@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pullup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pullup}
+      POSTGRES_DB: ${POSTGRES_DB:-pullup}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pullup}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Порт наружу не публикуем по умолчанию — app общается с db по внутренней
+    # docker-сети. Если нужен доступ с хоста (psql, GUI), раскомментируйте:
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python -m app.main' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:
