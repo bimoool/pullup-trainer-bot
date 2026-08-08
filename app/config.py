@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     admin_ids: str = ""
+    tribute_api_key: str = ""
 
     @property
     def admin_id_list(self) -> list[int]:
