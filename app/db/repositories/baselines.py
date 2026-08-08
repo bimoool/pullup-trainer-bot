@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Baseline, Branch, EquipmentType
+from app.db.models import Baseline, Branch, Equipment
 
 
 class BaselineRepository:
@@ -17,7 +17,7 @@ class BaselineRepository:
         user_id: int,
         performed_at: datetime,
         branch_result: Branch,
-        equipment_type: EquipmentType,
+        equipment_type: Equipment,
         reps: int,
         band_thickness_mm: Decimal | None = None,
         weight_kg: Decimal | None = None,

@@ -21,22 +21,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+# Branch/Equipment — доменные понятия (ветка считается доменным правилом
+# determine_branch, снаряд участвует в recalculate_target), поэтому у db
+# нет своих копий этих enum'ов — только импорт. Значения ('band','assisted',
+# 'band'/'weight') не менялись, так что на уже накатанную миграцию это не влияет.
+from app.domain.constants import Branch, Equipment
+
 
 def _pg_enum(enum_cls: type[StrEnum], name: str) -> PgEnum:
     # sa.Enum по умолчанию хранит .name члена (NONE, TRIAL, ...) — нам нужны
     # именно .value (none, trial, ...), чтобы совпадать со StrEnum.value,
     # который использует server_default и который отдаёт домен/сервисы.
     return PgEnum(enum_cls, name=name, values_callable=lambda cls: [member.value for member in cls])
-
-
-class Branch(StrEnum):
-    BAND = "band"
-    ASSISTED = "assisted"
-
-
-class EquipmentType(StrEnum):
-    BAND = "band"
-    WEIGHT = "weight"
 
 
 class WorkoutSetStatus(StrEnum):
@@ -67,6 +63,17 @@ class SubscriptionSource(StrEnum):
     STARS = "stars"
     COINS = "coins"
     ADMIN_GRANT = "admin_grant"
+    TRIBUTE = "tribute"
+
+
+class PendingPaymentProvider(StrEnum):
+    TRIBUTE = "tribute"
+
+
+class PendingPaymentStatus(StrEnum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    FAILED = "failed"
 
 
 class CoinReason(StrEnum):
@@ -106,8 +113,8 @@ class Baseline(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     branch_result: Mapped[Branch] = mapped_column(_pg_enum(Branch, "branch"), nullable=False)
-    equipment_type: Mapped[EquipmentType] = mapped_column(
-        _pg_enum(EquipmentType, "equipment_type"), nullable=False,
+    equipment_type: Mapped[Equipment] = mapped_column(
+        _pg_enum(Equipment, "equipment_type"), nullable=False,
     )
     band_thickness_mm: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), nullable=True)
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
@@ -242,3 +249,30 @@ class Achievement(Base):
     context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (UniqueConstraint("user_id", "code", name="uq_achievements_user_code"),)
+
+
+class PendingPayment(Base):
+    """Заказ у асинхронного провайдера (сейчас — только Tribute), ожидающий
+    подтверждения опросом (app/workers/tribute_sync.py). started_at/ends_at
+    периода подписки здесь намеренно нет — они считаются в момент
+    подтверждения (SubscriptionService.extend), а не в момент создания
+    заказа, чтобы «продление стекается поверх остатка» работало от
+    актуального состояния, а не от состояния на момент нажатия кнопки."""
+
+    __tablename__ = "pending_payments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    provider: Mapped[PendingPaymentProvider] = mapped_column(
+        _pg_enum(PendingPaymentProvider, "pending_payment_provider"), nullable=False,
+    )
+    external_order_id: Mapped[str] = mapped_column(Text, nullable=False)
+    days: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    status: Mapped[PendingPaymentStatus] = mapped_column(
+        _pg_enum(PendingPaymentStatus, "pending_payment_status"),
+        nullable=False,
+        default=PendingPaymentStatus.PENDING,
+        server_default=PendingPaymentStatus.PENDING.value,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

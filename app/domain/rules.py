@@ -5,10 +5,12 @@ from enum import StrEnum
 from app.domain.constants import (
     BACKDATE_MAX_DAYS,
     BASELINE_VALID_DAYS,
+    BLOCK_A,
     GAP_RETEST_DAYS,
     GAP_ROLLBACK_DAYS,
     MIN_REST_DAYS,
     SET_LENGTH,
+    Branch,
 )
 
 
@@ -72,3 +74,10 @@ def is_set_complete(completed_workouts_in_set: int) -> bool:
     """Сет завершён по достижении SET_LENGTH (12) полностью завершённых
     тренировок (замеры в счётчик не входят — считать их снаружи)."""
     return completed_workouts_in_set >= SET_LENGTH
+
+
+def determine_branch(reps: int) -> Branch:
+    """Ветка по итогам замера: BAND, если сделано хотя бы BLOCK_A.base_target
+    повторений на резине (тот же порог, что и стартовая цель блока A — это
+    не совпадение, а одно и то же число), иначе ASSISTED."""
+    return Branch.BAND if reps >= BLOCK_A.base_target else Branch.ASSISTED

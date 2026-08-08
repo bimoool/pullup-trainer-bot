@@ -9,6 +9,13 @@ class Equipment(StrEnum):
     WEIGHT = "weight"
 
 
+class Branch(StrEnum):
+    """Ветка тренировок пользователя, определяется по итогам замера."""
+
+    BAND = "band"
+    ASSISTED = "assisted"
+
+
 @dataclass(frozen=True)
 class BlockConfig:
     """Параметры прогрессии одного тренировочного блока."""

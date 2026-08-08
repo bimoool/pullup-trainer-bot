@@ -1,8 +1,10 @@
 from datetime import date, timedelta
 
+from app.domain.constants import Branch
 from app.domain.rules import (
     TrainingReadiness,
     check_training_readiness,
+    determine_branch,
     is_backdate_allowed,
     is_baseline_expired,
     is_set_complete,
@@ -113,3 +115,21 @@ def test_set_complete_at_twelve():
 
 def test_set_complete_beyond_twelve():
     assert is_set_complete(13) is True
+
+
+# --- determine_branch ----------------------------------------------------------
+
+def test_determine_branch_at_fifteen_reps_is_band():
+    assert determine_branch(15) == Branch.BAND
+
+
+def test_determine_branch_above_fifteen_reps_is_band():
+    assert determine_branch(20) == Branch.BAND
+
+
+def test_determine_branch_below_fifteen_reps_is_assisted():
+    assert determine_branch(14) == Branch.ASSISTED
+
+
+def test_determine_branch_zero_reps_is_assisted():
+    assert determine_branch(0) == Branch.ASSISTED

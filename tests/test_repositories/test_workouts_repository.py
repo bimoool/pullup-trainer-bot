@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.db.models import Branch, EquipmentType, User, WorkoutStatus
+from app.db.models import Branch, Equipment, User, WorkoutStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -14,7 +14,7 @@ WEIGHT = 10.0
 async def _make_set(session, user: User) -> int:
     baseline = await BaselineRepository(session).create(
         user_id=user.id, performed_at=datetime(2025, 12, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=EquipmentType.BAND, reps=18,
+        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=18,
     )
     workout_set = await WorkoutSetRepository(session).create(
         user_id=user.id, started_from_baseline_id=baseline.id,

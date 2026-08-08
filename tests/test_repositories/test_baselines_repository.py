@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.db.models import Branch, EquipmentType, User
+from app.db.models import Branch, Equipment, User
 from app.db.repositories.baselines import BaselineRepository
 
 
@@ -10,7 +10,7 @@ async def test_create_and_get_by_id(session, user: User):
         user_id=user.id,
         performed_at=datetime(2026, 1, 1, tzinfo=UTC),
         branch_result=Branch.BAND,
-        equipment_type=EquipmentType.BAND,
+        equipment_type=Equipment.BAND,
         reps=18,
         band_thickness_mm=22.0,
     )
@@ -26,11 +26,11 @@ async def test_get_latest_for_user(session, user: User):
     repo = BaselineRepository(session)
     await repo.create(
         user_id=user.id, performed_at=datetime(2026, 1, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=EquipmentType.BAND, reps=15,
+        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=15,
     )
     second = await repo.create(
         user_id=user.id, performed_at=datetime(2026, 3, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=EquipmentType.BAND, reps=20,
+        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=20,
     )
 
     latest = await repo.get_latest_for_user(user.id)
@@ -42,11 +42,11 @@ async def test_list_for_user_ordered_chronologically(session, user: User):
     repo = BaselineRepository(session)
     later = await repo.create(
         user_id=user.id, performed_at=datetime(2026, 3, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=EquipmentType.BAND, reps=20,
+        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=20,
     )
     earlier = await repo.create(
         user_id=user.id, performed_at=datetime(2026, 1, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=EquipmentType.BAND, reps=15,
+        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=15,
     )
 
     baselines = await repo.list_for_user(user.id)
@@ -57,7 +57,7 @@ async def test_assisted_branch_uses_weight_free_band(session, user: User):
     repo = BaselineRepository(session)
     baseline = await repo.create(
         user_id=user.id, performed_at=datetime(2026, 1, 1, tzinfo=UTC),
-        branch_result=Branch.ASSISTED, equipment_type=EquipmentType.BAND, reps=8,
+        branch_result=Branch.ASSISTED, equipment_type=Equipment.BAND, reps=8,
         band_thickness_mm=32.0,
     )
     assert baseline.branch_result == Branch.ASSISTED
