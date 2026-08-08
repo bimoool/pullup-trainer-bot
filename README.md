@@ -55,9 +55,18 @@ python -m app.main
 
 ## Тесты
 
+`tests/test_repositories/` и `tests/test_services/` — интеграционные, на
+реальном Postgres (не моки). `tests/conftest.py` сам поднимает `db` из
+docker-compose (`docker compose up -d db`), создаёт отдельную БД
+`pullup_test` и прогоняет туда миграции — руками ничего готовить не нужно,
+только чтобы Docker был запущен:
+
 ```bash
 pytest
 ```
+
+Домен (`tests/test_*.py` в корне `tests/`) — чистые unit-тесты, Postgres не
+трогают вообще.
 
 ## Миграции
 
@@ -71,9 +80,13 @@ alembic upgrade head
 ```
 app/
   domain/     чистая бизнес-логика прогрессии тренировок (без aiogram и SQLAlchemy)
-  db/         модели, репозитории, миграции Alembic
+  db/         модели (models.py), репозитории (repositories/), миграции Alembic
   bot/        хендлеры aiogram, клавиатуры, тексты, состояния FSM
-  services/   подписки, платежи, экспорт, интеграция с Google Sheets, аналитика
+  services/   подписки (subscription.py), монеты и ачивки (gamification.py);
+              позже — платежи, экспорт, Google Sheets, аналитика
   workers/    фоновые задачи: напоминания, синхронизация с Google Sheets
-tests/        тесты (в первую очередь для app/domain/)
+tests/
+  test_*.py            unit-тесты домена
+  test_repositories/   интеграционные тесты репозиториев (реальный Postgres)
+  test_services/       интеграционные тесты сервисного слоя (реальный Postgres)
 ```
