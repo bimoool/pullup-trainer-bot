@@ -7,6 +7,7 @@ from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.bot.handlers import router
+from app.bot.middlewares import DbSessionMiddleware
 from app.config import settings
 from app.workers.tribute_sync import register as register_tribute_sync
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher()
+    dispatcher.update.middleware(DbSessionMiddleware())
     dispatcher.include_router(router)
     return dispatcher
 

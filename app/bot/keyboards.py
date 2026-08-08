@@ -37,6 +37,12 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def skip_comment_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить", callback_data="skip_comment")
+    return builder.as_markup()
+
+
 def workout_result_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Изменить результат", callback_data="edit_last_workout")
