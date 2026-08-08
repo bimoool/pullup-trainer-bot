@@ -8,15 +8,21 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-pullup}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pullup}"]
       interval: 5s
       timeout: 5s
       retries: 10
-    # Порт наружу не публикуем по умолчанию — app общается с db по внутренней
-    # docker-сети. Если нужен доступ с хоста (psql, GUI), раскомментируйте:
-    # ports:
-    #   - "${POSTGRES_PORT:-5432}:5432"
+    # Публикуем на ЭФЕМЕРНОМ порту хоста (Docker сам выбирает свободный) —
+    # app всё равно общается с db по внутренней сети, а этот порт нужен
+    # только тестам/psql с хоста. Эфемерность исключает конфликт с другими
+    # локальными проектами (см. историю Этапа 0): узнать порт можно через
+    # `docker compose port db 5432`. На этом же порту, в этом же контейнере,
+    # initdb-скрипт создаёт вторую базу pullup_test — для интеграционных
+    # тестов, изолированно от dev-базы pullup.
+    ports:
+      - "127.0.0.1::5432"
 
   app:
     build: .
