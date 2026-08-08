@@ -145,7 +145,11 @@ class Workout(Base):
     workout_set_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("workout_sets.id"), nullable=False, index=True,
     )
-    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    # NULL, пока тренировка в статусе STARTED — хронологическая позиция для
+    # каскада известна только у тренировок с посчитанными результатами.
+    # NULL допустим в UNIQUE(user_id, sequence_number): в Postgres NULL != NULL,
+    # так что несколько неоконченных тренировок не конфликтуют между собой.
+    sequence_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[WorkoutStatus] = mapped_column(
         _pg_enum(WorkoutStatus, "workout_status"),

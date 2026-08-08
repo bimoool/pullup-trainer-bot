@@ -15,10 +15,15 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Приоритет — URL, явно переданный через Alembic Config (так тесты в
+# tests/conftest.py указывают на pullup_test); если его нет — обычный запуск
+# из командной строки берёт DATABASE_URL из .env через Settings.
+database_url = config.get_main_option("sqlalchemy.url") or settings.database_url
+
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.database_url,
+        url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -34,7 +39,7 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    connectable: AsyncEngine = create_async_engine(settings.database_url)
+    connectable: AsyncEngine = create_async_engine(database_url)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
