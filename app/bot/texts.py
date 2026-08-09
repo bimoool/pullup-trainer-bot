@@ -209,6 +209,36 @@ STARS_INVOICE_DESCRIPTION = "Доступ на {days} дней"
 STARS_INVOICE_LABEL = "Подписка"
 STARS_PAYMENT_LINK_SENT = "Оплата через Telegram Stars:"
 
+# --- Админка (Часть 7) --------------------------------------------------------------
+
+ADMIN_ACCESS_DENIED = "Команда недоступна."
+ADMIN_MENU_HEADER = "Админка"
+
+ADMIN_FUNNEL_HEADER = "📊 Воронка"
+ADMIN_FUNNEL_STEP = "\n\n{step} ({count}):\n{users}"
+ADMIN_FUNNEL_STEP_EMPTY = "\n\n{step} (0): —"
+ADMIN_FUNNEL_USER_LINE = "@{username} (id {telegram_id})"
+
+ADMIN_USERS_HEADER = "Выбери пользователя:"
+ADMIN_USER_CARD = (
+    "{name}\ntelegram_id: {telegram_id}\n\n"
+    "Замеров: {baseline_count}\nТренировок: {workout_count}\n"
+    "Текущие цели — объём: {target_a}, сила: {target_b}\n\n"
+    "Подписка: {subscription}\nМонеты: {coins}"
+)
+
+ADMIN_BROADCAST_PROMPT = "Текст для рассылки всем пользователям, завершившим онбординг:"
+ADMIN_BROADCAST_DONE = "Разослано {sent} из {total}."
+ADMIN_DM_PROMPT = "Текст сообщения для {name}:"
+ADMIN_DM_DONE = "Отправлено."
+ADMIN_DM_FAILED = "Не получилось отправить — пользователь мог заблокировать бота."
+
+ADMIN_GRANT_DAYS_PROMPT = "На сколько дней выдать подписку {name}? Например: 30"
+ADMIN_GRANT_DAYS_DONE = "Подписка на {days} дней выдана {name}."
+ADMIN_GRANT_COINS_PROMPT = "Сколько монет начислить {name}? Можно отрицательное число (списание). Например: 100"
+ADMIN_GRANT_COINS_DONE = "Начислено {amount} монет {name}."
+ADMIN_GRANT_INVALID_NUMBER = "Не разобрал число — пришли целое число, например: 30"
+
 # --- Общее -----------------------------------------------------------------------
 
 WELCOME_BACK = "С возвращением! Что делаем?"

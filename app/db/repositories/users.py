@@ -30,6 +30,12 @@ class UserRepository:
         result = await self._session.execute(select(User).where(User.onboarding_completed_at.is_not(None)))
         return list(result.scalars().all())
 
+    async def list_all(self) -> list[User]:
+        """Для админки (Часть 7) — выборка на фокус-группу 10-20 человек,
+        пагинация сознательно не нужна (см. respec)."""
+        result = await self._session.execute(select(User).order_by(User.created_at))
+        return list(result.scalars().all())
+
     async def update_profile(
         self,
         user_id: int,

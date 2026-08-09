@@ -45,3 +45,10 @@ class BackdateStates(StatesGroup):
     waiting_for_date = State()
     waiting_for_block_a = State()
     waiting_for_block_b = State()
+
+
+class AdminStates(StatesGroup):
+    waiting_for_broadcast_text = State()
+    waiting_for_dm_text = State()
+    waiting_for_grant_days = State()
+    waiting_for_grant_coins = State()

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     admin_ids: str = ""
+    admin_sheet_url: str = ""
     tribute_api_key: str = ""
 
     @property

@@ -143,3 +143,35 @@ def payment_link_keyboard(url: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Перейти к оплате", url=url)
     return builder.as_markup()
+
+
+def admin_menu_keyboard(sheet_url: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📊 Воронка", callback_data="admin_funnel")
+    builder.button(text="👥 Пользователи", callback_data="admin_users")
+    builder.button(text="📢 Рассылка всем", callback_data="admin_broadcast")
+    if sheet_url:
+        builder.button(text="📈 Google-таблица", url=sheet_url)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_user_list_keyboard(users: list) -> InlineKeyboardMarkup:
+    """users — User ORM-объекты, нужны только .id/.username/.telegram_id."""
+    builder = InlineKeyboardBuilder()
+    for user in users:
+        label = f"@{user.username}" if user.username else f"id {user.telegram_id}"
+        builder.button(text=label, callback_data=f"admin_user:{user.id}")
+    builder.button(text="← Назад", callback_data="admin_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_user_card_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✉️ Написать", callback_data=f"admin_dm:{user_id}")
+    builder.button(text="🎁 Выдать подписку", callback_data=f"admin_grant_days:{user_id}")
+    builder.button(text="🪙 Начислить монеты", callback_data=f"admin_grant_coins:{user_id}")
+    builder.button(text="← К списку", callback_data="admin_users")
+    builder.adjust(1)
+    return builder.as_markup()

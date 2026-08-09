@@ -47,6 +47,13 @@ class GamificationService:
         if coins:
             await self._award_coins(user_id, coins, CoinReason.WORKOUT_COMPLETED)
 
+    async def grant_coins_by_admin(self, user_id: int, amount: int) -> None:
+        """Ручная выдача монет из админки (Часть 7) — amount может быть и
+        отрицательным (коррекция), в отличие от spend_coins это не
+        ограничено текущим балансом: админ действует осознанно."""
+        if amount:
+            await self._award_coins(user_id, amount, CoinReason.ADMIN_ADJUSTMENT)
+
     async def spend_coins(
         self, user_id: int, amount: int, *, reason: CoinReason = CoinReason.SUBSCRIPTION_EXTENSION,
     ) -> None:

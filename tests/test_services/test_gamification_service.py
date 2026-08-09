@@ -73,3 +73,24 @@ async def test_spend_coins_rejects_insufficient_balance(session, user: User):
 
     with pytest.raises(ValueError, match="insufficient balance"):
         await service.spend_coins(user.id, 10)
+
+
+async def test_grant_coins_by_admin_allows_negative_correction(session, user: User):
+    service = GamificationService(session)
+    await service.award_workout_coins(user.id, 5)
+
+    await service.grant_coins_by_admin(user.id, -3)
+
+    updated_user = await UserRepository(session).get_by_id(user.id)
+    assert updated_user.coins_balance == 2
+    transactions = await CoinRepository(session).list_for_user(user.id)
+    assert transactions[-1].reason == CoinReason.ADMIN_ADJUSTMENT
+    assert transactions[-1].amount == -3
+
+
+async def test_grant_coins_by_admin_zero_creates_no_transaction(session, user: User):
+    service = GamificationService(session)
+    await service.grant_coins_by_admin(user.id, 0)
+
+    transactions = await CoinRepository(session).list_for_user(user.id)
+    assert transactions == []
