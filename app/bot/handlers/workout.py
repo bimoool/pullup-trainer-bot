@@ -7,6 +7,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
+from app.bot.formatting import format_set_close_report
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
     back_cancel_keyboard,
@@ -17,13 +18,20 @@ from app.bot.keyboards import (
 )
 from app.bot.parsing import ParseError, parse_block_result
 from app.bot.states import EquipmentStates, RetestStates, WorkoutStates
-from app.db.models import Block, BlockType, WorkoutSet
+from app.db.models import Block, BlockType, WorkoutSet, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
-from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType, to_signed_load
+from app.domain.constants import (
+    SET_LENGTH,
+    STRENGTH_BLOCK,
+    VOLUME_BLOCK,
+    EquipmentType,
+    to_signed_load,
+)
 from app.domain.progression import rollback_target, suggest_starting_equipment
+from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
 from app.services.subscription import SubscriptionService
@@ -394,6 +402,31 @@ async def _finalize_workout(
 
     await state.clear()
     await message.answer(summary, reply_markup=workout_result_keyboard())
+
+    # "По закрытии сета (12 тренировок) — большой отчёт" (Часть 5 респека).
+    # increment_completed переводит сет в COMPLETED ровно на этой тренировке
+    # (12-й) — новые тренировки уходят уже в следующий сет, поэтому этот
+    # флаг не сработает повторно на будущих записях.
+    workout_set = await WorkoutSetRepository(session).get_by_id(workout.workout_set_id)
+    if workout_set.status == WorkoutSetStatus.COMPLETED:
+        await _send_set_close_report(message, session, user.id, workout.workout_set_id)
+
+
+async def _send_set_close_report(message: Message, session: AsyncSession, user_id: int, workout_set_id: int) -> None:
+    workouts = WorkoutRepository(session)
+    workout_sets = WorkoutSetRepository(session)
+
+    records_in_set = await workouts.list_records_for_set(workout_set_id)
+    all_sets = await workout_sets.list_for_user(user_id)
+    position = next(i for i, s in enumerate(all_sets) if s.id == workout_set_id)
+
+    previous_set_volume = None
+    if position > 0:
+        previous_records = await workouts.list_records_for_set(all_sets[position - 1].id)
+        previous_set_volume = sum(r.block_a.log.volume + r.block_b.log.volume for r in previous_records)
+
+    summary = set_close_summary(records_in_set, previous_set_volume)
+    await message.answer(format_set_close_report(summary, SET_LENGTH))
 
 
 def _block_outcome_suffix(block: Block) -> str:

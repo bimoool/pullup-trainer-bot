@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from app.domain.constants import EquipmentType
 
@@ -43,6 +44,7 @@ class BlockAssignment:
     target_after: int
     equipment_changed: bool
     equipment_type: EquipmentType
+    equipment_value: Decimal | None = None
     transition_failed: bool = False
 
 

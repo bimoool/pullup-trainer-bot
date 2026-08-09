@@ -24,6 +24,12 @@ class UserRepository:
         result = await self._session.execute(select(User).where(User.telegram_id == telegram_id))
         return result.scalar_one_or_none()
 
+    async def list_onboarded(self) -> list[User]:
+        """Пользователи, завершившие анкету — адресаты еженедельной рассылки
+        (app/workers/weekly_report.py) и других проактивных уведомлений."""
+        result = await self._session.execute(select(User).where(User.onboarding_completed_at.is_not(None)))
+        return list(result.scalars().all())
+
     async def update_profile(
         self,
         user_id: int,

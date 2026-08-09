@@ -65,6 +65,8 @@ def workout_section_keyboard() -> InlineKeyboardMarkup:
 def progress_section_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="📖 История тренировок", callback_data="show_history")
+    builder.button(text="📊 Отчёт за неделю", callback_data="show_progress_report")
+    builder.button(text="⬇️ Экспорт в .xlsx", callback_data="export_xlsx")
     builder.adjust(1)
     return builder.as_markup()
 

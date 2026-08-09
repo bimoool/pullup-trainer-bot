@@ -43,6 +43,7 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             target_after=block_a.target_after,
             equipment_changed=block_a.equipment_changed,
             equipment_type=block_a.equipment_type,
+            equipment_value=block_a.equipment_value,
             transition_failed=block_a.transition_failed,
         ),
         block_b=BlockAssignment(
@@ -51,6 +52,7 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             target_after=block_b.target_after,
             equipment_changed=block_b.equipment_changed,
             equipment_type=block_b.equipment_type,
+            equipment_value=block_b.equipment_value,
             transition_failed=block_b.transition_failed,
         ),
         comment=workout.comment,
@@ -145,6 +147,14 @@ class WorkoutRepository:
             .order_by(Workout.performed_at),
         )
         return list(result.scalars().all())
+
+    async def list_records_for_user(self, user_id: int) -> list[WorkoutRecord]:
+        """list_for_user(), сконвертированный в чистые доменные WorkoutRecord —
+        вход для app/domain/reports.py (отчёты не должны знать про ORM)."""
+        return [_workout_to_record(w) for w in await self.list_for_user(user_id)]
+
+    async def list_records_for_set(self, workout_set_id: int) -> list[WorkoutRecord]:
+        return [_workout_to_record(w) for w in await self.list_for_set(workout_set_id)]
 
     async def start_workout(
         self, *, user_id: int, workout_set_id: int, performed_at: datetime, comment: str | None = None,

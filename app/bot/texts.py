@@ -157,6 +157,34 @@ HELP_TEXT = (
     "Если что-то работает не так, как ожидаешь, или остались вопросы — напиши автору: [контакт TBD]."
 )
 
+# --- Отчёты и прогресс ------------------------------------------------------------
+
+WEEKLY_REPORT_HEADER = "📊 Итоги недели"
+WEEKLY_REPORT_BODY = "Тренировок: {workout_count}\nСуммарный объём: {total_volume}{volume_change}"
+WEEKLY_REPORT_EQUIPMENT_CHANGED = "\nСнаряд сменился: {blocks}"
+
+PROGRESS_REPORT_NO_DATA_THIS_WEEK = "На этой неделе тренировок ещё не было."
+PROGRESS_REPORT_EQUIPMENT_HEADER = "\n\nДинамика на текущем снаряде:"
+PROGRESS_REPORT_EQUIPMENT_LINE_A = "\nОбъём: {line}"
+PROGRESS_REPORT_EQUIPMENT_LINE_B = "\nСила: {line}"
+
+VOLUME_CHANGE_WITH_PCT = " ({sign}{pct}% к прошлой неделе)"
+VOLUME_CHANGE_NO_BASELINE = ""
+EQUIPMENT_PROGRESS_WITH_PCT = "было {first}, сейчас {current} за тренировку ({sign}{pct}%)"
+EQUIPMENT_PROGRESS_NO_PCT = "было {first}, сейчас {current} за тренировку"
+EQUIPMENT_PROGRESS_NONE = "пока нет данных"
+
+SET_CLOSE_REPORT_HEADER = "🎉 Сет из {set_length} тренировок закрыт!"
+SET_CLOSE_REPORT_BODY = (
+    "Суммарный объём за сет: {total_volume}{volume_change}\n"
+    "Рост максимума — объём: {growth_a:+d}, сила: {growth_b:+d}\n"
+    "Смен снаряда за сет: {equipment_changes}\n\n"
+    "Когда будешь готов — сделай новый замер, посмотрим, как вырос уровень."
+)
+
+EXPORT_READY = "Экспорт готов 📎"
+EXPORT_BUTTON_LABEL = "⬇️ Экспорт в .xlsx"
+
 # --- История -----------------------------------------------------------------------
 
 HISTORY_EMPTY = "Пока нет ни одной тренировки."

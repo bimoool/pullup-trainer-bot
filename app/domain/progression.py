@@ -208,6 +208,7 @@ def recalculate_cascade(
                     target_after=result_a.new_target,
                     equipment_changed=result_a.equipment_changed,
                     equipment_type=record.block_a.equipment_type,
+                    equipment_value=record.block_a.equipment_value,
                     transition_failed=record.block_a.transition_failed,
                 ),
                 block_b=BlockAssignment(
@@ -216,6 +217,7 @@ def recalculate_cascade(
                     target_after=result_b.new_target,
                     equipment_changed=result_b.equipment_changed,
                     equipment_type=record.block_b.equipment_type,
+                    equipment_value=record.block_b.equipment_value,
                     transition_failed=record.block_b.transition_failed,
                 ),
                 comment=record.comment,
