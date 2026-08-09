@@ -10,7 +10,6 @@ from app.bot import texts
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
     back_cancel_keyboard,
-    bottom_menu_keyboard,
     cancel_keyboard,
     equipment_type_keyboard,
     skip_comment_keyboard,
@@ -387,23 +386,21 @@ async def _finalize_workout(
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
 
-    await message.answer(texts.BLOCK_RESULT_SUMMARY.format(max_reps=block_a.max_reps, new_target=block_a.target_after))
-    await _announce_block_outcome(message, block_a)
-    await message.answer(texts.BLOCK_RESULT_SUMMARY.format(max_reps=block_b.max_reps, new_target=block_b.target_after))
-    await _announce_block_outcome(message, block_b)
+    # Одно сообщение вместо разбора по блокам (см. Часть 4 респека) —
+    # статистика и подробности ушли в «Прогресс», здесь только
+    # подбадривание и цели на следующую тренировку.
+    summary = texts.WORKOUT_SUMMARY.format(target_a=block_a.target_after, target_b=block_b.target_after)
+    summary += _block_outcome_suffix(block_a) + _block_outcome_suffix(block_b)
 
     await state.clear()
-    await message.answer(texts.WORKOUT_DONE, reply_markup=workout_result_keyboard())
-    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+    await message.answer(summary, reply_markup=workout_result_keyboard())
 
 
-async def _announce_block_outcome(message: Message, block: Block) -> None:
+def _block_outcome_suffix(block: Block) -> str:
     if block.transition_failed:
-        await message.answer(texts.TRANSITION_FAILED_NOTICE)
-    elif block.equipment_changed:
-        await message.answer(texts.EQUIPMENT_CHANGED_NOTICE)
-    elif (
-        block.equipment_type == EquipmentType.BODYWEIGHT
-        and block.target_after == VOLUME_BLOCK.bodyweight_ceiling
-    ):
-        await message.answer(texts.CEILING_REACHED_NOTICE)
+        return texts.TRANSITION_FAILED_SUFFIX
+    if block.equipment_changed:
+        return texts.EQUIPMENT_CHANGED_SUFFIX
+    if block.equipment_type == EquipmentType.BODYWEIGHT and block.target_after == VOLUME_BLOCK.bodyweight_ceiling:
+        return texts.CEILING_REACHED_SUFFIX
+    return ""

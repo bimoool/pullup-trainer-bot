@@ -17,8 +17,6 @@ from app.db.repositories.users import UserRepository
 # вместо перезапуска — реальный баг, который эта очерёдность и чинит).
 router = Router()
 
-WELCOME_BACK = "С возвращением! Что делаем?"
-
 
 async def _go_home(message: Message, state: FSMContext, user: User) -> None:
     """Общий "выход в начало" — используется и /start, и /cancel, и кнопкой
@@ -29,9 +27,10 @@ async def _go_home(message: Message, state: FSMContext, user: User) -> None:
     if user.onboarding_completed_at is None:
         await state.set_state(OnboardingStates.waiting_for_baseline_reps)
         await message.answer(texts.ONBOARDING_INTRO)
+        await message.answer(texts.ONBOARDING_WHAT_NEXT)
         await message.answer(texts.BASELINE_GUIDE)
         return
-    await message.answer(WELCOME_BACK, reply_markup=bottom_menu_keyboard())
+    await message.answer(texts.WELCOME_BACK, reply_markup=bottom_menu_keyboard())
 
 
 @router.message(CommandStart())

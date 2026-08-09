@@ -18,9 +18,9 @@ def parse_block_result(raw_text: str, block: BlockConfig) -> BlockLog | ParseErr
     типизированными данными, а не строками пользовательского ввода."""
     parts = raw_text.split()
     expected_count = block.work_sets + 1
+    example = " ".join(["15"] * block.work_sets + ["18"])
 
     if len(parts) != expected_count:
-        example = " ".join(["15"] * block.work_sets + ["18"])
         return ParseError(
             f"Нужно {expected_count} чисел через пробел (рабочие подходы + подход на максимум), "
             f"а я насчитал {len(parts)}. Например: {example}",
@@ -29,10 +29,10 @@ def parse_block_result(raw_text: str, block: BlockConfig) -> BlockLog | ParseErr
     numbers = []
     for part in parts:
         if not part.isdigit():
-            return ParseError(f"«{part}» — это не число. Введи только цифры через пробел.")
+            return ParseError(f"«{part}» — не разобрал как число. Пришли только цифры через пробел, например: {example}")
         value = int(part)
         if not (MIN_REPS <= value <= MAX_REPS):
-            return ParseError(f"«{value}» — подозрительное число повторений (ожидается 0–{MAX_REPS}).")
+            return ParseError(f"«{value}» — не похоже на число повторений (жду 0–{MAX_REPS}). Например: {example}")
         numbers.append(value)
 
     return BlockLog(working_reps=tuple(numbers[:-1]), max_reps=numbers[-1])

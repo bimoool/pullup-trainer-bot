@@ -22,6 +22,7 @@ router = Router()
 @router.callback_query(F.data == "backdate_workout")
 async def handle_backdate_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(BackdateStates.waiting_for_date)
+    await callback.message.answer(texts.BACKDATE_INTRO)
     await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=cancel_keyboard())
     await callback.answer()
 

@@ -26,14 +26,14 @@ SUBSCRIPTION_PAYLOAD_PREFIX = "subscription:"
 @router.callback_query(F.data == "pay_stars")
 async def handle_pay_stars(callback: CallbackQuery) -> None:
     link = await callback.bot.create_invoice_link(
-        title="Подписка Pull-Up Trainer",
-        description=f"Доступ на {SUBSCRIPTION_DAYS} дней",
+        title=texts.STARS_INVOICE_TITLE,
+        description=texts.STARS_INVOICE_DESCRIPTION.format(days=SUBSCRIPTION_DAYS),
         payload=f"{SUBSCRIPTION_PAYLOAD_PREFIX}{callback.from_user.id}",
         currency="XTR",
-        prices=[LabeledPrice(label="Подписка", amount=STARS_PRICE)],
+        prices=[LabeledPrice(label=texts.STARS_INVOICE_LABEL, amount=STARS_PRICE)],
         subscription_period=STARS_SUBSCRIPTION_PERIOD_SECONDS,
     )
-    await callback.message.answer("Оплата через Telegram Stars:", reply_markup=payment_link_keyboard(link))
+    await callback.message.answer(texts.STARS_PAYMENT_LINK_SENT, reply_markup=payment_link_keyboard(link))
     await callback.answer()
 
 

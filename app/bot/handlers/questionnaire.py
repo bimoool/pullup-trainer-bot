@@ -37,7 +37,7 @@ def _parse_positive_int(raw: str | None) -> int | None:
 async def handle_weight(message: Message, state: FSMContext) -> None:
     value = _parse_positive_decimal(message.text)
     if value is None:
-        await message.answer(texts.QUESTIONNAIRE_INVALID_NUMBER)
+        await message.answer(texts.QUESTIONNAIRE_WEIGHT_INVALID)
         return
 
     await state.update_data(weight_kg=str(value))
@@ -49,7 +49,7 @@ async def handle_weight(message: Message, state: FSMContext) -> None:
 async def handle_height(message: Message, state: FSMContext) -> None:
     value = _parse_positive_int(message.text)
     if value is None:
-        await message.answer(texts.QUESTIONNAIRE_INVALID_NUMBER)
+        await message.answer(texts.QUESTIONNAIRE_HEIGHT_INVALID)
         return
 
     await state.update_data(height_cm=value)
@@ -61,7 +61,7 @@ async def handle_height(message: Message, state: FSMContext) -> None:
 async def handle_age(message: Message, state: FSMContext) -> None:
     value = _parse_positive_int(message.text)
     if value is None:
-        await message.answer(texts.QUESTIONNAIRE_INVALID_NUMBER)
+        await message.answer(texts.QUESTIONNAIRE_AGE_INVALID)
         return
 
     await state.update_data(age=value)
