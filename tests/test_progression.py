@@ -11,8 +11,8 @@ from app.domain.progression import (
     is_retry_allowed,
     recalculate_cascade,
     recalculate_target,
+    rollback_signed_load,
     rollback_target,
-    rollback_weight_kg,
     suggest_starting_equipment,
     suggest_weight_range,
 )
@@ -213,14 +213,40 @@ def test_suggest_weight_range_computes_10_to_15_percent():
     assert high == Decimal("12.5")
 
 
-# --- rollback_target / rollback_weight_kg (без изменений) -------------------
+# --- rollback_target / rollback_signed_load ----------------------------------
 
 def test_rollback_target_subtracts_rollback_reps():
     assert rollback_target(17) == 15
 
 
-def test_rollback_weight_kg_rounds_down():
-    assert rollback_weight_kg(13.75) == 11.25  # 13.75*0.9=12.375 -> floor к шагу 1.25 = 11.25
+def test_rollback_signed_load_weight_decreases_magnitude():
+    # отягощение: знаковая величина положительная, легче = МЕНЬШЕ кг.
+    # 13.75 - 10% = 12.375 -> floor к шагу 1.25 = 11.25 (та же арифметика,
+    # что была у прежней rollback_weight_kg, теперь через знаковую шкалу).
+    result = rollback_signed_load(EquipmentType.WEIGHT, Decimal("13.75"))
+    assert result == Decimal("11.25")
+
+
+def test_rollback_signed_load_band_increases_magnitude():
+    # резина: знаковая величина отрицательная, легче = БОЛЬШЕ кг
+    # сопротивления (толще резина, больше помощи). Наивное умножение
+    # |значения| на 0.9 дало бы 12.375 (легче число, но ЖЁСТЧЕ снаряд) —
+    # правильный результат идёт в обратную сторону, в сторону увеличения.
+    result = rollback_signed_load(EquipmentType.BAND, Decimal("13.75"))
+    assert result == Decimal("16.25")
+    assert result > Decimal("13.75")
+
+
+@pytest.mark.parametrize("equipment_type", [EquipmentType.BAND, EquipmentType.WEIGHT])
+def test_rollback_signed_load_always_moves_toward_easier(equipment_type):
+    # Инвариант, который должен держаться для ЛЮБОГО снаряда на шкале:
+    # знаковая нагрузка после отката строго МЕНЬШЕ прежней (легче), а не
+    # только модуль числа — иначе для резины откат случайно утяжелит.
+    value = Decimal("20.0")
+    before = to_signed_load(equipment_type, value)
+    after_value = rollback_signed_load(equipment_type, value)
+    after = to_signed_load(equipment_type, after_value)
+    assert after < before
 
 
 # --- recalculate_cascade -------------------------------------------------------

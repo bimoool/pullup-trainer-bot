@@ -12,6 +12,7 @@ from app.domain.constants import (
     WEIGHT_ROUND_TO_KG,
     BlockConfig,
     EquipmentType,
+    to_signed_load,
 )
 from app.domain.session import BlockAssignment, WorkoutRecord
 
@@ -158,13 +159,28 @@ def rollback_target(target: int) -> int:
     return target - ROLLBACK_REPS
 
 
-def rollback_weight_kg(current_weight_kg: float) -> float:
-    """Откат нагрузки силового блока при пропуске 21–35 дней:
-    -ROLLBACK_WEIGHT_PCT (10%), округление ВНИЗ до шага WEIGHT_ROUND_TO_KG
-    (в отличие от прибавки). Итоговое значение получается <= точного
-    -10%, то есть фактическое снижение всегда не меньше 10%. Применяется
-    только к силовому блоку (отягощение) — цель по повторениям не трогаем."""
-    return _floor_to_step(current_weight_kg * (1 - ROLLBACK_WEIGHT_PCT), WEIGHT_ROUND_TO_KG)
+def rollback_signed_load(equipment_type: EquipmentType, equipment_value: Decimal) -> Decimal:
+    """Предлагаемая нагрузка силового блока после отката (перерыв 21–35
+    дней) — тот же снаряд, но примерно на ROLLBACK_WEIGHT_PCT (10%) легче
+    ПО ЗНАКОВОЙ ШКАЛЕ (см. to_signed_load): знаковая величина должна
+    УМЕНЬШИТЬСЯ в обоих случаях — для отягощения это меньший вес
+    (+20 → +18), для резины — БОЛЬШЕЕ сопротивление в кг, то есть больше
+    помощи (−30 → −33, кг резины 30 → 33).
+
+    Именно поэтому здесь нельзя просто умножить |equipment_value| на 0.9:
+    для резины это утащило бы знаковую величину К НУЛЮ (−30·0.9 = −27),
+    то есть сделало бы снаряд ЖёстЧЕ — прямо противоположно смыслу отката.
+    Вместо этого вычитаем долю МОДУЛЯ из знакового значения — это всегда
+    двигает его в сторону "легче" независимо от знака.
+
+    Округление — в сторону ещё легче (floor знакового значения), чтобы
+    фактическое снижение нагрузки было не меньше заявленных 10%, как и в
+    прежней (дошкальной) версии этой функции. Возвращает магнитуду
+    (положительное число) — то, что показать пользователю в кг."""
+    signed = to_signed_load(equipment_type, equipment_value)
+    rolled_back_signed = float(signed) - abs(float(signed)) * ROLLBACK_WEIGHT_PCT
+    floored = _floor_to_step(rolled_back_signed, WEIGHT_ROUND_TO_KG)
+    return Decimal(str(abs(floored)))
 
 
 def recalculate_cascade(

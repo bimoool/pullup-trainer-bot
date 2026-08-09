@@ -23,14 +23,8 @@ from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
-from app.domain.constants import (
-    SET_LENGTH,
-    STRENGTH_BLOCK,
-    VOLUME_BLOCK,
-    EquipmentType,
-    to_signed_load,
-)
-from app.domain.progression import rollback_target, suggest_starting_equipment
+from app.domain.constants import SET_LENGTH, STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.progression import rollback_signed_load, rollback_target, suggest_starting_equipment
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
@@ -40,7 +34,6 @@ from app.services.workout_log import WorkoutLogService
 router = Router()
 
 _BLOCK_LABELS = {"a": "блоке на объём", "b": "блоке на силу"}
-_ROLLBACK_FACTOR = Decimal("0.9")  # -10%, см. texts.GAP_ROLLBACK_NOTICE
 
 
 async def _ensure_active_workout_set(session: AsyncSession, user_id: int) -> WorkoutSet | None:
@@ -147,14 +140,15 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
 
 def _rolled_back_load_hint(target_b_state: NextBlockState) -> tuple[str, str] | None:
     """Только подсказка в тексте — пользователь всё равно вводит фактически
-    использованный снаряд сам на этапе EquipmentStates. Ничего не
-    округляем до шага прогрессии — это не значение, которое запишется,
-    просто ориентир "примерно на 10% легче". None — снаряд без числа
+    использованный снаряд сам на этапе EquipmentStates. Направление считает
+    rollback_signed_load (через знаковую шкалу — для резины "легче" значит
+    БОЛЬШЕ кг сопротивления, для веса МЕНЬШЕ, наивное умножение модуля на
+    0.9 в обе стороны было ошибкой, см. историю). None — снаряд без числа
     (свой вес), подсказывать нечего."""
     if target_b_state.equipment_value is None:
         return None
     previous = target_b_state.equipment_value
-    suggested = abs(to_signed_load(target_b_state.equipment_type, previous) * _ROLLBACK_FACTOR)
+    suggested = rollback_signed_load(target_b_state.equipment_type, previous)
     return f"{suggested:.1f}", f"{previous:.1f}"
 
 
