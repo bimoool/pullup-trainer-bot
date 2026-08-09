@@ -168,6 +168,15 @@ PROGRESS_REPORT_EQUIPMENT_HEADER = "\n\nДинамика на текущем с�
 PROGRESS_REPORT_EQUIPMENT_LINE_A = "\nОбъём: {line}"
 PROGRESS_REPORT_EQUIPMENT_LINE_B = "\nСила: {line}"
 
+# --- Рекомендации (Часть 6, типы 1 и 2) ---------------------------------------------
+
+RECOMMENDATIONS_HEADER = "\n\n💡 Что можно улучшить:"
+RECOMMENDATION_UNDERWORKING_SETS = "В блоке на {block_label} максимум заметно выше рабочих подходов — там есть запас, можно нагружать рабочие подходы сильнее."
+RECOMMENDATION_EQUIPMENT_TOO_LIGHT = "В блоке на {block_label} максимум стабильно намного выше цели — похоже, снаряд слишком лёгкий, можно двигаться к следующему пораньше."
+RECOMMENDATION_WEAK_SET_INDEX = "В блоке на {block_label} подход №{set_number} стабильно слабее остальных — попробуй увеличить отдых между подходами."
+RECOMMENDATION_MINIMAL_REST_VOLUME_DROP = "Тренируешься почти без отдыха, и объём при этом падает — возможно, стоит взять лишний день на восстановление."
+RECOMMENDATION_CONSISTENT_STREAK = "{days} дней без пропусков — отличная динамика, продолжай в том же духе!"
+
 VOLUME_CHANGE_WITH_PCT = " ({sign}{pct}% к прошлой неделе)"
 VOLUME_CHANGE_NO_BASELINE = ""
 EQUIPMENT_PROGRESS_WITH_PCT = "было {first}, сейчас {current} за тренировку ({sign}{pct}%)"

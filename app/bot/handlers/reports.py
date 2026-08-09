@@ -5,7 +5,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_progress_report
+from app.bot.formatting import format_progress_report, format_recommendations
 from app.bot.keyboards import progress_section_keyboard
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
@@ -42,9 +42,10 @@ async def handle_show_progress_report(callback: CallbackQuery, session: AsyncSes
     progress_a = current_equipment_progress(records, "a")
     progress_b = current_equipment_progress(records, "b")
 
-    await callback.message.answer(
-        format_progress_report(summary, progress_a, progress_b), reply_markup=progress_section_keyboard(),
-    )
+    report = format_progress_report(summary, progress_a, progress_b)
+    report += format_recommendations(records, now.date())
+
+    await callback.message.answer(report, reply_markup=progress_section_keyboard())
     await callback.answer()
 
 

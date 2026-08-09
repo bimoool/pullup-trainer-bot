@@ -2,10 +2,30 @@
 пользователя — вынесено отдельно от хендлеров, чтобы не дублировать между
 обработчиком по запросу и еженедельным воркером (app/workers/weekly_report.py)."""
 
+from datetime import date
+
 from app.bot import texts
+from app.domain.recommendations import (
+    Recommendation,
+    RecommendationCode,
+    check_consistent_streak,
+    check_equipment_too_light,
+    check_minimal_rest_volume_drop,
+    check_underworking_sets,
+    check_weak_set_index,
+)
 from app.domain.reports import EquipmentProgress, SetCloseSummary, WeeklySummary
+from app.domain.session import WorkoutRecord
 
 _BLOCK_LABELS = {"a": "объём", "b": "сила"}
+
+_RECOMMENDATION_TEMPLATES = {
+    RecommendationCode.UNDERWORKING_SETS: texts.RECOMMENDATION_UNDERWORKING_SETS,
+    RecommendationCode.EQUIPMENT_TOO_LIGHT: texts.RECOMMENDATION_EQUIPMENT_TOO_LIGHT,
+    RecommendationCode.WEAK_SET_INDEX: texts.RECOMMENDATION_WEAK_SET_INDEX,
+    RecommendationCode.MINIMAL_REST_VOLUME_DROP: texts.RECOMMENDATION_MINIMAL_REST_VOLUME_DROP,
+    RecommendationCode.CONSISTENT_STREAK: texts.RECOMMENDATION_CONSISTENT_STREAK,
+}
 
 
 def _signed_pct(pct: float) -> tuple[str, float]:
@@ -54,6 +74,49 @@ def format_progress_report(
     body += texts.PROGRESS_REPORT_EQUIPMENT_LINE_A.format(line=format_equipment_progress_line(progress_a))
     body += texts.PROGRESS_REPORT_EQUIPMENT_LINE_B.format(line=format_equipment_progress_line(progress_b))
     return body
+
+
+def _format_recommendation(recommendation: Recommendation) -> str:
+    template = _RECOMMENDATION_TEMPLATES[recommendation.code]
+    context = dict(recommendation.context)
+    if "block" in context:
+        context["block_label"] = _BLOCK_LABELS[context.pop("block")]
+    return template.format(**context)
+
+
+def collect_recommendations(records: list[WorkoutRecord], today: date) -> list[Recommendation]:
+    """Прогоняет все проверки типов 1 и 2 (Часть 6 респека) по истории.
+    Тип 1 (блок/цифры) — по последней тренировке и по последним нескольким
+    подряд; тип 2 (режим) — по всей истории с учётом сегодняшней даты."""
+    recommendations: list[Recommendation] = []
+    if records:
+        last = records[-1]
+        for block in ("a", "b"):
+            underworking = check_underworking_sets(last, block)
+            if underworking is not None:
+                recommendations.append(underworking)
+            equipment_too_light = check_equipment_too_light(records, block)
+            if equipment_too_light is not None:
+                recommendations.append(equipment_too_light)
+            weak_set = check_weak_set_index(records, block)
+            if weak_set is not None:
+                recommendations.append(weak_set)
+
+    volume_drop = check_minimal_rest_volume_drop(records)
+    if volume_drop is not None:
+        recommendations.append(volume_drop)
+    streak = check_consistent_streak(records, today)
+    if streak is not None:
+        recommendations.append(streak)
+    return recommendations
+
+
+def format_recommendations(records: list[WorkoutRecord], today: date) -> str:
+    recommendations = collect_recommendations(records, today)
+    if not recommendations:
+        return ""
+    lines = "\n".join(f"— {_format_recommendation(r)}" for r in recommendations)
+    return f"{texts.RECOMMENDATIONS_HEADER}\n{lines}"
 
 
 def format_set_close_report(summary: SetCloseSummary, set_length: int) -> str:

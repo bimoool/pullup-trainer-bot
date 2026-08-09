@@ -77,3 +77,23 @@ TRIAL_DAYS: int = 14
 TRANSITION_RETRY_WORKOUTS: int = 4
 # Тренировок на прежнем снаряде после неудачного перехода, прежде чем
 # предлагать повторную попытку.
+
+# --- Рекомендации (app/domain/recommendations.py) — типы 1 и 2 ------------------
+
+UNDERWORKING_GAP_THRESHOLD: int = 5
+# Максимум минус средние рабочие подходы >= этого — рабочие подходы идут
+# сильно легче максимума, есть простор нагружать их больше.
+EQUIPMENT_TOO_LIGHT_MARGIN: int = 5
+EQUIPMENT_TOO_LIGHT_LOOKBACK: int = 3
+# Максимум стабильно превышает цель на EQUIPMENT_TOO_LIGHT_MARGIN и больше
+# на протяжении EQUIPMENT_TOO_LIGHT_LOOKBACK тренировок подряд на одном
+# снаряде — снаряд явно недооценивает уровень.
+WEAK_SET_DROP_THRESHOLD: int = 3
+WEAK_SET_LOOKBACK: int = 3
+# Конкретный по номеру рабочий подход в среднем ниже остальных подходов той
+# же тренировки минимум на столько — за последние WEAK_SET_LOOKBACK тренировок.
+VOLUME_DROP_LOOKBACK: int = 3
+MINIMAL_REST_MARGIN_DAYS: int = 1
+# Промежуток между тренировками не превышает MIN_REST_DAYS + этот запас —
+# считается "на грани минимального отдыха".
+CONSISTENT_STREAK_DAYS: int = 21

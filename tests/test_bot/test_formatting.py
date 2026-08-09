@@ -1,14 +1,17 @@
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.bot.formatting import (
     format_equipment_progress_line,
     format_progress_report,
+    format_recommendations,
     format_set_close_report,
     format_volume_change,
     format_weekly_summary,
 )
 from app.domain.constants import EquipmentType
 from app.domain.reports import EquipmentProgress, SetCloseSummary, WeeklySummary
+from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
 
 
 def test_format_volume_change_none_omits_percentage():
@@ -71,3 +74,29 @@ def test_format_set_close_report_includes_set_length_and_growth():
     assert "12" in text
     assert "+5" in text
     assert "+2" in text
+
+
+def _record() -> WorkoutRecord:
+    band = Decimal("20.0")
+    return WorkoutRecord(
+        performed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        block_a=BlockAssignment(
+            log=BlockLog(working_reps=(10, 10, 10), max_reps=16), target_before=10, target_after=11,
+            equipment_changed=False, equipment_type=EquipmentType.BAND, equipment_value=band,
+        ),
+        block_b=BlockAssignment(
+            log=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4), target_before=3, target_after=4,
+            equipment_changed=False, equipment_type=EquipmentType.BAND, equipment_value=band,
+        ),
+    )
+
+
+def test_format_recommendations_empty_history_gives_empty_string():
+    assert format_recommendations([], date(2026, 1, 1)) == ""
+
+
+def test_format_recommendations_includes_triggered_recommendation():
+    # gap = max(16) - mean(10,10,10) = 6 >= порог -> underworking_sets на объёме
+    text = format_recommendations([_record()], date(2026, 1, 1))
+    assert "💡" in text
+    assert "объём" in text
