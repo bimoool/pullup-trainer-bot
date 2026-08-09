@@ -4,22 +4,16 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import main_menu_keyboard
+from app.bot.keyboards import cancel_keyboard, main_menu_keyboard
 from app.bot.parsing import ParseError, parse_block_result
 from app.bot.states import EditWorkoutStates
 from app.db.models import BlockType
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.constants import BLOCK_A, BLOCK_B
+from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK
 from app.domain.session import BlockLog
 
 router = Router()
-
-NOTHING_TO_EDIT = "Пока нечего редактировать."
-EDIT_DONE = (
-    "Обновлено. Блок A: макс {a_max} → цель {a_target}. Блок B: макс {b_max} → цель {b_target}.\n"
-    "Тренировки после этой тоже пересчитаны."
-)
 
 
 @router.callback_query(F.data == "edit_last_workout")
@@ -30,30 +24,38 @@ async def handle_edit_last_workout(callback: CallbackQuery, state: FSMContext, s
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
     if not history:
-        await callback.answer(NOTHING_TO_EDIT, show_alert=True)
+        await callback.answer(texts.EDIT_NOTHING_TO_EDIT, show_alert=True)
         return
 
-    await state.update_data(edit_workout_id=history[-1].id)
+    last = history[-1]
+    if last.sequence_number is None or not last.participates_in_cascade:
+        # Последняя запись — внесённая задним числом, у неё нет цепочки
+        # каскада, редактировать через этот сценарий нельзя (см.
+        # WorkoutRepository.edit_workout).
+        await callback.answer(texts.EDIT_NOT_EDITABLE, show_alert=True)
+        return
+
+    await state.update_data(edit_workout_id=last.id)
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
-    await callback.message.answer(texts.BLOCK_A_PROMPT)
+    await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
     await callback.answer()
 
 
 @router.message(EditWorkoutStates.waiting_for_block_a)
 async def handle_edit_block_a(message: Message, state: FSMContext) -> None:
-    result = parse_block_result(message.text or "", BLOCK_A)
+    result = parse_block_result(message.text or "", VOLUME_BLOCK)
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(EditWorkoutStates.waiting_for_block_b)
-    await message.answer(texts.BLOCK_B_PROMPT)
+    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=cancel_keyboard())
 
 
 @router.message(EditWorkoutStates.waiting_for_block_b)
 async def handle_edit_block_b(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    result = parse_block_result(message.text or "", BLOCK_B)
+    result = parse_block_result(message.text or "", STRENGTH_BLOCK)
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
@@ -71,9 +73,9 @@ async def handle_edit_block_b(message: Message, state: FSMContext, session: Asyn
 
     await state.clear()
     await message.answer(
-        EDIT_DONE.format(
+        texts.EDIT_DONE.format(
             a_max=block_a.max_reps, a_target=block_a.target_after,
             b_max=block_b.max_reps, b_target=block_b.target_after,
         ),
     )
-    await message.answer("Что дальше?", reply_markup=main_menu_keyboard())
+    await message.answer(texts.WHAT_NEXT, reply_markup=main_menu_keyboard())

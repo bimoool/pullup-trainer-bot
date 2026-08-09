@@ -4,6 +4,7 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery, LabeledPrice, Message, PreCheckoutQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot import texts
 from app.bot.keyboards import payment_link_keyboard
 from app.db.models import SubscriptionSource
 from app.db.repositories.users import UserRepository
@@ -12,9 +13,11 @@ from app.services.tribute import SUBSCRIPTION_DAYS
 
 router = Router()
 
-# ЧЕРНОВИК: сумма в Stars не была явно продиктована в этой сессии ("как
-# договаривались отдельно") — цифра ниже условная, заменить на согласованную.
-STARS_PRICE = 200
+# 900 XTR — согласовано с пользователем при утверждении v2-респека
+# (ориентир: сопоставимо с тарифом Tribute, 990₽/мес, по курсу Stars на
+# момент согласования). Не привязано автоматически к курсу — если Telegram
+# изменит курс XTR или цена в рублях поменяется, число нужно поправить руками.
+STARS_PRICE = 900
 STARS_SUBSCRIPTION_PERIOD_SECONDS = 30 * 24 * 60 * 60  # нативный период подписки Stars — 30 дней
 
 SUBSCRIPTION_PAYLOAD_PREFIX = "subscription:"
@@ -52,4 +55,4 @@ async def handle_successful_payment(message: Message, session: AsyncSession) -> 
         source=SubscriptionSource.STARS,
         payment_reference=message.successful_payment.telegram_payment_charge_id,
     )
-    await message.answer("Подписка активирована — можно тренироваться!")
+    await message.answer(texts.STARS_PAYMENT_CONFIRMED)

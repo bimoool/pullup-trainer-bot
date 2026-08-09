@@ -53,6 +53,8 @@ class WorkoutLogService:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        target_a_override: int | None = None,
+        target_b_override: int | None = None,
         comment: str | None = None,
     ) -> Workout:
         workout = await self._workouts.record_workout(
@@ -65,6 +67,8 @@ class WorkoutLogService:
             block_a_equipment_value=block_a_equipment_value,
             block_b_equipment_type=block_b_equipment_type,
             block_b_equipment_value=block_b_equipment_value,
+            target_a_override=target_a_override,
+            target_b_override=target_b_override,
             comment=comment,
         )
 

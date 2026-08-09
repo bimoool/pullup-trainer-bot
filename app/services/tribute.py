@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -5,7 +6,7 @@ from typing import Protocol
 import aiohttp
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import PendingPaymentProvider, SubscriptionSource
+from app.db.models import PendingPayment, PendingPaymentProvider, SubscriptionSource
 from app.db.repositories.pending_payments import PendingPaymentRepository
 from app.services.subscription import SubscriptionService
 
@@ -104,9 +105,18 @@ class TributeService:
         )
         return order
 
-    async def sync_pending_payments(self, *, now: datetime) -> int:
+    async def sync_pending_payments(
+        self,
+        *,
+        now: datetime,
+        on_confirmed: Callable[[PendingPayment], Awaitable[None]] | None = None,
+    ) -> int:
         """Опрашивает все pending-заказы Tribute. Возвращает число
-        подтверждённых за этот проход (для лога воркера)."""
+        подтверждённых за этот проход (для лога воркера).
+
+        on_confirmed — опциональный колбэк на каждый подтверждённый платёж
+        (воркер передаёт сюда отправку сообщения в Telegram); сервис
+        нарочно не знает про Bot/aiogram — это дело вызывающего кода."""
         confirmed = 0
         for payment in await self._pending_payments.list_pending(PendingPaymentProvider.TRIBUTE):
             status = await self._client.get_order_status(payment.external_order_id)
@@ -120,6 +130,8 @@ class TributeService:
                 )
                 await self._pending_payments.mark_confirmed(payment.id, resolved_at=now)
                 confirmed += 1
+                if on_confirmed is not None:
+                    await on_confirmed(payment)
             elif status == _STATUS_FAILED:
                 await self._pending_payments.mark_failed(payment.id, resolved_at=now)
         return confirmed

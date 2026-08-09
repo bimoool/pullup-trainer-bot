@@ -58,11 +58,16 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
 
 
 @dataclass(frozen=True)
-class _NextState:
+class NextBlockState:
     target: int
     volume: int
     equipment_type: EquipmentType
     equipment_value: Decimal | None
+    needs_new_equipment: bool
+    # True — предыдущая тренировка сообщила equipment_changed (или истории
+    # нет вовсе): снаряд для СЛЕДУЮЩЕЙ тренировки ещё не известен, вызывающий
+    # код (хендлер) должен спросить пользователя, а не использовать
+    # equipment_type/equipment_value отсюда как есть — это старый снаряд.
 
 
 def _apply_cascade_result(workout: Workout, record: WorkoutRecord) -> None:
@@ -120,6 +125,18 @@ class WorkoutRepository:
         )
         return list(result.scalars().all())
 
+    async def resolve_next_targets(self, user_id: int) -> tuple[NextBlockState, NextBlockState]:
+        """Публичный вход для хендлеров: состояние (цель/объём/снаряд), с
+        которого начнётся следующая тренировка обоих блоков — то же самое,
+        что использует complete_workout внутри себя. Нужен хендлеру, чтобы
+        показать план и спросить снаряд ДО того, как тренировка реально
+        записана (см. app/bot/handlers/workout.py)."""
+        history = await self.list_for_user(user_id)
+        return (
+            self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK),
+            self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK),
+        )
+
     async def list_for_set(self, workout_set_id: int) -> list[Workout]:
         result = await self._session.execute(
             select(Workout)
@@ -160,6 +177,8 @@ class WorkoutRepository:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        target_a_override: int | None = None,
+        target_b_override: int | None = None,
         comment: str | None = None,
     ) -> Workout:
         """start_workout + complete_workout в одном вызове — основной путь
@@ -175,6 +194,8 @@ class WorkoutRepository:
             block_a_equipment_value=block_a_equipment_value,
             block_b_equipment_type=block_b_equipment_type,
             block_b_equipment_value=block_b_equipment_value,
+            target_a_override=target_a_override,
+            target_b_override=target_b_override,
         )
 
     async def complete_workout(
@@ -187,6 +208,8 @@ class WorkoutRepository:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        target_a_override: int | None = None,
+        target_b_override: int | None = None,
         comment: str | None = None,
     ) -> Workout:
         """Прикрепляет результаты блоков к ранее начатой (start_workout)
@@ -199,7 +222,15 @@ class WorkoutRepository:
         передаёт вызывающий код — репозиторий не подбирает его сам, только
         проверяет (check_transition_outcome), не провалена ли первая
         тренировка на новом снаряде, и если да — откатывает цель и снаряд
-        на предыдущие, не сбрасывая на base_target."""
+        на предыдущие, не сбрасывая на base_target.
+
+        target_*_override — для отката после долгого перерыва
+        (domain.rules.TrainingReadiness.GAP_ROLLBACK) и полного сброса после
+        ретеста (GAP_RETEST_REQUIRED): вызывающий код (хендлер) уже посчитал
+        скорректированную цель ДО того, как показал план пользователю, и эта
+        же цель должна лечь в target_before, а не заново выведенная из
+        истории — иначе показанный план разойдётся с тем, что реально
+        запишется."""
         workout = await self.get_by_id(workout_id)
         if workout is None:
             raise ValueError(f"workout {workout_id} not found")
@@ -209,13 +240,15 @@ class WorkoutRepository:
 
         state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
         state_b = self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK)
+        target_before_a = target_a_override if target_a_override is not None else state_a.target
+        target_before_b = target_b_override if target_b_override is not None else state_b.target
 
         result_a = recalculate_target(
-            VOLUME_BLOCK, state_a.target, block_a_reps.working_reps, block_a_reps.max_reps,
+            VOLUME_BLOCK, target_before_a, block_a_reps.working_reps, block_a_reps.max_reps,
             block_a_reps.volume, state_a.volume, block_a_equipment_type,
         )
         result_b = recalculate_target(
-            STRENGTH_BLOCK, state_b.target, block_b_reps.working_reps, block_b_reps.max_reps,
+            STRENGTH_BLOCK, target_before_b, block_b_reps.working_reps, block_b_reps.max_reps,
             block_b_reps.volume, state_b.volume, block_b_equipment_type,
         )
 
@@ -242,7 +275,7 @@ class WorkoutRepository:
                 block_type=BlockType.A,
                 working_reps=list(block_a_reps.working_reps),
                 max_reps=block_a_reps.max_reps,
-                target_before=state_a.target,
+                target_before=target_before_a,
                 target_after=target_after_a,
                 equipment_changed=equipment_changed_a,
                 equipment_type=block_a_equipment_type,
@@ -256,7 +289,7 @@ class WorkoutRepository:
                 block_type=BlockType.B,
                 working_reps=list(block_b_reps.working_reps),
                 max_reps=block_b_reps.max_reps,
-                target_before=state_b.target,
+                target_before=target_before_b,
                 target_after=target_after_b,
                 equipment_changed=equipment_changed_b,
                 equipment_type=block_b_equipment_type,
@@ -413,7 +446,7 @@ class WorkoutRepository:
 
     def _resolve_next_state(
         self, history: list[Workout], block_type: BlockType, block_config,
-    ) -> _NextState:
+    ) -> NextBlockState:
         """Цель/объём/снаряд, от которых считать СЛЕДУЮЩУЮ тренировку —
         по хронологически последней записи ЛЮБОГО происхождения (см.
         list_for_user). Если последняя запись отмечена transition_failed —
@@ -421,20 +454,29 @@ class WorkoutRepository:
         тренировка, что была ДО неудачной попытки смены) — target_after
         неудачной попытки уже содержит правильно откаченное значение,
         а вот equipment_type/value на ней — это как раз тот снаряд,
-        который не подошёл, его предлагать снова не нужно."""
+        который не подошёл, его предлагать снова не нужно. В этом случае
+        needs_new_equipment=False — снаряд уже известен (прежний),
+        спрашивать заново нечего."""
         if not history:
-            return _NextState(block_config.base_target, 0, EquipmentType.BAND, None)
+            return NextBlockState(
+                target=block_config.base_target, volume=0,
+                equipment_type=EquipmentType.BAND, equipment_value=None,
+                needs_new_equipment=True,
+            )
 
         last_block = _find_block(history[-1], block_type)
         equipment_source = last_block
+        needs_new_equipment = last_block.equipment_changed
         if last_block.transition_failed and len(history) >= 2:
             equipment_source = _find_block(history[-2], block_type)
+            needs_new_equipment = False
 
-        return _NextState(
+        return NextBlockState(
             target=last_block.target_after,
             volume=_block_to_log(last_block).volume,
             equipment_type=equipment_source.equipment_type,
             equipment_value=equipment_source.equipment_value,
+            needs_new_equipment=needs_new_equipment,
         )
 
     @staticmethod

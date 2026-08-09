@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "gspread>=6.1",
     "openpyxl>=3.1",
+    "redis>=5.0",
 ]
 
 [project.optional-dependencies]

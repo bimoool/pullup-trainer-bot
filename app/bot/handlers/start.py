@@ -1,17 +1,37 @@
-from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram import F, Router
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.keyboards import main_menu_keyboard
 from app.bot.states import OnboardingStates
+from app.db.models import User
 from app.db.repositories.users import UserRepository
 
+# ВАЖНО: этот router подключается ПЕРВЫМ в app/bot/handlers/__init__.py —
+# /start и /cancel обязаны перехватывать апдейт раньше любых хендлеров,
+# завязанных на FSM-состояние (иначе, например, "/start" посреди ввода
+# результата тренировки уйдёт в parse_block_result и вернёт ошибку разбора
+# вместо перезапуска — реальный баг, который эта очерёдность и чинит).
 router = Router()
 
 WELCOME_BACK = "С возвращением! Что делаем?"
+
+
+async def _go_home(message: Message, state: FSMContext, user: User) -> None:
+    """Общий "выход в начало" — используется и /start, и /cancel, и кнопкой
+    отмены: если анкета не завершена, возвращает туда, где пользователь
+    остановился в онбординге (а не в несуществующее для него главное меню),
+    иначе — в главное меню."""
+    await state.clear()
+    if user.onboarding_completed_at is None:
+        await state.set_state(OnboardingStates.waiting_for_baseline_reps)
+        await message.answer(texts.ONBOARDING_INTRO)
+        await message.answer(texts.BASELINE_GUIDE)
+        return
+    await message.answer(WELCOME_BACK, reply_markup=main_menu_keyboard())
 
 
 @router.message(CommandStart())
@@ -20,13 +40,28 @@ async def handle_start(message: Message, state: FSMContext, session: AsyncSessio
     user = await users.get_by_telegram_id(message.from_user.id)
     if user is None:
         user = await users.create(telegram_id=message.from_user.id, username=message.from_user.username)
+    await _go_home(message, state, user)
 
-    if user.onboarding_completed_at is None:
+
+@router.message(Command("cancel"))
+async def handle_cancel_command(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(message.from_user.id)
+    if user is None:
         await state.clear()
-        await state.set_state(OnboardingStates.waiting_for_baseline_reps)
-        await message.answer(texts.ONBOARDING_INTRO)
-        await message.answer(texts.BAND_SELECTION_GUIDE)
+        await message.answer(texts.CANCELLED)
         return
+    await message.answer(texts.CANCELLED)
+    await _go_home(message, state, user)
 
-    await state.clear()
-    await message.answer(WELCOME_BACK, reply_markup=main_menu_keyboard())
+
+@router.callback_query(F.data == "cancel_flow")
+async def handle_cancel_callback(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+    await callback.message.answer(texts.CANCELLED)
+    if user is not None:
+        await _go_home(callback.message, state, user)
+    else:
+        await state.clear()
+    await callback.answer()

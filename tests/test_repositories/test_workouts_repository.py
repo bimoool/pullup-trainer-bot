@@ -260,6 +260,29 @@ async def test_start_then_complete_workout(session, user: User):
     assert completed.sequence_number == 1
 
 
+async def test_resolve_next_targets_reports_needs_new_equipment(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    empty_a, empty_b = await repo.resolve_next_targets(user.id)
+    assert empty_a.needs_new_equipment is True
+    assert empty_b.needs_new_equipment is True
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(20, 20, 20), max_reps=21),  # достигает порога -> equipment_changed
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    next_a, next_b = await repo.resolve_next_targets(user.id)
+    assert next_a.needs_new_equipment is True  # объёмный блок сменил снаряд
+    assert next_b.needs_new_equipment is False  # силовой — нет, ниже порога
+    assert next_b.equipment_type == EquipmentType.BAND
+    assert next_b.equipment_value == BAND_VALUE
+
+
 async def test_list_for_user_includes_backdated_and_excludes_started(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
