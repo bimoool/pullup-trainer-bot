@@ -8,7 +8,7 @@ from app.domain.constants import GAP_ROLLBACK_DAYS
 class AchievementCode(StrEnum):
     FIRST_BASELINE = "first_baseline"
     TEN_WORKOUTS_STREAK = "ten_workouts_streak"
-    BAND_CHANGED = "band_changed"
+    EQUIPMENT_CHANGED = "equipment_changed"
     FIRST_WEIGHTED_PULLUP = "first_weighted_pullup"
     SET_COMPLETED = "set_completed"
     MAX_REPS_PLUS_FIVE = "max_reps_plus_five"
@@ -29,15 +29,19 @@ def check_workout_streak(consecutive_completed_workouts: int) -> AchievementCode
     )
 
 
-def check_band_changed(equipment_changed_block_a: bool) -> AchievementCode | None:
-    """BAND_CHANGED — когда блок A сообщает equipment_changed=True."""
-    return AchievementCode.BAND_CHANGED if equipment_changed_block_a else None
+def check_equipment_changed(equipment_changed: bool) -> AchievementCode | None:
+    """EQUIPMENT_CHANGED — любой блок сообщает equipment_changed=True
+    (переход на следующий снаряд по шкале — в любую сторону, не только
+    "резина потоньше", как раньше в BAND_CHANGED)."""
+    return AchievementCode.EQUIPMENT_CHANGED if equipment_changed else None
 
 
-def check_first_weighted_pullup(is_first_block_b_workout: bool) -> AchievementCode | None:
-    """FIRST_WEIGHTED_PULLUP — на первой тренировке, где вообще был блок B
-    (переход из ASSISTED либо первый BAND-цикл)."""
-    return AchievementCode.FIRST_WEIGHTED_PULLUP if is_first_block_b_workout else None
+def check_first_weighted_pullup(is_first_workout_with_added_weight: bool) -> AchievementCode | None:
+    """FIRST_WEIGHTED_PULLUP — первая тренировка, где силовой блок выполнен
+    с equipment_type == WEIGHT (раньше это совпадало с "первая тренировка
+    вообще" в ветке BAND — теперь силовой блок может стартовать и на
+    резине, так что это отдельная, более поздняя точка)."""
+    return AchievementCode.FIRST_WEIGHTED_PULLUP if is_first_workout_with_added_weight else None
 
 
 def check_set_completed(is_set_complete: bool) -> AchievementCode | None:

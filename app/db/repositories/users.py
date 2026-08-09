@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Branch, SubscriptionStatus, User
+from app.db.models import SubscriptionStatus, User
 
 
 class UserRepository:
@@ -42,12 +42,6 @@ class UserRepository:
             user.age = age
         if timezone is not None:
             user.timezone = timezone
-        await self._session.flush()
-        return user
-
-    async def set_branch(self, user_id: int, branch: Branch) -> User:
-        user = await self._session.get_one(User, user_id)
-        user.branch = branch
         await self._session.flush()
         return user
 

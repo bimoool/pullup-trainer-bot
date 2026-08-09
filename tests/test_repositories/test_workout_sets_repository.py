@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from app.db.models import Branch, Equipment, User, WorkoutSetStatus
+from app.db.models import User, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.domain.constants import SET_LENGTH
@@ -8,8 +8,7 @@ from app.domain.constants import SET_LENGTH
 
 async def _make_baseline(session, user: User) -> int:
     baseline = await BaselineRepository(session).create(
-        user_id=user.id, performed_at=datetime(2026, 1, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=18,
+        user_id=user.id, performed_at=datetime(2026, 1, 1, tzinfo=UTC), reps=18,
     )
     return baseline.id
 

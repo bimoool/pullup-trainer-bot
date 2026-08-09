@@ -1,4 +1,4 @@
-from app.db.models import Branch, SubscriptionStatus, User
+from app.db.models import SubscriptionStatus, User
 from app.db.repositories.users import UserRepository
 
 
@@ -39,12 +39,6 @@ async def test_update_profile_partial(session, user: User):
     updated_again = await repo.get_by_id(user.id)
     assert updated_again.weight_kg == 80  # не затёрлось
     assert updated_again.age == 30
-
-
-async def test_set_branch(session, user: User):
-    repo = UserRepository(session)
-    updated = await repo.set_branch(user.id, Branch.BAND)
-    assert updated.branch == Branch.BAND
 
 
 async def test_update_subscription_cache(session, user: User):

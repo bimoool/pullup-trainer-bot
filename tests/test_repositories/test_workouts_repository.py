@@ -1,20 +1,21 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
-from app.db.models import Branch, Equipment, User, WorkoutStatus
+import pytest
+
+from app.db.models import User, WorkoutStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.constants import BLOCK_A, BLOCK_B
+from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.session import BlockLog
 
-BAND = 22.0
-WEIGHT = 10.0
+BAND_VALUE = Decimal("30.0")
 
 
 async def _make_set(session, user: User) -> int:
     baseline = await BaselineRepository(session).create(
-        user_id=user.id, performed_at=datetime(2025, 12, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=18,
+        user_id=user.id, performed_at=datetime(2025, 12, 1, tzinfo=UTC), reps=8,
     )
     workout_set = await WorkoutSetRepository(session).create(
         user_id=user.id, started_from_baseline_id=baseline.id,
@@ -26,25 +27,31 @@ def _day(n: int) -> datetime:
     return datetime(2026, 1, n, tzinfo=UTC)
 
 
+def _block(workout, block_type: str):
+    return next(b for b in workout.blocks if b.block_type.value == block_type)
+
+
 async def test_record_workout_first_ever_starts_from_domain_base_targets(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     workout = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=16),
-        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
 
-    block_a = next(b for b in workout.blocks if b.block_type.value == "a")
-    block_b = next(b for b in workout.blocks if b.block_type.value == "b")
+    block_a, block_b = _block(workout, "a"), _block(workout, "b")
     assert workout.sequence_number == 1
     assert workout.status == WorkoutStatus.COMPLETED
-    assert block_a.target_before == BLOCK_A.base_target
-    assert block_a.target_after == 16  # delta=1, step=min(3, ceil(0.5))=1
-    assert block_b.target_before == BLOCK_B.base_target
-    assert block_b.target_after == 4
+    assert block_a.target_before == VOLUME_BLOCK.base_target
+    assert block_a.target_after == 11  # delta=2, step=min(3, ceil(1))=1
+    assert block_b.target_before == STRENGTH_BLOCK.base_target
+    assert block_b.target_after == 4  # delta=2, step=min(2, ceil(1))=1
+    assert block_a.equipment_type == EquipmentType.BAND
+    assert block_a.equipment_value == BAND_VALUE
 
 
 async def test_record_workout_second_continues_from_first_target_after(session, user: User):
@@ -53,152 +60,168 @@ async def test_record_workout_second_continues_from_first_target_after(session, 
 
     await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=16),
-        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
     second = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(4),
-        block_a_reps=BlockLog(working_reps=(16, 16, 16), max_reps=16),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
         block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=4),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
 
-    block_a = next(b for b in second.blocks if b.block_type.value == "a")
+    block_a = _block(second, "a")
     assert second.sequence_number == 2
-    assert block_a.target_before == 16  # = target_after первой тренировки
+    assert block_a.target_before == 11  # = target_after первой тренировки
 
 
-async def test_record_workout_reaching_change_at_switches_equipment(session, user: User):
-    workout_set_id = await _make_set(session, user)
-    repo = WorkoutRepository(session)
-
-    workout = await repo.record_workout(
-        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(18, 18, 18), max_reps=21),
-        block_b_reps=BlockLog(working_reps=(6, 6, 6, 6), max_reps=9),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
-    )
-    # это не первая тренировка в домене (target_before там не 18/6), поэтому
-    # реальный сценарий смены снаряда собираем через два вызова record_workout
-    second = await repo.record_workout(
-        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(4),
-        block_a_reps=BlockLog(working_reps=(18, 18, 18), max_reps=21),
-        block_b_reps=BlockLog(working_reps=(6, 6, 6, 6), max_reps=9),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
-    )
-    block_a_1 = next(b for b in workout.blocks if b.block_type.value == "a")
-    block_a_2 = next(b for b in second.blocks if b.block_type.value == "a")
-    # первая: target_before=15(base), delta=21-15=6, step=min(3, ceil(3))=3 -> 18, ещё не порог
-    assert block_a_1.target_after == 18
-    assert not block_a_1.equipment_changed
-    # вторая: target_before=18, delta=21-18=3, step=min(3, ceil(1.5))=2 -> 20 >= change_at(20)
-    assert block_a_2.equipment_changed is True
-    assert block_a_2.target_after == BLOCK_A.base_target
-
-
-async def test_backdated_insertion_renumbers_and_cascades(session, user: User):
-    """Ключевой тест: тренировка вносится задним числом МЕЖДУ двумя уже
-    сохранёнными. sequence_number существующих должен сдвинуться, а
-    target_before/target_after всех тренировок после точки вставки —
-    пересчитаться через domain.recalculate_cascade, а не остаться от
-    старого порядка."""
+async def test_equipment_change_threshold_and_failed_transition_reverts_to_prior_gear(session, user: User):
+    """Ключевой сценарий: все рабочие подходы объёмного блока достигают
+    порога (20) -> снаряд меняется. Следующая тренировка на новом снаряде
+    проваливается (max < min_viable=10) -> цель откатывается на
+    target_before неудачной попытки (10 -> исходный base_target первой
+    тренировки), снаряд возвращается к прежнему, а не к неудачному —
+    _resolve_next_state должен заглянуть на шаг раньше за equipment."""
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     first = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=18),  # -> target_after 16 (delta3,cap? ceil(1.5)=2->17) пересчитаем ниже по факту
+        block_a_reps=BlockLog(working_reps=(20, 20, 20), max_reps=21),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
+    first_block_a = _block(first, "a")
+    assert first_block_a.target_before == VOLUME_BLOCK.base_target  # 10, первая тренировка
+    assert first_block_a.equipment_changed is True
+    assert first_block_a.target_after == VOLUME_BLOCK.base_target  # порог достигнут -> сброс на base_target
+
+    second = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(4),
+        block_a_reps=BlockLog(working_reps=(5, 5, 5), max_reps=8),  # max < min_viable_reps(10) -> провал
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    second_block_a = _block(second, "a")
+    assert second_block_a.transition_failed is True
+    assert second_block_a.equipment_changed is False
+    assert second_block_a.target_after == first_block_a.target_before  # откат на target_before неудачной попытки
+    assert second_block_a.equipment_type == EquipmentType.BODYWEIGHT  # факт того, что реально пробовали
+
     third = await repo.record_workout(
-        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(10),
-        block_a_reps=BlockLog(working_reps=(17, 17, 17), max_reps=16),  # delta<0
-        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=3),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(7),
+        block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
-
-    first_block_a = next(b for b in first.blocks if b.block_type.value == "a")
-    assert first.sequence_number == 1
-    assert third.sequence_number == 2  # пока только две тренировки
-
-    # third была посчитана от target_before = first.target_after (17), с volume
-    # первой = 15+15+15+18=63, prev_volume не важен для delta>0 у first.
-    # Значения снимаем в переменные СРАЗУ — third.blocks те же ORM-объекты,
-    # что вернёт repo.get_by_id(third.id) позже (identity map SQLAlchemy),
-    # и каскад их замутирует на месте; ссылку сравнивать нельзя, только value.
-    third_block_a_before_insert = next(b for b in third.blocks if b.block_type.value == "a")
-    target_before_pre_cascade = third_block_a_before_insert.target_before
-    assert target_before_pre_cascade == first_block_a.target_after
-
-    # теперь вставляем задним числом между first (day 1) и third (day 10);
-    # max_reps=19 при target_before=17 даёт delta=2 -> target_after=18,
-    # так что у third target_before реально сдвинется (17 -> 18), а не
-    # случайно совпадёт со старым значением
-    second = await repo.record_workout(
-        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(5),
-        block_a_reps=BlockLog(working_reps=(17, 17, 17), max_reps=19),
-        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=4),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
-    )
-
-    updated_third = await repo.get_by_id(third.id)
-    second_block_a = next(b for b in second.blocks if b.block_type.value == "a")
-    updated_third_block_a = next(b for b in updated_third.blocks if b.block_type.value == "a")
-
-    # перенумерация: second встала между first и third
-    assert second.sequence_number == 2
-    assert updated_third.sequence_number == 3
-
-    # second унаследовала target_before от first (единственной тренировки до неё)
-    assert second_block_a.target_before == first_block_a.target_after
-    assert second_block_a.target_after == 18  # delta=2, ceil(1.0)=1 -> 17+1
-
-    # third была ПЕРЕСЧИТАНА от нового target_before = second.target_after,
-    # а не осталась со старым значением (это и есть проверка каскада)
-    assert updated_third_block_a.target_before == second_block_a.target_after
-    assert updated_third_block_a.target_before != target_before_pre_cascade
-
-    # реальные повторения third не изменились от каскада
-    assert updated_third_block_a.working_reps == [17, 17, 17]
+    third_block_a = _block(third, "a")
+    # снаряд для третьей тренировки должен быть предложен со ШАГА ДО
+    # неудачной попытки (тот же BAND, что и в первой тренировке), а не
+    # BODYWEIGHT, на котором провалились
+    assert third_block_a.target_before == second_block_a.target_after
 
 
-async def test_edit_workout_reps_cascades_forward(session, user: User):
+async def test_bodyweight_ceiling_caps_volume_target_and_does_not_switch_equipment(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    workout = None
+    for _ in range(6):
+        workout = await repo.record_workout(
+            user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(_ * 3 + 1),
+            block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=100),
+            block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+            block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+            block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+        )
+
+    block_a = _block(workout, "a")
+    assert block_a.target_after == VOLUME_BLOCK.bodyweight_ceiling
+    assert block_a.equipment_changed is False
+
+
+async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivation(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     first = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=15),  # delta=0
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
-    second = await repo.record_workout(
-        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(4),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=15),
-        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
-    )
-    # снимаем значение сразу — second.blocks те же ORM-объекты, что вернёт
-    # get_by_id(second.id) позже, каскад замутирует их на месте
-    second_block_a_before = next(b for b in second.blocks if b.block_type.value == "a")
-    target_before_pre_edit = second_block_a_before.target_before
-    assert target_before_pre_edit == 15
+    first_block_a = _block(first, "a")
+    assert first_block_a.target_after == 11
 
-    # редактируем первую тренировку — вместо 15 15 15 / 15 теперь большой
-    # максимум, target_after первой вырастет и должен утащить за собой вторую
+    backdated = await repo.record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(14, 14, 14), max_reps=15),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    backdated_block_a = _block(backdated, "a")
+    assert backdated.sequence_number is None
+    assert backdated.participates_in_cascade is False
+    assert backdated_block_a.target_before == first_block_a.target_after  # 11
+    assert backdated_block_a.target_after == 13  # delta=4, step=min(3, ceil(2))=2 -> 13
+
+    third = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(3),
+        block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    third_block_a = _block(third, "a")
+    # цель для третьей тренировки выведена из ПОСЛЕДНЕЙ ПО ДАТЕ записи любого
+    # происхождения — то есть из внесённой задним числом, а не из первой
+    assert third_block_a.target_before == backdated_block_a.target_after  # 13
+    # но нумерация цепочки каскада backdated не учитывает — вторая позиция
+    assert third.sequence_number == 2
+
     edited_first = await repo.edit_workout(
         workout_id=first.id,
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=20),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=14),
     )
-    edited_first_block_a = next(b for b in edited_first.blocks if b.block_type.value == "a")
-    assert edited_first_block_a.target_after == 18  # delta=5, ceil(2.5)=3, cap 3 -> 18
+    edited_first_block_a = _block(edited_first, "a")
+    assert edited_first_block_a.target_after == 12  # delta=4, step=min(3, ceil(2))=2 -> 10+2
 
-    updated_second = await repo.get_by_id(second.id)
-    updated_second_block_a = next(b for b in updated_second.blocks if b.block_type.value == "a")
-    assert updated_second_block_a.target_before == 18
-    assert updated_second_block_a.target_before != target_before_pre_edit
+    updated_backdated = await repo.get_by_id(backdated.id)
+    updated_backdated_block_a = _block(updated_backdated, "a")
+    # каскад НЕ трогает внесённую задним числом тренировку
+    assert updated_backdated_block_a.target_before == 11
+    assert updated_backdated_block_a.target_after == 13
+
+    updated_third = await repo.get_by_id(third.id)
+    updated_third_block_a = _block(updated_third, "a")
+    # каскад пересчитал третью от НОВОГО target_after первой (12), полностью
+    # игнорируя внесённую задним числом (13) — она не часть цепочки каскада
+    assert updated_third_block_a.target_before == 12
+    assert updated_third_block_a.target_before != updated_backdated_block_a.target_after
+
+
+async def test_edit_workout_raises_for_backdated_workout(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    backdated = await repo.record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    with pytest.raises(ValueError, match="cascade"):
+        await repo.edit_workout(workout_id=backdated.id, block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13))
 
 
 async def test_complete_workout_increments_set_counter(session, user: User):
@@ -207,9 +230,10 @@ async def test_complete_workout_increments_set_counter(session, user: User):
 
     await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=15),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
 
     workout_set = await WorkoutSetRepository(session).get_by_id(workout_set_id)
@@ -227,25 +251,34 @@ async def test_start_then_complete_workout(session, user: User):
 
     completed = await repo.complete_workout(
         workout_id=started.id,
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=16),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
     assert completed.status == WorkoutStatus.COMPLETED
     assert completed.sequence_number == 1
 
 
-async def test_list_for_user_excludes_started_workouts(session, user: User):
+async def test_list_for_user_includes_backdated_and_excludes_started(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     await repo.start_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1))
     completed = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
-        block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=15),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
-        band_thickness_mm=BAND, weight_kg=WEIGHT,
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    backdated = await repo.record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(3),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
 
     workouts = await repo.list_for_user(user.id)
-    assert [w.id for w in workouts] == [completed.id]
+    assert [w.id for w in workouts] == [completed.id, backdated.id]

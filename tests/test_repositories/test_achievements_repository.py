@@ -24,8 +24,8 @@ async def test_unlock_is_idempotent_does_not_poison_session(session, user: User)
     рабочей — savepoint в unlock() не должен утаскивать за собой внешнюю
     транзакцию."""
     repo = AchievementRepository(session)
-    await repo.unlock(user_id=user.id, code="band_changed")
-    await repo.unlock(user_id=user.id, code="band_changed")  # дубликат, поглощается
+    await repo.unlock(user_id=user.id, code="equipment_changed")
+    await repo.unlock(user_id=user.id, code="equipment_changed")  # дубликат, поглощается
 
     # сессия всё ещё живая и пригодна для дальнейших операций
     another = await repo.unlock(user_id=user.id, code="set_completed")
@@ -43,9 +43,9 @@ async def test_has_unlocked(session, user: User):
 async def test_list_for_user(session, user: User):
     repo = AchievementRepository(session)
     await repo.unlock(user_id=user.id, code="first_baseline")
-    await repo.unlock(user_id=user.id, code="band_changed", context={"new_band_mm": 18.0})
+    await repo.unlock(user_id=user.id, code="equipment_changed", context={"new_equipment_value": 18.0})
 
     achievements = await repo.list_for_user(user.id)
-    assert {a.code for a in achievements} == {"first_baseline", "band_changed"}
-    band_changed = next(a for a in achievements if a.code == "band_changed")
-    assert band_changed.context == {"new_band_mm": 18.0}
+    assert {a.code for a in achievements} == {"first_baseline", "equipment_changed"}
+    equipment_changed = next(a for a in achievements if a.code == "equipment_changed")
+    assert equipment_changed.context == {"new_equipment_value": 18.0}

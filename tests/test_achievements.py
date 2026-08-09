@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from app.domain.achievements import (
     AchievementCode,
-    check_band_changed,
+    check_equipment_changed,
     check_first_baseline,
     check_first_weighted_pullup,
     check_max_reps_gain,
@@ -29,12 +29,12 @@ def test_check_workout_streak_not_ten():
     assert check_workout_streak(11) is None
 
 
-def test_check_band_changed_true():
-    assert check_band_changed(True) == AchievementCode.BAND_CHANGED
+def test_check_equipment_changed_true():
+    assert check_equipment_changed(True) == AchievementCode.EQUIPMENT_CHANGED
 
 
-def test_check_band_changed_false():
-    assert check_band_changed(False) is None
+def test_check_equipment_changed_false():
+    assert check_equipment_changed(False) is None
 
 
 def test_check_first_weighted_pullup_true():

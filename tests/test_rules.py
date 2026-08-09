@@ -1,11 +1,8 @@
 from datetime import date, timedelta
 
-from app.domain.constants import Branch
 from app.domain.rules import (
     TrainingReadiness,
     check_training_readiness,
-    determine_branch,
-    is_backdate_allowed,
     is_baseline_expired,
     is_set_complete,
 )
@@ -81,28 +78,6 @@ def test_baseline_expired_well_past_35_days():
     assert is_baseline_expired(baseline, baseline + timedelta(days=60)) is True
 
 
-# --- is_backdate_allowed -----------------------------------------------------
-
-def test_backdate_allowed_same_day():
-    today = date(2026, 1, 10)
-    assert is_backdate_allowed(today, today) is True
-
-
-def test_backdate_allowed_at_seven_days():
-    today = date(2026, 1, 10)
-    assert is_backdate_allowed(today - timedelta(days=7), today) is True
-
-
-def test_backdate_not_allowed_at_eight_days():
-    today = date(2026, 1, 10)
-    assert is_backdate_allowed(today - timedelta(days=8), today) is False
-
-
-def test_backdate_not_allowed_for_future_date():
-    today = date(2026, 1, 10)
-    assert is_backdate_allowed(today + timedelta(days=1), today) is False
-
-
 # --- is_set_complete ----------------------------------------------------------
 
 def test_set_not_complete_at_eleven():
@@ -115,21 +90,3 @@ def test_set_complete_at_twelve():
 
 def test_set_complete_beyond_twelve():
     assert is_set_complete(13) is True
-
-
-# --- determine_branch ----------------------------------------------------------
-
-def test_determine_branch_at_fifteen_reps_is_band():
-    assert determine_branch(15) == Branch.BAND
-
-
-def test_determine_branch_above_fifteen_reps_is_band():
-    assert determine_branch(20) == Branch.BAND
-
-
-def test_determine_branch_below_fifteen_reps_is_assisted():
-    assert determine_branch(14) == Branch.ASSISTED
-
-
-def test_determine_branch_zero_reps_is_assisted():
-    assert determine_branch(0) == Branch.ASSISTED

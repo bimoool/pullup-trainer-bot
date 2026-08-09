@@ -1,36 +1,17 @@
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Baseline, Branch, Equipment
+from app.db.models import Baseline
 
 
 class BaselineRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(
-        self,
-        *,
-        user_id: int,
-        performed_at: datetime,
-        branch_result: Branch,
-        equipment_type: Equipment,
-        reps: int,
-        band_thickness_mm: Decimal | None = None,
-        weight_kg: Decimal | None = None,
-    ) -> Baseline:
-        baseline = Baseline(
-            user_id=user_id,
-            performed_at=performed_at,
-            branch_result=branch_result,
-            equipment_type=equipment_type,
-            reps=reps,
-            band_thickness_mm=band_thickness_mm,
-            weight_kg=weight_kg,
-        )
+    async def create(self, *, user_id: int, performed_at: datetime, reps: int) -> Baseline:
+        baseline = Baseline(user_id=user_id, performed_at=performed_at, reps=reps)
         self._session.add(baseline)
         await self._session.flush()
         return baseline

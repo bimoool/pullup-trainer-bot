@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -7,8 +8,7 @@ from app.db.models import (
     Achievement,
     Block,
     BlockType,
-    Branch,
-    Equipment,
+    EquipmentType,
     User,
     Workout,
     WorkoutStatus,
@@ -19,8 +19,7 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 
 async def _make_set(session, user: User) -> int:
     baseline = await BaselineRepository(session).create(
-        user_id=user.id, performed_at=datetime(2025, 12, 1, tzinfo=UTC),
-        branch_result=Branch.BAND, equipment_type=Equipment.BAND, reps=18,
+        user_id=user.id, performed_at=datetime(2025, 12, 1, tzinfo=UTC), reps=18,
     )
     workout_set = await WorkoutSetRepository(session).create(
         user_id=user.id, started_from_baseline_id=baseline.id,
@@ -29,12 +28,10 @@ async def _make_set(session, user: User) -> int:
 
 
 async def test_unique_workout_sequence_number_is_deferred_until_commit(session, user: User):
-    """UNIQUE(user_id, sequence_number) объявлен DEFERRABLE INITIALLY DEFERRED
-    намеренно (см. WorkoutRepository._find_insertion_index) — при перенумерации
-    задним числом строки временно делят один sequence_number внутри
-    транзакции. Здесь это проверяется напрямую, в обход репозитория: два
-    workout с одинаковым sequence_number должны спокойно пройти flush(),
-    но упасть на commit(), если конфликт не разрешён до конца транзакции."""
+    """UNIQUE(user_id, sequence_number) объявлен DEFERRABLE INITIALLY DEFERRED —
+    проверяется напрямую, в обход репозитория: два workout с одинаковым
+    sequence_number должны спокойно пройти flush(), но упасть на commit(),
+    если конфликт не разрешён до конца транзакции."""
     workout_set_id = await _make_set(session, user)
 
     session.add(Workout(
@@ -66,11 +63,13 @@ async def test_unique_blocks_workout_block_type_is_immediate(session, user: User
 
     session.add(Block(
         workout_id=workout.id, block_type=BlockType.A, working_reps=[15, 15, 15],
-        max_reps=16, target_before=15, target_after=16, band_thickness_mm=22.0,
+        max_reps=16, target_before=15, target_after=16,
+        equipment_type=EquipmentType.BAND, equipment_value=Decimal("22.0"),
     ))
     session.add(Block(
         workout_id=workout.id, block_type=BlockType.A, working_reps=[15, 15, 15],
-        max_reps=17, target_before=15, target_after=17, band_thickness_mm=22.0,
+        max_reps=17, target_before=15, target_after=17,
+        equipment_type=EquipmentType.BAND, equipment_value=Decimal("22.0"),
     ))
 
     with pytest.raises(IntegrityError):

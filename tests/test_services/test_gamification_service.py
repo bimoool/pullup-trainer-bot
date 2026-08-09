@@ -24,8 +24,8 @@ async def test_unlock_achievement_awards_coins(session, user: User):
 
 async def test_unlock_achievement_is_idempotent_no_double_reward(session, user: User):
     service = GamificationService(session)
-    await service.unlock_achievement(user_id=user.id, code=AchievementCode.BAND_CHANGED, coins_reward=15)
-    second = await service.unlock_achievement(user_id=user.id, code=AchievementCode.BAND_CHANGED, coins_reward=15)
+    await service.unlock_achievement(user_id=user.id, code=AchievementCode.EQUIPMENT_CHANGED, coins_reward=15)
+    second = await service.unlock_achievement(user_id=user.id, code=AchievementCode.EQUIPMENT_CHANGED, coins_reward=15)
 
     assert second is None
     updated_user = await UserRepository(session).get_by_id(user.id)

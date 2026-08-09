@@ -21,11 +21,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
-# Branch/Equipment — доменные понятия (ветка считается доменным правилом
-# determine_branch, снаряд участвует в recalculate_target), поэтому у db
-# нет своих копий этих enum'ов — только импорт. Значения ('band','assisted',
-# 'band'/'weight') не менялись, так что на уже накатанную миграцию это не влияет.
-from app.domain.constants import Branch, Equipment
+# EquipmentType — доменное понятие (участвует в recalculate_target),
+# поэтому у db нет своей копии, только импорт.
+from app.domain.constants import EquipmentType
 
 
 def _pg_enum(enum_cls: type[StrEnum], name: str) -> PgEnum:
@@ -47,8 +45,15 @@ class WorkoutStatus(StrEnum):
 
 
 class BlockType(StrEnum):
-    A = "a"
-    B = "b"
+    A = "a"  # объёмный блок — пользователь этой буквы не видит
+    B = "b"  # силовой блок
+
+
+class ExerciseType(StrEnum):
+    """Задел под будущее расширение (отжимания на брусьях, выходы силой,
+    подтягивания на одной руке) — сейчас только подтягивания."""
+
+    PULL_UPS = "pull_ups"
 
 
 class SubscriptionStatus(StrEnum):
@@ -92,7 +97,6 @@ class User(Base):
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     height_cm: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     age: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    branch: Mapped[Branch | None] = mapped_column(_pg_enum(Branch, "branch"), nullable=True)
     timezone: Mapped[str | None] = mapped_column(String, nullable=True)
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     subscription_status: Mapped[SubscriptionStatus] = mapped_column(
@@ -107,17 +111,15 @@ class User(Base):
 
 
 class Baseline(Base):
+    """Замер — одно число: максимум подтягиваний с собственным весом.
+    Ветки/снаряда замер больше не определяет (веток нет вообще) — снаряды
+    для обоих блоков уточняются на первой тренировке отдельно."""
+
     __tablename__ = "baselines"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    branch_result: Mapped[Branch] = mapped_column(_pg_enum(Branch, "branch"), nullable=False)
-    equipment_type: Mapped[Equipment] = mapped_column(
-        _pg_enum(Equipment, "equipment_type"), nullable=False,
-    )
-    band_thickness_mm: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), nullable=True)
-    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     reps: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -165,6 +167,19 @@ class Workout(Base):
         server_default=WorkoutStatus.STARTED.value,
     )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Внесённые задним числом тренировки участвуют в статистике/объёме, но
+    # не в каскадном пересчёте цепочки целей (WorkoutRepository фильтрует
+    # по этому полю только при каскаде — при выводе ТЕКУЩЕЙ цели фильтра нет,
+    # берётся хронологически последняя тренировка любого происхождения).
+    participates_in_cascade: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    exercise_type: Mapped[ExerciseType] = mapped_column(
+        _pg_enum(ExerciseType, "exercise_type"),
+        nullable=False,
+        default=ExerciseType.PULL_UPS,
+        server_default=ExerciseType.PULL_UPS.value,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -190,8 +205,20 @@ class Block(Base):
     target_before: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     target_after: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     equipment_changed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    band_thickness_mm: Mapped[Decimal | None] = mapped_column(Numeric(4, 1), nullable=True)
-    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Единая шкала нагрузки вместо раздельных band_thickness_mm/weight_kg:
+    # equipment_type определяет точку на шкале, equipment_value — величину в
+    # кг (сопротивление резины, суммарное при комбинации; вес отягощения;
+    # NULL для BODYWEIGHT и AUSTRALIAN — там числа нет или оно не в кг).
+    # Знак направления — только через domain.constants.to_signed_load(),
+    # никогда напрямую по значению этого поля.
+    equipment_type: Mapped[EquipmentType] = mapped_column(
+        _pg_enum(EquipmentType, "equipment_type"), nullable=False,
+    )
+    equipment_value: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Первая тренировка на новом снаряде провалена (максимум ниже
+    # min_viable_reps) — хранится явно, не восстанавливается сравнением
+    # соседних тренировок (хрупко при правках истории).
+    transition_failed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     workout: Mapped["Workout"] = relationship(back_populates="blocks")
