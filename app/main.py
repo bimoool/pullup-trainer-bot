@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.bot.handlers import router
@@ -14,6 +15,14 @@ from app.workers.tribute_sync import register as register_tribute_sync
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
+
+# /admin намеренно не входит — доступен по прямому вводу для белого списка
+# администраторов (см. Часть 7), но не должен предлагаться всем в автодополнении.
+BOT_COMMANDS = [
+    BotCommand(command="start", description="Начать / вернуться в начало"),
+    BotCommand(command="cancel", description="Отменить текущий шаг"),
+    BotCommand(command="help", description="Помощь"),
+]
 
 
 def build_dispatcher() -> Dispatcher:
@@ -39,6 +48,7 @@ async def run_polling() -> None:
     scheduler = build_scheduler(bot)
 
     await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_my_commands(BOT_COMMANDS)
     scheduler.start()
     try:
         await dispatcher.start_polling(bot)

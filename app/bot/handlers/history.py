@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import after_history_keyboard
+from app.bot.keyboards import progress_section_keyboard
 from app.db.models import Block, BlockType, EquipmentType
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -36,7 +36,7 @@ async def handle_show_history(callback: CallbackQuery, session: AsyncSession) ->
     history = await workouts.list_for_user(user.id)
 
     if not history:
-        await callback.message.answer(texts.HISTORY_EMPTY, reply_markup=after_history_keyboard())
+        await callback.message.answer(texts.HISTORY_EMPTY, reply_markup=progress_section_keyboard())
         await callback.answer()
         return
 
@@ -52,5 +52,5 @@ async def handle_show_history(callback: CallbackQuery, session: AsyncSession) ->
             f"{block_b.target_after}",
         )
 
-    await callback.message.answer("\n".join(lines), reply_markup=after_history_keyboard())
+    await callback.message.answer("\n".join(lines), reply_markup=progress_section_keyboard())
     await callback.answer()

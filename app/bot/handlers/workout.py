@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import texts
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
+    back_cancel_keyboard,
+    bottom_menu_keyboard,
     cancel_keyboard,
     equipment_type_keyboard,
-    main_menu_keyboard,
     skip_comment_keyboard,
     workout_result_keyboard,
 )
@@ -50,6 +51,22 @@ async def _ensure_active_workout_set(session: AsyncSession, user_id: int) -> Wor
     if baseline is None:
         return None
     return await workout_sets.create(user_id=user_id, started_from_baseline_id=baseline.id)
+
+
+@router.callback_query(F.data == "show_plan")
+async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> None:
+    """Посмотреть текущий план, не начиная тренировку — снаряд здесь не
+    уточняем (это делает сама тренировка), только цели по повторениям."""
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    workouts = WorkoutRepository(session)
+    target_a_state, target_b_state = await workouts.resolve_next_targets(user.id)
+
+    await callback.message.answer(
+        texts.CURRENT_PLAN.format(target_a=target_a_state.target, target_b=target_b_state.target),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "start_workout")
@@ -247,7 +264,17 @@ async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContex
     await state.update_data(pending_equipment_type=equipment_type.value)
     await state.set_state(EquipmentStates.waiting_for_value)
     prompt = texts.EQUIPMENT_VALUE_PROMPT_BAND if equipment_type == EquipmentType.BAND else texts.EQUIPMENT_VALUE_PROMPT_WEIGHT
-    await callback.message.answer(prompt, reply_markup=cancel_keyboard())
+    await callback.message.answer(prompt, reply_markup=back_cancel_keyboard("equip_back:type"))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "equip_back:type")
+async def handle_equipment_back_to_type(callback: CallbackQuery, state: FSMContext) -> None:
+    # Очередь не изменялась при переходе type -> value (позиция в
+    # equipment_queue снимается только после успешного выбора) — повторный
+    # вызов _advance_equipment_queue просто переспрашивает тип для того же
+    # блока, ничего дополнительно восстанавливать не нужно.
+    await _advance_equipment_queue(callback.message, state)
     await callback.answer()
 
 
@@ -286,7 +313,7 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
 
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_block_b)
-    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=cancel_keyboard())
+    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("wk_back:block_a"))
 
 
 @router.message(WorkoutStates.waiting_for_block_b)
@@ -298,7 +325,21 @@ async def handle_block_b_result(message: Message, state: FSMContext) -> None:
 
     await state.update_data(block_b_working_reps=list(result.working_reps), block_b_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_comment)
-    await message.answer(texts.COMMENT_PROMPT, reply_markup=skip_comment_keyboard())
+    await message.answer(texts.COMMENT_PROMPT, reply_markup=skip_comment_keyboard("wk_back:block_b"))
+
+
+@router.callback_query(F.data == "wk_back:block_a")
+async def handle_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    await _send_plan(callback.message, state, data["target_a"], data["target_b"])
+    await callback.answer()
+
+
+@router.callback_query(F.data == "wk_back:block_b")
+async def handle_back_to_block_b(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(WorkoutStates.waiting_for_block_b)
+    await callback.message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("wk_back:block_a"))
+    await callback.answer()
 
 
 @router.message(WorkoutStates.waiting_for_comment)
@@ -353,7 +394,7 @@ async def _finalize_workout(
 
     await state.clear()
     await message.answer(texts.WORKOUT_DONE, reply_markup=workout_result_keyboard())
-    await message.answer(texts.WHAT_NEXT, reply_markup=main_menu_keyboard())
+    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
 
 
 async def _announce_block_outcome(message: Message, block: Block) -> None:

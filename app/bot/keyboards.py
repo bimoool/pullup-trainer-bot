@@ -1,5 +1,5 @@
-from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 # Часовой пояс выбирается кнопкой из фиксированного списка, а не парсингом
 # свободного текста ("напиши город") — без города-в-IANA-таймзону словаря
@@ -29,6 +29,20 @@ EQUIPMENT_TYPE_CHOICES: list[tuple[str, str]] = [
     ("Отягощение", "weight"),
 ]
 
+# Постоянное нижнее меню — 4 раздела (см. Часть 3 респека). /admin сюда
+# намеренно не входит — админка доступна только по команде, не кнопкой.
+BOTTOM_MENU_WORKOUT = "💪 Тренировка"
+BOTTOM_MENU_PROGRESS = "📊 Прогресс"
+BOTTOM_MENU_PROFILE = "👤 Профиль"
+BOTTOM_MENU_HELP = "❓ Помощь"
+
+
+def bottom_menu_keyboard() -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text=BOTTOM_MENU_WORKOUT), KeyboardButton(text=BOTTOM_MENU_PROGRESS))
+    builder.row(KeyboardButton(text=BOTTOM_MENU_PROFILE), KeyboardButton(text=BOTTOM_MENU_HELP))
+    return builder.as_markup(resize_keyboard=True)
+
 
 def timezone_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -38,36 +52,71 @@ def timezone_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
+def workout_section_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="💪 Начать тренировку", callback_data="start_workout")
-    builder.button(text="📖 История", callback_data="show_history")
+    builder.button(text="📋 Текущий план", callback_data="show_plan")
     builder.button(text="🔁 Внести пропущенную тренировку", callback_data="backdate_workout")
+    builder.button(text="✏️ Изменить тренировку", callback_data="edit_workout_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def progress_section_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📖 История тренировок", callback_data="show_history")
     builder.adjust(1)
     return builder.as_markup()
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
     """Кнопка отмены текущего сценария — добавляется ко всем состояниям
-    ввода (тренировка, анкета, снаряд, бэкдейт, редактирование), чтобы
-    пользователь не застревал без выхода (см. критический баг Части 2)."""
+    ввода, у которых нет осмысленного "предыдущего шага" (например, первый
+    вопрос анкеты), чтобы пользователь не застревал без выхода (см.
+    критический баг Части 2)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
     return builder.as_markup()
 
 
-def skip_comment_keyboard() -> InlineKeyboardMarkup:
+def back_cancel_keyboard(back_callback: str) -> InlineKeyboardMarkup:
+    """"← Назад" возвращает к предыдущему шагу того же сценария (не
+    восстанавливает то, что там было введено — просто переспрашивает),
+    "❌ Отмена" выходит из сценария целиком — см. Часть 3 респека."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="← Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def skip_comment_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Пропустить", callback_data="skip_comment")
+    builder.button(text="← Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def equipment_type_keyboard(back_callback: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for label, value in EQUIPMENT_TYPE_CHOICES:
+        builder.button(text=label, callback_data=f"equip:{value}")
+    if back_callback is not None:
+        builder.button(text="← Назад", callback_data=back_callback)
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def equipment_type_keyboard() -> InlineKeyboardMarkup:
+def edit_workout_picker_keyboard(workouts: list) -> InlineKeyboardMarkup:
+    """workouts — Workout ORM-объекты (не импортируем тип напрямую, чтобы
+    не тянуть app.db.models в клавиатурный модуль лишний раз); нужны только
+    .id и .performed_at."""
     builder = InlineKeyboardBuilder()
-    for label, value in EQUIPMENT_TYPE_CHOICES:
-        builder.button(text=label, callback_data=f"equip:{value}")
+    for workout in reversed(workouts):
+        builder.button(text=workout.performed_at.strftime("%d.%m.%Y"), callback_data=f"edit_pick:{workout.id}")
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
     builder.adjust(1)
     return builder.as_markup()
@@ -78,12 +127,6 @@ def workout_result_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="✏️ Изменить результат", callback_data="edit_last_workout")
     builder.adjust(1)
     return builder.as_markup()
-
-
-def after_history_keyboard() -> InlineKeyboardMarkup:
-    """История раньше заканчивалась тупиком — без единой кнопки дальше.
-    Возвращаем в главное меню, чтобы диалог не обрывался."""
-    return main_menu_keyboard()
 
 
 def paywall_keyboard() -> InlineKeyboardMarkup:

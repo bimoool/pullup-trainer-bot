@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.handlers.workout import _ensure_active_workout_set
-from app.bot.keyboards import cancel_keyboard, main_menu_keyboard
+from app.bot.keyboards import back_cancel_keyboard, bottom_menu_keyboard, cancel_keyboard
 from app.bot.parsing import ParseError, parse_block_result
 from app.bot.states import BackdateStates
 from app.db.repositories.users import UserRepository
@@ -40,7 +40,14 @@ async def handle_backdate_date(message: Message, state: FSMContext) -> None:
 
     await state.update_data(backdate_performed_at=parsed_date.isoformat())
     await state.set_state(BackdateStates.waiting_for_block_a)
-    await message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
+    await message.answer(texts.BLOCK_A_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:date"))
+
+
+@router.callback_query(F.data == "backdate_back:date")
+async def handle_backdate_back_to_date(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(BackdateStates.waiting_for_date)
+    await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=cancel_keyboard())
+    await callback.answer()
 
 
 @router.message(BackdateStates.waiting_for_block_a)
@@ -52,7 +59,14 @@ async def handle_backdate_block_a(message: Message, state: FSMContext) -> None:
 
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(BackdateStates.waiting_for_block_b)
-    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=cancel_keyboard())
+    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:block_a"))
+
+
+@router.callback_query(F.data == "backdate_back:block_a")
+async def handle_backdate_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(BackdateStates.waiting_for_block_a)
+    await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:date"))
+    await callback.answer()
 
 
 @router.message(BackdateStates.waiting_for_block_b)
@@ -102,4 +116,4 @@ async def handle_backdate_block_b(message: Message, state: FSMContext, session: 
 
     await state.clear()
     await message.answer(texts.BACKDATE_DONE)
-    await message.answer(texts.WHAT_NEXT, reply_markup=main_menu_keyboard())
+    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())

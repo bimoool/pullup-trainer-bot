@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import main_menu_keyboard
+from app.bot.keyboards import bottom_menu_keyboard
 from app.bot.states import OnboardingStates
 from app.db.models import User
 from app.db.repositories.users import UserRepository
@@ -31,7 +31,7 @@ async def _go_home(message: Message, state: FSMContext, user: User) -> None:
         await message.answer(texts.ONBOARDING_INTRO)
         await message.answer(texts.BASELINE_GUIDE)
         return
-    await message.answer(WELCOME_BACK, reply_markup=main_menu_keyboard())
+    await message.answer(WELCOME_BACK, reply_markup=bottom_menu_keyboard())
 
 
 @router.message(CommandStart())
@@ -65,3 +65,9 @@ async def handle_cancel_callback(callback: CallbackQuery, state: FSMContext, ses
     else:
         await state.clear()
     await callback.answer()
+
+
+@router.message(Command("help"))
+async def handle_help_command(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer(texts.HELP_TEXT)
