@@ -21,9 +21,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
-# EquipmentType — доменное понятие (участвует в recalculate_target),
-# поэтому у db нет своей копии, только импорт.
-from app.domain.constants import EquipmentType
+# EquipmentType/ExerciseType — доменные понятия, поэтому у db нет своей
+# копии, только импорт.
+from app.domain.constants import EquipmentType, ExerciseType
 
 
 def _pg_enum(enum_cls: type[StrEnum], name: str) -> PgEnum:
@@ -47,13 +47,6 @@ class WorkoutStatus(StrEnum):
 class BlockType(StrEnum):
     A = "a"  # объёмный блок — пользователь этой буквы не видит
     B = "b"  # силовой блок
-
-
-class ExerciseType(StrEnum):
-    """Задел под будущее расширение (отжимания на брусьях, выходы силой,
-    подтягивания на одной руке) — сейчас только подтягивания."""
-
-    PULL_UPS = "pull_ups"
 
 
 class SubscriptionStatus(StrEnum):
@@ -122,6 +115,35 @@ class Baseline(Base):
     performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reps: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class EquipmentItem(Base):
+    """Личный список резин пользователя — растёт по мере надобности, не
+    заполняется заранее (см. Часть 8 респека). Только для BAND: у веса
+    число и так чистое, у своего веса/австралийских числа нет вообще.
+
+    resistance_kg опционален — в реальности резины в залах часто без
+    маркировки ("широкая фиолетовая"), точное сопротивление не всегда
+    известно. position задаёт порядок пользователя (0 — самый тяжёлый,
+    то есть больше всего помощи) — именно порядок, а не кг, определяет,
+    что значит "следующий снаряд" при переходах. Удаления нет (не
+    запрашивалось) — FK с blocks всегда разрешим, снапшот имени на Block
+    не нужен."""
+
+    __tablename__ = "equipment_items"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    resistance_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "position", name="uq_equipment_items_user_position", deferrable=True, initially="DEFERRED",
+        ),
+    )
 
 
 class WorkoutSet(Base):
@@ -215,6 +237,14 @@ class Block(Base):
         _pg_enum(EquipmentType, "equipment_type"), nullable=False,
     )
     equipment_value: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Ссылка на личный список резин пользователя (только для BAND — см.
+    # EquipmentItem). Дальше equipment_value для BAND не заполняется:
+    # число (если оно вообще известно) живёт на equipment_items.resistance_kg,
+    # доступно через этот id. Для WEIGHT — по-прежнему equipment_value,
+    # equipment_item_id остаётся NULL.
+    equipment_item_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("equipment_items.id"), nullable=True,
+    )
     # Первая тренировка на новом снаряде провалена (максимум ниже
     # min_viable_reps) — хранится явно, не восстанавливается сравнением
     # соседних тренировок (хрупко при правках истории).

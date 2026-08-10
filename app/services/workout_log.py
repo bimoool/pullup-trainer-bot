@@ -53,6 +53,8 @@ class WorkoutLogService:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        block_a_equipment_item_id: int | None = None,
+        block_b_equipment_item_id: int | None = None,
         target_a_override: int | None = None,
         target_b_override: int | None = None,
         comment: str | None = None,
@@ -67,6 +69,8 @@ class WorkoutLogService:
             block_a_equipment_value=block_a_equipment_value,
             block_b_equipment_type=block_b_equipment_type,
             block_b_equipment_value=block_b_equipment_value,
+            block_a_equipment_item_id=block_a_equipment_item_id,
+            block_b_equipment_item_id=block_b_equipment_item_id,
             target_a_override=target_a_override,
             target_b_override=target_b_override,
             comment=comment,
@@ -91,6 +95,8 @@ class WorkoutLogService:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        block_a_equipment_item_id: int | None = None,
+        block_b_equipment_item_id: int | None = None,
         comment: str | None = None,
     ) -> Workout:
         """Не участвует в каскаде (см. WorkoutRepository.record_backdated_workout),
@@ -107,6 +113,8 @@ class WorkoutLogService:
             block_a_equipment_value=block_a_equipment_value,
             block_b_equipment_type=block_b_equipment_type,
             block_b_equipment_value=block_b_equipment_value,
+            block_a_equipment_item_id=block_a_equipment_item_id,
+            block_b_equipment_item_id=block_b_equipment_item_id,
             comment=comment,
         )
         await self._events.create(

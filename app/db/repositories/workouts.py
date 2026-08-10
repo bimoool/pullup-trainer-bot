@@ -44,6 +44,7 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             equipment_changed=block_a.equipment_changed,
             equipment_type=block_a.equipment_type,
             equipment_value=block_a.equipment_value,
+            equipment_item_id=block_a.equipment_item_id,
             transition_failed=block_a.transition_failed,
         ),
         block_b=BlockAssignment(
@@ -53,9 +54,12 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             equipment_changed=block_b.equipment_changed,
             equipment_type=block_b.equipment_type,
             equipment_value=block_b.equipment_value,
+            equipment_item_id=block_b.equipment_item_id,
             transition_failed=block_b.transition_failed,
         ),
         comment=workout.comment,
+        workout_set_id=workout.workout_set_id,
+        exercise_type=workout.exercise_type,
     )
 
 
@@ -65,6 +69,7 @@ class NextBlockState:
     volume: int
     equipment_type: EquipmentType
     equipment_value: Decimal | None
+    equipment_item_id: int | None
     needs_new_equipment: bool
     # True — предыдущая тренировка сообщила equipment_changed (или истории
     # нет вовсе): снаряд для СЛЕДУЮЩЕЙ тренировки ещё не известен, вызывающий
@@ -187,6 +192,8 @@ class WorkoutRepository:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        block_a_equipment_item_id: int | None = None,
+        block_b_equipment_item_id: int | None = None,
         target_a_override: int | None = None,
         target_b_override: int | None = None,
         comment: str | None = None,
@@ -204,6 +211,8 @@ class WorkoutRepository:
             block_a_equipment_value=block_a_equipment_value,
             block_b_equipment_type=block_b_equipment_type,
             block_b_equipment_value=block_b_equipment_value,
+            block_a_equipment_item_id=block_a_equipment_item_id,
+            block_b_equipment_item_id=block_b_equipment_item_id,
             target_a_override=target_a_override,
             target_b_override=target_b_override,
         )
@@ -218,6 +227,8 @@ class WorkoutRepository:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        block_a_equipment_item_id: int | None = None,
+        block_b_equipment_item_id: int | None = None,
         target_a_override: int | None = None,
         target_b_override: int | None = None,
         comment: str | None = None,
@@ -290,6 +301,7 @@ class WorkoutRepository:
                 equipment_changed=equipment_changed_a,
                 equipment_type=block_a_equipment_type,
                 equipment_value=block_a_equipment_value,
+                equipment_item_id=block_a_equipment_item_id,
                 transition_failed=failed_a,
             ),
         )
@@ -304,6 +316,7 @@ class WorkoutRepository:
                 equipment_changed=equipment_changed_b,
                 equipment_type=block_b_equipment_type,
                 equipment_value=block_b_equipment_value,
+                equipment_item_id=block_b_equipment_item_id,
                 transition_failed=failed_b,
             ),
         )
@@ -325,6 +338,8 @@ class WorkoutRepository:
         block_a_equipment_value: Decimal | None,
         block_b_equipment_type: EquipmentType,
         block_b_equipment_value: Decimal | None,
+        block_a_equipment_item_id: int | None = None,
+        block_b_equipment_item_id: int | None = None,
         comment: str | None = None,
     ) -> Workout:
         """Тренировка, внесённая задним числом: пополняет историю/объём, но
@@ -371,6 +386,7 @@ class WorkoutRepository:
                 target_before=state_a.target, target_after=result_a.new_target,
                 equipment_changed=result_a.equipment_changed,
                 equipment_type=block_a_equipment_type, equipment_value=block_a_equipment_value,
+                equipment_item_id=block_a_equipment_item_id,
             ),
         )
         self._session.add(
@@ -380,6 +396,7 @@ class WorkoutRepository:
                 target_before=state_b.target, target_after=result_b.new_target,
                 equipment_changed=result_b.equipment_changed,
                 equipment_type=block_b_equipment_type, equipment_value=block_b_equipment_value,
+                equipment_item_id=block_b_equipment_item_id,
             ),
         )
 
@@ -470,7 +487,7 @@ class WorkoutRepository:
         if not history:
             return NextBlockState(
                 target=block_config.base_target, volume=0,
-                equipment_type=EquipmentType.BAND, equipment_value=None,
+                equipment_type=EquipmentType.BAND, equipment_value=None, equipment_item_id=None,
                 needs_new_equipment=True,
             )
 
@@ -486,6 +503,7 @@ class WorkoutRepository:
             volume=_block_to_log(last_block).volume,
             equipment_type=equipment_source.equipment_type,
             equipment_value=equipment_source.equipment_value,
+            equipment_item_id=equipment_source.equipment_item_id,
             needs_new_equipment=needs_new_equipment,
         )
 

@@ -17,7 +17,7 @@ from app.db.repositories.users import UserRepository
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 TABLES = (
-    "blocks", "workouts", "workout_sets", "baselines", "coins",
+    "blocks", "equipment_items", "workouts", "workout_sets", "baselines", "coins",
     "achievements", "subscriptions", "events", "users",
 )
 

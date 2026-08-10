@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.db.models import Baseline
-from app.domain.constants import EquipmentType
+from app.domain.constants import EquipmentType, ExerciseType
 from app.domain.session import BlockAssignment, WorkoutRecord
 
 _EQUIPMENT_LABELS = {
@@ -16,8 +16,14 @@ _EQUIPMENT_LABELS = {
     EquipmentType.AUSTRALIAN: "австралийские",
 }
 
+# Сейчас всегда PULL_UPS, но колонка в истории уже общая — задел под
+# будущие направления тренировок (Часть 8 респека), не только подтягивания.
+_EXERCISE_LABELS = {
+    ExerciseType.PULL_UPS: "подтягивания",
+}
+
 _HISTORY_HEADER = [
-    "Дата", "Объём: снаряд", "Объём: макс", "Объём: цель",
+    "Дата", "Цикл", "Направление", "Объём: снаряд", "Объём: макс", "Объём: цель",
     "Сила: снаряд", "Сила: макс", "Сила: цель", "Комментарий",
 ]
 _BASELINES_HEADER = ["Дата", "Повторения"]
@@ -35,11 +41,16 @@ def _equipment_label(block: BlockAssignment) -> str:
     return label
 
 
-def _write_history_sheet(ws: Worksheet, records: list[WorkoutRecord]) -> None:
+def _write_history_sheet(ws: Worksheet, records: list[WorkoutRecord], set_numbers: dict[int, int]) -> None:
+    """set_numbers — workout_set_id -> реальный порядковый номер цикла
+    (WorkoutSet.set_number), не позиция в списке: закрытый досрочно цикл
+    (см. "Завершить цикл") не должен сдвигать нумерацию следующих."""
     ws.append(_HISTORY_HEADER)
     for record in records:
+        cycle = set_numbers.get(record.workout_set_id, "") if record.workout_set_id is not None else ""
+        exercise_label = _EXERCISE_LABELS.get(record.exercise_type, record.exercise_type) if record.exercise_type else ""
         ws.append([
-            record.performed_at.strftime("%d.%m.%Y"),
+            record.performed_at.strftime("%d.%m.%Y"), cycle, exercise_label,
             _equipment_label(record.block_a), record.block_a.log.max_reps, record.block_a.target_after,
             _equipment_label(record.block_b), record.block_b.log.max_reps, record.block_b.target_after,
             record.comment or "",
@@ -73,11 +84,13 @@ def _write_offline_template_sheet(ws: Worksheet) -> None:
     ws.append(_OFFLINE_HEADER)
 
 
-def build_export_workbook(records: list[WorkoutRecord], baselines: list[Baseline]) -> io.BytesIO:
+def build_export_workbook(
+    records: list[WorkoutRecord], baselines: list[Baseline], set_numbers: dict[int, int],
+) -> io.BytesIO:
     workbook = Workbook()
     history_sheet = workbook.active
     history_sheet.title = "История"
-    _write_history_sheet(history_sheet, records)
+    _write_history_sheet(history_sheet, records, set_numbers)
 
     _write_baselines_sheet(workbook.create_sheet("Замеры"), baselines)
     _write_progress_sheet(workbook.create_sheet("Прогресс"), records)

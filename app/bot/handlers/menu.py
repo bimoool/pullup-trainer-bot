@@ -9,6 +9,7 @@ from app.bot.keyboards import (
     BOTTOM_MENU_PROFILE,
     BOTTOM_MENU_PROGRESS,
     BOTTOM_MENU_WORKOUT,
+    help_keyboard,
     profile_keyboard,
     progress_section_keyboard,
     workout_section_keyboard,
@@ -90,4 +91,4 @@ async def handle_profile_section(message: Message, state: FSMContext, session: A
 @router.message(F.text == BOTTOM_MENU_HELP)
 async def handle_help_section(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer(texts.HELP_TEXT)
+    await message.answer(texts.HELP_TEXT, reply_markup=help_keyboard())

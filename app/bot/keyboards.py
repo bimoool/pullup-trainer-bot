@@ -1,4 +1,9 @@
-from aiogram.types import InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 # Часовой пояс выбирается кнопкой из фиксированного списка, а не парсингом
@@ -19,14 +24,15 @@ TIMEZONE_CHOICES: list[tuple[str, str]] = [
     ("Камчатка (UTC+12)", "Asia/Kamchatsky"),
 ]
 
-# callback_data этих трёх кнопок обязаны совпадать со значениями EquipmentType
-# (band/bodyweight/weight) — хендлер разбирает "equip:<value>" напрямую через
-# EquipmentType(value). AUSTRALIAN сюда намеренно не входит — see
-# to_signed_load(), для него нет числовой шкалы, поддержка отложена.
+# callback_data этих кнопок обязаны совпадать со значениями EquipmentType —
+# хендлер разбирает "equip:<value>" напрямую через EquipmentType(value).
+# Выбор типа снаряда должен быть явным всегда (Часть 8 респека) — раньше
+# "0" в поле числа означало "без резины", это путало пользователей.
 EQUIPMENT_TYPE_CHOICES: list[tuple[str, str]] = [
     ("Резина", "band"),
     ("Свой вес", "bodyweight"),
     ("Отягощение", "weight"),
+    ("Австралийские", "australian"),
 ]
 
 # Постоянное нижнее меню — 4 раздела (см. Часть 3 респека). /admin сюда
@@ -76,8 +82,15 @@ def progress_section_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="📖 История тренировок", callback_data="show_history")
     builder.button(text="📊 Отчёт за неделю", callback_data="show_progress_report")
+    builder.button(text="📈 Аналитика по всем циклам", callback_data="show_all_cycles_analytics")
     builder.button(text="⬇️ Экспорт в .xlsx", callback_data="export_xlsx")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def help_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💬 Сообщить о проблеме", callback_data="report_problem")
     return builder.as_markup()
 
 
@@ -119,6 +132,51 @@ def equipment_type_keyboard(back_callback: str | None = None) -> InlineKeyboardM
         builder.button(text="← Назад", callback_data=back_callback)
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def band_item_picker_keyboard(items: list, back_callback: str) -> InlineKeyboardMarkup:
+    """items — EquipmentItem ORM-объекты пользователя, уже в порядке
+    position (см. EquipmentItemRepository.list_for_user). "Добавить новую"
+    — всегда последней кнопкой перед навигацией (Часть 8: список растёт по
+    мере надобности, не предзаполняется)."""
+    builder = InlineKeyboardBuilder()
+    for item in items:
+        builder.button(text=item.name, callback_data=f"band_item:{item.id}")
+    builder.button(text="➕ Добавить новую резину", callback_data="band_item:new")
+    builder.button(text="← Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def equipment_kg_keyboard(back_callback: str) -> InlineKeyboardMarkup:
+    """Кг резины — необязательное поле (в залах резины часто без
+    маркировки), поэтому кнопка "Пропустить" рядом с обычной навигацией."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить", callback_data="skip_item_kg")
+    builder.button(text="← Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def band_reorder_keyboard(items: list) -> InlineKeyboardMarkup:
+    """Реордер личного списка резин — порядок (не кг) определяет "следующий
+    снаряд" при переходах (Часть 8), поэтому пользователь должен уметь его
+    менять. Telegram не даёт drag-and-drop, поэтому реордер — стрелки
+    вверх/вниз у каждого пункта, свап с соседом за один тап."""
+    builder = InlineKeyboardBuilder()
+    for index, item in enumerate(items):
+        builder.row(InlineKeyboardButton(text=f"{index + 1}. {item.name}", callback_data="noop"))
+        row = []
+        if index > 0:
+            row.append(InlineKeyboardButton(text="⬆️", callback_data=f"band_move:{item.id}:up"))
+        if index < len(items) - 1:
+            row.append(InlineKeyboardButton(text="⬇️", callback_data=f"band_move:{item.id}:down"))
+        if row:
+            builder.row(*row)
+    builder.row(InlineKeyboardButton(text="✅ Готово", callback_data="band_reorder_done"))
     return builder.as_markup()
 
 
@@ -189,6 +247,7 @@ def admin_user_card_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def profile_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(text="🎗 Мои резины", callback_data="equipment_list_open")
     builder.button(text="🔄 Завершить цикл и начать заново", callback_data="end_cycle_prompt")
     builder.adjust(1)
     return builder.as_markup()

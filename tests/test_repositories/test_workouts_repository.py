@@ -5,9 +5,10 @@ import pytest
 
 from app.db.models import User, WorkoutStatus
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType, ExerciseType
 from app.domain.session import BlockLog
 
 BAND_VALUE = Decimal("30.0")
@@ -348,3 +349,67 @@ async def test_abandoned_set_workouts_stay_with_old_set_after_cycle_restart(sess
     # но обе видны в общей истории пользователя — ничего не спрятано
     all_workouts = await repo.list_for_user(user.id)
     assert [w.id for w in all_workouts] == [old_workout.id, new_workout.id]
+
+
+async def test_record_workout_persists_equipment_item_id_on_blocks(session, user: User):
+    """Часть 8: для BAND снаряд теперь ссылка на личный список
+    (equipment_items), а не equipment_value — repository должен сохранить
+    этот id на Block, не потеряв его по пути."""
+    workout_set_id = await _make_set(session, user)
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="зелёная")
+    repo = WorkoutRepository(session)
+
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=item.id,
+    )
+
+    block_a, block_b = _block(workout, "a"), _block(workout, "b")
+    assert block_a.equipment_item_id == item.id
+    assert block_b.equipment_item_id is None
+
+
+async def test_resolve_next_targets_carries_equipment_item_id_forward(session, user: User):
+    """resolve_next_targets (использует _resolve_next_state) — то, что
+    хендлер показывает как "текущий снаряд" перед следующей тренировкой,
+    должно включать equipment_item_id, а не только type/value."""
+    workout_set_id = await _make_set(session, user)
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="широкая фиолетовая")
+    repo = WorkoutRepository(session)
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=None,
+        block_a_equipment_item_id=item.id, block_b_equipment_item_id=item.id,
+    )
+
+    target_a_state, _ = await repo.resolve_next_targets(user.id)
+
+    assert target_a_state.equipment_item_id == item.id
+    assert target_a_state.needs_new_equipment is False
+
+
+async def test_list_records_for_set_populates_workout_set_id_and_exercise_type(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    records = await repo.list_records_for_set(workout_set_id)
+
+    assert len(records) == 1
+    assert records[0].workout_set_id == workout_set_id
+    assert records[0].exercise_type == ExerciseType.PULL_UPS

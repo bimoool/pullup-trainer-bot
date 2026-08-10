@@ -14,7 +14,7 @@ from app.domain.recommendations import (
     check_underworking_sets,
     check_weak_set_index,
 )
-from app.domain.reports import EquipmentProgress, SetCloseSummary, WeeklySummary
+from app.domain.reports import AllCyclesAnalytics, EquipmentProgress, SetCloseSummary, WeeklySummary
 from app.domain.session import WorkoutRecord
 
 _BLOCK_LABELS = {"a": "объём", "b": "сила"}
@@ -117,6 +117,30 @@ def format_recommendations(records: list[WorkoutRecord], today: date) -> str:
         return ""
     lines = "\n".join(f"— {_format_recommendation(r)}" for r in recommendations)
     return f"{texts.RECOMMENDATIONS_HEADER}\n{lines}"
+
+
+def _format_cycle_volume_change(pct: float | None) -> str:
+    # Отдельная реализация, не format_volume_change() — та жёстко зашивает
+    # "к прошлой неделе" в текст, здесь речь про предыдущий ЦИКЛ.
+    if pct is None:
+        return texts.VOLUME_CHANGE_NO_BASELINE
+    sign, value = _signed_pct(pct)
+    return texts.CYCLE_VOLUME_CHANGE_WITH_PCT.format(sign=sign, pct=value)
+
+
+def format_all_cycles_analytics(analytics: AllCyclesAnalytics) -> str:
+    body = texts.ALL_CYCLES_HEADER.format(cycle_count=analytics.cycle_count, total_volume=analytics.total_volume)
+    lines = []
+    for index, cycle in enumerate(analytics.cycles, start=1):
+        lines.append(
+            texts.ALL_CYCLES_LINE.format(
+                set_number=index,
+                workout_count=cycle.workout_count,
+                total_volume=cycle.total_volume,
+                volume_change=_format_cycle_volume_change(cycle.volume_change_pct),
+            ),
+        )
+    return body + "\n".join(lines)
 
 
 def format_set_close_report(summary: SetCloseSummary, set_length: int) -> str:

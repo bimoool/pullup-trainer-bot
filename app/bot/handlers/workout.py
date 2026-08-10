@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -8,24 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import format_set_close_report
+from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
     back_cancel_keyboard,
     cancel_keyboard,
     end_cycle_confirm_keyboard,
-    equipment_type_keyboard,
     skip_comment_keyboard,
     workout_result_keyboard,
 )
 from app.bot.parsing import ParseError, parse_block_result
-from app.bot.states import EquipmentStates, RetestStates, WorkoutStates
+from app.bot.states import RetestStates, WorkoutStates
 from app.db.models import Block, BlockType, WorkoutSet, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.constants import SET_LENGTH, STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
-from app.domain.progression import rollback_signed_load, rollback_target, suggest_starting_equipment
+from app.domain.progression import rollback_signed_load, rollback_target
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
@@ -33,8 +34,6 @@ from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService
 
 router = Router()
-
-_BLOCK_LABELS = {"a": "блоке на объём", "b": "блоке на силу"}
 
 
 async def _ensure_active_workout_set(session: AsyncSession, user_id: int) -> WorkoutSet | None:
@@ -164,7 +163,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
 
     if readiness is not None and readiness.status == TrainingReadiness.GAP_ROLLBACK:
         target_a_override = rollback_target(target_a_state.target)
-        load_hint = _rolled_back_load_hint(target_b_state)
+        load_hint = await _rolled_back_load_hint(session, target_b_state)
         if load_hint is None:
             notice = texts.GAP_ROLLBACK_NOTICE_NO_LOAD.format(days_since=readiness.days_since_last_workout)
         else:
@@ -181,28 +180,44 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         baseline_reps = baseline.reps if baseline is not None else 0
 
     await _begin_equipment_setup(
-        callback.message, state,
-        workout_set_id=active_set.id,
-        target_a=target_a_state.target, target_b=target_b_state.target,
-        target_a_override=target_a_override, target_b_override=None,
+        callback.message, state, session,
+        flow="live",
         target_a_state=target_a_state, target_b_state=target_b_state,
         baseline_reps=baseline_reps,
+        extra_data={
+            "workout_set_id": active_set.id,
+            "target_a": target_a_state.target, "target_b": target_b_state.target,
+            "target_a_override": target_a_override, "target_b_override": None,
+        },
     )
     await callback.answer()
 
 
-def _rolled_back_load_hint(target_b_state: NextBlockState) -> tuple[str, str] | None:
+async def _rolled_back_load_hint(session: AsyncSession, target_b_state: NextBlockState) -> tuple[str, str] | None:
     """Только подсказка в тексте — пользователь всё равно вводит фактически
     использованный снаряд сам на этапе EquipmentStates. Направление считает
     rollback_signed_load (через знаковую шкалу — для резины "легче" значит
     БОЛЬШЕ кг сопротивления, для веса МЕНЬШЕ, наивное умножение модуля на
     0.9 в обе стороны было ошибкой, см. историю). None — снаряд без числа
-    (свой вес), подсказывать нечего."""
-    if target_b_state.equipment_value is None:
+    вообще (свой вес/австралийские) или резина с неизвестным кг — подсказывать
+    нечего.
+
+    Для резины equipment_value на Block больше не хранится (Часть 8 —
+    личный список), реальное кг (если известно) нужно достать через
+    equipment_item_id из EquipmentItemRepository — просто NextBlockState.
+    equipment_value тут всегда None для BAND."""
+    if target_b_state.equipment_type == EquipmentType.BAND:
+        if target_b_state.equipment_item_id is None:
+            return None
+        item = await EquipmentItemRepository(session).get_by_id(target_b_state.equipment_item_id)
+        previous_value = item.resistance_kg if item is not None else None
+    else:
+        previous_value = target_b_state.equipment_value
+
+    if previous_value is None:
         return None
-    previous = target_b_state.equipment_value
-    suggested = rollback_signed_load(target_b_state.equipment_type, previous)
-    return f"{suggested:.1f}", f"{previous:.1f}"
+    suggested = rollback_signed_load(target_b_state.equipment_type, previous_value)
+    return f"{suggested:.1f}", f"{previous_value:.1f}"
 
 
 @router.message(RetestStates.waiting_for_baseline_reps)
@@ -226,131 +241,16 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
 
     await message.answer(texts.RETEST_DONE.format(reps=reps))
     await _begin_equipment_setup(
-        message, state,
-        workout_set_id=active_set.id,
-        target_a=VOLUME_BLOCK.base_target, target_b=STRENGTH_BLOCK.base_target,
-        target_a_override=VOLUME_BLOCK.base_target, target_b_override=STRENGTH_BLOCK.base_target,
+        message, state, session,
+        flow="live",
         target_a_state=None, target_b_state=None,
         baseline_reps=reps,
+        extra_data={
+            "workout_set_id": active_set.id,
+            "target_a": VOLUME_BLOCK.base_target, "target_b": STRENGTH_BLOCK.base_target,
+            "target_a_override": VOLUME_BLOCK.base_target, "target_b_override": STRENGTH_BLOCK.base_target,
+        },
     )
-
-
-async def _begin_equipment_setup(
-    message: Message,
-    state: FSMContext,
-    *,
-    workout_set_id: int,
-    target_a: int,
-    target_b: int,
-    target_a_override: int | None,
-    target_b_override: int | None,
-    target_a_state: NextBlockState | None,
-    target_b_state: NextBlockState | None,
-    baseline_reps: int | None,
-) -> None:
-    """target_*_state=None форсирует переспрос снаряда для обоих блоков
-    (первая тренировка / ретест) — иначе очередь строится по
-    needs_new_equipment каждого блока (обычное продолжение)."""
-    equipment_queue: list[str] = []
-    equipment_results: dict[str, dict[str, str | None]] = {}
-
-    for key, block_state in (("a", target_a_state), ("b", target_b_state)):
-        if block_state is None or block_state.needs_new_equipment:
-            equipment_queue.append(key)
-        else:
-            equipment_results[key] = {
-                "type": block_state.equipment_type.value,
-                "value": str(block_state.equipment_value) if block_state.equipment_value is not None else None,
-            }
-
-    await state.update_data(
-        workout_set_id=workout_set_id,
-        target_a=target_a, target_b=target_b,
-        target_a_override=target_a_override, target_b_override=target_b_override,
-        equipment_queue=equipment_queue, equipment_results=equipment_results,
-        baseline_reps=baseline_reps,
-    )
-    await _advance_equipment_queue(message, state)
-
-
-async def _advance_equipment_queue(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    queue: list[str] = data["equipment_queue"]
-
-    if not queue:
-        await _send_plan(message, state, data["target_a"], data["target_b"])
-        return
-
-    block_key = queue[0]
-    await state.set_state(EquipmentStates.waiting_for_type)
-
-    # baseline_reps выставлен только для самой первой тренировки/ретеста
-    # (см. _begin_equipment_setup) — во всех остальных случаях None, и
-    # подсказка снаряда по замеру не показывается.
-    if data.get("baseline_reps") is not None:
-        suggested_a, suggested_b = suggest_starting_equipment(data["baseline_reps"])
-        suggested = suggested_a if block_key == "a" else suggested_b
-        suggested_label = "свой вес" if suggested == EquipmentType.BODYWEIGHT else "резина"
-        prompt = texts.EQUIPMENT_TYPE_PROMPT_FIRST.format(
-            block_label=_BLOCK_LABELS[block_key], baseline_reps=data["baseline_reps"], suggested=suggested_label,
-        )
-    else:
-        prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
-
-    await message.answer(prompt, reply_markup=equipment_type_keyboard())
-
-
-@router.callback_query(EquipmentStates.waiting_for_type, F.data.startswith("equip:"))
-async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContext) -> None:
-    equipment_type = EquipmentType(callback.data.removeprefix("equip:"))
-    data = await state.get_data()
-    block_key = data["equipment_queue"][0]
-
-    if equipment_type == EquipmentType.BODYWEIGHT:
-        results = data["equipment_results"]
-        results[block_key] = {"type": equipment_type.value, "value": None}
-        queue = data["equipment_queue"][1:]
-        await state.update_data(equipment_results=results, equipment_queue=queue)
-        await _advance_equipment_queue(callback.message, state)
-        await callback.answer()
-        return
-
-    await state.update_data(pending_equipment_type=equipment_type.value)
-    await state.set_state(EquipmentStates.waiting_for_value)
-    prompt = texts.EQUIPMENT_VALUE_PROMPT_BAND if equipment_type == EquipmentType.BAND else texts.EQUIPMENT_VALUE_PROMPT_WEIGHT
-    await callback.message.answer(prompt, reply_markup=back_cancel_keyboard("equip_back:type"))
-    await callback.answer()
-
-
-@router.callback_query(F.data == "equip_back:type")
-async def handle_equipment_back_to_type(callback: CallbackQuery, state: FSMContext) -> None:
-    # Очередь не изменялась при переходе type -> value (позиция в
-    # equipment_queue снимается только после успешного выбора) — повторный
-    # вызов _advance_equipment_queue просто переспрашивает тип для того же
-    # блока, ничего дополнительно восстанавливать не нужно.
-    await _advance_equipment_queue(callback.message, state)
-    await callback.answer()
-
-
-@router.message(EquipmentStates.waiting_for_value)
-async def handle_equipment_value(message: Message, state: FSMContext) -> None:
-    try:
-        value = Decimal((message.text or "").strip().replace(",", "."))
-    except InvalidOperation:
-        await message.answer(texts.EQUIPMENT_VALUE_INVALID)
-        return
-    if value <= 0:
-        await message.answer(texts.EQUIPMENT_VALUE_INVALID)
-        return
-
-    data = await state.get_data()
-    block_key = data["equipment_queue"][0]
-    results = data["equipment_results"]
-    results[block_key] = {"type": data["pending_equipment_type"], "value": str(value)}
-    queue = data["equipment_queue"][1:]
-
-    await state.update_data(equipment_results=results, equipment_queue=queue)
-    await _advance_equipment_queue(message, state)
 
 
 async def _send_plan(message: Message, state: FSMContext, target_a: int, target_b: int) -> None:
@@ -419,8 +319,10 @@ async def _finalize_workout(
     equipment_results = data["equipment_results"]
     block_a_equipment_type = EquipmentType(equipment_results["a"]["type"])
     block_a_equipment_value = Decimal(equipment_results["a"]["value"]) if equipment_results["a"]["value"] else None
+    block_a_equipment_item_id = equipment_results["a"]["item_id"]
     block_b_equipment_type = EquipmentType(equipment_results["b"]["type"])
     block_b_equipment_value = Decimal(equipment_results["b"]["value"]) if equipment_results["b"]["value"] else None
+    block_b_equipment_item_id = equipment_results["b"]["item_id"]
 
     log_service = WorkoutLogService(session)
     workout = await log_service.record_workout(
@@ -433,6 +335,8 @@ async def _finalize_workout(
         block_a_equipment_value=block_a_equipment_value,
         block_b_equipment_type=block_b_equipment_type,
         block_b_equipment_value=block_b_equipment_value,
+        block_a_equipment_item_id=block_a_equipment_item_id,
+        block_b_equipment_item_id=block_b_equipment_item_id,
         target_a_override=data.get("target_a_override"),
         target_b_override=data.get("target_b_override"),
         comment=comment,
@@ -478,6 +382,8 @@ async def _send_set_close_report(message: Message, session: AsyncSession, user_i
 
 def _block_outcome_suffix(block: Block) -> str:
     if block.transition_failed:
+        if block.equipment_type == EquipmentType.BAND:
+            return texts.TRANSITION_FAILED_BAND_SUFFIX
         return texts.TRANSITION_FAILED_SUFFIX
     if block.equipment_changed:
         return texts.EQUIPMENT_CHANGED_SUFFIX

@@ -10,6 +10,7 @@ from app.bot import texts
 from app.bot.formatting import format_weekly_summary
 from app.db.base import async_session_factory
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.reports import weekly_summary
 
@@ -30,9 +31,16 @@ async def send_weekly_reports(bot: Bot) -> None:
     async with async_session_factory() as session:
         users = await UserRepository(session).list_onboarded()
         workouts = WorkoutRepository(session)
+        workout_sets = WorkoutSetRepository(session)
 
         for user in users:
-            records = await workouts.list_records_for_user(user.id)
+            # Скоуп по текущему (или только что закрытому) циклу, а не по
+            # всей истории — иначе сводка "за неделю" могла бы приплюсовать
+            # объём из предыдущего цикла к текущему (Часть 8 респека).
+            all_sets = await workout_sets.list_for_user(user.id)
+            if not all_sets:
+                continue
+            records = await workouts.list_records_for_set(all_sets[-1].id)
             this_week = [r for r in records if r.performed_at >= week_ago]
             if not this_week:
                 continue

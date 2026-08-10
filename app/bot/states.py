@@ -24,10 +24,18 @@ class EquipmentStates(StatesGroup):
     domain.suggest_starting_equipment), и когда предыдущая тренировка
     сообщила equipment_changed=True для одного из блоков (домен знает
     только ЧТО снаряд надо менять, не какой конкретно — пользователь
-    вводит сам, см. Часть 1)."""
+    вводит сам, см. Часть 1), и для бэкдейта (Часть 8 — там снаряд теперь
+    тоже спрашивается явно, а не тихо наследуется).
+
+    waiting_for_band_choice/waiting_for_new_item_name/waiting_for_new_item_kg
+    — подшаги личного списка резин (Часть 8): выбор уже добавленного
+    снаряда или создание нового именованного пункта."""
 
     waiting_for_type = State()
     waiting_for_value = State()
+    waiting_for_band_choice = State()
+    waiting_for_new_item_name = State()
+    waiting_for_new_item_kg = State()
 
 
 class WorkoutStates(StatesGroup):
@@ -45,6 +53,10 @@ class BackdateStates(StatesGroup):
     waiting_for_date = State()
     waiting_for_block_a = State()
     waiting_for_block_b = State()
+
+
+class FeedbackStates(StatesGroup):
+    waiting_for_text = State()
 
 
 class AdminStates(StatesGroup):

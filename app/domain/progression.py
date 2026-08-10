@@ -225,6 +225,7 @@ def recalculate_cascade(
                     equipment_changed=result_a.equipment_changed,
                     equipment_type=record.block_a.equipment_type,
                     equipment_value=record.block_a.equipment_value,
+                    equipment_item_id=record.block_a.equipment_item_id,
                     transition_failed=record.block_a.transition_failed,
                 ),
                 block_b=BlockAssignment(
@@ -234,9 +235,12 @@ def recalculate_cascade(
                     equipment_changed=result_b.equipment_changed,
                     equipment_type=record.block_b.equipment_type,
                     equipment_value=record.block_b.equipment_value,
+                    equipment_item_id=record.block_b.equipment_item_id,
                     transition_failed=record.block_b.transition_failed,
                 ),
                 comment=record.comment,
+                workout_set_id=record.workout_set_id,
+                exercise_type=record.exercise_type,
             )
         )
         target_a, target_b = result_a.new_target, result_b.new_target

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from app.domain.constants import EquipmentType
+from app.domain.constants import EquipmentType, ExerciseType
 
 
 @dataclass(frozen=True)
@@ -45,15 +45,25 @@ class BlockAssignment:
     equipment_changed: bool
     equipment_type: EquipmentType
     equipment_value: Decimal | None = None
+    # Ссылка на личный список резин пользователя (только для BAND) —
+    # непрозрачный идентификатор для сравнения "тот же снаряд", устойчивый
+    # к тому, что kg может быть неизвестен или отличаться (см.
+    # app/domain/reports.py::current_equipment_progress). Для WEIGHT/
+    # BODYWEIGHT/AUSTRALIAN всегда None.
+    equipment_item_id: int | None = None
     transition_failed: bool = False
 
 
 @dataclass(frozen=True)
 class WorkoutRecord:
     """Историческая запись тренировки — единица данных для каскадного
-    пересчёта при редактировании прошлой тренировки."""
+    пересчёта при редактировании прошлой тренировки, а также для отчётов
+    и экспорта (workout_set_id/exercise_type нужны там, чтобы группировать
+    по циклам и — на будущее — по направлению тренировок)."""
 
     performed_at: datetime
     block_a: BlockAssignment
     block_b: BlockAssignment
     comment: str | None = None
+    workout_set_id: int | None = None
+    exercise_type: ExerciseType | None = None

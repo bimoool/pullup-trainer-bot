@@ -32,7 +32,7 @@ def test_format_equipment_progress_line_none_placeholder():
 
 def test_format_equipment_progress_line_includes_values():
     progress = EquipmentProgress(
-        equipment_type=EquipmentType.BAND, equipment_value=Decimal("20.0"),
+        equipment_type=EquipmentType.BAND, equipment_value=Decimal("20.0"), equipment_item_id=None,
         first_volume=40, current_volume=80, change_pct=100.0,
     )
     line = format_equipment_progress_line(progress)

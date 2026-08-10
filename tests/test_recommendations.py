@@ -17,13 +17,14 @@ BAND = Decimal("20.0")
 
 def _record(
     day: int, *, a_reps=(15, 15, 15), a_max=16, target_before=10,
-    a_equipment_type=EquipmentType.BAND, a_equipment_value=BAND,
+    a_equipment_type=EquipmentType.BAND, a_equipment_value=BAND, a_equipment_item_id=None,
 ) -> WorkoutRecord:
     return WorkoutRecord(
         performed_at=datetime(2026, 1, day, tzinfo=UTC),
         block_a=BlockAssignment(
             log=BlockLog(working_reps=a_reps, max_reps=a_max), target_before=target_before, target_after=11,
             equipment_changed=False, equipment_type=a_equipment_type, equipment_value=a_equipment_value,
+            equipment_item_id=a_equipment_item_id,
         ),
         block_b=BlockAssignment(
             log=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4), target_before=3, target_after=4,
@@ -61,13 +62,29 @@ def test_equipment_too_light_no_trigger_with_not_enough_history():
     assert check_equipment_too_light(records, "a") is None
 
 
-def test_equipment_too_light_no_trigger_when_equipment_changed_mid_lookback():
+def test_equipment_too_light_no_trigger_when_band_item_changed_mid_lookback():
+    # Идентичность резины — по equipment_item_id (личный список, Часть 8),
+    # не по equipment_value (kg часто неизвестен/неточен) — смена item_id
+    # означает реальную смену снаряда и должна сбрасывать окно lookback.
     records = [
-        _record(1, a_max=16, target_before=10, a_equipment_value=Decimal("30.0")),
-        _record(4, a_max=16, target_before=10, a_equipment_value=Decimal("20.0")),
-        _record(7, a_max=16, target_before=10, a_equipment_value=Decimal("20.0")),
+        _record(1, a_max=16, target_before=10, a_equipment_item_id=1),
+        _record(4, a_max=16, target_before=10, a_equipment_item_id=2),
+        _record(7, a_max=16, target_before=10, a_equipment_item_id=2),
     ]
     assert check_equipment_too_light(records, "a") is None
+
+
+def test_equipment_too_light_still_triggers_when_only_band_kg_estimate_drifts():
+    # Тот же физический снаряд (equipment_item_id не меняется), но kg
+    # каждый раз введён/пересчитан немного по-разному — это НЕ должно
+    # считаться сменой снаряда и НЕ должно блокировать рекомендацию.
+    records = [
+        _record(1, a_max=16, target_before=10, a_equipment_item_id=1, a_equipment_value=Decimal("30.0")),
+        _record(4, a_max=16, target_before=10, a_equipment_item_id=1, a_equipment_value=Decimal("20.0")),
+        _record(7, a_max=16, target_before=10, a_equipment_item_id=1, a_equipment_value=Decimal("20.0")),
+    ]
+    result = check_equipment_too_light(records, "a")
+    assert result.code == RecommendationCode.EQUIPMENT_TOO_LIGHT
 
 
 def test_equipment_too_light_no_trigger_when_close_to_target():

@@ -25,6 +25,7 @@ from app.domain.constants import (
     VOLUME_DROP_LOOKBACK,
     WEAK_SET_DROP_THRESHOLD,
     WEAK_SET_LOOKBACK,
+    EquipmentType,
 )
 from app.domain.session import BlockAssignment, WorkoutRecord
 
@@ -64,6 +65,22 @@ def check_underworking_sets(record: WorkoutRecord, block: str) -> Recommendation
     return None
 
 
+def _same_equipment(a: BlockAssignment, b: BlockAssignment) -> bool:
+    """«Тот же снаряд» — для BAND сравниваем личный список пользователя
+    (equipment_item_id, kg не всегда известен и может отличаться на одном
+    и том же снаряде после редактирования), для WEIGHT — по-прежнему
+    equipment_value. См. ту же логику в domain/reports.py — здесь не
+    импортирую оттуда намеренно: это маленький, самодостаточный предикат,
+    не стоит городить общий модуль ради восьми строк."""
+    if a.equipment_type != b.equipment_type:
+        return False
+    if a.equipment_type == EquipmentType.BAND:
+        return a.equipment_item_id == b.equipment_item_id
+    if a.equipment_type == EquipmentType.WEIGHT:
+        return a.equipment_value == b.equipment_value
+    return True
+
+
 def check_equipment_too_light(
     records: list[WorkoutRecord], block: str, lookback: int = EQUIPMENT_TOO_LIGHT_LOOKBACK,
 ) -> Recommendation | None:
@@ -74,8 +91,8 @@ def check_equipment_too_light(
     if len(recent) < lookback:
         return None
 
-    equipment_keys = {(_block(r, block).equipment_type, _block(r, block).equipment_value) for r in recent}
-    if len(equipment_keys) != 1:
+    first_equipment = _block(recent[0], block)
+    if not all(_same_equipment(_block(r, block), first_equipment) for r in recent):
         return None
 
     if all(_block(r, block).log.max_reps - _block(r, block).target_before >= EQUIPMENT_TOO_LIGHT_MARGIN for r in recent):

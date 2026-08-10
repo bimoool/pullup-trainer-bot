@@ -15,6 +15,15 @@ class EquipmentType(StrEnum):
     AUSTRALIAN = "australian"
 
 
+class ExerciseType(StrEnum):
+    """Задел под будущее расширение (отжимания на брусьях, выходы силой,
+    подтягивания на одной руке) — сейчас только подтягивания. Раньше жил в
+    app/db/models.py — перенесено в домен по той же логике, что и
+    EquipmentType: это словарь предметной области, а не деталь схемы."""
+
+    PULL_UPS = "pull_ups"
+
+
 def to_signed_load(equipment_type: EquipmentType, equipment_value: Decimal | None) -> Decimal:
     """Переводит снаряд в одну знаковую величину общей шкалы нагрузки.
 

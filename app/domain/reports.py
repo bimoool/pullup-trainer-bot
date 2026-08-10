@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from app.domain.constants import EquipmentType
-from app.domain.session import WorkoutRecord
+from app.domain.session import BlockAssignment, WorkoutRecord
 
 
 def _record_volume(record: WorkoutRecord) -> int:
@@ -18,6 +18,22 @@ def _pct_change(previous: int, current: int) -> float | None:
 
 def _block(record: WorkoutRecord, block: str):
     return record.block_a if block == "a" else record.block_b
+
+
+def _same_equipment(a: BlockAssignment, b: BlockAssignment) -> bool:
+    """«Тот же снаряд» больше не сравнивается по equipment_value напрямую —
+    у резины теперь личный список (см. Часть 8 респека): kg опционален и
+    может отличаться у одного и того же физического снаряда, если позже
+    его отредактировать. Для BAND identity — equipment_item_id; для WEIGHT
+    (там число обязательно и стабильно) — по-прежнему equipment_value;
+    для BODYWEIGHT/AUSTRALIAN значения нет, достаточно совпадения типа."""
+    if a.equipment_type != b.equipment_type:
+        return False
+    if a.equipment_type == EquipmentType.BAND:
+        return a.equipment_item_id == b.equipment_item_id
+    if a.equipment_type == EquipmentType.WEIGHT:
+        return a.equipment_value == b.equipment_value
+    return True
 
 
 @dataclass(frozen=True)
@@ -48,10 +64,11 @@ class EquipmentProgress:
     """Динамика объёма на ТЕКУЩЕМ (последнем использованном) снаряде —
     ключевая метрика спеки: "с этой резиной делал 40, сейчас 80, +100%".
     Сравнивает первую и последнюю тренировку НЕПРЕРЫВНОГО хвоста истории
-    на одном и том же снаряде (equipment_type + equipment_value)."""
+    на одном и том же снаряде (см. _same_equipment)."""
 
     equipment_type: EquipmentType
     equipment_value: Decimal | None
+    equipment_item_id: int | None
     first_volume: int
     current_volume: int
     change_pct: float | None
@@ -66,7 +83,7 @@ def current_equipment_progress(records: list[WorkoutRecord], block: str) -> Equi
     segment: list[WorkoutRecord] = []
     for record in reversed(records):
         current = _block(record, block)
-        if current.equipment_type != last_equipment.equipment_type or current.equipment_value != last_equipment.equipment_value:
+        if not _same_equipment(current, last_equipment):
             break
         segment.append(record)
     segment.reverse()
@@ -76,6 +93,7 @@ def current_equipment_progress(records: list[WorkoutRecord], block: str) -> Equi
     return EquipmentProgress(
         equipment_type=last_equipment.equipment_type,
         equipment_value=last_equipment.equipment_value,
+        equipment_item_id=last_equipment.equipment_item_id,
         first_volume=first_volume,
         current_volume=current_volume,
         change_pct=_pct_change(first_volume, current_volume),
@@ -116,3 +134,58 @@ def set_close_summary(records_in_set: list[WorkoutRecord], previous_set_total_vo
         equipment_changes_count=equipment_changes,
         volume_change_pct=volume_change_pct,
     )
+
+
+@dataclass(frozen=True)
+class CycleVolume:
+    workout_set_id: int
+    workout_count: int
+    total_volume: int
+    volume_change_pct: float | None  # относительно предыдущего цикла в списке
+
+
+@dataclass(frozen=True)
+class AllCyclesAnalytics:
+    """Сводная аналитика по ВСЕЙ истории пользователя, а не одному циклу —
+    "📈 Аналитика по всем циклам" в «Прогресс» (см. Часть 8 респека, в
+    отличие от недельной сводки/отчёта по закрытии, которые скоупятся по
+    одному WorkoutSet)."""
+
+    total_volume: int
+    cycle_count: int
+    cycles: list[CycleVolume]  # в хронологическом порядке
+
+
+def all_cycles_analytics(records: list[WorkoutRecord]) -> AllCyclesAnalytics:
+    """Группирует по record.workout_set_id, сохраняя порядок первого
+    появления (== хронологический порядок циклов, они всегда открываются
+    последовательно). Записи без workout_set_id (не должно случаться для
+    завершённых тренировок) в группировку не попадают."""
+    order: list[int] = []
+    grouped: dict[int, list[WorkoutRecord]] = {}
+    for record in records:
+        if record.workout_set_id is None:
+            continue
+        if record.workout_set_id not in grouped:
+            order.append(record.workout_set_id)
+            grouped[record.workout_set_id] = []
+        grouped[record.workout_set_id].append(record)
+
+    cycles: list[CycleVolume] = []
+    previous_volume: int | None = None
+    total_volume = 0
+    for workout_set_id in order:
+        group = grouped[workout_set_id]
+        volume = sum(_record_volume(r) for r in group)
+        total_volume += volume
+        cycles.append(
+            CycleVolume(
+                workout_set_id=workout_set_id,
+                workout_count=len(group),
+                total_volume=volume,
+                volume_change_pct=_pct_change(previous_volume, volume) if previous_volume is not None else None,
+            ),
+        )
+        previous_volume = volume
+
+    return AllCyclesAnalytics(total_volume=total_volume, cycle_count=len(cycles), cycles=cycles)
