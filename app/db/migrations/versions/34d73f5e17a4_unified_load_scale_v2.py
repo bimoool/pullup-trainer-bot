@@ -29,6 +29,47 @@ _old_branch_type = postgresql.ENUM('band', 'assisted', name='branch')
 
 
 def upgrade() -> None:
+    # --- Архивация дореспековских данных -------------------------------
+    # Единицы и смысл снаряда меняются несовместимо (мм резины -> кг
+    # сопротивления, ветки BAND/ASSISTED упраздняются) — существующие
+    # строки нельзя автоматически перевести в новую модель, только
+    # выбросить или отложить в сторону. Переносим их в архивные таблицы
+    # *_archive_v1 (копия структуры БЕЗ индексов/constraint'ов — это
+    # холодное хранилище, не рабочие таблицы) и очищаем активные, прежде
+    # чем добавлять новые NOT NULL колонки ниже. Согласовано с
+    # пользователем 2026-08-10: на момент миграции в базе только один
+    # тестовый аккаунт (bimoool/65107390) с этапа живого тестирования,
+    # реальных пользователей ещё не было. См. downgrade() — архив не
+    # восстанавливается автоматически.
+    op.execute("CREATE TABLE IF NOT EXISTS blocks_archive_v1 (LIKE blocks)")
+    op.execute("INSERT INTO blocks_archive_v1 SELECT * FROM blocks")
+    op.execute("CREATE TABLE IF NOT EXISTS workouts_archive_v1 (LIKE workouts)")
+    op.execute("INSERT INTO workouts_archive_v1 SELECT * FROM workouts")
+    op.execute("CREATE TABLE IF NOT EXISTS workout_sets_archive_v1 (LIKE workout_sets)")
+    op.execute("INSERT INTO workout_sets_archive_v1 SELECT * FROM workout_sets")
+    op.execute("CREATE TABLE IF NOT EXISTS baselines_archive_v1 (LIKE baselines)")
+    op.execute("INSERT INTO baselines_archive_v1 SELECT * FROM baselines")
+    # baselines_archive_v1.equipment_type/branch_result унаследовали СТАРЫЕ
+    # enum-типы equipment_type/branch (LIKE копирует и тип колонки) — ниже
+    # эти типы удаляются целиком под новые значения, а DROP TYPE ... CASCADE
+    # снёс бы вместе с типом и сами архивные колонки (и их данные). Отвязываем
+    # архив от типа до дропа: значение остаётся текстом, тип свободен для удаления.
+    op.execute("ALTER TABLE baselines_archive_v1 ALTER COLUMN equipment_type TYPE text")
+    op.execute("ALTER TABLE baselines_archive_v1 ALTER COLUMN branch_result TYPE text")
+    # Данные скопированы и подтверждены выше — теперь можно безопасно
+    # очистить активные таблицы (CASCADE подчищает FK между ними самими,
+    # других зависимых таблиц у этой четвёрки нет).
+    op.execute("TRUNCATE TABLE blocks, workouts, workout_sets, baselines RESTART IDENTITY CASCADE")
+
+    # Тот же тестовый аккаунт: строку users не удаляем и не архивируем
+    # отдельно (одна строка, не критично) — просто обнуляем анкету и флаг
+    # онбординга, чтобы человек прошёл новый (v2) сценарий замера/анкеты
+    # с нуля при следующем /start.
+    op.execute(
+        "UPDATE users SET onboarding_completed_at = NULL, weight_kg = NULL, "
+        "height_cm = NULL, age = NULL, timezone = NULL WHERE telegram_id = 65107390",
+    )
+
     op.drop_column('baselines', 'equipment_type')
     op.drop_column('baselines', 'branch_result')
     op.drop_column('baselines', 'weight_kg')
@@ -70,6 +111,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # archived, not restored on downgrade — *_archive_v1 таблицы и данные
+    # из них намеренно остаются как есть (см. upgrade()); откат схемы сюда
+    # не пытается вернуть данные назад в активные таблицы. Если понадобится
+    # восстановить дореспековские записи — доставать вручную из архивных
+    # таблиц, они никуда не делись.
     op.drop_column('workouts', 'exercise_type')
     op.drop_column('workouts', 'participates_in_cascade')
     op.drop_column('blocks', 'transition_failed')
