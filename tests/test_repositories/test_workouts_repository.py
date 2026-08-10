@@ -413,3 +413,81 @@ async def test_list_records_for_set_populates_workout_set_id_and_exercise_type(s
     assert len(records) == 1
     assert records[0].workout_set_id == workout_set_id
     assert records[0].exercise_type == ExerciseType.PULL_UPS
+
+
+async def test_resolve_next_targets_bypass_transition_wait_forces_new_prompt(session, user: User):
+    """Часть 9 (админ-тестирование): по умолчанию (bypass_transition_wait=
+    False) поведение не меняется — после провала перехода needs_new_equipment
+    остаётся False. Домен (_apply_transition_outcome/check_transition_outcome)
+    не трогаем — только этот флаг в репозитории."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    _block(workout, "a").transition_failed = True
+    await session.flush()
+
+    normal_a, _ = await repo.resolve_next_targets(user.id)
+    assert normal_a.needs_new_equipment is False
+
+    admin_a, _ = await repo.resolve_next_targets(user.id, bypass_transition_wait=True)
+    assert admin_a.needs_new_equipment is True
+
+
+async def test_resolve_next_targets_bypass_does_not_affect_blocks_without_failed_transition(
+    session, user: User,
+):
+    """bypass_transition_wait=True не должен трогать блоки, где перехода
+    вообще не было — только те, где transition_failed=True."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    admin_a, admin_b = await repo.resolve_next_targets(user.id, bypass_transition_wait=True)
+    assert admin_a.needs_new_equipment is False
+    assert admin_b.needs_new_equipment is False
+
+
+async def test_resolve_next_targets_bypass_with_two_workout_history(session, user: User):
+    """Реалистичный случай (len(history) >= 2, где обычно срабатывает
+    "тихий откат на equipment_source из history[-2]") — админ вместо этого
+    сразу получает needs_new_equipment=True для проваленного блока."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    second = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.WEIGHT, block_a_equipment_value=Decimal("40.0"),
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    _block(second, "a").transition_failed = True
+    await session.flush()
+
+    normal_a, _ = await repo.resolve_next_targets(user.id)
+    assert normal_a.needs_new_equipment is False
+    assert normal_a.equipment_type == EquipmentType.BAND  # снаряд ДО провала, а не WEIGHT
+
+    admin_a, _ = await repo.resolve_next_targets(user.id, bypass_transition_wait=True)
+    assert admin_a.needs_new_equipment is True

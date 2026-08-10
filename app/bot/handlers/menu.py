@@ -14,6 +14,7 @@ from app.bot.keyboards import (
     progress_section_keyboard,
     workout_section_keyboard,
 )
+from app.config import settings
 from app.db.models import SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
@@ -85,7 +86,8 @@ async def handle_profile_section(message: Message, state: FSMContext, session: A
         achievement_count=len(achievements),
         achievement_list=achievement_list,
     )
-    await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=profile_keyboard())
+    is_admin = settings.is_admin(message.from_user.id)
+    await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=profile_keyboard(is_admin=is_admin))
 
 
 @router.message(F.text == BOTTOM_MENU_HELP)

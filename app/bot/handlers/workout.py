@@ -19,6 +19,7 @@ from app.bot.keyboards import (
 )
 from app.bot.parsing import ParseError, parse_block_result
 from app.bot.states import RetestStates, WorkoutStates
+from app.config import settings
 from app.db.models import Block, BlockType, WorkoutSet, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
@@ -113,7 +114,10 @@ async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> No
     user = await users.get_by_telegram_id(callback.from_user.id)
 
     workouts = WorkoutRepository(session)
-    target_a_state, target_b_state = await workouts.resolve_next_targets(user.id)
+    is_admin = settings.is_admin(callback.from_user.id)
+    target_a_state, target_b_state = await workouts.resolve_next_targets(
+        user.id, bypass_transition_wait=is_admin,
+    )
 
     await callback.message.answer(
         texts.CURRENT_PLAN.format(target_a=target_a_state.target, target_b=target_b_state.target),
@@ -126,6 +130,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
     now = datetime.now(UTC)
+    is_admin = settings.is_admin(callback.from_user.id)
 
     subscriptions = SubscriptionService(session)
     if not await subscriptions.has_access(user.id, now=now):
@@ -139,7 +144,10 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
     readiness = None
     if history:
         readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
-        if readiness.status == TrainingReadiness.TOO_EARLY:
+        # Обход минимального отдыха — только для admin_ids (Часть 9),
+        # ускоряет ручное тестирование; check_training_readiness (домен)
+        # не меняется и продолжает считать TOO_EARLY как обычно.
+        if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
             await callback.message.answer(texts.TOO_EARLY_FOR_WORKOUT.format(ready_at=readiness.ready_at))
             await callback.answer()
             return
@@ -158,7 +166,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         await callback.answer()
         return
 
-    target_a_state, target_b_state = await workouts.resolve_next_targets(user.id)
+    target_a_state, target_b_state = await workouts.resolve_next_targets(user.id, bypass_transition_wait=is_admin)
     target_a_override: int | None = None
 
     if readiness is not None and readiness.status == TrainingReadiness.GAP_ROLLBACK:

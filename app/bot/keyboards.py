@@ -245,11 +245,21 @@ def admin_user_card_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def profile_keyboard() -> InlineKeyboardMarkup:
+def profile_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🎗 Мои резины", callback_data="equipment_list_open")
     builder.button(text="🔄 Завершить цикл и начать заново", callback_data="end_cycle_prompt")
+    if is_admin:
+        builder.button(text="🧪 Полный сброс (админ)", callback_data="admin_reset_prompt")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_reset_confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data="admin_reset_confirm")
+    builder.button(text="❌ Отмена", callback_data="admin_reset_cancel")
+    builder.adjust(2)
     return builder.as_markup()
 
 

@@ -15,6 +15,7 @@ from app.bot.keyboards import (
     profile_keyboard,
 )
 from app.bot.states import EquipmentStates
+from app.config import settings
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.domain.constants import EquipmentType
@@ -337,5 +338,6 @@ async def handle_band_move(callback: CallbackQuery, session: AsyncSession) -> No
 @router.callback_query(F.data == "band_reorder_done")
 async def handle_band_reorder_done(callback: CallbackQuery) -> None:
     await callback.message.edit_reply_markup()
-    await callback.message.answer(texts.MY_BANDS_REORDER_DONE, reply_markup=profile_keyboard())
+    is_admin = settings.is_admin(callback.from_user.id)
+    await callback.message.answer(texts.MY_BANDS_REORDER_DONE, reply_markup=profile_keyboard(is_admin=is_admin))
     await callback.answer()

@@ -11,15 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import texts
 from app.bot.keyboards import (
     admin_menu_keyboard,
+    admin_reset_confirm_keyboard,
     admin_user_card_keyboard,
     admin_user_list_keyboard,
     cancel_keyboard,
+    profile_keyboard,
 )
 from app.bot.states import AdminStates
 from app.config import settings
 from app.db.models import SubscriptionStatus, User
 from app.db.repositories.users import UserRepository
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
+from app.services.admin_reset import reset_user_progress
 from app.services.gamification import GamificationService
 from app.services.subscription import SubscriptionService
 
@@ -36,7 +39,7 @@ _SUBSCRIPTION_LABELS = {
 
 
 def _is_admin(telegram_id: int) -> bool:
-    return telegram_id in settings.admin_id_list
+    return settings.is_admin(telegram_id)
 
 
 def _user_label(user: User) -> str:
@@ -245,3 +248,37 @@ async def handle_admin_grant_coins_value(message: Message, state: FSMContext, se
     await state.clear()
     await message.answer(texts.ADMIN_GRANT_COINS_DONE.format(amount=amount, name=_user_label(user)))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
+
+
+# --- Полный сброс СВОЕГО (админа) аккаунта — инструмент для ручного
+# тестирования (Часть 9), кнопка в Профиле, а не в списке пользователей:
+# в отличие от остальной админки выше, здесь нет admin_target_user_id —
+# действие всегда над собственным аккаунтом вызвавшего.
+
+
+@router.callback_query(F.data == "admin_reset_prompt")
+async def handle_admin_reset_prompt(callback: CallbackQuery) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    await callback.message.answer(texts.ADMIN_RESET_WARNING, reply_markup=admin_reset_confirm_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_reset_cancel")
+async def handle_admin_reset_cancel(callback: CallbackQuery) -> None:
+    await callback.answer(texts.CANCELLED)
+
+
+@router.callback_query(F.data == "admin_reset_confirm")
+async def handle_admin_reset_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+
+    user = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+    await reset_user_progress(session, user.id)
+
+    await state.clear()
+    await callback.message.answer(texts.ADMIN_RESET_DONE, reply_markup=profile_keyboard(is_admin=True))
+    await callback.answer()

@@ -132,16 +132,28 @@ class WorkoutRepository:
         )
         return list(result.scalars().all())
 
-    async def resolve_next_targets(self, user_id: int) -> tuple[NextBlockState, NextBlockState]:
+    async def resolve_next_targets(
+        self, user_id: int, *, bypass_transition_wait: bool = False,
+    ) -> tuple[NextBlockState, NextBlockState]:
         """Публичный вход для хендлеров: состояние (цель/объём/снаряд), с
         которого начнётся следующая тренировка обоих блоков — то же самое,
         что использует complete_workout внутри себя. Нужен хендлеру, чтобы
         показать план и спросить снаряд ДО того, как тренировка реально
-        записана (см. app/bot/handlers/workout.py)."""
+        записана (см. app/bot/handlers/workout.py).
+
+        bypass_transition_wait — только для админ-тестирования (Часть 9):
+        вызывающий бот-хендлер решает, передавать ли True, сам репозиторий
+        ничего не знает про admin_ids. Не влияет на target/volume (которые
+        читает complete_workout) — только на equipment_source/
+        needs_new_equipment в _resolve_next_state, см. там."""
         history = await self.list_for_user(user_id)
         return (
-            self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK),
-            self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK),
+            self._resolve_next_state(
+                history, BlockType.A, VOLUME_BLOCK, bypass_transition_wait=bypass_transition_wait,
+            ),
+            self._resolve_next_state(
+                history, BlockType.B, STRENGTH_BLOCK, bypass_transition_wait=bypass_transition_wait,
+            ),
         )
 
     async def list_for_set(self, workout_set_id: int) -> list[Workout]:
@@ -472,7 +484,7 @@ class WorkoutRepository:
         return workout
 
     def _resolve_next_state(
-        self, history: list[Workout], block_type: BlockType, block_config,
+        self, history: list[Workout], block_type: BlockType, block_config, *, bypass_transition_wait: bool = False,
     ) -> NextBlockState:
         """Цель/объём/снаряд, от которых считать СЛЕДУЮЩУЮ тренировку —
         по хронологически последней записи ЛЮБОГО происхождения (см.
@@ -483,7 +495,16 @@ class WorkoutRepository:
         а вот equipment_type/value на ней — это как раз тот снаряд,
         который не подошёл, его предлагать снова не нужно. В этом случае
         needs_new_equipment=False — снаряд уже известен (прежний),
-        спрашивать заново нечего."""
+        спрашивать заново нечего.
+
+        bypass_transition_wait=True (только для админ-тестирования, см.
+        resolve_next_targets) — не откатывает снаряд молча, а сразу просит
+        выбрать новый: needs_new_equipment=True вместо False. Естественный
+        механизм "подожди, пока порог наберётся снова" (это НЕ отдельный
+        счётчик тренировок — TRANSITION_RETRY_WORKOUTS/is_retry_allowed в
+        домене на практике нигде не вызываются, эта ветка — фактическая
+        точка, где перепопытка перехода сейчас притормаживается) для админа
+        пропускается."""
         if not history:
             return NextBlockState(
                 target=block_config.base_target, volume=0,
@@ -494,9 +515,12 @@ class WorkoutRepository:
         last_block = _find_block(history[-1], block_type)
         equipment_source = last_block
         needs_new_equipment = last_block.equipment_changed
-        if last_block.transition_failed and len(history) >= 2:
-            equipment_source = _find_block(history[-2], block_type)
-            needs_new_equipment = False
+        if last_block.transition_failed:
+            if bypass_transition_wait:
+                needs_new_equipment = True
+            elif len(history) >= 2:
+                equipment_source = _find_block(history[-2], block_type)
+                needs_new_equipment = False
 
         return NextBlockState(
             target=last_block.target_after,

@@ -21,5 +21,8 @@ class Settings(BaseSettings):
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]
 
+    def is_admin(self, telegram_id: int) -> bool:
+        return telegram_id in self.admin_id_list
+
 
 settings = Settings()
