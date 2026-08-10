@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import bottom_menu_keyboard
+from app.bot.keyboards import baseline_start_keyboard, bottom_menu_keyboard
 from app.bot.states import OnboardingStates
 from app.db.models import User
 from app.db.repositories.users import UserRepository
@@ -28,7 +28,7 @@ async def _go_home(message: Message, state: FSMContext, user: User) -> None:
         await state.set_state(OnboardingStates.waiting_for_baseline_reps)
         await message.answer(texts.ONBOARDING_INTRO)
         await message.answer(texts.ONBOARDING_WHAT_NEXT)
-        await message.answer(texts.BASELINE_GUIDE)
+        await message.answer(texts.BASELINE_GUIDE, reply_markup=baseline_start_keyboard())
         return
     await message.answer(texts.WELCOME_BACK, reply_markup=bottom_menu_keyboard())
 

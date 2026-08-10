@@ -44,6 +44,16 @@ def bottom_menu_keyboard() -> ReplyKeyboardMarkup:
     return builder.as_markup(resize_keyboard=True)
 
 
+def baseline_start_keyboard() -> InlineKeyboardMarkup:
+    """Явная кнопка-CTA под последним сообщением онбординга — раньше три
+    сообщения подряд заканчивались без единой кнопки, и человек должен был
+    сам догадаться, что от него ждут числа в чат (тот же тупиковый паттерн,
+    что уже чинили в других местах, см. Часть 2)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Начать замер →", callback_data="start_baseline_measurement")
+    return builder.as_markup()
+
+
 def timezone_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for label, iana_name in TIMEZONE_CHOICES:

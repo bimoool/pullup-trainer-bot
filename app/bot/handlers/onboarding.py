@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
@@ -13,6 +13,17 @@ from app.services.onboarding import OnboardingService
 router = Router()
 
 MAX_REASONABLE_REPS = 100
+
+
+@router.callback_query(OnboardingStates.waiting_for_baseline_reps, F.data == "start_baseline_measurement")
+async def handle_start_baseline_measurement(callback: CallbackQuery) -> None:
+    """Явный тап по "Начать замер →" — состояние уже выставлено на
+    waiting_for_baseline_reps сразу при показе трёх онбординговых
+    сообщений (см. start.py), так что прямой ввод числа тоже сработает;
+    кнопка нужна как понятный призыв к действию, а не техническая
+    необходимость. Убираем клавиатуру, чтобы не тапали дважды."""
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer(texts.BASELINE_START_TOAST)
 
 
 @router.message(OnboardingStates.waiting_for_baseline_reps)
