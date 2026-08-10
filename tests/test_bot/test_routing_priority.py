@@ -9,13 +9,9 @@ from datetime import UTC, datetime
 
 import pytest
 from aiogram import Bot, Dispatcher
-from aiogram.client.session.base import BaseSession
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.methods import TelegramMethod
-from aiogram.types import Chat, Message, TelegramObject, Update
+from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
 
-from app.bot.handlers import router as app_router
 from app.bot.states import (
     BackdateStates,
     EditWorkoutStates,
@@ -25,30 +21,6 @@ from app.bot.states import (
 )
 from app.db.models import User
 from app.db.repositories.users import UserRepository
-
-# Токен формально валиден для Bot(...) (цифры:остальное), реальных запросов
-# не делает — все исходящие вызовы перехватывает _StubSession ниже.
-_FAKE_TOKEN = "123456789:AAFakeTokenForRoutingTestsOnly0000000000"
-
-
-class _StubSession(BaseSession):
-    """Ни одного реального обращения к api.telegram.org — только чтобы
-    message.answer()/callback.answer() внутри хендлеров не падали."""
-
-    async def close(self) -> None:
-        return None
-
-    async def make_request(
-        self, bot: Bot, method: TelegramMethod[TelegramObject], timeout: int | None = None,
-    ) -> TelegramObject:
-        if isinstance(method.__returning__, bool | type(None)):  # answerCallbackQuery и т.п.
-            return True
-        return Message(
-            message_id=1, date=datetime.now(UTC), chat=Chat(id=1, type="private"), text="stub",
-        )
-
-    async def stream_content(self, *args, **kwargs):  # pragma: no cover - не используется в этих тестах
-        yield b""
 
 
 def _cancel_update(*, telegram_id: int) -> Update:
@@ -77,23 +49,6 @@ WAITING_FOR_INPUT_STATES = [
     BackdateStates.waiting_for_block_b,
     RetestStates.waiting_for_baseline_reps,
 ]
-
-
-@pytest.fixture(scope="module")
-def bot() -> Bot:
-    return Bot(token=_FAKE_TOKEN, session=_StubSession())
-
-
-@pytest.fixture(scope="module")
-def dispatcher() -> Dispatcher:
-    # Router можно include_router() только один раз за время жизни объекта
-    # (aiogram запрещает повторное присоединение) — Dispatcher строится
-    # один раз на модуль и переиспользуется между параметризованными
-    # прогонами; общее MemoryStorage это не портит, каждый тест сам
-    # выставляет своё состояние перед feed_update и проверяет после.
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.include_router(app_router)
-    return dp
 
 
 @pytest.mark.parametrize("state_to_set", WAITING_FOR_INPUT_STATES, ids=lambda s: s.state)

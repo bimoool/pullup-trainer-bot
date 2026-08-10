@@ -12,6 +12,7 @@ from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
     back_cancel_keyboard,
     cancel_keyboard,
+    end_cycle_confirm_keyboard,
     equipment_type_keyboard,
     skip_comment_keyboard,
     workout_result_keyboard,
@@ -51,6 +52,58 @@ async def _ensure_active_workout_set(session: AsyncSession, user_id: int) -> Wor
     if baseline is None:
         return None
     return await workout_sets.create(user_id=user_id, started_from_baseline_id=baseline.id)
+
+
+@router.callback_query(F.data == "end_cycle_prompt")
+async def handle_end_cycle_prompt(callback: CallbackQuery, session: AsyncSession) -> None:
+    """Добровольное завершение цикла раньше 12 тренировок — доступно из
+    «Профиль» в любой момент. Ничего не меняем здесь, только предупреждаем;
+    реальное действие — только после явного подтверждения ниже."""
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    active_set = await WorkoutSetRepository(session).get_active_for_user(user.id)
+    if active_set is None:
+        await callback.answer(texts.END_CYCLE_NOTHING_ACTIVE, show_alert=True)
+        return
+
+    await callback.message.answer(texts.END_CYCLE_WARNING, reply_markup=end_cycle_confirm_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "end_cycle_cancel")
+async def handle_end_cycle_cancel(callback: CallbackQuery) -> None:
+    await callback.answer(texts.CANCELLED)
+
+
+@router.callback_query(F.data == "end_cycle_confirm")
+async def handle_end_cycle_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Закрывает активный WorkoutSet статусом ABANDONED (тот же статус и
+    метод, что уже существовали для этого случая — WorkoutSetRepository.
+    mark_abandoned, просто раньше не был подключён ни к одному сценарию) и
+    переиспользует ретест-флоу: то же состояние RetestStates и тот же
+    handle_retest_baseline, что и при просроченном замере — он сам заведёт
+    новый Baseline, новый WorkoutSet (см. _ensure_active_workout_set) и
+    сбросит цели/снаряд на стартовые. Старые тренировки никуда не деваются
+    и не архивируются отдельно — они уже физически отделены от нового
+    цикла через workout_set_id закрытого сета; История/Прогресс/Отчёты
+    продолжают показывать полную непрерывную историю пользователя, как и
+    раньше — это не отдельные "циклы" для них, а один и тот же трекинг."""
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    workout_sets = WorkoutSetRepository(session)
+    active_set = await workout_sets.get_active_for_user(user.id)
+    if active_set is None:
+        await callback.answer(texts.END_CYCLE_NOTHING_ACTIVE, show_alert=True)
+        return
+
+    await workout_sets.mark_abandoned(active_set.id, abandoned_at=datetime.now(UTC))
+
+    await state.set_state(RetestStates.waiting_for_baseline_reps)
+    await callback.message.answer(texts.END_CYCLE_DONE)
+    await callback.message.answer(texts.BASELINE_GUIDE)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "show_plan")

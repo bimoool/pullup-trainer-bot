@@ -305,3 +305,46 @@ async def test_list_for_user_includes_backdated_and_excludes_started(session, us
 
     workouts = await repo.list_for_user(user.id)
     assert [w.id for w in workouts] == [completed.id, backdated.id]
+
+
+async def test_abandoned_set_workouts_stay_with_old_set_after_cycle_restart(session, user: User):
+    """"Завершить цикл и начать заново" (Профиль) не архивирует и не
+    перемещает старые тренировки — они уже физически отделены от нового
+    цикла через workout_set_id, см. app/bot/handlers/workout.py::
+    handle_end_cycle_confirm. list_for_user (История/Прогресс/Отчёты)
+    продолжает видеть обе тренировки — это единая непрерывная история."""
+    old_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    old_workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=old_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    workout_sets = WorkoutSetRepository(session)
+    await workout_sets.mark_abandoned(old_set_id, abandoned_at=_day(2))
+    new_baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=_day(2), reps=10,
+    )
+    new_set = await workout_sets.create(user_id=user.id, started_from_baseline_id=new_baseline.id)
+
+    new_workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=new_set.id, performed_at=_day(3),
+        block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=10),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    # старая тренировка осталась в старом (заброшенном) сете
+    old_set_workouts = await repo.list_for_set(old_set_id)
+    assert [w.id for w in old_set_workouts] == [old_workout.id]
+    new_set_workouts = await repo.list_for_set(new_set.id)
+    assert [w.id for w in new_set_workouts] == [new_workout.id]
+
+    # но обе видны в общей истории пользователя — ничего не спрятано
+    all_workouts = await repo.list_for_user(user.id)
+    assert [w.id for w in all_workouts] == [old_workout.id, new_workout.id]

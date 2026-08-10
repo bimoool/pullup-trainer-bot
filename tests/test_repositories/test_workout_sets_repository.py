@@ -79,3 +79,30 @@ async def test_mark_abandoned(session, user: User):
     abandoned = await repo.mark_abandoned(workout_set.id, abandoned_at=datetime(2026, 2, 1, tzinfo=UTC))
 
     assert abandoned.status == WorkoutSetStatus.ABANDONED
+
+
+async def test_mark_abandoned_frees_up_active_slot_for_a_new_set(session, user: User):
+    """Сценарий "завершить цикл и начать заново": после mark_abandoned у
+    пользователя нет активного сета, и можно завести новый (от нового
+    замера) независимо от старого — это ровно то, на чём держится кнопка
+    «Завершить цикл» в Профиле (переиспользует _ensure_active_workout_set
+    в app/bot/handlers/workout.py)."""
+    old_baseline_id = await _make_baseline(session, user)
+    repo = WorkoutSetRepository(session)
+    old_set = await repo.create(user_id=user.id, started_from_baseline_id=old_baseline_id)
+
+    await repo.mark_abandoned(old_set.id, abandoned_at=datetime(2026, 2, 1, tzinfo=UTC))
+    assert await repo.get_active_for_user(user.id) is None
+
+    new_baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=datetime(2026, 2, 1, tzinfo=UTC), reps=12,
+    )
+    new_set = await repo.create(user_id=user.id, started_from_baseline_id=new_baseline.id)
+
+    active = await repo.get_active_for_user(user.id)
+    assert active is not None
+    assert active.id == new_set.id
+    assert new_set.set_number == old_set.set_number + 1  # нумерация сетов продолжается, не сбрасывается
+
+    reloaded_old_set = await repo.get_by_id(old_set.id)
+    assert reloaded_old_set.status == WorkoutSetStatus.ABANDONED  # старый сет не тронут второй операцией

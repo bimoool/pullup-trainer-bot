@@ -185,3 +185,18 @@ def admin_user_card_keyboard(user_id: int) -> InlineKeyboardMarkup:
     builder.button(text="← К списку", callback_data="admin_users")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def profile_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Завершить цикл и начать заново", callback_data="end_cycle_prompt")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def end_cycle_confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить", callback_data="end_cycle_confirm")
+    builder.button(text="❌ Отмена", callback_data="end_cycle_cancel")
+    builder.adjust(2)
+    return builder.as_markup()

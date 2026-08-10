@@ -9,6 +9,7 @@ from app.bot.keyboards import (
     BOTTOM_MENU_PROFILE,
     BOTTOM_MENU_PROGRESS,
     BOTTOM_MENU_WORKOUT,
+    profile_keyboard,
     progress_section_keyboard,
     workout_section_keyboard,
 )
@@ -83,7 +84,7 @@ async def handle_profile_section(message: Message, state: FSMContext, session: A
         achievement_count=len(achievements),
         achievement_list=achievement_list,
     )
-    await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}")
+    await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=profile_keyboard())
 
 
 @router.message(F.text == BOTTOM_MENU_HELP)
