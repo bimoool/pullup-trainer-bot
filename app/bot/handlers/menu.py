@@ -1,9 +1,12 @@
+from datetime import UTC, datetime
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
+from app.bot.formatting import calculate_age
 from app.bot.keyboards import (
     BOTTOM_MENU_HELP,
     BOTTOM_MENU_PROFILE,
@@ -14,8 +17,9 @@ from app.bot.keyboards import (
     progress_section_keyboard,
     workout_section_keyboard,
 )
+from app.bot.timezones import format_timezone_label
 from app.config import settings
-from app.db.models import SubscriptionStatus
+from app.db.models import Gender, SubscriptionStatus, User
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
 from app.domain.achievements import AchievementCode
@@ -43,6 +47,11 @@ _SUBSCRIPTION_LABELS = {
     SubscriptionStatus.EXPIRED: "истекла",
 }
 
+_GENDER_LABELS = {
+    Gender.MALE: texts.PROFILE_GENDER_MALE,
+    Gender.FEMALE: texts.PROFILE_GENDER_FEMALE,
+}
+
 
 @router.message(F.text == BOTTOM_MENU_WORKOUT)
 async def handle_workout_section(message: Message, state: FSMContext) -> None:
@@ -56,33 +65,46 @@ async def handle_progress_section(message: Message, state: FSMContext) -> None:
     await message.answer(texts.SECTION_PROGRESS_TITLE, reply_markup=progress_section_keyboard())
 
 
-@router.message(F.text == BOTTOM_MENU_PROFILE)
-async def handle_profile_section(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    await state.clear()
+def _format_subscription(user: User) -> str:
+    label = _SUBSCRIPTION_LABELS[user.subscription_status]
+    if user.subscription_expires_at is not None and user.subscription_status in (
+        SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE,
+    ):
+        days_left = max((user.subscription_expires_at.date() - datetime.now(UTC).date()).days, 0)
+        label += texts.PROFILE_SUBSCRIPTION_DAYS_LEFT.format(
+            days_left=days_left, expires_at=user.subscription_expires_at.strftime("%d.%m.%Y"),
+        )
+    return label
+
+
+async def render_profile(message: Message, session: AsyncSession) -> None:
+    """Вынесено из handle_profile_section — переиспользуется хендлером
+    "← Назад" в редактировании профиля (см. profile_edit.py), чтобы после
+    правки поля просто перерисовать актуальный профиль, а не дублировать
+    сборку текста."""
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
     if achievements:
+        # Без тире перед эмодзи (Часть 10) — сами эмодзи уже достаточно
+        # разделяют пункты списка, тире было лишним.
         achievement_list = "\n".join(
-            f"— {_ACHIEVEMENT_LABELS.get(AchievementCode(a.code), a.code)}" for a in achievements
+            _ACHIEVEMENT_LABELS.get(AchievementCode(a.code), a.code) for a in achievements
         )
     else:
         achievement_list = texts.PROFILE_NO_ACHIEVEMENTS
 
-    subscription = _SUBSCRIPTION_LABELS[user.subscription_status]
-    if user.subscription_expires_at is not None and user.subscription_status in (
-        SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE,
-    ):
-        subscription += f" до {user.subscription_expires_at.strftime('%d.%m.%Y')}"
+    age = calculate_age(user.birth_date, datetime.now(UTC).date()) if user.birth_date is not None else None
 
     body = texts.PROFILE_BODY.format(
+        subscription=_format_subscription(user),
         weight_kg=user.weight_kg if user.weight_kg is not None else texts.PROFILE_NOT_SET,
         height_cm=user.height_cm if user.height_cm is not None else texts.PROFILE_NOT_SET,
-        age=user.age if user.age is not None else texts.PROFILE_NOT_SET,
-        timezone=user.timezone or texts.PROFILE_NOT_SET,
+        gender=_GENDER_LABELS[user.gender] if user.gender is not None else texts.PROFILE_NOT_SET,
+        age=age if age is not None else texts.PROFILE_NOT_SET,
+        timezone=format_timezone_label(user.timezone) if user.timezone else texts.PROFILE_NOT_SET,
         coins=user.coins_balance,
-        subscription=subscription,
         achievement_count=len(achievements),
         achievement_list=achievement_list,
     )
@@ -90,7 +112,19 @@ async def handle_profile_section(message: Message, state: FSMContext, session: A
     await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=profile_keyboard(is_admin=is_admin))
 
 
+@router.message(F.text == BOTTOM_MENU_PROFILE)
+async def handle_profile_section(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    await state.clear()
+    await render_profile(message, session)
+
+
 @router.message(F.text == BOTTOM_MENU_HELP)
 async def handle_help_section(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(texts.HELP_TEXT, reply_markup=help_keyboard())
+
+
+@router.callback_query(F.data == "help_detailed")
+async def handle_help_detailed(callback: CallbackQuery) -> None:
+    await callback.message.answer(texts.HELP_DETAILED_TEXT)
+    await callback.answer()

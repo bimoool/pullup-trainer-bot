@@ -3,10 +3,27 @@ from aiogram.fsm.state import State, StatesGroup
 
 class OnboardingStates(StatesGroup):
     waiting_for_baseline_reps = State()
+    # Подтверждение введённого числа (Часть 10 — живое тестирование
+    # показало, что опечатку в замере до этого нечем было поймать):
+    # baseline не пишется в БД, пока не подтверждён.
+    waiting_for_baseline_confirm = State()
     waiting_for_weight = State()
     waiting_for_height = State()
-    waiting_for_age = State()
-    waiting_for_timezone = State()  # выбор кнопкой, но состояние нужно для game-over защиты от левого ввода
+    waiting_for_gender = State()
+    waiting_for_birth_date = State()
+    waiting_for_timezone = State()  # свободный текст (город), см. app/bot/timezones.py
+
+
+class ProfileEditStates(StatesGroup):
+    """«✏️ Изменить профиль» — те же вопросы/валидация, что и в анкете, но
+    по одному полю за раз (не пересобирать весь профиль ради одного
+    изменившегося числа)."""
+
+    waiting_for_weight = State()
+    waiting_for_height = State()
+    waiting_for_gender = State()
+    waiting_for_birth_date = State()
+    waiting_for_timezone = State()
 
 
 class RetestStates(StatesGroup):

@@ -5,6 +5,15 @@
 from datetime import date
 
 from app.bot import texts
+
+
+def calculate_age(birth_date: date, today: date) -> int:
+    """Возраст на дисплей считается на лету (Часть 10) — хранить числом
+    бессмысленно, оно устаревает само по себе каждый день рождения."""
+    years = today.year - birth_date.year
+    if (today.month, today.day) < (birth_date.month, birth_date.day):
+        years -= 1
+    return years
 from app.domain.recommendations import (
     Recommendation,
     RecommendationCode,

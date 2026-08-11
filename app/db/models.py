@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -81,6 +82,11 @@ class CoinReason(StrEnum):
     ADMIN_ADJUSTMENT = "admin_adjustment"
 
 
+class Gender(StrEnum):
+    MALE = "male"
+    FEMALE = "female"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -89,7 +95,11 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String, nullable=True)
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     height_cm: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    age: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    gender: Mapped[Gender | None] = mapped_column(_pg_enum(Gender, "gender"), nullable=True)
+    # Возраст больше не хранится числом (сразу устаревает) — дата рождения,
+    # возраст на дисплей считается на лету (см. app/bot/formatting.py::
+    # calculate_age), см. Часть 10 респека.
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     timezone: Mapped[str | None] = mapped_column(String, nullable=True)
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     subscription_status: Mapped[SubscriptionStatus] = mapped_column(

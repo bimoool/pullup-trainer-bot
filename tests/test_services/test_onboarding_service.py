@@ -1,6 +1,6 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
-from app.db.models import SubscriptionStatus, User
+from app.db.models import Gender, SubscriptionStatus, User
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.domain.constants import TRIAL_DAYS
@@ -48,12 +48,14 @@ async def test_complete_questionnaire_starts_trial(session, user: User):
     service = OnboardingService(session)
 
     updated_user = await service.complete_questionnaire_and_start_trial(
-        user_id=user.id, weight_kg=78, height_cm=180, age=27, timezone="Europe/Moscow", now=NOW,
+        user_id=user.id, weight_kg=78, height_cm=180,
+        gender=Gender.MALE, birth_date=date(1998, 5, 20), timezone="Europe/Moscow", now=NOW,
     )
 
     assert updated_user.weight_kg == 78
     assert updated_user.height_cm == 180
-    assert updated_user.age == 27
+    assert updated_user.gender == Gender.MALE
+    assert updated_user.birth_date == date(1998, 5, 20)
     assert updated_user.timezone == "Europe/Moscow"
     assert updated_user.onboarding_completed_at == NOW
     assert updated_user.subscription_status == SubscriptionStatus.TRIAL

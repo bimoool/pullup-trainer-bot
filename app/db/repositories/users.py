@@ -1,10 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import SubscriptionStatus, User
+from app.db.models import Gender, SubscriptionStatus, User
 
 
 class UserRepository:
@@ -42,7 +42,8 @@ class UserRepository:
         *,
         weight_kg: Decimal | None = None,
         height_cm: int | None = None,
-        age: int | None = None,
+        gender: Gender | None = None,
+        birth_date: date | None = None,
         timezone: str | None = None,
     ) -> User:
         user = await self._session.get_one(User, user_id)
@@ -50,8 +51,10 @@ class UserRepository:
             user.weight_kg = weight_kg
         if height_cm is not None:
             user.height_cm = height_cm
-        if age is not None:
-            user.age = age
+        if gender is not None:
+            user.gender = gender
+        if birth_date is not None:
+            user.birth_date = birth_date
         if timezone is not None:
             user.timezone = timezone
         await self._session.flush()

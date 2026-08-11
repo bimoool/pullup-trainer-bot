@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Baseline, User, WorkoutSet
+from app.db.models import Baseline, Gender, User, WorkoutSet
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -55,12 +55,14 @@ class OnboardingService:
         user_id: int,
         weight_kg: Decimal,
         height_cm: int,
-        age: int,
+        gender: Gender,
+        birth_date: date,
         timezone: str,
         now: datetime,
     ) -> User:
         await self._users.update_profile(
-            user_id, weight_kg=weight_kg, height_cm=height_cm, age=age, timezone=timezone,
+            user_id, weight_kg=weight_kg, height_cm=height_cm,
+            gender=gender, birth_date=birth_date, timezone=timezone,
         )
         await self._users.complete_onboarding(user_id, now)
         return await self._subscriptions.start_trial(user_id, now=now)

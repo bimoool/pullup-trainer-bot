@@ -52,7 +52,7 @@ async def reset_user_progress(session: AsyncSession, user_id: int) -> None:
     await session.execute(
         text(
             "UPDATE users SET onboarding_completed_at = NULL, weight_kg = NULL, height_cm = NULL, "
-            "age = NULL, timezone = NULL WHERE id = :user_id",
+            "gender = NULL, birth_date = NULL, timezone = NULL WHERE id = :user_id",
         ),
         params,
     )

@@ -1,6 +1,6 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-from app.db.models import SubscriptionStatus, User
+from app.db.models import Gender, SubscriptionStatus, User
 from app.db.repositories.users import UserRepository
 
 
@@ -35,12 +35,14 @@ async def test_update_profile_partial(session, user: User):
     updated = await repo.get_by_id(user.id)
     assert updated.weight_kg == 80
     assert updated.height_cm == 180
-    assert updated.age is None
+    assert updated.gender is None
+    assert updated.birth_date is None
 
-    await repo.update_profile(user.id, age=30)
+    await repo.update_profile(user.id, gender=Gender.MALE, birth_date=date(1996, 5, 20))
     updated_again = await repo.get_by_id(user.id)
     assert updated_again.weight_kg == 80  # не затёрлось
-    assert updated_again.age == 30
+    assert updated_again.gender == Gender.MALE
+    assert updated_again.birth_date == date(1996, 5, 20)
 
 
 async def test_update_subscription_cache(session, user: User):

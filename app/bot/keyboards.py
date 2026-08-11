@@ -6,23 +6,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-# Часовой пояс выбирается кнопкой из фиксированного списка, а не парсингом
-# свободного текста ("напиши город") — без города-в-IANA-таймзону словаря
-# (и его неизбежных дыр на редких городах/опечатках) это надёжнее.
-# Один город-ориентир на каждый часовой пояс РФ (UTC+2..UTC+12).
-TIMEZONE_CHOICES: list[tuple[str, str]] = [
-    ("Калининград (UTC+2)", "Europe/Kaliningrad"),
-    ("Москва (UTC+3)", "Europe/Moscow"),
-    ("Самара (UTC+4)", "Europe/Samara"),
-    ("Екатеринбург (UTC+5)", "Asia/Yekaterinburg"),
-    ("Омск (UTC+6)", "Asia/Omsk"),
-    ("Красноярск (UTC+7)", "Asia/Krasnoyarsk"),
-    ("Иркутск (UTC+8)", "Asia/Irkutsk"),
-    ("Якутск (UTC+9)", "Asia/Yakutsk"),
-    ("Владивосток (UTC+10)", "Asia/Vladivostok"),
-    ("Магадан (UTC+11)", "Asia/Magadan"),
-    ("Камчатка (UTC+12)", "Asia/Kamchatsky"),
-]
+from app.bot import texts
 
 # callback_data этих кнопок обязаны совпадать со значениями EquipmentType —
 # хендлер разбирает "equip:<value>" напрямую через EquipmentType(value).
@@ -60,11 +44,22 @@ def baseline_start_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def timezone_keyboard() -> InlineKeyboardMarkup:
+def baseline_confirm_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for label, iana_name in TIMEZONE_CHOICES:
-        builder.button(text=label, callback_data=f"tz:{iana_name}")
-    builder.adjust(1)
+    builder.button(text="✅ Подтвердить", callback_data="baseline_confirm")
+    builder.button(text="✏️ Ввести заново", callback_data="baseline_reenter")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def gender_keyboard(back_callback: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.GENDER_LABEL_MALE, callback_data="gender:male")
+    builder.button(text=texts.GENDER_LABEL_FEMALE, callback_data="gender:female")
+    if back_callback is not None:
+        builder.button(text="← Назад", callback_data=back_callback)
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(2, 1, 1)
     return builder.as_markup()
 
 
@@ -90,7 +85,9 @@ def progress_section_keyboard() -> InlineKeyboardMarkup:
 
 def help_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(text=texts.HELP_DETAILED_BUTTON, callback_data="help_detailed")
     builder.button(text="💬 Сообщить о проблеме", callback_data="report_problem")
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -247,10 +244,23 @@ def admin_user_card_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def profile_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Изменить профиль", callback_data="profile_edit_open")
     builder.button(text="🎗 Мои резины", callback_data="equipment_list_open")
     builder.button(text="🔄 Завершить цикл и начать заново", callback_data="end_cycle_prompt")
     if is_admin:
         builder.button(text="🧪 Полный сброс (админ)", callback_data="admin_reset_prompt")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def profile_edit_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.PROFILE_EDIT_BUTTON_WEIGHT, callback_data="profile_edit:weight")
+    builder.button(text=texts.PROFILE_EDIT_BUTTON_HEIGHT, callback_data="profile_edit:height")
+    builder.button(text=texts.PROFILE_EDIT_BUTTON_GENDER, callback_data="profile_edit:gender")
+    builder.button(text=texts.PROFILE_EDIT_BUTTON_BIRTH_DATE, callback_data="profile_edit:birth_date")
+    builder.button(text=texts.PROFILE_EDIT_BUTTON_TIMEZONE, callback_data="profile_edit:timezone")
+    builder.button(text="← Назад", callback_data="profile_edit_close")
     builder.adjust(1)
     return builder.as_markup()
 
