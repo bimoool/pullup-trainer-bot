@@ -10,6 +10,7 @@ from app.bot.keyboards import (
     back_cancel_keyboard,
     band_item_picker_keyboard,
     band_reorder_keyboard,
+    cancel_keyboard,
     equipment_kg_keyboard,
     equipment_recommendation_keyboard,
     equipment_type_keyboard,
@@ -342,12 +343,69 @@ async def handle_equipment_list_open(callback: CallbackQuery, session: AsyncSess
     user = await users.get_by_telegram_id(callback.from_user.id)
     items = await EquipmentItemRepository(session).list_for_user(user.id)
 
-    if not items:
-        await callback.message.answer(texts.MY_BANDS_EMPTY)
-        await callback.answer()
+    # "➕ Добавить резину" видна всегда (Часть 10, п. 22) — даже при пустом
+    # списке, поэтому MY_BANDS_EMPTY больше не тупиковый текст без кнопок.
+    title = texts.MY_BANDS_TITLE if items else texts.MY_BANDS_EMPTY
+    await callback.message.answer(title, reply_markup=band_reorder_keyboard(items))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "band_add_standalone")
+async def handle_band_add_standalone_start(callback: CallbackQuery, state: FSMContext) -> None:
+    """Заведение резины заранее, вне тренировки (Часть 10, п. 22) — та же
+    пара шагов имя+кг, что и в очереди снаряда, но без block-контекста:
+    отдельные состояния, чтобы не путать с equipment_queue-флоу."""
+    await state.set_state(EquipmentStates.waiting_for_standalone_item_name)
+    await callback.message.answer(texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=cancel_keyboard())
+    await callback.answer()
+
+
+@router.message(EquipmentStates.waiting_for_standalone_item_name)
+async def handle_band_add_standalone_name(message: Message, state: FSMContext) -> None:
+    name = (message.text or "").strip()
+    if not name:
+        await message.answer(texts.EQUIPMENT_BAND_NAME_INVALID)
         return
 
-    await callback.message.answer(texts.MY_BANDS_TITLE, reply_markup=band_reorder_keyboard(items))
+    await state.update_data(pending_standalone_item_name=name)
+    await state.set_state(EquipmentStates.waiting_for_standalone_item_kg)
+    await message.answer(texts.EQUIPMENT_BAND_KG_PROMPT, reply_markup=equipment_kg_keyboard("cancel_flow"))
+
+
+async def _create_standalone_band_item(
+    message: Message, state: FSMContext, session: AsyncSession, *, user_id: int, resistance_kg: Decimal | None,
+) -> None:
+    data = await state.get_data()
+    await EquipmentItemRepository(session).create(
+        user_id=user_id, name=data["pending_standalone_item_name"], resistance_kg=resistance_kg,
+    )
+    await state.clear()
+
+    items = await EquipmentItemRepository(session).list_for_user(user_id)
+    await message.answer(texts.MY_BANDS_TITLE, reply_markup=band_reorder_keyboard(items))
+
+
+@router.message(EquipmentStates.waiting_for_standalone_item_kg)
+async def handle_band_add_standalone_kg(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    try:
+        value = Decimal((message.text or "").strip().replace(",", "."))
+    except InvalidOperation:
+        await message.answer(texts.EQUIPMENT_BAND_KG_INVALID)
+        return
+    if value <= 0:
+        await message.answer(texts.EQUIPMENT_BAND_KG_INVALID)
+        return
+
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(message.from_user.id)
+    await _create_standalone_band_item(message, state, session, user_id=user.id, resistance_kg=value)
+
+
+@router.callback_query(EquipmentStates.waiting_for_standalone_item_kg, F.data == "skip_item_kg")
+async def handle_band_add_standalone_kg_skip(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+    await _create_standalone_band_item(callback.message, state, session, user_id=user.id, resistance_kg=None)
     await callback.answer()
 
 

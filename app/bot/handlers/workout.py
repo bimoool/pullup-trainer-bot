@@ -14,6 +14,7 @@ from app.bot.keyboards import (
     back_cancel_keyboard,
     cancel_keyboard,
     end_cycle_confirm_keyboard,
+    optional_exercise_keyboard,
     skip_comment_keyboard,
     workout_result_keyboard,
 )
@@ -275,7 +276,22 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
 
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_block_b)
+    # Предложение факультативной нагрузки на отдыхе — перед приглашением к
+    # блоку на силу (Часть 10, п. 20), не блокирует переход дальше.
+    await message.answer(texts.OPTIONAL_EXERCISE_OFFER, reply_markup=optional_exercise_keyboard())
     await message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("wk_back:block_a"))
+
+
+@router.callback_query(F.data == "optional_exercise:want")
+async def handle_optional_exercise_want(callback: CallbackQuery) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer(texts.OPTIONAL_EXERCISE_ACCEPTED_TOAST, show_alert=True)
+
+
+@router.callback_query(F.data == "optional_exercise:skip")
+async def handle_optional_exercise_skip(callback: CallbackQuery) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer(texts.OPTIONAL_EXERCISE_SKIPPED_TOAST)
 
 
 @router.message(WorkoutStates.waiting_for_block_b)
@@ -319,6 +335,13 @@ async def _finalize_workout(
     message: Message, state: FSMContext, session: AsyncSession, *, comment: str | None,
 ) -> None:
     data = await state.get_data()
+    # Очищаем состояние ДО записи в БД (Часть 10, диагностика бага с
+    # "Пропустить"): запись тренировки — это await, и пока он выполняется,
+    # повторный тап (двойной клик/медленная сеть) по той же кнопке успевал
+    # снова пройти фильтр WorkoutStates.waiting_for_comment (состояние ещё
+    # не очищено) и мог записать ту же тренировку дважды. Теперь второй тап
+    # просто не находит подходящий хендлер — тихий no-op вместо гонки.
+    await state.clear()
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
 
@@ -359,7 +382,6 @@ async def _finalize_workout(
     summary = texts.WORKOUT_SUMMARY.format(target_a=block_a.target_after, target_b=block_b.target_after)
     summary += _block_outcome_suffix(block_a) + _block_outcome_suffix(block_b)
 
-    await state.clear()
     await message.answer(summary, reply_markup=workout_result_keyboard())
 
     # "По закрытии сета (12 тренировок) — большой отчёт" (Часть 5 респека).

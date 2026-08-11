@@ -155,3 +155,60 @@ async def test_band_move_swaps_positions(session, user: User, bot: Bot, dispatch
 
     items = await repo.list_for_user(user.id)
     assert [item.id for item in items] == [second.id, first.id]
+
+
+# --- "➕ Добавить резину" из Профиля, вне тренировки (Часть 10, п. 22) ------------
+
+
+async def test_standalone_add_band_with_kg(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="band_add_standalone"), session=session,
+    )
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    assert await fsm.get_state() == EquipmentStates.waiting_for_standalone_item_name.state
+
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="фиолетовая"), session=session,
+    )
+    assert await fsm.get_state() == EquipmentStates.waiting_for_standalone_item_kg.state
+
+    await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="18"), session=session)
+
+    items = await EquipmentItemRepository(session).list_for_user(user.id)
+    assert len(items) == 1
+    assert items[0].name == "фиолетовая"
+    assert items[0].resistance_kg == 18
+    assert await fsm.get_state() is None
+
+
+async def test_standalone_add_band_skip_kg(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(EquipmentStates.waiting_for_standalone_item_name)
+
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="зелёная"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="skip_item_kg"), session=session,
+    )
+
+    items = await EquipmentItemRepository(session).list_for_user(user.id)
+    assert len(items) == 1
+    assert items[0].resistance_kg is None
+
+
+async def test_equipment_list_open_shows_add_button_even_when_empty(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+
+    # не должно упасть/зайти в тупик без клавиатуры — сам факт, что дальше
+    # можно нажать "band_add_standalone", проверяет предыдущий тест
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equipment_list_open"), session=session,
+    )
+    items = await EquipmentItemRepository(session).list_for_user(user.id)
+    assert items == []

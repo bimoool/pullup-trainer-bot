@@ -540,3 +540,67 @@ async def test_correct_block_equipment_updates_item_id(session, user: User):
     )
 
     assert _block(updated, "a").equipment_item_id == other_item.id
+
+
+# --- record_free_workout (Часть 10, п. 18) -----------------------------------------
+
+
+async def test_record_free_workout_stores_reps_as_block_a_max(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    workout = await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1), reps=8,
+    )
+
+    block_a, block_b = _block(workout, "a"), _block(workout, "b")
+    assert block_a.working_reps == []
+    assert block_a.max_reps == 8
+    assert block_a.equipment_type == EquipmentType.BODYWEIGHT
+    assert block_b.max_reps == 0
+    assert workout.participates_in_cascade is False
+    assert workout.sequence_number is None
+    assert workout.is_free_entry is True
+
+
+async def test_record_free_workout_does_not_increment_set_counter(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    await repo.record_free_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1), reps=8)
+
+    workout_set = await WorkoutSetRepository(session).get_by_id(workout_set_id)
+    assert workout_set.workouts_completed == 0
+
+
+async def test_record_free_workout_does_not_affect_resolve_next_targets(session, user: User):
+    """Часть 10: свободная тренировка не должна становиться "последним
+    известным снарядом" для следующей структурированной — иначе прогрессия
+    на реальном снаряде (например BAND) молча съехала бы на bodyweight."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    real_workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    real_block_a = _block(real_workout, "a")
+
+    await repo.record_free_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2), reps=8)
+
+    target_a_state, _ = await repo.resolve_next_targets(user.id)
+    assert target_a_state.equipment_type == EquipmentType.BAND
+    assert target_a_state.target == real_block_a.target_after
+
+
+async def test_record_free_workout_appears_in_list_for_user_for_stats(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    await repo.record_free_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1), reps=8)
+
+    history = await repo.list_for_user(user.id)
+    assert len(history) == 1
+    assert history[0].is_free_entry is True

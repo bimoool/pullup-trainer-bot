@@ -206,6 +206,16 @@ class Workout(Base):
     participates_in_cascade: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true",
     )
+    # "➕ Внести свободные подтягивания" (Часть 10, п. 18) — произвольная
+    # тренировка вне схемы: не в сете из 12 (increment_completed не
+    # вызывается), не в цепочке каскада (participates_in_cascade=False, как
+    # у бэкдейта), И ДОПОЛНИТЕЛЬНО не должна становиться "последним снарядом/
+    # целью" для следующей структурированной тренировки — WorkoutRepository.
+    # resolve_next_targets/complete_workout явно фильтруют такие записи из
+    # истории перед тем, как вывести из неё текущее состояние прогрессии
+    # (см. комментарии там же). В "Историю"/статистику/объём попадает как
+    # обычно — это НЕ фильтруется.
+    is_free_entry: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     exercise_type: Mapped[ExerciseType] = mapped_column(
         _pg_enum(ExerciseType, "exercise_type"),
         nullable=False,

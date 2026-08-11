@@ -4,6 +4,7 @@ from app.bot.handlers.admin import router as admin_router
 from app.bot.handlers.backdate import router as backdate_router
 from app.bot.handlers.equipment import router as equipment_router
 from app.bot.handlers.feedback import router as feedback_router
+from app.bot.handlers.free_workout import router as free_workout_router
 from app.bot.handlers.history import router as history_router
 from app.bot.handlers.menu import router as menu_router
 from app.bot.handlers.onboarding import router as onboarding_router
@@ -32,6 +33,7 @@ router.include_router(equipment_router)
 router.include_router(workout_router)
 router.include_router(workout_edit_router)
 router.include_router(backdate_router)
+router.include_router(free_workout_router)
 router.include_router(history_router)
 router.include_router(reports_router)
 router.include_router(admin_router)

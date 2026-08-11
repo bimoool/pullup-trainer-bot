@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import cancel_keyboard
+from app.bot.keyboards import cancel_keyboard, feedback_admin_reply_keyboard
 from app.bot.states import FeedbackStates
 from app.config import settings
 from app.db.repositories.events import EventRepository
@@ -47,7 +47,9 @@ async def handle_report_problem_text(message: Message, state: FSMContext, sessio
     )
     for admin_id in settings.admin_id_list:
         try:
-            await message.bot.send_message(admin_id, notification, parse_mode=None)
+            await message.bot.send_message(
+                admin_id, notification, parse_mode=None, reply_markup=feedback_admin_reply_keyboard(user.id),
+            )
         except TelegramAPIError:
             logger.warning("feedback: failed to notify admin %s", admin_id, exc_info=True)
 

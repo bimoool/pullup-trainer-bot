@@ -24,7 +24,17 @@ FAKE_TOKEN = "123456789:AAFakeTokenForBotTestsOnly000000000000000"
 
 class StubSession(BaseSession):
     """Ни одного реального обращения к api.telegram.org — только чтобы
-    message.answer()/callback.answer() внутри хендлеров не падали."""
+    message.answer()/callback.answer() внутри хендлеров не падали.
+
+    sent_methods — все исходящие вызовы (send_message и т.п.) запоминаются
+    как есть, чтобы тесты могли проверить не только побочные эффекты в БД,
+    но и что реально отправлено (текст, reply_markup) — очищается перед
+    каждым тестом отдельной fixture ниже, session-scope у bot/dispatcher
+    иначе означал бы накопление между файлами."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent_methods: list[TelegramMethod] = []
 
     async def close(self) -> None:
         return None
@@ -32,6 +42,7 @@ class StubSession(BaseSession):
     async def make_request(
         self, bot: Bot, method: TelegramMethod[TelegramObject], timeout: int | None = None,
     ) -> TelegramObject:
+        self.sent_methods.append(method)
         if isinstance(method.__returning__, bool | type(None)):  # answerCallbackQuery и т.п.
             return True
         return Message(
@@ -52,3 +63,10 @@ def dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(app_router)
     return dp
+
+
+@pytest.fixture(autouse=True)
+def _clear_sent_methods(bot: Bot):
+    bot.session.sent_methods.clear()
+    yield
+    bot.session.sent_methods.clear()

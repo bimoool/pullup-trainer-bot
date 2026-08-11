@@ -33,6 +33,17 @@ def _find_block(workout: Workout, block_type: BlockType) -> Block:
     return next(b for b in workout.blocks if b.block_type == block_type)
 
 
+def _exclude_free_entries(workouts: list[Workout]) -> list[Workout]:
+    """"➕ Внести свободные подтягивания" (Часть 10, п. 18) — попадает в
+    статистику/список истории как обычно (list_for_user не фильтрует), но
+    НЕ должна становиться "последним известным снарядом/целью" для
+    следующей структурированной тренировки: снаряд там всегда bodyweight
+    независимо от того, чем реально прогрессирует пользователь. Вызывать
+    перед тем, как вывести из истории текущее состояние прогрессии
+    (resolve_next_targets/complete_workout), не перед показом истории."""
+    return [w for w in workouts if not w.is_free_entry]
+
+
 def _workout_to_record(workout: Workout) -> WorkoutRecord:
     block_a, block_b = _find_block(workout, BlockType.A), _find_block(workout, BlockType.B)
     return WorkoutRecord(
@@ -146,7 +157,7 @@ class WorkoutRepository:
         ничего не знает про admin_ids. Не влияет на target/volume (которые
         читает complete_workout) — только на equipment_source/
         needs_new_equipment в _resolve_next_state, см. там."""
-        history = await self.list_for_user(user_id)
+        history = _exclude_free_entries(await self.list_for_user(user_id))
         return (
             self._resolve_next_state(
                 history, BlockType.A, VOLUME_BLOCK, bypass_transition_wait=bypass_transition_wait,
@@ -268,7 +279,7 @@ class WorkoutRepository:
         if workout is None:
             raise ValueError(f"workout {workout_id} not found")
 
-        history = await self.list_for_user(workout.user_id)
+        history = _exclude_free_entries(await self.list_for_user(workout.user_id))
         preceding = history[-1] if history else None
 
         state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
@@ -414,6 +425,62 @@ class WorkoutRepository:
 
         await self._session.flush()
         await self._workout_sets.increment_completed(workout.workout_set_id, completed_at=workout.performed_at)
+        await self._session.refresh(workout, attribute_names=["blocks"])
+        return workout
+
+    async def record_free_workout(
+        self, *, user_id: int, workout_set_id: int, performed_at: datetime, reps: int, comment: str | None = None,
+    ) -> Workout:
+        """"➕ Внести свободные подтягивания" (Часть 10, п. 18) —
+        произвольная тренировка вне схемы: попадает в общую
+        статистику/объём (list_for_user её не фильтрует), но НЕ в сет из 12
+        (increment_completed не вызывается — в отличие от
+        record_backdated_workout) и НЕ в цепочку каскада
+        (participates_in_cascade=False). Цель заморожена на текущей
+        (resolve_next_targets уже сам исключает такие записи из истории —
+        см. _exclude_free_entries) — эта запись её не двигает и не
+        участвует в подборе снаряда для следующей структурированной
+        тренировки.
+
+        Единственное число (reps) целиком уходит в max_reps блока "a"
+        (working_reps пустой — считать нечего, это не структурированный
+        подход) — так BlockLog.volume даёт ровно reps, без задвоения.
+        Блок "b" — нулевой, свободные подтягивания не относятся к силовому
+        блоку."""
+        history = _exclude_free_entries(await self.list_for_user(user_id))
+        state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
+        state_b = self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK)
+
+        workout = Workout(
+            user_id=user_id,
+            workout_set_id=workout_set_id,
+            performed_at=performed_at,
+            status=WorkoutStatus.COMPLETED,
+            comment=comment,
+            participates_in_cascade=False,
+            is_free_entry=True,
+        )
+        self._session.add(workout)
+        await self._session.flush()
+
+        self._session.add(
+            Block(
+                workout_id=workout.id, block_type=BlockType.A,
+                working_reps=[], max_reps=reps,
+                target_before=state_a.target, target_after=state_a.target,
+                equipment_changed=False, equipment_type=EquipmentType.BODYWEIGHT,
+            ),
+        )
+        self._session.add(
+            Block(
+                workout_id=workout.id, block_type=BlockType.B,
+                working_reps=[], max_reps=0,
+                target_before=state_b.target, target_after=state_b.target,
+                equipment_changed=False, equipment_type=EquipmentType.BODYWEIGHT,
+            ),
+        )
+
+        await self._session.flush()
         await self._session.refresh(workout, attribute_names=["blocks"])
         return workout
 

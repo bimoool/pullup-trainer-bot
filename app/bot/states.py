@@ -54,6 +54,12 @@ class EquipmentStates(StatesGroup):
     waiting_for_new_item_name = State()
     waiting_for_new_item_kg = State()
 
+    # "➕ Добавить резину" из Профиля (Часть 10, п. 22) — заведение снаряда
+    # заранее, вне очереди выбора для конкретного блока тренировки;
+    # отдельные состояния, чтобы не путать с equipment_queue-флоу выше.
+    waiting_for_standalone_item_name = State()
+    waiting_for_standalone_item_kg = State()
+
 
 class WorkoutStates(StatesGroup):
     waiting_for_block_a = State()
@@ -74,6 +80,13 @@ class BackdateStates(StatesGroup):
     waiting_for_date = State()
     waiting_for_block_a = State()
     waiting_for_block_b = State()
+
+
+class FreeWorkoutStates(StatesGroup):
+    """"➕ Внести свободные подтягивания" (Часть 10, п. 18) — вне схемы, вне
+    сета из 12, вне каскада, только число."""
+
+    waiting_for_reps = State()
 
 
 class FeedbackStates(StatesGroup):

@@ -124,6 +124,21 @@ class WorkoutLogService:
         )
         return workout
 
+    async def record_free_workout(
+        self, *, user_id: int, workout_set_id: int, performed_at: datetime, reps: int, comment: str | None = None,
+    ) -> Workout:
+        """"➕ Внести свободные подтягивания" (Часть 10, п. 18) — вне
+        каскада и вне сета из 12 (см. WorkoutRepository.record_free_workout),
+        поэтому ачивки/монеты за тренировку здесь не проверяем, как и для
+        record_backdated_workout."""
+        workout = await self._workouts.record_free_workout(
+            user_id=user_id, workout_set_id=workout_set_id, performed_at=performed_at, reps=reps, comment=comment,
+        )
+        await self._events.create(
+            user_id=user_id, event_type="free_workout_recorded", payload={"workout_id": workout.id, "reps": reps},
+        )
+        return workout
+
     async def _unlock_workout_achievements(self, user_id: int, workout: Workout) -> None:
         block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
         block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)

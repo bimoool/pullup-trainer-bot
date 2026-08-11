@@ -68,6 +68,7 @@ def workout_section_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="💪 Начать тренировку", callback_data="start_workout")
     builder.button(text="📋 Текущий план", callback_data="show_plan")
     builder.button(text="🔁 Внести пропущенную тренировку", callback_data="backdate_workout")
+    builder.button(text="➕ Внести свободные подтягивания", callback_data="free_workout_start")
     builder.button(text="✏️ Изменить тренировку", callback_data="edit_workout_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -111,6 +112,15 @@ def calendar_keyboard(year: int, month: int, weeks: list[list[int]], marked_days
         InlineKeyboardButton(text=f"{year:04d}-{month:02d}", callback_data="noop"),
         InlineKeyboardButton(text="▶️", callback_data=f"cal_month:{next_year:04d}-{next_month:02d}"),
     )
+    return builder.as_markup()
+
+
+def feedback_admin_reply_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Часть 10, п. 23 — под уведомлением админу о фидбеке: ведёт прямо в
+    уже существующий флоу личного сообщения (admin.py::handle_admin_dm_start),
+    отдельного механизма ответа заводить не нужно."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✉️ Ответить", callback_data=f"admin_dm:{user_id}")
     return builder.as_markup()
 
 
@@ -202,7 +212,10 @@ def band_reorder_keyboard(items: list) -> InlineKeyboardMarkup:
     """Реордер личного списка резин — порядок (не кг) определяет "следующий
     снаряд" при переходах (Часть 8), поэтому пользователь должен уметь его
     менять. Telegram не даёт drag-and-drop, поэтому реордер — стрелки
-    вверх/вниз у каждого пункта, свап с соседом за один тап."""
+    вверх/вниз у каждого пункта, свап с соседом за один тап.
+
+    "➕ Добавить резину" (Часть 10, п. 22) — заводить снаряд заранее, не
+    только по ходу тренировки; показывается всегда, даже при пустом списке."""
     builder = InlineKeyboardBuilder()
     for index, item in enumerate(items):
         builder.row(InlineKeyboardButton(text=f"{index + 1}. {item.name}", callback_data="noop"))
@@ -213,7 +226,16 @@ def band_reorder_keyboard(items: list) -> InlineKeyboardMarkup:
             row.append(InlineKeyboardButton(text="⬇️", callback_data=f"band_move:{item.id}:down"))
         if row:
             builder.row(*row)
+    builder.row(InlineKeyboardButton(text="➕ Добавить резину", callback_data="band_add_standalone"))
     builder.row(InlineKeyboardButton(text="✅ Готово", callback_data="band_reorder_done"))
+    return builder.as_markup()
+
+
+def optional_exercise_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.OPTIONAL_EXERCISE_WANT_BUTTON, callback_data="optional_exercise:want")
+    builder.button(text=texts.OPTIONAL_EXERCISE_SKIP_BUTTON, callback_data="optional_exercise:skip")
+    builder.adjust(2)
     return builder.as_markup()
 
 
