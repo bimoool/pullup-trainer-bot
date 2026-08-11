@@ -11,6 +11,7 @@ from app.bot.keyboards import (
     band_item_picker_keyboard,
     band_reorder_keyboard,
     equipment_kg_keyboard,
+    equipment_recommendation_keyboard,
     equipment_type_keyboard,
     profile_keyboard,
 )
@@ -18,12 +19,22 @@ from app.bot.states import EquipmentStates
 from app.config import settings
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
-from app.domain.constants import EquipmentType
+from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.progression import suggest_starting_equipment
 
 router = Router()
 
 _BLOCK_LABELS = {"a": "блоке на объём", "b": "блоке на силу"}
+_EQUIPMENT_LABELS = {
+    EquipmentType.BODYWEIGHT: "свой вес",
+    EquipmentType.BAND: "резина",
+    EquipmentType.WEIGHT: "отягощение",
+}
+
+
+def _target_hint(block_key: str) -> str:
+    target = VOLUME_BLOCK.base_target if block_key == "a" else STRENGTH_BLOCK.base_target
+    return texts.EQUIPMENT_TARGET_HINT.format(target=target)
 
 # Личный список резин растёт по мере надобности (Часть 8 респека) — этот
 # модуль общий для живой тренировки (workout.py), бэкдейта (backdate.py) и
@@ -89,18 +100,22 @@ async def _advance_equipment_queue(message: Message, state: FSMContext, session:
     await state.set_state(EquipmentStates.waiting_for_type)
 
     # baseline_reps выставлен только для самой первой тренировки/ретеста —
-    # во всех остальных случаях None, и подсказка снаряда по замеру не
-    # показывается.
+    # во всех остальных случаях None, и рекомендации снаряда по замеру нет
+    # (домен ничего не советует при смене снаряда по порогу прогрессии,
+    # см. EQUIPMENT_TYPE_PROMPT_CHANGE — там по-прежнему открытый вопрос).
     if data.get("baseline_reps") is not None:
         suggested_a, suggested_b = suggest_starting_equipment(data["baseline_reps"])
         suggested = suggested_a if block_key == "a" else suggested_b
-        suggested_label = "свой вес" if suggested == EquipmentType.BODYWEIGHT else "резина"
-        prompt = texts.EQUIPMENT_TYPE_PROMPT_FIRST.format(
+        await state.update_data(recommended_equipment=suggested.value)
+        suggested_label = _EQUIPMENT_LABELS[suggested]
+        prompt = texts.EQUIPMENT_RECOMMENDATION_PROMPT.format(
             block_label=_BLOCK_LABELS[block_key], baseline_reps=data["baseline_reps"], suggested=suggested_label,
         )
-    else:
-        prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
+        accept_label = texts.EQUIPMENT_RECOMMENDATION_ACCEPT.format(suggested=suggested_label)
+        await message.answer(prompt, reply_markup=equipment_recommendation_keyboard(accept_label))
+        return
 
+    prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
     await message.answer(prompt, reply_markup=equipment_type_keyboard())
 
 
@@ -116,9 +131,12 @@ async def _complete_equipment_queue(message: Message, state: FSMContext, session
         await workout._send_plan(message, state, data["target_a"], data["target_b"])
 
 
-@router.callback_query(EquipmentStates.waiting_for_type, F.data.startswith("equip:"))
-async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
-    equipment_type = EquipmentType(callback.data.removeprefix("equip:"))
+async def _apply_equipment_type_choice(
+    equipment_type: EquipmentType, message: Message, state: FSMContext, session: AsyncSession, telegram_id: int,
+) -> None:
+    """Общая ветка для обычного выбора (handle_equipment_type_choice) и
+    принятия рекомендации (handle_equipment_recommendation_accept) — оба
+    в итоге применяют один и тот же тип снаряда к текущему блоку."""
     data = await state.get_data()
     block_key = data["equipment_queue"][0]
 
@@ -127,35 +145,58 @@ async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContex
         results[block_key] = {"type": equipment_type.value, "value": None, "item_id": None}
         queue = data["equipment_queue"][1:]
         await state.update_data(equipment_results=results, equipment_queue=queue)
-        await _advance_equipment_queue(callback.message, state, session)
-        await callback.answer()
+        await _advance_equipment_queue(message, state, session)
         return
 
     if equipment_type == EquipmentType.WEIGHT:
         await state.update_data(pending_equipment_type=equipment_type.value)
         await state.set_state(EquipmentStates.waiting_for_value)
-        await callback.message.answer(
-            texts.EQUIPMENT_VALUE_PROMPT_WEIGHT, reply_markup=back_cancel_keyboard("equip_back:type"),
+        await message.answer(
+            texts.EQUIPMENT_VALUE_PROMPT_WEIGHT + _target_hint(block_key),
+            reply_markup=back_cancel_keyboard("equip_back:type"),
         )
-        await callback.answer()
         return
 
     # BAND — личный список пользователя вместо свободного ввода кг.
     users = UserRepository(session)
-    user = await users.get_by_telegram_id(callback.from_user.id)
+    user = await users.get_by_telegram_id(telegram_id)
     items = await EquipmentItemRepository(session).list_for_user(user.id)
 
     if not items:
         await state.set_state(EquipmentStates.waiting_for_new_item_name)
-        await callback.message.answer(
-            texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("equip_back:type"),
+        await message.answer(
+            texts.EQUIPMENT_BAND_NAME_PROMPT + _target_hint(block_key), reply_markup=back_cancel_keyboard("equip_back:type"),
         )
-        await callback.answer()
         return
 
     await state.set_state(EquipmentStates.waiting_for_band_choice)
-    prompt = texts.EQUIPMENT_BAND_PICKER_PROMPT.format(block_label=_BLOCK_LABELS[block_key])
-    await callback.message.answer(prompt, reply_markup=band_item_picker_keyboard(items, "equip_back:type"))
+    prompt = texts.EQUIPMENT_BAND_PICKER_PROMPT.format(block_label=_BLOCK_LABELS[block_key]) + _target_hint(block_key)
+    await message.answer(prompt, reply_markup=band_item_picker_keyboard(items, "equip_back:type"))
+
+
+@router.callback_query(EquipmentStates.waiting_for_type, F.data.startswith("equip:"))
+async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    equipment_type = EquipmentType(callback.data.removeprefix("equip:"))
+    await _apply_equipment_type_choice(equipment_type, callback.message, state, session, callback.from_user.id)
+    await callback.answer()
+
+
+@router.callback_query(EquipmentStates.waiting_for_type, F.data == "equip_recommend:accept")
+async def handle_equipment_recommendation_accept(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    data = await state.get_data()
+    equipment_type = EquipmentType(data["recommended_equipment"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_equipment_type_choice(equipment_type, callback.message, state, session, callback.from_user.id)
+    await callback.answer()
+
+
+@router.callback_query(EquipmentStates.waiting_for_type, F.data == "equip_recommend:other")
+async def handle_equipment_recommendation_other(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    block_key = data["equipment_queue"][0]
+    await callback.message.edit_reply_markup(reply_markup=None)
+    prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
+    await callback.message.answer(prompt, reply_markup=equipment_type_keyboard())
     await callback.answer()
 
 
@@ -193,17 +234,18 @@ async def handle_equipment_value(message: Message, state: FSMContext, session: A
 @router.callback_query(EquipmentStates.waiting_for_band_choice, F.data.startswith("band_item:"))
 async def handle_band_item_choice(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     payload = callback.data.removeprefix("band_item:")
+    data = await state.get_data()
+    block_key = data["equipment_queue"][0]
 
     if payload == "new":
         await state.set_state(EquipmentStates.waiting_for_new_item_name)
         await callback.message.answer(
-            texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("equip_back:band_list"),
+            texts.EQUIPMENT_BAND_NAME_PROMPT + _target_hint(block_key),
+            reply_markup=back_cancel_keyboard("equip_back:band_list"),
         )
         await callback.answer()
         return
 
-    data = await state.get_data()
-    block_key = data["equipment_queue"][0]
     item = await EquipmentItemRepository(session).get_by_id(int(payload))
 
     results = data["equipment_results"]
@@ -227,7 +269,7 @@ async def handle_equipment_back_to_band_list(callback: CallbackQuery, state: FSM
     block_key = data["equipment_queue"][0]
 
     await state.set_state(EquipmentStates.waiting_for_band_choice)
-    prompt = texts.EQUIPMENT_BAND_PICKER_PROMPT.format(block_label=_BLOCK_LABELS[block_key])
+    prompt = texts.EQUIPMENT_BAND_PICKER_PROMPT.format(block_label=_BLOCK_LABELS[block_key]) + _target_hint(block_key)
     await callback.message.answer(prompt, reply_markup=band_item_picker_keyboard(items, "equip_back:type"))
     await callback.answer()
 

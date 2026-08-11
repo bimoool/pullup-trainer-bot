@@ -483,6 +483,34 @@ class WorkoutRepository:
         await self._session.refresh(workout, attribute_names=["blocks"])
         return workout
 
+    async def correct_block_equipment(
+        self,
+        *,
+        workout_id: int,
+        block_type: BlockType,
+        equipment_value: Decimal | None = None,
+        equipment_item_id: int | None = None,
+    ) -> Workout:
+        """Правка веса/резины уже записанной тренировки "в этом же отчёте"
+        (Часть 10) — только исправление ошибки ввода, НЕ смена снаряда:
+        equipment_type блока не меняется, каскад не запускается. Прогрессия
+        (target_before/after) не зависит от equipment_value/equipment_item_id
+        напрямую (см. recalculate_target — снаряд там только equipment_type
+        для потолка на своём весе), так что пересчитывать её не нужно."""
+        workout = await self.get_by_id(workout_id)
+        if workout is None:
+            raise ValueError(f"workout {workout_id} not found")
+
+        block = _find_block(workout, block_type)
+        if equipment_value is not None:
+            block.equipment_value = equipment_value
+        if equipment_item_id is not None:
+            block.equipment_item_id = equipment_item_id
+
+        await self._session.flush()
+        await self._session.refresh(workout, attribute_names=["blocks"])
+        return workout
+
     def _resolve_next_state(
         self, history: list[Workout], block_type: BlockType, block_config, *, bypass_transition_wait: bool = False,
     ) -> NextBlockState:

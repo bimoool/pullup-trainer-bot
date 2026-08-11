@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.db.models import User, WorkoutStatus
+from app.db.models import BlockType, User, WorkoutStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -172,7 +172,10 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
     assert backdated.sequence_number is None
     assert backdated.participates_in_cascade is False
     assert backdated_block_a.target_before == first_block_a.target_after  # 11
-    assert backdated_block_a.target_after == 13  # delta=4, step=min(3, ceil(2))=2 -> 13
+    # "Объём везде, без отката" (Часть 10): working_reps=(14,14,14) — разброс
+    # 0<=2, минимум(14)-target(11)=3>=max_step(3) -> round(mean(14,14,14))=14,
+    # без капа (обычная формула дала бы delta=4, step=min(3,ceil(2))=2 -> 13).
+    assert backdated_block_a.target_after == 14
 
     third = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(3),
@@ -184,7 +187,7 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
     third_block_a = _block(third, "a")
     # цель для третьей тренировки выведена из ПОСЛЕДНЕЙ ПО ДАТЕ записи любого
     # происхождения — то есть из внесённой задним числом, а не из первой
-    assert third_block_a.target_before == backdated_block_a.target_after  # 13
+    assert third_block_a.target_before == backdated_block_a.target_after  # 14
     # но нумерация цепочки каскада backdated не учитывает — вторая позиция
     assert third.sequence_number == 2
 
@@ -199,7 +202,7 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
     updated_backdated_block_a = _block(updated_backdated, "a")
     # каскад НЕ трогает внесённую задним числом тренировку
     assert updated_backdated_block_a.target_before == 11
-    assert updated_backdated_block_a.target_after == 13
+    assert updated_backdated_block_a.target_after == 14
 
     updated_third = await repo.get_by_id(third.id)
     updated_third_block_a = _block(updated_third, "a")
@@ -491,3 +494,49 @@ async def test_resolve_next_targets_bypass_with_two_workout_history(session, use
 
     admin_a, _ = await repo.resolve_next_targets(user.id, bypass_transition_wait=True)
     assert admin_a.needs_new_equipment is True
+
+
+async def test_correct_block_equipment_updates_value_without_touching_target(session, user: User):
+    """Часть 10: правка веса/резины "в этом же отчёте" — только
+    исправление ошибки ввода, target_before/after не пересчитывается."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("20.0"),
+    )
+    block_b_before = _block(workout, "b")
+    target_before, target_after = block_b_before.target_before, block_b_before.target_after
+
+    updated = await repo.correct_block_equipment(
+        workout_id=workout.id, block_type=BlockType.B, equipment_value=Decimal("22.5"),
+    )
+
+    updated_block_b = _block(updated, "b")
+    assert updated_block_b.equipment_value == Decimal("22.5")
+    assert updated_block_b.target_before == target_before
+    assert updated_block_b.target_after == target_after
+
+
+async def test_correct_block_equipment_updates_item_id(session, user: User):
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="широкая")
+    other_item = await EquipmentItemRepository(session).create(user_id=user.id, name="узкая")
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=None,
+        block_a_equipment_item_id=item.id,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    updated = await repo.correct_block_equipment(
+        workout_id=workout.id, block_type=BlockType.A, equipment_item_id=other_item.id,
+    )
+
+    assert _block(updated, "a").equipment_item_id == other_item.id

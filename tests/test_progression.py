@@ -87,6 +87,98 @@ def test_volume_missed_target_and_volume_did_not_grow_steps_down():
     assert result.new_target == 9
 
 
+# --- recalculate_target: "объём везде, без отката" (Часть 10) ----------------
+# Три случая из живого тестирования + граничные (разброс ровно
+# NO_CAP_MAX_SPREAD=2, минимум ровно на max_step выше цели).
+
+def test_volume_even_working_sets_far_above_target_ignores_cap():
+    # Пример из респека был "20 20 20 21" при цели 10 -> цель 20. Но 20 —
+    # это ровно VOLUME_BLOCK.equipment_change_threshold, поэтому такие
+    # working_reps одновременно попадают под УЖЕ существующий (и
+    # протестированный) переход на новый снаряд, который приоритетнее —
+    # см. test_volume_threshold_hit_in_all_working_sets_triggers_change.
+    # Здесь та же арифметика "без отката", но working_reps ниже порога
+    # смены снаряда, чтобы проверить именно новое правило изолированно.
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(17, 17, 17), max_reps=18,
+        volume=69, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    assert result.new_target == 17
+    assert result.equipment_changed is False
+
+
+def test_volume_no_cap_rule_yields_to_equipment_change_threshold():
+    # Когда working_reps одновременно попадают и под новое правило "без
+    # отката", и под порог смены снаряда — смена снаряда приоритетнее:
+    # если человек уже жмёт 20+ на всех рабочих подходах, разумнее
+    # предложить снаряд потяжелее, а не просто поднять цифру цели на том
+    # же снаряде.
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(20, 20, 20), max_reps=21,
+        volume=81, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    assert result.equipment_changed is True
+    assert result.new_target == VOLUME_BLOCK.base_target
+
+
+def test_volume_uneven_working_sets_falls_back_to_capped_formula():
+    # "10 10 10 16" при цели 10 -> 13 (разброс 0, но минимум-цель=0 < max_step=3 -> обычная формула)
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(10, 10, 10), max_reps=16,
+        volume=46, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    assert result.new_target == 13
+
+
+def test_volume_small_delta_does_not_need_the_new_rule():
+    # "15 15 15 16" при цели 15 -> 16 (маленькая дельта, кап и так не мешал)
+    result = recalculate_target(
+        VOLUME_BLOCK, target=15, working_reps=(15, 15, 15), max_reps=16,
+        volume=61, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    assert result.new_target == 16
+
+
+def test_volume_no_cap_rule_boundary_spread_exactly_two_still_applies():
+    # разброс ровно NO_CAP_MAX_SPREAD (2) -> граница включительно, правило применяется
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(18, 19, 20), max_reps=21,
+        volume=78, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # min(18,19,20)=18, 18-10=8>=max_step(3) -> новое правило: round(mean(18,19,20))=19
+    assert result.new_target == 19
+
+
+def test_volume_no_cap_rule_boundary_spread_three_falls_back():
+    # разброс 3 (>NO_CAP_MAX_SPREAD) -> правило НЕ применяется, обычная формула
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(17, 19, 20), max_reps=21,
+        volume=77, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # delta=21-10=11, step=min(3, ceil(5.5))=3 -> 13
+    assert result.new_target == 13
+
+
+def test_volume_no_cap_rule_boundary_minimum_exactly_max_step_above_target():
+    # минимум рабочих подходов ровно на max_step (3) выше цели -> граница включительно
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(13, 13, 14), max_reps=15,
+        volume=55, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # spread=1<=2, min(13)-10=3>=3 -> round(mean(13,13,14))=13
+    assert result.new_target == 13
+
+
+def test_volume_no_cap_rule_boundary_minimum_one_below_max_step_falls_back():
+    # минимум на max_step-1 выше цели -> НЕ применяется, обычная формула
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(12, 12, 13), max_reps=14,
+        volume=51, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # delta=14-10=4, step=min(3, ceil(2))=2 -> 12
+    assert result.new_target == 12
+
+
 # --- recalculate_target: потолок объёмного блока на собственном весе --------
 
 def test_volume_ceiling_not_yet_reached_grows_normally():
@@ -155,14 +247,21 @@ def test_strength_has_no_ceiling_on_bodyweight():
 
 
 # --- suggest_starting_equipment ----------------------------------------------
+# Часть 10: у каждого блока свои пороги — раньше силовой блок ошибочно
+# получал те же пороги, что и объёмный (баг: замер 20 -> "свой вес" вместо
+# "отягощение" для силы, хотя 20 >= 8).
 
 @pytest.mark.parametrize(
     "baseline_reps, expected",
     [
-        (0, (EquipmentType.BAND, EquipmentType.BAND)),
-        (9, (EquipmentType.BAND, EquipmentType.BAND)),
-        (10, (EquipmentType.BODYWEIGHT, EquipmentType.BODYWEIGHT)),
-        (25, (EquipmentType.BODYWEIGHT, EquipmentType.BODYWEIGHT)),
+        (0, (EquipmentType.BAND, EquipmentType.BAND)),  # объём: <=10 -> резина; сила: <3 -> резина
+        (2, (EquipmentType.BAND, EquipmentType.BAND)),
+        (3, (EquipmentType.BAND, EquipmentType.BODYWEIGHT)),  # сила: 3<=x<8 -> свой вес
+        (7, (EquipmentType.BAND, EquipmentType.BODYWEIGHT)),
+        (8, (EquipmentType.BAND, EquipmentType.WEIGHT)),  # сила: >=8 -> отягощение
+        (10, (EquipmentType.BAND, EquipmentType.WEIGHT)),  # объём: замер == 10 -> НЕ строго больше -> резина
+        (11, (EquipmentType.BODYWEIGHT, EquipmentType.WEIGHT)),  # объём: >10 -> свой вес
+        (20, (EquipmentType.BODYWEIGHT, EquipmentType.WEIGHT)),  # баг из живого тестирования: было (bodyweight, bodyweight)
     ],
 )
 def test_suggest_starting_equipment(baseline_reps, expected):

@@ -121,6 +121,15 @@ def skip_comment_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def equipment_recommendation_keyboard(accept_label: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=accept_label, callback_data="equip_recommend:accept")
+    builder.button(text=texts.EQUIPMENT_RECOMMENDATION_OTHER, callback_data="equip_recommend:other")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def equipment_type_keyboard(back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for label, value in EQUIPMENT_TYPE_CHOICES:
@@ -174,6 +183,24 @@ def band_reorder_keyboard(items: list) -> InlineKeyboardMarkup:
         if row:
             builder.row(*row)
     builder.row(InlineKeyboardButton(text="✅ Готово", callback_data="band_reorder_done"))
+    return builder.as_markup()
+
+
+def edit_equipment_weight_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.EDIT_EQUIPMENT_SKIP, callback_data="edit_equipment_skip")
+    return builder.as_markup()
+
+
+def edit_equipment_band_keyboard(items: list) -> InlineKeyboardMarkup:
+    """items — EquipmentItem пользователя. Без "Добавить новую" (в отличие
+    от band_item_picker_keyboard) — это точечная правка ошибки ввода в уже
+    записанной тренировке, не подбор нового снаряда."""
+    builder = InlineKeyboardBuilder()
+    for item in items:
+        builder.button(text=item.name, callback_data=f"edit_band_item:{item.id}")
+    builder.button(text=texts.EDIT_EQUIPMENT_SKIP, callback_data="edit_equipment_skip")
+    builder.adjust(1)
     return builder.as_markup()
 
 

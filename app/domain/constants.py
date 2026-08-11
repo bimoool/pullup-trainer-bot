@@ -73,6 +73,18 @@ STRENGTH_BLOCK = BlockConfig(
     equipment_change_threshold=7, min_viable_reps=3, bodyweight_ceiling=None,
 )
 
+# Пороги стартового снаряда силового блока по замеру (Часть 10 — раньше
+# suggest_starting_equipment ошибочно применял пороги объёмного блока к
+# обоим блокам). Объёмный блок использует свой собственный порог —
+# VOLUME_BLOCK.base_target, строго больше (не >=).
+STRENGTH_START_WEIGHT_MIN_REPS: int = 8
+STRENGTH_START_BODYWEIGHT_MIN_REPS: int = 3
+
+# "Объём везде, без отката" (Часть 10): если рабочие подходы почти ровные
+# (разброс небольшой) и стабильно намного выше цели — новая цель считается
+# от их среднего, а не капается MAX_STEP'ом, как в обычном случае.
+NO_CAP_MAX_SPREAD: int = 2
+
 WEIGHT_STEP_PCT: float = 0.125
 WEIGHT_ROUND_TO_KG: float = 1.25
 MIN_REST_DAYS: int = 2

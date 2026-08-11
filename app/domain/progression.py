@@ -2,11 +2,15 @@ import math
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
+from statistics import mean
 
 from app.domain.constants import (
+    NO_CAP_MAX_SPREAD,
     ROLLBACK_REPS,
     ROLLBACK_WEIGHT_PCT,
     STRENGTH_BLOCK,
+    STRENGTH_START_BODYWEIGHT_MIN_REPS,
+    STRENGTH_START_WEIGHT_MIN_REPS,
     TRANSITION_RETRY_WORKOUTS,
     VOLUME_BLOCK,
     WEIGHT_ROUND_TO_KG,
@@ -58,14 +62,30 @@ def recalculate_target(
     bodyweight_ceiling: там переходить дальше некуда, поэтому вместо смены
     снаряда new_target просто не растёт выше потолка.
     """
-    delta = max_reps - target
-    if delta > 0:
-        step = min(block.max_step, math.ceil(delta * block.coef))
-        new_target = target + step
-    elif delta == 0:
-        new_target = target
+    # "Объём везде, без отката" (Часть 10): рабочие подходы почти ровные
+    # (разброс <= NO_CAP_MAX_SPREAD) и стабильно намного выше цели (минимум
+    # среди них обгоняет цель минимум на max_step) — берём среднее рабочих
+    # подходов без капа MAX_STEP'ом, вместо того чтобы искусственно
+    # тормозить рост на потолке шага. Иначе — обычная формула ниже, без
+    # изменений.
+    #
+    # ВАЖНО: если та же тренировка ещё и пересекает equipment_change_
+    # threshold (см. threshold_hit ниже) — смена снаряда приоритетнее и
+    # переопределит new_target, посчитанный здесь, целиком: жать 20+ на
+    # всех рабочих подходах достаточно, чтобы предложить снаряд потяжелее,
+    # а не просто поднять цифру цели на том же снаряде.
+    spread = max(working_reps) - min(working_reps) if working_reps else 0
+    if working_reps and spread <= NO_CAP_MAX_SPREAD and (min(working_reps) - target) >= block.max_step:
+        new_target = round(mean(working_reps))
     else:
-        new_target = target if volume > prev_volume else target - 1
+        delta = max_reps - target
+        if delta > 0:
+            step = min(block.max_step, math.ceil(delta * block.coef))
+            new_target = target + step
+        elif delta == 0:
+            new_target = target
+        else:
+            new_target = target if volume > prev_volume else target - 1
 
     threshold_hit = bool(working_reps) and all(r >= block.equipment_change_threshold for r in working_reps)
     at_ceiling_equipment = block.bodyweight_ceiling is not None and equipment_type == EquipmentType.BODYWEIGHT
@@ -87,14 +107,25 @@ def suggest_starting_equipment(baseline_reps: int) -> tuple[EquipmentType, Equip
     или вес отягощения бот не подбирает — пользователь вводит фактическое
     на первой тренировке, здесь только тип.
 
-    Силовой блок никогда не легче объёмного (см. спеку: "блок на силу
-    всегда правее по шкале") — если объёмный стартует на резине, силовой
-    тоже на резине; если объёмный сразу на собственном весе, силовой
-    предлагается туда же (консервативный старт, не сразу отягощение).
+    У каждого блока СВОИ пороги (Часть 10 — раньше по ошибке оба блока
+    считались по порогу объёмного, силовой блок никогда не получал
+    "отягощение" даже при большом замере):
+    - объёмный: свой вес строго при замере > VOLUME_BLOCK.base_target (10),
+      иначе резина;
+    - силовой: отягощение при замере >= STRENGTH_START_WEIGHT_MIN_REPS (8),
+      свой вес при STRENGTH_START_BODYWEIGHT_MIN_REPS (3) <= замер < 8,
+      иначе (замер < 3) резина.
     """
-    if baseline_reps >= VOLUME_BLOCK.base_target:
-        return EquipmentType.BODYWEIGHT, EquipmentType.BODYWEIGHT
-    return EquipmentType.BAND, EquipmentType.BAND
+    volume_equipment = EquipmentType.BODYWEIGHT if baseline_reps > VOLUME_BLOCK.base_target else EquipmentType.BAND
+
+    if baseline_reps >= STRENGTH_START_WEIGHT_MIN_REPS:
+        strength_equipment = EquipmentType.WEIGHT
+    elif baseline_reps >= STRENGTH_START_BODYWEIGHT_MIN_REPS:
+        strength_equipment = EquipmentType.BODYWEIGHT
+    else:
+        strength_equipment = EquipmentType.BAND
+
+    return volume_equipment, strength_equipment
 
 
 class TransitionOutcome(StrEnum):

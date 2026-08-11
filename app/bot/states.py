@@ -64,6 +64,10 @@ class WorkoutStates(StatesGroup):
 class EditWorkoutStates(StatesGroup):
     waiting_for_block_a = State()
     waiting_for_block_b = State()
+    # Правка веса/резины "в этом же отчёте" (Часть 10) — только для блоков
+    # с корректируемым значением (WEIGHT/BAND), по очереди, с пропуском.
+    waiting_for_equipment_weight = State()
+    waiting_for_equipment_band = State()
 
 
 class BackdateStates(StatesGroup):
