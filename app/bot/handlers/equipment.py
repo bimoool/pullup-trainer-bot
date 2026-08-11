@@ -178,6 +178,7 @@ async def _apply_equipment_type_choice(
 @router.callback_query(EquipmentStates.waiting_for_type, F.data.startswith("equip:"))
 async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     equipment_type = EquipmentType(callback.data.removeprefix("equip:"))
+    await callback.message.edit_reply_markup(reply_markup=None)
     await _apply_equipment_type_choice(equipment_type, callback.message, state, session, callback.from_user.id)
     await callback.answer()
 
@@ -207,6 +208,7 @@ async def handle_equipment_back_to_type(callback: CallbackQuery, state: FSMConte
     # equipment_queue снимается только после успешного выбора) — повторный
     # вызов _advance_equipment_queue просто переспрашивает тип для того же
     # блока, ничего дополнительно восстанавливать не нужно.
+    await callback.message.edit_reply_markup(reply_markup=None)
     await _advance_equipment_queue(callback.message, state, session)
     await callback.answer()
 
@@ -237,6 +239,7 @@ async def handle_band_item_choice(callback: CallbackQuery, state: FSMContext, se
     payload = callback.data.removeprefix("band_item:")
     data = await state.get_data()
     block_key = data["equipment_queue"][0]
+    await callback.message.edit_reply_markup(reply_markup=None)
 
     if payload == "new":
         await state.set_state(EquipmentStates.waiting_for_new_item_name)
@@ -270,6 +273,7 @@ async def handle_equipment_back_to_band_list(callback: CallbackQuery, state: FSM
     block_key = data["equipment_queue"][0]
 
     await state.set_state(EquipmentStates.waiting_for_band_choice)
+    await callback.message.edit_reply_markup(reply_markup=None)
     prompt = texts.EQUIPMENT_BAND_PICKER_PROMPT.format(block_label=_BLOCK_LABELS[block_key]) + _target_hint(block_key)
     await callback.message.answer(prompt, reply_markup=band_item_picker_keyboard(items, "equip_back:type"))
     await callback.answer()
@@ -290,6 +294,7 @@ async def handle_new_item_name(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "equip_back:new_item_name")
 async def handle_equipment_back_to_name(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(EquipmentStates.waiting_for_new_item_name)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("equip_back:type"))
     await callback.answer()
 
@@ -330,6 +335,7 @@ async def handle_new_item_kg(message: Message, state: FSMContext, session: Async
 async def handle_new_item_kg_skip(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await _create_band_item_and_advance(callback.message, state, session, user_id=user.id, resistance_kg=None)
     await callback.answer()
 
@@ -405,6 +411,7 @@ async def handle_band_add_standalone_kg(message: Message, state: FSMContext, ses
 async def handle_band_add_standalone_kg_skip(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await _create_standalone_band_item(callback.message, state, session, user_id=user.id, resistance_kg=None)
     await callback.answer()
 

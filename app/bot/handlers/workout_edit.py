@@ -60,6 +60,7 @@ async def handle_edit_pick(callback: CallbackQuery, state: FSMContext) -> None:
     workout_id = int(callback.data.removeprefix("edit_pick:"))
     await state.update_data(edit_workout_id=workout_id)
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
     await callback.answer()
 
@@ -101,6 +102,7 @@ async def handle_edit_block_a(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "edit_back:block_a")
 async def handle_edit_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
     await callback.answer()
 
@@ -192,6 +194,7 @@ async def _advance_past_current_equipment_block(message: Message, state: FSMCont
 
 @router.callback_query(F.data == "edit_equipment_skip")
 async def handle_edit_equipment_skip(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
     await _advance_past_current_equipment_block(callback.message, state, session)
     await callback.answer()
 
@@ -226,6 +229,7 @@ async def handle_edit_equipment_band(callback: CallbackQuery, state: FSMContext,
     await WorkoutRepository(session).correct_block_equipment(
         workout_id=data["edit_workout_id"], block_type=block_type, equipment_item_id=item_id,
     )
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.EDIT_EQUIPMENT_UPDATED)
     await _advance_past_current_equipment_block(callback.message, state, session)
     await callback.answer()

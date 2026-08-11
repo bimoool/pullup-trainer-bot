@@ -48,6 +48,7 @@ async def handle_backdate_date(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "backdate_back:date")
 async def handle_backdate_back_to_date(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(BackdateStates.waiting_for_date)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=cancel_keyboard())
     await callback.answer()
 
@@ -67,6 +68,7 @@ async def handle_backdate_block_a(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "backdate_back:block_a")
 async def handle_backdate_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(BackdateStates.waiting_for_block_a)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:date"))
     await callback.answer()
 

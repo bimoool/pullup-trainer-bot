@@ -74,6 +74,7 @@ async def handle_end_cycle_prompt(callback: CallbackQuery, session: AsyncSession
 
 @router.callback_query(F.data == "end_cycle_cancel")
 async def handle_end_cycle_cancel(callback: CallbackQuery) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer(texts.CANCELLED)
 
 
@@ -95,6 +96,7 @@ async def handle_end_cycle_confirm(callback: CallbackQuery, state: FSMContext, s
 
     workout_sets = WorkoutSetRepository(session)
     active_set = await workout_sets.get_active_for_user(user.id)
+    await callback.message.edit_reply_markup(reply_markup=None)
     if active_set is None:
         await callback.answer(texts.END_CYCLE_NOTHING_ACTIVE, show_alert=True)
         return
@@ -309,6 +311,7 @@ async def handle_block_b_result(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "wk_back:block_a")
 async def handle_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
+    await callback.message.edit_reply_markup(reply_markup=None)
     await _send_plan(callback.message, state, data["target_a"], data["target_b"])
     await callback.answer()
 
@@ -316,6 +319,7 @@ async def handle_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> 
 @router.callback_query(F.data == "wk_back:block_b")
 async def handle_back_to_block_b(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(WorkoutStates.waiting_for_block_b)
+    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("wk_back:block_a"))
     await callback.answer()
 
@@ -327,12 +331,12 @@ async def handle_comment_text(message: Message, state: FSMContext, session: Asyn
 
 @router.callback_query(WorkoutStates.waiting_for_comment, F.data == "skip_comment")
 async def handle_skip_comment(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
-    await _finalize_workout(callback.message, state, session, comment=None)
+    await _finalize_workout(callback.message, state, session, comment=None, clear_keyboard=True)
     await callback.answer()
 
 
 async def _finalize_workout(
-    message: Message, state: FSMContext, session: AsyncSession, *, comment: str | None,
+    message: Message, state: FSMContext, session: AsyncSession, *, comment: str | None, clear_keyboard: bool = False,
 ) -> None:
     data = await state.get_data()
     # Очищаем состояние ДО записи в БД (Часть 10, диагностика бага с
@@ -342,6 +346,13 @@ async def _finalize_workout(
     # не очищено) и мог записать ту же тренировку дважды. Теперь второй тап
     # просто не находит подходящий хендлер — тихий no-op вместо гонки.
     await state.clear()
+    # clear_keyboard — только для callback-варианта (skip_comment): убираем
+    # клавиатуру ПОСЛЕ state.clear(), чтобы не расширять то самое гоночное
+    # окно двойного тапа, которое clear() выше и закрывает; для
+    # message-варианта (handle_comment_text) message — это сообщение
+    # пользователя, редактировать его клавиатуру нельзя и не нужно.
+    if clear_keyboard:
+        await message.edit_reply_markup(reply_markup=None)
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
 
