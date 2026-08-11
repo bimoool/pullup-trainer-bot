@@ -76,10 +76,41 @@ def workout_section_keyboard() -> InlineKeyboardMarkup:
 def progress_section_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="📖 История тренировок", callback_data="show_history")
+    builder.button(text="📅 Календарь", callback_data="show_calendar")
     builder.button(text="📊 Отчёт за неделю", callback_data="show_progress_report")
     builder.button(text="📈 Аналитика по всем циклам", callback_data="show_all_cycles_analytics")
     builder.button(text="⬇️ Экспорт в .xlsx", callback_data="export_xlsx")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+_CALENDAR_WEEKDAY_LABELS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
+
+def calendar_keyboard(year: int, month: int, weeks: list[list[int]], marked_days: set[int]) -> InlineKeyboardMarkup:
+    """weeks — вывод calendar.monthcalendar(year, month) (недели с
+    понедельника, 0 — день не в этом месяце). marked_days — числа месяца,
+    в которые была хотя бы одна тренировка."""
+    builder = InlineKeyboardBuilder()
+    builder.row(*(InlineKeyboardButton(text=label, callback_data="noop") for label in _CALENDAR_WEEKDAY_LABELS))
+
+    for week in weeks:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
+                continue
+            label = f"✅{day}" if day in marked_days else str(day)
+            row.append(InlineKeyboardButton(text=label, callback_data=f"cal_day:{year:04d}-{month:02d}-{day:02d}"))
+        builder.row(*row)
+
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    builder.row(
+        InlineKeyboardButton(text="◀️", callback_data=f"cal_month:{prev_year:04d}-{prev_month:02d}"),
+        InlineKeyboardButton(text=f"{year:04d}-{month:02d}", callback_data="noop"),
+        InlineKeyboardButton(text="▶️", callback_data=f"cal_month:{next_year:04d}-{next_month:02d}"),
+    )
     return builder.as_markup()
 
 

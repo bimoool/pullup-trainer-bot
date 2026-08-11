@@ -1,10 +1,13 @@
+import calendar
+from datetime import UTC, datetime
+
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import format_kg
-from app.bot.keyboards import progress_section_keyboard
+from app.bot.keyboards import calendar_keyboard, progress_section_keyboard
 from app.db.models import Block, BlockType, EquipmentType, Workout
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -12,6 +15,11 @@ from app.db.repositories.workouts import WorkoutRepository
 router = Router()
 
 HISTORY_LIMIT = 10
+
+_MONTH_NAMES_RU = (
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+)
 
 _EQUIPMENT_LABELS = {
     EquipmentType.BAND: "резина",
@@ -59,4 +67,69 @@ async def handle_show_history(callback: CallbackQuery, session: AsyncSession) ->
 
     entries = [format_history_entry(workout) for workout in history[-HISTORY_LIMIT:]]
     await callback.message.answer("\n\n".join(entries), reply_markup=progress_section_keyboard())
+    await callback.answer()
+
+
+async def _render_calendar_month(
+    callback: CallbackQuery, session: AsyncSession, *, year: int, month: int, edit: bool,
+) -> None:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    workouts = WorkoutRepository(session)
+    history = await workouts.list_for_user(user.id)
+    marked_days = {
+        w.performed_at.date().day for w in history
+        if w.performed_at.year == year and w.performed_at.month == month
+    }
+
+    weeks = calendar.monthcalendar(year, month)
+    header = texts.CALENDAR_HEADER.format(month_name=_MONTH_NAMES_RU[month - 1], year=year)
+    keyboard = calendar_keyboard(year, month, weeks, marked_days)
+
+    if edit:
+        await callback.message.edit_text(header, reply_markup=keyboard)
+    else:
+        await callback.message.answer(header, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "show_calendar")
+async def handle_show_calendar(callback: CallbackQuery, session: AsyncSession) -> None:
+    now = datetime.now(UTC)
+    # Открывается новым сообщением — предыдущее (меню "Прогресс") не сетка
+    # календаря, редактировать нечего.
+    await _render_calendar_month(callback, session, year=now.year, month=now.month, edit=False)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cal_month:"))
+async def handle_calendar_month_nav(callback: CallbackQuery, session: AsyncSession) -> None:
+    # ◀️/▶️ жмут по уже открытой сетке — редактируем её же (Часть 10, п. 12:
+    # не плодить новое сообщение на каждое переключение месяца).
+    year_str, month_str = callback.data.removeprefix("cal_month:").split("-")
+    await _render_calendar_month(callback, session, year=int(year_str), month=int(month_str), edit=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cal_day:"))
+async def handle_calendar_day(callback: CallbackQuery, session: AsyncSession) -> None:
+    day_str = callback.data.removeprefix("cal_day:")
+    year, month, day = (int(part) for part in day_str.split("-"))
+
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    workouts = WorkoutRepository(session)
+    history = await workouts.list_for_user(user.id)
+    day_workouts = [
+        w for w in history
+        if w.performed_at.year == year and w.performed_at.month == month and w.performed_at.day == day
+    ]
+
+    if not day_workouts:
+        await callback.answer(texts.CALENDAR_NO_WORKOUT_TOAST, show_alert=True)
+        return
+
+    entries = [format_history_entry(workout) for workout in day_workouts]
+    await callback.message.answer("\n\n".join(entries))
     await callback.answer()
