@@ -11,9 +11,10 @@ from app.domain.achievements import AchievementCode, check_first_baseline
 from app.services.gamification import GamificationService
 from app.services.subscription import SubscriptionService
 
-# Суммы монет за ачивки не определены (Этап 1: "coins_reward — в Этап 6") —
-# фиксируем разблокировку с наградой 0, сумму подставим позже в одном месте.
-ACHIEVEMENT_COINS = 0
+# Часть 10: сумма за "Первый замер" утверждена. Остальные ачивки (Этап 1:
+# "coins_reward — в Этап 6") по-прежнему разблокируются с наградой 0 —
+# суммы для них ещё не определены, разбираем отдельным заходом.
+FIRST_BASELINE_COINS = 50
 
 
 class OnboardingService:
@@ -42,7 +43,7 @@ class OnboardingService:
 
         if check_first_baseline(is_first_baseline):
             await self._gamification.unlock_achievement(
-                user_id=user_id, code=AchievementCode.FIRST_BASELINE, coins_reward=ACHIEVEMENT_COINS,
+                user_id=user_id, code=AchievementCode.FIRST_BASELINE, coins_reward=FIRST_BASELINE_COINS,
             )
 
         workout_set = await self._workout_sets.create(user_id=user_id, started_from_baseline_id=baseline.id)

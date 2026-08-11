@@ -5,6 +5,7 @@ from app.db.models import EquipmentType, User
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.events import EventRepository
+from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.domain.constants import SET_LENGTH
 from app.domain.session import BlockLog
@@ -77,6 +78,9 @@ async def test_first_workout_on_weight_unlocks_first_weighted_pullup(session, us
     )
 
     assert await AchievementRepository(session).has_unlocked(user.id, "first_weighted_pullup") is True
+    # Часть 10: сумма за "Первое подтягивание с отягощением" утверждена — 100 монет.
+    reloaded = await UserRepository(session).get_by_id(user.id)
+    assert reloaded.coins_balance == 100
 
 
 async def test_second_weighted_workout_does_not_reunlock(session, user: User):

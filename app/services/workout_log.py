@@ -16,11 +16,13 @@ from app.domain.achievements import (
 from app.domain.session import BlockLog
 from app.services.gamification import GamificationService
 
-# Суммы монет не определены (см. app/services/onboarding.py) — начисляем 0,
-# но фиксируем сам факт (тренировка/ачивка), чтобы история и уведомления
-# работали уже сейчас.
+# Суммы за COINS_PER_WORKOUT/EQUIPMENT_CHANGED/SET_COMPLETED не определены
+# (см. app/services/onboarding.py) — начисляем 0, но фиксируем сам факт
+# (тренировка/ачивка), чтобы история и уведомления работали уже сейчас.
+# FIRST_WEIGHTED_PULLUP — сумма утверждена (Часть 10).
 COINS_PER_WORKOUT = 0
 ACHIEVEMENT_COINS = 0
+FIRST_WEIGHTED_PULLUP_COINS = 100
 
 
 class WorkoutLogService:
@@ -135,7 +137,8 @@ class WorkoutLogService:
             is_first_weighted = len(weighted_workouts) == 1  # только та, что мы сейчас записали
             if check_first_weighted_pullup(is_first_weighted):
                 await self._gamification.unlock_achievement(
-                    user_id=user_id, code=AchievementCode.FIRST_WEIGHTED_PULLUP, coins_reward=ACHIEVEMENT_COINS,
+                    user_id=user_id, code=AchievementCode.FIRST_WEIGHTED_PULLUP,
+                    coins_reward=FIRST_WEIGHTED_PULLUP_COINS,
                 )
 
         if check_equipment_changed(block_a.equipment_changed or block_b.equipment_changed):

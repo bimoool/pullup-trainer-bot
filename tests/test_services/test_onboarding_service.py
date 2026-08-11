@@ -35,6 +35,14 @@ async def test_record_baseline_unlocks_first_baseline_achievement(session, user:
     assert await AchievementRepository(session).has_unlocked(user.id, "first_baseline") is True
 
 
+async def test_record_baseline_awards_fifty_coins(session, user: User):
+    # Часть 10: сумма за "Первый замер" утверждена — 50 монет.
+    service = OnboardingService(session)
+    _, _, updated_user = await service.record_baseline_and_start(user_id=user.id, performed_at=NOW, reps=18)
+
+    assert updated_user.coins_balance == 50
+
+
 async def test_second_baseline_does_not_unlock_again(session, user: User):
     service = OnboardingService(session)
     await service.record_baseline_and_start(user_id=user.id, performed_at=NOW, reps=18)

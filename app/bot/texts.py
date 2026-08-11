@@ -280,7 +280,10 @@ FEEDBACK_ADMIN_NOTIFICATION = "💬 Сообщение от {who} ({when}):\n\n{
 # --- Отчёты и прогресс ------------------------------------------------------------
 
 WEEKLY_REPORT_HEADER = "📊 Итоги недели"
-WEEKLY_REPORT_BODY = "Тренировок: {workout_count}\nСуммарный объём: {total_volume}{volume_change}"
+# "подтягиваний" — явно, не безлично (Часть 10, задел на будущие
+# направления тренировок): сейчас единственное направление — pull-ups, но
+# когда их станет больше, тут понадобится параметризация по ExerciseType.
+WEEKLY_REPORT_BODY = "Тренировок: {workout_count}\nСуммарный объём подтягиваний: {total_volume}{volume_change}"
 WEEKLY_REPORT_EQUIPMENT_CHANGED = "\nСнаряд сменился: {blocks}"
 
 PROGRESS_REPORT_NO_DATA_THIS_WEEK = "На этой неделе тренировок ещё не было."
@@ -305,7 +308,7 @@ EQUIPMENT_PROGRESS_NONE = "пока нет данных"
 
 SET_CLOSE_REPORT_HEADER = "🎉 Сет из {set_length} тренировок закрыт!"
 SET_CLOSE_REPORT_BODY = (
-    "Суммарный объём за сет: {total_volume}{volume_change}\n"
+    "Суммарный объём подтягиваний за сет: {total_volume}{volume_change}\n"
     "Рост максимума — объём: {growth_a:+d}, сила: {growth_b:+d}\n"
     "Смен снаряда за сет: {equipment_changes}\n\n"
     "Когда будешь готов — сделай новый замер, посмотрим, как вырос уровень."
@@ -316,14 +319,27 @@ EXPORT_BUTTON_LABEL = "⬇️ Экспорт в .xlsx"
 
 # --- Аналитика по всем циклам (Часть 8) -------------------------------------------
 
-ALL_CYCLES_HEADER = "📈 Аналитика по всем циклам\n\nЦиклов завершено/начато: {cycle_count}\nОбщий объём за всё время: {total_volume}\n\n"
-ALL_CYCLES_LINE = "Цикл {set_number}: {workout_count} тренировок, объём {total_volume}{volume_change}"
+ALL_CYCLES_HEADER = (
+    "📈 Аналитика по всем циклам\n\nЦиклов завершено/начато: {cycle_count}\n"
+    "Общий объём подтягиваний за всё время: {total_volume}\n\n"
+)
+ALL_CYCLES_LINE = "Цикл {set_number}: {workout_count} тренировок, объём подтягиваний {total_volume}{volume_change}"
 ALL_CYCLES_EMPTY = "Пока нет ни одного цикла с тренировками — статистика появится после первой тренировки."
 CYCLE_VOLUME_CHANGE_WITH_PCT = " ({sign}{pct}% к предыдущему циклу)"
 
 # --- История -----------------------------------------------------------------------
 
 HISTORY_EMPTY = "Пока нет ни одной тренировки."
+# Часть 10 — читаемая формулировка вместо "объём св.вес макс 21→цель 13,
+# сила отягощ. 48.00кг макс 4→цель 4".
+HISTORY_ENTRY = (
+    "{date}{backdated_mark}\n"
+    "Объём ({equipment_a}): максимум {max_a}, следующая цель {target_a}.\n"
+    "Сила ({equipment_b}): максимум {max_b}, следующая цель {target_b}."
+    "{comment}"
+)
+HISTORY_COMMENT_LINE = "\nКомментарий: {comment}"
+HISTORY_BACKDATED_MARK = " (задним числом)"
 
 # --- Пейволл --------------------------------------------------------------------
 

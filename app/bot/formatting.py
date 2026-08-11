@@ -3,6 +3,7 @@
 обработчиком по запросу и еженедельным воркером (app/workers/weekly_report.py)."""
 
 from datetime import date
+from decimal import Decimal
 
 from app.bot import texts
 
@@ -14,6 +15,17 @@ def calculate_age(birth_date: date, today: date) -> int:
     if (today.month, today.day) < (birth_date.month, birth_date.day):
         years -= 1
     return years
+
+
+def format_kg(value: Decimal) -> str:
+    """Без лишних нулей (Часть 10): 48.00 -> 48, 22.50 -> 22.5. Числа из БД
+    приходят с фиксированным scale колонки (Numeric(5,2)), поэтому почти
+    всегда есть дробная часть, которую можно безопасно подрезать — но
+    только ПОСЛЕ точки, иначе "20" превратится в "2"."""
+    text = f"{value:f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 from app.domain.recommendations import (
     Recommendation,
     RecommendationCode,
