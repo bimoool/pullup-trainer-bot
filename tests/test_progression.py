@@ -8,6 +8,8 @@ from app.domain.progression import (
     ProgressionResult,
     TransitionOutcome,
     check_transition_outcome,
+    count_consecutive_weak_trainings,
+    initial_volume_target,
     is_retry_allowed,
     recalculate_cascade,
     recalculate_target,
@@ -68,7 +70,8 @@ def test_volume_high_max_but_working_sets_below_threshold_does_not_change():
         volume=79, prev_volume=0, equipment_type=EquipmentType.BAND,
     )
     assert result.equipment_changed is False
-    assert result.new_target == 20  # обычная формула: delta=5, ceil(2.5)=3, cap3 -> 20, но снаряд НЕ меняется
+    # avg_working=19, growth=22-19=3, step=min(3,ceil(1.5))=2 -> round(19)+2=21
+    assert result.new_target == 21
 
 
 def test_volume_missed_target_but_volume_grew_stays_flat():
@@ -79,40 +82,119 @@ def test_volume_missed_target_but_volume_grew_stays_flat():
     assert result.new_target == 10
 
 
-def test_volume_missed_target_and_volume_did_not_grow_steps_down():
+# --- recalculate_target: отсрочка отката, 3 подряд "слабых" (Часть 10, пакет #2, п.13) ---
+
+def test_volume_equal_volume_is_not_weak_stays_flat_regardless_of_streak():
+    # Часть 10, пакет #2: раньше volume == prev_volume откатывало сразу
+    # (была else-ветка "volume > prev_volume, иначе -1"), теперь равный
+    # объём — НЕ слабая тренировка вовсе, откат тут в принципе не
+    # применим, streak не при чём.
     result = recalculate_target(
         VOLUME_BLOCK, target=10, working_reps=(10, 10, 8), max_reps=9,
         volume=37, prev_volume=37, equipment_type=EquipmentType.BAND,
+        consecutive_weak_before=5,
+    )
+    assert result.new_target == 10
+
+
+def test_volume_first_weak_training_does_not_rollback():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(10, 10, 8), max_reps=9,
+        volume=30, prev_volume=37, equipment_type=EquipmentType.BAND,
+        consecutive_weak_before=0,
+    )
+    assert result.new_target == 10
+
+
+def test_volume_second_consecutive_weak_training_still_no_rollback():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(10, 10, 8), max_reps=9,
+        volume=30, prev_volume=37, equipment_type=EquipmentType.BAND,
+        consecutive_weak_before=1,
+    )
+    assert result.new_target == 10
+
+
+def test_volume_third_consecutive_weak_training_rolls_back():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(10, 10, 8), max_reps=9,
+        volume=30, prev_volume=37, equipment_type=EquipmentType.BAND,
+        consecutive_weak_before=2,
     )
     assert result.new_target == 9
 
 
-# --- recalculate_target: "объём везде, без отката" (Часть 10) ----------------
-# Три случая из живого тестирования + граничные (разброс ровно
-# NO_CAP_MAX_SPREAD=2, минимум ровно на max_step выше цели).
-
-def test_volume_even_working_sets_far_above_target_ignores_cap():
-    # Пример из респека был "20 20 20 21" при цели 10 -> цель 20. Но 20 —
-    # это ровно VOLUME_BLOCK.equipment_change_threshold, поэтому такие
-    # working_reps одновременно попадают под УЖЕ существующий (и
-    # протестированный) переход на новый снаряд, который приоритетнее —
-    # см. test_volume_threshold_hit_in_all_working_sets_triggers_change.
-    # Здесь та же арифметика "без отката", но working_reps ниже порога
-    # смены снаряда, чтобы проверить именно новое правило изолированно.
+def test_volume_fourth_and_beyond_consecutive_weak_keeps_rolling_back():
+    # consecutive_weak_before уже >= порога — правило "не после первой", а
+    # не "ровно на третьей": продолжает откатывать каждую следующую слабую.
     result = recalculate_target(
-        VOLUME_BLOCK, target=10, working_reps=(17, 17, 17), max_reps=18,
-        volume=69, prev_volume=0, equipment_type=EquipmentType.BAND,
+        VOLUME_BLOCK, target=10, working_reps=(10, 10, 8), max_reps=9,
+        volume=30, prev_volume=37, equipment_type=EquipmentType.BAND,
+        consecutive_weak_before=3,
     )
-    assert result.new_target == 17
-    assert result.equipment_changed is False
+    assert result.new_target == 9
 
 
-def test_volume_no_cap_rule_yields_to_equipment_change_threshold():
-    # Когда working_reps одновременно попадают и под новое правило "без
-    # отката", и под порог смены снаряда — смена снаряда приоритетнее:
-    # если человек уже жмёт 20+ на всех рабочих подходах, разумнее
-    # предложить снаряд потяжелее, а не просто поднять цифру цели на том
-    # же снаряде.
+# --- recalculate_target: формула роста (Часть 10, пакет #2, п.12) -----------
+# ПОЛНАЯ замена прежнего правила "объём везде, без отката" — не дополняет
+# его, замещает целиком. Все 6 примеров из промпта.
+
+def test_growth_formula_example_18_18_18_21_at_target_10():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(18, 18, 18), max_reps=21,
+        volume=75, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # avg=18, growth=21-18=3, step=min(3,ceil(1.5))=2 -> round(18)+2=20
+    assert result.new_target == 20
+
+
+def test_growth_formula_example_18_18_18_23_hypothetical_at_target_10():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(18, 18, 18), max_reps=23,
+        volume=77, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # avg=18, growth=23-18=5, step=min(3,ceil(2.5))=3 (кап) -> round(18)+3=21
+    assert result.new_target == 21
+
+
+def test_growth_formula_example_15_15_15_16_at_target_15_unchanged_from_first_version():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=15, working_reps=(15, 15, 15), max_reps=16,
+        volume=61, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # avg=15, growth=1, step=min(3,ceil(0.5))=1 -> round(15)+1=16
+    assert result.new_target == 16
+
+
+def test_growth_formula_example_15_15_15_20_at_target_15_unchanged_from_first_version():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=15, working_reps=(15, 15, 15), max_reps=20,
+        volume=65, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # avg=15, growth=5, step=min(3,ceil(2.5))=3 (кап) -> round(15)+3=18
+    assert result.new_target == 18
+
+
+def test_growth_formula_example_10_10_10_16_at_target_10():
+    result = recalculate_target(
+        VOLUME_BLOCK, target=10, working_reps=(10, 10, 10), max_reps=16,
+        volume=46, prev_volume=0, equipment_type=EquipmentType.BAND,
+    )
+    # avg=10, growth=6, step=min(3,ceil(3))=3 (кап) -> round(10)+3=13
+    assert result.new_target == 13
+
+
+def test_growth_formula_example_20_20_20_21_yields_to_equipment_change_threshold():
+    # Пример из промпта ("20 20 20 21" при target=10 -> формула сама по
+    # себе даёт 21), НО working_reps=20 на каждом рабочем подходе — это
+    # ровно VOLUME_BLOCK.equipment_change_threshold, и смена снаряда
+    # приоритетнее результата формулы (тот же приоритет, что уже был
+    # установлен и подтверждён для прошлой версии формулы — жать 20+ на
+    # всех рабочих подходах достаточно, чтобы предложить снаряд
+    # потяжелее, а не просто поднять цифру цели на том же снаряде).
+    # Изолированно от этого взаимодействия формула проверена в
+    # test_growth_formula_example_18_18_18_21_at_target_10 (та же
+    # арифметика, working_reps=18 — ниже порога смены снаряда).
     result = recalculate_target(
         VOLUME_BLOCK, target=10, working_reps=(20, 20, 20), max_reps=21,
         volume=81, prev_volume=0, equipment_type=EquipmentType.BAND,
@@ -121,74 +203,59 @@ def test_volume_no_cap_rule_yields_to_equipment_change_threshold():
     assert result.new_target == VOLUME_BLOCK.base_target
 
 
-def test_volume_uneven_working_sets_falls_back_to_capped_formula():
-    # "10 10 10 16" при цели 10 -> 13 (разброс 0, но минимум-цель=0 < max_step=3 -> обычная формула)
+def test_growth_formula_step_never_negative_when_working_reps_exceed_max():
+    # Вырожденный случай: парсер ввода не проверяет, что working_reps <=
+    # max_reps ("19 19 19 6" технически валидный ввод), avg_working может
+    # оказаться намного выше max_reps, хотя max_reps всё ещё > target
+    # (ветка успеха). Без max(0, ...) это дало бы отрицательный step и
+    # абсурдный new_target ниже avg_working — здесь step floor'ится в 0,
+    # new_target не проваливается ниже round(avg_working). working_reps=19,
+    # не 20 — иначе сработал бы equipment_change_threshold (см. отдельный
+    # тест на это взаимодействие) и замаскировал бы то, что здесь проверяется.
     result = recalculate_target(
-        VOLUME_BLOCK, target=10, working_reps=(10, 10, 10), max_reps=16,
-        volume=46, prev_volume=0, equipment_type=EquipmentType.BAND,
+        VOLUME_BLOCK, target=5, working_reps=(19, 19, 19), max_reps=6,
+        volume=63, prev_volume=0, equipment_type=EquipmentType.BAND,
     )
-    assert result.new_target == 13
+    assert result.new_target == 19  # round(avg_working=19) + max(0, ...) = 19
+    assert result.equipment_changed is False
 
 
-def test_volume_small_delta_does_not_need_the_new_rule():
-    # "15 15 15 16" при цели 15 -> 16 (маленькая дельта, кап и так не мешал)
-    result = recalculate_target(
-        VOLUME_BLOCK, target=15, working_reps=(15, 15, 15), max_reps=16,
-        volume=61, prev_volume=0, equipment_type=EquipmentType.BAND,
-    )
-    assert result.new_target == 16
+# --- count_consecutive_weak_trainings (Часть 10, пакет #2, п.13) ------------
+
+def test_weak_streak_empty_history_is_zero():
+    assert count_consecutive_weak_trainings([]) == 0
 
 
-def test_volume_no_cap_rule_boundary_spread_exactly_two_still_applies():
-    # разброс ровно NO_CAP_MAX_SPREAD (2) -> граница включительно, правило применяется
-    result = recalculate_target(
-        VOLUME_BLOCK, target=10, working_reps=(18, 19, 20), max_reps=21,
-        volume=78, prev_volume=0, equipment_type=EquipmentType.BAND,
-    )
-    # min(18,19,20)=18, 18-10=8>=max_step(3) -> новое правило: round(mean(18,19,20))=19
-    assert result.new_target == 19
+def test_weak_streak_single_entry_has_nothing_to_compare_against():
+    assert count_consecutive_weak_trainings([10]) == 0
 
 
-def test_volume_no_cap_rule_boundary_spread_three_falls_back():
-    # разброс 3 (>NO_CAP_MAX_SPREAD) -> правило НЕ применяется, обычная формула
-    result = recalculate_target(
-        VOLUME_BLOCK, target=10, working_reps=(17, 19, 20), max_reps=21,
-        volume=77, prev_volume=0, equipment_type=EquipmentType.BAND,
-    )
-    # delta=21-10=11, step=min(3, ceil(5.5))=3 -> 13
-    assert result.new_target == 13
+def test_weak_streak_counts_trailing_consecutive_drops():
+    assert count_consecutive_weak_trainings([10, 9]) == 1
+    assert count_consecutive_weak_trainings([10, 9, 8]) == 2
+    assert count_consecutive_weak_trainings([10, 9, 8, 7]) == 3
 
 
-def test_volume_no_cap_rule_boundary_minimum_exactly_max_step_above_target():
-    # минимум рабочих подходов ровно на max_step (3) выше цели -> граница включительно
-    result = recalculate_target(
-        VOLUME_BLOCK, target=10, working_reps=(13, 13, 14), max_reps=15,
-        volume=55, prev_volume=0, equipment_type=EquipmentType.BAND,
-    )
-    # spread=1<=2, min(13)-10=3>=3 -> round(mean(13,13,14))=13
-    assert result.new_target == 13
+def test_weak_streak_equal_volume_resets_not_weak():
+    assert count_consecutive_weak_trainings([10, 9, 9]) == 0
 
 
-def test_volume_no_cap_rule_boundary_minimum_one_below_max_step_falls_back():
-    # минимум на max_step-1 выше цели -> НЕ применяется, обычная формула
-    result = recalculate_target(
-        VOLUME_BLOCK, target=10, working_reps=(12, 12, 13), max_reps=14,
-        volume=51, prev_volume=0, equipment_type=EquipmentType.BAND,
-    )
-    # delta=14-10=4, step=min(3, ceil(2))=2 -> 12
-    assert result.new_target == 12
+def test_weak_streak_only_counts_trailing_run_not_total_weak_count():
+    # слабая, потом рост, потом снова слабая — считает только ХВОСТ (1),
+    # а не общее число слабых записей во всей истории (было бы 2)
+    assert count_consecutive_weak_trainings([10, 8, 9, 7]) == 1
 
 
 # --- recalculate_target: потолок объёмного блока на собственном весе --------
 
 def test_volume_ceiling_not_yet_reached_grows_normally():
     result = recalculate_target(
-        VOLUME_BLOCK, target=23, working_reps=(25, 25, 25), max_reps=25,
-        volume=100, prev_volume=0, equipment_type=EquipmentType.BODYWEIGHT,
+        VOLUME_BLOCK, target=20, working_reps=(21, 21, 21), max_reps=22,
+        volume=85, prev_volume=0, equipment_type=EquipmentType.BODYWEIGHT,
     )
-    # delta=2, step=min(3, ceil(1))=1 -> 24; порог 20 взят, но на bodyweight
-    # переходить некуда — просто не считается сменой снаряда
-    assert result == ProgressionResult(new_target=24, equipment_changed=False, ceiling_reached=False)
+    # avg=21, growth=1, step=min(3,ceil(0.5))=1 -> round(21)+1=22; порог 20
+    # взят, но на bodyweight переходить некуда — не считается сменой снаряда
+    assert result == ProgressionResult(new_target=22, equipment_changed=False, ceiling_reached=False)
 
 
 def test_volume_ceiling_reached_caps_target_and_flags_it():
@@ -266,6 +333,23 @@ def test_strength_has_no_ceiling_on_bodyweight():
 )
 def test_suggest_starting_equipment(baseline_reps, expected):
     assert suggest_starting_equipment(baseline_reps) == expected
+
+
+# --- initial_volume_target: "замер минус 25%" (Часть 10, пакет #2, п.14) ----
+
+@pytest.mark.parametrize(
+    "baseline_reps, expected",
+    [
+        (0, VOLUME_BLOCK.base_target),  # старт с резины -> флэт base_target, без изменений
+        (5, VOLUME_BLOCK.base_target),
+        (10, VOLUME_BLOCK.base_target),  # == base_target -> НЕ строго больше -> резина, флэт
+        (11, 9),  # ceil(11*0.75)=ceil(8.25)=9 — граница чуть выше 10, формула уже применяется
+        (20, 15),  # пример из промпта: ceil(20*0.75)=15
+        (15, 12),  # ceil(11.25)=12
+    ],
+)
+def test_initial_volume_target(baseline_reps, expected):
+    assert initial_volume_target(baseline_reps) == expected
 
 
 # --- check_transition_outcome / is_retry_allowed -----------------------------
@@ -382,3 +466,44 @@ def test_recalculate_cascade_chains_targets():
 
 def test_recalculate_cascade_empty_list_returns_empty():
     assert recalculate_cascade(10, 3, 0, 0, []) == []
+
+
+def test_recalculate_cascade_propagates_weak_streak_from_starting_value():
+    # Часть 10, пакет #2, п.13 — starting_weak_streak_a приходит от
+    # вызывающего кода (edit_workout: стрик ДО отредактированной записи +
+    # сама она, если тоже оказалась слабой) и переигрывается ВНУТРИ
+    # каскада бегущим счётчиком, а не отдельной хранимой сущностью.
+    record = WorkoutRecord(
+        performed_at=datetime(2026, 1, 3, tzinfo=UTC),
+        block_a=_block_assignment((10, 10, 8), 9, target_before=0),
+        block_b=_block_assignment((3, 3, 3, 3), 3, target_before=0),
+    )
+
+    # starting_weak_streak_a=2, запись сама слабая (volume 37 < prev 40) ->
+    # итоговый стрик 3 -> откат на -1 (10 -> 9).
+    updated = recalculate_cascade(
+        starting_target_a=10, starting_target_b=3,
+        starting_volume_a=40, starting_volume_b=12,
+        subsequent_workouts=[record],
+        starting_weak_streak_a=2, starting_weak_streak_b=0,
+    )
+
+    assert updated[0].block_a.target_after == 9
+
+
+def test_recalculate_cascade_weak_streak_defaults_to_zero_when_not_passed():
+    # Обратная совместимость: без starting_weak_streak_* первая слабая
+    # тренировка в цепочке не откатывает цель сразу (не после первой).
+    record = WorkoutRecord(
+        performed_at=datetime(2026, 1, 3, tzinfo=UTC),
+        block_a=_block_assignment((10, 10, 8), 9, target_before=0),
+        block_b=_block_assignment((3, 3, 3, 3), 3, target_before=0),
+    )
+
+    updated = recalculate_cascade(
+        starting_target_a=10, starting_target_b=3,
+        starting_volume_a=40, starting_volume_b=12,
+        subsequent_workouts=[record],
+    )
+
+    assert updated[0].block_a.target_after == 10

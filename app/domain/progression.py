@@ -5,7 +5,6 @@ from enum import StrEnum
 from statistics import mean
 
 from app.domain.constants import (
-    NO_CAP_MAX_SPREAD,
     ROLLBACK_REPS,
     ROLLBACK_WEIGHT_PCT,
     STRENGTH_BLOCK,
@@ -13,6 +12,7 @@ from app.domain.constants import (
     STRENGTH_START_WEIGHT_MIN_REPS,
     TRANSITION_RETRY_WORKOUTS,
     VOLUME_BLOCK,
+    WEAK_STREAK_ROLLBACK_THRESHOLD,
     WEIGHT_ROUND_TO_KG,
     BlockConfig,
     EquipmentType,
@@ -45,13 +45,41 @@ def recalculate_target(
     volume: int,
     prev_volume: int,
     equipment_type: EquipmentType,
+    consecutive_weak_before: int = 0,
 ) -> ProgressionResult:
-    """Единая формула пересчёта цели для объёмного и силового блока.
+    """Единая формула пересчёта цели для объёмного и силового блока
+    (Часть 10, пакет #2, п.12-13 — третья по счёту правка этой функции,
+    ПОЛНОСТЬЮ заменяет предыдущую версию "объём везде, без отката", не
+    дополняет её).
 
-    delta = max_reps - target
-    delta > 0  → new_target = target + min(block.max_step, ceil(delta * block.coef))
-    delta == 0 → new_target = target
-    delta < 0  → new_target = target, если volume > prev_volume, иначе target - 1
+    Вход в ветку успеха/провала решает delta = max_reps - target, как и
+    раньше. Внутри ветки успеха величина шага роста считается не от
+    target, а от среднего рабочих подходов (avg_working) — это позволяет
+    цели расти сразу к тому уровню, который человек реально показал,
+    вместо капа шагом от уже устаревшей цели:
+
+        avg_working = mean(working_reps)
+        growth = max_reps - avg_working
+        step = max(0, min(block.max_step, ceil(growth * block.coef)))
+        new_target = round(avg_working) + step
+
+    round() — обычное (Python round-half-to-even), для согласованности с
+    остальной кодовой базой; не критично, по просьбе зафиксировано явно.
+    max(0, ...) вокруг step — защита от вырожденного случая, которого нет
+    в исходной формуле: working_reps не обязаны быть <= max_reps (парсер
+    ввода это не проверяет), и если avg_working сильно выше max_reps при
+    этом max_reps всё равно > target (входим в ветку успеха), growth
+    уходит в минус и без ограничения new_target мог бы провалиться ниже
+    avg_working или даже уйти в отрицательные числа — на практике это
+    ошибочный ввод, а не жать, но домен не должен реагировать на него
+    абсурдным откатом.
+
+    Ветка провала (delta <= 0) теперь с отсрочкой отката (п.13): "слабая"
+    тренировка — объём меньше предыдущего; цель откатывается на -1 только
+    после WEAK_STREAK_ROLLBACK_THRESHOLD (3) подряд слабых, не после
+    первой. consecutive_weak_before — сколько таких подряд БЫЛО до этой
+    тренировки, считает вызывающий код из истории (см.
+    count_consecutive_weak_trainings) — домен сам историю не хранит.
 
     Снаряд меняется, когда КАЖДЫЙ элемент working_reps (рабочие подходы,
     без учёта подхода на максимум) достиг block.equipment_change_threshold —
@@ -62,30 +90,20 @@ def recalculate_target(
     bodyweight_ceiling: там переходить дальше некуда, поэтому вместо смены
     снаряда new_target просто не растёт выше потолка.
     """
-    # "Объём везде, без отката" (Часть 10): рабочие подходы почти ровные
-    # (разброс <= NO_CAP_MAX_SPREAD) и стабильно намного выше цели (минимум
-    # среди них обгоняет цель минимум на max_step) — берём среднее рабочих
-    # подходов без капа MAX_STEP'ом, вместо того чтобы искусственно
-    # тормозить рост на потолке шага. Иначе — обычная формула ниже, без
-    # изменений.
-    #
-    # ВАЖНО: если та же тренировка ещё и пересекает equipment_change_
-    # threshold (см. threshold_hit ниже) — смена снаряда приоритетнее и
-    # переопределит new_target, посчитанный здесь, целиком: жать 20+ на
-    # всех рабочих подходах достаточно, чтобы предложить снаряд потяжелее,
-    # а не просто поднять цифру цели на том же снаряде.
-    spread = max(working_reps) - min(working_reps) if working_reps else 0
-    if working_reps and spread <= NO_CAP_MAX_SPREAD and (min(working_reps) - target) >= block.max_step:
-        new_target = round(mean(working_reps))
+    delta = max_reps - target
+    if delta > 0:
+        avg_working = mean(working_reps) if working_reps else float(target)
+        growth = max_reps - avg_working
+        step = max(0, min(block.max_step, math.ceil(growth * block.coef)))
+        new_target = round(avg_working) + step
+    elif delta == 0:
+        new_target = target
     else:
-        delta = max_reps - target
-        if delta > 0:
-            step = min(block.max_step, math.ceil(delta * block.coef))
-            new_target = target + step
-        elif delta == 0:
-            new_target = target
+        is_weak = volume < prev_volume
+        if is_weak and consecutive_weak_before + 1 >= WEAK_STREAK_ROLLBACK_THRESHOLD:
+            new_target = target - 1
         else:
-            new_target = target if volume > prev_volume else target - 1
+            new_target = target
 
     threshold_hit = bool(working_reps) and all(r >= block.equipment_change_threshold for r in working_reps)
     at_ceiling_equipment = block.bodyweight_ceiling is not None and equipment_type == EquipmentType.BODYWEIGHT
@@ -99,6 +117,26 @@ def recalculate_target(
         new_target = min(new_target, block.bodyweight_ceiling)
 
     return ProgressionResult(new_target=new_target, equipment_changed=False, ceiling_reached=ceiling_reached)
+
+
+def count_consecutive_weak_trainings(volumes: list[int]) -> int:
+    """Сколько подряд идущих "слабых" тренировок (Часть 10, пакет #2,
+    п.13) стоят в конце volumes — хронологического списка объёмов ОДНОГО
+    блока, НЕ включая тренировку, для которой сейчас считается
+    consecutive_weak_before. "Слабая" — объём меньше, чем у той, что
+    непосредственно перед ней (volumes[i] < volumes[i-1]); первый элемент
+    списка сам по себе не может быть "слабым" — сравнивать не с чем.
+
+    Вычисляется каждый раз заново из истории (list_for_user/каскад) — не
+    хранимый счётчик, тот же принцип, что уже применён к повторным
+    попыткам смены снаряда (is_retry_allowed) и к needs_new_equipment."""
+    count = 0
+    for i in range(len(volumes) - 1, 0, -1):
+        if volumes[i] < volumes[i - 1]:
+            count += 1
+        else:
+            break
+    return count
 
 
 def suggest_starting_equipment(baseline_reps: int) -> tuple[EquipmentType, EquipmentType]:
@@ -126,6 +164,23 @@ def suggest_starting_equipment(baseline_reps: int) -> tuple[EquipmentType, Equip
         strength_equipment = EquipmentType.BAND
 
     return volume_equipment, strength_equipment
+
+
+def initial_volume_target(baseline_reps: int) -> int:
+    """Начальная цель объёмного блока при старте (первая тренировка/
+    ретест) — Часть 10, пакет #2, п.14, "замер минус 25%".
+
+    Старт на собственном весе (замер > VOLUME_BLOCK.base_target, см.
+    suggest_starting_equipment) — начальная цель ceil(замер * 0.75), не
+    флэт base_target: сразу отталкивается от реального уровня, а не
+    занижает его до дефолтных 10. Округление вверх.
+
+    Старт с резины (замер <= base_target) — без изменений: подбираем
+    резину под ~base_target повторений, стартуем flat base_target-
+    base_target-base_target-макс, как и раньше."""
+    if baseline_reps > VOLUME_BLOCK.base_target:
+        return math.ceil(baseline_reps * 0.75)
+    return VOLUME_BLOCK.base_target
 
 
 class TransitionOutcome(StrEnum):
@@ -220,6 +275,8 @@ def recalculate_cascade(
     starting_volume_a: int,
     starting_volume_b: int,
     subsequent_workouts: list[WorkoutRecord],
+    starting_weak_streak_a: int = 0,
+    starting_weak_streak_b: int = 0,
 ) -> list[WorkoutRecord]:
     """Каскадный пересчёт цепочки тренировок после редактирования более
     ранней тренировки. Остаётся только для этого сценария — внесённые
@@ -229,6 +286,11 @@ def recalculate_cascade(
     starting_target_a/b — цели, которые действуют СРАЗУ ПОСЛЕ
     отредактированной тренировки. starting_volume_a/b — её объёмы, нужны
     как prev_volume для первой тренировки из subsequent_workouts.
+    starting_weak_streak_a/b (Часть 10, пакет #2, п.13) — сколько подряд
+    слабых тренировок было ДО начала этой цепочки (обычно посчитано
+    вызывающим кодом из истории вплоть до отредактированной тренировки
+    включительно, см. WorkoutRepository.edit_workout) — дальше счётчик
+    бегущий, обновляется по ходу цикла, отдельно нигде не хранится.
 
     equipment_type и transition_failed каждой записи не пересчитываются —
     это факт того, что было в реальности, каскад его не переигрывает.
@@ -236,15 +298,18 @@ def recalculate_cascade(
     updated: list[WorkoutRecord] = []
     target_a, target_b = starting_target_a, starting_target_b
     prev_volume_a, prev_volume_b = starting_volume_a, starting_volume_b
+    weak_streak_a, weak_streak_b = starting_weak_streak_a, starting_weak_streak_b
 
     for record in subsequent_workouts:
         result_a = recalculate_target(
             VOLUME_BLOCK, target_a, record.block_a.log.working_reps, record.block_a.log.max_reps,
             record.block_a.log.volume, prev_volume_a, record.block_a.equipment_type,
+            consecutive_weak_before=weak_streak_a,
         )
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_b, record.block_b.log.working_reps, record.block_b.log.max_reps,
             record.block_b.log.volume, prev_volume_b, record.block_b.equipment_type,
+            consecutive_weak_before=weak_streak_b,
         )
         updated.append(
             WorkoutRecord(
@@ -275,6 +340,8 @@ def recalculate_cascade(
             )
         )
         target_a, target_b = result_a.new_target, result_b.new_target
+        weak_streak_a = weak_streak_a + 1 if record.block_a.log.volume < prev_volume_a else 0
+        weak_streak_b = weak_streak_b + 1 if record.block_b.log.volume < prev_volume_b else 0
         prev_volume_a, prev_volume_b = record.block_a.log.volume, record.block_b.log.volume
 
     return updated

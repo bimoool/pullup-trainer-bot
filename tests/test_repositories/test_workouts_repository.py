@@ -48,9 +48,12 @@ async def test_record_workout_first_ever_starts_from_domain_base_targets(session
     assert workout.sequence_number == 1
     assert workout.status == WorkoutStatus.COMPLETED
     assert block_a.target_before == VOLUME_BLOCK.base_target
-    assert block_a.target_after == 11  # delta=2, step=min(3, ceil(1))=1
+    # Часть 10, пакет #2: формула роста считает шаг от avg_working (11), не
+    # от target (10) — avg=11, growth=12-11=1, step=min(3,ceil(0.5))=1 -> 12
+    assert block_a.target_after == 12
     assert block_b.target_before == STRENGTH_BLOCK.base_target
-    assert block_b.target_after == 4  # delta=2, step=min(2, ceil(1))=1
+    # avg=4, growth=5-4=1, step=min(2,ceil(0.5))=1 -> 5
+    assert block_b.target_after == 5
     assert block_a.equipment_type == EquipmentType.BAND
     assert block_a.equipment_value == BAND_VALUE
 
@@ -76,7 +79,7 @@ async def test_record_workout_second_continues_from_first_target_after(session, 
 
     block_a = _block(second, "a")
     assert second.sequence_number == 2
-    assert block_a.target_before == 11  # = target_after первой тренировки
+    assert block_a.target_before == 12  # = target_after первой тренировки (см. тест выше)
 
 
 async def test_equipment_change_threshold_and_failed_transition_reverts_to_prior_gear(session, user: User):
@@ -129,18 +132,23 @@ async def test_equipment_change_threshold_and_failed_transition_reverts_to_prior
 
 
 async def test_bodyweight_ceiling_caps_volume_target_and_does_not_switch_equipment(session, user: User):
+    # Часть 10, пакет #2: под новой формулой роста target больше не растёт
+    # кумулятивно на max_step каждый раз при одинаковых working_reps (шаг
+    # считается от avg_working, а не накапливается поверх предыдущего
+    # target) — фиксированные working_reps=15 сходятся к 15+max_step=18 и
+    # там и остаются, к потолку не подбираются. Чтобы реально дотянуться до
+    # потолка, working_reps сами должны быть достаточно высоки — единственный
+    # вызов с working_reps=26 уже за потолком (25) демонстрирует cap.
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
-    workout = None
-    for _ in range(6):
-        workout = await repo.record_workout(
-            user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(_ * 3 + 1),
-            block_a_reps=BlockLog(working_reps=(15, 15, 15), max_reps=100),
-            block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
-            block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
-            block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
-        )
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(26, 26, 26), max_reps=27),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
 
     block_a = _block(workout, "a")
     assert block_a.target_after == VOLUME_BLOCK.bodyweight_ceiling
@@ -159,7 +167,9 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
     first_block_a = _block(first, "a")
-    assert first_block_a.target_after == 11
+    # Часть 10, пакет #2: avg=11, growth=12-11=1, step=1 -> 12 (не 11 — см.
+    # test_record_workout_first_ever_starts_from_domain_base_targets)
+    assert first_block_a.target_after == 12
 
     backdated = await repo.record_backdated_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
@@ -171,11 +181,9 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
     backdated_block_a = _block(backdated, "a")
     assert backdated.sequence_number is None
     assert backdated.participates_in_cascade is False
-    assert backdated_block_a.target_before == first_block_a.target_after  # 11
-    # "Объём везде, без отката" (Часть 10): working_reps=(14,14,14) — разброс
-    # 0<=2, минимум(14)-target(11)=3>=max_step(3) -> round(mean(14,14,14))=14,
-    # без капа (обычная формула дала бы delta=4, step=min(3,ceil(2))=2 -> 13).
-    assert backdated_block_a.target_after == 14
+    assert backdated_block_a.target_before == first_block_a.target_after  # 12
+    # avg=14, growth=15-14=1, step=min(3,ceil(0.5))=1 -> 15
+    assert backdated_block_a.target_after == 15
 
     third = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(3),
@@ -187,7 +195,7 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
     third_block_a = _block(third, "a")
     # цель для третьей тренировки выведена из ПОСЛЕДНЕЙ ПО ДАТЕ записи любого
     # происхождения — то есть из внесённой задним числом, а не из первой
-    assert third_block_a.target_before == backdated_block_a.target_after  # 14
+    assert third_block_a.target_before == backdated_block_a.target_after  # 15
     # но нумерация цепочки каскада backdated не учитывает — вторая позиция
     assert third.sequence_number == 2
 
@@ -196,19 +204,21 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
         block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=14),
     )
     edited_first_block_a = _block(edited_first, "a")
-    assert edited_first_block_a.target_after == 12  # delta=4, step=min(3, ceil(2))=2 -> 10+2
+    # avg=11, growth=14-11=3, step=min(3,ceil(1.5))=2 -> 13
+    assert edited_first_block_a.target_after == 13
 
     updated_backdated = await repo.get_by_id(backdated.id)
     updated_backdated_block_a = _block(updated_backdated, "a")
-    # каскад НЕ трогает внесённую задним числом тренировку
-    assert updated_backdated_block_a.target_before == 11
-    assert updated_backdated_block_a.target_after == 14
+    # каскад НЕ трогает внесённую задним числом тренировку — её собственные
+    # target_before/after остаются снимком на момент записи, не переигрываются
+    assert updated_backdated_block_a.target_before == 12
+    assert updated_backdated_block_a.target_after == 15
 
     updated_third = await repo.get_by_id(third.id)
     updated_third_block_a = _block(updated_third, "a")
-    # каскад пересчитал третью от НОВОГО target_after первой (12), полностью
-    # игнорируя внесённую задним числом (13) — она не часть цепочки каскада
-    assert updated_third_block_a.target_before == 12
+    # каскад пересчитал третью от НОВОГО target_after первой (13), полностью
+    # игнорируя внесённую задним числом — она не часть цепочки каскада
+    assert updated_third_block_a.target_before == 13
     assert updated_third_block_a.target_before != updated_backdated_block_a.target_after
 
 

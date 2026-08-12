@@ -12,6 +12,7 @@ from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.progression import (
     TransitionOutcome,
     check_transition_outcome,
+    count_consecutive_weak_trainings,
     recalculate_cascade,
     recalculate_target,
 )
@@ -31,6 +32,15 @@ def _block_to_log(block: Block) -> BlockLog:
 
 def _find_block(workout: Workout, block_type: BlockType) -> Block:
     return next(b for b in workout.blocks if b.block_type == block_type)
+
+
+def _weak_streak(history: list[Workout], block_type: BlockType) -> int:
+    """Сколько подряд слабых тренировок (Часть 10, пакет #2, п.13) стоят в
+    конце history для данного блока — вычисляется из уже загруженной
+    истории каждый раз заново, отдельной сущности в БД нет (см.
+    count_consecutive_weak_trainings)."""
+    volumes = [_block_to_log(_find_block(w, block_type)).volume for w in history]
+    return count_consecutive_weak_trainings(volumes)
 
 
 def _exclude_free_entries(workouts: list[Workout]) -> list[Workout]:
@@ -290,10 +300,12 @@ class WorkoutRepository:
         result_a = recalculate_target(
             VOLUME_BLOCK, target_before_a, block_a_reps.working_reps, block_a_reps.max_reps,
             block_a_reps.volume, state_a.volume, block_a_equipment_type,
+            consecutive_weak_before=_weak_streak(history, BlockType.A),
         )
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_before_b, block_b_reps.working_reps, block_b_reps.max_reps,
             block_b_reps.volume, state_b.volume, block_b_equipment_type,
+            consecutive_weak_before=_weak_streak(history, BlockType.B),
         )
 
         transition_a = self._check_transition(preceding, BlockType.A, VOLUME_BLOCK, block_a_reps.max_reps)
@@ -385,10 +397,12 @@ class WorkoutRepository:
         result_a = recalculate_target(
             VOLUME_BLOCK, state_a.target, block_a_reps.working_reps, block_a_reps.max_reps,
             block_a_reps.volume, state_a.volume, block_a_equipment_type,
+            consecutive_weak_before=_weak_streak(history, BlockType.A),
         )
         result_b = recalculate_target(
             STRENGTH_BLOCK, state_b.target, block_b_reps.working_reps, block_b_reps.max_reps,
             block_b_reps.volume, state_b.volume, block_b_equipment_type,
+            consecutive_weak_before=_weak_streak(history, BlockType.B),
         )
 
         workout = Workout(
@@ -511,13 +525,20 @@ class WorkoutRepository:
         new_block_b_reps = block_b_reps or _block_to_log(block_b)
 
         target_before_a, target_before_b, prev_volume_a, prev_volume_b = self._preceding_chain_state(chain, position)
+        # Стрик "слабых" тренировок (Часть 10, пакет #2, п.13) до
+        # редактируемой записи — из цепочки ДО её позиции, тем же приёмом,
+        # что и target_before/prev_volume выше.
+        weak_streak_before_a = _weak_streak(chain[:position], BlockType.A)
+        weak_streak_before_b = _weak_streak(chain[:position], BlockType.B)
         result_a = recalculate_target(
             VOLUME_BLOCK, target_before_a, new_block_a_reps.working_reps, new_block_a_reps.max_reps,
             new_block_a_reps.volume, prev_volume_a, block_a.equipment_type,
+            consecutive_weak_before=weak_streak_before_a,
         )
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_before_b, new_block_b_reps.working_reps, new_block_b_reps.max_reps,
             new_block_b_reps.volume, prev_volume_b, block_b.equipment_type,
+            consecutive_weak_before=weak_streak_before_b,
         )
 
         block_a.working_reps = list(new_block_a_reps.working_reps)
@@ -539,9 +560,15 @@ class WorkoutRepository:
         following = chain[position + 1 :]
         if following:
             records = [_workout_to_record(w) for w in following]
+            # Стрик, который переходит В цепочку после отредактированной
+            # записи, учитывает и её саму — была ли она слабой по НОВЫМ
+            # (только что введённым) данным.
+            weak_streak_a = weak_streak_before_a + 1 if new_block_a_reps.volume < prev_volume_a else 0
+            weak_streak_b = weak_streak_before_b + 1 if new_block_b_reps.volume < prev_volume_b else 0
             cascaded = recalculate_cascade(
                 result_a.new_target, result_b.new_target,
                 new_block_a_reps.volume, new_block_b_reps.volume, records,
+                starting_weak_streak_a=weak_streak_a, starting_weak_streak_b=weak_streak_b,
             )
             for db_workout, new_record in zip(following, cascaded, strict=True):
                 _apply_cascade_result(db_workout, new_record)

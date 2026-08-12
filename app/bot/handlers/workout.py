@@ -28,7 +28,7 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.constants import SET_LENGTH, STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
-from app.domain.progression import rollback_signed_load, rollback_target
+from app.domain.progression import initial_volume_target, rollback_signed_load, rollback_target
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
@@ -124,9 +124,20 @@ async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> No
         user.id, bypass_transition_wait=is_admin,
     )
 
+    # Для ещё ни разу не тренировавшегося пользователя resolve_next_targets
+    # флэтом отдаёт VOLUME_BLOCK.base_target — не учитывает "замер минус
+    # 25%" (Часть 10, пакет #2, п.14), которое реально применится при
+    # старте (см. handle_start_workout). Показываем ту же скорректированную
+    # цифру здесь, иначе "Текущий план" разойдётся с тем, что будет на деле.
+    target_a = target_a_state.target
+    if not await workouts.list_for_user(user.id):
+        baseline = await BaselineRepository(session).get_latest_for_user(user.id)
+        if baseline is not None:
+            target_a = initial_volume_target(baseline.reps)
+
     await callback.message.answer(
         texts.CURRENT_PLAN.format(
-            target_a=target_a_state.target, target_b=target_b_state.target,
+            target_a=target_a, target_b=target_b_state.target,
             equipment_a=format_equipment_label(target_a_state.equipment_type, target_a_state.equipment_value),
             equipment_b=format_equipment_label(target_b_state.equipment_type, target_b_state.equipment_value),
         ),
@@ -195,7 +206,13 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
     if not history:
         baseline = await BaselineRepository(session).get_latest_for_user(user.id)
         baseline_reps = baseline.reps if baseline is not None else 0
+        # "Замер минус 25%" (Часть 10, пакет #2, п.14) — только при первом
+        # старте (target_a_override иначе не выставлен вовсе, target_a_state
+        # уже даёт VOLUME_BLOCK.base_target флэтом из _resolve_next_state
+        # для пустой истории — здесь его переопределяем).
+        target_a_override = initial_volume_target(baseline_reps)
 
+    target_a_for_display = target_a_override if target_a_override is not None else target_a_state.target
     await _begin_equipment_setup(
         callback.message, state, session,
         flow="live",
@@ -204,7 +221,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         baseline_reps=baseline_reps,
         extra_data={
             "workout_set_id": active_set.id,
-            "target_a": target_a_state.target, "target_b": target_b_state.target,
+            "target_a": target_a_for_display, "target_b": target_b_state.target,
             "target_a_override": target_a_override, "target_b_override": None,
         },
     )
@@ -258,6 +275,9 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
         return
 
     await message.answer(texts.RETEST_DONE.format(reps=reps))
+    # "Замер минус 25%" (Часть 10, пакет #2, п.14) — та же логика, что при
+    # первой тренировке нового пользователя, см. handle_start_workout.
+    target_a = initial_volume_target(reps)
     await _begin_equipment_setup(
         message, state, session,
         flow="live",
@@ -266,8 +286,8 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
         baseline_reps=reps,
         extra_data={
             "workout_set_id": active_set.id,
-            "target_a": VOLUME_BLOCK.base_target, "target_b": STRENGTH_BLOCK.base_target,
-            "target_a_override": VOLUME_BLOCK.base_target, "target_b_override": STRENGTH_BLOCK.base_target,
+            "target_a": target_a, "target_b": STRENGTH_BLOCK.base_target,
+            "target_a_override": target_a, "target_b_override": STRENGTH_BLOCK.base_target,
         },
     )
 
