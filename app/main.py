@@ -8,6 +8,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from app.bot.error_handler import register_error_handler
 from app.bot.handlers import router
 from app.bot.middlewares import DbSessionMiddleware
 from app.config import settings
@@ -33,6 +34,7 @@ def build_dispatcher() -> Dispatcher:
     storage = RedisStorage.from_url(settings.redis_url)
     dispatcher = Dispatcher(storage=storage)
     dispatcher.update.middleware(DbSessionMiddleware())
+    register_error_handler(dispatcher)
     dispatcher.include_router(router)
     return dispatcher
 
