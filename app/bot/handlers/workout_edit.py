@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
+from app.bot.formatting import format_reps_example
 from app.bot.keyboards import (
     back_cancel_keyboard,
     bottom_menu_keyboard,
@@ -55,13 +56,26 @@ async def handle_edit_workout_menu(callback: CallbackQuery, session: AsyncSessio
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("edit_pick:"))
-async def handle_edit_pick(callback: CallbackQuery, state: FSMContext) -> None:
-    workout_id = int(callback.data.removeprefix("edit_pick:"))
-    await state.update_data(edit_workout_id=workout_id)
+async def _start_editing(message: Message, state: FSMContext, session: AsyncSession, *, workout_id: int) -> None:
+    """target_a/target_b кладутся в FSM здесь один раз — не текущая цель
+    пользователя, а target_before ИМЕННО этой редактируемой тренировки
+    (Часть 10, пакет #2, п.10): именно против неё вводился реальный
+    результат, это и есть корректный пример формата ввода."""
+    workout = await WorkoutRepository(session).get_by_id(workout_id)
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+
+    await state.update_data(edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before)
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
+    example_a = format_reps_example(block_a.target_before, VOLUME_BLOCK.work_sets)
+    await message.answer(texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=cancel_keyboard())
+
+
+@router.callback_query(F.data.startswith("edit_pick:"))
+async def handle_edit_pick(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    workout_id = int(callback.data.removeprefix("edit_pick:"))
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
+    await _start_editing(callback.message, state, session, workout_id=workout_id)
     await callback.answer()
 
 
@@ -81,9 +95,7 @@ async def handle_edit_last_workout(callback: CallbackQuery, state: FSMContext, s
         await callback.answer(texts.EDIT_NOT_EDITABLE, show_alert=True)
         return
 
-    await state.update_data(edit_workout_id=last.id)
-    await state.set_state(EditWorkoutStates.waiting_for_block_a)
-    await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
+    await _start_editing(callback.message, state, session, workout_id=last.id)
     await callback.answer()
 
 
@@ -94,16 +106,22 @@ async def handle_edit_block_a(message: Message, state: FSMContext) -> None:
         await message.answer(result.message)
         return
 
+    data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(EditWorkoutStates.waiting_for_block_b)
-    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("edit_back:block_a"))
+    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+    await message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("edit_back:block_a"),
+    )
 
 
 @router.callback_query(F.data == "edit_back:block_a")
 async def handle_edit_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=cancel_keyboard())
+    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
+    await callback.message.answer(texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=cancel_keyboard())
     await callback.answer()
 
 

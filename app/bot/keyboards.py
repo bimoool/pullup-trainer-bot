@@ -162,15 +162,6 @@ def skip_comment_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def equipment_recommendation_keyboard(accept_label: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=accept_label, callback_data="equip_recommend:accept")
-    builder.button(text=texts.EQUIPMENT_RECOMMENDATION_OTHER, callback_data="equip_recommend:other")
-    builder.button(text="❌ Отмена", callback_data="cancel_flow")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 def equipment_type_keyboard(back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for label, value in EQUIPMENT_TYPE_CHOICES:

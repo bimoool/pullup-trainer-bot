@@ -6,6 +6,44 @@ from datetime import date
 from decimal import Decimal
 
 from app.bot import texts
+from app.domain.constants import EquipmentType
+
+_EQUIPMENT_LABELS_NOMINATIVE: dict[EquipmentType, str] = {
+    EquipmentType.BODYWEIGHT: "собственный вес",
+    EquipmentType.BAND: "резина",
+    EquipmentType.WEIGHT: "отягощение",
+    EquipmentType.AUSTRALIAN: "австралийские подтягивания",
+}
+_EQUIPMENT_LABELS_INSTRUMENTAL: dict[EquipmentType, str] = {
+    EquipmentType.BODYWEIGHT: "собственным весом",
+    EquipmentType.BAND: "резиной",
+    EquipmentType.WEIGHT: "отягощением",
+    EquipmentType.AUSTRALIAN: "австралийскими подтягиваниями",
+}
+
+
+def format_equipment_label(
+    equipment_type: EquipmentType, equipment_value: Decimal | None = None, *, instrumental: bool = False,
+) -> str:
+    """Единый источник склонений снаряда (Часть 10, пакет #2) — тип снаряда
+    это фиксированный список из 4 вариантов, а не свободный текст, значит
+    каждый должен быть правильно согласован в шаблоне, а не просто
+    подставлен через двоеточие. instrumental=True — творительный падеж
+    ("с собственным весом"), иначе именительный ("собственный вес")."""
+    labels = _EQUIPMENT_LABELS_INSTRUMENTAL if instrumental else _EQUIPMENT_LABELS_NOMINATIVE
+    label = labels[equipment_type]
+    if equipment_type == EquipmentType.WEIGHT and equipment_value is not None:
+        label += f" +{format_kg(equipment_value)} кг"
+    return label
+
+
+def format_reps_example(target: int, work_sets: int) -> str:
+    """Пример ввода результата для подсказки — раньше был всегда одинаковым
+    ("15 15 15 18"), не зависел от реальной цели пользователя (Часть 10,
+    пакет #2, п.10). work_sets рабочих подходов + один на максимум, все
+    числа равны цели — это только пример формата ввода (через пробел),
+    а не подсказка "сколько именно делать в подходе на максимум"."""
+    return " ".join(str(target) for _ in range(work_sets + 1))
 
 
 def calculate_age(birth_date: date, today: date) -> int:

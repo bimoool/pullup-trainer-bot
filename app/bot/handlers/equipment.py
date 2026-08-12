@@ -6,13 +6,13 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
+from app.bot.formatting import format_equipment_label
 from app.bot.keyboards import (
     back_cancel_keyboard,
     band_item_picker_keyboard,
     band_reorder_keyboard,
     cancel_keyboard,
     equipment_kg_keyboard,
-    equipment_recommendation_keyboard,
     equipment_type_keyboard,
     profile_keyboard,
 )
@@ -26,11 +26,6 @@ from app.domain.progression import suggest_starting_equipment
 router = Router()
 
 _BLOCK_LABELS = {"a": "блоке на объём", "b": "блоке на силу"}
-_EQUIPMENT_LABELS = {
-    EquipmentType.BODYWEIGHT: "свой вес",
-    EquipmentType.BAND: "резина",
-    EquipmentType.WEIGHT: "отягощение",
-}
 
 
 def _target_hint(block_key: str) -> str:
@@ -115,16 +110,24 @@ async def _advance_equipment_queue(message: Message, state: FSMContext, session:
     # во всех остальных случаях None, и рекомендации снаряда по замеру нет
     # (домен ничего не советует при смене снаряда по порогу прогрессии,
     # см. EQUIPMENT_TYPE_PROMPT_CHANGE — там по-прежнему открытый вопрос).
+    #
+    # План формулируется фактом, одним сообщением на оба блока сразу, без
+    # кнопок подтверждения/замены (Часть 10, пакет #2, п.6-7) — снаряд
+    # применяется сразу, без промежуточного шага. equipment_plan_announced
+    # в FSM гарантирует ровно одно объявление на весь заход, даже если
+    # пользователь потом тапнет "Назад" с шага ввода веса/резины и вернётся
+    # сюда повторно для того же блока.
     if data.get("baseline_reps") is not None:
         suggested_a, suggested_b = suggest_starting_equipment(data["baseline_reps"])
+        if not data.get("equipment_plan_announced"):
+            announcement = texts.EQUIPMENT_PLAN_ANNOUNCEMENT.format(
+                equipment_a=format_equipment_label(suggested_a, instrumental=True),
+                equipment_b=format_equipment_label(suggested_b, instrumental=True),
+            )
+            await message.answer(announcement)
+            await state.update_data(equipment_plan_announced=True)
         suggested = suggested_a if block_key == "a" else suggested_b
-        await state.update_data(recommended_equipment=suggested.value)
-        suggested_label = _EQUIPMENT_LABELS[suggested]
-        prompt = texts.EQUIPMENT_RECOMMENDATION_PROMPT.format(
-            block_label=_BLOCK_LABELS[block_key], baseline_reps=data["baseline_reps"], suggested=suggested_label,
-        )
-        accept_label = texts.EQUIPMENT_RECOMMENDATION_ACCEPT.format(suggested=suggested_label)
-        await message.answer(prompt, reply_markup=equipment_recommendation_keyboard(accept_label))
+        await _apply_equipment_type_choice(suggested, message, state, session, data["telegram_id"])
         return
 
     prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
@@ -147,8 +150,8 @@ async def _apply_equipment_type_choice(
     equipment_type: EquipmentType, message: Message, state: FSMContext, session: AsyncSession, telegram_id: int,
 ) -> None:
     """Общая ветка для обычного выбора (handle_equipment_type_choice) и
-    принятия рекомендации (handle_equipment_recommendation_accept) — оба
-    в итоге применяют один и тот же тип снаряда к текущему блоку."""
+    автоприменённой рекомендации (_advance_equipment_queue, п.6-7 пакета
+    #2) — оба в итоге применяют один и тот же тип снаряда к текущему блоку."""
     data = await state.get_data()
     block_key = data["equipment_queue"][0]
 
@@ -163,8 +166,13 @@ async def _apply_equipment_type_choice(
     if equipment_type == EquipmentType.WEIGHT:
         await state.update_data(pending_equipment_type=equipment_type.value)
         await state.set_state(EquipmentStates.waiting_for_value)
+        # Конкретная рекомендация вместо общего принципа (Часть 10, пакет
+        # #2, п.7) — только когда это первый старт блока на силу на
+        # отягощении по замеру; иначе обычная подсказка "около N повторений".
+        is_first_strength_weight = block_key == "b" and data.get("baseline_reps") is not None
+        hint = texts.EQUIPMENT_STRENGTH_WEIGHT_START_HINT if is_first_strength_weight else _target_hint(block_key)
         await message.answer(
-            texts.EQUIPMENT_VALUE_PROMPT_WEIGHT + _target_hint(block_key),
+            texts.EQUIPMENT_VALUE_PROMPT_WEIGHT + hint,
             reply_markup=back_cancel_keyboard("equip_back:type"),
         )
         return
@@ -191,25 +199,6 @@ async def handle_equipment_type_choice(callback: CallbackQuery, state: FSMContex
     equipment_type = EquipmentType(callback.data.removeprefix("equip:"))
     await callback.message.edit_reply_markup(reply_markup=None)
     await _apply_equipment_type_choice(equipment_type, callback.message, state, session, callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(EquipmentStates.waiting_for_type, F.data == "equip_recommend:accept")
-async def handle_equipment_recommendation_accept(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
-    data = await state.get_data()
-    equipment_type = EquipmentType(data["recommended_equipment"])
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await _apply_equipment_type_choice(equipment_type, callback.message, state, session, callback.from_user.id)
-    await callback.answer()
-
-
-@router.callback_query(EquipmentStates.waiting_for_type, F.data == "equip_recommend:other")
-async def handle_equipment_recommendation_other(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    block_key = data["equipment_queue"][0]
-    await callback.message.edit_reply_markup(reply_markup=None)
-    prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
-    await callback.message.answer(prompt, reply_markup=equipment_type_keyboard())
     await callback.answer()
 
 

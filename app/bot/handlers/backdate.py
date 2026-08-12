@@ -7,12 +7,14 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
+from app.bot.formatting import format_reps_example
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.workout import _ensure_active_workout_set
 from app.bot.keyboards import back_cancel_keyboard, bottom_menu_keyboard, cancel_keyboard
 from app.bot.parsing import ParseError, parse_block_result
 from app.bot.states import BackdateStates
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.session import BlockLog
 from app.services.workout_log import WorkoutLogService
@@ -21,8 +23,16 @@ router = Router()
 
 
 @router.callback_query(F.data == "backdate_workout")
-async def handle_backdate_start(callback: CallbackQuery, state: FSMContext) -> None:
+async def handle_backdate_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    # Текущие цели считаются один раз здесь и кладутся в FSM — используются
+    # только как пример формата ввода на следующих шагах (Часть 10, пакет
+    # #2, п.10), не как реальная цель ЭТОЙ конкретной прошлой тренировки.
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+    target_a_state, target_b_state = await WorkoutRepository(session).resolve_next_targets(user.id)
+
     await state.set_state(BackdateStates.waiting_for_date)
+    await state.update_data(target_a=target_a_state.target, target_b=target_b_state.target)
     await callback.message.answer(texts.BACKDATE_INTRO)
     await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=cancel_keyboard())
     await callback.answer()
@@ -40,9 +50,13 @@ async def handle_backdate_date(message: Message, state: FSMContext) -> None:
         await message.answer(texts.BACKDATE_FUTURE_DATE)
         return
 
+    data = await state.get_data()
     await state.update_data(backdate_performed_at=parsed_date.isoformat())
     await state.set_state(BackdateStates.waiting_for_block_a)
-    await message.answer(texts.BLOCK_A_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:date"))
+    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
+    await message.answer(
+        texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
+    )
 
 
 @router.callback_query(F.data == "backdate_back:date")
@@ -60,16 +74,24 @@ async def handle_backdate_block_a(message: Message, state: FSMContext) -> None:
         await message.answer(result.message)
         return
 
+    data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(BackdateStates.waiting_for_block_b)
-    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:block_a"))
+    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+    await message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("backdate_back:block_a"),
+    )
 
 
 @router.callback_query(F.data == "backdate_back:block_a")
 async def handle_backdate_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
     await state.set_state(BackdateStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.BLOCK_A_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:date"))
+    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
+    await callback.message.answer(
+        texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
+    )
     await callback.answer()
 
 

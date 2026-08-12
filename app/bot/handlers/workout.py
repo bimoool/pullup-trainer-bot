@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_set_close_report
+from app.bot.formatting import format_equipment_label, format_reps_example, format_set_close_report
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
@@ -111,8 +111,10 @@ async def handle_end_cycle_confirm(callback: CallbackQuery, state: FSMContext, s
 
 @router.callback_query(F.data == "show_plan")
 async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> None:
-    """Посмотреть текущий план, не начиная тренировку — снаряд здесь не
-    уточняем (это делает сама тренировка), только цели по повторениям."""
+    """Посмотреть текущий план, не начиная тренировку. Снаряд показывается
+    сразу (Часть 10, пакет #2, п.9) — это уже закреплённый за пользователем
+    снаряд с прошлой тренировки, не новый выбор, человек может заранее
+    подготовить инвентарь."""
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
 
@@ -123,7 +125,11 @@ async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> No
     )
 
     await callback.message.answer(
-        texts.CURRENT_PLAN.format(target_a=target_a_state.target, target_b=target_b_state.target),
+        texts.CURRENT_PLAN.format(
+            target_a=target_a_state.target, target_b=target_b_state.target,
+            equipment_a=format_equipment_label(target_a_state.equipment_type, target_a_state.equipment_value),
+            equipment_b=format_equipment_label(target_b_state.equipment_type, target_b_state.equipment_value),
+        ),
     )
     await callback.answer()
 
@@ -267,7 +273,11 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
 
 
 async def _send_plan(message: Message, state: FSMContext, target_a: int, target_b: int) -> None:
-    await message.answer(texts.WORKOUT_PLAN.format(target_a=target_a, target_b=target_b), reply_markup=cancel_keyboard())
+    example_a = format_reps_example(target_a, VOLUME_BLOCK.work_sets)
+    await message.answer(
+        texts.WORKOUT_PLAN.format(target_a=target_a, target_b=target_b, example_a=example_a),
+        reply_markup=cancel_keyboard(),
+    )
     await state.set_state(WorkoutStates.waiting_for_block_a)
 
 
@@ -278,12 +288,16 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
         await message.answer(result.message)
         return
 
+    data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_block_b)
     # Предложение факультативной нагрузки на отдыхе — перед приглашением к
     # блоку на силу (Часть 10, п. 20), не блокирует переход дальше.
     await message.answer(texts.OPTIONAL_EXERCISE_OFFER, reply_markup=optional_exercise_keyboard())
-    await message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("wk_back:block_a"))
+    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+    await message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("wk_back:block_a"),
+    )
 
 
 @router.callback_query(F.data == "optional_exercise:want")
@@ -320,9 +334,13 @@ async def handle_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data == "wk_back:block_b")
 async def handle_back_to_block_b(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
     await state.set_state(WorkoutStates.waiting_for_block_b)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.BLOCK_B_PROMPT, reply_markup=back_cancel_keyboard("wk_back:block_a"))
+    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+    await callback.message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("wk_back:block_a"),
+    )
     await callback.answer()
 
 

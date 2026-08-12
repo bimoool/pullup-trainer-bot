@@ -50,9 +50,15 @@ async def _make_workout(
 
 
 async def _enter_edit_flow(session, user: User, bot: Bot, dispatcher: Dispatcher, workout_id: int) -> None:
+    # target_a/target_b — как их выставляет _start_editing в проде: target_before
+    # именно этой редактируемой тренировки (Часть 10, пакет #2, п.10).
+    workout = await WorkoutRepository(session).get_by_id(workout_id)
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     await fsm.set_state(EditWorkoutStates.waiting_for_block_a)
-    await fsm.update_data(edit_workout_id=workout_id)
+    await fsm.update_data(edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before)
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="11 11 11 12"), session=session)
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="4 4 4 4 5"), session=session)
 
