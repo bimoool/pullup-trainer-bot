@@ -5,6 +5,7 @@
 from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
+from aiogram.methods import SendMessage
 
 from app.db.models import User
 from app.db.repositories.baselines import BaselineRepository
@@ -55,6 +56,22 @@ async def test_tap_marked_day_sends_workout_details(session, user: User, bot: Bo
     )
     # DB-запрос по дате отработал без ошибок — реальная проверка контента
     # StubSession не даёт (см. другие тесты в этом файле).
+
+
+async def test_tap_day_of_not_latest_workout_omits_next_target(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    # Часть 10, пакет #2, п.15 — та же логика, что и в "Истории", теперь и
+    # в деталях дня календаря: только у самой свежей тренировки видна
+    # "следующая цель".
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+    await _make_workout_on(session, user, performed_at=datetime(2026, 8, 5, tzinfo=UTC))
+    await _make_workout_on(session, user, performed_at=datetime(2026, 8, 6, tzinfo=UTC))
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:2026-08-05"), session=session,
+    )
+
+    [day_message] = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
+    assert "следующая цель" not in day_message
 
 
 async def test_tap_unmarked_day_does_not_crash(session, user: User, bot: Bot, dispatcher: Dispatcher):

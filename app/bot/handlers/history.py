@@ -36,18 +36,32 @@ def _format_equipment(block: Block) -> str:
     return f"{label} {format_kg(block.equipment_value)} кг"
 
 
-def format_history_entry(workout: Workout) -> str:
+def format_history_entry(workout: Workout, *, is_latest: bool = True) -> str:
     """Один читаемый блок на тренировку — переиспользуется списком истории
     и деталями дня в календаре (Часть 10, п. 26: "тап по дню показывает
-    детали в существующем формате истории")."""
+    детали в существующем формате истории").
+
+    is_latest=False (Часть 10, пакет #2, п.15) — "следующая цель" убирается
+    из более ранних записей: это число становится неактуальным после
+    следующей тренировки и вводит в заблуждение, особенно когда за один
+    день записано несколько тренировок подряд (например, задним числом)."""
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
     comment = texts.HISTORY_COMMENT_LINE.format(comment=workout.comment) if workout.comment else ""
-    return texts.HISTORY_ENTRY.format(
-        date=workout.performed_at.strftime("%d.%m.%Y"),
-        backdated_mark=texts.HISTORY_BACKDATED_MARK if not workout.participates_in_cascade else "",
-        equipment_a=_format_equipment(block_a), max_a=block_a.max_reps, target_a=block_a.target_after,
-        equipment_b=_format_equipment(block_b), max_b=block_b.max_reps, target_b=block_b.target_after,
+    date = workout.performed_at.strftime("%d.%m.%Y")
+    backdated_mark = texts.HISTORY_BACKDATED_MARK if not workout.participates_in_cascade else ""
+
+    if is_latest:
+        return texts.HISTORY_ENTRY.format(
+            date=date, backdated_mark=backdated_mark,
+            equipment_a=_format_equipment(block_a), max_a=block_a.max_reps, target_a=block_a.target_after,
+            equipment_b=_format_equipment(block_b), max_b=block_b.max_reps, target_b=block_b.target_after,
+            comment=comment,
+        )
+    return texts.HISTORY_ENTRY_NO_TARGET.format(
+        date=date, backdated_mark=backdated_mark,
+        equipment_a=_format_equipment(block_a), max_a=block_a.max_reps,
+        equipment_b=_format_equipment(block_b), max_b=block_b.max_reps,
         comment=comment,
     )
 
@@ -65,7 +79,8 @@ async def handle_show_history(callback: CallbackQuery, session: AsyncSession) ->
         await callback.answer()
         return
 
-    entries = [format_history_entry(workout) for workout in history[-HISTORY_LIMIT:]]
+    shown = history[-HISTORY_LIMIT:]
+    entries = [format_history_entry(workout, is_latest=workout is history[-1]) for workout in shown]
     await callback.message.answer("\n\n".join(entries), reply_markup=progress_section_keyboard())
     await callback.answer()
 
@@ -130,6 +145,7 @@ async def handle_calendar_day(callback: CallbackQuery, session: AsyncSession) ->
         await callback.answer(texts.CALENDAR_NO_WORKOUT_TOAST, show_alert=True)
         return
 
-    entries = [format_history_entry(workout) for workout in day_workouts]
+    latest = history[-1] if history else None
+    entries = [format_history_entry(workout, is_latest=workout is latest) for workout in day_workouts]
     await callback.message.answer("\n\n".join(entries))
     await callback.answer()
