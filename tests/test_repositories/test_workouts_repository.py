@@ -552,32 +552,54 @@ async def test_correct_block_equipment_updates_item_id(session, user: User):
     assert _block(updated, "a").equipment_item_id == other_item.id
 
 
-# --- record_free_workout (Часть 10, п. 18) -----------------------------------------
+# --- record_free_workout (Часть 10, п. 18, пакет #2 п.21) --------------------------
 
 
-async def test_record_free_workout_stores_reps_as_block_a_max(session, user: User):
+async def test_record_free_workout_stores_arbitrary_set_count_and_equipment(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     workout = await repo.record_free_workout(
-        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1), reps=8,
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(8, 6), max_reps=5), equipment_type=EquipmentType.BAND,
+        equipment_item_id=None, equipment_value=BAND_VALUE,
     )
 
     block_a, block_b = _block(workout, "a"), _block(workout, "b")
-    assert block_a.working_reps == []
-    assert block_a.max_reps == 8
-    assert block_a.equipment_type == EquipmentType.BODYWEIGHT
+    assert block_a.working_reps == [8, 6]
+    assert block_a.max_reps == 5
+    assert block_a.equipment_type == EquipmentType.BAND
+    assert block_a.equipment_value == BAND_VALUE
     assert block_b.max_reps == 0
     assert workout.participates_in_cascade is False
     assert workout.sequence_number is None
     assert workout.is_free_entry is True
 
 
+async def test_record_free_workout_defaults_still_work_with_single_set(session, user: User):
+    # Один подход — как раньше было единственное число, но теперь через
+    # тот же BlockLog-интерфейс (working_reps пустой, всё в max_reps).
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    workout = await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(), max_reps=8), equipment_type=EquipmentType.BODYWEIGHT,
+    )
+
+    block_a = _block(workout, "a")
+    assert block_a.working_reps == []
+    assert block_a.max_reps == 8
+
+
 async def test_record_free_workout_does_not_increment_set_counter(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
-    await repo.record_free_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1), reps=8)
+    await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(), max_reps=8), equipment_type=EquipmentType.BODYWEIGHT,
+    )
 
     workout_set = await WorkoutSetRepository(session).get_by_id(workout_set_id)
     assert workout_set.workouts_completed == 0
@@ -599,7 +621,10 @@ async def test_record_free_workout_does_not_affect_resolve_next_targets(session,
     )
     real_block_a = _block(real_workout, "a")
 
-    await repo.record_free_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2), reps=8)
+    await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(), max_reps=8), equipment_type=EquipmentType.BODYWEIGHT,
+    )
 
     target_a_state, _ = await repo.resolve_next_targets(user.id)
     assert target_a_state.equipment_type == EquipmentType.BAND
@@ -609,7 +634,10 @@ async def test_record_free_workout_does_not_affect_resolve_next_targets(session,
 async def test_record_free_workout_appears_in_list_for_user_for_stats(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
-    await repo.record_free_workout(user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1), reps=8)
+    await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(), max_reps=8), equipment_type=EquipmentType.BODYWEIGHT,
+    )
 
     history = await repo.list_for_user(user.id)
     assert len(history) == 1

@@ -183,9 +183,14 @@ async def _apply_equipment_type_choice(
     items = await EquipmentItemRepository(session).list_for_user(user.id)
 
     if not items:
+        # Явное предложение завести резину (Часть 10, пакет #2, п.22) —
+        # не молчаливый переход к вводу имени, человек может не понять,
+        # что происходит, если бот без объяснений сразу спрашивает "как
+        # назвать".
         await state.set_state(EquipmentStates.waiting_for_new_item_name)
         await message.answer(
-            texts.EQUIPMENT_BAND_NAME_PROMPT + _target_hint(block_key), reply_markup=back_cancel_keyboard("equip_back:type"),
+            texts.MY_BANDS_EMPTY_INLINE_OFFER + _target_hint(block_key),
+            reply_markup=back_cancel_keyboard("equip_back:type"),
         )
         return
 

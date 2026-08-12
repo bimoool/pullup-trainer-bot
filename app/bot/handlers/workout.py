@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+import math
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from aiogram import F, Router
@@ -27,7 +28,13 @@ from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
-from app.domain.constants import SET_LENGTH, STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.constants import (
+    MIN_REST_DAYS,
+    SET_LENGTH,
+    STRENGTH_BLOCK,
+    VOLUME_BLOCK,
+    EquipmentType,
+)
 from app.domain.progression import initial_volume_target, rollback_signed_load, rollback_target
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
@@ -168,7 +175,20 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         # ускоряет ручное тестирование; check_training_readiness (домен)
         # не меняется и продолжает считать TOO_EARLY как обычно.
         if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
-            await callback.message.answer(texts.TOO_EARLY_FOR_WORKOUT.format(ready_at=readiness.ready_at))
+            # Таймер + дата/время (Часть 10, пакет #2, п.23) — домен считает
+            # только по date (check_training_readiness), а тут для реального
+            # "сколько ждать" в часах нужна полная дата-время последней
+            # тренировки, поэтому здесь, не в домене (презентационный расчёт,
+            # не влияет на саму логику готовности).
+            ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
+            hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
+            await callback.message.answer(
+                texts.TOO_EARLY_FOR_WORKOUT.format(
+                    hours_left=hours_left,
+                    ready_date=ready_at_dt.strftime("%d.%m"),
+                    ready_time=ready_at_dt.strftime("%H:%M"),
+                ),
+            )
             await callback.answer()
             return
         if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
@@ -322,8 +342,12 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "optional_exercise:want")
 async def handle_optional_exercise_want(callback: CallbackQuery) -> None:
+    # Баг из живого тестирования (Часть 10, пакет #2, п.24): раньше здесь
+    # был только тост callback.answer(show_alert=True) — он подтверждал
+    # нажатие, но реально не присылал упражнения. Настоящее сообщение.
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.answer(texts.OPTIONAL_EXERCISE_ACCEPTED_TOAST, show_alert=True)
+    await callback.message.answer(texts.OPTIONAL_EXERCISE_DETAILS)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "optional_exercise:skip")

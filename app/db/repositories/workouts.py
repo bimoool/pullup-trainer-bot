@@ -443,9 +443,18 @@ class WorkoutRepository:
         return workout
 
     async def record_free_workout(
-        self, *, user_id: int, workout_set_id: int, performed_at: datetime, reps: int, comment: str | None = None,
+        self,
+        *,
+        user_id: int,
+        workout_set_id: int,
+        performed_at: datetime,
+        block_a_reps: BlockLog,
+        equipment_type: EquipmentType,
+        equipment_value: Decimal | None = None,
+        equipment_item_id: int | None = None,
+        comment: str | None = None,
     ) -> Workout:
-        """"➕ Внести свободные подтягивания" (Часть 10, п. 18) —
+        """"➕ Внести свободные подтягивания" (Часть 10, пакет #2, п.21) —
         произвольная тренировка вне схемы: попадает в общую
         статистику/объём (list_for_user её не фильтрует), но НЕ в сет из 12
         (increment_completed не вызывается — в отличие от
@@ -456,11 +465,12 @@ class WorkoutRepository:
         участвует в подборе снаряда для следующей структурированной
         тренировки.
 
-        Единственное число (reps) целиком уходит в max_reps блока "a"
-        (working_reps пустой — считать нечего, это не структурированный
-        подход) — так BlockLog.volume даёт ровно reps, без задвоения.
-        Блок "b" — нулевой, свободные подтягивания не относятся к силовому
-        блоку."""
+        block_a_reps — произвольное количество подходов (не фиксированные
+        3+1, как в основной схеме — сколько реально сделал, столько и
+        ввёл), volume считается как обычно через BlockLog.volume. Снаряд
+        теперь тоже указывается явно (раньше подразумевался собственный
+        вес всегда) — блок "b" по-прежнему нулевой, свободные подтягивания
+        не относятся к силовому блоку."""
         history = _exclude_free_entries(await self.list_for_user(user_id))
         state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
         state_b = self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK)
@@ -480,9 +490,10 @@ class WorkoutRepository:
         self._session.add(
             Block(
                 workout_id=workout.id, block_type=BlockType.A,
-                working_reps=[], max_reps=reps,
+                working_reps=list(block_a_reps.working_reps), max_reps=block_a_reps.max_reps,
                 target_before=state_a.target, target_after=state_a.target,
-                equipment_changed=False, equipment_type=EquipmentType.BODYWEIGHT,
+                equipment_changed=False, equipment_type=equipment_type,
+                equipment_value=equipment_value, equipment_item_id=equipment_item_id,
             ),
         )
         self._session.add(

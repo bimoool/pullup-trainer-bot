@@ -18,11 +18,16 @@ from app.db.repositories.users import UserRepository
 router = Router()
 
 
-async def _go_home(message: Message, state: FSMContext, user: User) -> None:
+async def _go_home(message: Message, state: FSMContext, user: User, *, cancelled: bool = False) -> None:
     """Общий "выход в начало" — используется и /start, и /cancel, и кнопкой
     отмены: если анкета не завершена, возвращает туда, где пользователь
     остановился в онбординге (а не в несуществующее для него главное меню),
-    иначе — в главное меню."""
+    иначе — в главное меню.
+
+    cancelled=True (Часть 10, пакет #2, п.18) — CANCELLED и WELCOME_BACK
+    оба заканчивались на "Что делаем?", и /cancel/кнопка отмены слали ОБА
+    подряд одним и тем же смыслом. Один текст вместо двух — "Отменено" для
+    явной отмены, "С возвращением" для /start."""
     await state.clear()
     if user.onboarding_completed_at is None:
         await state.set_state(OnboardingStates.waiting_for_baseline_reps)
@@ -30,7 +35,8 @@ async def _go_home(message: Message, state: FSMContext, user: User) -> None:
         await message.answer(texts.ONBOARDING_WHAT_NEXT)
         await message.answer(texts.BASELINE_GUIDE, reply_markup=baseline_start_keyboard())
         return
-    await message.answer(texts.WELCOME_BACK, reply_markup=bottom_menu_keyboard())
+    text = texts.CANCELLED if cancelled else texts.WELCOME_BACK
+    await message.answer(text, reply_markup=bottom_menu_keyboard())
 
 
 @router.message(CommandStart())
@@ -50,19 +56,18 @@ async def handle_cancel_command(message: Message, state: FSMContext, session: As
         await state.clear()
         await message.answer(texts.CANCELLED)
         return
-    await message.answer(texts.CANCELLED)
-    await _go_home(message, state, user)
+    await _go_home(message, state, user, cancelled=True)
 
 
 @router.callback_query(F.data == "cancel_flow")
 async def handle_cancel_callback(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
-    await callback.message.answer(texts.CANCELLED)
     if user is not None:
-        await _go_home(callback.message, state, user)
+        await _go_home(callback.message, state, user, cancelled=True)
     else:
         await state.clear()
+        await callback.message.answer(texts.CANCELLED)
     await callback.answer()
 
 

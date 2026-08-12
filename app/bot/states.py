@@ -83,9 +83,15 @@ class BackdateStates(StatesGroup):
 
 
 class FreeWorkoutStates(StatesGroup):
-    """"➕ Внести свободные подтягивания" (Часть 10, п. 18) — вне схемы, вне
-    сета из 12, вне каскада, только число."""
+    """"➕ Внести свободные подтягивания" (Часть 10, п. 18, пакет #2 п.21) —
+    вне схемы, вне сета из 12, вне каскада. Снаряд + произвольное
+    количество подходов, не фиксированная схема."""
 
+    waiting_for_equipment_type = State()
+    waiting_for_equipment_value = State()
+    waiting_for_band_choice = State()
+    waiting_for_new_item_name = State()
+    waiting_for_new_item_kg = State()
     waiting_for_reps = State()
 
 
