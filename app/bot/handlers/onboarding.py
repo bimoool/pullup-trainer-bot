@@ -70,13 +70,15 @@ async def handle_baseline_confirm(callback: CallbackQuery, state: FSMContext, se
 
     await callback.message.edit_reply_markup(reply_markup=None)
 
+    # Мотивационное сообщение — обязательное (Часть 10), разное по трём
+    # диапазонам результата (пакет #2, п.4): 0 подбадривает и объясняет
+    # план отдельно, 1-11 и 12+ — разный тон.
     if reps == 0:
-        await callback.message.answer(texts.BASELINE_ZERO_NOTICE)
-
-    # Мотивационное сообщение — обязательное (Часть 10), не только для
-    # результата 0: видеокружок-плейсхолдер здесь, не в BASELINE_GUIDE
-    # (тот — про то, как делать замер, этот — после результата).
-    await callback.message.answer(texts.MOTIVATION_AFTER_BASELINE)
+        await callback.message.answer(texts.MOTIVATION_AFTER_BASELINE_ZERO)
+    elif reps <= 11:
+        await callback.message.answer(texts.MOTIVATION_AFTER_BASELINE_LOW)
+    else:
+        await callback.message.answer(texts.MOTIVATION_AFTER_BASELINE_HIGH.format(reps=reps))
 
     await state.set_state(OnboardingStates.waiting_for_weight)
     await callback.message.answer(texts.WELCOME_AFTER_BASELINE.format(reps=reps))
