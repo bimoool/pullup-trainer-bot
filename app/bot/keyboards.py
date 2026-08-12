@@ -255,6 +255,12 @@ def optional_exercise_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def warmup_reminder_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.WARMUP_SHOW_BUTTON, callback_data="warmup:show")
+    return builder.as_markup()
+
+
 def edit_equipment_weight_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.EDIT_EQUIPMENT_SKIP, callback_data="edit_equipment_skip")

@@ -143,7 +143,10 @@ async def _complete_equipment_queue(message: Message, state: FSMContext, session
     if data["equipment_flow"] == "backdate":
         await backdate.finalize_backdated_workout(message, state, session, data, telegram_id=data["telegram_id"])
     else:
-        await workout._send_plan(message, state, data["target_a"], data["target_b"])
+        await workout._send_plan(
+            message, state, data["target_a"], data["target_b"],
+            is_first_workout=data.get("is_first_workout", False),
+        )
 
 
 async def _apply_equipment_type_choice(

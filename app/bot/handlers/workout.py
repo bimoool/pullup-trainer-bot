@@ -17,6 +17,7 @@ from app.bot.keyboards import (
     end_cycle_confirm_keyboard,
     optional_exercise_keyboard,
     skip_comment_keyboard,
+    warmup_reminder_keyboard,
     workout_result_keyboard,
 )
 from app.bot.parsing import ParseError, parse_block_result
@@ -243,6 +244,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
             "workout_set_id": active_set.id,
             "target_a": target_a_for_display, "target_b": target_b_state.target,
             "target_a_override": target_a_override, "target_b_override": None,
+            "is_first_workout": not history,
         },
     )
     await callback.answer()
@@ -308,17 +310,37 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
             "workout_set_id": active_set.id,
             "target_a": target_a, "target_b": STRENGTH_BLOCK.base_target,
             "target_a_override": target_a, "target_b_override": STRENGTH_BLOCK.base_target,
+            # Ретест возможен только при непустой истории (см. readiness в
+            # handle_start_workout), значит это никогда не первая тренировка.
+            "is_first_workout": False,
         },
     )
 
 
-async def _send_plan(message: Message, state: FSMContext, target_a: int, target_b: int) -> None:
+async def _send_plan(
+    message: Message, state: FSMContext, target_a: int, target_b: int, *, is_first_workout: bool = False,
+) -> None:
+    # Разминка (Часть 10, пакет #2, п.25) — полное описание только на самой
+    # первой тренировке; на всех следующих — короткое напоминание с кнопкой,
+    # чтобы не повторять один и тот же длинный текст каждый раз.
+    if is_first_workout:
+        await message.answer(texts.WARMUP_FULL)
+    else:
+        await message.answer(texts.WARMUP_REMINDER, reply_markup=warmup_reminder_keyboard())
+
     example_a = format_reps_example(target_a, VOLUME_BLOCK.work_sets)
     await message.answer(
         texts.WORKOUT_PLAN.format(target_a=target_a, target_b=target_b, example_a=example_a),
         reply_markup=cancel_keyboard(),
     )
     await state.set_state(WorkoutStates.waiting_for_block_a)
+
+
+@router.callback_query(F.data == "warmup:show")
+async def handle_warmup_show(callback: CallbackQuery) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(texts.WARMUP_FULL)
+    await callback.answer()
 
 
 @router.message(WorkoutStates.waiting_for_block_a)
@@ -372,7 +394,10 @@ async def handle_block_b_result(message: Message, state: FSMContext) -> None:
 async def handle_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await callback.message.edit_reply_markup(reply_markup=None)
-    await _send_plan(callback.message, state, data["target_a"], data["target_b"])
+    await _send_plan(
+        callback.message, state, data["target_a"], data["target_b"],
+        is_first_workout=data.get("is_first_workout", False),
+    )
     await callback.answer()
 
 
