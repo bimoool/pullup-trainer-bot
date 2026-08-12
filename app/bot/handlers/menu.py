@@ -77,13 +77,18 @@ def _format_subscription(user: User) -> str:
     return label
 
 
-async def render_profile(message: Message, session: AsyncSession) -> None:
+async def render_profile(message: Message, session: AsyncSession, telegram_id: int) -> None:
     """Вынесено из handle_profile_section — переиспользуется хендлером
     "← Назад" в редактировании профиля (см. profile_edit.py), чтобы после
     правки поля просто перерисовать актуальный профиль, а не дублировать
-    сборку текста."""
+    сборку текста.
+
+    telegram_id — явный параметр, а не message.from_user.id: у части
+    вызовов message — это callback.message (см. profile_edit.py), а там
+    from_user — бот, не пользователь (тот же класс бага, что и с кнопкой
+    "Пропустить" у комментария, см. workout.py::_finalize_workout)."""
     users = UserRepository(session)
-    user = await users.get_by_telegram_id(message.from_user.id)
+    user = await users.get_by_telegram_id(telegram_id)
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
     if achievements:
@@ -108,14 +113,14 @@ async def render_profile(message: Message, session: AsyncSession) -> None:
         achievement_count=len(achievements),
         achievement_list=achievement_list,
     )
-    is_admin = settings.is_admin(message.from_user.id)
+    is_admin = settings.is_admin(telegram_id)
     await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=profile_keyboard(is_admin=is_admin))
 
 
 @router.message(F.text == BOTTOM_MENU_PROFILE)
 async def handle_profile_section(message: Message, state: FSMContext, session: AsyncSession) -> None:
     await state.clear()
-    await render_profile(message, session)
+    await render_profile(message, session, message.from_user.id)
 
 
 @router.message(F.text == BOTTOM_MENU_HELP)

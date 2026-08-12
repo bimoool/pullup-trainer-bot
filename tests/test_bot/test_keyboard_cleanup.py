@@ -8,35 +8,19 @@ from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
 from aiogram.methods import EditMessageReplyMarkup
-from aiogram.types import CallbackQuery, Chat, Message, Update
-from aiogram.types import User as TgUser
 
 from app.bot.states import BackdateStates, EquipmentStates, WorkoutStates
 from app.db.models import User
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
+from tests.test_bot.conftest import make_callback_update
 
 _STALE_MESSAGE_ID = 100
 
 
-def _callback_update(*, telegram_id: int, data: str) -> Update:
-    message = Message(
-        message_id=_STALE_MESSAGE_ID, date=datetime.now(UTC),
-        chat=Chat(id=telegram_id, type="private"),
-        from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-        text="stub",
-    )
-    return Update(
-        update_id=1,
-        callback_query=CallbackQuery(
-            id="1",
-            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-            chat_instance="1",
-            data=data,
-            message=message,
-        ),
-    )
+def _callback_update(*, telegram_id: int, data: str):
+    return make_callback_update(telegram_id=telegram_id, data=data, message_id=_STALE_MESSAGE_ID)
 
 
 def _cleared_the_stale_message(bot: Bot) -> bool:

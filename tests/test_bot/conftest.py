@@ -13,13 +13,15 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import TelegramMethod
-from aiogram.types import Chat, Message, TelegramObject
+from aiogram.types import CallbackQuery, Chat, Message, TelegramObject, Update
+from aiogram.types import User as TgUser
 
 from app.bot.handlers import router as app_router
 
 # Токен формально валиден для Bot(...) (цифры:остальное), реальных запросов
 # не делает — все исходящие вызовы перехватывает StubSession ниже.
 FAKE_TOKEN = "123456789:AAFakeTokenForBotTestsOnly000000000000000"
+BOT_TELEGRAM_ID = 123456789  # id из FAKE_TOKEN — см. make_callback_update ниже
 
 
 class StubSession(BaseSession):
@@ -70,3 +72,35 @@ def _clear_sent_methods(bot: Bot):
     bot.session.sent_methods.clear()
     yield
     bot.session.sent_methods.clear()
+
+
+def make_callback_update(*, telegram_id: int, data: str, message_id: int = 100) -> Update:
+    """Общий конструктор Update с CallbackQuery для всех тестов
+    tests/test_bot/ — раньше каждый файл держал свою локальную копию, и все
+    они ошибочно ставили message.from_user = нажавший кнопку пользователь.
+
+    В реальном Telegram сообщение, к которому прикреплена inline-кнопка,
+    отправлено БОТОМ — callback.message.from_user всегда бот, а не тот, кто
+    нажал; нажавший доступен только через callback.from_user. Ошибочная
+    локальная копия маскировала реальный прод-баг (Часть 10): несколько
+    хендлеров брали telegram_id через message.from_user.id вместо
+    callback.from_user.id и падали на AttributeError (user из БД не
+    находился — id бота там не зарегистрирован), теряя данные молча.
+    См. workout.py::_finalize_workout, backdate.py::finalize_backdated_workout,
+    menu.py::render_profile, profile_edit.py::_save_and_confirm."""
+    message = Message(
+        message_id=message_id, date=datetime.now(UTC),
+        chat=Chat(id=telegram_id, type="private"),
+        from_user=TgUser(id=BOT_TELEGRAM_ID, is_bot=True, first_name="Bot"),
+        text="stub",
+    )
+    return Update(
+        update_id=1,
+        callback_query=CallbackQuery(
+            id="1",
+            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester", username="tester"),
+            chat_instance="1",
+            data=data,
+            message=message,
+        ),
+    )

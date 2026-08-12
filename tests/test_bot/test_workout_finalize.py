@@ -7,8 +7,6 @@
 from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import CallbackQuery, Chat, Message, Update
-from aiogram.types import User as TgUser
 
 from app.bot.states import WorkoutStates
 from app.db.models import User
@@ -16,25 +14,7 @@ from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-
-
-def _callback_update(*, telegram_id: int, data: str) -> Update:
-    message = Message(
-        message_id=100, date=datetime.now(UTC),
-        chat=Chat(id=telegram_id, type="private"),
-        from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-        text="stub",
-    )
-    return Update(
-        update_id=1,
-        callback_query=CallbackQuery(
-            id="1",
-            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-            chat_instance="1",
-            data=data,
-            message=message,
-        ),
-    )
+from tests.test_bot.conftest import make_callback_update as _callback_update
 
 
 async def _put_user_at_comment_step(session, user: User, bot: Bot, dispatcher: Dispatcher) -> None:
@@ -57,6 +37,12 @@ async def _put_user_at_comment_step(session, user: User, bot: Bot, dispatcher: D
 
 
 async def test_skip_comment_records_exactly_one_workout(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    """Часть 10, повторное всплытие бага: сквозная проверка до записи в БД,
+    не только "хендлер что-то ответил" — callback.message.from_user в
+    реальном Telegram это бот, не нажавший кнопку (см.
+    tests/test_bot/conftest.py::make_callback_update), и раньше
+    _finalize_workout брал telegram_id именно оттуда, теряя тренировку
+    молча (AttributeError после state.clear(), проглоченный aiogram)."""
     await _put_user_at_comment_step(session, user, bot, dispatcher)
 
     await dispatcher.feed_update(
@@ -65,6 +51,7 @@ async def test_skip_comment_records_exactly_one_workout(session, user: User, bot
 
     history = await WorkoutRepository(session).list_for_user(user.id)
     assert len(history) == 1
+    assert history[0].comment is None
 
 
 async def test_repeat_tap_on_stale_skip_button_does_not_duplicate_workout(

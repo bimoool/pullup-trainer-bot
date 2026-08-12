@@ -194,6 +194,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         callback.message, state, session,
         flow="live",
         target_a_state=target_a_state, target_b_state=target_b_state,
+        telegram_id=callback.from_user.id,
         baseline_reps=baseline_reps,
         extra_data={
             "workout_set_id": active_set.id,
@@ -255,6 +256,7 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
         message, state, session,
         flow="live",
         target_a_state=None, target_b_state=None,
+        telegram_id=message.from_user.id,
         baseline_reps=reps,
         extra_data={
             "workout_set_id": active_set.id,
@@ -326,17 +328,20 @@ async def handle_back_to_block_b(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.message(WorkoutStates.waiting_for_comment)
 async def handle_comment_text(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    await _finalize_workout(message, state, session, comment=message.text)
+    await _finalize_workout(message, state, session, comment=message.text, telegram_id=message.from_user.id)
 
 
 @router.callback_query(WorkoutStates.waiting_for_comment, F.data == "skip_comment")
 async def handle_skip_comment(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
-    await _finalize_workout(callback.message, state, session, comment=None, clear_keyboard=True)
+    await _finalize_workout(
+        callback.message, state, session, comment=None, clear_keyboard=True, telegram_id=callback.from_user.id,
+    )
     await callback.answer()
 
 
 async def _finalize_workout(
-    message: Message, state: FSMContext, session: AsyncSession, *, comment: str | None, clear_keyboard: bool = False,
+    message: Message, state: FSMContext, session: AsyncSession, *,
+    comment: str | None, telegram_id: int, clear_keyboard: bool = False,
 ) -> None:
     data = await state.get_data()
     # Очищаем состояние ДО записи в БД (Часть 10, диагностика бага с
@@ -353,8 +358,16 @@ async def _finalize_workout(
     # пользователя, редактировать его клавиатуру нельзя и не нужно.
     if clear_keyboard:
         await message.edit_reply_markup(reply_markup=None)
+    # telegram_id передаётся явно, а не берётся из message.from_user.id —
+    # НАСТОЯЩАЯ причина бага "тренировка не пишется при 'Пропустить'"
+    # (Часть 10, повторное всплытие): для callback-варианта message —
+    # это callback.message, а у него from_user — БОТ, не человек, нажавший
+    # кнопку. get_by_telegram_id(bot_id) возвращал None, user.id падал с
+    # AttributeError ПОСЛЕ state.clear() — тренировка терялась молча, без
+    # сообщения об ошибке (аиогram проглатывает необработанное исключение
+    # в хендлере). Подтверждено трассировкой в логах прод-бота.
     users = UserRepository(session)
-    user = await users.get_by_telegram_id(message.from_user.id)
+    user = await users.get_by_telegram_id(telegram_id)
 
     block_a_reps = BlockLog(working_reps=tuple(data["block_a_working_reps"]), max_reps=data["block_a_max_reps"])
     block_b_reps = BlockLog(working_reps=tuple(data["block_b_working_reps"]), max_reps=data["block_b_max_reps"])

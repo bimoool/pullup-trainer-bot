@@ -90,6 +90,7 @@ async def handle_backdate_block_b(message: Message, state: FSMContext, session: 
         message, state, session,
         flow="backdate",
         target_a_state=None, target_b_state=None,
+        telegram_id=message.from_user.id,
         baseline_reps=None,
         extra_data={
             "backdate_performed_at": data["backdate_performed_at"],
@@ -102,13 +103,18 @@ async def handle_backdate_block_b(message: Message, state: FSMContext, session: 
 
 
 async def finalize_backdated_workout(
-    message: Message, state: FSMContext, session: AsyncSession, data: dict,
+    message: Message, state: FSMContext, session: AsyncSession, data: dict, *, telegram_id: int,
 ) -> None:
     """Вызывается из equipment.py, когда очередь снаряда для бэкдейта
     опустела (см. _complete_equipment_queue) — здесь уже есть и повторения
-    обоих блоков, и выбранный снаряд, можно записывать."""
+    обоих блоков, и выбранный снаряд, можно записывать.
+
+    telegram_id передаётся явно от исходного вызова _begin_equipment_setup
+    (см. комментарий там) — message здесь почти всегда callback.message
+    (последний шаг очереди снаряда почти всегда завершается кнопкой), а у
+    него from_user — бот, не пользователь."""
     users = UserRepository(session)
-    user = await users.get_by_telegram_id(message.from_user.id)
+    user = await users.get_by_telegram_id(telegram_id)
 
     active_set = await _ensure_active_workout_set(session, user.id)
     if active_set is None:

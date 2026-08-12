@@ -39,7 +39,7 @@ async def handle_profile_edit_open(callback: CallbackQuery) -> None:
 async def handle_profile_edit_close(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     await state.clear()
     await callback.message.edit_reply_markup(reply_markup=None)
-    await render_profile(callback.message, session)
+    await render_profile(callback.message, session, callback.from_user.id)
     await callback.answer()
 
 
@@ -62,13 +62,15 @@ async def handle_profile_edit_field(callback: CallbackQuery, state: FSMContext) 
     await callback.answer()
 
 
-async def _save_and_confirm(message: Message, state: FSMContext, session: AsyncSession, **field) -> None:
+async def _save_and_confirm(
+    message: Message, state: FSMContext, session: AsyncSession, *, telegram_id: int, **field,
+) -> None:
     users = UserRepository(session)
-    user = await users.get_by_telegram_id(message.from_user.id)
+    user = await users.get_by_telegram_id(telegram_id)
     await users.update_profile(user.id, **field)
     await state.clear()
     await message.answer(texts.PROFILE_EDIT_DONE)
-    await render_profile(message, session)
+    await render_profile(message, session, telegram_id)
 
 
 @router.message(ProfileEditStates.waiting_for_weight)
@@ -81,7 +83,7 @@ async def handle_edit_weight(message: Message, state: FSMContext, session: Async
     if value <= 0:
         await message.answer(texts.QUESTIONNAIRE_WEIGHT_INVALID)
         return
-    await _save_and_confirm(message, state, session, weight_kg=value)
+    await _save_and_confirm(message, state, session, telegram_id=message.from_user.id, weight_kg=value)
 
 
 @router.message(ProfileEditStates.waiting_for_height)
@@ -90,14 +92,14 @@ async def handle_edit_height(message: Message, state: FSMContext, session: Async
     if not raw.isdigit() or int(raw) <= 0:
         await message.answer(texts.QUESTIONNAIRE_HEIGHT_INVALID)
         return
-    await _save_and_confirm(message, state, session, height_cm=int(raw))
+    await _save_and_confirm(message, state, session, telegram_id=message.from_user.id, height_cm=int(raw))
 
 
 @router.callback_query(ProfileEditStates.waiting_for_gender, F.data.startswith("gender:"))
 async def handle_edit_gender(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     gender = Gender(callback.data.removeprefix("gender:"))
     await callback.message.edit_reply_markup(reply_markup=None)
-    await _save_and_confirm(callback.message, state, session, gender=gender)
+    await _save_and_confirm(callback.message, state, session, telegram_id=callback.from_user.id, gender=gender)
     await callback.answer()
 
 
@@ -111,7 +113,7 @@ async def handle_edit_birth_date(message: Message, state: FSMContext, session: A
     if value > datetime.now(UTC).date():
         await message.answer(texts.QUESTIONNAIRE_BIRTH_DATE_FUTURE)
         return
-    await _save_and_confirm(message, state, session, birth_date=value)
+    await _save_and_confirm(message, state, session, telegram_id=message.from_user.id, birth_date=value)
 
 
 @router.message(ProfileEditStates.waiting_for_timezone)
@@ -119,4 +121,6 @@ async def handle_edit_timezone(message: Message, state: FSMContext, session: Asy
     city = (message.text or "").strip()
     if not city:
         return
-    await _save_and_confirm(message, state, session, timezone=resolve_city_timezone(city))
+    await _save_and_confirm(
+        message, state, session, telegram_id=message.from_user.id, timezone=resolve_city_timezone(city),
+    )

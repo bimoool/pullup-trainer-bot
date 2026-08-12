@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import CallbackQuery, Chat, Message, Update
+from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
 
 from app.bot.states import EditWorkoutStates
@@ -16,25 +16,7 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
 from app.domain.session import BlockLog
-
-
-def _callback_update(*, telegram_id: int, data: str) -> Update:
-    message = Message(
-        message_id=100, date=datetime.now(UTC),
-        chat=Chat(id=telegram_id, type="private"),
-        from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-        text="stub",
-    )
-    return Update(
-        update_id=1,
-        callback_query=CallbackQuery(
-            id="1",
-            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-            chat_instance="1",
-            data=data,
-            message=message,
-        ),
-    )
+from tests.test_bot.conftest import make_callback_update as _callback_update
 
 
 def _message_update(*, telegram_id: int, text: str) -> Update:

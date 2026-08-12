@@ -55,6 +55,7 @@ async def _begin_equipment_setup(
     flow: str,
     target_a_state,
     target_b_state,
+    telegram_id: int,
     baseline_reps: int | None = None,
     extra_data: dict | None = None,
 ) -> None:
@@ -65,7 +66,16 @@ async def _begin_equipment_setup(
 
     extra_data — то, что уже накоплено в FSM до вызова (например, реально
     введённые повторения бэкдейта) и должно пережить сбор снаряда, чтобы
-    _complete_equipment_queue могло собрать финальную запись."""
+    _complete_equipment_queue могло собрать финальную запись.
+
+    telegram_id — сохраняется в FSM явно и передаётся до самого конца
+    очереди (см. _complete_equipment_queue), а не берётся на месте записи
+    из message.from_user.id: очередь снаряда почти всегда завершается
+    callback-шагом (выбор своего веса/резины из списка), а у сообщения,
+    привязанного к CallbackQuery, from_user — это БОТ, а не человек,
+    который нажал кнопку. Ровно это было причиной бага "тренировка не
+    записывается при 'Пропустить' у комментария" (Часть 10) — то же самое
+    молча ждало здесь для бэкдейта."""
     equipment_queue: list[str] = []
     equipment_results: dict[str, dict[str, str | int | None]] = {}
 
@@ -84,6 +94,7 @@ async def _begin_equipment_setup(
         equipment_queue=equipment_queue,
         equipment_results=equipment_results,
         baseline_reps=baseline_reps,
+        telegram_id=telegram_id,
         **(extra_data or {}),
     )
     await _advance_equipment_queue(message, state, session)
@@ -127,7 +138,7 @@ async def _complete_equipment_queue(message: Message, state: FSMContext, session
     )
 
     if data["equipment_flow"] == "backdate":
-        await backdate.finalize_backdated_workout(message, state, session, data)
+        await backdate.finalize_backdated_workout(message, state, session, data, telegram_id=data["telegram_id"])
     else:
         await workout._send_plan(message, state, data["target_a"], data["target_b"])
 
