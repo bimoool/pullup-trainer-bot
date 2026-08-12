@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from aiogram import F, Router
@@ -10,7 +10,7 @@ from app.bot import texts
 from app.bot.formatting import format_reps_example
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.workout import _ensure_active_workout_set
-from app.bot.keyboards import back_cancel_keyboard, bottom_menu_keyboard, cancel_keyboard
+from app.bot.keyboards import back_cancel_keyboard, backdate_date_keyboard, bottom_menu_keyboard
 from app.bot.parsing import ParseError, parse_block_result
 from app.bot.states import BackdateStates
 from app.db.repositories.users import UserRepository
@@ -34,8 +34,33 @@ async def handle_backdate_start(callback: CallbackQuery, state: FSMContext, sess
     await state.set_state(BackdateStates.waiting_for_date)
     await state.update_data(target_a=target_a_state.target, target_b=target_b_state.target)
     await callback.message.answer(texts.BACKDATE_INTRO)
-    await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=cancel_keyboard())
+    await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=backdate_date_keyboard())
     await callback.answer()
+
+
+@router.callback_query(F.data == "backdate_open_calendar")
+async def handle_backdate_open_calendar(callback: CallbackQuery, session: AsyncSession) -> None:
+    from app.bot.handlers.history import (
+        render_calendar_month,  # деферред — см. комментарий в history.py
+    )
+
+    now = datetime.now(UTC)
+    await render_calendar_month(callback, session, year=now.year, month=now.month, edit=False, mode="backdate")
+    await callback.answer()
+
+
+async def _proceed_with_backdate_date(message: Message, state: FSMContext, parsed_date: datetime) -> None:
+    """Общий хвост после того, как дата бэкдейта известна и уже проверена
+    (не будущая) — не важно, пришла она текстом (handle_backdate_date) или
+    тапом по календарю (handle_calendar_date_picked, Часть 10, пакет #2,
+    п.17): дальше сценарий один и тот же."""
+    data = await state.get_data()
+    await state.update_data(backdate_performed_at=parsed_date.isoformat())
+    await state.set_state(BackdateStates.waiting_for_block_a)
+    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
+    await message.answer(
+        texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
+    )
 
 
 @router.message(BackdateStates.waiting_for_date)
@@ -50,20 +75,28 @@ async def handle_backdate_date(message: Message, state: FSMContext) -> None:
         await message.answer(texts.BACKDATE_FUTURE_DATE)
         return
 
-    data = await state.get_data()
-    await state.update_data(backdate_performed_at=parsed_date.isoformat())
-    await state.set_state(BackdateStates.waiting_for_block_a)
-    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
-    await message.answer(
-        texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
-    )
+    await _proceed_with_backdate_date(message, state, parsed_date)
+
+
+async def handle_calendar_date_picked(callback: CallbackQuery, state: FSMContext, picked_date: date) -> None:
+    """Вызывается из history.py при тапе по дню в режиме "backdate" (Часть
+    10, пакет #2, п.17) — та же проверка и переход, что при ручном вводе
+    даты текстом (см. _proceed_with_backdate_date), источник даты другой."""
+    if picked_date > datetime.now(UTC).date():
+        await callback.answer(texts.BACKDATE_FUTURE_DATE, show_alert=True)
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+    parsed_date = datetime(picked_date.year, picked_date.month, picked_date.day, tzinfo=UTC)
+    await _proceed_with_backdate_date(callback.message, state, parsed_date)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "backdate_back:date")
 async def handle_backdate_back_to_date(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(BackdateStates.waiting_for_date)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=cancel_keyboard())
+    await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=backdate_date_keyboard())
     await callback.answer()
 
 

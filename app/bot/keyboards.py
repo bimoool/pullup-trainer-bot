@@ -88,10 +88,19 @@ def progress_section_keyboard() -> InlineKeyboardMarkup:
 _CALENDAR_WEEKDAY_LABELS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
 
-def calendar_keyboard(year: int, month: int, weeks: list[list[int]], marked_days: set[int]) -> InlineKeyboardMarkup:
+def calendar_keyboard(
+    year: int, month: int, weeks: list[list[int]], marked_days: set[int], *, mode: str = "view",
+) -> InlineKeyboardMarkup:
     """weeks — вывод calendar.monthcalendar(year, month) (недели с
     понедельника, 0 — день не в этом месяце). marked_days — числа месяца,
-    в которые была хотя бы одна тренировка."""
+    в которые была хотя бы одна тренировка (или редактируемая — зависит от
+    режима, см. вызывающий код).
+
+    mode (Часть 10, пакет #2, п.16-17) — переиспользуемый компонент теперь
+    открывается из трёх разных сценариев ("Прогресс" → "Календарь", ввод
+    даты для бэкдейта, "Изменить тренировку"), зашивается в callback_data
+    каждой кнопки, чтобы общие хендлеры (app/bot/handlers/history.py)
+    знали, куда вести тап по дню/закрытию, не заводя три копии клавиатуры."""
     builder = InlineKeyboardBuilder()
     builder.row(*(InlineKeyboardButton(text=label, callback_data="noop") for label in _CALENDAR_WEEKDAY_LABELS))
 
@@ -102,16 +111,22 @@ def calendar_keyboard(year: int, month: int, weeks: list[list[int]], marked_days
                 row.append(InlineKeyboardButton(text=" ", callback_data="noop"))
                 continue
             label = f"✅{day}" if day in marked_days else str(day)
-            row.append(InlineKeyboardButton(text=label, callback_data=f"cal_day:{year:04d}-{month:02d}-{day:02d}"))
+            row.append(
+                InlineKeyboardButton(text=label, callback_data=f"cal_day:{mode}:{year:04d}-{month:02d}-{day:02d}"),
+            )
         builder.row(*row)
 
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
     builder.row(
-        InlineKeyboardButton(text="◀️", callback_data=f"cal_month:{prev_year:04d}-{prev_month:02d}"),
+        InlineKeyboardButton(text="◀️", callback_data=f"cal_month:{mode}:{prev_year:04d}-{prev_month:02d}"),
         InlineKeyboardButton(text=f"{year:04d}-{month:02d}", callback_data="noop"),
-        InlineKeyboardButton(text="▶️", callback_data=f"cal_month:{next_year:04d}-{next_month:02d}"),
+        InlineKeyboardButton(text="▶️", callback_data=f"cal_month:{mode}:{next_year:04d}-{next_month:02d}"),
     )
+    # Кнопка выхода прямо в компоненте (Часть 10, пакет #2, п.16) — раньше
+    # покинуть календарь можно было только тапом по другой кнопке нижнего
+    # меню, что нелогично.
+    builder.row(InlineKeyboardButton(text="✖️ Закрыть", callback_data=f"cal_close:{mode}"))
     return builder.as_markup()
 
 
@@ -139,6 +154,16 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     критический баг Части 2)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    return builder.as_markup()
+
+
+def backdate_date_keyboard() -> InlineKeyboardMarkup:
+    """Ввод даты бэкдейта — календарь ИЛИ текст, обе опции сразу (Часть 10,
+    пакет #2, п.17), не одна вместо другой."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📅 Открыть календарь", callback_data="backdate_open_calendar")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -248,13 +273,16 @@ def edit_equipment_band_keyboard(items: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def edit_workout_picker_keyboard(workouts: list) -> InlineKeyboardMarkup:
+def edit_workout_picker_keyboard(workouts: list, *, label_format: str = "%d.%m.%Y") -> InlineKeyboardMarkup:
     """workouts — Workout ORM-объекты (не импортируем тип напрямую, чтобы
     не тянуть app.db.models в клавиатурный модуль лишний раз); нужны только
-    .id и .performed_at."""
+    .id и .performed_at. Основной вход "Изменить тренировку" теперь ведёт
+    через календарь (Часть 10, пакет #2, п.17) — этот список остался только
+    для редкого случая нескольких редактируемых тренировок за один день
+    (label_format="%H:%M", даты у всех в списке одинаковые)."""
     builder = InlineKeyboardBuilder()
     for workout in reversed(workouts):
-        builder.button(text=workout.performed_at.strftime("%d.%m.%Y"), callback_data=f"edit_pick:{workout.id}")
+        builder.button(text=workout.performed_at.strftime(label_format), callback_data=f"edit_pick:{workout.id}")
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
     builder.adjust(1)
     return builder.as_markup()

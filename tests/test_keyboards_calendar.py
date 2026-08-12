@@ -30,9 +30,10 @@ def test_marked_day_gets_checkmark_prefix_and_real_callback():
     weeks = calendar.monthcalendar(2026, 8)
     markup = calendar_keyboard(2026, 8, weeks, marked_days={5})
 
+    # [1:-2] — без строки дней недели, строки навигации и строки закрытия
     day_buttons = {
-        button.callback_data.removeprefix("cal_day:"): button.text
-        for row in markup.inline_keyboard[1:-1]
+        button.callback_data.removeprefix("cal_day:view:"): button.text
+        for row in markup.inline_keyboard[1:-2]
         for button in row
         if button.callback_data.startswith("cal_day:")
     }
@@ -44,23 +45,49 @@ def test_navigation_row_wraps_month_correctly():
     weeks = calendar.monthcalendar(2026, 8)
     markup = calendar_keyboard(2026, 8, weeks, marked_days=set())
 
-    nav_row = markup.inline_keyboard[-1]
-    assert [b.callback_data for b in nav_row] == ["cal_month:2026-07", "noop", "cal_month:2026-09"]
+    nav_row = markup.inline_keyboard[-2]
+    assert [b.callback_data for b in nav_row] == ["cal_month:view:2026-07", "noop", "cal_month:view:2026-09"]
 
 
 def test_navigation_wraps_across_year_boundary_forward():
     weeks = calendar.monthcalendar(2026, 12)
     markup = calendar_keyboard(2026, 12, weeks, marked_days=set())
 
-    nav_row = markup.inline_keyboard[-1]
-    assert nav_row[0].callback_data == "cal_month:2026-11"
-    assert nav_row[2].callback_data == "cal_month:2027-01"
+    nav_row = markup.inline_keyboard[-2]
+    assert nav_row[0].callback_data == "cal_month:view:2026-11"
+    assert nav_row[2].callback_data == "cal_month:view:2027-01"
 
 
 def test_navigation_wraps_across_year_boundary_backward():
     weeks = calendar.monthcalendar(2026, 1)
     markup = calendar_keyboard(2026, 1, weeks, marked_days=set())
 
-    nav_row = markup.inline_keyboard[-1]
-    assert nav_row[0].callback_data == "cal_month:2025-12"
-    assert nav_row[2].callback_data == "cal_month:2026-02"
+    nav_row = markup.inline_keyboard[-2]
+    assert nav_row[0].callback_data == "cal_month:view:2025-12"
+    assert nav_row[2].callback_data == "cal_month:view:2026-02"
+
+
+def test_close_button_is_last_row_and_carries_mode():
+    # Часть 10, пакет #2, п.16 — кнопка выхода прямо в компоненте.
+    weeks = calendar.monthcalendar(2026, 8)
+    markup = calendar_keyboard(2026, 8, weeks, marked_days=set(), mode="backdate")
+
+    close_row = markup.inline_keyboard[-1]
+    assert len(close_row) == 1
+    assert close_row[0].callback_data == "cal_close:backdate"
+
+
+def test_mode_propagates_into_day_and_month_callbacks():
+    weeks = calendar.monthcalendar(2026, 8)
+    markup = calendar_keyboard(2026, 8, weeks, marked_days=set(), mode="edit")
+
+    nav_row = markup.inline_keyboard[-2]
+    assert nav_row[0].callback_data == "cal_month:edit:2026-07"
+
+    day_buttons = [
+        button.callback_data
+        for row in markup.inline_keyboard[1:-2]
+        for button in row
+        if button.callback_data.startswith("cal_day:")
+    ]
+    assert all(cb.startswith("cal_day:edit:") for cb in day_buttons)

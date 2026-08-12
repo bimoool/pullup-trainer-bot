@@ -40,10 +40,10 @@ async def test_show_calendar_does_not_crash_with_empty_history(session, user: Us
 async def test_month_navigation_across_year_boundary(session, user: User, bot: Bot, dispatcher: Dispatcher):
     await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
     await dispatcher.feed_update(
-        bot, _callback_update(telegram_id=user.telegram_id, data="cal_month:2026-12"), session=session,
+        bot, _callback_update(telegram_id=user.telegram_id, data="cal_month:view:2026-12"), session=session,
     )
     await dispatcher.feed_update(
-        bot, _callback_update(telegram_id=user.telegram_id, data="cal_month:2027-01"), session=session,
+        bot, _callback_update(telegram_id=user.telegram_id, data="cal_month:view:2027-01"), session=session,
     )
 
 
@@ -52,7 +52,7 @@ async def test_tap_marked_day_sends_workout_details(session, user: User, bot: Bo
     await _make_workout_on(session, user, performed_at=datetime(2026, 8, 5, tzinfo=UTC))
 
     await dispatcher.feed_update(
-        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:2026-08-05"), session=session,
+        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:view:2026-08-05"), session=session,
     )
     # DB-запрос по дате отработал без ошибок — реальная проверка контента
     # StubSession не даёт (см. другие тесты в этом файле).
@@ -67,7 +67,7 @@ async def test_tap_day_of_not_latest_workout_omits_next_target(session, user: Us
     await _make_workout_on(session, user, performed_at=datetime(2026, 8, 6, tzinfo=UTC))
 
     await dispatcher.feed_update(
-        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:2026-08-05"), session=session,
+        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:view:2026-08-05"), session=session,
     )
 
     [day_message] = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
@@ -78,7 +78,7 @@ async def test_tap_unmarked_day_does_not_crash(session, user: User, bot: Bot, di
     await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
 
     await dispatcher.feed_update(
-        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:2026-08-05"), session=session,
+        bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:view:2026-08-05"), session=session,
     )
 
 

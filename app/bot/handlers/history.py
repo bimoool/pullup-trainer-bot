@@ -1,13 +1,15 @@
 import calendar
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import format_kg
-from app.bot.keyboards import calendar_keyboard, progress_section_keyboard
+from app.bot.keyboards import bottom_menu_keyboard, calendar_keyboard, progress_section_keyboard
 from app.db.models import Block, BlockType, EquipmentType, Workout
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -85,22 +87,29 @@ async def handle_show_history(callback: CallbackQuery, session: AsyncSession) ->
     await callback.answer()
 
 
-async def _render_calendar_month(
+async def render_calendar_month(
     callback: CallbackQuery, session: AsyncSession, *, year: int, month: int, edit: bool,
+    mode: str = "view", history_filter: Callable[[Workout], bool] | None = None,
 ) -> None:
+    """Переиспользуемый рендер сетки месяца (Часть 10, пакет #2, п.16-17) —
+    публичная, вызывается и из backdate.py/workout_edit.py, не только
+    отсюда. history_filter — какие тренировки считаются "отмеченными"
+    (по умолчанию любая; режим "edit" передаёт только редактируемые —
+    иначе навигация по календарю вела бы на дни, где нечего редактировать)."""
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
 
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
+    marked_source = [w for w in history if history_filter(w)] if history_filter is not None else history
     marked_days = {
-        w.performed_at.date().day for w in history
+        w.performed_at.date().day for w in marked_source
         if w.performed_at.year == year and w.performed_at.month == month
     }
 
     weeks = calendar.monthcalendar(year, month)
     header = texts.CALENDAR_HEADER.format(month_name=_MONTH_NAMES_RU[month - 1], year=year)
-    keyboard = calendar_keyboard(year, month, weeks, marked_days)
+    keyboard = calendar_keyboard(year, month, weeks, marked_days, mode=mode)
 
     if edit:
         await callback.message.edit_text(header, reply_markup=keyboard)
@@ -113,7 +122,7 @@ async def handle_show_calendar(callback: CallbackQuery, session: AsyncSession) -
     now = datetime.now(UTC)
     # Открывается новым сообщением — предыдущее (меню "Прогресс") не сетка
     # календаря, редактировать нечего.
-    await _render_calendar_month(callback, session, year=now.year, month=now.month, edit=False)
+    await render_calendar_month(callback, session, year=now.year, month=now.month, edit=False, mode="view")
     await callback.answer()
 
 
@@ -121,25 +130,50 @@ async def handle_show_calendar(callback: CallbackQuery, session: AsyncSession) -
 async def handle_calendar_month_nav(callback: CallbackQuery, session: AsyncSession) -> None:
     # ◀️/▶️ жмут по уже открытой сетке — редактируем её же (Часть 10, п. 12:
     # не плодить новое сообщение на каждое переключение месяца).
-    year_str, month_str = callback.data.removeprefix("cal_month:").split("-")
-    await _render_calendar_month(callback, session, year=int(year_str), month=int(month_str), edit=True)
+    mode, date_part = callback.data.removeprefix("cal_month:").split(":", 1)
+    year_str, month_str = date_part.split("-")
+
+    history_filter = None
+    if mode == "edit":
+        from app.bot.handlers.workout_edit import (
+            _is_editable,  # деферред — см. комментарий выше про циклы импортов
+        )
+        history_filter = _is_editable
+
+    await render_calendar_month(
+        callback, session, year=int(year_str), month=int(month_str), edit=True,
+        mode=mode, history_filter=history_filter,
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("cal_day:"))
-async def handle_calendar_day(callback: CallbackQuery, session: AsyncSession) -> None:
-    day_str = callback.data.removeprefix("cal_day:")
-    year, month, day = (int(part) for part in day_str.split("-"))
+async def handle_calendar_day(callback: CallbackQuery, session: AsyncSession, state: FSMContext) -> None:
+    mode, date_part = callback.data.removeprefix("cal_day:").split(":", 1)
+    year, month, day = (int(part) for part in date_part.split("-"))
+    picked_date = datetime(year, month, day, tzinfo=UTC).date()
+
+    if mode == "backdate":
+        # Деферред-импорт — history.py и backdate.py взаимно переиспользуют
+        # функции друг друга (render_calendar_month / обработка выбора
+        # дня), прямой импорт на верхнем уровне зациклился бы.
+        from app.bot.handlers.backdate import handle_calendar_date_picked
+
+        await handle_calendar_date_picked(callback, state, picked_date)
+        return
+
+    if mode == "edit":
+        from app.bot.handlers.workout_edit import handle_calendar_workout_picked
+
+        await handle_calendar_workout_picked(callback, session, state, picked_date)
+        return
 
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
 
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
-    day_workouts = [
-        w for w in history
-        if w.performed_at.year == year and w.performed_at.month == month and w.performed_at.day == day
-    ]
+    day_workouts = [w for w in history if w.performed_at.date() == picked_date]
 
     if not day_workouts:
         await callback.answer(texts.CALENDAR_NO_WORKOUT_TOAST, show_alert=True)
@@ -148,4 +182,23 @@ async def handle_calendar_day(callback: CallbackQuery, session: AsyncSession) ->
     latest = history[-1] if history else None
     entries = [format_history_entry(workout, is_latest=workout is latest) for workout in day_workouts]
     await callback.message.answer("\n\n".join(entries))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cal_close:"))
+async def handle_calendar_close(callback: CallbackQuery, state: FSMContext) -> None:
+    """Кнопка выхода прямо в компоненте (Часть 10, пакет #2, п.16) — режим
+    "view" ни от чего не отменяет (у экрана истории нет FSM-состояния),
+    для "backdate"/"edit" — полноценная отмена сценария, тот же паттерн,
+    что и у остальных кнопок "Отмена" в боте."""
+    mode = callback.data.removeprefix("cal_close:")
+    if mode == "view":
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer()
+        return
+
+    await state.clear()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(texts.CANCELLED)
+    await callback.message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
     await callback.answer()

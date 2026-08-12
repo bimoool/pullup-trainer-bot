@@ -1,3 +1,4 @@
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
 from aiogram import F, Router
@@ -26,7 +27,6 @@ from app.domain.session import BlockLog
 
 router = Router()
 
-EDIT_PICKER_LIMIT = 10
 _BLOCK_LABELS = {"a": "блоке на объём", "b": "блоке на силу"}
 
 
@@ -39,19 +39,58 @@ def _is_editable(workout) -> bool:
 @router.callback_query(F.data == "edit_workout_menu")
 async def handle_edit_workout_menu(callback: CallbackQuery, session: AsyncSession) -> None:
     """Выбор ЛЮБОЙ прошлой тренировки для редактирования (не только
-    последней) — см. Часть 3 респека."""
+    последней) — теперь через календарь, не плоский список кнопок-дат
+    (Часть 10, пакет #2, п.17: список неизбежно растёт вместе с историей)."""
+    from app.bot.handlers.history import (
+        render_calendar_month,  # деферред — см. комментарий в history.py
+    )
+
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
 
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
-    editable = [w for w in history if _is_editable(w)]
-    if not editable:
+    if not any(_is_editable(w) for w in history):
         await callback.answer(texts.EDIT_NOTHING_TO_EDIT, show_alert=True)
         return
 
+    now = datetime.now(UTC)
+    await render_calendar_month(
+        callback, session, year=now.year, month=now.month, edit=False, mode="edit", history_filter=_is_editable,
+    )
+    await callback.answer()
+
+
+async def handle_calendar_workout_picked(
+    callback: CallbackQuery, session: AsyncSession, state: FSMContext, picked_date: date,
+) -> None:
+    """Вызывается из history.py при тапе по дню в режиме "edit" (Часть 10,
+    пакет #2, п.17). Обычно на дату приходится ровно одна редактируемая
+    тренировка — сразу переходим к вводу правки; в редком случае нескольких
+    за день — короткий саб-список только на этот день (те же кнопки
+    edit_pick:, что и раньше, просто с меткой по времени, не по дате —
+    дата у всех в списке одинаковая)."""
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    workouts = WorkoutRepository(session)
+    history = await workouts.list_for_user(user.id)
+    day_editable = [w for w in history if w.performed_at.date() == picked_date and _is_editable(w)]
+
+    if not day_editable:
+        await callback.answer(texts.EDIT_NOTHING_TO_EDIT, show_alert=True)
+        return
+
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    if len(day_editable) == 1:
+        await _start_editing(callback.message, state, session, workout_id=day_editable[0].id)
+        await callback.answer()
+        return
+
     await callback.message.answer(
-        texts.EDIT_PICK_WORKOUT, reply_markup=edit_workout_picker_keyboard(editable[-EDIT_PICKER_LIMIT:]),
+        texts.EDIT_PICK_WORKOUT,
+        reply_markup=edit_workout_picker_keyboard(day_editable, label_format="%H:%M"),
     )
     await callback.answer()
 
