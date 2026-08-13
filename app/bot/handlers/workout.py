@@ -44,7 +44,12 @@ from app.domain.constants import (
     VOLUME_BLOCK,
     EquipmentType,
 )
-from app.domain.progression import initial_volume_target, rollback_signed_load, rollback_target
+from app.domain.progression import (
+    initial_volume_target,
+    rollback_signed_load,
+    rollback_target,
+    suggest_starting_equipment,
+)
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
@@ -140,22 +145,37 @@ async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> No
         user.id, bypass_transition_wait=is_admin,
     )
 
-    # Для ещё ни разу не тренировавшегося пользователя resolve_next_targets
-    # флэтом отдаёт VOLUME_BLOCK.base_target — не учитывает "замер минус
-    # 25%" (Часть 10, пакет #2, п.14), которое реально применится при
-    # старте (см. handle_start_workout). Показываем ту же скорректированную
-    # цифру здесь, иначе "Текущий план" разойдётся с тем, что будет на деле.
     target_a = target_a_state.target
+    equipment_a, equipment_value_a = target_a_state.equipment_type, target_a_state.equipment_value
+    equipment_b, equipment_value_b = target_b_state.equipment_type, target_b_state.equipment_value
+    plan_text = texts.CURRENT_PLAN
+
     if not await workouts.list_for_user(user.id):
+        # Ещё ни разу не тренировавшемуся пользователю resolve_next_targets
+        # отдаёт голый плейсхолдер (VOLUME_BLOCK.base_target, снаряд —
+        # BAND флэтом, см. _resolve_next_state) — это НЕ рекомендация,
+        # просто заглушка на случай отсутствия истории, использовать её
+        # для показа снаряда нельзя. Реальная рекомендация по замеру — та
+        # же функция и те же пороги, что использует живой старт тренировки
+        # (handle_start_workout → _begin_equipment_setup → suggest_starting_
+        # equipment), иначе "Текущий план" и факт старта расходятся
+        # (баг из фокус-группы, пакет #5: план показывал резину для блока
+        # на силу при замере, для которого живой старт верно предлагал
+        # отягощение). "Замер минус 25%" (Часть 10, пакет #2, п.14) — та
+        # же поправка к цели объёмного блока, что реально применится на
+        # старте.
         baseline = await BaselineRepository(session).get_latest_for_user(user.id)
         if baseline is not None:
             target_a = initial_volume_target(baseline.reps)
+            equipment_a, equipment_b = suggest_starting_equipment(baseline.reps)
+            equipment_value_a = equipment_value_b = None
+        plan_text = texts.CURRENT_PLAN_FIRST_WORKOUT
 
     await callback.message.answer(
-        texts.CURRENT_PLAN.format(
+        plan_text.format(
             target_a=target_a, target_b=target_b_state.target,
-            equipment_a=format_equipment_label(target_a_state.equipment_type, target_a_state.equipment_value),
-            equipment_b=format_equipment_label(target_b_state.equipment_type, target_b_state.equipment_value),
+            equipment_a=format_equipment_label(equipment_a, equipment_value_a),
+            equipment_b=format_equipment_label(equipment_b, equipment_value_b),
         ),
     )
     await callback.answer()

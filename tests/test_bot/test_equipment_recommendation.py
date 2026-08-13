@@ -86,19 +86,25 @@ async def test_plan_announced_exactly_once_for_full_queue(session, user: User, b
     assert (await fsm.get_data())["equipment_plan_announced"] is True
 
 
-async def test_band_recommendation_goes_straight_to_name_prompt_no_confirm(
+async def test_band_recommendation_offers_yes_no_not_confirm_replace_screen(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
     """baseline_reps=1 -> объём рекомендует резину (1<=10); список пуст ->
-    сразу шаг имени, без экрана подтверждения/замены снаряда."""
+    да/нет-предложение завести (пакет #5), затем шаг имени после "Да" — без
+    экрана подтверждения/замены снаряда."""
     await _setup_equipment_queue(session, user, bot, dispatcher, queue=["a"], baseline_reps=1)
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
 
     await _advance(session, user, bot, dispatcher)
 
-    assert await fsm.get_state() == EquipmentStates.waiting_for_new_item_name.state
+    assert await fsm.get_state() == EquipmentStates.waiting_for_type.state
     # ни одной кнопки подтверждения/замены не осталось в тексте плана
     assert not any("Взять другой снаряд" in t for t in _sent_texts(bot))
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip_band_offer:yes"), session=session,
+    )
+    assert await fsm.get_state() == EquipmentStates.waiting_for_new_item_name.state
 
 
 async def test_bodyweight_only_block_finishes_queue_without_asking_anything(
@@ -134,13 +140,16 @@ async def test_strength_weight_start_shows_specific_hint_not_generic_target(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
     """Часть 10, пакет #2, п.7 — конкретная рекомендация (5 кг / минимум 4
-    повторения), не общий принцип "около N повторений"."""
+    повторения), не общий принцип "около N повторений". Формулировка
+    переработана в пакете #5 — 5 кг явно ориентир, не требование, единственное
+    условие — минимум 4 повторения выбранным весом."""
     await _setup_equipment_queue(session, user, bot, dispatcher, queue=["b"], baseline_reps=20)
 
     await _advance(session, user, bot, dispatcher)
 
     texts_sent = _sent_texts(bot)
-    assert any("Рекомендуемый стартовый вес — 5 кг" in t for t in texts_sent)
+    assert any("ориентируйся на 5 кг" in t and "минимум 4 повторения" in t for t in texts_sent)
+    assert not any("Рекомендуемый стартовый вес" in t for t in texts_sent)
     assert not any("около" in t and "повторений" in t for t in texts_sent)
 
 
@@ -150,6 +159,9 @@ async def test_band_target_hint_created_item_still_scoped_to_block(session, user
     await _setup_equipment_queue(session, user, bot, dispatcher, queue=["a"], baseline_reps=1)
 
     await _advance(session, user, bot, dispatcher)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip_band_offer:yes"), session=session,
+    )
 
     await dispatcher.feed_update(
         bot, Update(

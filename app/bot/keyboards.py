@@ -179,6 +179,17 @@ def anomaly_confirm_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def bands_empty_offer_keyboard(*, yes_callback: str, no_callback: str) -> InlineKeyboardMarkup:
+    """Пакет #5 — "Ещё нет резин, заведём? Как назовём" было одним
+    сообщением, слитно спрашивающим два разных вопроса сразу. Явное
+    да/нет здесь, имя — отдельным сообщением только после согласия."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.MY_BANDS_EMPTY_OFFER_YES_BUTTON, callback_data=yes_callback)
+    builder.button(text=texts.MY_BANDS_EMPTY_OFFER_NO_BUTTON, callback_data=no_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def back_cancel_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     """"← Назад" возвращает к предыдущему шагу того же сценария (не
     восстанавливает то, что там было введено — просто переспрашивает),

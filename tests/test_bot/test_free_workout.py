@@ -124,14 +124,22 @@ async def test_weight_choice_asks_for_value_then_records_it(session, user: User,
     assert block_a.equipment_value == 20
 
 
-async def test_band_choice_with_empty_list_offers_to_add_one(session, user: User, bot: Bot, dispatcher: Dispatcher):
+async def test_band_choice_with_empty_list_offers_yes_no_before_name(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Пакет #5 — да/нет и имя теперь два отдельных шага, не одно слитное
+    сообщение "заведём? как назовём"."""
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     await fsm.set_state(FreeWorkoutStates.waiting_for_equipment_type)
 
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="equip:band"), session=session,
     )
+    assert await fsm.get_state() == FreeWorkoutStates.waiting_for_equipment_type.state
 
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="free_workout_band_offer:yes"), session=session,
+    )
     assert await fsm.get_state() == FreeWorkoutStates.waiting_for_new_item_name.state
 
 
@@ -142,6 +150,9 @@ async def test_band_choice_creates_item_and_records_workout(session, user: User,
 
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="equip:band"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="free_workout_band_offer:yes"), session=session,
     )
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="зелёная"), session=session,

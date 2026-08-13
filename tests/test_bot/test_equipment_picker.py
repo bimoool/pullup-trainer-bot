@@ -52,16 +52,26 @@ async def _start_equipment_queue_for_block_a(session, user: User, bot: Bot, disp
     )
 
 
-async def test_band_choice_with_empty_list_goes_straight_to_name_prompt(
+async def test_band_choice_with_empty_list_offers_yes_no_before_asking_name(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
+    """Пакет #5 — "заведём? как назовём" было одним слитным сообщением с
+    двумя вопросами; теперь да/нет и имя — два отдельных шага."""
     await _start_equipment_queue_for_block_a(session, user, bot, dispatcher)
 
     await dispatcher.feed_update(bot, _callback_update(telegram_id=user.telegram_id, data="equip:band"), session=session)
 
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    # Ещё не в шаге ввода имени — сначала да/нет.
+    assert await fsm.get_state() == EquipmentStates.waiting_for_type.state
+    assert (await fsm.get_data())["equipment_queue"] == ["a"]
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip_band_offer:yes"), session=session,
+    )
+
     assert await fsm.get_state() == EquipmentStates.waiting_for_new_item_name.state
-    # очередь ещё не тронута — блок "a" по-прежнему первый в очереди
+    # очередь всё ещё не тронута — блок "a" по-прежнему первый
     assert (await fsm.get_data())["equipment_queue"] == ["a"]
 
 

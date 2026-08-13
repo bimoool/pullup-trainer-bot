@@ -11,6 +11,7 @@ from app.bot.keyboards import (
     back_cancel_keyboard,
     band_item_picker_keyboard,
     band_reorder_keyboard,
+    bands_empty_offer_keyboard,
     cancel_keyboard,
     equipment_kg_keyboard,
     equipment_type_keyboard,
@@ -203,17 +204,27 @@ async def _apply_equipment_type_choice(
         # Явное предложение завести резину (Часть 10, пакет #2, п.22) —
         # не молчаливый переход к вводу имени, человек может не понять,
         # что происходит, если бот без объяснений сразу спрашивает "как
-        # назвать".
-        await state.set_state(EquipmentStates.waiting_for_new_item_name)
+        # назвать". Да/нет и имя — два отдельных шага (пакет #5), не одно
+        # слитное сообщение с двумя вопросами сразу.
         await message.answer(
             texts.MY_BANDS_EMPTY_INLINE_OFFER + _target_hint(block_key),
-            reply_markup=back_cancel_keyboard("equip_back:type"),
+            reply_markup=bands_empty_offer_keyboard(yes_callback="equip_band_offer:yes", no_callback="equip_back:type"),
         )
         return
 
     await state.set_state(EquipmentStates.waiting_for_band_choice)
     prompt = texts.EQUIPMENT_BAND_PICKER_PROMPT.format(block_label=_BLOCK_LABELS[block_key]) + _target_hint(block_key)
     await message.answer(prompt, reply_markup=band_item_picker_keyboard(items, "equip_back:type"))
+
+
+@router.callback_query(EquipmentStates.waiting_for_type, F.data == "equip_band_offer:yes")
+async def handle_equipment_band_offer_yes(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(EquipmentStates.waiting_for_new_item_name)
+    await callback.message.answer(
+        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("equip_back:type"),
+    )
+    await callback.answer()
 
 
 @router.callback_query(EquipmentStates.waiting_for_type, F.data.startswith("equip:"))

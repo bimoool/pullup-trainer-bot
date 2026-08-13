@@ -18,6 +18,7 @@ from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
     band_item_picker_keyboard,
+    bands_empty_offer_keyboard,
     bottom_menu_keyboard,
     cancel_keyboard,
     equipment_kg_keyboard,
@@ -80,9 +81,13 @@ async def handle_free_workout_equipment_choice(
         # Явное предложение завести резину, а не молчаливый переход к вводу
         # имени (Часть 10, пакет #2, п.22) — человек может не понять, что
         # происходит, если бот без объяснений сразу спрашивает "как назвать".
-        await state.set_state(FreeWorkoutStates.waiting_for_new_item_name)
+        # Да/нет и имя — два отдельных шага (пакет #5), не одно слитное
+        # сообщение с двумя вопросами сразу.
         await callback.message.answer(
-            texts.MY_BANDS_EMPTY_INLINE_OFFER, reply_markup=back_cancel_keyboard("free_workout_back:type"),
+            texts.MY_BANDS_EMPTY_INLINE_OFFER,
+            reply_markup=bands_empty_offer_keyboard(
+                yes_callback="free_workout_band_offer:yes", no_callback="free_workout_back:type",
+            ),
         )
         await callback.answer()
         return
@@ -91,6 +96,16 @@ async def handle_free_workout_equipment_choice(
     await callback.message.answer(
         texts.FREE_WORKOUT_BAND_PICKER_PROMPT,
         reply_markup=band_item_picker_keyboard(items, "free_workout_back:type"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(FreeWorkoutStates.waiting_for_equipment_type, F.data == "free_workout_band_offer:yes")
+async def handle_free_workout_band_offer_yes(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(FreeWorkoutStates.waiting_for_new_item_name)
+    await callback.message.answer(
+        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("free_workout_back:type"),
     )
     await callback.answer()
 
