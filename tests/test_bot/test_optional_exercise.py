@@ -75,3 +75,36 @@ async def test_tapping_skip_does_not_send_exercise_details(session, user: User, 
 
     sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
     assert texts.OPTIONAL_EXERCISE_DETAILS not in sent_texts
+
+
+async def test_tapping_want_sends_exercise_details_before_block_b_prompt(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Баг из живого тестирования (пакет #3): раньше приглашение ко второму
+    блоку уходило сразу вместе с предложением ("Хочешь доп. упражнения?"),
+    независимо от выбора — при "Хочу" инструкция по упражнениям приходила
+    ПОСЛЕ приглашения, путая порядок действий. Теперь порядок жёстко завязан
+    на сам выбор: инструкция — первой, приглашение ко второму блоку с явным
+    переходом внутри неё — следом."""
+    await _put_user_at_block_a_step(session, user, bot, dispatcher)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="optional_exercise:want"), session=session,
+    )
+
+    sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
+    details_index = sent_texts.index(texts.OPTIONAL_EXERCISE_DETAILS)
+    block_b_index = next(i for i, t in enumerate(sent_texts) if t.startswith("Теперь блок на силу"))
+    assert details_index < block_b_index
+    assert "пришли результат блока на силу" in texts.OPTIONAL_EXERCISE_DETAILS.lower()
+
+
+async def test_tapping_skip_still_advances_straight_to_block_b_prompt(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    await _put_user_at_block_a_step(session, user, bot, dispatcher)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="optional_exercise:skip"), session=session,
+    )
+
+    sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
+    assert any(t.startswith("Теперь блок на силу") for t in sent_texts)

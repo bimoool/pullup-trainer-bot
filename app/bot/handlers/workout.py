@@ -350,12 +350,21 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
         await message.answer(result.message)
         return
 
-    data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_block_b)
     # Предложение факультативной нагрузки на отдыхе — перед приглашением к
-    # блоку на силу (Часть 10, п. 20), не блокирует переход дальше.
+    # блоку на силу (Часть 10, п. 20). Приглашение ко второму блоку теперь
+    # НЕ шлётся здесь же (баг из живого тестирования, пакет #3): раньше оно
+    # уходило сразу следом, независимо от выбора "Хочу"/"Пропущу" — если
+    # человек жал "Хочу", инструкция по упражнениям приходила уже ПОСЛЕ
+    # приглашения ко второму блоку, путая порядок действий. Теперь
+    # приглашение — только в handle_optional_exercise_want/_skip, после
+    # того как факультативный шаг реально разрешился.
     await message.answer(texts.OPTIONAL_EXERCISE_OFFER, reply_markup=optional_exercise_keyboard())
+
+
+async def _send_block_b_prompt(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
     await message.answer(
         texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("wk_back:block_a"),
@@ -363,19 +372,23 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(F.data == "optional_exercise:want")
-async def handle_optional_exercise_want(callback: CallbackQuery) -> None:
+async def handle_optional_exercise_want(callback: CallbackQuery, state: FSMContext) -> None:
     # Баг из живого тестирования (Часть 10, пакет #2, п.24): раньше здесь
     # был только тост callback.answer(show_alert=True) — он подтверждал
     # нажатие, но реально не присылал упражнения. Настоящее сообщение.
+    # Инструкция уходит ПЕРВОЙ, приглашение ко второму блоку — следом
+    # (пакет #3) — раньше было наоборот из-за handle_block_a_result.
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.OPTIONAL_EXERCISE_DETAILS)
     await callback.answer()
+    await _send_block_b_prompt(callback.message, state)
 
 
 @router.callback_query(F.data == "optional_exercise:skip")
-async def handle_optional_exercise_skip(callback: CallbackQuery) -> None:
+async def handle_optional_exercise_skip(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer(texts.OPTIONAL_EXERCISE_SKIPPED_TOAST)
+    await _send_block_b_prompt(callback.message, state)
 
 
 @router.message(WorkoutStates.waiting_for_block_b)
