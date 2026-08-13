@@ -229,6 +229,8 @@ WARMUP_SHOW_BUTTON = "Показать разминку"
 # на следующей тренировке.
 WORKOUT_SUMMARY = (
     "Тренировка записана, хорошая работа! 💪\n\n"
+    "Объём: {result_a}\n"
+    "Сила: {result_b}\n\n"
     "Цели на следующую тренировку:\n"
     "Объём: {target_a}\n"
     "Сила: {target_b}"
@@ -271,7 +273,7 @@ FREE_WORKOUT_DONE = (
 EDIT_NOTHING_TO_EDIT = "Пока нечего редактировать."
 EDIT_NOT_EDITABLE = "Эту тренировку изменить нельзя — она внесена задним числом и не входит в общий план."
 EDIT_DONE = (
-    "Обновил. Блок на объём: макс {a_max} → цель {a_target}. Блок на силу: макс {b_max} → цель {b_target}.\n"
+    "Обновил. Блок на объём: {a_result} → цель {a_target}. Блок на силу: {b_result} → цель {b_target}.\n"
     "Тренировки после этой тоже пересчитал."
 )
 
@@ -450,8 +452,8 @@ HISTORY_EMPTY = "Пока нет ни одной тренировки."
 # сила отягощ. 48.00кг макс 4→цель 4".
 HISTORY_ENTRY = (
     "{date}{backdated_mark}\n"
-    "Объём ({equipment_a}): максимум {max_a}, следующая цель {target_a}.\n"
-    "Сила ({equipment_b}): максимум {max_b}, следующая цель {target_b}."
+    "Объём ({equipment_a}): {result_a}, следующая цель {target_a}.\n"
+    "Сила ({equipment_b}): {result_b}, следующая цель {target_b}."
     "{comment}"
 )
 # "Следующая цель" показывается только у самой свежей тренировки в истории
@@ -461,8 +463,8 @@ HISTORY_ENTRY = (
 # задним числом) — только факт: рабочие подходы + максимум.
 HISTORY_ENTRY_NO_TARGET = (
     "{date}{backdated_mark}\n"
-    "Объём ({equipment_a}): максимум {max_a}.\n"
-    "Сила ({equipment_b}): максимум {max_b}."
+    "Объём ({equipment_a}): {result_a}.\n"
+    "Сила ({equipment_b}): {result_b}."
     "{comment}"
 )
 HISTORY_COMMENT_LINE = "\nКомментарий: {comment}"

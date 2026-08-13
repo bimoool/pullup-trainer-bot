@@ -8,7 +8,7 @@ from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_kg
+from app.bot.formatting import format_block_result, format_kg
 from app.bot.keyboards import bottom_menu_keyboard, calendar_keyboard, progress_section_keyboard
 from app.db.models import Block, BlockType, EquipmentType, Workout
 from app.db.repositories.users import UserRepository
@@ -53,17 +53,20 @@ def format_history_entry(workout: Workout, *, is_latest: bool = True) -> str:
     date = workout.performed_at.strftime("%d.%m.%Y")
     backdated_mark = texts.HISTORY_BACKDATED_MARK if not workout.participates_in_cascade else ""
 
+    result_a = format_block_result(block_a.working_reps, block_a.max_reps)
+    result_b = format_block_result(block_b.working_reps, block_b.max_reps)
+
     if is_latest:
         return texts.HISTORY_ENTRY.format(
             date=date, backdated_mark=backdated_mark,
-            equipment_a=_format_equipment(block_a), max_a=block_a.max_reps, target_a=block_a.target_after,
-            equipment_b=_format_equipment(block_b), max_b=block_b.max_reps, target_b=block_b.target_after,
+            equipment_a=_format_equipment(block_a), result_a=result_a, target_a=block_a.target_after,
+            equipment_b=_format_equipment(block_b), result_b=result_b, target_b=block_b.target_after,
             comment=comment,
         )
     return texts.HISTORY_ENTRY_NO_TARGET.format(
         date=date, backdated_mark=backdated_mark,
-        equipment_a=_format_equipment(block_a), max_a=block_a.max_reps,
-        equipment_b=_format_equipment(block_b), max_b=block_b.max_reps,
+        equipment_a=_format_equipment(block_a), result_a=result_a,
+        equipment_b=_format_equipment(block_b), result_b=result_b,
         comment=comment,
     )
 

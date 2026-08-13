@@ -36,8 +36,8 @@ async def test_history_entry_is_readable_and_strips_trailing_zeros(session, user
 
     entry = format_history_entry(workout)
 
-    assert "Объём (свой вес): максимум 21, следующая цель" in entry
-    assert "Сила (отягощение 48 кг): максимум 4, следующая цель" in entry
+    assert "Объём (свой вес): 20, 20, 20, максимум 21, следующая цель" in entry
+    assert "Сила (отягощение 48 кг): 4, 4, 4, 4, максимум 4, следующая цель" in entry
     assert "48.00" not in entry
     assert "48.0" not in entry
 
@@ -66,8 +66,8 @@ async def test_history_entry_omits_next_target_when_not_latest(session, user: Us
 
     entry = format_history_entry(workout, is_latest=False)
 
-    assert "Объём (свой вес): максимум 21." in entry
-    assert "Сила (отягощение 48 кг): максимум 4." in entry
+    assert "Объём (свой вес): 20, 20, 20, максимум 21." in entry
+    assert "Сила (отягощение 48 кг): 4, 4, 4, 4, максимум 4." in entry
     assert "следующая цель" not in entry
 
 

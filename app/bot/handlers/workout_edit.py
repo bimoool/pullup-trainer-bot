@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_reps_example
+from app.bot.formatting import format_block_result, format_reps_example
 from app.bot.keyboards import (
     back_cancel_keyboard,
     bottom_menu_keyboard,
@@ -194,8 +194,8 @@ async def handle_edit_block_b(message: Message, state: FSMContext, session: Asyn
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
     await message.answer(
         texts.EDIT_DONE.format(
-            a_max=block_a.max_reps, a_target=block_a.target_after,
-            b_max=block_b.max_reps, b_target=block_b.target_after,
+            a_result=format_block_result(block_a.working_reps, block_a.max_reps), a_target=block_a.target_after,
+            b_result=format_block_result(block_b.working_reps, block_b.max_reps), b_target=block_b.target_after,
         ),
     )
 

@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.bot.formatting import (
+    format_block_result,
     format_equipment_progress_line,
     format_progress_report,
     format_recommendations,
@@ -24,6 +25,16 @@ def test_format_volume_change_positive_has_plus_sign():
 
 def test_format_volume_change_negative_keeps_minus_sign():
     assert "-10.0%" in format_volume_change(-10.0)
+
+
+def test_format_block_result_lists_working_reps_before_max():
+    assert format_block_result((18, 18, 18), 21) == "18, 18, 18, максимум 21"
+
+
+def test_format_block_result_falls_back_to_max_only_when_working_reps_empty():
+    # Единичный ввод (например, свободные подтягивания одним числом) — нет
+    # рабочих подходов вообще, working_reps=() (см. parse_free_reps).
+    assert format_block_result((), 8) == "максимум 8"
 
 
 def test_format_equipment_progress_line_none_placeholder():

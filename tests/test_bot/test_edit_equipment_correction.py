@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from aiogram import Bot, Dispatcher
+from aiogram.methods import SendMessage
 from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
 
+from app.bot import texts
 from app.bot.states import EditWorkoutStates
 from app.db.models import BlockType, User
 from app.db.repositories.baselines import BaselineRepository
@@ -71,6 +73,22 @@ async def test_no_correctable_blocks_skips_straight_to_done(session, user: User,
 
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     assert await fsm.get_state() is None
+
+
+async def test_edit_done_shows_working_reps_alongside_max(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    """Пакет #4 — тот же принцип, что и в WORKOUT_SUMMARY: после правки
+    нужно свериться с фактически введёнными числами, не только с макс."""
+    workout_id = await _make_workout(
+        session, user, block_a_type=EquipmentType.BODYWEIGHT, block_b_type=EquipmentType.BODYWEIGHT,
+    )
+    await _enter_edit_flow(session, user, bot, dispatcher, workout_id)
+
+    [done] = [
+        m.text for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and m.text.startswith(texts.EDIT_DONE.split("{")[0])
+    ]
+    assert "11, 11, 11, максимум 12" in done
+    assert "4, 4, 4, 4, максимум 5" in done
 
 
 async def test_weight_correction_updates_value_and_advances(session, user: User, bot: Bot, dispatcher: Dispatcher):

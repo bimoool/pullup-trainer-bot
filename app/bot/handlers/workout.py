@@ -8,7 +8,12 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_equipment_label, format_reps_example, format_set_close_report
+from app.bot.formatting import (
+    format_block_result,
+    format_equipment_label,
+    format_reps_example,
+    format_set_close_report,
+)
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
@@ -503,7 +508,11 @@ async def _finalize_workout(
     # Одно сообщение вместо разбора по блокам (см. Часть 4 респека) —
     # статистика и подробности ушли в «Прогресс», здесь только
     # подбадривание и цели на следующую тренировку.
-    summary = texts.WORKOUT_SUMMARY.format(target_a=block_a.target_after, target_b=block_b.target_after)
+    summary = texts.WORKOUT_SUMMARY.format(
+        target_a=block_a.target_after, target_b=block_b.target_after,
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+    )
     summary += _block_outcome_suffix(block_a) + _block_outcome_suffix(block_b)
 
     await message.answer(summary, reply_markup=workout_result_keyboard())

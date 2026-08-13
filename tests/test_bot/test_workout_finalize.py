@@ -7,7 +7,9 @@
 from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
+from aiogram.methods import SendMessage
 
+from app.bot import texts
 from app.bot.states import WorkoutStates
 from app.db.models import User
 from app.db.repositories.baselines import BaselineRepository
@@ -73,3 +75,22 @@ async def test_repeat_tap_on_stale_skip_button_does_not_duplicate_workout(
 
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     assert await fsm.get_state() is None
+
+
+async def test_workout_summary_shows_working_reps_alongside_max(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Пакет #4 — итог сразу после записи должен позволять свериться с
+    фактически введёнными числами, не только с максимумом."""
+    await _put_user_at_comment_step(session, user, bot, dispatcher)
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="skip_comment"), session=session,
+    )
+
+    [summary] = [
+        m.text for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and m.text.startswith(texts.WORKOUT_SUMMARY.split("{")[0])
+    ]
+    assert "10, 10, 10, максимум 11" in summary
+    assert "3, 3, 3, 3, максимум 3" in summary

@@ -2,6 +2,7 @@
 пользователя — вынесено отдельно от хендлеров, чтобы не дублировать между
 обработчиком по запросу и еженедельным воркером (app/workers/weekly_report.py)."""
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 
@@ -44,6 +45,20 @@ def format_reps_example(target: int, work_sets: int) -> str:
     числа равны цели — это только пример формата ввода (через пробел),
     а не подсказка "сколько именно делать в подходе на максимум"."""
     return " ".join(str(target) for _ in range(work_sets + 1))
+
+
+def format_block_result(working_reps: Sequence[int], max_reps: int) -> str:
+    """"18, 18, 18, максимум 21" — рабочие подходы (сколько бы их ни было,
+    Часть 10, пакет #4) плюс подход на максимум, для отображения того, что
+    реально было введено (история, детали дня в календаре, итог сразу
+    после записи/правки) — раньше в этих местах показывался только
+    максимум, без рабочих подходов, и свериться с фактически введёнными
+    числами было нечем. working_reps может быть пустым (единичный ввод,
+    например свободные подтягивания одним числом) — тогда только максимум."""
+    if not working_reps:
+        return f"максимум {max_reps}"
+    working = ", ".join(str(reps) for reps in working_reps)
+    return f"{working}, максимум {max_reps}"
 
 
 def calculate_age(birth_date: date, today: date) -> int:
