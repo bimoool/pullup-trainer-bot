@@ -75,10 +75,21 @@ async def handle_calendar_workout_picked(
 
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
-    day_editable = [w for w in history if w.performed_at.date() == picked_date and _is_editable(w)]
+    day_workouts = [w for w in history if w.performed_at.date() == picked_date]
+    day_editable = [w for w in day_workouts if _is_editable(w)]
 
     if not day_editable:
-        await callback.answer(texts.EDIT_NOTHING_TO_EDIT, show_alert=True)
+        # Пакет #3, баг 2 — день без единой редактируемой тренировки бывает
+        # двух разных случаев: либо тренировок в этот день вообще не было
+        # (EDIT_NOTHING_TO_EDIT), либо они есть, но все внесены задним
+        # числом (не участвуют в каскаде — редактировать через этот сценарий
+        # нельзя принципиально, см. _is_editable). Раньше оба случая
+        # показывали один и тот же неинформативный текст — из "Истории"/
+        # календаря бэкдейта такой день виден отмеченным ✅, и генеричное
+        # "нечего редактировать" выглядело как рассинхрон, хотя оба
+        # календаря на самом деле смотрят на один и тот же _is_editable.
+        text = texts.EDIT_NOT_EDITABLE if day_workouts else texts.EDIT_NOTHING_TO_EDIT
+        await callback.answer(text, show_alert=True)
         return
 
     await callback.message.edit_reply_markup(reply_markup=None)

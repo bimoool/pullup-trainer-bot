@@ -130,7 +130,15 @@ async def _advance_equipment_queue(message: Message, state: FSMContext, session:
         await _apply_equipment_type_choice(suggested, message, state, session, data["telegram_id"])
         return
 
-    prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
+    # Бэкдейт (пакет #3, баг 1) — снаряд задним числом всегда переспрашивается
+    # явно (см. _begin_equipment_setup: target_*_state=None для flow="backdate"),
+    # но это не решение "пора менять снаряд" — просто фиксация факта. Раньше
+    # здесь всегда шёл EQUIPMENT_TYPE_PROMPT_CHANGE, дословно живая формулировка
+    # прогрессии ("дошёл до порога"), что вводило в заблуждение.
+    if data["equipment_flow"] == "backdate":
+        prompt = texts.EQUIPMENT_TYPE_PROMPT_BACKDATE.format(block_label=_BLOCK_LABELS[block_key])
+    else:
+        prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
     await message.answer(prompt, reply_markup=equipment_type_keyboard())
 
 
@@ -174,10 +182,16 @@ async def _apply_equipment_type_choice(
         # отягощении по замеру; иначе обычная подсказка "около N повторений".
         is_first_strength_weight = block_key == "b" and data.get("baseline_reps") is not None
         hint = texts.EQUIPMENT_STRENGTH_WEIGHT_START_HINT if is_first_strength_weight else _target_hint(block_key)
-        await message.answer(
-            texts.EQUIPMENT_VALUE_PROMPT_WEIGHT + hint,
-            reply_markup=back_cancel_keyboard("equip_back:type"),
+        # Бэкдейт (пакет #3, баг 1) — блок мог быть не пройден в тот день
+        # вообще (working_reps=0), вес тогда не то что не помнится, а
+        # физически не применялся. "Пропустить" здесь допустимо ровно как
+        # для непройденного блока — в живом потоке веса не бывает, кнопки нет.
+        keyboard = (
+            equipment_kg_keyboard("equip_back:type")
+            if data["equipment_flow"] == "backdate"
+            else back_cancel_keyboard("equip_back:type")
         )
+        await message.answer(texts.EQUIPMENT_VALUE_PROMPT_WEIGHT + hint, reply_markup=keyboard)
         return
 
     # BAND — личный список пользователя вместо свободного ввода кг.
@@ -228,18 +242,42 @@ async def handle_equipment_value(message: Message, state: FSMContext, session: A
     except InvalidOperation:
         await message.answer(texts.EQUIPMENT_VALUE_INVALID)
         return
+
+    data = await state.get_data()
+    # Бэкдейт (пакет #3, баг 1) — 0 тут то же самое, что кнопка "Пропустить"
+    # (см. keyboard в _apply_equipment_type_choice): блок в тот день не
+    # делался, веса не было. В живом потоке 0 по-прежнему невалиден — там
+    # вводится реально применённый вес.
+    if value == 0 and data["equipment_flow"] == "backdate":
+        await _apply_equipment_value(message, state, session, value=None)
+        return
     if value <= 0:
         await message.answer(texts.EQUIPMENT_VALUE_INVALID)
         return
 
+    await _apply_equipment_value(message, state, session, value=value)
+
+
+async def _apply_equipment_value(
+    message: Message, state: FSMContext, session: AsyncSession, *, value: Decimal | None,
+) -> None:
     data = await state.get_data()
     block_key = data["equipment_queue"][0]
     results = data["equipment_results"]
-    results[block_key] = {"type": data["pending_equipment_type"], "value": str(value), "item_id": None}
+    results[block_key] = {
+        "type": data["pending_equipment_type"], "value": str(value) if value is not None else None, "item_id": None,
+    }
     queue = data["equipment_queue"][1:]
 
     await state.update_data(equipment_results=results, equipment_queue=queue)
     await _advance_equipment_queue(message, state, session)
+
+
+@router.callback_query(EquipmentStates.waiting_for_value, F.data == "skip_item_kg")
+async def handle_equipment_value_skip(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_equipment_value(callback.message, state, session, value=None)
+    await callback.answer()
 
 
 @router.callback_query(EquipmentStates.waiting_for_band_choice, F.data.startswith("band_item:"))
