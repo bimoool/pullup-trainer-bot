@@ -7,8 +7,9 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_block_result, format_reps_example
+from app.bot.formatting import format_anomaly_message, format_block_result, format_reps_example
 from app.bot.keyboards import (
+    anomaly_confirm_keyboard,
     back_cancel_keyboard,
     bottom_menu_keyboard,
     cancel_keyboard,
@@ -16,12 +17,13 @@ from app.bot.keyboards import (
     edit_equipment_weight_keyboard,
     edit_workout_picker_keyboard,
 )
-from app.bot.parsing import ParseError, parse_block_result
+from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import EditWorkoutStates
 from app.db.models import BlockType
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.domain.anomalies import detect_anomalies
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.session import BlockLog
 
@@ -115,7 +117,14 @@ async def _start_editing(message: Message, state: FSMContext, session: AsyncSess
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
 
-    await state.update_data(edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before)
+    await state.update_data(
+        edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before,
+        # Для проверки "резкого скачка" (пакет #4) сравнивать нужно с тем,
+        # что было ДО этой записи, а не с глобально последней тренировкой —
+        # редактируется может быть старая запись, после которой уже
+        # случилось что-то ещё.
+        edit_workout_performed_at=workout.performed_at.isoformat(),
+    )
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     example_a = format_reps_example(block_a.target_before, VOLUME_BLOCK.work_sets)
     await message.answer(texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=cancel_keyboard())
@@ -149,13 +158,35 @@ async def handle_edit_last_workout(callback: CallbackQuery, state: FSMContext, s
     await callback.answer()
 
 
+async def _previous_avg_for_edit(session: AsyncSession, user_id: int, block_type: BlockType, data: dict) -> float | None:
+    before = datetime.fromisoformat(data["edit_workout_performed_at"])
+    return await WorkoutRepository(session).get_previous_avg_working(user_id, block_type, before=before)
+
+
 @router.message(EditWorkoutStates.waiting_for_block_a)
-async def handle_edit_block_a(message: Message, state: FSMContext) -> None:
-    result = parse_block_result(message.text or "", VOLUME_BLOCK)
+async def handle_edit_block_a(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(message.from_user.id)
+    data = await state.get_data()
+    previous_avg = await _previous_avg_for_edit(session, user.id, BlockType.A, data)
+    anomaly_text = format_anomaly_message(
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=VOLUME_BLOCK.work_sets),
+    )
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(EditWorkoutStates.waiting_for_block_a_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_edit_block_a(message, state, result)
+
+
+async def _apply_edit_block_a(message: Message, state: FSMContext, result: BlockLog) -> None:
     data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(EditWorkoutStates.waiting_for_block_b)
@@ -165,8 +196,26 @@ async def handle_edit_block_a(message: Message, state: FSMContext) -> None:
     )
 
 
+@router.callback_query(EditWorkoutStates.waiting_for_block_a_confirm, F.data == "anomaly:confirm")
+async def handle_edit_block_a_anomaly_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_edit_block_a(callback.message, state, result)
+    await callback.answer()
+
+
+@router.callback_query(EditWorkoutStates.waiting_for_block_a_confirm, F.data == "anomaly:reenter")
+async def handle_edit_block_a_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    await _resend_edit_block_a_prompt(callback, state)
+
+
 @router.callback_query(F.data == "edit_back:block_a")
 async def handle_edit_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
+    await _resend_edit_block_a_prompt(callback, state)
+
+
+async def _resend_edit_block_a_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
@@ -177,11 +226,49 @@ async def handle_edit_back_to_block_a(callback: CallbackQuery, state: FSMContext
 
 @router.message(EditWorkoutStates.waiting_for_block_b)
 async def handle_edit_block_b(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    result = parse_block_result(message.text or "", STRENGTH_BLOCK)
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(message.from_user.id)
+    data = await state.get_data()
+    previous_avg = await _previous_avg_for_edit(session, user.id, BlockType.B, data)
+    anomaly_text = format_anomaly_message(
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=STRENGTH_BLOCK.work_sets),
+    )
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(EditWorkoutStates.waiting_for_block_b_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_edit_block_b(message, state, session, result)
+
+
+@router.callback_query(EditWorkoutStates.waiting_for_block_b_confirm, F.data == "anomaly:confirm")
+async def handle_edit_block_b_anomaly_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_edit_block_b(callback.message, state, session, result)
+    await callback.answer()
+
+
+@router.callback_query(EditWorkoutStates.waiting_for_block_b_confirm, F.data == "anomaly:reenter")
+async def handle_edit_block_b_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.set_state(EditWorkoutStates.waiting_for_block_b)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+    await callback.message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("edit_back:block_a"),
+    )
+    await callback.answer()
+
+
+async def _apply_edit_block_b(message: Message, state: FSMContext, session: AsyncSession, result: BlockLog) -> None:
     data = await state.get_data()
     block_a_reps = BlockLog(working_reps=tuple(data["block_a_working_reps"]), max_reps=data["block_a_max_reps"])
 

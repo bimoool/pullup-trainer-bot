@@ -167,6 +167,18 @@ def backdate_date_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def anomaly_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Уточнение по подозрительно введённому результату (пакет #4) —
+    callback_data одинаков для всех точек входа (живая тренировка/
+    бэкдейт/правка/свободные подтягивания), гейтится конкретным
+    FSM-состоянием на стороне каждого хендлера, см. app/domain/anomalies.py."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.ANOMALY_CONFIRM_BUTTON, callback_data="anomaly:confirm")
+    builder.button(text=texts.ANOMALY_REENTER_BUTTON, callback_data="anomaly:reenter")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def back_cancel_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     """"← Назад" возвращает к предыдущему шагу того же сценария (не
     восстанавливает то, что там было введено — просто переспрашивает),

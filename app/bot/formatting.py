@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.bot import texts
+from app.domain.anomalies import AnomalyFlags
 from app.domain.constants import EquipmentType
 
 _EQUIPMENT_LABELS_NOMINATIVE: dict[EquipmentType, str] = {
@@ -59,6 +60,36 @@ def format_block_result(working_reps: Sequence[int], max_reps: int) -> str:
         return f"максимум {max_reps}"
     working = ", ".join(str(reps) for reps in working_reps)
     return f"{working}, максимум {max_reps}"
+
+
+def format_anomaly_message(flags: AnomalyFlags) -> str | None:
+    """Складывает сработавшие проверки detect_anomalies в одно сообщение
+    (пакет #4) — если сработало несколько сразу, все строки идут одна под
+    другой, вопрос "Всё верно?" — один общий, не по очереди на каждую.
+    None, если аномалий нет вообще (вызывающий тогда просто не показывает
+    уточнение)."""
+    lines = []
+    if flags.large_value is not None:
+        lines.append(texts.ANOMALY_LARGE_VALUE_LINE.format(value=flags.large_value))
+    if flags.previous_avg is not None:
+        lines.append(
+            texts.ANOMALY_JUMP_LINE.format(
+                previous=_format_avg(flags.previous_avg), current=_format_avg(flags.current_avg),
+            ),
+        )
+    if flags.actual_set_count is not None:
+        lines.append(
+            texts.ANOMALY_SET_COUNT_LINE.format(expected=flags.expected_set_count, actual=flags.actual_set_count),
+        )
+    if not lines:
+        return None
+    return "\n".join(lines) + texts.ANOMALY_CONFIRM_QUESTION
+
+
+def _format_avg(value: float) -> str:
+    # 12.0 -> "12", 12.5 -> "12.5" — то же самое правило округления, что и
+    # format_kg, просто без Decimal (среднее всегда float).
+    return f"{value:.1f}".rstrip("0").rstrip(".")
 
 
 def calculate_age(birth_date: date, today: date) -> int:

@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.bot.formatting import (
+    format_anomaly_message,
     format_block_result,
     format_equipment_progress_line,
     format_progress_report,
@@ -10,6 +11,7 @@ from app.bot.formatting import (
     format_volume_change,
     format_weekly_summary,
 )
+from app.domain.anomalies import AnomalyFlags
 from app.domain.constants import EquipmentType
 from app.domain.reports import EquipmentProgress, SetCloseSummary, WeeklySummary
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
@@ -35,6 +37,39 @@ def test_format_block_result_falls_back_to_max_only_when_working_reps_empty():
     # Единичный ввод (например, свободные подтягивания одним числом) — нет
     # рабочих подходов вообще, working_reps=() (см. parse_free_reps).
     assert format_block_result((), 8) == "максимум 8"
+
+
+def test_format_anomaly_message_none_when_no_anomalies():
+    assert format_anomaly_message(AnomalyFlags()) is None
+
+
+def test_format_anomaly_message_large_value_only():
+    message = format_anomaly_message(AnomalyFlags(large_value=55))
+    assert "55" in message
+    assert message.endswith("Всё верно?")
+
+
+def test_format_anomaly_message_jump_formats_averages_without_trailing_zero():
+    message = format_anomaly_message(AnomalyFlags(previous_avg=12.0, current_avg=28.0))
+    assert "12" in message
+    assert "28" in message
+    assert "12.0" not in message
+
+
+def test_format_anomaly_message_set_count():
+    message = format_anomaly_message(AnomalyFlags(expected_set_count=3, actual_set_count=5))
+    assert "3" in message
+    assert "5" in message
+
+
+def test_format_anomaly_message_combines_all_three_in_one_message():
+    message = format_anomaly_message(
+        AnomalyFlags(large_value=60, previous_avg=10.0, current_avg=55.0, expected_set_count=3, actual_set_count=2),
+    )
+    assert message.count("Всё верно?") == 1
+    assert "60" in message
+    assert "10" in message and "55" in message
+    assert "2" in message
 
 
 def test_format_equipment_progress_line_none_placeholder():

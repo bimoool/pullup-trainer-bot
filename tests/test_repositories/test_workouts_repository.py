@@ -642,3 +642,99 @@ async def test_record_free_workout_appears_in_list_for_user_for_stats(session, u
     history = await repo.list_for_user(user.id)
     assert len(history) == 1
     assert history[0].is_free_entry is True
+
+
+# --- get_previous_avg_working / get_previous_free_avg_working (пакет #4) ----------
+
+
+async def test_previous_avg_working_none_when_no_history(session, user: User):
+    repo = WorkoutRepository(session)
+    assert await repo.get_previous_avg_working(user.id, BlockType.A) is None
+
+
+async def test_previous_avg_working_averages_last_workouts_working_reps(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(10, 12, 14), max_reps=15),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+
+    assert await repo.get_previous_avg_working(user.id, BlockType.A) == 12.0
+
+
+async def test_previous_avg_working_uses_the_most_recent_by_date(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    for day, reps in ((1, (10, 10, 10)), (2, (20, 20, 20))):
+        await repo.record_workout(
+            user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(day),
+            block_a_reps=BlockLog(working_reps=reps, max_reps=25),
+            block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+            block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+            block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+        )
+
+    assert await repo.get_previous_avg_working(user.id, BlockType.A) == 20.0
+
+
+async def test_previous_avg_working_before_excludes_later_workouts(session, user: User):
+    """Правка старой записи (пакет #4) — сравнивать нужно с тем, что было
+    ДО неё, а не с глобально последней (которая может оказаться ПОСЛЕ)."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    for day, reps in ((1, (10, 10, 10)), (2, (20, 20, 20))):
+        await repo.record_workout(
+            user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(day),
+            block_a_reps=BlockLog(working_reps=reps, max_reps=25),
+            block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+            block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+            block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+        )
+
+    assert await repo.get_previous_avg_working(user.id, BlockType.A, before=_day(2)) == 10.0
+    assert await repo.get_previous_avg_working(user.id, BlockType.A, before=_day(1)) is None
+
+
+async def test_previous_avg_working_excludes_free_entries(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=15),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(99, 99, 99), max_reps=99), equipment_type=EquipmentType.BODYWEIGHT,
+    )
+
+    # Свободный вход — другая шкала, не должен подменять собой структурную историю.
+    assert await repo.get_previous_avg_working(user.id, BlockType.A) == 10.0
+
+
+async def test_previous_free_avg_working_only_compares_against_free_entries(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    assert await repo.get_previous_free_avg_working(user.id) is None
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(30, 30, 30), max_reps=35),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    # Структурная тренировка не в счёт — по-прежнему None.
+    assert await repo.get_previous_free_avg_working(user.id) is None
+
+    await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(8, 6, 4), max_reps=4), equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    assert await repo.get_previous_free_avg_working(user.id) == 6.0

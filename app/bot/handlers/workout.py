@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import (
+    format_anomaly_message,
     format_block_result,
     format_equipment_label,
     format_reps_example,
@@ -17,6 +18,7 @@ from app.bot.formatting import (
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
+    anomaly_confirm_keyboard,
     back_cancel_keyboard,
     cancel_keyboard,
     end_cycle_confirm_keyboard,
@@ -25,7 +27,7 @@ from app.bot.keyboards import (
     warmup_reminder_keyboard,
     workout_result_keyboard,
 )
-from app.bot.parsing import ParseError, parse_block_result
+from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import RetestStates, WorkoutStates
 from app.config import settings
 from app.db.models import Block, BlockType, WorkoutSet, WorkoutSetStatus
@@ -34,6 +36,7 @@ from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
+from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
     MIN_REST_DAYS,
     SET_LENGTH,
@@ -349,12 +352,28 @@ async def handle_warmup_show(callback: CallbackQuery) -> None:
 
 
 @router.message(WorkoutStates.waiting_for_block_a)
-async def handle_block_a_result(message: Message, state: FSMContext) -> None:
-    result = parse_block_result(message.text or "", VOLUME_BLOCK)
+async def handle_block_a_result(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(message.from_user.id)
+    previous_avg = await WorkoutRepository(session).get_previous_avg_working(user.id, BlockType.A)
+    anomaly_text = format_anomaly_message(
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=VOLUME_BLOCK.work_sets),
+    )
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(WorkoutStates.waiting_for_block_a_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_block_a_result(message, state, result)
+
+
+async def _apply_block_a_result(message: Message, state: FSMContext, result: BlockLog) -> None:
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_block_b)
     # Предложение факультативной нагрузки на отдыхе — перед приглашением к
@@ -366,6 +385,29 @@ async def handle_block_a_result(message: Message, state: FSMContext) -> None:
     # приглашение — только в handle_optional_exercise_want/_skip, после
     # того как факультативный шаг реально разрешился.
     await message.answer(texts.OPTIONAL_EXERCISE_OFFER, reply_markup=optional_exercise_keyboard())
+
+
+@router.callback_query(WorkoutStates.waiting_for_block_a_confirm, F.data == "anomaly:confirm")
+async def handle_block_a_anomaly_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_block_a_result(callback.message, state, result)
+    await callback.answer()
+
+
+@router.callback_query(WorkoutStates.waiting_for_block_a_confirm, F.data == "anomaly:reenter")
+async def handle_block_a_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    # Тот же переход, что и "← Назад" из блока B (handle_back_to_block_a) —
+    # заново показывает весь план, это уже принятый в проекте паттерн
+    # "вернуться к шагу ввода блока A" в живом потоке.
+    data = await state.get_data()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _send_plan(
+        callback.message, state, data["target_a"], data["target_b"],
+        is_first_workout=data.get("is_first_workout", False),
+    )
+    await callback.answer()
 
 
 async def _send_block_b_prompt(message: Message, state: FSMContext) -> None:
@@ -397,15 +439,48 @@ async def handle_optional_exercise_skip(callback: CallbackQuery, state: FSMConte
 
 
 @router.message(WorkoutStates.waiting_for_block_b)
-async def handle_block_b_result(message: Message, state: FSMContext) -> None:
-    result = parse_block_result(message.text or "", STRENGTH_BLOCK)
+async def handle_block_b_result(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(message.from_user.id)
+    previous_avg = await WorkoutRepository(session).get_previous_avg_working(user.id, BlockType.B)
+    anomaly_text = format_anomaly_message(
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=STRENGTH_BLOCK.work_sets),
+    )
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(WorkoutStates.waiting_for_block_b_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_block_b_result(message, state, result)
+
+
+async def _apply_block_b_result(message: Message, state: FSMContext, result: BlockLog) -> None:
     await state.update_data(block_b_working_reps=list(result.working_reps), block_b_max_reps=result.max_reps)
     await state.set_state(WorkoutStates.waiting_for_comment)
     await message.answer(texts.COMMENT_PROMPT, reply_markup=skip_comment_keyboard("wk_back:block_b"))
+
+
+@router.callback_query(WorkoutStates.waiting_for_block_b_confirm, F.data == "anomaly:confirm")
+async def handle_block_b_anomaly_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_block_b_result(callback.message, state, result)
+    await callback.answer()
+
+
+@router.callback_query(WorkoutStates.waiting_for_block_b_confirm, F.data == "anomaly:reenter")
+async def handle_block_b_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(WorkoutStates.waiting_for_block_b)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _send_block_b_prompt(callback.message, state)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "wk_back:block_a")

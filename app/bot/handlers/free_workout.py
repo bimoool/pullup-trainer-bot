@@ -12,9 +12,10 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_equipment_label
+from app.bot.formatting import format_anomaly_message, format_equipment_label
 from app.bot.handlers.workout import _ensure_active_workout_set
 from app.bot.keyboards import (
+    anomaly_confirm_keyboard,
     back_cancel_keyboard,
     band_item_picker_keyboard,
     bottom_menu_keyboard,
@@ -22,11 +23,14 @@ from app.bot.keyboards import (
     equipment_kg_keyboard,
     equipment_type_keyboard,
 )
-from app.bot.parsing import ParseError, parse_free_reps
+from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import FreeWorkoutStates
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workouts import WorkoutRepository
+from app.domain.anomalies import detect_anomalies
 from app.domain.constants import EquipmentType
+from app.domain.session import BlockLog
 from app.services.workout_log import WorkoutLogService
 
 router = Router()
@@ -221,14 +225,54 @@ async def _ask_for_reps(message: Message, state: FSMContext) -> None:
 
 @router.message(FreeWorkoutStates.waiting_for_reps)
 async def handle_free_workout_reps(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    result = parse_free_reps(message.text or "")
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
-    data = await state.get_data()
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
+    previous_avg = await WorkoutRepository(session).get_previous_free_avg_working(user.id)
+    # expected_work_sets не передаём (пакет #4) — у свободных подтягиваний
+    # структурного ожидания нет вообще, проверка количества подходов здесь
+    # не имеет смысла (это и есть весь смысл "свободных").
+    anomaly_text = format_anomaly_message(detect_anomalies(result, previous_avg_working=previous_avg))
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(FreeWorkoutStates.waiting_for_reps_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_free_workout_reps(message, state, session, result, telegram_id=message.from_user.id)
+
+
+@router.callback_query(FreeWorkoutStates.waiting_for_reps_confirm, F.data == "anomaly:confirm")
+async def handle_free_workout_reps_anomaly_confirm(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession,
+) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    # telegram_id — явно от callback.from_user (нажавший кнопку), НЕ от
+    # callback.message.from_user (это бот, см. критический баг Части 10 —
+    # тот же самый источник ошибки, здесь предотвращён заранее).
+    await _apply_free_workout_reps(callback.message, state, session, result, telegram_id=callback.from_user.id)
+    await callback.answer()
+
+
+@router.callback_query(FreeWorkoutStates.waiting_for_reps_confirm, F.data == "anomaly:reenter")
+async def handle_free_workout_reps_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _ask_for_reps(callback.message, state)
+    await callback.answer()
+
+
+async def _apply_free_workout_reps(
+    message: Message, state: FSMContext, session: AsyncSession, result: BlockLog, *, telegram_id: int,
+) -> None:
+    data = await state.get_data()
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(telegram_id)
 
     active_set = await _ensure_active_workout_set(session, user.id)
     if active_set is None:

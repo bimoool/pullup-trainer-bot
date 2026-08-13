@@ -7,14 +7,21 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_reps_example
+from app.bot.formatting import format_anomaly_message, format_reps_example
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.workout import _ensure_active_workout_set
-from app.bot.keyboards import back_cancel_keyboard, backdate_date_keyboard, bottom_menu_keyboard
-from app.bot.parsing import ParseError, parse_block_result
+from app.bot.keyboards import (
+    anomaly_confirm_keyboard,
+    back_cancel_keyboard,
+    backdate_date_keyboard,
+    bottom_menu_keyboard,
+)
+from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import BackdateStates
+from app.db.models import BlockType
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.domain.anomalies import detect_anomalies
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.session import BlockLog
 from app.services.workout_log import WorkoutLogService
@@ -100,13 +107,35 @@ async def handle_backdate_back_to_date(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 
+async def _previous_avg_for_backdate(session: AsyncSession, telegram_id: int, block_type: BlockType, data: dict) -> float | None:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(telegram_id)
+    before = datetime.fromisoformat(data["backdate_performed_at"])
+    return await WorkoutRepository(session).get_previous_avg_working(user.id, block_type, before=before)
+
+
 @router.message(BackdateStates.waiting_for_block_a)
-async def handle_backdate_block_a(message: Message, state: FSMContext) -> None:
-    result = parse_block_result(message.text or "", VOLUME_BLOCK)
+async def handle_backdate_block_a(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
+    data = await state.get_data()
+    previous_avg = await _previous_avg_for_backdate(session, message.from_user.id, BlockType.A, data)
+    anomaly_text = format_anomaly_message(
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=VOLUME_BLOCK.work_sets),
+    )
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(BackdateStates.waiting_for_block_a_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_backdate_block_a(message, state, result)
+
+
+async def _apply_backdate_block_a(message: Message, state: FSMContext, result: BlockLog) -> None:
     data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(BackdateStates.waiting_for_block_b)
@@ -116,8 +145,26 @@ async def handle_backdate_block_a(message: Message, state: FSMContext) -> None:
     )
 
 
+@router.callback_query(BackdateStates.waiting_for_block_a_confirm, F.data == "anomaly:confirm")
+async def handle_backdate_block_a_anomaly_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _apply_backdate_block_a(callback.message, state, result)
+    await callback.answer()
+
+
+@router.callback_query(BackdateStates.waiting_for_block_a_confirm, F.data == "anomaly:reenter")
+async def handle_backdate_block_a_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    await _resend_backdate_block_a_prompt(callback, state)
+
+
 @router.callback_query(F.data == "backdate_back:block_a")
 async def handle_backdate_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> None:
+    await _resend_backdate_block_a_prompt(callback, state)
+
+
+async def _resend_backdate_block_a_prompt(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     await state.set_state(BackdateStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
@@ -130,11 +177,28 @@ async def handle_backdate_back_to_block_a(callback: CallbackQuery, state: FSMCon
 
 @router.message(BackdateStates.waiting_for_block_b)
 async def handle_backdate_block_b(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    result = parse_block_result(message.text or "", STRENGTH_BLOCK)
+    result = parse_reps(message.text or "")
     if isinstance(result, ParseError):
         await message.answer(result.message)
         return
 
+    data = await state.get_data()
+    previous_avg = await _previous_avg_for_backdate(session, message.from_user.id, BlockType.B, data)
+    anomaly_text = format_anomaly_message(
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=STRENGTH_BLOCK.work_sets),
+    )
+    if anomaly_text is not None:
+        await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
+        await state.set_state(BackdateStates.waiting_for_block_b_confirm)
+        await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
+        return
+
+    await _apply_backdate_block_b(message, state, session, result, telegram_id=message.from_user.id)
+
+
+async def _apply_backdate_block_b(
+    message: Message, state: FSMContext, session: AsyncSession, result: BlockLog, *, telegram_id: int,
+) -> None:
     data = await state.get_data()
 
     # Снаряд на момент прошлой (пропущенной) тренировки теперь спрашивается
@@ -145,7 +209,7 @@ async def handle_backdate_block_b(message: Message, state: FSMContext, session: 
         message, state, session,
         flow="backdate",
         target_a_state=None, target_b_state=None,
-        telegram_id=message.from_user.id,
+        telegram_id=telegram_id,
         baseline_reps=None,
         extra_data={
             "backdate_performed_at": data["backdate_performed_at"],
@@ -155,6 +219,30 @@ async def handle_backdate_block_b(message: Message, state: FSMContext, session: 
             "block_b_max_reps": result.max_reps,
         },
     )
+
+
+@router.callback_query(BackdateStates.waiting_for_block_b_confirm, F.data == "anomaly:confirm")
+async def handle_backdate_block_b_anomaly_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    # telegram_id — явно от callback.from_user, НЕ от callback.message.from_user
+    # (это бот, см. критический баг Части 10 — тот же источник ошибки,
+    # здесь предотвращён заранее, а не найден постфактум в проде).
+    await _apply_backdate_block_b(callback.message, state, session, result, telegram_id=callback.from_user.id)
+    await callback.answer()
+
+
+@router.callback_query(BackdateStates.waiting_for_block_b_confirm, F.data == "anomaly:reenter")
+async def handle_backdate_block_b_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.set_state(BackdateStates.waiting_for_block_b)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+    await callback.message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("backdate_back:block_a"),
+    )
+    await callback.answer()
 
 
 async def finalize_backdated_workout(

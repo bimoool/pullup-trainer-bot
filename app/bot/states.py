@@ -63,13 +63,20 @@ class EquipmentStates(StatesGroup):
 
 class WorkoutStates(StatesGroup):
     waiting_for_block_a = State()
+    # Уточнение по аномалии ввода (пакет #4) — распарсено успешно, но
+    # detect_anomalies что-то заметило; ждём "Всё верно"/"Ввести заново"
+    # прежде чем продолжать так, как будто ввод был чистым.
+    waiting_for_block_a_confirm = State()
     waiting_for_block_b = State()
+    waiting_for_block_b_confirm = State()
     waiting_for_comment = State()
 
 
 class EditWorkoutStates(StatesGroup):
     waiting_for_block_a = State()
+    waiting_for_block_a_confirm = State()
     waiting_for_block_b = State()
+    waiting_for_block_b_confirm = State()
     # Правка веса/резины "в этом же отчёте" (Часть 10) — только для блоков
     # с корректируемым значением (WEIGHT/BAND), по очереди, с пропуском.
     waiting_for_equipment_weight = State()
@@ -79,7 +86,9 @@ class EditWorkoutStates(StatesGroup):
 class BackdateStates(StatesGroup):
     waiting_for_date = State()
     waiting_for_block_a = State()
+    waiting_for_block_a_confirm = State()
     waiting_for_block_b = State()
+    waiting_for_block_b_confirm = State()
 
 
 class FreeWorkoutStates(StatesGroup):
@@ -93,6 +102,7 @@ class FreeWorkoutStates(StatesGroup):
     waiting_for_new_item_name = State()
     waiting_for_new_item_kg = State()
     waiting_for_reps = State()
+    waiting_for_reps_confirm = State()
 
 
 class FeedbackStates(StatesGroup):

@@ -43,6 +43,30 @@ def _weak_streak(history: list[Workout], block_type: BlockType) -> int:
     return count_consecutive_weak_trainings(volumes)
 
 
+def _previous_avg_working(
+    history: list[Workout], block_type: BlockType, *, before: datetime | None = None,
+) -> float | None:
+    """Среднее рабочих подходов последней (по performed_at) тренировки
+    этого блока — метрика для проверки "резкого скачка" (пакет #4,
+    app.domain.anomalies.detect_anomalies). history уже отсортирована
+    list_for_user по performed_at.
+
+    before — строго ДО этой даты (используется при правке: сравнивать
+    нужно с тем, что было ДО редактируемой записи, а не с глобально
+    последней — иначе правка старой записи сравнивалась бы с тем, что
+    случилось уже ПОСЛЕ неё). None — просто последняя запись в history.
+
+    None, если истории нет или у найденной записи working_reps пуст
+    (например, свободный ввод одним числом) — сравнивать не с чем."""
+    candidates = history if before is None else [w for w in history if w.performed_at < before]
+    if not candidates:
+        return None
+    log = _block_to_log(_find_block(candidates[-1], block_type))
+    if not log.working_reps:
+        return None
+    return sum(log.working_reps) / len(log.working_reps)
+
+
 def _exclude_free_entries(workouts: list[Workout]) -> list[Workout]:
     """"➕ Внести свободные подтягивания" (Часть 10, п. 18) — попадает в
     статистику/список истории как обычно (list_for_user не фильтрует), но
@@ -176,6 +200,24 @@ class WorkoutRepository:
                 history, BlockType.B, STRENGTH_BLOCK, bypass_transition_wait=bypass_transition_wait,
             ),
         )
+
+    async def get_previous_avg_working(
+        self, user_id: int, block_type: BlockType, *, before: datetime | None = None,
+    ) -> float | None:
+        """Публичный вход для хендлеров (пакет #4) — среднее рабочих
+        подходов последней структурированной (не свободной) тренировки
+        этого блока, для проверки "резкого скачка" перед записью нового
+        результата. Свободные записи исключены той же _exclude_free_entries,
+        что и resolve_next_targets — другая шкала, сравнивать некорректно."""
+        history = _exclude_free_entries(await self.list_for_user(user_id))
+        return _previous_avg_working(history, block_type, before=before)
+
+    async def get_previous_free_avg_working(self, user_id: int) -> float | None:
+        """То же самое, но для свободных подтягиваний — сравнение только с
+        прошлым свободным входом (is_free_entry=True), не со структурным
+        блоком A: разные шкалы, свободный вход не участвует в прогрессии."""
+        history = [w for w in await self.list_for_user(user_id) if w.is_free_entry]
+        return _previous_avg_working(history, BlockType.A)
 
     async def list_for_set(self, workout_set_id: int) -> list[Workout]:
         result = await self._session.execute(
