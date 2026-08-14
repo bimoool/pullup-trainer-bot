@@ -18,6 +18,7 @@ from app.bot.keyboards import (
 )
 from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import BackdateStates
+from app.config import settings
 from app.db.models import BlockType
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -294,4 +295,4 @@ async def finalize_backdated_workout(
 
     await state.clear()
     await message.answer(texts.BACKDATE_DONE)
-    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))

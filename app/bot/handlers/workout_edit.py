@@ -19,6 +19,7 @@ from app.bot.keyboards import (
 )
 from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import EditWorkoutStates
+from app.config import settings
 from app.db.models import BlockType
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
@@ -244,7 +245,7 @@ async def handle_edit_block_b(message: Message, state: FSMContext, session: Asyn
         await message.answer(anomaly_text, reply_markup=anomaly_confirm_keyboard())
         return
 
-    await _apply_edit_block_b(message, state, session, result)
+    await _apply_edit_block_b(message, state, session, result, telegram_id=message.from_user.id)
 
 
 @router.callback_query(EditWorkoutStates.waiting_for_block_b_confirm, F.data == "anomaly:confirm")
@@ -252,7 +253,7 @@ async def handle_edit_block_b_anomaly_confirm(callback: CallbackQuery, state: FS
     data = await state.get_data()
     result = BlockLog(working_reps=tuple(data["anomaly_working_reps"]), max_reps=data["anomaly_max_reps"])
     await callback.message.edit_reply_markup(reply_markup=None)
-    await _apply_edit_block_b(callback.message, state, session, result)
+    await _apply_edit_block_b(callback.message, state, session, result, telegram_id=callback.from_user.id)
     await callback.answer()
 
 
@@ -268,7 +269,9 @@ async def handle_edit_block_b_anomaly_reenter(callback: CallbackQuery, state: FS
     await callback.answer()
 
 
-async def _apply_edit_block_b(message: Message, state: FSMContext, session: AsyncSession, result: BlockLog) -> None:
+async def _apply_edit_block_b(
+    message: Message, state: FSMContext, session: AsyncSession, result: BlockLog, *, telegram_id: int,
+) -> None:
     data = await state.get_data()
     block_a_reps = BlockLog(working_reps=tuple(data["block_a_working_reps"]), max_reps=data["block_a_max_reps"])
 
@@ -295,20 +298,22 @@ async def _apply_edit_block_b(message: Message, state: FSMContext, session: Asyn
     ]
     if not correction_queue:
         await state.clear()
-        await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+        await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))
         return
 
     await state.update_data(equipment_correction_queue=correction_queue)
-    await _advance_equipment_correction(message, state, session)
+    await _advance_equipment_correction(message, state, session, telegram_id=telegram_id)
 
 
-async def _advance_equipment_correction(message: Message, state: FSMContext, session: AsyncSession) -> None:
+async def _advance_equipment_correction(
+    message: Message, state: FSMContext, session: AsyncSession, *, telegram_id: int,
+) -> None:
     data = await state.get_data()
     queue: list[str] = data["equipment_correction_queue"]
 
     if not queue:
         await state.clear()
-        await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+        await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))
         return
 
     block_key = queue[0]
@@ -329,7 +334,7 @@ async def _advance_equipment_correction(message: Message, state: FSMContext, ses
     if not items or block.equipment_item_id is None:
         # Нечего показать взамен (личный список пуст или запись старее
         # Части 8, без ссылки на него) — пропускаем блок молча.
-        await _advance_past_current_equipment_block(message, state, session)
+        await _advance_past_current_equipment_block(message, state, session, telegram_id=telegram_id)
         return
 
     current_item = next((item for item in items if item.id == block.equipment_item_id), None)
@@ -340,17 +345,19 @@ async def _advance_equipment_correction(message: Message, state: FSMContext, ses
     await message.answer(prompt, reply_markup=edit_equipment_band_keyboard(items))
 
 
-async def _advance_past_current_equipment_block(message: Message, state: FSMContext, session: AsyncSession) -> None:
+async def _advance_past_current_equipment_block(
+    message: Message, state: FSMContext, session: AsyncSession, *, telegram_id: int,
+) -> None:
     data = await state.get_data()
     queue = data["equipment_correction_queue"][1:]
     await state.update_data(equipment_correction_queue=queue)
-    await _advance_equipment_correction(message, state, session)
+    await _advance_equipment_correction(message, state, session, telegram_id=telegram_id)
 
 
 @router.callback_query(F.data == "edit_equipment_skip")
 async def handle_edit_equipment_skip(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)
-    await _advance_past_current_equipment_block(callback.message, state, session)
+    await _advance_past_current_equipment_block(callback.message, state, session, telegram_id=callback.from_user.id)
     await callback.answer()
 
 
@@ -372,7 +379,7 @@ async def handle_edit_equipment_weight(message: Message, state: FSMContext, sess
         workout_id=data["edit_workout_id"], block_type=block_type, equipment_value=value,
     )
     await message.answer(texts.EDIT_EQUIPMENT_UPDATED)
-    await _advance_past_current_equipment_block(message, state, session)
+    await _advance_past_current_equipment_block(message, state, session, telegram_id=message.from_user.id)
 
 
 @router.callback_query(EditWorkoutStates.waiting_for_equipment_band, F.data.startswith("edit_band_item:"))
@@ -386,5 +393,5 @@ async def handle_edit_equipment_band(callback: CallbackQuery, state: FSMContext,
     )
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.EDIT_EQUIPMENT_UPDATED)
-    await _advance_past_current_equipment_block(callback.message, state, session)
+    await _advance_past_current_equipment_block(callback.message, state, session, telegram_id=callback.from_user.id)
     await callback.answer()

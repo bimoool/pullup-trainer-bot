@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import texts
 from app.bot.formatting import format_block_result, format_kg
 from app.bot.keyboards import bottom_menu_keyboard, calendar_keyboard, progress_section_keyboard
+from app.config import settings
 from app.db.models import Block, BlockType, EquipmentType, Workout
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -203,5 +204,7 @@ async def handle_calendar_close(callback: CallbackQuery, state: FSMContext) -> N
     await state.clear()
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(texts.CANCELLED)
-    await callback.message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+    await callback.message.answer(
+        texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(callback.from_user.id)),
+    )
     await callback.answer()

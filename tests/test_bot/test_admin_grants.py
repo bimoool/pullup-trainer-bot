@@ -198,6 +198,29 @@ async def test_user_card_shows_subscription_expiry_date(session, user: User, bot
     assert f"до {expected_date}" in card.text
 
 
+async def test_user_card_shows_date_for_expired_subscription(
+    session, user: User, bot: Bot, dispatcher: Dispatcher, monkeypatch,
+):
+    """Фидбек: заходил неделю назад — одно, полгода назад — совсем другое,
+    админу нужна дата истечения при решении, продлевать ли и на сколько."""
+    monkeypatch.setattr(settings, "admin_ids", str(user.telegram_id))
+    expires_at = datetime.now(UTC) - timedelta(days=45)
+    await UserRepository(session).update_subscription_cache(
+        user.id, status=SubscriptionStatus.EXPIRED, expires_at=expires_at,
+    )
+    await session.refresh(user)
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data=f"admin_user:{user.id}"), session=session,
+    )
+
+    [card] = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and f"telegram_id: {user.telegram_id}" in m.text
+    ]
+    assert f"истекла {expires_at.strftime('%d.%m.%Y')}" in card.text
+
+
 async def test_user_list_button_shows_subscription_status_and_date(
     session, user: User, bot: Bot, dispatcher: Dispatcher, monkeypatch,
 ):

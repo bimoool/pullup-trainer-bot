@@ -21,18 +21,23 @@ EQUIPMENT_TYPE_CHOICES: list[tuple[str, str]] = [
     ("Австралийские", "australian"),
 ]
 
-# Постоянное нижнее меню — 4 раздела (см. Часть 3 респека). /admin сюда
-# намеренно не входит — админка доступна только по команде, не кнопкой.
+# Постоянное нижнее меню — 4 раздела (см. Часть 3 респека). "🛠 Админка" —
+# 5-я, условная строка, видна только is_admin=True (тот же паттерн, что
+# "🧪 Полный сброс (админ)" в profile_keyboard) — ведёт туда же, куда и
+# команда /admin, просто без необходимости её набирать.
 BOTTOM_MENU_WORKOUT = "💪 Тренировка"
 BOTTOM_MENU_PROGRESS = "📊 Прогресс"
 BOTTOM_MENU_PROFILE = "👤 Профиль"
 BOTTOM_MENU_HELP = "❓ Помощь"
+BOTTOM_MENU_ADMIN = "🛠 Админка"
 
 
-def bottom_menu_keyboard() -> ReplyKeyboardMarkup:
+def bottom_menu_keyboard(*, is_admin: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text=BOTTOM_MENU_WORKOUT), KeyboardButton(text=BOTTOM_MENU_PROGRESS))
     builder.row(KeyboardButton(text=BOTTOM_MENU_PROFILE), KeyboardButton(text=BOTTOM_MENU_HELP))
+    if is_admin:
+        builder.row(KeyboardButton(text=BOTTOM_MENU_ADMIN))
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -405,7 +410,7 @@ def admin_user_list_keyboard(users: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for user in users:
         name = f"@{user.username}" if user.username else f"id {user.telegram_id}"
-        label = f"{name} — {format_subscription_status(user)}"
+        label = f"{name} — {format_subscription_status(user, show_expired_date=True)}"
         builder.button(text=label, callback_data=f"admin_user:{user.id}")
     builder.button(text="← Назад", callback_data="admin_menu")
     builder.adjust(1)

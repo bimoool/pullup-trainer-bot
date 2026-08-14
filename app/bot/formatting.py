@@ -19,13 +19,16 @@ SUBSCRIPTION_STATUS_LABELS = {
 }
 
 
-def format_subscription_status(user: User) -> str:
+def format_subscription_status(user: User, *, show_expired_date: bool = False) -> str:
     """Единый источник представления статуса подписки — Профиль
     пользователя и карточка/список в /admin показывают одно и то же
     (запрос автора после фидбека с реальной карточки: дата окончания была
-    не видна в админке). Дата — только для TRIAL/ACTIVE (для EXPIRED/NONE
-    такой суффикс не добавлялся и раньше, в Профиле — сохраняем то же
-    поведение, чтобы не расходиться с уже проверенным представлением)."""
+    не видна в админке). Дата для TRIAL/ACTIVE — везде, как и раньше.
+
+    show_expired_date=True (только /admin — админу дата истечения полезна
+    при решении, продлевать ли и на сколько; в Профиле пользователя
+    сознательно не показывается, оставляем прежнее поведение) добавляет
+    дату и для EXPIRED."""
     label = SUBSCRIPTION_STATUS_LABELS[user.subscription_status]
     if user.subscription_expires_at is not None and user.subscription_status in (
         SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE,
@@ -33,6 +36,10 @@ def format_subscription_status(user: User) -> str:
         days_left = max((user.subscription_expires_at.date() - datetime.now(UTC).date()).days, 0)
         label += texts.PROFILE_SUBSCRIPTION_DAYS_LEFT.format(
             days_left=days_left, expires_at=user.subscription_expires_at.strftime("%d.%m.%Y"),
+        )
+    elif show_expired_date and user.subscription_expires_at is not None and user.subscription_status == SubscriptionStatus.EXPIRED:
+        label += texts.ADMIN_SUBSCRIPTION_EXPIRED_DATE.format(
+            expires_at=user.subscription_expires_at.strftime("%d.%m.%Y"),
         )
     return label
 

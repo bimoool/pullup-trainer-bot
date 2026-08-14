@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import texts
 from app.bot.keyboards import baseline_start_keyboard, bottom_menu_keyboard
 from app.bot.states import OnboardingStates
+from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
 
@@ -36,7 +37,7 @@ async def _go_home(message: Message, state: FSMContext, user: User, *, cancelled
         await message.answer(texts.BASELINE_GUIDE, reply_markup=baseline_start_keyboard())
         return
     text = texts.CANCELLED if cancelled else texts.WELCOME_BACK
-    await message.answer(text, reply_markup=bottom_menu_keyboard())
+    await message.answer(text, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(user.telegram_id)))
 
 
 @router.message(CommandStart())

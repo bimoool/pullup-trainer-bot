@@ -10,6 +10,7 @@ from app.bot import texts
 from app.bot.keyboards import back_cancel_keyboard, bottom_menu_keyboard, gender_keyboard
 from app.bot.states import OnboardingStates
 from app.bot.timezones import resolve_city_timezone
+from app.config import settings
 from app.db.models import Gender
 from app.db.repositories.users import UserRepository
 from app.domain.constants import TRIAL_DAYS
@@ -145,4 +146,6 @@ async def handle_timezone(message: Message, state: FSMContext, session: AsyncSes
 
     await state.clear()
     await message.answer(texts.TRIAL_STARTED.format(trial_days=TRIAL_DAYS))
-    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+    await message.answer(
+        texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(message.from_user.id)),
+    )

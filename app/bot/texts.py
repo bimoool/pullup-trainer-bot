@@ -421,6 +421,11 @@ PROFILE_NOT_SET = "не указано"
 PROFILE_GENDER_MALE = "мужской"
 PROFILE_GENDER_FEMALE = "женский"
 PROFILE_SUBSCRIPTION_DAYS_LEFT = " (осталось {days_left} дн., до {expires_at})"
+# Дата истечения для статуса "истекла" — только в /admin (см.
+# format_subscription_status), в пользовательском Профиле сознательно не
+# показывается, там она не так полезна, как при решении админа, продлевать
+# ли и на сколько.
+ADMIN_SUBSCRIPTION_EXPIRED_DATE = " {expires_at}"
 
 PROFILE_EDIT_HEADER = "Что изменить?"
 PROFILE_EDIT_BUTTON_WEIGHT = "Вес"

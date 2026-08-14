@@ -18,6 +18,7 @@ from app.bot.formatting import format_elective_result, format_equipment_label
 from app.bot.keyboards import bottom_menu_keyboard, cancel_keyboard, elective_type_keyboard
 from app.bot.parsing import ParseError, parse_int_sequence
 from app.bot.states import ElectiveStates
+from app.config import settings
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -177,4 +178,4 @@ async def _finalize_elective(
             equipment=format_equipment_label(equipment_type, equipment_value),
         ),
     )
-    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
 from app.bot.keyboards import (
+    BOTTOM_MENU_ADMIN,
     admin_menu_keyboard,
     admin_reset_confirm_keyboard,
     admin_user_card_keyboard,
@@ -41,7 +42,11 @@ def _user_label(user: User) -> str:
 
 
 @router.message(Command("admin"))
+@router.message(F.text == BOTTOM_MENU_ADMIN)
 async def handle_admin_command(message: Message, state: FSMContext) -> None:
+    """Тот же обработчик и для команды /admin, и для кнопки "🛠 Админка" в
+    постоянном нижнем меню (видна только админам, см. bottom_menu_keyboard)
+    — кнопка не более чем ярлык для той же команды, не отдельный сценарий."""
     if not _is_admin(message.from_user.id):
         await message.answer(texts.ADMIN_ACCESS_DENIED)
         return
@@ -94,7 +99,7 @@ async def handle_admin_users(callback: CallbackQuery, session: AsyncSession) -> 
 
 def _format_user_card(card: UserCard) -> str:
     user = card.user
-    subscription = format_subscription_status(user)
+    subscription = format_subscription_status(user, show_expired_date=True)
     return texts.ADMIN_USER_CARD.format(
         name=_user_label(user), telegram_id=user.telegram_id,
         baseline_count=card.baseline_count, workout_count=card.workout_count,

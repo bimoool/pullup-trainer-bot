@@ -27,6 +27,7 @@ from app.bot.keyboards import (
 )
 from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import FreeWorkoutStates
+from app.config import settings
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -311,4 +312,4 @@ async def _apply_free_workout_reps(
 
     await state.clear()
     await message.answer(texts.FREE_WORKOUT_DONE.format(reps_summary=reps_summary, equipment=equipment_label))
-    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard())
+    await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))

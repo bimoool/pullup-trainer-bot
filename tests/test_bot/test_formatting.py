@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from app.bot.formatting import (
@@ -8,13 +8,47 @@ from app.bot.formatting import (
     format_progress_report,
     format_recommendations,
     format_set_close_report,
+    format_subscription_status,
     format_volume_change,
     format_weekly_summary,
 )
+from app.db.models import SubscriptionStatus, User
 from app.domain.anomalies import AnomalyFlags
 from app.domain.constants import EquipmentType
 from app.domain.reports import EquipmentProgress, SetCloseSummary, WeeklySummary
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
+
+
+def _user(status: SubscriptionStatus, expires_at: datetime | None) -> User:
+    return User(subscription_status=status, subscription_expires_at=expires_at)
+
+
+def test_format_subscription_status_active_shows_days_left_and_date():
+    expires_at = datetime.now(UTC) + timedelta(days=10)
+    label = format_subscription_status(_user(SubscriptionStatus.ACTIVE, expires_at))
+    assert "активна" in label
+    assert expires_at.strftime("%d.%m.%Y") in label
+    assert "осталось" in label
+
+
+def test_format_subscription_status_expired_omits_date_by_default():
+    expires_at = datetime.now(UTC) - timedelta(days=30)
+    label = format_subscription_status(_user(SubscriptionStatus.EXPIRED, expires_at))
+    assert label == "истекла"
+    assert expires_at.strftime("%d.%m.%Y") not in label
+
+
+def test_format_subscription_status_expired_shows_date_when_requested():
+    """/admin-запрос: дата важна для решения, продлевать ли и на сколько
+    (заходил неделю назад — одно, полгода назад — совсем другое)."""
+    expires_at = datetime.now(UTC) - timedelta(days=30)
+    label = format_subscription_status(_user(SubscriptionStatus.EXPIRED, expires_at), show_expired_date=True)
+    assert label == f"истекла {expires_at.strftime('%d.%m.%Y')}"
+
+
+def test_format_subscription_status_none_never_shows_date_even_when_requested():
+    label = format_subscription_status(_user(SubscriptionStatus.NONE, None), show_expired_date=True)
+    assert label == "нет подписки"
 
 
 def test_format_volume_change_none_omits_percentage():
