@@ -145,6 +145,20 @@ class WorkoutRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_since(self, after_id: int, *, limit: int) -> list[Workout]:
+        """Все завершённые тренировки ЛЮБОГО пользователя с id > after_id,
+        по возрастанию id — вход для app.workers.sheets_sync.py (лист
+        "workouts", тот же пагинированный по курсору паттерн, что и
+        EventRepository.list_since)."""
+        result = await self._session.execute(
+            select(Workout)
+            .where(Workout.id > after_id, Workout.status == WorkoutStatus.COMPLETED)
+            .options(selectinload(Workout.blocks))
+            .order_by(Workout.id)
+            .limit(limit),
+        )
+        return list(result.scalars().all())
+
     async def list_for_user(self, user_id: int) -> list[Workout]:
         """ВСЕ завершённые тренировки, любого происхождения (включая
         внесённые задним числом), в хронологическом порядке ПО ДАТЕ

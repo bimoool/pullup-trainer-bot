@@ -28,10 +28,20 @@ async def sync_sheets() -> None:
     )
     async with async_session_factory() as session:
         service = SheetsExportService(session, client)
-        events_synced, users_count = await service.sync()
+        result = await service.sync()
 
-    if events_synced:
-        logger.info("sheets_sync: synced %s new event(s), %s user(s) in snapshot", events_synced, users_count)
+    incremental_total = (
+        result.events + result.workouts + result.electives
+        + result.subscriptions + result.coins + result.achievements
+    )
+    if incremental_total:
+        logger.info(
+            "sheets_sync: events=%s workouts=%s electives=%s subscriptions=%s coins=%s achievements=%s "
+            "(users=%s, equipment_items=%s in snapshot)",
+            result.events, result.workouts, result.electives,
+            result.subscriptions, result.coins, result.achievements,
+            result.users, result.equipment_items,
+        )
 
 
 def register(scheduler: AsyncIOScheduler) -> None:

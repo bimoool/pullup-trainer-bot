@@ -48,3 +48,11 @@ class SubscriptionRepository:
             select(Subscription).where(Subscription.user_id == user_id).order_by(Subscription.started_at),
         )
         return list(result.scalars().all())
+
+    async def list_since(self, after_id: int, *, limit: int) -> list[Subscription]:
+        """Подписки ЛЮБОГО пользователя с id > after_id — вход для
+        app.workers.sheets_sync.py (лист "subscriptions")."""
+        result = await self._session.execute(
+            select(Subscription).where(Subscription.id > after_id).order_by(Subscription.id).limit(limit),
+        )
+        return list(result.scalars().all())

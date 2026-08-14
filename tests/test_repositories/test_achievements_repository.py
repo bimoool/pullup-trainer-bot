@@ -49,3 +49,12 @@ async def test_list_for_user(session, user: User):
     assert {a.code for a in achievements} == {"first_baseline", "equipment_changed"}
     equipment_changed = next(a for a in achievements if a.code == "equipment_changed")
     assert equipment_changed.context == {"new_equipment_value": 18.0}
+
+
+async def test_list_since_returns_only_newer_ids_in_order(session, user: User):
+    repo = AchievementRepository(session)
+    first = await repo.unlock(user_id=user.id, code="first_baseline")
+    second = await repo.unlock(user_id=user.id, code="equipment_changed")
+
+    assert [a.id for a in await repo.list_since(0, limit=10)] == [first.id, second.id]
+    assert [a.id for a in await repo.list_since(first.id, limit=10)] == [second.id]

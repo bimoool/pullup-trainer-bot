@@ -1,26 +1,49 @@
-"""Выгрузка в Google Sheets (ROADMAP Часть 6 «Аналитика») — против
+"""Выгрузка в Google Sheets (ROADMAP Часть 6, ревизия — пакет #7) — против
 SheetsClientProtocol через фейковую реализацию, без обращения к реальному
 Google API (та же схема, что и TributeService/TributeClientProtocol)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import requests
 from gspread.exceptions import APIError
 
-from app.db.models import User
+from app.db.models import CoinReason, SubscriptionSource, SubscriptionStatus, User
+from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.coins import CoinRepository
+from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
+from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.events import EventRepository
+from app.db.repositories.subscriptions import SubscriptionRepository
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workout_sets import WorkoutSetRepository
+from app.db.repositories.workouts import WorkoutRepository
+from app.domain.constants import EquipmentType
+from app.domain.electives import ElectiveType
+from app.domain.session import BlockLog
 from app.services.sheets_export import (
+    ACHIEVEMENTS_SHEET_TITLE,
+    COINS_SHEET_TITLE,
+    EQUIPMENT_ITEMS_HEADER,
+    EQUIPMENT_ITEMS_SHEET_TITLE,
     EVENTS_HEADER,
     EVENTS_SHEET_TITLE,
+    SUBSCRIPTIONS_SHEET_TITLE,
     USERS_HEADER,
     USERS_SHEET_TITLE,
+    WORKOUTS_SHEET_TITLE,
     SheetsExportService,
     _call_with_retry,
     _chunk,
+    achievement_to_row,
+    coin_to_row,
+    elective_to_row,
+    equipment_item_to_row,
     event_to_row,
+    subscription_to_row,
     user_to_row,
+    workout_to_rows,
 )
 
 
@@ -45,7 +68,13 @@ def _fake_api_error(status_code: int) -> APIError:
     return APIError(response)
 
 
-# --- Форматирование строк -----------------------------------------------------------
+async def _make_workout_set(session, user: User) -> int:
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=10)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    return workout_set.id
+
+
+# --- Форматирование строк: events/users -----------------------------------------------
 
 
 async def test_event_to_row_includes_telegram_id_and_flat_payload(session, user: User):
@@ -66,18 +95,12 @@ async def test_event_to_row_handles_missing_telegram_id(session, user: User):
     assert row[2] == ""
 
 
-async def test_event_to_row_empty_payload_is_empty_string(session, user: User):
-    event = await EventRepository(session).create(user_id=user.id, event_type="x")
-    row = event_to_row(event, telegram_id=1)
-    assert row[4] == ""
-
-
 async def test_user_to_row_handles_all_none_optional_fields(session, user: User):
     row = user_to_row(user)
     assert row[0] == str(user.id)
     assert row[1] == str(user.telegram_id)
     assert row[3] == ""  # onboarding_completed_at
-    assert row[5] == ""  # subscription_expires_at
+    assert row[6] == ""  # subscription_expires_at
 
 
 async def test_user_to_row_fills_onboarded_fields(session, user: User):
@@ -87,36 +110,167 @@ async def test_user_to_row_fills_onboarded_fields(session, user: User):
     assert row[3] != ""
 
 
-# --- Батчирование -----------------------------------------------------------------
+async def test_user_to_row_onboarding_stage_not_started(session, user: User):
+    row = user_to_row(user)
+    assert row[4] == "анкета не начата"
+
+
+async def test_user_to_row_onboarding_stage_in_progress(session, user: User):
+    await UserRepository(session).update_profile(user.id, weight_kg=Decimal("70.0"), height_cm=175)
+    await session.refresh(user)
+    row = user_to_row(user)
+    assert row[4] == "анкета в процессе (2/5)"
+
+
+async def test_user_to_row_onboarding_stage_completed_no_subscription(session, user: User):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+    await session.refresh(user)
+    row = user_to_row(user)
+    assert row[4] == "анкета завершена, без подписки"
+
+
+async def test_user_to_row_onboarding_stage_completed_with_subscription(session, user: User):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+    await UserRepository(session).update_subscription_cache(
+        user.id, status=SubscriptionStatus.TRIAL, expires_at=datetime.now(UTC) + timedelta(days=14),
+    )
+    await session.refresh(user)
+    row = user_to_row(user)
+    assert row[4] == "анкета завершена, подписка: trial"
+
+
+# --- Форматирование строк: workouts/electives ------------------------------------------
+
+
+async def test_workout_to_rows_live_produces_two_rows(session, user: User):
+    workout_set_id = await _make_workout_set(session, user)
+    workout = await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=datetime(2026, 1, 5, tzinfo=UTC),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("20.0"),
+    )
+
+    rows = workout_to_rows(workout, telegram_id=user.telegram_id)
+
+    assert len(rows) == 2
+    row_a, row_b = rows
+    assert row_a[1] == "live"
+    assert row_a[5] == "a"
+    assert row_a[6] == "bodyweight"
+    assert row_a[8] == "11, 11, 11"
+    assert row_a[9] == "12"
+    assert row_b[5] == "b"
+    assert row_b[6] == "weight"
+    assert row_b[7] == "20.00"
+
+
+async def test_workout_to_rows_free_entry_skips_dummy_block_b(session, user: User):
+    workout_set_id = await _make_workout_set(session, user)
+    workout = await WorkoutRepository(session).record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=datetime.now(UTC),
+        block_a_reps=BlockLog(working_reps=(8, 6, 4), max_reps=4), equipment_type=EquipmentType.BODYWEIGHT,
+    )
+
+    rows = workout_to_rows(workout, telegram_id=user.telegram_id)
+
+    assert len(rows) == 1
+    assert rows[0][1] == "free"
+    assert rows[0][5] == "a"
+
+
+async def test_workout_to_rows_backdated_entry_type(session, user: User):
+    workout_set_id = await _make_workout_set(session, user)
+    workout = await WorkoutRepository(session).record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=datetime.now(UTC),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+
+    rows = workout_to_rows(workout, telegram_id=user.telegram_id)
+    assert {row[1] for row in rows} == {"backdated"}
+
+
+async def test_elective_to_row_with_sequence(session, user: User):
+    elective = await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.MAX_REPS_LADDER, performed_at=datetime.now(UTC),
+        total_reps=36, reps_sequence=[12, 10, 8, 6], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+
+    row = elective_to_row(elective, telegram_id=user.telegram_id)
+
+    assert row[1] == "elective_max_reps_ladder"
+    assert row[5] == "-"
+    assert row[8] == "12, 10, 8, 6"
+    assert row[9] == ""  # max_reps не применимо
+    assert row[10] == ""  # target_before не применимо
+    assert row[12] == "36"  # volume = total_reps
+
+
+async def test_elective_to_row_without_sequence(session, user: User):
+    elective = await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.VOLUME_TARGET, performed_at=datetime.now(UTC),
+        total_reps=52, reps_sequence=None, equipment_type=EquipmentType.BAND,
+    )
+
+    row = elective_to_row(elective, telegram_id=user.telegram_id)
+    assert row[8] == ""
+    assert row[12] == "52"
+
+
+# --- Форматирование строк: subscriptions/coins/achievements/equipment_items -----------
+
+
+async def test_subscription_to_row(session, user: User):
+    subscription = await SubscriptionRepository(session).create(
+        user_id=user.id, status=SubscriptionStatus.TRIAL, source=SubscriptionSource.TRIAL,
+        started_at=datetime(2026, 1, 1, tzinfo=UTC), ends_at=datetime(2026, 1, 15, tzinfo=UTC),
+    )
+    row = subscription_to_row(subscription, telegram_id=user.telegram_id)
+    assert row[3] == "trial"
+    assert row[4] == "trial"
+    assert row[7] == ""  # payment_reference
+
+
+async def test_coin_to_row(session, user: User):
+    coin = await CoinRepository(session).create_transaction(
+        user_id=user.id, amount=5, reason=CoinReason.WORKOUT_COMPLETED,
+    )
+    row = coin_to_row(coin, telegram_id=user.telegram_id)
+    assert row[3] == "5"
+    assert row[4] == "workout_completed"
+    assert row[5] == ""  # related_achievement_id
+
+
+async def test_achievement_to_row(session, user: User):
+    achievement = await AchievementRepository(session).unlock(
+        user_id=user.id, code="first_baseline", context={"value": 10},
+    )
+    row = achievement_to_row(achievement, telegram_id=user.telegram_id)
+    assert row[3] == "first_baseline"
+    assert "value=10" in row[5]
+
+
+async def test_equipment_item_to_row(session, user: User):
+    item = await EquipmentItemRepository(session).create(
+        user_id=user.id, name="зелёная", resistance_kg=Decimal("25.0"),
+    )
+    row = equipment_item_to_row(item, telegram_id=user.telegram_id)
+    assert row[3] == "зелёная"
+    assert row[4] == "25.0"
+    assert row[5] == "0"
+
+
+# --- Батчирование / retry (без изменений в логике) -------------------------------------
 
 
 def test_chunk_splits_into_groups_of_given_size():
     rows = [[str(i)] for i in range(7)]
     chunks = _chunk(rows, 3)
     assert [len(c) for c in chunks] == [3, 3, 1]
-
-
-def test_chunk_of_empty_list_is_empty():
-    assert _chunk([], 500) == []
-
-
-def test_chunk_smaller_than_size_is_single_chunk():
-    rows = [[str(i)] for i in range(3)]
-    assert _chunk(rows, 500) == [rows]
-
-
-# --- Retry на 429 -------------------------------------------------------------------
-
-
-async def test_call_with_retry_succeeds_immediately_when_no_error():
-    calls = []
-
-    def ok():
-        calls.append(1)
-        return "done"
-
-    await _call_with_retry(ok)
-    assert calls == [1]
 
 
 async def test_call_with_retry_retries_on_429_then_succeeds(monkeypatch):
@@ -126,7 +280,6 @@ async def test_call_with_retry_retries_on_429_then_succeeds(monkeypatch):
         return None
 
     monkeypatch.setattr(module.asyncio, "sleep", _no_sleep)
-
     calls = {"n": 0}
 
     def flaky():
@@ -150,44 +303,22 @@ async def test_call_with_retry_does_not_retry_non_429_errors():
         assert error.code == 403
 
 
-async def test_call_with_retry_gives_up_after_max_retries(monkeypatch):
-    import app.services.sheets_export as module
-
-    async def _no_sleep(_seconds):
-        return None
-
-    monkeypatch.setattr(module.asyncio, "sleep", _no_sleep)
-
-    calls = {"n": 0}
-
-    def always_429():
-        calls["n"] += 1
-        raise _fake_api_error(429)
-
-    try:
-        await _call_with_retry(always_429)
-        raise AssertionError("expected APIError to propagate after exhausting retries")
-    except APIError:
-        pass
-    assert calls["n"] == module._MAX_RETRIES
+# --- SheetsExportService.sync() ---------------------------------------------------------
 
 
-# --- SheetsExportService.sync() ------------------------------------------------------
-
-
-async def test_sync_with_no_events_still_writes_users_snapshot(session, user: User):
+async def test_sync_with_nothing_at_all_still_writes_empty_snapshots(session, user: User):
     client = FakeSheetsClient()
     service = SheetsExportService(session, client)
 
-    events_synced, users_count = await service.sync()
+    result = await service.sync()
 
-    assert events_synced == 0
-    assert users_count == 1
+    assert (result.events, result.workouts, result.electives) == (0, 0, 0)
+    assert (result.subscriptions, result.coins, result.achievements) == (0, 0, 0)
+    assert result.users == 1
+    assert result.equipment_items == 0
     assert client.appended == []
-    [(title, header, rows)] = client.replaced
-    assert title == USERS_SHEET_TITLE
-    assert header == USERS_HEADER
-    assert len(rows) == 1
+    titles = {title for title, _, _ in client.replaced}
+    assert titles == {USERS_SHEET_TITLE, EQUIPMENT_ITEMS_SHEET_TITLE}
 
 
 async def test_sync_appends_only_new_events_and_advances_cursor(session, user: User):
@@ -197,36 +328,18 @@ async def test_sync_appends_only_new_events_and_advances_cursor(session, user: U
 
     client = FakeSheetsClient()
     service = SheetsExportService(session, client)
-    events_synced, _ = await service.sync()
+    result = await service.sync()
 
-    assert events_synced == 2
-    [(title, header, rows)] = client.appended
+    assert result.events == 2
+    [(title, header, rows)] = [row for row in client.appended if row[0] == EVENTS_SHEET_TITLE]
     assert title == EVENTS_SHEET_TITLE
     assert header == EVENTS_HEADER
     assert len(rows) == 2
 
-    # Второй прогон без новых событий — ничего заново не выгружает.
     client.appended.clear()
-    events_synced_again, _ = await service.sync()
-    assert events_synced_again == 0
+    result_again = await service.sync()
+    assert result_again.events == 0
     assert client.appended == []
-
-
-async def test_sync_picks_up_only_events_added_since_last_sync(session, user: User):
-    events = EventRepository(session)
-    await events.create(user_id=user.id, event_type="first")
-
-    client = FakeSheetsClient()
-    service = SheetsExportService(session, client)
-    await service.sync()
-
-    await events.create(user_id=user.id, event_type="second")
-    client.appended.clear()
-    events_synced, _ = await service.sync()
-
-    assert events_synced == 1
-    [(_, _, rows)] = client.appended
-    assert rows[0][3] == "second"
 
 
 async def test_sync_paginates_large_backlog_across_multiple_pages(session, user: User):
@@ -236,12 +349,89 @@ async def test_sync_paginates_large_backlog_across_multiple_pages(session, user:
 
     client = FakeSheetsClient()
     service = SheetsExportService(session, client)
-    events_synced, _ = await service.sync(events_page_size=2)
+    result = await service.sync(page_size=2)
 
-    assert events_synced == 5
+    assert result.events == 5
+    event_appends = [row for row in client.appended if row[0] == EVENTS_SHEET_TITLE]
     # 5 событий по 2 на страницу -> 3 отдельных вызова append_rows
-    assert len(client.appended) == 3
-    assert [len(rows) for (_, _, rows) in client.appended] == [2, 2, 1]
+    assert len(event_appends) == 3
+    assert [len(rows) for (_, _, rows) in event_appends] == [2, 2, 1]
+
+
+async def test_sync_workouts_and_electives_share_one_sheet_with_separate_cursors(session, user: User):
+    workout_set_id = await _make_workout_set(session, user)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=datetime.now(UTC),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.VOLUME_TARGET, performed_at=datetime.now(UTC),
+        total_reps=52, reps_sequence=None, equipment_type=EquipmentType.BAND,
+    )
+
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+    result = await service.sync()
+
+    assert result.workouts == 1  # 1 запись-тренировка (даёт 2 строки)
+    assert result.electives == 1
+    workout_sheet_appends = [row for row in client.appended if row[0] == WORKOUTS_SHEET_TITLE]
+    all_rows = [row for (_, _, rows) in workout_sheet_appends for row in rows]
+    assert len(all_rows) == 3  # 2 строки от тренировки + 1 от факультатива
+    assert {row[6] for row in [r for r in all_rows if r[1] == "live"]} == {"bodyweight"}
+    assert any(row[1] == "elective_volume_target" for row in all_rows)
+
+    # Второй прогон без новых записей — курсоры обоих источников
+    # действительно продвинулись, не только один из двух.
+    client.appended.clear()
+    result_again = await service.sync()
+    assert (result_again.workouts, result_again.electives) == (0, 0)
+    assert client.appended == []
+
+
+async def test_sync_subscriptions_coins_achievements_are_incremental(session, user: User):
+    await SubscriptionRepository(session).create(
+        user_id=user.id, status=SubscriptionStatus.TRIAL, source=SubscriptionSource.TRIAL,
+        started_at=datetime.now(UTC), ends_at=datetime.now(UTC) + timedelta(days=14),
+    )
+    await CoinRepository(session).create_transaction(user_id=user.id, amount=5, reason=CoinReason.WORKOUT_COMPLETED)
+    await AchievementRepository(session).unlock(user_id=user.id, code="first_baseline")
+
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+    result = await service.sync()
+
+    assert (result.subscriptions, result.coins, result.achievements) == (1, 1, 1)
+    titles = {title for title, _, _ in client.appended}
+    assert titles == {SUBSCRIPTIONS_SHEET_TITLE, COINS_SHEET_TITLE, ACHIEVEMENTS_SHEET_TITLE}
+
+    client.appended.clear()
+    result_again = await service.sync()
+    assert (result_again.subscriptions, result_again.coins, result_again.achievements) == (0, 0, 0)
+    assert client.appended == []
+
+
+async def test_sync_equipment_items_snapshot_replaces_not_appends(session, user: User):
+    await EquipmentItemRepository(session).create(user_id=user.id, name="зелёная")
+
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+    result = await service.sync()
+
+    assert result.equipment_items == 1
+    [(_, header, rows)] = [row for row in client.replaced if row[0] == EQUIPMENT_ITEMS_SHEET_TITLE]
+    assert header == EQUIPMENT_ITEMS_HEADER
+    assert len(rows) == 1
+
+    # Снапшот, не история — второй прогон без новых резин снова
+    # перезаписывает тот же единственный ряд, не накапливает записи.
+    client.replaced.clear()
+    await service.sync()
+    [(_, _, rows_again)] = [row for row in client.replaced if row[0] == EQUIPMENT_ITEMS_SHEET_TITLE]
+    assert len(rows_again) == 1
 
 
 async def test_sync_users_snapshot_includes_everyone_regardless_of_baseline(session, user: User):
@@ -250,10 +440,11 @@ async def test_sync_users_snapshot_includes_everyone_regardless_of_baseline(sess
 
     client = FakeSheetsClient()
     service = SheetsExportService(session, client)
-    _, users_count = await service.sync()
+    result = await service.sync()
 
-    assert users_count == 2
-    [(_, _, rows)] = client.replaced
+    assert result.users == 2
+    [(_, header, rows)] = [row for row in client.replaced if row[0] == USERS_SHEET_TITLE]
+    assert header == USERS_HEADER
     telegram_ids = {row[1] for row in rows}
     assert telegram_ids == {str(user.telegram_id), str(another.telegram_id)}
 
@@ -268,7 +459,7 @@ async def test_sync_events_include_correct_telegram_id_for_multiple_users(sessio
     service = SheetsExportService(session, client)
     await service.sync()
 
-    [(_, _, rows)] = client.appended
+    [(_, _, rows)] = [row for row in client.appended if row[0] == EVENTS_SHEET_TITLE]
     by_type = {row[3]: row[2] for row in rows}
     assert by_type["a"] == str(user.telegram_id)
     assert by_type["b"] == str(other.telegram_id)

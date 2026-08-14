@@ -63,3 +63,19 @@ async def test_count_since_only_counts_within_window(session, user: User):
 async def test_count_since_zero_when_no_recent_entries(session, user: User):
     repo = ElectiveWorkoutRepository(session)
     assert await repo.count_since(user.id, datetime.now(UTC) - timedelta(days=7)) == 0
+
+
+async def test_list_since_by_id_returns_only_newer_across_all_users(session, user: User):
+    repo = ElectiveWorkoutRepository(session)
+    first = await repo.create(
+        user_id=user.id, elective_type=ElectiveType.MAX_REPS_LADDER, performed_at=datetime.now(UTC),
+        total_reps=30, reps_sequence=[10, 8, 7, 5], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    second = await repo.create(
+        user_id=user.id, elective_type=ElectiveType.VOLUME_TARGET, performed_at=datetime.now(UTC),
+        total_reps=52, reps_sequence=None, equipment_type=EquipmentType.BAND,
+    )
+
+    assert [e.id for e in await repo.list_since(0, limit=10)] == [first.id, second.id]
+    assert [e.id for e in await repo.list_since(first.id, limit=10)] == [second.id]
+    assert await repo.list_since(second.id, limit=10) == []

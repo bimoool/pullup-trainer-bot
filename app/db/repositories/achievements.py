@@ -36,3 +36,11 @@ class AchievementRepository:
             select(Achievement).where(Achievement.user_id == user_id).order_by(Achievement.unlocked_at),
         )
         return list(result.scalars().all())
+
+    async def list_since(self, after_id: int, *, limit: int) -> list[Achievement]:
+        """Разблокировки ЛЮБОГО пользователя с id > after_id — вход для
+        app.workers.sheets_sync.py (лист "achievements")."""
+        result = await self._session.execute(
+            select(Achievement).where(Achievement.id > after_id).order_by(Achievement.id).limit(limit),
+        )
+        return list(result.scalars().all())

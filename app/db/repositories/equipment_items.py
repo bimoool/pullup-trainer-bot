@@ -36,6 +36,15 @@ class EquipmentItemRepository:
         )
         return list(result.scalars().all())
 
+    async def list_all(self) -> list[EquipmentItem]:
+        """Личный список резин ВСЕХ пользователей — вход для
+        app.workers.sheets_sync.py (лист "equipment_items", снапшот, как
+        users — список редко меняется и мал, инкремент избыточен)."""
+        result = await self._session.execute(
+            select(EquipmentItem).order_by(EquipmentItem.user_id, EquipmentItem.position),
+        )
+        return list(result.scalars().all())
+
     async def reorder(self, user_id: int, ordered_ids: list[int]) -> list[EquipmentItem]:
         """Переставляет position по новому порядку ordered_ids (весь список
         пользователя, целиком — частичный реордер не запрашивался). Позиции

@@ -29,6 +29,14 @@ class CoinRepository:
         )
         return list(result.scalars().all())
 
+    async def list_since(self, after_id: int, *, limit: int) -> list[Coin]:
+        """Начисления ЛЮБОГО пользователя с id > after_id — вход для
+        app.workers.sheets_sync.py (лист "coins")."""
+        result = await self._session.execute(
+            select(Coin).where(Coin.id > after_id).order_by(Coin.id).limit(limit),
+        )
+        return list(result.scalars().all())
+
     async def get_balance(self, user_id: int) -> int:
         """Настоящий баланс из леджера — для сверки с денормализованным
         users.coins_balance (используется в тестах/админке, не в hot-path)."""

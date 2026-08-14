@@ -60,5 +60,21 @@ async def test_reorder_swaps_positions_and_persists(session, user: User):
     assert [item.name for item in persisted] == ["третья", "первая", "вторая"]
 
 
+async def test_list_all_spans_every_user_ordered_by_user_then_position(session, user: User):
+    other_user = await _make_other_user(session)
+    repo = EquipmentItemRepository(session)
+    await repo.create(user_id=user.id, name="моя первая")
+    await repo.create(user_id=other_user.id, name="чужая первая")
+    await repo.create(user_id=user.id, name="моя вторая")
+
+    items = await repo.list_all()
+
+    assert [(item.user_id, item.name) for item in items] == [
+        (user.id, "моя первая"),
+        (user.id, "моя вторая"),
+        (other_user.id, "чужая первая"),
+    ]
+
+
 async def _make_other_user(session):
     return await UserRepository(session).create(telegram_id=2002, username="other")

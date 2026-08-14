@@ -67,3 +67,13 @@ class ElectiveWorkoutRepository:
             .limit(limit),
         )
         return list(result.scalars().all())
+
+    async def list_since(self, after_id: int, *, limit: int) -> list[ElectiveWorkout]:
+        """Факультативы ЛЮБОГО пользователя с id > after_id, по возрастанию
+        id — вход для app.workers.sheets_sync.py (пишет в тот же лист
+        "workouts", что и WorkoutRepository.list_since, но со своим
+        курсором)."""
+        result = await self._session.execute(
+            select(ElectiveWorkout).where(ElectiveWorkout.id > after_id).order_by(ElectiveWorkout.id).limit(limit),
+        )
+        return list(result.scalars().all())

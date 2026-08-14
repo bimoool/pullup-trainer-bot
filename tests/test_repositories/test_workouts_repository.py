@@ -738,3 +738,39 @@ async def test_previous_free_avg_working_only_compares_against_free_entries(sess
         block_a_reps=BlockLog(working_reps=(8, 6, 4), max_reps=4), equipment_type=EquipmentType.BODYWEIGHT,
     )
     assert await repo.get_previous_free_avg_working(user.id) == 6.0
+
+
+async def test_list_since_returns_only_newer_ids_across_all_users(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    first = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    second = await repo.record_free_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(8, 6, 4), max_reps=4), equipment_type=EquipmentType.BODYWEIGHT,
+    )
+
+    assert [w.id for w in await repo.list_since(0, limit=10)] == [first.id, second.id]
+    assert [w.id for w in await repo.list_since(first.id, limit=10)] == [second.id]
+    assert await repo.list_since(second.id, limit=10) == []
+
+
+async def test_list_since_respects_limit_for_pagination(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    for day in range(1, 4):
+        await repo.record_workout(
+            user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(day),
+            block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+            block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+            block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+            block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+        )
+
+    page = await repo.list_since(0, limit=2)
+    assert len(page) == 2
