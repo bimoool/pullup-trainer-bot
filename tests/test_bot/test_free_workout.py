@@ -5,9 +5,11 @@
 from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
+from aiogram.methods import SendMessage
 from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
 
+from app.bot import texts
 from app.bot.states import FreeWorkoutStates
 from app.db.models import User
 from app.db.repositories.baselines import BaselineRepository
@@ -171,3 +173,24 @@ async def test_band_choice_creates_item_and_records_workout(session, user: User,
     block_a = next(b for b in history[0].blocks if b.block_type.value == "a")
     assert block_a.equipment_type == EquipmentType.BAND
     assert block_a.equipment_item_id == items[0].id
+
+
+async def test_band_name_prompt_offers_help_button_in_free_workout_flow(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(FreeWorkoutStates.waiting_for_equipment_type)
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip:band"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="free_workout_band_offer:yes"), session=session,
+    )
+
+    [name_prompt] = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text == texts.EQUIPMENT_BAND_NAME_PROMPT
+    ]
+    buttons = {b.text: b.callback_data for row in name_prompt.reply_markup.inline_keyboard for b in row}
+    assert buttons[texts.EQUIPMENT_BAND_HELP_BUTTON] == "band_name_help"

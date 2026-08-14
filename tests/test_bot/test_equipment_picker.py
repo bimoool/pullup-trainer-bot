@@ -6,9 +6,11 @@ kg (или пропуск) -> запись в equipment_results и очеред�
 from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
+from aiogram.methods import SendMessage
 from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
 
+from app.bot import texts
 from app.bot.states import EquipmentStates, WorkoutStates
 from app.db.models import User
 from app.db.repositories.equipment_items import EquipmentItemRepository
@@ -192,6 +194,79 @@ async def test_standalone_add_band_skip_kg(session, user: User, bot: Bot, dispat
     items = await EquipmentItemRepository(session).list_for_user(user.id)
     assert len(items) == 1
     assert items[0].resistance_kg is None
+
+
+# --- "❓ Как выбрать резину" на шаге ввода имени — по запросу, не сама -----------
+
+
+async def test_band_name_prompt_offers_help_button_alongside_back_and_cancel(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    await _start_equipment_queue_for_block_a(session, user, bot, dispatcher)
+    await dispatcher.feed_update(bot, _callback_update(telegram_id=user.telegram_id, data="equip:band"), session=session)
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip_band_offer:yes"), session=session,
+    )
+
+    [name_prompt] = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text == texts.EQUIPMENT_BAND_NAME_PROMPT
+    ]
+    buttons = {
+        b.text: b.callback_data for row in name_prompt.reply_markup.inline_keyboard for b in row
+    }
+    assert buttons[texts.EQUIPMENT_BAND_HELP_BUTTON] == "band_name_help"
+    assert "← Назад" in buttons
+    assert "❌ Отмена" in buttons
+
+
+async def test_standalone_band_name_prompt_offers_help_without_back_button(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="band_add_standalone"), session=session,
+    )
+
+    [name_prompt] = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text == texts.EQUIPMENT_BAND_NAME_PROMPT
+    ]
+    buttons = {
+        b.text: b.callback_data for row in name_prompt.reply_markup.inline_keyboard for b in row
+    }
+    assert buttons[texts.EQUIPMENT_BAND_HELP_BUTTON] == "band_name_help"
+    assert "← Назад" not in buttons
+    assert "❌ Отмена" in buttons
+
+
+async def test_band_name_help_sends_text_without_disrupting_the_flow(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Справка по запросу — не должна ломать сценарий: состояние и уже
+    отправленное приглашение с клавиатурой остаются как есть, следующее
+    сообщение с именем резины по-прежнему обрабатывается нормально."""
+    await _start_equipment_queue_for_block_a(session, user, bot, dispatcher)
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(EquipmentStates.waiting_for_new_item_name)
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="band_name_help"), session=session,
+    )
+
+    assert await fsm.get_state() == EquipmentStates.waiting_for_new_item_name.state
+    help_messages = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text == texts.EQUIPMENT_BAND_HELP_TEXT
+    ]
+    assert len(help_messages) == 1
+
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="зелёная"), session=session,
+    )
+    assert await fsm.get_state() == EquipmentStates.waiting_for_new_item_kg.state
 
 
 async def test_equipment_list_open_shows_add_button_even_when_empty(

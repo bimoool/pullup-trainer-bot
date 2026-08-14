@@ -10,9 +10,9 @@ from app.bot.formatting import format_equipment_label
 from app.bot.keyboards import (
     back_cancel_keyboard,
     band_item_picker_keyboard,
+    band_name_keyboard,
     band_reorder_keyboard,
     bands_empty_offer_keyboard,
-    cancel_keyboard,
     equipment_kg_keyboard,
     equipment_type_keyboard,
     profile_keyboard,
@@ -222,7 +222,7 @@ async def handle_equipment_band_offer_yes(callback: CallbackQuery, state: FSMCon
     await callback.message.edit_reply_markup(reply_markup=None)
     await state.set_state(EquipmentStates.waiting_for_new_item_name)
     await callback.message.answer(
-        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("equip_back:type"),
+        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=band_name_keyboard("equip_back:type"),
     )
     await callback.answer()
 
@@ -302,7 +302,7 @@ async def handle_band_item_choice(callback: CallbackQuery, state: FSMContext, se
         await state.set_state(EquipmentStates.waiting_for_new_item_name)
         await callback.message.answer(
             texts.EQUIPMENT_BAND_NAME_PROMPT + _target_hint(block_key),
-            reply_markup=back_cancel_keyboard("equip_back:band_list"),
+            reply_markup=band_name_keyboard("equip_back:band_list"),
         )
         await callback.answer()
         return
@@ -352,7 +352,7 @@ async def handle_new_item_name(message: Message, state: FSMContext) -> None:
 async def handle_equipment_back_to_name(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(EquipmentStates.waiting_for_new_item_name)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("equip_back:type"))
+    await callback.message.answer(texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=band_name_keyboard("equip_back:type"))
     await callback.answer()
 
 
@@ -419,7 +419,16 @@ async def handle_band_add_standalone_start(callback: CallbackQuery, state: FSMCo
     пара шагов имя+кг, что и в очереди снаряда, но без block-контекста:
     отдельные состояния, чтобы не путать с equipment_queue-флоу."""
     await state.set_state(EquipmentStates.waiting_for_standalone_item_name)
-    await callback.message.answer(texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=cancel_keyboard())
+    await callback.message.answer(texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=band_name_keyboard(None))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "band_name_help")
+async def handle_band_name_help(callback: CallbackQuery) -> None:
+    """По запросу с шага ввода имени резины — не завязан на конкретное
+    FSM-состояние и не трогает текущую клавиатуру-приглашение, чтобы
+    сценарий продолжался как ни в чём не бывало после закрытия справки."""
+    await callback.message.answer(texts.EQUIPMENT_BAND_HELP_TEXT)
     await callback.answer()
 
 

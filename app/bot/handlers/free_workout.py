@@ -18,6 +18,7 @@ from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
     band_item_picker_keyboard,
+    band_name_keyboard,
     bands_empty_offer_keyboard,
     bottom_menu_keyboard,
     cancel_keyboard,
@@ -105,7 +106,7 @@ async def handle_free_workout_band_offer_yes(callback: CallbackQuery, state: FSM
     await callback.message.edit_reply_markup(reply_markup=None)
     await state.set_state(FreeWorkoutStates.waiting_for_new_item_name)
     await callback.message.answer(
-        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("free_workout_back:type"),
+        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=band_name_keyboard("free_workout_back:type"),
     )
     await callback.answer()
 
@@ -144,7 +145,7 @@ async def handle_free_workout_band_choice(callback: CallbackQuery, state: FSMCon
     if payload == "new":
         await state.set_state(FreeWorkoutStates.waiting_for_new_item_name)
         await callback.message.answer(
-            texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("free_workout_back:band_list"),
+            texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=band_name_keyboard("free_workout_back:band_list"),
         )
         await callback.answer()
         return
@@ -190,7 +191,7 @@ async def handle_free_workout_back_to_name(callback: CallbackQuery, state: FSMCo
     await state.set_state(FreeWorkoutStates.waiting_for_new_item_name)
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(
-        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=back_cancel_keyboard("free_workout_back:type"),
+        texts.EQUIPMENT_BAND_NAME_PROMPT, reply_markup=band_name_keyboard("free_workout_back:type"),
     )
     await callback.answer()
 

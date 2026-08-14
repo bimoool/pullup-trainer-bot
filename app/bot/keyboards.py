@@ -230,6 +230,25 @@ def back_cancel_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def band_name_keyboard(back_callback: str | None) -> InlineKeyboardMarkup:
+    """Ввод имени резины — та же пара "← Назад"/"❌ Отмена", что и
+    back_cancel_keyboard, плюс справка по запросу (не показывается сама,
+    чтобы не грузить тех, кому и так понятно — см. реальный пробел из
+    фокус-группы: новичок без резины не понимает, где тренироваться и что
+    покупать). back_callback=None — для отдельного захода "🎗 Мои резины",
+    там нет предыдущего шага в этом сценарии."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.EQUIPMENT_BAND_HELP_BUTTON, callback_data="band_name_help")
+    if back_callback is not None:
+        builder.button(text="← Назад", callback_data=back_callback)
+        builder.button(text="❌ Отмена", callback_data="cancel_flow")
+        builder.adjust(1, 2)
+    else:
+        builder.button(text="❌ Отмена", callback_data="cancel_flow")
+        builder.adjust(1, 1)
+    return builder.as_markup()
+
+
 def skip_comment_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Пропустить", callback_data="skip_comment")
