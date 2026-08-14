@@ -6,7 +6,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import calculate_age
+from app.bot.formatting import calculate_age, format_subscription_status
 from app.bot.keyboards import (
     BOTTOM_MENU_HELP,
     BOTTOM_MENU_PROFILE,
@@ -19,7 +19,7 @@ from app.bot.keyboards import (
 )
 from app.bot.timezones import format_timezone_label
 from app.config import settings
-from app.db.models import Gender, SubscriptionStatus, User
+from app.db.models import Gender
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
 from app.domain.achievements import AchievementCode
@@ -40,13 +40,6 @@ _ACHIEVEMENT_LABELS = {
     AchievementCode.MONTH_NO_GAPS: "📅 Месяц без пропусков",
 }
 
-_SUBSCRIPTION_LABELS = {
-    SubscriptionStatus.NONE: "нет подписки",
-    SubscriptionStatus.TRIAL: "пробный период",
-    SubscriptionStatus.ACTIVE: "активна",
-    SubscriptionStatus.EXPIRED: "истекла",
-}
-
 _GENDER_LABELS = {
     Gender.MALE: texts.PROFILE_GENDER_MALE,
     Gender.FEMALE: texts.PROFILE_GENDER_FEMALE,
@@ -63,18 +56,6 @@ async def handle_workout_section(message: Message, state: FSMContext) -> None:
 async def handle_progress_section(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(texts.SECTION_PROGRESS_TITLE, reply_markup=progress_section_keyboard())
-
-
-def _format_subscription(user: User) -> str:
-    label = _SUBSCRIPTION_LABELS[user.subscription_status]
-    if user.subscription_expires_at is not None and user.subscription_status in (
-        SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE,
-    ):
-        days_left = max((user.subscription_expires_at.date() - datetime.now(UTC).date()).days, 0)
-        label += texts.PROFILE_SUBSCRIPTION_DAYS_LEFT.format(
-            days_left=days_left, expires_at=user.subscription_expires_at.strftime("%d.%m.%Y"),
-        )
-    return label
 
 
 async def render_profile(message: Message, session: AsyncSession, telegram_id: int) -> None:
@@ -103,7 +84,7 @@ async def render_profile(message: Message, session: AsyncSession, telegram_id: i
     age = calculate_age(user.birth_date, datetime.now(UTC).date()) if user.birth_date is not None else None
 
     body = texts.PROFILE_BODY.format(
-        subscription=_format_subscription(user),
+        subscription=format_subscription_status(user),
         weight_kg=user.weight_kg if user.weight_kg is not None else texts.PROFILE_NOT_SET,
         height_cm=user.height_cm if user.height_cm is not None else texts.PROFILE_NOT_SET,
         gender=_GENDER_LABELS[user.gender] if user.gender is not None else texts.PROFILE_NOT_SET,

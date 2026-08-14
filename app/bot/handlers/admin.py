@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
+from app.bot.formatting import format_subscription_status
 from app.bot.keyboards import (
     admin_menu_keyboard,
     admin_reset_confirm_keyboard,
@@ -19,7 +20,7 @@ from app.bot.keyboards import (
 )
 from app.bot.states import AdminStates
 from app.config import settings
-from app.db.models import SubscriptionStatus, User
+from app.db.models import User
 from app.db.repositories.users import UserRepository
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
 from app.services.admin_reset import reset_user_progress
@@ -29,13 +30,6 @@ from app.services.subscription import SubscriptionService
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-_SUBSCRIPTION_LABELS = {
-    SubscriptionStatus.NONE: "нет подписки",
-    SubscriptionStatus.TRIAL: "пробный период",
-    SubscriptionStatus.ACTIVE: "активна",
-    SubscriptionStatus.EXPIRED: "истекла",
-}
 
 
 def _is_admin(telegram_id: int) -> bool:
@@ -100,7 +94,7 @@ async def handle_admin_users(callback: CallbackQuery, session: AsyncSession) -> 
 
 def _format_user_card(card: UserCard) -> str:
     user = card.user
-    subscription = _SUBSCRIPTION_LABELS[user.subscription_status]
+    subscription = format_subscription_status(user)
     return texts.ADMIN_USER_CARD.format(
         name=_user_label(user), telegram_id=user.telegram_id,
         baseline_count=card.baseline_count, workout_count=card.workout_count,
@@ -210,11 +204,23 @@ async def handle_admin_grant_days_value(message: Message, state: FSMContext, ses
 
     data = await state.get_data()
     user = await UserRepository(session).get_by_id(data["admin_target_user_id"])
-    await SubscriptionService(session).grant_by_admin(user.id, now=datetime.now(UTC), days=days)
+    updated = await SubscriptionService(session).grant_by_admin(user.id, now=datetime.now(UTC), days=days)
 
     await state.clear()
     await message.answer(texts.ADMIN_GRANT_DAYS_DONE.format(days=days, name=_user_label(user)))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
+
+    # Продление уже записано выше — сбой пуша (юзер заблокировал бота и
+    # т.п.) не должен выглядеть как неудачная выдача подписки для админа.
+    try:
+        await message.bot.send_message(
+            user.telegram_id,
+            texts.ADMIN_SUBSCRIPTION_EXTENDED_PUSH.format(
+                days=days, expires_at=updated.subscription_expires_at.strftime("%d.%m.%Y"),
+            ),
+        )
+    except TelegramAPIError:
+        logger.warning("admin grant_days: failed to notify user %s about extension", user.telegram_id, exc_info=True)
 
 
 @router.callback_query(F.data.startswith("admin_grant_coins:"))

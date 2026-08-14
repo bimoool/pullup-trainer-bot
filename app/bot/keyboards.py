@@ -7,6 +7,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
+from app.bot.formatting import format_subscription_status
 from app.domain.electives import ElectiveType
 
 # callback_data этих кнопок обязаны совпадать со значениями EquipmentType —
@@ -398,10 +399,13 @@ def admin_menu_keyboard(sheet_url: str) -> InlineKeyboardMarkup:
 
 
 def admin_user_list_keyboard(users: list) -> InlineKeyboardMarkup:
-    """users — User ORM-объекты, нужны только .id/.username/.telegram_id."""
+    """users — User ORM-объекты. Статус подписки (и дата окончания, если
+    есть — см. format_subscription_status) добавлен прямо в подпись кнопки
+    (запрос автора: дата была не видна ни в карточке, ни в списке)."""
     builder = InlineKeyboardBuilder()
     for user in users:
-        label = f"@{user.username}" if user.username else f"id {user.telegram_id}"
+        name = f"@{user.username}" if user.username else f"id {user.telegram_id}"
+        label = f"{name} — {format_subscription_status(user)}"
         builder.button(text=label, callback_data=f"admin_user:{user.id}")
     builder.button(text="← Назад", callback_data="admin_menu")
     builder.adjust(1)

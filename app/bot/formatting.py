@@ -3,12 +3,38 @@
 обработчиком по запросу и еженедельным воркером (app/workers/weekly_report.py)."""
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.bot import texts
+from app.db.models import SubscriptionStatus, User
 from app.domain.anomalies import AnomalyFlags
 from app.domain.constants import EquipmentType
+
+SUBSCRIPTION_STATUS_LABELS = {
+    SubscriptionStatus.NONE: "нет подписки",
+    SubscriptionStatus.TRIAL: "пробный период",
+    SubscriptionStatus.ACTIVE: "активна",
+    SubscriptionStatus.EXPIRED: "истекла",
+}
+
+
+def format_subscription_status(user: User) -> str:
+    """Единый источник представления статуса подписки — Профиль
+    пользователя и карточка/список в /admin показывают одно и то же
+    (запрос автора после фидбека с реальной карточки: дата окончания была
+    не видна в админке). Дата — только для TRIAL/ACTIVE (для EXPIRED/NONE
+    такой суффикс не добавлялся и раньше, в Профиле — сохраняем то же
+    поведение, чтобы не расходиться с уже проверенным представлением)."""
+    label = SUBSCRIPTION_STATUS_LABELS[user.subscription_status]
+    if user.subscription_expires_at is not None and user.subscription_status in (
+        SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE,
+    ):
+        days_left = max((user.subscription_expires_at.date() - datetime.now(UTC).date()).days, 0)
+        label += texts.PROFILE_SUBSCRIPTION_DAYS_LEFT.format(
+            days_left=days_left, expires_at=user.subscription_expires_at.strftime("%d.%m.%Y"),
+        )
+    return label
 
 _EQUIPMENT_LABELS_NOMINATIVE: dict[EquipmentType, str] = {
     EquipmentType.BODYWEIGHT: "собственный вес",
