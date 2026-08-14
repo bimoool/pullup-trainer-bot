@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 TABLES = (
     "blocks", "equipment_items", "workouts", "workout_sets", "baselines", "coins",
-    "achievements", "subscriptions", "events",
+    "achievements", "subscriptions", "events", "sheets_sync_state",
     "blocks_archive_admin_reset", "workouts_archive_admin_reset", "workout_sets_archive_admin_reset",
     "baselines_archive_admin_reset", "equipment_items_archive_admin_reset",
     "users",

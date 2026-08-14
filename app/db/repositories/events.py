@@ -19,3 +19,12 @@ class EventRepository:
             select(Event).where(Event.user_id == user_id).order_by(Event.created_at.desc()).limit(limit),
         )
         return list(result.scalars().all())
+
+    async def list_since(self, after_id: int, *, limit: int) -> list[Event]:
+        """Все события с id > after_id, по возрастанию id, ограничено limit
+        (app/workers/sheets_sync.py — выгружает страницами, чтобы один
+        цикл синка не пытался утащить неограниченный бэклог одним батчем)."""
+        result = await self._session.execute(
+            select(Event).where(Event.id > after_id).order_by(Event.id).limit(limit),
+        )
+        return list(result.scalars().all())

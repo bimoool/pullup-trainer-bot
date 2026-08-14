@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     admin_sheet_url: str = ""
     tribute_api_key: str = ""
 
+    # Выгрузка событий/пользователей в Google Sheets (ROADMAP Часть 6,
+    # app/workers/sheets_sync.py) — оба поля пустые -> воркер тихо
+    # ничего не делает (см. sync_sheets), фича опциональна.
+    google_sheets_spreadsheet_id: str = ""
+    google_sheets_credentials_path: str = ""
+
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]

@@ -43,6 +43,12 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      # Ключ сервисного аккаунта Google Sheets (app/workers/sheets_sync.py)
+      # — только чтение, путь совпадает с GOOGLE_SHEETS_CREDENTIALS_PATH
+      # в .env.example. Каталог может не существовать/быть пустым — фича
+      # опциональна (см. sync_sheets), это не ломает остальной бот.
+      - ./secrets:/app/secrets:ro
     depends_on:
       db:
         condition: service_healthy
