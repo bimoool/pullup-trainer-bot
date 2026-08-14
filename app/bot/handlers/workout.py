@@ -21,6 +21,7 @@ from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
     cancel_keyboard,
+    electives_offer_keyboard,
     end_cycle_confirm_keyboard,
     optional_exercise_keyboard,
     skip_comment_keyboard,
@@ -32,6 +33,7 @@ from app.bot.states import RetestStates, WorkoutStates
 from app.config import settings
 from app.db.models import Block, BlockType, WorkoutSet, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -44,6 +46,7 @@ from app.domain.constants import (
     VOLUME_BLOCK,
     EquipmentType,
 )
+from app.domain.electives import ELECTIVE_WEEK_WINDOW_DAYS, is_elective_allowed
 from app.domain.progression import (
     initial_volume_target,
     rollback_signed_load,
@@ -211,13 +214,23 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
             # не влияет на саму логику готовности).
             ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
             hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
-            await callback.message.answer(
-                texts.TOO_EARLY_FOR_WORKOUT.format(
-                    hours_left=hours_left,
-                    ready_date=ready_at_dt.strftime("%d.%m"),
-                    ready_time=ready_at_dt.strftime("%H:%M"),
-                ),
+            message_text = texts.TOO_EARLY_FOR_WORKOUT.format(
+                hours_left=hours_left,
+                ready_date=ready_at_dt.strftime("%d.%m"),
+                ready_time=ready_at_dt.strftime("%H:%M"),
             )
+            # Предложение факультатива вместо основной тренировки (пакет
+            # #6) — только если лимит "не чаще раза в неделю" ещё
+            # позволяет; ротация без повтора сама по себе никогда не
+            # блокирует выбор целиком (см. available_elective_types), так
+            # что проверять её здесь не нужно — достаточно недельного лимита.
+            electives = ElectiveWorkoutRepository(session)
+            week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
+            count_this_week = await electives.count_since(user.id, week_ago)
+            keyboard = electives_offer_keyboard() if is_elective_allowed(count_this_week) else None
+            if keyboard is not None:
+                message_text += texts.TOO_EARLY_ELECTIVE_OFFER
+            await callback.message.answer(message_text, reply_markup=keyboard)
             await callback.answer()
             return
         if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:

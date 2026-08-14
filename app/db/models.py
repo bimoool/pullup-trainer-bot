@@ -25,6 +25,7 @@ from app.db.base import Base
 # EquipmentType/ExerciseType — доменные понятия, поэтому у db нет своей
 # копии, только импорт.
 from app.domain.constants import EquipmentType, ExerciseType
+from app.domain.electives import ElectiveType
 
 
 def _pg_enum(enum_cls: type[StrEnum], name: str) -> PgEnum:
@@ -371,3 +372,38 @@ class SheetsSyncState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now(),
     )
+
+
+class ElectiveWorkout(Base):
+    """Факультативная нагрузка вне плана (пакет #6, app/domain/electives.py)
+    — 4 самостоятельных формата, ротация без повтора + не чаще раза в
+    неделю. Отдельная таблица, не workouts/blocks — не участвует в каскаде/
+    прогрессии структурно (никогда не проходит через WorkoutRepository),
+    без флагов is_free_entry/participates_in_cascade, без обязательного
+    workout_set_id (в отличие от свободных подтягиваний, у которых Workout.
+    workout_set_id NOT NULL вынуждает брать активный сет просто чтобы
+    удовлетворить схему)."""
+
+    __tablename__ = "elective_workouts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
+    elective_type: Mapped[ElectiveType] = mapped_column(_pg_enum(ElectiveType, "elective_type"), nullable=False)
+    performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Последовательность подходов — для 3 из 4 форматов (max_reps_ladder,
+    # w_ladder, three_minutes); NULL для volume_target, там фиксируется
+    # только итоговая сумма (см. total_reps), не сама последовательность.
+    reps_sequence: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True)
+    # Заполнен всегда, для всех 4 форматов — единая колонка для агрегации
+    # объёма факультативов в статистике, не завязанная на то, храним мы
+    # последовательность или нет. Для 3 форматов — sum(reps_sequence), для
+    # volume_target — введённое пользователем число напрямую.
+    total_reps: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Снаряд — всегда тот же, что закреплён за пользователем в блоке на
+    # объём на момент выполнения (без отдельного выбора, см. хендлер).
+    equipment_type: Mapped[EquipmentType] = mapped_column(_pg_enum(EquipmentType, "equipment_type"), nullable=False)
+    equipment_value: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    equipment_item_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("equipment_items.id"), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

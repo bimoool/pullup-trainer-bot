@@ -62,6 +62,17 @@ def format_block_result(working_reps: Sequence[int], max_reps: int) -> str:
     return f"{working}, максимум {max_reps}"
 
 
+def format_elective_result(reps_sequence: Sequence[int] | None, total_reps: int) -> str:
+    """"12, 10, 8, 6 (всего 36)" для 3 факультативов, фиксирующих
+    последовательность подходов, или "52 повторений всего" для
+    volume_target (пакет #6) — там последовательность не хранится
+    вообще, только сумма (см. ElectiveWorkout.reps_sequence)."""
+    if not reps_sequence:
+        return f"{total_reps} повторений всего"
+    sequence = ", ".join(str(reps) for reps in reps_sequence)
+    return f"{sequence} (всего {total_reps})"
+
+
 def format_anomaly_message(flags: AnomalyFlags) -> str | None:
     """Складывает сработавшие проверки detect_anomalies в одно сообщение
     (пакет #4) — если сработало несколько сразу, все строки идут одна под

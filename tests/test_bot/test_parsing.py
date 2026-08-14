@@ -4,7 +4,7 @@ parse_free_reps: произвольное количество чисел чер
 количеством — теперь мягкая аномалия, см. tests/test_anomalies.py, не
 повод отклонить ввод на этапе парсинга)."""
 
-from app.bot.parsing import ParseError, parse_reps
+from app.bot.parsing import ParseError, parse_int_sequence, parse_reps
 from app.domain.session import BlockLog
 
 
@@ -61,3 +61,28 @@ def test_rejects_number_above_hard_cap():
 def test_accepts_zero():
     result = parse_reps("0 0 0 0")
     assert result == BlockLog(working_reps=(0, 0, 0), max_reps=0)
+
+
+# --- parse_int_sequence (пакет #6, факультативы) — без выделения "максимума" -------
+
+
+def test_int_sequence_all_numbers_are_equal_no_max_split():
+    assert parse_int_sequence("12 10 8 6") == [12, 10, 8, 6]
+
+
+def test_int_sequence_single_number():
+    assert parse_int_sequence("52") == [52]
+
+
+def test_int_sequence_rejects_empty_input():
+    assert isinstance(parse_int_sequence(""), ParseError)
+
+
+def test_int_sequence_rejects_non_numeric_token():
+    result = parse_int_sequence("5 four 3")
+    assert isinstance(result, ParseError)
+    assert "four" in result.message
+
+
+def test_int_sequence_rejects_above_hard_cap():
+    assert isinstance(parse_int_sequence("5 4 999"), ParseError)

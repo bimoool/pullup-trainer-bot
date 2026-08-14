@@ -105,6 +105,17 @@ class FreeWorkoutStates(StatesGroup):
     waiting_for_reps_confirm = State()
 
 
+class ElectiveStates(StatesGroup):
+    """Факультативная нагрузка вне плана (пакет #6, app/domain/electives.py)
+    — 4 формата, ротация без повтора + не чаще раза в неделю. Снаряд не
+    спрашивается (всегда тот же, что в блоке на объём) — сразу выбор
+    формата, потом ввод результата."""
+
+    waiting_for_type = State()
+    waiting_for_reps = State()  # последовательность — max_reps_ladder/w_ladder/three_minutes
+    waiting_for_total = State()  # одно число — volume_target
+
+
 class FeedbackStates(StatesGroup):
     waiting_for_text = State()
 

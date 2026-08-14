@@ -50,16 +50,18 @@ async def test_too_early_shows_hours_left_and_ready_datetime(
     hours_left_min = max(0, math.ceil((ready_at_dt - after).total_seconds() / 3600))
     hours_left_max = max(0, math.ceil((ready_at_dt - before).total_seconds() / 3600))
 
+    # Пакет #6 — раз лимит "факультатив не чаще раза в неделю" ещё не
+    # исчерпан, к сообщению добавляется предложение факультатива.
     expected = texts.TOO_EARLY_FOR_WORKOUT.format(
         hours_left=hours_left_min,
         ready_date=ready_at_dt.strftime("%d.%m"),
         ready_time=ready_at_dt.strftime("%H:%M"),
-    )
+    ) + texts.TOO_EARLY_ELECTIVE_OFFER
     expected_alt = texts.TOO_EARLY_FOR_WORKOUT.format(
         hours_left=hours_left_max,
         ready_date=ready_at_dt.strftime("%d.%m"),
         ready_time=ready_at_dt.strftime("%H:%M"),
-    )
+    ) + texts.TOO_EARLY_ELECTIVE_OFFER
 
     sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
     [too_early] = [t for t in sent_texts if t.startswith(texts.TOO_EARLY_FOR_WORKOUT.split("{")[0])]

@@ -7,6 +7,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
+from app.domain.electives import ElectiveType
 
 # callback_data этих кнопок обязаны совпадать со значениями EquipmentType —
 # хендлер разбирает "equip:<value>" напрямую через EquipmentType(value).
@@ -69,7 +70,35 @@ def workout_section_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📋 Текущий план", callback_data="show_plan")
     builder.button(text="🔁 Внести пропущенную тренировку", callback_data="backdate_workout")
     builder.button(text="➕ Внести свободные подтягивания", callback_data="free_workout_start")
+    builder.button(text=texts.ELECTIVE_MENU_BUTTON, callback_data="electives_start")
     builder.button(text="✏️ Изменить тренировку", callback_data="edit_workout_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def electives_offer_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка предложения факультатива в TOO_EARLY (пакет #6) — тот же
+    callback_data, что и в workout_section_keyboard, один общий хендлер
+    (app/bot/handlers/electives.py::handle_electives_start)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.TOO_EARLY_ELECTIVE_BUTTON, callback_data="electives_start")
+    return builder.as_markup()
+
+
+def elective_type_keyboard(available: frozenset[ElectiveType]) -> InlineKeyboardMarkup:
+    _labels = {
+        ElectiveType.MAX_REPS_LADDER: texts.ELECTIVE_LABEL_MAX_REPS_LADDER,
+        ElectiveType.W_LADDER: texts.ELECTIVE_LABEL_W_LADDER,
+        ElectiveType.THREE_MINUTES: texts.ELECTIVE_LABEL_THREE_MINUTES,
+        ElectiveType.VOLUME_TARGET: texts.ELECTIVE_LABEL_VOLUME_TARGET,
+    }
+    builder = InlineKeyboardBuilder()
+    # Порядок enum, не set (порядок множества не гарантирован) — стабильный
+    # порядок кнопок между показами.
+    for elective_type in ElectiveType:
+        if elective_type in available:
+            builder.button(text=_labels[elective_type], callback_data=f"elective:{elective_type.value}")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
     builder.adjust(1)
     return builder.as_markup()
 
