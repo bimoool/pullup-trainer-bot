@@ -7,7 +7,13 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_anomaly_message, format_block_result, format_reps_example
+from app.bot.formatting import (
+    format_anomaly_message,
+    format_block_result,
+    format_equipment_from_result,
+    format_equipment_label,
+    format_reps_example,
+)
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
@@ -37,6 +43,18 @@ def _is_editable(workout) -> bool:
     # Внесённые задним числом не входят в цепочку каскада — редактировать
     # их через этот сценарий нельзя (см. WorkoutRepository.edit_workout).
     return workout.sequence_number is not None and workout.participates_in_cascade
+
+
+def _block_equipment_result(block) -> dict[str, str | None]:
+    """Снаряд ИСТОРИЧЕСКОЙ записи (не переспрашивается при вводе новых
+    чисел — правка веса/резины отдельным шагом после, см. ниже) в форме
+    equipment_results[block_key] (см. app/bot/handlers/equipment.py), чтобы
+    показать его в приглашениях через format_equipment_from_result (пакет
+    #7 — снаряд не был виден при вводе результата, реальный пробел)."""
+    return {
+        "type": block.equipment_type.value,
+        "value": str(block.equipment_value) if block.equipment_value is not None else None,
+    }
 
 
 @router.callback_query(F.data == "edit_workout_menu")
@@ -125,10 +143,15 @@ async def _start_editing(message: Message, state: FSMContext, session: AsyncSess
         # редактируется может быть старая запись, после которой уже
         # случилось что-то ещё.
         edit_workout_performed_at=workout.performed_at.isoformat(),
+        edit_block_a_equipment=_block_equipment_result(block_a),
+        edit_block_b_equipment=_block_equipment_result(block_b),
     )
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     example_a = format_reps_example(block_a.target_before, VOLUME_BLOCK.work_sets)
-    await message.answer(texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=cancel_keyboard())
+    prompt = texts.BLOCK_A_PROMPT.format(example=example_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
+        equipment=format_equipment_from_result(_block_equipment_result(block_a), instrumental=True),
+    )
+    await message.answer(prompt, reply_markup=cancel_keyboard())
 
 
 @router.callback_query(F.data.startswith("edit_pick:"))
@@ -192,9 +215,10 @@ async def _apply_edit_block_a(message: Message, state: FSMContext, result: Block
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
     await state.set_state(EditWorkoutStates.waiting_for_block_b)
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
-    await message.answer(
-        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("edit_back:block_a"),
+    prompt = texts.BLOCK_B_PROMPT.format(example=example_b) + texts.BLOCK_EQUIPMENT_NOTE.format(
+        equipment=format_equipment_from_result(data["edit_block_b_equipment"], instrumental=True),
     )
+    await message.answer(prompt, reply_markup=back_cancel_keyboard("edit_back:block_a"))
 
 
 @router.callback_query(EditWorkoutStates.waiting_for_block_a_confirm, F.data == "anomaly:confirm")
@@ -221,7 +245,10 @@ async def _resend_edit_block_a_prompt(callback: CallbackQuery, state: FSMContext
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
     example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
-    await callback.message.answer(texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=cancel_keyboard())
+    prompt = texts.BLOCK_A_PROMPT.format(example=example_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
+        equipment=format_equipment_from_result(data["edit_block_a_equipment"], instrumental=True),
+    )
+    await callback.message.answer(prompt, reply_markup=cancel_keyboard())
     await callback.answer()
 
 
@@ -263,9 +290,10 @@ async def handle_edit_block_b_anomaly_reenter(callback: CallbackQuery, state: FS
     await state.set_state(EditWorkoutStates.waiting_for_block_b)
     await callback.message.edit_reply_markup(reply_markup=None)
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
-    await callback.message.answer(
-        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("edit_back:block_a"),
+    prompt = texts.BLOCK_B_PROMPT.format(example=example_b) + texts.BLOCK_EQUIPMENT_NOTE.format(
+        equipment=format_equipment_from_result(data["edit_block_b_equipment"], instrumental=True),
     )
+    await callback.message.answer(prompt, reply_markup=back_cancel_keyboard("edit_back:block_a"))
     await callback.answer()
 
 
@@ -286,6 +314,8 @@ async def _apply_edit_block_b(
         texts.EDIT_DONE.format(
             a_result=format_block_result(block_a.working_reps, block_a.max_reps), a_target=block_a.target_after,
             b_result=format_block_result(block_b.working_reps, block_b.max_reps), b_target=block_b.target_after,
+            equipment_a=format_equipment_label(block_a.equipment_type, block_a.equipment_value),
+            equipment_b=format_equipment_label(block_b.equipment_type, block_b.equipment_value),
         ),
     )
 

@@ -7,7 +7,12 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_anomaly_message, format_reps_example
+from app.bot.formatting import (
+    format_anomaly_message,
+    format_block_result,
+    format_equipment_label,
+    format_reps_example,
+)
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.workout import _ensure_active_workout_set
 from app.bot.keyboards import (
@@ -279,7 +284,7 @@ async def finalize_backdated_workout(
     performed_at = datetime.fromisoformat(data["backdate_performed_at"])
 
     log_service = WorkoutLogService(session)
-    await log_service.record_backdated_workout(
+    workout = await log_service.record_backdated_workout(
         user_id=user.id,
         workout_set_id=active_set.id,
         performed_at=performed_at,
@@ -293,6 +298,16 @@ async def finalize_backdated_workout(
         block_b_equipment_item_id=block_b_equipment_item_id,
     )
 
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+
     await state.clear()
-    await message.answer(texts.BACKDATE_DONE)
+    await message.answer(
+        texts.BACKDATE_DONE.format(
+            result_a=format_block_result(block_a.working_reps, block_a.max_reps),
+            result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+            equipment_a=format_equipment_label(block_a.equipment_type, block_a.equipment_value),
+            equipment_b=format_equipment_label(block_b.equipment_type, block_b.equipment_value),
+        ),
+    )
     await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))

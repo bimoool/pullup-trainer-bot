@@ -12,7 +12,11 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import format_anomaly_message, format_equipment_label
+from app.bot.formatting import (
+    format_anomaly_message,
+    format_equipment_from_result,
+    format_equipment_label,
+)
 from app.bot.handlers.workout import _ensure_active_workout_set
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
@@ -237,7 +241,12 @@ async def handle_free_workout_new_item_kg_skip(
 
 async def _ask_for_reps(message: Message, state: FSMContext) -> None:
     await state.set_state(FreeWorkoutStates.waiting_for_reps)
-    await message.answer(texts.FREE_WORKOUT_REPS_PROMPT, reply_markup=cancel_keyboard())
+    data = await state.get_data()
+    equipment_result = {"type": data["equipment_type"], "value": data["equipment_value"]}
+    prompt = texts.FREE_WORKOUT_REPS_PROMPT.format(
+        equipment=format_equipment_from_result(equipment_result, instrumental=True),
+    )
+    await message.answer(prompt, reply_markup=cancel_keyboard())
 
 
 @router.message(FreeWorkoutStates.waiting_for_reps)

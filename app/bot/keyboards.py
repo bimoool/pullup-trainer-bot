@@ -8,6 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
+from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 
 # callback_data этих кнопок обязаны совпадать со значениями EquipmentType —
@@ -233,6 +234,36 @@ def back_cancel_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     builder.button(text="← Назад", callback_data=back_callback)
     builder.button(text="❌ Отмена", callback_data="cancel_flow")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+_CHANGE_EQUIPMENT_BUTTONS = {
+    EquipmentType.WEIGHT: texts.CHANGE_EQUIPMENT_WEIGHT_BUTTON,
+    EquipmentType.BAND: texts.CHANGE_EQUIPMENT_BAND_BUTTON,
+}
+
+
+def block_prompt_keyboard(
+    equipment_type: EquipmentType, *, block_key: str, back_callback: str | None,
+) -> InlineKeyboardMarkup:
+    """Приглашение ввести результат блока в живой тренировке (пакет #7) —
+    "✏️ Изменить вес/резину" только для WEIGHT/BAND (для своего веса/
+    австралийских менять нечего, кнопки нет — тот же принцип, что и в
+    уже существующей правке веса/резины при редактировании тренировки)."""
+    builder = InlineKeyboardBuilder()
+    change_label = _CHANGE_EQUIPMENT_BUTTONS.get(equipment_type)
+    sizes = []
+    if change_label is not None:
+        builder.button(text=change_label, callback_data=f"wk_change_equipment:{block_key}")
+        sizes.append(1)
+    if back_callback is not None:
+        builder.button(text="← Назад", callback_data=back_callback)
+        builder.button(text="❌ Отмена", callback_data="cancel_flow")
+        sizes.append(2)
+    else:
+        builder.button(text="❌ Отмена", callback_data="cancel_flow")
+        sizes.append(1)
+    builder.adjust(*sizes)
     return builder.as_markup()
 
 

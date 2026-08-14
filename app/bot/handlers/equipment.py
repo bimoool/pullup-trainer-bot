@@ -138,6 +138,14 @@ async def _advance_equipment_queue(message: Message, state: FSMContext, session:
     # прогрессии ("дошёл до порога"), что вводило в заблуждение.
     if data["equipment_flow"] == "backdate":
         prompt = texts.EQUIPMENT_TYPE_PROMPT_BACKDATE.format(block_label=_BLOCK_LABELS[block_key])
+    elif data["equipment_flow"].startswith("live_correction:"):
+        # "✏️ Изменить вес/резину" у приглашения блока (пакет #7) обычно
+        # прыгает прямо к вводу значения/резины (_apply_equipment_type_choice
+        # с уже известным типом, минуя этот экран) — сюда попадают, только
+        # если со шага ввода значения нажать "← Назад" к выбору типа. Не
+        # EQUIPMENT_TYPE_PROMPT_CHANGE — тот текст про "дошёл до порога",
+        # неверно здесь (это не решение о переходе, а правка на месте).
+        prompt = texts.EQUIPMENT_TYPE_PROMPT_LIVE_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
     else:
         prompt = texts.EQUIPMENT_TYPE_PROMPT_CHANGE.format(block_label=_BLOCK_LABELS[block_key])
     await message.answer(prompt, reply_markup=equipment_type_keyboard())
@@ -149,9 +157,20 @@ async def _complete_equipment_queue(message: Message, state: FSMContext, session
         workout,
     )
 
-    if data["equipment_flow"] == "backdate":
+    flow = data["equipment_flow"]
+    if flow == "backdate":
         await backdate.finalize_backdated_workout(message, state, session, data, telegram_id=data["telegram_id"])
+    elif flow == "live_correction:b":
+        # Правка снаряда блока B прямо у приглашения (пакет #7) — блок A
+        # уже мог быть пройден до этого, полный _send_plan() (как в ветке
+        # ниже) заново отправил бы разминку и план с нуля. Возвращаемся
+        # ровно к приглашению блока B, ничего из уже введённого не трогая.
+        await workout._send_block_b_prompt(message, state)
     else:
+        # Покрывает и обычное продолжение живой тренировки (flow="live"),
+        # и правку снаряда блока A (flow="live_correction:a") — для обоих
+        # правильный следующий шаг один и тот же: план+приглашение блока A
+        # (тот же путь, что и у существующего "← Назад" с блока B).
         await workout._send_plan(
             message, state, data["target_a"], data["target_b"],
             is_first_workout=data.get("is_first_workout", False),

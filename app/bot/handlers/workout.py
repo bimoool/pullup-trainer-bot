@@ -11,15 +11,16 @@ from app.bot import texts
 from app.bot.formatting import (
     format_anomaly_message,
     format_block_result,
+    format_equipment_from_result,
     format_equipment_label,
     format_reps_example,
     format_set_close_report,
 )
-from app.bot.handlers.equipment import _begin_equipment_setup
+from app.bot.handlers.equipment import _apply_equipment_type_choice, _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
-    back_cancel_keyboard,
+    block_prompt_keyboard,
     cancel_keyboard,
     electives_offer_keyboard,
     end_cycle_confirm_keyboard,
@@ -369,10 +370,19 @@ async def _send_plan(
     else:
         await message.answer(texts.WARMUP_REMINDER, reply_markup=warmup_reminder_keyboard())
 
+    data = await state.get_data()
+    equipment_result_a = data["equipment_results"]["a"]
+    equipment_result_b = data["equipment_results"]["b"]
     example_a = format_reps_example(target_a, VOLUME_BLOCK.work_sets)
     await message.answer(
-        texts.WORKOUT_PLAN.format(target_a=target_a, target_b=target_b, example_a=example_a),
-        reply_markup=cancel_keyboard(),
+        texts.WORKOUT_PLAN.format(
+            target_a=target_a, target_b=target_b, example_a=example_a,
+            equipment_a=format_equipment_from_result(equipment_result_a, instrumental=True),
+            equipment_b=format_equipment_from_result(equipment_result_b, instrumental=True),
+        ),
+        reply_markup=block_prompt_keyboard(
+            EquipmentType(equipment_result_a["type"]), block_key="a", back_callback=None,
+        ),
     )
     await state.set_state(WorkoutStates.waiting_for_block_a)
 
@@ -444,11 +454,40 @@ async def handle_block_a_anomaly_reenter(callback: CallbackQuery, state: FSMCont
 
 
 async def _send_block_b_prompt(message: Message, state: FSMContext) -> None:
+    await state.set_state(WorkoutStates.waiting_for_block_b)
     data = await state.get_data()
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
-    await message.answer(
-        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("wk_back:block_a"),
+    equipment_result_b = data["equipment_results"]["b"]
+    prompt = texts.BLOCK_B_PROMPT.format(example=example_b) + texts.BLOCK_EQUIPMENT_NOTE.format(
+        equipment=format_equipment_from_result(equipment_result_b, instrumental=True),
     )
+    await message.answer(
+        prompt,
+        reply_markup=block_prompt_keyboard(
+            EquipmentType(equipment_result_b["type"]), block_key="b", back_callback="wk_back:block_a",
+        ),
+    )
+
+
+@router.callback_query(WorkoutStates.waiting_for_block_a, F.data == "wk_change_equipment:a")
+@router.callback_query(WorkoutStates.waiting_for_block_b, F.data == "wk_change_equipment:b")
+async def handle_change_block_equipment(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """"✏️ Изменить вес/резину" у приглашения блока (пакет #7) — снаряд
+    молча наследуется с прошлой тренировки (needs_new_equipment=False),
+    человек узнавал, каким весом реально работает, только из уже введённых
+    цифр постфактум. Переиспользует готовый под-сценарий выбора значения/
+    резины из equipment.py (тот же экран, что при обычном выборе снаряда),
+    просто минуя вопрос о типе — тип уже известен, меняется только
+    значение. equipment_flow="live_correction:<block>" — новая ветка в
+    _complete_equipment_queue (equipment.py), возвращает ровно к тому же
+    приглашению блока, не сбрасывая уже введённый прогресс тренировки."""
+    block_key = callback.data.removeprefix("wk_change_equipment:")
+    data = await state.get_data()
+    current_type = EquipmentType(data["equipment_results"][block_key]["type"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await state.update_data(equipment_queue=[block_key], equipment_flow=f"live_correction:{block_key}")
+    await _apply_equipment_type_choice(current_type, callback.message, state, session, callback.from_user.id)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "optional_exercise:want")
@@ -510,7 +549,6 @@ async def handle_block_b_anomaly_confirm(callback: CallbackQuery, state: FSMCont
 
 @router.callback_query(WorkoutStates.waiting_for_block_b_confirm, F.data == "anomaly:reenter")
 async def handle_block_b_anomaly_reenter(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(WorkoutStates.waiting_for_block_b)
     await callback.message.edit_reply_markup(reply_markup=None)
     await _send_block_b_prompt(callback.message, state)
     await callback.answer()
@@ -529,13 +567,8 @@ async def handle_back_to_block_a(callback: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(F.data == "wk_back:block_b")
 async def handle_back_to_block_b(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    await state.set_state(WorkoutStates.waiting_for_block_b)
     await callback.message.edit_reply_markup(reply_markup=None)
-    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
-    await callback.message.answer(
-        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("wk_back:block_a"),
-    )
+    await _send_block_b_prompt(callback.message, state)
     await callback.answer()
 
 
@@ -620,6 +653,8 @@ async def _finalize_workout(
         target_a=block_a.target_after, target_b=block_b.target_after,
         result_a=format_block_result(block_a.working_reps, block_a.max_reps),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        equipment_a=format_equipment_label(block_a.equipment_type, block_a.equipment_value),
+        equipment_b=format_equipment_label(block_b.equipment_type, block_b.equipment_value),
     )
     summary += _block_outcome_suffix(block_a) + _block_outcome_suffix(block_b)
 

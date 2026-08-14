@@ -72,6 +72,16 @@ def format_equipment_label(
     return label
 
 
+def format_equipment_from_result(result: dict[str, str | int | None], *, instrumental: bool = False) -> str:
+    """Тот же format_equipment_label, но прямо из equipment_results[block_key]
+    (FSM-словарь с типом/значением строками, см. app/bot/handlers/equipment.py)
+    — до записи в БД снаряд блока живёт только там, не в виде Block/
+    NextBlockState с типизированными полями."""
+    equipment_type = EquipmentType(result["type"])
+    equipment_value = Decimal(result["value"]) if result["value"] else None
+    return format_equipment_label(equipment_type, equipment_value, instrumental=instrumental)
+
+
 def format_reps_example(target: int, work_sets: int) -> str:
     """Пример ввода результата для подсказки — раньше был всегда одинаковым
     ("15 15 15 18"), не зависел от реальной цели пользователя (Часть 10,

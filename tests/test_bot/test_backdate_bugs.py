@@ -85,6 +85,32 @@ async def test_backdate_equipment_prompt_uses_neutral_text_even_at_threshold_rep
     assert not any("порог" in t or "потяжелее" in t for t in sent_texts)
 
 
+async def test_backdate_done_shows_equipment_used_per_block(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    """Пакет #7 — снаряд задним числом выбирается ПОСЛЕ обоих блоков, но
+    итог до сих пор не показывал, с каким снаряд был выполнен."""
+    await _start_backdate_at_block_a(session, user, bot, dispatcher)
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 5"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip:weight"), session=session,
+    )
+    await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="22.5"), session=session)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip:bodyweight"), session=session,
+    )
+
+    [done] = [
+        m.text for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and m.text.startswith("Тренировка внесена задним числом")
+    ]
+    assert "Объём (отягощение +22.5 кг): 5, 5, 5, максимум 8" in done
+    assert "Сила (собственный вес): 3, 3, 3, 3, максимум 5" in done
+
+
 async def test_backdate_weight_step_offers_skip_button(session, user: User, bot: Bot, dispatcher: Dispatcher):
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(

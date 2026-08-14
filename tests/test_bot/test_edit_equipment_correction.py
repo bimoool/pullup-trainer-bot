@@ -63,9 +63,59 @@ async def _enter_edit_flow(session, user: User, bot: Bot, dispatcher: Dispatcher
     await fsm.update_data(
         edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before,
         edit_workout_performed_at=workout.performed_at.isoformat(),
+        # То же, что реально кладёт _start_editing — снаряд исторической
+        # записи, показывается в приглашениях блока A/B (пакет #7).
+        edit_block_a_equipment={
+            "type": block_a.equipment_type.value,
+            "value": str(block_a.equipment_value) if block_a.equipment_value is not None else None,
+        },
+        edit_block_b_equipment={
+            "type": block_b.equipment_type.value,
+            "value": str(block_b.equipment_value) if block_b.equipment_value is not None else None,
+        },
     )
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="11 11 11 12"), session=session)
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="4 4 4 4 5"), session=session)
+
+
+async def test_block_prompts_show_historical_equipment_before_correction(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Пакет #7 — снаряд ИСТОРИЧЕСКОЙ записи должен быть виден ещё ДО ввода
+    новых чисел, не только на отдельном шаге правки после."""
+    workout_id = await _make_workout(
+        session, user, block_a_type=EquipmentType.BAND, block_b_type=EquipmentType.WEIGHT,
+    )
+    workout = await WorkoutRepository(session).get_by_id(workout_id)
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(EditWorkoutStates.waiting_for_block_a)
+    await fsm.update_data(
+        edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before,
+        edit_workout_performed_at=workout.performed_at.isoformat(),
+        edit_block_a_equipment={"type": "band", "value": None},
+        edit_block_b_equipment={"type": "weight", "value": "20.0"},
+    )
+    await dispatcher.feed_update(
+        bot, Update(
+            update_id=1,
+            message=Message(
+                message_id=101, date=datetime.now(UTC),
+                chat=Chat(id=user.telegram_id, type="private"),
+                from_user=TgUser(id=user.telegram_id, is_bot=False, first_name="Tester"),
+                text="11 11 11 12",
+            ),
+        ),
+        session=session,
+    )
+
+    [prompt] = [
+        m.text for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and m.text.startswith("Теперь блок на силу")
+    ]
+    assert "Работаем с отягощением +20 кг." in prompt
 
 
 async def test_no_correctable_blocks_skips_straight_to_done(session, user: User, bot: Bot, dispatcher: Dispatcher):
@@ -92,6 +142,20 @@ async def test_edit_done_shows_working_reps_alongside_max(session, user: User, b
     ]
     assert "11, 11, 11, максимум 12" in done
     assert "4, 4, 4, 4, максимум 5" in done
+
+
+async def test_edit_done_shows_equipment_used_per_block(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    workout_id = await _make_workout(
+        session, user, block_a_type=EquipmentType.BAND, block_b_type=EquipmentType.BODYWEIGHT,
+    )
+    await _enter_edit_flow(session, user, bot, dispatcher, workout_id)
+
+    [done] = [
+        m.text for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and m.text.startswith(texts.EDIT_DONE.split("{")[0])
+    ]
+    assert "Блок на объём (резина):" in done
+    assert "Блок на силу (собственный вес):" in done
 
 
 async def test_weight_correction_updates_value_and_advances(session, user: User, bot: Bot, dispatcher: Dispatcher):

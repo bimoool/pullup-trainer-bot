@@ -51,6 +51,24 @@ async def test_bodyweight_choice_goes_straight_to_reps_prompt(session, user: Use
     assert await fsm.get_state() == FreeWorkoutStates.waiting_for_reps.state
 
 
+async def test_reps_prompt_shows_just_chosen_equipment(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    """Снаряд для свободных подтягиваний и так явно выбирается перед вводом
+    чисел (в отличие от живой тренировки) — но не был виден в самом
+    приглашении к вводу, только на предыдущем шаге выбора (пакет #7)."""
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(FreeWorkoutStates.waiting_for_equipment_type)
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="equip:bodyweight"), session=session,
+    )
+
+    [prompt] = [
+        m.text for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.text and m.text.startswith("Сколько подходов")
+    ]
+    assert "Работаем с собственным весом." in prompt
+
+
 async def test_arbitrary_set_count_is_recorded_with_equipment(session, user: User, bot: Bot, dispatcher: Dispatcher):
     await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=10)
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)

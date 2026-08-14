@@ -35,7 +35,9 @@ async def test_equipment_type_choice_clears_previous_keyboard(session, user: Use
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     await fsm.set_state(EquipmentStates.waiting_for_type)
     await fsm.update_data(
-        equipment_flow="live", equipment_queue=["a"], equipment_results={}, baseline_reps=None,
+        equipment_flow="live", equipment_queue=["a"],
+        equipment_results={"b": {"type": "bodyweight", "value": None, "item_id": None}},
+        baseline_reps=None,
         workout_set_id=1, target_a=10, target_b=4, target_a_override=None, target_b_override=None,
     )
 

@@ -331,6 +331,8 @@ async def test_edit_block_b_confirm_updates_workout_with_exact_numbers(
     await fsm.set_data({
         "edit_workout_id": workout.id, "target_a": 10, "target_b": 4,
         "edit_workout_performed_at": workout.performed_at.isoformat(),
+        "edit_block_a_equipment": {"type": "bodyweight", "value": None},
+        "edit_block_b_equipment": {"type": "bodyweight", "value": None},
     })
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="10 10 10 11"), session=session)
     assert await fsm.get_state() == EditWorkoutStates.waiting_for_block_b.state

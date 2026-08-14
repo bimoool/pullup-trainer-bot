@@ -28,10 +28,18 @@ async def _setup_equipment_queue(
     # telegram_id (фикстура user всегда 1001) переиспользуется между
     # тестами файла, update_data смержил бы с FSM-хвостом от предыдущего
     # теста (например, equipment_plan_announced=True) вместо чистого старта.
+    #
+    # Блок, которого нет в очереди, уже "решён" _begin_equipment_setup в
+    # реальном коде (needs_new_equipment=False, результат заполняется сразу)
+    # — плейсхолдер здесь нужен, чтобы _send_plan после опустошения очереди
+    # не упал на отсутствующем ключе equipment_results[тот_блок].
+    equipment_results = {
+        block: {"type": "bodyweight", "value": None, "item_id": None} for block in ("a", "b") if block not in queue
+    }
     await fsm.set_data({
         "equipment_flow": "live",
         "equipment_queue": queue,
-        "equipment_results": {},
+        "equipment_results": equipment_results,
         "baseline_reps": baseline_reps,
         "telegram_id": user.telegram_id,
         "workout_set_id": 1,

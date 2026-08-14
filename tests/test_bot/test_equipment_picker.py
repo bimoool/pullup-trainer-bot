@@ -44,7 +44,10 @@ async def _start_equipment_queue_for_block_a(session, user: User, bot: Bot, disp
     await fsm.update_data(
         equipment_flow="live",
         equipment_queue=["a"],
-        equipment_results={},
+        # Блок B не нуждается в переспросе (needs_new_equipment=False) —
+        # _begin_equipment_setup заполняет его результат сразу, до захода в
+        # очередь (см. app/bot/handlers/equipment.py); повторяем то же здесь.
+        equipment_results={"b": {"type": "band", "value": None, "item_id": None}},
         baseline_reps=None,
         workout_set_id=1,
         target_a=10,
