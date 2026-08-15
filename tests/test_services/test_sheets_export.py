@@ -24,6 +24,7 @@ from app.domain.electives import ElectiveType
 from app.domain.session import BlockLog
 from app.services.sheets_export import (
     ACHIEVEMENTS_SHEET_TITLE,
+    ALL_SHEET_TITLES,
     COINS_SHEET_TITLE,
     EQUIPMENT_ITEMS_HEADER,
     EQUIPMENT_ITEMS_SHEET_TITLE,
@@ -34,8 +35,11 @@ from app.services.sheets_export import (
     USERS_SHEET_TITLE,
     WORKOUTS_SHEET_TITLE,
     SheetsExportService,
+    _basic_filter_request,
+    _bold_header_request,
     _call_with_retry,
     _chunk,
+    _freeze_header_request,
     achievement_to_row,
     coin_to_row,
     elective_to_row,
@@ -51,12 +55,16 @@ class FakeSheetsClient:
     def __init__(self) -> None:
         self.appended: list[tuple[str, list[str], list[list[str]]]] = []
         self.replaced: list[tuple[str, list[str], list[list[str]]]] = []
+        self.formatted_sheet_titles: list[list[str]] = []
 
     async def append_rows(self, sheet_title, header, rows):
         self.appended.append((sheet_title, header, rows))
 
     async def replace_all_rows(self, sheet_title, header, rows):
         self.replaced.append((sheet_title, header, rows))
+
+    async def ensure_sheet_formatting(self, sheet_titles):
+        self.formatted_sheet_titles.append(list(sheet_titles))
 
 
 def _fake_api_error(status_code: int) -> APIError:
@@ -152,18 +160,19 @@ async def test_workout_to_rows_live_produces_two_rows(session, user: User):
         block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("20.0"),
     )
 
-    rows = workout_to_rows(workout, telegram_id=user.telegram_id)
+    rows = workout_to_rows(workout, telegram_id=user.telegram_id, username=user.username)
 
     assert len(rows) == 2
     row_a, row_b = rows
     assert row_a[1] == "live"
-    assert row_a[5] == "a"
-    assert row_a[6] == "bodyweight"
-    assert row_a[8] == "11, 11, 11"
-    assert row_a[9] == "12"
-    assert row_b[5] == "b"
-    assert row_b[6] == "weight"
-    assert row_b[7] == "20.00"
+    assert row_a[4] == user.username
+    assert row_a[6] == "a"
+    assert row_a[7] == "bodyweight"
+    assert row_a[9] == "11, 11, 11"
+    assert row_a[10] == "12"
+    assert row_b[6] == "b"
+    assert row_b[7] == "weight"
+    assert row_b[8] == "20.00"
 
 
 async def test_workout_to_rows_free_entry_skips_dummy_block_b(session, user: User):
@@ -173,11 +182,11 @@ async def test_workout_to_rows_free_entry_skips_dummy_block_b(session, user: Use
         block_a_reps=BlockLog(working_reps=(8, 6, 4), max_reps=4), equipment_type=EquipmentType.BODYWEIGHT,
     )
 
-    rows = workout_to_rows(workout, telegram_id=user.telegram_id)
+    rows = workout_to_rows(workout, telegram_id=user.telegram_id, username=user.username)
 
     assert len(rows) == 1
     assert rows[0][1] == "free"
-    assert rows[0][5] == "a"
+    assert rows[0][6] == "a"
 
 
 async def test_workout_to_rows_backdated_entry_type(session, user: User):
@@ -190,7 +199,7 @@ async def test_workout_to_rows_backdated_entry_type(session, user: User):
         block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
     )
 
-    rows = workout_to_rows(workout, telegram_id=user.telegram_id)
+    rows = workout_to_rows(workout, telegram_id=user.telegram_id, username=user.username)
     assert {row[1] for row in rows} == {"backdated"}
 
 
@@ -200,14 +209,15 @@ async def test_elective_to_row_with_sequence(session, user: User):
         total_reps=36, reps_sequence=[12, 10, 8, 6], equipment_type=EquipmentType.BODYWEIGHT,
     )
 
-    row = elective_to_row(elective, telegram_id=user.telegram_id)
+    row = elective_to_row(elective, telegram_id=user.telegram_id, username=user.username)
 
     assert row[1] == "elective_max_reps_ladder"
-    assert row[5] == "-"
-    assert row[8] == "12, 10, 8, 6"
-    assert row[9] == ""  # max_reps не применимо
-    assert row[10] == ""  # target_before не применимо
-    assert row[12] == "36"  # volume = total_reps
+    assert row[4] == user.username
+    assert row[6] == "-"
+    assert row[9] == "12, 10, 8, 6"
+    assert row[10] == ""  # max_reps не применимо
+    assert row[11] == ""  # target_before не применимо
+    assert row[13] == "36"  # volume = total_reps
 
 
 async def test_elective_to_row_without_sequence(session, user: User):
@@ -216,9 +226,9 @@ async def test_elective_to_row_without_sequence(session, user: User):
         total_reps=52, reps_sequence=None, equipment_type=EquipmentType.BAND,
     )
 
-    row = elective_to_row(elective, telegram_id=user.telegram_id)
-    assert row[8] == ""
-    assert row[12] == "52"
+    row = elective_to_row(elective, telegram_id=user.telegram_id, username=user.username)
+    assert row[9] == ""
+    assert row[13] == "52"
 
 
 # --- Форматирование строк: subscriptions/coins/achievements/equipment_items -----------
@@ -229,29 +239,32 @@ async def test_subscription_to_row(session, user: User):
         user_id=user.id, status=SubscriptionStatus.TRIAL, source=SubscriptionSource.TRIAL,
         started_at=datetime(2026, 1, 1, tzinfo=UTC), ends_at=datetime(2026, 1, 15, tzinfo=UTC),
     )
-    row = subscription_to_row(subscription, telegram_id=user.telegram_id)
-    assert row[3] == "trial"
+    row = subscription_to_row(subscription, telegram_id=user.telegram_id, username=user.username)
+    assert row[3] == user.username
     assert row[4] == "trial"
-    assert row[7] == ""  # payment_reference
+    assert row[5] == "trial"
+    assert row[8] == ""  # payment_reference
 
 
 async def test_coin_to_row(session, user: User):
     coin = await CoinRepository(session).create_transaction(
         user_id=user.id, amount=5, reason=CoinReason.WORKOUT_COMPLETED,
     )
-    row = coin_to_row(coin, telegram_id=user.telegram_id)
-    assert row[3] == "5"
-    assert row[4] == "workout_completed"
-    assert row[5] == ""  # related_achievement_id
+    row = coin_to_row(coin, telegram_id=user.telegram_id, username=user.username)
+    assert row[3] == user.username
+    assert row[4] == "5"
+    assert row[5] == "workout_completed"
+    assert row[6] == ""  # related_achievement_id
 
 
 async def test_achievement_to_row(session, user: User):
     achievement = await AchievementRepository(session).unlock(
         user_id=user.id, code="first_baseline", context={"value": 10},
     )
-    row = achievement_to_row(achievement, telegram_id=user.telegram_id)
-    assert row[3] == "first_baseline"
-    assert "value=10" in row[5]
+    row = achievement_to_row(achievement, telegram_id=user.telegram_id, username=user.username)
+    assert row[3] == user.username
+    assert row[4] == "first_baseline"
+    assert "value=10" in row[6]
 
 
 async def test_equipment_item_to_row(session, user: User):
@@ -381,7 +394,7 @@ async def test_sync_workouts_and_electives_share_one_sheet_with_separate_cursors
     workout_sheet_appends = [row for row in client.appended if row[0] == WORKOUTS_SHEET_TITLE]
     all_rows = [row for (_, _, rows) in workout_sheet_appends for row in rows]
     assert len(all_rows) == 3  # 2 строки от тренировки + 1 от факультатива
-    assert {row[6] for row in [r for r in all_rows if r[1] == "live"]} == {"bodyweight"}
+    assert {row[7] for row in [r for r in all_rows if r[1] == "live"]} == {"bodyweight"}
     assert any(row[1] == "elective_volume_target" for row in all_rows)
 
     # Второй прогон без новых записей — курсоры обоих источников
@@ -463,3 +476,88 @@ async def test_sync_events_include_correct_telegram_id_for_multiple_users(sessio
     by_type = {row[3]: row[2] for row in rows}
     assert by_type["a"] == str(user.telegram_id)
     assert by_type["b"] == str(other.telegram_id)
+
+
+async def test_sync_joins_username_into_workouts_subscriptions_coins_achievements(session, user: User):
+    """Реальная жалоба, подтверждённая прямой сверкой данных: только
+    telegram_id в этих 4 листах, приходилось вручную сопоставлять с users."""
+    workout_set_id = await _make_workout_set(session, user)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=datetime.now(UTC),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    await SubscriptionRepository(session).create(
+        user_id=user.id, status=SubscriptionStatus.TRIAL, source=SubscriptionSource.TRIAL,
+        started_at=datetime.now(UTC), ends_at=datetime.now(UTC) + timedelta(days=14),
+    )
+    await CoinRepository(session).create_transaction(user_id=user.id, amount=5, reason=CoinReason.WORKOUT_COMPLETED)
+    await AchievementRepository(session).unlock(user_id=user.id, code="first_baseline")
+
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+    await service.sync()
+
+    workout_rows = [
+        row for (title, _, rows) in client.appended if title == WORKOUTS_SHEET_TITLE
+        for row in rows if row[1] == "live"
+    ]
+    assert workout_rows and all(row[4] == user.username for row in workout_rows)
+
+    for title, username_index in (
+        (SUBSCRIPTIONS_SHEET_TITLE, 3), (COINS_SHEET_TITLE, 3), (ACHIEVEMENTS_SHEET_TITLE, 3),
+    ):
+        [(_, _, rows)] = [row for row in client.appended if row[0] == title]
+        assert all(row[username_index] == user.username for row in rows)
+
+
+# --- Форматирование листов: заморозка/фильтр/жирная шапка (пакет #7) ------------------
+
+
+def test_freeze_header_request_shape():
+    request = _freeze_header_request(42)
+    props = request["updateSheetProperties"]
+    assert props["properties"] == {"sheetId": 42, "gridProperties": {"frozenRowCount": 1}}
+    assert props["fields"] == "gridProperties.frozenRowCount"
+
+
+def test_basic_filter_request_covers_whole_sheet():
+    request = _basic_filter_request(42)
+    # Диапазон без явных границ строк/колонок = весь лист целиком.
+    assert request["setBasicFilter"]["filter"]["range"] == {"sheetId": 42}
+
+
+def test_bold_header_request_targets_only_first_row():
+    request = _bold_header_request(42)
+    cell = request["repeatCell"]
+    assert cell["range"] == {"sheetId": 42, "startRowIndex": 0, "endRowIndex": 1}
+    assert cell["cell"]["userEnteredFormat"]["textFormat"] == {"bold": True}
+    assert "backgroundColor" in cell["cell"]["userEnteredFormat"]
+    assert cell["fields"] == "userEnteredFormat(textFormat,backgroundColor)"
+
+
+async def test_sync_calls_ensure_sheet_formatting_with_every_sheet_title(session, user: User):
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+
+    await service.sync()
+
+    assert client.formatted_sheet_titles == [ALL_SHEET_TITLES]
+
+
+async def test_sync_calls_ensure_sheet_formatting_every_cycle_even_with_nothing_new(
+    session, user: User,
+):
+    """Идемпотентно и дёшево (см. GspreadSheetsClient.ensure_sheet_formatting
+    — один batchUpdate) — само-восстанавливает форматирование уже
+    существующих в проде листов, не только вновь создаваемых, поэтому
+    вызывается каждый цикл безусловно, а не только при первом создании."""
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+
+    await service.sync()
+    await service.sync()
+
+    assert len(client.formatted_sheet_titles) == 2

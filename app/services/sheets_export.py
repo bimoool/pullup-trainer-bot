@@ -33,29 +33,47 @@ COINS_SHEET_TITLE = "coins"
 ACHIEVEMENTS_SHEET_TITLE = "achievements"
 EQUIPMENT_ITEMS_SHEET_TITLE = "equipment_items"
 
+ALL_SHEET_TITLES = [
+    EVENTS_SHEET_TITLE, USERS_SHEET_TITLE, WORKOUTS_SHEET_TITLE,
+    SUBSCRIPTIONS_SHEET_TITLE, COINS_SHEET_TITLE, ACHIEVEMENTS_SHEET_TITLE, EQUIPMENT_ITEMS_SHEET_TITLE,
+]
+
 EVENTS_HEADER = ["id", "user_id", "telegram_id", "event_type", "payload", "created_at"]
 USERS_HEADER = [
     "id", "telegram_id", "username", "onboarding_completed_at", "onboarding_stage",
     "subscription_status", "subscription_expires_at", "coins_balance", "created_at",
 ]
-# Один блок одной тренировки/факультатива — не вся тренировка целиком, так
-# проще фильтровать и сравнивать блок A и блок B по отдельности в самой
-# таблице. entry_type различает происхождение (live/backdated/free/
-# elective_<тип>) — у структурных тренировок 2 строки (блок A и B), у
-# свободных — 1 (пустой блок B — заглушка на уровне схемы, в лог не идёт),
-# у факультативов — 1 (block="-", target_before/after не применимы, они
-# вне прогрессии).
+# username рядом с telegram_id (не вместо) — реальный пробел с прямой
+# сверки данных автором: без него приходилось вручную сопоставлять с
+# листом users, чтобы понять, чьи это строки. Один блок одной тренировки/
+# факультатива — не вся тренировка целиком, так проще фильтровать и
+# сравнивать блок A и блок B по отдельности в самой таблице. entry_type
+# различает происхождение (live/backdated/free/elective_<тип>) — у
+# структурных тренировок 2 строки (блок A и B), у свободных — 1 (пустой
+# блок B — заглушка на уровне схемы, в лог не идёт), у факультативов — 1
+# (block="-", target_before/after не применимы, они вне прогрессии).
 WORKOUTS_HEADER = [
-    "id", "entry_type", "user_id", "telegram_id", "performed_at", "block",
+    "id", "entry_type", "user_id", "telegram_id", "username", "performed_at", "block",
     "equipment", "equipment_value", "reps", "max_reps",
     "target_before", "target_after", "volume", "comment",
 ]
 SUBSCRIPTIONS_HEADER = [
-    "id", "user_id", "telegram_id", "status", "source", "started_at", "ends_at", "payment_reference", "created_at",
+    "id", "user_id", "telegram_id", "username", "status", "source",
+    "started_at", "ends_at", "payment_reference", "created_at",
 ]
-COINS_HEADER = ["id", "user_id", "telegram_id", "amount", "reason", "related_achievement_id", "created_at"]
-ACHIEVEMENTS_HEADER = ["id", "user_id", "telegram_id", "code", "unlocked_at", "context"]
+COINS_HEADER = [
+    "id", "user_id", "telegram_id", "username", "amount", "reason", "related_achievement_id", "created_at",
+]
+ACHIEVEMENTS_HEADER = ["id", "user_id", "telegram_id", "username", "code", "unlocked_at", "context"]
 EQUIPMENT_ITEMS_HEADER = ["id", "user_id", "telegram_id", "name", "resistance_kg", "position", "created_at"]
+
+# Заморозка шапки + жирный/подсвеченный заголовок — применяются каждый
+# цикл синка безусловно (идемпотентно, побочек нет). Базовый фильтр —
+# только если на листе его ещё нет (см. GspreadSheetsClient.
+# ensure_sheet_formatting): применять его безусловно каждые 5 минут стирало
+# бы условия отбора, которые Кирилл сам настроит внутри фильтра в
+# интерфейсе — сам факт наличия фильтра идемпотентен, а его критерии нет.
+_HEADER_BACKGROUND_COLOR = {"red": 0.85, "green": 0.85, "blue": 0.85}
 
 # Батч-запись (не по одной строке за раз, см. ROADMAP Часть 6) — но и не
 # бесконечный один запрос: при большом бэклоге (первый запуск воркера на
@@ -107,14 +125,14 @@ def user_to_row(user: User) -> list[str]:
     ]
 
 
-def workout_to_rows(workout: WorkoutModel, *, telegram_id: int | None) -> list[list[str]]:
+def workout_to_rows(workout: WorkoutModel, *, telegram_id: int | None, username: str | None) -> list[list[str]]:
     entry_type = "free" if workout.is_free_entry else ("live" if workout.participates_in_cascade else "backdated")
     rows = []
     for block in sorted(workout.blocks, key=lambda b: b.block_type.value):
         if workout.is_free_entry and block.block_type == BlockType.B:
             continue  # заглушка на уровне схемы (record_free_workout) — в лог не идёт
         rows.append([
-            str(workout.id), entry_type, str(workout.user_id), _opt(telegram_id),
+            str(workout.id), entry_type, str(workout.user_id), _opt(telegram_id), _opt(username),
             workout.performed_at.isoformat(), block.block_type.value,
             block.equipment_type.value, _opt(block.equipment_value),
             ", ".join(str(r) for r in block.working_reps), str(block.max_reps),
@@ -125,9 +143,10 @@ def workout_to_rows(workout: WorkoutModel, *, telegram_id: int | None) -> list[l
     return rows
 
 
-def elective_to_row(elective: ElectiveWorkoutModel, *, telegram_id: int | None) -> list[str]:
+def elective_to_row(elective: ElectiveWorkoutModel, *, telegram_id: int | None, username: str | None) -> list[str]:
     return [
-        str(elective.id), f"elective_{elective.elective_type.value}", str(elective.user_id), _opt(telegram_id),
+        str(elective.id), f"elective_{elective.elective_type.value}", str(elective.user_id),
+        _opt(telegram_id), _opt(username),
         elective.performed_at.isoformat(), "-",
         elective.equipment_type.value, _opt(elective.equipment_value),
         ", ".join(str(r) for r in elective.reps_sequence) if elective.reps_sequence else "",
@@ -138,25 +157,25 @@ def elective_to_row(elective: ElectiveWorkoutModel, *, telegram_id: int | None) 
     ]
 
 
-def subscription_to_row(subscription: SubscriptionModel, *, telegram_id: int | None) -> list[str]:
+def subscription_to_row(subscription: SubscriptionModel, *, telegram_id: int | None, username: str | None) -> list[str]:
     return [
-        str(subscription.id), str(subscription.user_id), _opt(telegram_id),
+        str(subscription.id), str(subscription.user_id), _opt(telegram_id), _opt(username),
         subscription.status.value, subscription.source.value,
         subscription.started_at.isoformat(), subscription.ends_at.isoformat(),
         subscription.payment_reference or "", subscription.created_at.isoformat(),
     ]
 
 
-def coin_to_row(coin: Coin, *, telegram_id: int | None) -> list[str]:
+def coin_to_row(coin: Coin, *, telegram_id: int | None, username: str | None) -> list[str]:
     return [
-        str(coin.id), str(coin.user_id), _opt(telegram_id), str(coin.amount), coin.reason.value,
+        str(coin.id), str(coin.user_id), _opt(telegram_id), _opt(username), str(coin.amount), coin.reason.value,
         _opt(coin.related_achievement_id), coin.created_at.isoformat(),
     ]
 
 
-def achievement_to_row(achievement: Achievement, *, telegram_id: int | None) -> list[str]:
+def achievement_to_row(achievement: Achievement, *, telegram_id: int | None, username: str | None) -> list[str]:
     return [
-        str(achievement.id), str(achievement.user_id), _opt(telegram_id), achievement.code,
+        str(achievement.id), str(achievement.user_id), _opt(telegram_id), _opt(username), achievement.code,
         achievement.unlocked_at.isoformat(), _payload_to_text(achievement.context or {}),
     ]
 
@@ -186,6 +205,8 @@ class SheetsClientProtocol(Protocol):
     async def append_rows(self, sheet_title: str, header: list[str], rows: list[list[str]]) -> None: ...
 
     async def replace_all_rows(self, sheet_title: str, header: list[str], rows: list[list[str]]) -> None: ...
+
+    async def ensure_sheet_formatting(self, sheet_titles: list[str]) -> None: ...
 
 
 class GspreadSheetsClient:
@@ -230,6 +251,66 @@ class GspreadSheetsClient:
             worksheet = spreadsheet.add_worksheet(title=sheet_title, rows=1000, cols=len(header))
             worksheet.append_rows([header])
             return worksheet
+
+    async def ensure_sheet_formatting(self, sheet_titles: list[str]) -> None:
+        """Закреплённая шапка + жирный/подсвеченный заголовок + базовый
+        фильтр — программно, идемпотентно, одним batchUpdate на ВСЕ листы
+        сразу за цикл синка (не по запросу на лист). Листы, которых ещё
+        нет (WorksheetNotFound на этот sheet_title не возникает — просто
+        не найдётся в fetch_sheet_metadata), тихо пропускаются:
+        отформатируются на одном из следующих циклов, когда появятся."""
+        spreadsheet, requests = await asyncio.to_thread(self._build_formatting_requests, sheet_titles)
+        if not requests:
+            return
+        await _call_with_retry(spreadsheet.batch_update, {"requests": requests})
+
+    def _build_formatting_requests(self, sheet_titles: list[str]) -> tuple[gspread.Spreadsheet, list[dict]]:
+        client = gspread.service_account(filename=self._credentials_path)
+        spreadsheet = client.open_by_key(self._spreadsheet_id)
+        metadata = spreadsheet.fetch_sheet_metadata()
+        requests: list[dict] = []
+        for sheet in metadata.get("sheets", []):
+            properties = sheet.get("properties", {})
+            if properties.get("title") not in sheet_titles:
+                continue
+            sheet_id = properties["sheetId"]
+            requests.append(_freeze_header_request(sheet_id))
+            requests.append(_bold_header_request(sheet_id))
+            # Только если фильтра ещё нет — см. комментарий у ALL_SHEET_TITLES:
+            # безусловное переприменение стирало бы условия отбора внутри
+            # фильтра, которые владелец таблицы сам настроит в интерфейсе.
+            if "basicFilter" not in sheet:
+                requests.append(_basic_filter_request(sheet_id))
+        return spreadsheet, requests
+
+
+def _freeze_header_request(sheet_id: int) -> dict:
+    return {
+        "updateSheetProperties": {
+            "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
+            "fields": "gridProperties.frozenRowCount",
+        },
+    }
+
+
+def _basic_filter_request(sheet_id: int) -> dict:
+    # GridRange без явных границ строк/колонок = весь лист целиком.
+    return {"setBasicFilter": {"filter": {"range": {"sheetId": sheet_id}}}}
+
+
+def _bold_header_request(sheet_id: int) -> dict:
+    return {
+        "repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
+            "cell": {
+                "userEnteredFormat": {
+                    "textFormat": {"bold": True},
+                    "backgroundColor": _HEADER_BACKGROUND_COLOR,
+                },
+            },
+            "fields": "userEnteredFormat(textFormat,backgroundColor)",
+        },
+    }
 
 
 def _chunk(rows: list[list[str]], size: int) -> list[list[list[str]]]:
@@ -298,9 +379,13 @@ class SheetsExportService:
     async def sync(self, *, page_size: int = 1000) -> SyncResult:
         all_users = await self._users.list_all()
         telegram_id_by_user_id = {user.id: user.telegram_id for user in all_users}
+        username_by_user_id = {user.id: user.username for user in all_users}
 
         def telegram_id_of(item) -> int | None:
             return telegram_id_by_user_id.get(item.user_id)
+
+        def username_of(item) -> str | None:
+            return username_by_user_id.get(item.user_id)
 
         events = await self._sync_incremental(
             sheet_title=EVENTS_SHEET_TITLE, header=EVENTS_HEADER, page_size=page_size,
@@ -312,31 +397,35 @@ class SheetsExportService:
             sheet_title=WORKOUTS_SHEET_TITLE, header=WORKOUTS_HEADER, page_size=page_size,
             get_cursor=self._cursor.get_last_workout_id, set_cursor=self._cursor.set_last_workout_id,
             fetch_page=self._workouts.list_since,
-            to_rows=lambda item: workout_to_rows(item, telegram_id=telegram_id_of(item)),
+            to_rows=lambda item: workout_to_rows(item, telegram_id=telegram_id_of(item), username=username_of(item)),
         )
         electives = await self._sync_incremental(
             sheet_title=WORKOUTS_SHEET_TITLE, header=WORKOUTS_HEADER, page_size=page_size,
             get_cursor=self._cursor.get_last_elective_id, set_cursor=self._cursor.set_last_elective_id,
             fetch_page=self._electives.list_since,
-            to_rows=lambda item: [elective_to_row(item, telegram_id=telegram_id_of(item))],
+            to_rows=lambda item: [elective_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item))],
         )
         subscriptions = await self._sync_incremental(
             sheet_title=SUBSCRIPTIONS_SHEET_TITLE, header=SUBSCRIPTIONS_HEADER, page_size=page_size,
             get_cursor=self._cursor.get_last_subscription_id, set_cursor=self._cursor.set_last_subscription_id,
             fetch_page=self._subscriptions.list_since,
-            to_rows=lambda item: [subscription_to_row(item, telegram_id=telegram_id_of(item))],
+            to_rows=lambda item: [
+                subscription_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item)),
+            ],
         )
         coins = await self._sync_incremental(
             sheet_title=COINS_SHEET_TITLE, header=COINS_HEADER, page_size=page_size,
             get_cursor=self._cursor.get_last_coin_id, set_cursor=self._cursor.set_last_coin_id,
             fetch_page=self._coins.list_since,
-            to_rows=lambda item: [coin_to_row(item, telegram_id=telegram_id_of(item))],
+            to_rows=lambda item: [coin_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item))],
         )
         achievements = await self._sync_incremental(
             sheet_title=ACHIEVEMENTS_SHEET_TITLE, header=ACHIEVEMENTS_HEADER, page_size=page_size,
             get_cursor=self._cursor.get_last_achievement_id, set_cursor=self._cursor.set_last_achievement_id,
             fetch_page=self._achievements.list_since,
-            to_rows=lambda item: [achievement_to_row(item, telegram_id=telegram_id_of(item))],
+            to_rows=lambda item: [
+                achievement_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item)),
+            ],
         )
 
         user_rows = [user_to_row(user) for user in all_users]
@@ -345,6 +434,12 @@ class SheetsExportService:
         equipment_items = await self._equipment_items.list_all()
         equipment_rows = [equipment_item_to_row(item, telegram_id=telegram_id_of(item)) for item in equipment_items]
         await self._client.replace_all_rows(EQUIPMENT_ITEMS_SHEET_TITLE, EQUIPMENT_ITEMS_HEADER, equipment_rows)
+
+        # Заморозка шапки/фильтр/жирный заголовок — каждый цикл, одним
+        # batchUpdate на все листы разом (см. GspreadSheetsClient.
+        # ensure_sheet_formatting). Не только для новых листов — самоисправляет
+        # и уже существующие в проде, без ручного вмешательства.
+        await self._client.ensure_sheet_formatting(ALL_SHEET_TITLES)
 
         return SyncResult(
             events=events, workouts=workouts, electives=electives,
