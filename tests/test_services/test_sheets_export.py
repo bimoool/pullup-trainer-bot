@@ -89,18 +89,20 @@ async def test_event_to_row_includes_telegram_id_and_flat_payload(session, user:
     event = await EventRepository(session).create(
         user_id=user.id, event_type="workout_completed", payload={"workout_id": 5},
     )
-    row = event_to_row(event, telegram_id=user.telegram_id)
+    row = event_to_row(event, telegram_id=user.telegram_id, username=user.username)
     assert row[0] == str(event.id)
     assert row[1] == str(user.id)
     assert row[2] == str(user.telegram_id)
-    assert row[3] == "workout_completed"
-    assert "workout_id=5" in row[4]
+    assert row[3] == user.username
+    assert row[4] == "workout_completed"
+    assert "workout_id=5" in row[5]
 
 
 async def test_event_to_row_handles_missing_telegram_id(session, user: User):
     event = await EventRepository(session).create(user_id=user.id, event_type="x")
-    row = event_to_row(event, telegram_id=None)
+    row = event_to_row(event, telegram_id=None, username=None)
     assert row[2] == ""
+    assert row[3] == ""
 
 
 async def test_user_to_row_handles_all_none_optional_fields(session, user: User):
@@ -271,10 +273,11 @@ async def test_equipment_item_to_row(session, user: User):
     item = await EquipmentItemRepository(session).create(
         user_id=user.id, name="зелёная", resistance_kg=Decimal("25.0"),
     )
-    row = equipment_item_to_row(item, telegram_id=user.telegram_id)
-    assert row[3] == "зелёная"
-    assert row[4] == "25.0"
-    assert row[5] == "0"
+    row = equipment_item_to_row(item, telegram_id=user.telegram_id, username=user.username)
+    assert row[3] == user.username
+    assert row[4] == "зелёная"
+    assert row[5] == "25.0"
+    assert row[6] == "0"
 
 
 # --- Батчирование / retry (без изменений в логике) -------------------------------------
@@ -473,9 +476,12 @@ async def test_sync_events_include_correct_telegram_id_for_multiple_users(sessio
     await service.sync()
 
     [(_, _, rows)] = [row for row in client.appended if row[0] == EVENTS_SHEET_TITLE]
-    by_type = {row[3]: row[2] for row in rows}
-    assert by_type["a"] == str(user.telegram_id)
-    assert by_type["b"] == str(other.telegram_id)
+    telegram_id_by_type = {row[4]: row[2] for row in rows}
+    username_by_type = {row[4]: row[3] for row in rows}
+    assert telegram_id_by_type["a"] == str(user.telegram_id)
+    assert telegram_id_by_type["b"] == str(other.telegram_id)
+    assert username_by_type["a"] == user.username
+    assert username_by_type["b"] == "second"
 
 
 async def test_sync_joins_username_into_workouts_subscriptions_coins_achievements(session, user: User):
@@ -511,6 +517,23 @@ async def test_sync_joins_username_into_workouts_subscriptions_coins_achievement
     ):
         [(_, _, rows)] = [row for row in client.appended if row[0] == title]
         assert all(row[username_index] == user.username for row in rows)
+
+
+async def test_sync_joins_username_into_events_and_equipment_items(session, user: User):
+    """Тем же способом, что и в остальных четырёх листах — тот же словарь
+    user_id -> username, уже загруженный в sync(), без новых запросов к БД."""
+    await EventRepository(session).create(user_id=user.id, event_type="workout_completed")
+    await EquipmentItemRepository(session).create(user_id=user.id, name="зелёная")
+
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+    await service.sync()
+
+    [(_, _, event_rows)] = [row for row in client.appended if row[0] == EVENTS_SHEET_TITLE]
+    assert all(row[3] == user.username for row in event_rows)
+
+    [(_, _, equipment_rows)] = [row for row in client.replaced if row[0] == EQUIPMENT_ITEMS_SHEET_TITLE]
+    assert all(row[3] == user.username for row in equipment_rows)
 
 
 # --- Форматирование листов: заморозка/фильтр/жирная шапка (пакет #7) ------------------

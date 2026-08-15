@@ -38,7 +38,7 @@ ALL_SHEET_TITLES = [
     SUBSCRIPTIONS_SHEET_TITLE, COINS_SHEET_TITLE, ACHIEVEMENTS_SHEET_TITLE, EQUIPMENT_ITEMS_SHEET_TITLE,
 ]
 
-EVENTS_HEADER = ["id", "user_id", "telegram_id", "event_type", "payload", "created_at"]
+EVENTS_HEADER = ["id", "user_id", "telegram_id", "username", "event_type", "payload", "created_at"]
 USERS_HEADER = [
     "id", "telegram_id", "username", "onboarding_completed_at", "onboarding_stage",
     "subscription_status", "subscription_expires_at", "coins_balance", "created_at",
@@ -65,7 +65,9 @@ COINS_HEADER = [
     "id", "user_id", "telegram_id", "username", "amount", "reason", "related_achievement_id", "created_at",
 ]
 ACHIEVEMENTS_HEADER = ["id", "user_id", "telegram_id", "username", "code", "unlocked_at", "context"]
-EQUIPMENT_ITEMS_HEADER = ["id", "user_id", "telegram_id", "name", "resistance_kg", "position", "created_at"]
+EQUIPMENT_ITEMS_HEADER = [
+    "id", "user_id", "telegram_id", "username", "name", "resistance_kg", "position", "created_at",
+]
 
 # Заморозка шапки + жирный/подсвеченный заголовок — применяются каждый
 # цикл синка безусловно (идемпотентно, побочек нет). Базовый фильтр —
@@ -86,11 +88,12 @@ _MAX_RETRIES = 5
 _RETRY_BASE_DELAY_SECONDS = 2.0
 
 
-def event_to_row(event: Event, *, telegram_id: int | None) -> list[str]:
+def event_to_row(event: Event, *, telegram_id: int | None, username: str | None) -> list[str]:
     return [
         str(event.id),
         str(event.user_id),
         _opt(telegram_id),
+        _opt(username),
         event.event_type,
         _payload_to_text(event.payload),
         event.created_at.isoformat(),
@@ -180,9 +183,9 @@ def achievement_to_row(achievement: Achievement, *, telegram_id: int | None, use
     ]
 
 
-def equipment_item_to_row(item: EquipmentItemModel, *, telegram_id: int | None) -> list[str]:
+def equipment_item_to_row(item: EquipmentItemModel, *, telegram_id: int | None, username: str | None) -> list[str]:
     return [
-        str(item.id), str(item.user_id), _opt(telegram_id), item.name,
+        str(item.id), str(item.user_id), _opt(telegram_id), _opt(username), item.name,
         _opt(item.resistance_kg), str(item.position), item.created_at.isoformat(),
     ]
 
@@ -391,7 +394,7 @@ class SheetsExportService:
             sheet_title=EVENTS_SHEET_TITLE, header=EVENTS_HEADER, page_size=page_size,
             get_cursor=self._cursor.get_last_event_id, set_cursor=self._cursor.set_last_event_id,
             fetch_page=self._events.list_since,
-            to_rows=lambda item: [event_to_row(item, telegram_id=telegram_id_of(item))],
+            to_rows=lambda item: [event_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item))],
         )
         workouts = await self._sync_incremental(
             sheet_title=WORKOUTS_SHEET_TITLE, header=WORKOUTS_HEADER, page_size=page_size,
@@ -432,7 +435,10 @@ class SheetsExportService:
         await self._client.replace_all_rows(USERS_SHEET_TITLE, USERS_HEADER, user_rows)
 
         equipment_items = await self._equipment_items.list_all()
-        equipment_rows = [equipment_item_to_row(item, telegram_id=telegram_id_of(item)) for item in equipment_items]
+        equipment_rows = [
+            equipment_item_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item))
+            for item in equipment_items
+        ]
         await self._client.replace_all_rows(EQUIPMENT_ITEMS_SHEET_TITLE, EQUIPMENT_ITEMS_HEADER, equipment_rows)
 
         # Заморозка шапки/фильтр/жирный заголовок — каждый цикл, одним
