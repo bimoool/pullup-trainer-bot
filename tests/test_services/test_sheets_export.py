@@ -22,6 +22,7 @@ from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 from app.domain.session import BlockLog
+from app.services import sheets_export as sheets_export_module
 from app.services.sheets_export import (
     ACHIEVEMENTS_SHEET_TITLE,
     ALL_SHEET_TITLES,
@@ -30,11 +31,15 @@ from app.services.sheets_export import (
     EQUIPMENT_ITEMS_SHEET_TITLE,
     EVENTS_HEADER,
     EVENTS_SHEET_TITLE,
+    SHEET_HEADERS,
     SUBSCRIPTIONS_SHEET_TITLE,
     USERS_HEADER,
     USERS_SHEET_TITLE,
+    WORKOUTS_HEADER,
     WORKOUTS_SHEET_TITLE,
+    GspreadSheetsClient,
     SheetsExportService,
+    _absolute_row_range,
     _basic_filter_request,
     _bold_header_request,
     _call_with_retry,
@@ -55,7 +60,7 @@ class FakeSheetsClient:
     def __init__(self) -> None:
         self.appended: list[tuple[str, list[str], list[list[str]]]] = []
         self.replaced: list[tuple[str, list[str], list[list[str]]]] = []
-        self.formatted_sheet_titles: list[list[str]] = []
+        self.structure_calls: list[dict[str, list[str]]] = []
 
     async def append_rows(self, sheet_title, header, rows):
         self.appended.append((sheet_title, header, rows))
@@ -63,8 +68,8 @@ class FakeSheetsClient:
     async def replace_all_rows(self, sheet_title, header, rows):
         self.replaced.append((sheet_title, header, rows))
 
-    async def ensure_sheet_formatting(self, sheet_titles):
-        self.formatted_sheet_titles.append(list(sheet_titles))
+    async def ensure_sheet_structure(self, headers_by_sheet):
+        self.structure_calls.append(dict(headers_by_sheet))
 
 
 def _fake_api_error(status_code: int) -> APIError:
@@ -561,26 +566,134 @@ def test_bold_header_request_targets_only_first_row():
     assert cell["fields"] == "userEnteredFormat(textFormat,backgroundColor)"
 
 
-async def test_sync_calls_ensure_sheet_formatting_with_every_sheet_title(session, user: User):
+async def test_sync_calls_ensure_sheet_structure_with_every_sheet_header(session, user: User):
     client = FakeSheetsClient()
     service = SheetsExportService(session, client)
 
     await service.sync()
 
-    assert client.formatted_sheet_titles == [ALL_SHEET_TITLES]
+    assert client.structure_calls == [SHEET_HEADERS]
+    assert set(client.structure_calls[0]) == set(ALL_SHEET_TITLES)
 
 
-async def test_sync_calls_ensure_sheet_formatting_every_cycle_even_with_nothing_new(
+async def test_sync_calls_ensure_sheet_structure_every_cycle_even_with_nothing_new(
     session, user: User,
 ):
-    """Идемпотентно и дёшево (см. GspreadSheetsClient.ensure_sheet_formatting
-    — один batchUpdate) — само-восстанавливает форматирование уже
-    существующих в проде листов, не только вновь создаваемых, поэтому
-    вызывается каждый цикл безусловно, а не только при первом создании."""
+    """Идемпотентно и дёшево (см. GspreadSheetsClient.ensure_sheet_structure
+    — один batchUpdate + один values-batchUpdate) — само-восстанавливает
+    структуру уже существующих в проде листов (включая заголовок, см.
+    баг с username, который не обновлялся на существующих листах), не
+    только вновь создаваемых, поэтому вызывается каждый цикл безусловно,
+    а не только при первом создании."""
     client = FakeSheetsClient()
     service = SheetsExportService(session, client)
 
     await service.sync()
     await service.sync()
 
-    assert len(client.formatted_sheet_titles) == 2
+    assert len(client.structure_calls) == 2
+
+
+# --- Регрессия: заголовок уже существующего листа обновляется при смене колонок ------
+
+
+class _FakeSpreadsheet:
+    """Стенд-ин для gspread.Spreadsheet — только то, что реально дёргает
+    _build_structure_requests (fetch_sheet_metadata/values_batch_get),
+    без единого обращения к сети. Мы тестируем логику GspreadSheetsClient
+    напрямую (а не только через SheetsClientProtocol/FakeSheetsClient) —
+    именно в этой логике жил баг с не обновляющимся заголовком, обёртка
+    поверх Protocol его бы не поймала."""
+
+    def __init__(self, *, sheets: list[dict], values_by_range: dict[str, list[list[str]]]) -> None:
+        self._sheets = sheets
+        self._values_by_range = values_by_range
+        self.values_batch_get_calls: list[list[str]] = []
+
+    def fetch_sheet_metadata(self):
+        return {"sheets": self._sheets}
+
+    def values_batch_get(self, ranges):
+        self.values_batch_get_calls.append(ranges)
+        value_ranges = []
+        for range_name in ranges:
+            values = self._values_by_range.get(range_name)
+            value_ranges.append({"values": values} if values is not None else {})
+        return {"valueRanges": value_ranges}
+
+
+def _patch_gspread_client(monkeypatch, spreadsheet: _FakeSpreadsheet) -> None:
+    fake_client = type("FakeGspreadClient", (), {"open_by_key": lambda self, _spreadsheet_id: spreadsheet})()
+    monkeypatch.setattr(sheets_export_module.gspread, "service_account", lambda filename: fake_client)
+
+
+def test_build_structure_requests_fixes_stale_header_on_existing_sheet(monkeypatch):
+    """Точная регрессия найденного бага: лист existing уже был создан со
+    СТАРЫМ составом колонок (до добавления username) — подтверждает
+    гипотезу автора и проверяет, что теперь она чинится."""
+    spreadsheet = _FakeSpreadsheet(
+        sheets=[{"properties": {"title": "workouts", "sheetId": 111}}],  # без basicFilter
+        values_by_range={
+            "'workouts'!1:1": [
+                ["id", "entry_type", "user_id", "telegram_id", "performed_at", "block"],
+            ],
+        },
+    )
+    _patch_gspread_client(monkeypatch, spreadsheet)
+
+    client = GspreadSheetsClient(credentials_path="unused", spreadsheet_id="unused")
+    result_spreadsheet, formatting_requests, header_fixes = client._build_structure_requests(
+        {"workouts": WORKOUTS_HEADER},
+    )
+
+    assert result_spreadsheet is spreadsheet
+    assert header_fixes == [{"range": "'workouts'!1:1", "values": [WORKOUTS_HEADER]}]
+    # заморозка + жирный заголовок + фильтр (basicFilter отсутствовал в метаданных)
+    assert len(formatting_requests) == 3
+
+
+def test_build_structure_requests_leaves_matching_header_alone(monkeypatch):
+    spreadsheet = _FakeSpreadsheet(
+        sheets=[{"properties": {"title": "workouts", "sheetId": 111}, "basicFilter": {}}],
+        values_by_range={"'workouts'!1:1": [WORKOUTS_HEADER]},
+    )
+    _patch_gspread_client(monkeypatch, spreadsheet)
+
+    client = GspreadSheetsClient(credentials_path="unused", spreadsheet_id="unused")
+    _, formatting_requests, header_fixes = client._build_structure_requests({"workouts": WORKOUTS_HEADER})
+
+    assert header_fixes == []
+    # basicFilter уже был — без setBasicFilter, только заморозка + жирный заголовок
+    assert len(formatting_requests) == 2
+
+
+def test_build_structure_requests_treats_empty_sheet_as_stale_header(monkeypatch):
+    """Лист существует, но первая строка пуста (values_batch_get не
+    возвращает "values" вообще для полностью пустого диапазона) — тоже
+    должно чиниться, а не падать на отсутствующем ключе."""
+    spreadsheet = _FakeSpreadsheet(
+        sheets=[{"properties": {"title": "workouts", "sheetId": 111}, "basicFilter": {}}],
+        values_by_range={},
+    )
+    _patch_gspread_client(monkeypatch, spreadsheet)
+
+    client = GspreadSheetsClient(credentials_path="unused", spreadsheet_id="unused")
+    _, _, header_fixes = client._build_structure_requests({"workouts": WORKOUTS_HEADER})
+
+    assert header_fixes == [{"range": "'workouts'!1:1", "values": [WORKOUTS_HEADER]}]
+
+
+def test_build_structure_requests_skips_sheets_that_do_not_exist_yet(monkeypatch):
+    spreadsheet = _FakeSpreadsheet(sheets=[], values_by_range={})
+    _patch_gspread_client(monkeypatch, spreadsheet)
+
+    client = GspreadSheetsClient(credentials_path="unused", spreadsheet_id="unused")
+    _, formatting_requests, header_fixes = client._build_structure_requests({"workouts": WORKOUTS_HEADER})
+
+    assert formatting_requests == []
+    assert header_fixes == []
+    assert spreadsheet.values_batch_get_calls == []
+
+
+def test_absolute_row_range_quotes_sheet_title():
+    assert _absolute_row_range("workouts") == "'workouts'!1:1"

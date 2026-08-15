@@ -33,11 +33,6 @@ COINS_SHEET_TITLE = "coins"
 ACHIEVEMENTS_SHEET_TITLE = "achievements"
 EQUIPMENT_ITEMS_SHEET_TITLE = "equipment_items"
 
-ALL_SHEET_TITLES = [
-    EVENTS_SHEET_TITLE, USERS_SHEET_TITLE, WORKOUTS_SHEET_TITLE,
-    SUBSCRIPTIONS_SHEET_TITLE, COINS_SHEET_TITLE, ACHIEVEMENTS_SHEET_TITLE, EQUIPMENT_ITEMS_SHEET_TITLE,
-]
-
 EVENTS_HEADER = ["id", "user_id", "telegram_id", "username", "event_type", "payload", "created_at"]
 USERS_HEADER = [
     "id", "telegram_id", "username", "onboarding_completed_at", "onboarding_stage",
@@ -69,12 +64,29 @@ EQUIPMENT_ITEMS_HEADER = [
     "id", "user_id", "telegram_id", "username", "name", "resistance_kg", "position", "created_at",
 ]
 
-# Заморозка шапки + жирный/подсвеченный заголовок — применяются каждый
-# цикл синка безусловно (идемпотентно, побочек нет). Базовый фильтр —
-# только если на листе его ещё нет (см. GspreadSheetsClient.
-# ensure_sheet_formatting): применять его безусловно каждые 5 минут стирало
-# бы условия отбора, которые Кирилл сам настроит внутри фильтра в
-# интерфейсе — сам факт наличия фильтра идемпотентен, а его критерии нет.
+# Единственный источник "какой лист должен иметь какую шапку" — на нём же
+# держится ensure_sheet_structure (см. GspreadSheetsClient): считает
+# заголовок листа неизменным составом колонок и умеет его чинить на уже
+# существующем листе, не только выставлять при создании. ALL_SHEET_TITLES
+# — производный список, для мест, которым нужны только имена (тесты).
+SHEET_HEADERS = {
+    EVENTS_SHEET_TITLE: EVENTS_HEADER,
+    USERS_SHEET_TITLE: USERS_HEADER,
+    WORKOUTS_SHEET_TITLE: WORKOUTS_HEADER,
+    SUBSCRIPTIONS_SHEET_TITLE: SUBSCRIPTIONS_HEADER,
+    COINS_SHEET_TITLE: COINS_HEADER,
+    ACHIEVEMENTS_SHEET_TITLE: ACHIEVEMENTS_HEADER,
+    EQUIPMENT_ITEMS_SHEET_TITLE: EQUIPMENT_ITEMS_HEADER,
+}
+ALL_SHEET_TITLES = list(SHEET_HEADERS)
+
+# Заморозка шапки + жирный/подсвеченный заголовок + сама шапка (если не
+# совпадает с ожидаемой) — применяются каждый цикл синка безусловно
+# (идемпотентно, побочек нет). Базовый фильтр — только если на листе его
+# ещё нет (см. GspreadSheetsClient.ensure_sheet_structure): применять его
+# безусловно каждые 5 минут стирало бы условия отбора, которые Кирилл сам
+# настроит внутри фильтра в интерфейсе — сам факт наличия фильтра
+# идемпотентен, а его критерии нет.
 _HEADER_BACKGROUND_COLOR = {"red": 0.85, "green": 0.85, "blue": 0.85}
 
 # Батч-запись (не по одной строке за раз, см. ROADMAP Часть 6) — но и не
@@ -209,7 +221,7 @@ class SheetsClientProtocol(Protocol):
 
     async def replace_all_rows(self, sheet_title: str, header: list[str], rows: list[list[str]]) -> None: ...
 
-    async def ensure_sheet_formatting(self, sheet_titles: list[str]) -> None: ...
+    async def ensure_sheet_structure(self, headers_by_sheet: dict[str, list[str]]) -> None: ...
 
 
 class GspreadSheetsClient:
@@ -246,6 +258,15 @@ class GspreadSheetsClient:
             await _call_with_retry(worksheet.append_rows, chunk)
 
     def _get_or_create_worksheet(self, sheet_title: str, header: list[str]) -> gspread.Worksheet:
+        """Заголовок пишется здесь ТОЛЬКО при первом создании листа — на
+        уже существующем листе сам spreadsheet.worksheet() просто отдаёт
+        его как есть, ни разу не трогая первую строку. Это и был баг: при
+        добавлении username в существующие листы (пакет #7) заголовок не
+        обновлялся, только у новых. Актуальность заголовка на уже
+        существующих листах теперь отдельно гарантирует
+        ensure_sheet_structure, вызывается каждый цикл синка безусловно —
+        не полагаемся на то, что этот метод когда-нибудь снова попадёт в
+        ветку создания для уже существующего листа."""
         client = gspread.service_account(filename=self._credentials_path)
         spreadsheet = client.open_by_key(self._spreadsheet_id)
         try:
@@ -255,36 +276,64 @@ class GspreadSheetsClient:
             worksheet.append_rows([header])
             return worksheet
 
-    async def ensure_sheet_formatting(self, sheet_titles: list[str]) -> None:
-        """Закреплённая шапка + жирный/подсвеченный заголовок + базовый
-        фильтр — программно, идемпотентно, одним batchUpdate на ВСЕ листы
-        сразу за цикл синка (не по запросу на лист). Листы, которых ещё
-        нет (WorksheetNotFound на этот sheet_title не возникает — просто
-        не найдётся в fetch_sheet_metadata), тихо пропускаются:
-        отформатируются на одном из следующих циклов, когда появятся."""
-        spreadsheet, requests = await asyncio.to_thread(self._build_formatting_requests, sheet_titles)
-        if not requests:
-            return
-        await _call_with_retry(spreadsheet.batch_update, {"requests": requests})
+    async def ensure_sheet_structure(self, headers_by_sheet: dict[str, list[str]]) -> None:
+        """Три вещи на каждом существующем листе из headers_by_sheet —
+        программно, идемпотентно, каждый цикл синка безусловно (кроме
+        самого фильтра, см. ниже), минимум запросов к API:
 
-    def _build_formatting_requests(self, sheet_titles: list[str]) -> tuple[gspread.Spreadsheet, list[dict]]:
+        1. Заголовок (первая строка) совпадает с ожидаемым составом колонок
+           — чинит и уже существующие листы, не только вновь создаваемые
+           (см. _get_or_create_worksheet).
+        2. Заморозка первой строки + жирный/подсвеченный заголовок.
+        3. Базовый фильтр — только если на листе его ещё нет: безусловное
+           переприменение стирало бы условия отбора, которые владелец
+           таблицы сам настроит в интерфейсе.
+
+        Листы, которых ещё нет, тихо пропускаются — появятся и
+        отформатируются на одном из следующих циклов."""
+        spreadsheet, formatting_requests, header_fixes = await asyncio.to_thread(
+            self._build_structure_requests, headers_by_sheet,
+        )
+        if formatting_requests:
+            await _call_with_retry(spreadsheet.batch_update, {"requests": formatting_requests})
+        if header_fixes:
+            await _call_with_retry(spreadsheet.values_batch_update, {"valueInputOption": "RAW", "data": header_fixes})
+
+    def _build_structure_requests(
+        self, headers_by_sheet: dict[str, list[str]],
+    ) -> tuple[gspread.Spreadsheet, list[dict], list[dict]]:
         client = gspread.service_account(filename=self._credentials_path)
         spreadsheet = client.open_by_key(self._spreadsheet_id)
         metadata = spreadsheet.fetch_sheet_metadata()
-        requests: list[dict] = []
+
+        # title -> (sheetId, есть ли уже basicFilter) — только для листов,
+        # которые реально существуют и нас интересуют.
+        present: dict[str, tuple[int, bool]] = {}
         for sheet in metadata.get("sheets", []):
             properties = sheet.get("properties", {})
-            if properties.get("title") not in sheet_titles:
-                continue
-            sheet_id = properties["sheetId"]
-            requests.append(_freeze_header_request(sheet_id))
-            requests.append(_bold_header_request(sheet_id))
-            # Только если фильтра ещё нет — см. комментарий у ALL_SHEET_TITLES:
-            # безусловное переприменение стирало бы условия отбора внутри
-            # фильтра, которые владелец таблицы сам настроит в интерфейсе.
-            if "basicFilter" not in sheet:
-                requests.append(_basic_filter_request(sheet_id))
-        return spreadsheet, requests
+            title = properties.get("title")
+            if title in headers_by_sheet:
+                present[title] = (properties["sheetId"], "basicFilter" in sheet)
+
+        formatting_requests: list[dict] = []
+        for title, (sheet_id, has_filter) in present.items():
+            formatting_requests.append(_freeze_header_request(sheet_id))
+            formatting_requests.append(_bold_header_request(sheet_id))
+            if not has_filter:
+                formatting_requests.append(_basic_filter_request(sheet_id))
+
+        header_fixes: list[dict] = []
+        if present:
+            titles = list(present)
+            ranges = [_absolute_row_range(title) for title in titles]
+            response = spreadsheet.values_batch_get(ranges)
+            for title, value_range in zip(titles, response.get("valueRanges", []), strict=True):
+                current_header = (value_range.get("values") or [[]])[0]
+                expected_header = headers_by_sheet[title]
+                if current_header != expected_header:
+                    header_fixes.append({"range": _absolute_row_range(title), "values": [expected_header]})
+
+        return spreadsheet, formatting_requests, header_fixes
 
 
 def _freeze_header_request(sheet_id: int) -> dict:
@@ -314,6 +363,10 @@ def _bold_header_request(sheet_id: int) -> dict:
             "fields": "userEnteredFormat(textFormat,backgroundColor)",
         },
     }
+
+
+def _absolute_row_range(sheet_title: str) -> str:
+    return gspread.utils.absolute_range_name(sheet_title, "1:1")
 
 
 def _chunk(rows: list[list[str]], size: int) -> list[list[list[str]]]:
@@ -441,11 +494,13 @@ class SheetsExportService:
         ]
         await self._client.replace_all_rows(EQUIPMENT_ITEMS_SHEET_TITLE, EQUIPMENT_ITEMS_HEADER, equipment_rows)
 
-        # Заморозка шапки/фильтр/жирный заголовок — каждый цикл, одним
-        # batchUpdate на все листы разом (см. GspreadSheetsClient.
-        # ensure_sheet_formatting). Не только для новых листов — самоисправляет
-        # и уже существующие в проде, без ручного вмешательства.
-        await self._client.ensure_sheet_formatting(ALL_SHEET_TITLES)
+        # Заголовок/заморозка/фильтр/жирный заголовок — каждый цикл, одним
+        # batchUpdate + одним values-batchUpdate на все листы разом (см.
+        # GspreadSheetsClient.ensure_sheet_structure). Не только для новых
+        # листов — чинит и уже существующие в проде (включая случай, когда
+        # состав колонок сменился уже после того, как лист был создан),
+        # без ручного вмешательства.
+        await self._client.ensure_sheet_structure(SHEET_HEADERS)
 
         return SyncResult(
             events=events, workouts=workouts, electives=electives,
