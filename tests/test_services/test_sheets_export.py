@@ -26,6 +26,8 @@ from app.services import sheets_export as sheets_export_module
 from app.services.sheets_export import (
     ACHIEVEMENTS_SHEET_TITLE,
     ALL_SHEET_TITLES,
+    BASELINES_HEADER,
+    BASELINES_SHEET_TITLE,
     COINS_SHEET_TITLE,
     EQUIPMENT_ITEMS_HEADER,
     EQUIPMENT_ITEMS_SHEET_TITLE,
@@ -46,6 +48,7 @@ from app.services.sheets_export import (
     _chunk,
     _freeze_header_request,
     achievement_to_row,
+    baseline_to_row,
     coin_to_row,
     elective_to_row,
     equipment_item_to_row,
@@ -283,6 +286,19 @@ async def test_equipment_item_to_row(session, user: User):
     assert row[4] == "зелёная"
     assert row[5] == "25.0"
     assert row[6] == "0"
+
+
+async def test_baseline_to_row(session, user: User):
+    baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=datetime(2026, 1, 5, tzinfo=UTC), reps=18,
+    )
+    row = baseline_to_row(baseline, telegram_id=user.telegram_id, username=user.username)
+    assert row[0] == str(baseline.id)
+    assert row[1] == str(user.id)
+    assert row[2] == str(user.telegram_id)
+    assert row[3] == user.username
+    assert row[4] == "18"
+    assert row[5] == baseline.performed_at.isoformat()
 
 
 # --- Батчирование / retry (без изменений в логике) -------------------------------------
@@ -539,6 +555,43 @@ async def test_sync_joins_username_into_events_and_equipment_items(session, user
 
     [(_, _, equipment_rows)] = [row for row in client.replaced if row[0] == EQUIPMENT_ITEMS_SHEET_TITLE]
     assert all(row[3] == user.username for row in equipment_rows)
+
+
+# --- Лист baselines (пакет #8) ---------------------------------------------------------
+
+
+async def test_sync_appends_baselines_with_username_and_advances_cursor(session, user: User):
+    baselines = BaselineRepository(session)
+    await baselines.create(user_id=user.id, performed_at=datetime(2026, 1, 1, tzinfo=UTC), reps=15)
+    await baselines.create(user_id=user.id, performed_at=datetime(2026, 3, 1, tzinfo=UTC), reps=20)
+
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+    result = await service.sync()
+
+    assert result.baselines == 2
+    [(title, header, rows)] = [row for row in client.appended if row[0] == BASELINES_SHEET_TITLE]
+    assert title == BASELINES_SHEET_TITLE
+    assert header == BASELINES_HEADER
+    assert len(rows) == 2
+    assert all(row[3] == user.username for row in rows)
+    assert [row[4] for row in rows] == ["15", "20"]
+
+    # Курсор продвинулся — второй прогон без новых замеров ничего не дописывает.
+    client.appended.clear()
+    result_again = await service.sync()
+    assert result_again.baselines == 0
+    assert client.appended == []
+
+
+async def test_sync_calls_ensure_sheet_structure_including_baselines(session, user: User):
+    client = FakeSheetsClient()
+    service = SheetsExportService(session, client)
+
+    await service.sync()
+
+    assert BASELINES_SHEET_TITLE in client.structure_calls[0]
+    assert client.structure_calls[0][BASELINES_SHEET_TITLE] == BASELINES_HEADER
 
 
 # --- Форматирование листов: заморозка/фильтр/жирная шапка (пакет #7) ------------------

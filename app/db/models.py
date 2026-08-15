@@ -360,8 +360,9 @@ class SheetsSyncState(Base):
     """Курсоры выгрузки в Google Sheets (app/workers/sheets_sync.py) —
     одна строка (id=1), по одному last_*_id на каждый инкрементальный
     источник (лист events/workouts/electives/subscriptions/coins/
-    achievements — у "workouts" их даже два, workouts и elective_workouts
-    пишут в один лист, но каждый по своему курсору). Отдельная таблица, а
+    achievements/baselines — у "workouts" их даже два, workouts и
+    elective_workouts пишут в один лист, но каждый по своему курсору).
+    Отдельная таблица, а
     не файл на диске — контейнер app пересоздаётся при каждом деплое,
     персистентного диска у него нет (в отличие от pgdata/redisdata),
     курсоры обязаны пережить рестарт/редеплой, иначе каждый деплой заново
@@ -376,6 +377,7 @@ class SheetsSyncState(Base):
     last_subscription_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     last_coin_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     last_achievement_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    last_baseline_id: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now(),
     )

@@ -30,3 +30,11 @@ class BaselineRepository:
             select(Baseline).where(Baseline.user_id == user_id).order_by(Baseline.performed_at),
         )
         return list(result.scalars().all())
+
+    async def list_since(self, after_id: int, *, limit: int) -> list[Baseline]:
+        """Глобально по всем пользователям, по возрастанию id — питает
+        лист baselines в Google Sheets (app/services/sheets_export.py)."""
+        result = await self._session.execute(
+            select(Baseline).where(Baseline.id > after_id).order_by(Baseline.id).limit(limit),
+        )
+        return list(result.scalars().all())

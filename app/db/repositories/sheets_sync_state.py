@@ -69,3 +69,11 @@ class SheetsSyncStateRepository:
         state = await self._get_state()
         state.last_achievement_id = achievement_id
         await self._session.flush()
+
+    async def get_last_baseline_id(self) -> int:
+        return (await self._get_state()).last_baseline_id
+
+    async def set_last_baseline_id(self, baseline_id: int) -> None:
+        state = await self._get_state()
+        state.last_baseline_id = baseline_id
+        await self._session.flush()

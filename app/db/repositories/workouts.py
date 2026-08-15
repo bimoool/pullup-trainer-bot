@@ -649,20 +649,29 @@ class WorkoutRepository:
         *,
         workout_id: int,
         block_type: BlockType,
+        equipment_type: EquipmentType | None = None,
         equipment_value: Decimal | None = None,
         equipment_item_id: int | None = None,
     ) -> Workout:
-        """Правка веса/резины уже записанной тренировки "в этом же отчёте"
-        (Часть 10) — только исправление ошибки ввода, НЕ смена снаряда:
-        equipment_type блока не меняется, каскад не запускается. Прогрессия
-        (target_before/after) не зависит от equipment_value/equipment_item_id
-        напрямую (см. recalculate_target — снаряд там только equipment_type
-        для потолка на своём весе), так что пересчитывать её не нужно."""
+        """Правка снаряда уже записанной тренировки задним числом —
+        исправление ошибки ВВОДА, не решение о смене снаряда: каскад не
+        запускается, прогрессия (target_before/after) не пересчитывается
+        (см. recalculate_target — снаряд там только equipment_type для
+        потолка на своём весе, а не сама эта запись).
+
+        equipment_type обычно НЕ передаётся — штатный сценарий "правка
+        веса/резины" в правке тренировки (Часть 10) специально не меняет
+        тип, только опечатку в цифре/резине. Параметр существует для
+        редких разовых исправлений исторически неверно записанного ТИПА
+        снаряда (например, случайный тап не на ту кнопку при бэкдейте) —
+        такой правкой пользуется только разовый скрипт/консоль, не бот."""
         workout = await self.get_by_id(workout_id)
         if workout is None:
             raise ValueError(f"workout {workout_id} not found")
 
         block = _find_block(workout, block_type)
+        if equipment_type is not None:
+            block.equipment_type = equipment_type
         if equipment_value is not None:
             block.equipment_value = equipment_value
         if equipment_item_id is not None:

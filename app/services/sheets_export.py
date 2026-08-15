@@ -8,12 +8,13 @@ import gspread
 from gspread.exceptions import APIError, WorksheetNotFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Achievement, BlockType, Coin, Event, SubscriptionStatus, User
+from app.db.models import Achievement, Baseline, BlockType, Coin, Event, SubscriptionStatus, User
 from app.db.models import ElectiveWorkout as ElectiveWorkoutModel
 from app.db.models import EquipmentItem as EquipmentItemModel
 from app.db.models import Subscription as SubscriptionModel
 from app.db.models import Workout as WorkoutModel
 from app.db.repositories.achievements import AchievementRepository
+from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.coins import CoinRepository
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
@@ -32,6 +33,7 @@ SUBSCRIPTIONS_SHEET_TITLE = "subscriptions"
 COINS_SHEET_TITLE = "coins"
 ACHIEVEMENTS_SHEET_TITLE = "achievements"
 EQUIPMENT_ITEMS_SHEET_TITLE = "equipment_items"
+BASELINES_SHEET_TITLE = "baselines"
 
 EVENTS_HEADER = ["id", "user_id", "telegram_id", "username", "event_type", "payload", "created_at"]
 USERS_HEADER = [
@@ -63,6 +65,7 @@ ACHIEVEMENTS_HEADER = ["id", "user_id", "telegram_id", "username", "code", "unlo
 EQUIPMENT_ITEMS_HEADER = [
     "id", "user_id", "telegram_id", "username", "name", "resistance_kg", "position", "created_at",
 ]
+BASELINES_HEADER = ["id", "user_id", "telegram_id", "username", "reps", "performed_at"]
 
 # Единственный источник "какой лист должен иметь какую шапку" — на нём же
 # держится ensure_sheet_structure (см. GspreadSheetsClient): считает
@@ -77,6 +80,7 @@ SHEET_HEADERS = {
     COINS_SHEET_TITLE: COINS_HEADER,
     ACHIEVEMENTS_SHEET_TITLE: ACHIEVEMENTS_HEADER,
     EQUIPMENT_ITEMS_SHEET_TITLE: EQUIPMENT_ITEMS_HEADER,
+    BASELINES_SHEET_TITLE: BASELINES_HEADER,
 }
 ALL_SHEET_TITLES = list(SHEET_HEADERS)
 
@@ -212,6 +216,13 @@ def equipment_item_to_row(item: EquipmentItemModel, *, telegram_id: int | None, 
     return [
         str(item.id), str(item.user_id), _opt(telegram_id), _opt(username), item.name,
         _opt(item.resistance_kg), str(item.position), item.created_at.isoformat(),
+    ]
+
+
+def baseline_to_row(baseline: Baseline, *, telegram_id: int | None, username: str | None) -> list[str]:
+    return [
+        str(baseline.id), str(baseline.user_id), _opt(telegram_id), _opt(username),
+        str(baseline.reps), baseline.performed_at.isoformat(),
     ]
 
 
@@ -412,6 +423,7 @@ class SyncResult:
     subscriptions: int
     coins: int
     achievements: int
+    baselines: int
     users: int
     equipment_items: int
 
@@ -426,7 +438,7 @@ class SheetsExportService:
     репозитории внутри, внешний клиент — через протокол, не завязана на
     конкретную реализацию (тестируется фейковым клиентом).
 
-    events/workouts/electives/subscriptions/coins/achievements —
+    events/workouts/electives/subscriptions/coins/achievements/baselines —
     инкремент по курсору (SheetsSyncStateRepository), history растёт, не
     перезаписывается; workouts и electives пишут в ОДИН лист ("workouts")
     каждый со своим курсором — разные источники, общий формат строки.
@@ -440,6 +452,7 @@ class SheetsExportService:
         self._subscriptions = SubscriptionRepository(session)
         self._coins = CoinRepository(session)
         self._achievements = AchievementRepository(session)
+        self._baselines = BaselineRepository(session)
         self._users = UserRepository(session)
         self._equipment_items = EquipmentItemRepository(session)
         self._cursor = SheetsSyncStateRepository(session)
@@ -496,6 +509,12 @@ class SheetsExportService:
                 achievement_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item)),
             ],
         )
+        baselines = await self._sync_incremental(
+            sheet_title=BASELINES_SHEET_TITLE, header=BASELINES_HEADER, page_size=page_size,
+            get_cursor=self._cursor.get_last_baseline_id, set_cursor=self._cursor.set_last_baseline_id,
+            fetch_page=self._baselines.list_since,
+            to_rows=lambda item: [baseline_to_row(item, telegram_id=telegram_id_of(item), username=username_of(item))],
+        )
 
         user_rows = [user_to_row(user) for user in all_users]
         await self._client.replace_all_rows(USERS_SHEET_TITLE, USERS_HEADER, user_rows)
@@ -517,7 +536,7 @@ class SheetsExportService:
 
         return SyncResult(
             events=events, workouts=workouts, electives=electives,
-            subscriptions=subscriptions, coins=coins, achievements=achievements,
+            subscriptions=subscriptions, coins=coins, achievements=achievements, baselines=baselines,
             users=len(all_users), equipment_items=len(equipment_items),
         )
 

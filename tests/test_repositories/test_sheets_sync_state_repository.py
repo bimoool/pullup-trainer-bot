@@ -53,3 +53,14 @@ async def test_additional_cursors_default_to_zero_and_roundtrip_independently(se
     assert await repo.get_last_achievement_id() == 7
     # Событийный курсор не задет соседними изменениями.
     assert await repo.get_last_event_id() == 0
+
+
+async def test_baseline_cursor_defaults_to_zero_and_roundtrips(session, user: User):
+    repo = SheetsSyncStateRepository(session)
+    assert await repo.get_last_baseline_id() == 0
+
+    await repo.set_last_baseline_id(9)
+
+    assert await repo.get_last_baseline_id() == 9
+    # Соседние курсоры не задеты.
+    assert await repo.get_last_event_id() == 0

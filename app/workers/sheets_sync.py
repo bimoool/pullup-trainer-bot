@@ -32,14 +32,14 @@ async def sync_sheets() -> None:
 
     incremental_total = (
         result.events + result.workouts + result.electives
-        + result.subscriptions + result.coins + result.achievements
+        + result.subscriptions + result.coins + result.achievements + result.baselines
     )
     if incremental_total:
         logger.info(
-            "sheets_sync: events=%s workouts=%s electives=%s subscriptions=%s coins=%s achievements=%s "
+            "sheets_sync: events=%s workouts=%s electives=%s subscriptions=%s coins=%s achievements=%s baselines=%s "
             "(users=%s, equipment_items=%s in snapshot)",
             result.events, result.workouts, result.electives,
-            result.subscriptions, result.coins, result.achievements,
+            result.subscriptions, result.coins, result.achievements, result.baselines,
             result.users, result.equipment_items,
         )
 

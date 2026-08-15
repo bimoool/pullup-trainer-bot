@@ -552,6 +552,59 @@ async def test_correct_block_equipment_updates_item_id(session, user: User):
     assert _block(updated, "a").equipment_item_id == other_item.id
 
 
+async def test_correct_block_equipment_can_fix_a_misrecorded_type(session, user: User):
+    """Разовое исправление исторически неверно записанного ТИПА снаряда
+    (не штатный сценарий правки веса/резины в боте — тем пользуется только
+    разовый скрипт/консоль) — например, случайный тап не на ту кнопку при
+    бэкдейте: bodyweight вместо weight, найдено сверкой соседних записей."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 5, 5, 5), max_reps=5),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    block_b_before = _block(workout, "b")
+    target_before, target_after = block_b_before.target_before, block_b_before.target_after
+
+    updated = await repo.correct_block_equipment(
+        workout_id=workout.id, block_type=BlockType.B,
+        equipment_type=EquipmentType.WEIGHT, equipment_value=Decimal("16.00"),
+    )
+
+    updated_block_b = _block(updated, "b")
+    assert updated_block_b.equipment_type == EquipmentType.WEIGHT
+    assert updated_block_b.equipment_value == Decimal("16.00")
+    # Только исправление ввода, не решение о смене снаряда — каскад не
+    # трогается, working_reps/цели остаются как были.
+    assert updated_block_b.working_reps == [4, 5, 5, 5]
+    assert updated_block_b.target_before == target_before
+    assert updated_block_b.target_after == target_after
+
+
+async def test_correct_block_equipment_type_unchanged_by_default(session, user: User):
+    """Штатный вызов из правки тренировки (workout_edit.py) не передаёт
+    equipment_type вообще — подтверждает, что поведение для СУЩЕСТВУЮЩИХ
+    вызовов не изменилось после добавления параметра."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("20.0"),
+    )
+
+    updated = await repo.correct_block_equipment(
+        workout_id=workout.id, block_type=BlockType.B, equipment_value=Decimal("22.5"),
+    )
+
+    assert _block(updated, "b").equipment_type == EquipmentType.WEIGHT
+
+
 # --- record_free_workout (Часть 10, п. 18, пакет #2 п.21) --------------------------
 
 
