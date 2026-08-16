@@ -27,6 +27,16 @@ class PendingPaymentRepository:
         result = await self._session.execute(query.order_by(PendingPayment.created_at))
         return list(result.scalars().all())
 
+    async def set_external_order_id(self, payment_id: int, external_order_id: str) -> PendingPayment:
+        """Робокасса (в отличие от Tribute) не выдаёт свой order id заранее
+        — используем id самой записи pending_payments как InvId, но узнаём
+        его только после создания строки (см. RobokassaService.
+        create_payment_link)."""
+        payment = await self._session.get_one(PendingPayment, payment_id)
+        payment.external_order_id = external_order_id
+        await self._session.flush()
+        return payment
+
     async def mark_confirmed(self, payment_id: int, *, resolved_at: datetime) -> PendingPayment:
         payment = await self._session.get_one(PendingPayment, payment_id)
         payment.status = PendingPaymentStatus.CONFIRMED

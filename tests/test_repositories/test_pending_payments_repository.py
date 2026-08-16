@@ -25,6 +25,31 @@ async def test_list_pending_filters_by_provider(session, user: User):
     assert len(await repo.list_pending(PendingPaymentProvider.TRIBUTE)) == 1
 
 
+async def test_list_pending_filters_by_provider_excludes_other_providers(session, user: User):
+    repo = PendingPaymentRepository(session)
+    await repo.create(user_id=user.id, provider=PendingPaymentProvider.TRIBUTE, external_order_id="a", days=30)
+    robokassa_payment = await repo.create(
+        user_id=user.id, provider=PendingPaymentProvider.ROBOKASSA, external_order_id="", days=30,
+    )
+
+    result = await repo.list_pending(PendingPaymentProvider.ROBOKASSA)
+
+    assert [p.id for p in result] == [robokassa_payment.id]
+
+
+async def test_set_external_order_id_updates_existing_payment(session, user: User):
+    repo = PendingPaymentRepository(session)
+    payment = await repo.create(
+        user_id=user.id, provider=PendingPaymentProvider.ROBOKASSA, external_order_id="", days=30,
+    )
+
+    updated = await repo.set_external_order_id(payment.id, str(payment.id))
+
+    assert updated.external_order_id == str(payment.id)
+    pending = await repo.list_pending()
+    assert pending[0].external_order_id == str(payment.id)
+
+
 async def test_mark_confirmed_removes_from_pending_list(session, user: User):
     repo = PendingPaymentRepository(session)
     payment = await repo.create(

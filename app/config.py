@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     admin_sheet_url: str = ""
     tribute_api_key: str = ""
+    robokassa_merchant_login: str = ""
+    robokassa_password_1: str = ""
 
     # Выгрузка событий/пользователей в Google Sheets (ROADMAP Часть 6,
     # app/workers/sheets_sync.py) — оба поля пустые -> воркер тихо

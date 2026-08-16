@@ -409,10 +409,15 @@ def workout_result_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def paywall_keyboard() -> InlineKeyboardMarkup:
+def paywall_keyboard(*, robokassa_available: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="⭐ Оплатить Stars", callback_data="pay_stars")
     builder.button(text="💳 Оплатить картой", callback_data="pay_tribute")
+    # Робокасса — запасной канал оплаты картой, пока верификация продавца
+    # у Tribute подвисла; кнопка появляется только когда заданы ключи
+    # (без них ссылка на оплату была бы гарантированно нерабочей).
+    if robokassa_available:
+        builder.button(text="💳 Картой (Робокасса)", callback_data="pay_robokassa")
     builder.adjust(1)
     return builder.as_markup()
 

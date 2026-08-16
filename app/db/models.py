@@ -64,10 +64,12 @@ class SubscriptionSource(StrEnum):
     COINS = "coins"
     ADMIN_GRANT = "admin_grant"
     TRIBUTE = "tribute"
+    ROBOKASSA = "robokassa"
 
 
 class PendingPaymentProvider(StrEnum):
     TRIBUTE = "tribute"
+    ROBOKASSA = "robokassa"
 
 
 class PendingPaymentStatus(StrEnum):

@@ -35,7 +35,7 @@ async def sync_tribute_payments(bot: Bot) -> None:
             if user is None:
                 return
             try:
-                await bot.send_message(user.telegram_id, texts.TRIBUTE_PAYMENT_CONFIRMED)
+                await bot.send_message(user.telegram_id, texts.CARD_PAYMENT_CONFIRMED)
             except TelegramAPIError:
                 logger.warning("tribute_sync: failed to notify user %s", user.telegram_id, exc_info=True)
 

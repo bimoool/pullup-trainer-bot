@@ -7,6 +7,7 @@ from app.bot.keyboards import payment_link_keyboard, paywall_keyboard
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
+from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.tribute import (
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
@@ -18,9 +19,10 @@ router = Router()
 
 
 async def send_paywall(message: Message, user: User) -> None:
+    robokassa_available = bool(settings.robokassa_merchant_login and settings.robokassa_password_1)
     await message.answer(
         texts.TRIAL_ENDED.format(price=SUBSCRIPTION_PRICE_RUB, days=SUBSCRIPTION_DAYS),
-        reply_markup=paywall_keyboard(),
+        reply_markup=paywall_keyboard(robokassa_available=robokassa_available),
     )
 
 
@@ -34,6 +36,21 @@ async def handle_pay_tribute(callback: CallbackQuery, session: AsyncSession) -> 
     order = await tribute.create_payment_link(user.id)
 
     link = order.payment_url or order.webapp_payment_url
+    await callback.message.answer(texts.PAYMENT_LINK_SENT, reply_markup=payment_link_keyboard(link))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pay_robokassa")
+async def handle_pay_robokassa(callback: CallbackQuery, session: AsyncSession) -> None:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(callback.from_user.id)
+
+    client = RobokassaClient(
+        merchant_login=settings.robokassa_merchant_login, password_1=settings.robokassa_password_1,
+    )
+    robokassa = RobokassaService(session, client)
+    link = await robokassa.create_payment_link(user.id)
+
     await callback.message.answer(texts.PAYMENT_LINK_SENT, reply_markup=payment_link_keyboard(link))
     await callback.answer()
 
