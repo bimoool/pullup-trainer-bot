@@ -11,8 +11,12 @@ class AchievementCode(StrEnum):
     EQUIPMENT_CHANGED = "equipment_changed"
     FIRST_WEIGHTED_PULLUP = "first_weighted_pullup"
     SET_COMPLETED = "set_completed"
-    MAX_REPS_PLUS_FIVE = "max_reps_plus_five"
+    MAX_REPS_PLUS_TEN = "max_reps_plus_ten"
     MONTH_NO_GAPS = "month_no_gaps"
+    VOLUME_100 = "volume_100"
+    VOLUME_1000 = "volume_1000"
+    VOLUME_10000 = "volume_10000"
+    VOLUME_100000 = "volume_100000"
 
 
 def check_first_baseline(is_first_baseline: bool) -> AchievementCode | None:
@@ -21,12 +25,32 @@ def check_first_baseline(is_first_baseline: bool) -> AchievementCode | None:
 
 
 def check_workout_streak(consecutive_completed_workouts: int) -> AchievementCode | None:
-    """TEN_WORKOUTS_STREAK — при 10 подряд завершённых тренировках без пропуска."""
+    """TEN_WORKOUTS_STREAK — от 10 подряд завершённых тренировок без
+    пропуска (>=, не ==: unlock_achievement идемпотентен, а пользователь
+    может прийти к проверке уже с более длинной серией — например, если
+    достиг 10+ до того, как эта ачивка была подключена — точное совпадение
+    в этом случае никогда бы не сработало)."""
     return (
         AchievementCode.TEN_WORKOUTS_STREAK
-        if consecutive_completed_workouts == 10
+        if consecutive_completed_workouts >= 10
         else None
     )
+
+
+def consecutive_streak_length(dates: list[date]) -> int:
+    """Длина хвостовой серии tail(dates) без пропуска >= GAP_ROLLBACK_DAYS
+    между соседними датами — вход для check_workout_streak. dates не
+    обязаны быть упорядочены заранее (сортируем сами, тот же принцип, что
+    и в check_month_without_gaps)."""
+    ordered = sorted(dates)
+    if not ordered:
+        return 0
+    streak = 1
+    for later, earlier in pairwise(reversed(ordered)):
+        if (later - earlier).days >= GAP_ROLLBACK_DAYS:
+            break
+        streak += 1
+    return streak
 
 
 def check_equipment_changed(equipment_changed: bool) -> AchievementCode | None:
@@ -50,11 +74,11 @@ def check_set_completed(is_set_complete: bool) -> AchievementCode | None:
 
 
 def check_max_reps_gain(max_reps_now: int, max_reps_at_baseline: int) -> AchievementCode | None:
-    """MAX_REPS_PLUS_FIVE — максимум вырос на >=5 повторений относительно
+    """MAX_REPS_PLUS_TEN — максимум вырос на >=10 повторений относительно
     последнего замера."""
     return (
-        AchievementCode.MAX_REPS_PLUS_FIVE
-        if (max_reps_now - max_reps_at_baseline) >= 5
+        AchievementCode.MAX_REPS_PLUS_TEN
+        if (max_reps_now - max_reps_at_baseline) >= 10
         else None
     )
 
@@ -76,3 +100,23 @@ def check_month_without_gaps(workout_dates: list[date], current_date: date) -> A
         if (later - earlier).days >= GAP_ROLLBACK_DAYS:
             return None
     return AchievementCode.MONTH_NO_GAPS
+
+
+_VOLUME_MILESTONES: tuple[tuple[int, AchievementCode], ...] = (
+    (100, AchievementCode.VOLUME_100),
+    (1_000, AchievementCode.VOLUME_1000),
+    (10_000, AchievementCode.VOLUME_10000),
+    (100_000, AchievementCode.VOLUME_100000),
+)
+
+
+def check_volume_milestones(total_volume: int) -> list[AchievementCode]:
+    """Все пороги пожизненного объёма подтягиваний, достигнутые к
+    total_volume (обычные тренировки + бэкдейт + свободные + факультативы
+    — сумма считается вызывающим кодом, здесь только сравнение с
+    порогами). Возвращает ВСЕ достигнутые коды, а не только новый —
+    unlock_achievement идемпотентен, так что уже разблокированные пороги
+    просто не начислят монеты повторно; это же делает функцию безопасной
+    для ретроактивного бэкфилла, где объём мог перескочить сразу через
+    несколько порогов."""
+    return [code for threshold, code in _VOLUME_MILESTONES if total_volume >= threshold]

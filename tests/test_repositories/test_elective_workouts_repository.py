@@ -44,6 +44,25 @@ async def test_list_types_for_user_is_chronological(session, user: User):
     assert types == [ElectiveType.W_LADDER, ElectiveType.THREE_MINUTES]
 
 
+async def test_total_reps_for_user_sums_across_all_electives(session, user: User):
+    repo = ElectiveWorkoutRepository(session)
+    await repo.create(
+        user_id=user.id, elective_type=ElectiveType.MAX_REPS_LADDER, performed_at=datetime.now(UTC),
+        total_reps=30, reps_sequence=[10, 8, 7, 5], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    await repo.create(
+        user_id=user.id, elective_type=ElectiveType.VOLUME_TARGET, performed_at=datetime.now(UTC),
+        total_reps=52, reps_sequence=None, equipment_type=EquipmentType.BAND,
+    )
+
+    assert await repo.total_reps_for_user(user.id) == 82
+
+
+async def test_total_reps_for_user_zero_when_no_electives(session, user: User):
+    repo = ElectiveWorkoutRepository(session)
+    assert await repo.total_reps_for_user(user.id) == 0
+
+
 async def test_count_since_only_counts_within_window(session, user: User):
     repo = ElectiveWorkoutRepository(session)
     now = datetime.now(UTC)

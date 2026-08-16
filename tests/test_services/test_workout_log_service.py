@@ -116,6 +116,10 @@ async def test_equipment_threshold_hit_unlocks_equipment_changed(session, user: 
     )
 
     assert await AchievementRepository(session).has_unlocked(user.id, "equipment_changed") is True
+    # 30 за equipment_changed + 100 за max_reps_plus_ten (max_reps=21 против
+    # замера 8 из _make_set — тоже срабатывает этой же тренировкой).
+    reloaded = await UserRepository(session).get_by_id(user.id)
+    assert reloaded.coins_balance == 130
 
 
 async def test_completing_set_unlocks_set_completed(session, user: User):

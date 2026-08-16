@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,14 +14,16 @@ from app.domain.achievements import (
     check_set_completed,
 )
 from app.domain.session import BlockLog
+from app.services.achievement_checks import unlock_history_achievements, unlock_volume_milestones
 from app.services.gamification import GamificationService
 
-# Суммы за COINS_PER_WORKOUT/EQUIPMENT_CHANGED/SET_COMPLETED не определены
-# (см. app/services/onboarding.py) — начисляем 0, но фиксируем сам факт
-# (тренировка/ачивка), чтобы история и уведомления работали уже сейчас.
-# FIRST_WEIGHTED_PULLUP — сумма утверждена (Часть 10).
+# Сумма за COINS_PER_WORKOUT не определена (см. app/services/onboarding.py)
+# — начисляем 0, но фиксируем сам факт тренировки, чтобы история работала
+# уже сейчас. EQUIPMENT_CHANGED/SET_COMPLETED/FIRST_WEIGHTED_PULLUP —
+# суммы утверждены (Часть 10 / ревизия ачивок).
 COINS_PER_WORKOUT = 0
-ACHIEVEMENT_COINS = 0
+EQUIPMENT_CHANGED_COINS = 30
+SET_COMPLETED_COINS = 200
 FIRST_WEIGHTED_PULLUP_COINS = 100
 
 
@@ -30,14 +32,16 @@ class WorkoutLogService:
     с его каскадом и sequence_number) + событие в аналитику + монеты за
     тренировку + проверка ачивок, которые можно определить прямо здесь.
 
-    Разблокированы тут только EQUIPMENT_CHANGED и SET_COMPLETED — они
-    напрямую следуют из результата этого вызова, плюс
-    FIRST_WEIGHTED_PULLUP (первая тренировка силового блока на
-    отягощении). TEN_WORKOUTS_STREAK, MAX_REPS_PLUS_FIVE и MONTH_NO_GAPS
-    сознательно не реализованы: требуют аккуратного чтения истории — не
-    гадаю с реализацией, оставляю на отдельный проход."""
+    EQUIPMENT_CHANGED, SET_COMPLETED и FIRST_WEIGHTED_PULLUP разблокируются
+    прямо из результата записи (см. _unlock_workout_achievements — только
+    для record_workout, требуют каскада/сета). TEN_WORKOUTS_STREAK,
+    MAX_REPS_PLUS_TEN, MONTH_NO_GAPS и пороги объёма (VOLUME_*) считаются
+    из полной истории (app.services.achievement_checks) — им каскад не
+    нужен, поэтому проверяются после ЛЮБОЙ записи, включая бэкдейт и
+    свободные подтягивания."""
 
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._workouts = WorkoutRepository(session)
         self._workout_sets = WorkoutSetRepository(session)
         self._events = EventRepository(session)
@@ -83,6 +87,8 @@ class WorkoutLogService:
         )
         await self._gamification.award_workout_coins(user_id, COINS_PER_WORKOUT)
         await self._unlock_workout_achievements(user_id, workout)
+        await unlock_history_achievements(self._session, user_id, now=datetime.now(UTC))
+        await unlock_volume_milestones(self._session, user_id)
         return workout
 
     async def record_backdated_workout(
@@ -104,7 +110,10 @@ class WorkoutLogService:
         """Не участвует в каскаде (см. WorkoutRepository.record_backdated_workout),
         поэтому и ачивки на переход снаряда/закрытие сета здесь не
         проверяем — closing a set задним числом можно, но статус сета
-        WorkoutSetRepository.increment_completed уже обновит сам."""
+        WorkoutSetRepository.increment_completed уже обновит сам.
+        TEN_WORKOUTS_STREAK/MONTH_NO_GAPS/MAX_REPS_PLUS_TEN и пороги
+        объёма от каскада не зависят — проверяем и здесь (см.
+        app.services.achievement_checks)."""
         workout = await self._workouts.record_backdated_workout(
             user_id=user_id,
             workout_set_id=workout_set_id,
@@ -122,6 +131,8 @@ class WorkoutLogService:
         await self._events.create(
             user_id=user_id, event_type="workout_backdated", payload={"workout_id": workout.id},
         )
+        await unlock_history_achievements(self._session, user_id, now=datetime.now(UTC))
+        await unlock_volume_milestones(self._session, user_id)
         return workout
 
     async def record_free_workout(
@@ -138,8 +149,11 @@ class WorkoutLogService:
     ) -> Workout:
         """"➕ Внести свободные подтягивания" (Часть 10, пакет #2, п.21) —
         вне каскада и вне сета из 12 (см.
-        WorkoutRepository.record_free_workout), поэтому ачивки/монеты за
-        тренировку здесь не проверяем, как и для record_backdated_workout."""
+        WorkoutRepository.record_free_workout), поэтому монеты за
+        тренировку и EQUIPMENT_CHANGED/SET_COMPLETED здесь не проверяем,
+        как и для record_backdated_workout. Но объём и историю (стрик,
+        месяц без пропусков, макс. вырос) свободные подтягивания меняют
+        так же, как обычная тренировка — проверяем."""
         workout = await self._workouts.record_free_workout(
             user_id=user_id, workout_set_id=workout_set_id, performed_at=performed_at,
             block_a_reps=block_a_reps, equipment_type=equipment_type,
@@ -149,6 +163,8 @@ class WorkoutLogService:
             user_id=user_id, event_type="free_workout_recorded",
             payload={"workout_id": workout.id, "volume": block_a_reps.volume},
         )
+        await unlock_history_achievements(self._session, user_id, now=datetime.now(UTC))
+        await unlock_volume_milestones(self._session, user_id)
         return workout
 
     async def _unlock_workout_achievements(self, user_id: int, workout: Workout) -> None:
@@ -170,12 +186,12 @@ class WorkoutLogService:
 
         if check_equipment_changed(block_a.equipment_changed or block_b.equipment_changed):
             await self._gamification.unlock_achievement(
-                user_id=user_id, code=AchievementCode.EQUIPMENT_CHANGED, coins_reward=ACHIEVEMENT_COINS,
+                user_id=user_id, code=AchievementCode.EQUIPMENT_CHANGED, coins_reward=EQUIPMENT_CHANGED_COINS,
             )
 
         workout_set = await self._workout_sets.get_by_id(workout.workout_set_id)
         just_completed = workout_set.status == WorkoutSetStatus.COMPLETED
         if check_set_completed(just_completed):
             await self._gamification.unlock_achievement(
-                user_id=user_id, code=AchievementCode.SET_COMPLETED, coins_reward=ACHIEVEMENT_COINS,
+                user_id=user_id, code=AchievementCode.SET_COMPLETED, coins_reward=SET_COMPLETED_COINS,
             )

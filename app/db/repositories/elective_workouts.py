@@ -49,6 +49,17 @@ class ElectiveWorkoutRepository:
         )
         return list(result.scalars().all())
 
+    async def total_reps_for_user(self, user_id: int) -> int:
+        """Пожизненная сумма total_reps — вход для ачивок за объём
+        (app.services.achievement_checks.unlock_volume_milestones).
+        SQL SUM, а не list_for_user (тот ограничен limit=100 — годится для
+        отображения истории, но не для пожизненного тотала)."""
+        result = await self._session.execute(
+            select(func.coalesce(func.sum(ElectiveWorkout.total_reps), 0))
+            .where(ElectiveWorkout.user_id == user_id),
+        )
+        return result.scalar_one()
+
     async def count_since(self, user_id: int, since: datetime) -> int:
         """Вход для app.domain.electives.is_elective_allowed — сколько
         факультативов сделано за скользящее окно (см. ELECTIVE_WEEK_WINDOW_DAYS)."""

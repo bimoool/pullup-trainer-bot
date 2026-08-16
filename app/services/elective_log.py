@@ -7,16 +7,20 @@ from app.db.models import ElectiveWorkout, EquipmentType
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.events import EventRepository
 from app.domain.electives import ElectiveType
+from app.services.achievement_checks import unlock_volume_milestones
 
 
 class ElectiveLogService:
     """Оркестрация записи факультатива: сама запись (ElectiveWorkoutRepository)
     + событие в аналитику (EventRepository, тот же канал, что фидбек и
-    /workers/sheets_sync.py). Без монет/ачивок — тот же прецедент, что и
-    для свободных подтягиваний/бэкдейта: вне плана, не про мотивацию
-    выполнения цикла из 12, а про опциональную дополнительную нагрузку."""
+    /workers/sheets_sync.py). Монет за сам факультатив нет — тот же
+    прецедент, что и для свободных подтягиваний/бэкдейта: вне плана, не
+    про мотивацию выполнения цикла из 12. Но факультативы входят в
+    пожизненный объём подтягиваний (ревизия ачивок) — проверяем пороги
+    VOLUME_* после каждой записи."""
 
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._electives = ElectiveWorkoutRepository(session)
         self._events = EventRepository(session)
 
@@ -42,4 +46,5 @@ class ElectiveLogService:
             user_id=user_id, event_type="elective_completed",
             payload={"elective_type": elective_type.value, "volume": total_reps},
         )
+        await unlock_volume_milestones(self._session, user_id)
         return elective

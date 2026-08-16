@@ -36,8 +36,12 @@ _ACHIEVEMENT_LABELS = {
     AchievementCode.EQUIPMENT_CHANGED: "📈 Смена снаряда",
     AchievementCode.FIRST_WEIGHTED_PULLUP: "🏋️ Первое подтягивание с отягощением",
     AchievementCode.SET_COMPLETED: "✅ Сет завершён",
-    AchievementCode.MAX_REPS_PLUS_FIVE: "💪 +5 к максимуму",
+    AchievementCode.MAX_REPS_PLUS_TEN: "💪 +10 к максимуму",
     AchievementCode.MONTH_NO_GAPS: "📅 Месяц без пропусков",
+    AchievementCode.VOLUME_100: "🔟 100 подтягиваний",
+    AchievementCode.VOLUME_1000: "💯 1 000 подтягиваний",
+    AchievementCode.VOLUME_10000: "🚀 10 000 подтягиваний",
+    AchievementCode.VOLUME_100000: "👑 100 000 подтягиваний",
 }
 
 _GENDER_LABELS = {
