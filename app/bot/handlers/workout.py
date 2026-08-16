@@ -490,17 +490,26 @@ async def handle_change_block_equipment(callback: CallbackQuery, state: FSMConte
     await callback.answer()
 
 
-@router.callback_query(F.data == "optional_exercise:want")
-async def handle_optional_exercise_want(callback: CallbackQuery, state: FSMContext) -> None:
+async def _handle_optional_exercise_choice(callback: CallbackQuery, state: FSMContext, details: str) -> None:
     # Баг из живого тестирования (Часть 10, пакет #2, п.24): раньше здесь
     # был только тост callback.answer(show_alert=True) — он подтверждал
     # нажатие, но реально не присылал упражнения. Настоящее сообщение.
     # Инструкция уходит ПЕРВОЙ, приглашение ко второму блоку — следом
     # (пакет #3) — раньше было наоборот из-за handle_block_a_result.
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(texts.OPTIONAL_EXERCISE_DETAILS)
+    await callback.message.answer(details)
     await callback.answer()
     await _send_block_b_prompt(callback.message, state)
+
+
+@router.callback_query(F.data == "optional_exercise:squats")
+async def handle_optional_exercise_squats(callback: CallbackQuery, state: FSMContext) -> None:
+    await _handle_optional_exercise_choice(callback, state, texts.OPTIONAL_EXERCISE_SQUATS_DETAILS)
+
+
+@router.callback_query(F.data == "optional_exercise:lunges")
+async def handle_optional_exercise_lunges(callback: CallbackQuery, state: FSMContext) -> None:
+    await _handle_optional_exercise_choice(callback, state, texts.OPTIONAL_EXERCISE_LUNGES_DETAILS)
 
 
 @router.callback_query(F.data == "optional_exercise:skip")

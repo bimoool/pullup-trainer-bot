@@ -357,9 +357,10 @@ def band_reorder_keyboard(items: list) -> InlineKeyboardMarkup:
 
 def optional_exercise_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text=texts.OPTIONAL_EXERCISE_WANT_BUTTON, callback_data="optional_exercise:want")
+    builder.button(text=texts.OPTIONAL_EXERCISE_SQUATS_BUTTON, callback_data="optional_exercise:squats")
+    builder.button(text=texts.OPTIONAL_EXERCISE_LUNGES_BUTTON, callback_data="optional_exercise:lunges")
     builder.button(text=texts.OPTIONAL_EXERCISE_SKIP_BUTTON, callback_data="optional_exercise:skip")
-    builder.adjust(2)
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
