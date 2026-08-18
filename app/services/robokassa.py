@@ -17,14 +17,24 @@ from app.services.tribute import SUBSCRIPTION_DAYS, SUBSCRIPTION_DESCRIPTION, SU
 logger = logging.getLogger(__name__)
 
 ROBOKASSA_PAYMENT_URL = "https://auth.robokassa.ru/Merchant/Index.aspx"
-ROBOKASSA_OP_STATE_URL = "https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpState"
+# OpStateExt — официально документированный метод (docs.robokassa.ru/opstate);
+# подтверждено живым запросом на активном магазине, что старый "/OpState"
+# отдаёт ИДЕНТИЧНУЮ структуру ответа/ошибок — используем задокументированное
+# имя на будущее, а не легаси-алиас.
+ROBOKASSA_OP_STATE_URL = "https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpStateExt"
 
-# State/Code из ответа OpState — по официальной документации Робокассы
-# (100 = оплачен полностью, 10 = отменён), НЕ проверено на реальных
-# платежах (ключей ещё нет на момент реализации). Первый живой платёж
-# нужно сверить вручную — см. напоминание в отчёте о деплое.
+# State/Code из ответа OpStateExt — сверено с официальной документацией
+# ПОСЛЕ активации магазина (100 = оплачен полностью, 10 = отменён без
+# оплаты, 60 = деньги пришли, но зачисление магазину отклонено и возвращено
+# покупателю — тоже FAILED, не просто "отменён", но по сути та же
+# невозможность продлить подписку). OpStateExt принципиально не работает
+# для тестовых платежей (IsTest=1) — реальный код ни разу не был подтверждён
+# на завершённом платеже, только по документации + структуре ответа
+# сервера (Result/Code=1 на неверной подписи совпал с задокументированным
+# буквально). Первый настоящий платёж всё ещё стоит сверить вручную.
 _STATE_CODE_PAID = 100
 _STATE_CODE_CANCELLED = 10
+_STATE_CODE_REJECTED_AND_REFUNDED = 60
 
 _STATUS_PAID = "paid"
 _STATUS_FAILED = "failed"
@@ -61,9 +71,10 @@ class RobokassaClient:
     (пуловая архитектура), не по вебхуку — без домена/HTTPS у бота
     принять входящий колбэк негде."""
 
-    def __init__(self, *, merchant_login: str, password_1: str) -> None:
+    def __init__(self, *, merchant_login: str, password_1: str, password_2: str) -> None:
         self._merchant_login = merchant_login
         self._password_1 = password_1
+        self._password_2 = password_2
 
     def build_payment_url(self, *, out_sum: str, inv_id: int, description: str) -> str:
         signature = _signature(self._merchant_login, out_sum, str(inv_id), self._password_1)
@@ -76,9 +87,18 @@ class RobokassaClient:
         }
         return f"{ROBOKASSA_PAYMENT_URL}?{urlencode(params)}"
 
+    def _op_state_params(self, inv_id: int) -> dict[str, str]:
+        # OpStateExt подписывается ПАРОЛЕМ №2, не №1 (в отличие от ссылки
+        # оплаты) — подтверждено живым запросом: подпись с password_1
+        # отдавала Result/Code=1 "Неверная цифровая подпись запроса",
+        # ровно как задокументировано для формулы MerchantLogin:InvId:Пароль#2.
+        # Вынесено из get_operation_state отдельным методом ради теста без
+        # реального сетевого вызова (тот же приём, что build_payment_url).
+        signature = _signature(self._merchant_login, str(inv_id), self._password_2)
+        return {"MerchantLogin": self._merchant_login, "InvoiceID": str(inv_id), "Signature": signature}
+
     async def get_operation_state(self, inv_id: int) -> str:
-        signature = _signature(self._merchant_login, str(inv_id), self._password_1)
-        params = {"MerchantLogin": self._merchant_login, "InvoiceID": str(inv_id), "Signature": signature}
+        params = self._op_state_params(inv_id)
         async with (
             aiohttp.ClientSession() as http,
             http.get(ROBOKASSA_OP_STATE_URL, params=params) as response,
@@ -119,7 +139,7 @@ def _parse_operation_state(xml_text: str) -> str:
 
     if code == _STATE_CODE_PAID:
         return _STATUS_PAID
-    if code == _STATE_CODE_CANCELLED:
+    if code in (_STATE_CODE_CANCELLED, _STATE_CODE_REJECTED_AND_REFUNDED):
         return _STATUS_FAILED
     return _STATUS_PENDING
 

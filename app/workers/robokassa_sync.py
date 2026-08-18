@@ -22,13 +22,15 @@ async def sync_robokassa_payments(bot: Bot) -> None:
     """Та же схема, что у sync_tribute_payments — своя сессия, коммит по
     итогам прохода, уведомление пользователю при подтверждении.
 
-    Без merchant_login/password_1 в конфиге список pending-заказов для
-    этого провайдера всегда пуст (кнопка оплаты Робокассой скрыта, пока
+    Без merchant_login/password_1/password_2 в конфиге список pending-заказов
+    для этого провайдера всегда пуст (кнопка оплаты Робокассой скрыта, пока
     их нет — см. paywall_keyboard), так что воркер безопасно бездействует
     до появления реальных ключей."""
     async with async_session_factory() as session:
         client = RobokassaClient(
-            merchant_login=settings.robokassa_merchant_login, password_1=settings.robokassa_password_1,
+            merchant_login=settings.robokassa_merchant_login,
+            password_1=settings.robokassa_password_1,
+            password_2=settings.robokassa_password_2,
         )
         service = RobokassaService(session, client)
         users = UserRepository(session)

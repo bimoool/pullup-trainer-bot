@@ -18,11 +18,19 @@ from app.services.tribute import (
 router = Router()
 
 
+def _robokassa_available() -> bool:
+    # password_2 обязателен наравне с password_1 — без него ссылка на
+    # оплату создастся, но воркер никогда не подтвердит платёж (OpStateExt
+    # подписывается именно password_2, см. app/services/robokassa.py).
+    return bool(
+        settings.robokassa_merchant_login and settings.robokassa_password_1 and settings.robokassa_password_2,
+    )
+
+
 async def send_paywall(message: Message, user: User) -> None:
-    robokassa_available = bool(settings.robokassa_merchant_login and settings.robokassa_password_1)
     await message.answer(
         texts.TRIAL_ENDED.format(price=SUBSCRIPTION_PRICE_RUB, days=SUBSCRIPTION_DAYS),
-        reply_markup=paywall_keyboard(robokassa_available=robokassa_available),
+        reply_markup=paywall_keyboard(robokassa_available=_robokassa_available()),
     )
 
 
@@ -46,7 +54,9 @@ async def handle_pay_robokassa(callback: CallbackQuery, session: AsyncSession) -
     user = await users.get_by_telegram_id(callback.from_user.id)
 
     client = RobokassaClient(
-        merchant_login=settings.robokassa_merchant_login, password_1=settings.robokassa_password_1,
+        merchant_login=settings.robokassa_merchant_login,
+        password_1=settings.robokassa_password_1,
+        password_2=settings.robokassa_password_2,
     )
     robokassa = RobokassaService(session, client)
     link = await robokassa.create_payment_link(user.id)

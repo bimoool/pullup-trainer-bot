@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     tribute_api_key: str = ""
     robokassa_merchant_login: str = ""
     robokassa_password_1: str = ""
+    # Пароль №2 — отдельный от №1, нужен именно для OpStateExt (проверка
+    # статуса платежа), см. app/services/robokassa.py. Без него ссылка на
+    # оплату всё ещё создастся, но воркер никогда не подтвердит платёж
+    # (неверная подпись у каждого запроса статуса).
+    robokassa_password_2: str = ""
 
     # Выгрузка событий/пользователей в Google Sheets (ROADMAP Часть 6,
     # app/workers/sheets_sync.py) — оба поля пустые -> воркер тихо
