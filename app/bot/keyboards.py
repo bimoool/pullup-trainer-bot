@@ -178,6 +178,7 @@ def feedback_admin_reply_keyboard(user_id: int) -> InlineKeyboardMarkup:
 def help_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.HELP_DETAILED_BUTTON, callback_data="help_detailed")
+    builder.button(text=texts.PRICING_BUTTON, callback_data="pricing_info")
     builder.button(text="💬 Сообщить о проблеме", callback_data="report_problem")
     builder.adjust(1)
     return builder.as_markup()

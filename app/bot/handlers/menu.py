@@ -118,3 +118,11 @@ async def handle_help_section(message: Message, state: FSMContext) -> None:
 async def handle_help_detailed(callback: CallbackQuery) -> None:
     await callback.message.answer(texts.HELP_DETAILED_TEXT)
     await callback.answer()
+
+
+@router.callback_query(F.data == "pricing_info")
+async def handle_pricing_info(callback: CallbackQuery) -> None:
+    """Требование модерации Робокассы — тарифы/реквизиты/оферта доступны
+    изнутри бота, не только на внешнем канале."""
+    await callback.message.answer(texts.PRICING_TEXT)
+    await callback.answer()
