@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
@@ -29,6 +30,11 @@ from app.domain.achievements import AchievementCode
 # текущего FSM-состояния, так же как /cancel (см. Часть 3: "выход в меню из
 # любого сценария").
 router = Router()
+
+# Часть app/assets (см. Dockerfile: COPY app ./app) — деплоится вместе с
+# остальным кодом, не раскладывается на сервере вручную. parents[2] от
+# этого файла (app/bot/handlers/menu.py) — корень пакета app/.
+OFERTA_PDF_PATH = Path(__file__).resolve().parents[2] / "assets" / "oferta.pdf"
 
 _ACHIEVEMENT_LABELS = {
     AchievementCode.FIRST_BASELINE: "🎯 Первый замер",
@@ -123,6 +129,9 @@ async def handle_help_detailed(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "pricing_info")
 async def handle_pricing_info(callback: CallbackQuery) -> None:
     """Требование модерации Робокассы — тарифы/реквизиты/оферта доступны
-    изнутри бота, не только на внешнем канале."""
+    изнутри бота, не только на внешнем канале. Полный текст оферты — файлом
+    (не ссылкой на канал), сразу следующим сообщением после текста, в этом
+    же действии по кнопке."""
     await callback.message.answer(texts.PRICING_TEXT)
+    await callback.message.answer_document(FSInputFile(OFERTA_PDF_PATH))
     await callback.answer()
