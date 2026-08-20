@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     admin_ids: str = ""
     admin_sheet_url: str = ""
-    tribute_api_key: str = ""
     robokassa_merchant_login: str = ""
     robokassa_password_1: str = ""
     # Пароль №2 — отдельный от №1, нужен именно для OpStateExt (проверка

@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import PendingPayment, PendingPaymentProvider, SubscriptionSource
 from app.db.repositories.pending_payments import PendingPaymentRepository
+from app.domain.constants import SUBSCRIPTION_DAYS, SUBSCRIPTION_DESCRIPTION, SUBSCRIPTION_PRICE_RUB
 from app.services.subscription import SubscriptionService
-from app.services.tribute import SUBSCRIPTION_DAYS, SUBSCRIPTION_DESCRIPTION, SUBSCRIPTION_PRICE_RUB
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +54,8 @@ class RobokassaAPIError(Exception):
 
 
 class RobokassaClientProtocol(Protocol):
-    """Форма, против которой тестируется RobokassaService — та же схема,
-    что и TributeClientProtocol, без обращения к реальному Robokassa API."""
+    """Форма, против которой тестируется RobokassaService — фейковая
+    реализация в тестах, без обращения к реальному Robokassa API."""
 
     def build_payment_url(self, *, out_sum: str, inv_id: int, description: str) -> str: ...
 
@@ -65,11 +65,10 @@ class RobokassaClientProtocol(Protocol):
 class RobokassaClient:
     """Тонкая обёртка над Робокассой — без бизнес-логики, только протокол.
 
-    В отличие от Tribute здесь нет серверного "создания заказа" — ссылка
-    на оплату строится локально (подпись MD5 + query-параметры), сеть
-    нужна только для проверки статуса (OpState). Работаем по опросу
-    (пуловая архитектура), не по вебхуку — без домена/HTTPS у бота
-    принять входящий колбэк негде."""
+    Здесь нет серверного "создания заказа" — ссылка на оплату строится
+    локально (подпись MD5 + query-параметры), сеть нужна только для
+    проверки статуса (OpState). Работаем по опросу (пуловая архитектура),
+    не по вебхуку — без домена/HTTPS у бота принять входящий колбэк негде."""
 
     def __init__(self, *, merchant_login: str, password_1: str, password_2: str) -> None:
         self._merchant_login = merchant_login
@@ -145,9 +144,9 @@ def _parse_operation_state(xml_text: str) -> str:
 
 
 class RobokassaService:
-    """Оркестрация: та же форма, что и TributeService — create_payment_link()
-    создаёт запись в pending_payments, sync_pending_payments() (вызывается
-    воркером) опрашивает OpState и продлевает подписку при оплате."""
+    """Оркестрация: create_payment_link() создаёт запись в pending_payments,
+    sync_pending_payments() (вызывается воркером) опрашивает OpState и
+    продлевает подписку при оплате."""
 
     def __init__(self, session: AsyncSession, client: RobokassaClientProtocol) -> None:
         self._pending_payments = PendingPaymentRepository(session)

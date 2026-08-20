@@ -42,7 +42,7 @@ async def _record_unhandled_exception(
     session: AsyncSession, *, telegram_id: int, update_id: int, exception: BaseException,
 ) -> None:
     """Отдельно от открытия сессии — тестируется напрямую с уже готовым
-    session (тот же приём, что и TributeService против sync_tribute_payments:
+    session (тот же приём, что и RobokassaService против sync_robokassa_payments:
     воркер/хендлер открывает свою сессию, логика — чистая функция)."""
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:

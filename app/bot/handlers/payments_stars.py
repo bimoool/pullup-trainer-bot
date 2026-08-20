@@ -8,14 +8,14 @@ from app.bot import texts
 from app.bot.keyboards import payment_link_keyboard
 from app.db.models import SubscriptionSource
 from app.db.repositories.users import UserRepository
+from app.domain.constants import SUBSCRIPTION_DAYS
 from app.services.subscription import SubscriptionService
-from app.services.tribute import SUBSCRIPTION_DAYS
 
 router = Router()
 
 # 900 XTR — согласовано с пользователем при утверждении v2-респека
-# (ориентир: сопоставимо с тарифом Tribute, 990₽/мес, по курсу Stars на
-# момент согласования). Не привязано автоматически к курсу — если Telegram
+# (ориентир: сопоставимо с тарифом оплаты картой, 990₽/мес, по курсу Stars
+# на момент согласования). Не привязано автоматически к курсу — если Telegram
 # изменит курс XTR или цена в рублях поменяется, число нужно поправить руками.
 STARS_PRICE = 900
 STARS_SUBSCRIPTION_PERIOD_SECONDS = 30 * 24 * 60 * 60  # нативный период подписки Stars — 30 дней

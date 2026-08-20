@@ -412,12 +412,12 @@ def workout_result_keyboard() -> InlineKeyboardMarkup:
 
 
 def paywall_keyboard(*, robokassa_available: bool = False) -> InlineKeyboardMarkup:
+    # Tribute убран целиком (отказ в верификации продавца) — Робокасса
+    # теперь единственный канал оплаты картой. Кнопка появляется только
+    # когда заданы все три ключа (без них ссылка на оплату была бы
+    # гарантированно нерабочей, см. _robokassa_available в subscription.py).
     builder = InlineKeyboardBuilder()
     builder.button(text="⭐ Оплатить Stars", callback_data="pay_stars")
-    builder.button(text="💳 Оплатить картой", callback_data="pay_tribute")
-    # Робокасса — запасной канал оплаты картой, пока верификация продавца
-    # у Tribute подвисла; кнопка появляется только когда заданы ключи
-    # (без них ссылка на оплату была бы гарантированно нерабочей).
     if robokassa_available:
         builder.button(text="💳 Картой (Робокасса)", callback_data="pay_robokassa")
     builder.adjust(1)

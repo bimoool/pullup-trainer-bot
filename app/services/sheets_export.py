@@ -238,8 +238,8 @@ def _payload_to_text(payload: dict) -> str:
 
 class SheetsClientProtocol(Protocol):
     """Форма, против которой тестируется воркер (app/workers/sheets_sync.py)
-    через фейковую реализацию — та же схема, что и TributeClientProtocol
-    (app/services/tribute.py), без обращения к реальному Google API."""
+    через фейковую реализацию — та же схема, что и RobokassaClientProtocol
+    (app/services/robokassa.py), без обращения к реальному Google API."""
 
     async def append_rows(self, sheet_title: str, header: list[str], rows: list[list[str]]) -> None: ...
 
@@ -258,7 +258,7 @@ class GspreadSheetsClient:
 
     Открытие клиента/таблицы — по одному разу за вызов sync_sheets()
     (создаётся заново в каждом цикле воркера, раз в 5 минут — то же самое
-    решение, что и в TributeClient, а не держать один долгоживущий
+    решение, что и в RobokassaClient, а не держать один долгоживущий
     объект и думать про истечение токена)."""
 
     def __init__(self, *, credentials_path: str, spreadsheet_id: str) -> None:
@@ -434,7 +434,7 @@ _T = TypeVar("_T")
 class SheetsExportService:
     """Оркестрация: сколько выгрузить и откуда взять данные — воркер
     (app/workers/sheets_sync.py) только открывает сессию и вызывает sync().
-    Та же структура, что и TributeService (app/services/tribute.py):
+    Та же структура, что и RobokassaService (app/services/robokassa.py):
     репозитории внутри, внешний клиент — через протокол, не завязана на
     конкретную реализацию (тестируется фейковым клиентом).
 

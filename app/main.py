@@ -14,7 +14,6 @@ from app.bot.middlewares import DbSessionMiddleware
 from app.config import settings
 from app.workers.robokassa_sync import register as register_robokassa_sync
 from app.workers.sheets_sync import register as register_sheets_sync
-from app.workers.tribute_sync import register as register_tribute_sync
 from app.workers.weekly_report import register as register_weekly_report
 
 logging.basicConfig(level=settings.log_level)
@@ -43,7 +42,6 @@ def build_dispatcher() -> Dispatcher:
 
 def build_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
-    register_tribute_sync(scheduler, bot)
     register_robokassa_sync(scheduler, bot)
     register_weekly_report(scheduler, bot)
     register_sheets_sync(scheduler)

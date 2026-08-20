@@ -63,12 +63,10 @@ class SubscriptionSource(StrEnum):
     STARS = "stars"
     COINS = "coins"
     ADMIN_GRANT = "admin_grant"
-    TRIBUTE = "tribute"
     ROBOKASSA = "robokassa"
 
 
 class PendingPaymentProvider(StrEnum):
-    TRIBUTE = "tribute"
     ROBOKASSA = "robokassa"
 
 
@@ -332,12 +330,13 @@ class Achievement(Base):
 
 
 class PendingPayment(Base):
-    """Заказ у асинхронного провайдера (сейчас — только Tribute), ожидающий
-    подтверждения опросом (app/workers/tribute_sync.py). started_at/ends_at
-    периода подписки здесь намеренно нет — они считаются в момент
-    подтверждения (SubscriptionService.extend), а не в момент создания
-    заказа, чтобы «продление стекается поверх остатка» работало от
-    актуального состояния, а не от состояния на момент нажатия кнопки."""
+    """Заказ у асинхронного провайдера (сейчас — только Робокасса, Tribute
+    удалён после отказа в верификации продавца), ожидающий подтверждения
+    опросом (app/workers/robokassa_sync.py). started_at/ends_at периода
+    подписки здесь намеренно нет — они считаются в момент подтверждения
+    (SubscriptionService.extend), а не в момент создания заказа, чтобы
+    «продление стекается поверх остатка» работало от актуального
+    состояния, а не от состояния на момент нажатия кнопки."""
 
     __tablename__ = "pending_payments"
 

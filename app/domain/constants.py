@@ -96,6 +96,16 @@ GAP_RETEST_DAYS: int = 35
 ROLLBACK_REPS: int = 2
 ROLLBACK_WEIGHT_PCT: float = 0.10
 TRIAL_DAYS: int = 14
+
+# Продуктовая константа платной подписки (990₽/мес) — раньше жила в
+# app/services/tribute.py (единственном на тот момент платёжном провайдере),
+# перенесена сюда при удалении Tribute (отказ в верификации продавца):
+# и Robokassa, и Stars (payments_stars.py) ссылаются на неё одинаково,
+# провайдер-специфичного смысла в ней нет.
+SUBSCRIPTION_PRICE_RUB: int = 990
+SUBSCRIPTION_DAYS: int = 30
+SUBSCRIPTION_DESCRIPTION: str = f"Доступ на {SUBSCRIPTION_DAYS} дней"
+
 TRANSITION_RETRY_WORKOUTS: int = 4
 # Тренировок на прежнем снаряде после неудачного перехода, прежде чем
 # предлагать повторную попытку.

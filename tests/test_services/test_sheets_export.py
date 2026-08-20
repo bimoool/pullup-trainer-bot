@@ -1,6 +1,6 @@
 """Выгрузка в Google Sheets (ROADMAP Часть 6, ревизия — пакет #7) — против
 SheetsClientProtocol через фейковую реализацию, без обращения к реальному
-Google API (та же схема, что и TributeService/TributeClientProtocol)."""
+Google API (та же схема, что и RobokassaService/RobokassaClientProtocol)."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
