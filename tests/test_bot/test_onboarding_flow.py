@@ -68,6 +68,36 @@ async def test_baseline_confirm_saves_and_advances_to_weight(session, user: User
     assert await fsm.get_state() == OnboardingStates.waiting_for_weight.state
 
 
+async def test_baseline_accepts_three_digit_number(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    # Баг: раньше MAX_REASONABLE_REPS=100 жёстко отклонял любое трёхзначное
+    # число (102 → "Не разобрал число повторений") на каждую попытку.
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(OnboardingStates.waiting_for_baseline_reps)
+
+    await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="102"), session=session)
+
+    assert await fsm.get_state() == OnboardingStates.waiting_for_baseline_confirm.state
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="baseline_confirm"), session=session,
+    )
+    baselines = await BaselineRepository(session).list_for_user(user.id)
+    assert baselines[0].reps == 102
+
+
+async def test_baseline_still_rejects_absurdly_large_number(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    # Жёсткий предел (сейчас 1000+) остаётся — это защита от опечаток
+    # (лишний ноль и т.п.), не то же самое, что снятое ограничение на 100.
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    await fsm.set_state(OnboardingStates.waiting_for_baseline_reps)
+
+    await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="1000"), session=session)
+
+    assert await fsm.get_state() == OnboardingStates.waiting_for_baseline_reps.state
+    assert await BaselineRepository(session).list_for_user(user.id) == []
+
+
 async def test_baseline_confirm_with_zero_still_saves(session, user: User, bot: Bot, dispatcher: Dispatcher):
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     await fsm.set_state(OnboardingStates.waiting_for_baseline_reps)

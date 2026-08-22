@@ -7,13 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.keyboards import baseline_confirm_keyboard
+from app.bot.parsing import MAX_REPS
 from app.bot.states import OnboardingStates
 from app.db.repositories.users import UserRepository
 from app.services.onboarding import OnboardingService
 
 router = Router()
-
-MAX_REASONABLE_REPS = 100
 
 
 @router.callback_query(OnboardingStates.waiting_for_baseline_reps, F.data == "start_baseline_measurement")
@@ -39,7 +38,7 @@ async def handle_baseline_reps(message: Message, state: FSMContext) -> None:
     тестирование показало, что опечатку в замере раньше нечем было
     поймать до самого конца анкеты."""
     text = (message.text or "").strip()
-    if not text.isdigit() or int(text) > MAX_REASONABLE_REPS:
+    if not text.isdigit() or int(text) > MAX_REPS:
         await message.answer(texts.BASELINE_INVALID)
         return
     reps = int(text)

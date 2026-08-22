@@ -52,10 +52,19 @@ def test_rejects_negative_number():
 
 
 def test_rejects_number_above_hard_cap():
-    # Жёсткий предел ввода (parsing.MAX_REPS=100) остаётся — это защита от
-    # опечаток, не то же самое, что мягкий порог аномалии (50).
-    result = parse_reps("15 15 15 999")
+    # Жёсткий предел ввода (parsing.MAX_REPS=999) остаётся — это защита от
+    # опечаток (лишний ноль и т.п.), не то же самое, что мягкий порог
+    # аномалии (50), который только переспрашивает, не блокирует.
+    result = parse_reps("15 15 15 1000")
     assert isinstance(result, ParseError)
+
+
+def test_accepts_three_digit_number():
+    # Баг: раньше MAX_REPS был 100, любое трёхзначное число (например 102)
+    # жёстко отклонялось — трёхзначные результаты вполне реальны (высокий
+    # объём, факультативы на объём и т.п.), это не опечатка.
+    result = parse_reps("15 15 15 102")
+    assert result == BlockLog(working_reps=(15, 15, 15), max_reps=102)
 
 
 def test_accepts_zero():
@@ -85,4 +94,8 @@ def test_int_sequence_rejects_non_numeric_token():
 
 
 def test_int_sequence_rejects_above_hard_cap():
-    assert isinstance(parse_int_sequence("5 4 999"), ParseError)
+    assert isinstance(parse_int_sequence("5 4 1000"), ParseError)
+
+
+def test_int_sequence_accepts_three_digit_number():
+    assert parse_int_sequence("102 50 30") == [102, 50, 30]
