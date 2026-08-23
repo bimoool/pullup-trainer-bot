@@ -15,6 +15,7 @@ from app.bot.formatting import (
     format_equipment_label,
     format_reps_example,
     format_set_close_report,
+    format_sets_word,
 )
 from app.bot.handlers.equipment import _apply_equipment_type_choice, _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
@@ -41,10 +42,13 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
+    DELOAD_REPS,
     MIN_REST_DAYS,
     SET_LENGTH,
     STRENGTH_BLOCK,
     VOLUME_BLOCK,
+    VOLUME_TARGET_CEILING,
+    VOLUME_WORK_SETS_CEILING,
     EquipmentType,
 )
 from app.domain.electives import ELECTIVE_WEEK_WINDOW_DAYS, is_elective_allowed
@@ -251,8 +255,14 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
 
     target_a_state, target_b_state = await workouts.resolve_next_targets(user.id, bypass_transition_wait=is_admin)
     target_a_override: int | None = None
+    # Ежемесячная разгрузочная тренировка блока на объём (ревизия формулы
+    # прогрессии, п.4) — раз в 30 дней структура блока A целиком заменяется
+    # на один подход без отягощения, независимо от того, на чём блок обычно
+    # сейчас стоит (даже если уже дошёл до веса). На основную прогрессию не
+    # влияет — cascade просто замораживает target/work_sets этой записи.
+    is_deload_a = await workouts.is_volume_deload_due(user.id, now=now)
 
-    if readiness is not None and readiness.status == TrainingReadiness.GAP_ROLLBACK:
+    if readiness is not None and readiness.status == TrainingReadiness.GAP_ROLLBACK and not is_deload_a:
         target_a_override = rollback_target(target_a_state.target)
         load_hint = await _rolled_back_load_hint(session, target_b_state)
         if load_hint is None:
@@ -272,14 +282,28 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         # "Замер минус 25%" (Часть 10, пакет #2, п.14) — только при первом
         # старте (target_a_override иначе не выставлен вовсе, target_a_state
         # уже даёт VOLUME_BLOCK.base_target флэтом из _resolve_next_state
-        # для пустой истории — здесь его переопределяем).
-        target_a_override = initial_volume_target(baseline_reps)
+        # для пустой истории — здесь его переопределяем). is_deload_a здесь
+        # всегда False (is_volume_deload_due считает от старта первого
+        # WorkoutSet, разница ещё нулевая), оставлено для симметрии.
+        if not is_deload_a:
+            target_a_override = initial_volume_target(baseline_reps)
 
-    target_a_for_display = target_a_override if target_a_override is not None else target_a_state.target
+    # Разгрузочная — снаряд блока A принудительно свой вес, без переспроса
+    # (equipment.py трактует needs_new_equipment=False как готовый факт).
+    target_a_state_for_setup = target_a_state
+    if is_deload_a:
+        target_a_state_for_setup = NextBlockState(
+            target=DELOAD_REPS, volume=0, equipment_type=EquipmentType.BODYWEIGHT,
+            equipment_value=None, equipment_item_id=None, needs_new_equipment=False, work_sets=1,
+        )
+
+    target_a_for_display = DELOAD_REPS if is_deload_a else (
+        target_a_override if target_a_override is not None else target_a_state.target
+    )
     await _begin_equipment_setup(
         callback.message, state, session,
         flow="live",
-        target_a_state=target_a_state, target_b_state=target_b_state,
+        target_a_state=target_a_state_for_setup, target_b_state=target_b_state,
         telegram_id=callback.from_user.id,
         baseline_reps=baseline_reps,
         extra_data={
@@ -287,6 +311,8 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
             "target_a": target_a_for_display, "target_b": target_b_state.target,
             "target_a_override": target_a_override, "target_b_override": None,
             "is_first_workout": not history,
+            "is_deload_a": is_deload_a,
+            "work_sets_a": 1 if is_deload_a else target_a_state.work_sets,
         },
     )
     await callback.answer()
@@ -355,6 +381,14 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
             # Ретест возможен только при непустой истории (см. readiness в
             # handle_start_workout), значит это никогда не первая тренировка.
             "is_first_workout": False,
+            # Ретест сбрасывает блок A целиком (новый замер, target_a
+            # override) — число рабочих подходов сбрасывается на стартовое
+            # вместе с целью, растёт заново с нуля. Разгрузочная тренировка
+            # здесь не проверяется намеренно: ретест — сам по себе редкий,
+            # уже структурно особый случай (перерыв ≥14 дней), совпадение
+            # с 30-дневным окном разгрузки не стоит усложнения.
+            "is_deload_a": False,
+            "work_sets_a": VOLUME_BLOCK.work_sets,
         },
     )
 
@@ -373,16 +407,29 @@ async def _send_plan(
     data = await state.get_data()
     equipment_result_a = data["equipment_results"]["a"]
     equipment_result_b = data["equipment_results"]["b"]
-    example_a = format_reps_example(target_a, VOLUME_BLOCK.work_sets)
+    equipment_type_a = EquipmentType(equipment_result_a["type"])
+
+    if data.get("is_deload_a", False):
+        # Разгрузочная (ревизия формулы прогрессии, п.4) — своя структура и
+        # текст, обычный WORKOUT_PLAN с примером формата ввода из N+1 чисел
+        # тут не подходит (один-единственный подход, см. VOLUME_DELOAD_PROMPT).
+        await message.answer(
+            texts.VOLUME_DELOAD_PROMPT,
+            reply_markup=block_prompt_keyboard(equipment_type_a, block_key="a", back_callback=None),
+        )
+        await state.set_state(WorkoutStates.waiting_for_block_a)
+        return
+
+    work_sets_a = data.get("work_sets_a", VOLUME_BLOCK.work_sets)
+    example_a = format_reps_example(target_a, work_sets_a)
     await message.answer(
         texts.WORKOUT_PLAN.format(
             target_a=target_a, target_b=target_b, example_a=example_a,
+            work_sets_a=work_sets_a, sets_word_a=format_sets_word(work_sets_a), max_set_a=work_sets_a + 1,
             equipment_a=format_equipment_from_result(equipment_result_a, instrumental=True),
             equipment_b=format_equipment_from_result(equipment_result_b, instrumental=True),
         ),
-        reply_markup=block_prompt_keyboard(
-            EquipmentType(equipment_result_a["type"]), block_key="a", back_callback=None,
-        ),
+        reply_markup=block_prompt_keyboard(equipment_type_a, block_key="a", back_callback=None),
     )
     await state.set_state(WorkoutStates.waiting_for_block_a)
 
@@ -401,11 +448,19 @@ async def handle_block_a_result(message: Message, state: FSMContext, session: As
         await message.answer(result.message)
         return
 
+    data = await state.get_data()
+    if data.get("is_deload_a", False):
+        # Разгрузочная — структура ввода намеренно другая (один подход),
+        # сверять с ожидаемым числом рабочих подходов/скачком нет смысла.
+        await _apply_block_a_result(message, state, result)
+        return
+
     users = UserRepository(session)
     user = await users.get_by_telegram_id(message.from_user.id)
     previous_avg = await WorkoutRepository(session).get_previous_avg_working(user.id, BlockType.A)
+    work_sets_a = data.get("work_sets_a", VOLUME_BLOCK.work_sets)
     anomaly_text = format_anomaly_message(
-        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=VOLUME_BLOCK.work_sets),
+        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=work_sets_a),
     )
     if anomaly_text is not None:
         await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
@@ -649,6 +704,7 @@ async def _finalize_workout(
         block_b_equipment_item_id=block_b_equipment_item_id,
         target_a_override=data.get("target_a_override"),
         target_b_override=data.get("target_b_override"),
+        is_deload_a=data.get("is_deload_a", False),
         comment=comment,
     )
 
@@ -696,12 +752,22 @@ async def _send_set_close_report(message: Message, session: AsyncSession, user_i
 
 
 def _block_outcome_suffix(block: Block) -> str:
+    if block.is_deload:
+        return texts.VOLUME_DELOAD_DONE_SUFFIX
     if block.transition_failed:
         if block.equipment_type == EquipmentType.BAND:
             return texts.TRANSITION_FAILED_BAND_SUFFIX
         return texts.TRANSITION_FAILED_SUFFIX
     if block.equipment_changed:
         return texts.EQUIPMENT_CHANGED_SUFFIX
-    if block.equipment_type == EquipmentType.BODYWEIGHT and block.target_after == VOLUME_BLOCK.bodyweight_ceiling:
-        return texts.CEILING_REACHED_SUFFIX
+    # Иерархия роста блока на объём (ревизия формулы прогрессии) — только
+    # для блока A, у силового блока этих полей нет (work_sets_before=None).
+    if block.block_type == BlockType.A and block.work_sets_before is not None:
+        reached_both_ceilings = (
+            block.target_after == VOLUME_TARGET_CEILING and block.work_sets_after == VOLUME_WORK_SETS_CEILING
+        )
+        if reached_both_ceilings and block.equipment_type != EquipmentType.WEIGHT:
+            return texts.VOLUME_WEIGHT_TRANSITION_SUFFIX
+        if block.work_sets_after is not None and block.work_sets_after > block.work_sets_before:
+            return texts.VOLUME_WORK_SET_ADDED_SUFFIX
     return ""

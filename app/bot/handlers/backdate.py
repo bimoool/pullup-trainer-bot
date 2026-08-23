@@ -12,6 +12,7 @@ from app.bot.formatting import (
     format_block_result,
     format_equipment_label,
     format_reps_example,
+    format_sets_word,
 )
 from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.handlers.workout import _ensure_active_workout_set
@@ -35,6 +36,11 @@ from app.services.workout_log import WorkoutLogService
 router = Router()
 
 
+def _format_block_a_prompt(target: int, work_sets: int) -> str:
+    example_a = format_reps_example(target, work_sets)
+    return texts.BLOCK_A_PROMPT.format(example=example_a, work_sets=work_sets, sets_word=format_sets_word(work_sets))
+
+
 @router.callback_query(F.data == "backdate_workout")
 async def handle_backdate_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     # Текущие цели считаются один раз здесь и кладутся в FSM — используются
@@ -45,7 +51,9 @@ async def handle_backdate_start(callback: CallbackQuery, state: FSMContext, sess
     target_a_state, target_b_state = await WorkoutRepository(session).resolve_next_targets(user.id)
 
     await state.set_state(BackdateStates.waiting_for_date)
-    await state.update_data(target_a=target_a_state.target, target_b=target_b_state.target)
+    await state.update_data(
+        target_a=target_a_state.target, target_b=target_b_state.target, work_sets_a=target_a_state.work_sets,
+    )
     await callback.message.answer(texts.BACKDATE_INTRO)
     await callback.message.answer(texts.BACKDATE_DATE_PROMPT, reply_markup=backdate_date_keyboard())
     await callback.answer()
@@ -70,9 +78,9 @@ async def _proceed_with_backdate_date(message: Message, state: FSMContext, parse
     data = await state.get_data()
     await state.update_data(backdate_performed_at=parsed_date.isoformat())
     await state.set_state(BackdateStates.waiting_for_block_a)
-    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
+    work_sets_a = data.get("work_sets_a", VOLUME_BLOCK.work_sets)
     await message.answer(
-        texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
+        _format_block_a_prompt(data["target_a"], work_sets_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
     )
 
 
@@ -130,7 +138,10 @@ async def handle_backdate_block_a(message: Message, state: FSMContext, session: 
     data = await state.get_data()
     previous_avg = await _previous_avg_for_backdate(session, message.from_user.id, BlockType.A, data)
     anomaly_text = format_anomaly_message(
-        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=VOLUME_BLOCK.work_sets),
+        detect_anomalies(
+            result, previous_avg_working=previous_avg,
+            expected_work_sets=data.get("work_sets_a", VOLUME_BLOCK.work_sets),
+        ),
     )
     if anomaly_text is not None:
         await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
@@ -174,9 +185,10 @@ async def _resend_backdate_block_a_prompt(callback: CallbackQuery, state: FSMCon
     data = await state.get_data()
     await state.set_state(BackdateStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
-    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
+    work_sets_a = data.get("work_sets_a", VOLUME_BLOCK.work_sets)
     await callback.message.answer(
-        texts.BLOCK_A_PROMPT.format(example=example_a), reply_markup=back_cancel_keyboard("backdate_back:date"),
+        _format_block_a_prompt(data["target_a"], work_sets_a),
+        reply_markup=back_cancel_keyboard("backdate_back:date"),
     )
     await callback.answer()
 

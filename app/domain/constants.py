@@ -47,31 +47,70 @@ def to_signed_load(equipment_type: EquipmentType, equipment_value: Decimal | Non
 class BlockConfig:
     """Параметры прогрессии одного блока. equipment здесь больше нет —
     снаряд не привязан к блоку жёстко, оба блока независимо двигаются по
-    одной шкале (см. EquipmentType)."""
+    одной шкале (см. EquipmentType).
+
+    max_step/coef убраны (пятая по счёту переработка формулы прогрессии) —
+    шаг роста теперь процентный, единый для обоих блоков, см. STEP_PCT и
+    app.domain.progression.recalculate_target. bodyweight_ceiling тоже убран:
+    старый "потолок 25 без дальнейшего роста" для объёмного блока заменён
+    новой системой (потолок 30 → доп. подходы до 8 → отягощение, см.
+    recalculate_volume_block) — держать оба потолка параллельно означало бы
+    конфликт условий."""
 
     base_target: int
     work_sets: int
-    max_step: int
-    coef: float
+    # ОБЪЁМНЫЙ блок: СТАРТОВОЕ число рабочих подходов — дальше растёт по
+    # правилу застоя/потолка (recalculate_volume_block), до
+    # VOLUME_WORK_SETS_CEILING. СИЛОВОЙ блок: фиксировано навсегда, как и
+    # было.
     equipment_change_threshold: int
     # Снаряд меняется, когда КАЖДЫЙ рабочий подход факт достиг этого порога —
-    # сравнение с сырыми повторениями, а не с расчётной новой целью (было
-    # раньше: "new_target >= change_at"; теперь механизм другой).
+    # сравнение с сырыми повторениями, а не с расчётной новой целью. Для
+    # объёмного блока это по-прежнему двигает BAND→BODYWEIGHT как раньше;
+    # переход BODYWEIGHT→WEIGHT для него теперь идёт только через новую
+    # систему (recalculate_volume_block подавляет здесь общий механизм на
+    # этом этапе), не через этот порог.
     min_viable_reps: int
     # Максимум ниже этого на новом снаряде — снаряд подобран неверно.
-    bodyweight_ceiling: int | None
-    # Только для объёмного блока (25) — цель не растёт выше на собственном
-    # весе, дальше некуда переходить. None — потолка нет (силовой блок).
 
 
-VOLUME_BLOCK = BlockConfig(
-    base_target=10, work_sets=3, max_step=3, coef=0.5,
-    equipment_change_threshold=20, min_viable_reps=10, bodyweight_ceiling=25,
-)
-STRENGTH_BLOCK = BlockConfig(
-    base_target=3, work_sets=4, max_step=2, coef=0.5,
-    equipment_change_threshold=7, min_viable_reps=3, bodyweight_ceiling=None,
-)
+VOLUME_BLOCK = BlockConfig(base_target=10, work_sets=3, equipment_change_threshold=20, min_viable_reps=10)
+STRENGTH_BLOCK = BlockConfig(base_target=3, work_sets=4, equipment_change_threshold=7, min_viable_reps=3)
+
+# Процентный шаг прогрессии (пятая переработка формулы) — 5% от текущей
+# цели за подход (не от того, насколько перевыполнен максимум — осознанное
+# решение: рост ограничен как доля ОТ ТЕКУЩЕЙ НАГРУЗКИ, а не от степени
+# перевыполнения, см. источники по прогрессивной перегрузке в промпте).
+# Тот же процент применяется к росту веса в объёмном блоке после перехода
+# на отягощение (VOLUME_WEIGHT_MIN_STEP_KG). Округление вверх, минимум +1
+# (иначе на малых числах рост останавливается).
+STEP_PCT: float = 0.05
+
+# --- Рост блока на объём сверх обычной формулы (потолок → подходы → вес) ----------
+# Конкретные числа — продуктовое решение, не научный факт (зафиксировано по
+# просьбе автора): потолок 30 повторений, до 8 рабочих подходов, дальше вес
+# с 5 кг. Опирается на реальный принцип прогрессивной перегрузки (рост не
+# более ~10%/неделю, гипертрофия/выносливость — объём вплоть до ~25
+# повторений в подходе), но точные пороги ниже — выбор продукта, не цитата
+# из источника.
+VOLUME_TARGET_CEILING: int = 30
+VOLUME_WORK_SETS_CEILING: int = 8
+VOLUME_STALL_THRESHOLD: int = 4
+# Столько подряд тренировок без роста цели (см.
+# count_consecutive_stalled_workouts) добавляют +1 рабочий подход, если
+# потолок подходов ещё не достигнут.
+VOLUME_BIG_OVERSHOOT_THRESHOLD: int = 50
+# Расчётная цель (до отката) ниже этого — откат до VOLUME_MODERATE_ROLLBACK_TARGET,
+# +1 подход. Равна или выше — откат до потолка (30), подходов добавляется
+# ceil(расчётная_цель / VOLUME_TARGET_CEILING) — распределяет объём на
+# разумное число подходов вместо одного огромного.
+VOLUME_MODERATE_ROLLBACK_TARGET: int = 20
+VOLUME_WEIGHT_START_KG = Decimal(5)
+VOLUME_WEIGHT_MIN_STEP_KG: float = 0.5
+
+# --- Ежемесячная разгрузочная тренировка блока на объём ---------------------------
+DELOAD_INTERVAL_DAYS: int = 30
+DELOAD_REPS: int = 50
 
 # Пороги стартового снаряда силового блока по замеру (Часть 10 — раньше
 # suggest_starting_equipment ошибочно применял пороги объёмного блока к

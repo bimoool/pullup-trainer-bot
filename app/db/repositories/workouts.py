@@ -8,13 +8,24 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models import Block, BlockType, Workout, WorkoutStatus
 from app.db.repositories.workout_sets import WorkoutSetRepository
-from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.constants import (
+    DELOAD_INTERVAL_DAYS,
+    STRENGTH_BLOCK,
+    VOLUME_BLOCK,
+    VOLUME_TARGET_CEILING,
+    VOLUME_WEIGHT_START_KG,
+    VOLUME_WORK_SETS_CEILING,
+    EquipmentType,
+)
 from app.domain.progression import (
     TransitionOutcome,
     check_transition_outcome,
+    count_consecutive_stalled_workouts,
     count_consecutive_weak_trainings,
+    grow_volume_weight_kg,
     recalculate_cascade,
     recalculate_target,
+    recalculate_volume_block,
 )
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
 
@@ -41,6 +52,35 @@ def _weak_streak(history: list[Workout], block_type: BlockType) -> int:
     count_consecutive_weak_trainings)."""
     volumes = [_block_to_log(_find_block(w, block_type)).volume for w in history]
     return count_consecutive_weak_trainings(volumes)
+
+
+def _work_sets_after(block: Block) -> int:
+    """work_sets_after — NULL для записей до ревизии формулы прогрессии
+    (число подходов тогда ещё не хранилось явно, было фиксированной
+    константой VOLUME_BLOCK.work_sets) — трактуем NULL как стартовое."""
+    return block.work_sets_after if block.work_sets_after is not None else VOLUME_BLOCK.work_sets
+
+
+def _stall_streak(history: list[Workout]) -> int:
+    """Застой блока на объём (иерархия роста, часть 2) — сколько подряд
+    тренировок в конце НЕ вырастили ни цель, ни число рабочих подходов.
+    Только для блока A; history должна быть уже отфильтрована от
+    разгрузочных записей вызывающим кодом (см. _exclude_deload_entries —
+    is_deload не участвует в пересчёте прогрессии)."""
+    grew_flags = []
+    for w in history:
+        block = _find_block(w, BlockType.A)
+        work_sets_before = block.work_sets_before if block.work_sets_before is not None else VOLUME_BLOCK.work_sets
+        grew_flags.append(block.target_after > block.target_before or _work_sets_after(block) > work_sets_before)
+    return count_consecutive_stalled_workouts(grew_flags)
+
+
+def _exclude_deload_entries(workouts: list[Workout]) -> list[Workout]:
+    """Разгрузочные тренировки блока на объём (часть 4 ревизии формулы) не
+    участвуют в пересчёте его прогрессии — фильтровать перед тем, как
+    считать состояние/стрики блока A (тот же приём, что и
+    _exclude_free_entries для свободных подтягиваний)."""
+    return [w for w in workouts if not _find_block(w, BlockType.A).is_deload]
 
 
 def _previous_avg_working(
@@ -91,6 +131,9 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             equipment_value=block_a.equipment_value,
             equipment_item_id=block_a.equipment_item_id,
             transition_failed=block_a.transition_failed,
+            work_sets_before=block_a.work_sets_before,
+            work_sets_after=block_a.work_sets_after,
+            is_deload=block_a.is_deload,
         ),
         block_b=BlockAssignment(
             log=_block_to_log(block_b),
@@ -120,15 +163,24 @@ class NextBlockState:
     # нет вовсе): снаряд для СЛЕДУЮЩЕЙ тренировки ещё не известен, вызывающий
     # код (хендлер) должен спросить пользователя, а не использовать
     # equipment_type/equipment_value отсюда как есть — это старый снаряд.
+    work_sets: int = VOLUME_BLOCK.work_sets
+    # Только для блока A (иерархия роста, часть 2) — растущее число рабочих
+    # подходов. Для блока B всегда STRENGTH_BLOCK.work_sets (фиксировано).
 
 
 def _apply_cascade_result(workout: Workout, record: WorkoutRecord) -> None:
     # equipment_type/equipment_value/transition_failed каскад не трогает —
     # это факт того, что реально использовалось, он не переигрывается.
+    # is_deload тоже не трогает — это тоже факт (была ли ЭТА тренировка
+    # разгрузочной), каскад его не переигрывает, только пересчитывает
+    # target/work_sets, которые для is_deload-записи и так остаются
+    # неизменными (см. recalculate_cascade).
     block_a, block_b = _find_block(workout, BlockType.A), _find_block(workout, BlockType.B)
     block_a.target_before = record.block_a.target_before
     block_a.target_after = record.block_a.target_after
     block_a.equipment_changed = record.block_a.equipment_changed
+    block_a.work_sets_before = record.block_a.work_sets_before
+    block_a.work_sets_after = record.block_a.work_sets_after
     block_b.target_before = record.block_b.target_before
     block_b.target_after = record.block_b.target_after
     block_b.equipment_changed = record.block_b.equipment_changed
@@ -215,6 +267,30 @@ class WorkoutRepository:
             ),
         )
 
+    async def is_volume_deload_due(self, user_id: int, *, now: datetime) -> bool:
+        """Пора ли следующая тренировка блока на объём быть ежемесячной
+        разгрузочной (часть 4 ревизии формулы) — публичный вход для
+        хендлера (workout.py), вызывается ДО показа плана, наравне с
+        resolve_next_targets.
+
+        Отсчёт DELOAD_INTERVAL_DAYS (30) — от даты последней разгрузочной
+        тренировки блока A; если разгрузки ещё не было ни разу — от старта
+        первого сета пользователя (естественнее, чем сразу в первый день:
+        разгружать нечего, если тренировок ещё не было). Без сетов вообще
+        (только что онбординг) — разгрузка неприменима."""
+        history = await self.list_for_user(user_id)
+        last_deload = next(
+            (w for w in reversed(history) if _find_block(w, BlockType.A).is_deload), None,
+        )
+        if last_deload is not None:
+            anchor = last_deload.performed_at
+        else:
+            workout_sets = await self._workout_sets.list_for_user(user_id)
+            if not workout_sets:
+                return False
+            anchor = workout_sets[0].started_at
+        return (now - anchor).days >= DELOAD_INTERVAL_DAYS
+
     async def get_previous_avg_working(
         self, user_id: int, block_type: BlockType, *, before: datetime | None = None,
     ) -> float | None:
@@ -285,6 +361,7 @@ class WorkoutRepository:
         block_b_equipment_item_id: int | None = None,
         target_a_override: int | None = None,
         target_b_override: int | None = None,
+        is_deload_a: bool = False,
         comment: str | None = None,
     ) -> Workout:
         """start_workout + complete_workout в одном вызове — основной путь
@@ -304,6 +381,7 @@ class WorkoutRepository:
             block_b_equipment_item_id=block_b_equipment_item_id,
             target_a_override=target_a_override,
             target_b_override=target_b_override,
+            is_deload_a=is_deload_a,
         )
 
     async def complete_workout(
@@ -320,6 +398,7 @@ class WorkoutRepository:
         block_b_equipment_item_id: int | None = None,
         target_a_override: int | None = None,
         target_b_override: int | None = None,
+        is_deload_a: bool = False,
         comment: str | None = None,
     ) -> Workout:
         """Прикрепляет результаты блоков к ранее начатой (start_workout)
@@ -340,39 +419,65 @@ class WorkoutRepository:
         скорректированную цель ДО того, как показал план пользователю, и эта
         же цель должна лечь в target_before, а не заново выведенная из
         истории — иначе показанный план разойдётся с тем, что реально
-        запишется."""
+        запишется. Число подходов override не поддерживает (gap-rollback
+        трогает только цель, не структуру блока — вне scope этой ревизии).
+
+        is_deload_a — ежемесячная разгрузочная тренировка блока на объём
+        (часть 4 ревизии формулы): target/work_sets блока A проходят БЕЗ
+        пересчёта (target_after=target_before, work_sets_after=work_sets_before),
+        проверка перехода снаряда для блока A тоже не выполняется — это не
+        решение о смене снаряда, а разовая тренировка без веса вне обычной
+        структуры. Блок B (силовой) разгрузку не знает вообще, считается
+        как обычно."""
         workout = await self.get_by_id(workout_id)
         if workout is None:
             raise ValueError(f"workout {workout_id} not found")
 
         history = _exclude_free_entries(await self.list_for_user(workout.user_id))
+        history_a = _exclude_deload_entries(history)
         preceding = history[-1] if history else None
+        preceding_a = history_a[-1] if history_a else None
 
         state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
         state_b = self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK)
         target_before_a = target_a_override if target_a_override is not None else state_a.target
         target_before_b = target_b_override if target_b_override is not None else state_b.target
+        work_sets_before_a = state_a.work_sets
 
-        result_a = recalculate_target(
-            VOLUME_BLOCK, target_before_a, block_a_reps.working_reps, block_a_reps.max_reps,
-            block_a_reps.volume, state_a.volume, block_a_equipment_type,
-            consecutive_weak_before=_weak_streak(history, BlockType.A),
-        )
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_before_b, block_b_reps.working_reps, block_b_reps.max_reps,
-            block_b_reps.volume, state_b.volume, block_b_equipment_type,
+            block_b_reps.volume, state_b.volume,
             consecutive_weak_before=_weak_streak(history, BlockType.B),
         )
-
-        transition_a = self._check_transition(preceding, BlockType.A, VOLUME_BLOCK, block_a_reps.max_reps)
         transition_b = self._check_transition(preceding, BlockType.B, STRENGTH_BLOCK, block_b_reps.max_reps)
-
-        target_after_a, equipment_changed_a, failed_a = self._apply_transition_outcome(
-            transition_a, result_a, preceding, BlockType.A,
-        )
         target_after_b, equipment_changed_b, failed_b = self._apply_transition_outcome(
             transition_b, result_b, preceding, BlockType.B,
         )
+
+        if is_deload_a:
+            target_after_a, work_sets_after_a, equipment_changed_a, failed_a = (
+                target_before_a, work_sets_before_a, False, False,
+            )
+        else:
+            result_a = recalculate_volume_block(
+                target_before_a, work_sets_before_a, block_a_reps.working_reps, block_a_reps.max_reps,
+                block_a_reps.volume, state_a.volume, block_a_equipment_type,
+                consecutive_weak_before=_weak_streak(history_a, BlockType.A),
+                consecutive_stall_before=_stall_streak(history_a),
+            )
+            transition_a = self._check_transition(preceding_a, BlockType.A, VOLUME_BLOCK, block_a_reps.max_reps)
+            if transition_a == TransitionOutcome.FAILED:
+                preceding_a_block = _find_block(preceding_a, BlockType.A)
+                target_after_a = preceding_a_block.target_before
+                work_sets_before_preceding = preceding_a_block.work_sets_before
+                work_sets_after_a = (
+                    work_sets_before_preceding if work_sets_before_preceding is not None else VOLUME_BLOCK.work_sets
+                )
+                equipment_changed_a, failed_a = False, True
+            else:
+                target_after_a = result_a.new_target
+                work_sets_after_a = result_a.new_work_sets
+                equipment_changed_a, failed_a = result_a.equipment_changed, False
 
         if comment is not None:
             workout.comment = comment
@@ -394,6 +499,9 @@ class WorkoutRepository:
                 equipment_value=block_a_equipment_value,
                 equipment_item_id=block_a_equipment_item_id,
                 transition_failed=failed_a,
+                work_sets_before=work_sets_before_a,
+                work_sets_after=work_sets_after_a,
+                is_deload=is_deload_a,
             ),
         )
         self._session.add(
@@ -447,17 +555,19 @@ class WorkoutRepository:
         участия в каскаде: между собой хронология всё равно соблюдается,
         просто не через sequence_number/цепочку живых тренировок."""
         history = await self.list_for_user(user_id)
+        history_a = _exclude_deload_entries(history)
         state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
         state_b = self._resolve_next_state(history, BlockType.B, STRENGTH_BLOCK)
 
-        result_a = recalculate_target(
-            VOLUME_BLOCK, state_a.target, block_a_reps.working_reps, block_a_reps.max_reps,
+        result_a = recalculate_volume_block(
+            state_a.target, state_a.work_sets, block_a_reps.working_reps, block_a_reps.max_reps,
             block_a_reps.volume, state_a.volume, block_a_equipment_type,
-            consecutive_weak_before=_weak_streak(history, BlockType.A),
+            consecutive_weak_before=_weak_streak(history_a, BlockType.A),
+            consecutive_stall_before=_stall_streak(history_a),
         )
         result_b = recalculate_target(
             STRENGTH_BLOCK, state_b.target, block_b_reps.working_reps, block_b_reps.max_reps,
-            block_b_reps.volume, state_b.volume, block_b_equipment_type,
+            block_b_reps.volume, state_b.volume,
             consecutive_weak_before=_weak_streak(history, BlockType.B),
         )
 
@@ -480,6 +590,7 @@ class WorkoutRepository:
                 equipment_changed=result_a.equipment_changed,
                 equipment_type=block_a_equipment_type, equipment_value=block_a_equipment_value,
                 equipment_item_id=block_a_equipment_item_id,
+                work_sets_before=state_a.work_sets, work_sets_after=result_a.new_work_sets,
             ),
         )
         self._session.add(
@@ -550,6 +661,7 @@ class WorkoutRepository:
                 target_before=state_a.target, target_after=state_a.target,
                 equipment_changed=False, equipment_type=equipment_type,
                 equipment_value=equipment_value, equipment_item_id=equipment_item_id,
+                work_sets_before=state_a.work_sets, work_sets_after=state_a.work_sets,
             ),
         )
         self._session.add(
@@ -591,28 +703,45 @@ class WorkoutRepository:
         new_block_a_reps = block_a_reps or _block_to_log(block_a)
         new_block_b_reps = block_b_reps or _block_to_log(block_b)
 
-        target_before_a, target_before_b, prev_volume_a, prev_volume_b = self._preceding_chain_state(chain, position)
+        target_before_a, target_before_b, prev_volume_a, prev_volume_b, work_sets_before_a = (
+            self._preceding_chain_state(chain, position)
+        )
         # Стрик "слабых" тренировок (Часть 10, пакет #2, п.13) до
         # редактируемой записи — из цепочки ДО её позиции, тем же приёмом,
-        # что и target_before/prev_volume выше.
-        weak_streak_before_a = _weak_streak(chain[:position], BlockType.A)
+        # что и target_before/prev_volume выше. Для застоя блока A цепочка
+        # дополнительно фильтруется от разгрузочных записей — они не в счёт.
+        weak_streak_before_a = _weak_streak(_exclude_deload_entries(chain[:position]), BlockType.A)
         weak_streak_before_b = _weak_streak(chain[:position], BlockType.B)
-        result_a = recalculate_target(
-            VOLUME_BLOCK, target_before_a, new_block_a_reps.working_reps, new_block_a_reps.max_reps,
-            new_block_a_reps.volume, prev_volume_a, block_a.equipment_type,
-            consecutive_weak_before=weak_streak_before_a,
-        )
+        stall_streak_before_a = _stall_streak(_exclude_deload_entries(chain[:position]))
+
+        if block_a.is_deload:
+            # Разгрузка не пересчитывается даже при редактировании — только
+            # правится фактический ввод (для статистики), состояние
+            # прогрессии остаётся замороженным, как и было.
+            target_after_a, work_sets_after_a, equipment_changed_a = target_before_a, work_sets_before_a, False
+        else:
+            result_a = recalculate_volume_block(
+                target_before_a, work_sets_before_a, new_block_a_reps.working_reps, new_block_a_reps.max_reps,
+                new_block_a_reps.volume, prev_volume_a, block_a.equipment_type,
+                consecutive_weak_before=weak_streak_before_a, consecutive_stall_before=stall_streak_before_a,
+            )
+            target_after_a, work_sets_after_a, equipment_changed_a = (
+                result_a.new_target, result_a.new_work_sets, result_a.equipment_changed
+            )
+
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_before_b, new_block_b_reps.working_reps, new_block_b_reps.max_reps,
-            new_block_b_reps.volume, prev_volume_b, block_b.equipment_type,
+            new_block_b_reps.volume, prev_volume_b,
             consecutive_weak_before=weak_streak_before_b,
         )
 
         block_a.working_reps = list(new_block_a_reps.working_reps)
         block_a.max_reps = new_block_a_reps.max_reps
         block_a.target_before = target_before_a
-        block_a.target_after = result_a.new_target
-        block_a.equipment_changed = result_a.equipment_changed
+        block_a.target_after = target_after_a
+        block_a.equipment_changed = equipment_changed_a
+        block_a.work_sets_before = work_sets_before_a
+        block_a.work_sets_after = work_sets_after_a
 
         block_b.working_reps = list(new_block_b_reps.working_reps)
         block_b.max_reps = new_block_b_reps.max_reps
@@ -628,14 +757,23 @@ class WorkoutRepository:
         if following:
             records = [_workout_to_record(w) for w in following]
             # Стрик, который переходит В цепочку после отредактированной
-            # записи, учитывает и её саму — была ли она слабой по НОВЫМ
-            # (только что введённым) данным.
-            weak_streak_a = weak_streak_before_a + 1 if new_block_a_reps.volume < prev_volume_a else 0
+            # записи, учитывает и её саму — была ли она слабой/застойной по
+            # НОВЫМ (только что введённым) данным. Разгрузка сама по себе
+            # никогда не бывает "слабой"/"застойной" — is_deload здесь
+            # исключён логикой transition_a выше (та ветка не трогает
+            # weak/stall streak вообще, они остаются от before-состояния).
+            if block_a.is_deload:
+                weak_streak_a, stall_streak_a = weak_streak_before_a, stall_streak_before_a
+            else:
+                weak_streak_a = weak_streak_before_a + 1 if new_block_a_reps.volume < prev_volume_a else 0
+                grew_a = target_after_a > target_before_a or work_sets_after_a > work_sets_before_a
+                stall_streak_a = 0 if grew_a else stall_streak_before_a + 1
             weak_streak_b = weak_streak_before_b + 1 if new_block_b_reps.volume < prev_volume_b else 0
             cascaded = recalculate_cascade(
-                result_a.new_target, result_b.new_target,
+                target_after_a, result_b.new_target,
                 new_block_a_reps.volume, new_block_b_reps.volume, records,
                 starting_weak_streak_a=weak_streak_a, starting_weak_streak_b=weak_streak_b,
+                starting_work_sets_a=work_sets_after_a, starting_stall_streak_a=stall_streak_a,
             )
             for db_workout, new_record in zip(following, cascaded, strict=True):
                 _apply_cascade_result(db_workout, new_record)
@@ -702,12 +840,28 @@ class WorkoutRepository:
         счётчик тренировок — TRANSITION_RETRY_WORKOUTS/is_retry_allowed в
         домене на практике нигде не вызываются, эта ветка — фактическая
         точка, где перепопытка перехода сейчас притормаживается) для админа
-        пропускается."""
+        пропускается.
+
+        Для блока A (иерархия роста, часть 2-3) history сначала фильтруется
+        от разгрузочных тренировок (is_deload) — они не должны становиться
+        "последним известным состоянием" ни по цели, ни по подходам, ни по
+        снаряду. Отдельно: если последняя (нерazгрузочная) запись блока A
+        уже достигла потолка и по цели, и по подходам (VOLUME_TARGET_CEILING/
+        VOLUME_WORK_SETS_CEILING) — либо это первый раз (снаряд ещё не
+        WEIGHT) и предлагается автоматический переход на отягощение с
+        VOLUME_WEIGHT_START_KG, либо снаряд уже WEIGHT и предлагается
+        следующий вес по формуле роста (grow_volume_weight_kg) — в обоих
+        случаях needs_new_equipment=False: это не "спросить снаряд у
+        пользователя", а прямое решение приложения, аналогично тому, как
+        цель/объём для обычного роста не спрашиваются, а вычисляются."""
+        if block_type == BlockType.A:
+            history = _exclude_deload_entries(history)
+
         if not history:
             return NextBlockState(
                 target=block_config.base_target, volume=0,
                 equipment_type=EquipmentType.BAND, equipment_value=None, equipment_item_id=None,
-                needs_new_equipment=True,
+                needs_new_equipment=True, work_sets=block_config.work_sets,
             )
 
         last_block = _find_block(history[-1], block_type)
@@ -720,13 +874,30 @@ class WorkoutRepository:
                 equipment_source = _find_block(history[-2], block_type)
                 needs_new_equipment = False
 
+        work_sets = block_config.work_sets
+        equipment_type = equipment_source.equipment_type
+        equipment_value = equipment_source.equipment_value
+
+        if block_type == BlockType.A:
+            work_sets = _work_sets_after(last_block)
+            at_ceiling = last_block.target_after >= VOLUME_TARGET_CEILING and work_sets >= VOLUME_WORK_SETS_CEILING
+            if at_ceiling:
+                needs_new_equipment = False
+                if last_block.equipment_type == EquipmentType.WEIGHT:
+                    equipment_type = EquipmentType.WEIGHT
+                    equipment_value = grow_volume_weight_kg(last_block.equipment_value or VOLUME_WEIGHT_START_KG)
+                else:
+                    equipment_type = EquipmentType.WEIGHT
+                    equipment_value = VOLUME_WEIGHT_START_KG
+
         return NextBlockState(
             target=last_block.target_after,
             volume=_block_to_log(last_block).volume,
-            equipment_type=equipment_source.equipment_type,
-            equipment_value=equipment_source.equipment_value,
+            equipment_type=equipment_type,
+            equipment_value=equipment_value,
             equipment_item_id=equipment_source.equipment_item_id,
             needs_new_equipment=needs_new_equipment,
+            work_sets=work_sets,
         )
 
     @staticmethod
@@ -755,10 +926,15 @@ class WorkoutRepository:
         return preceding_block.target_before, False, True
 
     @staticmethod
-    def _preceding_chain_state(chain: list[Workout], position: int) -> tuple[int, int, int, int]:
-        """Только для edit_workout — цепочка каскада, а не полная история."""
+    def _preceding_chain_state(chain: list[Workout], position: int) -> tuple[int, int, int, int, int]:
+        """Только для edit_workout — цепочка каскада, а не полная история.
+        work_sets_before_a (иерархия роста, часть 2) читается из
+        work_sets_after предыдущей записи цепочки — если та сама была
+        разгрузочной (is_deload), её work_sets_after по построению равен
+        work_sets_before (разгрузка не двигает состояние), так что читать
+        напрямую безопасно без отдельного случая."""
         if position == 0:
-            return VOLUME_BLOCK.base_target, STRENGTH_BLOCK.base_target, 0, 0
+            return VOLUME_BLOCK.base_target, STRENGTH_BLOCK.base_target, 0, 0, VOLUME_BLOCK.work_sets
         preceding = chain[position - 1]
         block_a, block_b = _find_block(preceding, BlockType.A), _find_block(preceding, BlockType.B)
         return (
@@ -766,4 +942,5 @@ class WorkoutRepository:
             block_b.target_after,
             _block_to_log(block_a).volume,
             _block_to_log(block_b).volume,
+            _work_sets_after(block_a),
         )

@@ -91,6 +91,18 @@ def format_reps_example(target: int, work_sets: int) -> str:
     return " ".join(str(target) for _ in range(work_sets + 1))
 
 
+def format_sets_word(work_sets: int) -> str:
+    """Склонение "подход" под число рабочих подходов — блок на объём
+    (ревизия формулы прогрессии) растёт от VOLUME_BLOCK.work_sets до
+    VOLUME_WORK_SETS_CEILING, фиксированное "3 подхода" в текстах больше
+    не годится везде, где раньше был этот блок."""
+    if work_sets % 10 == 1 and work_sets % 100 != 11:
+        return "подход"
+    if 2 <= work_sets % 10 <= 4 and not (12 <= work_sets % 100 <= 14):
+        return "подхода"
+    return "подходов"
+
+
 def format_block_result(working_reps: Sequence[int], max_reps: int) -> str:
     """"18, 18, 18, максимум 21" — рабочие подходы (сколько бы их ни было,
     Часть 10, пакет #4) плюс подход на максимум, для отображения того, что

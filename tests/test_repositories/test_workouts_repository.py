@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -8,7 +8,15 @@ from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType, ExerciseType
+from app.domain.constants import (
+    STRENGTH_BLOCK,
+    VOLUME_BLOCK,
+    VOLUME_MODERATE_ROLLBACK_TARGET,
+    VOLUME_TARGET_CEILING,
+    VOLUME_WORK_SETS_CEILING,
+    EquipmentType,
+    ExerciseType,
+)
 from app.domain.session import BlockLog
 
 BAND_VALUE = Decimal("30.0")
@@ -131,28 +139,72 @@ async def test_equipment_change_threshold_and_failed_transition_reverts_to_prior
     assert third_block_a.target_before == second_block_a.target_after
 
 
-async def test_bodyweight_ceiling_caps_volume_target_and_does_not_switch_equipment(session, user: User):
-    # Часть 10, пакет #2: под новой формулой роста target больше не растёт
-    # кумулятивно на max_step каждый раз при одинаковых working_reps (шаг
-    # считается от avg_working, а не накапливается поверх предыдущего
-    # target) — фиксированные working_reps=15 сходятся к 15+max_step=18 и
-    # там и остаются, к потолку не подбираются. Чтобы реально дотянуться до
-    # потолка, working_reps сами должны быть достаточно высоки — единственный
-    # вызов с working_reps=26 уже за потолком (25) демонстрирует cap.
+async def test_volume_block_ceiling_rolls_back_and_adds_set_instead_of_switching_equipment(session, user: User):
+    # Ревизия формулы прогрессии (иерархия роста блока на объём, часть 2) —
+    # заменяет старый bodyweight_ceiling=25 (плоский потолок без выхода).
+    # target_before=10 (первая тренировка), avg=29, step=max(1,ceil(10*0.05)=1)=1
+    # -> computed=30 (достиг нового потолка 30, < 50) -> откат до 20, +1 подход.
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     workout = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(26, 26, 26), max_reps=27),
+        block_a_reps=BlockLog(working_reps=(29, 29, 29), max_reps=35),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
         block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
 
     block_a = _block(workout, "a")
-    assert block_a.target_after == VOLUME_BLOCK.bodyweight_ceiling
+    assert block_a.target_after == VOLUME_MODERATE_ROLLBACK_TARGET
+    assert block_a.work_sets_before == VOLUME_BLOCK.work_sets
+    assert block_a.work_sets_after == VOLUME_BLOCK.work_sets + 1
     assert block_a.equipment_changed is False
+    assert block_a.equipment_type == EquipmentType.BODYWEIGHT  # ещё не 8 подходов — рано на отягощение
+
+
+async def test_volume_block_reaching_both_ceilings_transitions_to_weight_next_time(session, user: User):
+    # Огромное перевыполнение сразу доводит подходы до потолка (8) в ОДНОЙ
+    # тренировке — переход на отягощение НЕ в этой же тренировке (равно
+    # доке в recalculate_volume_block), а со следующей — через
+    # resolve_next_targets.
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    huge = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(200, 200, 200), max_reps=210),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    huge_block_a = _block(huge, "a")
+    assert huge_block_a.target_after == VOLUME_TARGET_CEILING
+    assert huge_block_a.work_sets_after == VOLUME_WORK_SETS_CEILING
+    assert huge_block_a.equipment_type == EquipmentType.BODYWEIGHT  # ещё не переключено само по себе
+
+    state_a, _ = await repo.resolve_next_targets(user.id)
+    assert state_a.target == VOLUME_TARGET_CEILING
+    assert state_a.work_sets == VOLUME_WORK_SETS_CEILING
+    assert state_a.equipment_type == EquipmentType.WEIGHT
+    assert state_a.equipment_value == Decimal(5)
+    assert state_a.needs_new_equipment is False  # решение приложения, не вопрос пользователю
+
+    on_weight = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(4),
+        block_a_reps=BlockLog(working_reps=(30,) * 8, max_reps=32),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.WEIGHT, block_a_equipment_value=Decimal(5),
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    on_weight_block_a = _block(on_weight, "a")
+    # Цель/подходы заморожены навсегда на потолке — результат не важен
+    assert on_weight_block_a.target_after == VOLUME_TARGET_CEILING
+    assert on_weight_block_a.work_sets_after == VOLUME_WORK_SETS_CEILING
+
+    state_a_after_weight, _ = await repo.resolve_next_targets(user.id)
+    assert state_a_after_weight.equipment_type == EquipmentType.WEIGHT
+    assert state_a_after_weight.equipment_value == Decimal("6.25")  # 5кг выросло на шаг
 
 
 async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivation(session, user: User):
@@ -204,8 +256,9 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
         block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=14),
     )
     edited_first_block_a = _block(edited_first, "a")
-    # avg=11, growth=14-11=3, step=min(3,ceil(1.5))=2 -> 13
-    assert edited_first_block_a.target_after == 13
+    # target_before=10 (первая тренировка в цепочке), step=max(1,ceil(10*0.05)=1)=1
+    # -> avg=11, round(11)+1=12
+    assert edited_first_block_a.target_after == 12
 
     updated_backdated = await repo.get_by_id(backdated.id)
     updated_backdated_block_a = _block(updated_backdated, "a")
@@ -216,9 +269,9 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
 
     updated_third = await repo.get_by_id(third.id)
     updated_third_block_a = _block(updated_third, "a")
-    # каскад пересчитал третью от НОВОГО target_after первой (13), полностью
+    # каскад пересчитал третью от НОВОГО target_after первой (12), полностью
     # игнорируя внесённую задним числом — она не часть цепочки каскада
-    assert updated_third_block_a.target_before == 13
+    assert updated_third_block_a.target_before == 12
     assert updated_third_block_a.target_before != updated_backdated_block_a.target_after
 
 
@@ -827,3 +880,95 @@ async def test_list_since_respects_limit_for_pagination(session, user: User):
 
     page = await repo.list_since(0, limit=2)
     assert len(page) == 2
+
+
+# --- Ежемесячная разгрузочная тренировка блока на объём (ревизия формулы прогрессии, п.4) ---------
+
+
+async def test_is_volume_deload_due_false_without_any_workout_sets(session, user: User):
+    repo = WorkoutRepository(session)
+    assert await repo.is_volume_deload_due(user.id, now=_day(1)) is False
+
+
+async def test_is_volume_deload_due_anchors_on_first_set_start_when_no_deload_yet(session, user: User):
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=_day(1), reps=8)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    workout_set.started_at = _day(1)
+    await session.flush()
+
+    repo = WorkoutRepository(session)
+    assert await repo.is_volume_deload_due(user.id, now=_day(1) + timedelta(days=29)) is False
+    assert await repo.is_volume_deload_due(user.id, now=_day(1) + timedelta(days=30)) is True
+
+
+async def test_is_volume_deload_due_anchors_on_last_deload_workout_not_set_start(session, user: User):
+    """После первой разгрузки отсчёт 30 дней начинается заново от НЕЁ, а
+    не от старта первого сета — иначе разгрузка предлагалась бы на каждой
+    следующей тренировке подряд."""
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=_day(1), reps=8)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    workout_set.started_at = _day(1)
+    await session.flush()
+
+    repo = WorkoutRepository(session)
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    deload_at = _day(1) + timedelta(days=31)
+    assert await repo.is_volume_deload_due(user.id, now=deload_at) is True
+
+    await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=deload_at,
+        block_a_reps=BlockLog(working_reps=(), max_reps=50),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+        is_deload_a=True,
+    )
+
+    assert await repo.is_volume_deload_due(user.id, now=deload_at + timedelta(days=29)) is False
+    assert await repo.is_volume_deload_due(user.id, now=deload_at + timedelta(days=30)) is True
+
+
+async def test_deload_workout_freezes_target_and_work_sets_without_affecting_cascade(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+    first = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    first_block_a = _block(first, "a")
+
+    deload = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(), max_reps=50),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+        is_deload_a=True,
+    )
+    deload_block_a = _block(deload, "a")
+
+    assert deload_block_a.is_deload is True
+    assert deload_block_a.target_after == deload_block_a.target_before == first_block_a.target_after
+    assert deload_block_a.work_sets_after == deload_block_a.work_sets_before == first_block_a.work_sets_after
+    assert deload_block_a.equipment_changed is False
+
+    third = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(3),
+        block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+    third_block_a = _block(third, "a")
+    # Каскад "видит" разгрузку насквозь — третья тренировка считает рост от
+    # ПЕРВОЙ (нерazгрузочной) записи, как будто разгрузки не было вовсе.
+    assert third_block_a.target_before == first_block_a.target_after

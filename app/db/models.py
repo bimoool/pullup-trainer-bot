@@ -270,6 +270,19 @@ class Block(Base):
     # min_viable_reps) — хранится явно, не восстанавливается сравнением
     # соседних тренировок (хрупко при правках истории).
     transition_failed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Иерархия роста блока на объём (ревизия формулы прогрессии) — число
+    # рабочих подходов ДО/ПОСЛЕ этой тренировки растёт по правилу застоя/
+    # потолка (см. app.domain.progression.recalculate_volume_block), в
+    # отличие от силового блока больше не фиксировано константой. NULL для
+    # блока B (там подходы всегда STRENGTH_BLOCK.work_sets, отдельно не
+    # хранится) и для исторических записей до этой ревизии.
+    work_sets_before: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    work_sets_after: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Ежемесячная разгрузочная тренировка блока на объём — не участвует в
+    # пересчёте прогрессии (target/work_sets/вес проходят без изменений),
+    # только в статистике/объёме, как факультативы и свободные подтягивания.
+    # Только для блока A, у блока B всегда False.
+    is_deload: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     workout: Mapped["Workout"] = relationship(back_populates="blocks")

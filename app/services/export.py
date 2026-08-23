@@ -7,7 +7,12 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from app.bot.formatting import format_kg
 from app.db.models import Baseline
-from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType, ExerciseType
+from app.domain.constants import (
+    STRENGTH_BLOCK,
+    VOLUME_WORK_SETS_CEILING,
+    EquipmentType,
+    ExerciseType,
+)
 from app.domain.session import BlockAssignment, WorkoutRecord
 
 _EQUIPMENT_LABELS = {
@@ -25,9 +30,14 @@ _EXERCISE_LABELS = {
 
 # Часть 10: вместо одного столбца "макс" — отдельный столбец на каждый
 # рабочий подход + отдельно максимум, так видно всю тренировку по числам,
-# не только финальный результат. Число столбцов берётся из домена
-# (VOLUME_BLOCK.work_sets/STRENGTH_BLOCK.work_sets), не захардкожено.
-_VOLUME_SET_HEADERS = [f"Объём: подход {i + 1}" for i in range(VOLUME_BLOCK.work_sets)]
+# не только финальный результат. Число столбцов для блока на силу берётся
+# из домена (фиксировано), для блока на объём — фиксированная ширина по
+# ПОТОЛКУ (VOLUME_WORK_SETS_CEILING), не по стартовому VOLUME_BLOCK.
+# work_sets (ревизия формулы прогрессии): число рабочих подходов там теперь
+# растёт от тренировки к тренировке, а у таблицы (в отличие от JSON) должна
+# быть заранее фиксированная ширина — берём максимум, у кого не дорос,
+# лишние столбцы просто пустые (см. _padded_working_reps).
+_VOLUME_SET_HEADERS = [f"Объём: подход {i + 1}" for i in range(VOLUME_WORK_SETS_CEILING)]
 _STRENGTH_SET_HEADERS = [f"Сила: подход {i + 1}" for i in range(STRENGTH_BLOCK.work_sets)]
 
 _HISTORY_HEADER = [
@@ -95,7 +105,7 @@ def _write_history_sheet(ws: Worksheet, records: list[WorkoutRecord], set_number
         exercise_label = _EXERCISE_LABELS.get(record.exercise_type, record.exercise_type) if record.exercise_type else ""
         ws.append([
             record.performed_at.strftime("%d.%m.%Y"), cycle, exercise_label,
-            _equipment_label(record.block_a), *_padded_working_reps(record.block_a, VOLUME_BLOCK.work_sets),
+            _equipment_label(record.block_a), *_padded_working_reps(record.block_a, VOLUME_WORK_SETS_CEILING),
             record.block_a.log.max_reps, record.block_a.target_after,
             _equipment_label(record.block_b), *_padded_working_reps(record.block_b, STRENGTH_BLOCK.work_sets),
             record.block_b.log.max_reps, record.block_b.target_after,
@@ -137,8 +147,8 @@ def _write_offline_template_sheet(ws: Worksheet) -> None:
     по подходам — та же, что в "Истории"."""
     ws.append(_OFFLINE_HEADER)
 
-    volume_set_cols = range(2, 2 + VOLUME_BLOCK.work_sets)  # после "Дата"
-    volume_max_col = 2 + VOLUME_BLOCK.work_sets
+    volume_set_cols = range(2, 2 + VOLUME_WORK_SETS_CEILING)  # после "Дата"
+    volume_max_col = 2 + VOLUME_WORK_SETS_CEILING
     volume_sum_col = volume_max_col + 1
     strength_set_cols = range(volume_sum_col + 1, volume_sum_col + 1 + STRENGTH_BLOCK.work_sets)
     strength_max_col = volume_sum_col + 1 + STRENGTH_BLOCK.work_sets

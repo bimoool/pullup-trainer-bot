@@ -13,6 +13,7 @@ from app.bot.formatting import (
     format_equipment_from_result,
     format_equipment_label,
     format_reps_example,
+    format_sets_word,
 )
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
@@ -43,6 +44,11 @@ def _is_editable(workout) -> bool:
     # Внесённые задним числом не входят в цепочку каскада — редактировать
     # их через этот сценарий нельзя (см. WorkoutRepository.edit_workout).
     return workout.sequence_number is not None and workout.participates_in_cascade
+
+
+def _format_block_a_prompt(target: int, work_sets: int) -> str:
+    example_a = format_reps_example(target, work_sets)
+    return texts.BLOCK_A_PROMPT.format(example=example_a, work_sets=work_sets, sets_word=format_sets_word(work_sets))
 
 
 def _block_equipment_result(block) -> dict[str, str | None]:
@@ -135,9 +141,14 @@ async def _start_editing(message: Message, state: FSMContext, session: AsyncSess
     workout = await WorkoutRepository(session).get_by_id(workout_id)
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+    # work_sets_before — NULL для исторических записей до ревизии формулы
+    # прогрессии (см. миграцию e2c7a4f19d3b) — тогда число рабочих подходов
+    # ещё было фиксированным VOLUME_BLOCK.work_sets.
+    work_sets_a = block_a.work_sets_before if block_a.work_sets_before is not None else VOLUME_BLOCK.work_sets
 
     await state.update_data(
         edit_workout_id=workout_id, target_a=block_a.target_before, target_b=block_b.target_before,
+        work_sets_a=work_sets_a,
         # Для проверки "резкого скачка" (пакет #4) сравнивать нужно с тем,
         # что было ДО этой записи, а не с глобально последней тренировкой —
         # редактируется может быть старая запись, после которой уже
@@ -147,8 +158,7 @@ async def _start_editing(message: Message, state: FSMContext, session: AsyncSess
         edit_block_b_equipment=_block_equipment_result(block_b),
     )
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
-    example_a = format_reps_example(block_a.target_before, VOLUME_BLOCK.work_sets)
-    prompt = texts.BLOCK_A_PROMPT.format(example=example_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
+    prompt = _format_block_a_prompt(block_a.target_before, work_sets_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
         equipment=format_equipment_from_result(_block_equipment_result(block_a), instrumental=True),
     )
     await message.answer(prompt, reply_markup=cancel_keyboard())
@@ -199,7 +209,10 @@ async def handle_edit_block_a(message: Message, state: FSMContext, session: Asyn
     data = await state.get_data()
     previous_avg = await _previous_avg_for_edit(session, user.id, BlockType.A, data)
     anomaly_text = format_anomaly_message(
-        detect_anomalies(result, previous_avg_working=previous_avg, expected_work_sets=VOLUME_BLOCK.work_sets),
+        detect_anomalies(
+            result, previous_avg_working=previous_avg,
+            expected_work_sets=data.get("work_sets_a", VOLUME_BLOCK.work_sets),
+        ),
     )
     if anomaly_text is not None:
         await state.update_data(anomaly_working_reps=list(result.working_reps), anomaly_max_reps=result.max_reps)
@@ -244,8 +257,8 @@ async def _resend_edit_block_a_prompt(callback: CallbackQuery, state: FSMContext
     data = await state.get_data()
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     await callback.message.edit_reply_markup(reply_markup=None)
-    example_a = format_reps_example(data["target_a"], VOLUME_BLOCK.work_sets)
-    prompt = texts.BLOCK_A_PROMPT.format(example=example_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
+    work_sets_a = data.get("work_sets_a", VOLUME_BLOCK.work_sets)
+    prompt = _format_block_a_prompt(data["target_a"], work_sets_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
         equipment=format_equipment_from_result(data["edit_block_a_equipment"], instrumental=True),
     )
     await callback.message.answer(prompt, reply_markup=cancel_keyboard())

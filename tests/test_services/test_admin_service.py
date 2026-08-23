@@ -91,4 +91,4 @@ async def test_build_user_card_reports_counts_and_targets(session, user: User):
     assert card.user.id == user.id
     assert card.baseline_count == 1
     assert card.workout_count == 1
-    assert card.target_a.target == 11  # delta=1, step=1 -> 10+1
+    assert card.target_a.target == 12  # avg=11, step=max(1,ceil(10*0.05)=1)=1 -> 12

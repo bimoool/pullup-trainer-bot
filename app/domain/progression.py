@@ -7,11 +7,18 @@ from statistics import mean
 from app.domain.constants import (
     ROLLBACK_REPS,
     ROLLBACK_WEIGHT_PCT,
+    STEP_PCT,
     STRENGTH_BLOCK,
     STRENGTH_START_BODYWEIGHT_MIN_REPS,
     STRENGTH_START_WEIGHT_MIN_REPS,
     TRANSITION_RETRY_WORKOUTS,
+    VOLUME_BIG_OVERSHOOT_THRESHOLD,
     VOLUME_BLOCK,
+    VOLUME_MODERATE_ROLLBACK_TARGET,
+    VOLUME_STALL_THRESHOLD,
+    VOLUME_TARGET_CEILING,
+    VOLUME_WEIGHT_MIN_STEP_KG,
+    VOLUME_WORK_SETS_CEILING,
     WEAK_STREAK_ROLLBACK_THRESHOLD,
     WEIGHT_ROUND_TO_KG,
     BlockConfig,
@@ -28,13 +35,10 @@ class ProgressionResult:
     equipment_changed=True означает, что new_target уже сброшен на
     block.base_target — снаряд меняется на следующий по шкале. Какой именно
     (толщина резины/конкретный вес) — вне домена, пользователь вводит сам.
-    ceiling_reached=True — только для объёмного блока на собственном весе:
-    цель дошла до bodyweight_ceiling и дальше не растёт (переходить некуда).
     """
 
     new_target: int
     equipment_changed: bool
-    ceiling_reached: bool = False
 
 
 def recalculate_target(
@@ -44,79 +48,80 @@ def recalculate_target(
     max_reps: int,
     volume: int,
     prev_volume: int,
-    equipment_type: EquipmentType,
     consecutive_weak_before: int = 0,
 ) -> ProgressionResult:
-    """Единая формула пересчёта цели для объёмного и силового блока
-    (Часть 10, пакет #2, п.12-13 — третья по счёту правка этой функции,
-    ПОЛНОСТЬЮ заменяет предыдущую версию "объём везде, без отката", не
-    дополняет её).
+    """Единая формула пересчёта цели для объёмного и силового блока (пятая
+    по счёту правка этой функции). Раньше принимала equipment_type — убран:
+    это был единственный потребитель (старый bodyweight_ceiling=25 для
+    объёмного блока), потолок заменён новой системой в
+    recalculate_volume_block, которая оборачивает эту функцию, а не меняет
+    её контракт.
 
     Вход в ветку успеха/провала решает delta = max_reps - target, как и
-    раньше. Внутри ветки успеха величина шага роста считается не от
-    target, а от среднего рабочих подходов (avg_working) — это позволяет
-    цели расти сразу к тому уровню, который человек реально показал,
-    вместо капа шагом от уже устаревшей цели:
+    раньше. Внутри ветки успеха шаг роста теперь ПРОЦЕНТНЫЙ — 5% от
+    текущей цели (STEP_PCT), не от степени перевыполнения максимума:
 
         avg_working = mean(working_reps)
-        growth = max_reps - avg_working
-        step = max(0, min(block.max_step, ceil(growth * block.coef)))
+        step = max(1, ceil(target * STEP_PCT))
         new_target = round(avg_working) + step
+
+    Осознанное следствие (не баг): шаг больше НЕ зависит от того, насколько
+    сильно max_reps превысил цель — только от текущей нагрузки. Раньше был
+    min(MAX_STEP, ceil(growth * coef)), где growth = max_reps - avg_working;
+    это заменено целиком, а не дополнено.
 
     round() — обычное (Python round-half-to-even), для согласованности с
     остальной кодовой базой; не критично, по просьбе зафиксировано явно.
-    max(0, ...) вокруг step — защита от вырожденного случая, которого нет
-    в исходной формуле: working_reps не обязаны быть <= max_reps (парсер
-    ввода это не проверяет), и если avg_working сильно выше max_reps при
-    этом max_reps всё равно > target (входим в ветку успеха), growth
-    уходит в минус и без ограничения new_target мог бы провалиться ниже
-    avg_working или даже уйти в отрицательные числа — на практике это
-    ошибочный ввод, а не жать, но домен не должен реагировать на него
-    абсурдным откатом.
+    max(1, ...) вокруг step (не max(0, ...), как было раньше) — шаг теперь
+    ВСЕГДА положителен вне зависимости от вырожденного ввода (working_reps
+    не обязаны быть <= max_reps, парсер этого не проверяет), поэтому
+    new_target гарантированно строго больше round(avg_working), даже при
+    испорченных данных — защита от абсурдного отката получается сама
+    собой, отдельный max(0, ...) для неё больше не нужен.
 
-    Ветка провала (delta <= 0) теперь с отсрочкой отката (п.13): "слабая"
-    тренировка — объём меньше предыдущего; цель откатывается на -1 только
-    после WEAK_STREAK_ROLLBACK_THRESHOLD (3) подряд слабых, не после
-    первой. consecutive_weak_before — сколько таких подряд БЫЛО до этой
-    тренировки, считает вызывающий код из истории (см.
-    count_consecutive_weak_trainings) — домен сам историю не хранит.
+    Ветка провала (delta <= 0) — с отсрочкой отката: "слабая" тренировка —
+    объём меньше предыдущего; цель откатывается на -1 только после
+    WEAK_STREAK_ROLLBACK_THRESHOLD (3) подряд слабых, не после первой.
+    consecutive_weak_before — сколько таких подряд БЫЛО до этой тренировки,
+    считает вызывающий код из истории (см. count_consecutive_weak_trainings)
+    — домен сам историю не хранит.
 
     Снаряд меняется, когда КАЖДЫЙ элемент working_reps (рабочие подходы,
     без учёта подхода на максимум) достиг block.equipment_change_threshold —
     сравнение идёт с фактическими повторениями, не с расчётной new_target
     ("20 20 20 21" — порог взят; "19 19 19 22" — нет, хотя максимум выше).
-
-    Исключение — объёмный блок на собственном весе с заданным
-    bodyweight_ceiling: там переходить дальше некуда, поэтому вместо смены
-    снаряда new_target просто не растёт выше потолка.
     """
+    new_target = _compute_raw_target(target, working_reps, max_reps, volume, prev_volume, consecutive_weak_before)
+
+    threshold_hit = bool(working_reps) and all(r >= block.equipment_change_threshold for r in working_reps)
+    if threshold_hit:
+        return ProgressionResult(new_target=block.base_target, equipment_changed=True)
+
+    return ProgressionResult(new_target=new_target, equipment_changed=False)
+
+
+def _compute_raw_target(
+    target: int, working_reps: tuple[int, ...], max_reps: int, volume: int, prev_volume: int,
+    consecutive_weak_before: int,
+) -> int:
+    """Арифметика делта/шаг/откат БЕЗ проверки порога смены снаряда —
+    вынесена отдельно от recalculate_target, потому что
+    recalculate_volume_block на этапе BODYWEIGHT (иерархия роста, часть 2)
+    должна расти по этой формуле НАПРЯМУЮ, не рискуя получить
+    threshold-сброс на base_target вместо честного расчётного значения
+    (общий порог смены снаряда на этом этапе подавлен целиком — см.
+    recalculate_volume_block)."""
     delta = max_reps - target
     if delta > 0:
         avg_working = mean(working_reps) if working_reps else float(target)
-        growth = max_reps - avg_working
-        step = max(0, min(block.max_step, math.ceil(growth * block.coef)))
-        new_target = round(avg_working) + step
-    elif delta == 0:
-        new_target = target
-    else:
-        is_weak = volume < prev_volume
-        if is_weak and consecutive_weak_before + 1 >= WEAK_STREAK_ROLLBACK_THRESHOLD:
-            new_target = target - 1
-        else:
-            new_target = target
-
-    threshold_hit = bool(working_reps) and all(r >= block.equipment_change_threshold for r in working_reps)
-    at_ceiling_equipment = block.bodyweight_ceiling is not None and equipment_type == EquipmentType.BODYWEIGHT
-
-    if threshold_hit and not at_ceiling_equipment:
-        return ProgressionResult(new_target=block.base_target, equipment_changed=True)
-
-    ceiling_reached = False
-    if at_ceiling_equipment:
-        ceiling_reached = new_target >= block.bodyweight_ceiling
-        new_target = min(new_target, block.bodyweight_ceiling)
-
-    return ProgressionResult(new_target=new_target, equipment_changed=False, ceiling_reached=ceiling_reached)
+        step = max(1, math.ceil(target * STEP_PCT))
+        return round(avg_working) + step
+    if delta == 0:
+        return target
+    is_weak = volume < prev_volume
+    if is_weak and consecutive_weak_before + 1 >= WEAK_STREAK_ROLLBACK_THRESHOLD:
+        return target - 1
+    return target
 
 
 def count_consecutive_weak_trainings(volumes: list[int]) -> int:
@@ -137,6 +142,169 @@ def count_consecutive_weak_trainings(volumes: list[int]) -> int:
         else:
             break
     return count
+
+
+def count_consecutive_stalled_workouts(grew_flags: list[bool]) -> int:
+    """Сколько подряд идущих тренировок В КОНЦЕ grew_flags НЕ вырастили
+    блок на объём — "застой" (иерархия роста, п.2): триггер для +1
+    рабочего подхода после VOLUME_STALL_THRESHOLD (4) подряд.
+
+    Аналог count_consecutive_weak_trainings, но сигнал другой — не объём
+    тренировки, а сам факт роста БЛОКА в любом из двух измерений: рост
+    цели (target_after > target_before) ИЛИ рост числа рабочих подходов
+    (work_sets_after > work_sets_before). Добавление подхода (по правилу
+    застоя или по потолку повторений, см. recalculate_volume_block) — это
+    тоже рост, просто другого рода, и должно сбрасывать застойный счётчик
+    так же, как рост цели — иначе один и тот же застой считался бы дважды.
+
+    grew_flags — booleans в хронологическом порядке (старые первыми),
+    вычисляет вызывающий код из истории блока А."""
+    count = 0
+    for grew in reversed(grew_flags):
+        if grew:
+            break
+        count += 1
+    return count
+
+
+@dataclass(frozen=True)
+class VolumeBlockResult:
+    """Результат пересчёта СПЕЦИФИЧНО для блока на объём — расширяет
+    ProgressionResult новым измерением состояния (иерархия роста, части
+    2-3 ревизии формулы): числом рабочих подходов. Силовой блок как был на
+    recalculate_target, так и остаётся — этой многомерности у него нет.
+
+    Вес НЕ считается здесь — это не факт результата ПРОШЕДШЕЙ тренировки
+    (как target/work_sets), а предложение на СЛЕДУЮЩУЮ, вычисляемое из
+    последнего фактического equipment_value репозиторием (см.
+    grow_volume_weight_kg и WorkoutRepository._resolve_next_state), тем же
+    принципом, что уже применён к suggest_weight_range для силового блока —
+    домен не решает за пользователя, что тот "использовал", только
+    подсказывает следующий шаг."""
+
+    new_target: int
+    new_work_sets: int
+    equipment_changed: bool
+
+
+def grow_volume_weight_kg(current_kg: Decimal) -> Decimal:
+    """Предложенный следующий вес блока на объём после перехода на
+    отягощение (часть 3) — тот же процентный шаг (STEP_PCT=5%), что и у
+    повторений, минимум +VOLUME_WEIGHT_MIN_STEP_KG (0.5кг) до округления,
+    затем округление вверх до ближайшего шага блинов (WEIGHT_ROUND_TO_KG)
+    — та же функция округления, что уже использует suggest_weight_range
+    для силового блока. Растёт БЕЗУСЛОВНО каждую тренировку на отягощении
+    (цель/подходы уже заморожены, дальнейший рост возможен только так — не
+    привязан к тому, справился ли человек с 30×8 или нет, в промпте это не
+    оговорено как условие)."""
+    step = max(VOLUME_WEIGHT_MIN_STEP_KG, float(current_kg) * STEP_PCT)
+    grown = _ceil_to_step(float(current_kg) + step, WEIGHT_ROUND_TO_KG)
+    return Decimal(str(grown))
+
+
+def recalculate_volume_block(
+    target: int,
+    work_sets: int,
+    working_reps: tuple[int, ...],
+    max_reps: int,
+    volume: int,
+    prev_volume: int,
+    equipment_type: EquipmentType,
+    consecutive_weak_before: int = 0,
+    consecutive_stall_before: int = 0,
+) -> VolumeBlockResult:
+    """Иерархия роста блока на объём (ревизия формулы, части 2-3) — ПОВЕРХ
+    recalculate_target, не вместо неё: базовая арифметика успех/провал и
+    процентный шаг общие для обоих блоков (часть 1), здесь только то, что
+    специфично для объёмного — доп. подходы при застое/потолке и переход
+    на отягощение.
+
+    Порядок проверки за одну тренировку (согласовано в плане, "по порядку,
+    не одновременно"):
+
+    1. Уже на отягощении (equipment_type=WEIGHT и work_sets уже на
+       потолке) — цель/подходы заморожены на потолке, дальше растёт
+       только вес (см. grow_volume_weight_kg — не здесь, это забота
+       _resolve_next_state при построении подсказки на СЛЕДУЮЩУЮ
+       тренировку). Всё остальное ниже не применяется.
+    2. Иначе считаем базовый результат через recalculate_target. На BAND —
+       обычный порог смены снаряда (BAND→BODYWEIGHT) работает как раньше,
+       без изменений. На BODYWEIGHT — общий порог ПОДАВЛЯЕТСЯ: дальнейший
+       рост с этой точки полностью ведёт эта функция, не общий механизм
+       смены снаряда (иначе он увёл бы на WEIGHT рано, через порог 20, в
+       обход системы потолка 30/8).
+    3. Если считается рост (delta>0) и расчётная цель дошла до
+       VOLUME_TARGET_CEILING (30):
+       - подходы уже на потолке (8) — переход на отягощение СРАЗУ в этой
+         же тренировке (расти по подходам уже некуда) — new_target/
+         new_work_sets замораживаются на потолке, equipment_type для
+         СЛЕДУЮЩЕЙ тренировки решит _resolve_next_state (видит
+         work_sets_after==потолок и target_after==потолок → WEIGHT).
+       - иначе, расчётная цель < VOLUME_BIG_OVERSHOOT_THRESHOLD (50) —
+         откат до VOLUME_MODERATE_ROLLBACK_TARGET (20), +1 подход.
+       - иначе (>= 50) — откат до потолка (30), подходов добавляется
+         ceil(расчётная_цель / VOLUME_TARGET_CEILING) — превращает "один
+         гигантский подход на X" в разумное число подходов по потолку
+         каждый. Если это ДОВЕЛО work_sets ровно до 8 — переход на
+         отягощение начнётся со СЛЕДУЮЩЕЙ тренировки, не в этой (тот же
+         механизм в _resolve_next_state, что и в пункте выше).
+    4. Иначе (застой, delta<=0 и НЕ выросло) — если застойный счётчик
+       (включая эту тренировку) достиг VOLUME_STALL_THRESHOLD (4) и
+       подходы ещё не на потолке — +1 подход, цель как посчитана
+       (flat/откат по обычной формуле, без изменений).
+    5. Как только work_sets == VOLUME_WORK_SETS_CEILING (8) — ни застой,
+       ни потолок повторений больше не добавляют подходов (последующий
+       рост только через п.1/переход на вес)."""
+    if equipment_type == EquipmentType.WEIGHT and work_sets >= VOLUME_WORK_SETS_CEILING:
+        return VolumeBlockResult(
+            new_target=VOLUME_TARGET_CEILING, new_work_sets=VOLUME_WORK_SETS_CEILING, equipment_changed=False,
+        )
+
+    if equipment_type == EquipmentType.BAND:
+        base = recalculate_target(
+            VOLUME_BLOCK, target, working_reps, max_reps, volume, prev_volume,
+            consecutive_weak_before=consecutive_weak_before,
+        )
+        if base.equipment_changed:
+            return VolumeBlockResult(new_target=base.new_target, new_work_sets=work_sets, equipment_changed=True)
+        computed_target = base.new_target
+    else:
+        # BODYWEIGHT (или WEIGHT ниже потолка подходов, если такое вообще
+        # возможно) — общий порог смены снаряда полностью подавлен, растим
+        # напрямую по формуле. НЕ через recalculate_target: если бы working
+        # reps СЛУЧАЙНО заодно перевалили за equipment_change_threshold
+        # (20), тот вернул бы new_target=base_target(10) вместо честного
+        # расчётного значения — здесь это было бы неверной "просадкой" и
+        # исказило бы всю иерархию роста ниже.
+        computed_target = _compute_raw_target(
+            target, working_reps, max_reps, volume, prev_volume, consecutive_weak_before,
+        )
+
+    grew = computed_target > target
+
+    if grew and computed_target >= VOLUME_TARGET_CEILING:
+        if work_sets >= VOLUME_WORK_SETS_CEILING:
+            return VolumeBlockResult(
+                new_target=VOLUME_TARGET_CEILING, new_work_sets=VOLUME_WORK_SETS_CEILING, equipment_changed=False,
+            )
+        if computed_target < VOLUME_BIG_OVERSHOOT_THRESHOLD:
+            new_target = VOLUME_MODERATE_ROLLBACK_TARGET
+            new_work_sets = min(VOLUME_WORK_SETS_CEILING, work_sets + 1)
+        else:
+            new_target = VOLUME_TARGET_CEILING
+            sets_to_add = math.ceil(computed_target / VOLUME_TARGET_CEILING)
+            new_work_sets = min(VOLUME_WORK_SETS_CEILING, work_sets + sets_to_add)
+        return VolumeBlockResult(new_target=new_target, new_work_sets=new_work_sets, equipment_changed=False)
+
+    new_work_sets = work_sets
+    if (
+        not grew
+        and work_sets < VOLUME_WORK_SETS_CEILING
+        and consecutive_stall_before + 1 >= VOLUME_STALL_THRESHOLD
+    ):
+        new_work_sets = work_sets + 1
+
+    return VolumeBlockResult(new_target=computed_target, new_work_sets=new_work_sets, equipment_changed=False)
 
 
 def suggest_starting_equipment(baseline_reps: int) -> tuple[EquipmentType, EquipmentType]:
@@ -277,6 +445,8 @@ def recalculate_cascade(
     subsequent_workouts: list[WorkoutRecord],
     starting_weak_streak_a: int = 0,
     starting_weak_streak_b: int = 0,
+    starting_work_sets_a: int = VOLUME_BLOCK.work_sets,
+    starting_stall_streak_a: int = 0,
 ) -> list[WorkoutRecord]:
     """Каскадный пересчёт цепочки тренировок после редактирования более
     ранней тренировки. Остаётся только для этого сценария — внесённые
@@ -286,44 +456,77 @@ def recalculate_cascade(
     starting_target_a/b — цели, которые действуют СРАЗУ ПОСЛЕ
     отредактированной тренировки. starting_volume_a/b — её объёмы, нужны
     как prev_volume для первой тренировки из subsequent_workouts.
-    starting_weak_streak_a/b (Часть 10, пакет #2, п.13) — сколько подряд
-    слабых тренировок было ДО начала этой цепочки (обычно посчитано
-    вызывающим кодом из истории вплоть до отредактированной тренировки
-    включительно, см. WorkoutRepository.edit_workout) — дальше счётчик
-    бегущий, обновляется по ходу цикла, отдельно нигде не хранится.
+    starting_weak_streak_a/b — сколько подряд слабых тренировок было ДО
+    начала этой цепочки (считает вызывающий код из истории вплоть до
+    отредактированной тренировки включительно, см.
+    WorkoutRepository.edit_workout) — дальше счётчик бегущий, обновляется
+    по ходу цикла, отдельно нигде не хранится. starting_work_sets_a/
+    starting_stall_streak_a — то же самое для новой иерархии роста блока
+    на объём (застой/потолок подходов, см. recalculate_volume_block);
+    только для блока A — у силового блока подходы фиксированы.
 
     equipment_type и transition_failed каждой записи не пересчитываются —
     это факт того, что было в реальности, каскад его не переигрывает.
-    """
+    Блок A с is_deload=True полностью выключен из пересчёта (часть 4
+    ревизии формулы: разгрузочная тренировка не двигает и не откатывает
+    прогрессию) — target/work_sets/весовые/стрик-счётчики проходят через
+    такую запись без изменений, как будто её не было."""
     updated: list[WorkoutRecord] = []
     target_a, target_b = starting_target_a, starting_target_b
     prev_volume_a, prev_volume_b = starting_volume_a, starting_volume_b
     weak_streak_a, weak_streak_b = starting_weak_streak_a, starting_weak_streak_b
+    work_sets_a = starting_work_sets_a
+    stall_streak_a = starting_stall_streak_a
 
     for record in subsequent_workouts:
-        result_a = recalculate_target(
-            VOLUME_BLOCK, target_a, record.block_a.log.working_reps, record.block_a.log.max_reps,
-            record.block_a.log.volume, prev_volume_a, record.block_a.equipment_type,
-            consecutive_weak_before=weak_streak_a,
-        )
+        if record.block_a.is_deload:
+            block_a_assignment = BlockAssignment(
+                log=record.block_a.log,
+                target_before=target_a,
+                target_after=target_a,
+                equipment_changed=False,
+                equipment_type=record.block_a.equipment_type,
+                equipment_value=record.block_a.equipment_value,
+                equipment_item_id=record.block_a.equipment_item_id,
+                transition_failed=record.block_a.transition_failed,
+                work_sets_before=work_sets_a,
+                work_sets_after=work_sets_a,
+                is_deload=True,
+            )
+        else:
+            result_a = recalculate_volume_block(
+                target_a, work_sets_a, record.block_a.log.working_reps, record.block_a.log.max_reps,
+                record.block_a.log.volume, prev_volume_a, record.block_a.equipment_type,
+                consecutive_weak_before=weak_streak_a, consecutive_stall_before=stall_streak_a,
+            )
+            block_a_assignment = BlockAssignment(
+                log=record.block_a.log,
+                target_before=target_a,
+                target_after=result_a.new_target,
+                equipment_changed=result_a.equipment_changed,
+                equipment_type=record.block_a.equipment_type,
+                equipment_value=record.block_a.equipment_value,
+                equipment_item_id=record.block_a.equipment_item_id,
+                transition_failed=record.block_a.transition_failed,
+                work_sets_before=work_sets_a,
+                work_sets_after=result_a.new_work_sets,
+                is_deload=False,
+            )
+            grew_a = result_a.new_target > target_a or result_a.new_work_sets > work_sets_a
+            stall_streak_a = 0 if grew_a else stall_streak_a + 1
+            weak_streak_a = weak_streak_a + 1 if record.block_a.log.volume < prev_volume_a else 0
+            prev_volume_a = record.block_a.log.volume
+            target_a, work_sets_a = result_a.new_target, result_a.new_work_sets
+
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_b, record.block_b.log.working_reps, record.block_b.log.max_reps,
-            record.block_b.log.volume, prev_volume_b, record.block_b.equipment_type,
+            record.block_b.log.volume, prev_volume_b,
             consecutive_weak_before=weak_streak_b,
         )
         updated.append(
             WorkoutRecord(
                 performed_at=record.performed_at,
-                block_a=BlockAssignment(
-                    log=record.block_a.log,
-                    target_before=target_a,
-                    target_after=result_a.new_target,
-                    equipment_changed=result_a.equipment_changed,
-                    equipment_type=record.block_a.equipment_type,
-                    equipment_value=record.block_a.equipment_value,
-                    equipment_item_id=record.block_a.equipment_item_id,
-                    transition_failed=record.block_a.transition_failed,
-                ),
+                block_a=block_a_assignment,
                 block_b=BlockAssignment(
                     log=record.block_b.log,
                     target_before=target_b,
@@ -339,9 +542,8 @@ def recalculate_cascade(
                 exercise_type=record.exercise_type,
             )
         )
-        target_a, target_b = result_a.new_target, result_b.new_target
-        weak_streak_a = weak_streak_a + 1 if record.block_a.log.volume < prev_volume_a else 0
+        target_b = result_b.new_target
         weak_streak_b = weak_streak_b + 1 if record.block_b.log.volume < prev_volume_b else 0
-        prev_volume_a, prev_volume_b = record.block_a.log.volume, record.block_b.log.volume
+        prev_volume_b = record.block_b.log.volume
 
     return updated

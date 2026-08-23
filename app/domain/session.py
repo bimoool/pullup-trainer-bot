@@ -52,6 +52,16 @@ class BlockAssignment:
     # BODYWEIGHT/AUSTRALIAN всегда None.
     equipment_item_id: int | None = None
     transition_failed: bool = False
+    # Иерархия роста блока на объём (ревизия формулы прогрессии, части 2-4)
+    # — только для блока A; у силового блока подходы фиксированы, эти поля
+    # у него всегда None/False. work_sets_before/after — число рабочих
+    # подходов ДО/ПОСЛЕ этой тренировки (растёт по правилу застоя/потолка,
+    # см. app.domain.progression.recalculate_volume_block). is_deload —
+    # ежемесячная разгрузочная тренировка (часть 4): не участвует в
+    # пересчёте прогрессии, только в статистике/объёме.
+    work_sets_before: int | None = None
+    work_sets_after: int | None = None
+    is_deload: bool = False
 
 
 @dataclass(frozen=True)
