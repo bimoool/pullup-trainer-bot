@@ -1,7 +1,7 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -13,6 +13,7 @@ from app.bot.formatting import format_subscription_status
 from app.bot.handlers.subscription import _robokassa_available
 from app.bot.keyboards import (
     BOTTOM_MENU_ADMIN,
+    admin_dm_prompt_keyboard,
     admin_menu_keyboard,
     admin_reset_confirm_keyboard,
     admin_user_card_keyboard,
@@ -25,7 +26,7 @@ from app.bot.states import AdminStates
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
-from app.domain.constants import ADMIN_TEST_PAYMENT_AMOUNT_RUB
+from app.domain.constants import ADMIN_TEST_PAYMENT_AMOUNT_RUB, WEEKLY_DIGEST_REPLY_DEADLINE_HOURS
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
 from app.services.admin_reset import reset_user_progress
 from app.services.gamification import GamificationService
@@ -136,22 +137,30 @@ async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 
-@router.message(AdminStates.waiting_for_broadcast_text)
-async def handle_admin_broadcast_text(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    # parse_mode=None: бот по умолчанию шлёт HTML (см. app/main.py), а это
-    # текст, который набрал админ, не наш шаблон — случайные "<"/"&" не
-    # должны ронять рассылку ошибкой парсинга сущностей.
+async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, text: str) -> tuple[int, int]:
+    """Общий механизм рассылки — используется и ручной "📢 Рассылка всем"
+    (handle_admin_broadcast_text), и еженедельным дайджестом
+    (handle_weekly_digest_reply, app/workers/weekly_digest.py решает КОГДА
+    его вызвать, не КАК рассылать). parse_mode=None: текст набирает
+    человек (админ), не наш HTML-шаблон — случайные "<"/"&" не должны
+    ронять рассылку ошибкой парсинга сущностей."""
     users = await UserRepository(session).list_onboarded()
     sent = 0
     for user in users:
         try:
-            await message.bot.send_message(user.telegram_id, message.text, parse_mode=None)
+            await bot.send_message(user.telegram_id, text, parse_mode=None)
             sent += 1
         except TelegramAPIError:
-            logger.warning("admin broadcast: failed to notify user %s", user.telegram_id, exc_info=True)
+            logger.warning("broadcast: failed to notify user %s", user.telegram_id, exc_info=True)
+    return sent, len(users)
+
+
+@router.message(AdminStates.waiting_for_broadcast_text)
+async def handle_admin_broadcast_text(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message.text)
 
     await state.clear()
-    await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=len(users)))
+    await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
 
 
@@ -165,8 +174,21 @@ async def handle_admin_dm_start(callback: CallbackQuery, state: FSMContext, sess
     user = await UserRepository(session).get_by_id(user_id)
     await state.update_data(admin_target_user_id=user_id)
     await state.set_state(AdminStates.waiting_for_dm_text)
-    await callback.message.answer(texts.ADMIN_DM_PROMPT.format(name=_user_label(user)), reply_markup=cancel_keyboard())
+    await callback.message.answer(
+        texts.ADMIN_DM_PROMPT.format(name=_user_label(user)), reply_markup=admin_dm_prompt_keyboard(user_id),
+    )
     await callback.answer()
+
+
+@router.callback_query(AdminStates.waiting_for_dm_text, F.data.startswith("admin_dm_template:"))
+async def handle_admin_dm_template(callback: CallbackQuery) -> None:
+    """Telegram не даёт боту подставить текст в чужое поле ввода (см.
+    admin_dm_prompt_keyboard) — присылаем заготовку отдельным сообщением
+    без разметки, чтобы долгим нажатием скопировалась один в один. Ничего
+    не отправляет получателю и не меняет состояние — следующий текст от
+    админа по-прежнему уходит через handle_admin_dm_text как обычно."""
+    await callback.message.answer(texts.ADMIN_DM_INCIDENT_TEMPLATE, parse_mode=None)
+    await callback.answer(texts.ADMIN_DM_TEMPLATE_SENT_TOAST, show_alert=True)
 
 
 @router.message(AdminStates.waiting_for_dm_text)
@@ -331,4 +353,29 @@ async def handle_admin_test_payment(callback: CallbackQuery, session: AsyncSessi
 
     await callback.message.answer(texts.PAYMENT_LINK_SENT, reply_markup=payment_link_keyboard(link))
     await callback.answer()
-    await callback.answer()
+
+
+# --- Еженедельный дайджест новостей продукта (Часть 12) --------------------------
+# waiting_for_weekly_digest_text выставляется не отсюда, а программно из
+# app/workers/weekly_digest.py в момент отправки напоминания — этот
+# хендлер только принимает ОТВЕТ на него. Дедлайн (WEEKLY_DIGEST_REPLY_
+# DEADLINE_HOURS) хранится в domain, не в воркере, именно чтобы можно было
+# читать его отсюда без обратной зависимости bot -> workers.
+
+
+@router.message(AdminStates.waiting_for_weekly_digest_text)
+async def handle_weekly_digest_reply(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    data = await state.get_data()
+    sent_at = datetime.fromisoformat(data["weekly_digest_reminder_sent_at"])
+    deadline = sent_at + timedelta(hours=WEEKLY_DIGEST_REPLY_DEADLINE_HOURS)
+    now = datetime.now(UTC)
+
+    await state.clear()
+
+    if now > deadline:
+        await message.answer(texts.ADMIN_WEEKLY_DIGEST_EXPIRED.format(expires_at=deadline.strftime("%d.%m %H:%M")))
+        return
+
+    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message.text)
+    await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
+    await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))

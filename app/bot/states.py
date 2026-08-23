@@ -125,3 +125,8 @@ class AdminStates(StatesGroup):
     waiting_for_dm_text = State()
     waiting_for_grant_days = State()
     waiting_for_grant_coins = State()
+    # Выставляется не через колбэк, а программно из воркера
+    # (app/workers/weekly_digest.py) в момент отправки еженедельного
+    # напоминания — так следующее сообщение админа однозначно привязано
+    # именно к этому напоминанию, не к случайному сообщению боту.
+    waiting_for_weekly_digest_text = State()

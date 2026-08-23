@@ -14,6 +14,7 @@ from app.bot.middlewares import DbSessionMiddleware
 from app.config import settings
 from app.workers.robokassa_sync import register as register_robokassa_sync
 from app.workers.sheets_sync import register as register_sheets_sync
+from app.workers.weekly_digest import register as register_weekly_digest
 from app.workers.weekly_report import register as register_weekly_report
 
 logging.basicConfig(level=settings.log_level)
@@ -40,10 +41,11 @@ def build_dispatcher() -> Dispatcher:
     return dispatcher
 
 
-def build_scheduler(bot: Bot) -> AsyncIOScheduler:
+def build_scheduler(bot: Bot, dispatcher: Dispatcher) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
     register_robokassa_sync(scheduler, bot)
     register_weekly_report(scheduler, bot)
+    register_weekly_digest(scheduler, bot, dispatcher)
     register_sheets_sync(scheduler)
     return scheduler
 
@@ -51,7 +53,7 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
 async def run_polling() -> None:
     bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dispatcher = build_dispatcher()
-    scheduler = build_scheduler(bot)
+    scheduler = build_scheduler(bot, dispatcher)
 
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_my_commands(BOT_COMMANDS)

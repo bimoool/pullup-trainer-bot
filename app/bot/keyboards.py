@@ -194,6 +194,18 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def admin_dm_prompt_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Приглашение ввести личное сообщение (admin_dm:<user_id>) — заготовка
+    про инцидент присылается отдельным сообщением (Telegram не даёт боту
+    подставить текст в чужое поле ввода), состояние ожидания текста не
+    меняется, поэтому "❌ Отмена" рядом всё ещё нужна."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⚠️ Использовать заготовку про инцидент", callback_data=f"admin_dm_template:{user_id}")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def backdate_date_keyboard() -> InlineKeyboardMarkup:
     """Ввод даты бэкдейта — календарь ИЛИ текст, обе опции сразу (Часть 10,
     пакет #2, п.17), не одна вместо другой."""
