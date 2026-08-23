@@ -153,17 +153,31 @@ class RobokassaService:
         self._subscriptions = SubscriptionService(session)
         self._client = client
 
-    async def create_payment_link(self, user_id: int) -> str:
+    async def create_payment_link(
+        self,
+        user_id: int,
+        *,
+        amount_rub: int = SUBSCRIPTION_PRICE_RUB,
+        days: int = SUBSCRIPTION_DAYS,
+        description: str = SUBSCRIPTION_DESCRIPTION,
+    ) -> str:
+        # amount_rub/days/description параметризованы ради диагностического
+        # платежа на 1₽ (app/bot/handlers/admin.py, ADMIN_TEST_PAYMENT_
+        # AMOUNT_RUB) — та же ссылка и тот же путь подтверждения
+        # (sync_pending_payments), что и у обычной подписки, значения по
+        # умолчанию не меняют поведение существующего вызова из
+        # subscription.py.
+        #
         # InvId у Робокассы обязан быть уникальным числом — вместо
         # отдельного счётчика используем id самой записи pending_payments
         # (её ещё не существует в момент вызова build_payment_url, поэтому
         # сначала создаём с плейсхолдером, потом дописываем настоящий id).
         payment = await self._pending_payments.create(
-            user_id=user_id, provider=PendingPaymentProvider.ROBOKASSA, external_order_id="", days=SUBSCRIPTION_DAYS,
+            user_id=user_id, provider=PendingPaymentProvider.ROBOKASSA, external_order_id="", days=days,
         )
         await self._pending_payments.set_external_order_id(payment.id, str(payment.id))
         return self._client.build_payment_url(
-            out_sum=f"{SUBSCRIPTION_PRICE_RUB:.2f}", inv_id=payment.id, description=SUBSCRIPTION_DESCRIPTION,
+            out_sum=f"{amount_rub:.2f}", inv_id=payment.id, description=description,
         )
 
     async def sync_pending_payments(

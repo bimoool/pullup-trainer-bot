@@ -145,6 +145,13 @@ SUBSCRIPTION_PRICE_RUB: int = 990
 SUBSCRIPTION_DAYS: int = 30
 SUBSCRIPTION_DESCRIPTION: str = f"Доступ на {SUBSCRIPTION_DAYS} дней"
 
+# Диагностический платёж для админа (app/bot/handlers/admin.py) — та же
+# ссылка Robokassa, что и у обычной подписки, только на 1₽ вместо
+# SUBSCRIPTION_PRICE_RUB: проверить весь путь (создание ссылки → реальная
+# оплата → опрос OpStateExt воркером → продление подписки) вживую, не
+# тратя 990₽ на каждую проверку.
+ADMIN_TEST_PAYMENT_AMOUNT_RUB: int = 1
+
 TRANSITION_RETRY_WORKOUTS: int = 4
 # Тренировок на прежнем снаряде после неудачного перехода, прежде чем
 # предлагать повторную попытку.

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
+from app.bot.handlers.subscription import _robokassa_available
 from app.bot.keyboards import (
     BOTTOM_MENU_ADMIN,
     admin_menu_keyboard,
@@ -17,15 +18,18 @@ from app.bot.keyboards import (
     admin_user_card_keyboard,
     admin_user_list_keyboard,
     cancel_keyboard,
+    payment_link_keyboard,
     profile_keyboard,
 )
 from app.bot.states import AdminStates
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
+from app.domain.constants import ADMIN_TEST_PAYMENT_AMOUNT_RUB
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
 from app.services.admin_reset import reset_user_progress
 from app.services.gamification import GamificationService
+from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 
 logger = logging.getLogger(__name__)
@@ -292,4 +296,39 @@ async def handle_admin_reset_confirm(callback: CallbackQuery, state: FSMContext,
 
     await state.clear()
     await callback.message.answer(texts.ADMIN_RESET_DONE, reply_markup=profile_keyboard(is_admin=True))
+
+
+# --- Диагностический платёж Robokassa на 1₽ (Часть 11) --------------------------
+# Та же ссылка на оплату и тот же путь подтверждения (RobokassaService.
+# sync_pending_payments — воркер, опрос OpStateExt), что и у обычной
+# подписки (см. subscription.py::handle_pay_robokassa), только на 1₽
+# вместо SUBSCRIPTION_PRICE_RUB — проверить весь путь вживую (создание
+# ссылки → реальная оплата → подтверждение → продление подписки), не
+# тратя 990₽ на каждую проверку. Всегда над собственным аккаунтом
+# вызвавшего, как и "🧪 Полный сброс" выше — не отдельный целевой
+# пользователь.
+
+
+@router.callback_query(F.data == "admin_test_payment")
+async def handle_admin_test_payment(callback: CallbackQuery, session: AsyncSession) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    if not _robokassa_available():
+        await callback.answer(texts.ADMIN_TEST_PAYMENT_UNAVAILABLE, show_alert=True)
+        return
+
+    user = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+    client = RobokassaClient(
+        merchant_login=settings.robokassa_merchant_login,
+        password_1=settings.robokassa_password_1,
+        password_2=settings.robokassa_password_2,
+    )
+    robokassa = RobokassaService(session, client)
+    link = await robokassa.create_payment_link(
+        user.id, amount_rub=ADMIN_TEST_PAYMENT_AMOUNT_RUB, description=texts.ADMIN_TEST_PAYMENT_DESCRIPTION,
+    )
+
+    await callback.message.answer(texts.PAYMENT_LINK_SENT, reply_markup=payment_link_keyboard(link))
+    await callback.answer()
     await callback.answer()
