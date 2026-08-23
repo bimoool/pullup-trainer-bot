@@ -43,6 +43,13 @@ async def sync_robokassa_payments(bot: Bot) -> None:
                 await bot.send_message(user.telegram_id, texts.CARD_PAYMENT_CONFIRMED)
             except TelegramAPIError:
                 logger.warning("robokassa_sync: failed to notify user %s", user.telegram_id, exc_info=True)
+            else:
+                # Раньше лога успеха не было вовсе — при диагностике первого
+                # живого платежа доставку пришлось подтверждать вручную,
+                # глядя в свой чат с ботом, поскольку "нет warning" не
+                # доказывает "сообщение реально дошло" настолько же прямо,
+                # как явная запись.
+                logger.info("robokassa_sync: notified user %s of confirmed payment %s", user.telegram_id, payment.id)
 
         confirmed = await service.sync_pending_payments(now=datetime.now(UTC), on_confirmed=_notify)
         await session.commit()
