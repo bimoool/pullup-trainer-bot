@@ -19,6 +19,7 @@ from app.bot.states import AdminStates
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
+from app.db.repositories.weekly_digests import WeeklyDigestRepository
 from app.workers.weekly_digest import send_weekly_digest_reminder
 
 
@@ -111,6 +112,10 @@ async def test_reply_within_deadline_broadcasts_via_shared_mechanism(
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=admin.telegram_id, user_id=admin.telegram_id)
     assert await fsm.get_state() is None
 
+    last_sent_at = await WeeklyDigestRepository(session).get_last_sent_at()
+    assert last_sent_at is not None
+    assert (datetime.now(UTC) - last_sent_at) < timedelta(seconds=10)
+
 
 async def test_reply_after_deadline_is_skipped_silently_not_broadcast(
     session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
@@ -147,3 +152,6 @@ async def test_reply_after_deadline_is_skipped_silently_not_broadcast(
     assert expired_notice is not None
 
     assert await fsm.get_state() is None
+    # Просроченный ответ не пишет в журнал — иначе last_digest_sent_at
+    # сдвигался бы неделя за неделей без единой реальной рассылки.
+    assert await WeeklyDigestRepository(session).get_last_sent_at() is None

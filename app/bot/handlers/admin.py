@@ -26,6 +26,7 @@ from app.bot.states import AdminStates
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
+from app.db.repositories.weekly_digests import WeeklyDigestRepository
 from app.domain.constants import ADMIN_TEST_PAYMENT_AMOUNT_RUB, WEEKLY_DIGEST_REPLY_DEADLINE_HOURS
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
 from app.services.admin_reset import reset_user_progress
@@ -377,5 +378,9 @@ async def handle_weekly_digest_reply(message: Message, state: FSMContext, sessio
         return
 
     sent, total = await _broadcast_to_onboarded_users(message.bot, session, message.text)
+    # Только при реальной рассылке — просроченный ответ (ветка above) сюда
+    # не доходит, иначе last_digest_sent_at сдвигался бы неделя за неделей
+    # без единой настоящей отправки пользователям.
+    await WeeklyDigestRepository(session).record(sent_at=now, text=message.text, recipients_count=sent)
     await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))

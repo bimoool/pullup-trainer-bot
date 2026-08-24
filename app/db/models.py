@@ -430,3 +430,27 @@ class ElectiveWorkout(Base):
         BigInteger, ForeignKey("equipment_items.id"), nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class WeeklyDigest(Base):
+    """Журнал фактически разосланных еженедельных дайджестов (Часть 12,
+    app/workers/weekly_digest.py) — не только источник last_digest_sent_at
+    (последняя строка по sent_at, для диапазона будущего автосбора
+    "что раскатили"/"что в работе"), но и самостоятельный аудит: что
+    именно и когда было разослано пользователям, тем же принципом, что
+    subscriptions/workouts — история, а не единственная изменяемая
+    строка-курсор. Отдельная таблица, не файл на диске — контейнер app
+    пересоздаётся при каждом деплое (см. SheetsSyncState), персистентного
+    диска у него нет.
+
+    Пишется только при УСПЕШНОЙ рассылке (handle_weekly_digest_reply) —
+    просроченный ответ (позже WEEKLY_DIGEST_REPLY_DEADLINE_HOURS) молча
+    пропускается и строку сюда не добавляет, иначе last_digest_sent_at
+    сдвигался бы неделя за неделей без единой реальной рассылки."""
+
+    __tablename__ = "weekly_digests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    recipients_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
