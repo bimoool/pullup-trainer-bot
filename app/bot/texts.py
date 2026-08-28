@@ -775,6 +775,17 @@ ADMIN_WEEKLY_DIGEST_EXPIRED = (
     "Если всё же хочешь разослать этот текст — используй «📢 Рассылка всем» в /admin."
 )
 
+# --- Автосбор к напоминанию — "что раскатили"/"что в работе" (app/services/github.py) ---
+# Каждая секция начинается с \n\n — приклеивается к ADMIN_WEEKLY_DIGEST_
+# REMINDER и друг к другу без дополнительной сборки пробелов на стороне
+# воркера (см. app/workers/weekly_digest.py::_build_reminder_text).
+ADMIN_WEEKLY_DIGEST_COMMITS_HEADER = "\n\n📦 Что раскатили с прошлого дайджеста:\n{commits}"
+ADMIN_WEEKLY_DIGEST_COMMITS_EMPTY = "\n\n📦 С прошлого дайджеста в код ничего не попало."
+ADMIN_WEEKLY_DIGEST_COMMITS_UNAVAILABLE = "\n\n📦 Не удалось получить список коммитов — GitHub API недоступен."
+ADMIN_WEEKLY_DIGEST_ISSUES_HEADER = "\n\n📋 Сейчас в работе (открытые issues):\n{issues}"
+ADMIN_WEEKLY_DIGEST_ISSUES_EMPTY = "\n\n📋 Открытых issues нет."
+ADMIN_WEEKLY_DIGEST_ISSUES_UNAVAILABLE = "\n\n📋 Не удалось получить список issues — GitHub API недоступен."
+
 # --- Общее -----------------------------------------------------------------------
 
 WELCOME_BACK = "С возвращением! Что делаем?"

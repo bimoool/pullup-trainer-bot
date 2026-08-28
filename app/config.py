@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     google_sheets_spreadsheet_id: str = ""
     google_sheets_credentials_path: str = ""
 
+    # Автосбор для еженедельного дайджеста (app/workers/weekly_digest.py,
+    # app/services/github.py) — "что раскатили"/"что в работе" читаются
+    # живыми HTTP-запросами к api.github.com. Fine-grained PAT, Contents:
+    # read + Issues:read на репозиторий bimoool/pullup-trainer-bot. Не
+    # личный gh-доступ разработчика — процесс бота на сервере не имеет ни
+    # .git, ни gh CLI (см. CLAUDE.md), только этот токен из .env. Пусто ->
+    # обе секции дайджеста показывают "недоступно", остальной воркер
+    # (напоминание, приём ответа, рассылка) работает как обычно.
+    github_token: str = ""
+
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]
