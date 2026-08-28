@@ -142,14 +142,15 @@ async def test_equipment_change_threshold_and_failed_transition_reverts_to_prior
 async def test_volume_block_ceiling_rolls_back_and_adds_set_instead_of_switching_equipment(session, user: User):
     # Ревизия формулы прогрессии (иерархия роста блока на объём, часть 2) —
     # заменяет старый bodyweight_ceiling=25 (плоский потолок без выхода).
-    # target_before=10 (первая тренировка), avg=29, step=max(1,ceil(10*0.05)=1)=1
-    # -> computed=30 (достиг нового потолка 30, < 50) -> откат до 20, +1 подход.
+    # target_before=10 (первая тренировка), avg=32, step=max(1,ceil(10*0.05)=1)=1
+    # -> computed=33 (достиг потолка VOLUME_TARGET_CEILING=33, ревизия v5,
+    # было 30; < 50) -> откат до 20, +1 подход.
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)
 
     workout = await repo.record_workout(
         user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
-        block_a_reps=BlockLog(working_reps=(29, 29, 29), max_reps=35),
+        block_a_reps=BlockLog(working_reps=(32, 32, 32), max_reps=38),
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
         block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,

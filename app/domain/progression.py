@@ -195,7 +195,7 @@ def grow_volume_weight_kg(current_kg: Decimal) -> Decimal:
     — та же функция округления, что уже использует suggest_weight_range
     для силового блока. Растёт БЕЗУСЛОВНО каждую тренировку на отягощении
     (цель/подходы уже заморожены, дальнейший рост возможен только так — не
-    привязан к тому, справился ли человек с 30×8 или нет, в промпте это не
+    привязан к тому, справился ли человек с 33×8 или нет, в промпте это не
     оговорено как условие)."""
     step = max(VOLUME_WEIGHT_MIN_STEP_KG, float(current_kg) * STEP_PCT)
     grown = _ceil_to_step(float(current_kg) + step, WEIGHT_ROUND_TO_KG)
@@ -232,9 +232,10 @@ def recalculate_volume_block(
        без изменений. На BODYWEIGHT — общий порог ПОДАВЛЯЕТСЯ: дальнейший
        рост с этой точки полностью ведёт эта функция, не общий механизм
        смены снаряда (иначе он увёл бы на WEIGHT рано, через порог 20, в
-       обход системы потолка 30/8).
+       обход системы потолка 33/8).
     3. Если считается рост (delta>0) и расчётная цель дошла до
-       VOLUME_TARGET_CEILING (30):
+       VOLUME_TARGET_CEILING (33 — тот же порог, что и старт блока сразу
+       с отягощением по замеру, см. suggest_starting_equipment):
        - подходы уже на потолке (8) — переход на отягощение СРАЗУ в этой
          же тренировке (расти по подходам уже некуда) — new_target/
          new_work_sets замораживаются на потолке, equipment_type для
@@ -242,7 +243,7 @@ def recalculate_volume_block(
          work_sets_after==потолок и target_after==потолок → WEIGHT).
        - иначе, расчётная цель < VOLUME_BIG_OVERSHOOT_THRESHOLD (50) —
          откат до VOLUME_MODERATE_ROLLBACK_TARGET (20), +1 подход.
-       - иначе (>= 50) — откат до потолка (30), подходов добавляется
+       - иначе (>= 50) — откат до потолка (33), подходов добавляется
          ceil(расчётная_цель / VOLUME_TARGET_CEILING) — превращает "один
          гигантский подход на X" в разумное число подходов по потолку
          каждый. Если это ДОВЕЛО work_sets ровно до 8 — переход на
@@ -316,13 +317,21 @@ def suggest_starting_equipment(baseline_reps: int) -> tuple[EquipmentType, Equip
     У каждого блока СВОИ пороги (Часть 10 — раньше по ошибке оба блока
     считались по порогу объёмного, силовой блок никогда не получал
     "отягощение" даже при большом замере):
-    - объёмный: свой вес строго при замере > VOLUME_BLOCK.base_target (10),
-      иначе резина;
+    - объёмный: отягощение сразу при замере >= VOLUME_TARGET_CEILING (33,
+      ревизия v5 — тот же порог, что и внутренний потолок иерархии роста,
+      сознательно одна константа: не гонять человека через долгий подъём
+      с собственного веса, если он уже явно готов к весу с самого начала);
+      иначе свой вес при замере > VOLUME_BLOCK.base_target (10); иначе резина;
     - силовой: отягощение при замере >= STRENGTH_START_WEIGHT_MIN_REPS (8),
       свой вес при STRENGTH_START_BODYWEIGHT_MIN_REPS (3) <= замер < 8,
       иначе (замер < 3) резина.
     """
-    volume_equipment = EquipmentType.BODYWEIGHT if baseline_reps > VOLUME_BLOCK.base_target else EquipmentType.BAND
+    if baseline_reps >= VOLUME_TARGET_CEILING:
+        volume_equipment = EquipmentType.WEIGHT
+    elif baseline_reps > VOLUME_BLOCK.base_target:
+        volume_equipment = EquipmentType.BODYWEIGHT
+    else:
+        volume_equipment = EquipmentType.BAND
 
     if baseline_reps >= STRENGTH_START_WEIGHT_MIN_REPS:
         strength_equipment = EquipmentType.WEIGHT

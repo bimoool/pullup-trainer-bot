@@ -144,6 +144,43 @@ async def test_recommendation_uses_per_block_thresholds_not_volume_block_ones(
     assert data["pending_equipment_type"] == "weight"
 
 
+async def test_volume_weight_start_at_new_ceiling_goes_straight_to_value_with_generic_hint(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Ревизия v5 — замер >= VOLUME_TARGET_CEILING (33) стартует блок на
+    объём сразу с отягощением, не с собственного веса. В отличие от
+    блока на силу, для блока на объём это НЕ отдельный сценарий с особой
+    подсказкой — переиспользует уже существующий общий "около N
+    повторений" (target=VOLUME_BLOCK.base_target=10), тот же хинт, что и
+    для BAND/BODYWEIGHT-стартов этого блока."""
+    await _setup_equipment_queue(session, user, bot, dispatcher, queue=["a"], baseline_reps=33)
+
+    await _advance(session, user, bot, dispatcher)
+
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    assert await fsm.get_state() == EquipmentStates.waiting_for_value.state
+    data = await fsm.get_data()
+    assert data["pending_equipment_type"] == "weight"
+
+    texts_sent = _sent_texts(bot)
+    assert any("около 10 повторений" in t for t in texts_sent)
+    assert not any("минимум 4 повторения" in t for t in texts_sent)
+
+
+async def test_volume_just_below_new_ceiling_still_starts_on_bodyweight(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Граница снизу — замер 32 (< 33) остаётся на прежнем поведении:
+    свой вес, без переспроса."""
+    await _setup_equipment_queue(session, user, bot, dispatcher, queue=["a"], baseline_reps=32)
+
+    await _advance(session, user, bot, dispatcher)
+
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
+    data = await fsm.get_data()
+    assert data["equipment_results"]["a"] == {"type": "bodyweight", "value": None, "item_id": None}
+
+
 async def test_strength_weight_start_shows_specific_hint_not_generic_target(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):

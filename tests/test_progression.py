@@ -282,10 +282,26 @@ def test_strength_threshold_hit_triggers_change():
         (10, (EquipmentType.BAND, EquipmentType.WEIGHT)),
         (11, (EquipmentType.BODYWEIGHT, EquipmentType.WEIGHT)),
         (20, (EquipmentType.BODYWEIGHT, EquipmentType.WEIGHT)),
+        # Ревизия v5 — отягощение сразу при замере >= VOLUME_TARGET_CEILING
+        # (33), тот же порог, что и внутренний потолок иерархии роста.
+        (32, (EquipmentType.BODYWEIGHT, EquipmentType.WEIGHT)),
+        (33, (EquipmentType.WEIGHT, EquipmentType.WEIGHT)),
+        (50, (EquipmentType.WEIGHT, EquipmentType.WEIGHT)),
     ],
 )
 def test_suggest_starting_equipment(baseline_reps, expected):
     assert suggest_starting_equipment(baseline_reps) == expected
+
+
+def test_suggest_starting_equipment_volume_weight_threshold_is_shared_ceiling_constant():
+    """Не два разных числа для разных сценариев (явное требование при
+    ревизии v5) — порог старта блока на объём сразу с отягощением и
+    внутренний потолок иерархии роста (recalculate_volume_block) обязаны
+    быть одной и той же константой, не совпадением двух литералов."""
+    volume_equipment, _ = suggest_starting_equipment(VOLUME_TARGET_CEILING)
+    assert volume_equipment == EquipmentType.WEIGHT
+    volume_equipment_below, _ = suggest_starting_equipment(VOLUME_TARGET_CEILING - 1)
+    assert volume_equipment_below == EquipmentType.BODYWEIGHT
 
 
 # --- initial_volume_target -----------------------------------------------------
@@ -425,13 +441,13 @@ def test_volume_block_bodyweight_suppresses_old_equipment_threshold():
     assert result.new_work_sets == 5
 
 
-# --- recalculate_volume_block: потолок 30 (часть 2, п.3) ---------------------
+# --- recalculate_volume_block: потолок 33 (часть 2, п.3; было 30, ревизия v5) ---
 
 def test_volume_block_ceiling_moderate_overshoot_rolls_back_to_20_plus_one_set():
-    # target=28, work_sets=6, working=28x6, max=32 -> step=ceil(28*0.05)=2,
-    # computed=30 (>=30, <50) -> откат до 20, +1 подход (6->7).
+    # target=31, work_sets=6, working=31x6, max=35 -> step=ceil(31*0.05)=2,
+    # computed=33 (>=33, <50) -> откат до 20, +1 подход (6->7).
     result = recalculate_volume_block(
-        target=28, work_sets=6, working_reps=(28,) * 6, max_reps=32, volume=28 * 6 + 32, prev_volume=0,
+        target=31, work_sets=6, working_reps=(31,) * 6, max_reps=35, volume=31 * 6 + 35, prev_volume=0,
         equipment_type=EquipmentType.BODYWEIGHT,
     )
     assert result == VolumeBlockResult(
@@ -464,8 +480,10 @@ def test_volume_block_ceiling_sets_addition_capped_at_eight():
 def test_volume_block_ceiling_immediate_weight_transition_when_sets_already_maxed():
     # work_sets уже 8 (потолок подходов достигнут раньше) — переход на
     # отягощение СРАЗУ в этой же тренировке, не откат/добавление подходов.
+    # target=31, step=ceil(31*0.05)=2, computed=33 (>=33) -> потолок подходов
+    # уже 8 -> заморозка на потолке.
     result = recalculate_volume_block(
-        target=29, work_sets=8, working_reps=(29,) * 8, max_reps=33, volume=29 * 8 + 33, prev_volume=0,
+        target=31, work_sets=8, working_reps=(31,) * 8, max_reps=35, volume=31 * 8 + 35, prev_volume=0,
         equipment_type=EquipmentType.BODYWEIGHT,
     )
     assert result == VolumeBlockResult(
@@ -603,17 +621,17 @@ def test_recalculate_cascade_weak_streak_defaults_to_zero_when_not_passed():
 
 
 def test_recalculate_cascade_grows_work_sets_through_ceiling_hierarchy():
-    # target=28, work_sets=6 -> тот же пример, что и в recalculate_volume_block
-    # напрямую: откат до 20, +1 подход (7).
+    # target=31, work_sets=6 -> тот же пример, что и в recalculate_volume_block
+    # напрямую: computed=33 -> откат до 20, +1 подход (7).
     record = WorkoutRecord(
         performed_at=datetime(2026, 1, 3, tzinfo=UTC),
-        block_a=_block_assignment((28,) * 6, 32, target_before=0, equipment_type=EquipmentType.BODYWEIGHT),
+        block_a=_block_assignment((31,) * 6, 35, target_before=0, equipment_type=EquipmentType.BODYWEIGHT),
         block_b=_block_assignment((3, 3, 3, 3), 3, target_before=0),
     )
 
     updated = recalculate_cascade(
-        starting_target_a=28, starting_target_b=3,
-        starting_volume_a=28 * 6 + 30, starting_volume_b=12,
+        starting_target_a=31, starting_target_b=3,
+        starting_volume_a=31 * 6 + 35, starting_volume_b=12,
         subsequent_workouts=[record],
         starting_work_sets_a=6,
     )
