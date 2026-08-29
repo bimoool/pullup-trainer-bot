@@ -1,0 +1,20 @@
+name: Deploy
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 192.241.141.47
+          username: deploy
+          key: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
+          command_timeout: 15m
+          script: ./deploy.sh ${{ github.sha }}
