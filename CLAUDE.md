@@ -226,6 +226,78 @@ telegram_id из списка:
 нет — тогда это баг того самого класса (см. `callback.message.from_user`
 выше), а не раньше.
 
+## Mini App: Этап 0 (фундамент)
+
+Домен подтверждён (issue #15): **`app.bimoool.com`** резолвится в этот VPS
+(`192.241.141.47`). Отдельный от инста-сейвер бота поддомен на той же
+панели — не конфликтует.
+
+Код фундамента:
+
+- **`app/web/`** — FastAPI, тонкий слой поверх тех же `repositories`/
+  `domain`, что и бот (тот же принцип, что `app/bot/handlers/`), без
+  импорта aiogram. `app/web/auth.py::validate_init_data` — HMAC-SHA256
+  проверка подписи Telegram `initData` (без неё любой мог бы подставить
+  чужой `telegram_id` прямым HTTP-запросом к `/api/*`, минуя сам
+  Telegram); фронтенд шлёт её заголовком `Authorization: tma <initData>`.
+  `GET /api/hello` — единственный содержательный эндпойнт, читает `User`
+  через `UserRepository` и считает готовность к тренировке через
+  `app.domain.rules.check_training_readiness` на реальных данных —
+  доказывает цепочку целиком. `GET /api/health` — без авторизации, для
+  Docker healthcheck и (потом) nginx.
+- **`webapp-frontend/`** — минимальный React (Vite, без TypeScript, JS),
+  вне пакета `app`. `npm run build` → `dist/`, отдаётся тем же
+  FastAPI-процессом через `StaticFiles` (см. `app/web/main.py`) — один
+  origin, CORS не нужен.
+- **`Dockerfile.web`** — отдельный образ (Node-сборка фронта → Python
+  рантайм, `pip install .[web]`). Основной `Dockerfile` бота не меняется и
+  не пересобирается этим файлом. Extra `web` в `pyproject.toml` — чтобы
+  `fastapi`/`uvicorn` не попадали в образ бота.
+- **`docker-compose.yml`, сервис `web`** — свой контейнер, зависит только
+  от `db` (не от `redis` — веб-слой не трогает FSM бота). Порт публикуется
+  **только на `127.0.0.1`** (как у `db`), наружу отдаёт nginx на хосте —
+  сервис физически не может задеть `reeltrack-*`-контейнеры соседнего
+  проекта. Порт настраивается `MINI_APP_PORT` в `.env` (по умолчанию
+  `8081`), если понадобится не конфликтовать с уже занятым портом.
+- **`MINI_APP_URL`** (`app/config.py`, `.env.example`) — кнопка
+  "🚀 Личный кабинет" в нижнем меню бота (`app/bot/keyboards.py::
+  bottom_menu_keyboard`) скрыта, пока пусто (тот же паттерн, что
+  `ADMIN_SHEET_URL`/`ROBOKASSA_*`) — Telegram и не даст открыть
+  `WebAppInfo` не по HTTPS, показывать кнопку раньше, чем сервер реально
+  настроен, бессмысленно.
+- **`docker/nginx/app.bimoool.com.conf`** — конфиг ДЛЯ ХОСТ-УРОВНЯ nginx
+  (не контейнер), copy-paste на сервер вручную. Комментарий в файле
+  расписывает порядок с certbot (webroot-режим, не трогает уже работающий
+  reeltrack-bot).
+
+### Чек-лист для человека с доступом к VPS (не выполнимо из песочницы Claude)
+
+1. Проверить, есть ли уже host-level nginx на сервере (например, под
+   `reeltrack-bot`) — если да, `docker/nginx/app.bimoool.com.conf` кладётся
+   рядом с его существующими `server{}`-блоками (обычно
+   `/etc/nginx/sites-available/` + симлинк в `sites-enabled/`); если нет —
+   `apt install nginx` на хосте (не контейнер — контейнерный nginx лишний
+   шаг ради одного сервиса, а хостовый проще шарить между `pullup` и
+   `reeltrack`, если у того тоже когда-нибудь будет свой поддомен).
+2. Проверить, что порты 80/443 на хосте свободны или уже слушаются именно
+   nginx (не что-то от `reeltrack-bot`).
+3. `sudo mkdir -p /var/www/certbot`, включить только блок `:80` из
+   `app.bimoool.com.conf`, `nginx -t && systemctl reload nginx`.
+4. `sudo certbot certonly --webroot -w /var/www/certbot -d app.bimoool.com`
+   (сертификата ещё нет — блок `:443` пока закомментирован).
+5. Раскомментировать блок `:443`, `nginx -t && systemctl reload nginx`.
+   Certbot сам ставит автопродление (cron/systemd timer), донастраивать не
+   нужно.
+6. В `.env` на сервере: `MINI_APP_URL=https://app.bimoool.com`, при
+   необходимости сменить `MINI_APP_PORT`, если `8081` занят.
+7. `docker compose up -d --build web` (из `/root/pullup-trainer-bot`, без
+   `-p`/глобальных флагов — см. правило вверху файла).
+8. Проверить вживую, не только по логам (см. правило "после деплоя" выше):
+   `curl -s https://app.bimoool.com/api/health`, затем открыть кнопку
+   "🚀 Личный кабинет" в самом боте (появится только после того, как
+   `MINI_APP_URL` заполнен и бот перезапущен) и убедиться, что видно
+   "Привет, {имя}".
+
 ## Прочие устоявшиеся решения
 
 - **Архивировать, не удалять.** Любой «сброс»/«убрать» исторических

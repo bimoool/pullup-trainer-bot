@@ -61,6 +61,33 @@ services:
       retries: 5
       start_period: 10s
 
+  web:
+    # Mini App (Этап 0, app/web/) — отдельный образ (Dockerfile.web), не
+    # трогает и не пересобирает основной образ бота (build: .). Не зависит
+    # от redis: веб-слой не использует FSM бота.
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    # Публикуем ТОЛЬКО на 127.0.0.1, как и db — снаружи отдаёт nginx на
+    # хосте (см. CLAUDE.md, "Mini App: Этап 0"). Порт настраивается через
+    # MINI_APP_PORT в .env, если 8081 уже занят на сервере (например,
+    # соседним reeltrack-bot) — сам контейнер физически не может задеть
+    # чужие reeltrack-* контейнеры, они не публикуют портов друг на друга.
+    ports:
+      - "127.0.0.1:${MINI_APP_PORT:-8081}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:8000/api/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   pgdata:
   redisdata:

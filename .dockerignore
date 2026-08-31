@@ -8,3 +8,5 @@ venv/
 .ruff_cache/
 tests/
 README.md
+webapp-frontend/node_modules/
+webapp-frontend/dist/

@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # (напоминание, приём ответа, рассылка) работает как обычно.
     github_token: str = ""
 
+    # Mini App (Этап 0, app/web/) — https://<поддомен>, обслуживается
+    # отдельным сервисом web (docker-compose.yml) за nginx+Let's Encrypt.
+    # Пусто -> кнопка "🚀 Личный кабинет" в нижнем меню бота скрыта: Telegram
+    # не откроет WebAppInfo не по HTTPS, показывать кнопку раньше, чем домен
+    # реально настроен на сервере, бессмысленно (см. app/bot/keyboards.py).
+    mini_app_url: str = ""
+
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]

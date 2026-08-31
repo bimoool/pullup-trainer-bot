@@ -3,11 +3,13 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
+from app.config import settings
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 
@@ -30,6 +32,7 @@ BOTTOM_MENU_WORKOUT = "💪 Тренировка"
 BOTTOM_MENU_PROGRESS = "📊 Прогресс"
 BOTTOM_MENU_PROFILE = "👤 Профиль"
 BOTTOM_MENU_HELP = "❓ Помощь"
+BOTTOM_MENU_MINI_APP = "🚀 Личный кабинет"
 BOTTOM_MENU_ADMIN = "🛠 Админка"
 
 
@@ -37,6 +40,14 @@ def bottom_menu_keyboard(*, is_admin: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text=BOTTOM_MENU_WORKOUT), KeyboardButton(text=BOTTOM_MENU_PROGRESS))
     builder.row(KeyboardButton(text=BOTTOM_MENU_PROFILE), KeyboardButton(text=BOTTOM_MENU_HELP))
+    # settings.mini_app_url, не параметр — читается напрямую (в отличие от
+    # is_admin) потому что не зависит от конкретного telegram_id вызова, это
+    # общий переключатель фичи (Mini App: Этап 0, пусто пока домен не настроен
+    # на сервере, см. CLAUDE.md).
+    if settings.mini_app_url:
+        builder.row(
+            KeyboardButton(text=BOTTOM_MENU_MINI_APP, web_app=WebAppInfo(url=settings.mini_app_url)),
+        )
     if is_admin:
         builder.row(KeyboardButton(text=BOTTOM_MENU_ADMIN))
     return builder.as_markup(resize_keyboard=True)
