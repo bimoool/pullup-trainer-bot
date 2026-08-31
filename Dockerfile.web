@@ -1,0 +1,30 @@
+# Отдельный образ от основного Dockerfile (бот) — свой сервис `web` в
+# docker-compose.yml, пересобирается и деплоится независимо, не трогает
+# работающий бот (см. CLAUDE.md, "Mini App: Этап 0").
+
+FROM node:20-slim AS frontend-build
+WORKDIR /frontend
+COPY webapp-frontend/package.json ./
+# package-lock.json нет (см. CLAUDE.md) — npm install, не npm ci, до
+# первой генерации лока средой с доступом к npm-реестру.
+RUN npm install
+COPY webapp-frontend/ ./
+RUN npm run build
+
+FROM python:3.12-slim
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml ./
+COPY app ./app
+
+RUN pip install --no-cache-dir .[web]
+
+# webapp-frontend/dist ожидается по этому пути — app/web/main.py монтирует
+# статику относительно своего файла (parents[2] от app/web/main.py).
+COPY --from=frontend-build /frontend/dist ./webapp-frontend/dist
+
+CMD ["uvicorn", "app.web.main:app", "--host", "0.0.0.0", "--port", "8000"]

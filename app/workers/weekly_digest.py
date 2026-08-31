@@ -33,8 +33,16 @@ MAX_ISSUES_SHOWN = 20
 async def _build_commits_section(client: GitHubClientProtocol, since: datetime) -> str:
     try:
         commits = await client.list_commits_since(since)
-    except (aiohttp.ClientError, TimeoutError):
-        logger.warning("weekly_digest: failed to fetch commits", exc_info=True)
+    except aiohttp.ClientResponseError as exc:
+        logger.warning(
+            "weekly_digest: failed to fetch commits — GitHub HTTP %s: %s",
+            exc.status, exc.message,
+        )
+        return texts.ADMIN_WEEKLY_DIGEST_COMMITS_UNAVAILABLE
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        logger.warning(
+            "weekly_digest: failed to fetch commits — %s: %s", type(exc).__name__, exc,
+        )
         return texts.ADMIN_WEEKLY_DIGEST_COMMITS_UNAVAILABLE
     if not commits:
         return texts.ADMIN_WEEKLY_DIGEST_COMMITS_EMPTY
@@ -53,8 +61,16 @@ def _format_issue_line(issue: IssueSummary) -> str:
 async def _build_issues_section(client: GitHubClientProtocol) -> str:
     try:
         issues = await client.list_open_issues()
-    except (aiohttp.ClientError, TimeoutError):
-        logger.warning("weekly_digest: failed to fetch issues", exc_info=True)
+    except aiohttp.ClientResponseError as exc:
+        logger.warning(
+            "weekly_digest: failed to fetch issues — GitHub HTTP %s: %s",
+            exc.status, exc.message,
+        )
+        return texts.ADMIN_WEEKLY_DIGEST_ISSUES_UNAVAILABLE
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        logger.warning(
+            "weekly_digest: failed to fetch issues — %s: %s", type(exc).__name__, exc,
+        )
         return texts.ADMIN_WEEKLY_DIGEST_ISSUES_UNAVAILABLE
     if not issues:
         return texts.ADMIN_WEEKLY_DIGEST_ISSUES_EMPTY
@@ -68,8 +84,16 @@ async def _build_reminder_text(github_client: GitHubClientProtocol | None, since
     """github_client=None — GITHUB_TOKEN не настроен (settings.github_token
     пуст): обе секции показывают "недоступно" без единого сетевого запроса,
     остальной воркер (напоминание, приём ответа, рассылка) работает как
-    обычно, тем же принципом, что Robokassa при отсутствующих ключах."""
+    обычно, тем же принципом, что Robokassa при отсутствующих ключах.
+
+    До этого фикса этот путь не логировал вообще ничего — "недоступно" в
+    сообщении админу выглядело неотличимо от реального сбоя сети/GitHub
+    API, хотя причина совсем другая (не настроен .env на сервере) и не
+    требует расследования HTTP-ответов."""
     if github_client is None:
+        logger.warning(
+            "weekly_digest: GITHUB_TOKEN is not configured, commits/issues sections skipped",
+        )
         return (
             texts.ADMIN_WEEKLY_DIGEST_REMINDER
             + texts.ADMIN_WEEKLY_DIGEST_COMMITS_UNAVAILABLE

@@ -10,3 +10,4 @@ secrets/
 dist/
 build/
 .DS_Store
+node_modules/
