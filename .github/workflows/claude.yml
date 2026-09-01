@@ -30,6 +30,16 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
@@ -43,8 +53,8 @@ jobs:
           # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
           # prompt: 'Update the pull request description to include a summary of changes.'
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr *)'
-
+          # Expanded tool allowlist: Python/pip and Node/npm are set up above, plus
+          # git/gh commands needed to actually verify code (install deps, run tests,
+          # build frontend) instead of only reasoning about it from memory. See
+          # CLAUDE.md "Mini App" section for why this was needed (issue #15).
+          claude_args: '--allowed-tools "Bash(pip install:*)" "Bash(pip:*)" "Bash(python -m pytest:*)" "Bash(pytest:*)" "Bash(ruff:*)" "Bash(npm install:*)" "Bash(npm run:*)" "Bash(npm ci:*)" "Bash(git fetch:*)" "Bash(git show-ref:*)" "Bash(git ls-remote:*)" "Bash(gh pr *)" "Bash(gh api:*)"'
