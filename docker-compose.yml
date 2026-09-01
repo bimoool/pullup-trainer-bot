@@ -67,8 +67,9 @@ services:
     # Публикуем ТОЛЬКО на 127.0.0.1, как db — наружу отдаёт nginx на хосте
     # (см. CLAUDE.md, "Mini App: Этап 0"), поэтому этот сервис физически не
     # может задеть reeltrack-* контейнеры соседнего проекта на этом VPS.
-    # Порт настраивается через MINI_APP_PORT, если 8000 конфликтует с уже
-    # занятым у reeltrack-bot.
+    # Порт настраивается через MINI_APP_PORT; дефолт 8001, не 8000 — на
+    # проде 8000 подтверждённо занят чужим живым процессом (issue #19).
+    # Переопределить в .env, если и 8001 конфликтует с чем-то на VPS.
     build:
       context: .
       dockerfile: Dockerfile.web
@@ -76,7 +77,7 @@ services:
     env_file:
       - .env
     ports:
-      - "127.0.0.1:${MINI_APP_PORT:-8000}:8000"
+      - "127.0.0.1:${MINI_APP_PORT:-8001}:8000"
     depends_on:
       db:
         condition: service_healthy
