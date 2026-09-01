@@ -264,6 +264,32 @@ npm/PyPI из песочницы Claude (сетевой доступ недос�
 build web` с доступом к сети. Не мержить/деплоить, не прогнав их хотя бы
 раз с реальными пакетами.
 
+**Обновление (issue #23, 2026-09-01): доступ к npm из песочницы Claude
+иногда всё же есть** — оговорка выше про полное отсутствие сетевого
+доступа не универсальна, зависит от конкретного запуска/окружения.
+Когда доступ есть — им стоит воспользоваться (`npm install` в
+`webapp-frontend/`, закоммитить получившийся `package-lock.json`, если
+его ещё нет, прогнать `npx tsc -b && npx vite build` перед выводами о
+типах/сборке), не полагаться на память о публичном API по умолчанию.
+Так был найден реальный баг: `@telegram-apps/sdk`'s `retrieveLaunchParams()`
+(пакет `@telegram-apps/bridge` под капотом) читает launch params
+**только из URL** (`location.href` → `performance` navigation entry →
+`sessionStorage`), никогда не обращается к `window.Telegram.WebApp.initData`
+(мост старого `telegram-web-app.js`, подключённого в `index.html`).
+На живом Telegram Desktop `tgWebAppData` иногда не попадает в URL, хотя
+кнопка Mini App правильная (`KeyboardButton(web_app=WebAppInfo(...))`,
+не обычная `url=`-ссылка — тип кнопки был не при чём) — фронтенд получал
+пустой `initDataRaw` и ошибочно писал "открыто не из Telegram?".
+`webapp-frontend/src/App.tsx` теперь фолбэчится на
+`window.Telegram.WebApp.initData`, если `retrieveLaunchParams()` пуст
+или бросает исключение — тот же initData, другой источник, независимый
+от URL-парсинга. Не проверено на живом Desktop-клиенте (сеть до npm ≠
+доступ к реальному Telegram-клиенту, это два разных класса ограничения
+песочницы) — если фолбэк не поможет, следующий кандидат — точка входа
+через постоянную Menu Button (`set_chat_menu_button`/`MenuButtonWebApp`)
+вместо `KeyboardButton`, у неё более стабильная кросс-клиентская
+поддержка initData по опыту сообщества `@telegram-apps/sdk`.
+
 **Что требует доступа к серверу (не проверяемо из песочницы Claude):**
 1. Host-level nginx на сервере подтверждённо не установлен (issue #21:
    `which nginx` пусто, `/etc/nginx/sites-available/` не существует) —
