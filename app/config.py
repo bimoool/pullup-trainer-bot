@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     # (напоминание, приём ответа, рассылка) работает как обычно.
     github_token: str = ""
 
+    # Mini App (app/web/, Этап 0, issue #15) — HTTPS-адрес, на котором
+    # отдаётся React-фронтенд (см. app/web/main.py, webapp-frontend/).
+    # Telegram открывает WebAppInfo только по https:// — пусто -> кнопка
+    # "🚀 Личный кабинет" в нижнем меню скрыта (app/bot/keyboards.py), тот
+    # же принцип, что ADMIN_SHEET_URL/ROBOKASSA_* выше: сервис можно
+    # выкатить в проде до того, как для него готов реальный домен.
+    mini_app_url: str = ""
+
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]

@@ -11,7 +11,17 @@ from app.db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False — иначе fileConfig() (по умолчанию True)
+    # молча отключает (logger.disabled = True) все уже созданные к этому
+    # моменту логгеры, не перечисленные в alembic.ini — включая
+    # logging.getLogger(__name__) любого app.*-модуля, импортированного до
+    # прогона миграций (у pytest это происходит на сборе тестов, раньше
+    # session-scoped фикстуры, что и запускает миграции). Найдено на
+    # caplog-тестах app/workers/weekly_digest.py: caplog.records оставался
+    # пустым даже для прямого синхронного logger.warning() в теле теста —
+    # не сбой конкретного теста, а глобальное отключение логов для всего
+    # процесса pytest после первого прогона миграций.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

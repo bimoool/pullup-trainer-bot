@@ -21,6 +21,25 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
+    "httpx>=0.27",
+]
+# Отдельный веб-сервис (app/web/, Mini App) — свой Docker-образ
+# (Dockerfile.web), не тянется в основной образ бота (Dockerfile). httpx —
+# только для тестов эндпоинтов (FastAPI TestClient), не рантайм-зависимость.
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    # Валидация подписи Telegram initData (HMAC-SHA256 по спеке Telegram) —
+    # готовая, тестируемая библиотека вместо самодельной реализации (issue
+    # #15, комментарий от 2026-08-31: taiga-labs/telegram-miniapp-template
+    # как референс, init-data-py/telegram-webapps-authentication как
+    # готовые варианты). init-data-py — минимальная поверхность (parse +
+    # validate), без привязки к конкретному веб-фреймворку — FastAPI-
+    # интеграция (Depends) написана тонким слоем в app/web/auth.py, тем же
+    # принципом "своя обвязка поверх готовой библиотеки", что и остальной
+    # проект (не app/bot/handlers пишет HTTP-клиент Robokassa сам, см.
+    # app/services/robokassa.py).
+    "init-data-py>=0.2.7,<1",
 ]
 
 [tool.pytest.ini_options]

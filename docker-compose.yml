@@ -61,6 +61,32 @@ services:
       retries: 5
       start_period: 10s
 
+  web:
+    # Mini App (Этап 0, issue #15) — свой образ (Dockerfile.web), свой
+    # контейнер, зависит только от db (initData не трогает FSM/Redis).
+    # Публикуем ТОЛЬКО на 127.0.0.1, как db — наружу отдаёт nginx на хосте
+    # (см. CLAUDE.md, "Mini App: Этап 0"), поэтому этот сервис физически не
+    # может задеть reeltrack-* контейнеры соседнего проекта на этом VPS.
+    # Порт настраивается через MINI_APP_PORT, если 8000 конфликтует с уже
+    # занятым у reeltrack-bot.
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${MINI_APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   pgdata:
   redisdata:

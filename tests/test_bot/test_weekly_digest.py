@@ -262,6 +262,49 @@ async def test_reminder_degrades_gracefully_when_github_api_fails(
     assert "#1 Открытый issue" in reminder.text  # issues секция не пострадала от сбоя в commits
 
 
+async def test_github_api_error_logs_status_and_message(
+    session, bot: Bot, dispatcher: Dispatcher, monkeypatch, caplog,
+):
+    """До этого фикса сбой GitHub API логировался только как безликий
+    traceback (exc_info=True) — по факту первого реального прод-инцидента
+    (issue #15: обе секции дайджеста ушли "недоступно" без единого
+    отличимого следа в логах) добавлено явное HTTP-код/текст в само
+    сообщение лога, не только в traceback."""
+    admin = await _make_admin(session, 8113)
+    monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
+    request_info = aiohttp.RequestInfo(
+        url=aiohttp.client.URL("https://api.github.com/repos/bimoool/pullup-trainer-bot/commits"),
+        method="GET", headers={}, real_url=aiohttp.client.URL("https://api.github.com/repos/bimoool/pullup-trainer-bot/commits"),
+    )
+    fake_github = FakeGitHubClient(
+        commits_error=aiohttp.ClientResponseError(
+            request_info, history=(), status=401, message="Bad credentials",
+        ),
+        issues=[],
+    )
+
+    with caplog.at_level("WARNING"):
+        await send_weekly_digest_reminder(bot, dispatcher, session=session, github_client=fake_github)
+
+    [commits_log] = [r for r in caplog.records if "failed to fetch commits" in r.message]
+    assert "401" in commits_log.message
+    assert "Bad credentials" in commits_log.message
+
+
+async def test_missing_github_token_logs_explanation(session, bot: Bot, dispatcher: Dispatcher, monkeypatch, caplog):
+    """github_client не передан и GITHUB_TOKEN пуст (реальный прод-путь) —
+    раньше этот случай не оставлял вообще никакого следа в логах,
+    неотличимо от того, будто воркер не запускался. См. issue #15."""
+    admin = await _make_admin(session, 8114)
+    monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
+    monkeypatch.setattr(settings, "github_token", "")
+
+    with caplog.at_level("WARNING"):
+        await send_weekly_digest_reminder(bot, dispatcher, session=session)
+
+    assert any("GITHUB_TOKEN is not configured" in r.message for r in caplog.records)
+
+
 async def test_first_reminder_uses_default_lookback_when_no_prior_digest(
     session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
 ):
