@@ -30,8 +30,19 @@ def _sign(fields: dict, bot_token: str) -> str:
 
 
 def _build_init_data(*, telegram_id: int, first_name: str, bot_token: str, auth_date: int | None = None) -> str:
+    # init_data_py.InitData.validate() не хэширует сырую подстроку "user="
+    # из query string — parse() сначала разбирает её в объект User, а
+    # calculate_hash() пересериализует его обратно через Object.to_json()
+    # (init_data_py/types/object.py), который зовёт json.dumps(...,
+    # ensure_ascii=False). Реальный Telegram-клиент тоже шлёт initData как
+    # raw UTF-8 (не \u-экранированную строку) — ensure_ascii=False здесь
+    # воспроизводит эту сериализацию, иначе для не-ASCII first_name подпись,
+    # посчитанная тестом, и подпись, пересчитанная библиотекой при валидации,
+    # расходятся байт-в-байт (обнаружено на "Кирилл": SignInvalidError).
     fields = {
-        "user": json.dumps({"id": telegram_id, "first_name": first_name}, separators=(",", ":")),
+        "user": json.dumps(
+            {"id": telegram_id, "first_name": first_name}, separators=(",", ":"), ensure_ascii=False
+        ),
         "auth_date": str(auth_date if auth_date is not None else int(time.time())),
         "query_id": "AAEAAAAAAAAA",
     }

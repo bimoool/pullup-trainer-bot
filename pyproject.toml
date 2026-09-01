@@ -39,7 +39,7 @@ web = [
     # принципом "своя обвязка поверх готовой библиотеки", что и остальной
     # проект (не app/bot/handlers пишет HTTP-клиент Robokassa сам, см.
     # app/services/robokassa.py).
-    "init-data-py>=1.2",
+    "init-data-py>=0.2.7,<1",
 ]
 
 [tool.pytest.ini_options]
