@@ -271,8 +271,9 @@ build web` с доступом к сети. Не мержить/деплоить
 2. Свободны ли порты 80/443, не заняты ли чем-то от `reeltrack-bot`.
 3. `certbot`/Let's Encrypt на `app.bimoool.com` — получить сертификат,
    настроить автопродление.
-4. Reverse proxy `app.bimoool.com` → `127.0.0.1:${MINI_APP_PORT:-8000}`
-   (порт сервиса `web`, см. `docker-compose.yml`).
+4. Reverse proxy `app.bimoool.com` → `127.0.0.1:${MINI_APP_PORT:-8001}`
+   (порт сервиса `web`, см. `docker-compose.yml`; дефолт 8001, не 8000 —
+   на проде порт 8000 подтверждённо занят чужим живым процессом, issue #19).
 5. Заполнить `MINI_APP_URL=https://app.bimoool.com` в `.env` на сервере —
    до этого кнопка "🚀 Личный кабинет" в нижнем меню бота скрыта
    (`app/bot/keyboards.py::bottom_menu_keyboard`).
