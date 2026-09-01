@@ -265,15 +265,25 @@ build web` с доступом к сети. Не мержить/деплоить
 раз с реальными пакетами.
 
 **Что требует доступа к серверу (не проверяемо из песочницы Claude):**
-1. Установлен ли уже host-level nginx на сервере (например, под
-   `reeltrack-bot`) — от этого зависит, добавлять новый `server{}`-блок
-   в существующий конфиг или ставить отдельный nginx-контейнер.
+1. Host-level nginx на сервере подтверждённо не установлен (issue #21:
+   `which nginx` пусто, `/etc/nginx/sites-available/` не существует) —
+   значит `reeltrack-bot` его тоже не использует. Установка (`apt install
+   nginx`) и включение конфига из пункта 4 — руками на сервере.
 2. Свободны ли порты 80/443, не заняты ли чем-то от `reeltrack-bot`.
 3. `certbot`/Let's Encrypt на `app.bimoool.com` — получить сертификат,
-   настроить автопродление.
+   настроить автопродление. `certbot --nginx -d app.bimoool.com` сам
+   допишет `listen 443 ssl`/редирект в конфиг из пункта 4, отдельный файл
+   под 443 не нужен.
 4. Reverse proxy `app.bimoool.com` → `127.0.0.1:${MINI_APP_PORT:-8001}`
    (порт сервиса `web`, см. `docker-compose.yml`; дефолт 8001, не 8000 —
    на проде порт 8000 подтверждённо занят чужим живым процессом, issue #19).
+   Готовый конфиг — `deploy/nginx/app.bimoool.com.conf` (issue #21,
+   версионируется как `deploy/deploy-run.sh`, применяется на сервере
+   вручную командами в шапке файла: скопировать в
+   `/etc/nginx/sites-available/`, симлинк в `sites-enabled/`, `nginx -t`,
+   `systemctl reload nginx`). Самостоятельный файл на отдельный
+   `server_name` — не трогает конфиг `reeltrack-bot`, если тот тоже
+   окажется под host-level nginx на этом VPS.
 5. Заполнить `MINI_APP_URL=https://app.bimoool.com` в `.env` на сервере —
    до этого кнопка "🚀 Личный кабинет" в нижнем меню бота скрыта
    (`app/bot/keyboards.py::bottom_menu_keyboard`).
