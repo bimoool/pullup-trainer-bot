@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from app.web.routes import router
+from app.web.static import CacheControlStaticFiles
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
 # тот же процесс FastAPI отдаёт и /api/*, и статику одним origin'ом, без
@@ -28,4 +28,10 @@ if FRONTEND_DIST.is_dir():
     # html=True — неизвестные пути (например, /workout при обновлении
     # страницы в React Router) отдают index.html, а не 404: клиентский
     # роутинг сам разберётся, какой экран показать.
-    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+    # CacheControlStaticFiles (не голый StaticFiles) — без явного
+    # Cache-Control Telegram Mini App клиенты агрессивно кэшируют
+    # index.html, и задеплоенные фиксы физически лежат на сервере, но не
+    # доходят до пользователя (issue #27).
+    app.mount(
+        "/", CacheControlStaticFiles(directory=FRONTEND_DIST, html=True), name="frontend",
+    )
