@@ -3,6 +3,125 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      issue #32: чёрный экран на мобильном пережил ErrorBoundary (#26) даже
+      после того как menu button (#30) заработала и initData стала
+      доходить — значит проблема где-то ДО того, как успевает
+      стартовать React (ErrorBoundary — часть React-дерева, бесполезна,
+      если сам бандл не загрузился/упал раньше). Этот script — самый
+      первый тег в <head>, classic (не type="module", не зависит от
+      bundle.js и от того, выполнился ли он вообще), регистрирует
+      обработчики раньше, чем начнут грузиться telegram-web-app.js и
+      /src/main.tsx ниже, чтобы поймать даже ошибку их собственной
+      загрузки (capture-phase 'error' на window — единственный способ
+      увидеть отказ загрузки ресурса, такие события не всплывают).
+      Пишет диагностику прямо в #root через textContent/createElement
+      (не React, не innerHTML с чужим текстом) только пока #root
+      реально пуст — если React уже успешно что-то туда отрисовал,
+      более поздние несвязанные ошибки экран не перезатирают.
+    -->
+    <script>
+      (function () {
+        var ROOT_ID = "root";
+        var messages = [];
+
+        function getRoot() {
+          return document.getElementById(ROOT_ID);
+        }
+
+        function rootIsEmpty(root) {
+          return !!root && root.childNodes.length === 0;
+        }
+
+        function describe() {
+          var tg = window.Telegram && window.Telegram.WebApp;
+          var lines = [
+            "userAgent: " + navigator.userAgent,
+            "location: " + location.href,
+            "readyState: " + document.readyState,
+            "Telegram.WebApp: " +
+              (tg
+                ? "version=" + (tg.version || "?") + " platform=" + (tg.platform || "?")
+                : "отсутствует"),
+          ];
+          if (messages.length) {
+            lines.push("события:");
+            lines = lines.concat(messages);
+          }
+          return lines.join("\n");
+        }
+
+        function render(title, details) {
+          var root = getRoot();
+          if (!rootIsEmpty(root)) {
+            return;
+          }
+          root.textContent = "";
+          var wrap = document.createElement("div");
+          wrap.style.cssText =
+            "padding:16px;font-family:sans-serif;background:#fff;color:#111;min-height:100vh;box-sizing:border-box;";
+          var heading = document.createElement("p");
+          heading.textContent = title;
+          heading.style.cssText = "font-weight:bold;margin:0 0 8px;";
+          var pre = document.createElement("pre");
+          pre.style.cssText = "white-space:pre-wrap;word-break:break-word;font-size:12px;color:#555;margin:0;";
+          pre.textContent = details;
+          wrap.appendChild(heading);
+          wrap.appendChild(pre);
+          root.appendChild(wrap);
+        }
+
+        function report(message) {
+          messages.push(new Date().toISOString() + " " + message);
+          render("Диагностика: что-то пошло не так до запуска приложения", describe());
+        }
+
+        // Раннее сообщение для случая, когда сам этот script почему-то не
+        // выполнился бы целиком (например, синтаксическая ошибка выше по
+        // файлу в другом браузере) — недостижимо в норме, но report ниже
+        // уже перезапишет этот текст первым же реальным событием.
+        window.__miniAppDiag = { report: report };
+
+        window.addEventListener(
+          "error",
+          function (event) {
+            var target = event.target;
+            if (target && target !== window && target.nodeType === 1) {
+              // Ошибка загрузки ресурса (script/link/img) не всплывает,
+              // ловится только в фазе capture — event.message тут пустой,
+              // информативны только тег и src/href.
+              report("не загрузился ресурс <" + target.tagName + "> " + (target.src || target.href || ""));
+              return;
+            }
+            report(
+              "window.onerror: " +
+                (event.message || "?") +
+                " (" +
+                (event.filename || "?") +
+                ":" +
+                (event.lineno || "?") +
+                ":" +
+                (event.colno || "?") +
+                ")",
+            );
+          },
+          true,
+        );
+
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          report("unhandledrejection: " + (reason && reason.message ? reason.message : String(reason)));
+        });
+
+        document.addEventListener("DOMContentLoaded", function () {
+          setTimeout(function () {
+            if (rootIsEmpty(getRoot())) {
+              report("React не успел ничего отрисовать за 4с после DOMContentLoaded — бандл не выполнился или завис");
+            }
+          }, 4000);
+        });
+      })();
+    </script>
     <title>pullup-trainer-bot</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
