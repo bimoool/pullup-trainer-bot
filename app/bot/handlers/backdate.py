@@ -15,7 +15,6 @@ from app.bot.formatting import (
     format_sets_word,
 )
 from app.bot.handlers.equipment import _begin_equipment_setup
-from app.bot.handlers.workout import _ensure_active_workout_set
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
@@ -31,7 +30,7 @@ from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.session import BlockLog
-from app.services.workout_log import WorkoutLogService
+from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
 router = Router()
 
@@ -277,7 +276,7 @@ async def finalize_backdated_workout(
     users = UserRepository(session)
     user = await users.get_by_telegram_id(telegram_id)
 
-    active_set = await _ensure_active_workout_set(session, user.id)
+    active_set = await ensure_active_workout_set(session, user.id)
     if active_set is None:
         await message.answer(texts.NO_ACTIVE_SET_SUPPORT)
         await state.clear()

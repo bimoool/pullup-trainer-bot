@@ -3,7 +3,8 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BlockType, EquipmentType, Workout, WorkoutSetStatus
+from app.db.models import BlockType, EquipmentType, Workout, WorkoutSet, WorkoutSetStatus
+from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.events import EventRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -16,6 +17,28 @@ from app.domain.achievements import (
 from app.domain.session import BlockLog
 from app.services.achievement_checks import unlock_history_achievements, unlock_volume_milestones
 from app.services.gamification import GamificationService
+
+
+async def ensure_active_workout_set(session: AsyncSession, user_id: int) -> WorkoutSet | None:
+    """Сет закрывается автоматически по достижении SET_LENGTH тренировок
+    (WorkoutSetRepository.increment_completed) — раньше это означало тупик
+    "нет активного сета, напишите в поддержку". Сеты — это просто окно
+    отчётности на 12 тренировок, они не должны блокировать тренировки,
+    поэтому следующий сет открывается автоматически от последнего замера.
+
+    Публичная функция сервисного слоя (issue #36, Этап 1 Mini App) — нужна
+    и боту (app/bot/handlers/workout.py), и веб-слою (app/web/routes.py),
+    единственный источник, не копия."""
+    workout_sets = WorkoutSetRepository(session)
+    active = await workout_sets.get_active_for_user(user_id)
+    if active is not None:
+        return active
+
+    baseline = await BaselineRepository(session).get_latest_for_user(user_id)
+    if baseline is None:
+        return None
+    return await workout_sets.create(user_id=user_id, started_from_baseline_id=baseline.id)
+
 
 # Сумма за COINS_PER_WORKOUT не определена (см. app/services/onboarding.py)
 # — начисляем 0, но фиксируем сам факт тренировки, чтобы история работала

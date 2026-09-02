@@ -1,4 +1,9 @@
-from pydantic import BaseModel
+from decimal import Decimal
+from typing import Annotated
+
+from pydantic import BaseModel, Field
+
+from app.bot.parsing import MAX_REPS, MIN_REPS
 
 
 class HelloResponse(BaseModel):
@@ -6,3 +11,72 @@ class HelloResponse(BaseModel):
     is_onboarded: bool
     readiness_status: str | None
     days_since_last_workout: int | None
+
+
+class EquipmentInfo(BaseModel):
+    """Снаряд блока, каким он унаследован с прошлой тренировки
+    (needs_new_equipment=False — иначе GET /api/workout/plan вообще не
+    дошёл бы до статуса "ready", см. app/web/routes.py). label — тот же
+    текст, что видит пользователь бота (app.bot.formatting.format_equipment_label,
+    не отдельная веб-копия форматирования)."""
+
+    type: str
+    value: Decimal | None
+    item_id: int | None
+    label: str
+
+
+class WorkoutPlanResponse(BaseModel):
+    """GET /api/workout/plan — статус определяет, есть ли форма ввода:
+    "ready" — да, план ниже заполнен; любой другой статус — форма не
+    показывается, поля плана пустые (см. issue #36, сужение скоупа
+    Этапа 1: только обычная тренировка и gap_rollback, остальные случаи
+    ведут в бота)."""
+
+    status: str
+    workout_set_id: int | None = None
+    target_a: int | None = None
+    target_b: int | None = None
+    work_sets_a: int | None = None
+    work_sets_b: int | None = None
+    equipment_a: EquipmentInfo | None = None
+    equipment_b: EquipmentInfo | None = None
+    is_gap_rollback: bool = False
+
+
+Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
+# Те же границы, что app.bot.parsing.parse_reps проверяет для живого ввода
+# в боте — единственный источник (MAX_REPS=999, см. CLAUDE.md), не
+# отдельная веб-константа.
+
+
+class WorkoutSubmitRequest(BaseModel):
+    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_max_reps: Reps
+    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_max_reps: Reps
+    comment: str | None = None
+    confirm_anomalies: bool = False
+
+
+class AnomalyFlagsResponse(BaseModel):
+    """Зеркало app.domain.anomalies.AnomalyFlags для JSON — та же функция
+    detect_anomalies, что использует бот, просто сериализованный результат."""
+
+    large_value: int | None = None
+    previous_avg: float | None = None
+    current_avg: float | None = None
+    expected_set_count: int | None = None
+    actual_set_count: int | None = None
+
+
+class WorkoutSubmitResponse(BaseModel):
+    status: str
+    target_a: int | None = None
+    target_b: int | None = None
+    equipment_a: EquipmentInfo | None = None
+    equipment_b: EquipmentInfo | None = None
+    result_a: str | None = None
+    result_b: str | None = None
+    anomalies_a: AnomalyFlagsResponse | None = None
+    anomalies_b: AnomalyFlagsResponse | None = None

@@ -17,7 +17,6 @@ from app.bot.formatting import (
     format_equipment_from_result,
     format_equipment_label,
 )
-from app.bot.handlers.workout import _ensure_active_workout_set
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
@@ -38,7 +37,7 @@ from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import EquipmentType
 from app.domain.session import BlockLog
-from app.services.workout_log import WorkoutLogService
+from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
 router = Router()
 
@@ -300,7 +299,7 @@ async def _apply_free_workout_reps(
     users = UserRepository(session)
     user = await users.get_by_telegram_id(telegram_id)
 
-    active_set = await _ensure_active_workout_set(session, user.id)
+    active_set = await ensure_active_workout_set(session, user.id)
     if active_set is None:
         await message.answer(texts.NO_ACTIVE_SET_SUPPORT)
         await state.clear()

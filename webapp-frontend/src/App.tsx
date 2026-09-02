@@ -2,11 +2,12 @@ import { retrieveLaunchParams } from "@telegram-apps/sdk";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { WorkoutScreen } from "./WorkoutScreen";
 
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; data: HelloResponse };
+  | { status: "ready"; data: HelloResponse; initDataRaw: string };
 
 type TelegramWebApp = { initData?: string; version?: string; platform?: string };
 
@@ -78,7 +79,7 @@ export function App() {
         }
         const data = await fetchHello(initDataRaw);
         if (!cancelled) {
-          setState({ status: "ready", data });
+          setState({ status: "ready", data, initDataRaw });
         }
       } catch (error) {
         if (!cancelled) {
@@ -103,13 +104,8 @@ export function App() {
   return (
     <div>
       <h1>Привет, {state.data.name}!</h1>
-      {!state.data.is_onboarded && <p>Онбординг ещё не пройден.</p>}
-      {state.data.readiness_status && (
-        <p>
-          Статус готовности: {state.data.readiness_status} (дней с последней тренировки:{" "}
-          {state.data.days_since_last_workout})
-        </p>
-      )}
+      {!state.data.is_onboarded && <p>Онбординг ещё не пройден. Начни его в боте.</p>}
+      {state.data.is_onboarded && <WorkoutScreen initDataRaw={state.initDataRaw} />}
     </div>
   );
 }

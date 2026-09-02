@@ -85,8 +85,8 @@ async def test_mark_abandoned_frees_up_active_slot_for_a_new_set(session, user: 
     """Сценарий "завершить цикл и начать заново": после mark_abandoned у
     пользователя нет активного сета, и можно завести новый (от нового
     замера) независимо от старого — это ровно то, на чём держится кнопка
-    «Завершить цикл» в Профиле (переиспользует _ensure_active_workout_set
-    в app/bot/handlers/workout.py)."""
+    «Завершить цикл» в Профиле (переиспользует ensure_active_workout_set
+    в app/services/workout_log.py)."""
     old_baseline_id = await _make_baseline(session, user)
     repo = WorkoutSetRepository(session)
     old_set = await repo.create(user_id=user.id, started_from_baseline_id=old_baseline_id)
