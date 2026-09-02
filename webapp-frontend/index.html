@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
+      issue #34: явно заявляем поддержку обеих тем, чтобы мобильный WebView
+      не пытался сам форсированно перекрашивать страницу (Android forced
+      dark) поверх уже заданных нами background-color/color в src/index.css
+      — без этой декларации автоинверсия иногда даёт рассинхрон фона и
+      текста, который эти явные стили как раз должны устранить.
+    -->
+    <meta name="color-scheme" content="light dark" />
+    <!--
       issue #32: чёрный экран на мобильном пережил ErrorBoundary (#26) даже
       после того как menu button (#30) заработала и initData стала
       доходить — значит проблема где-то ДО того, как успевает

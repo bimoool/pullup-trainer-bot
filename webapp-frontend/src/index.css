@@ -1,0 +1,37 @@
+/*
+ * issue #34: до этого файла в приложении не было ни одной CSS-декларации
+ * background-color/color вообще — весь текст рендерился дефолтным цветом
+ * UA-стиля WebView. На Desktop дефолт "чёрный текст на белом" совпадает
+ * с реальным фоном, поэтому там всё было видно. На мобильном Telegram
+ * WebView может подставить тёмный фон (форсированная тёмная тема
+ * Android WebView либо реальная тёмная тема пользователя в Telegram) —
+ * тогда чёрный текст по умолчанию становится невидимым на таком же тёмном
+ * фоне. Переменные ниже — light-дефолты для случая вне Telegram
+ * (themeParams недоступны); main.tsx перезаписывает их значениями
+ * window.Telegram.WebApp.themeParams, когда приложение открыто в Telegram,
+ * так что фон и цвет текста всегда заданы явно и согласованно, а не по
+ * отдельности.
+ */
+:root {
+  --tg-bg-color: #ffffff;
+  --tg-text-color: #111111;
+  --tg-hint-color: #999999;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--tg-bg-color);
+  color: var(--tg-text-color);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
