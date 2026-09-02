@@ -41,10 +41,11 @@ class Settings(BaseSettings):
 
     # Mini App (app/web/, Этап 0, issue #15) — HTTPS-адрес, на котором
     # отдаётся React-фронтенд (см. app/web/main.py, webapp-frontend/).
-    # Telegram открывает WebAppInfo только по https:// — пусто -> кнопка
-    # "🚀 Личный кабинет" в нижнем меню скрыта (app/bot/keyboards.py), тот
-    # же принцип, что ADMIN_SHEET_URL/ROBOKASSA_* выше: сервис можно
-    # выкатить в проде до того, как для него готов реальный домен.
+    # Telegram открывает WebAppInfo только по https:// — пусто -> menu
+    # button остаётся дефолтной, не подменяется на WebApp (issue #30,
+    # app/main.py::configure_menu_button), тот же принцип, что
+    # ADMIN_SHEET_URL/ROBOKASSA_* выше: сервис можно выкатить в проде до
+    # того, как для него готов реальный домен.
     mini_app_url: str = ""
 
     @property

@@ -3,13 +3,11 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
-from app.config import settings
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 
@@ -33,24 +31,20 @@ BOTTOM_MENU_PROGRESS = "📊 Прогресс"
 BOTTOM_MENU_PROFILE = "👤 Профиль"
 BOTTOM_MENU_HELP = "❓ Помощь"
 BOTTOM_MENU_ADMIN = "🛠 Админка"
-# Mini App (Этап 0, issue #15) — KeyboardButton.web_app требует https://,
-# Telegram сам не даст открыть по http:// (см. app/config.py::mini_app_url).
-BOTTOM_MENU_MINI_APP = "🚀 Личный кабинет"
 
 
 def bottom_menu_keyboard(*, is_admin: bool = False) -> ReplyKeyboardMarkup:
+    # Mini App больше не открывается отсюда (issue #30) — Telegram
+    # официально гарантирует непустую initData только при запуске через
+    # menu button (см. app/main.py::configure_menu_button), keyboard
+    # button из этого меню документированно отдавала initData пустой
+    # (docs.telegram-mini-apps.com/platform/init-data), что и было
+    # первопричиной "чёрного экрана"/ошибки инициализации в issue #23/#28.
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text=BOTTOM_MENU_WORKOUT), KeyboardButton(text=BOTTOM_MENU_PROGRESS))
     builder.row(KeyboardButton(text=BOTTOM_MENU_PROFILE), KeyboardButton(text=BOTTOM_MENU_HELP))
     if is_admin:
         builder.row(KeyboardButton(text=BOTTOM_MENU_ADMIN))
-    # MINI_APP_URL пуст, пока домен/HTTPS не настроены на сервере (см.
-    # CLAUDE.md, "Mini App: Этап 0") — кнопка скрыта, а не ведёт в никуда.
-    if settings.mini_app_url:
-        mini_app_button = KeyboardButton(
-            text=BOTTOM_MENU_MINI_APP, web_app=WebAppInfo(url=settings.mini_app_url),
-        )
-        builder.row(mini_app_button)
     return builder.as_markup(resize_keyboard=True)
 
 
