@@ -26,12 +26,28 @@ class EquipmentInfo(BaseModel):
     label: str
 
 
+class BandItemInfo(BaseModel):
+    """Один пункт личного списка резин пользователя (app.db.models.EquipmentItem)
+    — тот же источник, что band_item_picker_keyboard бота
+    (app/bot/keyboards.py). resistance_kg опционален (см. докстринг модели:
+    резины в залах часто без маркировки)."""
+
+    id: int
+    name: str
+    resistance_kg: Decimal | None
+
+
 class WorkoutPlanResponse(BaseModel):
     """GET /api/workout/plan — статус определяет, есть ли форма ввода:
     "ready" — да, план ниже заполнен; любой другой статус — форма не
     показывается, поля плана пустые (см. issue #36, сужение скоупа
     Этапа 1: только обычная тренировка и gap_rollback, остальные случаи
-    ведут в бота)."""
+    ведут в бота).
+
+    band_items заполняется, только если равнозначный ввод резины возможен
+    хотя бы для одного блока (equipment_a/b.type == "band") — личный список
+    пользователя (app/bot/keyboards.py::band_item_picker_keyboard читает
+    тот же EquipmentItemRepository.list_for_user), пустой список иначе."""
 
     status: str
     workout_set_id: int | None = None
@@ -42,6 +58,7 @@ class WorkoutPlanResponse(BaseModel):
     equipment_a: EquipmentInfo | None = None
     equipment_b: EquipmentInfo | None = None
     is_gap_rollback: bool = False
+    band_items: list[BandItemInfo] = Field(default_factory=list)
 
 
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
@@ -65,6 +82,13 @@ class WorkoutSubmitRequest(BaseModel):
     # бота (равнозначный ввод недоступен для BAND/BODYWEIGHT/AUSTRALIAN).
     block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
     block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
+    # Выбор резины (issue #48) — тот же принцип, что actual_weight выше,
+    # только для BAND: применяется (см. app/web/routes.py::submit_workout),
+    # только когда контекст на сервере подтвердил тип блока BAND, и только
+    # если item реально принадлежит вызывающему пользователю (проверка в
+    # routes.py — id из личного списка другого пользователя недопустим).
+    block_a_actual_band_item_id: int | None = None
+    block_b_actual_band_item_id: int | None = None
     comment: str | None = None
     confirm_anomalies: bool = False
 

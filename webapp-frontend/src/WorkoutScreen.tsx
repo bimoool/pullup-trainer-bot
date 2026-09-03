@@ -1,9 +1,11 @@
+import { Button, Input, Section, Select, Textarea } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
   fetchWorkoutPlan,
   submitWorkout,
   type AnomalyFlags,
+  type BandItemInfo,
   type WorkoutPlanResponse,
   type WorkoutSubmitRequest,
   type WorkoutSubmitResponse,
@@ -128,6 +130,35 @@ function SetInputGrid({
   );
 }
 
+function BandItemSelect({
+  letter,
+  bandItems,
+  value,
+  onChange,
+}: {
+  letter: "A" | "B";
+  bandItems: BandItemInfo[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select
+      header="Резина, если отличается"
+      aria-label={`Блок ${letter}, резина`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">Как в прошлый раз</option>
+      {bandItems.map((item) => (
+        <option key={item.id} value={item.id}>
+          {item.name}
+          {item.resistance_kg !== null ? ` (${item.resistance_kg} кг)` : ""}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
 function BlockForm({
   letter,
   target,
@@ -140,6 +171,9 @@ function BlockForm({
   onMaxChange,
   actualWeightValue,
   onActualWeightChange,
+  bandItems,
+  bandItemValue,
+  onBandItemChange,
 }: {
   letter: "A" | "B";
   target: number | null;
@@ -152,17 +186,17 @@ function BlockForm({
   onMaxChange: (value: string) => void;
   actualWeightValue: string;
   onActualWeightChange: (value: string) => void;
+  bandItems: BandItemInfo[];
+  bandItemValue: string;
+  onBandItemChange: (value: string) => void;
 }) {
   return (
-    <section className="block-card">
+    <Section className="block-section" header={`Блок ${letter} — цель ${target}`}>
       <div className="block-header">
         <div className="block-badge">{letter}</div>
-        <div>
-          <p className="block-title">Блок {letter} — цель {target}</p>
-          <p className="block-subtitle">
-            {workSets} рабочих {workSets === 1 ? "подход" : "подхода"} · {equipmentLabel ?? "снаряд не выбран"}
-          </p>
-        </div>
+        <p className="block-subtitle">
+          {workSets} рабочих {workSets === 1 ? "подход" : "подхода"} · {equipmentLabel ?? "снаряд не выбран"}
+        </p>
       </div>
 
       <span className="field-label">Рабочие подходы</span>
@@ -188,22 +222,28 @@ function BlockForm({
           app/web/routes.py::submit_workout — сервер игнорирует поле для
           остальных типов), поле здесь просто не показывается. */}
       {equipmentType === "weight" && (
-        <>
-          <span className="field-label">Фактический вес, если отличается (кг)</span>
-          <input
-            className="text-input"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.5"
-            placeholder={equipmentLabel}
-            aria-label={`Блок ${letter}, фактический вес`}
-            value={actualWeightValue}
-            onChange={(e) => onActualWeightChange(e.target.value)}
-          />
-        </>
+        <Input
+          header="Фактический вес (кг), если отличается"
+          after="кг"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="0.5"
+          placeholder={equipmentLabel}
+          aria-label={`Блок ${letter}, фактический вес`}
+          value={actualWeightValue}
+          onChange={(e) => onActualWeightChange(e.target.value)}
+        />
       )}
-    </section>
+
+      {/* Выбор резины (issue #48) — тот же принцип, что actual weight выше,
+          только для BAND: снаряд наследуется молча, реально взятая резина
+          могла отличаться. band_items пуст, если у пользователя ещё нет
+          личного списка резин — тогда селект не показывается вовсе. */}
+      {equipmentType === "band" && bandItems.length > 0 && (
+        <BandItemSelect letter={letter} bandItems={bandItems} value={bandItemValue} onChange={onBandItemChange} />
+      )}
+    </Section>
   );
 }
 
@@ -215,6 +255,8 @@ export function WorkoutScreen({ initDataRaw }: Props) {
   const [blockBMax, setBlockBMax] = useState("");
   const [blockAActualWeight, setBlockAActualWeight] = useState("");
   const [blockBActualWeight, setBlockBActualWeight] = useState("");
+  const [blockABandItem, setBlockABandItem] = useState("");
+  const [blockBBandItem, setBlockBBandItem] = useState("");
   const [comment, setComment] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -272,6 +314,8 @@ export function WorkoutScreen({ initDataRaw }: Props) {
       block_b_max_reps: maxB,
       block_a_actual_weight: actualWeightA.value,
       block_b_actual_weight: actualWeightB.value,
+      block_a_actual_band_item_id: blockABandItem ? Number(blockABandItem) : null,
+      block_b_actual_band_item_id: blockBBandItem ? Number(blockBBandItem) : null,
       comment: comment.trim() || null,
       confirm_anomalies: confirmAnomalies,
     };
@@ -299,7 +343,14 @@ export function WorkoutScreen({ initDataRaw }: Props) {
     return <p className="screen-message">Загружаю план тренировки…</p>;
   }
   if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить план: {state.message}</p>;
+    return (
+      <div>
+        <p className="screen-message">Не удалось загрузить план: {state.message}</p>
+        <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
+          Открыть в боте
+        </Button>
+      </div>
+    );
   }
   if (state.phase === "not_ready") {
     return (
@@ -307,9 +358,9 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         <p className="screen-message">
           {STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`}
         </p>
-        <button className="primary-button" onClick={closeMiniApp}>
+        <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
           Открыть в боте
-        </button>
+        </Button>
       </div>
     );
   }
@@ -321,16 +372,25 @@ export function WorkoutScreen({ initDataRaw }: Props) {
           {state.result.anomalies_a && <AnomalyLines flags={state.result.anomalies_a} />}
           {state.result.anomalies_b && <AnomalyLines flags={state.result.anomalies_b} />}
         </div>
-        <button className="primary-button" disabled={submitting} onClick={() => void handleSubmit(state.plan, true)}>
+        <Button
+          className="action-button"
+          size="l"
+          stretched
+          disabled={submitting}
+          onClick={() => void handleSubmit(state.plan, true)}
+        >
           Всё верно
-        </button>
-        <button
-          className="secondary-button"
+        </Button>
+        <Button
+          className="action-button"
+          size="l"
+          stretched
+          mode="outline"
           disabled={submitting}
           onClick={() => setState({ phase: "form", plan: state.plan })}
         >
           Исправить
-        </button>
+        </Button>
       </div>
     );
   }
@@ -348,6 +408,9 @@ export function WorkoutScreen({ initDataRaw }: Props) {
             {result.target_b} ({result.equipment_b?.label}).
           </p>
         </div>
+        <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
+          Готово
+        </Button>
       </div>
     );
   }
@@ -372,6 +435,9 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         onMaxChange={setBlockAMax}
         actualWeightValue={blockAActualWeight}
         onActualWeightChange={setBlockAActualWeight}
+        bandItems={plan.band_items}
+        bandItemValue={blockABandItem}
+        onBandItemChange={setBlockABandItem}
       />
 
       <BlockForm
@@ -386,15 +452,17 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         onMaxChange={setBlockBMax}
         actualWeightValue={blockBActualWeight}
         onActualWeightChange={setBlockBActualWeight}
+        bandItems={plan.band_items}
+        bandItemValue={blockBBandItem}
+        onBandItemChange={setBlockBBandItem}
       />
 
-      <span className="field-label">Комментарий (необязательно)</span>
-      <textarea className="textarea-field" value={comment} onChange={(e) => setComment(e.target.value)} />
+      <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />
 
       {formError && <p className="error-banner">{formError}</p>}
-      <button className="primary-button" disabled={submitting} onClick={() => void handleSubmit(plan, false)}>
+      <Button className="action-button" size="l" stretched disabled={submitting} onClick={() => void handleSubmit(plan, false)}>
         Записать тренировку
-      </button>
+      </Button>
     </div>
   );
 }

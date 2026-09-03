@@ -25,6 +25,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.db.models import BlockType, User
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -75,14 +76,18 @@ async def _get_plan(session, telegram_id: int) -> dict:
 
 
 async def _post_submit(session, telegram_id: int, payload: dict) -> dict:
+    response = await _post_submit_raw(session, telegram_id, payload)
+    assert response.status_code == 200
+    return response.json()
+
+
+async def _post_submit_raw(session, telegram_id: int, payload: dict):
     _override_dependencies(session, telegram_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/api/workout/submit", json=payload)
+            return await client.post("/api/workout/submit", json=payload)
     finally:
         app.dependency_overrides.clear()
-    assert response.status_code == 200
-    return response.json()
 
 
 async def _make_returning_user(
@@ -329,3 +334,91 @@ async def test_submit_ignores_actual_weight_override_for_non_weight_block(sessio
 
     assert body["status"] == "ok"
     assert Decimal(body["equipment_a"]["value"]) == BAND_VALUE
+
+
+# --- Выбор резины (issue #48) -------------------------------------------------------
+
+
+async def test_plan_ready_includes_band_items_for_band_block(session):
+    user = await _make_returning_user(session, telegram_id=42015, days_ago=5)
+    items_repo = EquipmentItemRepository(session)
+    item_a = await items_repo.create(user_id=user.id, name="широкая фиолетовая", resistance_kg=Decimal("15.0"))
+    item_b = await items_repo.create(user_id=user.id, name="тонкая красная", resistance_kg=None)
+
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+
+    assert body["status"] == "ready"
+    assert body["band_items"] == [
+        {"id": item_a.id, "name": "широкая фиолетовая", "resistance_kg": "15.0"},
+        {"id": item_b.id, "name": "тонкая красная", "resistance_kg": None},
+    ]
+
+
+async def test_plan_band_items_empty_when_no_items_created(session):
+    user = await _make_returning_user(session, telegram_id=42016, days_ago=5)
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+    assert body["status"] == "ready"
+    assert body["band_items"] == []
+
+
+async def test_submit_applies_actual_band_item_for_band_block(session):
+    """block_a_actual_band_item_id переопределяет унаследованный
+    equipment_a.item_id — тот же смысл, что actual_weight у WEIGHT-блока
+    (issue #45, часть 2), только для BAND (issue #48)."""
+    user = await _make_returning_user(session, telegram_id=42017, days_ago=5)
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="моя резина", resistance_kg=None)
+
+    payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_a_actual_band_item_id": item.id,
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert body["status"] == "ok"
+    assert body["equipment_a"]["item_id"] == item.id
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    written_block_a = next(b for b in history[-1].blocks if b.block_type == BlockType.A)
+    assert written_block_a.equipment_item_id == item.id
+
+
+async def test_submit_rejects_band_item_belonging_to_another_user(session):
+    user = await _make_returning_user(session, telegram_id=42018, days_ago=5)
+    other_user = await UserRepository(session).create(telegram_id=42019, username="other")
+    foreign_item = await EquipmentItemRepository(session).create(
+        user_id=other_user.id, name="чужая резина", resistance_kg=None,
+    )
+
+    payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_a_actual_band_item_id": foreign_item.id,
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "comment": None, "confirm_anomalies": False,
+    }
+    response = await _post_submit_raw(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert response.status_code == 400
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    assert len(history) == 1  # только исходная тренировка из _make_returning_user, ничего не дописано
+
+
+async def test_submit_ignores_actual_band_item_for_non_band_block(session):
+    """block_b_actual_band_item_id для блока B на весе (WEIGHT) не должен
+    ничего менять — симметрично test_submit_ignores_actual_weight_override_for_non_weight_block."""
+    user = await _make_returning_user_with_weight_block_b(
+        session, telegram_id=42020, days_ago=5, weight_value=Decimal("10.0"),
+    )
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="резина", resistance_kg=None)
+
+    payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "block_b_actual_band_item_id": item.id,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert body["status"] == "ok"
+    assert body["equipment_b"]["item_id"] is None
