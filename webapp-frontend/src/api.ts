@@ -36,11 +36,31 @@ export interface AnomalyFlags {
   actual_set_count: number | null;
 }
 
+/** Вкладка "Профиль" (issue #45, часть 3) — узкий срез того, что показывает
+ * app.bot.handlers.menu.render_profile (та же format_subscription_status на
+ * бэкенде, не отдельный текст). is_onboarded=false — остальные поля пустые,
+ * тот же принцип, что у HelloResponse. */
+export interface ProfileResponse {
+  is_onboarded: boolean;
+  subscription_status_label: string | null;
+  coins_balance: number | null;
+  achievements_count: number | null;
+  workouts_count: number | null;
+  days_since_last_workout: number | null;
+}
+
 export interface WorkoutSubmitRequest {
   block_a_working_reps: number[];
   block_a_max_reps: number;
   block_b_working_reps: number[];
   block_b_max_reps: number;
+  /** Необязательная правка веса на месте (issue #45, часть 2) — тот же
+   * смысл, что "✏️ Изменить вес/резину" в боте. Имеет эффект на бэкенде,
+   * только если снаряд соответствующего блока реально WEIGHT (см.
+   * app/web/routes.py::submit_workout) — для BAND/BODYWEIGHT/AUSTRALIAN
+   * значение молча игнорируется. */
+  block_a_actual_weight?: string | null;
+  block_b_actual_weight?: string | null;
   comment: string | null;
   confirm_anomalies: boolean;
 }
@@ -79,6 +99,10 @@ export async function fetchHello(initDataRaw: string): Promise<HelloResponse> {
 
 export async function fetchWorkoutPlan(initDataRaw: string): Promise<WorkoutPlanResponse> {
   return apiGet<WorkoutPlanResponse>("/api/workout/plan", initDataRaw);
+}
+
+export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse> {
+  return apiGet<ProfileResponse>("/api/profile", initDataRaw);
 }
 
 export async function submitWorkout(

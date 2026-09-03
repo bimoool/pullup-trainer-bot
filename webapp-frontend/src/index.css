@@ -69,6 +69,48 @@ input[type="number"] {
   padding: 20px 16px 40px;
 }
 
+/* Задел под навигацию (issue #45, часть 3) — нижние вкладки поверх
+   контента, поэтому app-shell-with-nav добавляет запас снизу под высоту
+   .bottom-nav, чтобы последняя карточка экрана не пряталась под ней. */
+.app-shell-with-nav {
+  padding-bottom: 88px;
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--tg-section-bg-color);
+  border-top: 1px solid rgba(127, 127, 127, 0.2);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--tg-subtitle-text-color);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.bottom-nav-icon {
+  font-size: 20px;
+}
+
+.bottom-nav-item.active {
+  color: var(--tg-button-color);
+}
+
 .app-greeting {
   font-size: 14px;
   color: var(--tg-subtitle-text-color);
@@ -191,6 +233,24 @@ input[type="number"] {
 
 .set-input.max-input {
   width: 72px;
+}
+
+.text-input {
+  display: block;
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(127, 127, 127, 0.25);
+  background: var(--tg-bg-color);
+  color: var(--tg-text-color);
+  font-size: 15px;
+  font-family: inherit;
+  padding: 0 12px;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--tg-button-color);
 }
 
 .textarea-field {
@@ -320,4 +380,44 @@ input[type="number"] {
 .done-stats .hint {
   color: var(--tg-subtitle-text-color);
   font-size: 13px;
+}
+
+.profile-card {
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.profile-card p {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.profile-card p:last-child {
+  margin-bottom: 0;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.stat-tile {
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 14px;
+  text-align: center;
+}
+
+.stat-tile .stat-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.stat-tile .stat-label {
+  font-size: 12px;
+  color: var(--tg-subtitle-text-color);
+  margin-top: 4px;
 }

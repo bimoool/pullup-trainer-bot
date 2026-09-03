@@ -108,6 +108,28 @@ async def _make_returning_user(
     return user
 
 
+async def _make_returning_user_with_weight_block_b(
+    session, *, telegram_id: int, days_ago: int, weight_value: Decimal,
+) -> User:
+    """Как _make_returning_user, но блок B (сила) на отягощении, не резине
+    — нужен для проверки правки "фактический вес" (issue #45, часть 2), она
+    имеет смысл только для WEIGHT (см. app/web/routes.py::submit_workout)."""
+    user = await UserRepository(session).create(telegram_id=telegram_id, username="tester")
+    now = datetime.now(UTC)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=10)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=days_ago),
+        block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=weight_value,
+    )
+    return user
+
+
 # --- GET /api/workout/plan — статусы -----------------------------------------------
 
 
@@ -260,3 +282,50 @@ async def test_submit_with_anomaly_requires_confirmation_and_does_not_write(sess
     assert body["status"] == "ok"
     history = await WorkoutRepository(session).list_for_user(user.id)
     assert len(history) == 2
+
+
+# --- POST /api/workout/submit — фактический вес (issue #45, часть 2) ---------------
+
+
+async def test_submit_applies_actual_weight_override_for_weight_block(session):
+    """block_b_actual_weight переопределяет унаследованный из прогрессии
+    вес блока B (WEIGHT) — тот же смысл, что "✏️ Изменить вес/резину" в
+    боте (app/bot/handlers/workout.py::handle_change_block_equipment)."""
+    user = await _make_returning_user_with_weight_block_b(
+        session, telegram_id=42013, days_ago=5, weight_value=Decimal("10.0"),
+    )
+    plan = await _get_plan(session, telegram_id=user.telegram_id)
+    assert plan["equipment_b"]["type"] == "weight"
+    assert Decimal(plan["equipment_b"]["value"]) == Decimal("10.0")
+
+    payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "block_b_actual_weight": "12.5",
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert body["status"] == "ok"
+    assert Decimal(body["equipment_b"]["value"]) == Decimal("12.5")
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    written_block_b = next(b for b in history[-1].blocks if b.block_type == BlockType.B)
+    assert written_block_b.equipment_value == Decimal("12.5")
+
+
+async def test_submit_ignores_actual_weight_override_for_non_weight_block(session):
+    """block_a_actual_weight для блока A на резине (BAND) не должен
+    ничего менять — правка веса имеет смысл только для WEIGHT, у резины
+    "вес" не то же самое, что фиксированный груз (см. app/web/routes.py)."""
+    user = await _make_returning_user(session, telegram_id=42014, days_ago=5)
+    payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_a_actual_weight": "99",
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert body["status"] == "ok"
+    assert Decimal(body["equipment_a"]["value"]) == BAND_VALUE

@@ -2,12 +2,23 @@ import { retrieveLaunchParams } from "@telegram-apps/sdk";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { ProfileScreen } from "./ProfileScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; data: HelloResponse; initDataRaw: string };
+
+/** Базовая навигация (issue #45, часть 3) — задел под структуру, не
+ * перенос всего функционала бота: пока два раздела, третий добавляется
+ * так же, одной записью в NAV_TABS + веткой в рендере ниже. */
+type Tab = "workout" | "profile";
+
+const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: "workout", icon: "💪", label: "Тренировка" },
+  { key: "profile", icon: "👤", label: "Профиль" },
+];
 
 type TelegramWebApp = { initData?: string; version?: string; platform?: string };
 
@@ -38,6 +49,7 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [tab, setTab] = useState<Tab>("workout");
 
   useEffect(() => {
     let cancelled = false;
@@ -110,10 +122,27 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={state.data.is_onboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
       {!state.data.is_onboarded && <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>}
-      {state.data.is_onboarded && <WorkoutScreen initDataRaw={state.initDataRaw} />}
+      {state.data.is_onboarded && tab === "workout" && <WorkoutScreen initDataRaw={state.initDataRaw} />}
+      {state.data.is_onboarded && tab === "profile" && <ProfileScreen initDataRaw={state.initDataRaw} />}
+
+      {state.data.is_onboarded && (
+        <nav className="bottom-nav">
+          {NAV_TABS.map(({ key, icon, label }) => (
+            <button
+              key={key}
+              type="button"
+              className={tab === key ? "bottom-nav-item active" : "bottom-nav-item"}
+              onClick={() => setTab(key)}
+            >
+              <span className="bottom-nav-icon">{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }
