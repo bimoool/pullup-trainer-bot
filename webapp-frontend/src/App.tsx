@@ -95,16 +95,24 @@ export function App() {
   }, []);
 
   if (state.status === "loading") {
-    return <p>Загрузка…</p>;
+    return (
+      <div className="app-shell">
+        <p className="screen-message">Загрузка…</p>
+      </div>
+    );
   }
   if (state.status === "error") {
-    return <p>Не удалось загрузить: {state.message}</p>;
+    return (
+      <div className="app-shell">
+        <p className="screen-message">Не удалось загрузить: {state.message}</p>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <h1>Привет, {state.data.name}!</h1>
-      {!state.data.is_onboarded && <p>Онбординг ещё не пройден. Начни его в боте.</p>}
+    <div className="app-shell">
+      <p className="app-greeting">Привет, {state.data.name}!</p>
+      {!state.data.is_onboarded && <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>}
       {state.data.is_onboarded && <WorkoutScreen initDataRaw={state.initDataRaw} />}
     </div>
   );
