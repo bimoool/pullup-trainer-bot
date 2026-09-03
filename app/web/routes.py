@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -13,6 +13,7 @@ from app.bot.formatting import (
     format_subscription_status,
 )
 from app.bot.handlers.subscription import _robokassa_available
+from app.bot.handlers.workout_edit import _is_editable
 from app.config import settings
 from app.db.models import BlockType, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
@@ -24,6 +25,7 @@ from app.domain.constants import (
     STRENGTH_BLOCK,
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
+    VOLUME_BLOCK,
     EquipmentType,
 )
 from app.domain.progression import rollback_target
@@ -36,9 +38,13 @@ from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas import (
     AnomalyFlagsResponse,
+    BackdateSubmitRequest,
     BandItemInfo,
     EquipmentInfo,
     HelloResponse,
+    HistoryBlockDetail,
+    HistoryEditDetailResponse,
+    HistoryEditRequest,
     HistoryEntryResponse,
     HistoryResponse,
     PaymentLinkResponse,
@@ -429,6 +435,7 @@ async def get_history(
         is_latest = workout is newest_first[0]
         items.append(
             HistoryEntryResponse(
+                workout_id=workout.id,
                 performed_at=workout.performed_at.date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
                 comment=workout.comment,
@@ -546,3 +553,374 @@ async def pay_subscription(
     )
     payment_url = await RobokassaService(session, client).create_payment_link(user.id)
     return PaymentLinkResponse(payment_url=payment_url)
+
+
+# --- Редактирование истории (issue #52) ---------------------------------------------
+
+
+def _history_block_detail(block) -> HistoryBlockDetail:
+    return HistoryBlockDetail(
+        working_reps=list(block.working_reps),
+        max_reps=block.max_reps,
+        target_before=block.target_before,
+        equipment=_equipment_info(block.equipment_type, block.equipment_value, block.equipment_item_id),
+    )
+
+
+@router.get("/history/{workout_id}", response_model=HistoryEditDetailResponse)
+async def get_history_workout(
+    workout_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> HistoryEditDetailResponse:
+    """Детали одной тренировки для формы редактирования (issue #52) — те же
+    факты, что app.bot.handlers.workout_edit::_start_editing кладёт в FSM
+    перед переспросом блока A. Чужая/несуществующая тренировка — 404, не
+    палим сам факт существования чужой записи отдельным статусом."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+
+    workout = await WorkoutRepository(session).get_by_id(workout_id)
+    if workout is None or workout.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+    return HistoryEditDetailResponse(
+        workout_id=workout.id,
+        performed_at=workout.performed_at.date().isoformat(),
+        is_editable=_is_editable(workout),
+        comment=workout.comment,
+        block_a=_history_block_detail(block_a),
+        block_b=_history_block_detail(block_b),
+    )
+
+
+@router.patch("/history/{workout_id}", response_model=WorkoutSubmitResponse)
+async def edit_history_workout(
+    workout_id: int,
+    body: HistoryEditRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutSubmitResponse:
+    """Правит уже введённые повторения прошлой тренировки через
+    WorkoutRepository.edit_workout — тот же каскадный пересчёт
+    (recalculate_cascade) последующих тренировок цепочки, что и
+    app.bot.handlers.workout_edit, не отдельная веб-копия. Аномалии — тот
+    же двухшаговый паттерн, что и submit_workout/submit_backdated_workout
+    (anomaly_confirm_required без confirm_anomalies=True ничего не пишет).
+    Правка веса/резины "на месте" — тот же приём, что submit_workout,
+    применяется отдельным correct_block_equipment ПОСЛЕ edit_workout."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+
+    workouts = WorkoutRepository(session)
+    workout = await workouts.get_by_id(workout_id)
+    if workout is None or workout.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    if not _is_editable(workout):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Workout is not editable")
+
+    block_a_orig = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    expected_work_sets_a = (
+        block_a_orig.work_sets_before
+        if block_a_orig.work_sets_before is not None
+        else VOLUME_BLOCK.work_sets
+    )
+
+    block_a_reps = BlockLog(working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps)
+    block_b_reps = BlockLog(working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps)
+
+    previous_avg_a = await workouts.get_previous_avg_working(
+        user.id, BlockType.A, before=workout.performed_at,
+    )
+    previous_avg_b = await workouts.get_previous_avg_working(
+        user.id, BlockType.B, before=workout.performed_at,
+    )
+    anomalies_a = detect_anomalies(
+        block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
+    )
+    anomalies_b = detect_anomalies(
+        block_b_reps, previous_avg_working=previous_avg_b, expected_work_sets=STRENGTH_BLOCK.work_sets,
+    )
+    if not body.confirm_anomalies and (not anomalies_a.is_empty() or not anomalies_b.is_empty()):
+        return WorkoutSubmitResponse(
+            status="anomaly_confirm_required",
+            anomalies_a=AnomalyFlagsResponse(**asdict(anomalies_a)),
+            anomalies_b=AnomalyFlagsResponse(**asdict(anomalies_b)),
+        )
+
+    # Резина валидируется ДО edit_workout (equipment_type блока сам
+    # edit_workout не трогает, читать его можно и из workout ДО правки) —
+    # иначе неверный item_id откатывал бы уже применённую правку повторений
+    # наполовину (edit_workout закоммичен, correct_block_equipment — нет).
+    block_b_orig = next(b for b in workout.blocks if b.block_type == BlockType.B)
+    band_item_a = None
+    band_item_b = None
+    if body.block_a_actual_band_item_id is not None and block_a_orig.equipment_type == EquipmentType.BAND:
+        band_item_a = await EquipmentItemRepository(session).get_by_id(body.block_a_actual_band_item_id)
+        if band_item_a is None or band_item_a.user_id != user.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid band item for block A")
+    if body.block_b_actual_band_item_id is not None and block_b_orig.equipment_type == EquipmentType.BAND:
+        band_item_b = await EquipmentItemRepository(session).get_by_id(body.block_b_actual_band_item_id)
+        if band_item_b is None or band_item_b.user_id != user.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid band item for block B")
+
+    workout = await workouts.edit_workout(
+        workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
+    )
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+
+    if body.block_a_actual_weight is not None and block_a.equipment_type == EquipmentType.WEIGHT:
+        workout = await workouts.correct_block_equipment(
+            workout_id=workout_id, block_type=BlockType.A, equipment_value=body.block_a_actual_weight,
+        )
+    if body.block_b_actual_weight is not None and block_b.equipment_type == EquipmentType.WEIGHT:
+        workout = await workouts.correct_block_equipment(
+            workout_id=workout_id, block_type=BlockType.B, equipment_value=body.block_b_actual_weight,
+        )
+    if band_item_a is not None:
+        workout = await workouts.correct_block_equipment(
+            workout_id=workout_id, block_type=BlockType.A, equipment_item_id=band_item_a.id,
+        )
+    if band_item_b is not None:
+        workout = await workouts.correct_block_equipment(
+            workout_id=workout_id, block_type=BlockType.B, equipment_item_id=band_item_b.id,
+        )
+
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+    return WorkoutSubmitResponse(
+        status="ok",
+        target_a=block_a.target_after,
+        target_b=block_b.target_after,
+        equipment_a=_equipment_info(
+            block_a.equipment_type, block_a.equipment_value, block_a.equipment_item_id,
+        ),
+        equipment_b=_equipment_info(
+            block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
+        ),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+    )
+
+
+# --- Внесение задним числом (issue #52) -----------------------------------------------
+
+
+@dataclass
+class _BackdateContext:
+    """Контекст для "Внести пропущенную тренировку" — тот же
+    resolve_next_targets, что и _PlanContext, но БЕЗ гейтов too_early/
+    gap_retest_required/deload_due/equipment_setup_required: бэкдейт про
+    прошлое, эти статусы про готовность к СЛЕДУЮЩЕЙ живой тренировке, не
+    про него (согласовано в issue #52). target/equipment здесь — только
+    пример/подсказка для формы, не авторитетное значение, которое просто
+    наследуется, как в _PlanContext: реальный тип/значение снаряда всегда
+    приходят явно от клиента (BackdateSubmitRequest) — тот же принцип, что
+    _begin_equipment_setup(target_a_state=None, ...) у бота для бэкдейта."""
+
+    status: str
+    user_id: int | None = None
+    workout_set_id: int | None = None
+    target_a: int | None = None
+    target_b: int | None = None
+    work_sets_a: int | None = None
+    work_sets_b: int | None = None
+    equipment_a_type: EquipmentType | None = None
+    equipment_a_value: Decimal | None = None
+    equipment_a_item_id: int | None = None
+    equipment_b_type: EquipmentType | None = None
+    equipment_b_value: Decimal | None = None
+    equipment_b_item_id: int | None = None
+
+
+async def _resolve_backdate_context(session: AsyncSession, telegram_id: int, *, now: datetime) -> _BackdateContext:
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    if user is None:
+        return _BackdateContext(status="not_onboarded")
+
+    if not await SubscriptionService(session).has_access(user.id, now=now):
+        return _BackdateContext(status="no_access")
+
+    workouts = WorkoutRepository(session)
+    target_a_state, target_b_state = await workouts.resolve_next_targets(user.id)
+
+    active_set = await ensure_active_workout_set(session, user.id)
+    if active_set is None:
+        return _BackdateContext(status="no_active_set")
+
+    return _BackdateContext(
+        status="ready",
+        user_id=user.id,
+        workout_set_id=active_set.id,
+        target_a=target_a_state.target,
+        target_b=target_b_state.target,
+        work_sets_a=target_a_state.work_sets,
+        work_sets_b=STRENGTH_BLOCK.work_sets,
+        equipment_a_type=target_a_state.equipment_type,
+        equipment_a_value=target_a_state.equipment_value,
+        equipment_a_item_id=target_a_state.equipment_item_id,
+        equipment_b_type=target_b_state.equipment_type,
+        equipment_b_value=target_b_state.equipment_value,
+        equipment_b_item_id=target_b_state.equipment_item_id,
+    )
+
+
+@router.get("/workout/backdate/plan", response_model=WorkoutPlanResponse)
+async def get_backdate_plan(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutPlanResponse:
+    """Контекст для формы "Добавить за дату" — те же цель/снаряд-пример, что
+    GET /api/workout/plan, но band_items отдаётся всегда (не только когда
+    текущий снаряд — BAND), потому что снаряд для бэкдейта выбирается явно
+    и может отличаться от того, что унаследовала бы живая тренировка."""
+    context = await _resolve_backdate_context(session, init_data.user.id, now=datetime.now(UTC))
+    if context.status != "ready":
+        return WorkoutPlanResponse(status=context.status)
+
+    items = await EquipmentItemRepository(session).list_for_user(context.user_id)
+    band_items = [BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items]
+
+    return WorkoutPlanResponse(
+        status="ready",
+        workout_set_id=context.workout_set_id,
+        target_a=context.target_a,
+        target_b=context.target_b,
+        work_sets_a=context.work_sets_a,
+        work_sets_b=context.work_sets_b,
+        equipment_a=_equipment_info(
+            context.equipment_a_type, context.equipment_a_value, context.equipment_a_item_id,
+        ),
+        equipment_b=_equipment_info(
+            context.equipment_b_type, context.equipment_b_value, context.equipment_b_item_id,
+        ),
+        is_gap_rollback=False,
+        band_items=band_items,
+    )
+
+
+def _parse_backdate_equipment_type(raw: str, *, field: str) -> EquipmentType:
+    try:
+        return EquipmentType(raw)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid equipment type for {field}") from None
+
+
+async def _resolve_backdate_equipment(
+    session: AsyncSession,
+    user_id: int,
+    equipment_type: EquipmentType,
+    equipment_value: Decimal | None,
+    equipment_item_id: int | None,
+    *,
+    field: str,
+) -> tuple[Decimal | None, int | None]:
+    if equipment_type == EquipmentType.WEIGHT:
+        if equipment_value is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Missing weight for {field}")
+        return equipment_value, None
+    if equipment_type == EquipmentType.BAND:
+        if equipment_item_id is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Missing band item for {field}")
+        item = await EquipmentItemRepository(session).get_by_id(equipment_item_id)
+        if item is None or item.user_id != user_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid band item for {field}")
+        return None, item.id
+    return None, None
+
+
+@router.post("/workout/backdate", response_model=WorkoutSubmitResponse)
+async def submit_backdated_workout(
+    body: BackdateSubmitRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutSubmitResponse:
+    """Записывает тренировку задним числом через
+    WorkoutLogService.record_backdated_workout — тот же сервис, что
+    finalize_backdated_workout бота (app/bot/handlers/backdate.py), не
+    отдельная реализация. Единственная проверка даты — "не в будущем" (тот
+    же `parsed_date.date() > now.date()`, что и handle_backdate_date/
+    handle_calendar_date_picked бота): никакого лимита на глубину бэкдейта
+    в реальном коде бота нет (issue #52, согласовано в комментарии — более
+    раннее упоминание "7 дней" было ошибкой по памяти, не переносом
+    существующей логики)."""
+    try:
+        performed_date = date.fromisoformat(body.performed_at)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid date") from None
+
+    now = datetime.now(UTC)
+    if performed_date > now.date():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Date cannot be in the future")
+
+    context = await _resolve_backdate_context(session, init_data.user.id, now=now)
+    if context.status != "ready":
+        return WorkoutSubmitResponse(status=context.status)
+
+    block_a_equipment_type = _parse_backdate_equipment_type(body.block_a_equipment_type, field="block A")
+    block_b_equipment_type = _parse_backdate_equipment_type(body.block_b_equipment_type, field="block B")
+    block_a_equipment_value, block_a_equipment_item_id = await _resolve_backdate_equipment(
+        session, context.user_id, block_a_equipment_type,
+        body.block_a_equipment_value, body.block_a_equipment_item_id, field="block A",
+    )
+    block_b_equipment_value, block_b_equipment_item_id = await _resolve_backdate_equipment(
+        session, context.user_id, block_b_equipment_type,
+        body.block_b_equipment_value, body.block_b_equipment_item_id, field="block B",
+    )
+
+    performed_at = datetime(performed_date.year, performed_date.month, performed_date.day, tzinfo=UTC)
+    block_a_reps = BlockLog(working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps)
+    block_b_reps = BlockLog(working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps)
+
+    workouts = WorkoutRepository(session)
+    previous_avg_a = await workouts.get_previous_avg_working(context.user_id, BlockType.A, before=performed_at)
+    previous_avg_b = await workouts.get_previous_avg_working(context.user_id, BlockType.B, before=performed_at)
+    anomalies_a = detect_anomalies(
+        block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=context.work_sets_a,
+    )
+    anomalies_b = detect_anomalies(
+        block_b_reps, previous_avg_working=previous_avg_b, expected_work_sets=context.work_sets_b,
+    )
+    if not body.confirm_anomalies and (not anomalies_a.is_empty() or not anomalies_b.is_empty()):
+        return WorkoutSubmitResponse(
+            status="anomaly_confirm_required",
+            anomalies_a=AnomalyFlagsResponse(**asdict(anomalies_a)),
+            anomalies_b=AnomalyFlagsResponse(**asdict(anomalies_b)),
+        )
+
+    log_service = WorkoutLogService(session)
+    workout = await log_service.record_backdated_workout(
+        user_id=context.user_id,
+        workout_set_id=context.workout_set_id,
+        performed_at=performed_at,
+        block_a_reps=block_a_reps,
+        block_b_reps=block_b_reps,
+        block_a_equipment_type=block_a_equipment_type,
+        block_a_equipment_value=block_a_equipment_value,
+        block_b_equipment_type=block_b_equipment_type,
+        block_b_equipment_value=block_b_equipment_value,
+        block_a_equipment_item_id=block_a_equipment_item_id,
+        block_b_equipment_item_id=block_b_equipment_item_id,
+        comment=body.comment,
+    )
+
+    block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+    block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+    return WorkoutSubmitResponse(
+        status="ok",
+        target_a=block_a.target_after,
+        target_b=block_b.target_after,
+        equipment_a=_equipment_info(
+            block_a.equipment_type, block_a.equipment_value, block_a.equipment_item_id,
+        ),
+        equipment_b=_equipment_info(
+            block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
+        ),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+    )

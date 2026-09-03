@@ -126,8 +126,16 @@ class HistoryEntryResponse(BaseModel):
     просто структурированный для карточки, а не единый текстовый блок.
     target_a/target_b заполнены только у самой свежей записи во всей
     истории (is_latest в format_history_entry) — у более ранних это число
-    уже неактуально после следующей тренировки."""
+    уже неактуально после следующей тренировки.
 
+    workout_id (issue #52) — нужен фронтенду, чтобы открыть
+    GET/PATCH /api/history/{workout_id} по тапу на карточку; is_backdated
+    здесь эквивалентно "не редактируется" (см. app.bot.handlers.workout_edit::
+    _is_editable — для завершённой тренировки participates_in_cascade=False
+    означает и sequence_number is None), отдельного is_editable не заводим,
+    чтобы не дублировать один и тот же факт двумя полями."""
+
+    workout_id: int
     performed_at: str
     is_backdated: bool
     comment: str | None
@@ -207,3 +215,79 @@ class WorkoutSubmitResponse(BaseModel):
     result_b: str | None = None
     anomalies_a: AnomalyFlagsResponse | None = None
     anomalies_b: AnomalyFlagsResponse | None = None
+
+
+class HistoryBlockDetail(BaseModel):
+    """Один блок исторической записи для формы редактирования (issue #52)
+    — working_reps/max_reps как реально введены (их длина уже кодирует
+    число рабочих подходов на момент ТОЙ тренировки, отдельного work_sets
+    не нужно, см. app.bot.handlers.workout_edit::_start_editing).
+    target_before — то же число, от которого реально считался ввод (не
+    текущая цель пользователя, если редактируется старая запись)."""
+
+    working_reps: list[int]
+    max_reps: int
+    target_before: int
+    equipment: EquipmentInfo
+
+
+class HistoryEditDetailResponse(BaseModel):
+    """GET /api/history/{workout_id} — данные для предзаполнения формы
+    редактирования. is_editable — тот же app.bot.handlers.workout_edit::
+    _is_editable (внесённые задним числом/не участвующие в каскаде записи
+    не редактируются через этот путь), импортируется напрямую, не
+    дублируется."""
+
+    workout_id: int
+    performed_at: str
+    is_editable: bool
+    comment: str | None
+    block_a: HistoryBlockDetail
+    block_b: HistoryBlockDetail
+
+
+class HistoryEditRequest(BaseModel):
+    """PATCH /api/history/{workout_id} — тот же смысл полей, что
+    WorkoutSubmitRequest (issue #36/#45/#48), только без confirm/comment
+    по умолчанию не переписывает существующий (см. app/web/routes.py:
+    edit_history_workout — comment=None оставляет прежний текст, как и
+    app.bot.handlers.workout_edit, которая правку комментария вообще не
+    предлагает)."""
+
+    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_max_reps: Reps
+    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_max_reps: Reps
+    block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_a_actual_band_item_id: int | None = None
+    block_b_actual_band_item_id: int | None = None
+    comment: str | None = None
+    confirm_anomalies: bool = False
+
+
+class BackdateSubmitRequest(BaseModel):
+    """POST /api/workout/backdate (issue #52) — снаряд здесь ВСЕГДА явный
+    (не наследуется молча из прогрессии, в отличие от WorkoutSubmitRequest)
+    — тот же принцип, что _begin_equipment_setup(target_a_state=None, ...)
+    у бота для бэкдейта (app/bot/handlers/backdate.py): пропущенная
+    тренировка могла пройти на другом снаряде, наследование по умолчанию
+    было бы неверным по умолчанию, не просто менее удобным.
+
+    performed_at — "YYYY-MM-DD", без времени (тот же уровень точности, что
+    и календарь бэкдейта бота — время дня внесённой задним числом
+    тренировки не имеет значения для прогрессии)."""
+
+    performed_at: str
+    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_max_reps: Reps
+    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_max_reps: Reps
+    block_a_equipment_type: str
+    block_a_equipment_value: Decimal | None = Field(default=None, gt=0)
+    block_a_equipment_item_id: int | None = None
+    block_b_equipment_type: str
+    block_b_equipment_value: Decimal | None = Field(default=None, gt=0)
+    block_b_equipment_item_id: int | None = None
+    comment: str | None = None
+    confirm_anomalies: bool = False
