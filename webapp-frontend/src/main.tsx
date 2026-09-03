@@ -13,6 +13,24 @@ import "./index.css";
 // themeParams перекрывают light-дефолты из src/index.css CSS-переменными,
 // так что фон и цвет текста остаются согласованной парой, а не двумя
 // независимыми дефолтами, которые могут разъехаться (см. issue #34).
+// issue #38: то же перекрытие CSS-переменных, что issue #34 завёл для
+// bg/text/hint, — теперь ещё и для палитры, нужной полноценной стилизации
+// (кнопка, карточки блоков, подписи). Каждая переменная опциональна и
+// падает на light-дефолт из src/index.css, если конкретное поле темы
+// клиент не прислал (themeParams — не гарантированно полный набор).
+const THEME_PARAM_TO_CSS_VAR: Record<string, string> = {
+  bg_color: "--tg-bg-color",
+  text_color: "--tg-text-color",
+  hint_color: "--tg-hint-color",
+  link_color: "--tg-link-color",
+  button_color: "--tg-button-color",
+  button_text_color: "--tg-button-text-color",
+  secondary_bg_color: "--tg-secondary-bg-color",
+  section_bg_color: "--tg-section-bg-color",
+  subtitle_text_color: "--tg-subtitle-text-color",
+  destructive_text_color: "--tg-destructive-text-color",
+};
+
 function applyTelegramTheme() {
   const themeParams = (window as unknown as { Telegram?: { WebApp?: { themeParams?: Record<string, string> } } })
     .Telegram?.WebApp?.themeParams;
@@ -20,14 +38,10 @@ function applyTelegramTheme() {
     return;
   }
   const root = document.documentElement.style;
-  if (themeParams.bg_color) {
-    root.setProperty("--tg-bg-color", themeParams.bg_color);
-  }
-  if (themeParams.text_color) {
-    root.setProperty("--tg-text-color", themeParams.text_color);
-  }
-  if (themeParams.hint_color) {
-    root.setProperty("--tg-hint-color", themeParams.hint_color);
+  for (const [param, cssVar] of Object.entries(THEME_PARAM_TO_CSS_VAR)) {
+    if (themeParams[param]) {
+      root.setProperty(cssVar, themeParams[param]);
+    }
   }
 }
 applyTelegramTheme();
