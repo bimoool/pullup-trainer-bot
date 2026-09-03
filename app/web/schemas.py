@@ -55,6 +55,16 @@ class WorkoutSubmitRequest(BaseModel):
     block_a_max_reps: Reps
     block_b_working_reps: list[Reps] = Field(min_length=1)
     block_b_max_reps: Reps
+    # Необязательная правка веса на месте (issue #45, часть 2) — тот же
+    # смысл, что "✏️ Изменить вес/резину" в боте (app/bot/handlers/workout.py::
+    # handle_change_block_equipment): снаряд наследуется из прогрессии
+    # молча, пользователь мог реально взять другой вес. Заполняется только
+    # если фактический вес отличается от предложенного в плане; применяется
+    # (см. app/web/routes.py::submit_workout), только когда контекст на
+    # сервере подтвердил тип блока WEIGHT — то же самое ограничение, что у
+    # бота (равнозначный ввод недоступен для BAND/BODYWEIGHT/AUSTRALIAN).
+    block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
     comment: str | None = None
     confirm_anomalies: bool = False
 
@@ -68,6 +78,22 @@ class AnomalyFlagsResponse(BaseModel):
     current_avg: float | None = None
     expected_set_count: int | None = None
     actual_set_count: int | None = None
+
+
+class ProfileResponse(BaseModel):
+    """Вкладка "Профиль" Mini App (issue #45, часть 3) — узкий срез того,
+    что показывает app.bot.handlers.menu.render_profile: тот же
+    format_subscription_status, но без роста/веса/таймзоны/списка ачивок
+    текстом — сознательно маленький первый шаг под навигацию, не перенос
+    всего профиля бота. is_onboarded=False — единственный случай, когда
+    остальные поля пустые (тот же принцип, что у HelloResponse)."""
+
+    is_onboarded: bool
+    subscription_status_label: str | None = None
+    coins_balance: int | None = None
+    achievements_count: int | None = None
+    workouts_count: int | None = None
+    days_since_last_workout: int | None = None
 
 
 class WorkoutSubmitResponse(BaseModel):

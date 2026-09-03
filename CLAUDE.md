@@ -370,11 +370,51 @@ button, это отдельный баг ErrorBoundary/загрузки скри
    `/root/pullup-trainer-bot`, без `-p`/глобальных флагов — см. шапку
    файла) и живая проверка: открыть Mini App из бота, увидеть
    "Привет, {имя}" с реальным статусом готовности к тренировке.
-7. `webapp-frontend/package.json` без `package-lock.json` — сгенерировать
-   может только среда с доступом к npm-реестру (`npm install` при первой
-   сборке `Dockerfile.web` создаст его внутри образа, но для
-   воспроизводимых сборок лок стоит закоммитить после первого успешного
-   `docker compose build web`).
+7. `webapp-frontend/package-lock.json` уже закоммичен (после первого
+   успешного `npm install`/`docker compose build web` с доступом к
+   npm-реестру) — при добавлении новых зависимостей в
+   `webapp-frontend/package.json` перегенерировать `npm install` и
+   закоммитить обновлённый лок туда же, не оставлять package.json без
+   него снова.
+
+**Обновление (issue #45, 2026-09-03): защита от повторного ввода в тот же
+день — не баг, обход по `ADMIN_IDS`.** Репорт с реального тестирования
+("сколько раз открываю Mini App, столько раз могу внести тренировку")
+объясняется тем же обходом, что задокументирован в разделе "`ADMIN_IDS`:
+обход лимитов для тестирования вживую" выше: `_resolve_plan_context`
+(`app/web/routes.py`) вызывает `check_training_readiness` корректно, но
+пропускает статус `too_early`, если `settings.is_admin(telegram_id)` —
+ровно то же условие, что и в `handle_start_workout` бота. Для не-админа
+это уже покрыто тестом (`tests/test_web/test_workout.py::
+test_plan_too_early_is_reported`). Если этот класс жалоб повторится
+снова — сначала проверить, не с админ-аккаунта ли тестирование, а не
+чинить сам `check_training_readiness`.
+
+**Обновление (issue #45, часть 2): фактический вес — правка "на месте",
+переиспользует прогрессию, не отдельная логика.** `WorkoutSubmitRequest`
+(`app/web/schemas.py`) получил необязательные `block_a_actual_weight`/
+`block_b_actual_weight` — тот же смысл, что "✏️ Изменить вес/резину" в
+боте (`app/bot/handlers/workout.py::handle_change_block_equipment`, через
+`equipment.py::handle_equipment_value`), просто без промежуточного шага
+FSM: значение подставляется прямо в `submit_workout`
+(`app/web/routes.py`) вместо унаследованного `context.equipment_*_value`
+**только если** тип блока на сервере — `EquipmentType.WEIGHT` (то же
+ограничение, что у бота: ввод кг недоступен для BAND/BODYWEIGHT/
+AUSTRALIAN). Дальше это обычное значение `equipment_value`, передаваемое
+в `WorkoutLogService.record_workout` — своей копии пересчёта прогрессии
+нет.
+
+**Обновление (issue #45, часть 3): базовая навигация — два раздела,
+задел на будущее.** `webapp-frontend/src/App.tsx` — нижние вкладки
+(`NAV_TABS`, сейчас "Тренировка"/"Профиль") поверх существующего
+`WorkoutScreen`; третий раздел добавляется той же записью в `NAV_TABS` +
+веткой в рендере, не отдельным переписыванием. `GET /api/profile`
+(`app/web/routes.py`) — сознательно узкий срез того, что показывает
+`app.bot.handlers.menu.render_profile` (тот же `format_subscription_status`,
+не веб-копия текста статуса подписки): подписка, монеты, число
+тренировок/ачивок, дни с последней тренировки. Рост/вес/таймзона/список
+ачивок текстом остаются только в боте — расширять `ProfileResponse`
+можно по одному полю за раз, когда понадобится.
 
 ## Прочие устоявшиеся решения
 

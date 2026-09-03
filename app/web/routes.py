@@ -6,9 +6,14 @@ from fastapi import APIRouter, Depends
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bot.formatting import format_block_result, format_equipment_label
+from app.bot.formatting import (
+    format_block_result,
+    format_equipment_label,
+    format_subscription_status,
+)
 from app.config import settings
 from app.db.models import BlockType
+from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
@@ -24,6 +29,7 @@ from app.web.schemas import (
     AnomalyFlagsResponse,
     EquipmentInfo,
     HelloResponse,
+    ProfileResponse,
     WorkoutPlanResponse,
     WorkoutSubmitRequest,
     WorkoutSubmitResponse,
@@ -67,6 +73,37 @@ async def hello(
         name=name, is_onboarded=True,
         readiness_status=readiness.status.value,
         days_since_last_workout=readiness.days_since_last_workout,
+    )
+
+
+@router.get("/profile", response_model=ProfileResponse)
+async def get_profile(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProfileResponse:
+    """Вкладка "Профиль" Mini App (issue #45, часть 3) — сознательно узкий
+    срез app.bot.handlers.menu.render_profile: тот же format_subscription_status
+    (единый источник представления статуса, не веб-копия), без
+    роста/веса/таймзоны/списка ачивок текстом — задел под навигацию,
+    наполнить остальным можно по одному полю за раз позже (issue #45,
+    план части 3), не всё сразу."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return ProfileResponse(is_onboarded=False)
+
+    achievements = await AchievementRepository(session).list_for_user(user.id)
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    days_since_last_workout = (
+        (datetime.now(UTC).date() - history[-1].performed_at.date()).days if history else None
+    )
+
+    return ProfileResponse(
+        is_onboarded=True,
+        subscription_status_label=format_subscription_status(user),
+        coins_balance=user.coins_balance,
+        achievements_count=len(achievements),
+        workouts_count=len(history),
+        days_since_last_workout=days_since_last_workout,
     )
 
 
@@ -264,6 +301,21 @@ async def submit_workout(
             anomalies_b=AnomalyFlagsResponse(**asdict(anomalies_b)),
         )
 
+    # Фактический вес (issue #45, часть 2) — та же правка "на месте", что
+    # "✏️ Изменить вес/резину" в боте (app/bot/handlers/workout.py::
+    # handle_change_block_equipment), только применяется тут, а не отдельным
+    # шагом FSM до ввода повторений. Действует только для WEIGHT: снаряд
+    # унаследован из _resolve_plan_context (needs_new_equipment=False уже
+    # проверен там), а у BAND/BODYWEIGHT/AUSTRALIAN "вес" не имеет смысла —
+    # тело/сопротивление резины клиент поправить не может, тот же принцип,
+    # что у equipment.py (свободный ввод кг доступен только для WEIGHT).
+    equipment_a_value = context.equipment_a_value
+    if body.block_a_actual_weight is not None and context.equipment_a_type == EquipmentType.WEIGHT:
+        equipment_a_value = body.block_a_actual_weight
+    equipment_b_value = context.equipment_b_value
+    if body.block_b_actual_weight is not None and context.equipment_b_type == EquipmentType.WEIGHT:
+        equipment_b_value = body.block_b_actual_weight
+
     log_service = WorkoutLogService(session)
     workout = await log_service.record_workout(
         user_id=context.user_id,
@@ -272,9 +324,9 @@ async def submit_workout(
         block_a_reps=block_a_reps,
         block_b_reps=block_b_reps,
         block_a_equipment_type=context.equipment_a_type,
-        block_a_equipment_value=context.equipment_a_value,
+        block_a_equipment_value=equipment_a_value,
         block_b_equipment_type=context.equipment_b_type,
-        block_b_equipment_value=context.equipment_b_value,
+        block_b_equipment_value=equipment_b_value,
         block_a_equipment_item_id=context.equipment_a_item_id,
         block_b_equipment_item_id=context.equipment_b_item_id,
         target_a_override=context.target_a if context.is_gap_rollback else None,

@@ -63,6 +63,22 @@ function replaceAt(values: string[], index: number, value: string): string[] {
   return values.map((v, i) => (i === index ? value : v));
 }
 
+/** Пустое поле — правки нет (null, сервер оставит вес из прогрессии как
+ * есть); непустое — должно быть положительным числом, как и живой ввод
+ * веса в боте (app/bot/handlers/equipment.py::handle_equipment_value). */
+function parseOptionalWeight(raw: string): { ok: true; value: string | null } | { ok: false } {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return { ok: true, value: null };
+  }
+  const normalized = trimmed.replace(",", ".");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { ok: false };
+  }
+  return { ok: true, value: normalized };
+}
+
 function AnomalyLines({ flags }: { flags: AnomalyFlags }) {
   return (
     <ul className="anomaly-list">
@@ -116,20 +132,26 @@ function BlockForm({
   letter,
   target,
   workSets,
+  equipmentType,
   equipmentLabel,
   workingValues,
   onWorkingChangeAt,
   maxValue,
   onMaxChange,
+  actualWeightValue,
+  onActualWeightChange,
 }: {
   letter: "A" | "B";
   target: number | null;
   workSets: number | null;
+  equipmentType: string | undefined;
   equipmentLabel: string | undefined;
   workingValues: string[];
   onWorkingChangeAt: (index: number, value: string) => void;
   maxValue: string;
   onMaxChange: (value: string) => void;
+  actualWeightValue: string;
+  onActualWeightChange: (value: string) => void;
 }) {
   return (
     <section className="block-card">
@@ -159,6 +181,28 @@ function BlockForm({
           onChange={(e) => onMaxChange(e.target.value)}
         />
       </div>
+
+      {/* Только для WEIGHT (issue #45, часть 2) — снаряд наследуется из
+          прогрессии молча, реально взятый вес мог отличаться. У BAND/
+          BODYWEIGHT/AUSTRALIAN "вес" не имеет отдельного смысла (см.
+          app/web/routes.py::submit_workout — сервер игнорирует поле для
+          остальных типов), поле здесь просто не показывается. */}
+      {equipmentType === "weight" && (
+        <>
+          <span className="field-label">Фактический вес, если отличается (кг)</span>
+          <input
+            className="text-input"
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.5"
+            placeholder={equipmentLabel}
+            aria-label={`Блок ${letter}, фактический вес`}
+            value={actualWeightValue}
+            onChange={(e) => onActualWeightChange(e.target.value)}
+          />
+        </>
+      )}
     </section>
   );
 }
@@ -169,6 +213,8 @@ export function WorkoutScreen({ initDataRaw }: Props) {
   const [blockAMax, setBlockAMax] = useState("");
   const [blockBWorking, setBlockBWorking] = useState<string[]>([]);
   const [blockBMax, setBlockBMax] = useState("");
+  const [blockAActualWeight, setBlockAActualWeight] = useState("");
+  const [blockBActualWeight, setBlockBActualWeight] = useState("");
   const [comment, setComment] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -211,6 +257,12 @@ export function WorkoutScreen({ initDataRaw }: Props) {
       setFormError("Заполни все подходы числами — пустые или нечисловые поля недопустимы.");
       return;
     }
+    const actualWeightA = parseOptionalWeight(blockAActualWeight);
+    const actualWeightB = parseOptionalWeight(blockBActualWeight);
+    if (!actualWeightA.ok || !actualWeightB.ok) {
+      setFormError("Фактический вес должен быть положительным числом, если он указан.");
+      return;
+    }
     setFormError(null);
 
     const body: WorkoutSubmitRequest = {
@@ -218,6 +270,8 @@ export function WorkoutScreen({ initDataRaw }: Props) {
       block_a_max_reps: maxA,
       block_b_working_reps: workingB,
       block_b_max_reps: maxB,
+      block_a_actual_weight: actualWeightA.value,
+      block_b_actual_weight: actualWeightB.value,
       comment: comment.trim() || null,
       confirm_anomalies: confirmAnomalies,
     };
@@ -310,22 +364,28 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         letter="A"
         target={plan.target_a}
         workSets={plan.work_sets_a}
+        equipmentType={plan.equipment_a?.type}
         equipmentLabel={plan.equipment_a?.label}
         workingValues={blockAWorking}
         onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
         maxValue={blockAMax}
         onMaxChange={setBlockAMax}
+        actualWeightValue={blockAActualWeight}
+        onActualWeightChange={setBlockAActualWeight}
       />
 
       <BlockForm
         letter="B"
         target={plan.target_b}
         workSets={plan.work_sets_b}
+        equipmentType={plan.equipment_b?.type}
         equipmentLabel={plan.equipment_b?.label}
         workingValues={blockBWorking}
         onWorkingChangeAt={(index, value) => setBlockBWorking((prev) => replaceAt(prev, index, value))}
         maxValue={blockBMax}
         onMaxChange={setBlockBMax}
+        actualWeightValue={blockBActualWeight}
+        onActualWeightChange={setBlockBActualWeight}
       />
 
       <span className="field-label">Комментарий (необязательно)</span>
