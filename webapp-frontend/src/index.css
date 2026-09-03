@@ -76,39 +76,8 @@ input[type="number"] {
   padding-bottom: 88px;
 }
 
-.bottom-nav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  max-width: 480px;
-  margin: 0 auto;
-  background: var(--tg-section-bg-color);
-  border-top: 1px solid rgba(127, 127, 127, 0.2);
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-
-.bottom-nav-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 0 10px;
-  border: none;
-  background: transparent;
-  color: var(--tg-subtitle-text-color);
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .bottom-nav-icon {
   font-size: 20px;
-}
-
-.bottom-nav-item.active {
-  color: var(--tg-button-color);
 }
 
 .app-greeting {
@@ -141,10 +110,7 @@ input[type="number"] {
   margin-bottom: 16px;
 }
 
-.block-card {
-  background: var(--tg-secondary-bg-color);
-  border-radius: 16px;
-  padding: 16px;
+.block-section {
   margin-bottom: 16px;
 }
 
@@ -167,12 +133,6 @@ input[type="number"] {
   font-weight: 700;
   font-size: 15px;
   flex-shrink: 0;
-}
-
-.block-title {
-  font-size: 17px;
-  font-weight: 600;
-  margin: 0;
 }
 
 .block-subtitle {
@@ -235,78 +195,8 @@ input[type="number"] {
   width: 72px;
 }
 
-.text-input {
-  display: block;
-  width: 100%;
-  height: 44px;
-  border-radius: 12px;
-  border: 1.5px solid rgba(127, 127, 127, 0.25);
-  background: var(--tg-bg-color);
-  color: var(--tg-text-color);
-  font-size: 15px;
-  font-family: inherit;
-  padding: 0 12px;
-}
-
-.text-input:focus {
-  outline: none;
-  border-color: var(--tg-button-color);
-}
-
-.textarea-field {
-  width: 100%;
-  min-height: 64px;
-  border-radius: 12px;
-  border: 1.5px solid rgba(127, 127, 127, 0.25);
-  background: var(--tg-bg-color);
-  color: var(--tg-text-color);
-  font-size: 15px;
-  font-family: inherit;
-  padding: 10px 12px;
-  resize: vertical;
-}
-
-.textarea-field:focus {
-  outline: none;
-  border-color: var(--tg-button-color);
-}
-
-.primary-button {
-  display: block;
-  width: 100%;
-  padding: 15px;
-  border: none;
-  border-radius: 14px;
-  background: var(--tg-button-color);
-  color: var(--tg-button-text-color);
-  font-size: 16px;
-  font-weight: 600;
-  margin-top: 20px;
-}
-
-.primary-button:disabled {
-  opacity: 0.5;
-}
-
-.primary-button:active:not(:disabled) {
-  opacity: 0.85;
-}
-
-.secondary-button {
-  display: block;
-  width: 100%;
-  padding: 15px;
-  border: 1.5px solid var(--tg-button-color);
-  border-radius: 14px;
-  background: transparent;
-  color: var(--tg-button-color);
-  font-size: 16px;
-  font-weight: 600;
-  margin-top: 10px;
-}
-
-.secondary-button:disabled {
-  opacity: 0.5;
+.action-button {
+  margin-top: 16px;
 }
 
 .error-banner {

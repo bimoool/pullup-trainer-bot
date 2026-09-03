@@ -12,10 +12,22 @@ export interface EquipmentInfo {
   label: string;
 }
 
+/** Один пункт личного списка резин пользователя (issue #48) — тот же
+ * источник, что бот показывает при "✏️ Изменить вес/резину"
+ * (app/bot/keyboards.py::band_item_picker_keyboard). */
+export interface BandItemInfo {
+  id: number;
+  name: string;
+  resistance_kg: string | null;
+}
+
 /** GET /api/workout/plan (issue #36, Этап 1) — status="ready" — единственный
  * случай, когда поля target/work_sets/equipment заполнены; любой другой
  * статус — та же причина, что определила бы ветку в handle_start_workout
- * бота (app/bot/handlers/workout.py), форма не показывается. */
+ * бота (app/bot/handlers/workout.py), форма не показывается.
+ *
+ * band_items заполнен, только если равнозначный выбор резины возможен хотя
+ * бы для одного блока (equipment_a/b.type === "band"), иначе пуст. */
 export interface WorkoutPlanResponse {
   status: string;
   workout_set_id: number | null;
@@ -26,6 +38,7 @@ export interface WorkoutPlanResponse {
   equipment_a: EquipmentInfo | null;
   equipment_b: EquipmentInfo | null;
   is_gap_rollback: boolean;
+  band_items: BandItemInfo[];
 }
 
 export interface AnomalyFlags {
@@ -61,6 +74,11 @@ export interface WorkoutSubmitRequest {
    * значение молча игнорируется. */
   block_a_actual_weight?: string | null;
   block_b_actual_weight?: string | null;
+  /** Выбор резины (issue #48) — тот же принцип, что actual_weight выше,
+   * только для BAND и id из band_items вместо числа. Игнорируется на
+   * бэкенде, если снаряд блока не BAND (см. app/web/routes.py::submit_workout). */
+  block_a_actual_band_item_id?: number | null;
+  block_b_actual_band_item_id?: number | null;
   comment: string | null;
   confirm_anomalies: boolean;
 }

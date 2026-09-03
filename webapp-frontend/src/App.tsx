@@ -1,4 +1,5 @@
 import { retrieveLaunchParams } from "@telegram-apps/sdk";
+import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
@@ -129,19 +130,13 @@ export function App() {
       {state.data.is_onboarded && tab === "profile" && <ProfileScreen initDataRaw={state.initDataRaw} />}
 
       {state.data.is_onboarded && (
-        <nav className="bottom-nav">
+        <Tabbar>
           {NAV_TABS.map(({ key, icon, label }) => (
-            <button
-              key={key}
-              type="button"
-              className={tab === key ? "bottom-nav-item active" : "bottom-nav-item"}
-              onClick={() => setTab(key)}
-            >
+            <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => setTab(key)}>
               <span className="bottom-nav-icon">{icon}</span>
-              <span>{label}</span>
-            </button>
+            </Tabbar.Item>
           ))}
-        </nav>
+        </Tabbar>
       )}
     </div>
   );

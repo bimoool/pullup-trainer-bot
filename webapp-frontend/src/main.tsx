@@ -1,3 +1,5 @@
+import { AppRoot } from "@telegram-apps/telegram-ui";
+import "@telegram-apps/telegram-ui/dist/styles.css";
 import { init } from "@telegram-apps/sdk";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -18,6 +20,15 @@ import "./index.css";
 // (кнопка, карточки блоков, подписи). Каждая переменная опциональна и
 // падает на light-дефолт из src/index.css, если конкретное поле темы
 // клиент не прислал (themeParams — не гарантированно полный набор).
+//
+// issue #48: @telegram-apps/telegram-ui читает СВОИ CSS-переменные
+// (--tgui--bg_color и т.д.), которые внутри styles.css кита сами ссылаются
+// на var(--tg-theme-bg-color, ...) — стандартное имя, официально
+// используемое экосистемой Telegram Mini Apps, но ДРУГОЕ, чем --tg-bg-color
+// выше (issue #34/#38, наш собственный CSS). Без этого блока кит просто не
+// увидел бы реальные цвета клиента и падал на свой статичный light/dark
+// fallback. Один и тот же источник (themeParams), просто записанный под
+// обоими именами — не два независимых механизма темизации.
 const THEME_PARAM_TO_CSS_VAR: Record<string, string> = {
   bg_color: "--tg-bg-color",
   text_color: "--tg-text-color",
@@ -29,6 +40,19 @@ const THEME_PARAM_TO_CSS_VAR: Record<string, string> = {
   section_bg_color: "--tg-section-bg-color",
   subtitle_text_color: "--tg-subtitle-text-color",
   destructive_text_color: "--tg-destructive-text-color",
+};
+
+const THEME_PARAM_TO_TGUI_CSS_VAR: Record<string, string> = {
+  bg_color: "--tg-theme-bg-color",
+  text_color: "--tg-theme-text-color",
+  hint_color: "--tg-theme-hint-color",
+  link_color: "--tg-theme-link-color",
+  button_color: "--tg-theme-button-color",
+  button_text_color: "--tg-theme-button-text-color",
+  secondary_bg_color: "--tg-theme-secondary-bg-color",
+  section_bg_color: "--tg-theme-section-bg-color",
+  subtitle_text_color: "--tg-theme-subtitle-text-color",
+  destructive_text_color: "--tg-theme-destructive-text-color",
 };
 
 function applyTelegramTheme() {
@@ -43,8 +67,22 @@ function applyTelegramTheme() {
       root.setProperty(cssVar, themeParams[param]);
     }
   }
+  for (const [param, cssVar] of Object.entries(THEME_PARAM_TO_TGUI_CSS_VAR)) {
+    if (themeParams[param]) {
+      root.setProperty(cssVar, themeParams[param]);
+    }
+  }
 }
 applyTelegramTheme();
+
+// Официальное поле Telegram ('light'/'dark') — надёжнее, чем автоопределение
+// кита по prefers-color-scheme (см. getInitialAppearance в самом ките):
+// тема Telegram-клиента может не совпадать с системной темой ОС. Вне
+// Telegram (обычный браузер) поле отсутствует — AppRoot сам падает на
+// prefers-color-scheme, ровно как и раньше.
+const telegramColorScheme = (
+  window as unknown as { Telegram?: { WebApp?: { colorScheme?: "light" | "dark" } } }
+).Telegram?.WebApp?.colorScheme;
 
 try {
   // Issue #24: на мобильном Telegram init() (внутри себя дёргает
@@ -65,7 +103,9 @@ try {
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <App />
+        <AppRoot appearance={telegramColorScheme}>
+          <App />
+        </AppRoot>
       </ErrorBoundary>
     </React.StrictMode>,
   );
