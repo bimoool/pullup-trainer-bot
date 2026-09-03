@@ -311,3 +311,36 @@ input[type="number"] {
   color: var(--tg-subtitle-text-color);
   margin-top: 4px;
 }
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.history-card {
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.history-card p {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.history-card p:last-child {
+  margin-bottom: 0;
+}
+
+.history-date {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.hint {
+  color: var(--tg-hint-color);
+  font-size: 13px;
+}

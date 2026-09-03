@@ -123,6 +123,49 @@ export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse
   return apiGet<ProfileResponse>("/api/profile", initDataRaw);
 }
 
+/** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
+ * что печатает бот в app.bot.handlers.history.format_history_entry, только
+ * структурированные под карточку. target_a/target_b заполнены только у
+ * самой свежей записи во всей истории. */
+export interface HistoryEntry {
+  performed_at: string;
+  is_backdated: boolean;
+  comment: string | null;
+  equipment_a: EquipmentInfo;
+  equipment_b: EquipmentInfo;
+  result_a: string;
+  result_b: string;
+  target_a: number | null;
+  target_b: number | null;
+}
+
+export interface HistoryPage {
+  items: HistoryEntry[];
+  has_more: boolean;
+}
+
+/** Одна точка графика "Прогресс" (issue #50, волна 2) — цель за подход
+ * блока A/Б на момент этой тренировки, уже посчитанная прогрессией на
+ * бэкенде (app/web/routes.py::get_progress), не пересчитывается на клиенте. */
+export interface ProgressPoint {
+  performed_at: string;
+  target_a: number;
+  target_b: number;
+  workout_set_id: number | null;
+}
+
+export interface ProgressData {
+  points: ProgressPoint[];
+}
+
+export async function fetchHistory(initDataRaw: string, offset: number, limit = 20): Promise<HistoryPage> {
+  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}`, initDataRaw);
+}
+
+export async function fetchProgress(initDataRaw: string): Promise<ProgressData> {
+  return apiGet<ProgressData>("/api/progress", initDataRaw);
+}
+
 export async function submitWorkout(
   initDataRaw: string,
   body: WorkoutSubmitRequest,

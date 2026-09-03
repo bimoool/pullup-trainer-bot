@@ -2,7 +2,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,11 @@ from app.web.schemas import (
     BandItemInfo,
     EquipmentInfo,
     HelloResponse,
+    HistoryEntryResponse,
+    HistoryResponse,
     ProfileResponse,
+    ProgressPointResponse,
+    ProgressResponse,
     WorkoutPlanResponse,
     WorkoutSubmitRequest,
     WorkoutSubmitResponse,
@@ -379,3 +383,84 @@ async def submit_workout(
         result_a=format_block_result(block_a.working_reps, block_a.max_reps),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps),
     )
+
+
+@router.get("/history", response_model=HistoryResponse)
+async def get_history(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> HistoryResponse:
+    """Вкладка "История" Mini App (issue #50, волна 1) — те же факты, что
+    печатает app.bot.handlers.history.handle_show_history (тот же
+    WorkoutRepository.list_for_user, тот же format_block_result), только
+    структурированные под карточки, а не единый текстовый блок бота.
+
+    Пагинация — offset/limit-срез уже загруженного списка (тот же приём,
+    что HISTORY_LIMIT-срез в handle_show_history), не отдельный SQL-запрос
+    с LIMIT/OFFSET: list_for_user и так остаётся единственным источником
+    истории пользователя во всём проекте (профиль/план/аномалии читают его
+    же), заводить вторую версию с БД-пагинацией ради одного экрана — лишняя
+    развилка без выигрыша при типичном объёме истории одного пользователя.
+    Новейшие тренировки — первыми (естественный порядок для ленты)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return HistoryResponse(items=[], has_more=False)
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    newest_first = list(reversed(history))
+    page = newest_first[offset : offset + limit]
+
+    items = []
+    for workout in page:
+        block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
+        block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+        is_latest = workout is newest_first[0]
+        items.append(
+            HistoryEntryResponse(
+                performed_at=workout.performed_at.date().isoformat(),
+                is_backdated=not workout.participates_in_cascade,
+                comment=workout.comment,
+                equipment_a=_equipment_info(
+                    block_a.equipment_type, block_a.equipment_value, block_a.equipment_item_id,
+                ),
+                equipment_b=_equipment_info(
+                    block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
+                ),
+                result_a=format_block_result(block_a.working_reps, block_a.max_reps),
+                result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+                target_a=block_a.target_after if is_latest else None,
+                target_b=block_b.target_after if is_latest else None,
+            ),
+        )
+    return HistoryResponse(items=items, has_more=offset + limit < len(newest_first))
+
+
+@router.get("/progress", response_model=ProgressResponse)
+async def get_progress(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProgressResponse:
+    """Данные для графика вкладки "Прогресс" (issue #50, волна 2) — цель за
+    подход по тренировкам во времени, для блока A и Б отдельно.
+    WorkoutRepository.list_records_for_user отдаёт те же доменные
+    WorkoutRecord, что app.services.reports/app.domain.reports используют
+    для отчётов бота — target_after уже посчитан прогрессией
+    (app.domain.progression) при записи каждой тренировки, здесь не
+    пересчитывается заново, только читается в хронологическом порядке."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return ProgressResponse(points=[])
+
+    records = await WorkoutRepository(session).list_records_for_user(user.id)
+    points = [
+        ProgressPointResponse(
+            performed_at=record.performed_at.date().isoformat(),
+            target_a=record.block_a.target_after,
+            target_b=record.block_b.target_after,
+            workout_set_id=record.workout_set_id,
+        )
+        for record in records
+    ]
+    return ProgressResponse(points=points)
