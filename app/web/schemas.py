@@ -126,8 +126,12 @@ class HistoryEntryResponse(BaseModel):
     просто структурированный для карточки, а не единый текстовый блок.
     target_a/target_b заполнены только у самой свежей записи во всей
     истории (is_latest в format_history_entry) — у более ранних это число
-    уже неактуально после следующей тренировки."""
+    уже неактуально после следующей тренировки.
 
+    workout_id (issue #52, волна 1) — нужен фронтенду, чтобы открыть
+    GET/PATCH /api/history/{workout_id} при редактировании карточки."""
+
+    workout_id: int
     performed_at: str
     is_backdated: bool
     comment: str | None
@@ -175,6 +179,7 @@ class HistoryEditDetailResponse(BaseModel):
     is_editable: bool
     block_a: HistoryBlockDetail
     block_b: HistoryBlockDetail
+    band_items: list[BandItemInfo] = Field(default_factory=list)
 
 
 class HistoryEditRequest(BaseModel):

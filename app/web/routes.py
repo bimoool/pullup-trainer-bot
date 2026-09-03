@@ -424,6 +424,7 @@ async def get_history(
         is_latest = workout is newest_first[0]
         items.append(
             HistoryEntryResponse(
+                workout_id=workout.id,
                 performed_at=workout.performed_at.date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
                 comment=workout.comment,
@@ -493,6 +494,12 @@ async def get_history_entry(
 
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
+
+    band_items: list[BandItemInfo] = []
+    if EquipmentType.BAND in (block_a.equipment_type, block_b.equipment_type):
+        items = await EquipmentItemRepository(session).list_for_user(user.id)
+        band_items = [BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items]
+
     return HistoryEditDetailResponse(
         workout_id=workout.id,
         performed_at=workout.performed_at.date().isoformat(),
@@ -506,6 +513,7 @@ async def get_history_entry(
             working_reps=list(block_b.working_reps), max_reps=block_b.max_reps, target_before=block_b.target_before,
             equipment=_equipment_info(block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id),
         ),
+        band_items=band_items,
     )
 
 

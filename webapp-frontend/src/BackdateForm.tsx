@@ -1,41 +1,52 @@
 import { Button, Textarea } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { fetchWorkoutPlan, submitWorkout, type WorkoutPlanResponse, type WorkoutSubmitRequest, type WorkoutSubmitResponse } from "./api";
+import {
+  fetchBackdatePlan,
+  submitBackdate,
+  type BackdateSubmitRequest,
+  type WorkoutPlanResponse,
+  type WorkoutSubmitResponse,
+} from "./api";
 import { AnomalyLines, BlockForm, parseOptionalWeight, parseSetValue, parseSetValues, replaceAt } from "./BlockForm";
 
-type Props = { initDataRaw: string };
+type Props = {
+  initDataRaw: string;
+  onCancel: () => void;
+  onSaved: () => void;
+};
 
 type ScreenState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
   | { phase: "not_ready"; status: string }
   | { phase: "form"; plan: WorkoutPlanResponse }
-  | { phase: "anomaly_confirm"; plan: WorkoutPlanResponse; body: WorkoutSubmitRequest; result: WorkoutSubmitResponse }
-  | { phase: "done"; result: WorkoutSubmitResponse };
+  | { phase: "anomaly_confirm"; plan: WorkoutPlanResponse; body: BackdateSubmitRequest; result: WorkoutSubmitResponse };
 
-// Текст для статусов, которые Mini App Этапа 1 не обрабатывает формой
-// (сужение скоупа, issue #36) — та же причина, что определила бы ветку в
-// handle_start_workout бота (app/bot/handlers/workout.py), просто без
-// самого диалога. Пользователь продолжает в боте, ничего не теряя —
-// у бота эти случаи по-прежнему работают как раньше.
+// Тот же смысл, что STATUS_MESSAGES в WorkoutScreen.tsx, но для статусов
+// _resolve_backdate_context (app/web/routes.py) — там нет readiness-гейтов
+// (too_early/gap_retest_required/deload_due/equipment_setup_required), но
+// есть свой статус "future_date".
 const STATUS_MESSAGES: Record<string, string> = {
   no_access: "Нет активной подписки. Оформи её в боте, потом возвращайся сюда.",
-  first_workout: "Это твоя первая тренировка — замер и выбор снаряда пока доступны только в боте.",
-  too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
-  gap_retest_required: "Был долгий перерыв — нужен повторный замер, начни его в боте.",
-  deload_due: "Пора на разгрузочную тренировку блока на объём — эта форма пока доступна только в боте.",
-  equipment_setup_required: "Нужно заново выбрать снаряд для одного из блоков — сделай это в боте.",
-  no_active_set: "Не получилось открыть тренировочный цикл. Напиши в поддержку через бота.",
+  no_active_set: "Нужен хотя бы один замер, чтобы вносить тренировки задним числом — начни его в боте.",
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
+  future_date: "Эта дата ещё не наступила — бэкдейт работает только для прошлого.",
 };
 
-function closeMiniApp() {
-  (window as unknown as { Telegram?: { WebApp?: { close?: () => void } } }).Telegram?.WebApp?.close?.();
-}
+const TODAY = new Date().toISOString().slice(0, 10);
 
-export function WorkoutScreen({ initDataRaw }: Props) {
+/** "Добавить за дату" (issue #52, волна 2) — упрощённый для веба аналог
+ * календаря бота (app/bot/handlers/backdate.py): обычный <input type="date">
+ * с max=сегодня вместо grid-календаря, единственная реальная проверка даты
+ * в боте — "не в будущем" (см. докстринг submit_backdated_workout в
+ * app/web/routes.py, лимита "не старше N дней" в боте на самом деле нет).
+ * Снаряд наследуется из GET /api/workout/backdate/plan (resolve_next_targets)
+ * — та же BlockForm/анти-аномальный поток, что и WorkoutScreen.tsx/
+ * HistoryEditForm.tsx. */
+export function BackdateForm({ initDataRaw, onCancel, onSaved }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  const [performedAt, setPerformedAt] = useState(TODAY);
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
   const [blockBWorking, setBlockBWorking] = useState<string[]>([]);
@@ -52,13 +63,11 @@ export function WorkoutScreen({ initDataRaw }: Props) {
     let cancelled = false;
     async function load() {
       try {
-        const plan = await fetchWorkoutPlan(initDataRaw);
+        const plan = await fetchBackdatePlan(initDataRaw);
         if (cancelled) {
           return;
         }
         if (plan.status === "ready") {
-          // Динамическое число полей на подход (issue #38) — по
-          // work_sets_a/work_sets_b из ответа API, не захардкожено.
           setBlockAWorking(Array(plan.work_sets_a ?? 0).fill(""));
           setBlockBWorking(Array(plan.work_sets_b ?? 0).fill(""));
           setState({ phase: "form", plan });
@@ -78,6 +87,10 @@ export function WorkoutScreen({ initDataRaw }: Props) {
   }, [initDataRaw]);
 
   async function handleSubmit(plan: WorkoutPlanResponse, confirmAnomalies: boolean) {
+    if (!performedAt) {
+      setFormError("Укажи дату тренировки.");
+      return;
+    }
     const workingA = parseSetValues(blockAWorking);
     const maxA = parseSetValue(blockAMax);
     const workingB = parseSetValues(blockBWorking);
@@ -94,7 +107,8 @@ export function WorkoutScreen({ initDataRaw }: Props) {
     }
     setFormError(null);
 
-    const body: WorkoutSubmitRequest = {
+    const body: BackdateSubmitRequest = {
+      performed_at: performedAt,
       block_a_working_reps: workingA,
       block_a_max_reps: maxA,
       block_b_working_reps: workingB,
@@ -109,16 +123,16 @@ export function WorkoutScreen({ initDataRaw }: Props) {
 
     setSubmitting(true);
     try {
-      const result = await submitWorkout(initDataRaw, body);
+      const result = await submitBackdate(initDataRaw, body);
       if (result.status === "anomaly_confirm_required") {
         setState({ phase: "anomaly_confirm", plan, body, result });
         return;
       }
       if (result.status !== "ok") {
-        setState({ phase: "not_ready", status: result.status });
+        setFormError(STATUS_MESSAGES[result.status] ?? `Не удалось записать (статус: ${result.status}).`);
         return;
       }
-      setState({ phase: "done", result });
+      onSaved();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -127,14 +141,14 @@ export function WorkoutScreen({ initDataRaw }: Props) {
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю план тренировки…</p>;
+    return <p className="screen-message">Загружаю форму…</p>;
   }
   if (state.phase === "error") {
     return (
       <div>
-        <p className="screen-message">Не удалось загрузить план: {state.message}</p>
-        <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
-          Открыть в боте
+        <p className="screen-message">Не удалось загрузить форму: {state.message}</p>
+        <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
+          Назад
         </Button>
       </div>
     );
@@ -145,8 +159,8 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         <p className="screen-message">
           {STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`}
         </p>
-        <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
-          Открыть в боте
+        <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
+          Назад
         </Button>
       </div>
     );
@@ -181,34 +195,23 @@ export function WorkoutScreen({ initDataRaw }: Props) {
       </div>
     );
   }
-  if (state.phase === "done") {
-    const { result } = state;
-    return (
-      <div className="done-card">
-        <div className="done-check">✓</div>
-        <p className="done-title">Тренировка записана</p>
-        <div className="done-stats">
-          <p>Блок A: {result.result_a}</p>
-          <p>Блок B: {result.result_b}</p>
-          <p className="hint">
-            Цели на следующую тренировку: блок A — {result.target_a} ({result.equipment_a?.label}), блок B —{" "}
-            {result.target_b} ({result.equipment_b?.label}).
-          </p>
-        </div>
-        <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
-          Готово
-        </Button>
-      </div>
-    );
-  }
 
   const { plan } = state;
   return (
     <div>
-      <p className="plan-title">Текущий план</p>
-      {plan.is_gap_rollback && (
-        <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
-      )}
+      <p className="plan-title">Добавить за дату</p>
+
+      <label className="backdate-date-field">
+        <span className="field-label">Дата тренировки</span>
+        <input
+          className="set-input"
+          type="date"
+          max={TODAY}
+          aria-label="Дата тренировки"
+          value={performedAt}
+          onChange={(e) => setPerformedAt(e.target.value)}
+        />
+      </label>
 
       <BlockForm
         letter="A"
@@ -247,8 +250,17 @@ export function WorkoutScreen({ initDataRaw }: Props) {
       <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />
 
       {formError && <p className="error-banner">{formError}</p>}
-      <Button className="action-button" size="l" stretched disabled={submitting} onClick={() => void handleSubmit(plan, false)}>
+      <Button
+        className="action-button"
+        size="l"
+        stretched
+        disabled={submitting}
+        onClick={() => void handleSubmit(plan, false)}
+      >
         Записать тренировку
+      </Button>
+      <Button className="action-button" size="l" stretched mode="outline" disabled={submitting} onClick={onCancel}>
+        Отмена
       </Button>
     </div>
   );

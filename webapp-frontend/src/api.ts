@@ -126,8 +126,17 @@ export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse
 /** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
  * что печатает бот в app.bot.handlers.history.format_history_entry, только
  * структурированные под карточку. target_a/target_b заполнены только у
- * самой свежей записи во всей истории. */
+ * самой свежей записи во всей истории.
+ *
+ * workout_id (issue #52, волна 2) — нужен, чтобы карточка знала, какую
+ * запись открыть в GET/PATCH /api/history/{id} при редактировании;
+ * is_backdated уже равносилен "не редактируется" (см. app/web/routes.py::
+ * get_history_entry — is_editable = participates_in_cascade AND
+ * sequence_number is not None, а is_backdated = not participates_in_cascade,
+ * значит editable ⟺ !is_backdated), используется как быстрый признак для
+ * показа/скрытия кнопки в списке, финальную проверку всё равно делает GET. */
 export interface HistoryEntry {
+  workout_id: number;
   performed_at: string;
   is_backdated: boolean;
   comment: string | null;
@@ -137,6 +146,53 @@ export interface HistoryEntry {
   result_b: string;
   target_a: number | null;
   target_b: number | null;
+}
+
+/** Один блок редактируемой тренировки (issue #52, волна 1) — working_reps/
+ * max_reps сырые (не отформатированная строка HistoryEntry.result_a/b),
+ * нужны как реальные числа для предзаполнения полей формы. */
+export interface HistoryBlockDetail {
+  working_reps: number[];
+  max_reps: number;
+  target_before: number;
+  equipment: EquipmentInfo;
+}
+
+/** GET /api/history/{workout_id} (issue #52, волна 1) — is_editable зеркалит
+ * app.bot.handlers.workout_edit._is_editable: тренировки задним числом и
+ * свободные подтягивания не участвуют в цепочке каскада, редактировать их
+ * через этот путь нельзя. */
+export interface HistoryEditDetail {
+  workout_id: number;
+  performed_at: string;
+  comment: string | null;
+  is_editable: boolean;
+  block_a: HistoryBlockDetail;
+  block_b: HistoryBlockDetail;
+  band_items: BandItemInfo[];
+}
+
+/** PATCH /api/history/{workout_id} — те же поля/ограничения, что и
+ * WorkoutSubmitRequest (actual_weight/actual_band_item_id — точечная правка
+ * снаряда, см. app/web/routes.py::edit_history_entry). */
+export interface HistoryEditRequest {
+  block_a_working_reps: number[];
+  block_a_max_reps: number;
+  block_b_working_reps: number[];
+  block_b_max_reps: number;
+  block_a_actual_weight?: string | null;
+  block_b_actual_weight?: string | null;
+  block_a_actual_band_item_id?: number | null;
+  block_b_actual_band_item_id?: number | null;
+  comment: string | null;
+  confirm_anomalies: boolean;
+}
+
+/** POST /api/workout/backdate (issue #52, волна 1) — performed_at как дата
+ * YYYY-MM-DD (см. <input type="date"> в BackdateForm.tsx), тот же смысл, что
+ * и остальные поля HistoryEditRequest. */
+export interface BackdateSubmitRequest extends HistoryEditRequest {
+  performed_at: string;
 }
 
 export interface HistoryPage {
@@ -166,12 +222,10 @@ export async function fetchProgress(initDataRaw: string): Promise<ProgressData> 
   return apiGet<ProgressData>("/api/progress", initDataRaw);
 }
 
-export async function submitWorkout(
-  initDataRaw: string,
-  body: WorkoutSubmitRequest,
-): Promise<WorkoutSubmitResponse> {
-  const response = await fetch("/api/workout/submit", {
-    method: "POST",
+/** POST/PATCH — общий приём apiGet выше, с телом. */
+async function apiSend<T>(method: "POST" | "PATCH", path: string, initDataRaw: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method,
     headers: {
       "X-Telegram-Init-Data": initDataRaw,
       "Content-Type": "application/json",
@@ -179,7 +233,44 @@ export async function submitWorkout(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST /api/workout/submit failed: ${response.status}`);
+    throw new Error(`${method} ${path} failed: ${response.status}`);
   }
-  return (await response.json()) as WorkoutSubmitResponse;
+  return (await response.json()) as T;
+}
+
+export async function submitWorkout(
+  initDataRaw: string,
+  body: WorkoutSubmitRequest,
+): Promise<WorkoutSubmitResponse> {
+  return apiSend<WorkoutSubmitResponse>("POST", "/api/workout/submit", initDataRaw, body);
+}
+
+/** GET /api/history/{workout_id} — детали для формы редактирования
+ * (issue #52, волна 1), см. HistoryEditDetail. */
+export async function fetchHistoryEntry(initDataRaw: string, workoutId: number): Promise<HistoryEditDetail> {
+  return apiGet<HistoryEditDetail>(`/api/history/${workoutId}`, initDataRaw);
+}
+
+/** PATCH /api/history/{workout_id} — применяет правку (issue #52, волна 1). */
+export async function patchHistoryEntry(
+  initDataRaw: string,
+  workoutId: number,
+  body: HistoryEditRequest,
+): Promise<WorkoutSubmitResponse> {
+  return apiSend<WorkoutSubmitResponse>("PATCH", `/api/history/${workoutId}`, initDataRaw, body);
+}
+
+/** GET /api/workout/backdate/plan — контекст формы "Добавить за дату"
+ * (issue #52, волна 1): та же форма ответа, что и GET /api/workout/plan. */
+export async function fetchBackdatePlan(initDataRaw: string): Promise<WorkoutPlanResponse> {
+  return apiGet<WorkoutPlanResponse>("/api/workout/backdate/plan", initDataRaw);
+}
+
+/** POST /api/workout/backdate — записывает тренировку задним числом
+ * (issue #52, волна 1). */
+export async function submitBackdate(
+  initDataRaw: string,
+  body: BackdateSubmitRequest,
+): Promise<WorkoutSubmitResponse> {
+  return apiSend<WorkoutSubmitResponse>("POST", "/api/workout/backdate", initDataRaw, body);
 }
