@@ -120,6 +120,48 @@ class ProfileResponse(BaseModel):
     days_since_last_workout: int | None = None
 
 
+class HistoryEntryResponse(BaseModel):
+    """Одна тренировка в списке "История" (issue #50, волна 1) — тот же
+    набор фактов, что печатает app.bot.handlers.history.format_history_entry,
+    просто структурированный для карточки, а не единый текстовый блок.
+    target_a/target_b заполнены только у самой свежей записи во всей
+    истории (is_latest в format_history_entry) — у более ранних это число
+    уже неактуально после следующей тренировки."""
+
+    performed_at: str
+    is_backdated: bool
+    comment: str | None
+    equipment_a: EquipmentInfo
+    equipment_b: EquipmentInfo
+    result_a: str
+    result_b: str
+    target_a: int | None = None
+    target_b: int | None = None
+
+
+class HistoryResponse(BaseModel):
+    """GET /api/history — самые свежие тренировки первыми, offset/limit
+    пагинация (issue #50: не грузить всю историю разом на клиент)."""
+
+    items: list[HistoryEntryResponse]
+    has_more: bool
+
+
+class ProgressPointResponse(BaseModel):
+    """Одна точка графика прогресса (issue #50, волна 2) — цель за подход
+    блока A/Б на момент этой тренировки (BlockAssignment.target_after, уже
+    посчитанный app.domain.progression, здесь не пересчитывается)."""
+
+    performed_at: str
+    target_a: int
+    target_b: int
+    workout_set_id: int | None
+
+
+class ProgressResponse(BaseModel):
+    points: list[ProgressPointResponse]
+
+
 class WorkoutSubmitResponse(BaseModel):
     status: str
     target_a: int | None = None

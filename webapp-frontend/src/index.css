@@ -311,3 +311,124 @@ input[type="number"] {
   color: var(--tg-subtitle-text-color);
   margin-top: 4px;
 }
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.history-card {
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.history-card p {
+  margin: 0 0 6px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.history-card p:last-child {
+  margin-bottom: 0;
+}
+
+.history-date {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.hint {
+  color: var(--tg-hint-color);
+  font-size: 13px;
+}
+
+.progress-chart-wrap {
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 14px 12px;
+  margin-top: 12px;
+}
+
+.progress-chart {
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.progress-chart-grid {
+  stroke: rgba(127, 127, 127, 0.18);
+  stroke-width: 1;
+}
+
+.progress-chart-axis-label {
+  font-size: 9px;
+  fill: var(--tg-hint-color);
+}
+
+.progress-chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.progress-chart-end-dot,
+.progress-chart-hover-dot {
+  stroke: var(--tg-secondary-bg-color);
+  stroke-width: 2;
+}
+
+.progress-chart-end-label {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.progress-chart-crosshair {
+  stroke: var(--tg-hint-color);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.progress-chart-tooltip {
+  background: var(--tg-bg-color);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.progress-chart-tooltip p:not(:first-child) {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-chart-tooltip-date {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.progress-chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--tg-subtitle-text-color);
+}
+
+.progress-chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-chart-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
