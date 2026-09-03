@@ -52,6 +52,12 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+# B008 (function call in default arg) — стандартный, официально
+# рекомендованный паттерн FastAPI (Depends(...) в аргументах эндпойнтов),
+# не реальная проблема кода, ложное срабатывание для этого фреймворка.
+ignore = ["B008"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

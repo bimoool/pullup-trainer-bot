@@ -33,7 +33,7 @@ from app.bot.keyboards import (
 from app.bot.parsing import ParseError, parse_reps
 from app.bot.states import RetestStates, WorkoutStates
 from app.config import settings
-from app.db.models import Block, BlockType, WorkoutSet, WorkoutSetStatus
+from app.db.models import Block, BlockType, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
@@ -62,26 +62,9 @@ from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
 from app.services.subscription import SubscriptionService
-from app.services.workout_log import WorkoutLogService
+from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
 router = Router()
-
-
-async def _ensure_active_workout_set(session: AsyncSession, user_id: int) -> WorkoutSet | None:
-    """Сет закрывается автоматически по достижении SET_LENGTH тренировок
-    (WorkoutSetRepository.increment_completed) — раньше это означало тупик
-    "нет активного сета, напишите в поддержку". Сеты — это просто окно
-    отчётности на 12 тренировок, они не должны блокировать тренировки,
-    поэтому следующий сет открывается автоматически от последнего замера."""
-    workout_sets = WorkoutSetRepository(session)
-    active = await workout_sets.get_active_for_user(user_id)
-    if active is not None:
-        return active
-
-    baseline = await BaselineRepository(session).get_latest_for_user(user_id)
-    if baseline is None:
-        return None
-    return await workout_sets.create(user_id=user_id, started_from_baseline_id=baseline.id)
 
 
 @router.callback_query(F.data == "end_cycle_prompt")
@@ -114,7 +97,7 @@ async def handle_end_cycle_confirm(callback: CallbackQuery, state: FSMContext, s
     mark_abandoned, просто раньше не был подключён ни к одному сценарию) и
     переиспользует ретест-флоу: то же состояние RetestStates и тот же
     handle_retest_baseline, что и при просроченном замере — он сам заведёт
-    новый Baseline, новый WorkoutSet (см. _ensure_active_workout_set) и
+    новый Baseline, новый WorkoutSet (см. ensure_active_workout_set) и
     сбросит цели/снаряд на стартовые. Старые тренировки никуда не деваются
     и не архивируются отдельно — они уже физически отделены от нового
     цикла через workout_set_id закрытого сета; История/Прогресс/Отчёты
@@ -247,7 +230,7 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
             await callback.answer()
             return
 
-    active_set = await _ensure_active_workout_set(session, user.id)
+    active_set = await ensure_active_workout_set(session, user.id)
     if active_set is None:
         await callback.message.answer(texts.NO_ACTIVE_SET_SUPPORT)
         await callback.answer()
@@ -358,7 +341,7 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
 
     await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=reps)
 
-    active_set = await _ensure_active_workout_set(session, user.id)
+    active_set = await ensure_active_workout_set(session, user.id)
     if active_set is None:
         await message.answer(texts.NO_ACTIVE_SET_SUPPORT)
         await state.clear()
