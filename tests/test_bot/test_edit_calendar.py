@@ -38,10 +38,15 @@ async def _make_backdated_workout(session, user: User, *, performed_at: datetime
 
 
 async def test_edit_workout_menu_opens_calendar_not_flat_list(session, user: User, bot: Bot, dispatcher: Dispatcher):
-    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
-    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=10)
+    # Календарь по умолчанию открывается на ТЕКУЩЕМ месяце (см.
+    # handle_edit_workout_menu: now = datetime.now(UTC)) — тренировка
+    # должна быть в нём же, не в захардкоженном прошлом месяце, иначе тест
+    # ломается при каждой смене месяца (issue #44).
+    performed_at = datetime.now(UTC)
+    await UserRepository(session).complete_onboarding(user.id, performed_at)
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=performed_at, reps=10)
     workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
-    await _make_live_workout(session, user, performed_at=datetime(2026, 8, 5, tzinfo=UTC), workout_set_id=workout_set.id)
+    await _make_live_workout(session, user, performed_at=performed_at, workout_set_id=workout_set.id)
 
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="edit_workout_menu"), session=session,
@@ -58,7 +63,7 @@ async def test_edit_workout_menu_opens_calendar_not_flat_list(session, user: Use
         b.callback_data for row in calendar_message.reply_markup.inline_keyboard for b in row
         if b.callback_data.startswith("cal_day:")
     ]
-    assert "cal_day:edit:2026-08-05" in day_buttons
+    assert f"cal_day:edit:{performed_at.date().isoformat()}" in day_buttons
 
 
 async def test_edit_workout_menu_alerts_when_nothing_editable(session, user: User, bot: Bot, dispatcher: Dispatcher):
