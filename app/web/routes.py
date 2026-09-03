@@ -2,7 +2,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.bot.formatting import (
 from app.config import settings
 from app.db.models import BlockType
 from app.db.repositories.achievements import AchievementRepository
+from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
@@ -27,6 +28,7 @@ from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas import (
     AnomalyFlagsResponse,
+    BandItemInfo,
     EquipmentInfo,
     HelloResponse,
     ProfileResponse,
@@ -231,6 +233,13 @@ async def get_workout_plan(
     if context.status != "ready":
         return WorkoutPlanResponse(status=context.status)
 
+    band_items: list[BandItemInfo] = []
+    if EquipmentType.BAND in (context.equipment_a_type, context.equipment_b_type):
+        items = await EquipmentItemRepository(session).list_for_user(context.user_id)
+        band_items = [
+            BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items
+        ]
+
     return WorkoutPlanResponse(
         status="ready",
         workout_set_id=context.workout_set_id,
@@ -245,6 +254,7 @@ async def get_workout_plan(
             context.equipment_b_type, context.equipment_b_value, context.equipment_b_item_id,
         ),
         is_gap_rollback=context.is_gap_rollback,
+        band_items=band_items,
     )
 
 
@@ -316,6 +326,24 @@ async def submit_workout(
     if body.block_b_actual_weight is not None and context.equipment_b_type == EquipmentType.WEIGHT:
         equipment_b_value = body.block_b_actual_weight
 
+    # Выбор резины (issue #48) — тот же принцип, что actual_weight выше,
+    # только для BAND и item_id вместо числа (у BAND equipment_value не
+    # заполняется, см. app/db/models.py::EquipmentItem). item должен
+    # принадлежать вызывающему пользователю — id из чужого личного списка
+    # не должен молча привязаться к этой тренировке.
+    equipment_a_item_id = context.equipment_a_item_id
+    equipment_b_item_id = context.equipment_b_item_id
+    if body.block_a_actual_band_item_id is not None and context.equipment_a_type == EquipmentType.BAND:
+        item = await EquipmentItemRepository(session).get_by_id(body.block_a_actual_band_item_id)
+        if item is None or item.user_id != context.user_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid band item for block A")
+        equipment_a_item_id = item.id
+    if body.block_b_actual_band_item_id is not None and context.equipment_b_type == EquipmentType.BAND:
+        item = await EquipmentItemRepository(session).get_by_id(body.block_b_actual_band_item_id)
+        if item is None or item.user_id != context.user_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid band item for block B")
+        equipment_b_item_id = item.id
+
     log_service = WorkoutLogService(session)
     workout = await log_service.record_workout(
         user_id=context.user_id,
@@ -327,8 +355,8 @@ async def submit_workout(
         block_a_equipment_value=equipment_a_value,
         block_b_equipment_type=context.equipment_b_type,
         block_b_equipment_value=equipment_b_value,
-        block_a_equipment_item_id=context.equipment_a_item_id,
-        block_b_equipment_item_id=context.equipment_b_item_id,
+        block_a_equipment_item_id=equipment_a_item_id,
+        block_b_equipment_item_id=equipment_b_item_id,
         target_a_override=context.target_a if context.is_gap_rollback else None,
         target_b_override=None,
         is_deload_a=False,
