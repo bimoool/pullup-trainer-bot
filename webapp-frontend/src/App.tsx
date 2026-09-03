@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchHello, type HelloResponse } from "./api";
 import { HistoryScreen } from "./HistoryScreen";
 import { ProfileScreen } from "./ProfileScreen";
+import { ProgressScreen } from "./ProgressScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 
 type LoadState =
@@ -14,12 +15,13 @@ type LoadState =
 
 /** Базовая навигация (issue #45, часть 3) — задел под структуру, не
  * перенос всего функционала бота: разделы добавляются одной записью в
- * NAV_TABS + веткой в рендере ниже (issue #50 добавила "История"). */
-type Tab = "workout" | "history" | "profile";
+ * NAV_TABS + веткой в рендере ниже (issue #50 добавила "История"/"Прогресс"). */
+type Tab = "workout" | "history" | "progress" | "profile";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
+  { key: "progress", icon: "📈", label: "Прогресс" },
   { key: "profile", icon: "👤", label: "Профиль" },
 ];
 
@@ -130,6 +132,7 @@ export function App() {
       {!state.data.is_onboarded && <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>}
       {state.data.is_onboarded && tab === "workout" && <WorkoutScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
+      {state.data.is_onboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "profile" && <ProfileScreen initDataRaw={state.initDataRaw} />}
 
       {state.data.is_onboarded && (
