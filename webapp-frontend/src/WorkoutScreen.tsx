@@ -245,7 +245,14 @@ export function WorkoutScreen({ initDataRaw }: Props) {
     return <p className="screen-message">Загружаю план тренировки…</p>;
   }
   if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить план: {state.message}</p>;
+    return (
+      <div>
+        <p className="screen-message">Не удалось загрузить план: {state.message}</p>
+        <button className="primary-button" onClick={closeMiniApp}>
+          Открыть в боте
+        </button>
+      </div>
+    );
   }
   if (state.phase === "not_ready") {
     return (
@@ -294,6 +301,9 @@ export function WorkoutScreen({ initDataRaw }: Props) {
             {result.target_b} ({result.equipment_b?.label}).
           </p>
         </div>
+        <button className="primary-button" onClick={closeMiniApp}>
+          Готово
+        </button>
       </div>
     );
   }
