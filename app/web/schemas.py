@@ -162,6 +162,41 @@ class ProgressResponse(BaseModel):
     points: list[ProgressPointResponse]
 
 
+class SubscriptionResponse(BaseModel):
+    """Раздел подписки/оплаты Mini App (issue #53, волна 1) — тот же
+    format_subscription_status, что "Профиль" (app/web/routes.py::get_profile),
+    расширенный полями оплаты. status — сырое значение
+    app.db.models.SubscriptionStatus ("none"/"trial"/"active"/"expired"),
+    status_label — готовый текст для отображения, оба вместе (не только
+    label), чтобы фронтенд мог решить, показывать ли блок "Тарифы и
+    реквизиты" (see pricing_text_html) отдельно от текста статуса.
+
+    pricing_text_html — app.bot.texts.PRICING_TEXT как есть, без
+    пересборки в отдельные JSON-поля: реквизиты (ИНН/ОГРН) уже согласованы
+    с модерацией Робокассы, дублирование их в структурированном виде
+    развело бы два источника при следующей правке текста. Источник
+    полностью статический (не пользовательский ввод) — безопасен для
+    рендера как HTML на фронтенде.
+
+    is_onboarded=False — единственный случай, когда остальные поля пустые
+    (тот же принцип, что у ProfileResponse/HelloResponse); price_rub/days/
+    pricing_text_html/robokassa_available заполнены всегда, они не зависят
+    от того, онбордился ли пользователь."""
+
+    is_onboarded: bool
+    status: str | None = None
+    status_label: str | None = None
+    expires_at: str | None = None
+    price_rub: int
+    days: int
+    pricing_text_html: str
+    robokassa_available: bool
+
+
+class PaymentLinkResponse(BaseModel):
+    payment_url: str
+
+
 class WorkoutSubmitResponse(BaseModel):
     status: str
     target_a: int | None = None

@@ -166,6 +166,45 @@ export async function fetchProgress(initDataRaw: string): Promise<ProgressData> 
   return apiGet<ProgressData>("/api/progress", initDataRaw);
 }
 
+/** Раздел подписки/оплаты (issue #53, волна 1) — расширяет то, что уже
+ * частично видно во вкладке "Профиль" (см. ProfileResponse выше), тем же
+ * status_label с бэкенда (app.bot.formatting.format_subscription_status,
+ * не отдельный текст на фронтенде). price_rub/days/pricing_text_html/
+ * robokassa_available не зависят от пользователя — те же значения, что
+ * паивелл бота (app/bot/texts.py::PRICING_TEXT), отдаются даже
+ * неонбордившемуся. pricing_text_html — HTML, источник полностью
+ * статический (не пользовательский ввод), безопасен для
+ * dangerouslySetInnerHTML. */
+export interface SubscriptionResponse {
+  is_onboarded: boolean;
+  status: string | null;
+  status_label: string | null;
+  expires_at: string | null;
+  price_rub: number;
+  days: number;
+  pricing_text_html: string;
+  robokassa_available: boolean;
+}
+
+export interface PaymentLinkResponse {
+  payment_url: string;
+}
+
+export async function fetchSubscription(initDataRaw: string): Promise<SubscriptionResponse> {
+  return apiGet<SubscriptionResponse>("/api/subscription", initDataRaw);
+}
+
+export async function paySubscription(initDataRaw: string): Promise<PaymentLinkResponse> {
+  const response = await fetch("/api/subscription/pay", {
+    method: "POST",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    throw new Error(`POST /api/subscription/pay failed: ${response.status}`);
+  }
+  return (await response.json()) as PaymentLinkResponse;
+}
+
 export async function submitWorkout(
   initDataRaw: string,
   body: WorkoutSubmitRequest,
