@@ -288,6 +288,18 @@ input[type="number"] {
   margin-bottom: 0;
 }
 
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pricing-text {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--tg-subtitle-text-color);
+  white-space: pre-line;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

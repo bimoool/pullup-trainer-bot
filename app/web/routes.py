@@ -6,22 +6,30 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bot import texts
 from app.bot.formatting import (
     format_block_result,
     format_equipment_label,
     format_subscription_status,
 )
+from app.bot.handlers.subscription import _robokassa_available
 from app.config import settings
-from app.db.models import BlockType
+from app.db.models import BlockType, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
-from app.domain.constants import STRENGTH_BLOCK, EquipmentType
+from app.domain.constants import (
+    STRENGTH_BLOCK,
+    SUBSCRIPTION_DAYS,
+    SUBSCRIPTION_PRICE_RUB,
+    EquipmentType,
+)
 from app.domain.progression import rollback_target
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
+from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 from app.web.auth import get_validated_init_data
@@ -33,9 +41,11 @@ from app.web.schemas import (
     HelloResponse,
     HistoryEntryResponse,
     HistoryResponse,
+    PaymentLinkResponse,
     ProfileResponse,
     ProgressPointResponse,
     ProgressResponse,
+    SubscriptionResponse,
     WorkoutPlanResponse,
     WorkoutSubmitRequest,
     WorkoutSubmitResponse,
@@ -464,3 +474,75 @@ async def get_progress(
         for record in records
     ]
     return ProgressResponse(points=points)
+
+
+@router.get("/subscription", response_model=SubscriptionResponse)
+async def get_subscription(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> SubscriptionResponse:
+    """Раздел подписки/оплаты Mini App (issue #53, волна 1) — расширяет
+    статус, уже частично показанный во вкладке "Профиль" (get_profile
+    выше), тем же format_subscription_status (не отдельный веб-текст).
+    price_rub/days/pricing_text_html/robokassa_available не зависят от
+    пользователя — те же SUBSCRIPTION_PRICE_RUB/SUBSCRIPTION_DAYS/
+    texts.PRICING_TEXT/_robokassa_available(), что паивелл бота
+    (app/bot/handlers/subscription.py), отдаются даже неонбордившемуся
+    (фронтенд может показать реквизиты/условия ещё до первой тренировки)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+
+    status_value = None
+    status_label = None
+    expires_at = None
+    if user is not None:
+        status_value = user.subscription_status.value
+        status_label = format_subscription_status(user)
+        if user.subscription_status in (SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE):
+            expires_at = (
+                user.subscription_expires_at.date().isoformat()
+                if user.subscription_expires_at is not None
+                else None
+            )
+
+    return SubscriptionResponse(
+        is_onboarded=user is not None,
+        status=status_value,
+        status_label=status_label,
+        expires_at=expires_at,
+        price_rub=SUBSCRIPTION_PRICE_RUB,
+        days=SUBSCRIPTION_DAYS,
+        pricing_text_html=texts.PRICING_TEXT,
+        robokassa_available=_robokassa_available(),
+    )
+
+
+@router.post("/subscription/pay", response_model=PaymentLinkResponse)
+async def pay_subscription(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> PaymentLinkResponse:
+    """Создаёт ссылку на оплату обычной подписки — тот же
+    RobokassaService.create_payment_link, что handle_pay_robokassa бота
+    (app/bot/handlers/subscription.py), без параметров amount_rub/
+    description (диагностический платёж на 1₽ остаётся только в /admin
+    бота, см. CLAUDE.md). Подтверждение — тем же воркером
+    sync_robokassa_payments, отдельного пути опроса для Mini App нет.
+
+    404 у неонбордившегося (в Mini App недостижимо вживую — экран
+    подписки виден только после онбординга — но дешевле проверить на
+    сервере, чем гадать). 503 при незаданных robokassa_* — тот же смысл,
+    что скрытая кнопка pay_robokassa в paywall_keyboard бота, только с
+    явным кодом ошибки для фронтенда вместо молча пропавшей кнопки."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    if not _robokassa_available():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Robokassa is not configured")
+
+    client = RobokassaClient(
+        merchant_login=settings.robokassa_merchant_login,
+        password_1=settings.robokassa_password_1,
+        password_2=settings.robokassa_password_2,
+    )
+    payment_url = await RobokassaService(session, client).create_payment_link(user.id)
+    return PaymentLinkResponse(payment_url=payment_url)
