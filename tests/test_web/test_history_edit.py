@@ -114,13 +114,13 @@ async def _make_chain(session, *, telegram_id: int) -> tuple[User, list[Workout]
 
 
 async def test_get_history_workout_for_unknown_telegram_id_is_404(session):
-    user, workouts = await _make_chain(session, telegram_id=54001)
+    _user, workouts = await _make_chain(session, telegram_id=54001)
     response = await _get_history_detail_raw(session, telegram_id=99999, workout_id=workouts[0].id)
     assert response.status_code == 404
 
 
 async def test_get_history_workout_for_foreign_workout_is_404(session):
-    user, workouts = await _make_chain(session, telegram_id=54002)
+    _user, workouts = await _make_chain(session, telegram_id=54002)
     other = await UserRepository(session).create(telegram_id=54003, username="other")
     response = await _get_history_detail_raw(session, telegram_id=other.telegram_id, workout_id=workouts[0].id)
     assert response.status_code == 404
@@ -181,7 +181,7 @@ async def test_patch_history_workout_rejects_non_editable_backdated_workout(sess
 
 async def test_patch_history_workout_uses_same_cascade_as_direct_repository_call(session):
     user_web, workouts_web = await _make_chain(session, telegram_id=54007)
-    user_direct, workouts_direct = await _make_chain(session, telegram_id=54008)
+    _user_direct, workouts_direct = await _make_chain(session, telegram_id=54008)
 
     payload = {
         "block_a_working_reps": [15, 15, 15], "block_a_max_reps": 16,

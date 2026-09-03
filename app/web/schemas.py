@@ -126,8 +126,16 @@ class HistoryEntryResponse(BaseModel):
     просто структурированный для карточки, а не единый текстовый блок.
     target_a/target_b заполнены только у самой свежей записи во всей
     истории (is_latest в format_history_entry) — у более ранних это число
-    уже неактуально после следующей тренировки."""
+    уже неактуально после следующей тренировки.
 
+    workout_id (issue #52) — нужен фронтенду, чтобы открыть
+    GET/PATCH /api/history/{workout_id} по тапу на карточку; is_backdated
+    здесь эквивалентно "не редактируется" (см. app.bot.handlers.workout_edit::
+    _is_editable — для завершённой тренировки participates_in_cascade=False
+    означает и sequence_number is None), отдельного is_editable не заводим,
+    чтобы не дублировать один и тот же факт двумя полями."""
+
+    workout_id: int
     performed_at: str
     is_backdated: bool
     comment: str | None

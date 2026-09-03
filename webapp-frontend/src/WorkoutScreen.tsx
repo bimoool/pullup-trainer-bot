@@ -10,6 +10,7 @@ import {
   type WorkoutSubmitRequest,
   type WorkoutSubmitResponse,
 } from "./api";
+import { BackdateForm } from "./BackdateForm";
 
 type Props = { initDataRaw: string };
 
@@ -42,7 +43,7 @@ function closeMiniApp() {
 }
 
 /** Каждое поле — один подход, без разделителей и ручного парсинга строки. */
-function parseSetValue(raw: string): number | null {
+export function parseSetValue(raw: string): number | null {
   const trimmed = raw.trim();
   if (!/^\d+$/.test(trimmed)) {
     return null;
@@ -50,7 +51,7 @@ function parseSetValue(raw: string): number | null {
   return Number(trimmed);
 }
 
-function parseSetValues(values: string[]): number[] | null {
+export function parseSetValues(values: string[]): number[] | null {
   if (values.length === 0) {
     return null;
   }
@@ -61,14 +62,14 @@ function parseSetValues(values: string[]): number[] | null {
   return parsed as number[];
 }
 
-function replaceAt(values: string[], index: number, value: string): string[] {
+export function replaceAt(values: string[], index: number, value: string): string[] {
   return values.map((v, i) => (i === index ? value : v));
 }
 
 /** Пустое поле — правки нет (null, сервер оставит вес из прогрессии как
  * есть); непустое — должно быть положительным числом, как и живой ввод
  * веса в боте (app/bot/handlers/equipment.py::handle_equipment_value). */
-function parseOptionalWeight(raw: string): { ok: true; value: string | null } | { ok: false } {
+export function parseOptionalWeight(raw: string): { ok: true; value: string | null } | { ok: false } {
   const trimmed = raw.trim();
   if (trimmed === "") {
     return { ok: true, value: null };
@@ -81,7 +82,7 @@ function parseOptionalWeight(raw: string): { ok: true; value: string | null } | 
   return { ok: true, value: normalized };
 }
 
-function AnomalyLines({ flags }: { flags: AnomalyFlags }) {
+export function AnomalyLines({ flags }: { flags: AnomalyFlags }) {
   return (
     <ul className="anomaly-list">
       {flags.large_value !== null && <li>Необычно большое число: {flags.large_value}.</li>}
@@ -100,7 +101,7 @@ function AnomalyLines({ flags }: { flags: AnomalyFlags }) {
   );
 }
 
-function SetInputGrid({
+export function SetInputGrid({
   values,
   onChangeAt,
   ariaLabelPrefix,
@@ -130,7 +131,7 @@ function SetInputGrid({
   );
 }
 
-function BandItemSelect({
+export function BandItemSelect({
   letter,
   bandItems,
   value,
@@ -159,7 +160,7 @@ function BandItemSelect({
   );
 }
 
-function BlockForm({
+export function BlockForm({
   letter,
   target,
   workSets,
@@ -248,6 +249,7 @@ function BlockForm({
 }
 
 export function WorkoutScreen({ initDataRaw }: Props) {
+  const [showBackdate, setShowBackdate] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -339,6 +341,16 @@ export function WorkoutScreen({ initDataRaw }: Props) {
     }
   }
 
+  if (showBackdate) {
+    return (
+      <BackdateForm
+        initDataRaw={initDataRaw}
+        onCancel={() => setShowBackdate(false)}
+        onDone={() => setShowBackdate(false)}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю план тренировки…</p>;
   }
@@ -360,6 +372,9 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         </p>
         <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
           Открыть в боте
+        </Button>
+        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowBackdate(true)}>
+          🔁 Внести пропущенную тренировку
         </Button>
       </div>
     );
@@ -422,6 +437,10 @@ export function WorkoutScreen({ initDataRaw }: Props) {
       {plan.is_gap_rollback && (
         <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
       )}
+
+      <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
+        🔁 Внести пропущенную тренировку
+      </Button>
 
       <BlockForm
         letter="A"

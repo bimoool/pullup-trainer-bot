@@ -424,6 +424,7 @@ async def get_history(
         is_latest = workout is newest_first[0]
         items.append(
             HistoryEntryResponse(
+                workout_id=workout.id,
                 performed_at=workout.performed_at.date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
                 comment=workout.comment,

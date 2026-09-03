@@ -2,6 +2,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHistory, type HistoryEntry } from "./api";
+import { HistoryEditForm } from "./HistoryEditForm";
 
 type Props = { initDataRaw: string };
 
@@ -22,6 +23,7 @@ function formatDate(isoDate: string): string {
 
 export function HistoryScreen({ initDataRaw }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +45,15 @@ export function HistoryScreen({ initDataRaw }: Props) {
     };
   }, [initDataRaw]);
 
+  async function reloadFirstPage() {
+    try {
+      const page = await fetchHistory(initDataRaw, 0, PAGE_SIZE);
+      setState({ phase: "ready", items: page.items, hasMore: page.has_more, loadingMore: false });
+    } catch (error) {
+      setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   async function loadMore() {
     if (state.phase !== "ready") {
       return;
@@ -61,6 +72,20 @@ export function HistoryScreen({ initDataRaw }: Props) {
     }
   }
 
+  if (editingWorkoutId !== null) {
+    return (
+      <HistoryEditForm
+        initDataRaw={initDataRaw}
+        workoutId={editingWorkoutId}
+        onCancel={() => setEditingWorkoutId(null)}
+        onDone={() => {
+          setEditingWorkoutId(null);
+          void reloadFirstPage();
+        }}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю историю…</p>;
   }
@@ -76,8 +101,8 @@ export function HistoryScreen({ initDataRaw }: Props) {
       <p className="plan-title">История</p>
 
       <div className="history-list">
-        {state.items.map((entry, index) => (
-          <div className="history-card" key={`${entry.performed_at}-${index}`}>
+        {state.items.map((entry) => (
+          <div className="history-card" key={entry.workout_id}>
             <p className="history-date">
               {formatDate(entry.performed_at)}
               {entry.is_backdated && <span className="hint"> (задним числом)</span>}
@@ -91,6 +116,18 @@ export function HistoryScreen({ initDataRaw }: Props) {
               {entry.target_b !== null && `, следующая цель ${entry.target_b}`}
             </p>
             {entry.comment && <p className="hint">Комментарий: {entry.comment}</p>}
+            {/* is_backdated здесь эквивалентно "не редактируется" (см.
+                app/web/schemas.py::HistoryEntryResponse) — бэкдейт не входит
+                в цепочку каскада, редактировать его через этот путь нельзя. */}
+            {!entry.is_backdated && (
+              <Button
+                mode="outline"
+                size="s"
+                onClick={() => setEditingWorkoutId(entry.workout_id)}
+              >
+                ✏️ Изменить
+              </Button>
+            )}
           </div>
         ))}
       </div>

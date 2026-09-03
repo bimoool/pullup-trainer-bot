@@ -128,6 +128,7 @@ export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse
  * структурированные под карточку. target_a/target_b заполнены только у
  * самой свежей записи во всей истории. */
 export interface HistoryEntry {
+  workout_id: number;
   performed_at: string;
   is_backdated: boolean;
   comment: string | null;
@@ -166,11 +167,8 @@ export async function fetchProgress(initDataRaw: string): Promise<ProgressData> 
   return apiGet<ProgressData>("/api/progress", initDataRaw);
 }
 
-export async function submitWorkout(
-  initDataRaw: string,
-  body: WorkoutSubmitRequest,
-): Promise<WorkoutSubmitResponse> {
-  const response = await fetch("/api/workout/submit", {
+async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {
+  const response = await fetch(path, {
     method: "POST",
     headers: {
       "X-Telegram-Init-Data": initDataRaw,
@@ -179,7 +177,101 @@ export async function submitWorkout(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST /api/workout/submit failed: ${response.status}`);
+    throw new Error(`POST ${path} failed: ${response.status}`);
+  }
+  return (await response.json()) as TResult;
+}
+
+export async function submitWorkout(
+  initDataRaw: string,
+  body: WorkoutSubmitRequest,
+): Promise<WorkoutSubmitResponse> {
+  return apiPost<WorkoutSubmitRequest, WorkoutSubmitResponse>("/api/workout/submit", initDataRaw, body);
+}
+
+/** Детали одной тренировки для формы редактирования (issue #52) — тот же
+ * набор фактов, что app.bot.handlers.workout_edit::_start_editing кладёт в
+ * FSM перед переспросом блока A. target_before — цель, от которой реально
+ * считался ввод этой тренировки, не текущая цель пользователя. */
+export interface HistoryBlockDetail {
+  working_reps: number[];
+  max_reps: number;
+  target_before: number;
+  equipment: EquipmentInfo;
+}
+
+export interface HistoryEditDetail {
+  workout_id: number;
+  performed_at: string;
+  is_editable: boolean;
+  comment: string | null;
+  block_a: HistoryBlockDetail;
+  block_b: HistoryBlockDetail;
+}
+
+/** PATCH /api/history/{id} — то же тело, что WorkoutSubmitRequest минус
+ * comment (правка комментария не входит в этот сценарий ни у бота, ни
+ * здесь — см. app/web/routes.py::edit_history_workout). */
+export interface HistoryEditRequest {
+  block_a_working_reps: number[];
+  block_a_max_reps: number;
+  block_b_working_reps: number[];
+  block_b_max_reps: number;
+  block_a_actual_weight?: string | null;
+  block_b_actual_weight?: string | null;
+  block_a_actual_band_item_id?: number | null;
+  block_b_actual_band_item_id?: number | null;
+  confirm_anomalies: boolean;
+}
+
+export async function fetchHistoryDetail(initDataRaw: string, workoutId: number): Promise<HistoryEditDetail> {
+  return apiGet<HistoryEditDetail>(`/api/history/${workoutId}`, initDataRaw);
+}
+
+export async function patchHistoryEdit(
+  initDataRaw: string,
+  workoutId: number,
+  body: HistoryEditRequest,
+): Promise<WorkoutSubmitResponse> {
+  const response = await fetch(`/api/history/${workoutId}`, {
+    method: "PATCH",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PATCH /api/history/${workoutId} failed: ${response.status}`);
   }
   return (await response.json()) as WorkoutSubmitResponse;
+}
+
+/** POST /api/workout/backdate — снаряд здесь ВСЕГДА явный (не наследуется
+ * молча, в отличие от WorkoutSubmitRequest) — тот же принцип, что явный
+ * переспрос снаряда у бота для бэкдейта (app/bot/handlers/backdate.py). */
+export interface BackdateSubmitRequest {
+  performed_at: string;
+  block_a_working_reps: number[];
+  block_a_max_reps: number;
+  block_b_working_reps: number[];
+  block_b_max_reps: number;
+  block_a_equipment_type: string;
+  block_a_equipment_value?: string | null;
+  block_a_equipment_item_id?: number | null;
+  block_b_equipment_type: string;
+  block_b_equipment_value?: string | null;
+  block_b_equipment_item_id?: number | null;
+  confirm_anomalies: boolean;
+}
+
+export async function fetchBackdatePlan(initDataRaw: string): Promise<WorkoutPlanResponse> {
+  return apiGet<WorkoutPlanResponse>("/api/workout/backdate/plan", initDataRaw);
+}
+
+export async function submitBackdate(
+  initDataRaw: string,
+  body: BackdateSubmitRequest,
+): Promise<WorkoutSubmitResponse> {
+  return apiPost<BackdateSubmitRequest, WorkoutSubmitResponse>("/api/workout/backdate", initDataRaw, body);
 }
