@@ -147,6 +147,78 @@ class HistoryResponse(BaseModel):
     has_more: bool
 
 
+class HistoryBlockDetail(BaseModel):
+    """Один блок редактируемой тренировки (issue #52, волна 1) — сырые
+    working_reps/max_reps (не отформатированная строка, как у
+    HistoryEntryResponse.result_a/b — форме редактирования нужны реальные
+    числа для предзаполнения полей ввода), plus target_before (тот же
+    "пример формата", что показывает боту _format_block_a_prompt перед
+    правкой)."""
+
+    working_reps: list[int]
+    max_reps: int
+    target_before: int
+    equipment: EquipmentInfo
+
+
+class HistoryEditDetailResponse(BaseModel):
+    """GET /api/history/{workout_id} (issue #52, волна 1) — is_editable
+    зеркалит app.bot.handlers.workout_edit._is_editable (импортируется
+    оттуда напрямую, не дублируется): тренировки задним числом и свободные
+    подтягивания не участвуют в цепочке каскада, редактировать их через
+    этот путь нельзя — фронтенд должен скрыть/задизейблить форму, если
+    False, а не полагаться на то, что PATCH сам откажет."""
+
+    workout_id: int
+    performed_at: str
+    comment: str | None
+    is_editable: bool
+    block_a: HistoryBlockDetail
+    block_b: HistoryBlockDetail
+
+
+class HistoryEditRequest(BaseModel):
+    """PATCH /api/history/{workout_id} — те же поля/ограничения, что и
+    WorkoutSubmitRequest (issue #45 часть 2/issue #48: actual_weight/
+    actual_band_item_id — точечная правка снаряда, применяется только если
+    тип блока совпадает, см. app/web/routes.py::edit_history_entry)."""
+
+    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_max_reps: Reps
+    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_max_reps: Reps
+    block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_a_actual_band_item_id: int | None = None
+    block_b_actual_band_item_id: int | None = None
+    comment: str | None = None
+    confirm_anomalies: bool = False
+
+
+class BackdateSubmitRequest(BaseModel):
+    """POST /api/workout/backdate (issue #52, волна 1) — performed_at как
+    дата YYYY-MM-DD (не datetime: у бэкдейта нет времени суток, только
+    день, см. app.bot.handlers.backdate — parsed_date всегда полночь UTC).
+    Снаряд по умолчанию наследуется из текущего состояния прогрессии
+    (см. app/web/routes.py::_resolve_backdate_context), actual_weight/
+    actual_band_item_id — та же точечная правка, что у HistoryEditRequest
+    и WorkoutSubmitRequest, не полный переспрос типа снаряда, как в
+    app.bot.handlers.equipment._begin_equipment_setup (упрощение для веба,
+    см. issue #52)."""
+
+    performed_at: str
+    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_max_reps: Reps
+    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_max_reps: Reps
+    block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_a_actual_band_item_id: int | None = None
+    block_b_actual_band_item_id: int | None = None
+    comment: str | None = None
+    confirm_anomalies: bool = False
+
+
 class ProgressPointResponse(BaseModel):
     """Одна точка графика прогресса (issue #50, волна 2) — цель за подход
     блока A/Б на момент этой тренировки (BlockAssignment.target_after, уже
