@@ -80,3 +80,13 @@ class UserRepository:
         user.coins_balance += delta
         await self._session.flush()
         return user
+
+    async def update_timer_preference(self, user_id: int, *, field: str, duration_seconds: int) -> User:
+        """Персистентная настройка длительности таймера Mini App (issue #59,
+        волна 2) — field один из "rest_seconds_block_a"/"rest_seconds_block_b"/
+        "big_break_seconds" (валидация значения — в app/web/routes.py, здесь
+        только запись одного из трёх полей на месте)."""
+        user = await self._session.get_one(User, user_id)
+        setattr(user, field, duration_seconds)
+        await self._session.flush()
+        return user
