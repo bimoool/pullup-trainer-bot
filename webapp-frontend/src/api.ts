@@ -314,3 +314,85 @@ export async function submitBackdate(
 ): Promise<WorkoutSubmitResponse> {
   return apiPost<BackdateSubmitRequest, WorkoutSubmitResponse>("/api/workout/backdate", initDataRaw, body);
 }
+
+/** Персистентный таймер режима тренировки в реальном времени (issue #59,
+ * волна 1) — общий ответ POST /api/timer/start, GET /api/timer/status и
+ * DELETE /api/timer. active=false покрывает и "таймера нет вообще", и
+ * "таймер уже истёк" — remaining_seconds отличает эти случаи друг от друга
+ * (см. app/web/routes.py::_timer_status_response), контекст (тип/блок/
+ * подход) остаётся даже у истёкшего таймера, полей нет только когда
+ * активного таймера не было НИКОГДА. */
+export interface TimerStatus {
+  active: boolean;
+  timer_type: string | null;
+  duration_seconds: number | null;
+  remaining_seconds: number | null;
+  block_letter: string | null;
+  set_number: number | null;
+}
+
+export interface TimerStartRequest {
+  timer_type: string;
+  duration_seconds: number;
+  block_letter?: string | null;
+  set_number?: number | null;
+}
+
+export async function startTimer(initDataRaw: string, body: TimerStartRequest): Promise<TimerStatus> {
+  return apiPost<TimerStartRequest, TimerStatus>("/api/timer/start", initDataRaw, body);
+}
+
+/** Источник правды — сервер: вызывается при каждом открытии/возврате в
+ * приложение (visibilitychange/focus), не только один раз при старте
+ * таймера — локальный setInterval между такими опросами только тикает
+ * визуально, не считается сам по себе (issue #59). */
+export async function fetchTimerStatus(initDataRaw: string): Promise<TimerStatus> {
+  return apiGet<TimerStatus>("/api/timer/status", initDataRaw);
+}
+
+export async function cancelTimer(initDataRaw: string): Promise<TimerStatus> {
+  const response = await fetch("/api/timer", {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    throw new Error(`DELETE /api/timer failed: ${response.status}`);
+  }
+  return (await response.json()) as TimerStatus;
+}
+
+/** Персистентные настройки длительности таймера (issue #59, волна 2) —
+ * значения уже резолвлены дефолтом на бэкенде (240/180/900с), фронтенду не
+ * нужно знать про дефолты отдельно. */
+export interface TimerPreferences {
+  rest_seconds_block_a: number;
+  rest_seconds_block_b: number;
+  big_break_seconds: number;
+}
+
+export interface TimerPreferencesUpdateRequest {
+  block_letter?: "A" | "B" | null;
+  duration_seconds: number;
+}
+
+export async function fetchTimerPreferences(initDataRaw: string): Promise<TimerPreferences> {
+  return apiGet<TimerPreferences>("/api/timer/preferences", initDataRaw);
+}
+
+export async function updateTimerPreferences(
+  initDataRaw: string,
+  body: TimerPreferencesUpdateRequest,
+): Promise<TimerPreferences> {
+  const response = await fetch("/api/timer/preferences", {
+    method: "PUT",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PUT /api/timer/preferences failed: ${response.status}`);
+  }
+  return (await response.json()) as TimerPreferences;
+}

@@ -11,8 +11,16 @@ import {
   type WorkoutSubmitResponse,
 } from "./api";
 import { BackdateForm } from "./BackdateForm";
+import { LiveWorkoutScreen } from "./LiveWorkoutScreen";
 
-type Props = { initDataRaw: string };
+type Props = {
+  initDataRaw: string;
+  /** Живая тренировка (issue #59) держит несохранённый ввод только во
+   * фронтенд-состоянии до финальной отправки — переключение нижних вкладок
+   * размонтировало бы этот экран и потеряло бы его молча (см. App.tsx),
+   * поэтому WorkoutScreen сообщает наверх, когда такой режим активен. */
+  onLiveActiveChange?: (active: boolean) => void;
+};
 
 type ScreenState =
   | { phase: "loading" }
@@ -27,7 +35,7 @@ type ScreenState =
 // handle_start_workout бота (app/bot/handlers/workout.py), просто без
 // самого диалога. Пользователь продолжает в боте, ничего не теряя —
 // у бота эти случаи по-прежнему работают как раньше.
-const STATUS_MESSAGES: Record<string, string> = {
+export const STATUS_MESSAGES: Record<string, string> = {
   no_access: "Нет активной подписки. Оформи её в боте, потом возвращайся сюда.",
   first_workout: "Это твоя первая тренировка — замер и выбор снаряда пока доступны только в боте.",
   too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
@@ -248,8 +256,9 @@ export function BlockForm({
   );
 }
 
-export function WorkoutScreen({ initDataRaw }: Props) {
+export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
   const [showBackdate, setShowBackdate] = useState(false);
+  const [showLive, setShowLive] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -351,6 +360,17 @@ export function WorkoutScreen({ initDataRaw }: Props) {
     );
   }
 
+  if (showLive) {
+    return (
+      <LiveWorkoutScreen
+        initDataRaw={initDataRaw}
+        onActiveChange={onLiveActiveChange}
+        onCancel={() => setShowLive(false)}
+        onDone={() => setShowLive(false)}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю план тренировки…</p>;
   }
@@ -438,9 +458,14 @@ export function WorkoutScreen({ initDataRaw }: Props) {
         <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
       )}
 
-      <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
-        🔁 Внести пропущенную тренировку
-      </Button>
+      <div className="workout-mode-buttons">
+        <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
+          ⏱ Тренировка в реальном времени
+        </Button>
+        <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
+          🔁 Внести пропущенную тренировку
+        </Button>
+      </div>
 
       <BlockForm
         letter="A"
