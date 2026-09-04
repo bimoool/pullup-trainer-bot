@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.bot.formatting import (
     format_equipment_label,
     format_subscription_status,
 )
+from app.bot.handlers.menu import OFERTA_PDF_PATH
 from app.bot.handlers.subscription import _robokassa_available
 from app.bot.handlers.workout_edit import _is_editable
 from app.config import settings
@@ -553,6 +555,16 @@ async def pay_subscription(
     )
     payment_url = await RobokassaService(session, client).create_payment_link(user.id)
     return PaymentLinkResponse(payment_url=payment_url)
+
+
+@router.get("/oferta.pdf")
+async def get_oferta_pdf() -> FileResponse:
+    """Тот же файл, что бот отправляет по кнопке "Тарифы и реквизиты"
+    (app/bot/handlers/menu.py::OFERTA_PDF_PATH) — раздаётся напрямую с
+    диска, не дублируется (issue #57, п.2). Публичный, без initData:
+    тот же уровень доступа, что у текста PRICING_TEXT в /api/subscription,
+    которое тоже отдаётся без проверки подписки/онбординга."""
+    return FileResponse(OFERTA_PDF_PATH, media_type="application/pdf", filename="oferta.pdf")
 
 
 # --- Редактирование истории (issue #52) ---------------------------------------------

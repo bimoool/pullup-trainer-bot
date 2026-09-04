@@ -134,3 +134,18 @@ async def test_pay_creates_pending_payment_and_returns_url(session, monkeypatch)
     assert pending[0].user_id == user.id
     assert pending[0].days == SUBSCRIPTION_DAYS
     assert str(pending[0].id) in body["payment_url"]
+
+
+async def test_get_oferta_pdf_serves_same_file_as_bot():
+    """GET /api/oferta.pdf (issue #57, п.2) — тот же файл, что бот
+    отправляет по кнопке "Тарифы и реквизиты" (см. test_pricing_info.py::
+    test_oferta_pdf_asset_exists_on_disk), не копия. Публичный — без
+    dependency overrides на initData/сессию."""
+    from app.bot.handlers.menu import OFERTA_PDF_PATH
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/oferta.pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content == OFERTA_PDF_PATH.read_bytes()
