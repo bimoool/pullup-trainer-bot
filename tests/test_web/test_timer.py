@@ -9,7 +9,6 @@ from httpx import ASGITransport, AsyncClient
 
 from app.db.models import ActiveTimerType, User
 from app.db.repositories.active_timers import ActiveTimerRepository
-from app.db.repositories.users import UserRepository
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.main import app
