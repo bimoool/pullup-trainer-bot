@@ -164,6 +164,17 @@ ADMIN_TEST_PAYMENT_AMOUNT_RUB: int = 1
 # направление импорта не используется больше нигде в проекте).
 WEEKLY_DIGEST_REPLY_DEADLINE_HOURS: int = 24
 
+# --- Персистентные настройки длительности таймера Mini App (issue #59) -----------
+# Дефолты для тех, кто ничего не настраивал (см. app.db.models.User::
+# rest_seconds_block_a/rest_seconds_block_b/big_break_seconds) — ручное зеркало
+# чисел, которые бот сообщает текстом в app.bot.texts.WORKOUT_PLAN
+# ("Отдых между подходами — 4 минуты"/"3 минуты") и OPTIONAL_EXERCISE_OFFER
+# ("Отдых 15 минут") — там это не enforced-константа, только текст. Продуктовое
+# решение (объёмный блок восстанавливается дольше силового), не физический факт.
+DEFAULT_REST_SECONDS_BLOCK_A: int = 240
+DEFAULT_REST_SECONDS_BLOCK_B: int = 180
+DEFAULT_BIG_BREAK_SECONDS: int = 900
+
 TRANSITION_RETRY_WORKOUTS: int = 4
 # Тренировок на прежнем снаряде после неудачного перехода, прежде чем
 # предлагать повторную попытку.
