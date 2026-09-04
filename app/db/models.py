@@ -88,6 +88,11 @@ class Gender(StrEnum):
     FEMALE = "female"
 
 
+class ActiveTimerType(StrEnum):
+    REST_BETWEEN_SETS = "rest_between_sets"
+    BIG_BREAK = "big_break"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -454,3 +459,42 @@ class WeeklyDigest(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     recipients_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+
+class ActiveTimer(Base):
+    """Персистентный таймер живой тренировки Mini App (issue #59, волна 1)
+    — время окончания хранится на сервере, не в localStorage браузера,
+    чтобы пережить закрытие Telegram, очистку данных браузера, смену
+    устройства: клиент только спрашивает "сколько осталось" по факту
+    открытия (GET /api/timer/status), не ведёт свой независимый отсчёт.
+
+    Один активный таймер на пользователя (unique user_id) — в один момент
+    у пользователя идёт ровно один поток тренировки в одной вкладке (см.
+    режим тренировки в реальном времени, Волна 2). Старт нового таймера
+    заменяет предыдущий (см. ActiveTimerRepository.start) — история
+    подходов таймер не хранит, она держится во фронтенд-состоянии до
+    финального submit_workout (так и в issue).
+
+    started_at выставляется сервером (datetime.now(UTC)) в момент
+    POST /api/timer/start — клиентское значение не принимается, иначе
+    рассинхрон часов устройства ломает весь смысл серверного источника
+    правды. block_letter/set_number не влияют на расчёт оставшегося
+    времени — только контекст для восстановления экрана при повторном
+    открытии Mini App. Нет FK на blocks/workout_sets: в момент отдыха
+    между подходами блок ещё не создан в БД (создаётся только при
+    финальном submit_workout)."""
+
+    __tablename__ = "active_timers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True,
+    )
+    timer_type: Mapped[ActiveTimerType] = mapped_column(
+        _pg_enum(ActiveTimerType, "active_timer_type"), nullable=False,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    block_letter: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    set_number: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
