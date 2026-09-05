@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,7 +23,9 @@ from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
+from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
@@ -36,6 +38,12 @@ from app.domain.constants import (
     EquipmentType,
 )
 from app.domain.progression import rollback_target
+from app.domain.reports import (
+    EquipmentProgress,
+    all_cycles_analytics,
+    current_equipment_progress,
+    weekly_summary,
+)
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
 from app.services.robokassa import RobokassaClient, RobokassaService
@@ -44,10 +52,14 @@ from app.services.workout_log import WorkoutLogService, ensure_active_workout_se
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas import (
+    AchievementItem,
+    AnalyticsResponse,
     AnomalyFlagsResponse,
     BackdateSubmitRequest,
     BandItemInfo,
+    CycleVolumeResponse,
     EquipmentInfo,
+    EquipmentProgressResponse,
     HelloResponse,
     HistoryBlockDetail,
     HistoryEditDetailResponse,
@@ -63,6 +75,7 @@ from app.web.schemas import (
     TimerPreferencesUpdateRequest,
     TimerStartRequest,
     TimerStatusResponse,
+    WeeklySummaryResponse,
     WorkoutDraftRequest,
     WorkoutDraftResponse,
     WorkoutPlanResponse,
@@ -132,11 +145,25 @@ async def get_profile(
         (datetime.now(UTC).date() - history[-1].performed_at.date()).days if history else None
     )
 
+    # Список ачивок с датами (issue #66, п.1) — тот же ACHIEVEMENT_LABELS,
+    # что render_profile бота, list_for_user уже отдаёт по возрастанию
+    # unlocked_at (см. AchievementRepository), тот же порядок, что в тексте
+    # бота, здесь не пересортировывается.
+    achievement_items = [
+        AchievementItem(
+            code=a.code,
+            label=ACHIEVEMENT_LABELS.get(AchievementCode(a.code), a.code),
+            unlocked_at=a.unlocked_at.date().isoformat(),
+        )
+        for a in achievements
+    ]
+
     return ProfileResponse(
         is_onboarded=True,
         subscription_status_label=format_subscription_status(user),
         coins_balance=user.coins_balance,
         achievements_count=len(achievements),
+        achievements=achievement_items,
         workouts_count=len(history),
         days_since_last_workout=days_since_last_workout,
     )
@@ -581,6 +608,65 @@ async def get_progress(
         for record in records
     ]
     return ProgressResponse(points=points)
+
+
+def _equipment_progress_response(progress: EquipmentProgress | None) -> EquipmentProgressResponse | None:
+    if progress is None:
+        return None
+    return EquipmentProgressResponse(
+        equipment=_equipment_info(progress.equipment_type, progress.equipment_value, progress.equipment_item_id),
+        first_volume=progress.first_volume,
+        current_volume=progress.current_volume,
+        change_pct=progress.change_pct,
+    )
+
+
+@router.get("/analytics", response_model=AnalyticsResponse)
+async def get_analytics(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> AnalyticsResponse:
+    """Аналитический блок вкладки "Прогресс" Mini App (issue #66, п.2) —
+    те же вызовы app.domain.reports с теми же входными данными, что кнопки
+    "📊 Прогресс"/"📈 Аналитика по всем циклам" бота
+    (app/bot/handlers/reports.py::handle_show_progress_report/
+    handle_show_all_cycles_analytics), только в JSON вместо готового
+    текста — не отдельная копия вычислений. Недельная сводка скоупится по
+    текущему (или только что закрытому) циклу, тем же способом, что и
+    еженедельная рассылка (app/workers/weekly_report.py); прогресс на
+    снаряде намеренно остаётся на полной истории — динамика "на одном и
+    том же снаряде", а не "за цикл"."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return AnalyticsResponse(has_data=False)
+
+    workouts = WorkoutRepository(session)
+    records = await workouts.list_records_for_user(user.id)
+    if not records:
+        return AnalyticsResponse(has_data=False)
+
+    all_sets = await WorkoutSetRepository(session).list_for_user(user.id)
+    current_set_records = await workouts.list_records_for_set(all_sets[-1].id)
+
+    now = datetime.now(UTC)
+    week_ago = now - timedelta(days=7)
+    two_weeks_ago = now - timedelta(days=14)
+    this_week = [r for r in current_set_records if r.performed_at >= week_ago]
+    previous_week = [r for r in current_set_records if two_weeks_ago <= r.performed_at < week_ago]
+    previous_week_volume = sum(r.block_a.log.volume + r.block_b.log.volume for r in previous_week)
+
+    summary = weekly_summary(this_week, previous_week_volume)
+    analytics = all_cycles_analytics(records)
+
+    return AnalyticsResponse(
+        has_data=True,
+        weekly=WeeklySummaryResponse(**asdict(summary)),
+        equipment_progress_a=_equipment_progress_response(current_equipment_progress(records, "a")),
+        equipment_progress_b=_equipment_progress_response(current_equipment_progress(records, "b")),
+        total_volume=analytics.total_volume,
+        cycle_count=analytics.cycle_count,
+        cycles=[CycleVolumeResponse(**asdict(c)) for c in analytics.cycles],
+    )
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)

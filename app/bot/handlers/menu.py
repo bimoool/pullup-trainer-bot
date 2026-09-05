@@ -23,7 +23,7 @@ from app.config import settings
 from app.db.models import Gender
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
-from app.domain.achievements import AchievementCode
+from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
 
 # ВАЖНО: подключается в app/bot/handlers/__init__.py сразу после start —
 # нажатие на кнопку нижнего меню обязано перехватывать апдейт независимо от
@@ -35,20 +35,6 @@ router = Router()
 # остальным кодом, не раскладывается на сервере вручную. parents[2] от
 # этого файла (app/bot/handlers/menu.py) — корень пакета app/.
 OFERTA_PDF_PATH = Path(__file__).resolve().parents[2] / "assets" / "oferta.pdf"
-
-_ACHIEVEMENT_LABELS = {
-    AchievementCode.FIRST_BASELINE: "🎯 Первый замер",
-    AchievementCode.TEN_WORKOUTS_STREAK: "🔥 10 тренировок подряд",
-    AchievementCode.EQUIPMENT_CHANGED: "📈 Смена снаряда",
-    AchievementCode.FIRST_WEIGHTED_PULLUP: "🏋️ Первое подтягивание с отягощением",
-    AchievementCode.SET_COMPLETED: "✅ Сет завершён",
-    AchievementCode.MAX_REPS_PLUS_TEN: "💪 +10 к максимуму",
-    AchievementCode.MONTH_NO_GAPS: "📅 Месяц без пропусков",
-    AchievementCode.VOLUME_100: "🔟 100 подтягиваний",
-    AchievementCode.VOLUME_1000: "💯 1 000 подтягиваний",
-    AchievementCode.VOLUME_10000: "🚀 10 000 подтягиваний",
-    AchievementCode.VOLUME_100000: "👑 100 000 подтягиваний",
-}
 
 _GENDER_LABELS = {
     Gender.MALE: texts.PROFILE_GENDER_MALE,
@@ -86,7 +72,7 @@ async def render_profile(message: Message, session: AsyncSession, telegram_id: i
         # Без тире перед эмодзи (Часть 10) — сами эмодзи уже достаточно
         # разделяют пункты списка, тире было лишним.
         achievement_list = "\n".join(
-            _ACHIEVEMENT_LABELS.get(AchievementCode(a.code), a.code) for a in achievements
+            ACHIEVEMENT_LABELS.get(AchievementCode(a.code), a.code) for a in achievements
         )
     else:
         achievement_list = texts.PROFILE_NO_ACHIEVEMENTS

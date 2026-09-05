@@ -320,6 +320,27 @@ input[type="number"] {
   text-align: center;
 }
 
+/* Issue #66: счётчик ачивок выглядел некликабельным — явная визуальная
+   подсказка (курсор, hover/active-затемнение), не только текст "›" в
+   лейбле. border: none/font: inherit сбрасывают дефолтные стили <button>,
+   чтобы кликабельная плитка выглядела как обычная. */
+.stat-tile-clickable {
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+  transition: background-color 0.15s ease;
+}
+
+.stat-tile-clickable:hover {
+  background: color-mix(in srgb, var(--tg-secondary-bg-color) 80%, var(--tg-text-color) 20%);
+}
+
+.stat-tile-clickable:active {
+  background: color-mix(in srgb, var(--tg-secondary-bg-color) 65%, var(--tg-text-color) 35%);
+}
+
 .stat-tile .stat-value {
   font-size: 22px;
   font-weight: 700;

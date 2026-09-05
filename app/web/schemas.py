@@ -104,18 +104,36 @@ class AnomalyFlagsResponse(BaseModel):
     actual_set_count: int | None = None
 
 
+class AchievementItem(BaseModel):
+    """Один пункт списка ачивок (issue #66, п.1) — code для стабильного
+    сопоставления на фронте (если понадобится иконка/поведение отдельно от
+    текста), label — тот же app.domain.achievements.ACHIEVEMENT_LABELS, что
+    и app.bot.handlers.menu.render_profile (единый источник подписи, не
+    веб-копия текста)."""
+
+    code: str
+    label: str
+    unlocked_at: str
+
+
 class ProfileResponse(BaseModel):
     """Вкладка "Профиль" Mini App (issue #45, часть 3) — узкий срез того,
     что показывает app.bot.handlers.menu.render_profile: тот же
-    format_subscription_status, но без роста/веса/таймзоны/списка ачивок
-    текстом — сознательно маленький первый шаг под навигацию, не перенос
-    всего профиля бота. is_onboarded=False — единственный случай, когда
-    остальные поля пустые (тот же принцип, что у HelloResponse)."""
+    format_subscription_status, но без роста/веса/таймзоны текстом —
+    сознательно маленький первый шаг под навигацию, не перенос всего
+    профиля бота. is_onboarded=False — единственный случай, когда остальные
+    поля пустые (тот же принцип, что у HelloResponse).
+
+    achievements (issue #66, п.1) — то же самое, что уже даёт
+    achievements_count числом, только с деталями (код/лейбл/дата) для
+    кликабельного счётчика на экране: пустой список — тот же случай, что
+    achievements_count == 0, а не "не загрузилось"."""
 
     is_onboarded: bool
     subscription_status_label: str | None = None
     coins_balance: int | None = None
     achievements_count: int | None = None
+    achievements: list[AchievementItem] = Field(default_factory=list)
     workouts_count: int | None = None
     days_since_last_workout: int | None = None
 
@@ -168,6 +186,59 @@ class ProgressPointResponse(BaseModel):
 
 class ProgressResponse(BaseModel):
     points: list[ProgressPointResponse]
+
+
+class WeeklySummaryResponse(BaseModel):
+    """Зеркало app.domain.reports.WeeklySummary для JSON (issue #66, п.2) —
+    та же недельная сводка, что показывает кнопка "📊 Прогресс" бота
+    (app/bot/handlers/reports.py::handle_show_progress_report)."""
+
+    workout_count: int
+    total_volume: int
+    volume_change_pct: float | None
+    equipment_changed_a: bool
+    equipment_changed_b: bool
+
+
+class EquipmentProgressResponse(BaseModel):
+    """Зеркало app.domain.reports.EquipmentProgress — динамика объёма на
+    текущем (последнем использованном) снаряде блока A/Б, тот же смысл, что
+    "с этой резиной делал 40, сейчас 80" в тексте бота."""
+
+    equipment: EquipmentInfo
+    first_volume: int
+    current_volume: int
+    change_pct: float | None
+
+
+class CycleVolumeResponse(BaseModel):
+    """Зеркало app.domain.reports.CycleVolume — одна строка списка "📈
+    Аналитика по всем циклам" бота (app/bot/handlers/reports.py::
+    handle_show_all_cycles_analytics)."""
+
+    workout_set_id: int
+    workout_count: int
+    total_volume: int
+    volume_change_pct: float | None
+
+
+class AnalyticsResponse(BaseModel):
+    """GET /api/analytics (issue #66, п.2) — те же вызовы
+    app.domain.reports с теми же входными данными, что и кнопки
+    "📊 Прогресс"/"📈 Аналитика по всем циклам" бота, просто в JSON вместо
+    готового текста. has_data=False — тот же случай, что "история пуста" у
+    бота (texts.HISTORY_EMPTY) — единственный случай, когда остальные поля
+    пустые. equipment_progress_a/b — None только если истории вообще нет
+    (has_data=False уже покрывает этот случай раньше, см.
+    current_equipment_progress), при has_data=True они всегда заполнены."""
+
+    has_data: bool
+    weekly: WeeklySummaryResponse | None = None
+    equipment_progress_a: EquipmentProgressResponse | None = None
+    equipment_progress_b: EquipmentProgressResponse | None = None
+    total_volume: int | None = None
+    cycle_count: int | None = None
+    cycles: list[CycleVolumeResponse] = Field(default_factory=list)
 
 
 class SubscriptionResponse(BaseModel):

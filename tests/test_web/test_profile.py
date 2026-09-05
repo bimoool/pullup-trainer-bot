@@ -58,7 +58,8 @@ async def test_profile_for_unknown_telegram_id_is_not_onboarded(session):
     body = await _get_profile(session, telegram_id=51001)
     assert body == {
         "is_onboarded": False, "subscription_status_label": None, "coins_balance": None,
-        "achievements_count": None, "workouts_count": None, "days_since_last_workout": None,
+        "achievements_count": None, "achievements": [], "workouts_count": None,
+        "days_since_last_workout": None,
     }
 
 
@@ -71,6 +72,7 @@ async def test_profile_for_fresh_user_without_workouts(session):
     assert body["is_onboarded"] is True
     assert body["coins_balance"] == 0
     assert body["achievements_count"] == 0
+    assert body["achievements"] == []
     assert body["workouts_count"] == 0
     assert body["days_since_last_workout"] is None
     assert "пробный период" in body["subscription_status_label"]
@@ -96,3 +98,21 @@ async def test_profile_reports_workout_and_achievement_counts(session):
     assert body["workouts_count"] == 1
     assert body["achievements_count"] == 1
     assert body["days_since_last_workout"] == 3
+
+
+async def test_profile_achievements_include_label_and_date(session):
+    """issue #66, п.1 — детали ачивок (код/лейбл/дата) для кликабельного
+    счётчика в Mini App, тот же ACHIEVEMENT_LABELS, что render_profile бота."""
+    user = await UserRepository(session).create(telegram_id=51004, username="achiever")
+    await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
+    unlocked = await AchievementRepository(session).unlock(user_id=user.id, code="first_baseline")
+
+    body = await _get_profile(session, telegram_id=user.telegram_id)
+
+    assert body["achievements"] == [
+        {
+            "code": "first_baseline",
+            "label": "🎯 Первый замер",
+            "unlocked_at": unlocked.unlocked_at.date().isoformat(),
+        },
+    ]
