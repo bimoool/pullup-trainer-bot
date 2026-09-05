@@ -17,13 +17,17 @@ from app.bot.handlers.menu import OFERTA_PDF_PATH
 from app.bot.handlers.subscription import _robokassa_available
 from app.bot.handlers.workout_edit import _is_editable
 from app.config import settings
-from app.db.models import BlockType, SubscriptionStatus
+from app.db.models import ActiveTimerType, BlockType, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
+from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
+    DEFAULT_BIG_BREAK_SECONDS,
+    DEFAULT_REST_SECONDS_BLOCK_A,
+    DEFAULT_REST_SECONDS_BLOCK_B,
     STRENGTH_BLOCK,
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
@@ -54,6 +58,10 @@ from app.web.schemas import (
     ProgressPointResponse,
     ProgressResponse,
     SubscriptionResponse,
+    TimerPreferencesResponse,
+    TimerPreferencesUpdateRequest,
+    TimerStartRequest,
+    TimerStatusResponse,
     WorkoutPlanResponse,
     WorkoutSubmitRequest,
     WorkoutSubmitResponse,
@@ -936,3 +944,145 @@ async def submit_backdated_workout(
         result_a=format_block_result(block_a.working_reps, block_a.max_reps),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps),
     )
+
+
+# --- Персистентный таймер (issue #59, волна 1) ------------------------------------------
+
+
+def _parse_timer_type(raw: str) -> ActiveTimerType:
+    try:
+        return ActiveTimerType(raw)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid timer_type") from None
+
+
+def _timer_status_response(timer, *, now: datetime) -> TimerStatusResponse:
+    """Источник правды — сервер: остаток всегда считается заново из
+    started_at/duration_seconds, никогда не читается из клиента (issue #59:
+    "клиент просто спрашивает "сколько осталось" по факту открытия, а не
+    ведёт свой независимый отсчёт"). Истёкшая запись не удаляется здесь —
+    только следующий POST /api/timer/start (замена) или DELETE /api/timer
+    её уберёт, поэтому active=False уже при remaining_seconds=0, хотя
+    строка в БД физически ещё существует."""
+    elapsed = (now - timer.started_at).total_seconds()
+    remaining = max(0, timer.duration_seconds - int(elapsed))
+    return TimerStatusResponse(
+        active=remaining > 0,
+        timer_type=timer.timer_type.value,
+        duration_seconds=timer.duration_seconds,
+        remaining_seconds=remaining,
+        block_letter=timer.block_letter,
+        set_number=timer.set_number,
+    )
+
+
+@router.post("/timer/start", response_model=TimerStatusResponse)
+async def start_timer(
+    body: TimerStartRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> TimerStatusResponse:
+    """Стартует (или заменяет уже идущий, см. ActiveTimerRepository.start)
+    персистентный таймер отдыха/большого перерыва режима тренировки в
+    реальном времени (issue #59, Волна 2). started_at всегда серверное
+    время — тело запроса его не содержит, чтобы рассинхрон часов клиента
+    не мог сдвинуть момент, от которого считается остаток."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+
+    timer_type = _parse_timer_type(body.timer_type)
+    now = datetime.now(UTC)
+    timer = await ActiveTimerRepository(session).start(
+        user_id=user.id,
+        timer_type=timer_type,
+        started_at=now,
+        duration_seconds=body.duration_seconds,
+        block_letter=body.block_letter,
+        set_number=body.set_number,
+    )
+    return _timer_status_response(timer, now=now)
+
+
+@router.get("/timer/status", response_model=TimerStatusResponse)
+async def get_timer_status(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> TimerStatusResponse:
+    """Опрашивается фронтендом при каждом открытии/возврате в приложение
+    (visibilitychange/focus, issue #59, Волна 2) — не полагается на
+    локальный setInterval как источник правды, только как визуальный тик
+    между опросами."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return TimerStatusResponse(active=False)
+
+    timer = await ActiveTimerRepository(session).get_for_user(user.id)
+    if timer is None:
+        return TimerStatusResponse(active=False)
+    return _timer_status_response(timer, now=datetime.now(UTC))
+
+
+@router.delete("/timer", response_model=TimerStatusResponse)
+async def cancel_timer(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> TimerStatusResponse:
+    """Досрочная отмена — идемпотентна: отсутствие активного таймера (или
+    неонбордившийся пользователь) не считается ошибкой, просто нечего
+    отменять."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is not None:
+        await ActiveTimerRepository(session).delete_for_user(user.id)
+    return TimerStatusResponse(active=False)
+
+
+# --- Персистентные настройки длительности таймера (issue #59, волна 2) ------------------
+
+
+def _resolve_timer_preferences(user) -> TimerPreferencesResponse:
+    return TimerPreferencesResponse(
+        rest_seconds_block_a=user.rest_seconds_block_a or DEFAULT_REST_SECONDS_BLOCK_A,
+        rest_seconds_block_b=user.rest_seconds_block_b or DEFAULT_REST_SECONDS_BLOCK_B,
+        big_break_seconds=user.big_break_seconds or DEFAULT_BIG_BREAK_SECONDS,
+    )
+
+
+@router.get("/timer/preferences", response_model=TimerPreferencesResponse)
+async def get_timer_preferences(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> TimerPreferencesResponse:
+    """Значения уже резолвлены дефолтом — NULL на users (никогда не
+    настраивал) отдаётся как DEFAULT_REST_SECONDS_BLOCK_A/B/
+    DEFAULT_BIG_BREAK_SECONDS, фронтенду не нужно знать про дефолты
+    отдельно (issue #59, волна 2)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    return _resolve_timer_preferences(user)
+
+
+@router.put("/timer/preferences", response_model=TimerPreferencesResponse)
+async def update_timer_preferences(
+    body: TimerPreferencesUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> TimerPreferencesResponse:
+    """Сохраняет ровно одну из трёх настроек за раз — block_letter="A"/"B"
+    выбирает отдых между подходами соответствующего блока, None — большой
+    перерыв между блоками (issue #59, волна 2: "для единообразия с
+    остальными двумя" — все три персистентны одинаково)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+
+    field = {
+        "A": "rest_seconds_block_a",
+        "B": "rest_seconds_block_b",
+        None: "big_break_seconds",
+    }[body.block_letter]
+    updated = await UserRepository(session).update_timer_preference(
+        user.id, field=field, duration_seconds=body.duration_seconds,
+    )
+    return _resolve_timer_preferences(updated)

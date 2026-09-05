@@ -101,6 +101,13 @@ input[type="number"] {
   margin: 0 0 16px;
 }
 
+.workout-mode-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .gap-banner {
   background: var(--tg-secondary-bg-color);
   border-radius: 12px;
@@ -443,4 +450,44 @@ input[type="number"] {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+.timer-card {
+  text-align: center;
+  padding: 24px 16px 8px;
+}
+
+.timer-display {
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin: 8px 0 20px;
+}
+
+.timer-display-done {
+  color: var(--tg-button-color);
+}
+
+.timer-adjust-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.timer-duration-label {
+  min-width: 48px;
+  font-size: 14px;
+  color: var(--tg-subtitle-text-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.pause-exercises {
+  text-align: left;
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin: 16px 0;
 }

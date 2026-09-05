@@ -266,6 +266,60 @@ class HistoryEditRequest(BaseModel):
     confirm_anomalies: bool = False
 
 
+class TimerStartRequest(BaseModel):
+    """POST /api/timer/start (issue #59, волна 1) — timer_type проверяется
+    на сервере против app.db.models.ActiveTimerType (см. app/web/routes.py::
+    _parse_timer_type), невалидное значение — 400, не тихая запись мусора.
+    duration_seconds ограничен сверху 3600 (час) — продуктовая защита от
+    мусорных значений с клиента, не физический факт: самый длинный
+    реальный таймер в потоке тренировки (issue) — "большой перерыв" между
+    блоками A и Б, а не отдых между подходами."""
+
+    timer_type: str
+    duration_seconds: int = Field(ge=1, le=3600)
+    block_letter: str | None = Field(default=None, pattern="^[AB]$")
+    set_number: int | None = Field(default=None, ge=1)
+
+
+class TimerStatusResponse(BaseModel):
+    """Общий ответ для POST /api/timer/start, GET /api/timer/status и
+    DELETE /api/timer — active=False, когда активного таймера нет ВООБЩЕ
+    (пользователь не онбордился или ещё не стартовал ни одного) или когда
+    он уже истёк (remaining_seconds достиг 0 — сервер не удаляет
+    истёкшую запись при чтении, см. app/web/routes.py); остальные поля
+    заполнены в обоих случаях "запись есть", только remaining_seconds
+    отличает "идёт" от "истёк"."""
+
+    active: bool
+    timer_type: str | None = None
+    duration_seconds: int | None = None
+    remaining_seconds: int | None = None
+    block_letter: str | None = None
+    set_number: int | None = None
+
+
+class TimerPreferencesResponse(BaseModel):
+    """GET/PUT /api/timer/preferences (issue #59, волна 2) — значения уже
+    резолвлены дефолтом (app.domain.constants.DEFAULT_REST_SECONDS_BLOCK_A/B/
+    DEFAULT_BIG_BREAK_SECONDS), если пользователь ничего не настраивал —
+    фронтенду не нужно знать про дефолты отдельно."""
+
+    rest_seconds_block_a: int
+    rest_seconds_block_b: int
+    big_break_seconds: int
+
+
+class TimerPreferencesUpdateRequest(BaseModel):
+    """PUT /api/timer/preferences — сохраняет ровно одну из трёх настроек
+    за раз (block_letter="A"/"B" — отдых между подходами того блока, None —
+    большой перерыв между блоками), не сохраняется молча при каждом сдвиге
+    ползунка на экране таймера — только по явному действию пользователя
+    "запомнить как значение по умолчанию" (issue #59, волна 2)."""
+
+    block_letter: str | None = Field(default=None, pattern="^[AB]$")
+    duration_seconds: int = Field(ge=1, le=3600)
+
+
 class BackdateSubmitRequest(BaseModel):
     """POST /api/workout/backdate (issue #52) — снаряд здесь ВСЕГДА явный
     (не наследуется молча из прогрессии, в отличие от WorkoutSubmitRequest)

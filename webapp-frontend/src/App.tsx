@@ -58,6 +58,22 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [tab, setTab] = useState<Tab>("workout");
+  // Живая тренировка (issue #59) держит несохранённый ввод только во
+  // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
+  // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
+  // потеряло бы прогресс молча, поэтому переключение вкладок при активной
+  // живой тренировке сначала спрашивает подтверждение.
+  const [liveWorkoutActive, setLiveWorkoutActive] = useState(false);
+
+  function handleTabClick(key: Tab) {
+    if (key === tab) {
+      return;
+    }
+    if (liveWorkoutActive && !window.confirm("Прогресс тренировки будет потерян — уйти?")) {
+      return;
+    }
+    setTab(key);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -133,7 +149,9 @@ export function App() {
     <div className={state.data.is_onboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
       {!state.data.is_onboarded && <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>}
-      {state.data.is_onboarded && tab === "workout" && <WorkoutScreen initDataRaw={state.initDataRaw} />}
+      {state.data.is_onboarded && tab === "workout" && (
+        <WorkoutScreen initDataRaw={state.initDataRaw} onLiveActiveChange={setLiveWorkoutActive} />
+      )}
       {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "profile" && (
@@ -144,7 +162,7 @@ export function App() {
       {state.data.is_onboarded && (
         <Tabbar>
           {NAV_TABS.map(({ key, icon, label }) => (
-            <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => setTab(key)}>
+            <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>
               <span className="bottom-nav-icon">{icon}</span>
             </Tabbar.Item>
           ))}
