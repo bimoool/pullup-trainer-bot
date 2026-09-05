@@ -1,13 +1,13 @@
 import { useEffect, useState, type PointerEvent } from "react";
 
-import { fetchProgress, type ProgressPoint } from "./api";
+import { fetchAnalytics, fetchProgress, type AnalyticsData, type EquipmentProgress, type ProgressPoint } from "./api";
 
 type Props = { initDataRaw: string };
 
 type ScreenState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; points: ProgressPoint[] };
+  | { phase: "ready"; points: ProgressPoint[]; analytics: AnalyticsData };
 
 // Категориальная пара из справочника dataviz-скилла (references/palette.md,
 // слоты 1/2 — blue/orange), провалидированная на contrast/CVD-различимость
@@ -170,10 +170,80 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
   );
 }
 
-/** Вкладка "Прогресс" (issue #50, волна 2) — цель за подход по тренировкам
- * во времени, для блока A и Б отдельно. Данные из GET /api/progress, которые
- * сервер берёт из уже посчитанного WorkoutRecord.block_*.target_after (см.
- * app/web/routes.py::get_progress) — прогрессия здесь не пересчитывается. */
+/** "+12.3%"/"-5%"/без изменений — тот же принцип знака, что _signed_pct
+ * бота (app/bot/formatting.py): "+", если >= 0, минус уже есть в самом
+ * числе для отрицательных. */
+function formatPct(pct: number | null): string {
+  if (pct === null) {
+    return "нет данных для сравнения";
+  }
+  const sign = pct >= 0 ? "+" : "";
+  return `${sign}${pct}%`;
+}
+
+/** Карточка "динамика на текущем снаряде" (issue #66, п.2) — тот же смысл,
+ * что EQUIPMENT_PROGRESS_WITH_PCT бота ("с этой резиной делал 40, сейчас 80,
+ * +100%"). */
+function EquipmentProgressCard({ title, progress }: { title: string; progress: EquipmentProgress | null }) {
+  if (progress === null) {
+    return null;
+  }
+  return (
+    <div className="profile-card">
+      <p className="section-title">{title}</p>
+      <p>{progress.equipment.label}</p>
+      <p>
+        {progress.first_volume} → {progress.current_volume} ({formatPct(progress.change_pct)})
+      </p>
+    </div>
+  );
+}
+
+/** Аналитический блок вкладки "Прогресс" (issue #66, п.2) — те же
+ * app.domain.reports вычисления, что кнопки "📊 Прогресс"/"📈 Аналитика по
+ * всем циклам" бота (GET /api/analytics), под графиком цели за подход. */
+function AnalyticsSection({ analytics }: { analytics: AnalyticsData }) {
+  if (!analytics.has_data || analytics.weekly === null) {
+    return null;
+  }
+  const { weekly } = analytics;
+  const changedBlocks = [weekly.equipment_changed_a && "объём", weekly.equipment_changed_b && "сила"].filter(Boolean);
+
+  return (
+    <div>
+      <div className="profile-card">
+        <p className="section-title">За неделю</p>
+        <p>Тренировок: {weekly.workout_count}</p>
+        <p>
+          Объём: {weekly.total_volume} ({formatPct(weekly.volume_change_pct)})
+        </p>
+        {changedBlocks.length > 0 && <p className="hint">Сменился снаряд: {changedBlocks.join(", ")}</p>}
+      </div>
+
+      <EquipmentProgressCard title="Динамика — объём" progress={analytics.equipment_progress_a} />
+      <EquipmentProgressCard title="Динамика — сила" progress={analytics.equipment_progress_b} />
+
+      {analytics.cycles.length > 0 && (
+        <div className="profile-card">
+          <p className="section-title">
+            Аналитика по циклам (всего {analytics.total_volume})
+          </p>
+          {analytics.cycles.map((cycle, index) => (
+            <p key={cycle.workout_set_id}>
+              Цикл {index + 1}: {cycle.workout_count} тр., объём {cycle.total_volume} ({formatPct(cycle.volume_change_pct)})
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Вкладка "Прогресс" (issue #50, волна 2; аналитика — issue #66, п.2) —
+ * цель за подход по тренировкам во времени для блока A и Б (GET /api/progress,
+ * прогрессия уже посчитана на бэкенде, здесь не пересчитывается), плюс
+ * недельная динамика/прогресс на снаряде/сводка по циклам (GET /api/analytics,
+ * те же app.domain.reports вызовы, что кнопки бота). */
 export function ProgressScreen({ initDataRaw }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
@@ -181,9 +251,9 @@ export function ProgressScreen({ initDataRaw }: Props) {
     let cancelled = false;
     async function load() {
       try {
-        const data = await fetchProgress(initDataRaw);
+        const [progress, analytics] = await Promise.all([fetchProgress(initDataRaw), fetchAnalytics(initDataRaw)]);
         if (!cancelled) {
-          setState({ phase: "ready", points: data.points });
+          setState({ phase: "ready", points: progress.points, analytics });
         }
       } catch (error) {
         if (!cancelled) {
@@ -203,15 +273,19 @@ export function ProgressScreen({ initDataRaw }: Props) {
   if (state.phase === "error") {
     return <p className="screen-message">Не удалось загрузить прогресс: {state.message}</p>;
   }
-  if (state.points.length < 2) {
-    return <p className="screen-message">Пока недостаточно тренировок для графика — нужно хотя бы две.</p>;
-  }
 
   return (
     <div>
       <p className="plan-title">Прогресс</p>
-      <p className="hint">Цель за подход по тренировкам</p>
-      <LineChart points={state.points} />
+      {state.points.length < 2 ? (
+        <p className="screen-message">Пока недостаточно тренировок для графика — нужно хотя бы две.</p>
+      ) : (
+        <>
+          <p className="hint">Цель за подход по тренировкам</p>
+          <LineChart points={state.points} />
+        </>
+      )}
+      <AnalyticsSection analytics={state.analytics} />
     </div>
   );
 }

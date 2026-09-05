@@ -49,15 +49,27 @@ export interface AnomalyFlags {
   actual_set_count: number | null;
 }
 
+/** Один пункт списка ачивок (issue #66, п.1) — code для стабильного
+ * сопоставления (иконка/сортировка), label — уже готовый текст с бэкенда
+ * (app.domain.achievements.ACHIEVEMENT_LABELS, тот же, что видит пользователь
+ * бота), unlocked_at — "YYYY-MM-DD". */
+export interface AchievementItem {
+  code: string;
+  label: string;
+  unlocked_at: string;
+}
+
 /** Вкладка "Профиль" (issue #45, часть 3) — узкий срез того, что показывает
  * app.bot.handlers.menu.render_profile (та же format_subscription_status на
  * бэкенде, не отдельный текст). is_onboarded=false — остальные поля пустые,
- * тот же принцип, что у HelloResponse. */
+ * тот же принцип, что у HelloResponse. achievements (issue #66, п.1) — то же
+ * число, что achievements_count, только с деталями для кликабельного счётчика. */
 export interface ProfileResponse {
   is_onboarded: boolean;
   subscription_status_label: string | null;
   coins_balance: number | null;
   achievements_count: number | null;
+  achievements: AchievementItem[];
   workouts_count: number | null;
   days_since_last_workout: number | null;
 }
@@ -165,6 +177,52 @@ export async function fetchHistory(initDataRaw: string, offset: number, limit = 
 
 export async function fetchProgress(initDataRaw: string): Promise<ProgressData> {
   return apiGet<ProgressData>("/api/progress", initDataRaw);
+}
+
+/** Зеркало app.domain.reports.WeeklySummary (issue #66, п.2) — та же
+ * недельная сводка, что показывает кнопка "📊 Прогресс" бота. */
+export interface WeeklySummary {
+  workout_count: number;
+  total_volume: number;
+  volume_change_pct: number | null;
+  equipment_changed_a: boolean;
+  equipment_changed_b: boolean;
+}
+
+/** Зеркало app.domain.reports.EquipmentProgress — динамика объёма на
+ * текущем снаряде блока A/Б ("с этой резиной делал 40, сейчас 80"). */
+export interface EquipmentProgress {
+  equipment: EquipmentInfo;
+  first_volume: number;
+  current_volume: number;
+  change_pct: number | null;
+}
+
+/** Зеркало app.domain.reports.CycleVolume — одна строка "📈 Аналитика по
+ * всем циклам" бота. */
+export interface CycleVolume {
+  workout_set_id: number;
+  workout_count: number;
+  total_volume: number;
+  volume_change_pct: number | null;
+}
+
+/** GET /api/analytics (issue #66, п.2) — те же вызовы app.domain.reports с
+ * теми же входными данными, что и кнопки "📊 Прогресс"/"📈 Аналитика по всем
+ * циклам" бота, просто в JSON вместо готового текста. has_data=false — та же
+ * "истории пока нет", что и у пустого графика /api/progress. */
+export interface AnalyticsData {
+  has_data: boolean;
+  weekly: WeeklySummary | null;
+  equipment_progress_a: EquipmentProgress | null;
+  equipment_progress_b: EquipmentProgress | null;
+  total_volume: number | null;
+  cycle_count: number | null;
+  cycles: CycleVolume[];
+}
+
+export async function fetchAnalytics(initDataRaw: string): Promise<AnalyticsData> {
+  return apiGet<AnalyticsData>("/api/analytics", initDataRaw);
 }
 
 /** Раздел подписки/оплаты (issue #53, волна 1) — расширяет то, что уже

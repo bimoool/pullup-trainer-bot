@@ -1,6 +1,7 @@
 import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
+import { AchievementsScreen } from "./AchievementsScreen";
 import { fetchProfile, type ProfileResponse } from "./api";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void };
@@ -22,6 +23,10 @@ type ScreenState =
  * при открытии), здесь остаётся только строка статуса + переход. */
 export function ProfileScreen({ initDataRaw, onOpenSubscription }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  // Список ачивок (issue #66, п.1) — отдельный экран внутри вкладки, тот же
+  // приём swap'а, что HistoryEditForm поверх HistoryScreen, не отдельная
+  // вкладка нижнего меню.
+  const [showAchievements, setShowAchievements] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +60,10 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription }: Props) {
     return <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>;
   }
 
+  if (showAchievements) {
+    return <AchievementsScreen achievements={profile.achievements} onBack={() => setShowAchievements(false)} />;
+  }
+
   return (
     <div>
       <p className="plan-title">Профиль</p>
@@ -82,10 +91,14 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription }: Props) {
           <div className="stat-value">{profile.workouts_count}</div>
           <div className="stat-label">Тренировок</div>
         </div>
-        <div className="stat-tile">
+        {/* Issue #66 (уточнение): счётчик выглядел некликабельным — теперь
+            это настоящая <button> (тап/клавиатура), не div с обработчиком,
+            плюс явная визуальная подсказка (стрелка, hover/active-состояние
+            в index.css), а не только число. */}
+        <button type="button" className="stat-tile stat-tile-clickable" onClick={() => setShowAchievements(true)}>
           <div className="stat-value">{profile.achievements_count}</div>
-          <div className="stat-label">Ачивок</div>
-        </div>
+          <div className="stat-label">Ачивок ›</div>
+        </button>
         <div className="stat-tile">
           <div className="stat-value">{profile.coins_balance}</div>
           <div className="stat-label">Монет</div>

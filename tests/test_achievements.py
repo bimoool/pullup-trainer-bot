@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from app.domain.achievements import (
+    ACHIEVEMENT_LABELS,
     AchievementCode,
     check_equipment_changed,
     check_first_baseline,
@@ -12,6 +13,25 @@ from app.domain.achievements import (
     check_workout_streak,
     consecutive_streak_length,
 )
+
+
+def test_every_achievement_code_has_a_label():
+    """ACHIEVEMENT_LABELS (issue #66, п.1) — единственный источник подписей,
+    используемый и ботом (render_profile), и Mini App (GET /api/profile);
+    пропущенный код показался бы пользователю сырым значением enum."""
+    missing = set(AchievementCode) - set(ACHIEVEMENT_LABELS)
+    assert missing == set()
+
+
+def test_max_reps_plus_ten_label_updated():
+    assert ACHIEVEMENT_LABELS[AchievementCode.MAX_REPS_PLUS_TEN] == "💪 +10 к максимуму"
+
+
+def test_volume_milestone_labels():
+    assert ACHIEVEMENT_LABELS[AchievementCode.VOLUME_100] == "🔟 100 подтягиваний"
+    assert ACHIEVEMENT_LABELS[AchievementCode.VOLUME_1000] == "💯 1 000 подтягиваний"
+    assert ACHIEVEMENT_LABELS[AchievementCode.VOLUME_10000] == "🚀 10 000 подтягиваний"
+    assert ACHIEVEMENT_LABELS[AchievementCode.VOLUME_100000] == "👑 100 000 подтягиваний"
 
 
 def test_check_first_baseline_true():

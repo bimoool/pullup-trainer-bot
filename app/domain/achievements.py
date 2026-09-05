@@ -19,6 +19,26 @@ class AchievementCode(StrEnum):
     VOLUME_100000 = "volume_100000"
 
 
+# Единственный источник подписей ачивок (issue #66, п.1) — раньше жил только
+# в app.bot.handlers.menu как _ACHIEVEMENT_LABELS; вынесен сюда, чтобы
+# app/web (Mini App, GET /api/profile) мог показать тот же текст, что и бот,
+# не заводя вторую копию. Это просто строковые константы, не бизнес-логика
+# — импорт отсюда не тянет за собой aiogram/sqlalchemy, домен остаётся чистым.
+ACHIEVEMENT_LABELS: dict[AchievementCode, str] = {
+    AchievementCode.FIRST_BASELINE: "🎯 Первый замер",
+    AchievementCode.TEN_WORKOUTS_STREAK: "🔥 10 тренировок подряд",
+    AchievementCode.EQUIPMENT_CHANGED: "📈 Смена снаряда",
+    AchievementCode.FIRST_WEIGHTED_PULLUP: "🏋️ Первое подтягивание с отягощением",
+    AchievementCode.SET_COMPLETED: "✅ Сет завершён",
+    AchievementCode.MAX_REPS_PLUS_TEN: "💪 +10 к максимуму",
+    AchievementCode.MONTH_NO_GAPS: "📅 Месяц без пропусков",
+    AchievementCode.VOLUME_100: "🔟 100 подтягиваний",
+    AchievementCode.VOLUME_1000: "💯 1 000 подтягиваний",
+    AchievementCode.VOLUME_10000: "🚀 10 000 подтягиваний",
+    AchievementCode.VOLUME_100000: "👑 100 000 подтягиваний",
+}
+
+
 def check_first_baseline(is_first_baseline: bool) -> AchievementCode | None:
     """FIRST_BASELINE — при самом первом замере пользователя."""
     return AchievementCode.FIRST_BASELINE if is_first_baseline else None
