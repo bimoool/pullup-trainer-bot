@@ -266,6 +266,51 @@ class HistoryEditRequest(BaseModel):
     confirm_anomalies: bool = False
 
 
+class WorkoutDraftRequest(BaseModel):
+    """PUT /api/workout/draft (issue #61) — сохраняет накопленный прогресс
+    живой тренировки после каждого завершённого подхода, не только при
+    финальной отправке (см. app/web/routes.py::save_workout_draft). Клиент
+    шлёт весь накопленный массив разом, не один подход за раз — тот же
+    приём, что и апдейт таймера (TimerStartRequest — тоже upsert целиком).
+
+    В отличие от WorkoutSubmitRequest, working_reps может быть короче
+    итогового числа рабочих подходов (ещё не все введены) и max_reps может
+    отсутствовать вовсе (шаг с максимумом ещё не пройден) — черновик
+    фиксирует промежуточное состояние, не готовую к записи тренировку."""
+
+    step_index: int = Field(ge=0)
+    block_a_working_reps: list[Reps] = Field(default_factory=list)
+    block_a_max_reps: Reps | None = None
+    block_b_working_reps: list[Reps] = Field(default_factory=list)
+    block_b_max_reps: Reps | None = None
+    block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
+    block_a_actual_band_item_id: int | None = None
+    block_b_actual_band_item_id: int | None = None
+    comment: str | None = None
+
+
+class WorkoutDraftResponse(BaseModel):
+    """GET/PUT/DELETE /api/workout/draft — active=False значит черновика
+    нет (обычный старт с экрана "intro", как и раньше) — либо потому что
+    ещё не начинали, либо потому что явно отменили/уже сдали тренировку
+    (submit_workout удаляет черновик при успешной записи, см. routes.py).
+    Остальные поля заполнены только при active=True, тот же принцип, что у
+    TimerStatusResponse."""
+
+    active: bool
+    step_index: int | None = None
+    block_a_working_reps: list[int] | None = None
+    block_a_max_reps: int | None = None
+    block_b_working_reps: list[int] | None = None
+    block_b_max_reps: int | None = None
+    block_a_actual_weight: Decimal | None = None
+    block_b_actual_weight: Decimal | None = None
+    block_a_actual_band_item_id: int | None = None
+    block_b_actual_band_item_id: int | None = None
+    comment: str | None = None
+
+
 class TimerStartRequest(BaseModel):
     """POST /api/timer/start (issue #59, волна 1) — timer_type проверяется
     на сервере против app.db.models.ActiveTimerType (см. app/web/routes.py::
