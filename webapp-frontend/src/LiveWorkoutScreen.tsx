@@ -74,8 +74,10 @@ function buildSteps(workSetsA: number, workSetsB: number): LiveStep[] {
     steps.push({ kind: "input", block: "A", isMax: false, index: i });
     steps.push({ kind: "rest", block: "A", setNumber: i + 1 });
   }
+  // Подход на максимум блока A сразу ведёт в большой перерыв (issue #63) —
+  // обычного отдыха между ним и big_break быть не должно, симметрично тому,
+  // как подход на максимум блока Б уже не имел завершающего отдыха.
   steps.push({ kind: "input", block: "A", isMax: true, index: workSetsA });
-  steps.push({ kind: "rest", block: "A", setNumber: workSetsA + 1 });
   steps.push({ kind: "big_break" });
   for (let i = 0; i < workSetsB; i++) {
     steps.push({ kind: "input", block: "B", isMax: false, index: i });

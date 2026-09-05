@@ -2,11 +2,18 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cancelTimer, fetchTimerStatus, startTimer, updateTimerPreferences, type TimerStatus } from "./api";
-import { ensureAudioUnlocked, playTimerBeep } from "./sound";
+import { ensureAudioUnlocked, playCountdownBeep, playTimerBeep, playWarningBeep } from "./sound";
 
 const STEP_SECONDS = 15;
 const MIN_SECONDS = 15;
 const MAX_SECONDS = 3600;
+
+/** Отметки для предупредительных бипов (issue #63, п.5) — за 10 секунд до
+ * конца отдыха и на последних 3/2/1 секундах, все короче и тише финального
+ * бипа на 0. MIN_SECONDS=15 гарантирует, что 10-секундная отметка всегда
+ * достижима при любой настроенной длительности. */
+const WARNING_MARK_SECONDS = 10;
+const COUNTDOWN_MARK_SECONDS = [3, 2, 1];
 
 type Props = {
   initDataRaw: string;
@@ -32,11 +39,15 @@ function formatMmSs(totalSeconds: number): string {
  * происходят на возврате в приложение (focus/visibilitychange), не только
  * один раз при монтировании.
  *
- * +/- контрол меняет длительность и до, и после старта — оба случая просто
- * заново вызывают POST /api/timer/start (тот же upsert, что и обычный
- * старт), это одновременно и меняет число, и перезапускает отсчёт с этой
- * длительности (согласовано в issue: "пересчитать duration_seconds тем же
- * POST /api/timer/start, раз это upsert").
+ * +/- контрол меняет `remaining` (сколько реально осталось прямо сейчас), а
+ * не номинальный `duration` — иначе после того, как часть отдыха уже прошла,
+ * клик по +/- прыгал бы обратно к почти полной длительности (issue #63:
+ * `duration` не тикает сам по себе, оставался равен исходной длительности
+ * весь отдых, поэтому "+15" от него был неотличим от рестарта с нуля).
+ * Технически это всё равно POST /api/timer/start (тот же upsert, что и
+ * обычный старт, start_at на сервере всегда "сейчас") — но раз само число
+ * уже равно желаемому остатку, эффект для пользователя — именно "остаток
+ * ±15", а не рестарт.
  */
 export function TimerScreen({
   initDataRaw,
@@ -52,7 +63,7 @@ export function TimerScreen({
   const [remaining, setRemaining] = useState(defaultDurationSeconds);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const beepedRef = useRef(false);
+  const beepedMarksRef = useRef<Set<number>>(new Set());
 
   function applyStatus(status: TimerStatus) {
     if (status.duration_seconds !== null) {
@@ -65,7 +76,7 @@ export function TimerScreen({
 
   async function start(nextDuration: number) {
     ensureAudioUnlocked();
-    beepedRef.current = false;
+    beepedMarksRef.current = new Set();
     try {
       const status = await startTimer(initDataRaw, {
         timer_type: timerType,
@@ -142,15 +153,25 @@ export function TimerScreen({
   }, []);
 
   useEffect(() => {
-    if (remaining === 0 && !beepedRef.current) {
-      beepedRef.current = true;
+    const beeped = beepedMarksRef.current;
+    if (beeped.has(remaining)) {
+      return;
+    }
+    if (remaining === 0) {
+      beeped.add(0);
       playTimerBeep();
+    } else if (remaining === WARNING_MARK_SECONDS) {
+      beeped.add(remaining);
+      playWarningBeep();
+    } else if (COUNTDOWN_MARK_SECONDS.includes(remaining)) {
+      beeped.add(remaining);
+      playCountdownBeep();
     }
   }, [remaining]);
 
   function adjust(deltaSeconds: number) {
-    const next = Math.min(MAX_SECONDS, Math.max(MIN_SECONDS, duration + deltaSeconds));
-    if (next === duration) {
+    const next = Math.min(MAX_SECONDS, Math.max(MIN_SECONDS, remaining + deltaSeconds));
+    if (next === remaining) {
       return;
     }
     setSaved(false);
