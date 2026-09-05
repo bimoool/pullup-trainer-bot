@@ -30,4 +30,9 @@ git checkout --quiet "$sha"
 # бот, web — Mini App (issue #15/PR #16). db/redis — сторонние образы, их
 # не нужно пересобирать при каждом деплое.
 docker compose build app web
+# Применяем миграции до переключения трафика на новые контейнеры — реальный
+# инцидент 2026-09-04: этого шага не было вообще, деплой issue #59 (новые
+# колонки users.rest_seconds_*/big_break_seconds) уронил прод на UndefinedColumnError,
+# пока миграцию не применили вручную. Не повторять.
+docker compose run --rm app alembic upgrade head
 docker compose up -d app web
