@@ -22,6 +22,7 @@ from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
@@ -62,6 +63,8 @@ from app.web.schemas import (
     TimerPreferencesUpdateRequest,
     TimerStartRequest,
     TimerStatusResponse,
+    WorkoutDraftRequest,
+    WorkoutDraftResponse,
     WorkoutPlanResponse,
     WorkoutSubmitRequest,
     WorkoutSubmitResponse,
@@ -396,6 +399,13 @@ async def submit_workout(
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
 
+    # Черновик живой тренировки (issue #61), если был — удаляется здесь, в
+    # той же обработке, что и запись blocks/workouts, а не отдельным
+    # вызовом DELETE с клиента после успеха: сеть могла оборваться уже
+    # после успешного submit, оставив черновик висеть и указывать на уже
+    # записанную тренировку.
+    await WorkoutDraftRepository(session).delete_for_user(context.user_id)
+
     return WorkoutSubmitResponse(
         status="ok",
         target_a=block_a.target_after,
@@ -409,6 +419,86 @@ async def submit_workout(
         result_a=format_block_result(block_a.working_reps, block_a.max_reps),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps),
     )
+
+
+# --- Черновик тренировки в реальном времени (issue #61) ---------------------------------
+
+
+def _draft_response(draft) -> WorkoutDraftResponse:
+    if draft is None:
+        return WorkoutDraftResponse(active=False)
+    return WorkoutDraftResponse(
+        active=True,
+        step_index=draft.step_index,
+        block_a_working_reps=draft.block_a_working_reps,
+        block_a_max_reps=draft.block_a_max_reps,
+        block_b_working_reps=draft.block_b_working_reps,
+        block_b_max_reps=draft.block_b_max_reps,
+        block_a_actual_weight=draft.block_a_actual_weight,
+        block_b_actual_weight=draft.block_b_actual_weight,
+        block_a_actual_band_item_id=draft.block_a_actual_band_item_id,
+        block_b_actual_band_item_id=draft.block_b_actual_band_item_id,
+        comment=draft.comment,
+    )
+
+
+@router.put("/workout/draft", response_model=WorkoutDraftResponse)
+async def save_workout_draft(
+    body: WorkoutDraftRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutDraftResponse:
+    """Сохраняет накопленный прогресс живой тренировки (issue #61) — по
+    завершении каждого подхода (LiveWorkoutScreen.tsx), не только при
+    финальной отправке через submit_workout выше. Апсертит целиком (тот же
+    приём, что start_timer ниже) — клиент шлёт весь накопленный массив, а
+    не один подход."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+
+    draft = await WorkoutDraftRepository(session).save(
+        user_id=user.id,
+        step_index=body.step_index,
+        block_a_working_reps=body.block_a_working_reps,
+        block_a_max_reps=body.block_a_max_reps,
+        block_b_working_reps=body.block_b_working_reps,
+        block_b_max_reps=body.block_b_max_reps,
+        block_a_actual_weight=body.block_a_actual_weight,
+        block_b_actual_weight=body.block_b_actual_weight,
+        block_a_actual_band_item_id=body.block_a_actual_band_item_id,
+        block_b_actual_band_item_id=body.block_b_actual_band_item_id,
+        comment=body.comment,
+    )
+    return _draft_response(draft)
+
+
+@router.get("/workout/draft", response_model=WorkoutDraftResponse)
+async def get_workout_draft(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutDraftResponse:
+    """Опрашивается при заходе на LiveWorkoutScreen вместе с планом (issue
+    #61) — если есть незавершённый черновик, экран восстанавливается на
+    том же шаге, а не начинается заново с "intro"."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return WorkoutDraftResponse(active=False)
+    draft = await WorkoutDraftRepository(session).get_for_user(user.id)
+    return _draft_response(draft)
+
+
+@router.delete("/workout/draft", response_model=WorkoutDraftResponse)
+async def delete_workout_draft(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutDraftResponse:
+    """Явная отмена тренировки ("Отмена" на LiveWorkoutScreen, issue #61) —
+    идемпотентна, тот же принцип, что cancel_timer ниже."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is not None:
+        await WorkoutDraftRepository(session).delete_for_user(user.id)
+    return WorkoutDraftResponse(active=False)
 
 
 @router.get("/history", response_model=HistoryResponse)

@@ -315,6 +315,71 @@ export async function submitBackdate(
   return apiPost<BackdateSubmitRequest, WorkoutSubmitResponse>("/api/workout/backdate", initDataRaw, body);
 }
 
+/** PUT /api/workout/draft (issue #61) — сохраняет накопленный прогресс
+ * живой тренировки после каждого завершённого подхода, весь массив разом,
+ * не по одному подходу. В отличие от WorkoutSubmitRequest working_reps
+ * может быть короче итогового числа подходов и max_reps может отсутствовать
+ * — черновик фиксирует промежуточное состояние, не готовую тренировку. */
+export interface WorkoutDraftRequest {
+  step_index: number;
+  block_a_working_reps: number[];
+  block_a_max_reps: number | null;
+  block_b_working_reps: number[];
+  block_b_max_reps: number | null;
+  block_a_actual_weight?: string | null;
+  block_b_actual_weight?: string | null;
+  block_a_actual_band_item_id?: number | null;
+  block_b_actual_band_item_id?: number | null;
+  comment?: string | null;
+}
+
+/** GET/PUT/DELETE /api/workout/draft — active=false значит черновика нет
+ * (обычный старт с "intro"), остальные поля заполнены только при
+ * active=true (тот же принцип, что у TimerStatus). */
+export interface WorkoutDraft {
+  active: boolean;
+  step_index: number | null;
+  block_a_working_reps: number[] | null;
+  block_a_max_reps: number | null;
+  block_b_working_reps: number[] | null;
+  block_b_max_reps: number | null;
+  block_a_actual_weight: string | null;
+  block_b_actual_weight: string | null;
+  block_a_actual_band_item_id: number | null;
+  block_b_actual_band_item_id: number | null;
+  comment: string | null;
+}
+
+export async function fetchWorkoutDraft(initDataRaw: string): Promise<WorkoutDraft> {
+  return apiGet<WorkoutDraft>("/api/workout/draft", initDataRaw);
+}
+
+export async function saveWorkoutDraft(initDataRaw: string, body: WorkoutDraftRequest): Promise<WorkoutDraft> {
+  const response = await fetch("/api/workout/draft", {
+    method: "PUT",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PUT /api/workout/draft failed: ${response.status}`);
+  }
+  return (await response.json()) as WorkoutDraft;
+}
+
+export async function deleteWorkoutDraft(initDataRaw: string): Promise<WorkoutDraft> {
+  const response = await fetch("/api/workout/draft", {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    throw new Error(`DELETE /api/workout/draft failed: ${response.status}`);
+  }
+  return (await response.json()) as WorkoutDraft;
+}
+
 /** Персистентный таймер режима тренировки в реальном времени (issue #59,
  * волна 1) — общий ответ POST /api/timer/start, GET /api/timer/status и
  * DELETE /api/timer. active=false покрывает и "таймера нет вообще", и

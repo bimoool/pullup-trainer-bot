@@ -3,11 +3,15 @@ import { useEffect, useState } from "react";
 
 import {
   cancelTimer,
+  deleteWorkoutDraft,
   fetchTimerPreferences,
   fetchTimerStatus,
+  fetchWorkoutDraft,
   fetchWorkoutPlan,
+  saveWorkoutDraft,
   submitWorkout,
   type TimerPreferences,
+  type WorkoutDraftRequest,
   type WorkoutPlanResponse,
   type WorkoutSubmitRequest,
   type WorkoutSubmitResponse,
@@ -83,6 +87,20 @@ function buildSteps(workSetsA: number, workSetsB: number): LiveStep[] {
   return steps;
 }
 
+/** Восстановленный черновик (issue #61) хранит только уже введённые
+ * повторения — короче итогового числа рабочих подходов, остаток
+ * дозаполняется пустыми строками для тех же полей ввода, что использует
+ * обычный ход тренировки (BlockForm/set-grid). */
+function padWorkingReps(reps: number[], length: number): string[] {
+  const padded = Array<string>(length).fill("");
+  reps.forEach((value, index) => {
+    if (index < length) {
+      padded[index] = String(value);
+    }
+  });
+  return padded;
+}
+
 type ScreenState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
@@ -100,12 +118,15 @@ type ScreenState =
  * эндпойнт на каждый подход — промежуточные результаты держатся в этом
  * компоненте до финальной отправки).
  *
- * При заходе на этот экран, если на сервере уже есть активный таймер
- * (реальный сценарий — перезагрузка страницы посреди живой тренировки, не
- * просто уход в фон/блокировка экрана, которые не размонтируют компонент)
- * — он отменяется, поток начинается заново с intro. Частично введённые
- * подходы всё равно уже потеряны вместе с состоянием фронтенда, восстановить
- * их нечем.
+ * Промежуточные результаты каждого завершённого подхода сохраняются на
+ * сервере черновиком (issue #61, GET/PUT/DELETE /api/workout/draft) — при
+ * заходе на этот экран, если черновик найден, экран восстанавливается
+ * ровно на том шаге, где остановился пользователь (тот же блок, тот же
+ * подход, тот же таймер отдыха, если он ещё активен — см. TimerScreen),
+ * а не начинается заново. Черновика нет — обычный старт с "intro"; если
+ * при этом на сервере всё же остался активный таймер (переходный период
+ * после этого фикса/старые протухшие записи), он на всякий случай
+ * отменяется, как и раньше.
  */
 export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChange }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
@@ -132,16 +153,12 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
     let cancelled = false;
     async function load() {
       try {
-        const status = await fetchTimerStatus(initDataRaw);
-        if (status.active) {
-          // Активный таймер при заходе на этот экран — реально была
-          // перезагрузка страницы посреди живой тренировки (issue #59,
-          // открытый вопрос из плана Волны 2). Частично введённые подходы
-          // всё равно не пережили перезагрузку (фронтенд-состояние), так
-          // что здесь просто чистим таймер и начинаем заново.
-          await cancelTimer(initDataRaw);
-        }
-        const [plan, prefs] = await Promise.all([fetchWorkoutPlan(initDataRaw), fetchTimerPreferences(initDataRaw)]);
+        const [status, draft, plan, prefs] = await Promise.all([
+          fetchTimerStatus(initDataRaw),
+          fetchWorkoutDraft(initDataRaw),
+          fetchWorkoutPlan(initDataRaw),
+          fetchTimerPreferences(initDataRaw),
+        ]);
         if (cancelled) {
           return;
         }
@@ -151,9 +168,52 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
         }
         const workSetsA = plan.work_sets_a ?? 0;
         const workSetsB = plan.work_sets_b ?? 0;
+        const steps = buildSteps(workSetsA, workSetsB);
+
+        // Восстановление черновика (issue #61) — только если он реально
+        // согласуется с текущим планом (число рабочих подходов не могло
+        // измениться под незавершённым черновиком в норме, но не
+        // полагаемся на это слепо: расхождение — сигнал отбросить черновик
+        // и начать как обычно, а не подставлять данные не под тот план).
+        if (
+          draft.active
+          && draft.block_a_working_reps !== null
+          && draft.block_b_working_reps !== null
+          && draft.step_index !== null
+          && draft.block_a_working_reps.length <= workSetsA
+          && draft.block_b_working_reps.length <= workSetsB
+        ) {
+          setBlockAWorking(padWorkingReps(draft.block_a_working_reps, workSetsA));
+          setBlockAMax(draft.block_a_max_reps !== null ? String(draft.block_a_max_reps) : "");
+          setBlockBWorking(padWorkingReps(draft.block_b_working_reps, workSetsB));
+          setBlockBMax(draft.block_b_max_reps !== null ? String(draft.block_b_max_reps) : "");
+          setBlockAActualWeight(draft.block_a_actual_weight ?? "");
+          setBlockBActualWeight(draft.block_b_actual_weight ?? "");
+          setBlockABandItem(
+            draft.block_a_actual_band_item_id !== null ? String(draft.block_a_actual_band_item_id) : "",
+          );
+          setBlockBBandItem(
+            draft.block_b_actual_band_item_id !== null ? String(draft.block_b_actual_band_item_id) : "",
+          );
+          setComment(draft.comment ?? "");
+          if (draft.step_index < steps.length) {
+            setState({ phase: "step", plan, prefs, steps, stepIndex: draft.step_index });
+          } else {
+            setState({ phase: "review", plan });
+          }
+          return;
+        }
+
+        if (status.active) {
+          // Активный таймер без черновика — не должно возникать при
+          // обычном потоке после этого фикса (черновик создаётся раньше
+          // первого таймера, см. "Начать" ниже), но подстраховка на
+          // переходный период/старые протухшие записи: начинаем заново.
+          await cancelTimer(initDataRaw);
+        }
         setBlockAWorking(Array(workSetsA).fill(""));
         setBlockBWorking(Array(workSetsB).fill(""));
-        setState({ phase: "intro", plan, prefs, steps: buildSteps(workSetsA, workSetsB) });
+        setState({ phase: "intro", plan, prefs, steps });
       } catch (error) {
         if (!cancelled) {
           setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
@@ -166,22 +226,6 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
     };
   }, [initDataRaw]);
 
-  function recordInput(step: Extract<LiveStep, { kind: "input" }>, value: number) {
-    if (step.block === "A") {
-      if (step.isMax) {
-        setBlockAMax(String(value));
-      } else {
-        setBlockAWorking((prev) => replaceAt(prev, step.index, String(value)));
-      }
-    } else {
-      if (step.isMax) {
-        setBlockBMax(String(value));
-      } else {
-        setBlockBWorking((prev) => replaceAt(prev, step.index, String(value)));
-      }
-    }
-  }
-
   function goToStep(plan: WorkoutPlanResponse, prefs: TimerPreferences, steps: LiveStep[], nextIndex: number) {
     if (nextIndex >= steps.length) {
       setState({ phase: "review", plan });
@@ -189,6 +233,100 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
     }
     setInputValue("");
     setState({ phase: "step", plan, prefs, steps, stepIndex: nextIndex });
+  }
+
+  /** Черновик тренировки (issue #61) — сохраняет накопленный прогресс на
+   * сервере после каждого завершённого подхода, весь массив разом (не
+   * один подход). actualWeight/bandItem/comment персистятся как есть —
+   * они не редактируются на шагах ввода (только на review), поэтому здесь
+   * это либо ещё пустые значения, либо то, что уже было в восстановленном
+   * черновике. */
+  function buildDraftBody(
+    stepIndex: number,
+    workingA: string[],
+    maxA: string,
+    workingB: string[],
+    maxB: string,
+  ): WorkoutDraftRequest {
+    const actualWeightA = parseOptionalWeight(blockAActualWeight);
+    const actualWeightB = parseOptionalWeight(blockBActualWeight);
+    return {
+      step_index: stepIndex,
+      block_a_working_reps: parseSetValues(workingA.filter((v) => v !== "")) ?? [],
+      block_a_max_reps: parseSetValue(maxA),
+      block_b_working_reps: parseSetValues(workingB.filter((v) => v !== "")) ?? [],
+      block_b_max_reps: parseSetValue(maxB),
+      block_a_actual_weight: actualWeightA.ok ? actualWeightA.value : null,
+      block_b_actual_weight: actualWeightB.ok ? actualWeightB.value : null,
+      block_a_actual_band_item_id: blockABandItem ? Number(blockABandItem) : null,
+      block_b_actual_band_item_id: blockBBandItem ? Number(blockBBandItem) : null,
+      comment: comment.trim() || null,
+    };
+  }
+
+  /** Завершение шага ввода подхода — сохраняет черновик на сервере ДО
+   * перехода на следующий шаг (issue #61) и ждёт ответа, в отличие от
+   * best-effort cancelTimer/deleteWorkoutDraft ниже: если сохранение не
+   * удалось, показываем ошибку и не продолжаем — иначе только что
+   * введённый подход потерялся бы молча при следующем закрытии Telegram. */
+  async function handleStepDone(
+    plan: WorkoutPlanResponse,
+    prefs: TimerPreferences,
+    steps: LiveStep[],
+    stepIndex: number,
+    step: Extract<LiveStep, { kind: "input" }>,
+  ) {
+    const parsed = parseSetValue(inputValue);
+    if (parsed === null) {
+      setFormError("Введи число повторений.");
+      return;
+    }
+    setFormError(null);
+    ensureAudioUnlocked();
+
+    let nextWorkingA = blockAWorking;
+    let nextMaxA = blockAMax;
+    let nextWorkingB = blockBWorking;
+    let nextMaxB = blockBMax;
+    if (step.block === "A") {
+      if (step.isMax) {
+        nextMaxA = String(parsed);
+      } else {
+        nextWorkingA = replaceAt(blockAWorking, step.index, String(parsed));
+      }
+    } else {
+      if (step.isMax) {
+        nextMaxB = String(parsed);
+      } else {
+        nextWorkingB = replaceAt(blockBWorking, step.index, String(parsed));
+      }
+    }
+
+    const nextStepIndex = stepIndex + 1;
+    setSubmitting(true);
+    try {
+      await saveWorkoutDraft(initDataRaw, buildDraftBody(nextStepIndex, nextWorkingA, nextMaxA, nextWorkingB, nextMaxB));
+    } catch (error) {
+      setSubmitting(false);
+      setFormError(
+        `Не удалось сохранить подход: ${error instanceof Error ? error.message : String(error)}. Попробуй ещё раз.`,
+      );
+      return;
+    }
+    setSubmitting(false);
+
+    if (step.block === "A") {
+      if (step.isMax) {
+        setBlockAMax(nextMaxA);
+      } else {
+        setBlockAWorking(nextWorkingA);
+      }
+    } else if (step.isMax) {
+      setBlockBMax(nextMaxB);
+    } else {
+      setBlockBWorking(nextWorkingB);
+    }
+    goToStep(plan, prefs, steps, nextStepIndex);
   }
 
   function buildSubmitBody(confirmAnomalies: boolean): WorkoutSubmitRequest {
@@ -248,9 +386,9 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
   async function handleCancelAll() {
     ensureAudioUnlocked();
     try {
-      await cancelTimer(initDataRaw);
+      await Promise.all([cancelTimer(initDataRaw), deleteWorkoutDraft(initDataRaw)]);
     } catch {
-      // Лучшее усилие — отмена таймера не должна блокировать выход.
+      // Лучшее усилие — отмена таймера/черновика не должна блокировать выход.
     }
     onCancel();
   }
@@ -296,6 +434,10 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
           stretched
           onClick={() => {
             ensureAudioUnlocked();
+            // Создаём черновик до первого шага (issue #61) — best-effort:
+            // на этот момент ещё нет ни одного введённого подхода, терять
+            // нечего, блокировать переход ожиданием ответа незачем.
+            saveWorkoutDraft(initDataRaw, buildDraftBody(0, [], "", [], "")).catch(() => {});
             goToStep(plan, prefs, steps, 0);
           }}
         >
@@ -371,17 +513,8 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
           className="action-button"
           size="l"
           stretched
-          onClick={() => {
-            const parsed = parseSetValue(inputValue);
-            if (parsed === null) {
-              setFormError("Введи число повторений.");
-              return;
-            }
-            setFormError(null);
-            ensureAudioUnlocked();
-            recordInput(step, parsed);
-            goToStep(plan, prefs, steps, stepIndex + 1);
-          }}
+          disabled={submitting}
+          onClick={() => void handleStepDone(plan, prefs, steps, stepIndex, step)}
         >
           Готово
         </Button>

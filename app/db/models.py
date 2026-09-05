@@ -507,3 +507,47 @@ class ActiveTimer(Base):
     block_letter: Mapped[str | None] = mapped_column(String(1), nullable=True)
     set_number: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class WorkoutDraft(Base):
+    """Черновик тренировки в реальном времени (issue #61) — накопленные
+    результаты уже завершённых подходов на сервере, переживает закрытие
+    Telegram посреди тренировки (в отличие от ActiveTimer, который знает
+    только текущий отсчёт отдыха, см. докстринг выше). Один черновик на
+    пользователя (unique user_id), тот же приём, что у ActiveTimer.
+
+    Живёт отдельно от ActiveTimer, не как одно поле в той же таблице:
+    во время шага ввода повторений никакой таймер не запущен, а строка
+    ActiveTimer от прошлого шага отдыха может просто лежать "протухшей"
+    (TimerScreen не удаляет её при обычном продолжении, только при явном
+    пропуске) — совмещать в одной строке два независимых жизненных цикла
+    было бы источником рассинхрона. Черновик и таймер ссылаются друг на
+    друга только неявно, через user_id.
+
+    Не хранит snapshot плана (target/work_sets/equipment) — при
+    восстановлении план перезапрашивается тем же GET /api/workout/plan,
+    что и при обычном старте: пока черновик не сдан через submit_workout,
+    прогрессия не менялась, план детерминирован тем же состоянием БД.
+    step_index — единственный источник позиции в потоке шагов, сами шаги
+    пересобираются на фронтенде той же buildSteps(work_sets_a, work_sets_b).
+
+    Нет FK на blocks/workout_sets — блок создаётся только в submit_workout,
+    как и у ActiveTimer (в момент черновика тренировка ещё не записана)."""
+
+    __tablename__ = "workout_drafts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False, index=True,
+    )
+    step_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    block_a_working_reps: Mapped[list[int]] = mapped_column(JSONB, nullable=False, default=list)
+    block_a_max_reps: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    block_b_working_reps: Mapped[list[int]] = mapped_column(JSONB, nullable=False, default=list)
+    block_b_max_reps: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    block_a_actual_weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    block_b_actual_weight: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    block_a_actual_band_item_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    block_b_actual_band_item_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

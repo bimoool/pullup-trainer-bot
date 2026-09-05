@@ -80,10 +80,34 @@ export function TimerScreen({
   }
 
   useEffect(() => {
-    void start(defaultDurationSeconds);
-    // Стартует ровно один раз при входе на этот экран таймера — повторный
-    // старт того же экрана происходит через adjust()/новый TimerScreen с
-    // новым key, не через этот эффект.
+    async function startOrResume() {
+      // Восстановление таймера при возврате в Mini App (issue #61) — если
+      // на сервере уже идёт таймер с тем же контекстом (тип/блок/подход),
+      // это тот же самый отдых, прерванный закрытием Telegram, а не новый
+      // шаг: просто принимаем статус сервера, не перезапускаем отсчёт на
+      // полную длительность. Иначе (другой контекст, истёк, отсутствует)
+      // — как раньше, обычный старт с нуля.
+      try {
+        const status = await fetchTimerStatus(initDataRaw);
+        if (
+          status.active
+          && status.timer_type === timerType
+          && status.block_letter === blockLetter
+          && status.set_number === (setNumber ?? null)
+        ) {
+          applyStatus(status);
+          return;
+        }
+      } catch {
+        // Не удалось получить статус — продолжаем обычным стартом ниже,
+        // как если бы активного таймера не было.
+      }
+      await start(defaultDurationSeconds);
+    }
+    void startOrResume();
+    // Проверяет восстановление ровно один раз при входе на этот экран
+    // таймера — повторный старт того же экрана происходит через
+    // adjust()/новый TimerScreen с новым key, не через этот эффект.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
