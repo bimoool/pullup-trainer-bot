@@ -10,11 +10,18 @@ from app.domain.leaderboard import LeaderboardEntry, LeaderboardMetric
 # репозитории обычно грузят полные ORM-объекты и агрегируют в Python, но
 # здесь это означало бы тянуть блоки ВСЕХ пользователей в память при каждом
 # открытии лидерборда).
+# "Лучший подход блока" — GREATEST(отдельный подход на максимум, лучший из
+# рабочих подходов), см. app.domain.session.BlockLog (max_reps не входит в
+# working_reps). Общая подформула для MAX_REPS и порога ≥3 повторений у
+# MAX_WEIGHT ниже (issue #74) — оба подхода выполнены на одном и том же
+# equipment_value этого блока.
+_BEST_SET_EXPR = (
+    "GREATEST(b.max_reps, COALESCE("
+    "(SELECT MAX(elem::int) FROM jsonb_array_elements_text(b.working_reps) AS elem), 0))"
+)
+
 _METRIC_EXPR: dict[LeaderboardMetric, str] = {
-    LeaderboardMetric.MAX_REPS: (
-        "MAX(GREATEST(b.max_reps, COALESCE("
-        "(SELECT MAX(elem::int) FROM jsonb_array_elements_text(b.working_reps) AS elem), 0)))"
-    ),
+    LeaderboardMetric.MAX_REPS: f"MAX({_BEST_SET_EXPR})",
     LeaderboardMetric.MAX_WEIGHT: "MAX(b.equipment_value)",
     LeaderboardMetric.TOTAL_VOLUME: (
         "SUM(b.max_reps + COALESCE("
@@ -69,6 +76,12 @@ class LeaderboardRepository:
         # к enum-типу колонки, в отличие от параметра, приходящего от
         # asyncpg без информации о типе.
         equipment_filter = "AND b.equipment_type = 'weight'" if metric == LeaderboardMetric.MAX_WEIGHT else ""
+        # issue #74: "максимальный вес" без учёта повторений засчитывал бы
+        # даже подход, где отягощение фактически не было освоено (1-2 повтора)
+        # — реальный порог программы: переход на новый вес засчитывается при
+        # ≥3 подтягиваниях (target_b стартует с 3). Тот же _BEST_SET_EXPR,
+        # что и у MAX_REPS, просто как условие фильтрации, а не агрегат.
+        reps_threshold_filter = f"AND {_BEST_SET_EXPR} >= 3" if metric == LeaderboardMetric.MAX_WEIGHT else ""
 
         sql = f"""
             WITH agg AS (
@@ -85,6 +98,7 @@ class LeaderboardRepository:
                     OR ({_AGE_BUCKET_CASE}) = CAST(:age_bucket AS text)
                   )
                   {equipment_filter}
+                  {reps_threshold_filter}
                 GROUP BY u.id, u.leaderboard_display_name
             ),
             ranked AS (
