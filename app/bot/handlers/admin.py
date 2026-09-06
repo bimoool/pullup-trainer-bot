@@ -138,18 +138,37 @@ async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 
-async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, text: str) -> tuple[int, int]:
+def _broadcast_source_text(message: Message) -> str | None:
+    """Источник рассылаемого текста: у обычного текстового сообщения это
+    message.text, но у сообщения с картинкой Telegram кладёт подпись в
+    message.caption, а message.text остаётся None. Раньше оба
+    вызывающих места (_broadcast_to_onboarded_users, WeeklyDigestRepository.
+    record) брали message.text напрямую — рассылка с картинкой падала на
+    `SendMessage.text=None` (aiogram/pydantic не пускает None в text),
+    прод-инцидент issue #69."""
+    return message.text or message.caption
+
+
+async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, message: Message) -> tuple[int, int]:
     """Общий механизм рассылки — используется и ручной "📢 Рассылка всем"
     (handle_admin_broadcast_text), и еженедельным дайджестом
     (handle_weekly_digest_reply, app/workers/weekly_digest.py решает КОГДА
     его вызвать, не КАК рассылать). parse_mode=None: текст набирает
     человек (админ), не наш HTML-шаблон — случайные "<"/"&" не должны
-    ронять рассылку ошибкой парсинга сущностей."""
+    ронять рассылку ошибкой парсинга сущностей.
+
+    Сообщение с картинкой (message.photo) пересылается через send_photo с
+    той же подписью, не send_message — иначе картинка терялась бы молча,
+    а caption ушёл бы как обычный текст без неё."""
+    text = _broadcast_source_text(message)
     users = await UserRepository(session).list_onboarded()
     sent = 0
     for user in users:
         try:
-            await bot.send_message(user.telegram_id, text, parse_mode=None)
+            if message.photo:
+                await bot.send_photo(user.telegram_id, message.photo[-1].file_id, caption=text, parse_mode=None)
+            else:
+                await bot.send_message(user.telegram_id, text, parse_mode=None)
             sent += 1
         except TelegramAPIError:
             logger.warning("broadcast: failed to notify user %s", user.telegram_id, exc_info=True)
@@ -158,7 +177,7 @@ async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, text: s
 
 @router.message(AdminStates.waiting_for_broadcast_text)
 async def handle_admin_broadcast_text(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message.text)
+    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message)
 
     await state.clear()
     await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
@@ -198,7 +217,12 @@ async def handle_admin_dm_text(message: Message, state: FSMContext, session: Asy
     user = await UserRepository(session).get_by_id(data["admin_target_user_id"])
 
     try:
-        await message.bot.send_message(user.telegram_id, message.text, parse_mode=None)
+        if message.photo:
+            await message.bot.send_photo(
+                user.telegram_id, message.photo[-1].file_id, caption=message.caption, parse_mode=None,
+            )
+        else:
+            await message.bot.send_message(user.telegram_id, message.text, parse_mode=None)
         await message.answer(texts.ADMIN_DM_DONE)
     except TelegramAPIError:
         await message.answer(texts.ADMIN_DM_FAILED)
@@ -377,10 +401,14 @@ async def handle_weekly_digest_reply(message: Message, state: FSMContext, sessio
         await message.answer(texts.ADMIN_WEEKLY_DIGEST_EXPIRED.format(expires_at=deadline.strftime("%d.%m %H:%M")))
         return
 
-    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message.text)
+    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message)
     # Только при реальной рассылке — просроченный ответ (ветка above) сюда
     # не доходит, иначе last_digest_sent_at сдвигался бы неделя за неделей
-    # без единой настоящей отправки пользователям.
-    await WeeklyDigestRepository(session).record(sent_at=now, text=message.text, recipients_count=sent)
+    # без единой настоящей отправки пользователям. text — из того же
+    # источника, что и сама рассылка (_broadcast_source_text): у дайджеста
+    # с картинкой message.text был бы None, а колонка text NOT NULL.
+    await WeeklyDigestRepository(session).record(
+        sent_at=now, text=_broadcast_source_text(message) or "", recipients_count=sent,
+    )
     await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
