@@ -519,3 +519,62 @@ export async function updateTimerPreferences(
   }
   return (await response.json()) as TimerPreferences;
 }
+
+/** Три переключаемые метрики лидерборда (issue #67) — вкладки одного
+ * экрана, не три отдельных. */
+export type LeaderboardMetric = "max_reps" | "max_weight" | "total_volume";
+export type LeaderboardGender = "all" | "male" | "female";
+/** Ступени ГТО для взрослых (см. app.domain.leaderboard.AGE_BUCKETS) —
+ * "all" здесь и на бэкенде означает "без фильтра по возрасту". */
+export type LeaderboardAgeBucket = "all" | "18_29" | "30_39" | "40_49" | "50_59" | "60_69" | "70_plus";
+
+/** Одна строка лидерборда — display_name уже "Аноним" вместо null (веб-роут
+ * подставляет текст сам, см. app/web/routes.py). */
+export interface LeaderboardEntry {
+  rank: number;
+  display_name: string;
+  value: string;
+  is_current_user: boolean;
+}
+
+/** GET /api/leaderboard — entries содержит топ-N плюс, если он вне топа,
+ * отдельной строкой в конце — самого запрашивающего пользователя
+ * (is_current_user=true у ровно одной строки, либо ни у одной).
+ * my_display_name — текущая настройка имени для поля ввода на этом же
+ * экране. */
+export interface LeaderboardData {
+  metric: LeaderboardMetric;
+  entries: LeaderboardEntry[];
+  my_display_name: string | null;
+  my_rank: number | null;
+}
+
+export async function fetchLeaderboard(
+  initDataRaw: string,
+  metric: LeaderboardMetric,
+  gender: LeaderboardGender,
+  ageBucket: LeaderboardAgeBucket,
+): Promise<LeaderboardData> {
+  return apiGet<LeaderboardData>(
+    `/api/leaderboard?metric=${metric}&gender=${gender}&age_bucket=${ageBucket}`,
+    initDataRaw,
+  );
+}
+
+export async function updateLeaderboardDisplayName(
+  initDataRaw: string,
+  displayName: string | null,
+): Promise<{ display_name: string | null }> {
+  const response = await fetch("/api/leaderboard/display-name", {
+    method: "PUT",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  if (!response.ok) {
+    throw new Error(`PUT /api/leaderboard/display-name failed: ${response.status}`);
+  }
+  return (await response.json()) as { display_name: string | null };
+}

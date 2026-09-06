@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
@@ -21,6 +22,7 @@ from app.db.models import ActiveTimerType, BlockType, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
+from app.db.repositories.leaderboard import LeaderboardRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -37,6 +39,7 @@ from app.domain.constants import (
     VOLUME_BLOCK,
     EquipmentType,
 )
+from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
 from app.domain.progression import rollback_target
 from app.domain.reports import (
     EquipmentProgress,
@@ -66,6 +69,10 @@ from app.web.schemas import (
     HistoryEditRequest,
     HistoryEntryResponse,
     HistoryResponse,
+    LeaderboardDisplayNameResponse,
+    LeaderboardDisplayNameUpdateRequest,
+    LeaderboardEntryResponse,
+    LeaderboardResponse,
     PaymentLinkResponse,
     ProfileResponse,
     ProgressPointResponse,
@@ -1262,3 +1269,70 @@ async def update_timer_preferences(
         user.id, field=field, duration_seconds=body.duration_seconds,
     )
     return _resolve_timer_preferences(updated)
+
+
+# Текст для NULL leaderboard_display_name — форматирование, не доменное
+# правило (issue #67), поэтому константа здесь, а не в app/domain/leaderboard.py.
+_ANONYMOUS_LABEL = "Аноним"
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponse)
+async def get_leaderboard(
+    metric: Literal["max_reps", "max_weight", "total_volume"] = Query(...),
+    gender: Literal["all", "male", "female"] = Query(default="all"),
+    age_bucket: str = Query(default="all"),
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LeaderboardResponse:
+    """Вкладка "Лидерборд" Mini App (issue #67) — три метрики (переключаются
+    значением metric на одном и том же экране, не отдельными эндпойнтами),
+    с необязательным фильтром по полу/возрастной категории (ступени ГТО,
+    см. app.domain.leaderboard.AGE_BUCKETS). Своя строка (is_current_user)
+    отдаётся LeaderboardRepository.top() одним проходом, даже если
+    пользователь вне топ-N — см. докстринг репозитория."""
+    if age_bucket != "all" and age_bucket not in AGE_BUCKETS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid age_bucket")
+
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    requesting_user_id = user.id if user is not None else None
+
+    entries = await LeaderboardRepository(session).top(
+        metric=LeaderboardMetric(metric),
+        gender=None if gender == "all" else gender,
+        age_bucket=None if age_bucket == "all" else age_bucket,
+        requesting_user_id=requesting_user_id,
+        limit=LEADERBOARD_TOP_LIMIT,
+    )
+    my_rank = next((entry.rank for entry in entries if entry.is_current_user), None)
+
+    return LeaderboardResponse(
+        metric=metric,
+        entries=[
+            LeaderboardEntryResponse(
+                rank=entry.rank,
+                display_name=entry.display_name or _ANONYMOUS_LABEL,
+                value=entry.value,
+                is_current_user=entry.is_current_user,
+            )
+            for entry in entries
+        ],
+        my_display_name=user.leaderboard_display_name if user is not None else None,
+        my_rank=my_rank,
+    )
+
+
+@router.put("/leaderboard/display-name", response_model=LeaderboardDisplayNameResponse)
+async def update_leaderboard_display_name(
+    body: LeaderboardDisplayNameUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LeaderboardDisplayNameResponse:
+    """Пустая строка нормализуется в None здесь же — тот же результат, что
+    явный null от клиента: "анонимно" (issue #67)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+
+    display_name = body.display_name.strip() if body.display_name else None
+    updated = await UserRepository(session).set_leaderboard_display_name(user.id, display_name or None)
+    return LeaderboardDisplayNameResponse(display_name=updated.leaderboard_display_name)

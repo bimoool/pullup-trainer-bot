@@ -461,3 +461,43 @@ class BackdateSubmitRequest(BaseModel):
     block_b_equipment_item_id: int | None = None
     comment: str | None = None
     confirm_anomalies: bool = False
+
+
+class LeaderboardEntryResponse(BaseModel):
+    """Одна строка лидерборда (issue #67) — display_name уже подставлен
+    "Аноним" вместо NULL на уровне веб-роута (это форматирование, не
+    доменное правило). value — Decimal вне зависимости от метрики (для
+    max_reps/total_volume это целое число, сериализуется тем же способом,
+    что и остальные Decimal-поля проекта)."""
+
+    rank: int
+    display_name: str
+    value: Decimal
+    is_current_user: bool
+
+
+class LeaderboardResponse(BaseModel):
+    """GET /api/leaderboard?metric=...&gender=...&age_bucket=... — entries
+    содержит топ-N плюс, если он вне топа, отдельной строкой в конце — самого
+    запрашивающего пользователя (is_current_user=True у ровно одной строки,
+    либо ни у одной, если он не онбордился или не входит в выбранный
+    фильтр). my_display_name — текущая настройка имени пользователя (для
+    поля ввода на этом же экране), не зависит от entries."""
+
+    metric: str
+    entries: list[LeaderboardEntryResponse] = Field(default_factory=list)
+    my_display_name: str | None = None
+    my_rank: int | None = None
+
+
+class LeaderboardDisplayNameUpdateRequest(BaseModel):
+    """PUT /api/leaderboard/display-name — всегда перезаписывает целиком
+    (в отличие от WorkoutSubmitRequest, где None у части полей значит
+    "не трогать"). Пустая строка нормализуется в None на уровне роута —
+    тот же результат, что и явный null, "анонимно"."""
+
+    display_name: str | None = Field(default=None, max_length=64)
+
+
+class LeaderboardDisplayNameResponse(BaseModel):
+    display_name: str | None
