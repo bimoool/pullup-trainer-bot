@@ -90,3 +90,13 @@ class UserRepository:
         setattr(user, field, duration_seconds)
         await self._session.flush()
         return user
+
+    async def set_leaderboard_display_name(self, user_id: int, display_name: str | None) -> User:
+        """В отличие от update_profile, None здесь валидное значение —
+        "стать анонимным" (issue #67), не "пропустить поле" — поэтому
+        отдельный метод, а не переиспользование update_profile с его
+        семантикой частичного обновления."""
+        user = await self._session.get_one(User, user_id)
+        user.leaderboard_display_name = display_name
+        await self._session.flush()
+        return user

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
 import { HistoryScreen } from "./HistoryScreen";
+import { LeaderboardScreen } from "./LeaderboardScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
 import { SubscriptionScreen } from "./SubscriptionScreen";
@@ -17,13 +18,15 @@ type LoadState =
 /** Базовая навигация (issue #45, часть 3) — задел под структуру, не
  * перенос всего функционала бота: разделы добавляются одной записью в
  * NAV_TABS + веткой в рендере ниже (issue #50 добавила "История"/"Прогресс";
- * issue #57 п.1 вынесла "Подписку" из "Профиля" в свою вкладку). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription";
+ * issue #57 п.1 вынесла "Подписку" из "Профиля" в свою вкладку; issue #67
+ * добавила "Лидерборд"). */
+type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "leaderboard";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
   { key: "progress", icon: "📈", label: "Прогресс" },
+  { key: "leaderboard", icon: "🏆", label: "Лидерборд" },
   { key: "profile", icon: "👤", label: "Профиль" },
   { key: "subscription", icon: "⭐", label: "Подписка" },
 ];
@@ -154,6 +157,7 @@ export function App() {
       )}
       {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
+      {state.data.is_onboarded && tab === "leaderboard" && <LeaderboardScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "profile" && (
         <ProfileScreen initDataRaw={state.initDataRaw} onOpenSubscription={() => setTab("subscription")} />
       )}

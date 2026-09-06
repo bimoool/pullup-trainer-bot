@@ -512,3 +512,109 @@ input[type="number"] {
   padding: 14px 16px;
   margin: 16px 0;
 }
+
+.leaderboard-tab {
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--tg-secondary-bg-color);
+  color: var(--tg-text-color);
+  cursor: pointer;
+}
+
+.leaderboard-tab-active {
+  background: var(--tg-button-color);
+  color: var(--tg-button-text-color);
+}
+
+.leaderboard-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.leaderboard-select {
+  flex: 1;
+  min-width: 130px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(127, 127, 127, 0.25);
+  background: var(--tg-bg-color);
+  color: var(--tg-text-color);
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.leaderboard-name-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1.5px solid rgba(127, 127, 127, 0.25);
+  background: var(--tg-bg-color);
+  color: var(--tg-text-color);
+  padding: 10px 12px;
+  font-size: 15px;
+  margin: 8px 0;
+}
+
+.leaderboard-save-button {
+  border: none;
+  border-radius: 10px;
+  background: var(--tg-button-color);
+  color: var(--tg-button-text-color);
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leaderboard-save-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--tg-secondary-bg-color);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.leaderboard-row-own {
+  background: color-mix(in srgb, var(--tg-button-color) 18%, var(--tg-secondary-bg-color) 82%);
+  font-weight: 700;
+}
+
+.leaderboard-rank {
+  width: 34px;
+  color: var(--tg-subtitle-text-color);
+  flex-shrink: 0;
+}
+
+.leaderboard-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-value {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-gap {
+  text-align: center;
+  color: var(--tg-hint-color);
+  padding: 2px 0;
+}

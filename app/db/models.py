@@ -125,6 +125,12 @@ class User(Base):
     rest_seconds_block_a: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     rest_seconds_block_b: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     big_break_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Лидерборд (issue #67) — NULL значит "анонимно", единственное и
+    # дефолтное состояние, пока пользователь явно не задал имя. Явный отказ
+    # ("быть анонимным" после того, как имя уже было задано) — это то же
+    # самое NULL, отдельного boolean-флага сознательно нет (см. план в
+    # issue #67).
+    leaderboard_display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
