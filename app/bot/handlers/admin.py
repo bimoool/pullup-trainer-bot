@@ -5,7 +5,7 @@ from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
@@ -22,6 +22,7 @@ from app.bot.keyboards import (
     payment_link_keyboard,
     profile_keyboard,
 )
+from app.bot.middlewares import MediaGroupMiddleware
 from app.bot.states import AdminStates
 from app.config import settings
 from app.db.models import User
@@ -37,6 +38,12 @@ from app.services.subscription import SubscriptionService
 logger = logging.getLogger(__name__)
 
 router = Router()
+# Только альбомы (media_group_id), долетевшие до этого роутера — рассылка
+# всем (handle_admin_broadcast_text), еженедельный дайджест
+# (handle_weekly_digest_reply) и личное сообщение из карточки пользователя
+# (handle_admin_dm_text) читают несколько фото через data["album"] (issue
+# #72), остальные хендлеры не завязаны на photo и не замечают буферизацию.
+router.message.outer_middleware(MediaGroupMiddleware())
 
 
 def _is_admin(telegram_id: int) -> bool:
@@ -149,7 +156,20 @@ def _broadcast_source_text(message: Message) -> str | None:
     return message.text or message.caption
 
 
-async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, message: Message) -> tuple[int, int]:
+def _album_photo_file_ids(album: list[Message]) -> list[str]:
+    return [m.photo[-1].file_id for m in album if m.photo]
+
+
+def _album_caption(album: list[Message]) -> str | None:
+    """Telegram кладёт подпись альбома только в ОДНО из его сообщений (не
+    обязательно первое по порядку получения) — ищем её по всем частям, а не
+    только у той, что дошла до буфера первой (см. MediaGroupMiddleware)."""
+    return next((m.caption for m in album if m.caption), None)
+
+
+async def _broadcast_to_onboarded_users(
+    bot: Bot, session: AsyncSession, message: Message, album: list[Message] | None = None,
+) -> tuple[int, int]:
     """Общий механизм рассылки — используется и ручной "📢 Рассылка всем"
     (handle_admin_broadcast_text), и еженедельным дайджестом
     (handle_weekly_digest_reply, app/workers/weekly_digest.py решает КОГДА
@@ -159,14 +179,27 @@ async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, message
 
     Сообщение с картинкой (message.photo) пересылается через send_photo с
     той же подписью, не send_message — иначе картинка терялась бы молча,
-    а caption ушёл бы как обычный текст без неё."""
-    text = _broadcast_source_text(message)
+    а caption ушёл бы как обычный текст без неё.
+
+    Несколько фото в одной рассылке (album, буферизован MediaGroupMiddleware
+    по media_group_id, issue #72) — send_media_group с caption на первом
+    элементе массива, Telegram показывает её как общую подпись альбома;
+    caption на остальных элементах Telegram молча игнорирует, если бы он
+    там был — не только на первом фото по отдельности (был бы старый баг:
+    альбом уходил как одно фото с подписью, остальные без текста)."""
+    photos = _album_photo_file_ids(album) if album else ([message.photo[-1].file_id] if message.photo else [])
+    text = _album_caption(album) if album else _broadcast_source_text(message)
     users = await UserRepository(session).list_onboarded()
     sent = 0
     for user in users:
         try:
-            if message.photo:
-                await bot.send_photo(user.telegram_id, message.photo[-1].file_id, caption=text, parse_mode=None)
+            if len(photos) > 1:
+                media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode=None)] + [
+                    InputMediaPhoto(media=file_id) for file_id in photos[1:]
+                ]
+                await bot.send_media_group(user.telegram_id, media)
+            elif photos:
+                await bot.send_photo(user.telegram_id, photos[0], caption=text, parse_mode=None)
             else:
                 await bot.send_message(user.telegram_id, text, parse_mode=None)
             sent += 1
@@ -176,8 +209,10 @@ async def _broadcast_to_onboarded_users(bot: Bot, session: AsyncSession, message
 
 
 @router.message(AdminStates.waiting_for_broadcast_text)
-async def handle_admin_broadcast_text(message: Message, state: FSMContext, session: AsyncSession) -> None:
-    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message)
+async def handle_admin_broadcast_text(
+    message: Message, state: FSMContext, session: AsyncSession, album: list[Message] | None = None,
+) -> None:
+    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message, album=album)
 
     await state.clear()
     await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
@@ -212,15 +247,26 @@ async def handle_admin_dm_template(callback: CallbackQuery) -> None:
 
 
 @router.message(AdminStates.waiting_for_dm_text)
-async def handle_admin_dm_text(message: Message, state: FSMContext, session: AsyncSession) -> None:
+async def handle_admin_dm_text(
+    message: Message, state: FSMContext, session: AsyncSession, album: list[Message] | None = None,
+) -> None:
     data = await state.get_data()
     user = await UserRepository(session).get_by_id(data["admin_target_user_id"])
 
+    # Та же буферизация альбома по media_group_id (issue #72), что и у
+    # рассылки — без неё несколько фото в личном сообщении ушли бы
+    # получателю отдельными сообщениями, не альбомом с общей подписью.
+    photos = _album_photo_file_ids(album) if album else ([message.photo[-1].file_id] if message.photo else [])
+    caption = _album_caption(album) if album else message.caption
+
     try:
-        if message.photo:
-            await message.bot.send_photo(
-                user.telegram_id, message.photo[-1].file_id, caption=message.caption, parse_mode=None,
-            )
+        if len(photos) > 1:
+            media = [InputMediaPhoto(media=photos[0], caption=caption, parse_mode=None)] + [
+                InputMediaPhoto(media=file_id) for file_id in photos[1:]
+            ]
+            await message.bot.send_media_group(user.telegram_id, media)
+        elif photos:
+            await message.bot.send_photo(user.telegram_id, photos[0], caption=caption, parse_mode=None)
         else:
             await message.bot.send_message(user.telegram_id, message.text, parse_mode=None)
         await message.answer(texts.ADMIN_DM_DONE)
@@ -389,7 +435,9 @@ async def handle_admin_test_payment(callback: CallbackQuery, session: AsyncSessi
 
 
 @router.message(AdminStates.waiting_for_weekly_digest_text)
-async def handle_weekly_digest_reply(message: Message, state: FSMContext, session: AsyncSession) -> None:
+async def handle_weekly_digest_reply(
+    message: Message, state: FSMContext, session: AsyncSession, album: list[Message] | None = None,
+) -> None:
     data = await state.get_data()
     sent_at = datetime.fromisoformat(data["weekly_digest_reminder_sent_at"])
     deadline = sent_at + timedelta(hours=WEEKLY_DIGEST_REPLY_DEADLINE_HOURS)
@@ -401,14 +449,13 @@ async def handle_weekly_digest_reply(message: Message, state: FSMContext, sessio
         await message.answer(texts.ADMIN_WEEKLY_DIGEST_EXPIRED.format(expires_at=deadline.strftime("%d.%m %H:%M")))
         return
 
-    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message)
+    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message, album=album)
     # Только при реальной рассылке — просроченный ответ (ветка above) сюда
     # не доходит, иначе last_digest_sent_at сдвигался бы неделя за неделей
     # без единой настоящей отправки пользователям. text — из того же
-    # источника, что и сама рассылка (_broadcast_source_text): у дайджеста
-    # с картинкой message.text был бы None, а колонка text NOT NULL.
-    await WeeklyDigestRepository(session).record(
-        sent_at=now, text=_broadcast_source_text(message) or "", recipients_count=sent,
-    )
+    # источника, что и сама рассылка (_broadcast_source_text/_album_caption):
+    # у дайджеста с картинкой message.text был бы None, а колонка text NOT NULL.
+    text = (_album_caption(album) if album else _broadcast_source_text(message)) or ""
+    await WeeklyDigestRepository(session).record(sent_at=now, text=text, recipients_count=sent)
     await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
