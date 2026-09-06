@@ -138,6 +138,31 @@ class ProfileResponse(BaseModel):
     days_since_last_workout: int | None = None
 
 
+class GtoResponse(BaseModel):
+    """GET /api/gto (issue #71) — разряд ГТО по подтягиванию, отдельная
+    концепция от обычных ачивок (app.domain.gto, не AchievementRepository):
+    статус, а не факт истории, всегда пересчитывается на лету из текущего
+    пола/возраста/лучшего max_reps, ничего не хранится в БД.
+
+    applicable=False — рассчитать нечего, reason объясняет почему (см.
+    app.domain.gto.GtoStatus для полного списка причин: only_male,
+    missing_gender/missing_birth_date, age_out_of_range, norm_data_missing,
+    no_workouts) — фронтенд показывает соответствующий текст, а не молчаливый
+    пустой раздел. Остальные поля заполнены только когда applicable=True."""
+
+    applicable: bool
+    reason: str | None = None
+    age: int | None = None
+    step_number: int | None = None
+    rank: str | None = None
+    best_max_reps: int | None = None
+    bronze_threshold: int | None = None
+    silver_threshold: int | None = None
+    gold_threshold: int | None = None
+    next_rank: str | None = None
+    reps_to_next_rank: int | None = None
+
+
 class HistoryEntryResponse(BaseModel):
     """Одна тренировка в списке "История" (issue #50, волна 1) — тот же
     набор фактов, что печатает app.bot.handlers.history.format_history_entry,
