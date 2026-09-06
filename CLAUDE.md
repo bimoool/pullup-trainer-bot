@@ -586,6 +586,32 @@ API — `PUT/GET/DELETE /api/workout/draft` (`app/web/routes.py`,
   докстринг `recalculate_volume_block` явно отделяет, что построено на
   принципах прогрессивной перегрузки, а что — собственный выбор чисел).
 
+## Известный класс бага: `message.text` — `None` у сообщения с картинкой
+
+Прод-инцидент (issue #69): рассылка "📢 Рассылка всем" и еженедельный
+дайджест (`handle_weekly_digest_reply`) брали текст из `message.text`
+напрямую и передавали его в `bot.send_message`. Когда админ присылает
+сообщение с картинкой, Telegram кладёт подпись в `message.caption`, а
+`message.text` остаётся `None` — `aiogram`/pydantic отклоняет
+`SendMessage(text=None)` валидацией (`1 validation error for SendMessage:
+text — Input should be a valid string`), рассылка падала целиком, ни один
+пользователь не получал сообщение. Тот же провал ждал
+`WeeklyDigestRepository.record` (колонка `text` — `NOT NULL`).
+
+Фикс — `app/bot/handlers/admin.py::_broadcast_source_text` (`message.text
+or message.caption`) как единственный источник текста для рассылки, и
+ветвление на `bot.send_photo(..., caption=...)`, если в сообщении есть
+`message.photo` — иначе картинка терялась бы молча, а подпись ушла бы как
+обычный текст без неё. Тот же паттерн (`message.text` без учёта
+`message.photo`/`message.caption`) правился заодно и в `handle_admin_dm_text`
+(личное сообщение пользователю из карточки в `/admin`) — тот же класс
+бага, тот же вызывающий код мог получить картинку так же легко.
+
+**Правило**: в любом хендлере, принимающем свободный текст от админа для
+пересылки другому пользователю, не читать `message.text` напрямую, если
+сообщение может прийти с вложением — проверять `message.photo` и
+использовать `message.caption` как текст в этом случае.
+
 ## Обновление этого файла
 
 Держать живым: после значимой новой фичи или явно установленного нового

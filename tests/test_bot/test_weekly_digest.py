@@ -19,8 +19,8 @@ from datetime import UTC, datetime, timedelta
 import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.methods import SendMessage
-from aiogram.types import Chat, Message, Update
+from aiogram.methods import SendMessage, SendPhoto
+from aiogram.types import Chat, Message, PhotoSize, Update
 from aiogram.types import User as TgUser
 
 from app.bot import texts
@@ -41,6 +41,19 @@ def _message_update(*, telegram_id: int, text: str) -> Update:
             chat=Chat(id=telegram_id, type="private"),
             from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
             text=text,
+        ),
+    )
+
+
+def _photo_update(*, telegram_id: int, caption: str) -> Update:
+    return Update(
+        update_id=1,
+        message=Message(
+            message_id=101, date=datetime.now(UTC),
+            chat=Chat(id=telegram_id, type="private"),
+            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
+            photo=[PhotoSize(file_id="photo1", file_unique_id="u1", width=100, height=100)],
+            caption=caption,
         ),
     )
 
@@ -153,6 +166,35 @@ async def test_reply_within_deadline_broadcasts_via_shared_mechanism(
     last_sent_at = await WeeklyDigestRepository(session).get_last_sent_at()
     assert last_sent_at is not None
     assert (datetime.now(UTC) - last_sent_at) < timedelta(seconds=10)
+
+
+async def test_reply_with_photo_broadcasts_via_send_photo_not_crash(
+    session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
+):
+    """Прод-инцидент issue #69: дайджест с картинкой падал на
+    `SendMessage.text=None`, потому что ответ-с-фото имеет message.text=None
+    (подпись лежит в message.caption) и код передавал его напрямую в
+    bot.send_message. Заодно WeeklyDigestRepository.record больше не
+    пытается записать text=None в NOT NULL колонку."""
+    admin = await _make_admin(session, 8115)
+    monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
+    onboarded = await UserRepository(session).create(telegram_id=8116, username="onboarded_user_3")
+    await UserRepository(session).complete_onboarding(onboarded.id, datetime.now(UTC))
+
+    await send_weekly_digest_reminder(bot, dispatcher, session=session)
+    await dispatcher.feed_update(
+        bot, _photo_update(telegram_id=admin.telegram_id, caption="Запустили Mini App! 🚀"), session=session,
+    )
+
+    delivered = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendPhoto) and m.chat_id == onboarded.telegram_id
+    ]
+    assert len(delivered) == 1
+    assert delivered[0].caption == "Запустили Mini App! 🚀"
+
+    last_sent_at = await WeeklyDigestRepository(session).get_last_sent_at()
+    assert last_sent_at is not None
 
 
 async def test_reply_after_deadline_is_skipped_silently_not_broadcast(
