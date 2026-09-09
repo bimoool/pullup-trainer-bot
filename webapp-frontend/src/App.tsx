@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
 import { HistoryScreen } from "./HistoryScreen";
-import { LeaderboardScreen } from "./LeaderboardScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
 import { SubscriptionScreen } from "./SubscriptionScreen";
@@ -17,18 +16,24 @@ type LoadState =
 
 /** Базовая навигация (issue #45, часть 3) — задел под структуру, не
  * перенос всего функционала бота: разделы добавляются одной записью в
- * NAV_TABS + веткой в рендере ниже (issue #50 добавила "История"/"Прогресс";
- * issue #57 п.1 вынесла "Подписку" из "Профиля" в свою вкладку; issue #67
- * добавила "Лидерборд"). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "leaderboard";
+ * NAV_TABS + веткой в рендере ниже (issue #50 добавила "История"/"Прогресс").
+ *
+ * issue #74, волна 4 — меню разрослось до 6 пунктов (после issue #57 п.1
+ * "Подписки" и issue #67 "Лидерборда"), названия переставали помещаться.
+ * Двухуровневая структура вместо этого: "Лидерборд" переехал под-разделом
+ * внутри "Прогресса" (см. ProgressScreen.tsx — логически ближе, чем
+ * "Профиль", обе вкладки про динамику результатов), "Подписка" осталась
+ * отдельным экраном, но без своего пункта меню — открывается только кнопкой
+ * с "Профиля" (тот же принцип, что у AchievementsScreen: "subscription" —
+ * по-прежнему валидное значение Tab, просто не перечислено в NAV_TABS, так
+ * что назад ведёт explicit onBack, не переключение вкладки). */
+type Tab = "workout" | "history" | "progress" | "profile" | "subscription";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
   { key: "progress", icon: "📈", label: "Прогресс" },
-  { key: "leaderboard", icon: "🏆", label: "Лидерборд" },
   { key: "profile", icon: "👤", label: "Профиль" },
-  { key: "subscription", icon: "⭐", label: "Подписка" },
 ];
 
 type TelegramWebApp = { initData?: string; version?: string; platform?: string };
@@ -157,11 +162,12 @@ export function App() {
       )}
       {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
-      {state.data.is_onboarded && tab === "leaderboard" && <LeaderboardScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "profile" && (
         <ProfileScreen initDataRaw={state.initDataRaw} onOpenSubscription={() => setTab("subscription")} />
       )}
-      {state.data.is_onboarded && tab === "subscription" && <SubscriptionScreen initDataRaw={state.initDataRaw} />}
+      {state.data.is_onboarded && tab === "subscription" && (
+        <SubscriptionScreen initDataRaw={state.initDataRaw} onBack={() => setTab("profile")} />
+      )}
 
       {state.data.is_onboarded && (
         <Tabbar>

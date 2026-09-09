@@ -1,6 +1,7 @@
 import { useEffect, useState, type PointerEvent } from "react";
 
 import { fetchAnalytics, fetchProgress, type AnalyticsData, type EquipmentProgress, type ProgressPoint } from "./api";
+import { LeaderboardScreen } from "./LeaderboardScreen";
 
 type Props = { initDataRaw: string };
 
@@ -239,12 +240,27 @@ function AnalyticsSection({ analytics }: { analytics: AnalyticsData }) {
   );
 }
 
+type ProgressSection = "chart" | "leaderboard";
+
+const PROGRESS_SECTIONS: { key: ProgressSection; label: string }[] = [
+  { key: "chart", label: "📈 График" },
+  { key: "leaderboard", label: "🏆 Лидерборд" },
+];
+
 /** Вкладка "Прогресс" (issue #50, волна 2; аналитика — issue #66, п.2) —
  * цель за подход по тренировкам во времени для блока A и Б (GET /api/progress,
  * прогрессия уже посчитана на бэкенде, здесь не пересчитывается), плюс
  * недельная динамика/прогресс на снаряде/сводка по циклам (GET /api/analytics,
- * те же app.domain.reports вызовы, что кнопки бота). */
+ * те же app.domain.reports вызовы, что кнопки бота).
+ *
+ * "Лидерборд" (issue #67) переехал сюда под-разделом (issue #74, волна 4) —
+ * нижнее меню разрослось до 6 пунктов и названия переставали помещаться;
+ * логически ближе к "Прогрессу", чем к "Профилю" — оба про динамику
+ * результатов, просто свою и относительно других. LeaderboardScreen
+ * переиспользуется целиком, не копируется — тот же приём, что
+ * AchievementsScreen внутри "Профиля". */
 export function ProgressScreen({ initDataRaw }: Props) {
+  const [section, setSection] = useState<ProgressSection>("chart");
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
   useEffect(() => {
@@ -267,25 +283,44 @@ export function ProgressScreen({ initDataRaw }: Props) {
     };
   }, [initDataRaw]);
 
-  if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю прогресс…</p>;
-  }
-  if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить прогресс: {state.message}</p>;
-  }
-
   return (
     <div>
       <p className="plan-title">Прогресс</p>
-      {state.points.length < 2 ? (
-        <p className="screen-message">Пока недостаточно тренировок для графика — нужно хотя бы две.</p>
+
+      <div className="workout-mode-buttons">
+        {PROGRESS_SECTIONS.map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            className={option.key === section ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
+            onClick={() => setSection(option.key)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {section === "leaderboard" ? (
+        <LeaderboardScreen initDataRaw={initDataRaw} />
       ) : (
         <>
-          <p className="hint">Цель за подход по тренировкам</p>
-          <LineChart points={state.points} />
+          {state.phase === "loading" && <p className="screen-message">Загружаю прогресс…</p>}
+          {state.phase === "error" && <p className="screen-message">Не удалось загрузить прогресс: {state.message}</p>}
+          {state.phase === "ready" && (
+            <>
+              {state.points.length < 2 ? (
+                <p className="screen-message">Пока недостаточно тренировок для графика — нужно хотя бы две.</p>
+              ) : (
+                <>
+                  <p className="hint">Цель за подход по тренировкам</p>
+                  <LineChart points={state.points} />
+                </>
+              )}
+              <AnalyticsSection analytics={state.analytics} />
+            </>
+          )}
         </>
       )}
-      <AnalyticsSection analytics={state.analytics} />
     </div>
   );
 }
