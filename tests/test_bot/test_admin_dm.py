@@ -4,11 +4,12 @@
 test_admin_grants.py. Плюс заготовка про инцидент (кнопка "⚠️ Использовать
 заготовку про инцидент" в приглашении ввести текст)."""
 
+import asyncio
 from datetime import UTC, datetime
 
 from aiogram import Bot, Dispatcher
-from aiogram.methods import SendMessage
-from aiogram.types import Chat, Message, Update
+from aiogram.methods import SendMediaGroup, SendMessage
+from aiogram.types import Chat, Message, PhotoSize, Update
 from aiogram.types import User as TgUser
 
 from app.bot import texts
@@ -27,6 +28,22 @@ def _message_update(*, telegram_id: int, text: str) -> Update:
             chat=Chat(id=telegram_id, type="private"),
             from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
             text=text,
+        ),
+    )
+
+
+def _album_photo_update(
+    *, telegram_id: int, message_id: int, media_group_id: str, file_id: str, caption: str | None = None,
+) -> Update:
+    return Update(
+        update_id=message_id,
+        message=Message(
+            message_id=message_id, date=datetime.now(UTC),
+            chat=Chat(id=telegram_id, type="private"),
+            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
+            photo=[PhotoSize(file_id=file_id, file_unique_id=f"u{file_id}", width=100, height=100)],
+            caption=caption,
+            media_group_id=media_group_id,
         ),
     )
 
@@ -123,6 +140,46 @@ async def test_dm_template_button_sends_template_to_admin_not_target(
         if isinstance(m, SendMessage) and m.chat_id == user.telegram_id and m.text == "Отредактированная заготовка"
     ]
     assert len(delivered) == 1
+
+
+async def test_dm_with_album_delivers_via_send_media_group_not_per_photo(
+    session, user: User, bot: Bot, dispatcher: Dispatcher, monkeypatch,
+):
+    """Тот же класс бага, что и в рассылке (issue #72) — DM тоже читает
+    message.photo и без буферизации по media_group_id отправил бы каждое
+    фото альбома отдельным DM (конкурентные задачи aiogram polling)."""
+    monkeypatch.setattr("app.bot.middlewares.ALBUM_DEBOUNCE_SECONDS", 0.05)
+
+    admin = await _make_admin(session, 8005)
+    monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=admin.telegram_id, data=f"admin_dm:{user.id}"), session=session,
+    )
+
+    media_group_id = "dm-album-72"
+    updates = [
+        _album_photo_update(
+            telegram_id=admin.telegram_id, message_id=301, media_group_id=media_group_id,
+            file_id="dm_photo_1", caption="Смотри!",
+        ),
+        _album_photo_update(
+            telegram_id=admin.telegram_id, message_id=302, media_group_id=media_group_id, file_id="dm_photo_2",
+        ),
+    ]
+    await asyncio.gather(*(dispatcher.feed_update(bot, u, session=session) for u in updates))
+
+    delivered_groups = [m for m in bot.session.sent_methods if isinstance(m, SendMediaGroup) and m.chat_id == user.telegram_id]
+    assert len(delivered_groups) == 1
+    [group] = delivered_groups
+    assert [item.media for item in group.media] == ["dm_photo_1", "dm_photo_2"]
+    assert group.media[0].caption == "Смотри!"
+
+    confirmations = [
+        m for m in bot.session.sent_methods
+        if isinstance(m, SendMessage) and m.chat_id == admin.telegram_id and m.text == texts.ADMIN_DM_DONE
+    ]
+    assert len(confirmations) == 1
 
 
 async def test_dm_denied_for_non_admin(session, user: User, bot: Bot, dispatcher: Dispatcher):
