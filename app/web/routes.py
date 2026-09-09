@@ -39,6 +39,7 @@ from app.domain.constants import (
     VOLUME_BLOCK,
     EquipmentType,
 )
+from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
 from app.domain.progression import rollback_target
 from app.domain.reports import (
@@ -63,6 +64,7 @@ from app.web.schemas import (
     CycleVolumeResponse,
     EquipmentInfo,
     EquipmentProgressResponse,
+    GtoResponse,
     HelloResponse,
     HistoryBlockDetail,
     HistoryEditDetailResponse,
@@ -173,6 +175,52 @@ async def get_profile(
         achievements=achievement_items,
         workouts_count=len(history),
         days_since_last_workout=days_since_last_workout,
+    )
+
+
+@router.get("/gto", response_model=GtoResponse)
+async def get_gto(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> GtoResponse:
+    """Разряд ГТО по подтягиванию (issue #71) — отдельная концепция от
+    обычных ачивок (app.domain.gto, не AchievementRepository): статус
+    пересчитывается на лету при каждом запросе из текущего пола/возраста
+    (app.db.models.User) и лучшего max_reps за всю историю, ничего не
+    пишется в БД (обратимый статус — снижение результата или смена
+    возрастной ступени меняют его в обе стороны, см. докстринг домена).
+
+    best_max_reps — тот же способ агрегации, что
+    app.services.achievement_checks.unlock_history_achievements уже
+    использует для MAX_REPS_PLUS_TEN: максимум по обоим блокам за всю
+    историю, не только блок A."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return GtoResponse(applicable=False, reason="not_onboarded")
+
+    records = await WorkoutRepository(session).list_records_for_user(user.id)
+    best_max_reps = (
+        max(max(r.block_a.log.max_reps, r.block_b.log.max_reps) for r in records) if records else None
+    )
+
+    status_ = calculate_gto_status(
+        gender=user.gender.value if user.gender is not None else None,
+        birth_date=user.birth_date,
+        best_max_reps=best_max_reps,
+        today=datetime.now(UTC).date(),
+    )
+    return GtoResponse(
+        applicable=status_.applicable,
+        reason=status_.reason,
+        age=status_.age,
+        step_number=status_.step_number,
+        rank=status_.rank.value if status_.rank is not None else None,
+        best_max_reps=status_.best_max_reps,
+        bronze_threshold=status_.bronze_threshold,
+        silver_threshold=status_.silver_threshold,
+        gold_threshold=status_.gold_threshold,
+        next_rank=status_.next_rank.value if status_.next_rank is not None else None,
+        reps_to_next_rank=status_.reps_to_next_rank,
     )
 
 

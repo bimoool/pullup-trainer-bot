@@ -135,6 +135,39 @@ export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse
   return apiGet<ProfileResponse>("/api/profile", initDataRaw);
 }
 
+/** GET /api/gto (issue #71) — разряд ГТО по подтягиванию, отдельная
+ * концепция от списка ачивок (AchievementItem выше): статус, не факт
+ * истории, пересчитывается на лету при каждом запросе (не хранится в БД,
+ * см. app/domain/gto.py — снижение результата или смена возрастной
+ * ступени меняют его в обе стороны).
+ *
+ * applicable=false — показывать нечего, reason объясняет почему:
+ * "not_onboarded"/"missing_birth_date" — профиль не заполнен;
+ * "only_male" — доступно только для мужского пола (женский норматив ГТО
+ * измеряет другое упражнение — вис лёжа на низкой перекладине, не
+ * сопоставим с обычными подтягиваниями на высокой, которые тренирует это
+ * приложение); "age_out_of_range" — младше 18; "norm_data_missing" —
+ * официальные нормативы для этой возрастной ступени ещё не подтверждены;
+ * "no_workouts" — ещё нет ни одной тренировки. rank/next_rank —
+ * "none"|"bronze"|"silver"|"gold", next_rank отсутствует уже на "gold". */
+export interface GtoStatus {
+  applicable: boolean;
+  reason: string | null;
+  age: number | null;
+  step_number: number | null;
+  rank: string | null;
+  best_max_reps: number | null;
+  bronze_threshold: number | null;
+  silver_threshold: number | null;
+  gold_threshold: number | null;
+  next_rank: string | null;
+  reps_to_next_rank: number | null;
+}
+
+export async function fetchGtoStatus(initDataRaw: string): Promise<GtoStatus> {
+  return apiGet<GtoStatus>("/api/gto", initDataRaw);
+}
+
 /** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
  * что печатает бот в app.bot.handlers.history.format_history_entry, только
  * структурированные под карточку. target_a/target_b заполнены только у
