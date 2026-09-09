@@ -4,7 +4,7 @@ app/db/repositories/leaderboard.py). Ожидаемые значения пос�
 ниже по каждому тесту, до запуска — тот же принцип, что и остальные тесты
 проекта (CLAUDE.md: "доказать, что тест реально ловит баг")."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.db.models import Gender
@@ -39,6 +39,7 @@ async def _record_workout(
     block_a_equipment_value: Decimal | None = None,
     block_b_equipment_type: EquipmentType = EquipmentType.BODYWEIGHT,
     block_b_equipment_value: Decimal | None = None,
+    performed_at: datetime | None = None,
 ):
     baseline = await BaselineRepository(session).create(
         user_id=user_id, performed_at=datetime.now(UTC), reps=10,
@@ -47,7 +48,7 @@ async def _record_workout(
     return await WorkoutRepository(session).record_workout(
         user_id=user_id,
         workout_set_id=workout_set.id,
-        performed_at=datetime.now(UTC),
+        performed_at=performed_at or datetime.now(UTC),
         block_a_reps=block_a,
         block_b_reps=block_b,
         block_a_equipment_type=block_a_equipment_type,
@@ -262,3 +263,70 @@ async def test_display_name_defaults_to_none_for_anonymous_user(session):
     )
     entry = next(e for e in entries if e.user_id == user.id)
     assert entry.display_name == "Крутой Перец"
+
+
+async def test_total_volume_period_week_excludes_older_workouts(session):
+    user = await _make_user(session, telegram_id=67014)
+    now = datetime.now(UTC)
+
+    # Внутри последних 7 дней: A = 12 + 30 = 42, B = 4 + 12 = 16, total = 58.
+    await _record_workout(
+        session, user.id,
+        block_a=BlockLog(working_reps=(10, 10, 10), max_reps=12),
+        block_b=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        performed_at=now - timedelta(days=2),
+    )
+    # 10 дней назад — вне недели, но внутри месяца: A = 12 + 30 = 42, B = 4 + 12 = 16, total = 58.
+    await _record_workout(
+        session, user.id,
+        block_a=BlockLog(working_reps=(10, 10, 10), max_reps=12),
+        block_b=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        performed_at=now - timedelta(days=10),
+    )
+    # 40 дней назад — вне месяца тоже: та же сумма, только для проверки "all".
+    await _record_workout(
+        session, user.id,
+        block_a=BlockLog(working_reps=(10, 10, 10), max_reps=12),
+        block_b=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        performed_at=now - timedelta(days=40),
+    )
+
+    week_entries = await LeaderboardRepository(session).top(
+        metric=LeaderboardMetric.TOTAL_VOLUME, gender=None, age_bucket=None,
+        requesting_user_id=None, period="week", limit=20,
+    )
+    assert next(e for e in week_entries if e.user_id == user.id).value == 58
+
+    month_entries = await LeaderboardRepository(session).top(
+        metric=LeaderboardMetric.TOTAL_VOLUME, gender=None, age_bucket=None,
+        requesting_user_id=None, period="month", limit=20,
+    )
+    assert next(e for e in month_entries if e.user_id == user.id).value == 116
+
+    all_time_entries = await LeaderboardRepository(session).top(
+        metric=LeaderboardMetric.TOTAL_VOLUME, gender=None, age_bucket=None,
+        requesting_user_id=None, period=None, limit=20,
+    )
+    assert next(e for e in all_time_entries if e.user_id == user.id).value == 174
+
+
+async def test_period_is_ignored_for_metrics_other_than_total_volume(session):
+    user = await _make_user(session, telegram_id=67015)
+    now = datetime.now(UTC)
+
+    # Единственная тренировка — 40 дней назад, вне любого period-окна.
+    await _record_workout(
+        session, user.id,
+        block_a=BlockLog(working_reps=(20, 20, 20), max_reps=25),
+        block_b=BlockLog(working_reps=(5, 5, 5, 5), max_reps=6),
+        performed_at=now - timedelta(days=40),
+    )
+
+    entries = await LeaderboardRepository(session).top(
+        metric=LeaderboardMetric.MAX_REPS, gender=None, age_bucket=None,
+        requesting_user_id=None, period="week", limit=20,
+    )
+    # period не должен отфильтровать эту строку для max_reps — он применяется
+    # только к total_volume (см. докстринг LeaderboardRepository.top).
+    entry = next(e for e in entries if e.user_id == user.id)
+    assert entry.value == 25

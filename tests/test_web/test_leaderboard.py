@@ -134,6 +134,20 @@ async def test_update_display_name_for_unknown_user_is_404(session):
     assert status_code == 404
 
 
+async def test_leaderboard_period_week_narrows_total_volume(session):
+    """issue #74, волна 2 — только смок-тест прокидывания query-параметра
+    через веб-роут (сама логика окна проверена репозиторными тестами,
+    tests/test_repositories/test_leaderboard_repository.py). Единственная
+    тренировка сделана только что — попадает в любое окно, period=week не
+    должен привести к ошибке/пустому ответу."""
+    user = await UserRepository(session).create(telegram_id=68008, username="volumer")
+    await _record_workout(session, user.id)
+
+    body = await _get(session, telegram_id=user.telegram_id, path="/api/leaderboard?metric=total_volume&period=week")
+    assert len(body["entries"]) == 1
+    assert body["entries"][0]["is_current_user"] is True
+
+
 async def test_max_weight_value_is_decimal_string(session):
     user = await UserRepository(session).create(telegram_id=68007, username="lifter")
     baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=10)

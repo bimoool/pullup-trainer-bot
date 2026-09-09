@@ -7,6 +7,7 @@ import {
   type LeaderboardData,
   type LeaderboardGender,
   type LeaderboardMetric,
+  type LeaderboardPeriod,
 } from "./api";
 
 type Props = { initDataRaw: string };
@@ -41,6 +42,16 @@ const AGE_BUCKET_OPTIONS: { key: LeaderboardAgeBucket; label: string }[] = [
   { key: "70_plus", label: "70+" },
 ];
 
+// Скользящее окно, не календарное (issue #74, волна 2) — см. пояснение у
+// LeaderboardPeriod в api.ts. Виден только на вкладке "Объём" (см. рендер
+// ниже) — для max_reps/max_weight период не имеет смысла и бэкенд его
+// игнорирует.
+const PERIOD_OPTIONS: { key: LeaderboardPeriod; label: string }[] = [
+  { key: "week", label: "Неделя" },
+  { key: "month", label: "Месяц" },
+  { key: "all", label: "Всё время" },
+];
+
 /** Целое число повторений/объёма отображается без дробной части даже если
  * бэкенд прислал его как Decimal-строку ("45" или "45.00") — вес, наоборот,
  * оставляем как есть (может быть дробным, "62.5"). */
@@ -60,6 +71,7 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
   const [metric, setMetric] = useState<LeaderboardMetric>("max_reps");
   const [gender, setGender] = useState<LeaderboardGender>("all");
   const [ageBucket, setAgeBucket] = useState<LeaderboardAgeBucket>("all");
+  const [period, setPeriod] = useState<LeaderboardPeriod>("all");
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
   const [nameInput, setNameInput] = useState("");
@@ -71,7 +83,7 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
     async function load() {
       setState({ phase: "loading" });
       try {
-        const data = await fetchLeaderboard(initDataRaw, metric, gender, ageBucket);
+        const data = await fetchLeaderboard(initDataRaw, metric, gender, ageBucket, period);
         if (!cancelled) {
           setState({ phase: "ready", data });
           setNameInput(data.my_display_name ?? "");
@@ -86,7 +98,7 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [initDataRaw, metric, gender, ageBucket]);
+  }, [initDataRaw, metric, gender, ageBucket, period]);
 
   async function handleSaveName() {
     setNameError(null);
@@ -121,6 +133,21 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
           </button>
         ))}
       </div>
+
+      {metric === "total_volume" && (
+        <div className="workout-mode-buttons">
+          {PERIOD_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={option.key === period ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
+              onClick={() => setPeriod(option.key)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="leaderboard-filters">
         <select

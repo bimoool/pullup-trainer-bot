@@ -56,6 +56,7 @@ class LeaderboardRepository:
         gender: str | None,
         age_bucket: str | None,
         requesting_user_id: int | None,
+        period: str | None = None,
         limit: int = 20,
     ) -> list[LeaderboardEntry]:
         """Топ-N по метрике плюс строка самого запрашивающего пользователя,
@@ -69,7 +70,14 @@ class LeaderboardRepository:
         эквивалентно фильтрации по пользователям, потому что gender/
         age_bucket зависят только от u, не от конкретного блока: либо все
         блоки пользователя проходят фильтр, либо ни одного (тогда
-        пользователь просто не появляется в agg через INNER JOIN)."""
+        пользователь просто не появляется в agg через INNER JOIN).
+
+        period — "week"/"month"/None (issue #74, волна 2), учитывается
+        только для TOTAL_VOLUME (для max_reps/max_weight период не имеет
+        смысла — это разовые рекорды, не сумма за интервал). Скользящее
+        окно (now() - interval), не календарное с понедельника/1 числа —
+        не даёт всем сразу обнулиться в полночь смены периода и не требует
+        отдельной ветки SQL под "с начала месяца"."""
         metric_expr = _METRIC_EXPR[metric]
         # equipment_type сравнивается с литералом 'weight' в тексте самого
         # SQL (не bind-параметром) — Postgres сам приводит строковый литерал
@@ -82,6 +90,16 @@ class LeaderboardRepository:
         # ≥3 подтягиваниях (target_b стартует с 3). Тот же _BEST_SET_EXPR,
         # что и у MAX_REPS, просто как условие фильтрации, а не агрегат.
         reps_threshold_filter = f"AND {_BEST_SET_EXPR} >= 3" if metric == LeaderboardMetric.MAX_WEIGHT else ""
+        # period приходит из фиксированного набора, проверенного вызывающей
+        # стороной (Literal в app/web/routes.py), не произвольный ввод
+        # пользователя — интервал безопасно подставить литералом в текст
+        # SQL, а не bind-параметром (INTERVAL не принимает обычный
+        # текстовый/числовой bind без явного CAST на стороне Postgres).
+        period_filter = ""
+        if metric == LeaderboardMetric.TOTAL_VOLUME and period == "week":
+            period_filter = "AND w.performed_at >= now() - interval '7 days'"
+        elif metric == LeaderboardMetric.TOTAL_VOLUME and period == "month":
+            period_filter = "AND w.performed_at >= now() - interval '30 days'"
 
         sql = f"""
             WITH agg AS (
@@ -99,6 +117,7 @@ class LeaderboardRepository:
                   )
                   {equipment_filter}
                   {reps_threshold_filter}
+                  {period_filter}
                 GROUP BY u.id, u.leaderboard_display_name
             ),
             ranked AS (
