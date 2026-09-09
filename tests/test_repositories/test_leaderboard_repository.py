@@ -144,6 +144,37 @@ async def test_max_weight_only_considers_weight_equipment_blocks(session):
     assert entry.value == Decimal("25.0")
 
 
+async def test_max_weight_excludes_blocks_with_fewer_than_three_reps(session):
+    user = await _make_user(session, telegram_id=67013)
+
+    # Тяжёлый вес (50 кг), но лучший подход блока — GREATEST(2, max(1,1,2))
+    # = 2 < 3: реального освоения веса не было (программа засчитывает
+    # переход на новый вес только при ≥3 подтягиваниях), не должен попасть
+    # в лидерборд по весу вовсе.
+    await _record_workout(
+        session, user.id,
+        block_a=BlockLog(working_reps=(10, 10, 10), max_reps=12),
+        block_b=BlockLog(working_reps=(1, 1, 2, 1), max_reps=2),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=Decimal("30.0"),
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("50.0"),
+    )
+    # Более лёгкий вес (10 кг), но лучший подход = GREATEST(4, max(3,3,3,3))
+    # = 4 >= 3 — должен засчитаться.
+    await _record_workout(
+        session, user.id,
+        block_a=BlockLog(working_reps=(10, 10, 10), max_reps=12),
+        block_b=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=Decimal("30.0"),
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("10.0"),
+    )
+
+    entries = await LeaderboardRepository(session).top(
+        metric=LeaderboardMetric.MAX_WEIGHT, gender=None, age_bucket=None, requesting_user_id=None, limit=20,
+    )
+    entry = next(e for e in entries if e.user_id == user.id)
+    assert entry.value == Decimal("10.0")
+
+
 async def test_gender_filter_excludes_other_gender(session):
     male = await _make_user(session, telegram_id=67006, gender=Gender.MALE)
     female = await _make_user(session, telegram_id=67007, gender=Gender.FEMALE)
