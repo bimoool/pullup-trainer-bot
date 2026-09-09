@@ -50,6 +50,7 @@ from app.domain.constants import (
     VOLUME_TARGET_CEILING,
     VOLUME_WORK_SETS_CEILING,
     EquipmentType,
+    VolumeGrowthReason,
 )
 from app.domain.electives import ELECTIVE_WEEK_WINDOW_DAYS, is_elective_allowed
 from app.domain.progression import (
@@ -257,6 +258,19 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
                 suggested_load=suggested_load, previous_load=previous_load,
             )
         await callback.message.answer(notice)
+
+    # Объяснение роста числа подходов блока на объём (issue #79) — ДО
+    # начала тренировки, не постфактум. is_deload_a исключён (разгрузка не
+    # трогает work_sets, target_a_state.work_sets_growth_reason всё равно
+    # был бы про прошлую обычную тренировку, показывать его сейчас, когда
+    # план на сегодня — разгрузка, было бы не в тему).
+    if not is_deload_a and target_a_state.work_sets_growth_reason is not None:
+        growth_notice = (
+            texts.WORK_SETS_GROWTH_STALL_NOTICE
+            if target_a_state.work_sets_growth_reason == VolumeGrowthReason.STALL
+            else texts.WORK_SETS_GROWTH_CEILING_NOTICE
+        )
+        await callback.message.answer(growth_notice)
 
     baseline_reps = None
     if not history:

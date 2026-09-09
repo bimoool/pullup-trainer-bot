@@ -46,6 +46,17 @@ export const STATUS_MESSAGES: Record<string, string> = {
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
 };
 
+// Тот же текст, что app.bot.texts.WORK_SETS_GROWTH_STALL_NOTICE/
+// WORK_SETS_GROWTH_CEILING_NOTICE (issue #79) — независимая копия строки,
+// как и весь остальной текст интерфейса (прямого шаринга Python↔TS в
+// проекте нет), причина одна и та же (plan.work_sets_growth_reason).
+const WORK_SETS_GROWTH_NOTICES: Record<string, string> = {
+  stall: "Несколько тренировок подряд без роста — добавлен ещё один подход, чтобы продолжить расти через объём.",
+  ceiling:
+    "Отличный результат — вы уперлись в потолок повторений за подход, поэтому цель снижена, " +
+    "а число подходов увеличено, чтобы продолжить расти дальше.",
+};
+
 function closeMiniApp() {
   (window as unknown as { Telegram?: { WebApp?: { close?: () => void } } }).Telegram?.WebApp?.close?.();
 }
@@ -456,6 +467,9 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
       <p className="plan-title">Текущий план</p>
       {plan.is_gap_rollback && (
         <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
+      )}
+      {plan.work_sets_growth_reason && (
+        <p className="gap-banner">{WORK_SETS_GROWTH_NOTICES[plan.work_sets_growth_reason]}</p>
       )}
 
       <div className="workout-mode-buttons">

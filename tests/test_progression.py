@@ -12,6 +12,7 @@ from app.domain.constants import (
     VOLUME_TARGET_CEILING,
     VOLUME_WORK_SETS_CEILING,
     EquipmentType,
+    VolumeGrowthReason,
     to_signed_load,
 )
 from app.domain.progression import (
@@ -452,6 +453,7 @@ def test_volume_block_ceiling_moderate_overshoot_rolls_back_to_20_plus_one_set()
     )
     assert result == VolumeBlockResult(
         new_target=VOLUME_MODERATE_ROLLBACK_TARGET, new_work_sets=7, equipment_changed=False,
+        work_sets_growth_reason=VolumeGrowthReason.CEILING,
     )
 
 
@@ -462,7 +464,10 @@ def test_volume_block_ceiling_big_overshoot_rolls_back_to_30_plus_computed_sets(
         target=48, work_sets=7, working_reps=(48,) * 7, max_reps=55, volume=48 * 7 + 55, prev_volume=0,
         equipment_type=EquipmentType.BODYWEIGHT,
     )
-    assert result == VolumeBlockResult(new_target=VOLUME_TARGET_CEILING, new_work_sets=8, equipment_changed=False)
+    assert result == VolumeBlockResult(
+        new_target=VOLUME_TARGET_CEILING, new_work_sets=8, equipment_changed=False,
+        work_sets_growth_reason=VolumeGrowthReason.CEILING,
+    )
     assert VOLUME_BIG_OVERSHOOT_THRESHOLD == 50
 
 
@@ -475,13 +480,15 @@ def test_volume_block_ceiling_sets_addition_capped_at_eight():
     )
     assert result.new_target == VOLUME_TARGET_CEILING
     assert result.new_work_sets == VOLUME_WORK_SETS_CEILING
+    assert result.work_sets_growth_reason == VolumeGrowthReason.CEILING
 
 
 def test_volume_block_ceiling_immediate_weight_transition_when_sets_already_maxed():
     # work_sets уже 8 (потолок подходов достигнут раньше) — переход на
     # отягощение СРАЗУ в этой же тренировке, не откат/добавление подходов.
     # target=31, step=ceil(31*0.05)=2, computed=33 (>=33) -> потолок подходов
-    # уже 8 -> заморозка на потолке.
+    # уже 8 -> заморозка на потолке. work_sets НЕ растёт (8->8) — рост уже
+    # случился в прошлой тренировке, здесь причины нет (issue #79).
     result = recalculate_volume_block(
         target=31, work_sets=8, working_reps=(31,) * 8, max_reps=35, volume=31 * 8 + 35, prev_volume=0,
         equipment_type=EquipmentType.BODYWEIGHT,
@@ -524,6 +531,7 @@ def test_volume_block_stall_adds_set_after_four_consecutive_non_growing_workouts
     )
     assert result.new_target == 20
     assert result.new_work_sets == 6
+    assert result.work_sets_growth_reason == VolumeGrowthReason.STALL
 
 
 def test_volume_block_stall_below_threshold_does_not_add_set():
@@ -533,6 +541,7 @@ def test_volume_block_stall_below_threshold_does_not_add_set():
     )
     assert result.new_target == 20
     assert result.new_work_sets == 5
+    assert result.work_sets_growth_reason is None
 
 
 def test_volume_block_stall_does_not_add_set_once_sets_already_at_ceiling():
@@ -542,10 +551,35 @@ def test_volume_block_stall_does_not_add_set_once_sets_already_at_ceiling():
         equipment_type=EquipmentType.BODYWEIGHT, consecutive_stall_before=10,
     )
     assert result.new_work_sets == 8
+    assert result.work_sets_growth_reason is None
 
 
 def test_volume_block_stall_threshold_constant_is_four():
     assert VOLUME_STALL_THRESHOLD == 4
+
+
+# --- work_sets_growth_reason (issue #79): явное объяснение роста подходов --
+
+def test_volume_block_growth_reason_none_when_target_grows_without_extra_set():
+    # Обычный рост цели (часть 1) без роста work_sets — не должно давать
+    # никакой причины, объяснять пользователю нечего.
+    result = recalculate_volume_block(
+        target=17, work_sets=3, working_reps=(19, 19, 19), max_reps=22, volume=79, prev_volume=0,
+        equipment_type=EquipmentType.BAND,
+    )
+    assert result.new_work_sets == 3
+    assert result.work_sets_growth_reason is None
+
+
+def test_volume_block_growth_reason_none_when_equipment_changes_instead_of_growing():
+    # BAND -> BODYWEIGHT (порог смены снаряда) — work_sets не растёт этой
+    # веткой, реальной причины роста подходов нет.
+    result = recalculate_volume_block(
+        target=17, work_sets=5, working_reps=(20, 20, 20), max_reps=21, volume=81, prev_volume=0,
+        equipment_type=EquipmentType.BAND,
+    )
+    assert result.new_work_sets == 5
+    assert result.work_sets_growth_reason is None
 
 
 # --- recalculate_cascade -------------------------------------------------------
@@ -638,6 +672,7 @@ def test_recalculate_cascade_grows_work_sets_through_ceiling_hierarchy():
 
     assert updated[0].block_a.target_after == VOLUME_MODERATE_ROLLBACK_TARGET
     assert updated[0].block_a.work_sets_after == 7
+    assert updated[0].block_a.work_sets_growth_reason == VolumeGrowthReason.CEILING
 
 
 def test_recalculate_cascade_skips_deload_workout_entirely():

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from app.domain.constants import EquipmentType, ExerciseType
+from app.domain.constants import EquipmentType, ExerciseType, VolumeGrowthReason
 
 
 @dataclass(frozen=True)
@@ -62,6 +62,11 @@ class BlockAssignment:
     work_sets_before: int | None = None
     work_sets_after: int | None = None
     is_deload: bool = False
+    # Почему выросли рабочие подходы ЭТОЙ тренировки (issue #79) — застой
+    # или упор в потолок повторений (см. app.domain.progression.
+    # recalculate_volume_block). None, если work_sets не выросли за эту
+    # тренировку (в т.ч. для work_sets_after is None/для блока Б).
+    work_sets_growth_reason: VolumeGrowthReason | None = None
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,7 @@ from app.domain.constants import (
     VOLUME_WEIGHT_START_KG,
     VOLUME_WORK_SETS_CEILING,
     EquipmentType,
+    VolumeGrowthReason,
 )
 from app.domain.progression import (
     TransitionOutcome,
@@ -134,6 +135,11 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             work_sets_before=block_a.work_sets_before,
             work_sets_after=block_a.work_sets_after,
             is_deload=block_a.is_deload,
+            work_sets_growth_reason=(
+                VolumeGrowthReason(block_a.work_sets_growth_reason)
+                if block_a.work_sets_growth_reason is not None
+                else None
+            ),
         ),
         block_b=BlockAssignment(
             log=_block_to_log(block_b),
@@ -166,6 +172,14 @@ class NextBlockState:
     work_sets: int = VOLUME_BLOCK.work_sets
     # Только для блока A (иерархия роста, часть 2) — растущее число рабочих
     # подходов. Для блока B всегда STRENGTH_BLOCK.work_sets (фиксировано).
+    # Причина роста work_sets ИМЕННО В САМОЙ ПОСЛЕДНЕЙ тренировке блока A
+    # (issue #79) — не "когда-либо в истории": _resolve_next_state
+    # проставляет её, только если last_block.work_sets_before <
+    # last_block.work_sets_after, иначе None. Как только пользователь
+    # проходит следующую тренировку без роста, это поле само становится
+    # None — баннер-объяснение исчезает без отдельного счётчика "показать
+    # один раз". Для блока B всегда None.
+    work_sets_growth_reason: VolumeGrowthReason | None = None
 
 
 def _apply_cascade_result(workout: Workout, record: WorkoutRecord) -> None:
@@ -181,6 +195,9 @@ def _apply_cascade_result(workout: Workout, record: WorkoutRecord) -> None:
     block_a.equipment_changed = record.block_a.equipment_changed
     block_a.work_sets_before = record.block_a.work_sets_before
     block_a.work_sets_after = record.block_a.work_sets_after
+    block_a.work_sets_growth_reason = (
+        record.block_a.work_sets_growth_reason.value if record.block_a.work_sets_growth_reason is not None else None
+    )
     block_b.target_before = record.block_b.target_before
     block_b.target_after = record.block_b.target_after
     block_b.equipment_changed = record.block_b.equipment_changed
@@ -454,6 +471,7 @@ class WorkoutRepository:
             transition_b, result_b, preceding, BlockType.B,
         )
 
+        work_sets_growth_reason_a: VolumeGrowthReason | None = None
         if is_deload_a:
             target_after_a, work_sets_after_a, equipment_changed_a, failed_a = (
                 target_before_a, work_sets_before_a, False, False,
@@ -478,6 +496,7 @@ class WorkoutRepository:
                 target_after_a = result_a.new_target
                 work_sets_after_a = result_a.new_work_sets
                 equipment_changed_a, failed_a = result_a.equipment_changed, False
+                work_sets_growth_reason_a = result_a.work_sets_growth_reason
 
         if comment is not None:
             workout.comment = comment
@@ -502,6 +521,9 @@ class WorkoutRepository:
                 work_sets_before=work_sets_before_a,
                 work_sets_after=work_sets_after_a,
                 is_deload=is_deload_a,
+                work_sets_growth_reason=(
+                    work_sets_growth_reason_a.value if work_sets_growth_reason_a is not None else None
+                ),
             ),
         )
         self._session.add(
@@ -591,6 +613,9 @@ class WorkoutRepository:
                 equipment_type=block_a_equipment_type, equipment_value=block_a_equipment_value,
                 equipment_item_id=block_a_equipment_item_id,
                 work_sets_before=state_a.work_sets, work_sets_after=result_a.new_work_sets,
+                work_sets_growth_reason=(
+                    result_a.work_sets_growth_reason.value if result_a.work_sets_growth_reason is not None else None
+                ),
             ),
         )
         self._session.add(
@@ -714,6 +739,7 @@ class WorkoutRepository:
         weak_streak_before_b = _weak_streak(chain[:position], BlockType.B)
         stall_streak_before_a = _stall_streak(_exclude_deload_entries(chain[:position]))
 
+        work_sets_growth_reason_a: VolumeGrowthReason | None = None
         if block_a.is_deload:
             # Разгрузка не пересчитывается даже при редактировании — только
             # правится фактический ввод (для статистики), состояние
@@ -728,6 +754,7 @@ class WorkoutRepository:
             target_after_a, work_sets_after_a, equipment_changed_a = (
                 result_a.new_target, result_a.new_work_sets, result_a.equipment_changed
             )
+            work_sets_growth_reason_a = result_a.work_sets_growth_reason
 
         result_b = recalculate_target(
             STRENGTH_BLOCK, target_before_b, new_block_b_reps.working_reps, new_block_b_reps.max_reps,
@@ -742,6 +769,9 @@ class WorkoutRepository:
         block_a.equipment_changed = equipment_changed_a
         block_a.work_sets_before = work_sets_before_a
         block_a.work_sets_after = work_sets_after_a
+        block_a.work_sets_growth_reason = (
+            work_sets_growth_reason_a.value if work_sets_growth_reason_a is not None else None
+        )
 
         block_b.working_reps = list(new_block_b_reps.working_reps)
         block_b.max_reps = new_block_b_reps.max_reps
@@ -877,9 +907,21 @@ class WorkoutRepository:
         work_sets = block_config.work_sets
         equipment_type = equipment_source.equipment_type
         equipment_value = equipment_source.equipment_value
+        work_sets_growth_reason: VolumeGrowthReason | None = None
 
         if block_type == BlockType.A:
             work_sets = _work_sets_after(last_block)
+            # Причина показывается, только если рост случился В САМОЙ
+            # ПОСЛЕДНЕЙ тренировке (issue #79) — не в любой из прошлых, где
+            # рост когда-то был: как только следующая тренировка не растит
+            # work_sets дальше, work_sets_before==work_sets_after у НЕЁ, и
+            # это условие само перестаёт выполняться без отдельного
+            # "показать один раз" счётчика.
+            work_sets_before_last = (
+                last_block.work_sets_before if last_block.work_sets_before is not None else VOLUME_BLOCK.work_sets
+            )
+            if work_sets_before_last < work_sets and last_block.work_sets_growth_reason is not None:
+                work_sets_growth_reason = VolumeGrowthReason(last_block.work_sets_growth_reason)
             at_ceiling = last_block.target_after >= VOLUME_TARGET_CEILING and work_sets >= VOLUME_WORK_SETS_CEILING
             if at_ceiling:
                 needs_new_equipment = False
@@ -898,6 +940,7 @@ class WorkoutRepository:
             equipment_item_id=equipment_source.equipment_item_id,
             needs_new_equipment=needs_new_equipment,
             work_sets=work_sets,
+            work_sets_growth_reason=work_sets_growth_reason,
         )
 
     @staticmethod

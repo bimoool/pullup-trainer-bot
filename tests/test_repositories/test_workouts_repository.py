@@ -16,6 +16,7 @@ from app.domain.constants import (
     VOLUME_WORK_SETS_CEILING,
     EquipmentType,
     ExerciseType,
+    VolumeGrowthReason,
 )
 from app.domain.session import BlockLog
 
@@ -162,6 +163,57 @@ async def test_volume_block_ceiling_rolls_back_and_adds_set_instead_of_switching
     assert block_a.work_sets_after == VOLUME_BLOCK.work_sets + 1
     assert block_a.equipment_changed is False
     assert block_a.equipment_type == EquipmentType.BODYWEIGHT  # ещё не 8 подходов — рано на отягощение
+    # Объяснение роста work_sets (issue #79) — хранится на самом Block и
+    # видно СЛЕДУЮЩЕЙ тренировке через resolve_next_targets, ДО её начала.
+    assert block_a.work_sets_growth_reason == "ceiling"
+    state_a, _ = await repo.resolve_next_targets(user.id)
+    assert state_a.work_sets_growth_reason == VolumeGrowthReason.CEILING
+
+
+async def test_work_sets_growth_reason_shown_only_for_the_latest_stall_workout(session, user: User):
+    # Застой (issue #79) — объяснение должно появиться РОВНО на тренировке,
+    # где work_sets реально выросли (4-я подряд без роста), и исчезнуть на
+    # следующей, где роста уже нет, а не оставаться навсегда с этого момента.
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    flat_reps = BlockLog(working_reps=(10, 10, 10), max_reps=10)
+    strength_reps = BlockLog(working_reps=(3, 3, 3, 3), max_reps=4)
+
+    for day in range(1, 4):
+        await repo.record_workout(
+            user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(day),
+            block_a_reps=flat_reps, block_b_reps=strength_reps,
+            block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+            block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+        )
+
+    stall_workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(4),
+        block_a_reps=flat_reps, block_b_reps=strength_reps,
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    stall_block_a = _block(stall_workout, "a")
+    assert stall_block_a.work_sets_before == VOLUME_BLOCK.work_sets
+    assert stall_block_a.work_sets_after == VOLUME_BLOCK.work_sets + 1
+    assert stall_block_a.work_sets_growth_reason == "stall"
+
+    state_a, _ = await repo.resolve_next_targets(user.id)
+    assert state_a.work_sets == VOLUME_BLOCK.work_sets + 1
+    assert state_a.work_sets_growth_reason == VolumeGrowthReason.STALL
+
+    next_workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(5),
+        block_a_reps=flat_reps, block_b_reps=strength_reps,
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    next_block_a = _block(next_workout, "a")
+    assert next_block_a.work_sets_growth_reason is None
+
+    state_a_after, _ = await repo.resolve_next_targets(user.id)
+    assert state_a_after.work_sets_growth_reason is None
 
 
 async def test_volume_block_reaching_both_ceilings_transitions_to_weight_next_time(session, user: User):

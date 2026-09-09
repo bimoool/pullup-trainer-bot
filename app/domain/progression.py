@@ -23,6 +23,7 @@ from app.domain.constants import (
     WEIGHT_ROUND_TO_KG,
     BlockConfig,
     EquipmentType,
+    VolumeGrowthReason,
     to_signed_load,
 )
 from app.domain.session import BlockAssignment, WorkoutRecord
@@ -180,11 +181,18 @@ class VolumeBlockResult:
     grow_volume_weight_kg и WorkoutRepository._resolve_next_state), тем же
     принципом, что уже применён к suggest_weight_range для силового блока —
     домен не решает за пользователя, что тот "использовал", только
-    подсказывает следующий шаг."""
+    подсказывает следующий шаг.
+
+    work_sets_growth_reason — None, если new_work_sets не выросло по
+    сравнению с переданным work_sets (в т.ч. когда оно уже заморожено на
+    потолке — см. recalculate_volume_block, п.1 и "уже на потолке 8
+    подходов"), иначе STALL/CEILING в зависимости от того, какая из двух
+    веток роста подходов сработала."""
 
     new_target: int
     new_work_sets: int
     equipment_changed: bool
+    work_sets_growth_reason: VolumeGrowthReason | None = None
 
 
 def grow_volume_weight_kg(current_kg: Decimal) -> Decimal:
@@ -295,7 +303,11 @@ def recalculate_volume_block(
             new_target = VOLUME_TARGET_CEILING
             sets_to_add = math.ceil(computed_target / VOLUME_TARGET_CEILING)
             new_work_sets = min(VOLUME_WORK_SETS_CEILING, work_sets + sets_to_add)
-        return VolumeBlockResult(new_target=new_target, new_work_sets=new_work_sets, equipment_changed=False)
+        reason = VolumeGrowthReason.CEILING if new_work_sets > work_sets else None
+        return VolumeBlockResult(
+            new_target=new_target, new_work_sets=new_work_sets, equipment_changed=False,
+            work_sets_growth_reason=reason,
+        )
 
     new_work_sets = work_sets
     if (
@@ -305,7 +317,11 @@ def recalculate_volume_block(
     ):
         new_work_sets = work_sets + 1
 
-    return VolumeBlockResult(new_target=computed_target, new_work_sets=new_work_sets, equipment_changed=False)
+    reason = VolumeGrowthReason.STALL if new_work_sets > work_sets else None
+    return VolumeBlockResult(
+        new_target=computed_target, new_work_sets=new_work_sets, equipment_changed=False,
+        work_sets_growth_reason=reason,
+    )
 
 
 def suggest_starting_equipment(baseline_reps: int) -> tuple[EquipmentType, EquipmentType]:
@@ -520,6 +536,7 @@ def recalculate_cascade(
                 work_sets_before=work_sets_a,
                 work_sets_after=result_a.new_work_sets,
                 is_deload=False,
+                work_sets_growth_reason=result_a.work_sets_growth_reason,
             )
             grew_a = result_a.new_target > target_a or result_a.new_work_sets > work_sets_a
             stall_streak_a = 0 if grew_a else stall_streak_a + 1

@@ -194,6 +194,7 @@ async def test_plan_ready_shows_target_and_equipment(session):
     assert body["equipment_a"]["item_id"] is None
     assert body["equipment_a"]["label"] == "резина"
     assert body["workout_set_id"] is not None
+    assert body["work_sets_growth_reason"] is None
 
 
 async def test_plan_gap_rollback_overrides_target_a_by_rollback_reps(session):
@@ -211,6 +212,31 @@ async def test_plan_gap_rollback_overrides_target_a_by_rollback_reps(session):
     # до отката — единственная разница должна быть ровно в ROLLBACK_REPS.
     assert rollback_body["target_a"] == ready_body["target_a"] - ROLLBACK_REPS
     assert rollback_body["target_b"] == ready_body["target_b"]
+
+
+async def test_plan_reports_work_sets_growth_reason_before_next_workout(session):
+    # Объяснение роста work_sets (issue #79) — та же причина, что
+    # app.domain.progression.recalculate_volume_block уже кладёт на Block
+    # (см. tests/test_repositories/test_workouts_repository.py::
+    # test_volume_block_ceiling_rolls_back_and_adds_set_instead_of_switching_equipment),
+    # здесь только проверка, что она доходит до ответа Mini App ДО начала
+    # следующей тренировки, не постфактум.
+    user = await UserRepository(session).create(telegram_id=42010, username="ceiling")
+    now = datetime.now(UTC)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=10)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=5),
+        block_a_reps=BlockLog(working_reps=(32, 32, 32), max_reps=38),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+    assert body["status"] == "ready"
+    assert body["work_sets_growth_reason"] == "ceiling"
 
 
 # --- POST /api/workout/submit -------------------------------------------------------
