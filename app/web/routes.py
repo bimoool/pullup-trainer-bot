@@ -1329,6 +1329,7 @@ async def get_leaderboard(
     metric: Literal["max_reps", "max_weight", "total_volume"] = Query(...),
     gender: Literal["all", "male", "female"] = Query(default="all"),
     age_bucket: str = Query(default="all"),
+    period: Literal["week", "month", "all"] = Query(default="all"),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> LeaderboardResponse:
@@ -1337,7 +1338,12 @@ async def get_leaderboard(
     с необязательным фильтром по полу/возрастной категории (ступени ГТО,
     см. app.domain.leaderboard.AGE_BUCKETS). Своя строка (is_current_user)
     отдаётся LeaderboardRepository.top() одним проходом, даже если
-    пользователь вне топ-N — см. докстринг репозитория."""
+    пользователь вне топ-N — см. докстринг репозитория.
+
+    period (issue #74, волна 2) имеет эффект только при metric=total_volume
+    (см. LeaderboardRepository.top) — для остальных метрик игнорируется
+    молча, а не отклоняется 400: фронтенд просто не показывает переключатель
+    периода на других вкладках, отдельный запрет здесь избыточен."""
     if age_bucket != "all" and age_bucket not in AGE_BUCKETS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid age_bucket")
 
@@ -1349,6 +1355,7 @@ async def get_leaderboard(
         gender=None if gender == "all" else gender,
         age_bucket=None if age_bucket == "all" else age_bucket,
         requesting_user_id=requesting_user_id,
+        period=None if period == "all" else period,
         limit=LEADERBOARD_TOP_LIMIT,
     )
     my_rank = next((entry.rank for entry in entries if entry.is_current_user), None)

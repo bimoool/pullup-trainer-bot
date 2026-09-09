@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { fetchSubscription, paySubscription, type SubscriptionResponse } from "./api";
 
-type Props = { initDataRaw: string };
+type Props = { initDataRaw: string; onBack: () => void };
 
 type ScreenState =
   | { phase: "loading" }
@@ -41,12 +41,17 @@ function openExternalLink(url: string) {
   window.open(url, "_blank");
 }
 
-/** Отдельная вкладка "Подписка" Mini App (issue #57, п.1) — раньше этот
- * раздел был частью вкладки "Профиль" (issue #53, волна 2), но там он
- * оказался слишком заметным сразу при открытии — вынесен в свой пункт
- * навигации, на "Профиль" остаётся только краткая строка статуса
- * (см. ProfileScreen.tsx). */
-export function SubscriptionScreen({ initDataRaw }: Props) {
+/** "Подписка" Mini App (issue #57, п.1) — раньше этот раздел был частью
+ * вкладки "Профиль" (issue #53, волна 2), но там он оказался слишком
+ * заметным сразу при открытии — вынесен в свой экран, на "Профиль"
+ * остаётся только краткая строка статуса (см. ProfileScreen.tsx).
+ *
+ * Больше не отдельный пункт нижнего меню (issue #74, волна 4 — меню
+ * разрослось до 6 пунктов, названия переставали помещаться): открывается
+ * только кнопкой "⭐ Подробнее о подписке" с "Профиля", поэтому теперь
+ * нужна явная кнопка "Назад" — без пункта меню на этот экран больше не
+ * возвращает переключение вкладок. */
+export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
@@ -85,15 +90,32 @@ export function SubscriptionScreen({ initDataRaw }: Props) {
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю подписку…</p>;
+    return (
+      <div>
+        <Button mode="outline" size="s" onClick={onBack}>
+          ← Профиль
+        </Button>
+        <p className="screen-message">Загружаю подписку…</p>
+      </div>
+    );
   }
   if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить подписку: {state.message}</p>;
+    return (
+      <div>
+        <Button mode="outline" size="s" onClick={onBack}>
+          ← Профиль
+        </Button>
+        <p className="screen-message">Не удалось загрузить подписку: {state.message}</p>
+      </div>
+    );
   }
 
   const { subscription } = state;
   return (
     <div>
+      <Button mode="outline" size="s" onClick={onBack}>
+        ← Профиль
+      </Button>
       <p className="plan-title">Подписка</p>
 
       <div className="profile-card">

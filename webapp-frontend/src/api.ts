@@ -557,6 +557,12 @@ export async function updateTimerPreferences(
  * экрана, не три отдельных. */
 export type LeaderboardMetric = "max_reps" | "max_weight" | "total_volume";
 export type LeaderboardGender = "all" | "male" | "female";
+/** Период для метрики "объём" (issue #74, волна 2) — скользящее окно
+ * (последние 7/30 дней от текущего момента), не календарное с
+ * понедельника/1 числа. Игнорируется бэкендом для max_reps/max_weight (это
+ * разовые рекорды, не сумма за интервал), поэтому фронтенд не показывает
+ * переключатель на других вкладках (см. METRIC_TABS ниже). */
+export type LeaderboardPeriod = "week" | "month" | "all";
 /** Ступени ГТО для взрослых (см. app.domain.leaderboard.AGE_BUCKETS) —
  * "all" здесь и на бэкенде означает "без фильтра по возрасту". */
 export type LeaderboardAgeBucket = "all" | "18_29" | "30_39" | "40_49" | "50_59" | "60_69" | "70_plus";
@@ -587,9 +593,10 @@ export async function fetchLeaderboard(
   metric: LeaderboardMetric,
   gender: LeaderboardGender,
   ageBucket: LeaderboardAgeBucket,
+  period: LeaderboardPeriod = "all",
 ): Promise<LeaderboardData> {
   return apiGet<LeaderboardData>(
-    `/api/leaderboard?metric=${metric}&gender=${gender}&age_bucket=${ageBucket}`,
+    `/api/leaderboard?metric=${metric}&gender=${gender}&age_bucket=${ageBucket}&period=${period}`,
     initDataRaw,
   );
 }

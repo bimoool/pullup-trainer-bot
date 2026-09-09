@@ -55,9 +55,19 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
   }
 
   const rankLabel = gto.rank ? (GTO_RANK_LABEL[gto.rank] ?? gto.rank) : "—";
+  // issue #74 (доп. пункт) — раньше карточка сразу показывала цифры разряда
+  // без единого поясняющего предложения, приходилось самому сопоставлять
+  // "лучший результат" с порогами. summaryText формулирует прямым текстом,
+  // выполнен норматив или нет — то же деление, что и у next_rank ниже
+  // (rank !== NONE значит хотя бы бронза выполнена).
+  const summaryText =
+    gto.rank && gto.rank !== "none"
+      ? "Вы выполнили норматив ГТО для своей возрастной категории по подтягиваниям."
+      : "Норматив ГТО для вашей возрастной категории по подтягиваниям пока не выполнен.";
   return (
     <div className="profile-card">
       <p className="section-title">Разряд ГТО (подтягивание)</p>
+      <p>{summaryText}</p>
       <p>{`Ступень ${gto.step_number} · возраст ${gto.age} · лучший результат ${gto.best_max_reps} за подход`}</p>
       <p>{rankLabel}</p>
       <p>{`Бронза от ${gto.bronze_threshold}, серебро от ${gto.silver_threshold}, золото от ${gto.gold_threshold}.`}</p>
