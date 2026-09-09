@@ -23,6 +23,15 @@ const METRIC_TABS: { key: LeaderboardMetric; label: string }[] = [
   { key: "total_volume", label: "Объём" },
 ];
 
+// Пояснение под табами (issue #74, волна 3.2) — подписи табов сами по
+// себе не объясняли методику подсчёта (максимум за один подход, порог
+// повторений для веса, наличие периода у объёма).
+const METRIC_HINTS: Record<LeaderboardMetric, string> = {
+  max_reps: "Максимум повторений за один подход — за всю историю тренировок.",
+  max_weight: "Максимальный вес отягощения, на котором выполнено хотя бы 3 повторения в одном подходе.",
+  total_volume: "Суммарные повторения по обоим блокам за выбранный период (переключатель ниже).",
+};
+
 const GENDER_OPTIONS: { key: LeaderboardGender; label: string }[] = [
   { key: "all", label: "Пол: все" },
   { key: "male", label: "Пол: М" },
@@ -77,6 +86,11 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
   const [nameInput, setNameInput] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  // issue #74, волна 3.1 — раньше успешное сохранение не давало никакой
+  // видимой реакции (кроме сброса disabled на кнопке), пользователь не
+  // понимал, сработало ли, не перезагрузив экран. true только до следующей
+  // правки поля (см. onChange ниже) — не "залипает" после следующего ввода.
+  const [nameJustSaved, setNameJustSaved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,11 +116,13 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
 
   async function handleSaveName() {
     setNameError(null);
+    setNameJustSaved(false);
     setSavingName(true);
     try {
       const trimmed = nameInput.trim();
       const { display_name: saved } = await updateLeaderboardDisplayName(initDataRaw, trimmed === "" ? null : trimmed);
       setNameInput(saved ?? "");
+      setNameJustSaved(true);
       if (state.phase === "ready") {
         setState({ phase: "ready", data: { ...state.data, my_display_name: saved } });
       }
@@ -133,6 +149,7 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
           </button>
         ))}
       </div>
+      <p className="hint">{METRIC_HINTS[metric]}</p>
 
       {metric === "total_volume" && (
         <div className="workout-mode-buttons">
@@ -183,11 +200,15 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
           maxLength={64}
           placeholder="Аноним"
           value={nameInput}
-          onChange={(event) => setNameInput(event.target.value)}
+          onChange={(event) => {
+            setNameInput(event.target.value);
+            setNameJustSaved(false);
+          }}
         />
         <button type="button" className="leaderboard-save-button" onClick={() => void handleSaveName()} disabled={savingName}>
           {savingName ? "Сохраняю…" : "Сохранить"}
         </button>
+        {nameJustSaved && <p className="hint leaderboard-name-saved">✓ Сохранено</p>}
         {nameError && <p className="screen-message">Не удалось сохранить имя: {nameError}</p>}
       </div>
 
