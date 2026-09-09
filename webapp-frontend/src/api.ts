@@ -38,6 +38,10 @@ export interface WorkoutPlanResponse {
   equipment_a: EquipmentInfo | null;
   equipment_b: EquipmentInfo | null;
   is_gap_rollback: boolean;
+  /** Объяснение роста work_sets блока A ДО начала тренировки (issue #79) —
+   * та же причина, что бэкенд хранит в NextBlockState.work_sets_growth_reason;
+   * текст форматирует фронтенд (см. WORK_SETS_GROWTH_NOTICES в WorkoutScreen.tsx). */
+  work_sets_growth_reason: "stall" | "ceiling" | null;
   band_items: BandItemInfo[];
 }
 

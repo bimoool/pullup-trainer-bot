@@ -15,6 +15,19 @@ class EquipmentType(StrEnum):
     AUSTRALIAN = "australian"
 
 
+class VolumeGrowthReason(StrEnum):
+    """Почему выросло число рабочих подходов блока на объём (issue #79) —
+    объяснение пользователю ДО начала тренировки, откуда взялся лишний
+    подход. Единственный источник причины: app.domain.progression.
+    recalculate_volume_block (VolumeBlockResult.work_sets_growth_reason) —
+    дальше по цепочке (BlockAssignment → Block → NextBlockState →
+    бот/Mini App) только проброс и форматирование в текст, без повторного
+    вычисления."""
+
+    STALL = "stall"  # застой: несколько тренировок подряд без роста
+    CEILING = "ceiling"  # упор в потолок повторений за подход
+
+
 class ExerciseType(StrEnum):
     """Задел под будущее расширение (отжимания на брусьях, выходы силой,
     подтягивания на одной руке) — сейчас только подтягивания. Раньше жил в

@@ -38,6 +38,7 @@ from app.domain.constants import (
     SUBSCRIPTION_PRICE_RUB,
     VOLUME_BLOCK,
     EquipmentType,
+    VolumeGrowthReason,
 )
 from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
@@ -252,6 +253,7 @@ class _PlanContext:
     equipment_b_value: Decimal | None = None
     equipment_b_item_id: int | None = None
     is_gap_rollback: bool = False
+    work_sets_growth_reason: VolumeGrowthReason | None = None
 
 
 async def _resolve_plan_context(
@@ -320,6 +322,7 @@ async def _resolve_plan_context(
         equipment_b_value=target_b_state.equipment_value,
         equipment_b_item_id=target_b_state.equipment_item_id,
         is_gap_rollback=is_gap_rollback,
+        work_sets_growth_reason=target_a_state.work_sets_growth_reason,
     )
 
 
@@ -369,6 +372,9 @@ async def get_workout_plan(
             context.equipment_b_type, context.equipment_b_value, context.equipment_b_item_id,
         ),
         is_gap_rollback=context.is_gap_rollback,
+        work_sets_growth_reason=(
+            context.work_sets_growth_reason.value if context.work_sets_growth_reason is not None else None
+        ),
         band_items=band_items,
     )
 

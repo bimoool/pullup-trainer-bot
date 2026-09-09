@@ -298,6 +298,12 @@ class Block(Base):
     # хранится) и для исторических записей до этой ревизии.
     work_sets_before: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     work_sets_after: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Почему выросли work_sets ЭТОЙ тренировки — "stall"/"ceiling" (issue
+    # #79, app.domain.constants.VolumeGrowthReason) или NULL, если не
+    # выросли. Простой String(10), не Postgres enum — значений всего два,
+    # ALTER TYPE ради такого расширения не нужен (см. CLAUDE.md про выбор
+    # между String и pg enum для похожего случая).
+    work_sets_growth_reason: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Ежемесячная разгрузочная тренировка блока на объём — не участвует в
     # пересчёте прогрессии (target/work_sets/вес проходят без изменений),
     # только в статистике/объёме, как факультативы и свободные подтягивания.

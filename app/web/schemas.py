@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,11 @@ class WorkoutPlanResponse(BaseModel):
     equipment_a: EquipmentInfo | None = None
     equipment_b: EquipmentInfo | None = None
     is_gap_rollback: bool = False
+    # Объяснение роста work_sets блока A ДО начала тренировки (issue #79) —
+    # то же значение, что app.db.repositories.workouts.NextBlockState.
+    # work_sets_growth_reason, отдаётся как есть, текст форматирует
+    # фронтенд (тот же приём, что is_gap_rollback выше).
+    work_sets_growth_reason: Literal["stall", "ceiling"] | None = None
     band_items: list[BandItemInfo] = Field(default_factory=list)
 
 
