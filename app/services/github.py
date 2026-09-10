@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
@@ -39,11 +40,40 @@ def _commit_author_label(item: dict) -> str:
     return item["commit"]["author"]["name"]
 
 
+# Мёрж-коммит от кнопки "Merge pull request" на GitHub — первая строка сама
+# по себе нечитаема ("Merge pull request #83 from bimoool/claude/issue-82-
+# ..."), но GitHub кладёт заголовок смёрженного PR второй непустой строкой
+# того же сообщения (после разделяющей пустой строки) — он и есть
+# человекочитаемое описание того, что раскатили (issue #84).
+_MERGE_PR_LINE = re.compile(r"^Merge pull request #\d+ from \S+\s*$")
+# Conventional Commits префиксы ("fix:", "feat(scope)!:" и т.п.) — не то,
+# что стоит показывать пользователю бота напрямую.
+_CONVENTIONAL_PREFIX = re.compile(r"^(feat|fix|chore|docs|refactor|test|style|perf|build|ci)(\([^)]*\))?!?:\s*", re.IGNORECASE)
+
+
+def _strip_conventional_prefix(line: str) -> str:
+    stripped = _CONVENTIONAL_PREFIX.sub("", line, count=1)
+    if stripped and stripped[0].islower():
+        stripped = stripped[0].upper() + stripped[1:]
+    return stripped
+
+
+def _normalize_commit_message(raw_message: str) -> str:
+    lines = raw_message.splitlines()
+    first_line = lines[0] if lines else ""
+    if _MERGE_PR_LINE.match(first_line):
+        pr_title = next((line.strip() for line in lines[1:] if line.strip()), None)
+        if pr_title:
+            return _strip_conventional_prefix(pr_title)
+        return first_line
+    return _strip_conventional_prefix(first_line)
+
+
 def _parse_commits(data: list[dict]) -> list[CommitSummary]:
     return [
         CommitSummary(
             sha=item["sha"],
-            message=item["commit"]["message"].splitlines()[0],
+            message=_normalize_commit_message(item["commit"]["message"]),
             author=_commit_author_label(item),
             committed_at=datetime.fromisoformat(item["commit"]["author"]["date"]),
         )

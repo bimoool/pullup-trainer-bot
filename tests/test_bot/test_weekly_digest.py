@@ -134,6 +134,10 @@ async def test_reminder_send_failure_does_not_set_state(session, bot: Bot, dispa
 async def test_reply_within_deadline_broadcasts_via_shared_mechanism(
     session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
 ):
+    """issue #84: в отличие от ручной "📢 Рассылка всем" (только завершившие
+    онбординг, см. test_admin_broadcast.py), еженедельный дайджест обязан
+    доходить и до не прошедших онбординг — цель вернуть тех, кто начал, но
+    не закончил анкету."""
     admin = await _make_admin(session, 8103)
     monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
 
@@ -147,16 +151,19 @@ async def test_reply_within_deadline_broadcasts_via_shared_mechanism(
         session=session,
     )
 
+    # list_all() охватывает вообще всех пользователей бота, включая самого
+    # админа (он тоже строка в users, см. UserRepository.list_all) — тот же
+    # принцип, что у ручной рассылки, где онбордившийся админ тоже получил
+    # бы свою же рассылку.
     delivered = [
         m for m in bot.session.sent_methods
         if isinstance(m, SendMessage) and m.text == "На этой неделе: разгрузочные тренировки!"
     ]
-    assert [m.chat_id for m in delivered] == [onboarded.telegram_id]
-    assert not any(m.chat_id == not_onboarded.telegram_id for m in delivered)
+    assert {m.chat_id for m in delivered} == {admin.telegram_id, onboarded.telegram_id, not_onboarded.telegram_id}
 
     [confirmation] = [
         m for m in bot.session.sent_methods
-        if isinstance(m, SendMessage) and m.chat_id == admin.telegram_id and m.text == texts.ADMIN_BROADCAST_DONE.format(sent=1, total=1)
+        if isinstance(m, SendMessage) and m.chat_id == admin.telegram_id and m.text == texts.ADMIN_BROADCAST_DONE.format(sent=3, total=3)
     ]
     assert confirmation is not None
 

@@ -44,6 +44,47 @@ def test_parse_commits_uses_only_first_line_of_multiline_message():
     assert commit.message == "Fix the thing"
 
 
+def test_parse_commits_uses_pr_title_for_github_merge_commits():
+    """issue #84: подавляющее большинство коммитов в этом репозитории —
+    результат кнопки "Merge pull request" на GitHub, первая строка которых
+    ("Merge pull request #83 from bimoool/claude/issue-82-...") нечитаема
+    пользователю. Настоящий заголовок смёрженного PR лежит второй непустой
+    строкой того же сообщения — она и должна использоваться вместо этого."""
+    message = (
+        "Merge pull request #83 from bimoool/claude/issue-82-20260910-0835\n\n"
+        "График прогресса: факт вместо плана + переключатель метрик (issue #82)"
+    )
+    data = [_commit_item(message=message)]
+
+    [commit] = _parse_commits(data)
+
+    assert commit.message == "График прогресса: факт вместо плана + переключатель метрик (issue #82)"
+
+
+def test_parse_commits_falls_back_to_merge_line_when_no_pr_title_present():
+    data = [_commit_item(message="Merge pull request #83 from bimoool/some-branch")]
+
+    [commit] = _parse_commits(data)
+
+    assert commit.message == "Merge pull request #83 from bimoool/some-branch"
+
+
+def test_parse_commits_strips_conventional_commit_prefix_and_capitalizes():
+    data = [_commit_item(message="fix: normalize gto age bucket")]
+
+    [commit] = _parse_commits(data)
+
+    assert commit.message == "Normalize gto age bucket"
+
+
+def test_parse_commits_strips_conventional_commit_prefix_with_scope():
+    data = [_commit_item(message="feat(webapp)!: add leaderboard tab")]
+
+    [commit] = _parse_commits(data)
+
+    assert commit.message == "Add leaderboard tab"
+
+
 def test_parse_commits_falls_back_to_commit_author_name_when_no_github_account_linked():
     # GitHub author бывает null — коммит сделан адресом почты, не привязанным
     # ни к какому GitHub-аккаунту (например, коммит до подключения GitHub
