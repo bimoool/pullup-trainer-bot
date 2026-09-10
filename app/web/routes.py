@@ -39,6 +39,7 @@ from app.domain.constants import (
     VOLUME_BLOCK,
     EquipmentType,
     VolumeGrowthReason,
+    to_signed_load,
 )
 from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
@@ -50,7 +51,7 @@ from app.domain.reports import (
     weekly_summary,
 )
 from app.domain.rules import TrainingReadiness, check_training_readiness
-from app.domain.session import BlockLog
+from app.domain.session import BlockAssignment, BlockLog
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
@@ -642,33 +643,48 @@ async def get_history(
     return HistoryResponse(items=items, has_more=offset + limit < len(newest_first))
 
 
+def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -> Decimal | None:
+    """Факт по выбранной метрике (issue #82) — см. докстринг
+    ProgressPointResponse для смысла каждой ветки. strength скоуплена на
+    блок Б (block_letter == "b") — для A возвращает None всегда, не
+    придумывает число для метрики, которая для этого блока не определена."""
+    if metric == "max_reps":
+        return Decimal(block.log.best_set)
+    if metric == "volume":
+        return Decimal(block.log.volume)
+    # metric == "strength"
+    if block_letter != "b" or block.equipment_type == EquipmentType.AUSTRALIAN:
+        return None
+    return to_signed_load(block.equipment_type, block.equipment_value)
+
+
 @router.get("/progress", response_model=ProgressResponse)
 async def get_progress(
+    metric: Literal["max_reps", "volume", "strength"] = Query(default="max_reps"),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> ProgressResponse:
-    """Данные для графика вкладки "Прогресс" (issue #50, волна 2) — цель за
-    подход по тренировкам во времени, для блока A и Б отдельно.
+    """Данные для графика вкладки "Прогресс" (issue #82: переделано с плана
+    на факт — см. история issue #50, волна 2, там строился по target_after).
     WorkoutRepository.list_records_for_user отдаёт те же доменные
     WorkoutRecord, что app.services.reports/app.domain.reports используют
-    для отчётов бота — target_after уже посчитан прогрессией
-    (app.domain.progression) при записи каждой тренировки, здесь не
-    пересчитывается заново, только читается в хронологическом порядке."""
+    для отчётов бота — value_a/value_b читаются из уже записанного факта
+    (BlockLog), не из плановой цели прогрессии."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
-        return ProgressResponse(points=[])
+        return ProgressResponse(metric=metric, points=[])
 
     records = await WorkoutRepository(session).list_records_for_user(user.id)
     points = [
         ProgressPointResponse(
             performed_at=record.performed_at.date().isoformat(),
-            target_a=record.block_a.target_after,
-            target_b=record.block_b.target_after,
+            value_a=_progress_value(record.block_a, metric, block_letter="a"),
+            value_b=_progress_value(record.block_b, metric, block_letter="b"),
             workout_set_id=record.workout_set_id,
         )
         for record in records
     ]
-    return ProgressResponse(points=points)
+    return ProgressResponse(metric=metric, points=points)
 
 
 def _equipment_progress_response(progress: EquipmentProgress | None) -> EquipmentProgressResponse | None:

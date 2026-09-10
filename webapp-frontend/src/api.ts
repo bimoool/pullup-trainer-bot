@@ -194,17 +194,28 @@ export interface HistoryPage {
   has_more: boolean;
 }
 
-/** Одна точка графика "Прогресс" (issue #50, волна 2) — цель за подход
- * блока A/Б на момент этой тренировки, уже посчитанная прогрессией на
- * бэкенде (app/web/routes.py::get_progress), не пересчитывается на клиенте. */
+/** Три переключаемые метрики графика "Прогресс" (issue #82: переделано с
+ * плана на факт — была история, issue #50, волна 2, строилась по
+ * target_after). "strength" скоуплена на блок Б (value_a всегда null) — см.
+ * app/web/routes.py::_progress_value для обоснования выбора метрики "сила"
+ * (единая знаковая шкала нагрузки app.domain.constants.to_signed_load, не
+ * повторения — те сбрасываются при каждой смене снаряда). */
+export type ProgressMetric = "max_reps" | "volume" | "strength";
+
+/** Одна точка графика "Прогресс" — ФАКТ по выбранной metric, не плановая
+ * цель. value_a/value_b — Decimal с бэкенда (строка, как и в лидерборде,
+ * см. LeaderboardEntry.value) — null, если метрика не определена для этого
+ * блока/тренировки (strength: value_a всегда null; value_b — null для
+ * AUSTRALIAN, там нет числа в кг). */
 export interface ProgressPoint {
   performed_at: string;
-  target_a: number;
-  target_b: number;
+  value_a: string | null;
+  value_b: string | null;
   workout_set_id: number | null;
 }
 
 export interface ProgressData {
+  metric: ProgressMetric;
   points: ProgressPoint[];
 }
 
@@ -212,8 +223,8 @@ export async function fetchHistory(initDataRaw: string, offset: number, limit = 
   return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}`, initDataRaw);
 }
 
-export async function fetchProgress(initDataRaw: string): Promise<ProgressData> {
-  return apiGet<ProgressData>("/api/progress", initDataRaw);
+export async function fetchProgress(initDataRaw: string, metric: ProgressMetric): Promise<ProgressData> {
+  return apiGet<ProgressData>(`/api/progress?metric=${metric}`, initDataRaw);
 }
 
 /** Зеркало app.domain.reports.WeeklySummary (issue #66, п.2) — та же
