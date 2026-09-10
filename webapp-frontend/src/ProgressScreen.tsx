@@ -1,14 +1,26 @@
 import { useEffect, useState, type PointerEvent } from "react";
 
-import { fetchAnalytics, fetchProgress, type AnalyticsData, type EquipmentProgress, type ProgressPoint } from "./api";
+import {
+  fetchAnalytics,
+  fetchProgress,
+  type AnalyticsData,
+  type EquipmentProgress,
+  type ProgressMetric,
+  type ProgressPoint,
+} from "./api";
 import { LeaderboardScreen } from "./LeaderboardScreen";
 
 type Props = { initDataRaw: string };
 
-type ScreenState =
+type ProgressState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; points: ProgressPoint[]; analytics: AnalyticsData };
+  | { phase: "ready"; points: ProgressPoint[] };
+
+type AnalyticsState =
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "ready"; analytics: AnalyticsData };
 
 // Категориальная пара из справочника dataviz-скилла (references/palette.md,
 // слоты 1/2 — blue/orange), провалидированная на contrast/CVD-различимость
@@ -23,6 +35,47 @@ const PADDING_RIGHT = 14;
 const PADDING_TOP = 16;
 const PADDING_BOTTOM = 22;
 
+type SeriesKey = "value_a" | "value_b";
+
+/** Точка графика с числами вместо строк Decimal — конвертация происходит
+ * один раз при рендере (issue #82), не в каждой функции chart-компонента. */
+type ChartPoint = { performed_at: string; value_a: number | null; value_b: number | null };
+
+/** "strength" (issue #82) — единственная метрика с одной линией (блок Б),
+ * не двумя: value_a у неё всегда null (см. app/web/routes.py::_progress_value
+ * и объяснение в CLAUDE.md, почему "сила" скоуплена на блок Б). */
+function seriesKeysForMetric(metric: ProgressMetric): SeriesKey[] {
+  return metric === "strength" ? ["value_b"] : ["value_a", "value_b"];
+}
+
+const CHART_METRIC_TABS: { key: ProgressMetric; label: string }[] = [
+  { key: "max_reps", label: "Максимум" },
+  { key: "volume", label: "Объём" },
+  { key: "strength", label: "Сила" },
+];
+
+// Пояснение под табами (тот же приём, что METRIC_HINTS в LeaderboardScreen,
+// issue #74, волна 3.2) — подписи табов сами по себе не объясняют методику.
+const CHART_METRIC_HINTS: Record<ProgressMetric, string> = {
+  max_reps: "Лучший фактический подход блока (рабочий или на максимум) — не плановая цель.",
+  volume: "Сумма повторений блока (рабочие подходы + подход на максимум) за тренировку.",
+  strength:
+    "Нагрузка блока «Сила» на единой шкале: резина — со знаком минус, 0 — свой вес, " +
+    "отягощение — со знаком плюс. Переживает смену снаряда, в отличие от повторений. " +
+    'Тренировки на "австралийских" подтягиваниях (без снаряда в кг) на график не попадают.',
+};
+
+const SERIES_LABELS: Record<ProgressMetric, Partial<Record<SeriesKey, string>>> = {
+  max_reps: { value_a: "Объём", value_b: "Сила" },
+  volume: { value_a: "Объём", value_b: "Сила" },
+  strength: { value_b: "Блок Б" },
+};
+
+const SERIES_COLOR: Record<SeriesKey, string> = {
+  value_a: SERIES_A_COLOR,
+  value_b: SERIES_B_COLOR,
+};
+
 /** "2026-09-03" -> "03.09" — без года: график про относительный ход
  * тренировок, не про календарь, короче для тесной мобильной ширины. */
 function formatDate(isoDate: string): string {
@@ -30,19 +83,32 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}`;
 }
 
-/** Лёгкий самописный inline-SVG line chart (issue #50, волна 2) — без новой
- * npm-зависимости (recharts и подобные не добавлены, доступность npm из
- * песочницы непостоянна, см. CLAUDE.md; для двух линий с ховером своя
- * реализация дешевле, чем непроверяемо интегрировать библиотеку). Одна общая
- * ось Y — оба блока меряются в тех же повторениях, отдельная ось для
- * второй серии не нужна (dataviz-скилл: "never a dual-axis chart"). */
-function LineChart({ points }: { points: ProgressPoint[] }) {
+/** Повторения/объём — целое число; "сила" — кг со знаком (уже есть в самом
+ * числе для отрицательных, "+" добавляется только для положительных, чтобы
+ * "прибавка отягощения" отличалась от "0 — свой вес" на глаз). */
+function formatMetricValue(metric: ProgressMetric, value: number): string {
+  if (metric === "strength") {
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value} кг`;
+  }
+  return `${Math.round(value)}`;
+}
+
+/** Лёгкий самописный inline-SVG line chart (issue #50, волна 2; issue #82 —
+ * факт вместо плана + переменное число серий: 2 для "максимум"/"объём", 1
+ * для "сила"). Без новой npm-зависимости (recharts и подобные не добавлены,
+ * доступность npm из песочницы непостоянна, см. CLAUDE.md). Одна общая ось
+ * Y — обе серии "максимум"/"объём" меряются в тех же повторениях, "сила" не
+ * смешивается с ними на одном графике (переключатель метрик, не общая ось). */
+function LineChart({ points, seriesKeys, metric }: { points: ChartPoint[]; seriesKeys: SeriesKey[]; metric: ProgressMetric }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const plotWidth = CHART_WIDTH - PADDING_LEFT - PADDING_RIGHT;
   const plotHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
 
-  const values = points.flatMap((point) => [point.target_a, point.target_b]);
+  // points уже отфильтрованы вызывающей стороной так, что все seriesKeys не
+  // null (см. ProgressScreen) — здесь можно смело приводить к number.
+  const values = points.flatMap((point) => seriesKeys.map((key) => point[key] as number));
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
   const valueRange = maxValue - minValue || 1;
@@ -57,8 +123,8 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
   function yAt(value: number): number {
     return PADDING_TOP + plotHeight - ((value - minValue) / valueRange) * plotHeight;
   }
-  function pathFor(key: "target_a" | "target_b"): string {
-    return points.map((point, index) => `${index === 0 ? "M" : "L"}${xAt(index)},${yAt(point[key])}`).join(" ");
+  function pathFor(key: SeriesKey): string {
+    return points.map((point, index) => `${index === 0 ? "M" : "L"}${xAt(index)},${yAt(point[key] as number)}`).join(" ");
   }
 
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
@@ -78,6 +144,7 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
 
   const gridValues = [minValue, (minValue + maxValue) / 2, maxValue];
   const hovered = hoverIndex !== null ? points[hoverIndex] : null;
+  const labels = SERIES_LABELS[metric];
 
   return (
     <div className="progress-chart-wrap">
@@ -87,7 +154,7 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
         onPointerMove={handlePointerMove}
         onPointerLeave={() => setHoverIndex(null)}
         role="img"
-        aria-label="График цели за подход по тренировкам, блок объёма и блок силы"
+        aria-label={`График "${CHART_METRIC_TABS.find((tab) => tab.key === metric)?.label}" по тренировкам`}
       >
         {gridValues.map((value, index) => (
           <g key={index}>
@@ -108,30 +175,25 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
           {formatDate(points[lastIndex].performed_at)}
         </text>
 
-        <path d={pathFor("target_a")} className="progress-chart-line" stroke={SERIES_A_COLOR} />
-        <path d={pathFor("target_b")} className="progress-chart-line" stroke={SERIES_B_COLOR} />
+        {seriesKeys.map((key) => (
+          <path key={key} d={pathFor(key)} className="progress-chart-line" stroke={SERIES_COLOR[key]} />
+        ))}
 
         {/* Значение у конца линии (dataviz-скилл: "Lines -> value at the end") — не подписываем каждую точку. */}
-        <circle
-          cx={xAt(lastIndex)} cy={yAt(points[lastIndex].target_a)} r={4}
-          fill={SERIES_A_COLOR} className="progress-chart-end-dot"
-        />
-        <circle
-          cx={xAt(lastIndex)} cy={yAt(points[lastIndex].target_b)} r={4}
-          fill={SERIES_B_COLOR} className="progress-chart-end-dot"
-        />
-        <text
-          x={xAt(lastIndex) - 8} y={yAt(points[lastIndex].target_a) - 8} textAnchor="end"
-          className="progress-chart-end-label" fill={SERIES_A_COLOR}
-        >
-          {points[lastIndex].target_a}
-        </text>
-        <text
-          x={xAt(lastIndex) - 8} y={yAt(points[lastIndex].target_b) - 8} textAnchor="end"
-          className="progress-chart-end-label" fill={SERIES_B_COLOR}
-        >
-          {points[lastIndex].target_b}
-        </text>
+        {seriesKeys.map((key) => (
+          <g key={key}>
+            <circle
+              cx={xAt(lastIndex)} cy={yAt(points[lastIndex][key] as number)} r={4}
+              fill={SERIES_COLOR[key]} className="progress-chart-end-dot"
+            />
+            <text
+              x={xAt(lastIndex) - 8} y={yAt(points[lastIndex][key] as number) - 8} textAnchor="end"
+              className="progress-chart-end-label" fill={SERIES_COLOR[key]}
+            >
+              {formatMetricValue(metric, points[lastIndex][key] as number)}
+            </text>
+          </g>
+        ))}
 
         {hoverIndex !== null && hovered && (
           <g>
@@ -139,8 +201,12 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
               x1={xAt(hoverIndex)} x2={xAt(hoverIndex)} y1={PADDING_TOP} y2={CHART_HEIGHT - PADDING_BOTTOM}
               className="progress-chart-crosshair"
             />
-            <circle cx={xAt(hoverIndex)} cy={yAt(hovered.target_a)} r={4} fill={SERIES_A_COLOR} className="progress-chart-hover-dot" />
-            <circle cx={xAt(hoverIndex)} cy={yAt(hovered.target_b)} r={4} fill={SERIES_B_COLOR} className="progress-chart-hover-dot" />
+            {seriesKeys.map((key) => (
+              <circle
+                key={key} cx={xAt(hoverIndex)} cy={yAt(hovered[key] as number)} r={4}
+                fill={SERIES_COLOR[key]} className="progress-chart-hover-dot"
+              />
+            ))}
           </g>
         )}
       </svg>
@@ -148,24 +214,21 @@ function LineChart({ points }: { points: ProgressPoint[] }) {
       {hovered && (
         <div className="progress-chart-tooltip">
           <p className="progress-chart-tooltip-date">{formatDate(hovered.performed_at)}</p>
-          <p>
-            <span className="progress-chart-swatch" style={{ background: SERIES_A_COLOR }} />
-            Объём: <strong>{hovered.target_a}</strong>
-          </p>
-          <p>
-            <span className="progress-chart-swatch" style={{ background: SERIES_B_COLOR }} />
-            Сила: <strong>{hovered.target_b}</strong>
-          </p>
+          {seriesKeys.map((key) => (
+            <p key={key}>
+              <span className="progress-chart-swatch" style={{ background: SERIES_COLOR[key] }} />
+              {labels[key]}: <strong>{formatMetricValue(metric, hovered[key] as number)}</strong>
+            </p>
+          ))}
         </div>
       )}
 
       <div className="progress-chart-legend">
-        <span className="progress-chart-legend-item">
-          <span className="progress-chart-swatch" style={{ background: SERIES_A_COLOR }} /> Объём
-        </span>
-        <span className="progress-chart-legend-item">
-          <span className="progress-chart-swatch" style={{ background: SERIES_B_COLOR }} /> Сила
-        </span>
+        {seriesKeys.map((key) => (
+          <span key={key} className="progress-chart-legend-item">
+            <span className="progress-chart-swatch" style={{ background: SERIES_COLOR[key] }} /> {labels[key]}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -202,7 +265,8 @@ function EquipmentProgressCard({ title, progress }: { title: string; progress: E
 
 /** Аналитический блок вкладки "Прогресс" (issue #66, п.2) — те же
  * app.domain.reports вычисления, что кнопки "📊 Прогресс"/"📈 Аналитика по
- * всем циклам" бота (GET /api/analytics), под графиком цели за подход. */
+ * всем циклам" бота (GET /api/analytics), под графиком. Не зависит от
+ * выбранной метрики графика — свой независимый запрос (issue #82). */
 function AnalyticsSection({ analytics }: { analytics: AnalyticsData }) {
   if (!analytics.has_data || analytics.weekly === null) {
     return null;
@@ -247,11 +311,12 @@ const PROGRESS_SECTIONS: { key: ProgressSection; label: string }[] = [
   { key: "leaderboard", label: "🏆 Лидерборд" },
 ];
 
-/** Вкладка "Прогресс" (issue #50, волна 2; аналитика — issue #66, п.2) —
- * цель за подход по тренировкам во времени для блока A и Б (GET /api/progress,
- * прогрессия уже посчитана на бэкенде, здесь не пересчитывается), плюс
- * недельная динамика/прогресс на снаряде/сводка по циклам (GET /api/analytics,
- * те же app.domain.reports вызовы, что кнопки бота).
+/** Вкладка "Прогресс" (issue #50, волна 2; аналитика — issue #66, п.2;
+ * график переделан с плана на факт + переключатель метрик — issue #82) —
+ * ФАКТ по тренировкам во времени (GET /api/progress?metric=...), плюс
+ * недельная динамика/прогресс на снаряде/сводка по циклам (GET
+ * /api/analytics, те же app.domain.reports вызовы, что кнопки бота, не
+ * зависят от выбранной метрики графика).
  *
  * "Лидерборд" (issue #67) переехал сюда под-разделом (issue #74, волна 4) —
  * нижнее меню разрослось до 6 пунктов и названия переставали помещаться;
@@ -261,19 +326,42 @@ const PROGRESS_SECTIONS: { key: ProgressSection; label: string }[] = [
  * AchievementsScreen внутри "Профиля". */
 export function ProgressScreen({ initDataRaw }: Props) {
   const [section, setSection] = useState<ProgressSection>("chart");
-  const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  const [metric, setMetric] = useState<ProgressMetric>("max_reps");
+  const [progressState, setProgressState] = useState<ProgressState>({ phase: "loading" });
+  const [analyticsState, setAnalyticsState] = useState<AnalyticsState>({ phase: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setProgressState({ phase: "loading" });
+      try {
+        const progress = await fetchProgress(initDataRaw, metric);
+        if (!cancelled) {
+          setProgressState({ phase: "ready", points: progress.points });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setProgressState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw, metric]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [progress, analytics] = await Promise.all([fetchProgress(initDataRaw), fetchAnalytics(initDataRaw)]);
+        const analytics = await fetchAnalytics(initDataRaw);
         if (!cancelled) {
-          setState({ phase: "ready", points: progress.points, analytics });
+          setAnalyticsState({ phase: "ready", analytics });
         }
       } catch (error) {
         if (!cancelled) {
-          setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+          setAnalyticsState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
         }
       }
     }
@@ -282,6 +370,18 @@ export function ProgressScreen({ initDataRaw }: Props) {
       cancelled = true;
     };
   }, [initDataRaw]);
+
+  const seriesKeys = seriesKeysForMetric(metric);
+  const chartPoints: ChartPoint[] =
+    progressState.phase === "ready"
+      ? progressState.points
+          .map((point) => ({
+            performed_at: point.performed_at,
+            value_a: point.value_a === null ? null : Number(point.value_a),
+            value_b: point.value_b === null ? null : Number(point.value_b),
+          }))
+          .filter((point) => seriesKeys.every((key) => point[key] !== null))
+      : [];
 
   return (
     <div>
@@ -304,21 +404,39 @@ export function ProgressScreen({ initDataRaw }: Props) {
         <LeaderboardScreen initDataRaw={initDataRaw} />
       ) : (
         <>
-          {state.phase === "loading" && <p className="screen-message">Загружаю прогресс…</p>}
-          {state.phase === "error" && <p className="screen-message">Не удалось загрузить прогресс: {state.message}</p>}
-          {state.phase === "ready" && (
+          <div className="workout-mode-buttons">
+            {CHART_METRIC_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={tab.key === metric ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
+                onClick={() => setMetric(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <p className="hint">{CHART_METRIC_HINTS[metric]}</p>
+
+          {progressState.phase === "loading" && <p className="screen-message">Загружаю прогресс…</p>}
+          {progressState.phase === "error" && (
+            <p className="screen-message">Не удалось загрузить прогресс: {progressState.message}</p>
+          )}
+          {progressState.phase === "ready" && (
             <>
-              {state.points.length < 2 ? (
+              {progressState.points.length < 2 ? (
                 <p className="screen-message">Пока недостаточно тренировок для графика — нужно хотя бы две.</p>
+              ) : chartPoints.length < 2 ? (
+                <p className="screen-message">
+                  Недостаточно данных для этой метрики — попробуй другую или другой снаряд блока Б.
+                </p>
               ) : (
-                <>
-                  <p className="hint">Цель за подход по тренировкам</p>
-                  <LineChart points={state.points} />
-                </>
+                <LineChart points={chartPoints} seriesKeys={seriesKeys} metric={metric} />
               )}
-              <AnalyticsSection analytics={state.analytics} />
             </>
           )}
+
+          {analyticsState.phase === "ready" && <AnalyticsSection analytics={analyticsState.analytics} />}
         </>
       )}
     </div>

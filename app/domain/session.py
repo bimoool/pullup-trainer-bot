@@ -22,6 +22,15 @@ class BlockLog:
         """Сумма всех повторений блока: рабочие подходы + подход на максимум."""
         return sum(self.working_reps) + self.max_reps
 
+    @property
+    def best_set(self) -> int:
+        """Лучший фактический подход блока — рабочий или на максимум. Тот же
+        смысл, что _BEST_SET_EXPR в app.db.repositories.leaderboard (issue
+        #82: метрика "Максимум" графика прогресса), но в Python поверх уже
+        загруженных объектов, а не как raw SQL — здесь запись уже в памяти,
+        SQL-агрегация по всем пользователям разом не нужна."""
+        return max((*self.working_reps, self.max_reps))
+
 
 @dataclass(frozen=True)
 class WorkoutLog:

@@ -204,17 +204,28 @@ class HistoryResponse(BaseModel):
 
 
 class ProgressPointResponse(BaseModel):
-    """Одна точка графика прогресса (issue #50, волна 2) — цель за подход
-    блока A/Б на момент этой тренировки (BlockAssignment.target_after, уже
-    посчитанный app.domain.progression, здесь не пересчитывается)."""
+    """Одна точка графика прогресса (issue #82: переделано с плана на факт,
+    было target_after — см. история issue #50, волна 2). value_a/value_b —
+    фактический результат тренировки по выбранной metric, не плановая цель:
+
+    - max_reps: BlockLog.best_set (лучший подход, рабочий или на максимум).
+    - volume: BlockLog.volume (сумма повторений блока за тренировку).
+    - strength: app.domain.constants.to_signed_load(equipment_type,
+      equipment_value) блока Б на единой знаковой шкале нагрузки (резина —
+      минус, свой вес — 0, отягощение — плюс) — переживает смену снаряда,
+      в отличие от повторений на блоке Б (сбрасываются при каждой смене).
+      value_a всегда null (метрика скоуплена на блок Б, см. CLAUDE.md);
+      value_b — null для AUSTRALIAN (там нет числа в кг, to_signed_load для
+      неё не определена)."""
 
     performed_at: str
-    target_a: int
-    target_b: int
+    value_a: Decimal | None
+    value_b: Decimal | None
     workout_set_id: int | None
 
 
 class ProgressResponse(BaseModel):
+    metric: str
     points: list[ProgressPointResponse]
 
 
