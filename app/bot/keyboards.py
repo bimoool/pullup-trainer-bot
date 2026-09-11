@@ -453,6 +453,7 @@ def admin_menu_keyboard(sheet_url: str) -> InlineKeyboardMarkup:
     builder.button(text="📊 Воронка", callback_data="admin_funnel")
     builder.button(text="👥 Пользователи", callback_data="admin_users")
     builder.button(text="📢 Рассылка всем", callback_data="admin_broadcast")
+    builder.button(text="🗞 Разослать дайджест сейчас", callback_data="admin_weekly_digest_now")
     builder.button(text="🧪 Тестовый платёж 1₽", callback_data="admin_test_payment")
     if sheet_url:
         builder.button(text="📈 Google-таблица", url=sheet_url)
