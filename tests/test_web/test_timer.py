@@ -199,6 +199,7 @@ async def test_get_preferences_returns_defaults_when_unset(session, user: User):
     body = await _request(session, user.telegram_id, "GET", "/api/timer/preferences")
     assert body == {
         "rest_seconds_block_a": 240, "rest_seconds_block_b": 180, "big_break_seconds": 900,
+        "sound_volume_percent": 100,
     }
 
 
@@ -219,6 +220,7 @@ async def test_put_preferences_updates_block_a_only(session, user: User):
     )
     assert body == {
         "rest_seconds_block_a": 300, "rest_seconds_block_b": 180, "big_break_seconds": 900,
+        "sound_volume_percent": 100,
     }
 
 
@@ -229,6 +231,7 @@ async def test_put_preferences_updates_block_b_only(session, user: User):
     )
     assert body == {
         "rest_seconds_block_a": 240, "rest_seconds_block_b": 150, "big_break_seconds": 900,
+        "sound_volume_percent": 100,
     }
 
 
@@ -239,7 +242,78 @@ async def test_put_preferences_updates_big_break_when_block_letter_omitted(sessi
     )
     assert body == {
         "rest_seconds_block_a": 240, "rest_seconds_block_b": 180, "big_break_seconds": 600,
+        "sound_volume_percent": 100,
     }
+
+
+async def test_put_preferences_updates_sound_volume(session, user: User):
+    body = await _request(
+        session, user.telegram_id, "PUT", "/api/timer/preferences",
+        json={"sound_volume_percent": 50},
+    )
+    assert body == {
+        "rest_seconds_block_a": 240, "rest_seconds_block_b": 180, "big_break_seconds": 900,
+        "sound_volume_percent": 50,
+    }
+
+
+async def test_put_preferences_accepts_zero_sound_volume(session, user: User):
+    """0 — валидное значение ("выключить звук"), не должно молча подменяться
+    дефолтом (falsy-ловушка `user.sound_volume_percent or DEFAULT`, issue #90)."""
+    body = await _request(
+        session, user.telegram_id, "PUT", "/api/timer/preferences",
+        json={"sound_volume_percent": 0},
+    )
+    assert body["sound_volume_percent"] == 0
+
+    get_body = await _request(session, user.telegram_id, "GET", "/api/timer/preferences")
+    assert get_body["sound_volume_percent"] == 0
+
+
+async def test_put_preferences_rejects_sound_volume_over_limit(session, user: User):
+    _override_dependencies(session, telegram_id=user.telegram_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put("/api/timer/preferences", json={"sound_volume_percent": 101})
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+async def test_put_preferences_rejects_both_duration_and_volume(session, user: User):
+    _override_dependencies(session, telegram_id=user.telegram_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/timer/preferences",
+                json={"duration_seconds": 300, "sound_volume_percent": 50},
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+async def test_put_preferences_rejects_neither_duration_nor_volume(session, user: User):
+    _override_dependencies(session, telegram_id=user.telegram_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put("/api/timer/preferences", json={"block_letter": "A"})
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+async def test_put_preferences_rejects_block_letter_with_volume(session, user: User):
+    _override_dependencies(session, telegram_id=user.telegram_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.put(
+                "/api/timer/preferences",
+                json={"block_letter": "A", "sound_volume_percent": 50},
+            )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
 
 
 async def test_put_preferences_persists_across_requests(session, user: User):

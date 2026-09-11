@@ -187,6 +187,16 @@ WEEKLY_DIGEST_REPLY_DEADLINE_HOURS: int = 24
 DEFAULT_REST_SECONDS_BLOCK_A: int = 240
 DEFAULT_REST_SECONDS_BLOCK_B: int = 180
 DEFAULT_BIG_BREAK_SECONDS: int = 900
+# Громкость звука таймера (issue #90) — 0..100%, тот же принцип NULL-значит-
+# дефолт, что у трёх настроек выше (см. app.db.models.User::sound_volume_percent).
+# Максимум (100%), а не середина — жалоба в issue была именно "слишком тихо",
+# не "нет вариантов": самый громкий вариант из доступных — разумный дефолт
+# без произвольного выбора конкретного процента ниже потолка. "Громче
+# текущего" достигается не только этим (100% > implicit-до-issue #90
+# поведения без регулировки), но и подъёмом базовых peakGain в
+# webapp-frontend/src/sound.ts — иначе даже 100% воспроизводило бы тот же
+# тихий звук, что и раньше.
+DEFAULT_TIMER_SOUND_VOLUME_PERCENT: int = 100
 
 TRANSITION_RETRY_WORKOUTS: int = 4
 # Тренировок на прежнем снаряде после неудачного перехода, прежде чем
