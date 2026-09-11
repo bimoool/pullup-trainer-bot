@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime, timedelta
 
-from aiogram import Bot, F, Router
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -34,6 +34,7 @@ from app.services.admin_reset import reset_user_progress
 from app.services.gamification import GamificationService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
+from app.workers.weekly_digest import send_weekly_digest_reminder
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +237,24 @@ async def handle_admin_broadcast_text(
     await state.clear()
     await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
     await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
+
+
+@router.callback_query(F.data == "admin_weekly_digest_now")
+async def handle_admin_weekly_digest_now(callback: CallbackQuery, dispatcher: Dispatcher, session: AsyncSession) -> None:
+    """"🗞 Разослать дайджест сейчас" (issue #86) — ручной запуск ТОГО ЖЕ
+    процесса, что и воскресный крон (app/workers/weekly_digest.py::register),
+    без дублирования сбора коммитов/issues или логики рассылки:
+    send_weekly_digest_reminder сама шлёт напоминание всем settings.
+    admin_id_list и выставляет FSM-состояние waiting_for_weekly_digest_text
+    — дальнейший ответ ловит тот же handle_weekly_digest_reply, что и у
+    расписания. dispatcher инжектится aiogram'ом автоматически (Dispatcher.
+    feed_update кладёт self в data как "dispatcher"), тем же способом, что
+    и bot/session — не нужно прокидывать его отдельным параметром роутера."""
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    await send_weekly_digest_reminder(callback.bot, dispatcher, session=session)
+    await callback.answer(texts.ADMIN_WEEKLY_DIGEST_TRIGGERED_TOAST)
 
 
 @router.callback_query(F.data.startswith("admin_dm:"))
