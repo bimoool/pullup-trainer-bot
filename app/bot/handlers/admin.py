@@ -167,13 +167,13 @@ def _album_caption(album: list[Message]) -> str | None:
     return next((m.caption for m in album if m.caption), None)
 
 
-async def _broadcast_to_onboarded_users(
-    bot: Bot, session: AsyncSession, message: Message, album: list[Message] | None = None,
-) -> tuple[int, int]:
+async def _broadcast(bot: Bot, message: Message, users: list[User], album: list[Message] | None = None) -> tuple[int, int]:
     """Общий механизм рассылки — используется и ручной "📢 Рассылка всем"
-    (handle_admin_broadcast_text), и еженедельным дайджестом
-    (handle_weekly_digest_reply, app/workers/weekly_digest.py решает КОГДА
-    его вызвать, не КАК рассылать). parse_mode=None: текст набирает
+    (handle_admin_broadcast_text, только завершившие онбординг), и
+    еженедельным дайджестом (handle_weekly_digest_reply, весь список
+    пользователей — issue #84). Список адресатов выбирает вызывающий
+    (_broadcast_to_onboarded_users/_broadcast_to_all_users), эта функция
+    только знает, КАК отправить, не КОМУ. parse_mode=None: текст набирает
     человек (админ), не наш HTML-шаблон — случайные "<"/"&" не должны
     ронять рассылку ошибкой парсинга сущностей.
 
@@ -189,7 +189,6 @@ async def _broadcast_to_onboarded_users(
     альбом уходил как одно фото с подписью, остальные без текста)."""
     photos = _album_photo_file_ids(album) if album else ([message.photo[-1].file_id] if message.photo else [])
     text = _album_caption(album) if album else _broadcast_source_text(message)
-    users = await UserRepository(session).list_onboarded()
     sent = 0
     for user in users:
         try:
@@ -206,6 +205,26 @@ async def _broadcast_to_onboarded_users(
         except TelegramAPIError:
             logger.warning("broadcast: failed to notify user %s", user.telegram_id, exc_info=True)
     return sent, len(users)
+
+
+async def _broadcast_to_onboarded_users(
+    bot: Bot, session: AsyncSession, message: Message, album: list[Message] | None = None,
+) -> tuple[int, int]:
+    """Ручная "📢 Рассылка всем" — только завершившие онбординг. Сознательно
+    не расширена на всех пользователей (issue #84) — этот охват не трогать
+    без явной отдельной просьбы, в отличие от _broadcast_to_all_users."""
+    users = await UserRepository(session).list_onboarded()
+    return await _broadcast(bot, message, users, album=album)
+
+
+async def _broadcast_to_all_users(
+    bot: Bot, session: AsyncSession, message: Message, album: list[Message] | None = None,
+) -> tuple[int, int]:
+    """Еженедельный дайджест — охват шире ручной рассылки: включает и не
+    прошедших онбординг (issue #84), цель — вернуть тех, кто начал, но не
+    закончил анкету."""
+    users = await UserRepository(session).list_all()
+    return await _broadcast(bot, message, users, album=album)
 
 
 @router.message(AdminStates.waiting_for_broadcast_text)
@@ -449,7 +468,11 @@ async def handle_weekly_digest_reply(
         await message.answer(texts.ADMIN_WEEKLY_DIGEST_EXPIRED.format(expires_at=deadline.strftime("%d.%m %H:%M")))
         return
 
-    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message, album=album)
+    # _broadcast_to_all_users, не _broadcast_to_onboarded_users — дайджест
+    # охватывает и не прошедших онбординг (issue #84), цель — вернуть тех,
+    # кто начал, но не закончил анкету. Обычная ручная рассылка (/admin →
+    # "📢 Рассылка всем") этот охват не расширяет, см. её докстринг.
+    sent, total = await _broadcast_to_all_users(message.bot, session, message, album=album)
     # Только при реальной рассылке — просроченный ответ (ветка above) сюда
     # не доходит, иначе last_digest_sent_at сдвигался бы неделя за неделей
     # без единой настоящей отправки пользователям. text — из того же
