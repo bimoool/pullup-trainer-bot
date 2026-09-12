@@ -5,6 +5,10 @@ from enum import StrEnum
 from statistics import mean
 
 from app.domain.constants import (
+    HEAVY_BLOCK_FIXED_REPS,
+    HEAVY_BLOCK_MEDIAN_REPS,
+    HEAVY_GROWTH_MAX_REPS_THRESHOLD,
+    HEAVY_WEIGHT_ROUND_TO_KG,
     ROLLBACK_REPS,
     ROLLBACK_WEIGHT_PCT,
     STEP_PCT,
@@ -24,6 +28,7 @@ from app.domain.constants import (
     BlockConfig,
     EquipmentType,
     VolumeGrowthReason,
+    epley_multiplier,
     to_signed_load,
 )
 from app.domain.session import BlockAssignment, WorkoutRecord
@@ -433,6 +438,39 @@ def suggest_weight_range(current_weight_kg: Decimal) -> tuple[Decimal, Decimal] 
     return Decimal(str(low)), Decimal(str(high))
 
 
+def suggest_heavy_weight_kg(normal_weight_kg: Decimal) -> Decimal:
+    """Вес для чётной ("тяжёлой") тренировки блока Б (issue #97) — через
+    формулу Эпли от текущего обычного веса силового блока: медиана
+    HEAVY_BLOCK_MEDIAN_REPS (5) повторений обычного блока переводится в
+    эквивалент 1ПМ, оттуда обратно — вес на HEAVY_BLOCK_FIXED_REPS (3)
+    повторения. Округление вверх до HEAVY_WEIGHT_ROUND_TO_KG (0.5 — НЕ
+    WEIGHT_ROUND_TO_KG, шаг для этого случая подтверждён автором продукта
+    отдельно, см. константу).
+
+    Вызывается только один раз — перед самой первой тяжёлой тренировкой
+    (предыдущей тяжёлой ещё не было в истории); дальше подсказку несёт сама
+    история тяжёлых тренировок, см. resolve_heavy_weight_growth и
+    WorkoutRepository._resolve_next_state (ищет последний тяжёлый Block)."""
+    one_rm_equivalent = normal_weight_kg * epley_multiplier(HEAVY_BLOCK_MEDIAN_REPS)
+    heavy = float(one_rm_equivalent / epley_multiplier(HEAVY_BLOCK_FIXED_REPS))
+    return Decimal(str(_ceil_to_step(heavy, HEAVY_WEIGHT_ROUND_TO_KG)))
+
+
+def resolve_heavy_weight_growth(max_reps: int, current_heavy_weight_kg: Decimal) -> Decimal:
+    """Подсказка веса на СЛЕДУЮЩУЮ тяжёлую тренировку по факту последней
+    (issue #97, решение автора продукта после ревизии плана): пятый подход
+    (тот же смысл, что "подход на максимум" обычного силового блока) >=
+    HEAVY_GROWTH_MAX_REPS_THRESHOLD (5) — рост на HEAVY_WEIGHT_ROUND_TO_KG,
+    иначе вес остаётся прежним. Без отката при провале — согласовано явно,
+    "не откатываем вес при провале, просто не растим": простой порог по
+    ОДНОЙ тренировке, не стрик из нескольких подряд, как у обычного
+    силового блока (WEAK_STREAK_ROLLBACK_THRESHOLD)."""
+    if max_reps >= HEAVY_GROWTH_MAX_REPS_THRESHOLD:
+        grown = _ceil_to_step(float(current_heavy_weight_kg) + HEAVY_WEIGHT_ROUND_TO_KG, HEAVY_WEIGHT_ROUND_TO_KG)
+        return Decimal(str(grown))
+    return current_heavy_weight_kg
+
+
 def rollback_target(target: int) -> int:
     """Откат цели объёмного блока при пропуске 21–35 дней: target - ROLLBACK_REPS."""
     return target - ROLLBACK_REPS
@@ -495,7 +533,12 @@ def recalculate_cascade(
     Блок A с is_deload=True полностью выключен из пересчёта (часть 4
     ревизии формулы: разгрузочная тренировка не двигает и не откатывает
     прогрессию) — target/work_sets/весовые/стрик-счётчики проходят через
-    такую запись без изменений, как будто её не было."""
+    такую запись без изменений, как будто её не было. Блок Б с is_heavy=True
+    (чётная "тяжёлая" тренировка, issue #97) выключен из пересчёта тем же
+    приёмом — target_before_b/target_after_b и weak_streak_b/prev_volume_b
+    проходят через неё без изменений; фактический вес (equipment_value) и
+    результат (log) при этом сохраняются как есть, каскад их не трогает,
+    только не даёт им сдвинуть прогрессию обычных (нечётных) тренировок."""
     updated: list[WorkoutRecord] = []
     target_a, target_b = starting_target_a, starting_target_b
     prev_volume_a, prev_volume_b = starting_volume_a, starting_volume_b
@@ -544,32 +587,48 @@ def recalculate_cascade(
             prev_volume_a = record.block_a.log.volume
             target_a, work_sets_a = result_a.new_target, result_a.new_work_sets
 
-        result_b = recalculate_target(
-            STRENGTH_BLOCK, target_b, record.block_b.log.working_reps, record.block_b.log.max_reps,
-            record.block_b.log.volume, prev_volume_b,
-            consecutive_weak_before=weak_streak_b,
-        )
+        if record.block_b.is_heavy:
+            block_b_assignment = BlockAssignment(
+                log=record.block_b.log,
+                target_before=target_b,
+                target_after=target_b,
+                equipment_changed=False,
+                equipment_type=record.block_b.equipment_type,
+                equipment_value=record.block_b.equipment_value,
+                equipment_item_id=record.block_b.equipment_item_id,
+                transition_failed=record.block_b.transition_failed,
+                is_heavy=True,
+            )
+        else:
+            result_b = recalculate_target(
+                STRENGTH_BLOCK, target_b, record.block_b.log.working_reps, record.block_b.log.max_reps,
+                record.block_b.log.volume, prev_volume_b,
+                consecutive_weak_before=weak_streak_b,
+            )
+            block_b_assignment = BlockAssignment(
+                log=record.block_b.log,
+                target_before=target_b,
+                target_after=result_b.new_target,
+                equipment_changed=result_b.equipment_changed,
+                equipment_type=record.block_b.equipment_type,
+                equipment_value=record.block_b.equipment_value,
+                equipment_item_id=record.block_b.equipment_item_id,
+                transition_failed=record.block_b.transition_failed,
+                is_heavy=False,
+            )
+            target_b = result_b.new_target
+            weak_streak_b = weak_streak_b + 1 if record.block_b.log.volume < prev_volume_b else 0
+            prev_volume_b = record.block_b.log.volume
+
         updated.append(
             WorkoutRecord(
                 performed_at=record.performed_at,
                 block_a=block_a_assignment,
-                block_b=BlockAssignment(
-                    log=record.block_b.log,
-                    target_before=target_b,
-                    target_after=result_b.new_target,
-                    equipment_changed=result_b.equipment_changed,
-                    equipment_type=record.block_b.equipment_type,
-                    equipment_value=record.block_b.equipment_value,
-                    equipment_item_id=record.block_b.equipment_item_id,
-                    transition_failed=record.block_b.transition_failed,
-                ),
+                block_b=block_b_assignment,
                 comment=record.comment,
                 workout_set_id=record.workout_set_id,
                 exercise_type=record.exercise_type,
             )
         )
-        target_b = result_b.new_target
-        weak_streak_b = weak_streak_b + 1 if record.block_b.log.volume < prev_volume_b else 0
-        prev_volume_b = record.block_b.log.volume
 
     return updated

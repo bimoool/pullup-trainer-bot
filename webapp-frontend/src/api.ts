@@ -43,6 +43,10 @@ export interface WorkoutPlanResponse {
    * текст форматирует фронтенд (см. WORK_SETS_GROWTH_NOTICES в WorkoutScreen.tsx). */
   work_sets_growth_reason: "stall" | "ceiling" | null;
   band_items: BandItemInfo[];
+  /** Чётная ("тяжёлая") тренировка блока Б (issue #97) — фиксированные
+   * повторения, повышенный вес (уже подставлен в equipment_b.value/label
+   * сервером, см. app/web/routes.py::_resolve_plan_context). */
+  is_heavy_b: boolean;
 }
 
 export interface AnomalyFlags {

@@ -325,6 +325,21 @@ async def test_submit_applies_actual_weight_override_for_weight_block(session):
     user = await _make_returning_user_with_weight_block_b(
         session, telegram_id=42013, days_ago=5, weight_value=Decimal("10.0"),
     )
+    # Ровно одна прошлая тренировка блока Б на WEIGHT сделала бы СЛЕДУЮЩУЮ
+    # чётной ("тяжёлой", issue #97) — план тогда подставил бы подсказку
+    # повышенного веса вместо унаследованного 10.0, что не про это тест.
+    # Вторая тренировка (позиция 2, тяжёлая) возвращает следующую (позицию
+    # 3) к обычной прогрессии — независимо от чередования проверяем именно
+    # правку "фактический вес" силового блока.
+    active_set = await WorkoutSetRepository(session).get_active_for_user(user.id)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=active_set.id, performed_at=datetime.now(UTC) - timedelta(days=3),
+        block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("10.0"),
+    )
+
     plan = await _get_plan(session, telegram_id=user.telegram_id)
     assert plan["equipment_b"]["type"] == "weight"
     assert Decimal(plan["equipment_b"]["value"]) == Decimal("10.0")

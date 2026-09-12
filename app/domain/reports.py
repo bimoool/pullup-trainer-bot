@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from app.domain.constants import EquipmentType
+from app.domain.constants import EquipmentType, epley_multiplier
 from app.domain.session import BlockAssignment, WorkoutRecord
 
 
@@ -213,10 +213,13 @@ def _epley_eligible(block: BlockAssignment) -> bool:
 
 def _epley_load(weight_kg: Decimal, block: BlockAssignment) -> float:
     """(вес тела + отягощение) × (1 + повторения / 30) — расчётный
-    эквивалент нагрузки на 1 повторение, не буквальный вес."""
+    эквивалент нагрузки на 1 повторение, не буквальный вес. Множитель —
+    app.domain.constants.epley_multiplier, общий с
+    app.domain.progression.suggest_heavy_weight_kg (issue #97) — не
+    отдельная копия той же формулы."""
     equipment_value = block.equipment_value if block.equipment_type == EquipmentType.WEIGHT else Decimal(0)
     reps = block.log.best_set
-    return float((weight_kg + (equipment_value or Decimal(0))) * (Decimal(1) + Decimal(reps) / Decimal(30)))
+    return float((weight_kg + (equipment_value or Decimal(0))) * epley_multiplier(reps))
 
 
 @dataclass(frozen=True)

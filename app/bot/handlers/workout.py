@@ -43,6 +43,8 @@ from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
     DELOAD_INTERVAL_DAYS,
+    HEAVY_BLOCK_FIXED_REPS,
+    HEAVY_GROWTH_MAX_REPS_THRESHOLD,
     MIN_REST_DAYS,
     SET_LENGTH,
     STRENGTH_BLOCK,
@@ -358,6 +360,10 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
             "is_first_workout": not history,
             "is_deload_a": is_deload_a,
             "work_sets_a": 1 if is_deload_a else target_a_state.work_sets,
+            # Чётная ("тяжёлая") тренировка блока Б (issue #97) — только
+            # текст приглашения/подсказка веса отличаются, парсинг результата
+            # не меняется (см. _send_plan/_send_block_b_prompt/equipment.py).
+            "is_heavy_b": target_b_state.is_heavy,
         },
     )
     await callback.answer()
@@ -434,6 +440,10 @@ async def handle_retest_baseline(message: Message, state: FSMContext, session: A
             # с 30-дневным окном разгрузки не стоит усложнения.
             "is_deload_a": False,
             "work_sets_a": VOLUME_BLOCK.work_sets,
+            # Ретест переспрашивает снаряд заново для обоих блоков
+            # (target_b_state=None выше) — чередование (issue #97) не
+            # применимо, пока новый снаряд/цель ещё не установлены.
+            "is_heavy_b": False,
         },
     )
 
@@ -469,12 +479,17 @@ async def _send_plan(
 
     work_sets_a = data.get("work_sets_a", VOLUME_BLOCK.work_sets)
     example_a = format_reps_example(target_a, work_sets_a)
+    equipment_b_label = format_equipment_from_result(equipment_result_b, instrumental=True)
+    block_b_line_template = (
+        texts.WORKOUT_PLAN_BLOCK_B_LINE_HEAVY if data.get("is_heavy_b", False)
+        else texts.WORKOUT_PLAN_BLOCK_B_LINE_NORMAL
+    )
+    block_b_line = block_b_line_template.format(target_b=target_b, equipment_b=equipment_b_label)
     await message.answer(
         texts.WORKOUT_PLAN.format(
-            target_a=target_a, target_b=target_b, example_a=example_a,
+            target_a=target_a, example_a=example_a, block_b_line=block_b_line,
             work_sets_a=work_sets_a, sets_word_a=format_sets_word(work_sets_a), max_set_a=work_sets_a + 1,
             equipment_a=format_equipment_from_result(equipment_result_a, instrumental=True),
-            equipment_b=format_equipment_from_result(equipment_result_b, instrumental=True),
         ),
         reply_markup=block_prompt_keyboard(equipment_type_a, block_key="a", back_callback=None),
     )
@@ -558,9 +573,18 @@ async def handle_block_a_anomaly_reenter(callback: CallbackQuery, state: FSMCont
 async def _send_block_b_prompt(message: Message, state: FSMContext) -> None:
     await state.set_state(WorkoutStates.waiting_for_block_b)
     data = await state.get_data()
-    example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
     equipment_result_b = data["equipment_results"]["b"]
-    prompt = texts.BLOCK_B_PROMPT.format(example=example_b) + texts.BLOCK_EQUIPMENT_NOTE.format(
+    is_heavy_b = data.get("is_heavy_b", False)
+    if is_heavy_b:
+        # Тяжёлая (чётная) тренировка блока Б (issue #97) — пример
+        # показывает фикс. 3 повторения, а не растущую цель силового блока
+        # (парсинг результата не меняется, см. BLOCK_B_PROMPT_HEAVY).
+        example_b = format_reps_example(HEAVY_BLOCK_FIXED_REPS, STRENGTH_BLOCK.work_sets)
+        prompt = texts.BLOCK_B_PROMPT_HEAVY.format(example=example_b)
+    else:
+        example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
+        prompt = texts.BLOCK_B_PROMPT.format(example=example_b)
+    prompt += texts.BLOCK_EQUIPMENT_NOTE.format(
         equipment=format_equipment_from_result(equipment_result_b, instrumental=True),
     )
     await message.answer(
@@ -801,6 +825,11 @@ async def _send_set_close_report(message: Message, session: AsyncSession, user_i
 def _block_outcome_suffix(block: Block) -> str:
     if block.is_deload:
         return texts.VOLUME_DELOAD_DONE_SUFFIX
+    if block.is_heavy:
+        suffix = texts.HEAVY_TRAINING_DONE_SUFFIX
+        if block.max_reps >= HEAVY_GROWTH_MAX_REPS_THRESHOLD:
+            suffix += texts.HEAVY_WEIGHT_GROWTH_SUFFIX.format(reps=HEAVY_GROWTH_MAX_REPS_THRESHOLD)
+        return suffix
     if block.transition_failed:
         if block.equipment_type == EquipmentType.BAND:
             return texts.TRANSITION_FAILED_BAND_SUFFIX

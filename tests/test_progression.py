@@ -4,6 +4,8 @@ from decimal import Decimal
 import pytest
 
 from app.domain.constants import (
+    HEAVY_GROWTH_MAX_REPS_THRESHOLD,
+    HEAVY_WEIGHT_ROUND_TO_KG,
     STRENGTH_BLOCK,
     VOLUME_BIG_OVERSHOOT_THRESHOLD,
     VOLUME_BLOCK,
@@ -28,8 +30,10 @@ from app.domain.progression import (
     recalculate_cascade,
     recalculate_target,
     recalculate_volume_block,
+    resolve_heavy_weight_growth,
     rollback_signed_load,
     rollback_target,
+    suggest_heavy_weight_kg,
     suggest_starting_equipment,
     suggest_weight_range,
 )
@@ -584,14 +588,19 @@ def test_volume_block_growth_reason_none_when_equipment_changes_instead_of_growi
 
 # --- recalculate_cascade -------------------------------------------------------
 
-def _block_assignment(working_reps, max_reps, target_before, equipment_type=EquipmentType.BAND, is_deload=False):
+def _block_assignment(
+    working_reps, max_reps, target_before, equipment_type=EquipmentType.BAND, is_deload=False, is_heavy=False,
+    equipment_value=None,
+):
     return BlockAssignment(
         log=BlockLog(working_reps=working_reps, max_reps=max_reps),
         target_before=target_before,
         target_after=0,
         equipment_changed=False,
         equipment_type=equipment_type,
+        equipment_value=equipment_value,
         is_deload=is_deload,
+        is_heavy=is_heavy,
     )
 
 
@@ -722,3 +731,125 @@ def test_recalculate_cascade_resumes_normal_progression_after_deload():
 
     assert updated[1].block_a.target_before == 17
     assert updated[1].block_a.target_after == 18  # тот же расчёт, что в test_recalculate_cascade_chains_targets
+
+
+# --- Тяжёлая (чётная) тренировка блока Б (issue #97) -------------------------------
+
+
+def test_suggest_heavy_weight_kg_example_20kg():
+    # 20 * (1+5/30) / (1+3/30) = 20 * 35/33 = 21.2121... -> округление вверх
+    # до шага 0.5 -> 21.5.
+    assert suggest_heavy_weight_kg(Decimal(20)) == Decimal("21.5")
+
+
+def test_suggest_heavy_weight_kg_example_10kg():
+    # 10 * 35/33 = 10.606... -> 11.0.
+    assert suggest_heavy_weight_kg(Decimal(10)) == Decimal("11.0")
+
+
+def test_suggest_heavy_weight_kg_matches_issue_multiplier_approximation():
+    # Множитель из issue (~+6%, точно 35/33 = 1.0606...) — на большом весе,
+    # где округление до 0.5 кг вносит малую относительную погрешность.
+    normal = Decimal(100)
+    heavy = suggest_heavy_weight_kg(normal)
+    assert abs(float(heavy) / float(normal) - 35 / 33) < 0.01
+
+
+def test_resolve_heavy_weight_growth_at_threshold_grows_by_step():
+    # Пример Кирилла буквально: "3 3 3 3 5" -> рост веса.
+    assert resolve_heavy_weight_growth(5, Decimal("21.5")) == Decimal("22.0")
+
+
+def test_resolve_heavy_weight_growth_above_threshold_still_grows_by_fixed_step():
+    assert resolve_heavy_weight_growth(8, Decimal("21.5")) == Decimal("22.0")
+
+
+def test_resolve_heavy_weight_growth_below_threshold_keeps_weight():
+    # Пример Кирилла буквально: "3 3 3 3 4" -> без роста.
+    assert resolve_heavy_weight_growth(4, Decimal("21.5")) == Decimal("21.5")
+
+
+def test_resolve_heavy_weight_growth_no_rollback_on_failure():
+    assert resolve_heavy_weight_growth(0, Decimal("21.5")) == Decimal("21.5")
+
+
+def test_resolve_heavy_weight_growth_threshold_is_five():
+    assert HEAVY_GROWTH_MAX_REPS_THRESHOLD == 5
+    assert HEAVY_WEIGHT_ROUND_TO_KG == 0.5
+
+
+def test_recalculate_cascade_skips_heavy_block_b_entirely():
+    # Тяжёлая (чётная) тренировка блока Б — не двигает и не откатывает
+    # прогрессию силового блока, проходит через каскад без изменений (тот
+    # же принцип, что is_deload у блока A).
+    record = WorkoutRecord(
+        performed_at=datetime(2026, 1, 3, tzinfo=UTC),
+        block_a=_block_assignment((17, 17, 17), 19, target_before=0),
+        block_b=_block_assignment(
+            (3, 3, 3, 3), 5, target_before=0, is_heavy=True, equipment_value=Decimal("21.5"),
+        ),
+    )
+
+    updated = recalculate_cascade(
+        starting_target_a=17, starting_target_b=20,
+        starting_volume_a=68, starting_volume_b=100,
+        subsequent_workouts=[record],
+        starting_work_sets_a=3,
+    )
+
+    block_b = updated[0].block_b
+    assert block_b.target_before == 20
+    assert block_b.target_after == 20
+    assert block_b.equipment_changed is False
+    assert block_b.is_heavy is True
+    assert block_b.equipment_value == Decimal("21.5")
+
+
+def test_recalculate_cascade_heavy_block_b_does_not_affect_weak_streak_or_prev_volume():
+    # weak_streak_b/prev_volume_b должны "перепрыгнуть" тяжёлую тренировку
+    # без изменений — как будто её не было, тот же принцип, что is_deload у
+    # блока A. Проверяем это через 3 подряд "слабых" ОБЫЧНЫХ тренировки с
+    # тяжёлой МЕЖДУ первой и второй: откат должен сработать ровно на
+    # четвёртой записи (третьей подряд слабой обычной), если стрик и
+    # prev_volume действительно перепрыгнули тяжёлую, а не сбросились/не
+    # подменились на её собственный объём.
+    # working_reps здесь намеренно все < STRENGTH_BLOCK.equipment_change_threshold
+    # (7) — иначе сработал бы порог смены снаряда вместо интересующей нас
+    # ветки "слабая тренировка/откат".
+    normal_1 = WorkoutRecord(
+        performed_at=datetime(2026, 1, 3, tzinfo=UTC),
+        block_a=_block_assignment((17, 17, 17), 19, target_before=0),
+        block_b=_block_assignment((6, 6, 6, 6), 6, target_before=0),  # volume=30, weak vs prev=100
+    )
+    heavy = WorkoutRecord(
+        performed_at=datetime(2026, 1, 6, tzinfo=UTC),
+        block_a=_block_assignment((17, 17, 17), 19, target_before=0),
+        block_b=_block_assignment(
+            (3, 3, 3, 3), 3, target_before=0, is_heavy=True, equipment_value=Decimal("21.5"),
+        ),  # volume=15 — должен быть проигнорирован как prev_volume для следующей записи
+    )
+    normal_2 = WorkoutRecord(
+        performed_at=datetime(2026, 1, 9, tzinfo=UTC),
+        block_a=_block_assignment((17, 17, 17), 19, target_before=0),
+        block_b=_block_assignment((5, 5, 5, 5), 5, target_before=0),  # volume=25, weak vs 30 (не vs 15!)
+    )
+    normal_3 = WorkoutRecord(
+        performed_at=datetime(2026, 1, 12, tzinfo=UTC),
+        block_a=_block_assignment((17, 17, 17), 19, target_before=0),
+        block_b=_block_assignment((4, 4, 4, 4), 4, target_before=0),  # volume=20, weak vs 25 -> 3-й подряд, откат
+    )
+
+    updated = recalculate_cascade(
+        starting_target_a=17, starting_target_b=10,
+        starting_volume_a=68, starting_volume_b=100,
+        subsequent_workouts=[normal_1, heavy, normal_2, normal_3],
+        starting_work_sets_a=3,
+    )
+
+    assert updated[0].block_b.target_after == 10  # 1-я слабая, ещё нет отката
+    assert updated[1].block_b.is_heavy is True
+    assert updated[1].block_b.target_before == 10
+    assert updated[1].block_b.target_after == 10  # тяжёлая — заморожена
+    assert updated[2].block_b.target_before == 10  # унаследовано через тяжёлую без изменений
+    assert updated[2].block_b.target_after == 10  # 2-я слабая (30<40, не 30<15) — ещё нет отката
+    assert updated[3].block_b.target_after == 9  # 3-я слабая подряд — откат

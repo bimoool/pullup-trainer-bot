@@ -90,6 +90,14 @@ class BlockAssignment:
     work_sets_before: int | None = None
     work_sets_after: int | None = None
     is_deload: bool = False
+    # Чётная ("тяжёлая") тренировка блока Б в рамках сета из 12 (issue #97) —
+    # только для блока Б, у блока A всегда False. Фиксированные повторения в
+    # подходе, повышенный вес; не участвует в пересчёте прогрессии (target_
+    # before/after равны, как и у is_deload выше) — только в статистике/
+    # объёме/тренде app.domain.reports.epley_progress (там нормализуется
+    # формулой Эпли наравне с обычными тренировками, отдельного случая не
+    # требует).
+    is_heavy: bool = False
     # Почему выросли рабочие подходы ЭТОЙ тренировки (issue #79) — застой
     # или упор в потолок повторений (см. app.domain.progression.
     # recalculate_volume_block). None, если work_sets не выросли за эту

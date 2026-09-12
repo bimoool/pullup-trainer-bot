@@ -324,6 +324,13 @@ class Block(Base):
     # ОТСЮДА, не из max_reps, иначе итог исказил бы "лучший подход"
     # (best_set/лидерборд MAX_REPS/MAX_WEIGHT) так же, как баг из issue #88.
     reported_volume: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Чётная ("тяжёлая") тренировка блока Б в рамках сета из 12 (issue #97) —
+    # только для block_type=B, у блока A всегда False. Фиксированные
+    # повторения в подходе (working_reps не меняет форму — те же 4+1, что и
+    # обычно), повышенный вес (equipment_value). Не участвует в пересчёте
+    # прогрессии — target_before/after всегда равны, тем же приёмом, что и
+    # is_deload выше (см. app.domain.progression.recalculate_cascade).
+    is_heavy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     workout: Mapped["Workout"] = relationship(back_populates="blocks")
