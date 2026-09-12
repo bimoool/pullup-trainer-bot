@@ -87,8 +87,14 @@ class BackdateStates(StatesGroup):
     waiting_for_date = State()
     waiting_for_block_a = State()
     waiting_for_block_a_confirm = State()
+    # Выбор формата ввода блока Б (issue #88) — по честной раскладке
+    # подходов (waiting_for_block_b, как раньше) или только итог без неё
+    # (waiting_for_block_b_total[_max], см. app/bot/handlers/backdate.py).
+    waiting_for_block_b_mode = State()
     waiting_for_block_b = State()
     waiting_for_block_b_confirm = State()
+    waiting_for_block_b_total = State()
+    waiting_for_block_b_total_max = State()
 
 
 class FreeWorkoutStates(StatesGroup):

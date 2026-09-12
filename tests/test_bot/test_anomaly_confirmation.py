@@ -243,9 +243,17 @@ async def test_backdate_block_a_confirm_advances_to_block_b(session, user: User,
     )
 
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
-    assert await fsm.get_state() == BackdateStates.waiting_for_block_b.state
+    # issue #88 — между блоком A и блоком Б теперь всегда есть выбор формата
+    # ввода (waiting_for_block_b_mode); "по подходам, как обычно" ведёт туда
+    # же, куда раньше вёл anomaly:confirm напрямую.
+    assert await fsm.get_state() == BackdateStates.waiting_for_block_b_mode.state
     data = await fsm.get_data()
     assert data["block_a_working_reps"] == [10, 10]
+
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
+    )
+    assert await fsm.get_state() == BackdateStates.waiting_for_block_b.state
 
 
 async def test_backdate_block_b_confirm_reaches_equipment_queue_with_correct_user(
@@ -258,6 +266,11 @@ async def test_backdate_block_b_confirm_reaches_equipment_queue_with_correct_use
     telegram_id по-прежнему настоящий пользователь."""
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 6"), session=session)
+    # issue #88 — выбор формата ввода блока Б, "по подходам, как обычно",
+    # прежде чем текстовый ввод блока Б вообще начнёт распознаваться.
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
+    )
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 60"), session=session)
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     assert await fsm.get_state() == BackdateStates.waiting_for_block_b_confirm.state
@@ -284,6 +297,9 @@ async def test_backdate_block_b_confirm_reaches_equipment_queue_with_correct_use
 async def test_backdate_block_b_reenter_returns_to_block_b_state(session, user: User, bot: Bot, dispatcher: Dispatcher):
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 6"), session=session)
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
+    )
     await dispatcher.feed_update(bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 60"), session=session)
 
     await dispatcher.feed_update(

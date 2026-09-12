@@ -163,13 +163,17 @@ def workout_to_rows(workout: WorkoutModel, *, telegram_id: int | None, username:
     for block in sorted(workout.blocks, key=lambda b: b.block_type.value):
         if workout.is_free_entry and block.block_type == BlockType.B:
             continue  # заглушка на уровне схемы (record_free_workout) — в лог не идёт
+        # reported_volume (issue #88) — итог блока Б бэкдейта без раскладки
+        # по подходам, см. app.domain.session.BlockLog.volume: тот же
+        # приоритет, если задан — используется вместо max_reps+sum(reps).
+        volume = block.reported_volume if block.reported_volume is not None else sum(block.working_reps) + block.max_reps
         rows.append([
             str(workout.id), entry_type, str(workout.user_id), _opt(telegram_id), _opt(username),
             workout.performed_at.isoformat(), block.block_type.value,
             block.equipment_type.value, _opt(block.equipment_value),
             ", ".join(str(r) for r in block.working_reps), str(block.max_reps),
             str(block.target_before), str(block.target_after),
-            str(sum(block.working_reps) + block.max_reps),
+            str(volume),
             workout.comment or "",
         ])
     return rows

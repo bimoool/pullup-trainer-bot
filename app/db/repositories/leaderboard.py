@@ -20,13 +20,19 @@ _BEST_SET_EXPR = (
     "(SELECT MAX(elem::int) FROM jsonb_array_elements_text(b.working_reps) AS elem), 0))"
 )
 
+_BLOCK_VOLUME_EXPR = (
+    "COALESCE(b.reported_volume, b.max_reps + COALESCE("
+    "(SELECT SUM(elem::int) FROM jsonb_array_elements_text(b.working_reps) AS elem), 0))"
+)
+
 _METRIC_EXPR: dict[LeaderboardMetric, str] = {
     LeaderboardMetric.MAX_REPS: f"MAX({_BEST_SET_EXPR})",
     LeaderboardMetric.MAX_WEIGHT: "MAX(b.equipment_value)",
-    LeaderboardMetric.TOTAL_VOLUME: (
-        "SUM(b.max_reps + COALESCE("
-        "(SELECT SUM(elem::int) FROM jsonb_array_elements_text(b.working_reps) AS elem), 0))"
-    ),
+    # b.reported_volume (issue #88) — итог за тренировку без раскладки по
+    # подходам (бэкдейт блока Б), см. app.domain.session.BlockLog.volume —
+    # тот же приоритет, что и там: если задан, считается вместо
+    # max_reps+SUM(working_reps), не в дополнение.
+    LeaderboardMetric.TOTAL_VOLUME: f"SUM({_BLOCK_VOLUME_EXPR})",
 }
 
 # Зеркало app.domain.leaderboard.age_bucket в SQL (issue #67) — возраст

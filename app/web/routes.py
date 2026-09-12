@@ -505,8 +505,8 @@ async def submit_workout(
         equipment_b=_equipment_info(
             block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
         ),
-        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
 
 
@@ -634,8 +634,12 @@ async def get_history(
                 equipment_b=_equipment_info(
                     block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
                 ),
-                result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-                result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+                result_a=format_block_result(
+                    block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume,
+                ),
+                result_b=format_block_result(
+                    block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume,
+                ),
                 target_a=block_a.target_after if is_latest else None,
                 target_b=block_b.target_after if is_latest else None,
             ),
@@ -976,8 +980,8 @@ async def edit_history_workout(
         equipment_b=_equipment_info(
             block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
         ),
-        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
 
 
@@ -1194,8 +1198,8 @@ async def submit_backdated_workout(
         equipment_b=_equipment_info(
             block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
         ),
-        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
 
 
