@@ -125,6 +125,12 @@ class User(Base):
     rest_seconds_block_a: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     rest_seconds_block_b: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     big_break_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Громкость звука таймера в процентах, 0..100 (issue #90) — тот же
+    # принцип, что у трёх полей выше: NULL значит "не настраивал", дефолт
+    # (см. app.domain.constants.DEFAULT_TIMER_SOUND_VOLUME_PERCENT) резолвится
+    # на чтении. 0 — валидное значение ("выключить звук"), отличное от NULL —
+    # резолвинг дефолта обязан проверять `is not None`, а не truthiness.
+    sound_volume_percent: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     # Лидерборд (issue #67) — NULL значит "анонимно", единственное и
     # дефолтное состояние, пока пользователь явно не задал имя. Явный отказ
     # ("быть анонимным" после того, как имя уже было задано) — это то же

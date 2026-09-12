@@ -17,6 +17,23 @@
  * планированием осциллятора, а не полагается на состояние на момент
  * ensureAudioUnlocked. */
 
+/** Громкость звука таймера, 0..100% (issue #90) — module-level, не React
+ * state: переживает remount TimerScreen между шагами (каждый шаг — новый
+ * компонент с key={stepIndex}, см. LiveWorkoutScreen.tsx), не нужно
+ * пробрасывать значение как проп через дерево компонентов. Дефолт совпадает
+ * с DEFAULT_TIMER_SOUND_VOLUME_PERCENT на бэкенде (app/domain/constants.py)
+ * до первого fetchTimerPreferences — сохранённое значение пользователя
+ * применяется поверх (LiveWorkoutScreen.tsx, сразу после загрузки prefs). */
+let soundVolumePercent = 100;
+
+export function getSoundVolumePercent(): number {
+  return soundVolumePercent;
+}
+
+export function setSoundVolumePercent(percent: number): void {
+  soundVolumePercent = Math.min(100, Math.max(0, percent));
+}
+
 let audioContext: AudioContext | null = null;
 
 export function ensureAudioUnlocked(): void {
@@ -33,11 +50,15 @@ export function ensureAudioUnlocked(): void {
   }
 }
 
-function scheduleBeep(frequency: number, durationSeconds: number, peakGain: number): void {
+function scheduleBeep(frequency: number, durationSeconds: number, peakGainAtFullVolume: number): void {
   const context = audioContext;
-  if (!context) {
+  // 0% — полная тишина, не просто "тихий звук": exponentialRampToValueAtTime
+  // не принимает 0 как цель (RangeError), поэтому это отдельная ветка, а не
+  // peakGain=0 ниже по потоку.
+  if (!context || soundVolumePercent <= 0) {
     return;
   }
+  const peakGain = peakGainAtFullVolume * (soundVolumePercent / 100);
   const play = () => {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
@@ -60,18 +81,21 @@ function scheduleBeep(frequency: number, durationSeconds: number, peakGain: numb
 }
 
 /** Финальный сигнал окончания отдыха — длиннее и выше остальных, чтобы
- * отличаться от предупредительных бипов ниже (issue #63, п.5). */
+ * отличаться от предупредительных бипов ниже (issue #63, п.5). Базовый
+ * peakGain (при 100% громкости) поднят с исходных 0.3/0.2/0.2 (issue #90:
+ * "звук очень тихий") — сама по себе регулировка громкости не решила бы
+ * жалобу, если бы 100% продолжали звучать как раньше. */
 export function playTimerBeep(): void {
-  scheduleBeep(880, 0.4, 0.3);
+  scheduleBeep(880, 0.4, 0.5);
 }
 
 /** Предупреждение за 10 секунд до конца отдыха (issue #63, п.5) — тот же
  * простой bip, короче и тише финального. */
 export function playWarningBeep(): void {
-  scheduleBeep(660, 0.15, 0.2);
+  scheduleBeep(660, 0.15, 0.35);
 }
 
 /** Отметки 3/2/1 секунда до конца отдыха (issue #63, п.5). */
 export function playCountdownBeep(): void {
-  scheduleBeep(660, 0.12, 0.2);
+  scheduleBeep(660, 0.12, 0.35);
 }

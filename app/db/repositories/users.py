@@ -81,13 +81,14 @@ class UserRepository:
         await self._session.flush()
         return user
 
-    async def update_timer_preference(self, user_id: int, *, field: str, duration_seconds: int) -> User:
-        """Персистентная настройка длительности таймера Mini App (issue #59,
-        волна 2) — field один из "rest_seconds_block_a"/"rest_seconds_block_b"/
-        "big_break_seconds" (валидация значения — в app/web/routes.py, здесь
-        только запись одного из трёх полей на месте)."""
+    async def update_timer_preference(self, user_id: int, *, field: str, value: int) -> User:
+        """Персистентная настройка таймера Mini App (issue #59, волна 2;
+        sound_volume_percent — issue #90) — field один из
+        "rest_seconds_block_a"/"rest_seconds_block_b"/"big_break_seconds"/
+        "sound_volume_percent" (валидация значения — в app/web/routes.py,
+        здесь только запись одного из полей на месте)."""
         user = await self._session.get_one(User, user_id)
-        setattr(user, field, duration_seconds)
+        setattr(user, field, value)
         await self._session.flush()
         return user
 

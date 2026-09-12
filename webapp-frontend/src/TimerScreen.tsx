@@ -2,7 +2,16 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cancelTimer, fetchTimerStatus, startTimer, updateTimerPreferences, type TimerStatus } from "./api";
-import { ensureAudioUnlocked, playCountdownBeep, playTimerBeep, playWarningBeep } from "./sound";
+import {
+  ensureAudioUnlocked,
+  getSoundVolumePercent,
+  playCountdownBeep,
+  playTimerBeep,
+  playWarningBeep,
+  setSoundVolumePercent,
+} from "./sound";
+
+const VOLUME_STEP_PERCENT = 25;
 
 const STEP_SECONDS = 15;
 const MIN_SECONDS = 15;
@@ -62,6 +71,13 @@ export function TimerScreen({
   const [duration, setDuration] = useState(defaultDurationSeconds);
   const [remaining, setRemaining] = useState(defaultDurationSeconds);
   const [saved, setSaved] = useState(false);
+  // Начальное положение слайдера — текущее module-level значение sound.ts
+  // (issue #90), не отдельный проп: оно уже несёт либо сохранённое на
+  // сервере предпочтение (засеяно в LiveWorkoutScreen.tsx сразу после
+  // fetchTimerPreferences), либо изменение, сделанное на предыдущем шаге
+  // этой же тренировки, но ещё не сохранённое ("Запомнить").
+  const [volume, setVolume] = useState(getSoundVolumePercent());
+  const [volumeSaved, setVolumeSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const beepedMarksRef = useRef<Set<number>>(new Set());
 
@@ -191,6 +207,30 @@ export function TimerScreen({
     }
   }
 
+  function adjustVolume(deltaPercent: number) {
+    const next = Math.min(100, Math.max(0, volume + deltaPercent));
+    if (next === volume) {
+      return;
+    }
+    setVolume(next);
+    setVolumeSaved(false);
+    // Применяется сразу, независимо от сохранения на сервере (issue #90) —
+    // громкость следующих бипов этой же тренировки должна поменяться без
+    // ожидания сетевого запроса, "Запомнить громкость" ниже — только про
+    // персистентность на будущее.
+    setSoundVolumePercent(next);
+  }
+
+  async function handleRememberVolume() {
+    ensureAudioUnlocked();
+    try {
+      await updateTimerPreferences(initDataRaw, { sound_volume_percent: volume });
+      setVolumeSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function handleSkip() {
     ensureAudioUnlocked();
     try {
@@ -225,6 +265,20 @@ export function TimerScreen({
 
       <Button mode="outline" size="s" disabled={saved} onClick={() => void handleRemember()}>
         {saved ? "Сохранено как значение по умолчанию" : "Запомнить как значение по умолчанию"}
+      </Button>
+
+      <div className="timer-adjust-row">
+        <Button mode="outline" size="s" onClick={() => adjustVolume(-VOLUME_STEP_PERCENT)}>
+          🔉 −
+        </Button>
+        <span className="timer-duration-label">🔊 Громкость: {volume}%</span>
+        <Button mode="outline" size="s" onClick={() => adjustVolume(VOLUME_STEP_PERCENT)}>
+          🔊 +
+        </Button>
+      </div>
+
+      <Button mode="outline" size="s" disabled={volumeSaved} onClick={() => void handleRememberVolume()}>
+        {volumeSaved ? "Громкость сохранена как значение по умолчанию" : "Запомнить громкость по умолчанию"}
       </Button>
 
       {children}

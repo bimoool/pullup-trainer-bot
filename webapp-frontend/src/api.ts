@@ -539,12 +539,15 @@ export interface TimerPreferences {
   rest_seconds_block_a: number;
   rest_seconds_block_b: number;
   big_break_seconds: number;
+  /** Громкость звука таймера, 0..100% (issue #90). */
+  sound_volume_percent: number;
 }
 
-export interface TimerPreferencesUpdateRequest {
-  block_letter?: "A" | "B" | null;
-  duration_seconds: number;
-}
+/** Ровно одно из duration_seconds/sound_volume_percent должно быть задано —
+ * см. TimerPreferencesUpdateRequest в app/web/schemas.py. */
+export type TimerPreferencesUpdateRequest =
+  | { block_letter?: "A" | "B" | null; duration_seconds: number; sound_volume_percent?: never }
+  | { block_letter?: null; duration_seconds?: never; sound_volume_percent: number };
 
 export async function fetchTimerPreferences(initDataRaw: string): Promise<TimerPreferences> {
   return apiGet<TimerPreferences>("/api/timer/preferences", initDataRaw);
