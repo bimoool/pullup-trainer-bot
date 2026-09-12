@@ -15,7 +15,12 @@ from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.reports import all_cycles_analytics, current_equipment_progress, weekly_summary
+from app.domain.reports import (
+    all_cycles_analytics,
+    current_equipment_progress,
+    epley_progress,
+    weekly_summary,
+)
 from app.services.export import build_export_workbook
 
 router = Router()
@@ -53,8 +58,9 @@ async def handle_show_progress_report(callback: CallbackQuery, session: AsyncSes
     summary = weekly_summary(this_week, previous_week_volume)
     progress_a = current_equipment_progress(records, "a")
     progress_b = current_equipment_progress(records, "b")
+    epley = epley_progress(records, user.weight_kg)
 
-    report = format_progress_report(summary, progress_a, progress_b)
+    report = format_progress_report(summary, progress_a, progress_b, epley)
     report += format_recommendations(records, now.date())
 
     await callback.message.answer(report, reply_markup=progress_section_keyboard())

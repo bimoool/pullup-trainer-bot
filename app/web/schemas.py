@@ -263,6 +263,18 @@ class CycleVolumeResponse(BaseModel):
     volume_change_pct: float | None
 
 
+class EpleyProgressResponse(BaseModel):
+    """Зеркало app.domain.reports.EpleyProgress (issue #96) — оценочная сила
+    блока Б по формуле Эпли. None (весь объект отсутствует в AnalyticsResponse)
+    — нет веса тела в профиле или нет ни одной подходящей тренировки блока Б
+    (только WEIGHT/BODYWEIGHT с зафиксированным максимумом — резина и
+    AUSTRALIAN исключены, см. epley_progress)."""
+
+    current_load_kg: float
+    change_pct_vs_previous: float | None
+    change_pct_vs_first: float | None
+
+
 class AnalyticsResponse(BaseModel):
     """GET /api/analytics (issue #66, п.2) — те же вызовы
     app.domain.reports с теми же входными данными, что и кнопки
@@ -271,12 +283,17 @@ class AnalyticsResponse(BaseModel):
     бота (texts.HISTORY_EMPTY) — единственный случай, когда остальные поля
     пустые. equipment_progress_a/b — None только если истории вообще нет
     (has_data=False уже покрывает этот случай раньше, см.
-    current_equipment_progress), при has_data=True они всегда заполнены."""
+    current_equipment_progress), при has_data=True они всегда заполнены.
+    epley_progress (issue #96) — None и при has_data=True тоже, если нет
+    веса тела в профиле или нет подходящей тренировки блока Б (см.
+    epley_progress/EpleyProgressResponse) — единственное поле из этой
+    группы, которое остаётся опциональным при has_data=True."""
 
     has_data: bool
     weekly: WeeklySummaryResponse | None = None
     equipment_progress_a: EquipmentProgressResponse | None = None
     equipment_progress_b: EquipmentProgressResponse | None = None
+    epley_progress: EpleyProgressResponse | None = None
     total_volume: int | None = None
     cycle_count: int | None = None
     cycles: list[CycleVolumeResponse] = Field(default_factory=list)

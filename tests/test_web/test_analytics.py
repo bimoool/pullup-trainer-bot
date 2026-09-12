@@ -58,7 +58,7 @@ async def test_analytics_for_unknown_telegram_id_has_no_data(session):
     body = await _get_analytics(session, telegram_id=54001)
     assert body == {
         "has_data": False, "weekly": None, "equipment_progress_a": None, "equipment_progress_b": None,
-        "total_volume": None, "cycle_count": None, "cycles": [],
+        "epley_progress": None, "total_volume": None, "cycle_count": None, "cycles": [],
     }
 
 
@@ -109,3 +109,29 @@ async def test_analytics_reports_weekly_summary_equipment_progress_and_cycles(se
             "total_volume": total_volume, "volume_change_pct": None,
         },
     ]
+    # Блок Б на резине (BAND) — формула Эпли для неё не определена (issue #96).
+    assert body["epley_progress"] is None
+
+
+async def test_analytics_epley_progress_for_weight_block_b(session):
+    user = await UserRepository(session).create(telegram_id=54004, username="epley")
+    await UserRepository(session).update_profile(user.id, weight_kg=Decimal(70))
+    baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=datetime.now(UTC) - timedelta(days=10), reps=10,
+    )
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    # (70 + 10) кг × (1 + 6/30) = 80 × 1.2 = 96.0; единственная тренировка
+    # блока Б на отягощении — "прошлая"/"первая" совпадают с текущей (0%).
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=datetime.now(UTC) - timedelta(days=3),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(), max_reps=6),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=Decimal("20.0"),
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal(10),
+    )
+
+    body = await _get_analytics(session, telegram_id=user.telegram_id)
+
+    assert body["epley_progress"] == {
+        "current_load_kg": 96.0, "change_pct_vs_previous": 0.0, "change_pct_vs_first": 0.0,
+    }

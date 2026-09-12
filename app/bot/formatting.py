@@ -197,7 +197,13 @@ from app.domain.recommendations import (
     check_underworking_sets,
     check_weak_set_index,
 )
-from app.domain.reports import AllCyclesAnalytics, EquipmentProgress, SetCloseSummary, WeeklySummary
+from app.domain.reports import (
+    AllCyclesAnalytics,
+    EpleyProgress,
+    EquipmentProgress,
+    SetCloseSummary,
+    WeeklySummary,
+)
 from app.domain.session import WorkoutRecord
 
 _BLOCK_LABELS = {"a": "объём", "b": "сила"}
@@ -249,13 +255,33 @@ def format_weekly_summary(summary: WeeklySummary) -> str:
     return body
 
 
+def format_epley_progress(progress: EpleyProgress | None) -> str:
+    if progress is None:
+        return texts.EPLEY_PROGRESS_NONE
+    body = texts.EPLEY_PROGRESS_CURRENT.format(load=progress.current_load_kg)
+    if progress.change_pct_vs_previous is not None:
+        sign, value = _signed_pct(progress.change_pct_vs_previous)
+        body += texts.EPLEY_PROGRESS_VS_PREVIOUS.format(sign=sign, pct=value)
+    if progress.change_pct_vs_first is not None:
+        sign, value = _signed_pct(progress.change_pct_vs_first)
+        body += texts.EPLEY_PROGRESS_VS_FIRST.format(sign=sign, pct=value)
+    return body
+
+
 def format_progress_report(
-    summary: WeeklySummary, progress_a: EquipmentProgress | None, progress_b: EquipmentProgress | None,
+    summary: WeeklySummary,
+    progress_a: EquipmentProgress | None,
+    progress_b: EquipmentProgress | None,
+    epley: EpleyProgress | None = None,
 ) -> str:
     body = f"{texts.WEEKLY_REPORT_HEADER}\n\n{format_weekly_summary(summary)}"
     body += texts.PROGRESS_REPORT_EQUIPMENT_HEADER
     body += texts.PROGRESS_REPORT_EQUIPMENT_LINE_A.format(line=format_equipment_progress_line(progress_a))
     body += texts.PROGRESS_REPORT_EQUIPMENT_LINE_B.format(line=format_equipment_progress_line(progress_b))
+    body += texts.PROGRESS_REPORT_EPLEY_HEADER
+    body += format_epley_progress(epley)
+    if epley is not None:
+        body += texts.EPLEY_PROGRESS_FOOTNOTE
     return body
 
 

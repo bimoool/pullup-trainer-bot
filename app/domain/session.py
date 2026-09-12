@@ -110,3 +110,12 @@ class WorkoutRecord:
     comment: str | None = None
     workout_set_id: int | None = None
     exercise_type: ExerciseType | None = None
+    # Официальная тренировка основной программы (см. Workout.participates_in_
+    # cascade) vs бэкдейт/свободный ввод (issue #88/#94). Дефолт True — так
+    # исторически ведёт себя большинство тренировок, и не ломает конструкторы
+    # WorkoutRecord в существующих тестах/коде, которым это различие
+    # безразлично. Используется для формулы Эпли (app.domain.reports.
+    # epley_progress, issue #96) — "прошлая"/"первая" тренировка блока Б для
+    # % прироста берётся только среди official-записей, бэкдейт/свободные
+    # видны на графике факта, но не становятся анкорами для сравнения.
+    participates_in_cascade: bool = True

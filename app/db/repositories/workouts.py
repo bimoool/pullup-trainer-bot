@@ -156,6 +156,7 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
         comment=workout.comment,
         workout_set_id=workout.workout_set_id,
         exercise_type=workout.exercise_type,
+        participates_in_cascade=workout.participates_in_cascade,
     )
 
 
