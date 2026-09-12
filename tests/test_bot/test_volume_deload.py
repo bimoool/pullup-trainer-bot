@@ -1,7 +1,9 @@
-"""Ежемесячная разгрузочная тренировка блока на объём (ревизия формулы
-прогрессии, п.4) — раз в 30 дней структура блока A целиком заменяется на
-один подход без отягощения, независимо от того, на чём блок обычно сейчас
-стоит. Реальным aiogram-роутингом, как test_workout_finalize.py."""
+"""Ежемесячный тест на максимум блока на объём (ревизия формулы прогрессии,
+п.4; переосмыслено из "разгрузки" в issue #89 — по факту не снижение
+нагрузки, а разовая проверка реального текущего максимума) — раз в 30 дней
+структура блока A целиком заменяется на один подход без отягощения,
+независимо от того, на чём блок обычно сейчас стоит. Реальным
+aiogram-роутингом, как test_workout_finalize.py."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -18,7 +20,11 @@ from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.constants import DELOAD_REPS, EquipmentType
+from app.domain.constants import (
+    DELOAD_INTERVAL_DAYS,
+    VOLUME_MAX_TEST_REFERENCE_MULTIPLIER,
+    EquipmentType,
+)
 from app.domain.session import BlockLog
 from app.services.subscription import SubscriptionService
 from tests.test_bot.conftest import make_callback_update as _callback_update
@@ -66,17 +72,31 @@ async def test_start_workout_shows_deload_prompt_and_forces_bodyweight(
 ):
     await _make_user_due_for_deload(session, user)
 
+    # Посчитано вручную по формуле recalculate_volume_block (не выведено из
+    # тестируемого кода): единственная предшествующая тренировка — target=10,
+    # work_sets=3, working_reps=(11,11,11), max_reps=12 → delta=2>0,
+    # avg_working=11, step=max(1, ceil(10*0.05))=1, computed_target=12.
+    # 12 < VOLUME_TARGET_CEILING(33), поэтому это и есть target_after=12,
+    # без отката/доп.подходов. Ориентир теста на максимум — round(12*1.5)=18
+    # (issue #89, коэффициент 1.5 от ТЕКУЩЕЙ, не стартовой, цели блока A).
+    expected_reference = 18
+    assert round(12 * VOLUME_MAX_TEST_REFERENCE_MULTIPLIER) == expected_reference
+
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="start_workout"), session=session,
     )
 
     sent = _sent_texts(bot)
-    assert texts.VOLUME_DELOAD_PROMPT in sent
+    expected_prompt = texts.VOLUME_DELOAD_PROMPT.format(
+        interval_days=DELOAD_INTERVAL_DAYS, reference=expected_reference,
+    )
+    assert expected_prompt in sent
     assert not any(text.startswith("<b>План на сегодня:</b>") for text in sent)
 
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     data = await fsm.get_data()
     assert data["is_deload_a"] is True
+    assert data["target_a"] == expected_reference
     assert data["equipment_results"]["a"] == {"type": "bodyweight", "value": None, "item_id": None}
     assert await fsm.get_state() == WorkoutStates.waiting_for_block_a
 
@@ -84,13 +104,18 @@ async def test_start_workout_shows_deload_prompt_and_forces_bodyweight(
 async def test_deload_block_a_accepts_single_number_without_anomaly_prompt(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
+    # Реальный результат теста на максимум — произвольное число, введённое
+    # пользователем; никак не привязано к ориентиру из VOLUME_DELOAD_PROMPT
+    # (тот — только подсказка масштаба, не обязательная цель).
+    actual_max_reps = 15
+
     await _make_user_due_for_deload(session, user)
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="start_workout"), session=session,
     )
 
     await dispatcher.feed_update(
-        bot, _message_update(telegram_id=user.telegram_id, text=str(DELOAD_REPS)), session=session,
+        bot, _message_update(telegram_id=user.telegram_id, text=str(actual_max_reps)), session=session,
     )
 
     sent = _sent_texts(bot)
@@ -100,18 +125,20 @@ async def test_deload_block_a_accepts_single_number_without_anomaly_prompt(
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     data = await fsm.get_data()
     assert data["block_a_working_reps"] == []
-    assert data["block_a_max_reps"] == DELOAD_REPS
+    assert data["block_a_max_reps"] == actual_max_reps
 
 
 async def test_deload_workout_records_frozen_progress_and_summary_suffix(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
+    actual_max_reps = 15
+
     await _make_user_due_for_deload(session, user)
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="start_workout"), session=session,
     )
     await dispatcher.feed_update(
-        bot, _message_update(telegram_id=user.telegram_id, text=str(DELOAD_REPS)), session=session,
+        bot, _message_update(telegram_id=user.telegram_id, text=str(actual_max_reps)), session=session,
     )
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="optional_exercise:skip"), session=session,
@@ -130,7 +157,7 @@ async def test_deload_workout_records_frozen_progress_and_summary_suffix(
     assert block_a.is_deload is True
     assert block_a.equipment_type == EquipmentType.BODYWEIGHT
     assert list(block_a.working_reps) == []
-    assert block_a.max_reps == DELOAD_REPS
+    assert block_a.max_reps == actual_max_reps
     # Заморожено — совпадает с тем, что было ДО (то же самое, что дала бы
     # обычная тренировка без разгрузки, работавшая бы дальше с прошлой цели).
     assert block_a.target_after == block_a.target_before

@@ -42,11 +42,12 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
-    DELOAD_REPS,
+    DELOAD_INTERVAL_DAYS,
     MIN_REST_DAYS,
     SET_LENGTH,
     STRENGTH_BLOCK,
     VOLUME_BLOCK,
+    VOLUME_MAX_TEST_REFERENCE_MULTIPLIER,
     VOLUME_TARGET_CEILING,
     VOLUME_WORK_SETS_CEILING,
     EquipmentType,
@@ -239,11 +240,13 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
 
     target_a_state, target_b_state = await workouts.resolve_next_targets(user.id, bypass_transition_wait=is_admin)
     target_a_override: int | None = None
-    # Ежемесячная разгрузочная тренировка блока на объём (ревизия формулы
-    # прогрессии, п.4) — раз в 30 дней структура блока A целиком заменяется
-    # на один подход без отягощения, независимо от того, на чём блок обычно
-    # сейчас стоит (даже если уже дошёл до веса). На основную прогрессию не
-    # влияет — cascade просто замораживает target/work_sets этой записи.
+    # Ежемесячный тест на максимум блока на объём (ревизия формулы
+    # прогрессии, п.4; переосмыслено из "разгрузки" в issue #89 — по факту
+    # не снижение нагрузки, а проверка реального текущего максимума) — раз в
+    # 30 дней структура блока A целиком заменяется на один подход без
+    # отягощения, независимо от того, на чём блок обычно сейчас стоит (даже
+    # если уже дошёл до веса). На основную прогрессию не влияет — cascade
+    # просто замораживает target/work_sets этой записи.
     is_deload_a = await workouts.is_volume_deload_due(user.id, now=now)
 
     if readiness is not None and readiness.status == TrainingReadiness.GAP_ROLLBACK and not is_deload_a:
@@ -285,16 +288,21 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         if not is_deload_a:
             target_a_override = initial_volume_target(baseline_reps)
 
-    # Разгрузочная — снаряд блока A принудительно свой вес, без переспроса
-    # (equipment.py трактует needs_new_equipment=False как готовый факт).
+    # Тест на максимум (была "разгрузочная") — снаряд блока A принудительно
+    # свой вес, без переспроса (equipment.py трактует needs_new_equipment=False
+    # как готовый факт). Ориентир в тексте (VOLUME_DELOAD_PROMPT) считается от
+    # ТЕКУЩЕЙ цели блока A на момент теста, не фиксированное число — иначе
+    # одна и та же цифра одинаково не подходит ни новичку, ни продвинутому
+    # (issue #89).
+    max_test_reference = round(target_a_state.target * VOLUME_MAX_TEST_REFERENCE_MULTIPLIER)
     target_a_state_for_setup = target_a_state
     if is_deload_a:
         target_a_state_for_setup = NextBlockState(
-            target=DELOAD_REPS, volume=0, equipment_type=EquipmentType.BODYWEIGHT,
+            target=max_test_reference, volume=0, equipment_type=EquipmentType.BODYWEIGHT,
             equipment_value=None, equipment_item_id=None, needs_new_equipment=False, work_sets=1,
         )
 
-    target_a_for_display = DELOAD_REPS if is_deload_a else (
+    target_a_for_display = max_test_reference if is_deload_a else (
         target_a_override if target_a_override is not None else target_a_state.target
     )
     await _begin_equipment_setup(
@@ -407,11 +415,13 @@ async def _send_plan(
     equipment_type_a = EquipmentType(equipment_result_a["type"])
 
     if data.get("is_deload_a", False):
-        # Разгрузочная (ревизия формулы прогрессии, п.4) — своя структура и
-        # текст, обычный WORKOUT_PLAN с примером формата ввода из N+1 чисел
+        # Тест на максимум (была "разгрузочная", issue #89) — своя структура
+        # и текст, обычный WORKOUT_PLAN с примером формата ввода из N+1 чисел
         # тут не подходит (один-единственный подход, см. VOLUME_DELOAD_PROMPT).
+        # target_a здесь уже посчитан как ориентир (round(цель × 1.5), см.
+        # handle_start_workout), не жёсткая цель — просто подставляется в текст.
         await message.answer(
-            texts.VOLUME_DELOAD_PROMPT,
+            texts.VOLUME_DELOAD_PROMPT.format(interval_days=DELOAD_INTERVAL_DAYS, reference=target_a),
             reply_markup=block_prompt_keyboard(equipment_type_a, block_key="a", back_callback=None),
         )
         await state.set_state(WorkoutStates.waiting_for_block_a)
