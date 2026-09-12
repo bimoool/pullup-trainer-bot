@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.bot.parsing import MAX_REPS, MIN_REPS
 
@@ -456,25 +456,46 @@ class TimerStatusResponse(BaseModel):
 
 
 class TimerPreferencesResponse(BaseModel):
-    """GET/PUT /api/timer/preferences (issue #59, волна 2) — значения уже
-    резолвлены дефолтом (app.domain.constants.DEFAULT_REST_SECONDS_BLOCK_A/B/
-    DEFAULT_BIG_BREAK_SECONDS), если пользователь ничего не настраивал —
-    фронтенду не нужно знать про дефолты отдельно."""
+    """GET/PUT /api/timer/preferences (issue #59, волна 2; sound_volume_percent
+    — issue #90) — значения уже резолвлены дефолтом
+    (app.domain.constants.DEFAULT_REST_SECONDS_BLOCK_A/B/
+    DEFAULT_BIG_BREAK_SECONDS/DEFAULT_TIMER_SOUND_VOLUME_PERCENT), если
+    пользователь ничего не настраивал — фронтенду не нужно знать про
+    дефолты отдельно."""
 
     rest_seconds_block_a: int
     rest_seconds_block_b: int
     big_break_seconds: int
+    sound_volume_percent: int
 
 
 class TimerPreferencesUpdateRequest(BaseModel):
-    """PUT /api/timer/preferences — сохраняет ровно одну из трёх настроек
-    за раз (block_letter="A"/"B" — отдых между подходами того блока, None —
-    большой перерыв между блоками), не сохраняется молча при каждом сдвиге
-    ползунка на экране таймера — только по явному действию пользователя
-    "запомнить как значение по умолчанию" (issue #59, волна 2)."""
+    """PUT /api/timer/preferences — сохраняет ровно одну настройку за раз, не
+    молча при каждом сдвиге ползунка на экране таймера, только по явному
+    действию пользователя "запомнить как значение по умолчанию" (issue #59,
+    волна 2). Ровно одно из duration_seconds/sound_volume_percent должно
+    быть задано (см. _check_exactly_one_value ниже):
+
+    - duration_seconds — одна из трёх длительностей, block_letter="A"/"B"
+      выбирает отдых между подходами того блока, None — большой перерыв
+      между блоками;
+    - sound_volume_percent (issue #90) — громкость звука таймера, 0..100%,
+      0 — валидное значение ("выключить звук"), не привязана к блоку
+      (block_letter должен быть None)."""
 
     block_letter: str | None = Field(default=None, pattern="^[AB]$")
-    duration_seconds: int = Field(ge=1, le=3600)
+    duration_seconds: int | None = Field(default=None, ge=1, le=3600)
+    sound_volume_percent: int | None = Field(default=None, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def _check_exactly_one_value(self) -> "TimerPreferencesUpdateRequest":
+        if (self.duration_seconds is None) == (self.sound_volume_percent is None):
+            raise ValueError(
+                "Ровно одно из duration_seconds/sound_volume_percent должно быть задано",
+            )
+        if self.sound_volume_percent is not None and self.block_letter is not None:
+            raise ValueError("block_letter не используется вместе с sound_volume_percent")
+        return self
 
 
 class BackdateSubmitRequest(BaseModel):

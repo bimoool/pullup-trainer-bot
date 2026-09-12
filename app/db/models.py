@@ -125,6 +125,12 @@ class User(Base):
     rest_seconds_block_a: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     rest_seconds_block_b: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     big_break_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Громкость звука таймера в процентах, 0..100 (issue #90) — тот же
+    # принцип, что у трёх полей выше: NULL значит "не настраивал", дефолт
+    # (см. app.domain.constants.DEFAULT_TIMER_SOUND_VOLUME_PERCENT) резолвится
+    # на чтении. 0 — валидное значение ("выключить звук"), отличное от NULL —
+    # резолвинг дефолта обязан проверять `is not None`, а не truthiness.
+    sound_volume_percent: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     # Лидерборд (issue #67) — NULL значит "анонимно", единственное и
     # дефолтное состояние, пока пользователь явно не задал имя. Явный отказ
     # ("быть анонимным" после того, как имя уже было задано) — это то же
@@ -309,6 +315,15 @@ class Block(Base):
     # только в статистике/объёме, как факультативы и свободные подтягивания.
     # Только для блока A, у блока B всегда False.
     is_deload: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Итог за тренировку без раскладки по подходам (issue #88) — только для
+    # бэкдейта блока Б, когда пользователь не помнит числа по подходам, но
+    # знает сумму. NULL — обычная запись, volume считается как обычно из
+    # working_reps/max_reps (см. app.domain.session.BlockLog.volume). Когда
+    # задано — working_reps всегда [], max_reps — 0 (максимум не
+    # зафиксирован) либо реально введённый лучший подход; volume берётся
+    # ОТСЮДА, не из max_reps, иначе итог исказил бы "лучший подход"
+    # (best_set/лидерборд MAX_REPS/MAX_WEIGHT) так же, как баг из issue #88.
+    reported_volume: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     workout: Mapped["Workout"] = relationship(back_populates="blocks")

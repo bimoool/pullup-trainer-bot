@@ -16,7 +16,7 @@ import {
   type WorkoutSubmitRequest,
   type WorkoutSubmitResponse,
 } from "./api";
-import { ensureAudioUnlocked } from "./sound";
+import { ensureAudioUnlocked, setSoundVolumePercent } from "./sound";
 import { TimerScreen } from "./TimerScreen";
 import { AnomalyLines, BlockForm, STATUS_MESSAGES, parseOptionalWeight, parseSetValue, parseSetValues, replaceAt } from "./WorkoutScreen";
 
@@ -164,6 +164,11 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
         if (cancelled) {
           return;
         }
+        // Сидируем громкость звука таймера сохранённым значением пользователя
+        // (issue #90) один раз за сессию тренировки, до первого возможного
+        // бипа — TimerScreen ниже только читает/меняет этот module-level
+        // источник правды (sound.ts), не получает громкость пропом.
+        setSoundVolumePercent(prefs.sound_volume_percent);
         if (plan.status !== "ready") {
           setState({ phase: "not_ready", status: plan.status });
           return;

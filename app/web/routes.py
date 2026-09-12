@@ -33,6 +33,7 @@ from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
     DEFAULT_REST_SECONDS_BLOCK_A,
     DEFAULT_REST_SECONDS_BLOCK_B,
+    DEFAULT_TIMER_SOUND_VOLUME_PERCENT,
     STRENGTH_BLOCK,
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
@@ -505,8 +506,8 @@ async def submit_workout(
         equipment_b=_equipment_info(
             block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
         ),
-        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
 
 
@@ -634,8 +635,12 @@ async def get_history(
                 equipment_b=_equipment_info(
                     block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
                 ),
-                result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-                result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+                result_a=format_block_result(
+                    block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume,
+                ),
+                result_b=format_block_result(
+                    block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume,
+                ),
                 target_a=block_a.target_after if is_latest else None,
                 target_b=block_b.target_after if is_latest else None,
             ),
@@ -976,8 +981,8 @@ async def edit_history_workout(
         equipment_b=_equipment_info(
             block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
         ),
-        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
 
 
@@ -1194,8 +1199,8 @@ async def submit_backdated_workout(
         equipment_b=_equipment_info(
             block_b.equipment_type, block_b.equipment_value, block_b.equipment_item_id,
         ),
-        result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-        result_b=format_block_result(block_b.working_reps, block_b.max_reps),
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
 
 
@@ -1298,6 +1303,13 @@ def _resolve_timer_preferences(user) -> TimerPreferencesResponse:
         rest_seconds_block_a=user.rest_seconds_block_a or DEFAULT_REST_SECONDS_BLOCK_A,
         rest_seconds_block_b=user.rest_seconds_block_b or DEFAULT_REST_SECONDS_BLOCK_B,
         big_break_seconds=user.big_break_seconds or DEFAULT_BIG_BREAK_SECONDS,
+        # `or` не годится здесь как для трёх полей выше — 0 (звук выключен)
+        # валидное значение, но falsy, "or" молча подменил бы его дефолтом.
+        sound_volume_percent=(
+            user.sound_volume_percent
+            if user.sound_volume_percent is not None
+            else DEFAULT_TIMER_SOUND_VOLUME_PERCENT
+        ),
     )
 
 
@@ -1322,22 +1334,26 @@ async def update_timer_preferences(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> TimerPreferencesResponse:
-    """Сохраняет ровно одну из трёх настроек за раз — block_letter="A"/"B"
-    выбирает отдых между подходами соответствующего блока, None — большой
-    перерыв между блоками (issue #59, волна 2: "для единообразия с
-    остальными двумя" — все три персистентны одинаково)."""
+    """Сохраняет ровно одну настройку за раз (issue #59, волна 2: "для
+    единообразия" — все настройки персистентны одинаково). Либо одну из трёх
+    длительностей (block_letter="A"/"B" — отдых между подходами
+    соответствующего блока, None — большой перерыв между блоками), либо
+    громкость звука таймера (issue #90) — ровно одно из двух гарантировано
+    схемой (TimerPreferencesUpdateRequest._check_exactly_one_value)."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
 
-    field = {
-        "A": "rest_seconds_block_a",
-        "B": "rest_seconds_block_b",
-        None: "big_break_seconds",
-    }[body.block_letter]
-    updated = await UserRepository(session).update_timer_preference(
-        user.id, field=field, duration_seconds=body.duration_seconds,
-    )
+    if body.sound_volume_percent is not None:
+        field, value = "sound_volume_percent", body.sound_volume_percent
+    else:
+        field = {
+            "A": "rest_seconds_block_a",
+            "B": "rest_seconds_block_b",
+            None: "big_break_seconds",
+        }[body.block_letter]
+        value = body.duration_seconds
+    updated = await UserRepository(session).update_timer_preference(user.id, field=field, value=value)
     return _resolve_timer_preferences(updated)
 
 

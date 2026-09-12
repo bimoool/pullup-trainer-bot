@@ -54,8 +54,8 @@ def format_history_entry(workout: Workout, *, is_latest: bool = True) -> str:
     date = workout.performed_at.strftime("%d.%m.%Y")
     backdated_mark = texts.HISTORY_BACKDATED_MARK if not workout.participates_in_cascade else ""
 
-    result_a = format_block_result(block_a.working_reps, block_a.max_reps)
-    result_b = format_block_result(block_b.working_reps, block_b.max_reps)
+    result_a = format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume)
+    result_b = format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume)
 
     if is_latest:
         return texts.HISTORY_ENTRY.format(

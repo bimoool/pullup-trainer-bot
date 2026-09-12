@@ -39,7 +39,9 @@ from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
 
 
 def _block_to_log(block: Block) -> BlockLog:
-    return BlockLog(working_reps=tuple(block.working_reps), max_reps=block.max_reps)
+    return BlockLog(
+        working_reps=tuple(block.working_reps), max_reps=block.max_reps, reported_volume=block.reported_volume,
+    )
 
 
 def _find_block(workout: Workout, block_type: BlockType) -> Block:
@@ -572,15 +574,28 @@ class WorkoutRepository:
         НЕ участвует в каскаде (participates_in_cascade=False,
         sequence_number остаётся NULL — как и у STARTED-тренировок, эта
         запись просто не занимает места в цепочке). target_before/after
-        считаются один раз, от текущего состояния на момент вызова (не
-        переигрываются позже правкой других тренировок и сами не запускают
-        каскад по уже существующим).
+        блока A считаются один раз, от текущего состояния на момент вызова
+        (не переигрываются позже правкой других тренировок и сами не
+        запускают каскад по уже существующим).
 
         Если вносится несколько тренировок задним числом подряд, каждая
         следующая учитывает предыдущую внесённую (list_for_user видит уже
         сохранённую) — это соответствует "они пополняют статистику" без
         участия в каскаде: между собой хронология всё равно соблюдается,
-        просто не через sequence_number/цепочку живых тренировок."""
+        просто не через sequence_number/цепочку живых тренировок.
+
+        Блок Б (issue #88) ЦЕЛЬ НЕ ПЕРЕСЧИТЫВАЕТ ВООБЩЕ — target_after_b
+        всегда равен target_before_b, equipment_changed_b всегда False,
+        независимо от того, введена честная раскладка по подходам или
+        только итог (block_b_reps.reported_volume, см. BlockLog) без
+        максимума. Согласовано явно (issue #88, комментарий Кирилла):
+        пересчёт цели блока Б должен происходить ТОЛЬКО при результате
+        основной программы (complete_workout, живая тренировка) — раньше
+        бэкдейт пересчитывал его как обычно, и одно число, введённое вместо
+        честной раскладки (`parse_reps("60")` → working_reps=(),
+        max_reps=60), искажало прогрессию, притворяясь настоящим максимумом
+        за подход. Блок A этим не затронут — его форма ввода и пересчёт
+        (recalculate_volume_block) остаются прежними, вне scope issue #88."""
         history = await self.list_for_user(user_id)
         history_a = _exclude_deload_entries(history)
         state_a = self._resolve_next_state(history, BlockType.A, VOLUME_BLOCK)
@@ -591,11 +606,6 @@ class WorkoutRepository:
             block_a_reps.volume, state_a.volume, block_a_equipment_type,
             consecutive_weak_before=_weak_streak(history_a, BlockType.A),
             consecutive_stall_before=_stall_streak(history_a),
-        )
-        result_b = recalculate_target(
-            STRENGTH_BLOCK, state_b.target, block_b_reps.working_reps, block_b_reps.max_reps,
-            block_b_reps.volume, state_b.volume,
-            consecutive_weak_before=_weak_streak(history, BlockType.B),
         )
 
         workout = Workout(
@@ -627,8 +637,9 @@ class WorkoutRepository:
             Block(
                 workout_id=workout.id, block_type=BlockType.B,
                 working_reps=list(block_b_reps.working_reps), max_reps=block_b_reps.max_reps,
-                target_before=state_b.target, target_after=result_b.new_target,
-                equipment_changed=result_b.equipment_changed,
+                reported_volume=block_b_reps.reported_volume,
+                target_before=state_b.target, target_after=state_b.target,
+                equipment_changed=False,
                 equipment_type=block_b_equipment_type, equipment_value=block_b_equipment_value,
                 equipment_item_id=block_b_equipment_item_id,
             ),
