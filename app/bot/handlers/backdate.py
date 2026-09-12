@@ -18,6 +18,8 @@ from app.bot.handlers.equipment import _begin_equipment_setup
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
+    backdate_block_b_mode_keyboard,
+    backdate_block_b_total_max_keyboard,
     backdate_date_keyboard,
     bottom_menu_keyboard,
 )
@@ -38,6 +40,20 @@ router = Router()
 def _format_block_a_prompt(target: int, work_sets: int) -> str:
     example_a = format_reps_example(target, work_sets)
     return texts.BLOCK_A_PROMPT.format(example=example_a, work_sets=work_sets, sets_word=format_sets_word(work_sets))
+
+
+def _parse_single_total(raw_text: str) -> int | ParseError:
+    """Одно число — итог за тренировку без раскладки по подходам (issue
+    #88, режим "только итог" блока Б бэкдейта). Переиспользует parse_reps
+    (тот же диапазон/сообщения об ошибках), но требует РОВНО одно число —
+    несколько чисел здесь означали бы, что пользователь на самом деле
+    пытается ввести раскладку по подходам не в том режиме."""
+    result = parse_reps(raw_text)
+    if isinstance(result, ParseError):
+        return result
+    if result.working_reps:
+        return ParseError(texts.BACKDATE_BLOCK_B_TOTAL_INVALID)
+    return result.max_reps
 
 
 @router.callback_query(F.data == "backdate_workout")
@@ -152,13 +168,43 @@ async def handle_backdate_block_a(message: Message, state: FSMContext, session: 
 
 
 async def _apply_backdate_block_a(message: Message, state: FSMContext, result: BlockLog) -> None:
-    data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
+    await _resend_backdate_block_b_mode_prompt(message, state)
+
+
+async def _resend_backdate_block_b_mode_prompt(message: Message, state: FSMContext) -> None:
+    await state.set_state(BackdateStates.waiting_for_block_b_mode)
+    await message.answer(texts.BACKDATE_BLOCK_B_MODE_PROMPT, reply_markup=backdate_block_b_mode_keyboard())
+
+
+@router.callback_query(BackdateStates.waiting_for_block_b_mode, F.data.startswith("backdate_block_b_mode:"))
+async def handle_backdate_block_b_mode(callback: CallbackQuery, state: FSMContext) -> None:
+    mode = callback.data.removeprefix("backdate_block_b_mode:")
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+    if mode == "total":
+        await state.set_state(BackdateStates.waiting_for_block_b_total)
+        await callback.message.answer(
+            texts.BACKDATE_BLOCK_B_TOTAL_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:block_b_mode"),
+        )
+        await callback.answer()
+        return
+
+    data = await state.get_data()
     await state.set_state(BackdateStates.waiting_for_block_b)
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
-    await message.answer(
-        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("backdate_back:block_a"),
+    await callback.message.answer(
+        texts.BLOCK_B_PROMPT.format(example=example_b),
+        reply_markup=back_cancel_keyboard("backdate_back:block_b_mode"),
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "backdate_back:block_b_mode")
+async def handle_backdate_back_to_block_b_mode(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _resend_backdate_block_b_mode_prompt(callback.message, state)
+    await callback.answer()
 
 
 @router.callback_query(BackdateStates.waiting_for_block_a_confirm, F.data == "anomaly:confirm")
@@ -234,6 +280,7 @@ async def _apply_backdate_block_b(
             "block_a_max_reps": data["block_a_max_reps"],
             "block_b_working_reps": list(result.working_reps),
             "block_b_max_reps": result.max_reps,
+            "block_b_reported_volume": result.reported_volume,
         },
     )
 
@@ -257,8 +304,58 @@ async def handle_backdate_block_b_anomaly_reenter(callback: CallbackQuery, state
     await callback.message.edit_reply_markup(reply_markup=None)
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
     await callback.message.answer(
-        texts.BLOCK_B_PROMPT.format(example=example_b), reply_markup=back_cancel_keyboard("backdate_back:block_a"),
+        texts.BLOCK_B_PROMPT.format(example=example_b),
+        reply_markup=back_cancel_keyboard("backdate_back:block_b_mode"),
     )
+    await callback.answer()
+
+
+@router.message(BackdateStates.waiting_for_block_b_total)
+async def handle_backdate_block_b_total(message: Message, state: FSMContext) -> None:
+    total = _parse_single_total(message.text or "")
+    if isinstance(total, ParseError):
+        await message.answer(total.message)
+        return
+
+    await state.update_data(block_b_total=total)
+    await state.set_state(BackdateStates.waiting_for_block_b_total_max)
+    await message.answer(
+        texts.BACKDATE_BLOCK_B_TOTAL_MAX_PROMPT, reply_markup=backdate_block_b_total_max_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "backdate_back:block_b_total")
+async def handle_backdate_back_to_block_b_total(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(BackdateStates.waiting_for_block_b_total)
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        texts.BACKDATE_BLOCK_B_TOTAL_PROMPT, reply_markup=back_cancel_keyboard("backdate_back:block_b_mode"),
+    )
+    await callback.answer()
+
+
+@router.message(BackdateStates.waiting_for_block_b_total_max)
+async def handle_backdate_block_b_total_max(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    max_reps = _parse_single_total(message.text or "")
+    if isinstance(max_reps, ParseError):
+        await message.answer(max_reps.message)
+        return
+
+    data = await state.get_data()
+    result = BlockLog(working_reps=(), max_reps=max_reps, reported_volume=data["block_b_total"])
+    await _apply_backdate_block_b(message, state, session, result, telegram_id=message.from_user.id)
+
+
+@router.callback_query(BackdateStates.waiting_for_block_b_total_max, F.data == "backdate_skip_block_b_max")
+async def handle_backdate_block_b_total_max_skip(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession,
+) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=(), max_reps=0, reported_volume=data["block_b_total"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    # telegram_id — явно от callback.from_user (тот же приём, что и у
+    # остальных callback-веток бэкдейта, см. комментарии ниже).
+    await _apply_backdate_block_b(callback.message, state, session, result, telegram_id=callback.from_user.id)
     await callback.answer()
 
 
@@ -291,7 +388,10 @@ async def finalize_backdated_workout(
     block_b_equipment_item_id = equipment_results["b"]["item_id"]
 
     block_a_reps = BlockLog(working_reps=tuple(data["block_a_working_reps"]), max_reps=data["block_a_max_reps"])
-    block_b_reps = BlockLog(working_reps=tuple(data["block_b_working_reps"]), max_reps=data["block_b_max_reps"])
+    block_b_reps = BlockLog(
+        working_reps=tuple(data["block_b_working_reps"]), max_reps=data["block_b_max_reps"],
+        reported_volume=data.get("block_b_reported_volume"),
+    )
     performed_at = datetime.fromisoformat(data["backdate_performed_at"])
 
     log_service = WorkoutLogService(session)
@@ -313,12 +413,13 @@ async def finalize_backdated_workout(
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
 
     await state.clear()
-    await message.answer(
-        texts.BACKDATE_DONE.format(
-            result_a=format_block_result(block_a.working_reps, block_a.max_reps),
-            result_b=format_block_result(block_b.working_reps, block_b.max_reps),
-            equipment_a=format_equipment_label(block_a.equipment_type, block_a.equipment_value),
-            equipment_b=format_equipment_label(block_b.equipment_type, block_b.equipment_value),
-        ),
+    done_text = texts.BACKDATE_DONE.format(
+        result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
+        result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
+        equipment_a=format_equipment_label(block_a.equipment_type, block_a.equipment_value),
+        equipment_b=format_equipment_label(block_b.equipment_type, block_b.equipment_value),
     )
+    if block_b.reported_volume is not None:
+        done_text += texts.BACKDATE_BLOCK_B_TOTAL_DONE_NOTE
+    await message.answer(done_text)
     await message.answer(texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(telegram_id)))

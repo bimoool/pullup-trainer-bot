@@ -222,6 +222,34 @@ def backdate_date_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def backdate_block_b_mode_keyboard() -> InlineKeyboardMarkup:
+    """Выбор формата ввода блока Б бэкдейта (issue #88) — по честной
+    раскладке подходов (как раньше) или только итог без неё, для случая
+    "не помню, сколько было в каждом подходе, но общая сумма знаю". Раньше
+    единственный способ (свободный текст на BLOCK_B_PROMPT) провоцировал
+    ввод одного числа вместо раскладки — то число ловилось как настоящий
+    максимум за подход и искажало прогрессию (см. CLAUDE.md)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=texts.BACKDATE_BLOCK_B_MODE_STRUCTURED_BUTTON, callback_data="backdate_block_b_mode:structured")
+    builder.button(text=texts.BACKDATE_BLOCK_B_MODE_TOTAL_BUTTON, callback_data="backdate_block_b_mode:total")
+    builder.button(text="← Назад", callback_data="backdate_back:block_a")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1, 1, 2)
+    return builder.as_markup()
+
+
+def backdate_block_b_total_max_keyboard() -> InlineKeyboardMarkup:
+    """Максимум за подход — необязателен в режиме "только итог" (issue
+    #88): если не знаешь/не хочешь фиксировать, итог всё равно попадёт в
+    статистику/объём, просто без личного рекорда за подход."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить", callback_data="backdate_skip_block_b_max")
+    builder.button(text="← Назад", callback_data="backdate_back:block_b_total")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
 def anomaly_confirm_keyboard() -> InlineKeyboardMarkup:
     """Уточнение по подозрительно введённому результату (пакет #4) —
     callback_data одинаков для всех точек входа (живая тренировка/

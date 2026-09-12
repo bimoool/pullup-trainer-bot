@@ -309,6 +309,15 @@ class Block(Base):
     # только в статистике/объёме, как факультативы и свободные подтягивания.
     # Только для блока A, у блока B всегда False.
     is_deload: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Итог за тренировку без раскладки по подходам (issue #88) — только для
+    # бэкдейта блока Б, когда пользователь не помнит числа по подходам, но
+    # знает сумму. NULL — обычная запись, volume считается как обычно из
+    # working_reps/max_reps (см. app.domain.session.BlockLog.volume). Когда
+    # задано — working_reps всегда [], max_reps — 0 (максимум не
+    # зафиксирован) либо реально введённый лучший подход; volume берётся
+    # ОТСЮДА, не из max_reps, иначе итог исказил бы "лучший подход"
+    # (best_set/лидерборд MAX_REPS/MAX_WEIGHT) так же, как баг из issue #88.
+    reported_volume: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     workout: Mapped["Workout"] = relationship(back_populates="blocks")

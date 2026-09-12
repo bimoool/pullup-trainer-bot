@@ -74,6 +74,11 @@ async def test_backdate_equipment_prompt_uses_neutral_text_even_at_threshold_rep
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="20 20 20 25"), session=session,
     )
+    # issue #88 — выбор формата ввода блока Б ("по подходам, как обычно")
+    # перед тем, как текстовый ввод блока Б вообще начнёт распознаваться.
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
+    )
     # STRENGTH_BLOCK.equipment_change_threshold=7, work_sets=4 — то же самое.
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="7 7 7 7 10"), session=session,
@@ -91,6 +96,9 @@ async def test_backdate_done_shows_equipment_used_per_block(session, user: User,
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
     )
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 5"), session=session,
@@ -117,6 +125,9 @@ async def test_backdate_weight_step_offers_skip_button(session, user: User, bot:
         bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
     )
     await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
+    )
+    await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 5"), session=session,
     )
 
@@ -138,6 +149,9 @@ async def test_backdate_weight_step_accepts_typed_zero_as_skip(session, user: Us
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
     )
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 5"), session=session,
@@ -211,6 +225,9 @@ async def test_cancel_after_blocks_entered_before_equipment_confirmed_leaves_no_
         bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
     )
     await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
+    )
+    await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 5"), session=session,
     )
 
@@ -233,6 +250,9 @@ async def test_edit_calendar_day_with_only_backdated_workout_explains_why(
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _callback_update(telegram_id=user.telegram_id, data="backdate_block_b_mode:structured"), session=session,
     )
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="3 3 3 3 5"), session=session,
