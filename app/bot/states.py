@@ -113,9 +113,9 @@ class FreeWorkoutStates(StatesGroup):
 
 class ElectiveStates(StatesGroup):
     """Факультативная нагрузка вне плана (пакет #6, app/domain/electives.py)
-    — 4 формата, ротация без повтора + не чаще раза в неделю. Снаряд не
-    спрашивается (всегда тот же, что в блоке на объём) — сразу выбор
-    формата, потом ввод результата."""
+    — 4 формата, ротация без повтора + не более ELECTIVE_MAX_PER_WEEK раз в
+    неделю (issue #94: было 1, стало 2). Снаряд не спрашивается (всегда тот
+    же, что в блоке на объём) — сразу выбор формата, потом ввод результата."""
 
     waiting_for_type = State()
     waiting_for_reps = State()  # последовательность — max_reps_ladder/w_ladder/three_minutes

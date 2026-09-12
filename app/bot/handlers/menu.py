@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import calculate_age, format_subscription_status
+from app.bot.handlers.workout import resolve_rest_day_notice
 from app.bot.keyboards import (
     BOTTOM_MENU_HELP,
     BOTTOM_MENU_PROFILE,
@@ -43,8 +44,24 @@ _GENDER_LABELS = {
 
 
 @router.message(F.text == BOTTOM_MENU_WORKOUT)
-async def handle_workout_section(message: Message, state: FSMContext) -> None:
+async def handle_workout_section(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    """Проактивный статус «сегодня отдых» (issue #94) — раньше пауза между
+    тренировками была молчаливой: ничего не показывалось, пока пользователь
+    сам не нажимал "Начать тренировку" и не получал TOO_EARLY реактивно
+    (app/bot/handlers/workout.py::handle_start_workout). Теперь тот же
+    самый статус (resolve_rest_day_notice — общая функция, не копия
+    правила) показывается сразу при открытии раздела, вместе с
+    предложением факультатива, если недельный лимит ещё не исчерпан.
+    Остальные пункты меню (план/бэкдейт/факультатив/редактирование)
+    показываются следом в любом случае — статус не заменяет их, не
+    "редирект в пустоту"."""
     await state.clear()
+    rest_day_notice = await resolve_rest_day_notice(
+        session, telegram_id=message.from_user.id, now=datetime.now(UTC),
+    )
+    if rest_day_notice is not None:
+        notice_text, notice_keyboard = rest_day_notice
+        await message.answer(notice_text, reply_markup=notice_keyboard)
     await message.answer(texts.SECTION_WORKOUT_TITLE, reply_markup=workout_section_keyboard())
 
 

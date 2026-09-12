@@ -44,7 +44,10 @@ VOLUME_TARGET_MAX_REPS_PER_SET: int = 10
 
 # --- Ротация и лимит -----------------------------------------------------------------
 
-ELECTIVE_MAX_PER_WEEK: int = 1
+# Было 1 (пакет #6), поднято до 2 по запросу продукта (issue #94) — то же
+# скользящее 7-дневное окно (ELECTIVE_WEEK_WINDOW_DAYS), не календарная
+# неделя, тот же принцип, что и period="week" лидерборда (issue #74).
+ELECTIVE_MAX_PER_WEEK: int = 2
 ELECTIVE_WEEK_WINDOW_DAYS: int = 7
 
 

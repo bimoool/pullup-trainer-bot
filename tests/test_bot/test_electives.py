@@ -1,6 +1,6 @@
 """Факультативы (пакет #6) — 4 формата вне плана, ротация без повтора +
-не чаще раза в неделю, снаряд всегда как в блоке на объём (без пикера).
-Реальным aiogram-роутингом."""
+не более ELECTIVE_MAX_PER_WEEK раз в неделю (issue #94: было 1, стало 2),
+снаряд всегда как в блоке на объём (без пикера). Реальным aiogram-роутингом."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -115,9 +115,15 @@ async def test_menu_blocked_when_weekly_limit_reached(session, user: User, bot: 
     await fsm.clear()
 
     await _make_history(session, user)
+    # ELECTIVE_MAX_PER_WEEK == 2 (issue #94) — нужны ДВЕ записи в окне, не
+    # одна, чтобы реально исчерпать лимит.
     await ElectiveWorkoutRepository(session).create(
         user_id=user.id, elective_type=ElectiveType.W_LADDER, performed_at=datetime.now(UTC) - timedelta(days=1),
         total_reps=40, reps_sequence=[5, 4, 3], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.MAX_REPS_LADDER, performed_at=datetime.now(UTC) - timedelta(days=2),
+        total_reps=30, reps_sequence=[10, 8, 7, 5], equipment_type=EquipmentType.BODYWEIGHT,
     )
 
     await dispatcher.feed_update(
@@ -364,9 +370,14 @@ async def test_too_early_does_not_offer_elective_when_weekly_limit_reached(
 
     await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
     await _make_history(session, user)
+    # ELECTIVE_MAX_PER_WEEK == 2 (issue #94) — нужны ДВЕ записи в окне.
     await ElectiveWorkoutRepository(session).create(
         user_id=user.id, elective_type=ElectiveType.W_LADDER, performed_at=datetime.now(UTC),
         total_reps=20, reps_sequence=[5, 4, 3], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.MAX_REPS_LADDER, performed_at=datetime.now(UTC),
+        total_reps=30, reps_sequence=[10, 8, 7, 5], equipment_type=EquipmentType.BODYWEIGHT,
     )
 
     await dispatcher.feed_update(
@@ -377,6 +388,7 @@ async def test_too_early_does_not_offer_elective_when_weekly_limit_reached(
     too_early = [t for t in sent_texts if t.startswith("Рано —")]
     assert too_early
     assert texts.TOO_EARLY_ELECTIVE_OFFER not in too_early[0]
+    assert texts.TOO_EARLY_ELECTIVE_LIMIT_REACHED.format(limit=2) in too_early[0]
 
 
 async def test_offer_button_in_too_early_reaches_the_same_picker(session, user: User, bot: Bot, dispatcher: Dispatcher):

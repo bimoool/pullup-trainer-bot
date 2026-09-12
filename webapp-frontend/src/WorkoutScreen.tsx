@@ -11,6 +11,7 @@ import {
   type WorkoutSubmitResponse,
 } from "./api";
 import { BackdateForm } from "./BackdateForm";
+import { ElectiveScreen } from "./ElectiveScreen";
 import { LiveWorkoutScreen } from "./LiveWorkoutScreen";
 
 type Props = {
@@ -270,6 +271,7 @@ export function BlockForm({
 export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
   const [showBackdate, setShowBackdate] = useState(false);
   const [showLive, setShowLive] = useState(false);
+  const [showElective, setShowElective] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -382,6 +384,16 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
     );
   }
 
+  if (showElective) {
+    return (
+      <ElectiveScreen
+        initDataRaw={initDataRaw}
+        onCancel={() => setShowElective(false)}
+        onDone={() => setShowElective(false)}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю план тренировки…</p>;
   }
@@ -401,6 +413,18 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
         <p className="screen-message">
           {STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`}
         </p>
+        {/* Проактивное предложение факультатива на статусе "сегодня отдых"
+            (issue #94) — тот же принцип, что TOO_EARLY_ELECTIVE_BUTTON у
+            бота (app/bot/handlers/workout.py::resolve_rest_day_notice):
+            факультатив не заменяет обычную тренировку и не гейтуется её
+            статусом (см. app/web/routes.py::get_elective_plan), поэтому
+            кнопка ведёт на тот же ElectiveScreen, что и в обычном режиме
+            ниже, просто выделена здесь первой, раз статус уже too_early. */}
+        {state.status === "too_early" && (
+          <Button className="action-button" size="l" stretched onClick={() => setShowElective(true)}>
+            🎯 Сделать факультатив
+          </Button>
+        )}
         <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
           Открыть в боте
         </Button>
@@ -478,6 +502,9 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
         </Button>
         <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
           🔁 Внести пропущенную тренировку
+        </Button>
+        <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
+          🎯 Факультатив
         </Button>
       </div>
 
