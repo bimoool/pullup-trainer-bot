@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,8 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ElectiveWorkout, EquipmentType
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.events import EventRepository
-from app.domain.electives import ElectiveType
+from app.domain.electives import ELECTIVE_WEEK_WINDOW_DAYS, ElectiveType, is_elective_allowed
 from app.services.achievement_checks import unlock_volume_milestones
+
+
+async def is_elective_available(session: AsyncSession, user_id: int, *, now: datetime) -> bool:
+    """Общая проверка недельного лимита (issue #94) — используется и
+    реактивно (handle_start_workout/handle_electives_start), и проактивно
+    (handle_workout_section), чтобы запрос "сколько факультативов за
+    последнюю неделю" не дублировался в каждом хендлере отдельно."""
+    week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
+    count_this_week = await ElectiveWorkoutRepository(session).count_since(user_id, week_ago)
+    return is_elective_allowed(count_this_week)
 
 
 class ElectiveLogService:

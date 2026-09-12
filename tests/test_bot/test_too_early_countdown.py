@@ -50,7 +50,7 @@ async def test_too_early_shows_hours_left_and_ready_datetime(
     hours_left_min = max(0, math.ceil((ready_at_dt - after).total_seconds() / 3600))
     hours_left_max = max(0, math.ceil((ready_at_dt - before).total_seconds() / 3600))
 
-    # Пакет #6 — раз лимит "факультатив не чаще раза в неделю" ещё не
+    # Пакет #6 — раз недельный лимит факультатива (2, issue #94) ещё не
     # исчерпан, к сообщению добавляется предложение факультатива.
     expected = texts.TOO_EARLY_FOR_WORKOUT.format(
         hours_left=hours_left_min,

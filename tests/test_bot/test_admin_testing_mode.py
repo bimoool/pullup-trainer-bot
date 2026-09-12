@@ -8,6 +8,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import Chat, Message, Update
+from aiogram.types import User as TgUser
 from sqlalchemy import text
 
 from app.bot.states import EquipmentStates, WorkoutStates
@@ -22,6 +24,18 @@ from app.domain.constants import EquipmentType
 from app.domain.session import BlockLog
 from app.services.subscription import SubscriptionService
 from tests.test_bot.conftest import make_callback_update as _callback_update
+
+
+def _message_update(*, telegram_id: int, message_text: str) -> Update:
+    return Update(
+        update_id=1,
+        message=Message(
+            message_id=101, date=datetime.now(UTC),
+            chat=Chat(id=telegram_id, type="private"),
+            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
+            text=message_text,
+        ),
+    )
 
 
 async def _make_user_ready_for_workouts(session, user: User) -> None:
@@ -80,6 +94,27 @@ async def test_too_early_does_not_block_admin(session, user: User, bot: Bot, dis
     # Снаряд у обоих блоков не менялся — сценарий доходит сразу до ввода
     # результата (очередь снаряда пустая, needs_new_equipment=False).
     assert await fsm.get_state() == WorkoutStates.waiting_for_block_a.state
+
+
+async def test_too_early_proactive_status_does_not_show_for_admin(
+    session, user: User, bot: Bot, dispatcher: Dispatcher, monkeypatch,
+):
+    """Тот же обход, что и test_too_early_does_not_block_admin — теперь
+    ещё и для проактивного статуса при открытии раздела "Тренировка"
+    (app/bot/handlers/menu.py::handle_workout_section, issue #94), не
+    только для реактивного показа после клика "Начать тренировку"."""
+    from aiogram.methods import SendMessage
+
+    monkeypatch.setattr(settings, "admin_ids", str(user.telegram_id))
+    await _make_user_ready_for_workouts(session, user)
+    await _seed_one_workout(session, user, performed_at=datetime.now(UTC))
+
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, message_text="💪 Тренировка"), session=session,
+    )
+
+    sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
+    assert not [t for t in sent_texts if t and t.startswith("Рано —")]
 
 
 # --- "тихий откат" после провала перехода на новом снаряде -------------------------

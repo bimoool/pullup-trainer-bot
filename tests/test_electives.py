@@ -74,11 +74,15 @@ def test_allowed_when_zero_entries_this_week():
     assert is_elective_allowed(0) is True
 
 
-def test_not_allowed_when_one_entry_this_week():
-    assert is_elective_allowed(1) is False
+def test_allowed_when_one_entry_this_week():
+    assert is_elective_allowed(1) is True
 
 
-def test_not_allowed_when_more_than_one_entry_this_week():
+def test_not_allowed_when_two_entries_this_week():
+    assert is_elective_allowed(2) is False
+
+
+def test_not_allowed_when_more_than_two_entries_this_week():
     assert is_elective_allowed(3) is False
 
 

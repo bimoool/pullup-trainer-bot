@@ -7,12 +7,13 @@ from aiogram.types import CallbackQuery, FSInputFile, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.formatting import calculate_age, format_subscription_status
+from app.bot.formatting import calculate_age, format_subscription_status, format_too_early_message
 from app.bot.keyboards import (
     BOTTOM_MENU_HELP,
     BOTTOM_MENU_PROFILE,
     BOTTOM_MENU_PROGRESS,
     BOTTOM_MENU_WORKOUT,
+    electives_offer_keyboard,
     help_keyboard,
     profile_keyboard,
     progress_section_keyboard,
@@ -23,7 +24,10 @@ from app.config import settings
 from app.db.models import Gender
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workouts import WorkoutRepository
 from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
+from app.domain.rules import TrainingReadiness, check_training_readiness
+from app.services.elective_log import is_elective_available
 
 # ВАЖНО: подключается в app/bot/handlers/__init__.py сразу после start —
 # нажатие на кнопку нижнего меню обязано перехватывать апдейт независимо от
@@ -43,8 +47,26 @@ _GENDER_LABELS = {
 
 
 @router.message(F.text == BOTTOM_MENU_WORKOUT)
-async def handle_workout_section(message: Message, state: FSMContext) -> None:
+async def handle_workout_section(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    """Явный статус "сегодня отдых" (issue #94) — проактивно, при самом
+    открытии раздела, не только реактивно после клика "Начать тренировку"
+    (handle_start_workout, app/bot/handlers/workout.py, который по-прежнему
+    показывает тот же текст — пользователь может дойти сюда и напрямую
+    кнопкой, и через клик, оба пути должны говорить одно и то же)."""
     await state.clear()
+    user = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+    if user is not None and not settings.is_admin(user.telegram_id):
+        history = await WorkoutRepository(session).list_for_user(user.id)
+        if history:
+            now = datetime.now(UTC)
+            readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
+            if readiness.status == TrainingReadiness.TOO_EARLY:
+                rest_day_text = format_too_early_message(history[-1].performed_at, now)
+                elective_available = await is_elective_available(session, user.id, now=now)
+                keyboard = electives_offer_keyboard() if elective_available else None
+                if keyboard is not None:
+                    rest_day_text += texts.TOO_EARLY_ELECTIVE_OFFER
+                await message.answer(rest_day_text, reply_markup=keyboard)
     await message.answer(texts.SECTION_WORKOUT_TITLE, reply_markup=workout_section_keyboard())
 
 

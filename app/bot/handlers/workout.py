@@ -1,5 +1,4 @@
-import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from aiogram import F, Router
@@ -16,6 +15,7 @@ from app.bot.formatting import (
     format_reps_example,
     format_set_close_report,
     format_sets_word,
+    format_too_early_message,
 )
 from app.bot.handlers.equipment import _apply_equipment_type_choice, _begin_equipment_setup
 from app.bot.handlers.subscription import send_paywall
@@ -35,7 +35,6 @@ from app.bot.states import RetestStates, WorkoutStates
 from app.config import settings
 from app.db.models import Block, BlockType, WorkoutSetStatus
 from app.db.repositories.baselines import BaselineRepository
-from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -43,7 +42,6 @@ from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import (
     DELOAD_INTERVAL_DAYS,
-    MIN_REST_DAYS,
     SET_LENGTH,
     STRENGTH_BLOCK,
     VOLUME_BLOCK,
@@ -53,7 +51,6 @@ from app.domain.constants import (
     EquipmentType,
     VolumeGrowthReason,
 )
-from app.domain.electives import ELECTIVE_WEEK_WINDOW_DAYS, is_elective_allowed
 from app.domain.progression import (
     initial_volume_target,
     rollback_signed_load,
@@ -63,6 +60,7 @@ from app.domain.progression import (
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
+from app.services.elective_log import is_elective_available
 from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
@@ -197,27 +195,14 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
         # ускоряет ручное тестирование; check_training_readiness (домен)
         # не меняется и продолжает считать TOO_EARLY как обычно.
         if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
-            # Таймер + дата/время (Часть 10, пакет #2, п.23) — домен считает
-            # только по date (check_training_readiness), а тут для реального
-            # "сколько ждать" в часах нужна полная дата-время последней
-            # тренировки, поэтому здесь, не в домене (презентационный расчёт,
-            # не влияет на саму логику готовности).
-            ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
-            hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
-            message_text = texts.TOO_EARLY_FOR_WORKOUT.format(
-                hours_left=hours_left,
-                ready_date=ready_at_dt.strftime("%d.%m"),
-                ready_time=ready_at_dt.strftime("%H:%M"),
-            )
+            message_text = format_too_early_message(history[-1].performed_at, now)
             # Предложение факультатива вместо основной тренировки (пакет
-            # #6) — только если лимит "не чаще раза в неделю" ещё
+            # #6) — только если лимит (issue #94: 2 раза в неделю) ещё
             # позволяет; ротация без повтора сама по себе никогда не
             # блокирует выбор целиком (см. available_elective_types), так
             # что проверять её здесь не нужно — достаточно недельного лимита.
-            electives = ElectiveWorkoutRepository(session)
-            week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
-            count_this_week = await electives.count_since(user.id, week_ago)
-            keyboard = electives_offer_keyboard() if is_elective_allowed(count_this_week) else None
+            elective_available = await is_elective_available(session, user.id, now=now)
+            keyboard = electives_offer_keyboard() if elective_available else None
             if keyboard is not None:
                 message_text += texts.TOO_EARLY_ELECTIVE_OFFER
             await callback.message.answer(message_text, reply_markup=keyboard)

@@ -1,6 +1,6 @@
 """Факультативы (пакет #6) — 4 формата вне плана, ротация без повтора +
-не чаще раза в неделю, снаряд всегда как в блоке на объём (без пикера).
-Реальным aiogram-роутингом."""
+не чаще 2 раз в неделю (issue #94), снаряд всегда как в блоке на объём
+(без пикера). Реальным aiogram-роутингом."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -115,9 +115,15 @@ async def test_menu_blocked_when_weekly_limit_reached(session, user: User, bot: 
     await fsm.clear()
 
     await _make_history(session, user)
+    # Лимит — 2 в неделю (ELECTIVE_MAX_PER_WEEK, issue #94), нужны обе записи,
+    # чтобы reached.
     await ElectiveWorkoutRepository(session).create(
-        user_id=user.id, elective_type=ElectiveType.W_LADDER, performed_at=datetime.now(UTC) - timedelta(days=1),
+        user_id=user.id, elective_type=ElectiveType.W_LADDER, performed_at=datetime.now(UTC) - timedelta(days=2),
         total_reps=40, reps_sequence=[5, 4, 3], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.THREE_MINUTES, performed_at=datetime.now(UTC) - timedelta(days=1),
+        total_reps=30, reps_sequence=[5, 5, 5], equipment_type=EquipmentType.BODYWEIGHT,
     )
 
     await dispatcher.feed_update(
@@ -364,9 +370,15 @@ async def test_too_early_does_not_offer_elective_when_weekly_limit_reached(
 
     await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
     await _make_history(session, user)
+    # Лимит — 2 в неделю (ELECTIVE_MAX_PER_WEEK, issue #94), обе записи
+    # нужны, чтобы предложение факультатива перестало показываться.
     await ElectiveWorkoutRepository(session).create(
-        user_id=user.id, elective_type=ElectiveType.W_LADDER, performed_at=datetime.now(UTC),
+        user_id=user.id, elective_type=ElectiveType.W_LADDER, performed_at=datetime.now(UTC) - timedelta(days=1),
         total_reps=20, reps_sequence=[5, 4, 3], equipment_type=EquipmentType.BODYWEIGHT,
+    )
+    await ElectiveWorkoutRepository(session).create(
+        user_id=user.id, elective_type=ElectiveType.THREE_MINUTES, performed_at=datetime.now(UTC),
+        total_reps=30, reps_sequence=[5, 5, 5], equipment_type=EquipmentType.BODYWEIGHT,
     )
 
     await dispatcher.feed_update(
@@ -394,3 +406,41 @@ async def test_offer_button_in_too_early_reaches_the_same_picker(session, user: 
 
     fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     assert await fsm.get_state() == ElectiveStates.waiting_for_type.state
+
+
+# --- Проактивный статус "сегодня отдых" при открытии раздела (issue #94) ------------
+
+
+async def test_workout_section_shows_rest_day_status_proactively_when_too_early(
+    session, user: User, bot: Bot, dispatcher: Dispatcher,
+):
+    """Раньше статус "рано" показывался только РЕАКТИВНО, после клика
+    "Начать тренировку" (см. test_too_early_offers_elective_when_allowed) —
+    теперь то же сообщение + предложение факультатива приходит сразу при
+    открытии раздела "Тренировка", без явного клика."""
+    from app.services.subscription import SubscriptionService
+
+    await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
+    await _make_history(session, user)
+
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="💪 Тренировка"), session=session,
+    )
+
+    sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
+    too_early = [t for t in sent_texts if t.startswith("Рано —")]
+    assert too_early
+    assert texts.TOO_EARLY_ELECTIVE_OFFER in too_early[0]
+    assert texts.SECTION_WORKOUT_TITLE in sent_texts
+
+
+async def test_workout_section_no_rest_day_status_when_ready(session, user: User, bot: Bot, dispatcher: Dispatcher):
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+
+    await dispatcher.feed_update(
+        bot, _message_update(telegram_id=user.telegram_id, text="💪 Тренировка"), session=session,
+    )
+
+    sent_texts = [m.text for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text]
+    assert not [t for t in sent_texts if t and t.startswith("Рано —")]
+    assert texts.SECTION_WORKOUT_TITLE in sent_texts

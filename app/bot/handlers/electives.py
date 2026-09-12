@@ -1,11 +1,12 @@
 """Факультативная нагрузка вне плана (пакет #6, app/domain/electives.py) —
 4 самостоятельных формата, ротация без повтора (цикл из 4, свободный
-порядок выбора) + не чаще раза в неделю. Снаряд не выбирается — всегда тот
+порядок выбора) + не чаще ELECTIVE_MAX_PER_WEEK (2) раз в неделю (issue
+#94). Снаряд не выбирается — всегда тот
 же, что закреплён за пользователем в блоке на объём на момент выполнения
 (WorkoutRepository.resolve_next_targets), поэтому вход сюда возможен
 только при непустой истории (иначе снаряда ещё нет)."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from aiogram import F, Router
@@ -24,15 +25,13 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
 from app.domain.electives import (
-    ELECTIVE_WEEK_WINDOW_DAYS,
     THREE_MINUTES_MAX_INTERVALS,
     W_LADDER,
     ElectiveType,
     available_elective_types,
-    is_elective_allowed,
     volume_target_goal,
 )
-from app.services.elective_log import ElectiveLogService
+from app.services.elective_log import ElectiveLogService, is_elective_available
 
 router = Router()
 
@@ -68,12 +67,11 @@ async def handle_electives_start(callback: CallbackQuery, state: FSMContext, ses
         await callback.answer(texts.ELECTIVE_NEEDS_FIRST_WORKOUT_TOAST, show_alert=True)
         return
 
-    electives = ElectiveWorkoutRepository(session)
-    week_ago = datetime.now(UTC) - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
-    count_this_week = await electives.count_since(user.id, week_ago)
-    if not is_elective_allowed(count_this_week):
+    if not await is_elective_available(session, user.id, now=datetime.now(UTC)):
         await callback.answer(texts.ELECTIVE_LIMIT_REACHED_TOAST, show_alert=True)
         return
+
+    electives = ElectiveWorkoutRepository(session)
 
     types_history = await electives.list_types_for_user(user.id)
     available = available_elective_types(types_history)

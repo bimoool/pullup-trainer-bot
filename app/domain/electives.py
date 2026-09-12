@@ -44,7 +44,7 @@ VOLUME_TARGET_MAX_REPS_PER_SET: int = 10
 
 # --- Ротация и лимит -----------------------------------------------------------------
 
-ELECTIVE_MAX_PER_WEEK: int = 1
+ELECTIVE_MAX_PER_WEEK: int = 2
 ELECTIVE_WEEK_WINDOW_DAYS: int = 7
 
 

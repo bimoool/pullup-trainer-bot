@@ -2,14 +2,15 @@
 пользователя — вынесено отдельно от хендлеров, чтобы не дублировать между
 обработчиком по запросу и еженедельным воркером (app/workers/weekly_report.py)."""
 
+import math
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from app.bot import texts
 from app.db.models import SubscriptionStatus, User
 from app.domain.anomalies import AnomalyFlags
-from app.domain.constants import EquipmentType
+from app.domain.constants import MIN_REST_DAYS, EquipmentType
 
 SUBSCRIPTION_STATUS_LABELS = {
     SubscriptionStatus.NONE: "нет подписки",
@@ -138,6 +139,26 @@ def format_elective_result(reps_sequence: Sequence[int] | None, total_reps: int)
         return f"{total_reps} повторений всего"
     sequence = ", ".join(str(reps) for reps in reps_sequence)
     return f"{sequence} (всего {total_reps})"
+
+
+def format_too_early_message(last_workout_performed_at: datetime, now: datetime) -> str:
+    """Таймер + дата/время вместе (Часть 10, пакет #2, п.23) — общий для
+    реактивного показа (после клика "Начать тренировку", когда рано —
+    app/bot/handlers/workout.py::handle_start_workout) и проактивного
+    (при открытии раздела "Тренировка" — app/bot/handlers/menu.py::
+    handle_workout_section, issue #94), чтобы формула "сколько реально
+    ждать" не разъезжалась между двумя местами показа одного и того же
+    статуса. Домен (check_training_readiness) считает только по date —
+    здесь для реального "сколько ждать" в часах нужна полная дата-время
+    последней тренировки, поэтому здесь, не в домене (презентационный
+    расчёт, не влияет на саму логику готовности)."""
+    ready_at_dt = last_workout_performed_at + timedelta(days=MIN_REST_DAYS)
+    hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
+    return texts.TOO_EARLY_FOR_WORKOUT.format(
+        hours_left=hours_left,
+        ready_date=ready_at_dt.strftime("%d.%m"),
+        ready_time=ready_at_dt.strftime("%H:%M"),
+    )
 
 
 def format_anomaly_message(flags: AnomalyFlags) -> str | None:
