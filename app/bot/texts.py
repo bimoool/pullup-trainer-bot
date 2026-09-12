@@ -685,6 +685,22 @@ EQUIPMENT_PROGRESS_WITH_PCT = "было {first}, сейчас {current} за т�
 EQUIPMENT_PROGRESS_NO_PCT = "было {first}, сейчас {current} за тренировку"
 EQUIPMENT_PROGRESS_NONE = "пока нет данных"
 
+# --- Оценочная сила по формуле Эпли (issue #96) --------------------------------------
+
+PROGRESS_REPORT_EPLEY_HEADER = "\n\nОценочная сила блока Б (формула Эпли):"
+EPLEY_PROGRESS_CURRENT = "\n{load} кг экв."
+EPLEY_PROGRESS_VS_PREVIOUS = ", к прошлой тренировке: {sign}{pct}%"
+EPLEY_PROGRESS_VS_FIRST = ", к первой тренировке: {sign}{pct}%"
+EPLEY_PROGRESS_NONE = (
+    "\nпока нет данных — нужен вес тела в профиле и хотя бы одна тренировка "
+    "блока Б на отягощении или своём весе (без резины)"
+)
+EPLEY_PROGRESS_FOOTNOTE = (
+    "\n📐 Оценка по формуле Эпли: (вес тела + отягощение) × (1 + повторения / 30) — "
+    "не буквальный вес, а расчётный эквивалент нагрузки на 1 повторение. Не считается "
+    "для резины — реальное сопротивление физически неизвестно."
+)
+
 SET_CLOSE_REPORT_HEADER = "🎉 Сет из {set_length} тренировок закрыт!"
 SET_CLOSE_REPORT_BODY = (
     "Суммарный объём подтягиваний за сет: {total_volume}{volume_change}\n"

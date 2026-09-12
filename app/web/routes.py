@@ -61,9 +61,11 @@ from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
 from app.domain.progression import rollback_target
 from app.domain.reports import (
+    EpleyProgress,
     EquipmentProgress,
     all_cycles_analytics,
     current_equipment_progress,
+    epley_progress,
     weekly_summary,
 )
 from app.domain.rules import TrainingReadiness, check_training_readiness
@@ -85,6 +87,7 @@ from app.web.schemas import (
     ElectiveSubmitRequest,
     ElectiveSubmitResponse,
     ElectiveTypeInfo,
+    EpleyProgressResponse,
     EquipmentInfo,
     EquipmentProgressResponse,
     GtoResponse,
@@ -723,6 +726,16 @@ def _equipment_progress_response(progress: EquipmentProgress | None) -> Equipmen
     )
 
 
+def _epley_progress_response(progress: EpleyProgress | None) -> EpleyProgressResponse | None:
+    if progress is None:
+        return None
+    return EpleyProgressResponse(
+        current_load_kg=progress.current_load_kg,
+        change_pct_vs_previous=progress.change_pct_vs_previous,
+        change_pct_vs_first=progress.change_pct_vs_first,
+    )
+
+
 @router.get("/analytics", response_model=AnalyticsResponse)
 async def get_analytics(
     init_data: InitData = Depends(get_validated_init_data),
@@ -737,7 +750,9 @@ async def get_analytics(
     текущему (или только что закрытому) циклу, тем же способом, что и
     еженедельная рассылка (app/workers/weekly_report.py); прогресс на
     снаряде намеренно остаётся на полной истории — динамика "на одном и
-    том же снаряде", а не "за цикл"."""
+    том же снаряде", а не "за цикл". epley_progress (issue #96) — тот же
+    вызов app.domain.reports.epley_progress, что теперь добавляет строку в
+    текст "📊 Прогресс" бота (app/bot/handlers/reports.py)."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return AnalyticsResponse(has_data=False)
@@ -765,6 +780,7 @@ async def get_analytics(
         weekly=WeeklySummaryResponse(**asdict(summary)),
         equipment_progress_a=_equipment_progress_response(current_equipment_progress(records, "a")),
         equipment_progress_b=_equipment_progress_response(current_equipment_progress(records, "b")),
+        epley_progress=_epley_progress_response(epley_progress(records, user.weight_kg)),
         total_volume=analytics.total_volume,
         cycle_count=analytics.cycle_count,
         cycles=[CycleVolumeResponse(**asdict(c)) for c in analytics.cycles],

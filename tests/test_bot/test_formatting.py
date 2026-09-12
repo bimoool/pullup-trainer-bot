@@ -1,9 +1,11 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from app.bot import texts
 from app.bot.formatting import (
     format_anomaly_message,
     format_block_result,
+    format_epley_progress,
     format_equipment_progress_line,
     format_progress_report,
     format_recommendations,
@@ -15,7 +17,7 @@ from app.bot.formatting import (
 from app.db.models import SubscriptionStatus, User
 from app.domain.anomalies import AnomalyFlags
 from app.domain.constants import EquipmentType
-from app.domain.reports import EquipmentProgress, SetCloseSummary, WeeklySummary
+from app.domain.reports import EpleyProgress, EquipmentProgress, SetCloseSummary, WeeklySummary
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
 
 
@@ -143,6 +145,46 @@ def test_format_progress_report_includes_both_blocks():
     text = format_progress_report(summary, None, None)
     assert "Объём:" in text
     assert "Сила:" in text
+
+
+def test_format_progress_report_epley_defaults_to_no_data():
+    summary = WeeklySummary(1, 100, None, False, False)
+    text = format_progress_report(summary, None, None)
+    assert "Эпли" in text
+    assert "пока нет данных" in text
+    # Сноска про формулу не показывается, если самой оценки нет — иначе
+    # выглядело бы как объяснение отсутствующего числа.
+    assert "📐" not in text
+
+
+def test_format_progress_report_epley_shown_with_footnote():
+    summary = WeeklySummary(1, 100, None, False, False)
+    epley = EpleyProgress(current_load_kg=93.3, change_pct_vs_previous=15.4, change_pct_vs_first=28.6)
+    text = format_progress_report(summary, None, None, epley)
+    assert "93.3 кг экв." in text
+    assert "+15.4%" in text
+    assert "+28.6%" in text
+    assert "📐" in text
+
+
+def test_format_epley_progress_none_placeholder():
+    assert format_epley_progress(None) == texts.EPLEY_PROGRESS_NONE
+
+
+def test_format_epley_progress_omits_missing_percentages():
+    progress = EpleyProgress(current_load_kg=96.0, change_pct_vs_previous=None, change_pct_vs_first=None)
+    text = format_epley_progress(progress)
+    assert "96.0 кг экв." in text
+    assert "к прошлой" not in text
+    assert "к первой" not in text
+
+
+def test_format_epley_progress_negative_change_has_no_plus_sign():
+    progress = EpleyProgress(current_load_kg=90.0, change_pct_vs_previous=-5.0, change_pct_vs_first=-2.0)
+    text = format_epley_progress(progress)
+    assert "-5.0%" in text
+    assert "-2.0%" in text
+    assert "+-" not in text
 
 
 def test_format_set_close_report_includes_set_length_and_growth():

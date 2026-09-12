@@ -9,7 +9,7 @@ def _record_volume(record: WorkoutRecord) -> int:
     return record.block_a.log.volume + record.block_b.log.volume
 
 
-def _pct_change(previous: int, current: int) -> float | None:
+def _pct_change(previous: float, current: float) -> float | None:
     """None, если раньше объём был 0 — процент от нуля не определён."""
     if previous == 0:
         return None
@@ -189,3 +189,89 @@ def all_cycles_analytics(records: list[WorkoutRecord]) -> AllCyclesAnalytics:
         previous_volume = volume
 
     return AllCyclesAnalytics(total_volume=total_volume, cycle_count=len(cycles), cycles=cycles)
+
+
+# --- Формула Эпли: оценочная сила блока Б (issue #96) ------------------------------
+
+_EPLEY_ELIGIBLE_TYPES = (EquipmentType.WEIGHT, EquipmentType.BODYWEIGHT)
+# Резина (BAND) сознательно исключена целиком, а не сведена к общей шкале
+# нагрузки через to_signed_load — реальное сопротивление резины физически
+# неизвестно (стёртая маркировка, растяжение со временем), в отличие от
+# кг отягощения или собственного веса. Явное решение автора продукта (issue
+# #96, комментарий): "не пытайся приводить резину к общей шкале с весом —
+# это должно быть отдельное измерение". AUSTRALIAN исключена по тому же
+# принципу, что и в метрике "strength" графика прогресса (issue #82) — там
+# нет кг вообще, только угол корпуса.
+
+
+def _epley_eligible(block: BlockAssignment) -> bool:
+    """best_set > 0 отсекает бэкдейт-итог блока Б без введённого максимума
+    (issue #88: reported_volume задан, working_reps=(), max_reps=0) — там
+    "0 повторений" исказило бы Эпли до голого веса снаряда."""
+    return block.equipment_type in _EPLEY_ELIGIBLE_TYPES and block.log.best_set > 0
+
+
+def _epley_load(weight_kg: Decimal, block: BlockAssignment) -> float:
+    """(вес тела + отягощение) × (1 + повторения / 30) — расчётный
+    эквивалент нагрузки на 1 повторение, не буквальный вес."""
+    equipment_value = block.equipment_value if block.equipment_type == EquipmentType.WEIGHT else Decimal(0)
+    reps = block.log.best_set
+    return float((weight_kg + (equipment_value or Decimal(0))) * (Decimal(1) + Decimal(reps) / Decimal(30)))
+
+
+@dataclass(frozen=True)
+class EpleyProgress:
+    """Оценочная сила блока Б (issue #96). current_load_kg — по последней
+    подходящей тренировке ЛЮБОГО происхождения (в т.ч. бэкдейт/свободная —
+    это факт "сейчас", а не сравнение). change_pct_vs_previous/vs_first
+    сравнивают текущее значение ТОЛЬКО с официальными тренировками основной
+    программы (participates_in_cascade=True) — согласовано в issue: бэкдейт/
+    свободные видны на графике факта, но не становятся анкорами для %."""
+
+    current_load_kg: float
+    change_pct_vs_previous: float | None
+    change_pct_vs_first: float | None
+
+
+def epley_progress(records: list[WorkoutRecord], weight_kg: Decimal | None) -> EpleyProgress | None:
+    """None, если вес тела не заполнен в профиле (формула невозможна) или ни
+    одна тренировка блока Б не подходит под формулу (только WEIGHT/
+    BODYWEIGHT с зафиксированным максимумом, см. _epley_eligible)."""
+    if weight_kg is None:
+        return None
+
+    eligible = [r for r in records if _epley_eligible(r.block_b)]
+    if not eligible:
+        return None
+
+    # current_load — неокруглённая величина используется для % (иначе
+    # сравнение "самого-себя-с-собой", когда анкор совпадает с текущей
+    # тренировкой, давало бы не ровно 0.0%, а погрешность округления вроде
+    # -0.0%); округляется только то, что идёт в current_load_kg на показ.
+    current_load = _epley_load(weight_kg, eligible[-1].block_b)
+    official = [r for r in eligible if r.participates_in_cascade]
+    if not official:
+        return EpleyProgress(
+            current_load_kg=round(current_load, 1), change_pct_vs_previous=None, change_pct_vs_first=None,
+        )
+
+    first_anchor = official[0]
+    # Если самая свежая подходящая тренировка сама официальная — она же
+    # official[-1] (eligible/official сохраняют хронологический порядок), и
+    # "прошлая" не должна сравнивать её саму с собой, если есть кто-то раньше.
+    # Единственное исключение — когда официальная тренировка блока Б всего
+    # одна: тогда "прошлая"/"первая" намеренно совпадают (сравнение текущего
+    # значения с самим собой, 0%), а не None — так и есть на практике на
+    # первой тренировке блока Б.
+    if eligible[-1].participates_in_cascade and len(official) >= 2:
+        previous_anchor = official[-2]
+    else:
+        previous_anchor = official[-1]
+
+    previous_load = _epley_load(weight_kg, previous_anchor.block_b)
+    first_load = _epley_load(weight_kg, first_anchor.block_b)
+    return EpleyProgress(
+        current_load_kg=round(current_load, 1),
+        change_pct_vs_previous=_pct_change(previous_load, current_load),
+        change_pct_vs_first=_pct_change(first_load, current_load),
+    )
