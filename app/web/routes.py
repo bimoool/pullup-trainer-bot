@@ -279,6 +279,11 @@ class _PlanContext:
     equipment_b_item_id: int | None = None
     is_gap_rollback: bool = False
     work_sets_growth_reason: VolumeGrowthReason | None = None
+    # Чётная ("тяжёлая") тренировка блока Б (issue #97) — тот же флаг, что
+    # NextBlockState.is_heavy бота (app/bot/handlers/workout.py::_send_plan);
+    # equipment_b_value ниже уже подставлен heavy_equipment_value вместо
+    # обычного веса, когда is_heavy_b=True (см. _resolve_plan_context).
+    is_heavy_b: bool = False
 
 
 async def _resolve_plan_context(
@@ -332,6 +337,15 @@ async def _resolve_plan_context(
 
     is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK
     target_a = rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+    # Тяжёлая (чётная) тренировка блока Б (issue #97) — подсказка веса, не
+    # обычный вес силового блока (тот же приём, что app/bot/handlers/
+    # equipment.py::_begin_equipment_setup): is_heavy=True здесь гарантирует
+    # needs_new_equipment=False (см. WorkoutRepository._resolve_next_state),
+    # так что этот путь никогда не пересекается с equipment_setup_required
+    # выше.
+    equipment_b_value = (
+        target_b_state.heavy_equipment_value if target_b_state.is_heavy else target_b_state.equipment_value
+    )
 
     return _PlanContext(
         status="ready",
@@ -344,10 +358,11 @@ async def _resolve_plan_context(
         equipment_a_value=target_a_state.equipment_value,
         equipment_a_item_id=target_a_state.equipment_item_id,
         equipment_b_type=target_b_state.equipment_type,
-        equipment_b_value=target_b_state.equipment_value,
+        equipment_b_value=equipment_b_value,
         equipment_b_item_id=target_b_state.equipment_item_id,
         is_gap_rollback=is_gap_rollback,
         work_sets_growth_reason=target_a_state.work_sets_growth_reason,
+        is_heavy_b=target_b_state.is_heavy,
     )
 
 
@@ -401,6 +416,7 @@ async def get_workout_plan(
             context.work_sets_growth_reason.value if context.work_sets_growth_reason is not None else None
         ),
         band_items=band_items,
+        is_heavy_b=context.is_heavy_b,
     )
 
 

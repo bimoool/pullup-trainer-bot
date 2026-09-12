@@ -79,9 +79,19 @@ async def _begin_equipment_setup(
         if block_state is None or block_state.needs_new_equipment:
             equipment_queue.append(key)
         else:
+            # Тяжёлая (чётная) тренировка блока Б (issue #97) — подсказка
+            # веса, не обычный вес силового блока: is_heavy=True гарантирует
+            # needs_new_equipment=False (см. WorkoutRepository.
+            # _resolve_next_state), так что этот блок никогда не оказывается
+            # в equipment_queue — heavy_equipment_value должен попасть в
+            # equipment_results напрямую, иначе план молча предложил бы
+            # обычный (заниженный) вес вместо тяжёлого.
+            equipment_value = (
+                block_state.heavy_equipment_value if block_state.is_heavy else block_state.equipment_value
+            )
             equipment_results[key] = {
                 "type": block_state.equipment_type.value,
-                "value": str(block_state.equipment_value) if block_state.equipment_value is not None else None,
+                "value": str(equipment_value) if equipment_value is not None else None,
                 "item_id": block_state.equipment_item_id,
             }
 

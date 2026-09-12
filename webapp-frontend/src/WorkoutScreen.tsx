@@ -195,6 +195,7 @@ export function BlockForm({
   bandItems,
   bandItemValue,
   onBandItemChange,
+  isHeavy = false,
 }: {
   letter: "A" | "B";
   target: number | null;
@@ -210,13 +211,25 @@ export function BlockForm({
   bandItems: BandItemInfo[];
   bandItemValue: string;
   onBandItemChange: (value: string) => void;
+  /** Чётная ("тяжёлая") тренировка блока Б (issue #97) — фиксированные
+   * повторения, повышенный вес (уже подставлен в equipmentLabel сервером,
+   * см. app/web/routes.py::_resolve_plan_context), только заголовок/подпись
+   * отличаются — раскладка полей ввода та же (4 рабочих + 1 на максимум). */
+  isHeavy?: boolean;
 }) {
   return (
-    <Section className="block-section" header={`Блок ${letter} — цель ${target}`}>
+    <Section
+      className="block-section"
+      header={isHeavy ? `Блок ${letter} — тяжёлая тренировка 🏋️` : `Блок ${letter} — цель ${target}`}
+    >
       <div className="block-header">
         <div className="block-badge">{letter}</div>
         <p className="block-subtitle">
-          {workSets} рабочих {workSets === 1 ? "подход" : "подхода"} · {equipmentLabel ?? "снаряд не выбран"}
+          {isHeavy
+            ? "Фиксированные 3 повторения в каждом подходе"
+            : `${workSets} рабочих ${workSets === 1 ? "подход" : "подхода"}`}
+          {" · "}
+          {equipmentLabel ?? "снаряд не выбран"}
         </p>
       </div>
 
@@ -540,6 +553,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
         bandItems={plan.band_items}
         bandItemValue={blockBBandItem}
         onBandItemChange={setBlockBBandItem}
+        isHeavy={plan.is_heavy_b}
       />
 
       <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />

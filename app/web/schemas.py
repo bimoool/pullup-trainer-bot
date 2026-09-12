@@ -64,6 +64,12 @@ class WorkoutPlanResponse(BaseModel):
     # фронтенд (тот же приём, что is_gap_rollback выше).
     work_sets_growth_reason: Literal["stall", "ceiling"] | None = None
     band_items: list[BandItemInfo] = Field(default_factory=list)
+    # Чётная ("тяжёлая") тренировка блока Б (issue #97) — фиксированные
+    # повторения, повышенный вес (уже подставлен в equipment_b.value, см.
+    # app/web/routes.py::_resolve_plan_context); фронтенд меняет
+    # формулировку формы блока Б на основании этого флага, парсинг ввода не
+    # меняется (тот же принцип, что и у бота).
+    is_heavy_b: bool = False
 
 
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
