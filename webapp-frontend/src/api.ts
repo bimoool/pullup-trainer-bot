@@ -619,6 +619,69 @@ export async function fetchLeaderboard(
   );
 }
 
+/** Один доступный сейчас формат факультатива (issue #94) — та же ротация
+ * без повтора, что app.domain.electives.available_elective_types считает
+ * на бэкенде. input_kind различает форму: "sequence" — раскладка по
+ * подходам (min_count/max_count — допустимая длина списка, для
+ * max_reps_ladder всегда 4=4), "total" — одно число (только volume_target,
+ * volume_goal — тот же ×5 ориентир, что показывает бот, не обязательная
+ * цель). */
+export interface ElectiveTypeInfo {
+  value: string;
+  label: string;
+  input_kind: "sequence" | "total";
+  min_count: number | null;
+  max_count: number | null;
+  volume_goal: number | null;
+}
+
+/** GET /api/elective/plan (issue #94) — тот же путь, что
+ * handle_electives_start бота: доступность формы определяется недельным
+ * лимитом/ротацией, НЕ статусом готовности к обычной тренировке (нет
+ * "no_access" — факультатив не за паивеллом ни в боте, ни здесь).
+ * is_rest_day/ready_at/hours_left — только для проактивного текста "сегодня
+ * как раз день отдыха", не гейт формы. elective_allowed=false — недельный
+ * лимит уже исчерпан, available_types тогда пуст — показывай explicit текст,
+ * не пустой экран. */
+export interface ElectivePlan {
+  status: string;
+  is_rest_day: boolean;
+  ready_at: string | null;
+  hours_left: number | null;
+  elective_allowed: boolean;
+  elective_limit: number;
+  entries_this_week: number;
+  available_types: ElectiveTypeInfo[];
+  equipment_label: string | null;
+}
+
+export async function fetchElectivePlan(initDataRaw: string): Promise<ElectivePlan> {
+  return apiGet<ElectivePlan>("/api/elective/plan", initDataRaw);
+}
+
+/** POST /api/elective/submit — reps_sequence обязателен для "sequence"
+ * форматов (total_reps — просто клиентская сумма для UX, сервер всё равно
+ * пересчитывает её сам из reps_sequence, см. app/web/routes.py), null для
+ * "total" (volume_target — там total_reps единственное число). */
+export interface ElectiveSubmitRequest {
+  elective_type: string;
+  reps_sequence?: number[] | null;
+  total_reps: number;
+}
+
+export interface ElectiveSubmitResponse {
+  status: string;
+  result_text: string | null;
+  equipment_label: string | null;
+}
+
+export async function submitElective(
+  initDataRaw: string,
+  body: ElectiveSubmitRequest,
+): Promise<ElectiveSubmitResponse> {
+  return apiPost<ElectiveSubmitRequest, ElectiveSubmitResponse>("/api/elective/submit", initDataRaw, body);
+}
+
 export async function updateLeaderboardDisplayName(
   initDataRaw: string,
   displayName: string | null,

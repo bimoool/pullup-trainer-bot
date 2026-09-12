@@ -1,3 +1,4 @@
+import math
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import texts
 from app.bot.formatting import (
     format_block_result,
+    format_elective_result,
     format_equipment_label,
     format_subscription_status,
 )
@@ -21,6 +23,7 @@ from app.config import settings
 from app.db.models import ActiveTimerType, BlockType, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
+from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.leaderboard import LeaderboardRepository
 from app.db.repositories.users import UserRepository
@@ -34,6 +37,7 @@ from app.domain.constants import (
     DEFAULT_REST_SECONDS_BLOCK_A,
     DEFAULT_REST_SECONDS_BLOCK_B,
     DEFAULT_TIMER_SOUND_VOLUME_PERCENT,
+    MIN_REST_DAYS,
     STRENGTH_BLOCK,
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
@@ -41,6 +45,17 @@ from app.domain.constants import (
     EquipmentType,
     VolumeGrowthReason,
     to_signed_load,
+)
+from app.domain.electives import (
+    ELECTIVE_MAX_PER_WEEK,
+    ELECTIVE_WEEK_WINDOW_DAYS,
+    MAX_REPS_LADDER_SETS,
+    THREE_MINUTES_MAX_INTERVALS,
+    W_LADDER,
+    ElectiveType,
+    available_elective_types,
+    is_elective_allowed,
+    volume_target_goal,
 )
 from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
@@ -53,6 +68,7 @@ from app.domain.reports import (
 )
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
+from app.services.elective_log import ElectiveLogService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
@@ -65,6 +81,10 @@ from app.web.schemas import (
     BackdateSubmitRequest,
     BandItemInfo,
     CycleVolumeResponse,
+    ElectivePlanResponse,
+    ElectiveSubmitRequest,
+    ElectiveSubmitResponse,
+    ElectiveTypeInfo,
     EquipmentInfo,
     EquipmentProgressResponse,
     GtoResponse,
@@ -1429,3 +1449,187 @@ async def update_leaderboard_display_name(
     display_name = body.display_name.strip() if body.display_name else None
     updated = await UserRepository(session).set_leaderboard_display_name(user.id, display_name or None)
     return LeaderboardDisplayNameResponse(display_name=updated.leaderboard_display_name)
+
+
+# --- Факультатив (issue #94) ---------------------------------------------------------
+
+# Тот же (мин, макс) чисел в последовательности, что _SEQUENCE_LIMITS в
+# app/bot/handlers/electives.py — max_reps_ladder всегда ровно
+# MAX_REPS_LADDER_SETS (4) подходов, остальные два формата допускают
+# неполную раскладку (человек мог не дотянуть до конца лесенки/трёх минут).
+_ELECTIVE_SEQUENCE_LIMITS: dict[ElectiveType, tuple[int, int]] = {
+    ElectiveType.MAX_REPS_LADDER: (MAX_REPS_LADDER_SETS, MAX_REPS_LADDER_SETS),
+    ElectiveType.W_LADDER: (1, len(W_LADDER)),
+    ElectiveType.THREE_MINUTES: (1, THREE_MINUTES_MAX_INTERVALS),
+}
+
+_ELECTIVE_LABELS: dict[ElectiveType, str] = {
+    ElectiveType.MAX_REPS_LADDER: texts.ELECTIVE_LABEL_MAX_REPS_LADDER,
+    ElectiveType.W_LADDER: texts.ELECTIVE_LABEL_W_LADDER,
+    ElectiveType.THREE_MINUTES: texts.ELECTIVE_LABEL_THREE_MINUTES,
+    ElectiveType.VOLUME_TARGET: texts.ELECTIVE_LABEL_VOLUME_TARGET,
+}
+
+
+@router.get("/elective/plan", response_model=ElectivePlanResponse)
+async def get_elective_plan(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ElectivePlanResponse:
+    """Экран факультатива Mini App (issue #94) — тот же путь, что
+    handle_electives_start бота (app/bot/handlers/electives.py): доступность
+    определяется недельным лимитом (is_elective_allowed) и ротацией без
+    повтора (available_elective_types), не статусом готовности к обычной
+    тренировке — форма видна в любой день, так же как кнопка "🎯 Факультатив"
+    в workout_section_keyboard бота.
+
+    is_rest_day/ready_at/hours_left — только для проактивного текста
+    "сегодня как раз день отдыха" на том же экране (issue #94, п.1-2), не
+    гейт формы; тот же расчёт, что app.bot.handlers.workout.
+    resolve_rest_day_notice, но без текста/клавиатуры бота — Mini App
+    рисует свой экран.
+
+    Нет проверки активной подписки (в отличие от _resolve_plan_context) —
+    handle_electives_start бота её тоже не делает, факультатив не за
+    паивеллом ни в одном из двух интерфейсов, это сознательное решение
+    бота (не оплаченная фича мотивации/вовлечения), не упущение, которое
+    нужно исправлять именно здесь."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return ElectivePlanResponse(status="not_onboarded")
+
+    now = datetime.now(UTC)
+    workouts = WorkoutRepository(session)
+    history = await workouts.list_for_user(user.id)
+    if not history:
+        return ElectivePlanResponse(status="needs_first_workout")
+
+    is_admin = settings.is_admin(init_data.user.id)
+    is_rest_day = False
+    ready_at: str | None = None
+    hours_left: int | None = None
+    if not is_admin:
+        readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
+        if readiness.status == TrainingReadiness.TOO_EARLY:
+            is_rest_day = True
+            ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
+            ready_at = ready_at_dt.date().isoformat()
+            hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
+
+    electives = ElectiveWorkoutRepository(session)
+    week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
+    entries_this_week = await electives.count_since(user.id, week_ago)
+    elective_allowed = is_elective_allowed(entries_this_week)
+
+    available_types: list[ElectiveTypeInfo] = []
+    equipment_label = None
+    if elective_allowed:
+        types_history = await electives.list_types_for_user(user.id)
+        available = available_elective_types(types_history)
+
+        target_a_state, _ = await workouts.resolve_next_targets(user.id, bypass_transition_wait=is_admin)
+        equipment_label = format_equipment_label(target_a_state.equipment_type, target_a_state.equipment_value)
+
+        for elective_type in ElectiveType:
+            if elective_type not in available:
+                continue
+            if elective_type == ElectiveType.VOLUME_TARGET:
+                available_types.append(
+                    ElectiveTypeInfo(
+                        value=elective_type.value,
+                        label=_ELECTIVE_LABELS[elective_type],
+                        input_kind="total",
+                        volume_goal=volume_target_goal(target_a_state.target),
+                    ),
+                )
+            else:
+                min_count, max_count = _ELECTIVE_SEQUENCE_LIMITS[elective_type]
+                available_types.append(
+                    ElectiveTypeInfo(
+                        value=elective_type.value,
+                        label=_ELECTIVE_LABELS[elective_type],
+                        input_kind="sequence",
+                        min_count=min_count,
+                        max_count=max_count,
+                    ),
+                )
+
+    return ElectivePlanResponse(
+        status="ready",
+        is_rest_day=is_rest_day,
+        ready_at=ready_at,
+        hours_left=hours_left,
+        elective_allowed=elective_allowed,
+        elective_limit=ELECTIVE_MAX_PER_WEEK,
+        entries_this_week=entries_this_week,
+        available_types=available_types,
+        equipment_label=equipment_label,
+    )
+
+
+@router.post("/elective/submit", response_model=ElectiveSubmitResponse)
+async def submit_elective(
+    body: ElectiveSubmitRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ElectiveSubmitResponse:
+    """Записывает факультатив через ElectiveLogService.record — тот же
+    сервис, что _finalize_elective бота (app/bot/handlers/electives.py), не
+    отдельная реализация. Все проверки статуса/лимита повторяются заново на
+    сервере (не доверяем клиенту ответу предыдущего GET /elective/plan —
+    например, если факультатив уже был записан параллельно из бота, лимит
+    здесь пересчитается сам). Нет проверки подписки — см. докстринг
+    get_elective_plan выше, тот же принцип, что и у бота."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return ElectiveSubmitResponse(status="not_onboarded")
+
+    now = datetime.now(UTC)
+    workouts = WorkoutRepository(session)
+    history = await workouts.list_for_user(user.id)
+    if not history:
+        return ElectiveSubmitResponse(status="needs_first_workout")
+
+    try:
+        elective_type = ElectiveType(body.elective_type)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid elective_type") from None
+
+    electives = ElectiveWorkoutRepository(session)
+    week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
+    entries_this_week = await electives.count_since(user.id, week_ago)
+    if not is_elective_allowed(entries_this_week):
+        return ElectiveSubmitResponse(status="limit_reached")
+
+    if elective_type == ElectiveType.VOLUME_TARGET:
+        if body.total_reps <= 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "total_reps must be positive")
+        reps_sequence = None
+        total_reps = body.total_reps
+    else:
+        min_count, max_count = _ELECTIVE_SEQUENCE_LIMITS[elective_type]
+        if body.reps_sequence is None or not (min_count <= len(body.reps_sequence) <= max_count):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid reps_sequence length")
+        reps_sequence = body.reps_sequence
+        # Пересчитывается из raw-последовательности, не доверяем
+        # total_reps клиента буквально — тот же принцип, что и остальные
+        # Submit-эндпойнты (сервер как источник истины для того, что
+        # реально идёт в БД/лидерборд).
+        total_reps = sum(reps_sequence)
+
+    is_admin = settings.is_admin(init_data.user.id)
+    target_a_state, _ = await workouts.resolve_next_targets(user.id, bypass_transition_wait=is_admin)
+
+    await ElectiveLogService(session).record(
+        user_id=user.id, elective_type=elective_type, performed_at=now,
+        total_reps=total_reps, reps_sequence=reps_sequence,
+        equipment_type=target_a_state.equipment_type,
+        equipment_value=target_a_state.equipment_value,
+        equipment_item_id=target_a_state.equipment_item_id,
+    )
+
+    return ElectiveSubmitResponse(
+        status="ok",
+        result_text=format_elective_result(reps_sequence, total_reps),
+        equipment_label=format_equipment_label(target_a_state.equipment_type, target_a_state.equipment_value),
+    )

@@ -563,3 +563,80 @@ class LeaderboardDisplayNameUpdateRequest(BaseModel):
 
 class LeaderboardDisplayNameResponse(BaseModel):
     display_name: str | None
+
+
+class ElectiveTypeInfo(BaseModel):
+    """Один доступный сейчас формат факультатива (issue #94) — та же
+    ротация без повтора, что и app.domain.electives.available_elective_types
+    использует для elective_type_keyboard бота, просто списком для
+    фронтенда вместо inline-кнопок.
+
+    input_kind различает вид формы: "sequence" — раскладка по подходам
+    (min_count/max_count ограничивают длину списка — тот же смысл, что
+    _SEQUENCE_LIMITS в app/bot/handlers/electives.py), "total" — одно
+    число (только volume_target, min_count/max_count тогда None).
+    volume_goal — тот же ×5 ориентир от текущей цели блока на объём, что
+    показывает бот (app.domain.electives.volume_target_goal), заполнен
+    только для volume_target."""
+
+    value: str
+    label: str
+    input_kind: Literal["sequence", "total"]
+    min_count: int | None = None
+    max_count: int | None = None
+    volume_goal: int | None = None
+
+
+class ElectivePlanResponse(BaseModel):
+    """GET /api/elective/plan (issue #94) — тот же путь, что
+    handle_electives_start бота (app/bot/handlers/electives.py): доступность
+    факультатива НЕ привязана к готовности к обычной тренировке (кнопка
+    "🎯 Факультатив" в workout_section_keyboard бота видна в любой день) —
+    is_rest_day здесь только для текста ("сегодня как раз день отдыха"), не
+    гейт самой формы.
+
+    status: "not_onboarded"/"needs_first_workout" — форма не показывается,
+    тот же принцип, что и у остальных *PlanResponse (см. WorkoutPlanResponse).
+    Нет статуса "no_access" — факультатив не за паивеллом, ни в боте
+    (handle_electives_start не проверяет подписку), ни здесь. "ready" —
+    остальные поля заполнены.
+
+    elective_allowed=False — недельный лимит (elective_limit,
+    entries_this_week) уже исчерпан — фронтенд обязан показать явный текст
+    (issue #94, уточнение в комментарии: "не просто скрыть кнопку молча"),
+    available_types в этом случае пуст (форма ввода не показывается)."""
+
+    status: str
+    is_rest_day: bool = False
+    ready_at: str | None = None
+    hours_left: int | None = None
+    elective_allowed: bool = False
+    elective_limit: int = 0
+    entries_this_week: int = 0
+    available_types: list[ElectiveTypeInfo] = Field(default_factory=list)
+    equipment_label: str | None = None
+
+
+class ElectiveSubmitRequest(BaseModel):
+    """POST /api/elective/submit — тот же смысл полей, что финальный шаг
+    бота (app/bot/handlers/electives.py::_finalize_elective): reps_sequence
+    — раскладка по подходам для max_reps_ladder/w_ladder/three_minutes,
+    None для volume_target (там только итог). total_reps обязателен
+    всегда — для форматов с раскладкой сервер игнорирует присланную сумму
+    и пересчитывает её сам из reps_sequence (не доверяем клиентской
+    арифметике), для volume_target это единственное число.
+
+    Длина reps_sequence проверяется на сервере против тех же min/max, что
+    вернул GET /api/elective/plan (ElectiveTypeInfo.min_count/max_count) —
+    тот же принцип, что и у остальных Submit-эндпойнтов (сервер не
+    доверяет буквально ответу предыдущего GET, пересчитывает сам)."""
+
+    elective_type: str
+    reps_sequence: list[Reps] | None = None
+    total_reps: Reps
+
+
+class ElectiveSubmitResponse(BaseModel):
+    status: str
+    result_text: str | None = None
+    equipment_label: str | None = None

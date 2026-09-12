@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
@@ -53,7 +53,11 @@ from app.domain.constants import (
     EquipmentType,
     VolumeGrowthReason,
 )
-from app.domain.electives import ELECTIVE_WEEK_WINDOW_DAYS, is_elective_allowed
+from app.domain.electives import (
+    ELECTIVE_MAX_PER_WEEK,
+    ELECTIVE_WEEK_WINDOW_DAYS,
+    is_elective_allowed,
+)
 from app.domain.progression import (
     initial_volume_target,
     rollback_signed_load,
@@ -174,6 +178,63 @@ async def handle_show_plan(callback: CallbackQuery, session: AsyncSession) -> No
     await callback.answer()
 
 
+async def resolve_rest_day_notice(
+    session: AsyncSession, *, telegram_id: int, now: datetime,
+) -> tuple[str, InlineKeyboardMarkup | None] | None:
+    """Статус «сегодня день отдыха» (TOO_EARLY по check_training_readiness) —
+    общий для реактивной проверки при нажатии "Начать тренировку"
+    (handle_start_workout ниже) и проактивного показа при открытии раздела
+    "Тренировка" (app/bot/handlers/menu.py::handle_workout_section, issue
+    #94) — тот же текст и то же предложение факультатива в обоих местах, не
+    отдельная копия. None — сегодня можно тренироваться (или ещё нет
+    истории/обход для admin_ids) — вызывающий показывает обычный экран.
+
+    Предложение факультатива — только если недельный лимит (ELECTIVE_MAX_PER_WEEK)
+    ещё не исчерпан; ротация без повтора сама по себе никогда не блокирует
+    выбор целиком (см. available_elective_types), так что проверять её здесь
+    не нужно, достаточно недельного лимита. Если лимит уже исчерпан — это
+    тоже показывается явно (issue #94), а не просто молча скрытая кнопка."""
+    # Обход минимального отдыха — только для admin_ids (Часть 9), ускоряет
+    # ручное тестирование; check_training_readiness (домен) не меняется и
+    # продолжает считать TOO_EARLY как обычно.
+    if settings.is_admin(telegram_id):
+        return None
+
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    workouts = WorkoutRepository(session)
+    history = await workouts.list_for_user(user.id)
+    if not history:
+        return None
+
+    readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
+    if readiness.status != TrainingReadiness.TOO_EARLY:
+        return None
+
+    # Таймер + дата/время (Часть 10, пакет #2, п.23) — домен считает только
+    # по date (check_training_readiness), а тут для реального "сколько
+    # ждать" в часах нужна полная дата-время последней тренировки, поэтому
+    # здесь, не в домене (презентационный расчёт, не влияет на саму логику
+    # готовности).
+    ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
+    hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
+    message_text = texts.TOO_EARLY_FOR_WORKOUT.format(
+        hours_left=hours_left,
+        ready_date=ready_at_dt.strftime("%d.%m"),
+        ready_time=ready_at_dt.strftime("%H:%M"),
+    )
+
+    electives = ElectiveWorkoutRepository(session)
+    week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
+    count_this_week = await electives.count_since(user.id, week_ago)
+    if is_elective_allowed(count_this_week):
+        keyboard = electives_offer_keyboard()
+        message_text += texts.TOO_EARLY_ELECTIVE_OFFER
+    else:
+        keyboard = None
+        message_text += texts.TOO_EARLY_ELECTIVE_LIMIT_REACHED.format(limit=ELECTIVE_MAX_PER_WEEK)
+    return message_text, keyboard
+
+
 @router.callback_query(F.data == "start_workout")
 async def handle_start_workout(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     users = UserRepository(session)
@@ -193,33 +254,12 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
     readiness = None
     if history:
         readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
-        # Обход минимального отдыха — только для admin_ids (Часть 9),
-        # ускоряет ручное тестирование; check_training_readiness (домен)
-        # не меняется и продолжает считать TOO_EARLY как обычно.
         if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
-            # Таймер + дата/время (Часть 10, пакет #2, п.23) — домен считает
-            # только по date (check_training_readiness), а тут для реального
-            # "сколько ждать" в часах нужна полная дата-время последней
-            # тренировки, поэтому здесь, не в домене (презентационный расчёт,
-            # не влияет на саму логику готовности).
-            ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
-            hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
-            message_text = texts.TOO_EARLY_FOR_WORKOUT.format(
-                hours_left=hours_left,
-                ready_date=ready_at_dt.strftime("%d.%m"),
-                ready_time=ready_at_dt.strftime("%H:%M"),
-            )
-            # Предложение факультатива вместо основной тренировки (пакет
-            # #6) — только если лимит "не чаще раза в неделю" ещё
-            # позволяет; ротация без повтора сама по себе никогда не
-            # блокирует выбор целиком (см. available_elective_types), так
-            # что проверять её здесь не нужно — достаточно недельного лимита.
-            electives = ElectiveWorkoutRepository(session)
-            week_ago = now - timedelta(days=ELECTIVE_WEEK_WINDOW_DAYS)
-            count_this_week = await electives.count_since(user.id, week_ago)
-            keyboard = electives_offer_keyboard() if is_elective_allowed(count_this_week) else None
-            if keyboard is not None:
-                message_text += texts.TOO_EARLY_ELECTIVE_OFFER
+            rest_day_notice = await resolve_rest_day_notice(session, telegram_id=callback.from_user.id, now=now)
+            # rest_day_notice всегда не None здесь: тот же readiness/history,
+            # что resolve_rest_day_notice пересчитывает само (is_admin уже
+            # проверен веткой выше).
+            message_text, keyboard = rest_day_notice
             await callback.message.answer(message_text, reply_markup=keyboard)
             await callback.answer()
             return
