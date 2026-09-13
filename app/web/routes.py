@@ -722,6 +722,17 @@ async def get_history(
     return HistoryResponse(items=items, has_more=offset + limit < len(newest_first))
 
 
+# strength (issue #82) больше не считает резину частью общей шкалы нагрузки
+# (issue #110) — тот же принцип, что epley_progress уже применяет (issue
+# #96): реальное сопротивление резины физически неизвестно (стёртая
+# маркировка, растяжение), сравнивать его с кг отягощения нельзя ни в каком
+# виде, даже со знаком минус. to_signed_load() как функция не тронута — она
+# по-прежнему обслуживает резину для сравнений "легче/тяжелее" внутри
+# прогрессии (recalculate_target), где обе стороны сравнения всегда один и
+# тот же тип снаряда, не для этого графика.
+_STRENGTH_ELIGIBLE_TYPES = (EquipmentType.WEIGHT, EquipmentType.BODYWEIGHT)
+
+
 def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -> Decimal | None:
     """Факт по выбранной метрике (issue #82) — см. докстринг
     ProgressPointResponse для смысла каждой ветки. strength скоуплена на
@@ -732,7 +743,7 @@ def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -
     if metric == "volume":
         return Decimal(block.log.volume)
     # metric == "strength"
-    if block_letter != "b" or block.equipment_type == EquipmentType.AUSTRALIAN:
+    if block_letter != "b" or block.equipment_type not in _STRENGTH_ELIGIBLE_TYPES:
         return None
     return to_signed_load(block.equipment_type, block.equipment_value)
 
