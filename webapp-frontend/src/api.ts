@@ -47,6 +47,12 @@ export interface WorkoutPlanResponse {
    * повторения, повышенный вес (уже подставлен в equipment_b.value/label
    * сервером, см. app/web/routes.py::_resolve_plan_context). */
   is_heavy_b: boolean;
+  /** Ежемесячный тест на максимум блока на объём (issue #89, форма в Mini
+   * App — issue #105) — target_a остаётся null (текст теста больше не
+   * называет никакого ориентирующего числа, ни тут, ни в боте, см.
+   * app/bot/texts.py::VOLUME_DELOAD_PROMPT). Фронтенд показывает вместо
+   * обычной сетки блока A один вопрос "сколько реально смог". */
+  is_deload_a: boolean;
 }
 
 export interface AnomalyFlags {
@@ -113,6 +119,9 @@ export interface WorkoutSubmitResponse {
   result_b: string | null;
   anomalies_a: AnomalyFlags | null;
   anomalies_b: AnomalyFlags | null;
+  /** Записанная тренировка была тестом на максимум блока A (issue #105) —
+   * тот же смысл, что texts.VOLUME_DELOAD_DONE_SUFFIX у бота. */
+  is_deload_a: boolean;
 }
 
 /**

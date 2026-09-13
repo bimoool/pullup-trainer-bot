@@ -41,8 +41,8 @@ class WorkoutPlanResponse(BaseModel):
     """GET /api/workout/plan — статус определяет, есть ли форма ввода:
     "ready" — да, план ниже заполнен; любой другой статус — форма не
     показывается, поля плана пустые (см. issue #36, сужение скоупа
-    Этапа 1: только обычная тренировка и gap_rollback, остальные случаи
-    ведут в бота).
+    Этапа 1: только обычная тренировка, gap_rollback и (issue #105)
+    ежемесячный тест на максимум блока A, остальные случаи ведут в бота).
 
     band_items заполняется, только если равнозначный ввод резины возможен
     хотя бы для одного блока (equipment_a/b.type == "band") — личный список
@@ -70,6 +70,13 @@ class WorkoutPlanResponse(BaseModel):
     # формулировку формы блока Б на основании этого флага, парсинг ввода не
     # меняется (тот же принцип, что и у бота).
     is_heavy_b: bool = False
+    # Ежемесячный тест на максимум блока на объём (issue #89, форма в Mini
+    # App — issue #105) — target_a/work_sets_a/equipment_a теряют обычный
+    # смысл при True: target_a всегда None (текст теста больше не называет
+    # никакого ориентирующего числа, ни здесь, ни в боте), equipment_a
+    # принудительно свой вес. Фронтенд показывает вместо обычной сетки
+    # блока A один вопрос "сколько реально смог".
+    is_deload_a: bool = False
 
 
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
@@ -79,7 +86,10 @@ Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
 
 
 class WorkoutSubmitRequest(BaseModel):
-    block_a_working_reps: list[Reps] = Field(min_length=1)
+    # min_length=0 (не 1, как у блока B) — тест на максимум блока A (issue
+    # #89/#105) вводится одним числом без раскладки по подходам, тот же
+    # смысл, что parse_reps("15") в боте: working_reps=(), max_reps=15.
+    block_a_working_reps: list[Reps] = Field(min_length=0)
     block_a_max_reps: Reps
     block_b_working_reps: list[Reps] = Field(min_length=1)
     block_b_max_reps: Reps
@@ -358,6 +368,11 @@ class WorkoutSubmitResponse(BaseModel):
     result_b: str | None = None
     anomalies_a: AnomalyFlagsResponse | None = None
     anomalies_b: AnomalyFlagsResponse | None = None
+    # Записанная тренировка была тестом на максимум блока A (issue #89/#105)
+    # — то же значение, что Block.is_deload. Фронтенд показывает заметку
+    # "цель не менялась" на экране "Готово", тот же смысл, что
+    # texts.VOLUME_DELOAD_DONE_SUFFIX у бота.
+    is_deload_a: bool = False
 
 
 class HistoryBlockDetail(BaseModel):
