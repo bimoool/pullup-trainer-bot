@@ -349,6 +349,11 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   const [showBackdate, setShowBackdate] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showElective, setShowElective] = useState(false);
+  // Экран выбора действия по умолчанию (issue #108) — форма ввода
+  // результата сегодняшней тренировки больше не показывается сразу под
+  // planом, а только после явного нажатия 4-й кнопки "📝 Внести результат
+  // тренировки", симметрично остальным трём режимам.
+  const [showForm, setShowForm] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -576,33 +581,59 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   }
 
   const { plan } = state;
-  return (
-    <div>
-      <p className="plan-title">Текущий план</p>
+  // Баннеры показываются сразу на экране выбора действия, а не только
+  // вместе с формой (issue #108) — это контекст, важный до выбора действия
+  // (снижена ли цель блока A из-за перерыва, вырос ли объём блока), а не
+  // только при непосредственном вводе результата.
+  const banners = (
+    <>
       {plan.is_gap_rollback && (
         <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
       )}
       {plan.work_sets_growth_reason && (
         <p className="gap-banner">{WORK_SETS_GROWTH_NOTICES[plan.work_sets_growth_reason]}</p>
       )}
+    </>
+  );
 
-      <div className="workout-mode-buttons">
-        {/* Живая тренировка (таймер по подходам) не адаптирована под
-            структуру теста на максимум (issue #105, тот же принцип сужения
-            скоупа, что и у остальных статусов Этапа 1) — на день теста
-            кнопка скрыта, обычный режим ниже её заменяет. */}
-        {!plan.is_deload_a && (
-          <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
-            ⏱ Тренировка в реальном времени
+  if (!showForm) {
+    return (
+      <div>
+        <p className="plan-title">Текущий план</p>
+        {banners}
+
+        <div className="workout-mode-buttons">
+          {/* Живая тренировка (таймер по подходам) не адаптирована под
+              структуру теста на максимум (issue #105, тот же принцип сужения
+              скоупа, что и у остальных статусов Этапа 1) — на день теста
+              кнопка скрыта, обычный режим ниже её заменяет. */}
+          {!plan.is_deload_a && (
+            <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
+              ⏱ Тренировка в реальном времени
+            </Button>
+          )}
+          <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
+            🔁 Внести пропущенную тренировку
           </Button>
-        )}
-        <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
-          🔁 Внести пропущенную тренировку
-        </Button>
-        <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
-          🎯 Факультатив
-        </Button>
+          <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
+            🎯 Факультатив
+          </Button>
+          <Button mode="outline" size="s" onClick={() => setShowForm(true)}>
+            📝 Внести результат тренировки
+          </Button>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="plan-title">Текущий план</p>
+      {banners}
+
+      <Button mode="plain" size="s" onClick={() => setShowForm(false)}>
+        ← Назад к выбору действия
+      </Button>
 
       {plan.is_deload_a ? (
         <DeloadBlockAForm maxValue={blockAMax} onMaxChange={setBlockAMax} />
