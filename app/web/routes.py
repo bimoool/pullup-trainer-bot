@@ -29,9 +29,9 @@ from app.db.repositories.leaderboard import LeaderboardRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
-from app.db.repositories.workouts import WorkoutRepository
+from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
-from app.domain.anomalies import detect_anomalies
+from app.domain.anomalies import AnomalyFlags, detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
     DEFAULT_REST_SECONDS_BLOCK_A,
@@ -262,9 +262,10 @@ class _PlanContext:
     status="ready" — единственный случай, когда остальные поля заполнены.
     Любой другой статус — точная копия того, что определило бы ветку в
     handle_start_workout (app/bot/handlers/workout.py): too_early,
-    gap_retest_required, deload_due, equipment_setup_required — Mini App их
-    не обрабатывает формой (сужение скоупа Этапа 1, см. issue #36), только
-    gap_rollback остаётся внутри "ready" (see is_gap_rollback)."""
+    gap_retest_required, equipment_setup_required — Mini App их не
+    обрабатывает формой (сужение скоупа Этапа 1, см. issue #36), только
+    gap_rollback и (issue #105) ежемесячный тест на максимум блока A
+    остаются внутри "ready" (см. is_gap_rollback/is_deload_a)."""
 
     status: str
     user_id: int | None = None
@@ -285,6 +286,12 @@ class _PlanContext:
     # equipment_b_value ниже уже подставлен heavy_equipment_value вместо
     # обычного веса, когда is_heavy_b=True (см. _resolve_plan_context).
     is_heavy_b: bool = False
+    # Ежемесячный тест на максимум блока на объём (issue #89, перенос формы
+    # в Mini App — issue #105) — тот же флаг, что data["is_deload_a"] в FSM
+    # бота. target_a остаётся None, когда True — текст теста (issue #105,
+    # поправка продукта) больше не называет никакого ориентирующего числа
+    # ни в боте, ни здесь.
+    is_deload_a: bool = False
 
 
 async def _resolve_plan_context(
@@ -296,14 +303,17 @@ async def _resolve_plan_context(
     копия правил.
 
     Единственное реальное отличие от бота: needs_new_equipment (для
-    любого блока) и is_volume_deload_due здесь тоже останавливают поток —
-    Mini App Этапа 1 не переспрашивает снаряд и не показывает
-    разгрузочную форму (сужение скоупа, issue #36, согласовано в
-    комментарии к issue), эти случаи ведут пользователя обратно в бота.
-    ensure_active_workout_set (app/services/workout_log.py, общая с ботом
-    функция) вызывается только когда мы точно дошли до "ready" — не
-    заводим лишний WorkoutSet ради статуса, который Mini App всё равно не
-    покажет формой."""
+    любого блока) здесь тоже останавливает поток — Mini App Этапа 1 не
+    переспрашивает снаряд (сужение скоупа, issue #36, согласовано в
+    комментарии к issue), этот случай ведёт пользователя обратно в бота.
+    Ежемесячный тест на максимум блока A (is_volume_deload_due) — с issue
+    #105 больше НЕ останавливает поток, форма перенесена в Mini App тем же
+    приёмом, что _begin_equipment_setup бота (app/bot/handlers/workout.py::
+    handle_start_workout): блок A принудительно свой вес, needs_new_equipment
+    блока A не проверяется вовсе. ensure_active_workout_set (app/services/
+    workout_log.py, общая с ботом функция) вызывается только когда мы точно
+    дошли до "ready" — не заводим лишний WorkoutSet ради статуса, который
+    Mini App всё равно не покажет формой."""
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return _PlanContext(status="not_onboarded")
@@ -323,12 +333,23 @@ async def _resolve_plan_context(
     if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
         return _PlanContext(status="gap_retest_required")
 
-    if await workouts.is_volume_deload_due(user.id, now=now):
-        return _PlanContext(status="deload_due")
+    is_deload_a = await workouts.is_volume_deload_due(user.id, now=now)
 
     target_a_state, target_b_state = await workouts.resolve_next_targets(
         user.id, bypass_transition_wait=is_admin,
     )
+    # Тест на максимум (issue #89, форма в Mini App — issue #105) — блок A
+    # принудительно свой вес, без переспроса (тот же приём, что
+    # target_a_state_for_setup в handle_start_workout бота): needs_new_
+    # equipment блока A никогда не блокирует поток на день теста, target
+    # оставлен равным текущей цели блока A просто чтобы не заводить
+    # бессмысленное число в NextBlockState — наружу (target_a ниже) он не
+    # попадает вовсе, текст теста не называет никакого числа.
+    if is_deload_a:
+        target_a_state = NextBlockState(
+            target=target_a_state.target, volume=0, equipment_type=EquipmentType.BODYWEIGHT,
+            equipment_value=None, equipment_item_id=None, needs_new_equipment=False, work_sets=1,
+        )
     if target_a_state.needs_new_equipment or target_b_state.needs_new_equipment:
         return _PlanContext(status="equipment_setup_required")
 
@@ -336,8 +357,14 @@ async def _resolve_plan_context(
     if active_set is None:
         return _PlanContext(status="no_active_set")
 
-    is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK
-    target_a = rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+    # Гэп-откат блока A не применяется на день теста (та же логика, что
+    # app/bot/handlers/workout.py::handle_start_workout: target_a_override
+    # остаётся None, если is_deload_a) — цель блока A на тест-день всё
+    # равно не показывается пользователю.
+    is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK and not is_deload_a
+    target_a = None if is_deload_a else (
+        rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+    )
     # Тяжёлая (чётная) тренировка блока Б (issue #97) — подсказка веса, не
     # обычный вес силового блока (тот же приём, что app/bot/handlers/
     # equipment.py::_begin_equipment_setup): is_heavy=True здесь гарантирует
@@ -364,6 +391,7 @@ async def _resolve_plan_context(
         is_gap_rollback=is_gap_rollback,
         work_sets_growth_reason=target_a_state.work_sets_growth_reason,
         is_heavy_b=target_b_state.is_heavy,
+        is_deload_a=is_deload_a,
     )
 
 
@@ -418,6 +446,7 @@ async def get_workout_plan(
         ),
         band_items=band_items,
         is_heavy_b=context.is_heavy_b,
+        is_deload_a=context.is_deload_a,
     )
 
 
@@ -460,7 +489,11 @@ async def submit_workout(
     workouts = WorkoutRepository(session)
     previous_avg_a = await workouts.get_previous_avg_working(context.user_id, BlockType.A)
     previous_avg_b = await workouts.get_previous_avg_working(context.user_id, BlockType.B)
-    anomalies_a = detect_anomalies(
+    # Тест на максимум (issue #105) — структура ввода намеренно другая
+    # (один подход без раскладки), сверять с ожидаемым числом рабочих
+    # подходов/скачком нет смысла, тот же принцип, что у
+    # handle_block_a_result бота (app/bot/handlers/workout.py).
+    anomalies_a = AnomalyFlags() if context.is_deload_a else detect_anomalies(
         block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=context.work_sets_a,
     )
     anomalies_b = detect_anomalies(
@@ -522,7 +555,7 @@ async def submit_workout(
         block_b_equipment_item_id=equipment_b_item_id,
         target_a_override=context.target_a if context.is_gap_rollback else None,
         target_b_override=None,
-        is_deload_a=False,
+        is_deload_a=context.is_deload_a,
         comment=body.comment,
     )
 
@@ -548,6 +581,7 @@ async def submit_workout(
         ),
         result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
+        is_deload_a=block_a.is_deload,
     )
 
 
@@ -688,6 +722,17 @@ async def get_history(
     return HistoryResponse(items=items, has_more=offset + limit < len(newest_first))
 
 
+# strength (issue #82) больше не считает резину частью общей шкалы нагрузки
+# (issue #110) — тот же принцип, что epley_progress уже применяет (issue
+# #96): реальное сопротивление резины физически неизвестно (стёртая
+# маркировка, растяжение), сравнивать его с кг отягощения нельзя ни в каком
+# виде, даже со знаком минус. to_signed_load() как функция не тронута — она
+# по-прежнему обслуживает резину для сравнений "легче/тяжелее" внутри
+# прогрессии (recalculate_target), где обе стороны сравнения всегда один и
+# тот же тип снаряда, не для этого графика.
+_STRENGTH_ELIGIBLE_TYPES = (EquipmentType.WEIGHT, EquipmentType.BODYWEIGHT)
+
+
 def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -> Decimal | None:
     """Факт по выбранной метрике (issue #82) — см. докстринг
     ProgressPointResponse для смысла каждой ветки. strength скоуплена на
@@ -698,7 +743,7 @@ def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -
     if metric == "volume":
         return Decimal(block.log.volume)
     # metric == "strength"
-    if block_letter != "b" or block.equipment_type == EquipmentType.AUSTRALIAN:
+    if block_letter != "b" or block.equipment_type not in _STRENGTH_ELIGIBLE_TYPES:
         return None
     return to_signed_load(block.equipment_type, block.equipment_value)
 

@@ -50,7 +50,12 @@ export function ensureAudioUnlocked(): void {
   }
 }
 
-function scheduleBeep(frequency: number, durationSeconds: number, peakGainAtFullVolume: number): void {
+function scheduleBeep(
+  frequency: number,
+  durationSeconds: number,
+  peakGainAtFullVolume: number,
+  waveType: OscillatorType = "sine",
+): void {
   const context = audioContext;
   // 0% — полная тишина, не просто "тихий звук": exponentialRampToValueAtTime
   // не принимает 0 как цель (RangeError), поэтому это отдельная ветка, а не
@@ -62,7 +67,7 @@ function scheduleBeep(frequency: number, durationSeconds: number, peakGainAtFull
   const play = () => {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
-    oscillator.type = "sine";
+    oscillator.type = waveType;
     oscillator.frequency.value = frequency;
     const now = context.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
@@ -82,20 +87,38 @@ function scheduleBeep(frequency: number, durationSeconds: number, peakGainAtFull
 
 /** Финальный сигнал окончания отдыха — длиннее и выше остальных, чтобы
  * отличаться от предупредительных бипов ниже (issue #63, п.5). Базовый
- * peakGain (при 100% громкости) поднят с исходных 0.3/0.2/0.2 (issue #90:
- * "звук очень тихий") — сама по себе регулировка громкости не решила бы
- * жалобу, если бы 100% продолжали звучать как раньше. */
+ * peakGain (при 100% громкости) поднят с исходных 0.3/0.2/0.2 (issue #90),
+ * затем ещё раз с 0.5/0.35/0.35 до 0.9/0.75/0.75 (issue #107: "даже 100%
+ * едва слышен") — старые значения использовали только треть-половину
+ * физически доступной амплитуды `GainNode.gain` (до 1.0 без клиппинга при
+ * одном одновременно звучащем осцилляторе, как здесь). Потолок 0.9/0.75, не
+ * ровно 1.0 — небольшой запас от физического предела на случай устройств,
+ * где DAC/динамик заметно искажают сигнал непосредственно у верхней границы
+ * диапазона; сама по себе синусоида/треугольник с gain=1.0 остаётся в
+ * пределах [-1, 1] и не клипует на уровне Web Audio API, риск — только в
+ * следующем звене (аппаратном), не проверяемый из песочницы без реального
+ * устройства.
+ *
+ * Тип волны — "triangle", не "sine", только для основного сигнала: даёт
+ * нечётные обертоны и субъективно громче/заметнее при той же амплитуде
+ * (полезно через одежду/карман/шум зала), но мягче резкой "square" —
+ * выбран как компромисс между "громче" и "не отвлекающе резко", не
+ * подтверждён на реальном устройстве (тот же класс ограничения песочницы,
+ * что и остальной Mini App, см. CLAUDE.md). Если всё ещё недостаточно
+ * заметно — следующий шаг "square"; если слишком резко — откат на "sine".
+ * Предупредительные/countdown-бипы оставлены на "sine" — issue просил
+ * менять тип волны только у основного сигнала. */
 export function playTimerBeep(): void {
-  scheduleBeep(880, 0.4, 0.5);
+  scheduleBeep(880, 0.4, 0.9, "triangle");
 }
 
 /** Предупреждение за 10 секунд до конца отдыха (issue #63, п.5) — тот же
  * простой bip, короче и тише финального. */
 export function playWarningBeep(): void {
-  scheduleBeep(660, 0.15, 0.35);
+  scheduleBeep(660, 0.15, 0.75);
 }
 
 /** Отметки 3/2/1 секунда до конца отдыха (issue #63, п.5). */
 export function playCountdownBeep(): void {
-  scheduleBeep(660, 0.12, 0.35);
+  scheduleBeep(660, 0.12, 0.75);
 }
