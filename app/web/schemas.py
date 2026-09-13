@@ -556,6 +556,50 @@ class BackdateSubmitRequest(BaseModel):
     confirm_anomalies: bool = False
 
 
+class FreeWorkoutPlanResponse(BaseModel):
+    """GET /api/free-workout/plan (issue #109) — тот же путь, что
+    handle_free_workout_start бота (app/bot/handlers/free_workout.py):
+    снаряд здесь ВСЕГДА явный выбор, как у бэкдейта (см. BackdateSubmitRequest),
+    не наследуется молча из прогрессии — свободные подтягивания вне цикла
+    программы, унаследовать target/work_sets/снаряд из resolve_next_targets
+    здесь не от чего (эти числа для основной программы, свободный вход в
+    неё не входит).
+
+    Нет статуса "no_access" — свободные подтягивания не за паивеллом, ни в
+    боте (handle_free_workout_start не проверяет подписку), ни здесь, тот
+    же принцип, что у ElectivePlanResponse. "ready" — только workout_set_id
+    (нужен для последующего submit) и band_items (личный список резин для
+    выбора снаряда)."""
+
+    status: str
+    workout_set_id: int | None = None
+    band_items: list[BandItemInfo] = Field(default_factory=list)
+
+
+class FreeWorkoutSubmitRequest(BaseModel):
+    """POST /api/free-workout/submit — произвольное число рабочих подходов
+    (issue #109, тот же смысл, что свободный текстовый ввод бота через
+    parse_reps: сколько реально сделал, столько и ввёл), не фиксированные
+    3+1 обычного блока A. equipment_* — тот же смысл и та же серверная
+    валидация, что у BackdateSubmitRequest (см. app/web/routes.py::
+    _resolve_explicit_equipment) — снаряд не наследуется, указывается явно."""
+
+    working_reps: list[Reps] = Field(min_length=1)
+    max_reps: Reps
+    equipment_type: str
+    equipment_value: Decimal | None = Field(default=None, gt=0)
+    equipment_item_id: int | None = None
+    comment: str | None = None
+    confirm_anomalies: bool = False
+
+
+class FreeWorkoutSubmitResponse(BaseModel):
+    status: str
+    result_text: str | None = None
+    equipment: EquipmentInfo | None = None
+    anomalies: AnomalyFlagsResponse | None = None
+
+
 class LeaderboardEntryResponse(BaseModel):
     """Одна строка лидерборда (issue #67) — display_name уже подставлен
     "Аноним" вместо NULL на уровне веб-роута (это форматирование, не

@@ -91,6 +91,9 @@ from app.web.schemas import (
     EpleyProgressResponse,
     EquipmentInfo,
     EquipmentProgressResponse,
+    FreeWorkoutPlanResponse,
+    FreeWorkoutSubmitRequest,
+    FreeWorkoutSubmitResponse,
     GtoResponse,
     HelloResponse,
     HistoryBlockDetail,
@@ -1147,14 +1150,17 @@ async def get_backdate_plan(
     )
 
 
-def _parse_backdate_equipment_type(raw: str, *, field: str) -> EquipmentType:
+def _parse_equipment_type_param(raw: str, *, field: str) -> EquipmentType:
+    """Разбирает явно присланный тип снаряда (issue #52, переиспользуется
+    свободными подтягиваниями issue #109) — в обоих случаях снаряд не
+    наследуется из прогрессии, клиент указывает его сам."""
     try:
         return EquipmentType(raw)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid equipment type for {field}") from None
 
 
-async def _resolve_backdate_equipment(
+async def _resolve_explicit_equipment(
     session: AsyncSession,
     user_id: int,
     equipment_type: EquipmentType,
@@ -1163,6 +1169,9 @@ async def _resolve_backdate_equipment(
     *,
     field: str,
 ) -> tuple[Decimal | None, int | None]:
+    """Валидирует явно выбранный снаряд (не унаследованный) — используется
+    и бэкдейтом (issue #52), и свободными подтягиваниями (issue #109), не
+    отдельная копия для каждого."""
     if equipment_type == EquipmentType.WEIGHT:
         if equipment_value is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Missing weight for {field}")
@@ -1205,13 +1214,13 @@ async def submit_backdated_workout(
     if context.status != "ready":
         return WorkoutSubmitResponse(status=context.status)
 
-    block_a_equipment_type = _parse_backdate_equipment_type(body.block_a_equipment_type, field="block A")
-    block_b_equipment_type = _parse_backdate_equipment_type(body.block_b_equipment_type, field="block B")
-    block_a_equipment_value, block_a_equipment_item_id = await _resolve_backdate_equipment(
+    block_a_equipment_type = _parse_equipment_type_param(body.block_a_equipment_type, field="block A")
+    block_b_equipment_type = _parse_equipment_type_param(body.block_b_equipment_type, field="block B")
+    block_a_equipment_value, block_a_equipment_item_id = await _resolve_explicit_equipment(
         session, context.user_id, block_a_equipment_type,
         body.block_a_equipment_value, body.block_a_equipment_item_id, field="block A",
     )
-    block_b_equipment_value, block_b_equipment_item_id = await _resolve_backdate_equipment(
+    block_b_equipment_value, block_b_equipment_item_id = await _resolve_explicit_equipment(
         session, context.user_id, block_b_equipment_type,
         body.block_b_equipment_value, body.block_b_equipment_item_id, field="block B",
     )
@@ -1266,6 +1275,85 @@ async def submit_backdated_workout(
         ),
         result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
+    )
+
+
+# --- Свободные подтягивания (issue #109) ------------------------------------------------
+
+
+@router.get("/free-workout/plan", response_model=FreeWorkoutPlanResponse)
+async def get_free_workout_plan(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> FreeWorkoutPlanResponse:
+    """Контекст для формы "Внести свободные подтягивания" (issue #109) —
+    тот же вход, что handle_free_workout_start бота
+    (app/bot/handlers/free_workout.py): нет проверки подписки (свободные
+    подтягивания не за паивеллом, как и факультатив — см. докстринг
+    get_elective_plan) и нет target/work_sets/унаследованного снаряда (вне
+    цикла программы, сравнивать не с чем)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return FreeWorkoutPlanResponse(status="not_onboarded")
+
+    active_set = await ensure_active_workout_set(session, user.id)
+    if active_set is None:
+        return FreeWorkoutPlanResponse(status="no_active_set")
+
+    items = await EquipmentItemRepository(session).list_for_user(user.id)
+    band_items = [BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items]
+
+    return FreeWorkoutPlanResponse(status="ready", workout_set_id=active_set.id, band_items=band_items)
+
+
+@router.post("/free-workout/submit", response_model=FreeWorkoutSubmitResponse)
+async def submit_free_workout(
+    body: FreeWorkoutSubmitRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> FreeWorkoutSubmitResponse:
+    """Записывает свободные подтягивания через
+    WorkoutLogService.record_free_workout — тот же сервис, что
+    _apply_free_workout_reps бота (app/bot/handlers/free_workout.py), не
+    отдельная реализация. Произвольное число рабочих подходов (issue #109,
+    тот же смысл, что parse_reps на свободный текст бота) — в отличие от
+    WorkoutSubmitRequest/BackdateSubmitRequest здесь нет фиксированного
+    work_sets, поэтому и anomaly-проверка на "ожидаемое число подходов"
+    здесь не имеет смысла (expected_work_sets не передаём, как и у бота)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return FreeWorkoutSubmitResponse(status="not_onboarded")
+
+    active_set = await ensure_active_workout_set(session, user.id)
+    if active_set is None:
+        return FreeWorkoutSubmitResponse(status="no_active_set")
+
+    equipment_type = _parse_equipment_type_param(body.equipment_type, field="equipment")
+    equipment_value, equipment_item_id = await _resolve_explicit_equipment(
+        session, user.id, equipment_type, body.equipment_value, body.equipment_item_id, field="equipment",
+    )
+
+    result = BlockLog(working_reps=tuple(body.working_reps), max_reps=body.max_reps)
+
+    workouts = WorkoutRepository(session)
+    previous_avg = await workouts.get_previous_free_avg_working(user.id)
+    anomalies = detect_anomalies(result, previous_avg_working=previous_avg)
+    if not body.confirm_anomalies and not anomalies.is_empty():
+        return FreeWorkoutSubmitResponse(
+            status="anomaly_confirm_required", anomalies=AnomalyFlagsResponse(**asdict(anomalies)),
+        )
+
+    now = datetime.now(UTC)
+    await WorkoutLogService(session).record_free_workout(
+        user_id=user.id, workout_set_id=active_set.id, performed_at=now,
+        block_a_reps=result, equipment_type=equipment_type,
+        equipment_value=equipment_value, equipment_item_id=equipment_item_id, comment=body.comment,
+    )
+
+    return FreeWorkoutSubmitResponse(
+        status="ok",
+        result_text=format_block_result(result.working_reps, result.max_reps),
+        equipment=_equipment_info(equipment_type, equipment_value, equipment_item_id),
     )
 
 
