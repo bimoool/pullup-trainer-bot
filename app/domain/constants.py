@@ -209,6 +209,13 @@ DEFAULT_BIG_BREAK_SECONDS: int = 900
 # тихий звук, что и раньше.
 DEFAULT_TIMER_SOUND_VOLUME_PERCENT: int = 100
 
+# Проактивное push-уведомление "сегодня по плану тренировка" (issue #100) —
+# тот же принцип NULL-значит-дефолт, что у настроек выше (см.
+# app.db.models.User::training_reminder_hour). Локальный час пользователя
+# (app.workers.training_reminder), не UTC — утро буднего дня, разумный
+# дефолт без завязки на конкретный часовой пояс.
+DEFAULT_TRAINING_REMINDER_HOUR: int = 9
+
 TRANSITION_RETRY_WORKOUTS: int = 4
 # Тренировок на прежнем снаряде после неудачного перехода, прежде чем
 # предлагать повторную попытку.

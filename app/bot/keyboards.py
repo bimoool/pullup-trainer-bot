@@ -517,10 +517,23 @@ def profile_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Изменить профиль", callback_data="profile_edit_open")
     builder.button(text="🎗 Мои резины", callback_data="equipment_list_open")
+    builder.button(text=texts.TRAINING_REMINDER_BUTTON, callback_data="training_reminder_open")
     builder.button(text="🔄 Завершить цикл и начать заново", callback_data="end_cycle_prompt")
     if is_admin:
         builder.button(text="🧪 Полный сброс (админ)", callback_data="admin_reset_prompt")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def training_reminder_keyboard(*, enabled: bool, hour: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    toggle_text = texts.TRAINING_REMINDER_TOGGLE_OFF if enabled else texts.TRAINING_REMINDER_TOGGLE_ON
+    builder.button(text=toggle_text, callback_data="training_reminder_toggle")
+    builder.button(text="−1 ч", callback_data="training_reminder_hour:-1")
+    builder.button(text=texts.TRAINING_REMINDER_HOUR_LABEL.format(hour=hour), callback_data="training_reminder_noop")
+    builder.button(text="+1 ч", callback_data="training_reminder_hour:1")
+    builder.button(text="← Назад", callback_data="profile_edit_close")
+    builder.adjust(1, 3, 1)
     return builder.as_markup()
 
 

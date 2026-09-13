@@ -15,6 +15,7 @@ from app.bot.handlers.questionnaire import router as questionnaire_router
 from app.bot.handlers.reports import router as reports_router
 from app.bot.handlers.start import router as start_router
 from app.bot.handlers.subscription import router as subscription_router
+from app.bot.handlers.training_reminder import router as training_reminder_router
 from app.bot.handlers.workout import router as workout_router
 from app.bot.handlers.workout_edit import router as workout_edit_router
 
@@ -28,6 +29,7 @@ router.include_router(menu_router)
 router.include_router(onboarding_router)
 router.include_router(questionnaire_router)
 router.include_router(profile_edit_router)
+router.include_router(training_reminder_router)
 router.include_router(subscription_router)
 router.include_router(payments_stars_router)
 router.include_router(equipment_router)
