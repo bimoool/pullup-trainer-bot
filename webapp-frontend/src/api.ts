@@ -176,6 +176,47 @@ export async function fetchGtoStatus(initDataRaw: string): Promise<GtoStatus> {
   return apiGet<GtoStatus>("/api/gto", initDataRaw);
 }
 
+/** GET /api/wsf (issue #104) — разряд WSF (World Streetlifting Federation) по
+ * многоповторным подтягиваниям с отягощением, вторая система оценки РЯДОМ с
+ * ГТО (GtoStatus выше), не заменяющая её. В отличие от ГТО (только мужчины),
+ * здесь оценка одинакова для обоих полов.
+ *
+ * applicable=false — reason объясняет причину: "missing_gender"/
+ * "missing_weight" — профиль не заполнен; "no_workouts" — нет ни одной
+ * подходящей тренировки блока Б (только WEIGHT/BODYWEIGHT); "norm_data_missing"
+ * — все подходящие тренировки попали в ступень добавленного отягощения, для
+ * которой у этого пола вообще нет данных (например, женщины на 25/35/50 кг).
+ *
+ * added_weight_step_kg/actual_added_weight_kg — Decimal с бэкенда (строка, тот
+ * же приём, что LeaderboardEntry.value/ProgressPoint.value_a). Ступень
+ * ОКРУГЛЕНА ВНИЗ от реального веса тренировки (см. app/domain/wsf.py) — если
+ * они не совпадают, интерфейс ОБЯЗАН явно объяснить расхождение (согласовано
+ * в issue #104), не просто показать одну цифру. age_bonus_pct — Decimal-доля
+ * (например "0.15" = +15%), null если бонус не применялся. */
+export interface WsfRankThreshold {
+  rank: string;
+  reps: number;
+}
+
+export interface WsfStatus {
+  applicable: boolean;
+  reason: string | null;
+  gender: string | null;
+  weight_category: string | null;
+  rank: string | null;
+  best_reps: number | null;
+  added_weight_step_kg: string | null;
+  actual_added_weight_kg: string | null;
+  age_bonus_pct: string | null;
+  next_rank: string | null;
+  reps_to_next_rank: number | null;
+  thresholds: WsfRankThreshold[];
+}
+
+export async function fetchWsfStatus(initDataRaw: string): Promise<WsfStatus> {
+  return apiGet<WsfStatus>("/api/wsf", initDataRaw);
+}
+
 /** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
  * что печатает бот в app.bot.handlers.history.format_history_entry, только
  * структурированные под карточку. target_a/target_b заполнены только у

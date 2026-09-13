@@ -2,7 +2,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
-import { fetchGtoStatus, fetchProfile, type GtoStatus, type ProfileResponse } from "./api";
+import { fetchGtoStatus, fetchProfile, fetchWsfStatus, type GtoStatus, type ProfileResponse, type WsfStatus } from "./api";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
 
@@ -78,6 +78,89 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
   );
 }
 
+/** Текст для reason=applicable=false (issue #104) — та же схема, что
+ * GTO_REASON_TEXT выше, "not_onboarded" сюда не попадает по той же причине. */
+const WSF_REASON_TEXT: Record<string, string> = {
+  missing_gender: "Укажи пол в анкете бота, чтобы увидеть свой разряд WSF.",
+  missing_weight: "Укажи свой вес в анкете бота, чтобы увидеть свой разряд WSF.",
+  no_workouts: "Внеси тренировку блока Б на отягощении или собственном весе, чтобы узнать свой разряд WSF.",
+};
+
+const WSF_RANK_LABEL: Record<string, string> = {
+  none: "Без разряда",
+  iii: "III",
+  ii: "II",
+  i: "I",
+  kms: "КМС",
+  ms: "МС",
+  msmk: "МСМК",
+  elite: "🏆 Элита",
+};
+
+function weightCategoryLabel(category: string): string {
+  return category === "999" ? "открытая (самая тяжёлая)" : `до ${category} кг`;
+}
+
+/** Карточка "Разряд WSF" (issue #104) — вторая система оценки, ДОПОЛНЯЮЩАЯ
+ * карточку ГТО выше (GtoCard), не заменяющая её: та же логика отдельного
+ * запроса/статуса, не факта истории, пересчитывается заново при каждом
+ * заходе на вкладку.
+ *
+ * Округление ступени отягощения ВНИЗ (см. app/domain/wsf.py) занижает
+ * фактический результат при сравнении — по прямому требованию из issue #104
+ * карточка ВСЕГДА явно показывает и реальный вес тренировки, и ступень, по
+ * которой считался разряд, когда они отличаются (weightCaveat ниже), а не
+ * молчаливое несовпадение цифр. */
+function WsfCard({ wsf }: { wsf: WsfStatus }) {
+  if (!wsf.applicable) {
+    if (wsf.reason === "norm_data_missing") {
+      return (
+        <div className="profile-card">
+          <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
+          <p>{`Для твоей весовой категории (${weightCategoryLabel(wsf.weight_category ?? "")}) и ступени отягощения твоих тренировок в таблице WSF пока нет данных.`}</p>
+        </div>
+      );
+    }
+    const text = wsf.reason ? WSF_REASON_TEXT[wsf.reason] : undefined;
+    if (!text) {
+      return null;
+    }
+    return (
+      <div className="profile-card">
+        <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
+        <p>{text}</p>
+      </div>
+    );
+  }
+
+  const rankLabel = wsf.rank ? (WSF_RANK_LABEL[wsf.rank] ?? wsf.rank) : "—";
+  const summaryText =
+    wsf.rank && wsf.rank !== "none"
+      ? "Вы выполнили норматив WSF для своей весовой категории по многоповторным подтягиваниям с отягощением."
+      : "Норматив WSF для вашей весовой категории пока не выполнен.";
+  const stepKg = wsf.added_weight_step_kg !== null ? Number(wsf.added_weight_step_kg) : null;
+  const actualKg = wsf.actual_added_weight_kg !== null ? Number(wsf.actual_added_weight_kg) : null;
+  const weightCaveat =
+    stepKg !== null && actualKg !== null && stepKg !== actualKg
+      ? `Норматив посчитан по ближайшей ступени ${stepKg} кг (твой реальный вес отягощения — ${actualKg} кг) — фактически ты выполняешь его с запасом.`
+      : null;
+  const bonusPct = wsf.age_bonus_pct !== null ? Math.round(Number(wsf.age_bonus_pct) * 100) : null;
+
+  return (
+    <div className="profile-card">
+      <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
+      <p>{summaryText}</p>
+      <p>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps} повторений на ${stepKg} кг`}</p>
+      <p>{rankLabel}</p>
+      {weightCaveat && <p>{weightCaveat}</p>}
+      {bonusPct !== null && <p>{`Учтён возрастной коэффициент +${bonusPct}%.`}</p>}
+      {wsf.next_rank && wsf.reps_to_next_rank !== null && (
+        <p>{`До разряда "${WSF_RANK_LABEL[wsf.next_rank] ?? wsf.next_rank}" не хватает ${wsf.reps_to_next_rank} повторений на той же ступени.`}</p>
+      )}
+    </div>
+  );
+}
+
 /** Вкладка "Профиль" Mini App (issue #45, часть 3) — сознательно узкий
  * первый шаг: краткий статус подписки, монеты, число тренировок/ачивок,
  * дни с последней тренировки. Полный профиль (рост/вес/таймзона/список
@@ -102,6 +185,9 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   // поэтому её сбой не должен ронять всю вкладку "Профиль" (гасится
   // молча ниже — та же терпимость, что у второстепенного раздела).
   const [gto, setGto] = useState<GtoStatus | null>(null);
+  // Разряд WSF (issue #104) — та же терпимость к сбою, что у ГТО выше:
+  // второстепенный раздел, не должен ронять остальной экран.
+  const [wsf, setWsf] = useState<WsfStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +219,22 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
       })
       .catch(() => {
         // Молча — карточка ГТО просто не появится, второстепенный раздел.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWsfStatus(initDataRaw)
+      .then((status) => {
+        if (!cancelled) {
+          setWsf(status);
+        }
+      })
+      .catch(() => {
+        // Молча — карточка WSF просто не появится, второстепенный раздел.
       });
     return () => {
       cancelled = true;
@@ -185,6 +287,7 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
       </div>
 
       {gto && <GtoCard gto={gto} />}
+      {wsf && <WsfCard wsf={wsf} />}
 
       <div className="stat-grid">
         <div className="stat-tile">
