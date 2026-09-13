@@ -38,8 +38,11 @@ const PADDING_BOTTOM = 22;
 type SeriesKey = "value_a" | "value_b";
 
 /** Точка графика с числами вместо строк Decimal — конвертация происходит
- * один раз при рендере (issue #82), не в каждой функции chart-компонента. */
-type ChartPoint = { performed_at: string; value_a: number | null; value_b: number | null };
+ * один раз при рендере (issue #82), не в каждой функции chart-компонента.
+ * is_heavy_b (issue #117) — чередующаяся тяжёлая тренировка блока Б (issue
+ * #97), нужна, чтобы пометить эти точки на графике, не только в metric
+ * "strength" (то же значение относится и к "max_reps"/"volume"). */
+type ChartPoint = { performed_at: string; value_a: number | null; value_b: number | null; is_heavy_b: boolean };
 
 /** "strength" (issue #82) — единственная метрика с одной линией (блок Б),
  * не двумя: value_a у неё всегда null (см. app/web/routes.py::_progress_value
@@ -62,7 +65,9 @@ const CHART_METRIC_HINTS: Record<ProgressMetric, string> = {
   strength:
     "Отягощение блока «Сила» в кг: 0 — свой вес, больше нуля — с дополнительным весом. " +
     "Переживает смену веса, в отличие от повторений. Тренировки на резине и " +
-    '"австралийских" подтягиваниях (там нет надёжного числа в кг) на график не попадают.',
+    '"австралийских" подтягиваниях (там нет надёжного числа в кг) на график не попадают. ' +
+    "Точки, отмеченные ◆ — чередующаяся тяжёлая тренировка (раз в две тренировки, при работе " +
+    "с отягощением): периодический скачок веса на них — ожидаемое чередование, не сбой.",
 };
 
 const SERIES_LABELS: Record<ProgressMetric, Partial<Record<SeriesKey, string>>> = {
@@ -179,6 +184,26 @@ function LineChart({ points, seriesKeys, metric }: { points: ChartPoint[]; serie
           <path key={key} d={pathFor(key)} className="progress-chart-line" stroke={SERIES_COLOR[key]} />
         ))}
 
+        {/* Тяжёлая тренировка блока Б (issue #97) — ромб вместо обычной точки
+            на линии, чтобы её легитимный скачок веса не выглядел аномалией
+            (issue #117). Относится к value_b на любой вкладке метрики, не
+            только "Сила" — то же самое чередование двигает и повторения/объём. */}
+        {seriesKeys.includes("value_b") &&
+          points.map((point, index) =>
+            point.is_heavy_b ? (
+              <rect
+                key={`heavy-${index}`}
+                x={xAt(index) - 4}
+                y={yAt(point.value_b as number) - 4}
+                width={8}
+                height={8}
+                transform={`rotate(45 ${xAt(index)} ${yAt(point.value_b as number)})`}
+                fill={SERIES_COLOR.value_b}
+                className="progress-chart-heavy-marker"
+              />
+            ) : null,
+          )}
+
         {/* Значение у конца линии (dataviz-скилл: "Lines -> value at the end") — не подписываем каждую точку. */}
         {seriesKeys.map((key) => (
           <g key={key}>
@@ -220,6 +245,12 @@ function LineChart({ points, seriesKeys, metric }: { points: ChartPoint[]; serie
               {labels[key]}: <strong>{formatMetricValue(metric, hovered[key] as number)}</strong>
             </p>
           ))}
+          {seriesKeys.includes("value_b") && hovered.is_heavy_b && (
+            <p>
+              <span className="progress-chart-heavy-swatch" style={{ background: SERIES_COLOR.value_b }} />
+              Тяжёлая тренировка (чередование, issue #97) — периодический скачок веса ожидаем.
+            </p>
+          )}
         </div>
       )}
 
@@ -229,6 +260,11 @@ function LineChart({ points, seriesKeys, metric }: { points: ChartPoint[]; serie
             <span className="progress-chart-swatch" style={{ background: SERIES_COLOR[key] }} /> {labels[key]}
           </span>
         ))}
+        {seriesKeys.includes("value_b") && points.some((point) => point.is_heavy_b) && (
+          <span className="progress-chart-legend-item">
+            <span className="progress-chart-heavy-swatch" style={{ background: SERIES_COLOR.value_b }} /> тяжёлая тренировка
+          </span>
+        )}
       </div>
     </div>
   );
@@ -379,6 +415,7 @@ export function ProgressScreen({ initDataRaw }: Props) {
             performed_at: point.performed_at,
             value_a: point.value_a === null ? null : Number(point.value_a),
             value_b: point.value_b === null ? null : Number(point.value_b),
+            is_heavy_b: point.is_heavy_b,
           }))
           .filter((point) => seriesKeys.every((key) => point[key] !== null))
       : [];

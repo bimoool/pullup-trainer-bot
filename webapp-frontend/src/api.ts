@@ -219,11 +219,16 @@ export type ProgressMetric = "max_reps" | "volume" | "strength";
  * цель. value_a/value_b — Decimal с бэкенда (строка, как и в лидерборде,
  * см. LeaderboardEntry.value) — null, если метрика не определена для этого
  * блока/тренировки (strength: value_a всегда null; value_b — null для
- * AUSTRALIAN, там нет числа в кг). */
+ * AUSTRALIAN, там нет числа в кг).
+ *
+ * is_heavy_b (issue #117) — чередующаяся тяжёлая тренировка блока Б (issue
+ * #97): вес легитимно скачет каждую вторую тренировку, без пометки на
+ * графике это читается как аномалия/сбой. Не зависит от выбранной metric. */
 export interface ProgressPoint {
   performed_at: string;
   value_a: string | null;
   value_b: string | null;
+  is_heavy_b: boolean;
   workout_set_id: number | null;
 }
 

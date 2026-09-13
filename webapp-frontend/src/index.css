@@ -485,6 +485,22 @@ input[type="number"] {
   border-radius: 50%;
 }
 
+/* Точка чередующейся тяжёлой тренировки блока Б (issue #97) на графике
+   "Прогресс" (issue #117) — ромб вместо круга, чтобы легитимный
+   периодический скачок веса не читался как аномалия данных. */
+.progress-chart-heavy-marker {
+  stroke: var(--tg-secondary-bg-color);
+  stroke-width: 1;
+}
+
+.progress-chart-heavy-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  background: var(--series-color, currentColor);
+}
+
 .timer-card {
   text-align: center;
   padding: 24px 16px 8px;
