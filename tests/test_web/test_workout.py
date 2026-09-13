@@ -2,11 +2,15 @@
 (issue #36): форма ввода результатов тренировки, тонкая обвязка вокруг
 тех же repositories/services/domain, что использует бот
 (app/bot/handlers/workout.py). Сужение скоупа, согласованное в issue:
-только "обычная" тренировка (needs_new_equipment=False для обоих блоков,
-не разгрузочная) и gap_rollback — остальные случаи (too_early,
-gap_retest_required, deload_due, equipment_setup_required, first_workout,
-без подписки/онбординга) Mini App не обрабатывает формой, только сообщает
-статус, тот же самый, что определил бы ветку в боте.
+только "обычная" тренировка (needs_new_equipment=False для обоих блоков)
+и gap_rollback — остальные случаи (too_early, gap_retest_required,
+equipment_setup_required, first_workout, без подписки/онбординга) Mini
+App не обрабатывает формой, только сообщает статус, тот же самый, что
+определил бы ветку в боте. Ежемесячный тест на максимум блока A
+(is_volume_deload_due) — единственное исключение из этого сужения формой
+(issue #105, см. тесты в конце файла с префиксом test_deload_a_),
+перенесённое в Mini App тем же приёмом, что бот форсирует свой вес
+блока A на день теста.
 
 Главное, что эти тесты доказывают (issue #36, п.8 плана): POST
 /api/workout/submit пишет тренировку ЧЕРЕЗ WorkoutLogService.record_workout
@@ -462,4 +466,72 @@ async def test_submit_ignores_actual_band_item_for_non_band_block(session):
     body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
 
     assert body["status"] == "ok"
+
+
+# --- Ежемесячный тест на максимум блока A (issue #89, форма в Mini App — issue #105) ---
+
+
+async def _make_user_due_for_deload_a(session, *, telegram_id: int) -> User:
+    """Пользователь с реальной историей (блок A уже на резине), у которого
+    первый сет стартовал 31 день назад — is_volume_deload_due(...) is True,
+    последняя тренировка достаточно давно для READY (не too_early/gap_*).
+    Тот же приём, что tests/test_bot/test_volume_deload.py::
+    _make_user_due_for_deload."""
+    user = await _make_returning_user(session, telegram_id=telegram_id, days_ago=5)
+    workout_set = (await WorkoutSetRepository(session).list_for_user(user.id))[0]
+    workout_set.started_at = datetime.now(UTC) - timedelta(days=31)
+    await session.flush()
+    return user
+
+
+async def test_plan_reports_deload_a_ready_without_any_reference_number(session):
+    """Mini App показывает форму (status="ready", не отдельный "заглушка"
+    статус) с is_deload_a=True — target_a остаётся None: текст теста
+    (issue #105) больше не называет никакого ориентирующего числа, ни тут,
+    ни в боте (app/bot/texts.py::VOLUME_DELOAD_PROMPT)."""
+    user = await _make_user_due_for_deload_a(session, telegram_id=42021)
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+
+    assert body["status"] == "ready"
+    assert body["is_deload_a"] is True
+    assert body["target_a"] is None
+    assert body["target_b"] is not None
+    assert body["equipment_a"]["type"] == "bodyweight"
+    assert body["equipment_a"]["value"] is None
+
+
+async def test_submit_records_deload_a_freezes_target_and_skips_anomaly_check(session):
+    """Один подход без раскладки (block_a_working_reps=[]) — тот же смысл,
+    что parse_reps("15") в боте: working_reps=(), max_reps=15. Ни аномалия
+    (число подходов "0 вместо 3" в норме вызвала бы её), ни пересчёт цели
+    блока A не срабатывают — target_after == target_before, тот же принцип,
+    что tests/test_bot/test_volume_deload.py::
+    test_deload_workout_records_frozen_progress_and_summary_suffix."""
+    user = await _make_user_due_for_deload_a(session, telegram_id=42022)
+    plan_before = await _get_plan(session, telegram_id=user.telegram_id)
+
+    payload = {
+        "block_a_working_reps": [], "block_a_max_reps": 15,
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert body["status"] == "ok"
+    assert body["is_deload_a"] is True
+    assert body["anomalies_a"] is None
+    assert body["result_a"] is not None
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    block_a = next(b for b in history[-1].blocks if b.block_type == BlockType.A)
+    assert block_a.is_deload is True
+    assert block_a.equipment_type == EquipmentType.BODYWEIGHT
+    assert list(block_a.working_reps) == []
+    assert block_a.max_reps == 15
+    assert block_a.target_after == block_a.target_before
+    assert block_a.equipment_changed is False
+    # target_b в ответе GET /plan (до записи) должен совпадать с целью,
+    # которую реально получил блок Б — тест на максимум не трогает блок Б.
+    block_b = next(b for b in history[-1].blocks if b.block_type == BlockType.B)
+    assert block_b.target_before == plan_before["target_b"]
     assert body["equipment_b"]["item_id"] is None
