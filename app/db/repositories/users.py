@@ -92,6 +92,24 @@ class UserRepository:
         await self._session.flush()
         return user
 
+    async def set_training_reminder(self, user_id: int, *, enabled: bool, hour: int | None) -> User:
+        """Тумблер + локальный час уведомления "сегодня по плану тренировка"
+        (issue #100) — оба поля пишутся вместе, не по отдельности как
+        update_timer_preference: включение/выключение и смена часа задаются
+        одним и тем же экраном (app/bot/handlers/training_reminder.py),
+        каждое действие там уже знает актуальное значение обоих полей."""
+        user = await self._session.get_one(User, user_id)
+        user.training_reminder_enabled = enabled
+        user.training_reminder_hour = hour
+        await self._session.flush()
+        return user
+
+    async def mark_training_reminder_sent(self, user_id: int, sent_date: date) -> User:
+        user = await self._session.get_one(User, user_id)
+        user.training_reminder_last_sent_date = sent_date
+        await self._session.flush()
+        return user
+
     async def set_leaderboard_display_name(self, user_id: int, display_name: str | None) -> User:
         """В отличие от update_profile, None здесь валидное значение —
         "стать анонимным" (issue #67), не "пропустить поле" — поэтому

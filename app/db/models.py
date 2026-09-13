@@ -137,6 +137,23 @@ class User(Base):
     # самое NULL, отдельного boolean-флага сознательно нет (см. план в
     # issue #67).
     leaderboard_display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Проактивное push-уведомление "сегодня по плану тренировка" (issue #100)
+    # — в отличие от timer_preferences/sound_volume_percent выше (там сама
+    # механика всегда активна, настраивается только число), здесь нужен
+    # явный тумблер: по умолчанию выключено, никого не подписываем молча.
+    # training_reminder_hour — локальный час (0..23) отправки, NULL значит
+    # дефолт (см. app.domain.constants.DEFAULT_TRAINING_REMINDER_HOUR), тот
+    # же принцип, что у остальных персистентных настроек. training_reminder_
+    # last_sent_date — локальная (по часовому поясу пользователя) дата
+    # последней отправки: app.workers.training_reminder опрашивает всех
+    # пользователей периодически (не одним CronTrigger на фиксированный UTC
+    # час, как остальные воркеры — часовые пояса разные), это поле не даёт
+    # отправить уведомление дважды за день при повторных прогонах опроса.
+    training_reminder_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+    training_reminder_hour: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    training_reminder_last_sent_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

@@ -62,6 +62,32 @@ async def test_adjust_coins_balance(session, user: User):
     assert after_spend.coins_balance == 7
 
 
+async def test_set_training_reminder(session, user: User):
+    repo = UserRepository(session)
+    assert user.training_reminder_enabled is False
+    assert user.training_reminder_hour is None
+
+    await repo.set_training_reminder(user.id, enabled=True, hour=7)
+    updated = await repo.get_by_id(user.id)
+    assert updated.training_reminder_enabled is True
+    assert updated.training_reminder_hour == 7
+
+    await repo.set_training_reminder(user.id, enabled=False, hour=7)
+    disabled = await repo.get_by_id(user.id)
+    assert disabled.training_reminder_enabled is False
+    assert disabled.training_reminder_hour == 7  # час сохраняется отдельно от тумблера
+
+
+async def test_mark_training_reminder_sent(session, user: User):
+    repo = UserRepository(session)
+    sent_date = date(2026, 9, 13)
+
+    await repo.mark_training_reminder_sent(user.id, sent_date)
+
+    updated = await repo.get_by_id(user.id)
+    assert updated.training_reminder_last_sent_date == sent_date
+
+
 async def test_list_onboarded_excludes_users_without_completed_onboarding(session, user: User):
     repo = UserRepository(session)
     onboarded = await repo.create(telegram_id=555, username="onboarded")

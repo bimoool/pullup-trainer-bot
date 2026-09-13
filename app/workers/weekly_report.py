@@ -61,8 +61,8 @@ async def send_weekly_reports(bot: Bot) -> None:
 
 def register(scheduler: AsyncIOScheduler, bot: Bot) -> None:
     # Понедельник, 09:00 UTC — часовой пояс пользователя учитывается только
-    # для напоминаний о самой тренировке (отдельная, ещё не реализованная
-    # задача), не для этой сводки.
+    # для напоминаний о самой тренировке (app/workers/training_reminder.py,
+    # issue #100), не для этой сводки.
     scheduler.add_job(
         send_weekly_reports, CronTrigger(day_of_week="mon", hour=9), id=JOB_ID, kwargs={"bot": bot},
     )
