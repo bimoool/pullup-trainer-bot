@@ -1,4 +1,4 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Input, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -8,7 +8,15 @@ import {
   type HistoryEditRequest,
   type WorkoutSubmitResponse,
 } from "./api";
-import { AnomalyLines, BlockForm, parseOptionalWeight, parseSetValue, parseSetValues, replaceAt } from "./WorkoutScreen";
+import {
+  AnomalyLines,
+  BlockForm,
+  EquipmentCorrectionFields,
+  parseOptionalWeight,
+  parseSetValue,
+  parseSetValues,
+  replaceAt,
+} from "./WorkoutScreen";
 
 type Props = {
   initDataRaw: string;
@@ -30,13 +38,26 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
+/** reported_volume не null — запись создана в режиме "только итог" (issue
+ * #88), working_reps тогда всегда пуст. Форма должна остаться в том же
+ * формате при правке (issue #106) — переключения формата нет. */
+function isTotalFormatB(detail: HistoryEditDetail): boolean {
+  return detail.block_b.reported_volume !== null;
+}
+
 /**
- * Форма редактирования прошлой тренировки (issue #52) — та же разметка
- * блоков, что WorkoutScreen.tsx (BlockForm/AnomalyLines/парсинг оттуда же,
- * не копия), предзаполненная реально введёнными числами из
- * GET /api/history/{id}, сабмит через PATCH /api/history/{id}
- * (app.web.routes::edit_history_workout — тот же каскадный пересчёт, что
- * app.bot.handlers.workout_edit).
+ * Форма редактирования прошлой тренировки (issue #52, расширено issue
+ * #106 на бэкдейт/свободные записи) — та же разметка блоков, что
+ * WorkoutScreen.tsx (BlockForm/AnomalyLines/парсинг оттуда же, не копия),
+ * предзаполненная реально введёнными числами из GET /api/history/{id},
+ * сабмит через PATCH /api/history/{id} (app.web.routes::edit_history_workout).
+ * Тренировки цепочки каскада правятся с пересчётом (edit_workout), внесённые
+ * не в цепочку (бэкдейт/свободные) — без пересчёта цели/каскада
+ * (edit_noncascade_workout), форма одна и та же, ветвление на бэкенде.
+ *
+ * Блок Б в формате "только итог" (issue #88) показывает не сетку подходов,
+ * а поле итога + опциональный максимум — тот же формат, в котором запись
+ * была создана в боте (app.bot.handlers.backdate.py), без переключения.
  *
  * Правка резины (в отличие от веса) здесь не предлагается — для неё нужен
  * бы личный список пользователя, а GET /api/history/{id} его не отдаёт
@@ -50,6 +71,8 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
   const [blockAMax, setBlockAMax] = useState("");
   const [blockBWorking, setBlockBWorking] = useState<string[]>([]);
   const [blockBMax, setBlockBMax] = useState("");
+  const [blockBTotal, setBlockBTotal] = useState("");
+  const [blockBTotalMax, setBlockBTotalMax] = useState("");
   const [blockAActualWeight, setBlockAActualWeight] = useState("");
   const [blockBActualWeight, setBlockBActualWeight] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -64,13 +87,18 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
           return;
         }
         if (!detail.is_editable) {
-          setState({ phase: "error", message: "Эта тренировка не редактируется (внесена задним числом)." });
+          setState({ phase: "error", message: "Эта тренировка не редактируется." });
           return;
         }
         setBlockAWorking(detail.block_a.working_reps.map(String));
         setBlockAMax(String(detail.block_a.max_reps));
-        setBlockBWorking(detail.block_b.working_reps.map(String));
-        setBlockBMax(String(detail.block_b.max_reps));
+        if (isTotalFormatB(detail)) {
+          setBlockBTotal(String(detail.block_b.reported_volume));
+          setBlockBTotalMax(detail.block_b.max_reps > 0 ? String(detail.block_b.max_reps) : "");
+        } else {
+          setBlockBWorking(detail.block_b.working_reps.map(String));
+          setBlockBMax(String(detail.block_b.max_reps));
+        }
         setState({ phase: "form", detail });
       } catch (error) {
         if (!cancelled) {
@@ -87,12 +115,41 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
   async function handleSubmit(detail: HistoryEditDetail, confirmAnomalies: boolean) {
     const workingA = parseSetValues(blockAWorking);
     const maxA = parseSetValue(blockAMax);
-    const workingB = parseSetValues(blockBWorking);
-    const maxB = parseSetValue(blockBMax);
-    if (workingA === null || maxA === null || workingB === null || maxB === null) {
-      setFormError("Заполни все подходы числами — пустые или нечисловые поля недопустимы.");
+    if (workingA === null || maxA === null) {
+      setFormError("Заполни все подходы блока А числами — пустые или нечисловые поля недопустимы.");
       return;
     }
+
+    const totalFormatB = isTotalFormatB(detail);
+    let workingB: number[] = [];
+    let maxB = 0;
+    let reportedVolumeB: number | null = null;
+    if (totalFormatB) {
+      const total = parseSetValue(blockBTotal);
+      if (total === null) {
+        setFormError("Итог блока Б должен быть числом.");
+        return;
+      }
+      // Пустое поле максимума — он не был зафиксирован (тот же смысл, что
+      // "Пропустить" у app.bot.handlers.backdate.py::handle_backdate_block_b_total_max_skip).
+      const maxOrSkip = blockBTotalMax.trim() === "" ? 0 : parseSetValue(blockBTotalMax);
+      if (maxOrSkip === null) {
+        setFormError("Максимум блока Б должен быть числом, если он указан.");
+        return;
+      }
+      reportedVolumeB = total;
+      maxB = maxOrSkip;
+    } else {
+      const working = parseSetValues(blockBWorking);
+      const max = parseSetValue(blockBMax);
+      if (working === null || max === null) {
+        setFormError("Заполни все подходы блока Б числами — пустые или нечисловые поля недопустимы.");
+        return;
+      }
+      workingB = working;
+      maxB = max;
+    }
+
     const actualWeightA = parseOptionalWeight(blockAActualWeight);
     const actualWeightB = parseOptionalWeight(blockBActualWeight);
     if (!actualWeightA.ok || !actualWeightB.ok) {
@@ -106,6 +163,7 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
       block_a_max_reps: maxA,
       block_b_working_reps: workingB,
       block_b_max_reps: maxB,
+      block_b_reported_volume: reportedVolumeB,
       block_a_actual_weight: actualWeightA.value,
       block_b_actual_weight: actualWeightB.value,
       confirm_anomalies: confirmAnomalies,
@@ -212,22 +270,65 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
         onBandItemChange={() => {}}
       />
 
-      <BlockForm
-        letter="B"
-        target={detail.block_b.target_before}
-        workSets={detail.block_b.working_reps.length}
-        equipmentType={detail.block_b.equipment.type}
-        equipmentLabel={detail.block_b.equipment.label}
-        workingValues={blockBWorking}
-        onWorkingChangeAt={(index, value) => setBlockBWorking((prev) => replaceAt(prev, index, value))}
-        maxValue={blockBMax}
-        onMaxChange={setBlockBMax}
-        actualWeightValue={blockBActualWeight}
-        onActualWeightChange={setBlockBActualWeight}
-        bandItems={[]}
-        bandItemValue=""
-        onBandItemChange={() => {}}
-      />
+      {isTotalFormatB(detail) ? (
+        <Section className="block-section" header={`Блок Б — цель ${detail.block_b.target_before}`}>
+          <div className="block-header">
+            <div className="block-badge">B</div>
+            <p className="block-subtitle">
+              Итог за тренировку, без раскладки по подходам · {detail.block_b.equipment.label}
+            </p>
+          </div>
+
+          <Input
+            header="Итог за тренировку"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={999}
+            aria-label="Блок Б, итог за тренировку"
+            value={blockBTotal}
+            onChange={(e) => setBlockBTotal(e.target.value)}
+          />
+          <Input
+            header="Лучший подход (максимум), если он известен"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={999}
+            aria-label="Блок Б, лучший подход"
+            value={blockBTotalMax}
+            onChange={(e) => setBlockBTotalMax(e.target.value)}
+          />
+
+          <EquipmentCorrectionFields
+            letter="B"
+            equipmentType={detail.block_b.equipment.type}
+            equipmentLabel={detail.block_b.equipment.label}
+            actualWeightValue={blockBActualWeight}
+            onActualWeightChange={setBlockBActualWeight}
+            bandItems={[]}
+            bandItemValue=""
+            onBandItemChange={() => {}}
+          />
+        </Section>
+      ) : (
+        <BlockForm
+          letter="B"
+          target={detail.block_b.target_before}
+          workSets={detail.block_b.working_reps.length}
+          equipmentType={detail.block_b.equipment.type}
+          equipmentLabel={detail.block_b.equipment.label}
+          workingValues={blockBWorking}
+          onWorkingChangeAt={(index, value) => setBlockBWorking((prev) => replaceAt(prev, index, value))}
+          maxValue={blockBMax}
+          onMaxChange={setBlockBMax}
+          actualWeightValue={blockBActualWeight}
+          onActualWeightChange={setBlockBActualWeight}
+          bandItems={[]}
+          bandItemValue=""
+          onBandItemChange={() => {}}
+        />
+      )}
 
       {formError && <p className="error-banner">{formError}</p>}
       <Button

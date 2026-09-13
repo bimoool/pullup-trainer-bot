@@ -77,6 +77,12 @@ class EditWorkoutStates(StatesGroup):
     waiting_for_block_a_confirm = State()
     waiting_for_block_b = State()
     waiting_for_block_b_confirm = State()
+    # Правка бэкдейт-записи блока Б в формате "только итог" (issue #88/#106)
+    # — формат не переключается при правке, эти состояния используются
+    # только когда редактируемая запись изначально была в этом формате
+    # (см. app/bot/handlers/workout_edit.py::_start_editing).
+    waiting_for_block_b_total = State()
+    waiting_for_block_b_total_max = State()
     # Правка веса/резины "в этом же отчёте" (Часть 10) — только для блоков
     # с корректируемым значением (WEIGHT/BAND), по очереди, с пропуском.
     waiting_for_equipment_weight = State()

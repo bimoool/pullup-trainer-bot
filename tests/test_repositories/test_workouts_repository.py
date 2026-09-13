@@ -344,6 +344,93 @@ async def test_edit_workout_raises_for_backdated_workout(session, user: User):
         await repo.edit_workout(workout_id=backdated.id, block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13))
 
 
+async def test_edit_noncascade_workout_raises_for_cascade_workout(session, user: User):
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    live = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    with pytest.raises(ValueError, match="cascade"):
+        await repo.edit_noncascade_workout(
+            workout_id=live.id, block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13),
+        )
+
+
+async def test_edit_noncascade_workout_changes_reps_without_touching_target(session, user: User):
+    """issue #106 — правка бэкдейт-записи меняет только сами цифры, цель
+    (target_before/after) и снаряд остаются заморожены такими же, какими
+    были посчитаны один раз при создании (issue #88: бэкдейт вне пересчёта
+    прогрессии, включая последующую правку, не только первый ввод)."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    backdated = await repo.record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    block_a_before = _block(backdated, "a")
+    block_b_before = _block(backdated, "b")
+    target_a_before, target_b_before = block_a_before.target_after, block_b_before.target_after
+
+    updated = await repo.edit_noncascade_workout(
+        workout_id=backdated.id,
+        block_a_reps=BlockLog(working_reps=(20, 20, 20), max_reps=21),
+        block_b_reps=BlockLog(working_reps=(9, 9, 9, 9), max_reps=10),
+        comment="исправил цифры",
+    )
+
+    block_a_after = _block(updated, "a")
+    block_b_after = _block(updated, "b")
+    assert block_a_after.working_reps == [20, 20, 20]
+    assert block_a_after.max_reps == 21
+    assert block_b_after.working_reps == [9, 9, 9, 9]
+    assert block_b_after.max_reps == 10
+    assert updated.comment == "исправил цифры"
+    # Заморожено — не пересчитано от новых (гораздо больших) чисел.
+    assert block_a_after.target_before == block_a_before.target_before
+    assert block_a_after.target_after == target_a_before
+    assert block_b_after.target_before == block_b_before.target_before
+    assert block_b_after.target_after == target_b_before
+    assert block_a_after.equipment_changed is False
+    assert block_b_after.equipment_changed is False
+
+
+async def test_edit_noncascade_workout_preserves_reported_volume_format(session, user: User):
+    """Формат "только итог" блока Б (issue #88) должен сохраняться при
+    правке — best_set/лидерборд не должны внезапно увидеть раскладку по
+    подходам там, где её никогда не вводили (issue #106)."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    backdated = await repo.record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(), max_reps=0, reported_volume=50),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    assert _block(backdated, "b").reported_volume == 50
+
+    updated = await repo.edit_noncascade_workout(
+        workout_id=backdated.id,
+        block_b_reps=BlockLog(working_reps=(), max_reps=15, reported_volume=65),
+    )
+
+    block_b_after = _block(updated, "b")
+    assert block_b_after.working_reps == []
+    assert block_b_after.max_reps == 15
+    assert block_b_after.reported_volume == 65
+
+
 async def test_complete_workout_increments_set_counter(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)

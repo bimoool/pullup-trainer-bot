@@ -15,11 +15,13 @@ from app.bot.formatting import (
     format_reps_example,
     format_sets_word,
 )
+from app.bot.handlers.backdate import _parse_single_total
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
     bottom_menu_keyboard,
     cancel_keyboard,
+    edit_block_b_total_max_keyboard,
     edit_equipment_band_keyboard,
     edit_equipment_weight_keyboard,
     edit_workout_picker_keyboard,
@@ -41,9 +43,19 @@ _BLOCK_LABELS = {"a": "блоке на объём", "b": "блоке на сил
 
 
 def _is_editable(workout) -> bool:
-    # Внесённые задним числом не входят в цепочку каскада — редактировать
-    # их через этот сценарий нельзя (см. WorkoutRepository.edit_workout).
+    # Тренировки цепочки каскада — правятся через WorkoutRepository.edit_workout
+    # (с пересчётом цели/каскада). Внесённые задним числом сюда не попадают —
+    # для них своя ветка, см. _is_history_editable/_start_editing ниже.
     return workout.sequence_number is not None and workout.participates_in_cascade
+
+
+def _is_history_editable(workout) -> bool:
+    """Тренировки цепочки каскада (_is_editable) ИЛИ внесённые не в цепочку
+    (бэкдейт/свободные, issue #106) — обе теперь редактируются, просто
+    разными методами репозитория (_start_editing выбирает между
+    WorkoutRepository.edit_workout и edit_noncascade_workout по
+    participates_in_cascade)."""
+    return _is_editable(workout) or not workout.participates_in_cascade
 
 
 def _format_block_a_prompt(target: int, work_sets: int) -> str:
@@ -77,13 +89,14 @@ async def handle_edit_workout_menu(callback: CallbackQuery, session: AsyncSessio
 
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
-    if not any(_is_editable(w) for w in history):
+    if not any(_is_history_editable(w) for w in history):
         await callback.answer(texts.EDIT_NOTHING_TO_EDIT, show_alert=True)
         return
 
     now = datetime.now(UTC)
     await render_calendar_month(
-        callback, session, year=now.year, month=now.month, edit=False, mode="edit", history_filter=_is_editable,
+        callback, session, year=now.year, month=now.month, edit=False, mode="edit",
+        history_filter=_is_history_editable,
     )
     await callback.answer()
 
@@ -103,7 +116,7 @@ async def handle_calendar_workout_picked(
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
     day_workouts = [w for w in history if w.performed_at.date() == picked_date]
-    day_editable = [w for w in day_workouts if _is_editable(w)]
+    day_editable = [w for w in day_workouts if _is_history_editable(w)]
 
     if not day_editable:
         # Пакет #3, баг 2 — день без единой редактируемой тренировки бывает
@@ -156,6 +169,16 @@ async def _start_editing(message: Message, state: FSMContext, session: AsyncSess
         edit_workout_performed_at=workout.performed_at.isoformat(),
         edit_block_a_equipment=_block_equipment_result(block_a),
         edit_block_b_equipment=_block_equipment_result(block_b),
+        # Внесённые не в цепочку (бэкдейт/свободные, issue #106) правятся
+        # без пересчёта цели/каскада (edit_noncascade_workout) — ветвление
+        # в _apply_edit_block_b по этому флагу, не по повторной проверке
+        # workout.participates_in_cascade (запись могла уже поменяться к
+        # моменту применения правки, сам факт "куда редактировать" не
+        # должен зависеть от порядка шагов). block_b_is_total (issue #88) —
+        # запись создана в режиме "только итог", тот же формат сохраняется
+        # при правке, без переключения (см. _apply_edit_block_a).
+        edit_is_noncascade=not workout.participates_in_cascade,
+        edit_block_b_is_total=block_b.reported_volume is not None,
     )
     await state.set_state(EditWorkoutStates.waiting_for_block_a)
     prompt = _format_block_a_prompt(block_a.target_before, work_sets_a) + texts.BLOCK_EQUIPMENT_NOTE.format(
@@ -184,7 +207,7 @@ async def handle_edit_last_workout(callback: CallbackQuery, state: FSMContext, s
         return
 
     last = history[-1]
-    if not _is_editable(last):
+    if not _is_history_editable(last):
         await callback.answer(texts.EDIT_NOT_EDITABLE, show_alert=True)
         return
 
@@ -226,12 +249,23 @@ async def handle_edit_block_a(message: Message, state: FSMContext, session: Asyn
 async def _apply_edit_block_a(message: Message, state: FSMContext, result: BlockLog) -> None:
     data = await state.get_data()
     await state.update_data(block_a_working_reps=list(result.working_reps), block_a_max_reps=result.max_reps)
+    if data.get("edit_block_b_is_total"):
+        # Формат "только итог" (issue #88) — тот же, в котором запись была
+        # создана, без переспроса режима (в отличие от бэкдейта, где режим
+        # выбирается заново каждый раз, см. backdate.py).
+        await _send_edit_block_b_total_prompt(message, state)
+        return
     await state.set_state(EditWorkoutStates.waiting_for_block_b)
     example_b = format_reps_example(data["target_b"], STRENGTH_BLOCK.work_sets)
     prompt = texts.BLOCK_B_PROMPT.format(example=example_b) + texts.BLOCK_EQUIPMENT_NOTE.format(
         equipment=format_equipment_from_result(data["edit_block_b_equipment"], instrumental=True),
     )
     await message.answer(prompt, reply_markup=back_cancel_keyboard("edit_back:block_a"))
+
+
+async def _send_edit_block_b_total_prompt(message: Message, state: FSMContext) -> None:
+    await state.set_state(EditWorkoutStates.waiting_for_block_b_total)
+    await message.answer(texts.BACKDATE_BLOCK_B_TOTAL_PROMPT, reply_markup=back_cancel_keyboard("edit_back:block_a"))
 
 
 @router.callback_query(EditWorkoutStates.waiting_for_block_a_confirm, F.data == "anomaly:confirm")
@@ -310,6 +344,57 @@ async def handle_edit_block_b_anomaly_reenter(callback: CallbackQuery, state: FS
     await callback.answer()
 
 
+# --- Правка блока Б в формате "только итог" (issue #88/#106) ------------------------
+# Тот же формат ввода, что app.bot.handlers.backdate.py (не копия — переиспользует
+# _parse_single_total оттуда), просто без шага выбора режима: формат фиксирован
+# исходной записью (см. _apply_edit_block_a/_start_editing).
+
+
+@router.message(EditWorkoutStates.waiting_for_block_b_total)
+async def handle_edit_block_b_total(message: Message, state: FSMContext) -> None:
+    total = _parse_single_total(message.text or "")
+    if isinstance(total, ParseError):
+        await message.answer(total.message)
+        return
+
+    await state.update_data(edit_block_b_total=total)
+    await state.set_state(EditWorkoutStates.waiting_for_block_b_total_max)
+    await message.answer(texts.BACKDATE_BLOCK_B_TOTAL_MAX_PROMPT, reply_markup=edit_block_b_total_max_keyboard())
+
+
+@router.callback_query(F.data == "edit_back:block_b_total")
+async def handle_edit_back_to_block_b_total(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await _send_edit_block_b_total_prompt(callback.message, state)
+    await callback.answer()
+
+
+@router.message(EditWorkoutStates.waiting_for_block_b_total_max)
+async def handle_edit_block_b_total_max(message: Message, state: FSMContext, session: AsyncSession) -> None:
+    max_reps = _parse_single_total(message.text or "")
+    if isinstance(max_reps, ParseError):
+        await message.answer(max_reps.message)
+        return
+
+    data = await state.get_data()
+    result = BlockLog(working_reps=(), max_reps=max_reps, reported_volume=data["edit_block_b_total"])
+    await _apply_edit_block_b(message, state, session, result, telegram_id=message.from_user.id)
+
+
+@router.callback_query(EditWorkoutStates.waiting_for_block_b_total_max, F.data == "edit_skip_block_b_total_max")
+async def handle_edit_block_b_total_max_skip(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession,
+) -> None:
+    data = await state.get_data()
+    result = BlockLog(working_reps=(), max_reps=0, reported_volume=data["edit_block_b_total"])
+    await callback.message.edit_reply_markup(reply_markup=None)
+    # telegram_id — явно от callback.from_user, НЕ от callback.message.from_user
+    # (см. критический баг Части 10 в CLAUDE.md — тот же приём, что и везде
+    # в этом файле/backdate.py).
+    await _apply_edit_block_b(callback.message, state, session, result, telegram_id=callback.from_user.id)
+    await callback.answer()
+
+
 async def _apply_edit_block_b(
     message: Message, state: FSMContext, session: AsyncSession, result: BlockLog, *, telegram_id: int,
 ) -> None:
@@ -317,20 +402,35 @@ async def _apply_edit_block_b(
     block_a_reps = BlockLog(working_reps=tuple(data["block_a_working_reps"]), max_reps=data["block_a_max_reps"])
 
     workouts = WorkoutRepository(session)
-    workout = await workouts.edit_workout(
-        workout_id=data["edit_workout_id"], block_a_reps=block_a_reps, block_b_reps=result,
-    )
+    if data.get("edit_is_noncascade"):
+        # Бэкдейт/свободные (issue #106) — правит только цифры записи, без
+        # пересчёта цели/каскада (тот же инвариант, что и при первом вводе
+        # таких записей, issue #88).
+        workout = await workouts.edit_noncascade_workout(
+            workout_id=data["edit_workout_id"], block_a_reps=block_a_reps, block_b_reps=result,
+        )
+    else:
+        workout = await workouts.edit_workout(
+            workout_id=data["edit_workout_id"], block_a_reps=block_a_reps, block_b_reps=result,
+        )
 
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
-    await message.answer(
-        texts.EDIT_DONE.format(
-            a_result=format_block_result(block_a.working_reps, block_a.max_reps), a_target=block_a.target_after,
-            b_result=format_block_result(block_b.working_reps, block_b.max_reps), b_target=block_b.target_after,
-            equipment_a=format_equipment_label(block_a.equipment_type, block_a.equipment_value),
-            equipment_b=format_equipment_label(block_b.equipment_type, block_b.equipment_value),
-        ),
-    )
+    result_a = format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume)
+    result_b = format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume)
+    equipment_a = format_equipment_label(block_a.equipment_type, block_a.equipment_value)
+    equipment_b = format_equipment_label(block_b.equipment_type, block_b.equipment_value)
+    if data.get("edit_is_noncascade"):
+        done_text = texts.EDIT_DONE_NONCASCADE.format(
+            a_result=result_a, b_result=result_b, equipment_a=equipment_a, equipment_b=equipment_b,
+        )
+    else:
+        done_text = texts.EDIT_DONE.format(
+            a_result=result_a, a_target=block_a.target_after,
+            b_result=result_b, b_target=block_b.target_after,
+            equipment_a=equipment_a, equipment_b=equipment_b,
+        )
+    await message.answer(done_text)
 
     # Правка веса/резины "в этом же отчёте" (Часть 10) — только для блоков
     # с корректируемым значением (WEIGHT/BAND); если оба на bodyweight/
