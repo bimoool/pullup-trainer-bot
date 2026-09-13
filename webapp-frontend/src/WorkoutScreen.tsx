@@ -46,11 +46,24 @@ export const STATUS_MESSAGES: Record<string, string> = {
   first_workout: "Это твоя первая тренировка — замер и выбор снаряда пока доступны только в боте.",
   too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
   gap_retest_required: "Был долгий перерыв — нужен повторный замер, начни его в боте.",
-  deload_due: "Пора на ежемесячный тест на максимум блока на объём — эта форма пока доступна только в боте.",
   equipment_setup_required: "Нужно заново выбрать снаряд для одного из блоков — сделай это в боте.",
   no_active_set: "Не получилось открыть тренировочный цикл. Напиши в поддержку через бота.",
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
 };
+
+// Ежемесячный тест на максимум блока на объём (issue #89, форма перенесена
+// в Mini App — issue #105) — тот же текст, что app.bot.texts.
+// VOLUME_DELOAD_PROMPT (независимая копия, как и весь остальной текст
+// интерфейса, см. WORK_SETS_GROWTH_NOTICES выше), без числа-ориентира
+// (поправка продукта того же issue — даже необязательный ориентир вводил
+// в заблуждение резким скачком от рабочей цели).
+const DELOAD_TEST_PROMPT =
+  "Сегодня — тест на максимум по блоку на объём. Раз в 30 дней вместо обычной структуры блока — " +
+  "один подход на максимум, без отягощения: подтянись столько раз, сколько реально сможешь, до отказа. " +
+  "Никакого обязательного числа нет — просто честный максимум за один подход. На основной прогресс это " +
+  "не влияет — только в статистику. Блок Б дальше пройдёт как в обычной тренировке.";
+const DELOAD_DONE_NOTE =
+  "😌 Это был ежемесячный тест на максимум блока на объём — цель и число рабочих подходов не менялись.";
 
 // Тот же текст, что app.bot.texts.WORK_SETS_GROWTH_STALL_NOTICE/
 // WORK_SETS_GROWTH_CEILING_NOTICE (issue #79) — независимая копия строки,
@@ -306,11 +319,43 @@ export function BlockForm({
   );
 }
 
+/** Тест на максимум блока A (issue #89, форма в Mini App — issue #105) —
+ * один вопрос вместо обычной сетки рабочих подходов + максимума, тот же
+ * смысл, что "пришли результат одним числом" в боте (VOLUME_DELOAD_PROMPT).
+ * Снаряд принудительно свой вес (сервер уже это гарантирует, см.
+ * app/web/routes.py::_resolve_plan_context) — актуального веса/резины тут
+ * нет и быть не может. */
+function DeloadBlockAForm({ maxValue, onMaxChange }: { maxValue: string; onMaxChange: (value: string) => void }) {
+  return (
+    <Section className="block-section" header="Блок A — тест на максимум">
+      <p className="block-subtitle">{DELOAD_TEST_PROMPT}</p>
+      <span className="field-label">Результат (одно число)</span>
+      <div className="set-grid">
+        <input
+          className="set-input max-input"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={999}
+          aria-label="Блок A, тест на максимум"
+          value={maxValue}
+          onChange={(e) => onMaxChange(e.target.value)}
+        />
+      </div>
+    </Section>
+  );
+}
+
 export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Props) {
   const [showBackdate, setShowBackdate] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showElective, setShowElective] = useState(false);
   const [showFreeWorkout, setShowFreeWorkout] = useState(false);
+  // Экран выбора действия по умолчанию (issue #108) — форма ввода
+  // результата сегодняшней тренировки больше не показывается сразу под
+  // planом, а только после явного нажатия 4-й кнопки "📝 Внести результат
+  // тренировки", симметрично остальным трём режимам.
+  const [showForm, setShowForm] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -354,7 +399,12 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   }, [initDataRaw]);
 
   async function handleSubmit(plan: WorkoutPlanResponse, confirmAnomalies: boolean) {
-    const workingA = parseSetValues(blockAWorking);
+    // Тест на максимум (issue #105) — один подход без раскладки, тот же
+    // смысл, что parse_reps("15") в боте: working_reps=[], max_reps=введённое
+    // число. parseSetValues(blockAWorking) не подходит здесь — пустой массив
+    // для неё невалиден (используется как "поля не заполнены" для обычного
+    // блока A), а для теста это ожидаемое штатное значение.
+    const workingA = plan.is_deload_a ? [] : parseSetValues(blockAWorking);
     const maxA = parseSetValue(blockAMax);
     const workingB = parseSetValues(blockBWorking);
     const maxB = parseSetValue(blockBMax);
@@ -529,10 +579,17 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
         <div className="done-stats">
           <p>Блок A: {result.result_a}</p>
           <p>Блок B: {result.result_b}</p>
-          <p className="hint">
-            Цели на следующую тренировку: блок A — {result.target_a} ({result.equipment_a?.label}), блок B —{" "}
-            {result.target_b} ({result.equipment_b?.label}).
-          </p>
+          {result.is_deload_a ? (
+            <p className="hint">
+              {DELOAD_DONE_NOTE} Цель блока Б на следующую тренировку — {result.target_b} (
+              {result.equipment_b?.label}).
+            </p>
+          ) : (
+            <p className="hint">
+              Цели на следующую тренировку: блок A — {result.target_a} ({result.equipment_a?.label}), блок B —{" "}
+              {result.target_b} ({result.equipment_b?.label}).
+            </p>
+          )}
         </div>
         <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
           Готово
@@ -542,48 +599,84 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   }
 
   const { plan } = state;
-  return (
-    <div>
-      <p className="plan-title">Текущий план</p>
+  // Баннеры показываются сразу на экране выбора действия, а не только
+  // вместе с формой (issue #108) — это контекст, важный до выбора действия
+  // (снижена ли цель блока A из-за перерыва, вырос ли объём блока), а не
+  // только при непосредственном вводе результата.
+  const banners = (
+    <>
       {plan.is_gap_rollback && (
         <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
       )}
       {plan.work_sets_growth_reason && (
         <p className="gap-banner">{WORK_SETS_GROWTH_NOTICES[plan.work_sets_growth_reason]}</p>
       )}
+    </>
+  );
 
-      <div className="workout-mode-buttons">
-        <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
-          ⏱ Тренировка в реальном времени
-        </Button>
-        <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
-          🔁 Внести пропущенную тренировку
-        </Button>
-        <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
-          🎯 Факультатив
-        </Button>
-        <Button mode="outline" size="s" onClick={() => setShowFreeWorkout(true)}>
-          ➕ Внести свободные подтягивания
-        </Button>
+  if (!showForm) {
+    return (
+      <div>
+        <p className="plan-title">Текущий план</p>
+        {banners}
+
+        <div className="workout-mode-buttons">
+          {/* Живая тренировка (таймер по подходам) не адаптирована под
+              структуру теста на максимум (issue #105, тот же принцип сужения
+              скоупа, что и у остальных статусов Этапа 1) — на день теста
+              кнопка скрыта, обычный режим ниже её заменяет. */}
+          {!plan.is_deload_a && (
+            <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
+              ⏱ Тренировка в реальном времени
+            </Button>
+          )}
+          <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
+            🔁 Внести пропущенную тренировку
+          </Button>
+          <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
+            🎯 Факультатив
+          </Button>
+          <Button mode="outline" size="s" onClick={() => setShowFreeWorkout(true)}>
+            ➕ Внести свободные подтягивания
+          </Button>
+          <Button mode="outline" size="s" onClick={() => setShowForm(true)}>
+            📝 Внести результат тренировки
+          </Button>
+        </div>
       </div>
+    );
+  }
 
-      <BlockForm
-        letter="A"
-        target={plan.target_a}
-        workSets={plan.work_sets_a}
-        equipmentType={plan.equipment_a?.type}
-        equipmentLabel={plan.equipment_a?.label}
-        workingValues={blockAWorking}
-        onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
-        maxValue={blockAMax}
-        onMaxChange={setBlockAMax}
-        actualWeightValue={blockAActualWeight}
-        onActualWeightChange={setBlockAActualWeight}
-        bandItems={plan.band_items}
-        bandItemValue={blockABandItem}
-        onBandItemChange={setBlockABandItem}
-        onOpenFaq={onOpenFaq}
-      />
+  return (
+    <div>
+      <p className="plan-title">Текущий план</p>
+      {banners}
+
+      <Button mode="plain" size="s" onClick={() => setShowForm(false)}>
+        ← Назад к выбору действия
+      </Button>
+
+      {plan.is_deload_a ? (
+        <DeloadBlockAForm maxValue={blockAMax} onMaxChange={setBlockAMax} />
+      ) : (
+        <BlockForm
+          letter="A"
+          target={plan.target_a}
+          workSets={plan.work_sets_a}
+          equipmentType={plan.equipment_a?.type}
+          equipmentLabel={plan.equipment_a?.label}
+          workingValues={blockAWorking}
+          onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
+          maxValue={blockAMax}
+          onMaxChange={setBlockAMax}
+          actualWeightValue={blockAActualWeight}
+          onActualWeightChange={setBlockAActualWeight}
+          bandItems={plan.band_items}
+          bandItemValue={blockABandItem}
+          onBandItemChange={setBlockABandItem}
+          onOpenFaq={onOpenFaq}
+        />
+      )}
 
       <BlockForm
         letter="B"
