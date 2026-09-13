@@ -385,6 +385,18 @@ input[type="number"] {
   font-size: 13px;
 }
 
+/* Сноска-ссылка внутри .hint (issue #102) — открывает полный текст на
+   отдельном экране (FaqScreen), не дублирует его на месте. */
+.hint-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--tg-link-color);
+  cursor: pointer;
+}
+
 .progress-chart-wrap {
   background: var(--tg-secondary-bg-color);
   border-radius: 16px;

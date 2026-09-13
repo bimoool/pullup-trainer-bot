@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AchievementsScreen } from "./AchievementsScreen";
 import { fetchGtoStatus, fetchProfile, type GtoStatus, type ProfileResponse } from "./api";
 
-type Props = { initDataRaw: string; onOpenSubscription: () => void };
+type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
 
 type ScreenState =
   | { phase: "loading" }
@@ -87,8 +87,11 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
  *
  * Раздел подписки (issue #53, волна 2) раньше был здесь целиком — вынесен
  * в отдельную вкладку (issue #57, п.1: он оказался слишком заметным сразу
- * при открытии), здесь остаётся только строка статуса + переход. */
-export function ProfileScreen({ initDataRaw, onOpenSubscription }: Props) {
+ * при открытии), здесь остаётся только строка статуса + переход.
+ *
+ * "Справка" (issue #102) — тот же приём перехода, что подписка: только
+ * кнопка здесь, полный текст на отдельном экране (FaqScreen через App.tsx). */
+export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Список ачивок (issue #66, п.1) — отдельный экран внутри вкладки, тот же
   // приём swap'а, что HistoryEditForm поверх HistoryScreen, не отдельная
@@ -171,6 +174,13 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription }: Props) {
         <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
         <Button mode="outline" size="m" stretched onClick={onOpenSubscription}>
           ⭐ Подробнее о подписке
+        </Button>
+      </div>
+
+      <div className="profile-card">
+        <p className="section-title">Справка</p>
+        <Button mode="outline" size="m" stretched onClick={onOpenFaq}>
+          ❓ Как выбрать резину
         </Button>
       </div>
 

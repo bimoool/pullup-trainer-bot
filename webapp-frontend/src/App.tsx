@@ -3,6 +3,7 @@ import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
@@ -26,8 +27,14 @@ type LoadState =
  * отдельным экраном, но без своего пункта меню — открывается только кнопкой
  * с "Профиля" (тот же принцип, что у AchievementsScreen: "subscription" —
  * по-прежнему валидное значение Tab, просто не перечислено в NAV_TABS, так
- * что назад ведёт explicit onBack, не переключение вкладки). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription";
+ * что назад ведёт explicit onBack, не переключение вкладки).
+ *
+ * "faq" (issue #102) — тот же приём: не пункт нижнего меню, открывается
+ * кнопкой с "Профиля" ИЛИ сноской у выбора резины на WorkoutScreen (два
+ * разных входа в один и тот же экран, в отличие от "subscription", у
+ * которого один вход). faqReturnTab ниже помнит, откуда открыли, чтобы
+ * "Назад" вёл туда же, а не всегда на "Профиль". */
+type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "workout", icon: "💪", label: "Тренировка" },
@@ -72,6 +79,14 @@ export function App() {
   // потеряло бы прогресс молча, поэтому переключение вкладок при активной
   // живой тренировке сначала спрашивает подтверждение.
   const [liveWorkoutActive, setLiveWorkoutActive] = useState(false);
+  // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
+  // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
+  const [faqReturnTab, setFaqReturnTab] = useState<Tab>("profile");
+
+  function openFaq(from: Tab) {
+    setFaqReturnTab(from);
+    setTab("faq");
+  }
 
   function handleTabClick(key: Tab) {
     if (key === tab) {
@@ -158,15 +173,26 @@ export function App() {
       <p className="app-greeting">Привет, {state.data.name}!</p>
       {!state.data.is_onboarded && <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>}
       {state.data.is_onboarded && tab === "workout" && (
-        <WorkoutScreen initDataRaw={state.initDataRaw} onLiveActiveChange={setLiveWorkoutActive} />
+        <WorkoutScreen
+          initDataRaw={state.initDataRaw}
+          onLiveActiveChange={setLiveWorkoutActive}
+          onOpenFaq={() => openFaq("workout")}
+        />
       )}
       {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
       {state.data.is_onboarded && tab === "profile" && (
-        <ProfileScreen initDataRaw={state.initDataRaw} onOpenSubscription={() => setTab("subscription")} />
+        <ProfileScreen
+          initDataRaw={state.initDataRaw}
+          onOpenSubscription={() => setTab("subscription")}
+          onOpenFaq={() => openFaq("profile")}
+        />
       )}
       {state.data.is_onboarded && tab === "subscription" && (
         <SubscriptionScreen initDataRaw={state.initDataRaw} onBack={() => setTab("profile")} />
+      )}
+      {state.data.is_onboarded && tab === "faq" && (
+        <FaqScreen initDataRaw={state.initDataRaw} onBack={() => setTab(faqReturnTab)} />
       )}
 
       {state.data.is_onboarded && (
