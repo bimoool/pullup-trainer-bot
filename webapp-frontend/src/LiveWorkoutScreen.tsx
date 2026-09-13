@@ -28,6 +28,9 @@ type Props = {
    * пробрасывает это состояние наверх в App.tsx, чтобы переключение вкладок
    * не потеряло молча несохранённый ввод (issue #59, волна 2). */
   onActiveChange?: (active: boolean) => void;
+  /** FAQ "Как выбрать резину" (issue #102) — прокинуто из WorkoutScreen в
+   * BlockForm ниже, тот же смысл, что и в обычном режиме ввода. */
+  onOpenFaq: () => void;
 };
 
 // Пауза между блоками A и Б (issue #59) — тот же контент, что бот
@@ -130,7 +133,7 @@ type ScreenState =
  * после этого фикса/старые протухшие записи), он на всякий случай
  * отменяется, как и раньше.
  */
-export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChange }: Props) {
+export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChange, onOpenFaq }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -584,6 +587,7 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
           bandItems={plan.band_items}
           bandItemValue={blockABandItem}
           onBandItemChange={setBlockABandItem}
+          onOpenFaq={onOpenFaq}
         />
 
         <BlockForm
@@ -601,6 +605,7 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
           bandItems={plan.band_items}
           bandItemValue={blockBBandItem}
           onBandItemChange={setBlockBBandItem}
+          onOpenFaq={onOpenFaq}
         />
 
         <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />

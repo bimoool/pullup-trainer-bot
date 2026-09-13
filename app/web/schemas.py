@@ -340,6 +340,14 @@ class PaymentLinkResponse(BaseModel):
     payment_url: str
 
 
+class BandHelpResponse(BaseModel):
+    """FAQ "Как выбрать резину" (issue #102) — тот же приём, что
+    pricing_text_html у SubscriptionResponse: статический текст бота как
+    есть, без пересборки в структурированные поля."""
+
+    text_html: str
+
+
 class WorkoutSubmitResponse(BaseModel):
     status: str
     target_a: int | None = None

@@ -21,6 +21,10 @@ type Props = {
    * размонтировало бы этот экран и потеряло бы его молча (см. App.tsx),
    * поэтому WorkoutScreen сообщает наверх, когда такой режим активен. */
   onLiveActiveChange?: (active: boolean) => void;
+  /** FAQ "Как выбрать резину" (issue #102) — открывает FaqScreen через
+   * App.tsx, прокидывается дальше в BlockForm/LiveWorkoutScreen, где
+   * фактически показана сноска у выбора резины на BAND. */
+  onOpenFaq: () => void;
 };
 
 type ScreenState =
@@ -196,6 +200,7 @@ export function BlockForm({
   bandItemValue,
   onBandItemChange,
   isHeavy = false,
+  onOpenFaq,
 }: {
   letter: "A" | "B";
   target: number | null;
@@ -216,6 +221,12 @@ export function BlockForm({
    * см. app/web/routes.py::_resolve_plan_context), только заголовок/подпись
    * отличаются — раскладка полей ввода та же (4 рабочих + 1 на максимум). */
   isHeavy?: boolean;
+  /** Сноска "Как выбрать резину" (issue #102) — короткая подсказка рядом с
+   * выбором резины, полный текст только на FaqScreen (не дублируется тут).
+   * Опционально: HistoryEditForm переиспользует BlockForm для правки уже
+   * записанной тренировки и не имеет перехода на FaqScreen — там сноска
+   * просто не показывается, не сломанная ссылка в никуда. */
+  onOpenFaq?: () => void;
 }) {
   return (
     <Section
@@ -277,11 +288,24 @@ export function BlockForm({
       {equipmentType === "band" && bandItems.length > 0 && (
         <BandItemSelect letter={letter} bandItems={bandItems} value={bandItemValue} onChange={onBandItemChange} />
       )}
+
+      {/* Сноска "Как выбрать резину" (issue #102) — короткая подсказка, не
+          полный текст (полный текст только на FaqScreen, открывается этой
+          же кнопкой). Показывается при любом BAND, не только когда уже есть
+          личный список резин — актуально и до первого добавления резины. */}
+      {equipmentType === "band" && onOpenFaq && (
+        <p className="hint">
+          Тугая резина — целевое число повторений даётся легко; слабая — не получается даже с ней.{" "}
+          <button type="button" className="hint-link" onClick={onOpenFaq}>
+            Как выбрать резину →
+          </button>
+        </p>
+      )}
     </Section>
   );
 }
 
-export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
+export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Props) {
   const [showBackdate, setShowBackdate] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showElective, setShowElective] = useState(false);
@@ -393,6 +417,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
         onActiveChange={onLiveActiveChange}
         onCancel={() => setShowLive(false)}
         onDone={() => setShowLive(false)}
+        onOpenFaq={onOpenFaq}
       />
     );
   }
@@ -536,6 +561,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
         bandItems={plan.band_items}
         bandItemValue={blockABandItem}
         onBandItemChange={setBlockABandItem}
+        onOpenFaq={onOpenFaq}
       />
 
       <BlockForm
@@ -554,6 +580,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange }: Props) {
         bandItemValue={blockBBandItem}
         onBandItemChange={setBlockBBandItem}
         isHeavy={plan.is_heavy_b}
+        onOpenFaq={onOpenFaq}
       />
 
       <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />

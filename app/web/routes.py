@@ -81,6 +81,7 @@ from app.web.schemas import (
     AnalyticsResponse,
     AnomalyFlagsResponse,
     BackdateSubmitRequest,
+    BandHelpResponse,
     BandItemInfo,
     CycleVolumeResponse,
     ElectivePlanResponse,
@@ -883,6 +884,18 @@ async def get_oferta_pdf() -> FileResponse:
     тот же уровень доступа, что у текста PRICING_TEXT в /api/subscription,
     которое тоже отдаётся без проверки подписки/онбординга."""
     return FileResponse(OFERTA_PDF_PATH, media_type="application/pdf", filename="oferta.pdf")
+
+
+@router.get("/faq/band-help", response_model=BandHelpResponse)
+async def get_band_help() -> BandHelpResponse:
+    """Полный текст "Как выбрать резину" (issue #102) для FAQ-страницы Mini
+    App (FaqScreen.tsx) — тот же texts.EQUIPMENT_BAND_HELP_TEXT, что кнопка
+    "❓ Как выбрать резину" бота (app/bot/handlers/equipment.py::
+    handle_band_name_help), не отдельная копия текста (тот же принцип, что
+    pricing_text_html у /subscription). Публичный, без initData: как и
+    оферта/pricing_text_html, это статический обучающий текст, не
+    персональные данные."""
+    return BandHelpResponse(text_html=texts.EQUIPMENT_BAND_HELP_TEXT)
 
 
 # --- Редактирование истории (issue #52) ---------------------------------------------

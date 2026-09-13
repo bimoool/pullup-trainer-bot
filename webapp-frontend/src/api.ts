@@ -316,6 +316,18 @@ export async function paySubscription(initDataRaw: string): Promise<PaymentLinkR
   return (await response.json()) as PaymentLinkResponse;
 }
 
+/** FAQ "Как выбрать резину" (issue #102) — тот же принцип, что
+ * pricing_text_html выше: статический HTML-текст бота
+ * (app.bot.texts.EQUIPMENT_BAND_HELP_TEXT) как есть, безопасен для
+ * dangerouslySetInnerHTML. */
+export interface BandHelpResponse {
+  text_html: string;
+}
+
+export async function fetchBandHelp(initDataRaw: string): Promise<BandHelpResponse> {
+  return apiGet<BandHelpResponse>("/api/faq/band-help", initDataRaw);
+}
+
 async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {
   const response = await fetch(path, {
     method: "POST",
