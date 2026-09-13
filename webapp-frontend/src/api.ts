@@ -446,6 +446,47 @@ export async function submitBackdate(
   return apiPost<BackdateSubmitRequest, WorkoutSubmitResponse>("/api/workout/backdate", initDataRaw, body);
 }
 
+/** GET /api/free-workout/plan (issue #109) — тот же путь, что
+ * handle_free_workout_start бота (app/bot/handlers/free_workout.py): нет
+ * "no_access" (свободные подтягивания не за паивеллом) и нет target/work_sets/
+ * унаследованного снаряда — вне цикла программы, наследовать нечего. */
+export interface FreeWorkoutPlan {
+  status: string;
+  workout_set_id: number | null;
+  band_items: BandItemInfo[];
+}
+
+export async function fetchFreeWorkoutPlan(initDataRaw: string): Promise<FreeWorkoutPlan> {
+  return apiGet<FreeWorkoutPlan>("/api/free-workout/plan", initDataRaw);
+}
+
+/** POST /api/free-workout/submit — снаряд здесь ВСЕГДА явный выбор, как у
+ * бэкдейта, working_reps — произвольная длина (сколько реально подходов
+ * сделал, столько и вводит, не фиксированные 3+1). */
+export interface FreeWorkoutSubmitRequest {
+  working_reps: number[];
+  max_reps: number;
+  equipment_type: string;
+  equipment_value?: string | null;
+  equipment_item_id?: number | null;
+  comment?: string | null;
+  confirm_anomalies: boolean;
+}
+
+export interface FreeWorkoutSubmitResponse {
+  status: string;
+  result_text: string | null;
+  equipment: EquipmentInfo | null;
+  anomalies: AnomalyFlags | null;
+}
+
+export async function submitFreeWorkout(
+  initDataRaw: string,
+  body: FreeWorkoutSubmitRequest,
+): Promise<FreeWorkoutSubmitResponse> {
+  return apiPost<FreeWorkoutSubmitRequest, FreeWorkoutSubmitResponse>("/api/free-workout/submit", initDataRaw, body);
+}
+
 /** PUT /api/workout/draft (issue #61) — сохраняет накопленный прогресс
  * живой тренировки после каждого завершённого подхода, весь массив разом,
  * не по одному подходу. В отличие от WorkoutSubmitRequest working_reps

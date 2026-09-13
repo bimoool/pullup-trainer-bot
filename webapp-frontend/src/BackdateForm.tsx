@@ -35,7 +35,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
 };
 
-const EQUIPMENT_TYPE_LABELS: { value: string; label: string }[] = [
+export const EQUIPMENT_TYPE_LABELS: { value: string; label: string }[] = [
   { value: "band", label: "Резина" },
   { value: "bodyweight", label: "Свой вес" },
   { value: "weight", label: "Отягощение" },
@@ -49,9 +49,12 @@ function todayIsoDate(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
-type EquipmentChoice = { type: string; value: string; bandItemId: string };
+export type EquipmentChoice = { type: string; value: string; bandItemId: string };
 
-function EquipmentTypeFields({
+/** Явный выбор снаряда (тип + значение/резина) — переиспользуется формой
+ * свободных подтягиваний (issue #109, FreeWorkoutScreen.tsx), тот же смысл,
+ * что и здесь: снаряд не наследуется из прогрессии, вводится явно. */
+export function EquipmentTypeFields({
   letter,
   choice,
   onTypeChange,

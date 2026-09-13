@@ -12,6 +12,7 @@ import {
 } from "./api";
 import { BackdateForm } from "./BackdateForm";
 import { ElectiveScreen } from "./ElectiveScreen";
+import { FreeWorkoutScreen } from "./FreeWorkoutScreen";
 import { LiveWorkoutScreen } from "./LiveWorkoutScreen";
 
 type Props = {
@@ -349,6 +350,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   const [showBackdate, setShowBackdate] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showElective, setShowElective] = useState(false);
+  const [showFreeWorkout, setShowFreeWorkout] = useState(false);
   // Экран выбора действия по умолчанию (issue #108) — форма ввода
   // результата сегодняшней тренировки больше не показывается сразу под
   // planом, а только после явного нажатия 4-й кнопки "📝 Внести результат
@@ -482,6 +484,16 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
     );
   }
 
+  if (showFreeWorkout) {
+    return (
+      <FreeWorkoutScreen
+        initDataRaw={initDataRaw}
+        onCancel={() => setShowFreeWorkout(false)}
+        onDone={() => setShowFreeWorkout(false)}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю план тренировки…</p>;
   }
@@ -518,6 +530,12 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
         </Button>
         <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowBackdate(true)}>
           🔁 Внести пропущенную тренировку
+        </Button>
+        {/* Свободные подтягивания (issue #109) не гейтуются готовностью к
+            обычной тренировке, как и бэкдейт выше — доступны и на статусе
+            "сегодня отдых", и на любом другом not_ready. */}
+        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowFreeWorkout(true)}>
+          ➕ Внести свободные подтягивания
         </Button>
       </div>
     );
@@ -617,6 +635,9 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
           </Button>
           <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
             🎯 Факультатив
+          </Button>
+          <Button mode="outline" size="s" onClick={() => setShowFreeWorkout(true)}>
+            ➕ Внести свободные подтягивания
           </Button>
           <Button mode="outline" size="s" onClick={() => setShowForm(true)}>
             📝 Внести результат тренировки
