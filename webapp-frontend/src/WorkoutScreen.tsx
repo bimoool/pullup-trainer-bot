@@ -184,6 +184,65 @@ export function BandItemSelect({
   );
 }
 
+/** Поля правки веса/резины "на месте" (issue #45/#48/#102) — вынесены из
+ * BlockForm (issue #106), чтобы HistoryEditForm.tsx могла показать те же
+ * поля рядом с формой блока Б в формате "только итог" (issue #88), у
+ * которой нет обычной сетки рабочих подходов, но правка веса/резины имеет
+ * тот же смысл, что и у раскладки по подходам. */
+export function EquipmentCorrectionFields({
+  letter,
+  equipmentType,
+  equipmentLabel,
+  actualWeightValue,
+  onActualWeightChange,
+  bandItems,
+  bandItemValue,
+  onBandItemChange,
+  onOpenFaq,
+}: {
+  letter: "A" | "B";
+  equipmentType: string | undefined;
+  equipmentLabel: string | undefined;
+  actualWeightValue: string;
+  onActualWeightChange: (value: string) => void;
+  bandItems: BandItemInfo[];
+  bandItemValue: string;
+  onBandItemChange: (value: string) => void;
+  onOpenFaq?: () => void;
+}) {
+  return (
+    <>
+      {equipmentType === "weight" && (
+        <Input
+          header="Фактический вес (кг), если отличается"
+          after="кг"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="0.5"
+          placeholder={equipmentLabel}
+          aria-label={`Блок ${letter}, фактический вес`}
+          value={actualWeightValue}
+          onChange={(e) => onActualWeightChange(e.target.value)}
+        />
+      )}
+
+      {equipmentType === "band" && bandItems.length > 0 && (
+        <BandItemSelect letter={letter} bandItems={bandItems} value={bandItemValue} onChange={onBandItemChange} />
+      )}
+
+      {equipmentType === "band" && onOpenFaq && (
+        <p className="hint">
+          Тугая резина — целевое число повторений даётся легко; слабая — не получается даже с ней.{" "}
+          <button type="button" className="hint-link" onClick={onOpenFaq}>
+            Как выбрать резину →
+          </button>
+        </p>
+      )}
+    </>
+  );
+}
+
 export function BlockForm({
   letter,
   target,
@@ -261,46 +320,21 @@ export function BlockForm({
         />
       </div>
 
-      {/* Только для WEIGHT (issue #45, часть 2) — снаряд наследуется из
-          прогрессии молча, реально взятый вес мог отличаться. У BAND/
-          BODYWEIGHT/AUSTRALIAN "вес" не имеет отдельного смысла (см.
-          app/web/routes.py::submit_workout — сервер игнорирует поле для
-          остальных типов), поле здесь просто не показывается. */}
-      {equipmentType === "weight" && (
-        <Input
-          header="Фактический вес (кг), если отличается"
-          after="кг"
-          type="number"
-          inputMode="decimal"
-          min={0}
-          step="0.5"
-          placeholder={equipmentLabel}
-          aria-label={`Блок ${letter}, фактический вес`}
-          value={actualWeightValue}
-          onChange={(e) => onActualWeightChange(e.target.value)}
-        />
-      )}
-
-      {/* Выбор резины (issue #48) — тот же принцип, что actual weight выше,
-          только для BAND: снаряд наследуется молча, реально взятая резина
-          могла отличаться. band_items пуст, если у пользователя ещё нет
-          личного списка резин — тогда селект не показывается вовсе. */}
-      {equipmentType === "band" && bandItems.length > 0 && (
-        <BandItemSelect letter={letter} bandItems={bandItems} value={bandItemValue} onChange={onBandItemChange} />
-      )}
-
-      {/* Сноска "Как выбрать резину" (issue #102) — короткая подсказка, не
-          полный текст (полный текст только на FaqScreen, открывается этой
-          же кнопкой). Показывается при любом BAND, не только когда уже есть
-          личный список резин — актуально и до первого добавления резины. */}
-      {equipmentType === "band" && onOpenFaq && (
-        <p className="hint">
-          Тугая резина — целевое число повторений даётся легко; слабая — не получается даже с ней.{" "}
-          <button type="button" className="hint-link" onClick={onOpenFaq}>
-            Как выбрать резину →
-          </button>
-        </p>
-      )}
+      {/* Правка веса/резины "на месте" (issue #45/#48/#102) — снаряд
+          наследуется из прогрессии молча, реально взятый мог отличаться.
+          Вынесено в EquipmentCorrectionFields (issue #106), переиспользуется
+          и формой блока Б в формате "только итог" в HistoryEditForm.tsx. */}
+      <EquipmentCorrectionFields
+        letter={letter}
+        equipmentType={equipmentType}
+        equipmentLabel={equipmentLabel}
+        actualWeightValue={actualWeightValue}
+        onActualWeightChange={onActualWeightChange}
+        bandItems={bandItems}
+        bandItemValue={bandItemValue}
+        onBandItemChange={onBandItemChange}
+        onOpenFaq={onOpenFaq}
+      />
     </Section>
   );
 }

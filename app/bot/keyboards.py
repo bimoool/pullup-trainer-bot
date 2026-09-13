@@ -250,6 +250,22 @@ def backdate_block_b_total_max_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def edit_block_b_total_max_keyboard() -> InlineKeyboardMarkup:
+    """Тот же смысл, что backdate_block_b_total_max_keyboard, для правки уже
+    существующей записи в формате "только итог" (issue #106) — формат
+    ввода при правке не переключается, режим "только итог" фиксирован
+    исходной записью, поэтому здесь нет шага выбора режима, только
+    итог → опциональный максимум. "← Назад" ведёт на переввод самого
+    итога (edit_back:block_b_total), не на дату/выбор формата — их в
+    сценарии правки нет."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить", callback_data="edit_skip_block_b_total_max")
+    builder.button(text="← Назад", callback_data="edit_back:block_b_total")
+    builder.button(text="❌ Отмена", callback_data="cancel_flow")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
 def anomaly_confirm_keyboard() -> InlineKeyboardMarkup:
     """Уточнение по подозрительно введённому результату (пакет #4) —
     callback_data одинаков для всех точек входа (живая тренировка/

@@ -141,7 +141,10 @@ async def test_get_history_workout_returns_details_and_is_editable(session):
     assert Decimal(body["block_b"]["equipment"]["value"]) == WEIGHT_VALUE
 
 
-async def test_get_history_workout_marks_backdated_as_not_editable(session):
+async def test_get_history_workout_marks_backdated_as_editable(session):
+    """issue #106 — раньше backdated записи не редактировались вовсе
+    (is_editable=False), теперь редактируются, просто без пересчёта
+    цели/каскада (WorkoutRepository.edit_noncascade_workout)."""
     user, _workouts = await _make_chain(session, telegram_id=54005)
     workout_set = (await WorkoutSetRepository(session).get_active_for_user(user.id))
     backdated = await WorkoutRepository(session).record_backdated_workout(
@@ -154,13 +157,39 @@ async def test_get_history_workout_marks_backdated_as_not_editable(session):
 
     response = await _get_history_detail_raw(session, telegram_id=user.telegram_id, workout_id=backdated.id)
     assert response.status_code == 200
-    assert response.json()["is_editable"] is False
+    body = response.json()
+    assert body["is_editable"] is True
+    assert body["block_b"]["reported_volume"] is None
+
+
+async def test_get_history_workout_returns_reported_volume_for_total_format_backdate(session):
+    user, _workouts = await _make_chain(session, telegram_id=54014)
+    workout_set = (await WorkoutSetRepository(session).get_active_for_user(user.id))
+    backdated = await WorkoutRepository(session).record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=datetime.now(UTC) - timedelta(days=3),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(), max_reps=0, reported_volume=50),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=WEIGHT_VALUE,
+    )
+
+    response = await _get_history_detail_raw(session, telegram_id=user.telegram_id, workout_id=backdated.id)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_editable"] is True
+    assert body["block_b"]["working_reps"] == []
+    assert body["block_b"]["max_reps"] == 0
+    assert body["block_b"]["reported_volume"] == 50
 
 
 # --- PATCH /api/history/{workout_id} -------------------------------------------------
 
 
-async def test_patch_history_workout_rejects_non_editable_backdated_workout(session):
+async def test_patch_history_workout_edits_backdated_workout_without_recalculating_target(session):
+    """issue #106 — правка бэкдейт-записи через тот же PATCH-эндпойнт, что и
+    обычные тренировки, но без пересчёта цели/каскада (WorkoutRepository.
+    edit_noncascade_workout), в отличие от рассмотренного выше поведения
+    для тренировок цепочки каскада."""
     user, _workouts = await _make_chain(session, telegram_id=54006)
     workout_set = (await WorkoutSetRepository(session).get_active_for_user(user.id))
     backdated = await WorkoutRepository(session).record_backdated_workout(
@@ -170,13 +199,65 @@ async def test_patch_history_workout_rejects_non_editable_backdated_workout(sess
         block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
         block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=WEIGHT_VALUE,
     )
+    before_a = next(b for b in backdated.blocks if b.block_type == BlockType.A)
+    before_b = next(b for b in backdated.blocks if b.block_type == BlockType.B)
+    target_a_before, target_b_before = before_a.target_after, before_b.target_after
+
     payload = {
         "block_a_working_reps": [12, 12, 12], "block_a_max_reps": 13,
         "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
         "comment": None, "confirm_anomalies": False,
     }
-    response = await _patch_history_raw(session, telegram_id=user.telegram_id, workout_id=backdated.id, payload=payload)
-    assert response.status_code == 400
+    body = await _patch_history(session, telegram_id=user.telegram_id, workout_id=backdated.id, payload=payload)
+    assert body["status"] == "ok"
+    assert body["target_a"] == target_a_before
+    assert body["target_b"] == target_b_before
+
+    updated = await WorkoutRepository(session).get_by_id(backdated.id)
+    updated_a = next(b for b in updated.blocks if b.block_type == BlockType.A)
+    updated_b = next(b for b in updated.blocks if b.block_type == BlockType.B)
+    assert updated_a.working_reps == [12, 12, 12]
+    assert updated_a.max_reps == 13
+    assert updated_b.working_reps == [4, 4, 4, 4]
+    assert updated_a.target_after == target_a_before
+    assert updated_b.target_after == target_b_before
+
+
+async def test_patch_history_workout_edits_total_format_backdated_block_b(session):
+    user, _workouts = await _make_chain(session, telegram_id=54015)
+    workout_set = (await WorkoutSetRepository(session).get_active_for_user(user.id))
+    backdated = await WorkoutRepository(session).record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=datetime.now(UTC) - timedelta(days=3),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(), max_reps=0, reported_volume=50),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=WEIGHT_VALUE,
+    )
+
+    payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_b_working_reps": [], "block_b_max_reps": 15, "block_b_reported_volume": 70,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _patch_history(session, telegram_id=user.telegram_id, workout_id=backdated.id, payload=payload)
+    assert body["status"] == "ok"
+
+    updated = await WorkoutRepository(session).get_by_id(backdated.id)
+    updated_b = next(b for b in updated.blocks if b.block_type == BlockType.B)
+    assert updated_b.working_reps == []
+    assert updated_b.max_reps == 15
+    assert updated_b.reported_volume == 70
+
+
+async def test_patch_history_workout_rejects_working_reps_together_with_reported_volume(session):
+    user, workouts = await _make_chain(session, telegram_id=54016)
+    payload = {
+        "block_a_working_reps": [10, 10, 10], "block_a_max_reps": 11,
+        "block_b_working_reps": [3, 3, 3, 3], "block_b_max_reps": 3, "block_b_reported_volume": 50,
+        "comment": None, "confirm_anomalies": False,
+    }
+    response = await _patch_history_raw(session, telegram_id=user.telegram_id, workout_id=workouts[0].id, payload=payload)
+    assert response.status_code == 422
 
 
 async def test_patch_history_workout_uses_same_cascade_as_direct_repository_call(session):
