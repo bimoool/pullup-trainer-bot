@@ -45,11 +45,22 @@ export const STATUS_MESSAGES: Record<string, string> = {
   first_workout: "Это твоя первая тренировка — замер и выбор снаряда пока доступны только в боте.",
   too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
   gap_retest_required: "Был долгий перерыв — нужен повторный замер, начни его в боте.",
-  deload_due: "Пора на ежемесячный тест на максимум блока на объём — эта форма пока доступна только в боте.",
   equipment_setup_required: "Нужно заново выбрать снаряд для одного из блоков — сделай это в боте.",
   no_active_set: "Не получилось открыть тренировочный цикл. Напиши в поддержку через бота.",
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
 };
+
+// Тот же текст, что app.bot.texts.VOLUME_DELOAD_PROMPT (issue #89, ввод
+// перенесён в Mini App issue #105) — независимая копия строки, как и весь
+// остальной текст интерфейса (см. WORK_SETS_GROWTH_NOTICES выше), просто
+// без плейсхолдера reference (он уже показан числом в заголовке блока).
+const VOLUME_MAX_TEST_HINT =
+  "Раз в месяц вместо обычной структуры блока A — один подход на максимум, без " +
+  "отягощения: подтянись столько раз, сколько реально сможешь, до отказа. Никакого " +
+  "обязательного числа нет — цифра выше только примерный масштаб (в полтора раза " +
+  "больше твоей обычной рабочей цели), не порог, который нужно выполнить. На " +
+  "основной прогресс это не влияет — только в статистику. Блок Б дальше пройдёт " +
+  "как в обычной тренировке.";
 
 // Тот же текст, что app.bot.texts.WORK_SETS_GROWTH_STALL_NOTICE/
 // WORK_SETS_GROWTH_CEILING_NOTICE (issue #79) — независимая копия строки,
@@ -184,6 +195,44 @@ export function BandItemSelect({
   );
 }
 
+/** Ежемесячный тест на максимум блока A (issue #89, ввод перенесён в Mini
+ * App issue #105) — один подход, одно число, без структуры обычных блоков
+ * (см. VOLUME_MAX_TEST_HINT — тот же текст, что VOLUME_DELOAD_PROMPT бота).
+ * target здесь — ОРИЕНТИР (plan.target_a уже содержит округлённое
+ * round(обычная цель × 1.5), не жёсткая цель), не число рабочих подходов. */
+export function MaxTestForm({
+  target,
+  value,
+  onChange,
+}: {
+  target: number | null;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Section className="block-section" header={`Блок A — тест на максимум (ориентир ${target})`}>
+      <div className="block-header">
+        <div className="block-badge">A</div>
+        <p className="block-subtitle">1 подход на максимум · без веса</p>
+      </div>
+      <p className="hint">{VOLUME_MAX_TEST_HINT}</p>
+      <span className="field-label">Сколько реально подтянулся</span>
+      <div className="set-grid">
+        <input
+          className="set-input max-input"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={999}
+          aria-label="Блок A, тест на максимум"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    </Section>
+  );
+}
+
 export function BlockForm({
   letter,
   target,
@@ -312,6 +361,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
+  const [blockAMaxTest, setBlockAMaxTest] = useState("");
   const [blockBWorking, setBlockBWorking] = useState<string[]>([]);
   const [blockBMax, setBlockBMax] = useState("");
   const [blockAActualWeight, setBlockAActualWeight] = useState("");
@@ -352,11 +402,29 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
   }, [initDataRaw]);
 
   async function handleSubmit(plan: WorkoutPlanResponse, confirmAnomalies: boolean) {
-    const workingA = parseSetValues(blockAWorking);
-    const maxA = parseSetValue(blockAMax);
+    // Тест на максимум блока A (issue #89/#105) — один подход, одно число,
+    // без обычной раскладки по подходам; блок Б идёт как всегда.
+    let blockAFields: Pick<WorkoutSubmitRequest, "block_a_working_reps" | "block_a_max_reps" | "block_a_max_test_reps">;
+    if (plan.is_deload_a) {
+      const maxTest = parseSetValue(blockAMaxTest);
+      if (maxTest === null) {
+        setFormError("Впиши результат теста на максимум числом.");
+        return;
+      }
+      blockAFields = { block_a_working_reps: null, block_a_max_reps: null, block_a_max_test_reps: maxTest };
+    } else {
+      const workingA = parseSetValues(blockAWorking);
+      const maxA = parseSetValue(blockAMax);
+      if (workingA === null || maxA === null) {
+        setFormError("Заполни все подходы числами — пустые или нечисловые поля недопустимы.");
+        return;
+      }
+      blockAFields = { block_a_working_reps: workingA, block_a_max_reps: maxA };
+    }
+
     const workingB = parseSetValues(blockBWorking);
     const maxB = parseSetValue(blockBMax);
-    if (workingA === null || maxA === null || workingB === null || maxB === null) {
+    if (workingB === null || maxB === null) {
       setFormError("Заполни все подходы числами — пустые или нечисловые поля недопустимы.");
       return;
     }
@@ -369,8 +437,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
     setFormError(null);
 
     const body: WorkoutSubmitRequest = {
-      block_a_working_reps: workingA,
-      block_a_max_reps: maxA,
+      ...blockAFields,
       block_b_working_reps: workingB,
       block_b_max_reps: maxB,
       block_a_actual_weight: actualWeightA.value,
@@ -546,23 +613,27 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
         </Button>
       </div>
 
-      <BlockForm
-        letter="A"
-        target={plan.target_a}
-        workSets={plan.work_sets_a}
-        equipmentType={plan.equipment_a?.type}
-        equipmentLabel={plan.equipment_a?.label}
-        workingValues={blockAWorking}
-        onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
-        maxValue={blockAMax}
-        onMaxChange={setBlockAMax}
-        actualWeightValue={blockAActualWeight}
-        onActualWeightChange={setBlockAActualWeight}
-        bandItems={plan.band_items}
-        bandItemValue={blockABandItem}
-        onBandItemChange={setBlockABandItem}
-        onOpenFaq={onOpenFaq}
-      />
+      {plan.is_deload_a ? (
+        <MaxTestForm target={plan.target_a} value={blockAMaxTest} onChange={setBlockAMaxTest} />
+      ) : (
+        <BlockForm
+          letter="A"
+          target={plan.target_a}
+          workSets={plan.work_sets_a}
+          equipmentType={plan.equipment_a?.type}
+          equipmentLabel={plan.equipment_a?.label}
+          workingValues={blockAWorking}
+          onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
+          maxValue={blockAMax}
+          onMaxChange={setBlockAMax}
+          actualWeightValue={blockAActualWeight}
+          onActualWeightChange={setBlockAActualWeight}
+          bandItems={plan.band_items}
+          bandItemValue={blockABandItem}
+          onBandItemChange={setBlockABandItem}
+          onOpenFaq={onOpenFaq}
+        />
+      )}
 
       <BlockForm
         letter="B"

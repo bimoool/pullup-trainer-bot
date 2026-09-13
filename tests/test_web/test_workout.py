@@ -2,11 +2,13 @@
 (issue #36): форма ввода результатов тренировки, тонкая обвязка вокруг
 тех же repositories/services/domain, что использует бот
 (app/bot/handlers/workout.py). Сужение скоупа, согласованное в issue:
-только "обычная" тренировка (needs_new_equipment=False для обоих блоков,
-не разгрузочная) и gap_rollback — остальные случаи (too_early,
-gap_retest_required, deload_due, equipment_setup_required, first_workout,
-без подписки/онбординга) Mini App не обрабатывает формой, только сообщает
-статус, тот же самый, что определил бы ветку в боте.
+"обычная" тренировка (needs_new_equipment=False для обоих блоков) и
+gap_rollback — остальные случаи (too_early, gap_retest_required,
+equipment_setup_required, first_workout, без подписки/онбординга) Mini App
+не обрабатывает формой, только сообщает статус, тот же самый, что
+определил бы ветку в боте. Тест на максимум блока A (issue #89) — тоже
+внутри "ready" (issue #105, ввод перенесён в Mini App, см. is_deload_a
+ниже) — единственный из "особых" случаев, для которого форма реально есть.
 
 Главное, что эти тесты доказывают (issue #36, п.8 плана): POST
 /api/workout/submit пишет тренировку ЧЕРЕЗ WorkoutLogService.record_workout
@@ -29,7 +31,7 @@ from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
-from app.domain.constants import ROLLBACK_REPS, EquipmentType
+from app.domain.constants import ROLLBACK_REPS, VOLUME_MAX_TEST_REFERENCE_MULTIPLIER, EquipmentType
 from app.domain.session import BlockLog
 from app.services.subscription import SubscriptionService
 from app.web.auth import get_validated_init_data
@@ -131,6 +133,29 @@ async def _make_returning_user_with_weight_block_b(
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
         block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
         block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=weight_value,
+    )
+    return user
+
+
+async def _make_user_due_for_max_test(session, *, telegram_id: int) -> User:
+    """Тот же фикстура-приём, что tests/test_bot/test_volume_deload.py::
+    _make_user_due_for_deload — блок A уже на весе (проверяем, что тест на
+    максимум форсирует свой вес ДАЖЕ поверх этого), первый сет стартовал 31
+    день назад (DELOAD_INTERVAL_DAYS=30 пройден), последняя тренировка была
+    достаточно давно для READY (не TOO_EARLY/GAP_*)."""
+    user = await UserRepository(session).create(telegram_id=telegram_id, username="maxtest")
+    now = datetime.now(UTC)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=10)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    workout_set.started_at = now - timedelta(days=31)
+    await session.flush()
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=5),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.WEIGHT, block_a_equipment_value=Decimal(5),
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
     )
     return user
 
@@ -239,6 +264,32 @@ async def test_plan_reports_work_sets_growth_reason_before_next_workout(session)
     assert body["work_sets_growth_reason"] == "ceiling"
 
 
+async def test_plan_max_test_day_is_ready_with_reference_target_and_bodyweight(session):
+    """Тест на максимум блока A (issue #89, ввод перенесён в Mini App issue
+    #105) больше не уводит в "deload_due" — статус "ready" с is_deload_a=True,
+    тем же путём, что handle_start_workout бота (см.
+    tests/test_bot/test_volume_deload.py::test_start_workout_shows_deload_prompt_and_forces_bodyweight,
+    те же входные числа). Посчитано вручную (не выведено из тестируемого
+    кода): единственная предшествующая тренировка — target=10, work_sets=3,
+    working_reps=(11,11,11), max_reps=12 → delta=2>0, avg_working=11,
+    step=max(1, ceil(10*0.05))=1, computed_target=12 (< VOLUME_TARGET_CEILING,
+    без отката). Ориентир теста — round(12*1.5)=18."""
+    user = await _make_user_due_for_max_test(session, telegram_id=42020)
+    expected_reference = 18
+    assert round(12 * VOLUME_MAX_TEST_REFERENCE_MULTIPLIER) == expected_reference
+
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+
+    assert body["status"] == "ready"
+    assert body["is_deload_a"] is True
+    assert body["target_a"] == expected_reference
+    assert body["work_sets_a"] == 1
+    assert body["equipment_a"]["type"] == "bodyweight"
+    assert body["equipment_a"]["value"] is None
+    assert body["is_gap_rollback"] is False
+    assert body["work_sets_growth_reason"] is None
+
+
 # --- POST /api/workout/submit -------------------------------------------------------
 
 
@@ -313,6 +364,56 @@ async def test_submit_with_anomaly_requires_confirmation_and_does_not_write(sess
     assert body["status"] == "ok"
     history = await WorkoutRepository(session).list_for_user(user.id)
     assert len(history) == 2
+
+
+# --- POST /api/workout/submit — тест на максимум блока A (issue #89/#105) ----------
+
+
+async def test_submit_max_test_records_frozen_progress_and_forces_bodyweight(session):
+    """Тот же результат, что tests/test_bot/test_volume_deload.py::
+    test_deload_workout_records_frozen_progress_and_summary_suffix, только
+    через Mini App: block_a_max_test_reps вместо block_a_working_reps/
+    block_a_max_reps, снаряд принудительно bodyweight, working_reps=[],
+    target/work_sets блока A заморожены (совпадают до/после)."""
+    user = await _make_user_due_for_max_test(session, telegram_id=42021)
+    actual_max_reps = 15
+
+    payload = {
+        "block_a_working_reps": None, "block_a_max_reps": None, "block_a_max_test_reps": actual_max_reps,
+        "block_b_working_reps": [3, 3, 3, 3], "block_b_max_reps": 4,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+
+    assert body["status"] == "ok"
+    assert body["equipment_a"]["type"] == "bodyweight"
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    block_a = next(b for b in history[-1].blocks if b.block_type == BlockType.A)
+    assert list(block_a.working_reps) == []
+    assert block_a.max_reps == actual_max_reps
+    assert block_a.is_deload is True
+    assert block_a.equipment_type == EquipmentType.BODYWEIGHT
+    assert block_a.target_after == block_a.target_before
+    assert block_a.work_sets_after == block_a.work_sets_before
+    assert block_a.equipment_changed is False
+
+
+async def test_submit_max_test_without_max_test_reps_is_rejected(session):
+    """block_a_max_test_reps обязателен, когда сервер считает день тестом на
+    максимум (context.is_deload_a=True пересчитан заново, не по тому, что
+    клиент фактически прислал) — иначе тихая порча данных (working_reps/
+    max_reps=None ушли бы в BlockLog как попало)."""
+    user = await _make_user_due_for_max_test(session, telegram_id=42022)
+    payload = {
+        "block_a_working_reps": None, "block_a_max_reps": None,
+        "block_b_working_reps": [3, 3, 3, 3], "block_b_max_reps": 4,
+        "comment": None, "confirm_anomalies": False,
+    }
+    response = await _post_submit_raw(session, telegram_id=user.telegram_id, payload=payload)
+    assert response.status_code == 400
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    assert len(history) == 1  # ничего не записалось
 
 
 # --- POST /api/workout/submit — фактический вес (issue #45, часть 2) ---------------

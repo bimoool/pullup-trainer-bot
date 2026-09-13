@@ -31,7 +31,7 @@ from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
-from app.domain.anomalies import detect_anomalies
+from app.domain.anomalies import AnomalyFlags, detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
     DEFAULT_REST_SECONDS_BLOCK_A,
@@ -42,6 +42,7 @@ from app.domain.constants import (
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
     VOLUME_BLOCK,
+    VOLUME_MAX_TEST_REFERENCE_MULTIPLIER,
     EquipmentType,
     VolumeGrowthReason,
     to_signed_load,
@@ -262,9 +263,10 @@ class _PlanContext:
     status="ready" — единственный случай, когда остальные поля заполнены.
     Любой другой статус — точная копия того, что определило бы ветку в
     handle_start_workout (app/bot/handlers/workout.py): too_early,
-    gap_retest_required, deload_due, equipment_setup_required — Mini App их
-    не обрабатывает формой (сужение скоупа Этапа 1, см. issue #36), только
-    gap_rollback остаётся внутри "ready" (see is_gap_rollback)."""
+    gap_retest_required, equipment_setup_required — Mini App их не
+    обрабатывает формой (сужение скоупа Этапа 1, см. issue #36), только
+    gap_rollback и deload (issue #89/#105, тест на максимум блока A)
+    остаются внутри "ready" (см. is_gap_rollback/is_deload_a)."""
 
     status: str
     user_id: int | None = None
@@ -285,6 +287,11 @@ class _PlanContext:
     # equipment_b_value ниже уже подставлен heavy_equipment_value вместо
     # обычного веса, когда is_heavy_b=True (см. _resolve_plan_context).
     is_heavy_b: bool = False
+    # Ежемесячный тест на максимум блока A (issue #89, ввод перенесён в Mini
+    # App issue #105) — тот же флаг, что data["is_deload_a"] бота. target_a
+    # здесь уже содержит ОРИЕНТИР (max_test_reference), а не жёсткую цель —
+    # тот же приём, что target_a_for_display в handle_start_workout.
+    is_deload_a: bool = False
 
 
 async def _resolve_plan_context(
@@ -296,14 +303,16 @@ async def _resolve_plan_context(
     копия правил.
 
     Единственное реальное отличие от бота: needs_new_equipment (для
-    любого блока) и is_volume_deload_due здесь тоже останавливают поток —
-    Mini App Этапа 1 не переспрашивает снаряд и не показывает
-    разгрузочную форму (сужение скоупа, issue #36, согласовано в
-    комментарии к issue), эти случаи ведут пользователя обратно в бота.
-    ensure_active_workout_set (app/services/workout_log.py, общая с ботом
-    функция) вызывается только когда мы точно дошли до "ready" — не
-    заводим лишний WorkoutSet ради статуса, который Mini App всё равно не
-    покажет формой."""
+    любого блока, за вычетом блока A на тесте на максимум — см. ниже)
+    здесь тоже останавливает поток — Mini App Этапа 1 не переспрашивает
+    снаряд (сужение скоупа, issue #36, согласовано в комментарии к issue),
+    этот случай ведёт пользователя обратно в бота. Тест на максимум блока
+    A (issue #89) с issue #105 больше не входит в это исключение — он
+    остаётся внутри "ready" (is_deload_a=True), тем же путём, что и
+    handle_start_workout бота. ensure_active_workout_set (app/services/
+    workout_log.py, общая с ботом функция) вызывается только когда мы
+    точно дошли до "ready" — не заводим лишний WorkoutSet ради статуса,
+    который Mini App всё равно не покажет формой."""
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return _PlanContext(status="not_onboarded")
@@ -323,21 +332,23 @@ async def _resolve_plan_context(
     if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
         return _PlanContext(status="gap_retest_required")
 
-    if await workouts.is_volume_deload_due(user.id, now=now):
-        return _PlanContext(status="deload_due")
+    # Тест на максимум блока A (issue #89, ввод перенесён в Mini App issue
+    # #105) — тот же порядок, что handle_start_workout бота: is_deload_a
+    # считается ДО resolve_next_targets (не влияет на него), но
+    # переопределяет needs_new_equipment/is_gap_rollback/цель блока A ниже.
+    is_deload_a = await workouts.is_volume_deload_due(user.id, now=now)
 
     target_a_state, target_b_state = await workouts.resolve_next_targets(
         user.id, bypass_transition_wait=is_admin,
     )
-    if target_a_state.needs_new_equipment or target_b_state.needs_new_equipment:
+    if (not is_deload_a and target_a_state.needs_new_equipment) or target_b_state.needs_new_equipment:
         return _PlanContext(status="equipment_setup_required")
 
     active_set = await ensure_active_workout_set(session, user.id)
     if active_set is None:
         return _PlanContext(status="no_active_set")
 
-    is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK
-    target_a = rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+    is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK and not is_deload_a
     # Тяжёлая (чётная) тренировка блока Б (issue #97) — подсказка веса, не
     # обычный вес силового блока (тот же приём, что app/bot/handlers/
     # equipment.py::_begin_equipment_setup): is_heavy=True здесь гарантирует
@@ -348,22 +359,44 @@ async def _resolve_plan_context(
         target_b_state.heavy_equipment_value if target_b_state.is_heavy else target_b_state.equipment_value
     )
 
+    if is_deload_a:
+        # Снаряд блока A принудительно свой вес, без переспроса (тот же
+        # приём, что target_a_state_for_setup в handle_start_workout бота):
+        # тест на максимум — не решение о смене снаряда, а разовая
+        # тренировка без веса вне обычной структуры. target_a — ОРИЕНТИР
+        # (round(текущая цель × VOLUME_MAX_TEST_REFERENCE_MULTIPLIER)), не
+        # жёсткая цель — не передаётся в record_workout как
+        # target_a_override (см. submit_workout), только показывается
+        # пользователю.
+        target_a = round(target_a_state.target * VOLUME_MAX_TEST_REFERENCE_MULTIPLIER)
+        equipment_a_type = EquipmentType.BODYWEIGHT
+        equipment_a_value: Decimal | None = None
+        equipment_a_item_id: int | None = None
+        work_sets_a = 1
+    else:
+        target_a = rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+        equipment_a_type = target_a_state.equipment_type
+        equipment_a_value = target_a_state.equipment_value
+        equipment_a_item_id = target_a_state.equipment_item_id
+        work_sets_a = target_a_state.work_sets
+
     return _PlanContext(
         status="ready",
         user_id=user.id,
         workout_set_id=active_set.id,
         target_a=target_a,
         target_b=target_b_state.target,
-        work_sets_a=target_a_state.work_sets,
-        equipment_a_type=target_a_state.equipment_type,
-        equipment_a_value=target_a_state.equipment_value,
-        equipment_a_item_id=target_a_state.equipment_item_id,
+        work_sets_a=work_sets_a,
+        equipment_a_type=equipment_a_type,
+        equipment_a_value=equipment_a_value,
+        equipment_a_item_id=equipment_a_item_id,
         equipment_b_type=target_b_state.equipment_type,
         equipment_b_value=equipment_b_value,
         equipment_b_item_id=target_b_state.equipment_item_id,
         is_gap_rollback=is_gap_rollback,
-        work_sets_growth_reason=target_a_state.work_sets_growth_reason,
+        work_sets_growth_reason=None if is_deload_a else target_a_state.work_sets_growth_reason,
         is_heavy_b=target_b_state.is_heavy,
+        is_deload_a=is_deload_a,
     )
 
 
@@ -418,6 +451,7 @@ async def get_workout_plan(
         ),
         band_items=band_items,
         is_heavy_b=context.is_heavy_b,
+        is_deload_a=context.is_deload_a,
     )
 
 
@@ -450,18 +484,40 @@ async def submit_workout(
     if context.status != "ready":
         return WorkoutSubmitResponse(status=context.status)
 
-    block_a_reps = BlockLog(
-        working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps,
-    )
+    # Тест на максимум блока A (issue #89, ввод перенесён в Mini App issue
+    # #105) — один подход, одно число, без рабочих подходов (тот же смысл,
+    # что parse_reps одного числа в боте: working_reps=(), max_reps=введённое
+    # число). Обычная раскладка по подходам недоступна в этот день — сервер
+    # решает по context.is_deload_a (пересчитан заново, не доверяем клиенту),
+    # не по тому, какие поля клиент фактически прислал.
+    if context.is_deload_a:
+        if body.block_a_max_test_reps is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "block_a_max_test_reps required for max test day")
+        block_a_reps = BlockLog(working_reps=(), max_reps=body.block_a_max_test_reps)
+    else:
+        if body.block_a_working_reps is None or body.block_a_max_reps is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "block_a_working_reps/block_a_max_reps required")
+        block_a_reps = BlockLog(
+            working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps,
+        )
     block_b_reps = BlockLog(
         working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps,
     )
 
     workouts = WorkoutRepository(session)
-    previous_avg_a = await workouts.get_previous_avg_working(context.user_id, BlockType.A)
     previous_avg_b = await workouts.get_previous_avg_working(context.user_id, BlockType.B)
-    anomalies_a = detect_anomalies(
-        block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=context.work_sets_a,
+    # Тест на максимум блока A не проверяется на аномалии вообще (тот же
+    # приём, что handle_block_a_result бота: is_deload_a пропускает
+    # detect_anomalies целиком) — структура ввода намеренно другая (один
+    # подход), сверять её с ожидаемым числом рабочих подходов/скачком
+    # относительно обычной прогрессии смысла не имеет.
+    anomalies_a = (
+        AnomalyFlags() if context.is_deload_a
+        else detect_anomalies(
+            block_a_reps,
+            previous_avg_working=await workouts.get_previous_avg_working(context.user_id, BlockType.A),
+            expected_work_sets=context.work_sets_a,
+        )
     )
     anomalies_b = detect_anomalies(
         block_b_reps, previous_avg_working=previous_avg_b,
@@ -522,7 +578,7 @@ async def submit_workout(
         block_b_equipment_item_id=equipment_b_item_id,
         target_a_override=context.target_a if context.is_gap_rollback else None,
         target_b_override=None,
-        is_deload_a=False,
+        is_deload_a=context.is_deload_a,
         comment=body.comment,
     )
 
@@ -1058,9 +1114,11 @@ async def edit_history_workout(
 class _BackdateContext:
     """Контекст для "Внести пропущенную тренировку" — тот же
     resolve_next_targets, что и _PlanContext, но БЕЗ гейтов too_early/
-    gap_retest_required/deload_due/equipment_setup_required: бэкдейт про
-    прошлое, эти статусы про готовность к СЛЕДУЮЩЕЙ живой тренировке, не
-    про него (согласовано в issue #52). target/equipment здесь — только
+    gap_retest_required/equipment_setup_required и без принудительной
+    структуры теста на максимум (is_volume_deload_due, issue #89/#105):
+    бэкдейт про прошлое, эти статусы/особая структура про готовность к
+    СЛЕДУЮЩЕЙ живой тренировке, не про него (согласовано в issue #52).
+    target/equipment здесь — только
     пример/подсказка для формы, не авторитетное значение, которое просто
     наследуется, как в _PlanContext: реальный тип/значение снаряда всегда
     приходят явно от клиента (BackdateSubmitRequest) — тот же принцип, что

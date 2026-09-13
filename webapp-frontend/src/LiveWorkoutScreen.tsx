@@ -176,6 +176,17 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
           setState({ phase: "not_ready", status: plan.status });
           return;
         }
+        // Тест на максимум блока A (issue #89/#105) — один подход, одно
+        // число, структурно несовместим с этим экраном (buildSteps считает
+        // work_sets_a обычными рабочими подходами + отдельный подход на
+        // максимум, что для теста дало бы 2 инпута вместо одного). Не
+        // реализовано здесь намеренно — ведём на обычную форму WorkoutScreen
+        // (deload_live_unsupported — статус только этого экрана, сервер его
+        // не возвращает, поэтому не пересекается с STATUS_MESSAGES).
+        if (plan.is_deload_a) {
+          setState({ phase: "not_ready", status: "deload_live_unsupported" });
+          return;
+        }
         const workSetsA = plan.work_sets_a ?? 0;
         const workSetsB = plan.work_sets_b ?? 0;
         const steps = buildSteps(workSetsA, workSetsB);
@@ -417,11 +428,13 @@ export function LiveWorkoutScreen({ initDataRaw, onCancel, onDone, onActiveChang
     );
   }
   if (state.phase === "not_ready") {
+    const message = state.status === "deload_live_unsupported"
+      ? "Сегодня — ежемесячный тест на максимум блока A: один подход, без таймеров и отдыха. " +
+        "Введи результат в обычной форме тренировки."
+      : STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`;
     return (
       <div>
-        <p className="screen-message">
-          {STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`}
-        </p>
+        <p className="screen-message">{message}</p>
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>

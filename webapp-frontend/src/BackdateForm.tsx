@@ -26,8 +26,9 @@ type ScreenState =
   | { phase: "done"; result: WorkoutSubmitResponse };
 
 // Тот же узкий набор статусов, что и у GET /api/workout/plan (WorkoutScreen)
-// — бэкдейт дополнительно не гейтует too_early/gap_retest_required/deload_due/
-// equipment_setup_required (issue #52, см. app/web/routes.py::_resolve_backdate_context),
+// — бэкдейт дополнительно не гейтует too_early/gap_retest_required/
+// equipment_setup_required и не форсирует структуру теста на максимум
+// (issue #52/#89, см. app/web/routes.py::_resolve_backdate_context),
 // поэтому их здесь просто нет в списке.
 const STATUS_MESSAGES: Record<string, string> = {
   no_access: "Нет активной подписки. Оформи её в боте, потом возвращайся сюда.",

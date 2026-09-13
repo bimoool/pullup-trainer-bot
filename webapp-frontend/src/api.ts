@@ -47,6 +47,11 @@ export interface WorkoutPlanResponse {
    * повторения, повышенный вес (уже подставлен в equipment_b.value/label
    * сервером, см. app/web/routes.py::_resolve_plan_context). */
   is_heavy_b: boolean;
+  /** Ежемесячный тест на максимум блока A (issue #89, ввод перенесён в Mini
+   * App issue #105) — тот же флаг, что data["is_deload_a"] бота. target_a
+   * тут уже содержит ОРИЕНТИР (не жёсткую цель, см. VOLUME_DELOAD_PROMPT в
+   * боте), work_sets_a всегда 1, equipment_a всегда bodyweight. */
+  is_deload_a: boolean;
 }
 
 export interface AnomalyFlags {
@@ -83,8 +88,15 @@ export interface ProfileResponse {
 }
 
 export interface WorkoutSubmitRequest {
-  block_a_working_reps: number[];
-  block_a_max_reps: number;
+  /** Обычная раскладка по подходам — заполнена, только если план не тест на
+   * максимум (WorkoutPlanResponse.is_deload_a === false); в противном
+   * случае оба поля не заполняются, используется block_a_max_test_reps. */
+  block_a_working_reps: number[] | null;
+  block_a_max_reps: number | null;
+  /** Тест на максимум блока A (issue #89, ввод перенесён в Mini App issue
+   * #105) — один подход, одно число, вместо двух полей выше. Заполняется,
+   * только когда plan.is_deload_a === true. */
+  block_a_max_test_reps?: number | null;
   block_b_working_reps: number[];
   block_b_max_reps: number;
   /** Необязательная правка веса на месте (issue #45, часть 2) — тот же

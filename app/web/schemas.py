@@ -70,6 +70,14 @@ class WorkoutPlanResponse(BaseModel):
     # формулировку формы блока Б на основании этого флага, парсинг ввода не
     # меняется (тот же принцип, что и у бота).
     is_heavy_b: bool = False
+    # Ежемесячный тест на максимум блока A (issue #89, перенесён в Mini App
+    # issue #105) — тот же флаг, что data["is_deload_a"] в FSM бота
+    # (app/bot/handlers/workout.py). Когда True: target_a уже содержит
+    # ОРИЕНТИР (round(обычная цель × VOLUME_MAX_TEST_REFERENCE_MULTIPLIER),
+    # не жёсткую цель — тот же текст, что VOLUME_DELOAD_PROMPT), work_sets_a
+    # всегда 1, equipment_a всегда bodyweight — фронтенд показывает один
+    # числовой инпут вместо обычной раскладки по подходам (см. BlockForm).
+    is_deload_a: bool = False
 
 
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
@@ -79,8 +87,20 @@ Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
 
 
 class WorkoutSubmitRequest(BaseModel):
-    block_a_working_reps: list[Reps] = Field(min_length=1)
-    block_a_max_reps: Reps
+    # Обычная раскладка по подходам — обязательна, если план НЕ тест на
+    # максимум (context.is_deload_a=False на сервере, см. submit_workout);
+    # для теста на максимум (issue #89/#105) оба поля не заполняются вовсе
+    # — используется block_a_max_test_reps ниже. Optional на уровне схемы,
+    # а не Field(min_length=1) всегда, потому что какое из двух обязательно
+    # решает статус на сервере, а не сама форма запроса.
+    block_a_working_reps: list[Reps] | None = None
+    block_a_max_reps: Reps | None = None
+    # Тест на максимум блока A (issue #89, ввод перенесён в Mini App issue
+    # #105) — один подход, одно число, без рабочих подходов вообще (тот же
+    # смысл, что parse_reps одного числа в боте: working_reps=(), max_reps=
+    # введённое число). Заполняется вместо двух полей выше, только когда
+    # GET /api/workout/plan вернул is_deload_a=True.
+    block_a_max_test_reps: Reps | None = None
     block_b_working_reps: list[Reps] = Field(min_length=1)
     block_b_max_reps: Reps
     # Необязательная правка веса на месте (issue #45, часть 2) — тот же
