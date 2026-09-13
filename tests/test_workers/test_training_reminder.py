@@ -1,7 +1,12 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.workers.training_reminder import JOB_ID, POLL_INTERVAL_MINUTES, register, send_training_reminders
+from app.workers.training_reminder import (
+    JOB_ID,
+    POLL_INTERVAL_MINUTES,
+    register,
+    send_training_reminders,
+)
 
 
 def test_register_adds_job_with_expected_interval():
