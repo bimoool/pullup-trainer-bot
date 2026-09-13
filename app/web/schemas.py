@@ -384,20 +384,29 @@ class HistoryBlockDetail(BaseModel):
     число рабочих подходов на момент ТОЙ тренировки, отдельного work_sets
     не нужно, см. app.bot.handlers.workout_edit::_start_editing).
     target_before — то же число, от которого реально считался ввод (не
-    текущая цель пользователя, если редактируется старая запись)."""
+    текущая цель пользователя, если редактируется старая запись).
+
+    reported_volume (issue #106) — не None только у блока Б бэкдейт-записи,
+    введённой в режиме "только итог" (issue #88, working_reps в этом случае
+    всегда пуст) — фронтенд использует именно это поле, чтобы понять, какую
+    форму показать при правке (раскладку по подходам или итог+максимум), не
+    заставляя переключать формат."""
 
     working_reps: list[int]
     max_reps: int
+    reported_volume: int | None = None
     target_before: int
     equipment: EquipmentInfo
 
 
 class HistoryEditDetailResponse(BaseModel):
     """GET /api/history/{workout_id} — данные для предзаполнения формы
-    редактирования. is_editable — тот же app.bot.handlers.workout_edit::
-    _is_editable (внесённые задним числом/не участвующие в каскаде записи
-    не редактируются через этот путь), импортируется напрямую, не
-    дублируется."""
+    редактирования. is_editable (issue #106) — тренировки цепочки каскада
+    (app.bot.handlers.workout_edit::_is_editable) ИЛИ внесённые не в цепочку
+    (бэкдейт/свободные, participates_in_cascade=False) — те и другие теперь
+    редактируются, просто разными методами репозитория (edit_workout с
+    каскадным пересчётом vs edit_noncascade_workout без него, см.
+    app/web/routes.py::_history_is_editable)."""
 
     workout_id: int
     performed_at: str
@@ -413,18 +422,36 @@ class HistoryEditRequest(BaseModel):
     по умолчанию не переписывает существующий (см. app/web/routes.py:
     edit_history_workout — comment=None оставляет прежний текст, как и
     app.bot.handlers.workout_edit, которая правку комментария вообще не
-    предлагает)."""
+    предлагает).
+
+    block_b_reported_volume (issue #106) — заполняется ТОЛЬКО при правке
+    бэкдейт-записи, изначально введённой в режиме "только итог" (issue
+    #88): тогда block_b_working_reps обязан быть пустым (см.
+    _check_block_b_format), а block_b_max_reps — либо честный максимум,
+    либо 0, если он не был зафиксирован (тот же смысл, что и при первом
+    вводе, см. app.bot.handlers.backdate.py::handle_backdate_block_b_total_max_skip).
+    Для обычных (не бэкдейт) и бэкдейт-записей с честной раскладкой это
+    поле остаётся None, как и раньше."""
 
     block_a_working_reps: list[Reps] = Field(min_length=1)
     block_a_max_reps: Reps
-    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_working_reps: list[Reps] = Field(default_factory=list)
     block_b_max_reps: Reps
+    block_b_reported_volume: Reps | None = None
     block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
     block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
     block_a_actual_band_item_id: int | None = None
     block_b_actual_band_item_id: int | None = None
     comment: str | None = None
     confirm_anomalies: bool = False
+
+    @model_validator(mode="after")
+    def _check_block_b_format(self) -> "HistoryEditRequest":
+        if self.block_b_reported_volume is None and not self.block_b_working_reps:
+            raise ValueError("block_b_working_reps is required unless block_b_reported_volume is given")
+        if self.block_b_reported_volume is not None and self.block_b_working_reps:
+            raise ValueError("block_b_working_reps must be empty when block_b_reported_volume is given")
+        return self
 
 
 class WorkoutDraftRequest(BaseModel):

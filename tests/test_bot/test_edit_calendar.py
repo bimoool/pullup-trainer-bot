@@ -93,12 +93,12 @@ async def test_tapping_day_with_one_editable_workout_starts_editing(
     assert await fsm.get_state() == EditWorkoutStates.waiting_for_block_a.state
 
 
-async def test_tapping_day_with_only_backdated_workout_shows_alert(
+async def test_tapping_day_with_only_backdated_workout_starts_editing(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
-    # Внесённые задним числом не в цепочке каскада — редактировать через
-    # этот сценарий нельзя (см. _is_editable), даже если день отмечен на
-    # общем календаре другими средствами.
+    # Внесённые задним числом не в цепочке каскада, но теперь тоже
+    # редактируются (issue #106) — просто через edit_noncascade_workout
+    # вместо edit_workout (см. _is_history_editable), без пересчёта цели.
     await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
     baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=10)
     workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
@@ -112,7 +112,7 @@ async def test_tapping_day_with_only_backdated_workout_shows_alert(
         bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:edit:2026-08-05"), session=session,
     )
 
-    assert await fsm.get_state() is None
+    assert await fsm.get_state() == EditWorkoutStates.waiting_for_block_a.state
 
 
 async def test_tapping_day_with_two_editable_workouts_shows_sub_picker(

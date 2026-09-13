@@ -953,9 +953,20 @@ def _history_block_detail(block) -> HistoryBlockDetail:
     return HistoryBlockDetail(
         working_reps=list(block.working_reps),
         max_reps=block.max_reps,
+        reported_volume=block.reported_volume,
         target_before=block.target_before,
         equipment=_equipment_info(block.equipment_type, block.equipment_value, block.equipment_item_id),
     )
+
+
+def _history_is_editable(workout) -> bool:
+    """Тренировки цепочки каскада (_is_editable) ИЛИ внесённые не в цепочку
+    (бэкдейт/свободные, participates_in_cascade=False) — issue #106
+    добавляет второй случай, раньше такие записи не редактировались вовсе.
+    Правка идёт разными методами репозитория в зависимости от ветки (см.
+    edit_history_workout), но сам факт "редактируется" — один на оба
+    случая."""
+    return _is_editable(workout) or not workout.participates_in_cascade
 
 
 @router.get("/history/{workout_id}", response_model=HistoryEditDetailResponse)
@@ -981,7 +992,7 @@ async def get_history_workout(
     return HistoryEditDetailResponse(
         workout_id=workout.id,
         performed_at=workout.performed_at.date().isoformat(),
-        is_editable=_is_editable(workout),
+        is_editable=_history_is_editable(workout),
         comment=workout.comment,
         block_a=_history_block_detail(block_a),
         block_b=_history_block_detail(block_b),
@@ -995,14 +1006,27 @@ async def edit_history_workout(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> WorkoutSubmitResponse:
-    """Правит уже введённые повторения прошлой тренировки через
-    WorkoutRepository.edit_workout — тот же каскадный пересчёт
-    (recalculate_cascade) последующих тренировок цепочки, что и
-    app.bot.handlers.workout_edit, не отдельная веб-копия. Аномалии — тот
-    же двухшаговый паттерн, что и submit_workout/submit_backdated_workout
-    (anomaly_confirm_required без confirm_anomalies=True ничего не пишет).
-    Правка веса/резины "на месте" — тот же приём, что submit_workout,
-    применяется отдельным correct_block_equipment ПОСЛЕ edit_workout."""
+    """Правит уже введённые повторения прошлой тренировки.
+
+    Тренировки цепочки каскада идут через WorkoutRepository.edit_workout —
+    тот же каскадный пересчёт (recalculate_cascade) последующих тренировок
+    цепочки, что и app.bot.handlers.workout_edit, не отдельная веб-копия.
+
+    Внесённые не в цепочку (бэкдейт/свободные, issue #106) идут через
+    edit_noncascade_workout — правит только сами цифры записи, без
+    пересчёта цели/каскада (тот же инвариант, что и при первом вводе таких
+    записей, issue #88). block_b_reported_volume — формат "только итог"
+    блока Б бэкдейта (issue #88): аномалии для него не проверяются вообще,
+    тем же принципом, что и при первом вводе в этом режиме
+    (app.bot.handlers.backdate.py не вызывает detect_anomalies для
+    waiting_for_block_b_total[_max]) — реальный объём здесь не в
+    working_reps/max_reps, проверка смотрела бы не на то число.
+
+    Аномалии (когда применимо) — тот же двухшаговый паттерн, что и
+    submit_workout/submit_backdated_workout (anomaly_confirm_required без
+    confirm_anomalies=True ничего не пишет). Правка веса/резины "на месте"
+    — тот же приём, что submit_workout, применяется отдельным
+    correct_block_equipment ПОСЛЕ edit_workout/edit_noncascade_workout."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
@@ -1011,8 +1035,10 @@ async def edit_history_workout(
     workout = await workouts.get_by_id(workout_id)
     if workout is None or workout.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    if not _is_editable(workout):
+    if not _history_is_editable(workout):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Workout is not editable")
+
+    is_cascade = workout.participates_in_cascade
 
     block_a_orig = next(b for b in workout.blocks if b.block_type == BlockType.A)
     expected_work_sets_a = (
@@ -1022,20 +1048,26 @@ async def edit_history_workout(
     )
 
     block_a_reps = BlockLog(working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps)
-    block_b_reps = BlockLog(working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps)
+    block_b_reps = BlockLog(
+        working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps,
+        reported_volume=body.block_b_reported_volume,
+    )
 
     previous_avg_a = await workouts.get_previous_avg_working(
         user.id, BlockType.A, before=workout.performed_at,
     )
-    previous_avg_b = await workouts.get_previous_avg_working(
-        user.id, BlockType.B, before=workout.performed_at,
-    )
     anomalies_a = detect_anomalies(
         block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
     )
-    anomalies_b = detect_anomalies(
-        block_b_reps, previous_avg_working=previous_avg_b, expected_work_sets=STRENGTH_BLOCK.work_sets,
-    )
+    if body.block_b_reported_volume is None:
+        previous_avg_b = await workouts.get_previous_avg_working(
+            user.id, BlockType.B, before=workout.performed_at,
+        )
+        anomalies_b = detect_anomalies(
+            block_b_reps, previous_avg_working=previous_avg_b, expected_work_sets=STRENGTH_BLOCK.work_sets,
+        )
+    else:
+        anomalies_b = AnomalyFlags()
     if not body.confirm_anomalies and (not anomalies_a.is_empty() or not anomalies_b.is_empty()):
         return WorkoutSubmitResponse(
             status="anomaly_confirm_required",
@@ -1059,9 +1091,14 @@ async def edit_history_workout(
         if band_item_b is None or band_item_b.user_id != user.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid band item for block B")
 
-    workout = await workouts.edit_workout(
-        workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
-    )
+    if is_cascade:
+        workout = await workouts.edit_workout(
+            workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
+        )
+    else:
+        workout = await workouts.edit_noncascade_workout(
+            workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
+        )
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
 

@@ -363,9 +363,14 @@ export async function submitWorkout(
  * набор фактов, что app.bot.handlers.workout_edit::_start_editing кладёт в
  * FSM перед переспросом блока A. target_before — цель, от которой реально
  * считался ввод этой тренировки, не текущая цель пользователя. */
+/** reported_volume (issue #106) — не null только у блока Б бэкдейт-записи,
+ * введённой в режиме "только итог" (issue #88, working_reps тогда всегда
+ * пуст) — форма редактирования показывает соответствующий формат ввода
+ * по этому полю, не заставляя переключать формат. */
 export interface HistoryBlockDetail {
   working_reps: number[];
   max_reps: number;
+  reported_volume: number | null;
   target_before: number;
   equipment: EquipmentInfo;
 }
@@ -381,12 +386,18 @@ export interface HistoryEditDetail {
 
 /** PATCH /api/history/{id} — то же тело, что WorkoutSubmitRequest минус
  * comment (правка комментария не входит в этот сценарий ни у бота, ни
- * здесь — см. app/web/routes.py::edit_history_workout). */
+ * здесь — см. app/web/routes.py::edit_history_workout).
+ *
+ * block_b_reported_volume (issue #106) — заполняется только при правке
+ * бэкдейт-записи в формате "только итог": тогда block_b_working_reps
+ * должен быть пустым массивом, а block_b_max_reps — честный максимум либо
+ * 0, если он не был зафиксирован. */
 export interface HistoryEditRequest {
   block_a_working_reps: number[];
   block_a_max_reps: number;
   block_b_working_reps: number[];
   block_b_max_reps: number;
+  block_b_reported_volume?: number | null;
   block_a_actual_weight?: string | null;
   block_b_actual_weight?: string | null;
   block_a_actual_band_item_id?: number | null;

@@ -116,18 +116,17 @@ export function HistoryScreen({ initDataRaw }: Props) {
               {entry.target_b !== null && `, следующая цель ${entry.target_b}`}
             </p>
             {entry.comment && <p className="hint">Комментарий: {entry.comment}</p>}
-            {/* is_backdated здесь эквивалентно "не редактируется" (см.
-                app/web/schemas.py::HistoryEntryResponse) — бэкдейт не входит
-                в цепочку каскада, редактировать его через этот путь нельзя. */}
-            {!entry.is_backdated && (
-              <Button
-                mode="outline"
-                size="s"
-                onClick={() => setEditingWorkoutId(entry.workout_id)}
-              >
-                ✏️ Изменить
-              </Button>
-            )}
+            {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
+                редактируются (issue #106) — просто без пересчёта цели/каскада
+                на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
+                одна для всех записей. */}
+            <Button
+              mode="outline"
+              size="s"
+              onClick={() => setEditingWorkoutId(entry.workout_id)}
+            >
+              ✏️ Изменить
+            </Button>
           </div>
         ))}
       </div>
