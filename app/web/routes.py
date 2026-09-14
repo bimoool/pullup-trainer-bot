@@ -29,9 +29,9 @@ from app.db.repositories.leaderboard import LeaderboardRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
-from app.db.repositories.workouts import WorkoutRepository
+from app.db.repositories.workouts import NextBlockState, WorkoutRepository
 from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
-from app.domain.anomalies import detect_anomalies
+from app.domain.anomalies import AnomalyFlags, detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
     DEFAULT_REST_SECONDS_BLOCK_A,
@@ -92,6 +92,9 @@ from app.web.schemas import (
     EpleyProgressResponse,
     EquipmentInfo,
     EquipmentProgressResponse,
+    FreeWorkoutPlanResponse,
+    FreeWorkoutSubmitRequest,
+    FreeWorkoutSubmitResponse,
     GtoResponse,
     HelloResponse,
     HistoryBlockDetail,
@@ -312,9 +315,10 @@ class _PlanContext:
     status="ready" — единственный случай, когда остальные поля заполнены.
     Любой другой статус — точная копия того, что определило бы ветку в
     handle_start_workout (app/bot/handlers/workout.py): too_early,
-    gap_retest_required, deload_due, equipment_setup_required — Mini App их
-    не обрабатывает формой (сужение скоупа Этапа 1, см. issue #36), только
-    gap_rollback остаётся внутри "ready" (see is_gap_rollback)."""
+    gap_retest_required, equipment_setup_required — Mini App их не
+    обрабатывает формой (сужение скоупа Этапа 1, см. issue #36), только
+    gap_rollback и (issue #105) ежемесячный тест на максимум блока A
+    остаются внутри "ready" (см. is_gap_rollback/is_deload_a)."""
 
     status: str
     user_id: int | None = None
@@ -335,6 +339,12 @@ class _PlanContext:
     # equipment_b_value ниже уже подставлен heavy_equipment_value вместо
     # обычного веса, когда is_heavy_b=True (см. _resolve_plan_context).
     is_heavy_b: bool = False
+    # Ежемесячный тест на максимум блока на объём (issue #89, перенос формы
+    # в Mini App — issue #105) — тот же флаг, что data["is_deload_a"] в FSM
+    # бота. target_a остаётся None, когда True — текст теста (issue #105,
+    # поправка продукта) больше не называет никакого ориентирующего числа
+    # ни в боте, ни здесь.
+    is_deload_a: bool = False
 
 
 async def _resolve_plan_context(
@@ -346,14 +356,17 @@ async def _resolve_plan_context(
     копия правил.
 
     Единственное реальное отличие от бота: needs_new_equipment (для
-    любого блока) и is_volume_deload_due здесь тоже останавливают поток —
-    Mini App Этапа 1 не переспрашивает снаряд и не показывает
-    разгрузочную форму (сужение скоупа, issue #36, согласовано в
-    комментарии к issue), эти случаи ведут пользователя обратно в бота.
-    ensure_active_workout_set (app/services/workout_log.py, общая с ботом
-    функция) вызывается только когда мы точно дошли до "ready" — не
-    заводим лишний WorkoutSet ради статуса, который Mini App всё равно не
-    покажет формой."""
+    любого блока) здесь тоже останавливает поток — Mini App Этапа 1 не
+    переспрашивает снаряд (сужение скоупа, issue #36, согласовано в
+    комментарии к issue), этот случай ведёт пользователя обратно в бота.
+    Ежемесячный тест на максимум блока A (is_volume_deload_due) — с issue
+    #105 больше НЕ останавливает поток, форма перенесена в Mini App тем же
+    приёмом, что _begin_equipment_setup бота (app/bot/handlers/workout.py::
+    handle_start_workout): блок A принудительно свой вес, needs_new_equipment
+    блока A не проверяется вовсе. ensure_active_workout_set (app/services/
+    workout_log.py, общая с ботом функция) вызывается только когда мы точно
+    дошли до "ready" — не заводим лишний WorkoutSet ради статуса, который
+    Mini App всё равно не покажет формой."""
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return _PlanContext(status="not_onboarded")
@@ -373,12 +386,23 @@ async def _resolve_plan_context(
     if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
         return _PlanContext(status="gap_retest_required")
 
-    if await workouts.is_volume_deload_due(user.id, now=now):
-        return _PlanContext(status="deload_due")
+    is_deload_a = await workouts.is_volume_deload_due(user.id, now=now)
 
     target_a_state, target_b_state = await workouts.resolve_next_targets(
         user.id, bypass_transition_wait=is_admin,
     )
+    # Тест на максимум (issue #89, форма в Mini App — issue #105) — блок A
+    # принудительно свой вес, без переспроса (тот же приём, что
+    # target_a_state_for_setup в handle_start_workout бота): needs_new_
+    # equipment блока A никогда не блокирует поток на день теста, target
+    # оставлен равным текущей цели блока A просто чтобы не заводить
+    # бессмысленное число в NextBlockState — наружу (target_a ниже) он не
+    # попадает вовсе, текст теста не называет никакого числа.
+    if is_deload_a:
+        target_a_state = NextBlockState(
+            target=target_a_state.target, volume=0, equipment_type=EquipmentType.BODYWEIGHT,
+            equipment_value=None, equipment_item_id=None, needs_new_equipment=False, work_sets=1,
+        )
     if target_a_state.needs_new_equipment or target_b_state.needs_new_equipment:
         return _PlanContext(status="equipment_setup_required")
 
@@ -386,8 +410,14 @@ async def _resolve_plan_context(
     if active_set is None:
         return _PlanContext(status="no_active_set")
 
-    is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK
-    target_a = rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+    # Гэп-откат блока A не применяется на день теста (та же логика, что
+    # app/bot/handlers/workout.py::handle_start_workout: target_a_override
+    # остаётся None, если is_deload_a) — цель блока A на тест-день всё
+    # равно не показывается пользователю.
+    is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK and not is_deload_a
+    target_a = None if is_deload_a else (
+        rollback_target(target_a_state.target) if is_gap_rollback else target_a_state.target
+    )
     # Тяжёлая (чётная) тренировка блока Б (issue #97) — подсказка веса, не
     # обычный вес силового блока (тот же приём, что app/bot/handlers/
     # equipment.py::_begin_equipment_setup): is_heavy=True здесь гарантирует
@@ -414,6 +444,7 @@ async def _resolve_plan_context(
         is_gap_rollback=is_gap_rollback,
         work_sets_growth_reason=target_a_state.work_sets_growth_reason,
         is_heavy_b=target_b_state.is_heavy,
+        is_deload_a=is_deload_a,
     )
 
 
@@ -468,6 +499,7 @@ async def get_workout_plan(
         ),
         band_items=band_items,
         is_heavy_b=context.is_heavy_b,
+        is_deload_a=context.is_deload_a,
     )
 
 
@@ -510,7 +542,11 @@ async def submit_workout(
     workouts = WorkoutRepository(session)
     previous_avg_a = await workouts.get_previous_avg_working(context.user_id, BlockType.A)
     previous_avg_b = await workouts.get_previous_avg_working(context.user_id, BlockType.B)
-    anomalies_a = detect_anomalies(
+    # Тест на максимум (issue #105) — структура ввода намеренно другая
+    # (один подход без раскладки), сверять с ожидаемым числом рабочих
+    # подходов/скачком нет смысла, тот же принцип, что у
+    # handle_block_a_result бота (app/bot/handlers/workout.py).
+    anomalies_a = AnomalyFlags() if context.is_deload_a else detect_anomalies(
         block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=context.work_sets_a,
     )
     anomalies_b = detect_anomalies(
@@ -572,7 +608,7 @@ async def submit_workout(
         block_b_equipment_item_id=equipment_b_item_id,
         target_a_override=context.target_a if context.is_gap_rollback else None,
         target_b_override=None,
-        is_deload_a=False,
+        is_deload_a=context.is_deload_a,
         comment=body.comment,
     )
 
@@ -598,6 +634,7 @@ async def submit_workout(
         ),
         result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
+        is_deload_a=block_a.is_deload,
     )
 
 
@@ -738,6 +775,17 @@ async def get_history(
     return HistoryResponse(items=items, has_more=offset + limit < len(newest_first))
 
 
+# strength (issue #82) больше не считает резину частью общей шкалы нагрузки
+# (issue #110) — тот же принцип, что epley_progress уже применяет (issue
+# #96): реальное сопротивление резины физически неизвестно (стёртая
+# маркировка, растяжение), сравнивать его с кг отягощения нельзя ни в каком
+# виде, даже со знаком минус. to_signed_load() как функция не тронута — она
+# по-прежнему обслуживает резину для сравнений "легче/тяжелее" внутри
+# прогрессии (recalculate_target), где обе стороны сравнения всегда один и
+# тот же тип снаряда, не для этого графика.
+_STRENGTH_ELIGIBLE_TYPES = (EquipmentType.WEIGHT, EquipmentType.BODYWEIGHT)
+
+
 def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -> Decimal | None:
     """Факт по выбранной метрике (issue #82) — см. докстринг
     ProgressPointResponse для смысла каждой ветки. strength скоуплена на
@@ -748,7 +796,7 @@ def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -
     if metric == "volume":
         return Decimal(block.log.volume)
     # metric == "strength"
-    if block_letter != "b" or block.equipment_type == EquipmentType.AUSTRALIAN:
+    if block_letter != "b" or block.equipment_type not in _STRENGTH_ELIGIBLE_TYPES:
         return None
     return to_signed_load(block.equipment_type, block.equipment_value)
 
@@ -955,9 +1003,20 @@ def _history_block_detail(block) -> HistoryBlockDetail:
     return HistoryBlockDetail(
         working_reps=list(block.working_reps),
         max_reps=block.max_reps,
+        reported_volume=block.reported_volume,
         target_before=block.target_before,
         equipment=_equipment_info(block.equipment_type, block.equipment_value, block.equipment_item_id),
     )
+
+
+def _history_is_editable(workout) -> bool:
+    """Тренировки цепочки каскада (_is_editable) ИЛИ внесённые не в цепочку
+    (бэкдейт/свободные, participates_in_cascade=False) — issue #106
+    добавляет второй случай, раньше такие записи не редактировались вовсе.
+    Правка идёт разными методами репозитория в зависимости от ветки (см.
+    edit_history_workout), но сам факт "редактируется" — один на оба
+    случая."""
+    return _is_editable(workout) or not workout.participates_in_cascade
 
 
 @router.get("/history/{workout_id}", response_model=HistoryEditDetailResponse)
@@ -983,7 +1042,7 @@ async def get_history_workout(
     return HistoryEditDetailResponse(
         workout_id=workout.id,
         performed_at=workout.performed_at.date().isoformat(),
-        is_editable=_is_editable(workout),
+        is_editable=_history_is_editable(workout),
         comment=workout.comment,
         block_a=_history_block_detail(block_a),
         block_b=_history_block_detail(block_b),
@@ -997,14 +1056,27 @@ async def edit_history_workout(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> WorkoutSubmitResponse:
-    """Правит уже введённые повторения прошлой тренировки через
-    WorkoutRepository.edit_workout — тот же каскадный пересчёт
-    (recalculate_cascade) последующих тренировок цепочки, что и
-    app.bot.handlers.workout_edit, не отдельная веб-копия. Аномалии — тот
-    же двухшаговый паттерн, что и submit_workout/submit_backdated_workout
-    (anomaly_confirm_required без confirm_anomalies=True ничего не пишет).
-    Правка веса/резины "на месте" — тот же приём, что submit_workout,
-    применяется отдельным correct_block_equipment ПОСЛЕ edit_workout."""
+    """Правит уже введённые повторения прошлой тренировки.
+
+    Тренировки цепочки каскада идут через WorkoutRepository.edit_workout —
+    тот же каскадный пересчёт (recalculate_cascade) последующих тренировок
+    цепочки, что и app.bot.handlers.workout_edit, не отдельная веб-копия.
+
+    Внесённые не в цепочку (бэкдейт/свободные, issue #106) идут через
+    edit_noncascade_workout — правит только сами цифры записи, без
+    пересчёта цели/каскада (тот же инвариант, что и при первом вводе таких
+    записей, issue #88). block_b_reported_volume — формат "только итог"
+    блока Б бэкдейта (issue #88): аномалии для него не проверяются вообще,
+    тем же принципом, что и при первом вводе в этом режиме
+    (app.bot.handlers.backdate.py не вызывает detect_anomalies для
+    waiting_for_block_b_total[_max]) — реальный объём здесь не в
+    working_reps/max_reps, проверка смотрела бы не на то число.
+
+    Аномалии (когда применимо) — тот же двухшаговый паттерн, что и
+    submit_workout/submit_backdated_workout (anomaly_confirm_required без
+    confirm_anomalies=True ничего не пишет). Правка веса/резины "на месте"
+    — тот же приём, что submit_workout, применяется отдельным
+    correct_block_equipment ПОСЛЕ edit_workout/edit_noncascade_workout."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
@@ -1013,8 +1085,10 @@ async def edit_history_workout(
     workout = await workouts.get_by_id(workout_id)
     if workout is None or workout.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    if not _is_editable(workout):
+    if not _history_is_editable(workout):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Workout is not editable")
+
+    is_cascade = workout.participates_in_cascade
 
     block_a_orig = next(b for b in workout.blocks if b.block_type == BlockType.A)
     expected_work_sets_a = (
@@ -1024,20 +1098,26 @@ async def edit_history_workout(
     )
 
     block_a_reps = BlockLog(working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps)
-    block_b_reps = BlockLog(working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps)
+    block_b_reps = BlockLog(
+        working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps,
+        reported_volume=body.block_b_reported_volume,
+    )
 
     previous_avg_a = await workouts.get_previous_avg_working(
         user.id, BlockType.A, before=workout.performed_at,
     )
-    previous_avg_b = await workouts.get_previous_avg_working(
-        user.id, BlockType.B, before=workout.performed_at,
-    )
     anomalies_a = detect_anomalies(
         block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
     )
-    anomalies_b = detect_anomalies(
-        block_b_reps, previous_avg_working=previous_avg_b, expected_work_sets=STRENGTH_BLOCK.work_sets,
-    )
+    if body.block_b_reported_volume is None:
+        previous_avg_b = await workouts.get_previous_avg_working(
+            user.id, BlockType.B, before=workout.performed_at,
+        )
+        anomalies_b = detect_anomalies(
+            block_b_reps, previous_avg_working=previous_avg_b, expected_work_sets=STRENGTH_BLOCK.work_sets,
+        )
+    else:
+        anomalies_b = AnomalyFlags()
     if not body.confirm_anomalies and (not anomalies_a.is_empty() or not anomalies_b.is_empty()):
         return WorkoutSubmitResponse(
             status="anomaly_confirm_required",
@@ -1061,9 +1141,14 @@ async def edit_history_workout(
         if band_item_b is None or band_item_b.user_id != user.id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid band item for block B")
 
-    workout = await workouts.edit_workout(
-        workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
-    )
+    if is_cascade:
+        workout = await workouts.edit_workout(
+            workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
+        )
+    else:
+        workout = await workouts.edit_noncascade_workout(
+            workout_id=workout_id, block_a_reps=block_a_reps, block_b_reps=block_b_reps, comment=body.comment,
+        )
     block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
     block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
 
@@ -1197,14 +1282,17 @@ async def get_backdate_plan(
     )
 
 
-def _parse_backdate_equipment_type(raw: str, *, field: str) -> EquipmentType:
+def _parse_equipment_type_param(raw: str, *, field: str) -> EquipmentType:
+    """Разбирает явно присланный тип снаряда (issue #52, переиспользуется
+    свободными подтягиваниями issue #109) — в обоих случаях снаряд не
+    наследуется из прогрессии, клиент указывает его сам."""
     try:
         return EquipmentType(raw)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid equipment type for {field}") from None
 
 
-async def _resolve_backdate_equipment(
+async def _resolve_explicit_equipment(
     session: AsyncSession,
     user_id: int,
     equipment_type: EquipmentType,
@@ -1213,6 +1301,9 @@ async def _resolve_backdate_equipment(
     *,
     field: str,
 ) -> tuple[Decimal | None, int | None]:
+    """Валидирует явно выбранный снаряд (не унаследованный) — используется
+    и бэкдейтом (issue #52), и свободными подтягиваниями (issue #109), не
+    отдельная копия для каждого."""
     if equipment_type == EquipmentType.WEIGHT:
         if equipment_value is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Missing weight for {field}")
@@ -1255,13 +1346,13 @@ async def submit_backdated_workout(
     if context.status != "ready":
         return WorkoutSubmitResponse(status=context.status)
 
-    block_a_equipment_type = _parse_backdate_equipment_type(body.block_a_equipment_type, field="block A")
-    block_b_equipment_type = _parse_backdate_equipment_type(body.block_b_equipment_type, field="block B")
-    block_a_equipment_value, block_a_equipment_item_id = await _resolve_backdate_equipment(
+    block_a_equipment_type = _parse_equipment_type_param(body.block_a_equipment_type, field="block A")
+    block_b_equipment_type = _parse_equipment_type_param(body.block_b_equipment_type, field="block B")
+    block_a_equipment_value, block_a_equipment_item_id = await _resolve_explicit_equipment(
         session, context.user_id, block_a_equipment_type,
         body.block_a_equipment_value, body.block_a_equipment_item_id, field="block A",
     )
-    block_b_equipment_value, block_b_equipment_item_id = await _resolve_backdate_equipment(
+    block_b_equipment_value, block_b_equipment_item_id = await _resolve_explicit_equipment(
         session, context.user_id, block_b_equipment_type,
         body.block_b_equipment_value, body.block_b_equipment_item_id, field="block B",
     )
@@ -1316,6 +1407,85 @@ async def submit_backdated_workout(
         ),
         result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
+    )
+
+
+# --- Свободные подтягивания (issue #109) ------------------------------------------------
+
+
+@router.get("/free-workout/plan", response_model=FreeWorkoutPlanResponse)
+async def get_free_workout_plan(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> FreeWorkoutPlanResponse:
+    """Контекст для формы "Внести свободные подтягивания" (issue #109) —
+    тот же вход, что handle_free_workout_start бота
+    (app/bot/handlers/free_workout.py): нет проверки подписки (свободные
+    подтягивания не за паивеллом, как и факультатив — см. докстринг
+    get_elective_plan) и нет target/work_sets/унаследованного снаряда (вне
+    цикла программы, сравнивать не с чем)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return FreeWorkoutPlanResponse(status="not_onboarded")
+
+    active_set = await ensure_active_workout_set(session, user.id)
+    if active_set is None:
+        return FreeWorkoutPlanResponse(status="no_active_set")
+
+    items = await EquipmentItemRepository(session).list_for_user(user.id)
+    band_items = [BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items]
+
+    return FreeWorkoutPlanResponse(status="ready", workout_set_id=active_set.id, band_items=band_items)
+
+
+@router.post("/free-workout/submit", response_model=FreeWorkoutSubmitResponse)
+async def submit_free_workout(
+    body: FreeWorkoutSubmitRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> FreeWorkoutSubmitResponse:
+    """Записывает свободные подтягивания через
+    WorkoutLogService.record_free_workout — тот же сервис, что
+    _apply_free_workout_reps бота (app/bot/handlers/free_workout.py), не
+    отдельная реализация. Произвольное число рабочих подходов (issue #109,
+    тот же смысл, что parse_reps на свободный текст бота) — в отличие от
+    WorkoutSubmitRequest/BackdateSubmitRequest здесь нет фиксированного
+    work_sets, поэтому и anomaly-проверка на "ожидаемое число подходов"
+    здесь не имеет смысла (expected_work_sets не передаём, как и у бота)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return FreeWorkoutSubmitResponse(status="not_onboarded")
+
+    active_set = await ensure_active_workout_set(session, user.id)
+    if active_set is None:
+        return FreeWorkoutSubmitResponse(status="no_active_set")
+
+    equipment_type = _parse_equipment_type_param(body.equipment_type, field="equipment")
+    equipment_value, equipment_item_id = await _resolve_explicit_equipment(
+        session, user.id, equipment_type, body.equipment_value, body.equipment_item_id, field="equipment",
+    )
+
+    result = BlockLog(working_reps=tuple(body.working_reps), max_reps=body.max_reps)
+
+    workouts = WorkoutRepository(session)
+    previous_avg = await workouts.get_previous_free_avg_working(user.id)
+    anomalies = detect_anomalies(result, previous_avg_working=previous_avg)
+    if not body.confirm_anomalies and not anomalies.is_empty():
+        return FreeWorkoutSubmitResponse(
+            status="anomaly_confirm_required", anomalies=AnomalyFlagsResponse(**asdict(anomalies)),
+        )
+
+    now = datetime.now(UTC)
+    await WorkoutLogService(session).record_free_workout(
+        user_id=user.id, workout_set_id=active_set.id, performed_at=now,
+        block_a_reps=result, equipment_type=equipment_type,
+        equipment_value=equipment_value, equipment_item_id=equipment_item_id, comment=body.comment,
+    )
+
+    return FreeWorkoutSubmitResponse(
+        status="ok",
+        result_text=format_block_result(result.working_reps, result.max_reps),
+        equipment=_equipment_info(equipment_type, equipment_value, equipment_item_id),
     )
 
 

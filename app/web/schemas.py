@@ -41,8 +41,8 @@ class WorkoutPlanResponse(BaseModel):
     """GET /api/workout/plan — статус определяет, есть ли форма ввода:
     "ready" — да, план ниже заполнен; любой другой статус — форма не
     показывается, поля плана пустые (см. issue #36, сужение скоупа
-    Этапа 1: только обычная тренировка и gap_rollback, остальные случаи
-    ведут в бота).
+    Этапа 1: только обычная тренировка, gap_rollback и (issue #105)
+    ежемесячный тест на максимум блока A, остальные случаи ведут в бота).
 
     band_items заполняется, только если равнозначный ввод резины возможен
     хотя бы для одного блока (equipment_a/b.type == "band") — личный список
@@ -70,6 +70,13 @@ class WorkoutPlanResponse(BaseModel):
     # формулировку формы блока Б на основании этого флага, парсинг ввода не
     # меняется (тот же принцип, что и у бота).
     is_heavy_b: bool = False
+    # Ежемесячный тест на максимум блока на объём (issue #89, форма в Mini
+    # App — issue #105) — target_a/work_sets_a/equipment_a теряют обычный
+    # смысл при True: target_a всегда None (текст теста больше не называет
+    # никакого ориентирующего числа, ни здесь, ни в боте), equipment_a
+    # принудительно свой вес. Фронтенд показывает вместо обычной сетки
+    # блока A один вопрос "сколько реально смог".
+    is_deload_a: bool = False
 
 
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
@@ -79,7 +86,10 @@ Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
 
 
 class WorkoutSubmitRequest(BaseModel):
-    block_a_working_reps: list[Reps] = Field(min_length=1)
+    # min_length=0 (не 1, как у блока B) — тест на максимум блока A (issue
+    # #89/#105) вводится одним числом без раскладки по подходам, тот же
+    # смысл, что parse_reps("15") в боте: working_reps=(), max_reps=15.
+    block_a_working_reps: list[Reps] = Field(min_length=0)
     block_a_max_reps: Reps
     block_b_working_reps: list[Reps] = Field(min_length=1)
     block_b_max_reps: Reps
@@ -254,12 +264,15 @@ class ProgressPointResponse(BaseModel):
     - max_reps: BlockLog.best_set (лучший подход, рабочий или на максимум).
     - volume: BlockLog.volume (сумма повторений блока за тренировку).
     - strength: app.domain.constants.to_signed_load(equipment_type,
-      equipment_value) блока Б на единой знаковой шкале нагрузки (резина —
-      минус, свой вес — 0, отягощение — плюс) — переживает смену снаряда,
-      в отличие от повторений на блоке Б (сбрасываются при каждой смене).
-      value_a всегда null (метрика скоуплена на блок Б, см. CLAUDE.md);
-      value_b — null для AUSTRALIAN (там нет числа в кг, to_signed_load для
-      неё не определена)."""
+      equipment_value) блока Б, ТОЛЬКО для WEIGHT/BODYWEIGHT (свой вес — 0,
+      отягощение — плюс) — переживает смену отягощения, в отличие от
+      повторений на блоке Б (сбрасываются при каждой смене). Резина (BAND)
+      исключена целиком (issue #110), тем же принципом, что уже применён к
+      epley_progress (issue #96): реальное сопротивление резины физически
+      неизвестно, сравнивать его с кг нельзя ни в каком виде, даже со знаком
+      минус. value_a всегда null (метрика скоуплена на блок Б, см.
+      CLAUDE.md); value_b — null для BAND/AUSTRALIAN (там либо неизвестное,
+      либо отсутствующее число в кг)."""
 
     performed_at: str
     value_a: Decimal | None
@@ -395,6 +408,11 @@ class WorkoutSubmitResponse(BaseModel):
     result_b: str | None = None
     anomalies_a: AnomalyFlagsResponse | None = None
     anomalies_b: AnomalyFlagsResponse | None = None
+    # Записанная тренировка была тестом на максимум блока A (issue #89/#105)
+    # — то же значение, что Block.is_deload. Фронтенд показывает заметку
+    # "цель не менялась" на экране "Готово", тот же смысл, что
+    # texts.VOLUME_DELOAD_DONE_SUFFIX у бота.
+    is_deload_a: bool = False
 
 
 class HistoryBlockDetail(BaseModel):
@@ -403,20 +421,29 @@ class HistoryBlockDetail(BaseModel):
     число рабочих подходов на момент ТОЙ тренировки, отдельного work_sets
     не нужно, см. app.bot.handlers.workout_edit::_start_editing).
     target_before — то же число, от которого реально считался ввод (не
-    текущая цель пользователя, если редактируется старая запись)."""
+    текущая цель пользователя, если редактируется старая запись).
+
+    reported_volume (issue #106) — не None только у блока Б бэкдейт-записи,
+    введённой в режиме "только итог" (issue #88, working_reps в этом случае
+    всегда пуст) — фронтенд использует именно это поле, чтобы понять, какую
+    форму показать при правке (раскладку по подходам или итог+максимум), не
+    заставляя переключать формат."""
 
     working_reps: list[int]
     max_reps: int
+    reported_volume: int | None = None
     target_before: int
     equipment: EquipmentInfo
 
 
 class HistoryEditDetailResponse(BaseModel):
     """GET /api/history/{workout_id} — данные для предзаполнения формы
-    редактирования. is_editable — тот же app.bot.handlers.workout_edit::
-    _is_editable (внесённые задним числом/не участвующие в каскаде записи
-    не редактируются через этот путь), импортируется напрямую, не
-    дублируется."""
+    редактирования. is_editable (issue #106) — тренировки цепочки каскада
+    (app.bot.handlers.workout_edit::_is_editable) ИЛИ внесённые не в цепочку
+    (бэкдейт/свободные, participates_in_cascade=False) — те и другие теперь
+    редактируются, просто разными методами репозитория (edit_workout с
+    каскадным пересчётом vs edit_noncascade_workout без него, см.
+    app/web/routes.py::_history_is_editable)."""
 
     workout_id: int
     performed_at: str
@@ -432,18 +459,36 @@ class HistoryEditRequest(BaseModel):
     по умолчанию не переписывает существующий (см. app/web/routes.py:
     edit_history_workout — comment=None оставляет прежний текст, как и
     app.bot.handlers.workout_edit, которая правку комментария вообще не
-    предлагает)."""
+    предлагает).
+
+    block_b_reported_volume (issue #106) — заполняется ТОЛЬКО при правке
+    бэкдейт-записи, изначально введённой в режиме "только итог" (issue
+    #88): тогда block_b_working_reps обязан быть пустым (см.
+    _check_block_b_format), а block_b_max_reps — либо честный максимум,
+    либо 0, если он не был зафиксирован (тот же смысл, что и при первом
+    вводе, см. app.bot.handlers.backdate.py::handle_backdate_block_b_total_max_skip).
+    Для обычных (не бэкдейт) и бэкдейт-записей с честной раскладкой это
+    поле остаётся None, как и раньше."""
 
     block_a_working_reps: list[Reps] = Field(min_length=1)
     block_a_max_reps: Reps
-    block_b_working_reps: list[Reps] = Field(min_length=1)
+    block_b_working_reps: list[Reps] = Field(default_factory=list)
     block_b_max_reps: Reps
+    block_b_reported_volume: Reps | None = None
     block_a_actual_weight: Decimal | None = Field(default=None, gt=0)
     block_b_actual_weight: Decimal | None = Field(default=None, gt=0)
     block_a_actual_band_item_id: int | None = None
     block_b_actual_band_item_id: int | None = None
     comment: str | None = None
     confirm_anomalies: bool = False
+
+    @model_validator(mode="after")
+    def _check_block_b_format(self) -> "HistoryEditRequest":
+        if self.block_b_reported_volume is None and not self.block_b_working_reps:
+            raise ValueError("block_b_working_reps is required unless block_b_reported_volume is given")
+        if self.block_b_reported_volume is not None and self.block_b_working_reps:
+            raise ValueError("block_b_working_reps must be empty when block_b_reported_volume is given")
+        return self
 
 
 class WorkoutDraftRequest(BaseModel):
@@ -591,6 +636,50 @@ class BackdateSubmitRequest(BaseModel):
     block_b_equipment_item_id: int | None = None
     comment: str | None = None
     confirm_anomalies: bool = False
+
+
+class FreeWorkoutPlanResponse(BaseModel):
+    """GET /api/free-workout/plan (issue #109) — тот же путь, что
+    handle_free_workout_start бота (app/bot/handlers/free_workout.py):
+    снаряд здесь ВСЕГДА явный выбор, как у бэкдейта (см. BackdateSubmitRequest),
+    не наследуется молча из прогрессии — свободные подтягивания вне цикла
+    программы, унаследовать target/work_sets/снаряд из resolve_next_targets
+    здесь не от чего (эти числа для основной программы, свободный вход в
+    неё не входит).
+
+    Нет статуса "no_access" — свободные подтягивания не за паивеллом, ни в
+    боте (handle_free_workout_start не проверяет подписку), ни здесь, тот
+    же принцип, что у ElectivePlanResponse. "ready" — только workout_set_id
+    (нужен для последующего submit) и band_items (личный список резин для
+    выбора снаряда)."""
+
+    status: str
+    workout_set_id: int | None = None
+    band_items: list[BandItemInfo] = Field(default_factory=list)
+
+
+class FreeWorkoutSubmitRequest(BaseModel):
+    """POST /api/free-workout/submit — произвольное число рабочих подходов
+    (issue #109, тот же смысл, что свободный текстовый ввод бота через
+    parse_reps: сколько реально сделал, столько и ввёл), не фиксированные
+    3+1 обычного блока A. equipment_* — тот же смысл и та же серверная
+    валидация, что у BackdateSubmitRequest (см. app/web/routes.py::
+    _resolve_explicit_equipment) — снаряд не наследуется, указывается явно."""
+
+    working_reps: list[Reps] = Field(min_length=1)
+    max_reps: Reps
+    equipment_type: str
+    equipment_value: Decimal | None = Field(default=None, gt=0)
+    equipment_item_id: int | None = None
+    comment: str | None = None
+    confirm_anomalies: bool = False
+
+
+class FreeWorkoutSubmitResponse(BaseModel):
+    status: str
+    result_text: str | None = None
+    equipment: EquipmentInfo | None = None
+    anomalies: AnomalyFlagsResponse | None = None
 
 
 class LeaderboardEntryResponse(BaseModel):

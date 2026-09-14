@@ -47,6 +47,12 @@ export interface WorkoutPlanResponse {
    * повторения, повышенный вес (уже подставлен в equipment_b.value/label
    * сервером, см. app/web/routes.py::_resolve_plan_context). */
   is_heavy_b: boolean;
+  /** Ежемесячный тест на максимум блока на объём (issue #89, форма в Mini
+   * App — issue #105) — target_a остаётся null (текст теста больше не
+   * называет никакого ориентирующего числа, ни тут, ни в боте, см.
+   * app/bot/texts.py::VOLUME_DELOAD_PROMPT). Фронтенд показывает вместо
+   * обычной сетки блока A один вопрос "сколько реально смог". */
+  is_deload_a: boolean;
 }
 
 export interface AnomalyFlags {
@@ -113,6 +119,9 @@ export interface WorkoutSubmitResponse {
   result_b: string | null;
   anomalies_a: AnomalyFlags | null;
   anomalies_b: AnomalyFlags | null;
+  /** Записанная тренировка была тестом на максимум блока A (issue #105) —
+   * тот же смысл, что texts.VOLUME_DELOAD_DONE_SUFFIX у бота. */
+  is_deload_a: boolean;
 }
 
 /**
@@ -395,9 +404,14 @@ export async function submitWorkout(
  * набор фактов, что app.bot.handlers.workout_edit::_start_editing кладёт в
  * FSM перед переспросом блока A. target_before — цель, от которой реально
  * считался ввод этой тренировки, не текущая цель пользователя. */
+/** reported_volume (issue #106) — не null только у блока Б бэкдейт-записи,
+ * введённой в режиме "только итог" (issue #88, working_reps тогда всегда
+ * пуст) — форма редактирования показывает соответствующий формат ввода
+ * по этому полю, не заставляя переключать формат. */
 export interface HistoryBlockDetail {
   working_reps: number[];
   max_reps: number;
+  reported_volume: number | null;
   target_before: number;
   equipment: EquipmentInfo;
 }
@@ -413,12 +427,18 @@ export interface HistoryEditDetail {
 
 /** PATCH /api/history/{id} — то же тело, что WorkoutSubmitRequest минус
  * comment (правка комментария не входит в этот сценарий ни у бота, ни
- * здесь — см. app/web/routes.py::edit_history_workout). */
+ * здесь — см. app/web/routes.py::edit_history_workout).
+ *
+ * block_b_reported_volume (issue #106) — заполняется только при правке
+ * бэкдейт-записи в формате "только итог": тогда block_b_working_reps
+ * должен быть пустым массивом, а block_b_max_reps — честный максимум либо
+ * 0, если он не был зафиксирован. */
 export interface HistoryEditRequest {
   block_a_working_reps: number[];
   block_a_max_reps: number;
   block_b_working_reps: number[];
   block_b_max_reps: number;
+  block_b_reported_volume?: number | null;
   block_a_actual_weight?: string | null;
   block_b_actual_weight?: string | null;
   block_a_actual_band_item_id?: number | null;
@@ -476,6 +496,47 @@ export async function submitBackdate(
   body: BackdateSubmitRequest,
 ): Promise<WorkoutSubmitResponse> {
   return apiPost<BackdateSubmitRequest, WorkoutSubmitResponse>("/api/workout/backdate", initDataRaw, body);
+}
+
+/** GET /api/free-workout/plan (issue #109) — тот же путь, что
+ * handle_free_workout_start бота (app/bot/handlers/free_workout.py): нет
+ * "no_access" (свободные подтягивания не за паивеллом) и нет target/work_sets/
+ * унаследованного снаряда — вне цикла программы, наследовать нечего. */
+export interface FreeWorkoutPlan {
+  status: string;
+  workout_set_id: number | null;
+  band_items: BandItemInfo[];
+}
+
+export async function fetchFreeWorkoutPlan(initDataRaw: string): Promise<FreeWorkoutPlan> {
+  return apiGet<FreeWorkoutPlan>("/api/free-workout/plan", initDataRaw);
+}
+
+/** POST /api/free-workout/submit — снаряд здесь ВСЕГДА явный выбор, как у
+ * бэкдейта, working_reps — произвольная длина (сколько реально подходов
+ * сделал, столько и вводит, не фиксированные 3+1). */
+export interface FreeWorkoutSubmitRequest {
+  working_reps: number[];
+  max_reps: number;
+  equipment_type: string;
+  equipment_value?: string | null;
+  equipment_item_id?: number | null;
+  comment?: string | null;
+  confirm_anomalies: boolean;
+}
+
+export interface FreeWorkoutSubmitResponse {
+  status: string;
+  result_text: string | null;
+  equipment: EquipmentInfo | null;
+  anomalies: AnomalyFlags | null;
+}
+
+export async function submitFreeWorkout(
+  initDataRaw: string,
+  body: FreeWorkoutSubmitRequest,
+): Promise<FreeWorkoutSubmitResponse> {
+  return apiPost<FreeWorkoutSubmitRequest, FreeWorkoutSubmitResponse>("/api/free-workout/submit", initDataRaw, body);
 }
 
 /** PUT /api/workout/draft (issue #61) — сохраняет накопленный прогресс

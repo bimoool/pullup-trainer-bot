@@ -889,6 +889,50 @@ class WorkoutRepository:
         await self._session.refresh(workout, attribute_names=["blocks"])
         return workout
 
+    async def edit_noncascade_workout(
+        self,
+        *,
+        workout_id: int,
+        block_a_reps: BlockLog | None = None,
+        block_b_reps: BlockLog | None = None,
+        comment: str | None = None,
+    ) -> Workout:
+        """Правит уже введённую тренировку, НЕ участвующую в каскаде
+        (бэкдейт/свободные подтягивания, issue #106) — правит только
+        сохранённые цифры блоков (working_reps/max_reps/reported_volume) и
+        комментарий, БЕЗ пересчёта target_before/target_after/
+        equipment_changed и без каскада: тот же инвариант, что уже
+        применяется при первом вводе таких записей (record_backdated_workout/
+        record_free_workout, issue #88 — блок Б бэкдейта никогда не
+        пересчитывает цель), просто распространён на последующую правку, а
+        не только на создание. reported_volume блока Б (issue #88) — как
+        есть, из переданного BlockLog: вызывающий отвечает за то, чтобы не
+        менять формат ввода (раскладка vs "только итог") при правке, сам
+        метод такого не проверяет."""
+        workout = await self.get_by_id(workout_id)
+        if workout is None:
+            raise ValueError(f"workout {workout_id} not found")
+        if workout.participates_in_cascade:
+            raise ValueError("cannot edit a cascade workout via edit_noncascade_workout")
+
+        block_a, block_b = _find_block(workout, BlockType.A), _find_block(workout, BlockType.B)
+        if block_a_reps is not None:
+            block_a.working_reps = list(block_a_reps.working_reps)
+            block_a.max_reps = block_a_reps.max_reps
+            block_a.reported_volume = block_a_reps.reported_volume
+        if block_b_reps is not None:
+            block_b.working_reps = list(block_b_reps.working_reps)
+            block_b.max_reps = block_b_reps.max_reps
+            block_b.reported_volume = block_b_reps.reported_volume
+
+        if comment is not None:
+            workout.comment = comment
+        workout.updated_at = datetime.now(UTC)
+
+        await self._session.flush()
+        await self._session.refresh(workout, attribute_names=["blocks"])
+        return workout
+
     async def correct_block_equipment(
         self,
         *,

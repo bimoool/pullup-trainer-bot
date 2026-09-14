@@ -72,7 +72,8 @@ async def _record_three_workouts(session, telegram_id: int):
 
     Числа посчитаны руками, не выведены из тестируемого кода:
     - workout 1: блок A сумма 11+11+11+12=45, лучший подход 12;
-      блок Б сумма 4+4+4+4+5=21, лучший подход 5; резина 20кг -> сила -20.00.
+      блок Б сумма 4+4+4+4+5=21, лучший подход 5; резина 20кг -> сила не
+      определена (null, issue #110 — резина исключена из графика целиком).
     - workout 2: блок A сумма 14*3+15=57, лучший подход 15;
       блок Б сумма 5*4+6=26, лучший подход 6; отягощение 7.5кг -> сила 7.50.
     - workout 3: блок A сумма 16*3+17=65, лучший подход 17;
@@ -139,14 +140,42 @@ async def test_progress_volume_metric_is_actual_reps_sum(session):
     ]
 
 
-async def test_progress_strength_metric_is_signed_load_of_block_b_only(session):
+async def test_progress_strength_metric_excludes_band_and_australian(session):
+    """issue #110: резина (BAND) больше не участвует в метрике "Сила" —
+    тем же принципом, что epley_progress (issue #96) — только AUSTRALIAN
+    отсекалась до этого фикса."""
     user, workout_set, (first_at, second_at, third_at) = await _record_three_workouts(session, telegram_id=53005)
 
     body = await _get_progress(session, telegram_id=user.telegram_id, metric="strength")
 
     assert body["metric"] == "strength"
     assert body["points"] == [
-        {"performed_at": first_at.date().isoformat(), "value_a": None, "value_b": "-20.00", "workout_set_id": workout_set.id},
+        {"performed_at": first_at.date().isoformat(), "value_a": None, "value_b": None, "workout_set_id": workout_set.id},
         {"performed_at": second_at.date().isoformat(), "value_a": None, "value_b": "7.50", "workout_set_id": workout_set.id},
         {"performed_at": third_at.date().isoformat(), "value_a": None, "value_b": None, "workout_set_id": workout_set.id},
+    ]
+
+
+async def test_progress_strength_metric_includes_bodyweight_as_zero(session):
+    """BODYWEIGHT (свой вес, без резины и без отягощения) остаётся на графике
+    "Сила" как 0 — единственный числовой-но-легальный случай, отличный от
+    null (issue #110 отсекает только BAND/AUSTRALIAN, не BODYWEIGHT)."""
+    user = await UserRepository(session).create(telegram_id=53006, username="bodyweight")
+    baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=datetime.now(UTC) - timedelta(days=10), reps=10,
+    )
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    performed_at = datetime.now(UTC) - timedelta(days=1)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=performed_at,
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=Decimal("20.0"),
+        block_b_equipment_type=EquipmentType.BODYWEIGHT, block_b_equipment_value=None,
+    )
+
+    body = await _get_progress(session, telegram_id=user.telegram_id, metric="strength")
+
+    assert body["points"] == [
+        {"performed_at": performed_at.date().isoformat(), "value_a": None, "value_b": "0", "workout_set_id": workout_set.id},
     ]

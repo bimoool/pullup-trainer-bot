@@ -11,10 +11,16 @@ aiogram-роутингом.
 критерием редактируемости не подтвердился при разборе кода и прямой
 проверке прод-БД — record_backdated_workout создаёт Workout только в
 самом конце потока, /cancel в любой точке лишь чистит FSM, ничего в БД
-не создавая. Тест ниже фиксирует это как регрессию. Отдельно — реальная
-находка: generic "нечего редактировать" не объясняет разницу между
-"тренировок в этот день не было" и "тренировка есть, но внесена задним
-числом" — второе теперь отвечает текстом EDIT_NOT_EDITABLE."""
+не создавая. Тест ниже фиксирует это как регрессию.
+
+Обновление (issue #106): бэкдейт-записи теперь тоже редактируются (через
+WorkoutRepository.edit_noncascade_workout, без пересчёта цели/каскада —
+см. app/bot/handlers/workout_edit.py::_is_history_editable) — тап по дню
+с единственной такой записью открывает форму правки, а не отвечает
+EDIT_NOT_EDITABLE, как было в исходной находке пакета #3. Полноценный
+сценарий правки — tests/test_bot/test_edit_backdated_workout.py, здесь
+только сам факт "открывается форма, не алерт с отказом", на том же дне,
+что и раньше."""
 
 from datetime import UTC, datetime
 
@@ -24,7 +30,7 @@ from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
 
 from app.bot import texts
-from app.bot.states import EquipmentStates
+from app.bot.states import EditWorkoutStates, EquipmentStates
 from app.db.models import User
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
@@ -241,12 +247,13 @@ async def test_cancel_after_blocks_entered_before_equipment_confirmed_leaves_no_
     assert history == []
 
 
-async def test_edit_calendar_day_with_only_backdated_workout_explains_why(
+async def test_edit_calendar_day_with_only_backdated_workout_opens_edit_form(
     session, user: User, bot: Bot, dispatcher: Dispatcher,
 ):
     """День отмечен ✅ в "Истории"/календаре бэкдейта (там маркируются любые
-    тренировки), но в "Изменить тренировку" не редактируется — сообщение
-    должно объяснять причину (EDIT_NOT_EDITABLE), а не молчать generic-ом."""
+    тренировки) — тап в "Изменить тренировку" открывает форму правки
+    (issue #106), а не отвечает EDIT_NOT_EDITABLE, как было до issue #106
+    (см. обновление докстринга модуля)."""
     await _start_backdate_at_block_a(session, user, bot, dispatcher)
     await dispatcher.feed_update(
         bot, _message_update(telegram_id=user.telegram_id, text="5 5 5 8"), session=session,
@@ -267,13 +274,19 @@ async def test_edit_calendar_day_with_only_backdated_workout_explains_why(
     history = await WorkoutRepository(session).list_for_user(user.id)
     assert len(history) == 1
 
+    fsm = dispatcher.fsm.get_context(bot=bot, chat_id=user.telegram_id, user_id=user.telegram_id)
     before = len(bot.session.sent_methods)
     await dispatcher.feed_update(
         bot, _callback_update(telegram_id=user.telegram_id, data="cal_day:edit:2026-01-05"), session=session,
     )
 
+    # Открывается форма правки (issue #106) — не алерт с отказом, как было
+    # до этого issue: callback.answer() здесь без текста (пустое
+    # подтверждение тапа), сам ответ пользователю — SendMessage с
+    # приглашением ввести блок A.
     [answer] = [m for m in bot.session.sent_methods[before:] if isinstance(m, AnswerCallbackQuery)]
-    assert answer.text == texts.EDIT_NOT_EDITABLE
+    assert answer.text is None
+    assert await fsm.get_state() == EditWorkoutStates.waiting_for_block_a.state
 
 
 async def test_edit_calendar_day_with_no_workout_shows_generic_text(
