@@ -70,6 +70,7 @@ from app.domain.reports import (
 )
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
+from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -120,6 +121,8 @@ from app.web.schemas import (
     WorkoutPlanResponse,
     WorkoutSubmitRequest,
     WorkoutSubmitResponse,
+    WsfResponse,
+    WsfThresholdItem,
 )
 
 router = APIRouter(prefix="/api")
@@ -251,6 +254,53 @@ async def get_gto(
         gold_threshold=status_.gold_threshold,
         next_rank=status_.next_rank.value if status_.next_rank is not None else None,
         reps_to_next_rank=status_.reps_to_next_rank,
+    )
+
+
+def _wsf_thresholds_response(thresholds: tuple[WsfRankThreshold, ...]) -> list[WsfThresholdItem]:
+    return [WsfThresholdItem(rank=t.rank, reps=t.reps) for t in thresholds]
+
+
+@router.get("/wsf", response_model=WsfResponse)
+async def get_wsf(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WsfResponse:
+    """Разряд WSF по многоповторным подтягиваниям с отягощением (issue #104)
+    — вторая система оценки в профиле, РЯДОМ с ГТО (get_gto выше), не
+    заменяющая её: в отличие от ГТО (только мужчины), здесь оценка одинакова
+    для обоих полов (app.domain.wsf). Статус пересчитывается на лету при
+    каждом запросе из текущего пола/веса/возраста (app.db.models.User) и
+    лучшего РАЗРЯДА, достигнутого хоть раз за всю историю блока Б
+    (app.domain.wsf.calculate_wsf_status сам проходит по records — в отличие
+    от ГТО, здесь нельзя агрегировать одним числом заранее: у разных
+    тренировок разная ступень отягощения, сравнивать напрямую можно только
+    достигнутые разряды, не сырые повторения)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        return WsfResponse(applicable=False, reason="not_onboarded")
+
+    records = await WorkoutRepository(session).list_records_for_user(user.id)
+    status_ = calculate_wsf_status(
+        gender=user.gender.value if user.gender is not None else None,
+        weight_kg=user.weight_kg,
+        birth_date=user.birth_date,
+        records=records,
+        today=datetime.now(UTC).date(),
+    )
+    return WsfResponse(
+        applicable=status_.applicable,
+        reason=status_.reason,
+        gender=status_.gender,
+        weight_category=status_.weight_category,
+        rank=status_.rank,
+        best_reps=status_.best_reps,
+        added_weight_step_kg=status_.added_weight_step_kg,
+        actual_added_weight_kg=status_.actual_added_weight_kg,
+        age_bonus_pct=status_.age_bonus_pct,
+        next_rank=status_.next_rank,
+        reps_to_next_rank=status_.reps_to_next_rank,
+        thresholds=_wsf_thresholds_response(status_.thresholds),
     )
 
 

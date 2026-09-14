@@ -184,6 +184,43 @@ class GtoResponse(BaseModel):
     reps_to_next_rank: int | None = None
 
 
+class WsfThresholdItem(BaseModel):
+    rank: str
+    reps: int
+
+
+class WsfResponse(BaseModel):
+    """GET /api/wsf (issue #104) — разряд WSF (World Streetlifting Federation)
+    по многоповторным подтягиваниям с отягощением, вторая система оценки в
+    профиле РЯДОМ с ГТО (GtoResponse выше), не заменяющая её: в отличие от
+    ГТО (только мужчины), здесь оценка одинакова для обоих полов
+    (app.domain.wsf). Статус, а не факт истории — пересчитывается на лету
+    при каждом запросе, ничего не хранится в БД.
+
+    applicable=False — reason объясняет причину (см. app.domain.wsf.WsfStatus
+    для полного списка: missing_gender, missing_weight, no_workouts,
+    norm_data_missing) — фронтенд показывает соответствующий текст.
+
+    added_weight_step_kg/actual_added_weight_kg — ОБЯЗАТЕЛЬНО показывать
+    вместе, когда applicable=True: ступень отягощения, по которой считался
+    разряд, округляется ВНИЗ от реального веса тренировки (см. докстринг
+    app.domain.wsf) — если они не совпадают, интерфейс должен явно объяснить
+    расхождение (согласовано в issue #104), не просто показать одну цифру."""
+
+    applicable: bool
+    reason: str | None = None
+    gender: str | None = None
+    weight_category: str | None = None
+    rank: str | None = None
+    best_reps: int | None = None
+    added_weight_step_kg: Decimal | None = None
+    actual_added_weight_kg: Decimal | None = None
+    age_bonus_pct: Decimal | None = None
+    next_rank: str | None = None
+    reps_to_next_rank: int | None = None
+    thresholds: list[WsfThresholdItem] = Field(default_factory=list)
+
+
 class HistoryEntryResponse(BaseModel):
     """Одна тренировка в списке "История" (issue #50, волна 1) — тот же
     набор фактов, что печатает app.bot.handlers.history.format_history_entry,
