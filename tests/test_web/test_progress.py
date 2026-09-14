@@ -121,9 +121,9 @@ async def test_progress_max_reps_metric_is_best_set_not_target(session):
 
     assert body["metric"] == "max_reps"
     assert body["points"] == [
-        {"performed_at": first_at.date().isoformat(), "value_a": "12", "value_b": "5", "workout_set_id": workout_set.id},
-        {"performed_at": second_at.date().isoformat(), "value_a": "15", "value_b": "6", "workout_set_id": workout_set.id},
-        {"performed_at": third_at.date().isoformat(), "value_a": "17", "value_b": "4", "workout_set_id": workout_set.id},
+        {"performed_at": first_at.date().isoformat(), "value_a": "12", "value_b": "5", "is_heavy_b": False, "workout_set_id": workout_set.id},
+        {"performed_at": second_at.date().isoformat(), "value_a": "15", "value_b": "6", "is_heavy_b": False, "workout_set_id": workout_set.id},
+        {"performed_at": third_at.date().isoformat(), "value_a": "17", "value_b": "4", "is_heavy_b": False, "workout_set_id": workout_set.id},
     ]
 
 
@@ -134,9 +134,9 @@ async def test_progress_volume_metric_is_actual_reps_sum(session):
 
     assert body["metric"] == "volume"
     assert body["points"] == [
-        {"performed_at": first_at.date().isoformat(), "value_a": "45", "value_b": "21", "workout_set_id": workout_set.id},
-        {"performed_at": second_at.date().isoformat(), "value_a": "57", "value_b": "26", "workout_set_id": workout_set.id},
-        {"performed_at": third_at.date().isoformat(), "value_a": "65", "value_b": "16", "workout_set_id": workout_set.id},
+        {"performed_at": first_at.date().isoformat(), "value_a": "45", "value_b": "21", "is_heavy_b": False, "workout_set_id": workout_set.id},
+        {"performed_at": second_at.date().isoformat(), "value_a": "57", "value_b": "26", "is_heavy_b": False, "workout_set_id": workout_set.id},
+        {"performed_at": third_at.date().isoformat(), "value_a": "65", "value_b": "16", "is_heavy_b": False, "workout_set_id": workout_set.id},
     ]
 
 
@@ -150,9 +150,9 @@ async def test_progress_strength_metric_excludes_band_and_australian(session):
 
     assert body["metric"] == "strength"
     assert body["points"] == [
-        {"performed_at": first_at.date().isoformat(), "value_a": None, "value_b": None, "workout_set_id": workout_set.id},
-        {"performed_at": second_at.date().isoformat(), "value_a": None, "value_b": "7.50", "workout_set_id": workout_set.id},
-        {"performed_at": third_at.date().isoformat(), "value_a": None, "value_b": None, "workout_set_id": workout_set.id},
+        {"performed_at": first_at.date().isoformat(), "value_a": None, "value_b": None, "is_heavy_b": False, "workout_set_id": workout_set.id},
+        {"performed_at": second_at.date().isoformat(), "value_a": None, "value_b": "7.50", "is_heavy_b": False, "workout_set_id": workout_set.id},
+        {"performed_at": third_at.date().isoformat(), "value_a": None, "value_b": None, "is_heavy_b": False, "workout_set_id": workout_set.id},
     ]
 
 
@@ -177,5 +177,42 @@ async def test_progress_strength_metric_includes_bodyweight_as_zero(session):
     body = await _get_progress(session, telegram_id=user.telegram_id, metric="strength")
 
     assert body["points"] == [
-        {"performed_at": performed_at.date().isoformat(), "value_a": None, "value_b": "0", "workout_set_id": workout_set.id},
+        {"performed_at": performed_at.date().isoformat(), "value_a": None, "value_b": "0", "is_heavy_b": False, "workout_set_id": workout_set.id},
     ]
+
+
+async def test_progress_marks_heavy_alternating_workouts(session):
+    """issue #117: чередующаяся тяжёлая тренировка блока Б (issue #97) на
+    графике "Сила" выглядит как аномалия без пометки — is_heavy_b позволяет
+    фронтенду отличить эти точки. Тот же сценарий чередования (позиция 1 —
+    обычная, позиция 2 — тяжёлая), что и tests/test_repositories/
+    test_workouts_heavy.py::test_heavy_alternation_full_walkthrough — здесь
+    только сверяется прокидывание флага в /api/progress, не сама формула
+    прогрессии/веса."""
+    user = await UserRepository(session).create(telegram_id=53007, username="heavy")
+    baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=datetime.now(UTC) - timedelta(days=10), reps=10,
+    )
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    workouts = WorkoutRepository(session)
+    first_at = datetime.now(UTC) - timedelta(days=2)
+    second_at = datetime.now(UTC) - timedelta(days=1)
+
+    await workouts.record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=first_at,
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal(20),
+    )
+    await workouts.record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=second_at,
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4),
+        block_a_equipment_type=EquipmentType.BODYWEIGHT, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=Decimal("21.5"),
+    )
+
+    body = await _get_progress(session, telegram_id=user.telegram_id, metric="max_reps")
+
+    assert [point["is_heavy_b"] for point in body["points"]] == [False, True]

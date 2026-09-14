@@ -823,6 +823,7 @@ async def get_progress(
             performed_at=record.performed_at.date().isoformat(),
             value_a=_progress_value(record.block_a, metric, block_letter="a"),
             value_b=_progress_value(record.block_b, metric, block_letter="b"),
+            is_heavy_b=record.block_b.is_heavy,
             workout_set_id=record.workout_set_id,
         )
         for record in records
