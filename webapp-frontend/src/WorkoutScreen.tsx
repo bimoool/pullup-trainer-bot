@@ -2,6 +2,7 @@ import { Button, Input, Section, Select, Textarea } from "@telegram-apps/telegra
 import { useEffect, useState } from "react";
 
 import {
+  createBandItem,
   fetchWorkoutPlan,
   submitWorkout,
   type AnomalyFlags,
@@ -67,11 +68,14 @@ export const STATUS_MESSAGES: Record<string, string> = {
 
 // Статусы, на которых снаряд для блоков ещё не назначен вообще (issue #123)
 // — «Внести пропущенную тренировку»/«Внести свободные подтягивания» на них
-// были тупиковыми: бэкдейт подставлял снаряд-заглушку (резина, которой
-// физически нет — band_items пуст, экрана добавления резины в Mini App не
-// существует), и сохранить результат было невозможно. too_early сюда
-// намеренно не входит — там снаряд уже назначен с прошлой тренировки, эти
-// кнопки там корректны и не трогаются.
+// были тупиковыми: бэкдейт подставлял снаряд-заглушку (резина без
+// сохранённых пунктов), и сохранить результат было невозможно. Заведение
+// резины (issue #124, PR 3, BandItemSelect выше) доступно только из
+// обычного плана тренировки ниже, не из форм бэкдейта/свободных
+// подтягиваний (EquipmentTypeFields в BackdateForm.tsx/FreeWorkoutScreen.tsx
+// по-прежнему только выбирает из уже существующих) — статусы здесь не
+// трогаются этим PR. too_early сюда намеренно не входит — там снаряд уже
+// назначен с прошлой тренировки, эти кнопки там корректны и не трогаются.
 const NO_EQUIPMENT_YET_STATUSES = new Set([
   "first_workout", "onboarding_incomplete", "not_onboarded", "equipment_setup_required", "gap_retest_required",
 ]);
@@ -194,12 +198,19 @@ export function SetInputGrid({
   );
 }
 
+/** Значение специальной опции "+ Завести новую резину" в Select ниже — не
+ * валидный id резины, перехватывается в onChange раньше onChange-колбэка
+ * наружу. */
+const NEW_BAND_ITEM_OPTION = "__new__";
+
 export function BandItemSelect({
   letter,
   bandItems,
   value,
   onChange,
   firstWorkout = false,
+  initDataRaw,
+  onItemCreated,
 }: {
   letter: "A" | "B";
   bandItems: BandItemInfo[];
@@ -209,13 +220,109 @@ export function BandItemSelect({
    * смысла, когда прошлого раза не было: пустое значение остаётся тем же
    * (валидация выше требует явный выбор), но подпись честная. */
   firstWorkout?: boolean;
+  /** Заведение резины прямо тут (issue #124, PR 3) — оба пропа заданы
+   * только там, где есть доступ к API и возможность обновить список у
+   * вызывающего компонента (WorkoutScreen.tsx); без них (HistoryEditForm.tsx,
+   * где bandItems всегда []) опция "+ Завести новую" не показывается, и
+   * компонент ведёт себя как раньше. */
+  initDataRaw?: string;
+  onItemCreated?: (item: BandItemInfo) => void;
 }) {
+  const canCreate = initDataRaw !== undefined && onItemCreated !== undefined;
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newResistance, setNewResistance] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleCreate() {
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      setCreateError("Введи название резины.");
+      return;
+    }
+    let resistanceValue: string | null = null;
+    const normalized = newResistance.trim().replace(",", ".");
+    if (normalized !== "") {
+      const parsed = Number(normalized);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        setCreateError("Сопротивление должно быть положительным числом, если указано.");
+        return;
+      }
+      resistanceValue = normalized;
+    }
+    setCreateError(null);
+    setSaving(true);
+    try {
+      const item = await createBandItem(initDataRaw as string, { name: trimmedName, resistance_kg: resistanceValue });
+      (onItemCreated as (item: BandItemInfo) => void)(item);
+      onChange(String(item.id));
+      setNewName("");
+      setNewResistance("");
+      setCreating(false);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (creating) {
+    return (
+      <div className="band-create-form">
+        <span className="field-label">Новая резина</span>
+        <Input
+          header="Название"
+          placeholder="Например: красная"
+          aria-label={`Блок ${letter}, название резины`}
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+        />
+        <Input
+          header="Сопротивление, кг"
+          after="кг"
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="0.5"
+          placeholder="Не знаю точно — оставь пустым"
+          aria-label={`Блок ${letter}, сопротивление резины`}
+          value={newResistance}
+          onChange={(e) => setNewResistance(e.target.value)}
+        />
+        {createError && <p className="error-banner">{createError}</p>}
+        <div className="band-create-actions">
+          <Button size="s" disabled={saving} onClick={() => void handleCreate()}>
+            Добавить резину
+          </Button>
+          <Button
+            size="s"
+            mode="outline"
+            disabled={saving}
+            onClick={() => {
+              setCreating(false);
+              setCreateError(null);
+            }}
+          >
+            Отмена
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Select
       header={firstWorkout ? "Резина" : "Резина, если отличается"}
       aria-label={`Блок ${letter}, резина`}
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        if (e.target.value === NEW_BAND_ITEM_OPTION) {
+          setCreating(true);
+          return;
+        }
+        onChange(e.target.value);
+      }}
     >
       <option value="">{firstWorkout ? "Выбери резину" : "Как в прошлый раз"}</option>
       {bandItems.map((item) => (
@@ -224,6 +331,7 @@ export function BandItemSelect({
           {item.resistance_kg !== null ? ` (${item.resistance_kg} кг)` : ""}
         </option>
       ))}
+      {canCreate && <option value={NEW_BAND_ITEM_OPTION}>+ Завести новую резину</option>}
     </Select>
   );
 }
@@ -244,6 +352,8 @@ export function EquipmentCorrectionFields({
   onBandItemChange,
   onOpenFaq,
   firstWorkout = false,
+  initDataRaw,
+  onBandItemCreated,
 }: {
   letter: "A" | "B";
   equipmentType: string | undefined;
@@ -257,11 +367,16 @@ export function EquipmentCorrectionFields({
   /** Первая тренировка (issue #124, PR 2) — унаследованного значения нет
    * вообще (equipmentLabel/bandItems не содержат прежнего снаряда), поэтому
    * поле веса становится обязательным (не "если отличается"), а для резины
-   * без сохранённых пунктов список выбора заменяется объяснением: заведение
-   * новой резины прямо в Mini App появится в PR 3 (issue #124), пока это
-   * доступно только в боте. */
+   * список выбора всегда включает "+ Завести новую" (issue #124, PR 3, см.
+   * докстринг BandItemSelect), даже когда сохранённых пунктов ещё нет. */
   firstWorkout?: boolean;
+  /** Заведение резины (issue #124, PR 3) — прокидывается в BandItemSelect,
+   * см. её докстринг. Без них (HistoryEditForm.tsx) опция "+ Завести новую"
+   * не показывается вовсе. */
+  initDataRaw?: string;
+  onBandItemCreated?: (item: BandItemInfo) => void;
 }) {
+  const canPickBand = bandItems.length > 0 || (initDataRaw !== undefined && onBandItemCreated !== undefined);
   return (
     <>
       {equipmentType === "weight" && (
@@ -279,21 +394,16 @@ export function EquipmentCorrectionFields({
         />
       )}
 
-      {equipmentType === "band" && bandItems.length > 0 && (
+      {equipmentType === "band" && canPickBand && (
         <BandItemSelect
           letter={letter}
           bandItems={bandItems}
           value={bandItemValue}
           onChange={onBandItemChange}
           firstWorkout={firstWorkout}
+          initDataRaw={initDataRaw}
+          onItemCreated={onBandItemCreated}
         />
-      )}
-
-      {equipmentType === "band" && bandItems.length === 0 && firstWorkout && (
-        <p className="hint">
-          Для этого блока рекомендована резина, но заводить новую резину в Mini App пока нельзя (скоро появится) —
-          заверши эту тренировку в боте.
-        </p>
       )}
 
       {equipmentType === "band" && onOpenFaq && (
@@ -326,6 +436,8 @@ export function BlockForm({
   isHeavy = false,
   onOpenFaq,
   firstWorkout = false,
+  initDataRaw,
+  onBandItemCreated,
 }: {
   letter: "A" | "B";
   target: number | null;
@@ -355,6 +467,10 @@ export function BlockForm({
   /** Первая тренировка (issue #124, PR 2) — прокидывается в
    * EquipmentCorrectionFields, см. её докстринг. */
   firstWorkout?: boolean;
+  /** Заведение резины (issue #124, PR 3) — прокидывается в
+   * EquipmentCorrectionFields/BandItemSelect, см. их докстринги. */
+  initDataRaw?: string;
+  onBandItemCreated?: (item: BandItemInfo) => void;
 }) {
   return (
     <Section
@@ -404,6 +520,8 @@ export function BlockForm({
         onBandItemChange={onBandItemChange}
         onOpenFaq={onOpenFaq}
         firstWorkout={firstWorkout}
+        initDataRaw={initDataRaw}
+        onBandItemCreated={onBandItemCreated}
       />
     </Section>
   );
@@ -455,6 +573,11 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   const [blockBActualWeight, setBlockBActualWeight] = useState("");
   const [blockABandItem, setBlockABandItem] = useState("");
   const [blockBBandItem, setBlockBBandItem] = useState("");
+  // Заведённые резины (issue #124, PR 3) — своё состояние поверх
+  // plan.band_items: заведение новой резины прямо на этом экране
+  // (BandItemSelect) должно сразу появиться в списке выбора обоих блоков,
+  // не только того, где её завели, а plan — снимок на момент загрузки.
+  const [bandItems, setBandItems] = useState<BandItemInfo[]>([]);
   const [comment, setComment] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -472,6 +595,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
           // work_sets_a/work_sets_b из ответа API, не захардкожено.
           setBlockAWorking(Array(plan.work_sets_a ?? 0).fill(""));
           setBlockBWorking(Array(plan.work_sets_b ?? 0).fill(""));
+          setBandItems(plan.band_items);
           // Первая тренировка (issue #124, PR 2) — сразу открываем форму
           // ввода, минуя экран выбора режима: для первой тренировки других
           // осмысленных режимов и нет (см. ниже, где скрыты остальные кнопки).
@@ -493,6 +617,13 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
       cancelled = true;
     };
   }, [initDataRaw]);
+
+  // Заведение резины прямо на этом экране (issue #124, PR 3) — новый пункт
+  // добавляется в общий список сразу для обоих блоков (BandItemSelect
+  // блока, где её завели, сам выставляет её выбранной через onChange).
+  function handleBandItemCreated(item: BandItemInfo) {
+    setBandItems((prev) => [...prev, item]);
+  }
 
   async function handleSubmit(plan: WorkoutPlanResponse, confirmAnomalies: boolean) {
     // Тест на максимум (issue #105) — один подход без раскладки, тот же
@@ -519,7 +650,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
     // поэтому то, что для обычной тренировки было необязательной правкой "на
     // месте", здесь обязательно: без веса для WEIGHT сервер записал бы null
     // вместо реального снаряда, без резины для BAND — нечего записывать
-    // вовсе (заведение резины прямо тут — PR 3, пока только через бота).
+    // вовсе (заведение/выбор резины — тут же, BandItemSelect, issue #124, PR 3).
     if (plan.is_first_workout) {
       const missingWeight =
         (plan.equipment_a?.type === "weight" && actualWeightA.value === null) ||
@@ -532,9 +663,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
         (plan.equipment_a?.type === "band" && !blockABandItem) ||
         (plan.equipment_b?.type === "band" && !blockBBandItem);
       if (missingBand) {
-        setFormError(
-          "Для блока с резиной нужно сначала завести её в боте (в Mini App это появится позже) — заверши эту тренировку там.",
-        );
+        setFormError("Выбери или заведи резину для блока, где она нужна — это твой первый снаряд.");
         return;
       }
     }
@@ -823,11 +952,13 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
           onMaxChange={setBlockAMax}
           actualWeightValue={blockAActualWeight}
           onActualWeightChange={setBlockAActualWeight}
-          bandItems={plan.band_items}
+          bandItems={bandItems}
           bandItemValue={blockABandItem}
           onBandItemChange={setBlockABandItem}
           onOpenFaq={onOpenFaq}
           firstWorkout={plan.is_first_workout}
+          initDataRaw={initDataRaw}
+          onBandItemCreated={handleBandItemCreated}
         />
       )}
 
@@ -843,12 +974,14 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
         onMaxChange={setBlockBMax}
         actualWeightValue={blockBActualWeight}
         onActualWeightChange={setBlockBActualWeight}
-        bandItems={plan.band_items}
+        bandItems={bandItems}
         bandItemValue={blockBBandItem}
         onBandItemChange={setBlockBBandItem}
         isHeavy={plan.is_heavy_b}
         onOpenFaq={onOpenFaq}
         firstWorkout={plan.is_first_workout}
+        initDataRaw={initDataRaw}
+        onBandItemCreated={handleBandItemCreated}
       />
 
       <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />

@@ -92,7 +92,9 @@ from app.web.schemas import (
     AnomalyFlagsResponse,
     BackdateSubmitRequest,
     BandHelpResponse,
+    BandItemCreateRequest,
     BandItemInfo,
+    BandItemListResponse,
     CycleVolumeResponse,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
@@ -277,6 +279,53 @@ async def submit_onboarding_questionnaire(
         now=now,
     )
     return OnboardingQuestionnaireResponse(trial_days=TRIAL_DAYS)
+
+
+# --- Резины (issue #124, PR 3) -----------------------------------------------------
+
+
+@router.get("/equipment/band-items", response_model=BandItemListResponse)
+async def list_band_items(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BandItemListResponse:
+    """Личный список резин вне контекста конкретного плана тренировки —
+    GET /api/workout/plan/GET /api/workout/backdate/plan/GET /api/free-workout/plan
+    уже отдают band_items как часть своего ответа (тот же
+    EquipmentItemRepository.list_for_user), но экрану заведения/выбора
+    резины на первой тренировке (WorkoutScreen.tsx, issue #124, PR 3) нужен
+    отдельный явный эндпойнт, не завязанный на план."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    items = await EquipmentItemRepository(session).list_for_user(user.id)
+    return BandItemListResponse(
+        items=[BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items],
+    )
+
+
+@router.post("/equipment/band-items", response_model=BandItemInfo)
+async def create_band_item(
+    body: BandItemCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BandItemInfo:
+    """Заведение новой резины (issue #124, PR 3) — тот же
+    EquipmentItemRepository.create, что _create_band_item_and_advance/
+    _create_standalone_band_item бота (app/bot/handlers/equipment.py) уже
+    вызывают, не дублированная логика. Единственный кусок, которого не
+    хватало, чтобы первая тренировка на резине проходила в Mini App целиком
+    без захода в бота (issue #124, PR 2 уже довело снаряд/цель до
+    status="ready", но не умело создать саму резину). PATCH/DELETE
+    сознательно вне скоупа (согласовано в issue — паритет с ботом, у
+    которого их тоже нет)."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    item = await EquipmentItemRepository(session).create(
+        user_id=user.id, name=body.name, resistance_kg=body.resistance_kg,
+    )
+    return BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
 
 
 @router.get("/profile", response_model=ProfileResponse)
@@ -1439,9 +1488,11 @@ class _BackdateContext:
     Исключение (issue #123): needs_new_equipment/пустая история ВСЁ ЖЕ
     блокируют поток статусами "first_workout"/"equipment_setup_required",
     как и у _PlanContext — без этого resolve_next_targets на пустой истории
-    отдавал бы снаряд-заглушку (BAND без item_id — резину физически неоткуда
-    взять, band_items пуст, экрана добавления резины в Mini App нет),
-    "ready" с ним вело в тупик 400 при попытке сохранить. Это уже не про
+    отдавал бы снаряд-заглушку (BAND без item_id), "ready" с ним вело в тупик
+    400 при попытке сохранить. Заведение резины (issue #124, PR 3,
+    POST /api/equipment/band-items) не снимает этот гейт — форма бэкдейта
+    (BackdateSubmitRequest) по-прежнему требует явный снаряд от клиента, не
+    решает вопрос "откуда взять первый снаряд вообще" сама. Это уже не про
     готовность к следующей ЖИВОЙ тренировке (та причина не трогается) — это
     про то, что снаряд для бэкдейта пока не из чего выбирать."""
 
