@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
 import { fetchGtoStatus, fetchProfile, fetchWsfStatus, type GtoStatus, type ProfileResponse, type WsfStatus } from "./api";
+import { ProfileEditForm } from "./ProfileEditForm";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
 
@@ -163,10 +164,11 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
 
 /** Вкладка "Профиль" Mini App (issue #45, часть 3) — сознательно узкий
  * первый шаг: краткий статус подписки, монеты, число тренировок/ачивок,
- * дни с последней тренировки. Полный профиль (рост/вес/таймзона/список
- * ачивок текстом) остаётся только в боте (app/bot/handlers/menu.py::
- * render_profile) — сюда можно добавлять поля по одному, когда
- * понадобится, не всё сразу.
+ * дни с последней тренировки. Личные данные (рост/вес/пол/дата рождения/
+ * часовой пояс) добавлены в issue #125 — карточка с текущими значениями
+ * + форма правки (ProfileEditForm), тот же PUT /api/profile, что и
+ * app/bot/handlers/profile_edit.py вызывает через UserRepository.update_profile.
+ * Список ачивок текстом остаётся отдельным разделом ниже (issue #66).
  *
  * Раздел подписки (issue #53, волна 2) раньше был здесь целиком — вынесен
  * в отдельную вкладку (issue #57, п.1: он оказался слишком заметным сразу
@@ -180,6 +182,9 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   // приём swap'а, что HistoryEditForm поверх HistoryScreen, не отдельная
   // вкладка нижнего меню.
   const [showAchievements, setShowAchievements] = useState(false);
+  // Форма правки личных данных (issue #125) — тот же приём swap'а, что и
+  // showAchievements выше.
+  const [showEditProfile, setShowEditProfile] = useState(false);
   // Разряд ГТО (issue #71) — отдельный запрос от /api/profile: своя
   // концепция (не AchievementItem), не критична для остального экрана,
   // поэтому её сбой не должен ронять всю вкладку "Профиль" (гасится
@@ -257,6 +262,17 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     return <AchievementsScreen achievements={profile.achievements} onBack={() => setShowAchievements(false)} />;
   }
 
+  if (showEditProfile) {
+    return (
+      <ProfileEditForm
+        initDataRaw={initDataRaw}
+        profile={profile}
+        onSaved={(updated) => setState({ phase: "ready", profile: updated })}
+        onBack={() => setShowEditProfile(false)}
+      />
+    );
+  }
+
   return (
     <div>
       <p className="plan-title">Профиль</p>
@@ -269,6 +285,18 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
               ? "Последняя тренировка — сегодня."
               : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
         </p>
+      </div>
+
+      <div className="profile-card">
+        <p className="section-title">Личные данные</p>
+        <p>{`Вес: ${profile.weight_kg ?? "не указано"} кг`}</p>
+        <p>{`Рост: ${profile.height_cm ?? "не указано"} см`}</p>
+        <p>{`Пол: ${profile.gender_label ?? "не указано"}`}</p>
+        <p>{`Возраст: ${profile.age ?? "не указано"}`}</p>
+        <p>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</p>
+        <Button mode="outline" size="m" stretched onClick={() => setShowEditProfile(true)}>
+          ✏️ Изменить
+        </Button>
       </div>
 
       <div className="profile-card">

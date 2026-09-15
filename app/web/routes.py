@@ -11,16 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import (
+    calculate_age,
     format_block_result,
     format_elective_result,
     format_equipment_label,
     format_subscription_status,
 )
-from app.bot.handlers.menu import OFERTA_PDF_PATH
+from app.bot.handlers.menu import _GENDER_LABELS, OFERTA_PDF_PATH
 from app.bot.handlers.subscription import _robokassa_available
 from app.bot.handlers.workout_edit import _is_editable
+from app.bot.timezones import TIMEZONE_DISPLAY_LABELS, format_timezone_label
 from app.config import settings
-from app.db.models import ActiveTimerType, BlockType, SubscriptionStatus
+from app.db.models import ActiveTimerType, BlockType, Gender, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
@@ -108,6 +110,7 @@ from app.web.schemas import (
     LeaderboardResponse,
     PaymentLinkResponse,
     ProfileResponse,
+    ProfileUpdateRequest,
     ProgressPointResponse,
     ProgressResponse,
     SubscriptionResponse,
@@ -115,6 +118,8 @@ from app.web.schemas import (
     TimerPreferencesUpdateRequest,
     TimerStartRequest,
     TimerStatusResponse,
+    TimezoneOption,
+    TimezoneOptionsResponse,
     WeeklySummaryResponse,
     WorkoutDraftRequest,
     WorkoutDraftResponse,
@@ -200,6 +205,8 @@ async def get_profile(
         for a in achievements
     ]
 
+    age = calculate_age(user.birth_date, datetime.now(UTC).date()) if user.birth_date is not None else None
+
     return ProfileResponse(
         is_onboarded=True,
         subscription_status_label=format_subscription_status(user),
@@ -208,6 +215,62 @@ async def get_profile(
         achievements=achievement_items,
         workouts_count=len(history),
         days_since_last_workout=days_since_last_workout,
+        weight_kg=user.weight_kg,
+        height_cm=user.height_cm,
+        gender=user.gender.value if user.gender is not None else None,
+        gender_label=_GENDER_LABELS[user.gender] if user.gender is not None else None,
+        birth_date=user.birth_date.isoformat() if user.birth_date is not None else None,
+        age=age,
+        timezone=user.timezone,
+        timezone_label=format_timezone_label(user.timezone) if user.timezone else None,
+    )
+
+
+@router.put("/profile", response_model=ProfileResponse)
+async def update_profile(
+    body: ProfileUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProfileResponse:
+    """Правка уже заполненных полей профиля (issue #125) — тот же
+    UserRepository.update_profile, что app.bot.handlers.profile_edit
+    вызывает по одному полю за раз и что OnboardingService.
+    complete_questionnaire_and_start_trial вызывает при онбординге
+    (единственный метод записи этих полей в проекте, не дублируется).
+    Mini App шлёт все изменившиеся поля одним запросом (обычная веб-форма,
+    не пошаговый FSM, как в боте) — update_profile уже поддерживает
+    частичное обновление через None-параметры, ничего дополнительно
+    адаптировать не нужно.
+
+    После сохранения отдаёт тот же полный ProfileResponse, что и GET —
+    фронтенду не нужен отдельный shape ответа, экран профиля обновляется
+    тем же способом, что и при обычной загрузке."""
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+
+    await users.update_profile(
+        user.id,
+        weight_kg=body.weight_kg,
+        height_cm=body.height_cm,
+        gender=Gender(body.gender) if body.gender is not None else None,
+        birth_date=body.birth_date,
+        timezone=body.timezone,
+    )
+    return await get_profile(init_data=init_data, session=session)
+
+
+@router.get("/profile/timezone-options", response_model=TimezoneOptionsResponse)
+async def get_timezone_options() -> TimezoneOptionsResponse:
+    """Список часовых поясов для выбора в форме правки профиля (issue #125)
+    — тот же TIMEZONE_DISPLAY_LABELS, что app.bot.timezones уже использует
+    для отображения выбранного пояса в Профиле бота (format_timezone_label),
+    здесь отдаётся целиком как список опций. Публичный, без initData: как и
+    /api/oferta.pdf/ /api/faq/band-help, это статический справочный список,
+    не персональные данные."""
+    return TimezoneOptionsResponse(
+        options=[TimezoneOption(value=value, label=label) for value, label in TIMEZONE_DISPLAY_LABELS.items()],
     )
 
 
