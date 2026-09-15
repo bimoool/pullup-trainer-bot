@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchHello, type HelloResponse } from "./api";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
+import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
 import { SubscriptionScreen } from "./SubscriptionScreen";
@@ -104,6 +105,19 @@ export function App() {
     setTab(key);
   }
 
+  // Переиспользуется и начальной загрузкой, и завершением онбординга
+  // (OnboardingScreen.tsx::onComplete, issue #124, PR 2) — initDataRaw уже
+  // известна (Telegram-цепочка ниже проходится только один раз, при первом
+  // открытии), новый GET /api/hello просто приносит свежий onboarding_step.
+  async function refetchHello(initDataRaw: string) {
+    try {
+      const data = await fetchHello(initDataRaw);
+      setState({ status: "ready", data, initDataRaw });
+    } catch (error) {
+      setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -174,11 +188,23 @@ export function App() {
     );
   }
 
+  const isOnboarded = state.data.onboarding_step === "done";
+
   return (
-    <div className={state.data.is_onboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
+    <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
-      {!state.data.is_onboarded && <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>}
-      {state.data.is_onboarded && tab === "workout" && (
+      {/* Замер + анкета (issue #124, PR 2) — раньше единственным путём
+          пройти онбординг был бот ("Онбординг ещё не пройден. Начни его в
+          боте."), теперь полноценный экран прямо здесь: не нужно закрывать
+          Mini App и переключаться в чат с ботом, чтобы вообще начать. */}
+      {!isOnboarded && (
+        <OnboardingScreen
+          initDataRaw={state.initDataRaw}
+          startStep={state.data.onboarding_step}
+          onComplete={() => void refetchHello(state.initDataRaw)}
+        />
+      )}
+      {isOnboarded && tab === "workout" && (
         <WorkoutScreen
           initDataRaw={state.initDataRaw}
           onLiveActiveChange={setLiveWorkoutActive}
@@ -186,26 +212,26 @@ export function App() {
           onOpenWarmup={() => setTab("warmup")}
         />
       )}
-      {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
-      {state.data.is_onboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
-      {state.data.is_onboarded && tab === "profile" && (
+      {isOnboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
+      {isOnboarded && tab === "progress" && <ProgressScreen initDataRaw={state.initDataRaw} />}
+      {isOnboarded && tab === "profile" && (
         <ProfileScreen
           initDataRaw={state.initDataRaw}
           onOpenSubscription={() => setTab("subscription")}
           onOpenFaq={() => openFaq("profile")}
         />
       )}
-      {state.data.is_onboarded && tab === "subscription" && (
+      {isOnboarded && tab === "subscription" && (
         <SubscriptionScreen initDataRaw={state.initDataRaw} onBack={() => setTab("profile")} />
       )}
-      {state.data.is_onboarded && tab === "faq" && (
+      {isOnboarded && tab === "faq" && (
         <FaqScreen initDataRaw={state.initDataRaw} onBack={() => setTab(faqReturnTab)} />
       )}
-      {state.data.is_onboarded && tab === "warmup" && (
+      {isOnboarded && tab === "warmup" && (
         <WarmupScreen initDataRaw={state.initDataRaw} onBack={() => setTab("workout")} />
       )}
 
-      {state.data.is_onboarded && (
+      {isOnboarded && (
         <Tabbar>
           {NAV_TABS.map(({ key, icon, label }) => (
             <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>

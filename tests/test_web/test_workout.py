@@ -153,11 +153,58 @@ async def test_plan_without_subscription_is_no_access(session):
     assert body["status"] == "no_access"
 
 
-async def test_plan_without_history_is_first_workout(session):
+async def test_plan_without_history_and_incomplete_onboarding_is_onboarding_incomplete(session):
+    # Анкета не пройдена (onboarding_completed_at всё ещё None) — редкий
+    # случай гонки, в норме App.tsx не даёт дойти до этого экрана раньше
+    # (issue #124, PR 2), но сервер защищается сам, а не доверяет клиенту.
     user = await UserRepository(session).create(telegram_id=42003, username="fresh")
     await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
     body = await _get_plan(session, telegram_id=user.telegram_id)
-    assert body["status"] == "first_workout"
+    assert body["status"] == "onboarding_incomplete"
+
+
+async def test_plan_without_history_after_full_onboarding_is_ready(session):
+    # Первая тренировка после полного онбординга в Mini App (issue #124,
+    # PR 2) — снаряд посчитан suggest_starting_equipment(reps=2): блок на
+    # объём <= VOLUME_BLOCK.base_target (10) -> резина, блок на силу <
+    # STRENGTH_START_BODYWEIGHT_MIN_REPS (3) -> тоже резина (см.
+    # app/domain/progression.py::suggest_starting_equipment).
+    user = await UserRepository(session).create(telegram_id=42030, username="onboarded")
+    now = datetime.now(UTC)
+    await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=2)
+    await UserRepository(session).complete_onboarding(user.id, now)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+    assert body["status"] == "ready"
+    assert body["is_first_workout"] is True
+    assert body["target_a"] == 10  # initial_volume_target(2) == VOLUME_BLOCK.base_target (2 <= 10)
+    assert body["target_b"] == 3  # STRENGTH_BLOCK.base_target, флэт независимо от замера
+    assert body["work_sets_a"] == 3  # VOLUME_BLOCK.work_sets
+    assert body["equipment_a"]["type"] == "band"
+    assert body["equipment_a"]["value"] is None
+    assert body["equipment_a"]["item_id"] is None
+    assert body["equipment_b"]["type"] == "band"
+    assert body["equipment_b"]["value"] is None
+    assert body["equipment_b"]["item_id"] is None
+
+
+async def test_plan_without_history_after_onboarding_with_high_baseline_suggests_weight(session):
+    # baseline=15: объём -> собственный вес (>10, <33), сила -> отягощение
+    # (>=8) — те же пороги, что suggest_starting_equipment проверяет для
+    # бота (app/domain/progression.py).
+    user = await UserRepository(session).create(telegram_id=42031, username="strong")
+    now = datetime.now(UTC)
+    await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=15)
+    await UserRepository(session).complete_onboarding(user.id, now)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+
+    body = await _get_plan(session, telegram_id=user.telegram_id)
+    assert body["status"] == "ready"
+    assert body["target_a"] == 12  # ceil(15 * 0.75)
+    assert body["equipment_a"]["type"] == "bodyweight"
+    assert body["equipment_b"]["type"] == "weight"
+    assert body["equipment_b"]["value"] is None
 
 
 async def test_plan_too_early_is_reported(session):
@@ -254,6 +301,43 @@ async def test_submit_for_unknown_telegram_id_reports_status_without_writing(ses
     }
     body = await _post_submit(session, telegram_id=99999, payload=payload)
     assert body["status"] == "not_onboarded"
+
+
+async def test_submit_first_workout_uses_initial_volume_target_not_base_target(session):
+    """Первая тренировка после полного онбординга в Mini App (issue #124,
+    PR 2) — target_before блока A должен быть initial_volume_target(15)=12
+    ("замер минус 25%"), НЕ VOLUME_BLOCK.base_target=10, который
+    WorkoutRepository.complete_workout посчитал бы сам при пустой истории
+    без явного target_a_override (см. app/web/routes.py::submit_workout).
+    Без него этот тест ловит ту же цифру, что видит план (test_plan_
+    without_history_after_onboarding_with_high_baseline_suggests_weight),
+    но записанной в БД по-другому — расхождение плана и факта."""
+    user = await UserRepository(session).create(telegram_id=42032, username="strong-submit")
+    now = datetime.now(UTC)
+    await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=15)
+    await UserRepository(session).complete_onboarding(user.id, now)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+
+    plan = await _get_plan(session, telegram_id=user.telegram_id)
+    assert plan["target_a"] == 12
+    assert plan["equipment_b"]["type"] == "weight"
+
+    payload = {
+        "block_a_working_reps": [12, 12, 12], "block_a_max_reps": 13,
+        "block_b_working_reps": [3, 3, 3, 3], "block_b_max_reps": 3,
+        "block_b_actual_weight": "5.0",
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _post_submit(session, telegram_id=user.telegram_id, payload=payload)
+    assert body["status"] == "ok"
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    assert len(history) == 1
+    written_block_a = next(b for b in history[0].blocks if b.block_type == BlockType.A)
+    written_block_b = next(b for b in history[0].blocks if b.block_type == BlockType.B)
+    assert written_block_a.target_before == 12
+    assert written_block_b.equipment_type == EquipmentType.WEIGHT
+    assert written_block_b.equipment_value == Decimal("5.0")
 
 
 async def test_submit_uses_same_progression_as_direct_repository_call(session):

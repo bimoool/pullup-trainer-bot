@@ -25,6 +25,7 @@ from app.config import settings
 from app.db.models import ActiveTimerType, BlockType, Gender, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
+from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.leaderboard import LeaderboardRepository
@@ -43,6 +44,7 @@ from app.domain.constants import (
     STRENGTH_BLOCK,
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
+    TRIAL_DAYS,
     VOLUME_BLOCK,
     EquipmentType,
     VolumeGrowthReason,
@@ -61,7 +63,7 @@ from app.domain.electives import (
 )
 from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
-from app.domain.progression import rollback_target
+from app.domain.progression import initial_volume_target, rollback_target, suggest_starting_equipment
 from app.domain.reports import (
     EpleyProgress,
     EquipmentProgress,
@@ -74,6 +76,7 @@ from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
+from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
@@ -108,6 +111,10 @@ from app.web.schemas import (
     LeaderboardDisplayNameUpdateRequest,
     LeaderboardEntryResponse,
     LeaderboardResponse,
+    OnboardingBaselineRequest,
+    OnboardingBaselineResponse,
+    OnboardingQuestionnaireRequest,
+    OnboardingQuestionnaireResponse,
     PaymentLinkResponse,
     ProfileResponse,
     ProfileUpdateRequest,
@@ -148,28 +155,124 @@ async def hello(
 
     name — из initData.user (Telegram уже подтвердил личность подписью),
     не из БД: у ещё не онбордившегося пользователя в users вообще нет
-    строки, а поздороваться нужно в любом случае."""
+    строки, а поздороваться нужно в любом случае.
+
+    onboarding_step (issue #124, PR 2) — четыре состояния вместо булева
+    is_onboarded (тот молча приравнивал "есть строка User" к "онбординг
+    пройден", хотя анкета могла быть не завершена): "not_registered" —
+    строки User ещё нет вообще (POST /api/onboarding/baseline создаёт её
+    сама при необходимости — Mini App не полагается на /start бота);
+    "baseline" — User есть, замера ещё не было; "questionnaire" — замер
+    есть, анкета не завершена (onboarding_completed_at ещё None); "done" —
+    обычный путь ниже, как раньше is_onboarded=True."""
     telegram_id = init_data.user.id
     name = init_data.user.first_name
 
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return HelloResponse(
-            name=name, is_onboarded=False, readiness_status=None, days_since_last_workout=None,
+            name=name, onboarding_step="not_registered", readiness_status=None, days_since_last_workout=None,
+        )
+
+    if user.onboarding_completed_at is None:
+        baseline = await BaselineRepository(session).get_latest_for_user(user.id)
+        step = "questionnaire" if baseline is not None else "baseline"
+        return HelloResponse(
+            name=name, onboarding_step=step, readiness_status=None, days_since_last_workout=None,
         )
 
     history = await WorkoutRepository(session).list_for_user(user.id)
     if not history:
         return HelloResponse(
-            name=name, is_onboarded=True, readiness_status=None, days_since_last_workout=None,
+            name=name, onboarding_step="done", readiness_status=None, days_since_last_workout=None,
         )
 
     readiness = check_training_readiness(history[-1].performed_at.date(), datetime.now(UTC).date())
     return HelloResponse(
-        name=name, is_onboarded=True,
+        name=name, onboarding_step="done",
         readiness_status=readiness.status.value,
         days_since_last_workout=readiness.days_since_last_workout,
     )
+
+
+@router.post("/onboarding/baseline", response_model=OnboardingBaselineResponse)
+async def submit_onboarding_baseline(
+    body: OnboardingBaselineRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> OnboardingBaselineResponse:
+    """Замер (issue #124, PR 2) — тот же OnboardingService.record_baseline_and_start,
+    что handle_baseline_confirm бота вызывает по нажатию "Да" (app/bot/handlers/
+    onboarding.py): один сет + первая ачивка "Первый замер", без дублирования
+    логики. Подтверждение "точно ли N" (waiting_for_baseline_confirm бота) —
+    сделано чисто на фронтенде (ввёл → показали число → "Да"/"Ввести заново"):
+    в БД ничего не попадает, пока фронтенд не вызовет этот эндпойнт, тот же
+    эффект, что и у pending_baseline_reps, который в боте живёт только в FSM.
+
+    Создаёт User сам, если строки ещё нет (onboarding_step="not_registered")
+    — в отличие от бота, где User заводит /start (app/bot/handlers/start.py),
+    Mini App может быть открыта через Menu Button без единого сообщения боту
+    вообще, так что рассчитывать на то, что строка уже существует, нельзя.
+    Повторный вызов (например, "Ввести заново" уже ПОСЛЕ отправки — фронтенд
+    так не делает, но сервер не доверяет клиенту) создаёт второй Baseline —
+    тот же эффект, что и повторный /start → замер в боте, не новая проблема
+    этого эндпойнта."""
+    telegram_id = init_data.user.id
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(telegram_id)
+    if user is None:
+        user = await users.create(telegram_id=telegram_id, username=getattr(init_data.user, "username", None))
+
+    await OnboardingService(session).record_baseline_and_start(
+        user_id=user.id, performed_at=datetime.now(UTC), reps=body.reps,
+    )
+
+    if body.reps == 0:
+        motivation_message = texts.MOTIVATION_AFTER_BASELINE_ZERO
+    elif body.reps <= 11:
+        motivation_message = texts.MOTIVATION_AFTER_BASELINE_LOW
+    else:
+        motivation_message = texts.MOTIVATION_AFTER_BASELINE_HIGH.format(reps=body.reps)
+
+    return OnboardingBaselineResponse(reps=body.reps, motivation_message=motivation_message)
+
+
+@router.post("/onboarding/questionnaire", response_model=OnboardingQuestionnaireResponse)
+async def submit_onboarding_questionnaire(
+    body: OnboardingQuestionnaireRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> OnboardingQuestionnaireResponse:
+    """Анкета (issue #124, PR 2) — тот же OnboardingService.
+    complete_questionnaire_and_start_trial, что handle_timezone бота вызывает
+    последним шагом анкеты (app/bot/handlers/questionnaire.py): пишет профиль,
+    отмечает онбординг завершённым, стартует триал. Таймзона — не свободный
+    ввод города, как в боте (там нераспознанный город молча становится
+    Москвой, см. app/bot/timezones.py — неприемлемо для явного выбора в
+    форме), а выбор из GET /api/profile/timezone-options (issue #125,
+    Intl.DateTimeFormat на фронтенде только предзаполняет значение по
+    умолчанию) — осознанное расхождение с ботом, согласовано в issue.
+
+    404, если User ещё нет вообще (baseline не пройден) — в Mini App
+    недостижимо вживую (App.tsx не даст дойти до этого экрана раньше
+    /api/onboarding/baseline), но дешевле проверить на сервере, чем
+    считать чужой ввод валидным."""
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Baseline not recorded yet")
+
+    now = datetime.now(UTC)
+    await OnboardingService(session).complete_questionnaire_and_start_trial(
+        user_id=user.id,
+        weight_kg=body.weight_kg,
+        height_cm=body.height_cm,
+        gender=Gender(body.gender),
+        birth_date=body.birth_date,
+        timezone=body.timezone,
+        now=now,
+    )
+    return OnboardingQuestionnaireResponse(trial_days=TRIAL_DAYS)
 
 
 @router.get("/profile", response_model=ProfileResponse)
@@ -409,6 +512,15 @@ class _PlanContext:
     # поправка продукта) больше не называет никакого ориентирующего числа
     # ни в боте, ни здесь.
     is_deload_a: bool = False
+    # Первая тренировка после полного онбординга в Mini App (issue #124,
+    # PR 2) — снаряд посчитан suggest_starting_equipment, не унаследован от
+    # предыдущей тренировки (её ещё не было). equipment_a/b_value/item_id
+    # всегда None в этом случае — конкретное значение (кг/резина) выбирается
+    # на самой форме тренировки, тем же полем "фактический вес"/выбор резины,
+    # что WorkoutSubmitRequest уже поддерживает для правки унаследованного
+    # снаряда (issue #45/#48); полноценный UI выбора и заведения резины —
+    # отдельно, PR 3.
+    is_first_workout: bool = False
 
 
 async def _resolve_plan_context(
@@ -430,7 +542,21 @@ async def _resolve_plan_context(
     блока A не проверяется вовсе. ensure_active_workout_set (app/services/
     workout_log.py, общая с ботом функция) вызывается только когда мы точно
     дошли до "ready" — не заводим лишний WorkoutSet ради статуса, который
-    Mini App всё равно не покажет формой."""
+    Mini App всё равно не покажет формой.
+
+    Пустая история (issue #124, PR 2) — раньше всегда означала status=
+    "first_workout" (форма недоступна, только бот). Теперь различается:
+    анкета не пройдена (onboarding_completed_at is None) — "onboarding_incomplete"
+    (в норме недостижимо, App.tsx перехватывает по onboarding_step раньше,
+    чем дойти до этого экрана, но защита на сервере нужна на случай гонки —
+    проверяется только тут, а не раньше проверки доступа выше, чтобы не
+    менять порядок статусов для уже существующих сценариев); анкета
+    пройдена — "ready" сразу, тот же расчёт снаряда/цели, что
+    _advance_equipment_queue/handle_start_workout бота делают через
+    suggest_starting_equipment/initial_volume_target (app/bot/handlers/
+    equipment.py, app/bot/handlers/workout.py), просто без промежуточных
+    шагов FSM — никакой инерции от предыдущей тренировки нет, needs_new_
+    equipment проверять не на чем."""
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return _PlanContext(status="not_onboarded")
@@ -441,7 +567,28 @@ async def _resolve_plan_context(
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
     if not history:
-        return _PlanContext(status="first_workout")
+        if user.onboarding_completed_at is None:
+            return _PlanContext(status="onboarding_incomplete")
+
+        baseline = await BaselineRepository(session).get_latest_for_user(user.id)
+        baseline_reps = baseline.reps if baseline is not None else 0
+        equipment_a_type, equipment_b_type = suggest_starting_equipment(baseline_reps)
+
+        active_set = await ensure_active_workout_set(session, user.id)
+        if active_set is None:
+            return _PlanContext(status="no_active_set")
+
+        return _PlanContext(
+            status="ready",
+            user_id=user.id,
+            workout_set_id=active_set.id,
+            target_a=initial_volume_target(baseline_reps),
+            target_b=STRENGTH_BLOCK.base_target,
+            work_sets_a=VOLUME_BLOCK.work_sets,
+            equipment_a_type=equipment_a_type,
+            equipment_b_type=equipment_b_type,
+            is_first_workout=True,
+        )
 
     is_admin = settings.is_admin(telegram_id)
     readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
@@ -564,6 +711,7 @@ async def get_workout_plan(
         band_items=band_items,
         is_heavy_b=context.is_heavy_b,
         is_deload_a=context.is_deload_a,
+        is_first_workout=context.is_first_workout,
     )
 
 
@@ -670,7 +818,14 @@ async def submit_workout(
         block_b_equipment_value=equipment_b_value,
         block_a_equipment_item_id=equipment_a_item_id,
         block_b_equipment_item_id=equipment_b_item_id,
-        target_a_override=context.target_a if context.is_gap_rollback else None,
+        # Первая тренировка (issue #124, PR 2) — context.target_a уже несёт
+        # initial_volume_target ("замер минус 25%"), не флэт base_target,
+        # который иначе досчитал бы record_workout сам (у него нет истории,
+        # откуда взять реальный замер) — тот же override, что "target_a_override"
+        # в data FSM бота для этого случая (app/bot/handlers/workout.py::
+        # handle_start_workout). is_gap_rollback/is_first_workout взаимно
+        # исключают друг друга (см. _resolve_plan_context).
+        target_a_override=context.target_a if (context.is_gap_rollback or context.is_first_workout) else None,
         target_b_override=None,
         is_deload_a=context.is_deload_a,
         comment=body.comment,
