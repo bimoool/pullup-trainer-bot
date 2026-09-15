@@ -10,8 +10,24 @@ tests/test_web/test_workout.py — сценарий "ready" здесь досл�
 пять — отдельными issue после того, как инфраструктура обкатана):
   - not_onboarded — ничего не сидирует, статус берётся из отсутствия строки
     users (см. app/web/routes.py::get_hello/get_workout_plan).
-  - first_workout — анкета пройдена, ни одной тренировки ещё не было.
+  - first_workout — анкета полностью пройдена, ни одной тренировки ещё не
+    было.
   - ready — одна прошлая тренировка 5 дней назад, обычный день тренировки.
+
+Обновление (issue #126, разбор повторного падения CI после мержа issue
+#124 PR 2): оба сценария с сидированием раньше вызывали
+SubscriptionService.start_trial напрямую и не отмечали
+user.onboarding_completed_at вообще — до PR 2 issue #124 это было
+достаточно (HelloResponse.is_onboarded значило просто "строка users
+существует"). Теперь GET /api/hello (onboarding_step) проверяет
+onboarding_completed_at ПЕРВЫМ, раньше истории тренировок — с
+onboarding_completed_at=None App.tsx рендерит OnboardingScreen вместо
+WorkoutScreen вообще, независимо от того, есть ли уже тренировки в
+истории. Оба сценария теперь проходят через OnboardingService целиком
+(record_baseline_and_start + complete_questionnaire_and_start_trial — тот
+же путь, что и настоящий онбординг, start_trial внутри неё же, отдельный
+вызов SubscriptionService.start_trial убран, чтобы не стартовать триал
+дважды).
 
 Использование (тот же DATABASE_URL/BOT_TOKEN, что у app/web/main.py):
     python scripts/e2e_seed.py ready 900003
@@ -19,21 +35,33 @@ tests/test_web/test_workout.py — сценарий "ready" здесь досл�
 
 import argparse
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import async_session_factory
-from app.db.repositories.baselines import BaselineRepository
+from app.db.models import Gender
 from app.db.repositories.users import UserRepository
-from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
 from app.domain.session import BlockLog
-from app.services.subscription import SubscriptionService
+from app.services.onboarding import OnboardingService
 
 BAND_VALUE = Decimal("15.0")
+
+# Реальная демография значения не имеет для этих сценариев — заполняется
+# только потому, что OnboardingService.complete_questionnaire_and_start_trial
+# (issue #124) требует эти поля, чтобы отметить онбординг завершённым; без
+# этого GET /api/hello никогда не вернёт onboarding_step="done", и App.tsx
+# не покажет WorkoutScreen вообще.
+_QUESTIONNAIRE_DEFAULTS = {
+    "weight_kg": Decimal("75"),
+    "height_cm": 180,
+    "gender": Gender.MALE,
+    "birth_date": date(1995, 1, 1),
+    "timezone": "Europe/Moscow",
+}
 
 
 async def seed_not_onboarded(session: AsyncSession, telegram_id: int) -> None:
@@ -43,8 +71,21 @@ async def seed_not_onboarded(session: AsyncSession, telegram_id: int) -> None:
 
 
 async def seed_first_workout(session: AsyncSession, telegram_id: int) -> None:
+    """Замер на 12 повторений (не 10 — на 10 suggest_starting_equipment
+    отдал бы блоку A резину, а у свежего пользователя нет ни одного
+    заведённого band_item, заведение резины в Mini App — issue #124, PR 3,
+    ещё не сделан; форма первой тренировки не смогла бы дойти до отправки)
+    даёт (BODYWEIGHT, WEIGHT) — блок A на собственном весе, блок Б сразу на
+    отягощении, вес указывается прямо в форме. Анкета пройдена полностью
+    (см. модульный докстрин выше), ни одной тренировки ещё не было — GET
+    /api/workout/plan отдаёт status="ready" с is_first_workout=True."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
-    await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
+    now = datetime.now(UTC)
+    onboarding = OnboardingService(session)
+    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=12)
+    await onboarding.complete_questionnaire_and_start_trial(
+        user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
+    )
 
 
 async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
@@ -57,12 +98,14 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
     test_plan_ready_shows_target_and_equipment."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
     now = datetime.now(UTC)
-    await SubscriptionService(session).start_trial(user.id, now=now)
-
-    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=10)
-    workout_set = await WorkoutSetRepository(session).create(
-        user_id=user.id, started_from_baseline_id=baseline.id,
+    onboarding = OnboardingService(session)
+    _baseline, workout_set, _user = await onboarding.record_baseline_and_start(
+        user_id=user.id, performed_at=now, reps=10,
     )
+    await onboarding.complete_questionnaire_and_start_trial(
+        user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
+    )
+
     await WorkoutRepository(session).record_workout(
         user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=5),
         block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=11),
