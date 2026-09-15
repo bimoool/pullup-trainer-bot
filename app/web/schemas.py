@@ -1,5 +1,7 @@
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -148,7 +150,13 @@ class ProfileResponse(BaseModel):
     achievements (issue #66, п.1) — то же самое, что уже даёт
     achievements_count числом, только с деталями (код/лейбл/дата) для
     кликабельного счётчика на экране: пустой список — тот же случай, что
-    achievements_count == 0, а не "не загрузилось"."""
+    achievements_count == 0, а не "не загрузилось".
+
+    weight_kg/height_cm/gender/birth_date/timezone (issue #125) —
+    сырые значения для формы правки, gender_label/age/timezone_label —
+    те же готовые подписи, что app.bot.handlers.menu.render_profile уже
+    показывает текстом (_GENDER_LABELS/calculate_age/format_timezone_label,
+    не веб-копии)."""
 
     is_onboarded: bool
     subscription_status_label: str | None = None
@@ -157,6 +165,57 @@ class ProfileResponse(BaseModel):
     achievements: list[AchievementItem] = Field(default_factory=list)
     workouts_count: int | None = None
     days_since_last_workout: int | None = None
+    weight_kg: Decimal | None = None
+    height_cm: int | None = None
+    gender: str | None = None
+    gender_label: str | None = None
+    birth_date: str | None = None
+    age: int | None = None
+    timezone: str | None = None
+    timezone_label: str | None = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    """PUT /api/profile (issue #125) — та же семантика частичного
+    обновления, что app.db.repositories.users.UserRepository.update_profile
+    (единственная валидация значений — здесь, сам метод репозитория её не
+    делает; тот же принцип, что и у полей questionnaire/profile_edit.py
+    бота): None значит "не менять это поле", а не "очистить его" — сброс
+    отдельного поля в Mini App не предусмотрен, как и в боте."""
+
+    weight_kg: Decimal | None = Field(default=None, gt=0)
+    height_cm: int | None = Field(default=None, gt=0)
+    gender: Literal["male", "female"] | None = None
+    birth_date: date | None = None
+    timezone: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_values(self) -> "ProfileUpdateRequest":
+        if self.birth_date is not None and self.birth_date > datetime.now(UTC).date():
+            raise ValueError("birth_date не может быть в будущем")
+        if self.timezone is not None:
+            try:
+                ZoneInfo(self.timezone)
+            except ZoneInfoNotFoundError as exc:
+                raise ValueError("Некорректный часовой пояс") from exc
+        return self
+
+
+class TimezoneOption(BaseModel):
+    """Один пункт списка часовых поясов для выбора в Mini App — тот же
+    anchor-набор, что app.bot.timezones.TIMEZONE_DISPLAY_LABELS уже
+    показывает в Профиле бота, просто отдаётся списком вместо свободного
+    текста города: выбор из готового списка на вебе надёжнее, чем гадать
+    город по свободному вводу (там непризнанный город молча становится
+    Москвой, см. докстринг app.bot.timezones — такое молчаливое поведение
+    не годится для явного выбора в форме)."""
+
+    value: str
+    label: str
+
+
+class TimezoneOptionsResponse(BaseModel):
+    options: list[TimezoneOption]
 
 
 class GtoResponse(BaseModel):

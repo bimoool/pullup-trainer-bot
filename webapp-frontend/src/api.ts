@@ -77,7 +77,12 @@ export interface AchievementItem {
  * app.bot.handlers.menu.render_profile (та же format_subscription_status на
  * бэкенде, не отдельный текст). is_onboarded=false — остальные поля пустые,
  * тот же принцип, что у HelloResponse. achievements (issue #66, п.1) — то же
- * число, что achievements_count, только с деталями для кликабельного счётчика. */
+ * число, что achievements_count, только с деталями для кликабельного счётчика.
+ *
+ * weight_kg/height_cm/gender/birth_date/timezone (issue #125) — сырые
+ * значения для формы правки, gender_label/age/timezone_label — уже готовые
+ * подписи с бэкенда (та же _GENDER_LABELS/calculate_age/format_timezone_label,
+ * что показывает бот, не веб-копия форматирования). */
 export interface ProfileResponse {
   is_onboarded: boolean;
   subscription_status_label: string | null;
@@ -86,6 +91,14 @@ export interface ProfileResponse {
   achievements: AchievementItem[];
   workouts_count: number | null;
   days_since_last_workout: number | null;
+  weight_kg: string | null;
+  height_cm: number | null;
+  gender: "male" | "female" | null;
+  gender_label: string | null;
+  birth_date: string | null;
+  age: number | null;
+  timezone: string | null;
+  timezone_label: string | null;
 }
 
 export interface WorkoutSubmitRequest {
@@ -150,6 +163,48 @@ export async function fetchWorkoutPlan(initDataRaw: string): Promise<WorkoutPlan
 
 export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse> {
   return apiGet<ProfileResponse>("/api/profile", initDataRaw);
+}
+
+/** PUT /api/profile (issue #125) — та же семантика частичного обновления,
+ * что app.db.repositories.users.UserRepository.update_profile: не заданное
+ * (undefined) поле — "не менять", сброс отдельного поля в форму не заложен
+ * (как и в боте, app/bot/handlers/profile_edit.py). */
+export interface ProfileUpdateRequest {
+  weight_kg?: string | null;
+  height_cm?: number | null;
+  gender?: "male" | "female" | null;
+  birth_date?: string | null;
+  timezone?: string | null;
+}
+
+export async function updateProfile(initDataRaw: string, body: ProfileUpdateRequest): Promise<ProfileResponse> {
+  const response = await fetch("/api/profile", {
+    method: "PUT",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PUT /api/profile failed: ${response.status}`);
+  }
+  return (await response.json()) as ProfileResponse;
+}
+
+/** GET /api/profile/timezone-options (issue #125) — тот же anchor-список
+ * городов/поясов, что app.bot.timezones.TIMEZONE_DISPLAY_LABELS уже
+ * показывает в Профиле бота, отданный для выпадающего списка формы
+ * правки: выбор из готового списка надёжнее свободного ввода города
+ * (там непризнанный город молча становится Москвой). Публичный эндпоинт —
+ * initDataRaw не обязателен, но передаётся для единообразия с apiGet. */
+export interface TimezoneOption {
+  value: string;
+  label: string;
+}
+
+export async function fetchTimezoneOptions(initDataRaw: string): Promise<{ options: TimezoneOption[] }> {
+  return apiGet<{ options: TimezoneOption[] }>("/api/profile/timezone-options", initDataRaw);
 }
 
 /** GET /api/gto (issue #71) — разряд ГТО по подтягиванию, отдельная
