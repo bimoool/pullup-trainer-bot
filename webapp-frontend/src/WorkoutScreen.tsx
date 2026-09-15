@@ -26,6 +26,12 @@ type Props = {
    * App.tsx, прокидывается дальше в BlockForm/LiveWorkoutScreen, где
    * фактически показана сноска у выбора резины на BAND. */
   onOpenFaq: () => void;
+  /** Разминка (issue #124, PR 1) — открывает WarmupScreen через App.tsx,
+   * та же кнопка, что "Показать разминку" у бота
+   * (app/bot/handlers/workout.py::handle_warmup_show), просто доступна в
+   * любой момент из списка режимов ниже, а не только вместе с
+   * напоминанием перед конкретной тренировкой. */
+  onOpenWarmup: () => void;
 };
 
 type ScreenState =
@@ -389,7 +395,7 @@ function DeloadBlockAForm({ maxValue, onMaxChange }: { maxValue: string; onMaxCh
   );
 }
 
-export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Props) {
+export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOpenWarmup }: Props) {
   const [showBackdate, setShowBackdate] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showElective, setShowElective] = useState(false);
@@ -697,6 +703,9 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
           </Button>
           <Button mode="outline" size="s" onClick={() => setShowForm(true)}>
             📝 Внести результат тренировки
+          </Button>
+          <Button mode="outline" size="s" onClick={onOpenWarmup}>
+            🔥 Показать разминку
           </Button>
         </div>
       </div>

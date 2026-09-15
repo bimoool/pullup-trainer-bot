@@ -465,6 +465,13 @@ class BandHelpResponse(BaseModel):
     text_html: str
 
 
+class WarmupResponse(BaseModel):
+    """Разминка (issue #124, PR 1) — тот же приём, что BandHelpResponse
+    выше: statический texts.WARMUP_FULL как есть, без пересборки."""
+
+    text_html: str
+
+
 class WorkoutSubmitResponse(BaseModel):
     status: str
     target_a: int | None = None

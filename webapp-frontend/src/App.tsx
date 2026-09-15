@@ -8,6 +8,7 @@ import { HistoryScreen } from "./HistoryScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
 import { SubscriptionScreen } from "./SubscriptionScreen";
+import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 
 type LoadState =
@@ -33,8 +34,13 @@ type LoadState =
  * кнопкой с "Профиля" ИЛИ сноской у выбора резины на WorkoutScreen (два
  * разных входа в один и тот же экран, в отличие от "subscription", у
  * которого один вход). faqReturnTab ниже помнит, откуда открыли, чтобы
- * "Назад" вёл туда же, а не всегда на "Профиль". */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq";
+ * "Назад" вёл туда же, а не всегда на "Профиль".
+ *
+ * "warmup" (issue #124, PR 1) — тот же приём, что "faq": один вход, с
+ * кнопки "🔥 Показать разминку" на WorkoutScreen, "Назад" всегда ведёт на
+ * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
+ * — открыть разминку можно только оттуда). */
+type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "workout", icon: "💪", label: "Тренировка" },
@@ -177,6 +183,7 @@ export function App() {
           initDataRaw={state.initDataRaw}
           onLiveActiveChange={setLiveWorkoutActive}
           onOpenFaq={() => openFaq("workout")}
+          onOpenWarmup={() => setTab("warmup")}
         />
       )}
       {state.data.is_onboarded && tab === "history" && <HistoryScreen initDataRaw={state.initDataRaw} />}
@@ -193,6 +200,9 @@ export function App() {
       )}
       {state.data.is_onboarded && tab === "faq" && (
         <FaqScreen initDataRaw={state.initDataRaw} onBack={() => setTab(faqReturnTab)} />
+      )}
+      {state.data.is_onboarded && tab === "warmup" && (
+        <WarmupScreen initDataRaw={state.initDataRaw} onBack={() => setTab("workout")} />
       )}
 
       {state.data.is_onboarded && (
