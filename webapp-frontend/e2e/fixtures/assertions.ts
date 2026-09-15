@@ -1,6 +1,26 @@
 import type { Page } from "@playwright/test";
 
 /**
+ * Ожидаемый шум, не баг (найдено при разборе первого реального прогона в
+ * CI, issue #126): `webapp-frontend/src/main.tsx` оборачивает
+ * `@telegram-apps/sdk`'s `init()` в try/catch и намеренно логирует через
+ * `console.error("Telegram SDK init() failed", ...)` (issue #24 — иначе
+ * необработанное исключение здесь роняло рендер до первого <p>Загрузка…</p>).
+ * `init()` внутри себя сам зовёт тот же `retrieveLaunchParams()`, что и
+ * App.tsx — а он гарантированно бросает исключение в этом наборе:
+ * `telegramMock.ts` кладёт initData в `window.Telegram.WebApp.initData`
+ * (мост telegram-web-app.js), но НЕ вписывает launch-параметры в URL/
+ * performance entry/sessionStorage, единственные источники, которые читает
+ * retrieveLaunchParams() — App.tsx на этот случай имеет собственный фолбэк
+ * (issue #23), а вот init() в main.tsx — нет, и не обязан: он ловит
+ * исключение сам и продолжает работу с дефолтной версией SDK, ровно как
+ * задумано issue #24. Без этого фильтра ЛЮБОЙ сценарий этого набора падал
+ * бы на `expect(consoleErrors).toEqual([])` из-за ожидаемого, а не
+ * найденного бага — реальные ошибки приложения по-прежнему ловятся.
+ */
+const EXPECTED_CONSOLE_ERROR_SUBSTRINGS = ["Telegram SDK init() failed"];
+
+/**
  * Пункт 3 issue #126 — набор должен ловить не только "экран показал не тот
  * текст", но и "экран упал внутри React без видимого сообщения об ошибке".
  * page.on("pageerror") — необработанные исключения (например, из
@@ -11,7 +31,7 @@ import type { Page } from "@playwright/test";
 export function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("console", (msg) => {
-    if (msg.type() === "error") {
+    if (msg.type() === "error" && !EXPECTED_CONSOLE_ERROR_SUBSTRINGS.some((s) => msg.text().includes(s))) {
       errors.push(msg.text());
     }
   });
