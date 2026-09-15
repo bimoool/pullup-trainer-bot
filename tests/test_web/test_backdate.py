@@ -115,6 +115,41 @@ async def test_backdate_plan_without_subscription_is_no_access(session):
     assert body["status"] == "no_access"
 
 
+async def test_backdate_plan_without_history_is_first_workout(session):
+    """Реальный баг issue #123: без единой прошлой тренировки
+    resolve_next_targets вернул бы needs_new_equipment=True с BAND без
+    item_id (резину физически неоткуда взять, band_items пуст) — раньше это
+    молча превращалось в status="ready" с этим снарядом-заглушкой, форма
+    вела в тупик 400 при попытке сохранить. Теперь тот же статус, что у
+    GET /api/workout/plan для того же пользователя (test_plan_without_history_is_first_workout)."""
+    user = await UserRepository(session).create(telegram_id=55015, username="fresh")
+    await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
+    body = await _get_backdate_plan(session, telegram_id=user.telegram_id)
+    assert body["status"] == "first_workout"
+
+
+async def test_backdate_plan_equipment_setup_required_is_reported(session):
+    """needs_new_equipment теперь так же строго блокирует бэкдейт, как
+    основной GET /api/workout/plan (issue #123) — тот же приём, что
+    test_plan_equipment_setup_required_is_reported в test_workout.py:
+    (20, 20, 20) достигает equipment_change_threshold блока на объём на
+    единственной прошлой тренировке."""
+    user = await UserRepository(session).create(telegram_id=55016, username="tester")
+    now = datetime.now(UTC)
+    await SubscriptionService(session).start_trial(user.id, now=now)
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=now, reps=10)
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=5),
+        block_a_reps=BlockLog(working_reps=(20, 20, 20), max_reps=21),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    body = await _get_backdate_plan(session, telegram_id=user.telegram_id)
+    assert body["status"] == "equipment_setup_required"
+
+
 async def test_backdate_plan_ignores_too_early_gate(session):
     """GET /api/workout/plan для того же пользователя вернул бы
     "too_early" (см. test_plan_too_early_is_reported в test_workout.py) —

@@ -25,14 +25,21 @@ type ScreenState =
   | { phase: "anomaly_confirm"; plan: WorkoutPlanResponse; result: WorkoutSubmitResponse }
   | { phase: "done"; result: WorkoutSubmitResponse };
 
-// Тот же узкий набор статусов, что и у GET /api/workout/plan (WorkoutScreen)
-// — бэкдейт дополнительно не гейтует too_early/gap_retest_required/deload_due/
-// equipment_setup_required (issue #52, см. app/web/routes.py::_resolve_backdate_context),
-// поэтому их здесь просто нет в списке.
+// Бэкдейт по-прежнему не гейтует too_early/gap_retest_required/deload_due
+// (issue #52, см. app/web/routes.py::_resolve_backdate_context) — эти статусы
+// про готовность к СЛЕДУЮЩЕЙ живой тренировке, не про запись прошлой.
+// first_workout/equipment_setup_required — исключение (issue #123): без них
+// resolve_next_targets на пустой истории/при ожидающей смене снаряда отдавал
+// бы снаряд-заглушку (резину без item_id, взять физически неоткуда), форма
+// вела в тупик 400 при попытке сохранить. На практике эта форма уже не
+// открывается на этих статусах — WorkoutScreen.tsx прячет саму кнопку входа
+// (NO_EQUIPMENT_YET_STATUSES) — сообщения здесь на случай прямого захода.
 const STATUS_MESSAGES: Record<string, string> = {
   no_access: "Нет активной подписки. Оформи её в боте, потом возвращайся сюда.",
   no_active_set: "Не получилось открыть тренировочный цикл. Напиши в поддержку через бота.",
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
+  first_workout: "Это твоя первая тренировка — замер и выбор снаряда пока доступны только в боте.",
+  equipment_setup_required: "Нужно заново выбрать снаряд для одного из блоков — сделай это в боте.",
 };
 
 export const EQUIPMENT_TYPE_LABELS: { value: string; label: string }[] = [
