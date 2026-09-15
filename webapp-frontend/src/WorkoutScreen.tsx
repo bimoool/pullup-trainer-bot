@@ -49,7 +49,15 @@ type ScreenState =
 // у бота эти случаи по-прежнему работают как раньше.
 export const STATUS_MESSAGES: Record<string, string> = {
   no_access: "Нет активной подписки. Оформи её в боте, потом возвращайся сюда.",
+  // "first_workout" (issue #124, PR 2) — GET /api/workout/plan больше не
+  // возвращает этот статус для онбордившегося пользователя (снаряд теперь
+  // считается сразу, status="ready" + is_first_workout=true ниже). Строка
+  // на случай уже открытых старых клиентов оставлена, "onboarding_incomplete"
+  // — новый статус на её месте (анкета не пройдена, см. app/web/routes.py::
+  // _resolve_plan_context; в норме недостижимо — App.tsx перехватывает
+  // раньше по onboarding_step).
   first_workout: "Это твоя первая тренировка — замер и выбор снаряда пока доступны только в боте.",
+  onboarding_incomplete: "Сначала заверши замер и анкету — они на предыдущем экране.",
   too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
   gap_retest_required: "Был долгий перерыв — нужен повторный замер, начни его в боте.",
   equipment_setup_required: "Нужно заново выбрать снаряд для одного из блоков — сделай это в боте.",
@@ -64,7 +72,9 @@ export const STATUS_MESSAGES: Record<string, string> = {
 // существует), и сохранить результат было невозможно. too_early сюда
 // намеренно не входит — там снаряд уже назначен с прошлой тренировки, эти
 // кнопки там корректны и не трогаются.
-const NO_EQUIPMENT_YET_STATUSES = new Set(["first_workout", "not_onboarded", "equipment_setup_required", "gap_retest_required"]);
+const NO_EQUIPMENT_YET_STATUSES = new Set([
+  "first_workout", "onboarding_incomplete", "not_onboarded", "equipment_setup_required", "gap_retest_required",
+]);
 
 // Ежемесячный тест на максимум блока на объём (issue #89, форма перенесена
 // в Mini App — issue #105) — тот же текст, что app.bot.texts.
@@ -189,20 +199,25 @@ export function BandItemSelect({
   bandItems,
   value,
   onChange,
+  firstWorkout = false,
 }: {
   letter: "A" | "B";
   bandItems: BandItemInfo[];
   value: string;
   onChange: (value: string) => void;
+  /** Первая тренировка (issue #124, PR 2) — "как в прошлый раз" не имеет
+   * смысла, когда прошлого раза не было: пустое значение остаётся тем же
+   * (валидация выше требует явный выбор), но подпись честная. */
+  firstWorkout?: boolean;
 }) {
   return (
     <Select
-      header="Резина, если отличается"
+      header={firstWorkout ? "Резина" : "Резина, если отличается"}
       aria-label={`Блок ${letter}, резина`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
     >
-      <option value="">Как в прошлый раз</option>
+      <option value="">{firstWorkout ? "Выбери резину" : "Как в прошлый раз"}</option>
       {bandItems.map((item) => (
         <option key={item.id} value={item.id}>
           {item.name}
@@ -228,6 +243,7 @@ export function EquipmentCorrectionFields({
   bandItemValue,
   onBandItemChange,
   onOpenFaq,
+  firstWorkout = false,
 }: {
   letter: "A" | "B";
   equipmentType: string | undefined;
@@ -238,18 +254,25 @@ export function EquipmentCorrectionFields({
   bandItemValue: string;
   onBandItemChange: (value: string) => void;
   onOpenFaq?: () => void;
+  /** Первая тренировка (issue #124, PR 2) — унаследованного значения нет
+   * вообще (equipmentLabel/bandItems не содержат прежнего снаряда), поэтому
+   * поле веса становится обязательным (не "если отличается"), а для резины
+   * без сохранённых пунктов список выбора заменяется объяснением: заведение
+   * новой резины прямо в Mini App появится в PR 3 (issue #124), пока это
+   * доступно только в боте. */
+  firstWorkout?: boolean;
 }) {
   return (
     <>
       {equipmentType === "weight" && (
         <Input
-          header="Фактический вес (кг), если отличается"
+          header={firstWorkout ? "Вес отягощения, кг" : "Фактический вес (кг), если отличается"}
           after="кг"
           type="number"
           inputMode="decimal"
           min={0}
           step="0.5"
-          placeholder={equipmentLabel}
+          placeholder={firstWorkout ? "Например: 5" : equipmentLabel}
           aria-label={`Блок ${letter}, фактический вес`}
           value={actualWeightValue}
           onChange={(e) => onActualWeightChange(e.target.value)}
@@ -257,7 +280,20 @@ export function EquipmentCorrectionFields({
       )}
 
       {equipmentType === "band" && bandItems.length > 0 && (
-        <BandItemSelect letter={letter} bandItems={bandItems} value={bandItemValue} onChange={onBandItemChange} />
+        <BandItemSelect
+          letter={letter}
+          bandItems={bandItems}
+          value={bandItemValue}
+          onChange={onBandItemChange}
+          firstWorkout={firstWorkout}
+        />
+      )}
+
+      {equipmentType === "band" && bandItems.length === 0 && firstWorkout && (
+        <p className="hint">
+          Для этого блока рекомендована резина, но заводить новую резину в Mini App пока нельзя (скоро появится) —
+          заверши эту тренировку в боте.
+        </p>
       )}
 
       {equipmentType === "band" && onOpenFaq && (
@@ -289,6 +325,7 @@ export function BlockForm({
   onBandItemChange,
   isHeavy = false,
   onOpenFaq,
+  firstWorkout = false,
 }: {
   letter: "A" | "B";
   target: number | null;
@@ -315,6 +352,9 @@ export function BlockForm({
    * записанной тренировки и не имеет перехода на FaqScreen — там сноска
    * просто не показывается, не сломанная ссылка в никуда. */
   onOpenFaq?: () => void;
+  /** Первая тренировка (issue #124, PR 2) — прокидывается в
+   * EquipmentCorrectionFields, см. её докстринг. */
+  firstWorkout?: boolean;
 }) {
   return (
     <Section
@@ -363,6 +403,7 @@ export function BlockForm({
         bandItemValue={bandItemValue}
         onBandItemChange={onBandItemChange}
         onOpenFaq={onOpenFaq}
+        firstWorkout={firstWorkout}
       />
     </Section>
   );
@@ -431,6 +472,12 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
           // work_sets_a/work_sets_b из ответа API, не захардкожено.
           setBlockAWorking(Array(plan.work_sets_a ?? 0).fill(""));
           setBlockBWorking(Array(plan.work_sets_b ?? 0).fill(""));
+          // Первая тренировка (issue #124, PR 2) — сразу открываем форму
+          // ввода, минуя экран выбора режима: для первой тренировки других
+          // осмысленных режимов и нет (см. ниже, где скрыты остальные кнопки).
+          if (plan.is_first_workout) {
+            setShowForm(true);
+          }
           setState({ phase: "form", plan });
         } else {
           setState({ phase: "not_ready", status: plan.status });
@@ -466,6 +513,30 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
     if (!actualWeightA.ok || !actualWeightB.ok) {
       setFormError("Фактический вес должен быть положительным числом, если он указан.");
       return;
+    }
+    // Первая тренировка (issue #124, PR 2) — снаряд ещё ничем не унаследован
+    // (equipment_a/b.value/item_id всегда null, см. api.ts::WorkoutPlanResponse),
+    // поэтому то, что для обычной тренировки было необязательной правкой "на
+    // месте", здесь обязательно: без веса для WEIGHT сервер записал бы null
+    // вместо реального снаряда, без резины для BAND — нечего записывать
+    // вовсе (заведение резины прямо тут — PR 3, пока только через бота).
+    if (plan.is_first_workout) {
+      const missingWeight =
+        (plan.equipment_a?.type === "weight" && actualWeightA.value === null) ||
+        (plan.equipment_b?.type === "weight" && actualWeightB.value === null);
+      if (missingWeight) {
+        setFormError("Укажи вес отягощения — это твой первый снаряд, унаследовать пока нечего.");
+        return;
+      }
+      const missingBand =
+        (plan.equipment_a?.type === "band" && !blockABandItem) ||
+        (plan.equipment_b?.type === "band" && !blockBBandItem);
+      if (missingBand) {
+        setFormError(
+          "Для блока с резиной нужно сначала завести её в боте (в Mini App это появится позже) — заверши эту тренировку там.",
+        );
+        return;
+      }
     }
     setFormError(null);
 
@@ -667,6 +738,12 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   // только при непосредственном вводе результата.
   const banners = (
     <>
+      {plan.is_first_workout && (
+        <p className="gap-banner">
+          Это твоя первая тренировка — снаряд ниже подобран по замеру, укажи фактическое значение (вес/резину), где
+          это нужно.
+        </p>
+      )}
       {plan.is_gap_rollback && (
         <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>
       )}
@@ -683,24 +760,32 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
         {banners}
 
         <div className="workout-mode-buttons">
-          {/* Живая тренировка (таймер по подходам) не адаптирована под
-              структуру теста на максимум (issue #105, тот же принцип сужения
-              скоупа, что и у остальных статусов Этапа 1) — на день теста
-              кнопка скрыта, обычный режим ниже её заменяет. */}
-          {!plan.is_deload_a && (
+          {/* Первая тренировка (issue #124, PR 2) — остальные режимы не
+              имеют смысла до неё: бэкдейту/свободным подтягиваниям/
+              факультативу физически нечего наследовать (тот же принцип,
+              что NO_EQUIPMENT_YET_STATUSES выше), а живая тренировка по
+              подходам не адаптирована под ввод первого снаряда (см.
+              EquipmentCorrectionFields, firstWorkout). На практике этот
+              блок недостижим — is_first_workout сразу открывает форму
+              (см. useEffect выше), оставлено на случай возврата назад. */}
+          {!plan.is_deload_a && !plan.is_first_workout && (
             <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
               ⏱ Тренировка в реальном времени
             </Button>
           )}
-          <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
-            🔁 Внести пропущенную тренировку
-          </Button>
-          <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
-            🎯 Факультатив
-          </Button>
-          <Button mode="outline" size="s" onClick={() => setShowFreeWorkout(true)}>
-            ➕ Внести свободные подтягивания
-          </Button>
+          {!plan.is_first_workout && (
+            <>
+              <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
+                🔁 Внести пропущенную тренировку
+              </Button>
+              <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
+                🎯 Факультатив
+              </Button>
+              <Button mode="outline" size="s" onClick={() => setShowFreeWorkout(true)}>
+                ➕ Внести свободные подтягивания
+              </Button>
+            </>
+          )}
           <Button mode="outline" size="s" onClick={() => setShowForm(true)}>
             📝 Внести результат тренировки
           </Button>
@@ -717,9 +802,11 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
       <p className="plan-title">Текущий план</p>
       {banners}
 
-      <Button mode="plain" size="s" onClick={() => setShowForm(false)}>
-        ← Назад к выбору действия
-      </Button>
+      {!plan.is_first_workout && (
+        <Button mode="plain" size="s" onClick={() => setShowForm(false)}>
+          ← Назад к выбору действия
+        </Button>
+      )}
 
       {plan.is_deload_a ? (
         <DeloadBlockAForm maxValue={blockAMax} onMaxChange={setBlockAMax} />
@@ -740,6 +827,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
           bandItemValue={blockABandItem}
           onBandItemChange={setBlockABandItem}
           onOpenFaq={onOpenFaq}
+          firstWorkout={plan.is_first_workout}
         />
       )}
 
@@ -760,6 +848,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
         onBandItemChange={setBlockBBandItem}
         isHeavy={plan.is_heavy_b}
         onOpenFaq={onOpenFaq}
+        firstWorkout={plan.is_first_workout}
       />
 
       <Textarea header="Комментарий (необязательно)" value={comment} onChange={(e) => setComment(e.target.value)} />

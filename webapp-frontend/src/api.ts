@@ -1,8 +1,57 @@
+/** onboarding_step (issue #124, PR 2) — четыре состояния вместо булева
+ * is_onboarded (тот приравнивал "есть строка User" к "онбординг пройден",
+ * хотя анкета могла быть не завершена): "not_registered" — строки User ещё
+ * нет вообще; "baseline" — User есть, замера не было; "questionnaire" —
+ * замер есть, анкета не завершена; "done" — обычный путь, как раньше
+ * is_onboarded=true. */
+export type OnboardingStep = "not_registered" | "baseline" | "questionnaire" | "done";
+
 export interface HelloResponse {
   name: string;
-  is_onboarded: boolean;
+  onboarding_step: OnboardingStep;
   readiness_status: string | null;
   days_since_last_workout: number | null;
+}
+
+/** POST /api/onboarding/baseline (issue #124, PR 2) — тот же смысл, что
+ * handle_baseline_reps/handle_baseline_confirm бота (app/bot/handlers/
+ * onboarding.py): максимум подтягиваний на собственном весе, один подход.
+ * Подтверждение "точно ли N" (waiting_for_baseline_confirm бота) сделано
+ * чисто на фронтенде — этот запрос отправляется уже с подтверждённым
+ * числом, ничего в БД не попадает раньше. */
+export interface OnboardingBaselineResponse {
+  reps: number;
+  motivation_message: string;
+}
+
+export async function submitOnboardingBaseline(initDataRaw: string, reps: number): Promise<OnboardingBaselineResponse> {
+  return apiPost<{ reps: number }, OnboardingBaselineResponse>("/api/onboarding/baseline", initDataRaw, { reps });
+}
+
+/** POST /api/onboarding/questionnaire (issue #124, PR 2) — та же анкета,
+ * что app/bot/handlers/questionnaire.py собирает по одному вопросу за раз;
+ * здесь один запрос в конце пятишаговой формы (см. OnboardingScreen.tsx).
+ * timezone — выбор из fetchTimezoneOptions (issue #125), не свободный ввод
+ * города, как в боте — осознанное расхождение, согласовано в issue #124. */
+export interface OnboardingQuestionnaireRequest {
+  weight_kg: string;
+  height_cm: number;
+  gender: "male" | "female";
+  birth_date: string;
+  timezone: string;
+}
+
+export interface OnboardingQuestionnaireResponse {
+  trial_days: number;
+}
+
+export async function submitOnboardingQuestionnaire(
+  initDataRaw: string,
+  body: OnboardingQuestionnaireRequest,
+): Promise<OnboardingQuestionnaireResponse> {
+  return apiPost<OnboardingQuestionnaireRequest, OnboardingQuestionnaireResponse>(
+    "/api/onboarding/questionnaire", initDataRaw, body,
+  );
 }
 
 export interface EquipmentInfo {
@@ -53,6 +102,12 @@ export interface WorkoutPlanResponse {
    * app/bot/texts.py::VOLUME_DELOAD_PROMPT). Фронтенд показывает вместо
    * обычной сетки блока A один вопрос "сколько реально смог". */
   is_deload_a: boolean;
+  /** Первая тренировка после полного онбординга в Mini App (issue #124,
+   * PR 2) — equipment_a/b.value/item_id всегда null (снаряд посчитан
+   * suggest_starting_equipment, наследовать ещё нечего): форма просит
+   * ввести фактическое значение веса или выбрать/завести резину
+   * (заведение резины — отдельно, PR 3). */
+  is_first_workout: boolean;
 }
 
 export interface AnomalyFlags {

@@ -58,7 +58,7 @@ async def test_health_endpoint_requires_no_auth():
     assert response.json() == {"status": "ok"}
 
 
-async def test_hello_for_unknown_telegram_id_reports_not_onboarded(session):
+async def test_hello_for_unknown_telegram_id_reports_not_registered(session):
     _override_dependencies(session, telegram_id=9001, first_name="Настя")
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -69,11 +69,12 @@ async def test_hello_for_unknown_telegram_id_reports_not_onboarded(session):
     assert response.status_code == 200
     body = response.json()
     assert body == {
-        "name": "Настя", "is_onboarded": False, "readiness_status": None, "days_since_last_workout": None,
+        "name": "Настя", "onboarding_step": "not_registered", "readiness_status": None,
+        "days_since_last_workout": None,
     }
 
 
-async def test_hello_for_onboarded_user_without_workouts(session):
+async def test_hello_for_registered_user_without_baseline_reports_baseline_step(session):
     await UserRepository(session).create(telegram_id=9002, username="fresh")
 
     _override_dependencies(session, telegram_id=9002, first_name="Олег")
@@ -85,12 +86,47 @@ async def test_hello_for_onboarded_user_without_workouts(session):
 
     body = response.json()
     assert body == {
-        "name": "Олег", "is_onboarded": True, "readiness_status": None, "days_since_last_workout": None,
+        "name": "Олег", "onboarding_step": "baseline", "readiness_status": None, "days_since_last_workout": None,
+    }
+
+
+async def test_hello_for_user_with_baseline_but_no_questionnaire_reports_questionnaire_step(session):
+    user: User = await UserRepository(session).create(telegram_id=9004, username="mid-onboarding")
+    await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=5)
+
+    _override_dependencies(session, telegram_id=9004, first_name="Лена")
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/api/hello")
+    finally:
+        app.dependency_overrides.clear()
+
+    body = response.json()
+    assert body == {
+        "name": "Лена", "onboarding_step": "questionnaire", "readiness_status": None,
+        "days_since_last_workout": None,
+    }
+
+
+async def test_hello_for_onboarded_user_without_workouts_reports_done(session):
+    user: User = await UserRepository(session).create(telegram_id=9003, username="done")
+    await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
+
+    _override_dependencies(session, telegram_id=9003, first_name="Олег")
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/api/hello")
+    finally:
+        app.dependency_overrides.clear()
+
+    body = response.json()
+    assert body == {
+        "name": "Олег", "onboarding_step": "done", "readiness_status": None, "days_since_last_workout": None,
     }
 
 
 async def test_hello_reports_readiness_from_last_workout(session):
-    user: User = await UserRepository(session).create(telegram_id=9003, username="active")
+    user: User = await UserRepository(session).create(telegram_id=9005, username="active")
     performed_at = datetime.now(UTC) - timedelta(days=1)
     baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=performed_at, reps=10)
     workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
@@ -101,8 +137,9 @@ async def test_hello_reports_readiness_from_last_workout(session):
         block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=Decimal("20.0"),
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=Decimal("20.0"),
     )
+    await UserRepository(session).complete_onboarding(user.id, performed_at)
 
-    _override_dependencies(session, telegram_id=9003, first_name="Марина")
+    _override_dependencies(session, telegram_id=9005, first_name="Марина")
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/api/hello")
@@ -111,6 +148,6 @@ async def test_hello_reports_readiness_from_last_workout(session):
 
     body = response.json()
     assert body["name"] == "Марина"
-    assert body["is_onboarded"] is True
+    assert body["onboarding_step"] == "done"
     assert body["readiness_status"] == "too_early"
     assert body["days_since_last_workout"] == 1

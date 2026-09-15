@@ -9,8 +9,15 @@ from app.bot.parsing import MAX_REPS, MIN_REPS
 
 
 class HelloResponse(BaseModel):
+    """onboarding_step (issue #124, PR 2) — четыре состояния вместо булева
+    is_onboarded (тот приравнивал "есть строка User" к "онбординг пройден",
+    хотя анкета могла быть не завершена): "not_registered" (строки User
+    ещё нет), "baseline" (User есть, замера не было), "questionnaire"
+    (замер есть, анкета не завершена), "done" (обычный путь, как раньше
+    is_onboarded=True) — см. app/web/routes.py::hello."""
+
     name: str
-    is_onboarded: bool
+    onboarding_step: Literal["not_registered", "baseline", "questionnaire", "done"]
     readiness_status: str | None
     days_since_last_workout: int | None
 
@@ -79,6 +86,13 @@ class WorkoutPlanResponse(BaseModel):
     # принудительно свой вес. Фронтенд показывает вместо обычной сетки
     # блока A один вопрос "сколько реально смог".
     is_deload_a: bool = False
+    # Первая тренировка после полного онбординга в Mini App (issue #124,
+    # PR 2) — equipment_a/b.value/item_id всегда null в этом случае (снаряд
+    # посчитан suggest_starting_equipment, наследовать ещё нечего): фронтенд
+    # просит ввести фактическое значение веса или выбрать/завести резину
+    # (заведение резины — отдельно, PR 3), а не молча предлагает "как в
+    # прошлый раз", как для обычного плана.
+    is_first_workout: bool = False
 
 
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
@@ -216,6 +230,71 @@ class TimezoneOption(BaseModel):
 
 class TimezoneOptionsResponse(BaseModel):
     options: list[TimezoneOption]
+
+
+class OnboardingBaselineRequest(BaseModel):
+    """POST /api/onboarding/baseline (issue #124, PR 2) — то же число, что
+    handle_baseline_reps бота парсит (app/bot/handlers/onboarding.py):
+    максимум подтягиваний на собственном весе, один подход. Границы (Reps,
+    0..999) — те же MIN_REPS/MAX_REPS, не отдельный веб-лимит.
+
+    Подтверждение "точно ли N" (waiting_for_baseline_confirm бота) сделано
+    чисто на фронтенде (ввёл → показали число → "Да"/"Ввести заново") — в
+    БД ничего не попадает, пока фронтенд не вызовет этот эндпойнт уже с
+    подтверждённым числом, тот же эффект, что pending_baseline_reps,
+    который в боте живёт только в FSM."""
+
+    reps: Reps
+
+
+class OnboardingBaselineResponse(BaseModel):
+    """motivation_message — тот же текст по трём диапазонам результата, что
+    handle_baseline_confirm бота показывает после записи (app.bot.texts.
+    MOTIVATION_AFTER_BASELINE_ZERO/LOW/HIGH), не отдельная веб-копия
+    формулировок."""
+
+    reps: int
+    motivation_message: str
+
+
+class OnboardingQuestionnaireRequest(BaseModel):
+    """POST /api/onboarding/questionnaire (issue #124, PR 2) — та же анкета,
+    что app/bot/handlers/questionnaire.py собирает по одному вопросу за раз
+    (вес/рост/пол/дата рождения/таймзона), здесь одним запросом — пошаговость
+    (5 экранов, "назад" между ними) держится на фронтенде, не на сервере, тот
+    же приём, что и у самой анкеты бота, где каждый шаг тоже не пишется в БД
+    до самого конца (см. handle_timezone).
+
+    Валидация значений мирроррит ProfileUpdateRequest выше (тот же смысл
+    полей), но все поля обязательны — анкету нельзя завершить частично, в
+    отличие от последующей правки уже заполненного профиля.
+
+    timezone — не свободный ввод города, как в боте (там нераспознанный
+    город молча становится Москвой, см. app.bot.timezones — неприемлемо для
+    явного выбора в форме), а строка из GET /api/profile/timezone-options;
+    Intl.DateTimeFormat на фронтенде только предзаполняет значение по
+    умолчанию, реальная проверка — здесь, тем же ZoneInfo, что и у
+    ProfileUpdateRequest."""
+
+    weight_kg: Decimal = Field(gt=0)
+    height_cm: int = Field(gt=0)
+    gender: Literal["male", "female"]
+    birth_date: date
+    timezone: str
+
+    @model_validator(mode="after")
+    def _validate_values(self) -> "OnboardingQuestionnaireRequest":
+        if self.birth_date > datetime.now(UTC).date():
+            raise ValueError("birth_date не может быть в будущем")
+        try:
+            ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("Некорректный часовой пояс") from exc
+        return self
+
+
+class OnboardingQuestionnaireResponse(BaseModel):
+    trial_days: int
 
 
 class GtoResponse(BaseModel):
