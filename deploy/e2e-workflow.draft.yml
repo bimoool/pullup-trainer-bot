@@ -1,0 +1,112 @@
+# ЧЕРНОВИК — НЕ активный workflow.
+#
+# GitHub App, которым сюда пишет Claude, не имеет прав на .github/workflows/
+# (issue #126) — переносить этот файл в .github/workflows/e2e.yml нужно
+# руками (или дать права). Содержимое проверено настолько, насколько это
+# возможно без доступа к самому GitHub Actions из песочницы: соответствует
+# реальным сигнатурам scripts/e2e_seed.py и env-переменным
+# app.config.Settings (DATABASE_URL/BOT_TOKEN, см. app/db/migrations/env.py
+# и alembic upgrade head, которые читают ровно эти два имени).
+#
+# webapp-frontend/e2e/package-lock.json ещё не существует (npm был
+# недоступен в сессии, где готовился этот PR, см.
+# webapp-frontend/e2e/README.md) — до его появления `npm ci` здесь упадёт,
+# поэтому шаги ниже используют `npm install`. После первого прогона с
+# доступом к npm стоит закоммитить лок-файл и переключить оба шага на
+# `npm ci` (тот же принцип, что уже применён к webapp-frontend/package-lock.json).
+
+name: E2E (Mini App)
+
+on:
+  pull_request:
+    paths:
+      - "webapp-frontend/**"
+      - "app/web/**"
+      - "app/db/**"
+      - "app/domain/**"
+      - "app/services/**"
+      - "scripts/e2e_seed.py"
+      - "alembic.ini"
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pullup
+          POSTGRES_PASSWORD: pullup
+          POSTGRES_DB: pullup_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pullup"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_e2e
+      BOT_TOKEN: e2e-test-token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        run: pip install -e ".[web,dev]"
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend
+        working-directory: webapp-frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Start API server
+        run: |
+          nohup uvicorn app.web.main:app --port 8001 > uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8001/health && exit 0
+            sleep 1
+          done
+          echo "server did not become healthy in time" && cat uvicorn.log && exit 1
+
+      - name: Seed E2E scenarios
+        # not_onboarded (900001) не сеет ничего — статус означает
+        # отсутствие строки users, см. scripts/e2e_seed.py::seed_not_onboarded.
+        run: |
+          python scripts/e2e_seed.py first_workout 900002
+          python scripts/e2e_seed.py ready 900003
+
+      - name: Install Playwright
+        working-directory: webapp-frontend/e2e
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: webapp-frontend/e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8001
+        run: npm test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: webapp-frontend/e2e/playwright-report/
+          retention-days: 14
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: cat uvicorn.log
