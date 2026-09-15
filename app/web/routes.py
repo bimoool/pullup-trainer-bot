@@ -1194,13 +1194,22 @@ async def edit_history_workout(
 class _BackdateContext:
     """Контекст для "Внести пропущенную тренировку" — тот же
     resolve_next_targets, что и _PlanContext, но БЕЗ гейтов too_early/
-    gap_retest_required/deload_due/equipment_setup_required: бэкдейт про
-    прошлое, эти статусы про готовность к СЛЕДУЮЩЕЙ живой тренировке, не
-    про него (согласовано в issue #52). target/equipment здесь — только
-    пример/подсказка для формы, не авторитетное значение, которое просто
-    наследуется, как в _PlanContext: реальный тип/значение снаряда всегда
-    приходят явно от клиента (BackdateSubmitRequest) — тот же принцип, что
-    _begin_equipment_setup(target_a_state=None, ...) у бота для бэкдейта."""
+    gap_retest_required/deload_due: бэкдейт про прошлое, эти статусы про
+    готовность к СЛЕДУЮЩЕЙ живой тренировке, не про него (согласовано в
+    issue #52). target/equipment здесь — только пример/подсказка для формы,
+    не авторитетное значение, которое просто наследуется, как в
+    _PlanContext: реальный тип/значение снаряда всегда приходят явно от
+    клиента (BackdateSubmitRequest) — тот же принцип, что
+    _begin_equipment_setup(target_a_state=None, ...) у бота для бэкдейта.
+
+    Исключение (issue #123): needs_new_equipment/пустая история ВСЁ ЖЕ
+    блокируют поток статусами "first_workout"/"equipment_setup_required",
+    как и у _PlanContext — без этого resolve_next_targets на пустой истории
+    отдавал бы снаряд-заглушку (BAND без item_id — резину физически неоткуда
+    взять, band_items пуст, экрана добавления резины в Mini App нет),
+    "ready" с ним вело в тупик 400 при попытке сохранить. Это уже не про
+    готовность к следующей ЖИВОЙ тренировке (та причина не трогается) — это
+    про то, что снаряд для бэкдейта пока не из чего выбирать."""
 
     status: str
     user_id: int | None = None
@@ -1226,7 +1235,12 @@ async def _resolve_backdate_context(session: AsyncSession, telegram_id: int, *, 
         return _BackdateContext(status="no_access")
 
     workouts = WorkoutRepository(session)
+    if not await workouts.list_for_user(user.id):
+        return _BackdateContext(status="first_workout")
+
     target_a_state, target_b_state = await workouts.resolve_next_targets(user.id)
+    if target_a_state.needs_new_equipment or target_b_state.needs_new_equipment:
+        return _BackdateContext(status="equipment_setup_required")
 
     active_set = await ensure_active_workout_set(session, user.id)
     if active_set is None:

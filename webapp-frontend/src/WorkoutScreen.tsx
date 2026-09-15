@@ -51,6 +51,15 @@ export const STATUS_MESSAGES: Record<string, string> = {
   not_onboarded: "Похоже, ты ещё не проходил онбординг — начни его в боте.",
 };
 
+// Статусы, на которых снаряд для блоков ещё не назначен вообще (issue #123)
+// — «Внести пропущенную тренировку»/«Внести свободные подтягивания» на них
+// были тупиковыми: бэкдейт подставлял снаряд-заглушку (резина, которой
+// физически нет — band_items пуст, экрана добавления резины в Mini App не
+// существует), и сохранить результат было невозможно. too_early сюда
+// намеренно не входит — там снаряд уже назначен с прошлой тренировки, эти
+// кнопки там корректны и не трогаются.
+const NO_EQUIPMENT_YET_STATUSES = new Set(["first_workout", "not_onboarded", "equipment_setup_required", "gap_retest_required"]);
+
 // Ежемесячный тест на максимум блока на объём (issue #89, форма перенесена
 // в Mini App — issue #105) — тот же текст, что app.bot.texts.
 // VOLUME_DELOAD_PROMPT (независимая копия, как и весь остальной текст
@@ -562,15 +571,28 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq }: Pr
         <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
           Открыть в боте
         </Button>
-        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowBackdate(true)}>
-          🔁 Внести пропущенную тренировку
-        </Button>
         {/* Свободные подтягивания (issue #109) не гейтуются готовностью к
-            обычной тренировке, как и бэкдейт выше — доступны и на статусе
-            "сегодня отдых", и на любом другом not_ready. */}
-        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowFreeWorkout(true)}>
-          ➕ Внести свободные подтягивания
-        </Button>
+            обычной тренировке, как и бэкдейт ниже — доступны и на статусе
+            "сегодня отдых", и на любом другом not_ready, КРОМЕ статусов, где
+            снаряд ещё не назначен вообще (issue #123, см.
+            NO_EQUIPMENT_YET_STATUSES) — там обеим кнопкам физически нечего
+            делать. */}
+        {!NO_EQUIPMENT_YET_STATUSES.has(state.status) && (
+          <>
+            <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowBackdate(true)}>
+              🔁 Внести пропущенную тренировку
+            </Button>
+            <Button
+              className="action-button"
+              size="l"
+              stretched
+              mode="outline"
+              onClick={() => setShowFreeWorkout(true)}
+            >
+              ➕ Внести свободные подтягивания
+            </Button>
+          </>
+        )}
       </div>
     );
   }
