@@ -120,6 +120,7 @@ from app.web.schemas import (
     TimerStatusResponse,
     TimezoneOption,
     TimezoneOptionsResponse,
+    WarmupResponse,
     WeeklySummaryResponse,
     WorkoutDraftRequest,
     WorkoutDraftResponse,
@@ -1058,6 +1059,17 @@ async def get_band_help() -> BandHelpResponse:
     оферта/pricing_text_html, это статический обучающий текст, не
     персональные данные."""
     return BandHelpResponse(text_html=texts.EQUIPMENT_BAND_HELP_TEXT)
+
+
+@router.get("/warmup", response_model=WarmupResponse)
+async def get_warmup() -> WarmupResponse:
+    """Разминка (issue #124, PR 1) — тот же texts.WARMUP_FULL, что бот
+    показывает перед первой тренировкой блока и по кнопке "Показать
+    разминку" (app/bot/handlers/workout.py::handle_warmup_show), не
+    отдельная копия текста. Публичный, без initData: тот же уровень
+    доступа, что у /faq/band-help выше — статический обучающий текст, не
+    персональные данные."""
+    return WarmupResponse(text_html=texts.WARMUP_FULL)
 
 
 # --- Редактирование истории (issue #52) ---------------------------------------------

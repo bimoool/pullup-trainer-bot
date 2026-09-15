@@ -438,6 +438,16 @@ export async function fetchBandHelp(initDataRaw: string): Promise<BandHelpRespon
   return apiGet<BandHelpResponse>("/api/faq/band-help", initDataRaw);
 }
 
+/** Разминка (issue #124, PR 1) — тот же приём, что BandHelpResponse выше:
+ * статический текст бота (app.bot.texts.WARMUP_FULL) как есть. */
+export interface WarmupResponse {
+  text_html: string;
+}
+
+export async function fetchWarmup(initDataRaw: string): Promise<WarmupResponse> {
+  return apiGet<WarmupResponse>("/api/warmup", initDataRaw);
+}
+
 async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {
   const response = await fetch(path, {
     method: "POST",
