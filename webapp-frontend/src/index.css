@@ -206,6 +206,16 @@ input[type="number"] {
   margin-top: 16px;
 }
 
+.band-create-form {
+  margin: 16px 0 8px;
+}
+
+.band-create-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .error-banner {
   background: rgba(229, 57, 53, 0.12);
   color: var(--tg-destructive-text-color);

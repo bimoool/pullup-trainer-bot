@@ -503,6 +503,26 @@ export async function fetchWarmup(initDataRaw: string): Promise<WarmupResponse> 
   return apiGet<WarmupResponse>("/api/warmup", initDataRaw);
 }
 
+/** GET/POST /api/equipment/band-items (issue #124, PR 3) — список и
+ * заведение личных резин вне контекста плана конкретной тренировки: GET
+ * /api/workout/plan и остальные *_plan-эндпойнты уже отдают band_items как
+ * часть своего ответа (тот же источник), но экрану выбора/заведения резины
+ * на первой тренировке (WorkoutScreen.tsx) нужен отдельный явный путь, не
+ * завязанный на план. PATCH/DELETE сознательно не заведены — паритет с
+ * ботом, у которого их тоже нет (см. app/web/routes.py). */
+export interface BandItemCreateRequest {
+  name: string;
+  resistance_kg: string | null;
+}
+
+export async function fetchBandItems(initDataRaw: string): Promise<{ items: BandItemInfo[] }> {
+  return apiGet<{ items: BandItemInfo[] }>("/api/equipment/band-items", initDataRaw);
+}
+
+export async function createBandItem(initDataRaw: string, body: BandItemCreateRequest): Promise<BandItemInfo> {
+  return apiPost<BandItemCreateRequest, BandItemInfo>("/api/equipment/band-items", initDataRaw, body);
+}
+
 async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {
   const response = await fetch(path, {
     method: "POST",

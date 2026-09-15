@@ -297,6 +297,30 @@ class OnboardingQuestionnaireResponse(BaseModel):
     trial_days: int
 
 
+class BandItemCreateRequest(BaseModel):
+    """POST /api/equipment/band-items (issue #124, PR 3) — то же заведение
+    резины, что _create_band_item_and_advance/_create_standalone_band_item
+    бота (app/bot/handlers/equipment.py) уже делают через
+    EquipmentItemRepository.create, не дублированная логика. resistance_kg
+    опционален (см. докстринг EquipmentItem — "не знаю точно" на фронтенде
+    — пустое поле, ровно как кнопка "Пропустить" в боте)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    resistance_kg: Decimal | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _strip_name(self) -> "BandItemCreateRequest":
+        stripped = self.name.strip()
+        if not stripped:
+            raise ValueError("Название не должно быть пустым")
+        self.name = stripped
+        return self
+
+
+class BandItemListResponse(BaseModel):
+    items: list[BandItemInfo]
+
+
 class GtoResponse(BaseModel):
     """GET /api/gto (issue #71) — разряд ГТО по подтягиванию, отдельная
     концепция от обычных ачивок (app.domain.gto, не AchievementRepository):
