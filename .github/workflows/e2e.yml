@@ -1,20 +1,3 @@
-# ЧЕРНОВИК — НЕ активный workflow.
-#
-# GitHub App, которым сюда пишет Claude, не имеет прав на .github/workflows/
-# (issue #126) — переносить этот файл в .github/workflows/e2e.yml нужно
-# руками (или дать права). Содержимое проверено настолько, насколько это
-# возможно без доступа к самому GitHub Actions из песочницы: соответствует
-# реальным сигнатурам scripts/e2e_seed.py и env-переменным
-# app.config.Settings (DATABASE_URL/BOT_TOKEN, см. app/db/migrations/env.py
-# и alembic upgrade head, которые читают ровно эти два имени).
-#
-# webapp-frontend/e2e/package-lock.json ещё не существует (npm был
-# недоступен в сессии, где готовился этот PR, см.
-# webapp-frontend/e2e/README.md) — до его появления `npm ci` здесь упадёт,
-# поэтому шаги ниже используют `npm install`. После первого прогона с
-# доступом к npm стоит закоммитить лок-файл и переключить оба шага на
-# `npm ci` (тот же принцип, что уже применён к webapp-frontend/package-lock.json).
-
 name: E2E (Mini App)
 
 on:
@@ -68,7 +51,7 @@ jobs:
       - name: Build frontend
         working-directory: webapp-frontend
         run: |
-          npm install
+          npm ci
           npm run build
 
       - name: Start API server
@@ -90,7 +73,7 @@ jobs:
       - name: Install Playwright
         working-directory: webapp-frontend/e2e
         run: |
-          npm install
+          npm ci
           npx playwright install --with-deps chromium
 
       - name: Run Playwright tests
