@@ -63,7 +63,11 @@ from app.domain.electives import (
 )
 from app.domain.gto import calculate_gto_status
 from app.domain.leaderboard import AGE_BUCKETS, LEADERBOARD_TOP_LIMIT, LeaderboardMetric
-from app.domain.progression import initial_volume_target, rollback_target, suggest_starting_equipment
+from app.domain.progression import (
+    initial_volume_target,
+    rollback_target,
+    suggest_starting_equipment,
+)
 from app.domain.reports import (
     EpleyProgress,
     EquipmentProgress,
