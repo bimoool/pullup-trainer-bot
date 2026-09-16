@@ -5,7 +5,11 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
-from app.bot.keyboards import baseline_start_keyboard, bottom_menu_keyboard
+from app.bot.keyboards import (
+    baseline_start_keyboard,
+    bottom_menu_keyboard,
+    onboarding_mini_app_keyboard,
+)
 from app.bot.states import OnboardingStates
 from app.config import settings
 from app.db.models import User
@@ -33,8 +37,21 @@ async def _go_home(message: Message, state: FSMContext, user: User, *, cancelled
     if user.onboarding_completed_at is None:
         await state.set_state(OnboardingStates.waiting_for_baseline_reps)
         await message.answer(texts.ONBOARDING_INTRO)
-        await message.answer(texts.ONBOARDING_WHAT_NEXT)
-        await message.answer(texts.BASELINE_GUIDE, reply_markup=baseline_start_keyboard())
+        # issue #141: замер+анкета полностью работают в Mini App
+        # (OnboardingScreen.tsx, issue #124) — ведём туда сразу, а не в
+        # текстовый ввод. Текстовый путь (waiting_for_baseline_reps выше уже
+        # выставлен) остаётся рабочим как запасной — на случай, если человек
+        # проигнорирует кнопку и всё равно напишет число в чат (см.
+        # onboarding.py::handle_baseline_reps, не тронут этим issue), и как
+        # единственный путь целиком, если Mini App ещё не настроена на этом
+        # окружении (settings.mini_app_url пуст).
+        if settings.mini_app_url:
+            await message.answer(
+                texts.ONBOARDING_OPEN_MINI_APP, reply_markup=onboarding_mini_app_keyboard(),
+            )
+        else:
+            await message.answer(texts.ONBOARDING_WHAT_NEXT)
+            await message.answer(texts.BASELINE_GUIDE, reply_markup=baseline_start_keyboard())
         return
     text = texts.CANCELLED if cancelled else texts.WELCOME_BACK
     await message.answer(text, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(user.telegram_id)))
