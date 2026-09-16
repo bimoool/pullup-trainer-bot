@@ -56,7 +56,7 @@ BAND_VALUE = Decimal("15.0")
 # этого GET /api/hello никогда не вернёт onboarding_step="done", и App.tsx
 # не покажет WorkoutScreen вообще.
 _QUESTIONNAIRE_DEFAULTS = {
-    "weight_kg": Decimal("75"),
+    "weight_kg": Decimal(75),
     "height_cm": 180,
     "gender": Gender.MALE,
     "birth_date": date(1995, 1, 1),
