@@ -50,11 +50,12 @@ export function ensureAudioUnlocked(): void {
   }
 }
 
-function scheduleBeep(
-  frequency: number,
-  durationSeconds: number,
+/** Общая обвязка resume()/volume=0 для одиночного тона и для клик-пачки
+ * ниже (issue #140) — раньше жила только внутри scheduleBeep, продублирована
+ * бы один в один при добавлении playClickBurst. */
+function withAudioPlayback(
   peakGainAtFullVolume: number,
-  waveType: OscillatorType = "sine",
+  play: (context: AudioContext, peakGain: number) => void,
 ): void {
   const context = audioContext;
   // 0% — полная тишина, не просто "тихий звук": exponentialRampToValueAtTime
@@ -64,7 +65,21 @@ function scheduleBeep(
     return;
   }
   const peakGain = peakGainAtFullVolume * (soundVolumePercent / 100);
-  const play = () => {
+  const run = () => play(context, peakGain);
+  if (context.state === "suspended") {
+    void context.resume().then(run);
+  } else {
+    run();
+  }
+}
+
+function scheduleBeep(
+  frequency: number,
+  durationSeconds: number,
+  peakGainAtFullVolume: number,
+  waveType: OscillatorType = "sine",
+): void {
+  withAudioPlayback(peakGainAtFullVolume, (context, peakGain) => {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.type = waveType;
@@ -77,12 +92,47 @@ function scheduleBeep(
     gain.connect(context.destination);
     oscillator.start(now);
     oscillator.stop(now + durationSeconds);
-  };
-  if (context.state === "suspended") {
-    void context.resume().then(play);
-  } else {
-    play();
-  }
+  });
+}
+
+/** Атака/спад одного "клика" пачки ниже (issue #140) — на порядок короче,
+ * чем у scheduleBeep выше (0.002с фронт вместо 0.01с, 0.07с спад вместо
+ * 0.4с): резкий фронт вместо плавного нарастания — то, что по гипотезе
+ * issue делает сигнал субъективно громче/разборчивее на маленьком динамике
+ * телефона при той же амплитуде, а не просто короче. */
+const CLICK_ATTACK_SECONDS = 0.002;
+const CLICK_DECAY_SECONDS = 0.07;
+const CLICK_GAP_SECONDS = 0.05;
+
+/** "Клик-клик-клик" вместо одного долгого тона (issue #140, п.1) — паттерн
+ * из нескольких коротких импульсов субъективно воспринимается громче одного
+ * длинного гудка при той же пиковой амплитуде/энергии на слабом динамике,
+ * не требует поднимать `peakGain` выше уже подтверждённого физического
+ * потолка (issue #107/#118 — дальше клиппинг, не громкость). */
+function playClickBurst(
+  frequency: number,
+  clickCount: number,
+  peakGainAtFullVolume: number,
+  waveType: OscillatorType,
+): void {
+  withAudioPlayback(peakGainAtFullVolume, (context, peakGain) => {
+    const now = context.currentTime;
+    const clickPeriod = CLICK_ATTACK_SECONDS + CLICK_DECAY_SECONDS + CLICK_GAP_SECONDS;
+    for (let i = 0; i < clickCount; i += 1) {
+      const startTime = now + i * clickPeriod;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = waveType;
+      oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(peakGain, startTime + CLICK_ATTACK_SECONDS);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + CLICK_ATTACK_SECONDS + CLICK_DECAY_SECONDS);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startTime);
+      oscillator.stop(startTime + CLICK_ATTACK_SECONDS + CLICK_DECAY_SECONDS + 0.01);
+    }
+  });
 }
 
 /** Финальный сигнал окончания отдыха — длиннее и выше остальных, чтобы
@@ -121,12 +171,46 @@ function scheduleBeep(
  * неактивной вкладки, `GainNode.gain`/`OscillatorType` физически не могут
  * это компенсировать — сигнал уже ослаблен до попадания в W3C Web Audio
  * API. Не подтверждено и не опровергнуто из песочницы (нет доступа к
- * живому Telegram Desktop) — если "square" не решит жалобу, следующий
+ * живому Telegram Desktop) — если следующий фикс не решит жалобу,
  * диагностический шаг не "громче в коде", а сравнение: слышен ли обычный
  * `<audio>`/системный звук такой же тихий в том же окне Telegram Desktop
- * (если да — ограничение на уровне ОС/Telegram, не в этом файле). */
+ * (если да — ограничение на уровне ОС/Telegram, не в этом файле).
+ *
+ * **Обновление (issue #140): дизайн сигнала, не громкость — амплитуда уже
+ * подтверждённо у физического потолка (клиппинг на максимуме, live-отчёт
+ * Кирилла), дальше поднимать её означало бы только грязнее звучать, не
+ * громче восприниматься.** Гипотеза issue: спортивные приложения звучат
+ * громче на слабом динамике телефона не за счёт амплитуды, а за счёт формы
+ * сигнала — короткий резкий "клик" с богатым спектром вместо одного
+ * длинного чистого тона. Применены оба предложенных в issue изменения
+ * дизайна (без п.3 — реальный сэмпл, см. ниже):
+ * - **Пачка из 3 коротких кликов** (`playClickBurst`, `CLICK_ATTACK_SECONDS`
+ *   0.002с фронт / `CLICK_DECAY_SECONDS` 0.07с спад — на порядок короче
+ *   исходных 0.01с/0.4с) вместо одного долгого тона — "клик-клик-клик"
+ *   субъективно громче/разборчивее одного гудка при той же энергии на
+ *   маленьком, дребезжащем на низких частотах динамике телефона.
+ * - **Частота поднята с 880 Гц до 2200 Гц** — середина предложенного в
+ *   issue диапазона 1500-3000 Гц, где телефонные динамики (особенно слабые
+ *   на низких частотах) воспроизводят звук разборчивее, без изменения
+ *   амплитуды.
+ * `peakGain` (0.9) и тип волны ("square", максимум нечётных обертонов,
+ * issue #118) не менялись — сохранён тот же физический потолок, меняется
+ * только форма/частота/паттерн сигнала, не его пиковая громкость.
+ *
+ * **П.3 issue (реальный сэмпл вместо `OscillatorNode`) сознательно не
+ * реализован в этом PR.** Причины: (1) в песочнице агента нет инструмента
+ * записи/мастеринга аудио — сгенерировать "хорошо замастеренный" сэмпл
+ * здесь нечем, вписать заведомо не лучший файл ради самого факта наличия
+ * файла не имеет смысла; (2) это ввело бы первый бинарный ассет в
+ * `webapp-frontend/`, тогда как исходный докстринг этого файла (issue #59)
+ * явно фиксирует синтез на лету как принцип наравне с "без нового
+ * npm-пакета" — отход от него стоит отдельного согласования с автором
+ * продукта, не одностороннего решения агента. Если клик-пачка на новой
+ * частоте (issue #140) всё ещё не решит жалобу при следующей живой
+ * проверке — следующий шаг именно реальный сэмпл, а не дальнейшая правка
+ * синтеза. */
 export function playTimerBeep(): void {
-  scheduleBeep(880, 0.4, 0.9, "square");
+  playClickBurst(2200, 3, 0.9, "square");
 }
 
 /** Предупреждение за 10 секунд до конца отдыха (issue #63, п.5) — тот же
