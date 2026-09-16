@@ -38,11 +38,20 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-/** reported_volume не null — запись создана в режиме "только итог" (issue
- * #88), working_reps тогда всегда пуст. Форма должна остаться в том же
- * формате при правке (issue #106) — переключения формата нет. */
+/** working_reps пуст — запись блока Б создана в режиме "только итог" (issue
+ * #88), без раскладки по подходам. Проверяем именно это, не
+ * `reported_volume !== null` — записи, созданные ДО фикса issue #88, тоже
+ * хранят working_reps=[] (пустая раскладка), но при этом reported_volume
+ * ещё не существовало как поля и осталось null, а введённое пользователем
+ * число легло в max_reps напрямую (сам баг issue #88). Раскладка по
+ * подходам (обычная/бэкдейт-запись) физически не может быть пустой —
+ * блок Б требует минимум один рабочий подход везде, где формат "только
+ * итог" не выбран явно, поэтому working_reps.length === 0 однозначно
+ * определяет оба варианта формата "только итог" (issue #147). Форма
+ * должна остаться в том же формате при правке (issue #106) —
+ * переключения формата нет. */
 function isTotalFormatB(detail: HistoryEditDetail): boolean {
-  return detail.block_b.reported_volume !== null;
+  return detail.block_b.working_reps.length === 0;
 }
 
 /**
@@ -93,8 +102,17 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
         setBlockAWorking(detail.block_a.working_reps.map(String));
         setBlockAMax(String(detail.block_a.max_reps));
         if (isTotalFormatB(detail)) {
-          setBlockBTotal(String(detail.block_b.reported_volume));
-          setBlockBTotalMax(detail.block_b.max_reps > 0 ? String(detail.block_b.max_reps) : "");
+          if (detail.block_b.reported_volume !== null) {
+            setBlockBTotal(String(detail.block_b.reported_volume));
+            setBlockBTotalMax(detail.block_b.max_reps > 0 ? String(detail.block_b.max_reps) : "");
+          } else {
+            // Легаси-запись до фикса issue #88 — введённое число лежит в
+            // max_reps (см. isTotalFormatB выше), сам факт "это был честный
+            // отдельный подход на максимум" не зафиксирован достоверно,
+            // поэтому "лучший подход" оставляем пустым, а не равным итогу.
+            setBlockBTotal(String(detail.block_b.max_reps));
+            setBlockBTotalMax("");
+          }
         } else {
           setBlockBWorking(detail.block_b.working_reps.map(String));
           setBlockBMax(String(detail.block_b.max_reps));
