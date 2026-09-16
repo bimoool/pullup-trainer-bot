@@ -180,9 +180,15 @@ class EquipmentItem(Base):
     маркировки ("широкая фиолетовая"), точное сопротивление не всегда
     известно. position задаёт порядок пользователя (0 — самый тяжёлый,
     то есть больше всего помощи) — именно порядок, а не кг, определяет,
-    что значит "следующий снаряд" при переходах. Удаления нет (не
-    запрашивалось) — FK с blocks всегда разрешим, снапшот имени на Block
-    не нужен."""
+    что значит "следующий снаряд" при переходах.
+
+    Переименование/удаление — issue #148. Удаление — настоящий DELETE
+    (не архивация: это личный справочник, не история тренировок), но FK
+    с blocks/elective_workouts — ON DELETE SET NULL, не RESTRICT: история
+    не должна становиться неудаляемой из-за давно удалённой резины.
+    Название на момент тренировки переживает удаление/переименование
+    резины отдельно — см. Block.equipment_item_name/
+    ElectiveWorkout.equipment_item_name."""
 
     __tablename__ = "equipment_items"
 
@@ -306,9 +312,19 @@ class Block(Base):
     # число (если оно вообще известно) живёт на equipment_items.resistance_kg,
     # доступно через этот id. Для WEIGHT — по-прежнему equipment_value,
     # equipment_item_id остаётся NULL.
+    #
+    # ON DELETE SET NULL (issue #148) — резину можно удалить из личного
+    # списка, даже если она уже использована в записанных тренировках;
+    # история не должна становиться неудаляемой из-за старой резины.
+    # equipment_item_name (снапшот названия на момент ЭТОЙ тренировки,
+    # заполняется репозиторием при записи блока, не задним числом при
+    # удалении — переименование резины после тренировки не должно менять
+    # то, что показывает уже записанная история) переживает и удаление,
+    # и последующее переименование резины.
     equipment_item_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("equipment_items.id"), nullable=True,
+        BigInteger, ForeignKey("equipment_items.id", ondelete="SET NULL"), nullable=True,
     )
+    equipment_item_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Первая тренировка на новом снаряде провалена (максимум ниже
     # min_viable_reps) — хранится явно, не восстанавливается сравнением
     # соседних тренировок (хрупко при правках истории).
@@ -491,9 +507,13 @@ class ElectiveWorkout(Base):
     # объём на момент выполнения (без отдельного выбора, см. хендлер).
     equipment_type: Mapped[EquipmentType] = mapped_column(_pg_enum(EquipmentType, "equipment_type"), nullable=False)
     equipment_value: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # ON DELETE SET NULL + снапшот имени — тот же приём, что Block.
+    # equipment_item_id/equipment_item_name (issue #148): факультативы тоже
+    # часть истории, удаление резины не должно на них влиять.
     equipment_item_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("equipment_items.id"), nullable=True,
+        BigInteger, ForeignKey("equipment_items.id", ondelete="SET NULL"), nullable=True,
     )
+    equipment_item_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

@@ -77,8 +77,13 @@ class BlockAssignment:
     # непрозрачный идентификатор для сравнения "тот же снаряд", устойчивый
     # к тому, что kg может быть неизвестен или отличаться (см.
     # app/domain/reports.py::current_equipment_progress). Для WEIGHT/
-    # BODYWEIGHT/AUSTRALIAN всегда None.
+    # BODYWEIGHT/AUSTRALIAN всегда None. Может стать None и для BAND, если
+    # резина была удалена из личного списка после этой тренировки (issue
+    # #148, ON DELETE SET NULL) — equipment_item_name ниже отдельно хранит
+    # снапшот названия на момент ИМЕННО этой тренировки, устойчивый и к
+    # удалению, и к последующему переименованию резины.
     equipment_item_id: int | None = None
+    equipment_item_name: str | None = None
     transition_failed: bool = False
     # Иерархия роста блока на объём (ревизия формулы прогрессии, части 2-4)
     # — только для блока A; у силового блока подходы фиксированы, эти поля

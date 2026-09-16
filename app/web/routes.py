@@ -95,6 +95,7 @@ from app.web.schemas import (
     BandItemCreateRequest,
     BandItemInfo,
     BandItemListResponse,
+    BandItemUpdateRequest,
     CycleVolumeResponse,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
@@ -316,9 +317,8 @@ async def create_band_item(
     вызывают, не дублированная логика. Единственный кусок, которого не
     хватало, чтобы первая тренировка на резине проходила в Mini App целиком
     без захода в бота (issue #124, PR 2 уже довело снаряд/цель до
-    status="ready", но не умело создать саму резину). PATCH/DELETE
-    сознательно вне скоупа (согласовано в issue — паритет с ботом, у
-    которого их тоже нет)."""
+    status="ready", но не умело создать саму резину). PATCH/DELETE — issue
+    #148, см. update_band_item/delete_band_item ниже."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
@@ -326,6 +326,62 @@ async def create_band_item(
         user_id=user.id, name=body.name, resistance_kg=body.resistance_kg,
     )
     return BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
+
+
+@router.patch("/equipment/band-items/{item_id}", response_model=BandItemInfo)
+async def update_band_item(
+    item_id: int,
+    body: BandItemUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BandItemInfo:
+    """Переименование резины (issue #148) — правит только name на самой
+    EquipmentItem. Уже записанные тренировки/факультативы не меняются
+    задним числом: они хранят собственный снапшот названия
+    (Block.equipment_item_name/ElectiveWorkout.equipment_item_name),
+    зафиксированный на момент записи, а не текущее item.name."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    item = await EquipmentItemRepository(session).rename(
+        item_id=item_id, user_id=user.id, name=body.name,
+    )
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Band item not found")
+    return BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
+
+
+@router.delete("/equipment/band-items/{item_id}", response_model=BandItemInfo)
+async def delete_band_item(
+    item_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BandItemInfo:
+    """Удаление резины (issue #148) — настоящий DELETE, не архивация (это
+    личный справочник, не история тренировок). Разрешено безусловно, даже
+    если резина сейчас унаследована как активный снаряд блока (последняя
+    тренировка на ней) — решение согласовано в issue #148 (см. описание
+    вариантов и итоговый выбор в PR): blocks.equipment_item_id/
+    elective_workouts.equipment_item_id — ON DELETE SET NULL, история не
+    ломается (equipment_item_name уже хранит название отдельно). Следующая
+    тренировка на этом блоке просто увидит "снаряд band, резина не
+    выбрана" — WorkoutScreen.tsx требует явный выбор/заведение резины в
+    этом случае тем же полем, что и для первой тренировки на резине
+    (item_id в equipment_a/b пуст), не отдельная ветка UI.
+
+    Возвращает удалённую запись (не 204) — фронтенду проще убрать
+    конкретный элемент из уже отрисованного списка по id, чем делать
+    отдельный GET после DELETE."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    repo = EquipmentItemRepository(session)
+    item = await repo.get_by_id(item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Band item not found")
+    snapshot = BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
+    await repo.delete(item_id=item_id, user_id=user.id)
+    return snapshot
 
 
 @router.get("/profile", response_model=ProfileResponse)

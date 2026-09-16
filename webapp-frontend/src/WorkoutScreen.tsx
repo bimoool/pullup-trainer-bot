@@ -659,13 +659,19 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
         setFormError("Укажи вес отягощения — это твой первый снаряд, унаследовать пока нечего.");
         return;
       }
-      const missingBand =
-        (plan.equipment_a?.type === "band" && !blockABandItem) ||
-        (plan.equipment_b?.type === "band" && !blockBBandItem);
-      if (missingBand) {
-        setFormError("Выбери или заведи резину для блока, где она нужна — это твой первый снаряд.");
-        return;
-      }
+    }
+    // Нечего наследовать (issue #148) — не только первая тренировка
+    // (equipment_*.item_id === null): унаследованная резина могла быть
+    // удалена из личного списка (DELETE /api/equipment/band-items/{id}
+    // не блокируется, даже если резина сейчас активный снаряд блока —
+    // см. описание решения в PR issue #148). В обоих случаях серверу
+    // нечего подставить молча — выбор/заведение резины обязательно.
+    const missingBand =
+      (plan.equipment_a?.type === "band" && plan.equipment_a?.item_id === null && !blockABandItem) ||
+      (plan.equipment_b?.type === "band" && plan.equipment_b?.item_id === null && !blockBBandItem);
+    if (missingBand) {
+      setFormError("Выбери или заведи резину — прежняя недоступна (например, была удалена из списка).");
+      return;
     }
     setFormError(null);
 

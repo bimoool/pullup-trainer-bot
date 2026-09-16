@@ -579,6 +579,61 @@ async def test_record_workout_persists_equipment_item_id_on_blocks(session, user
     assert block_b.equipment_item_id is None
 
 
+async def test_record_workout_snapshots_equipment_item_name(session, user: User):
+    """issue #148 — Block.equipment_item_name захватывается на момент
+    записи, а не выведен позже из equipment_items.name: переименование или
+    удаление резины после тренировки не должно задним числом менять то,
+    что показывает уже записанная история."""
+    workout_set_id = await _make_set(session, user)
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="зелёная")
+    repo = WorkoutRepository(session)
+
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=item.id,
+    )
+
+    assert _block(workout, "a").equipment_item_name == "зелёная"
+
+    await EquipmentItemRepository(session).rename(item_id=item.id, user_id=user.id, name="жёлтая")
+    await session.refresh(_block(workout, "a"))
+
+    # Переименование резины после тренировки не трогает уже записанный снапшот.
+    assert _block(workout, "a").equipment_item_name == "зелёная"
+
+
+async def test_deleting_equipment_item_nulls_block_reference_but_keeps_name(session, user: User):
+    """issue #148 — резину можно удалить, даже если она уже использована в
+    записанной тренировке: FK ON DELETE SET NULL вместо RESTRICT (иначе
+    DELETE падал бы IntegrityError), equipment_item_name переживает
+    удаление (без него история сразу потеряла бы название резины)."""
+    workout_set_id = await _make_set(session, user)
+    item = await EquipmentItemRepository(session).create(user_id=user.id, name="зелёная")
+    repo = WorkoutRepository(session)
+
+    workout = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(4, 4, 4, 4), max_reps=5),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=None,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=item.id,
+    )
+    block_a = _block(workout, "a")
+
+    deleted = await EquipmentItemRepository(session).delete(item_id=item.id, user_id=user.id)
+    assert deleted is True
+
+    await session.refresh(block_a)
+    assert block_a.equipment_item_id is None
+    assert block_a.equipment_item_name == "зелёная"
+    assert await EquipmentItemRepository(session).get_by_id(item.id) is None
+
+
 async def test_resolve_next_targets_carries_equipment_item_id_forward(session, user: User):
     """resolve_next_targets (использует _resolve_next_state) — то, что
     хендлер показывает как "текущий снаряд" перед следующей тренировкой,

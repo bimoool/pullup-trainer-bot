@@ -71,11 +71,19 @@ def _same_equipment(a: BlockAssignment, b: BlockAssignment) -> bool:
     и том же снаряде после редактирования), для WEIGHT — по-прежнему
     equipment_value. См. ту же логику в domain/reports.py — здесь не
     импортирую оттуда намеренно: это маленький, самодостаточный предикат,
-    не стоит городить общий модуль ради восьми строк."""
+    не стоит городить общий модуль ради восьми строк.
+
+    equipment_item_id может стать None и для уже использованной резины
+    (issue #148, удаление — ON DELETE SET NULL) — без тай-брейка по
+    equipment_item_name (снапшот на момент тренировки, переживает
+    удаление) две РАЗНЫЕ удалённые резины (оба id None) выглядели бы тем
+    же снарядом, см. идентичное рассуждение в domain/reports.py."""
     if a.equipment_type != b.equipment_type:
         return False
     if a.equipment_type == EquipmentType.BAND:
-        return a.equipment_item_id == b.equipment_item_id
+        if a.equipment_item_id is not None or b.equipment_item_id is not None:
+            return a.equipment_item_id == b.equipment_item_id
+        return a.equipment_item_name == b.equipment_item_name
     if a.equipment_type == EquipmentType.WEIGHT:
         return a.equipment_value == b.equipment_value
     return True
