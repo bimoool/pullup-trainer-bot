@@ -3,11 +3,13 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot import texts
 from app.bot.formatting import format_subscription_status
+from app.config import settings
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 
@@ -55,6 +57,28 @@ def baseline_start_keyboard() -> InlineKeyboardMarkup:
     что уже чинили в других местах, см. Часть 2)."""
     builder = InlineKeyboardBuilder()
     builder.button(text="Начать замер →", callback_data="start_baseline_measurement")
+    return builder.as_markup()
+
+
+def onboarding_mini_app_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка "Начать замер и анкету в приложении" (issue #141) — открывает
+    Mini App прямо на экране онбординга: App.tsx сам показывает
+    OnboardingScreen вместо WorkoutScreen, пока onboarding_step != "done"
+    (см. GET /api/hello), поэтому URL — тот же settings.mini_app_url, что и
+    у постоянной Menu Button, без отдельного query-параметра под этот экран.
+
+    InlineKeyboardButton.web_app, не KeyboardButton — последний
+    документированно отдаёт пустую initData при запуске Mini App (issue #30,
+    docs.telegram-mini-apps.com/platform/init-data, тот класс кнопки уже
+    убран из app/main.py::configure_menu_button/bottom_menu_keyboard). Тот
+    список сломанных способов запуска не включает InlineKeyboardButton,
+    прикреплённую к обычному сообщению бота — не то же самое, что кнопка
+    постоянной нижней клавиатуры. Не проверено вживую (тот же класс
+    ограничения песочницы, что и весь раздел Mini App в CLAUDE.md) — вызывать
+    только когда settings.mini_app_url задан (см. вызывающий код), иначе
+    WebAppInfo(url="") гарантированно невалиден для Bot API."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚀 Открыть замер и анкету", web_app=WebAppInfo(url=settings.mini_app_url))
     return builder.as_markup()
 
 
