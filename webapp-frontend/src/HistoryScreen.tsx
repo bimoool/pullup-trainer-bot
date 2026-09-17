@@ -1,4 +1,4 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Cell, Placeholder, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
@@ -21,6 +21,11 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
+/** `Section`+`Cell`/`Placeholder` вместо `.history-list`/`.history-card`/
+ * `.screen-message` (issue #142) — тот же базовый паттерн, что
+ * AchievementsScreen.tsx. Действия (✏️ Изменить/🗑 Удалить) — в `after`
+ * ячейки, одной колонкой, вместо отдельного ряда кнопок под текстом
+ * (`.history-card-actions` в index.css переиспользован для их раскладки). */
 export function HistoryScreen({ initDataRaw }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
@@ -105,67 +110,66 @@ export function HistoryScreen({ initDataRaw }: Props) {
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю историю…</p>;
+    return (
+      <Placeholder>
+        <Spinner size="m" />
+      </Placeholder>
+    );
   }
   if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить историю: {state.message}</p>;
+    return <Placeholder description={`Не удалось загрузить историю: ${state.message}`} />;
   }
   if (state.items.length === 0) {
-    return <p className="screen-message">Пока нет ни одной тренировки.</p>;
+    return <Placeholder description="Пока нет ни одной тренировки." />;
   }
 
   return (
     <div>
-      <p className="plan-title">История</p>
-      {deleteError && <p className="screen-message">Не удалось удалить тренировку: {deleteError}</p>}
+      {deleteError && <Placeholder description={`Не удалось удалить тренировку: ${deleteError}`} />}
 
-      <div className="history-list">
+      <Section header="История">
         {state.items.map((entry) => (
-          <div className="history-card" key={entry.workout_id}>
-            <p className="history-date">
-              {formatDate(entry.performed_at)}
-              {entry.is_backdated && <span className="hint"> (задним числом)</span>}
-            </p>
-            <p>
-              Объём ({entry.equipment_a.label}): {entry.result_a}
-              {entry.target_a !== null && `, следующая цель ${entry.target_a}`}
-            </p>
-            <p>
-              Сила ({entry.equipment_b.label}): {entry.result_b}
-              {entry.target_b !== null && `, следующая цель ${entry.target_b}`}
-            </p>
-            {entry.comment && <p className="hint">Комментарий: {entry.comment}</p>}
-            <div className="history-card-actions">
-              {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
-                  редактируются (issue #106) — просто без пересчёта цели/каскада
-                  на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
-                  одна для всех записей. */}
-              <Button
-                mode="outline"
-                size="s"
-                onClick={() => setEditingWorkoutId(entry.workout_id)}
-              >
-                ✏️ Изменить
-              </Button>
-              {/* Удаление (issue #146) — только для записей вне каскада
-                  (is_deletable). Обычные тренировки цепочки каскада пока не
-                  удаляются вообще (см. HistoryEntry.is_deletable в api.ts) —
-                  кнопка не показывается, не показывается disabled без
-                  объяснения. */}
-              {entry.is_deletable && (
-                <Button
-                  mode="outline"
-                  size="s"
-                  loading={deletingWorkoutId === entry.workout_id}
-                  onClick={() => void handleDelete(entry.workout_id)}
-                >
-                  🗑 Удалить
+          <Cell
+            key={entry.workout_id}
+            subhead={`${formatDate(entry.performed_at)}${entry.is_backdated ? " (задним числом)" : ""}`}
+            subtitle={`Сила (${entry.equipment_b.label}): ${entry.result_b}${
+              entry.target_b !== null ? `, следующая цель ${entry.target_b}` : ""
+            }`}
+            description={entry.comment ? `Комментарий: ${entry.comment}` : undefined}
+            multiline
+            after={
+              <div className="history-card-actions">
+                {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
+                    редактируются (issue #106) — просто без пересчёта цели/каскада
+                    на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
+                    одна для всех записей. */}
+                <Button mode="outline" size="s" onClick={() => setEditingWorkoutId(entry.workout_id)}>
+                  ✏️ Изменить
                 </Button>
-              )}
-            </div>
-          </div>
+                {/* Удаление (issue #146) — только для записей вне каскада
+                    (is_deletable). Обычные тренировки цепочки каскада пока не
+                    удаляются вообще (см. HistoryEntry.is_deletable в api.ts) —
+                    кнопка не показывается, не показывается disabled без
+                    объяснения. */}
+                {entry.is_deletable && (
+                  <Button
+                    mode="outline"
+                    size="s"
+                    loading={deletingWorkoutId === entry.workout_id}
+                    onClick={() => void handleDelete(entry.workout_id)}
+                  >
+                    🗑 Удалить
+                  </Button>
+                )}
+              </div>
+            }
+          >
+            {`Объём (${entry.equipment_a.label}): ${entry.result_a}${
+              entry.target_a !== null ? `, следующая цель ${entry.target_a}` : ""
+            }`}
+          </Cell>
         ))}
-      </div>
+      </Section>
 
       {state.hasMore && (
         <Button mode="outline" size="m" stretched onClick={() => void loadMore()} loading={state.loadingMore}>

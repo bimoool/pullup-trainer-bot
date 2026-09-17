@@ -392,8 +392,8 @@ input[type="number"] {
 
 .history-card-actions {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 4px;
 }
 
 .hint {
