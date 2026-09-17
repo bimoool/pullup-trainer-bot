@@ -83,7 +83,7 @@ from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
-from app.services.workout_deletion import delete_noncascade_workout
+from app.services.workout_deletion import delete_cascade_workout, delete_noncascade_workout
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -1029,7 +1029,7 @@ async def get_history(
                 workout_id=workout.id,
                 performed_at=workout.performed_at.date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
-                is_deletable=not workout.participates_in_cascade,
+                is_deletable=True,
                 comment=workout.comment,
                 equipment_a=_equipment_info(
                     block_a.equipment_type, block_a.equipment_value, block_a.equipment_item_id,
@@ -1479,18 +1479,25 @@ async def delete_history_workout(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> HistoryDeleteResponse:
-    """Удаляет запись истории (issue #146) — ТОЛЬКО внесённые не в цепочку
-    каскада (бэкдейт/свободные подтягивания, participates_in_cascade=False):
-    у них нет sequence_number и нет последующих тренировок цепочки, которые
-    нужно было бы пересчитывать при исчезновении записи. Обычные тренировки
-    цепочки каскада 400-ятся явно, не молча игнорируют запрос — удаление для
-    них не реализовано, пока не согласовано, должно ли оно запускать
-    recalculate_cascade (см. issue #146).
+    """Удаляет запись истории (issue #146). Два пути в зависимости от
+    participates_in_cascade:
 
-    Архивирует, не удаляет молча — see app.services.workout_deletion.
-    delete_noncascade_workout. Подтверждение "точно удалить?" — на
+    - False (бэкдейт/свободные подтягивания) — нет sequence_number и нет
+      последующих тренировок цепочки, пересчитывать нечего
+      (delete_noncascade_workout).
+    - True (обычная тренировка) — решение Кирилла, вариант A: удаление
+      пересчитывает каскад для всей цепочки, начиная с позиции удалённой
+      записи (delete_cascade_workout/WorkoutRepository.
+      recalculate_cascade_on_delete) — реальный кейс: тренировка
+      задублирована по ошибке, без пересчёта дубль продолжал бы искажать
+      прогрессию задним числом у всех последующих тренировок.
+
+    Архивирует, не удаляет молча в обоих случаях — см.
+    app.services.workout_deletion. Подтверждение "точно удалить?" — на
     фронтенде (window.confirm, тот же паттерн, что и в App.tsx для потери
-    прогресса живой тренировки), не отдельный шаг на бэкенде."""
+    прогресса живой тренировки), не отдельный шаг на бэкенде; для каскадных
+    записей фронтенд использует более строгую формулировку (предупреждает
+    про пересчёт целей последующих тренировок)."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
@@ -1498,10 +1505,18 @@ async def delete_history_workout(
     workout = await WorkoutRepository(session).get_by_id(workout_id)
     if workout is None or workout.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    if workout.participates_in_cascade:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cascade workouts cannot be deleted yet")
+    if not _history_is_editable(workout):
+        # Та же граница допустимости, что и у правки (_history_is_editable) —
+        # в частности, отсекает ещё не завершённую (STARTED) живую тренировку:
+        # у неё participates_in_cascade=True, но sequence_number ещё не
+        # выставлен, recalculate_cascade_on_delete не смог бы найти её позицию
+        # в цепочке.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Workout is not deletable")
 
-    await delete_noncascade_workout(session, workout)
+    if workout.participates_in_cascade:
+        await delete_cascade_workout(session, workout)
+    else:
+        await delete_noncascade_workout(session, workout)
     return HistoryDeleteResponse(status="ok")
 
 

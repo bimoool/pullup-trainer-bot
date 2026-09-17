@@ -74,8 +74,15 @@ export function HistoryScreen({ initDataRaw }: Props) {
     }
   }
 
-  async function handleDelete(workoutId: number) {
-    if (!window.confirm("Удалить эту тренировку из истории? Отменить это будет нельзя.")) {
+  async function handleDelete(workoutId: number, isBackdated: boolean) {
+    // Каскадные (обычные) тренировки удаляются с пересчётом цепочки целей
+    // (issue #146, решение Кирилла — вариант A) — последствия серьёзнее,
+    // чем для бэкдейта/свободных (там пересчитывать нечего), формулировка
+    // предупреждает об этом явно, не только "нельзя отменить".
+    const message = isBackdated
+      ? "Удалить эту тренировку из истории? Отменить это будет нельзя."
+      : "Удалить эту тренировку? Это пересчитает цели всех следующих тренировок. Отменить это будет нельзя.";
+    if (!window.confirm(message)) {
       return;
     }
     setDeleteError(null);
@@ -147,17 +154,16 @@ export function HistoryScreen({ initDataRaw }: Props) {
               >
                 ✏️ Изменить
               </Button>
-              {/* Удаление (issue #146) — только для записей вне каскада
-                  (is_deletable). Обычные тренировки цепочки каскада пока не
-                  удаляются вообще (см. HistoryEntry.is_deletable в api.ts) —
-                  кнопка не показывается, не показывается disabled без
-                  объяснения. */}
+              {/* Удаление (issue #146) — теперь и для каскадных тренировок
+                  (решение Кирилла, вариант A: удаление пересчитывает цепочку
+                  целей), не только бэкдейт/свободных — is_deletable
+                  (HistoryEntry в api.ts) сейчас всегда true. */}
               {entry.is_deletable && (
                 <Button
                   mode="outline"
                   size="s"
                   loading={deletingWorkoutId === entry.workout_id}
-                  onClick={() => void handleDelete(entry.workout_id)}
+                  onClick={() => void handleDelete(entry.workout_id, entry.is_backdated)}
                 >
                   🗑 Удалить
                 </Button>

@@ -398,13 +398,12 @@ class HistoryEntryResponse(BaseModel):
     означает и sequence_number is None), отдельного is_editable не заводим,
     чтобы не дублировать один и тот же факт двумя полями.
 
-    is_deletable (issue #146) — В ОТЛИЧИЕ от is_editable, НЕ совпадает с
-    is_backdated по совпадению: удаление реализовано только для записей вне
-    каскада (бэкдейт/свободные, DELETE /api/history/{workout_id}), поэтому
-    is_deletable == is_backdated ровно сейчас, но это два разных факта —
-    удаление обычных (каскадных) тренировок на бэкенде пока не
-    реализовано вовсе (решение о пересчёте каскада требует отдельного
-    согласования продукта, см. issue #146), не просто скрыто на фронтенде."""
+    is_deletable (issue #146) — теперь всегда True: после решения Кирилла
+    (вариант A — удаление каскадной тренировки пересчитывает цепочку,
+    реальный кейс — тренировка задублирована по ошибке) DELETE
+    /api/history/{workout_id} принимает и каскадные, и бэкдейт/свободные
+    записи (см. app.services.workout_deletion.delete_cascade_workout/
+    delete_noncascade_workout)."""
 
     workout_id: int
     performed_at: str
@@ -678,9 +677,10 @@ class HistoryEditRequest(BaseModel):
 
 
 class HistoryDeleteResponse(BaseModel):
-    """DELETE /api/history/{workout_id} (issue #146) — только для записей вне
-    каскада (бэкдейт/свободные), см. app.services.workout_deletion.
-    delete_noncascade_workout и app/web/routes.py::delete_history_workout."""
+    """DELETE /api/history/{workout_id} (issue #146) — и каскадные, и
+    бэкдейт/свободные записи, см. app.services.workout_deletion.
+    delete_cascade_workout/delete_noncascade_workout и
+    app/web/routes.py::delete_history_workout."""
 
     status: Literal["ok"]
 

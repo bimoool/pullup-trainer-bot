@@ -889,6 +889,93 @@ class WorkoutRepository:
         await self._session.refresh(workout, attribute_names=["blocks"])
         return workout
 
+    async def recalculate_cascade_on_delete(self, workout: Workout) -> None:
+        """Пересчитывает каскад после удаления ОБЫЧНОЙ (каскадной) тренировки
+        (issue #146, решение Кирилла — вариант A: пересчитывать, не оставлять
+        "дыру". Реальный кейс — тренировка задублирована по ошибке: без
+        пересчёта дубль продолжал бы искажать прогрессию целей задним числом
+        у всех последующих тренировок, удаление не решало бы саму проблему).
+        Не удаляет строку сама — только пересчитывает то, что останется (см.
+        app.services.workout_deletion.delete_cascade_workout, который вызывает
+        этот метод и уже потом архивирует/удаляет саму запись).
+
+        Механика идентична каскадной части edit_workout — тот же
+        _preceding_chain_state/recalculate_cascade, тот же принцип
+        "equipment_type/equipment_value/is_deload/is_heavy каждой
+        последующей записи — факт, не пересчитывается, только
+        target_before/target_after/equipment_changed/work_sets". Разница
+        только в СТАРТОВОЙ точке: edit_workout сначала пересчитывает саму
+        отредактированную запись и стартует каскад ОТ её нового
+        target_after; здесь редактируемой записи больше нет вообще, поэтому
+        каскад для chain[position + 1:] стартует прямо от состояния ДО
+        удаляемой записи (_preceding_chain_state(chain, position) и
+        weak/stall-стрики, посчитанные по chain[:position]) — то же самое
+        "before", что вычисляет edit_workout, просто без добавления "+1 за
+        саму запись". Работает единообразно независимо от того, была ли
+        удаляемая запись сама is_deload/is_heavy — _preceding_chain_state и
+        _weak_streak/_stall_streak смотрят только на chain[:position], саму
+        удаляемую запись не читают вовсе (для position == 0 — тот же
+        приём: _preceding_chain_state отдаёт базовые
+        VOLUME_BLOCK/STRENGTH_BLOCK.base_target, как будто первой
+        тренировки не было).
+
+        Смены снаряда между удаляемой и последующими тренировками — не
+        отдельный случай, специально не обрабатывается отдельно: для каждой
+        последующей записи recalculate_cascade заново решает по формуле
+        (потолок цели в recalculate_volume_block/recalculate_target), должен
+        ли был случиться переход на новый снаряд, не читая исторический
+        equipment_type записи как признак перехода — это тот же риск
+        расхождения с тем, что реально было, каким уже рискует edit_workout
+        при правке более ранней записи цепочки (не новый риск, привнесённый
+        именно удалением, тот же механизм, что уже используется в проекте).
+
+        sequence_number всех последующих записей сдвигается на -1, чтобы не
+        оставить дыру: complete_workout вычисляет sequence_number новой
+        тренировки как len(cascade_chain) + 1 (количество, не max + 1) —
+        дыра в номерах привела бы к коллизии с уже существующим номером при
+        следующей живой тренировке. UNIQUE(user_id, sequence_number)
+        DEFERRABLE INITIALLY DEFERRED (app.db.models.Workout) позволяет
+        менять номера в любом порядке в пределах транзакции без
+        промежуточного конфликта уникальности.
+
+        Декремент workout_set.workouts_completed — тот же побочный эффект,
+        что уже обрабатывает delete_noncascade_workout для бэкдейта (issue
+        #97, чётность is_heavy): ЛЮБАЯ каскадная (обычная) тренировка тоже
+        инкрементирует этот счётчик в complete_workout, без отката чётность
+        тяжёлой тренировки блока Б сдвинулась бы навсегда для всех
+        последующих тренировок этого сета, не только для соседних по
+        цепочке. Тот же осознанный пробел, что и там: реоткрытие
+        WorkoutSetStatus.COMPLETED -> ACTIVE, если удаляемая запись закрыла
+        сет ровно на SET_LENGTH, намеренно не реализовано — следующий сет
+        мог уже открыться к моменту удаления."""
+        chain = await self._cascade_chain(workout.user_id)
+        position = next(i for i, w in enumerate(chain) if w.id == workout.id)
+
+        target_before_a, target_before_b, prev_volume_a, prev_volume_b, work_sets_before_a = (
+            self._preceding_chain_state(chain, position)
+        )
+        weak_streak_before_a = _weak_streak(_exclude_deload_entries(chain[:position]), BlockType.A)
+        weak_streak_before_b = _weak_streak(_exclude_heavy_entries(chain[:position]), BlockType.B)
+        stall_streak_before_a = _stall_streak(_exclude_deload_entries(chain[:position]))
+
+        following = chain[position + 1 :]
+        if following:
+            records = [_workout_to_record(w) for w in following]
+            cascaded = recalculate_cascade(
+                target_before_a, target_before_b,
+                prev_volume_a, prev_volume_b, records,
+                starting_weak_streak_a=weak_streak_before_a, starting_weak_streak_b=weak_streak_before_b,
+                starting_work_sets_a=work_sets_before_a, starting_stall_streak_a=stall_streak_before_a,
+            )
+            for db_workout, new_record in zip(following, cascaded, strict=True):
+                _apply_cascade_result(db_workout, new_record)
+            for db_workout in following:
+                db_workout.sequence_number -= 1
+
+        workout_set = await self._workout_sets.get_by_id(workout.workout_set_id)
+        if workout_set is not None and workout_set.workouts_completed > 0:
+            workout_set.workouts_completed -= 1
+
     async def edit_noncascade_workout(
         self,
         *,
@@ -1122,7 +1209,8 @@ class WorkoutRepository:
 
     @staticmethod
     def _preceding_chain_state(chain: list[Workout], position: int) -> tuple[int, int, int, int, int]:
-        """Только для edit_workout — цепочка каскада, а не полная история.
+        """Для edit_workout и recalculate_cascade_on_delete (issue #146) —
+        цепочка каскада, а не полная история.
         work_sets_before_a (иерархия роста, часть 2) читается из
         work_sets_after предыдущей записи цепочки — если та сама была
         разгрузочной (is_deload), её work_sets_after по построению равен
