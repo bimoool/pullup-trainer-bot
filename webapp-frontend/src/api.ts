@@ -344,10 +344,9 @@ export interface HistoryEntry {
   workout_id: number;
   performed_at: string;
   is_backdated: boolean;
-  /** issue #146 — удаление реализовано только для записей вне каскада
-   * (бэкдейт/свободные): is_deletable совпадает с is_backdated ровно
-   * сейчас, но это два разных поля с бэкенда (см. HistoryEntryResponse в
-   * app/web/schemas.py), не выведенное на фронтенде из is_backdated. */
+  /** issue #146 — сейчас всегда true (решение Кирилла, вариант A: удаление
+   * каскадной тренировки пересчитывает цепочку целей) — см.
+   * HistoryEntryResponse в app/web/schemas.py. */
   is_deletable: boolean;
   comment: string | null;
   equipment_a: EquipmentInfo;
@@ -619,10 +618,9 @@ export async function patchHistoryEdit(
   return (await response.json()) as WorkoutSubmitResponse;
 }
 
-/** DELETE /api/history/{workout_id} (issue #146) — только для записей вне
- * каскада (бэкдейт/свободные, HistoryEntry.is_deletable). Каскадные
- * тренировки отвечают 400 — удаление для них ещё не реализовано (см.
- * app/web/routes.py::delete_history_workout). */
+/** DELETE /api/history/{workout_id} (issue #146) — и каскадные тренировки
+ * (решение Кирилла, вариант A: пересчитывает цепочку целей), и бэкдейт/
+ * свободные (см. app/web/routes.py::delete_history_workout). */
 export async function deleteHistoryWorkout(initDataRaw: string, workoutId: number): Promise<void> {
   const response = await fetch(`/api/history/${workoutId}`, {
     method: "DELETE",
