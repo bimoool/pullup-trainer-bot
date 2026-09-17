@@ -264,8 +264,14 @@ def recalculate_volume_block(
          механизм в _resolve_next_state, что и в пункте выше).
     4. Иначе (застой, delta<=0 и НЕ выросло) — если застойный счётчик
        (включая эту тренировку) достиг VOLUME_STALL_THRESHOLD (4) и
-       подходы ещё не на потолке — +1 подход, цель как посчитана
-       (flat/откат по обычной формуле, без изменений).
+       подходы ещё не на потолке — +1 подход, ЦЕЛЬ ПЕРЕСЧИТЫВАЕТСЯ (issue
+       #149, не "как посчитана" flat-формулой): round(computed_target *
+       work_sets / new_work_sets) — старый общий объём делится на новое
+       число подходов, чтобы не перегружать пользователя кратным ростом
+       общего объёма при добавлении подхода (было 4×10=40 -> 5×10=50,
+       скачок 25% без причины; стало 4×10=40 -> 5×8=40, тот же общий
+       объём). Без застоя (new_work_sets не выросло) цель остаётся
+       computed_target как посчитана.
     5. Как только work_sets == VOLUME_WORK_SETS_CEILING (8) — ни застой,
        ни потолок повторений больше не добавляют подходов (последующий
        рост только через п.1/переход на вес)."""
@@ -315,16 +321,25 @@ def recalculate_volume_block(
         )
 
     new_work_sets = work_sets
+    new_target = computed_target
     if (
         not grew
         and work_sets < VOLUME_WORK_SETS_CEILING
         and consecutive_stall_before + 1 >= VOLUME_STALL_THRESHOLD
     ):
         new_work_sets = work_sets + 1
+        # issue #149: раньше цель на подход оставалась прежней при добавлении
+        # подхода застоя — 4×10 (итого 40) превращалось в 5×10 (итого 50),
+        # скачок объёма на 25% за одну тренировку без причины (пользователь
+        # не стал сильнее, просто "застоялся"). Пересчёт держит общий объём
+        # примерно тем же: старый общий объём (по СТАРОМУ числу подходов)
+        # делится на НОВОЕ число подходов, round() — округление обычное
+        # (round-half-to-even), тот же принцип, что и везде в модуле.
+        new_target = round(computed_target * work_sets / new_work_sets)
 
     reason = VolumeGrowthReason.STALL if new_work_sets > work_sets else None
     return VolumeBlockResult(
-        new_target=computed_target, new_work_sets=new_work_sets, equipment_changed=False,
+        new_target=new_target, new_work_sets=new_work_sets, equipment_changed=False,
         work_sets_growth_reason=reason,
     )
 
