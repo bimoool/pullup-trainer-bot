@@ -182,6 +182,31 @@ async def test_get_history_workout_returns_reported_volume_for_total_format_back
     assert body["block_b"]["reported_volume"] == 50
 
 
+async def test_get_history_workout_returns_legacy_total_format_backdate_shape(session):
+    """issue #147 — записи, внесённые ДО фикса issue #88, хранят итог за
+    тренировку прямо в max_reps (working_reps пуст, reported_volume=None —
+    поля reported_volume тогда ещё не существовало). Тот же класс "только
+    итог", что и современный формат с явным reported_volume, но с другой
+    формой на диске — GET должен отдавать её как есть, без домысливания."""
+    user, _workouts = await _make_chain(session, telegram_id=54017)
+    workout_set = (await WorkoutSetRepository(session).get_active_for_user(user.id))
+    backdated = await WorkoutRepository(session).record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=datetime.now(UTC) - timedelta(days=3),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(), max_reps=60),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=WEIGHT_VALUE,
+    )
+
+    response = await _get_history_detail_raw(session, telegram_id=user.telegram_id, workout_id=backdated.id)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_editable"] is True
+    assert body["block_b"]["working_reps"] == []
+    assert body["block_b"]["max_reps"] == 60
+    assert body["block_b"]["reported_volume"] is None
+
+
 # --- PATCH /api/history/{workout_id} -------------------------------------------------
 
 
@@ -247,6 +272,56 @@ async def test_patch_history_workout_edits_total_format_backdated_block_b(sessio
     assert updated_b.working_reps == []
     assert updated_b.max_reps == 15
     assert updated_b.reported_volume == 70
+
+
+async def test_patch_history_workout_migrates_legacy_total_format_block_b(session):
+    """issue #147 — до фикса HistoryEditForm.tsx::isTotalFormatB для легаси-
+    записи (working_reps=[], reported_volume=None, итог в max_reps) форма
+    ошибочно считала это "полной раскладкой" (SetInputGrid на 0 полей —
+    "нельзя внести подходы", описано в issue) и отправляла
+    block_b_working_reps=[] БЕЗ block_b_reported_volume — запрос ниже
+    воспроизводит именно этот старый payload и подтверждает, что он
+    отклоняется валидацией (тот же 422, что и раньше, не новый баг)."""
+    user, _workouts = await _make_chain(session, telegram_id=54018)
+    workout_set = (await WorkoutSetRepository(session).get_active_for_user(user.id))
+    backdated = await WorkoutRepository(session).record_backdated_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=datetime.now(UTC) - timedelta(days=3),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(), max_reps=60),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.WEIGHT, block_b_equipment_value=WEIGHT_VALUE,
+    )
+
+    broken_payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_b_working_reps": [], "block_b_max_reps": 0,
+        "comment": None, "confirm_anomalies": False,
+    }
+    broken_response = await _patch_history_raw(
+        session, telegram_id=user.telegram_id, workout_id=backdated.id, payload=broken_payload,
+    )
+    assert broken_response.status_code == 422
+
+    # Фикс: HistoryEditForm.tsx теперь распознаёт эту запись как "только
+    # итог" по working_reps.length === 0 (а не по reported_volume), берёт
+    # итог из max_reps (60) и шлёт его как block_b_reported_volume — тот же
+    # payload, который бы отправила исправленная форма.
+    fixed_payload = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_b_working_reps": [], "block_b_max_reps": 0, "block_b_reported_volume": 65,
+        "comment": None, "confirm_anomalies": False,
+    }
+    body = await _patch_history(session, telegram_id=user.telegram_id, workout_id=backdated.id, payload=fixed_payload)
+    assert body["status"] == "ok"
+
+    updated = await WorkoutRepository(session).get_by_id(backdated.id)
+    updated_b = next(b for b in updated.blocks if b.block_type == BlockType.B)
+    assert updated_b.working_reps == []
+    assert updated_b.max_reps == 0
+    assert updated_b.reported_volume == 65
+    # Бэкдейт вне каскада — цель по-прежнему не пересчитывается правкой.
+    before_b = next(b for b in backdated.blocks if b.block_type == BlockType.B)
+    assert updated_b.target_after == before_b.target_after
 
 
 async def test_patch_history_workout_rejects_working_reps_together_with_reported_volume(session):
