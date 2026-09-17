@@ -1,7 +1,7 @@
 import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { fetchHistory, type HistoryEntry } from "./api";
+import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
 import { HistoryEditForm } from "./HistoryEditForm";
 
 type Props = { initDataRaw: string };
@@ -24,6 +24,8 @@ function formatDate(isoDate: string): string {
 export function HistoryScreen({ initDataRaw }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
+  const [deletingWorkoutId, setDeletingWorkoutId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +74,22 @@ export function HistoryScreen({ initDataRaw }: Props) {
     }
   }
 
+  async function handleDelete(workoutId: number) {
+    if (!window.confirm("Удалить эту тренировку из истории? Отменить это будет нельзя.")) {
+      return;
+    }
+    setDeleteError(null);
+    setDeletingWorkoutId(workoutId);
+    try {
+      await deleteHistoryWorkout(initDataRaw, workoutId);
+      await reloadFirstPage();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDeletingWorkoutId(null);
+    }
+  }
+
   if (editingWorkoutId !== null) {
     return (
       <HistoryEditForm
@@ -99,6 +117,7 @@ export function HistoryScreen({ initDataRaw }: Props) {
   return (
     <div>
       <p className="plan-title">История</p>
+      {deleteError && <p className="screen-message">Не удалось удалить тренировку: {deleteError}</p>}
 
       <div className="history-list">
         {state.items.map((entry) => (
@@ -116,17 +135,34 @@ export function HistoryScreen({ initDataRaw }: Props) {
               {entry.target_b !== null && `, следующая цель ${entry.target_b}`}
             </p>
             {entry.comment && <p className="hint">Комментарий: {entry.comment}</p>}
-            {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
-                редактируются (issue #106) — просто без пересчёта цели/каскада
-                на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
-                одна для всех записей. */}
-            <Button
-              mode="outline"
-              size="s"
-              onClick={() => setEditingWorkoutId(entry.workout_id)}
-            >
-              ✏️ Изменить
-            </Button>
+            <div className="history-card-actions">
+              {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
+                  редактируются (issue #106) — просто без пересчёта цели/каскада
+                  на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
+                  одна для всех записей. */}
+              <Button
+                mode="outline"
+                size="s"
+                onClick={() => setEditingWorkoutId(entry.workout_id)}
+              >
+                ✏️ Изменить
+              </Button>
+              {/* Удаление (issue #146) — только для записей вне каскада
+                  (is_deletable). Обычные тренировки цепочки каскада пока не
+                  удаляются вообще (см. HistoryEntry.is_deletable в api.ts) —
+                  кнопка не показывается, не показывается disabled без
+                  объяснения. */}
+              {entry.is_deletable && (
+                <Button
+                  mode="outline"
+                  size="s"
+                  loading={deletingWorkoutId === entry.workout_id}
+                  onClick={() => void handleDelete(entry.workout_id)}
+                >
+                  🗑 Удалить
+                </Button>
+              )}
+            </div>
           </div>
         ))}
       </div>
