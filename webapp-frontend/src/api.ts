@@ -604,6 +604,7 @@ export interface HistoryEditDetail {
   performed_at: string;
   is_editable: boolean;
   comment: string | null;
+  is_free_entry: boolean;
   block_a: HistoryBlockDetail;
   block_b: HistoryBlockDetail;
 }
@@ -619,6 +620,7 @@ export interface HistoryEditDetail {
 export interface HistoryEditRequest {
   block_a_working_reps: number[];
   block_a_max_reps: number;
+  block_a_reported_volume?: number | null;
   block_b_working_reps: number[];
   block_b_max_reps: number;
   block_b_reported_volume?: number | null;

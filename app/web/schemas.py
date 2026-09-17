@@ -651,6 +651,7 @@ class HistoryEditDetailResponse(BaseModel):
     performed_at: str
     is_editable: bool
     comment: str | None
+    is_free_entry: bool
     block_a: HistoryBlockDetail
     block_b: HistoryBlockDetail
 
@@ -672,8 +673,9 @@ class HistoryEditRequest(BaseModel):
     Для обычных (не бэкдейт) и бэкдейт-записей с честной раскладкой это
     поле остаётся None, как и раньше."""
 
-    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_working_reps: list[Reps] = Field(default_factory=list)
     block_a_max_reps: Reps
+    block_a_reported_volume: Reps | None = None
     block_b_working_reps: list[Reps] = Field(default_factory=list)
     block_b_max_reps: Reps
     block_b_reported_volume: Reps | None = None
@@ -683,6 +685,14 @@ class HistoryEditRequest(BaseModel):
     block_b_actual_band_item_id: int | None = None
     comment: str | None = None
     confirm_anomalies: bool = False
+
+    @model_validator(mode="after")
+    def _check_block_a_format(self) -> "HistoryEditRequest":
+        if self.block_a_reported_volume is None and not self.block_a_working_reps:
+            raise ValueError("block_a_working_reps is required unless block_a_reported_volume is given")
+        if self.block_a_reported_volume is not None and self.block_a_working_reps:
+            raise ValueError("block_a_working_reps must be empty when block_a_reported_volume is given")
+        return self
 
     @model_validator(mode="after")
     def _check_block_b_format(self) -> "HistoryEditRequest":

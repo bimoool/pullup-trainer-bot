@@ -30,12 +30,21 @@ type ScreenState =
   | { phase: "error"; message: string }
   | { phase: "form"; detail: HistoryEditDetail }
   | { phase: "anomaly_confirm"; detail: HistoryEditDetail; result: WorkoutSubmitResponse }
-  | { phase: "done"; result: WorkoutSubmitResponse };
+  | { phase: "done"; result: WorkoutSubmitResponse; isFreeEntry: boolean };
 
 /** "2026-09-03" -> "03.09.2026" — тот же формат, что HistoryScreen.tsx. */
 function formatDate(isoDate: string): string {
   const [year, month, day] = isoDate.split("-");
   return `${day}.${month}.${year}`;
+}
+
+/** Тот же формат "только итог" (issue #88/#147), но для блока A — тот же
+ * принцип: working_reps пуст означает запись сделана без раскладки по
+ * подходам, независимо от того, заполнен ли reported_volume явно (легаси-
+ * записи до фикса issue #88 хранят введённое число в max_reps напрямую).
+ * См. докстринг isTotalFormatB ниже — тут ровно то же самое, для блока A. */
+function isTotalFormatA(detail: HistoryEditDetail): boolean {
+  return detail.block_a.working_reps.length === 0;
 }
 
 /** working_reps пуст — запись блока Б создана в режиме "только итог" (issue
@@ -78,6 +87,8 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
+  const [blockATotal, setBlockATotal] = useState("");
+  const [blockATotalMax, setBlockATotalMax] = useState("");
   const [blockBWorking, setBlockBWorking] = useState<string[]>([]);
   const [blockBMax, setBlockBMax] = useState("");
   const [blockBTotal, setBlockBTotal] = useState("");
@@ -99,8 +110,20 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
           setState({ phase: "error", message: "Эта тренировка не редактируется." });
           return;
         }
-        setBlockAWorking(detail.block_a.working_reps.map(String));
-        setBlockAMax(String(detail.block_a.max_reps));
+        if (isTotalFormatA(detail)) {
+          if (detail.block_a.reported_volume !== null) {
+            setBlockATotal(String(detail.block_a.reported_volume));
+            setBlockATotalMax(detail.block_a.max_reps > 0 ? String(detail.block_a.max_reps) : "");
+          } else {
+            // Легаси-запись до фикса issue #88 — та же логика, что и у
+            // блока Б ниже: введённое число лежит в max_reps.
+            setBlockATotal(String(detail.block_a.max_reps));
+            setBlockATotalMax("");
+          }
+        } else {
+          setBlockAWorking(detail.block_a.working_reps.map(String));
+          setBlockAMax(String(detail.block_a.max_reps));
+        }
         if (isTotalFormatB(detail)) {
           if (detail.block_b.reported_volume !== null) {
             setBlockBTotal(String(detail.block_b.reported_volume));
@@ -131,18 +154,46 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
   }, [initDataRaw, workoutId]);
 
   async function handleSubmit(detail: HistoryEditDetail, confirmAnomalies: boolean) {
-    const workingA = parseSetValues(blockAWorking);
-    const maxA = parseSetValue(blockAMax);
-    if (workingA === null || maxA === null) {
-      setFormError("Заполни все подходы блока А числами — пустые или нечисловые поля недопустимы.");
-      return;
+    const totalFormatA = isTotalFormatA(detail);
+    let workingA: number[] = [];
+    let maxA = 0;
+    let reportedVolumeA: number | null = null;
+    if (totalFormatA) {
+      const total = parseSetValue(blockATotal);
+      if (total === null) {
+        setFormError("Итог блока А должен быть числом.");
+        return;
+      }
+      const maxOrSkip = blockATotalMax.trim() === "" ? 0 : parseSetValue(blockATotalMax);
+      if (maxOrSkip === null) {
+        setFormError("Максимум блока А должен быть числом, если он указан.");
+        return;
+      }
+      reportedVolumeA = total;
+      maxA = maxOrSkip;
+    } else {
+      const working = parseSetValues(blockAWorking);
+      const max = parseSetValue(blockAMax);
+      if (working === null || max === null) {
+        setFormError("Заполни все подходы блока А числами — пустые или нечисловые поля недопустимы.");
+        return;
+      }
+      workingA = working;
+      maxA = max;
     }
 
     const totalFormatB = isTotalFormatB(detail);
     let workingB: number[] = [];
     let maxB = 0;
     let reportedVolumeB: number | null = null;
-    if (totalFormatB) {
+    if (detail.is_free_entry) {
+      // Свободные подтягивания (issue #109) — блок Б технически существует
+      // в БД как нулевой (working_reps=[], max_reps=0, см.
+      // WorkoutRepository.record_free_workout), но по смыслу отсутствует —
+      // не показываем его и не валидируем, просто отправляем то же самое
+      // нулевое значение обратно, без изменений.
+      reportedVolumeB = 0;
+    } else if (totalFormatB) {
       const total = parseSetValue(blockBTotal);
       if (total === null) {
         setFormError("Итог блока Б должен быть числом.");
@@ -179,6 +230,7 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
     const body: HistoryEditRequest = {
       block_a_working_reps: workingA,
       block_a_max_reps: maxA,
+      block_a_reported_volume: reportedVolumeA,
       block_b_working_reps: workingB,
       block_b_max_reps: maxB,
       block_b_reported_volume: reportedVolumeB,
@@ -198,7 +250,7 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
         setFormError(`Не удалось сохранить (статус: ${result.status}).`);
         return;
       }
-      setState({ phase: "done", result });
+      setState({ phase: "done", result, isFreeEntry: detail.is_free_entry });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -257,7 +309,7 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
         <p className="done-title">Тренировка обновлена</p>
         <div className="done-stats">
           <p>Блок A: {result.result_a}</p>
-          <p>Блок B: {result.result_b}</p>
+          {!state.isFreeEntry && <p>Блок B: {result.result_b}</p>}
         </div>
         <Button className="action-button" size="l" stretched onClick={onDone}>
           Готово
@@ -271,24 +323,67 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
     <div>
       <p className="plan-title">Редактирование тренировки от {formatDate(detail.performed_at)}</p>
 
-      <BlockForm
-        letter="A"
-        target={detail.block_a.target_before}
-        workSets={detail.block_a.working_reps.length}
-        equipmentType={detail.block_a.equipment.type}
-        equipmentLabel={detail.block_a.equipment.label}
-        workingValues={blockAWorking}
-        onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
-        maxValue={blockAMax}
-        onMaxChange={setBlockAMax}
-        actualWeightValue={blockAActualWeight}
-        onActualWeightChange={setBlockAActualWeight}
-        bandItems={[]}
-        bandItemValue=""
-        onBandItemChange={() => {}}
-      />
+      {isTotalFormatA(detail) ? (
+        <Section className="block-section" header={`Блок A — цель ${detail.block_a.target_before}`}>
+          <div className="block-header">
+            <div className="block-badge">A</div>
+            <p className="block-subtitle">
+              Итог за тренировку, без раскладки по подходам · {detail.block_a.equipment.label}
+            </p>
+          </div>
 
-      {isTotalFormatB(detail) ? (
+          <Input
+            header="Итог за тренировку"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={999}
+            aria-label="Блок А, итог за тренировку"
+            value={blockATotal}
+            onChange={(e) => setBlockATotal(e.target.value)}
+          />
+          <Input
+            header="Лучший подход (максимум), если он известен"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={999}
+            aria-label="Блок А, лучший подход"
+            value={blockATotalMax}
+            onChange={(e) => setBlockATotalMax(e.target.value)}
+          />
+
+          <EquipmentCorrectionFields
+            letter="A"
+            equipmentType={detail.block_a.equipment.type}
+            equipmentLabel={detail.block_a.equipment.label}
+            actualWeightValue={blockAActualWeight}
+            onActualWeightChange={setBlockAActualWeight}
+            bandItems={[]}
+            bandItemValue=""
+            onBandItemChange={() => {}}
+          />
+        </Section>
+      ) : (
+        <BlockForm
+          letter="A"
+          target={detail.block_a.target_before}
+          workSets={detail.block_a.working_reps.length}
+          equipmentType={detail.block_a.equipment.type}
+          equipmentLabel={detail.block_a.equipment.label}
+          workingValues={blockAWorking}
+          onWorkingChangeAt={(index, value) => setBlockAWorking((prev) => replaceAt(prev, index, value))}
+          maxValue={blockAMax}
+          onMaxChange={setBlockAMax}
+          actualWeightValue={blockAActualWeight}
+          onActualWeightChange={setBlockAActualWeight}
+          bandItems={[]}
+          bandItemValue=""
+          onBandItemChange={() => {}}
+        />
+      )}
+
+      {detail.is_free_entry ? null : isTotalFormatB(detail) ? (
         <Section className="block-section" header={`Блок Б — цель ${detail.block_b.target_before}`}>
           <div className="block-header">
             <div className="block-badge">B</div>
