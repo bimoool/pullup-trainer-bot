@@ -26,11 +26,23 @@ def _same_equipment(a: BlockAssignment, b: BlockAssignment) -> bool:
     может отличаться у одного и того же физического снаряда, если позже
     его отредактировать. Для BAND identity — equipment_item_id; для WEIGHT
     (там число обязательно и стабильно) — по-прежнему equipment_value;
-    для BODYWEIGHT/AUSTRALIAN значения нет, достаточно совпадения типа."""
+    для BODYWEIGHT/AUSTRALIAN значения нет, достаточно совпадения типа.
+
+    equipment_item_id может стать None для BAND и после того, как резина
+    уже была использована (issue #148, удаление резины — ON DELETE SET
+    NULL): без доп. проверки две РАЗНЫЕ удалённые резины (оба id — None)
+    выглядели бы "тем же снарядом" и сегмент current_equipment_progress
+    ошибочно склеивал бы их историю в одну. equipment_item_name — снапшот
+    названия на момент каждой конкретной тренировки, переживает и
+    удаление, и переименование резины — используется как тай-брейк именно
+    в этом случае, не как основной идентификатор (name не уникально
+    гарантированно, id надёжнее, пока он есть)."""
     if a.equipment_type != b.equipment_type:
         return False
     if a.equipment_type == EquipmentType.BAND:
-        return a.equipment_item_id == b.equipment_item_id
+        if a.equipment_item_id is not None or b.equipment_item_id is not None:
+            return a.equipment_item_id == b.equipment_item_id
+        return a.equipment_item_name == b.equipment_item_name
     if a.equipment_type == EquipmentType.WEIGHT:
         return a.equipment_value == b.equipment_value
     return True

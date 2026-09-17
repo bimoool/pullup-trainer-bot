@@ -4,7 +4,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ElectiveWorkout
+from app.db.models import ElectiveWorkout, EquipmentItem
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 
@@ -25,6 +25,10 @@ class ElectiveWorkoutRepository:
         equipment_value: Decimal | None = None,
         equipment_item_id: int | None = None,
     ) -> ElectiveWorkout:
+        equipment_item_name = None
+        if equipment_item_id is not None:
+            item = await self._session.get(EquipmentItem, equipment_item_id)
+            equipment_item_name = item.name if item is not None else None
         elective = ElectiveWorkout(
             user_id=user_id,
             elective_type=elective_type,
@@ -34,6 +38,7 @@ class ElectiveWorkoutRepository:
             equipment_type=equipment_type,
             equipment_value=equipment_value,
             equipment_item_id=equipment_item_id,
+            equipment_item_name=equipment_item_name,
         )
         self._session.add(elective)
         await self._session.flush()
