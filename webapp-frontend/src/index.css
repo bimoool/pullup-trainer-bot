@@ -390,6 +390,12 @@ input[type="number"] {
   font-size: 15px;
 }
 
+.history-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .hint {
   color: var(--tg-hint-color);
   font-size: 13px;

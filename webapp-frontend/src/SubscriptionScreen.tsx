@@ -1,5 +1,5 @@
 import { openLink } from "@telegram-apps/sdk";
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Cell, Placeholder, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchSubscription, paySubscription, type SubscriptionResponse } from "./api";
@@ -50,7 +50,10 @@ function openExternalLink(url: string) {
  * разрослось до 6 пунктов, названия переставали помещаться): открывается
  * только кнопкой "⭐ Подробнее о подписке" с "Профиля", поэтому теперь
  * нужна явная кнопка "Назад" — без пункта меню на этот экран больше не
- * возвращает переключение вкладок. */
+ * возвращает переключение вкладок.
+ *
+ * `Section`/`Cell`/`Placeholder` вместо `.profile-card`/`.screen-message`
+ * (issue #142) — тот же базовый паттерн, что AchievementsScreen.tsx. */
 export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [paying, setPaying] = useState(false);
@@ -95,7 +98,9 @@ export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
         <Button mode="outline" size="s" onClick={onBack}>
           ← Профиль
         </Button>
-        <p className="screen-message">Загружаю подписку…</p>
+        <Placeholder>
+          <Spinner size="m" />
+        </Placeholder>
       </div>
     );
   }
@@ -105,7 +110,7 @@ export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
         <Button mode="outline" size="s" onClick={onBack}>
           ← Профиль
         </Button>
-        <p className="screen-message">Не удалось загрузить подписку: {state.message}</p>
+        <Placeholder description={`Не удалось загрузить подписку: ${state.message}`} />
       </div>
     );
   }
@@ -116,19 +121,17 @@ export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
       <Button mode="outline" size="s" onClick={onBack}>
         ← Профиль
       </Button>
-      <p className="plan-title">Подписка</p>
 
-      <div className="profile-card">
-        <p className="section-title">Статус</p>
-        <p>{subscription.status_label ?? "Статус подписки недоступен."}</p>
+      <Section header="Подписка">
+        <Cell subtitle={subscription.status_label ?? "Статус подписки недоступен."}>Статус</Cell>
         {subscription.robokassa_available ? (
           <Button mode="filled" size="m" stretched onClick={() => void handlePay()} loading={paying}>
             💳 Оплатить {subscription.price_rub} ₽ / {subscription.days} дн.
           </Button>
         ) : (
-          <p className="screen-message">Оплата картой временно недоступна.</p>
+          <Placeholder description="Оплата картой временно недоступна." />
         )}
-        {payError && <p className="screen-message">Не удалось создать ссылку на оплату: {payError}</p>}
+        {payError && <Placeholder description={`Не удалось создать ссылку на оплату: ${payError}`} />}
         <div className="pricing-text" dangerouslySetInnerHTML={{ __html: subscription.pricing_text_html }} />
         <Button
           mode="outline"
@@ -138,7 +141,7 @@ export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
         >
           📄 Открыть текст оферты
         </Button>
-      </div>
+      </Section>
     </div>
   );
 }

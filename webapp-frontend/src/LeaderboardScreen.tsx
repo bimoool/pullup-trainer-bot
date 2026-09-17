@@ -1,3 +1,4 @@
+import { Button, Cell, Input, Placeholder, Section, Select, SegmentedControl, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -75,7 +76,16 @@ function formatValue(metric: LeaderboardMetric, value: string): string {
  * внутри одного экрана (не три отдельных экрана), фильтр по полу/возрастной
  * категории применяется к любой из них одинаково. Своя строка (если вне
  * видимого топа) показывается отдельно под списком с разделителем — тот же
- * частый паттерн лидербордов, что был согласован в плане issue #67. */
+ * частый паттерн лидербордов, что был согласован в плане issue #67.
+ *
+ * `SegmentedControl`/`Select`/`Section`+`Cell`/`Placeholder` вместо
+ * `.leaderboard-tab`/`.leaderboard-select`/`.leaderboard-list`/
+ * `.leaderboard-row`/`.screen-message` (issue #142) — тот же базовый
+ * паттерн, что AchievementsScreen.tsx. `.leaderboard-tab`/
+ * `.leaderboard-tab-active` в index.css не удалены — ProgressScreen.tsx
+ * (не тронут этим PR, встраивает LeaderboardScreen целиком) переиспользует
+ * те же классы для своего переключателя "График"/"Лидерборд" и для своих
+ * табов метрик графика. */
 export function LeaderboardScreen({ initDataRaw }: Props) {
   const [metric, setMetric] = useState<LeaderboardMetric>("max_reps");
   const [gender, setGender] = useState<LeaderboardGender>("all");
@@ -137,83 +147,74 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
     <div>
       <p className="plan-title">Лидерборд</p>
 
-      <div className="workout-mode-buttons">
+      <SegmentedControl>
         {METRIC_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            className={tab.key === metric ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
-            onClick={() => setMetric(tab.key)}
-          >
+          <SegmentedControl.Item key={tab.key} selected={tab.key === metric} onClick={() => setMetric(tab.key)}>
             {tab.label}
-          </button>
+          </SegmentedControl.Item>
         ))}
-      </div>
+      </SegmentedControl>
       <p className="hint">{METRIC_HINTS[metric]}</p>
 
       {metric === "total_volume" && (
-        <div className="workout-mode-buttons">
+        <SegmentedControl>
           {PERIOD_OPTIONS.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              className={option.key === period ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
-              onClick={() => setPeriod(option.key)}
-            >
+            <SegmentedControl.Item key={option.key} selected={option.key === period} onClick={() => setPeriod(option.key)}>
               {option.label}
-            </button>
+            </SegmentedControl.Item>
           ))}
-        </div>
+        </SegmentedControl>
       )}
 
-      <div className="leaderboard-filters">
-        <select
-          className="leaderboard-select"
-          value={gender}
-          onChange={(event) => setGender(event.target.value as LeaderboardGender)}
-        >
-          {GENDER_OPTIONS.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="leaderboard-select"
-          value={ageBucket}
-          onChange={(event) => setAgeBucket(event.target.value as LeaderboardAgeBucket)}
-        >
-          {AGE_BUCKET_OPTIONS.map((option) => (
-            <option key={option.key} value={option.key}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Select
+        aria-label="Пол"
+        value={gender}
+        onChange={(event) => setGender(event.target.value as LeaderboardGender)}
+      >
+        {GENDER_OPTIONS.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+      <Select
+        aria-label="Возраст"
+        value={ageBucket}
+        onChange={(event) => setAgeBucket(event.target.value as LeaderboardAgeBucket)}
+      >
+        {AGE_BUCKET_OPTIONS.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
 
-      <div className="profile-card">
-        <p className="section-title">Отображаемое имя</p>
-        <p className="hint">Пусто — участвуешь в лидерборде анонимно (это же дефолт, пока не задано явно).</p>
-        <input
-          className="leaderboard-name-input"
+      <Section header="Отображаемое имя">
+        <Cell subtitle="Пусто — участвуешь в лидерборде анонимно (это же дефолт, пока не задано явно).">Имя</Cell>
+        <Input
           type="text"
           maxLength={64}
           placeholder="Аноним"
+          aria-label="Отображаемое имя"
           value={nameInput}
           onChange={(event) => {
             setNameInput(event.target.value);
             setNameJustSaved(false);
           }}
         />
-        <button type="button" className="leaderboard-save-button" onClick={() => void handleSaveName()} disabled={savingName}>
+        <Button size="m" stretched onClick={() => void handleSaveName()} loading={savingName}>
           {savingName ? "Сохраняю…" : "Сохранить"}
-        </button>
+        </Button>
         {nameJustSaved && <p className="hint leaderboard-name-saved">✓ Сохранено</p>}
-        {nameError && <p className="screen-message">Не удалось сохранить имя: {nameError}</p>}
-      </div>
+        {nameError && <Placeholder description={`Не удалось сохранить имя: ${nameError}`} />}
+      </Section>
 
-      {state.phase === "loading" && <p className="screen-message">Загружаю лидерборд…</p>}
-      {state.phase === "error" && <p className="screen-message">Не удалось загрузить лидерборд: {state.message}</p>}
+      {state.phase === "loading" && (
+        <Placeholder>
+          <Spinner size="m" />
+        </Placeholder>
+      )}
+      {state.phase === "error" && <Placeholder description={`Не удалось загрузить лидерборд: ${state.message}`} />}
       {state.phase === "ready" && <LeaderboardTable metric={metric} data={state.data} />}
     </div>
   );
@@ -226,25 +227,24 @@ export function LeaderboardScreen({ initDataRaw }: Props) {
  * "своя строка внутри топа"/"своя строка вне топа". */
 function LeaderboardTable({ metric, data }: { metric: LeaderboardMetric; data: LeaderboardData }) {
   if (data.entries.length === 0) {
-    return <p className="screen-message">Пока никто не попал в этот срез лидерборда.</p>;
+    return <Placeholder description="Пока никто не попал в этот срез лидерборда." />;
   }
 
   return (
-    <div className="leaderboard-list">
+    <Section>
       {data.entries.map((entry, index) => {
         const previous = data.entries[index - 1];
         const showGap = previous !== undefined && entry.rank > previous.rank + 1;
         return (
           <div key={entry.rank}>
             {showGap && <div className="leaderboard-gap">⋯</div>}
-            <div className={entry.is_current_user ? "leaderboard-row leaderboard-row-own" : "leaderboard-row"}>
-              <span className="leaderboard-rank">#{entry.rank}</span>
-              <span className="leaderboard-name">
-                {entry.display_name}
-                {entry.is_current_user ? " (ты)" : ""}
-              </span>
-              <span className="leaderboard-value">{formatValue(metric, entry.value)}</span>
-            </div>
+            <Cell
+              subhead={`#${entry.rank}`}
+              hint={formatValue(metric, entry.value)}
+              subtitle={entry.is_current_user ? "Это ты" : undefined}
+            >
+              {entry.display_name}
+            </Cell>
           </div>
         );
       })}
@@ -253,6 +253,6 @@ function LeaderboardTable({ metric, data }: { metric: LeaderboardMetric; data: L
           Твоей строки здесь нет — либо ещё нет тренировок для этой метрики, либо не подходишь под выбранный фильтр.
         </p>
       )}
-    </div>
+    </Section>
   );
 }

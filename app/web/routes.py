@@ -83,6 +83,7 @@ from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
+from app.services.workout_deletion import delete_noncascade_workout
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -109,6 +110,7 @@ from app.web.schemas import (
     GtoResponse,
     HelloResponse,
     HistoryBlockDetail,
+    HistoryDeleteResponse,
     HistoryEditDetailResponse,
     HistoryEditRequest,
     HistoryEntryResponse,
@@ -1027,6 +1029,7 @@ async def get_history(
                 workout_id=workout.id,
                 performed_at=workout.performed_at.date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
+                is_deletable=not workout.participates_in_cascade,
                 comment=workout.comment,
                 equipment_a=_equipment_info(
                     block_a.equipment_type, block_a.equipment_value, block_a.equipment_item_id,
@@ -1468,6 +1471,38 @@ async def edit_history_workout(
         result_a=format_block_result(block_a.working_reps, block_a.max_reps, reported_volume=block_a.reported_volume),
         result_b=format_block_result(block_b.working_reps, block_b.max_reps, reported_volume=block_b.reported_volume),
     )
+
+
+@router.delete("/history/{workout_id}", response_model=HistoryDeleteResponse)
+async def delete_history_workout(
+    workout_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> HistoryDeleteResponse:
+    """Удаляет запись истории (issue #146) — ТОЛЬКО внесённые не в цепочку
+    каскада (бэкдейт/свободные подтягивания, participates_in_cascade=False):
+    у них нет sequence_number и нет последующих тренировок цепочки, которые
+    нужно было бы пересчитывать при исчезновении записи. Обычные тренировки
+    цепочки каскада 400-ятся явно, не молча игнорируют запрос — удаление для
+    них не реализовано, пока не согласовано, должно ли оно запускать
+    recalculate_cascade (см. issue #146).
+
+    Архивирует, не удаляет молча — see app.services.workout_deletion.
+    delete_noncascade_workout. Подтверждение "точно удалить?" — на
+    фронтенде (window.confirm, тот же паттерн, что и в App.tsx для потери
+    прогресса живой тренировки), не отдельный шаг на бэкенде."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+
+    workout = await WorkoutRepository(session).get_by_id(workout_id)
+    if workout is None or workout.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    if workout.participates_in_cascade:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cascade workouts cannot be deleted yet")
+
+    await delete_noncascade_workout(session, workout)
+    return HistoryDeleteResponse(status="ok")
 
 
 # --- Внесение задним числом (issue #52) -----------------------------------------------
