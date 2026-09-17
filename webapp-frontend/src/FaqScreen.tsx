@@ -1,4 +1,4 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Placeholder, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchBandHelp } from "./api";
@@ -13,7 +13,9 @@ type ScreenState = { phase: "loading" } | { phase: "error"; message: string } | 
  * (не пункт нижнего меню — "faq" валидное значение Tab в App.tsx, назад
  * ведёт explicit onBack на тот раздел, откуда открыли, не всегда "Профиль").
  * Текст — не копия, а тот же texts.EQUIPMENT_BAND_HELP_TEXT, что кнопка
- * "❓ Как выбрать резину" бота (см. api.ts::fetchBandHelp). */
+ * "❓ Как выбрать резину" бота (см. api.ts::fetchBandHelp).
+ * `Placeholder`/`Spinner`/`Section` вместо `.screen-message`/`.profile-card`
+ * (issue #142) — тот же базовый паттерн, что AchievementsScreen.tsx. */
 export function FaqScreen({ initDataRaw, onBack }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
@@ -44,12 +46,16 @@ export function FaqScreen({ initDataRaw, onBack }: Props) {
       </Button>
       <p className="plan-title">Как выбрать резину</p>
 
-      {state.phase === "loading" && <p className="screen-message">Загружаю…</p>}
-      {state.phase === "error" && <p className="screen-message">Не удалось загрузить инструкцию: {state.message}</p>}
+      {state.phase === "loading" && (
+        <Placeholder>
+          <Spinner size="m" />
+        </Placeholder>
+      )}
+      {state.phase === "error" && <Placeholder description={`Не удалось загрузить инструкцию: ${state.message}`} />}
       {state.phase === "ready" && (
-        <div className="profile-card">
+        <Section>
           <div className="pricing-text" dangerouslySetInnerHTML={{ __html: state.textHtml }} />
-        </div>
+        </Section>
       )}
     </div>
   );
