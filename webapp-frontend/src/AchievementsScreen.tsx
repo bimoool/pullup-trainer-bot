@@ -1,4 +1,4 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Cell, Placeholder, Section } from "@telegram-apps/telegram-ui";
 
 import type { AchievementItem } from "./api";
 
@@ -15,24 +15,24 @@ function formatDate(isoDate: string): string {
  * навигации внутри вкладки, что HistoryEditForm поверх HistoryScreen — не
  * отдельная вкладка нижнего меню ради одного маленького экрана. Данные уже
  * загружены вместе с профилем (GET /api/profile, app.domain.achievements.
- * ACHIEVEMENT_LABELS на бэкенде) — отдельного запроса здесь нет. */
+ * ACHIEVEMENT_LABELS на бэкенде) — отдельного запроса здесь нет.
+ * `Section`/`Cell`/`Placeholder` вместо `.history-list`/`.history-card`/
+ * `.screen-message` (issue #142, пилот миграции на @telegram-apps/telegram-ui) —
+ * первый экран, задающий базовый паттерн для остальных списков. */
 export function AchievementsScreen({ achievements, onBack }: Props) {
   return (
     <div>
-      <p className="plan-title">Ачивки</p>
-
-      {achievements.length === 0 ? (
-        <p className="screen-message">Пока нет ни одной ачивки.</p>
-      ) : (
-        <div className="history-list">
-          {achievements.map((achievement) => (
-            <div className="history-card" key={achievement.code}>
-              <p>{achievement.label}</p>
-              <p className="hint">{formatDate(achievement.unlocked_at)}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      <Section header="Ачивки">
+        {achievements.length === 0 ? (
+          <Placeholder description="Пока нет ни одной ачивки." />
+        ) : (
+          achievements.map((achievement) => (
+            <Cell key={achievement.code} hint={formatDate(achievement.unlocked_at)} multiline>
+              {achievement.label}
+            </Cell>
+          ))
+        )}
+      </Section>
 
       <Button mode="outline" size="m" stretched onClick={onBack}>
         ← Назад
