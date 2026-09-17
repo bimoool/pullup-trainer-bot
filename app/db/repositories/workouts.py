@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Block, BlockType, Workout, WorkoutStatus
+from app.db.models import Block, BlockType, EquipmentItem, Workout, WorkoutStatus
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.domain.constants import (
     DELOAD_INTERVAL_DAYS,
@@ -145,6 +145,7 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             equipment_type=block_a.equipment_type,
             equipment_value=block_a.equipment_value,
             equipment_item_id=block_a.equipment_item_id,
+            equipment_item_name=block_a.equipment_item_name,
             transition_failed=block_a.transition_failed,
             work_sets_before=block_a.work_sets_before,
             work_sets_after=block_a.work_sets_after,
@@ -163,6 +164,7 @@ def _workout_to_record(workout: Workout) -> WorkoutRecord:
             equipment_type=block_b.equipment_type,
             equipment_value=block_b.equipment_value,
             equipment_item_id=block_b.equipment_item_id,
+            equipment_item_name=block_b.equipment_item_name,
             transition_failed=block_b.transition_failed,
             is_heavy=block_b.is_heavy,
         ),
@@ -233,6 +235,17 @@ class WorkoutRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self._workout_sets = WorkoutSetRepository(session)
+
+    async def _equipment_item_name(self, equipment_item_id: int | None) -> str | None:
+        """Снапшот названия резины на момент ЭТОЙ тренировки (issue #148) —
+        читается один раз при записи блока, не выведено позже из текущего
+        equipment_items.name: переименование/удаление резины после этой
+        тренировки не должно задним числом менять то, что показывает уже
+        записанная история (см. докстринг Block.equipment_item_name)."""
+        if equipment_item_id is None:
+            return None
+        item = await self._session.get(EquipmentItem, equipment_item_id)
+        return item.name if item is not None else None
 
     async def get_by_id(self, workout_id: int) -> Workout | None:
         result = await self._session.execute(
@@ -561,6 +574,9 @@ class WorkoutRepository:
         cascade_chain = await self._cascade_chain(workout.user_id)
         workout.sequence_number = len(cascade_chain) + 1
 
+        equipment_item_name_a = await self._equipment_item_name(block_a_equipment_item_id)
+        equipment_item_name_b = await self._equipment_item_name(block_b_equipment_item_id)
+
         self._session.add(
             Block(
                 workout_id=workout.id,
@@ -573,6 +589,7 @@ class WorkoutRepository:
                 equipment_type=block_a_equipment_type,
                 equipment_value=block_a_equipment_value,
                 equipment_item_id=block_a_equipment_item_id,
+                equipment_item_name=equipment_item_name_a,
                 transition_failed=failed_a,
                 work_sets_before=work_sets_before_a,
                 work_sets_after=work_sets_after_a,
@@ -594,6 +611,7 @@ class WorkoutRepository:
                 equipment_type=block_b_equipment_type,
                 equipment_value=block_b_equipment_value,
                 equipment_item_id=block_b_equipment_item_id,
+                equipment_item_name=equipment_item_name_b,
                 transition_failed=failed_b,
                 is_heavy=state_b.is_heavy,
             ),
@@ -669,6 +687,9 @@ class WorkoutRepository:
         self._session.add(workout)
         await self._session.flush()
 
+        equipment_item_name_a = await self._equipment_item_name(block_a_equipment_item_id)
+        equipment_item_name_b = await self._equipment_item_name(block_b_equipment_item_id)
+
         self._session.add(
             Block(
                 workout_id=workout.id, block_type=BlockType.A,
@@ -677,6 +698,7 @@ class WorkoutRepository:
                 equipment_changed=result_a.equipment_changed,
                 equipment_type=block_a_equipment_type, equipment_value=block_a_equipment_value,
                 equipment_item_id=block_a_equipment_item_id,
+                equipment_item_name=equipment_item_name_a,
                 work_sets_before=state_a.work_sets, work_sets_after=result_a.new_work_sets,
                 work_sets_growth_reason=(
                     result_a.work_sets_growth_reason.value if result_a.work_sets_growth_reason is not None else None
@@ -692,6 +714,7 @@ class WorkoutRepository:
                 equipment_changed=False,
                 equipment_type=block_b_equipment_type, equipment_value=block_b_equipment_value,
                 equipment_item_id=block_b_equipment_item_id,
+                equipment_item_name=equipment_item_name_b,
             ),
         )
 
@@ -745,6 +768,8 @@ class WorkoutRepository:
         self._session.add(workout)
         await self._session.flush()
 
+        equipment_item_name = await self._equipment_item_name(equipment_item_id)
+
         self._session.add(
             Block(
                 workout_id=workout.id, block_type=BlockType.A,
@@ -752,6 +777,7 @@ class WorkoutRepository:
                 target_before=state_a.target, target_after=state_a.target,
                 equipment_changed=False, equipment_type=equipment_type,
                 equipment_value=equipment_value, equipment_item_id=equipment_item_id,
+                equipment_item_name=equipment_item_name,
                 work_sets_before=state_a.work_sets, work_sets_after=state_a.work_sets,
             ),
         )
@@ -1052,6 +1078,7 @@ class WorkoutRepository:
             block.equipment_value = equipment_value
         if equipment_item_id is not None:
             block.equipment_item_id = equipment_item_id
+            block.equipment_item_name = await self._equipment_item_name(equipment_item_id)
 
         await self._session.flush()
         await self._session.refresh(workout, attribute_names=["blocks"])

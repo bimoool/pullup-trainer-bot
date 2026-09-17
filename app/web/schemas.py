@@ -321,6 +321,23 @@ class BandItemListResponse(BaseModel):
     items: list[BandItemInfo]
 
 
+class BandItemUpdateRequest(BaseModel):
+    """PATCH /api/equipment/band-items/{id} (issue #148) — переименование
+    только, тот же принцип валидации имени (min/max длина, непустое после
+    strip), что BandItemCreateRequest. resistance_kg/position этим
+    эндпойнтом не правятся — для этого нет формы, не запрашивалось."""
+
+    name: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def _strip_name(self) -> "BandItemUpdateRequest":
+        stripped = self.name.strip()
+        if not stripped:
+            raise ValueError("Название не должно быть пустым")
+        self.name = stripped
+        return self
+
+
 class GtoResponse(BaseModel):
     """GET /api/gto (issue #71) — разряд ГТО по подтягиванию, отдельная
     концепция от обычных ачивок (app.domain.gto, не AchievementRepository):

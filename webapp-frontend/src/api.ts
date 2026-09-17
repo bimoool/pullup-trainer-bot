@@ -507,16 +507,20 @@ export async function fetchWarmup(initDataRaw: string): Promise<WarmupResponse> 
   return apiGet<WarmupResponse>("/api/warmup", initDataRaw);
 }
 
-/** GET/POST /api/equipment/band-items (issue #124, PR 3) — список и
- * заведение личных резин вне контекста плана конкретной тренировки: GET
+/** GET/POST/PATCH/DELETE /api/equipment/band-items (issue #124 PR 3, issue
+ * #148 для PATCH/DELETE) — список, заведение, переименование и удаление
+ * личных резин вне контекста плана конкретной тренировки: GET
  * /api/workout/plan и остальные *_plan-эндпойнты уже отдают band_items как
  * часть своего ответа (тот же источник), но экрану выбора/заведения резины
- * на первой тренировке (WorkoutScreen.tsx) нужен отдельный явный путь, не
- * завязанный на план. PATCH/DELETE сознательно не заведены — паритет с
- * ботом, у которого их тоже нет (см. app/web/routes.py). */
+ * на первой тренировке (WorkoutScreen.tsx) и экрану управления списком
+ * (BandItemsScreen.tsx) нужен отдельный явный путь, не завязанный на план. */
 export interface BandItemCreateRequest {
   name: string;
   resistance_kg: string | null;
+}
+
+export interface BandItemUpdateRequest {
+  name: string;
 }
 
 export async function fetchBandItems(initDataRaw: string): Promise<{ items: BandItemInfo[] }> {
@@ -525,6 +529,36 @@ export async function fetchBandItems(initDataRaw: string): Promise<{ items: Band
 
 export async function createBandItem(initDataRaw: string, body: BandItemCreateRequest): Promise<BandItemInfo> {
   return apiPost<BandItemCreateRequest, BandItemInfo>("/api/equipment/band-items", initDataRaw, body);
+}
+
+export async function updateBandItem(
+  initDataRaw: string,
+  itemId: number,
+  body: BandItemUpdateRequest,
+): Promise<BandItemInfo> {
+  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+    method: "PATCH",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PATCH /api/equipment/band-items/${itemId} failed: ${response.status}`);
+  }
+  return (await response.json()) as BandItemInfo;
+}
+
+export async function deleteBandItem(initDataRaw: string, itemId: number): Promise<BandItemInfo> {
+  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    throw new Error(`DELETE /api/equipment/band-items/${itemId} failed: ${response.status}`);
+  }
+  return (await response.json()) as BandItemInfo;
 }
 
 async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {

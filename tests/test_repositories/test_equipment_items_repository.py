@@ -76,5 +76,54 @@ async def test_list_all_spans_every_user_ordered_by_user_then_position(session, 
     ]
 
 
+async def test_rename_updates_name(session, user: User):
+    repo = EquipmentItemRepository(session)
+    item = await repo.create(user_id=user.id, name="старое имя")
+
+    renamed = await repo.rename(item_id=item.id, user_id=user.id, name="новое имя")
+
+    assert renamed is not None
+    assert renamed.name == "новое имя"
+    persisted = await repo.get_by_id(item.id)
+    assert persisted.name == "новое имя"
+
+
+async def test_rename_returns_none_for_missing_item(session, user: User):
+    repo = EquipmentItemRepository(session)
+    assert await repo.rename(item_id=999999, user_id=user.id, name="x") is None
+
+
+async def test_rename_returns_none_for_foreign_item(session, user: User):
+    other_user = await _make_other_user(session)
+    repo = EquipmentItemRepository(session)
+    item = await repo.create(user_id=other_user.id, name="чужая")
+
+    assert await repo.rename(item_id=item.id, user_id=user.id, name="перехват") is None
+    persisted = await repo.get_by_id(item.id)
+    assert persisted.name == "чужая"
+
+
+async def test_delete_removes_item(session, user: User):
+    repo = EquipmentItemRepository(session)
+    item = await repo.create(user_id=user.id, name="удаляемая")
+
+    assert await repo.delete(item_id=item.id, user_id=user.id) is True
+    assert await repo.get_by_id(item.id) is None
+
+
+async def test_delete_returns_false_for_missing_item(session, user: User):
+    repo = EquipmentItemRepository(session)
+    assert await repo.delete(item_id=999999, user_id=user.id) is False
+
+
+async def test_delete_returns_false_for_foreign_item(session, user: User):
+    other_user = await _make_other_user(session)
+    repo = EquipmentItemRepository(session)
+    item = await repo.create(user_id=other_user.id, name="чужая")
+
+    assert await repo.delete(item_id=item.id, user_id=user.id) is False
+    assert await repo.get_by_id(item.id) is not None
+
+
 async def _make_other_user(session):
     return await UserRepository(session).create(telegram_id=2002, username="other")

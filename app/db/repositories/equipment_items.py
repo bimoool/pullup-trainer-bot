@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import EquipmentItem
+from app.db.models import EquipmentItem, WorkoutDraft
 
 
 class EquipmentItemRepository:
@@ -27,6 +27,56 @@ class EquipmentItemRepository:
 
     async def get_by_id(self, equipment_item_id: int) -> EquipmentItem | None:
         return await self._session.get(EquipmentItem, equipment_item_id)
+
+    async def rename(self, *, item_id: int, user_id: int, name: str) -> EquipmentItem | None:
+        """Переименование (issue #148) — правит только name, resistance_kg/
+        position не трогает (для этого есть create/reorder). Возвращает
+        None, если резина не найдена или принадлежит другому пользователю —
+        вызывающий код (app/web/routes.py) превращает это в 404, не 403,
+        тем же принципом, что остальные ownership-проверки этого файла (не
+        подтверждать чужому пользователю сам факт существования id)."""
+        item = await self.get_by_id(item_id)
+        if item is None or item.user_id != user_id:
+            return None
+        item.name = name
+        await self._session.flush()
+        return item
+
+    async def delete(self, *, item_id: int, user_id: int) -> bool:
+        """Настоящий DELETE, не архивация — это личный справочник
+        пользователя, не история тренировок (см. докстринг EquipmentItem).
+        blocks.equipment_item_id/elective_workouts.equipment_item_id —
+        ON DELETE SET NULL (миграция e7c2a4f9d1b3), поэтому уже записанные
+        тренировки/факультативы не мешают удалению и не ломаются: имя на
+        момент тренировки уже отдельно сохранено в equipment_item_name.
+
+        WorkoutDraft.block_*_actual_band_item_id — не FK (черновик не
+        хранит snapshot плана вообще, см. докстринг WorkoutDraft), поэтому
+        Postgres не подчистит их сам — обнуляем вручную, чтобы черновик не
+        указывал на несуществующий id (сам черновик эфемерен, это не потеря
+        данных)."""
+        item = await self.get_by_id(item_id)
+        if item is None or item.user_id != user_id:
+            return False
+        await self._session.execute(
+            update(WorkoutDraft)
+            .where(
+                WorkoutDraft.user_id == user_id,
+                WorkoutDraft.block_a_actual_band_item_id == item_id,
+            )
+            .values(block_a_actual_band_item_id=None),
+        )
+        await self._session.execute(
+            update(WorkoutDraft)
+            .where(
+                WorkoutDraft.user_id == user_id,
+                WorkoutDraft.block_b_actual_band_item_id == item_id,
+            )
+            .values(block_b_actual_band_item_id=None),
+        )
+        await self._session.delete(item)
+        await self._session.flush()
+        return True
 
     async def list_for_user(self, user_id: int) -> list[EquipmentItem]:
         """В порядке position — 0 самый тяжёлый (больше всего помощи),
