@@ -1387,6 +1387,7 @@ async def get_history_workout(
         performed_at=workout.performed_at.date().isoformat(),
         is_editable=_history_is_editable(workout),
         comment=workout.comment,
+        is_free_entry=workout.is_free_entry,
         block_a=_history_block_detail(block_a),
         block_b=_history_block_detail(block_b),
     )
@@ -1440,18 +1441,24 @@ async def edit_history_workout(
         else VOLUME_BLOCK.work_sets
     )
 
-    block_a_reps = BlockLog(working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps)
+    block_a_reps = BlockLog(
+        working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps,
+        reported_volume=body.block_a_reported_volume,
+    )
     block_b_reps = BlockLog(
         working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps,
         reported_volume=body.block_b_reported_volume,
     )
 
-    previous_avg_a = await workouts.get_previous_avg_working(
-        user.id, BlockType.A, before=workout.performed_at,
-    )
-    anomalies_a = detect_anomalies(
-        block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
-    )
+    if body.block_a_reported_volume is None:
+        previous_avg_a = await workouts.get_previous_avg_working(
+            user.id, BlockType.A, before=workout.performed_at,
+        )
+        anomalies_a = detect_anomalies(
+            block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
+        )
+    else:
+        anomalies_a = AnomalyFlags()
     if body.block_b_reported_volume is None:
         previous_avg_b = await workouts.get_previous_avg_working(
             user.id, BlockType.B, before=workout.performed_at,
