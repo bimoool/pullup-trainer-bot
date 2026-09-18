@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,11 +25,15 @@ from app.domain.progression import (
     count_consecutive_stalled_workouts,
     count_consecutive_weak_trainings,
     grow_volume_weight_kg,
-    recalculate_cascade,
     recalculate_target,
     recalculate_volume_block,
     resolve_heavy_weight_growth,
     suggest_heavy_weight_kg,
+)
+from app.domain.progression_strategy import (
+    ProgressionContext,
+    ProgressionStrategy,
+    StepProgressionStrategy,
 )
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
 
@@ -232,9 +237,16 @@ def _apply_cascade_result(workout: Workout, record: WorkoutRecord) -> None:
 
 
 class WorkoutRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, strategy: ProgressionStrategy | None = None) -> None:
         self._session = session
         self._workout_sets = WorkoutSetRepository(session)
+        # Волна 0 многокурсовой платформы (issue #158) — расчёт каскада
+        # правки/удаления (не весь репозиторий, см. issue) вынесен за
+        # ProgressionStrategy. Дефолт — единственная боевая программа
+        # (шаговая прогрессия подтягиваний); параметр существует, чтобы
+        # тесты/будущие программы могли подставить свою реализацию, не
+        # чтобы она реально менялась где-то в проде сейчас.
+        self._strategy: ProgressionStrategy = strategy or StepProgressionStrategy()
 
     async def _equipment_item_name(self, equipment_item_id: int | None) -> str | None:
         """Снапшот названия резины на момент ЭТОЙ тренировки (issue #148) —
@@ -794,6 +806,100 @@ class WorkoutRepository:
         await self._session.refresh(workout, attribute_names=["blocks"])
         return workout
 
+    async def _load_cascade_position(self, workout_id: int) -> tuple[list[Workout], int, Workout]:
+        """Чтение, общее для edit_workout/preview_edit_workout (волна 0,
+        issue #158) — цепочка каскада и позиция в ней редактируемой
+        тренировки, без какого-либо расчёта/мутации."""
+        workout = await self.get_by_id(workout_id)
+        if workout is None:
+            raise ValueError(f"workout {workout_id} not found")
+        if workout.sequence_number is None or not workout.participates_in_cascade:
+            raise ValueError("cannot edit a workout that is not part of the cascade chain")
+
+        chain = await self._cascade_chain(workout.user_id)
+        position = next(i for i, w in enumerate(chain) if w.id == workout.id)
+        return chain, position, workout
+
+    @staticmethod
+    def _chain_streaks_before(chain: list[Workout], position: int) -> tuple[int, int, int]:
+        """(weak_streak_a, weak_streak_b, stall_streak_a) непосредственно
+        ПЕРЕД position в цепочке каскада — общая часть контекста правки и
+        удаления (волна 0, issue #158)."""
+        weak_streak_a = _weak_streak(_exclude_deload_entries(chain[:position]), BlockType.A)
+        weak_streak_b = _weak_streak(_exclude_heavy_entries(chain[:position]), BlockType.B)
+        stall_streak_a = _stall_streak(_exclude_deload_entries(chain[:position]))
+        return weak_streak_a, weak_streak_b, stall_streak_a
+
+    @classmethod
+    def _build_edit_context(
+        cls,
+        chain: list[Workout],
+        position: int,
+        workout: Workout,
+        block_a_reps: BlockLog | None,
+        block_b_reps: BlockLog | None,
+    ) -> ProgressionContext:
+        """Читающая + собирающая часть edit_workout/preview_edit_workout
+        (волна 0, issue #158, план п.3-4): ТОЛЬКО чтение уже загруженной
+        цепочки и сборка ProgressionContext, без единой мутации ORM. Сама
+        редактируемая запись становится ПЕРВЫМ элементом
+        subsequent_workouts (план п.2, подтверждено Кириллом) — с новым
+        log (введённые реps), но с equipment_type/is_deload/is_heavy/
+        equipment_value/equipment_item_id ИЗ ТЕКУЩЕГО (ещё не
+        отредактированного) состояния блока, ровно как их читал старый
+        ручной расчёт до этой волны (см.
+        tests/test_progression_strategy.py::
+        test_prepending_edited_record_to_cascade_matches_old_manual_single_block_path)."""
+        block_a, block_b = _find_block(workout, BlockType.A), _find_block(workout, BlockType.B)
+        new_block_a_reps = block_a_reps or _block_to_log(block_a)
+        new_block_b_reps = block_b_reps or _block_to_log(block_b)
+
+        target_before_a, target_before_b, prev_volume_a, prev_volume_b, work_sets_before_a = (
+            cls._preceding_chain_state(chain, position)
+        )
+        weak_streak_before_a, weak_streak_before_b, stall_streak_before_a = cls._chain_streaks_before(
+            chain, position,
+        )
+
+        original_record = _workout_to_record(workout)
+        edited_record = dataclasses.replace(
+            original_record,
+            block_a=dataclasses.replace(original_record.block_a, log=new_block_a_reps),
+            block_b=dataclasses.replace(original_record.block_b, log=new_block_b_reps),
+        )
+        following_records = [_workout_to_record(w) for w in chain[position + 1 :]]
+
+        return ProgressionContext(
+            starting_target_a=target_before_a,
+            starting_target_b=target_before_b,
+            starting_volume_a=prev_volume_a,
+            starting_volume_b=prev_volume_b,
+            subsequent_workouts=[edited_record, *following_records],
+            starting_weak_streak_a=weak_streak_before_a,
+            starting_weak_streak_b=weak_streak_before_b,
+            starting_work_sets_a=work_sets_before_a,
+            starting_stall_streak_a=stall_streak_before_a,
+        )
+
+    @staticmethod
+    def _apply_edit_result(workout: Workout, following: list[Workout], updated: list[WorkoutRecord]) -> None:
+        """Пишет результат strategy.apply() в ORM (волна 0, issue #158) —
+        первый элемент updated относится к самой отредактированной
+        workout: _apply_cascade_result переносит пересчитанные
+        target/equipment_changed/work_sets, а working_reps/max_reps
+        (фактический НОВЫЙ ввод, который каскад не пересчитывает — это не
+        цель, это факт) проставляются отдельно, тем же способом, что и до
+        волны 0. Остальные элементы — following по порядку, как и раньше."""
+        edited_result, *cascaded = updated
+        block_a, block_b = _find_block(workout, BlockType.A), _find_block(workout, BlockType.B)
+        block_a.working_reps = list(edited_result.block_a.log.working_reps)
+        block_a.max_reps = edited_result.block_a.log.max_reps
+        block_b.working_reps = list(edited_result.block_b.log.working_reps)
+        block_b.max_reps = edited_result.block_b.log.max_reps
+        _apply_cascade_result(workout, edited_result)
+        for db_workout, new_record in zip(following, cascaded, strict=True):
+            _apply_cascade_result(db_workout, new_record)
+
     async def edit_workout(
         self,
         *,
@@ -806,114 +912,46 @@ class WorkoutRepository:
         участвующей в каскаде (не бэкдейт — у тех цепочки нет вовсе), и
         каскадом пересчитывает все более поздние тренировки ИЗ ТОЙ ЖЕ
         цепочки (внесённые задним числом каскад пропускает: не входят в
-        _cascade_chain, значит не сдвигаются и не пересчитываются)."""
-        workout = await self.get_by_id(workout_id)
-        if workout is None:
-            raise ValueError(f"workout {workout_id} not found")
-        if workout.sequence_number is None or not workout.participates_in_cascade:
-            raise ValueError("cannot edit a workout that is not part of the cascade chain")
+        _cascade_chain, значит не сдвигаются и не пересчитываются).
 
-        chain = await self._cascade_chain(workout.user_id)
-        position = next(i for i, w in enumerate(chain) if w.id == workout.id)
-
-        block_a, block_b = _find_block(workout, BlockType.A), _find_block(workout, BlockType.B)
-        new_block_a_reps = block_a_reps or _block_to_log(block_a)
-        new_block_b_reps = block_b_reps or _block_to_log(block_b)
-
-        target_before_a, target_before_b, prev_volume_a, prev_volume_b, work_sets_before_a = (
-            self._preceding_chain_state(chain, position)
-        )
-        # Стрик "слабых" тренировок (Часть 10, пакет #2, п.13) до
-        # редактируемой записи — из цепочки ДО её позиции, тем же приёмом,
-        # что и target_before/prev_volume выше. Для застоя блока A цепочка
-        # дополнительно фильтруется от разгрузочных записей — они не в счёт.
-        weak_streak_before_a = _weak_streak(_exclude_deload_entries(chain[:position]), BlockType.A)
-        weak_streak_before_b = _weak_streak(_exclude_heavy_entries(chain[:position]), BlockType.B)
-        stall_streak_before_a = _stall_streak(_exclude_deload_entries(chain[:position]))
-
-        work_sets_growth_reason_a: VolumeGrowthReason | None = None
-        if block_a.is_deload:
-            # Разгрузка не пересчитывается даже при редактировании — только
-            # правится фактический ввод (для статистики), состояние
-            # прогрессии остаётся замороженным, как и было.
-            target_after_a, work_sets_after_a, equipment_changed_a = target_before_a, work_sets_before_a, False
-        else:
-            result_a = recalculate_volume_block(
-                target_before_a, work_sets_before_a, new_block_a_reps.working_reps, new_block_a_reps.max_reps,
-                new_block_a_reps.volume, prev_volume_a, block_a.equipment_type,
-                consecutive_weak_before=weak_streak_before_a, consecutive_stall_before=stall_streak_before_a,
-            )
-            target_after_a, work_sets_after_a, equipment_changed_a = (
-                result_a.new_target, result_a.new_work_sets, result_a.equipment_changed
-            )
-            work_sets_growth_reason_a = result_a.work_sets_growth_reason
-
-        if block_b.is_heavy:
-            # Тяжёлая (чётная) тренировка блока Б (issue #97) — правка
-            # только фактического ввода (статистика/тренд Эпли), состояние
-            # прогрессии силового блока остаётся замороженным, тем же
-            # приёмом, что is_deload у блока A выше.
-            target_after_b, equipment_changed_b = target_before_b, False
-        else:
-            result_b = recalculate_target(
-                STRENGTH_BLOCK, target_before_b, new_block_b_reps.working_reps, new_block_b_reps.max_reps,
-                new_block_b_reps.volume, prev_volume_b,
-                consecutive_weak_before=weak_streak_before_b,
-            )
-            target_after_b, equipment_changed_b = result_b.new_target, result_b.equipment_changed
-
-        block_a.working_reps = list(new_block_a_reps.working_reps)
-        block_a.max_reps = new_block_a_reps.max_reps
-        block_a.target_before = target_before_a
-        block_a.target_after = target_after_a
-        block_a.equipment_changed = equipment_changed_a
-        block_a.work_sets_before = work_sets_before_a
-        block_a.work_sets_after = work_sets_after_a
-        block_a.work_sets_growth_reason = (
-            work_sets_growth_reason_a.value if work_sets_growth_reason_a is not None else None
-        )
-
-        block_b.working_reps = list(new_block_b_reps.working_reps)
-        block_b.max_reps = new_block_b_reps.max_reps
-        block_b.target_before = target_before_b
-        block_b.target_after = target_after_b
-        block_b.equipment_changed = equipment_changed_b
+        Волна 0 многокурсовой платформы (issue #158) расцепила это на три
+        слоя: чтение состояния (_load_cascade_position/_build_edit_context,
+        только БД), чистый расчёт (self._strategy.apply — см.
+        app.domain.progression_strategy) и запись (_apply_edit_result).
+        preview_edit_workout ниже — тот же первый и второй слой, но
+        strategy.preview() и без третьего — честный сухой прогон, а не
+        отдельная копия расчёта."""
+        chain, position, workout = await self._load_cascade_position(workout_id)
+        ctx = self._build_edit_context(chain, position, workout, block_a_reps, block_b_reps)
+        updated = self._strategy.apply(ctx)
+        self._apply_edit_result(workout, chain[position + 1 :], updated)
 
         if comment is not None:
             workout.comment = comment
         workout.updated_at = datetime.now(UTC)
 
-        following = chain[position + 1 :]
-        if following:
-            records = [_workout_to_record(w) for w in following]
-            # Стрик, который переходит В цепочку после отредактированной
-            # записи, учитывает и её саму — была ли она слабой/застойной по
-            # НОВЫМ (только что введённым) данным. Разгрузка сама по себе
-            # никогда не бывает "слабой"/"застойной" — is_deload здесь
-            # исключён логикой transition_a выше (та ветка не трогает
-            # weak/stall streak вообще, они остаются от before-состояния).
-            if block_a.is_deload:
-                weak_streak_a, stall_streak_a = weak_streak_before_a, stall_streak_before_a
-            else:
-                weak_streak_a = weak_streak_before_a + 1 if new_block_a_reps.volume < prev_volume_a else 0
-                grew_a = target_after_a > target_before_a or work_sets_after_a > work_sets_before_a
-                stall_streak_a = 0 if grew_a else stall_streak_before_a + 1
-            if block_b.is_heavy:
-                weak_streak_b = weak_streak_before_b
-            else:
-                weak_streak_b = weak_streak_before_b + 1 if new_block_b_reps.volume < prev_volume_b else 0
-            cascaded = recalculate_cascade(
-                target_after_a, target_after_b,
-                new_block_a_reps.volume, new_block_b_reps.volume, records,
-                starting_weak_streak_a=weak_streak_a, starting_weak_streak_b=weak_streak_b,
-                starting_work_sets_a=work_sets_after_a, starting_stall_streak_a=stall_streak_a,
-            )
-            for db_workout, new_record in zip(following, cascaded, strict=True):
-                _apply_cascade_result(db_workout, new_record)
-
         await self._session.flush()
         await self._session.refresh(workout, attribute_names=["blocks"])
         return workout
+
+    async def preview_edit_workout(
+        self,
+        *,
+        workout_id: int,
+        block_a_reps: BlockLog | None = None,
+        block_b_reps: BlockLog | None = None,
+    ) -> list[WorkoutRecord]:
+        """Сухой прогон edit_workout (волна 0, issue #158) — та же читающая
+        часть (_load_cascade_position/_build_edit_context), но
+        strategy.preview(ctx) вместо apply() и БЕЗ единой мутации ORM/flush:
+        [пересчитанная сама запись, ...пересчитанные following], тот же
+        порядок и те же значения, что реально запишет edit_workout с теми
+        же аргументами — не пишет ничего в БД. Нужен, чтобы показать
+        пользователю "вот что изменится" перед подтверждением правки
+        задним числом (раздел 6 архитектурного документа)."""
+        chain, position, workout = await self._load_cascade_position(workout_id)
+        ctx = self._build_edit_context(chain, position, workout, block_a_reps, block_b_reps)
+        return self._strategy.preview(ctx)
 
     async def recalculate_cascade_on_delete(self, workout: Workout) -> None:
         """Пересчитывает каскад после удаления ОБЫЧНОЙ (каскадной) тренировки
@@ -973,27 +1011,37 @@ class WorkoutRepository:
         цепочке. Тот же осознанный пробел, что и там: реоткрытие
         WorkoutSetStatus.COMPLETED -> ACTIVE, если удаляемая запись закрыла
         сет ровно на SET_LENGTH, намеренно не реализовано — следующий сет
-        мог уже открыться к моменту удаления."""
+        мог уже открыться к моменту удаления.
+
+        Волна 0 многокурсовой платформы (issue #158) вынесла сам расчёт за
+        self._strategy.apply (см. app.domain.progression_strategy) — эта
+        функция теперь только читает (_chain_streaks_before/
+        _preceding_chain_state) и пишет (_apply_cascade_result), без
+        изменений в самой формуле/порядке аргументов."""
         chain = await self._cascade_chain(workout.user_id)
         position = next(i for i, w in enumerate(chain) if w.id == workout.id)
 
-        target_before_a, target_before_b, prev_volume_a, prev_volume_b, work_sets_before_a = (
-            self._preceding_chain_state(chain, position)
-        )
-        weak_streak_before_a = _weak_streak(_exclude_deload_entries(chain[:position]), BlockType.A)
-        weak_streak_before_b = _weak_streak(_exclude_heavy_entries(chain[:position]), BlockType.B)
-        stall_streak_before_a = _stall_streak(_exclude_deload_entries(chain[:position]))
-
         following = chain[position + 1 :]
         if following:
-            records = [_workout_to_record(w) for w in following]
-            cascaded = recalculate_cascade(
-                target_before_a, target_before_b,
-                prev_volume_a, prev_volume_b, records,
-                starting_weak_streak_a=weak_streak_before_a, starting_weak_streak_b=weak_streak_before_b,
-                starting_work_sets_a=work_sets_before_a, starting_stall_streak_a=stall_streak_before_a,
+            target_before_a, target_before_b, prev_volume_a, prev_volume_b, work_sets_before_a = (
+                self._preceding_chain_state(chain, position)
             )
-            for db_workout, new_record in zip(following, cascaded, strict=True):
+            weak_streak_before_a, weak_streak_before_b, stall_streak_before_a = self._chain_streaks_before(
+                chain, position,
+            )
+            ctx = ProgressionContext(
+                starting_target_a=target_before_a,
+                starting_target_b=target_before_b,
+                starting_volume_a=prev_volume_a,
+                starting_volume_b=prev_volume_b,
+                subsequent_workouts=[_workout_to_record(w) for w in following],
+                starting_weak_streak_a=weak_streak_before_a,
+                starting_weak_streak_b=weak_streak_before_b,
+                starting_work_sets_a=work_sets_before_a,
+                starting_stall_streak_a=stall_streak_before_a,
+            )
+            updated = self._strategy.apply(ctx)
+            for db_workout, new_record in zip(following, updated, strict=True):
                 _apply_cascade_result(db_workout, new_record)
             for db_workout in following:
                 db_workout.sequence_number -= 1
