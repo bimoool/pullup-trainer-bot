@@ -1,0 +1,59 @@
+# Настройка staging-контура — что нужно сделать один раз
+
+Это разовая инфраструктурная настройка. Дальше все волны (4, 5, 6...),
+которые трогают фронтенд, будут деплоиться туда для твоей проверки, прежде
+чем что-либо попадёт в `main`/прод.
+
+## Что уже сделано (в репозитории, автоматически)
+
+- `.github/workflows/deploy-staging.yml` — отдельный workflow, деплоит
+  любую ветку в изолированный контур на том же сервере (свой docker
+  compose project `pullup-staging`, физически не пересекается с прод-
+  volumes/контейнерами).
+- `.env.staging.example` — какие переменные должны отличаться от прода.
+
+## Что нужно сделать тебе (я не могу сам — нет доступа к Telegram/DNS)
+
+### 1. Завести тестового бота
+Через `@BotFather` в Telegram: `/newbot`, любое имя (например
+`pullup_trainer_staging_bot`). Получишь токен — сохрани, понадобится в
+шаге 3.
+
+### 2. DNS-запись
+У регистратора/DNS-панели домена `bimoool.com` — добавить A-запись:
+```
+staging.app.bimoool.com  →  192.241.141.47
+```
+(тот же IP, что уже используется для `app.bimoool.com` — сервер один и
+тот же, просто второй поддомен).
+
+### 3. На сервере (один раз, по SSH)
+```bash
+sudo mkdir -p /opt/pullup-trainer-bot-staging
+sudo chown deploy:deploy /opt/pullup-trainer-bot-staging
+cd /opt/pullup-trainer-bot-staging
+git clone https://github.com/bimoool/pullup-trainer-bot.git .
+cp .env.staging.example .env
+nano .env   # вставить токен из шага 1, остальное можно оставить как в примере
+```
+
+### 4. Nginx — новый server-блок
+Скопировать существующий блок для `app.bimoool.com` (посмотри, как он
+сейчас устроен в `/etc/nginx/sites-available/`), и завести рядом такой же
+для `staging.app.bimoool.com`, только `proxy_pass` — на `127.0.0.1:8002`
+вместо прод-порта. Дальше:
+```bash
+sudo certbot --nginx -d staging.app.bimoool.com   # свой SSL-сертификат
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 5. Готово
+После этого я смогу сам, через `workflow_dispatch` (`deploy-staging.yml`,
+параметр `ref` = имя ветки), выкатывать любую фиче-ветку на
+`staging.app.bimoool.com` для твоей проверки — точно так же, как весь
+день сегодня деплоил прод через `deploy.yml`. Прод при этом не трогается
+вообще.
+
+Дай знать, когда шаги 1-4 будут готовы — и я запущу первый тестовый
+деплой на staging, чтобы вместе убедиться, что всё работает, прежде чем
+начинать волну 4.
