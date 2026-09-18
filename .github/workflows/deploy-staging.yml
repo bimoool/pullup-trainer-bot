@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       STAGING_BOT_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
+      STAGING_CLONE_TOKEN: ${{ secrets.STAGING_CLONE_TOKEN }}
     steps:
       - name: Deploy to VPS (staging)
         uses: appleboy/ssh-action@v1.0.3
@@ -34,14 +35,15 @@ jobs:
           username: deploy
           key: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
           command_timeout: 15m
-          envs: STAGING_BOT_TOKEN
+          envs: STAGING_BOT_TOKEN,STAGING_CLONE_TOKEN
           script: |
             set -e
             STAGING_DIR=~/pullup-trainer-bot-staging
             if [ ! -d "$STAGING_DIR" ]; then
-              git clone https://github.com/bimoool/pullup-trainer-bot.git "$STAGING_DIR"
+              git clone "https://x-access-token:${STAGING_CLONE_TOKEN}@github.com/bimoool/pullup-trainer-bot.git" "$STAGING_DIR"
             fi
             cd "$STAGING_DIR"
+            git remote set-url origin "https://x-access-token:${STAGING_CLONE_TOKEN}@github.com/bimoool/pullup-trainer-bot.git"
             git fetch origin
             git checkout "${{ inputs.ref }}"
             git pull origin "${{ inputs.ref }}" --ff-only || true
