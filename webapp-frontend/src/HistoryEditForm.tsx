@@ -1,4 +1,4 @@
-import { Button, Input, Section } from "@telegram-apps/telegram-ui";
+import { Button, Input, Placeholder, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -82,6 +82,15 @@ function isTotalFormatB(detail: HistoryEditDetail): boolean {
  * (не источник для этого списка нигде в проекте, кроме плана тренировки).
  * Осознанное сужение, не пропуск: правка веса (частый случай — "забыл
  * записать точный вес") доступна, смена резины — только через бота.
+ *
+ * `Placeholder`/`Spinner` вместо `.screen-message` для loading/error (issue
+ * #142) — тот же базовый паттерн, что AchievementsScreen.tsx. Остальная
+ * разметка (`.plan-title`/`.action-button`/`.error-banner`/`.anomaly-card`/
+ * `.done-card`/`.block-header`/`.block-badge`/`.block-subtitle`) не
+ * тронута — тот же общий визуальный язык, что и у `BlockForm`/
+ * `AnomalyLines` (WorkoutScreen.tsx, PR 6 по плану, ещё не мигрирован);
+ * менять его здесь в отрыве значило бы разъехаться с тем, как выглядит тот
+ * же самый блок ввода в самом WorkoutScreen.tsx.
  */
 export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
@@ -259,12 +268,16 @@ export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Pr
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю тренировку…</p>;
+    return (
+      <Placeholder>
+        <Spinner size="m" />
+      </Placeholder>
+    );
   }
   if (state.phase === "error") {
     return (
       <div>
-        <p className="screen-message">{state.message}</p>
+        <Placeholder description={state.message} />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>
