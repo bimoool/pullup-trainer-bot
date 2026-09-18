@@ -37,7 +37,7 @@ jobs:
           envs: STAGING_BOT_TOKEN
           script: |
             set -e
-            STAGING_DIR=/opt/pullup-trainer-bot-staging
+            STAGING_DIR=~/pullup-trainer-bot-staging
             if [ ! -d "$STAGING_DIR" ]; then
               git clone https://github.com/bimoool/pullup-trainer-bot.git "$STAGING_DIR"
             fi

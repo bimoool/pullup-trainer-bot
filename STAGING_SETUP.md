@@ -25,13 +25,10 @@ staging.app.bimoool.com  →  192.241.141.47
 (тот же IP, что уже используется для `app.bimoool.com` — сервер один и
 тот же, просто второй поддомен).
 
-### 3. На сервере (один раз, по SSH) — только папка, .env создаётся автоматически
-```bash
-sudo mkdir -p /opt/pullup-trainer-bot-staging
-sudo chown deploy:deploy /opt/pullup-trainer-bot-staging
-```
-Токен бота уже сохранён как секрет GitHub Actions (`STAGING_BOT_TOKEN`) —
-`.env` `deploy-staging.yml` создаёт сам при каждом деплое, вручную редактировать не нужно.
+### 3. На сервере — ничего делать не нужно
+Папка (`~/pullup-trainer-bot-staging` — в домашней директории пользователя
+`deploy`) и `.env` создаются автоматически при первом деплое, без sudo и
+без твоего участия.
 
 ### 4. Nginx — новый server-блок
 Скопировать существующий блок для `app.bimoool.com` (посмотри, как он
