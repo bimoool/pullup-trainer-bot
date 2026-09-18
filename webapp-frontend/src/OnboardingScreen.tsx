@@ -1,4 +1,4 @@
-import { Button, Input, Select } from "@telegram-apps/telegram-ui";
+import { Button, Cell, Input, Section, Select } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -53,7 +53,16 @@ const GENDER_OPTIONS: { value: "male" | "female"; label: string }[] = [
  * анкета — 5 экранов, один вопрос за раз, с кнопкой "Назад", один POST в
  * конце (не по шагам — см. обоснование в комментарии к issue: анкета
  * дешёвая форма без побочных эффектов до сабмита, в отличие от целой
- * тренировки, которая персистится по шагам, issue #61). */
+ * тренировки, которая персистится по шагам, issue #61).
+ *
+ * `Section`+`Cell` вместо `.screen-message` для абзацев инструкции/
+ * подтверждения (issue #142) — здесь это не состояние загрузки/ошибки
+ * экрана целиком (для такого состояния этот экран не грузит ничего
+ * асинхронно перед первым рендером), а обычный информационный текст внутри
+ * уже готового экрана — тот же паттерн, что уже применён к телу карточек
+ * ГТО/WSF в ProfileScreen.tsx. `.plan-title`/`.action-button`/`.error-banner`
+ * не тронуты — общий с ещё немигрированными экранами приём (см.
+ * FreeWorkoutScreen.tsx, PR 3). */
 export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) {
   const [state, setState] = useState<ScreenState>(
     startStep === "questionnaire" ? { phase: "questionnaire", step: 0 } : { phase: "baseline_input" },
@@ -198,7 +207,9 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
     return (
       <div>
         <p className="plan-title">Замер</p>
-        <p className="screen-message">{BASELINE_GUIDE}</p>
+        <Section>
+          <Cell multiline>{BASELINE_GUIDE}</Cell>
+        </Section>
         <Input
           header="Сколько подтягиваний вышло?"
           type="number"
@@ -221,7 +232,9 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
     return (
       <div>
         <p className="plan-title">Всё верно?</p>
-        <p className="screen-message">Записал: {state.reps} повторений. Всё верно?</p>
+        <Section>
+          <Cell multiline>{`Записал: ${state.reps} повторений. Всё верно?`}</Cell>
+        </Section>
         {formError && <p className="error-banner">{formError}</p>}
         <Button
           className="action-button"
@@ -250,8 +263,10 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
     return (
       <div>
         <p className="plan-title">Уровень зафиксирован</p>
-        <p className="screen-message">{state.message}</p>
-        <p className="screen-message">{WELCOME_AFTER_BASELINE}</p>
+        <Section>
+          <Cell multiline>{state.message}</Cell>
+          <Cell multiline>{WELCOME_AFTER_BASELINE}</Cell>
+        </Section>
         <Button
           className="action-button"
           size="l"
