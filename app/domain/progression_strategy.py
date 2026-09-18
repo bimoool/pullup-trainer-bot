@@ -1,10 +1,22 @@
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from enum import StrEnum
 from typing import Protocol
 
 from app.domain.constants import VOLUME_BLOCK
 from app.domain.progression import recalculate_cascade
 from app.domain.session import WorkoutRecord
+
+
+class ProgressionStrategyType(StrEnum):
+    """Тип реализации ProgressionStrategy, на который ссылается
+    app.db.models_program.Program.progression_strategy_id (через
+    ProgressionStrategyProfile.strategy_type, волна 1, issue #160) —
+    сама схема БД не создаёт новый интерфейс прогрессии, только называет,
+    какая из существующих реализаций этого модуля используется."""
+
+    STEP = "step"
+    PERCENTAGE = "percentage"
 
 
 @dataclass(frozen=True)
