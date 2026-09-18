@@ -235,7 +235,7 @@ async def test_list_sessions_returns_recorded_history(session, user: User):
     assert sessions[0]["comment"] == "норм"
     assert sessions[0]["effort"] == "7.5"
     assert len(sessions[0]["blocks"]) == 2
-    assert [s["value"] for s in sessions[0]["blocks"][0]["set_logs"]] == ["11", "11", "11", "12"]
+    assert [s["value"] for s in sessions[0]["blocks"][0]["set_logs"]] == ["11.00", "11.00", "11.00", "12.00"]
 
 
 async def test_create_session_rejects_ambiguous_target(session, user: User):
