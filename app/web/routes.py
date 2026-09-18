@@ -83,7 +83,7 @@ from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
-from app.services.workout_deletion import delete_noncascade_workout
+from app.services.workout_deletion import delete_cascade_workout, delete_noncascade_workout
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -96,6 +96,7 @@ from app.web.schemas import (
     BandItemCreateRequest,
     BandItemInfo,
     BandItemListResponse,
+    BandItemUpdateRequest,
     CycleVolumeResponse,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
@@ -318,9 +319,8 @@ async def create_band_item(
     вызывают, не дублированная логика. Единственный кусок, которого не
     хватало, чтобы первая тренировка на резине проходила в Mini App целиком
     без захода в бота (issue #124, PR 2 уже довело снаряд/цель до
-    status="ready", но не умело создать саму резину). PATCH/DELETE
-    сознательно вне скоупа (согласовано в issue — паритет с ботом, у
-    которого их тоже нет)."""
+    status="ready", но не умело создать саму резину). PATCH/DELETE — issue
+    #148, см. update_band_item/delete_band_item ниже."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
@@ -328,6 +328,62 @@ async def create_band_item(
         user_id=user.id, name=body.name, resistance_kg=body.resistance_kg,
     )
     return BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
+
+
+@router.patch("/equipment/band-items/{item_id}", response_model=BandItemInfo)
+async def update_band_item(
+    item_id: int,
+    body: BandItemUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BandItemInfo:
+    """Переименование резины (issue #148) — правит только name на самой
+    EquipmentItem. Уже записанные тренировки/факультативы не меняются
+    задним числом: они хранят собственный снапшот названия
+    (Block.equipment_item_name/ElectiveWorkout.equipment_item_name),
+    зафиксированный на момент записи, а не текущее item.name."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    item = await EquipmentItemRepository(session).rename(
+        item_id=item_id, user_id=user.id, name=body.name,
+    )
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Band item not found")
+    return BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
+
+
+@router.delete("/equipment/band-items/{item_id}", response_model=BandItemInfo)
+async def delete_band_item(
+    item_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BandItemInfo:
+    """Удаление резины (issue #148) — настоящий DELETE, не архивация (это
+    личный справочник, не история тренировок). Разрешено безусловно, даже
+    если резина сейчас унаследована как активный снаряд блока (последняя
+    тренировка на ней) — решение согласовано в issue #148 (см. описание
+    вариантов и итоговый выбор в PR): blocks.equipment_item_id/
+    elective_workouts.equipment_item_id — ON DELETE SET NULL, история не
+    ломается (equipment_item_name уже хранит название отдельно). Следующая
+    тренировка на этом блоке просто увидит "снаряд band, резина не
+    выбрана" — WorkoutScreen.tsx требует явный выбор/заведение резины в
+    этом случае тем же полем, что и для первой тренировки на резине
+    (item_id в equipment_a/b пуст), не отдельная ветка UI.
+
+    Возвращает удалённую запись (не 204) — фронтенду проще убрать
+    конкретный элемент из уже отрисованного списка по id, чем делать
+    отдельный GET после DELETE."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    repo = EquipmentItemRepository(session)
+    item = await repo.get_by_id(item_id)
+    if item is None or item.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Band item not found")
+    snapshot = BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg)
+    await repo.delete(item_id=item_id, user_id=user.id)
+    return snapshot
 
 
 @router.get("/profile", response_model=ProfileResponse)
@@ -1029,7 +1085,7 @@ async def get_history(
                 workout_id=workout.id,
                 performed_at=workout.performed_at.date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
-                is_deletable=not workout.participates_in_cascade,
+                is_deletable=True,
                 comment=workout.comment,
                 equipment_a=_equipment_info(
                     block_a.equipment_type, block_a.equipment_value, block_a.equipment_item_id,
@@ -1331,6 +1387,7 @@ async def get_history_workout(
         performed_at=workout.performed_at.date().isoformat(),
         is_editable=_history_is_editable(workout),
         comment=workout.comment,
+        is_free_entry=workout.is_free_entry,
         block_a=_history_block_detail(block_a),
         block_b=_history_block_detail(block_b),
     )
@@ -1384,18 +1441,24 @@ async def edit_history_workout(
         else VOLUME_BLOCK.work_sets
     )
 
-    block_a_reps = BlockLog(working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps)
+    block_a_reps = BlockLog(
+        working_reps=tuple(body.block_a_working_reps), max_reps=body.block_a_max_reps,
+        reported_volume=body.block_a_reported_volume,
+    )
     block_b_reps = BlockLog(
         working_reps=tuple(body.block_b_working_reps), max_reps=body.block_b_max_reps,
         reported_volume=body.block_b_reported_volume,
     )
 
-    previous_avg_a = await workouts.get_previous_avg_working(
-        user.id, BlockType.A, before=workout.performed_at,
-    )
-    anomalies_a = detect_anomalies(
-        block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
-    )
+    if body.block_a_reported_volume is None:
+        previous_avg_a = await workouts.get_previous_avg_working(
+            user.id, BlockType.A, before=workout.performed_at,
+        )
+        anomalies_a = detect_anomalies(
+            block_a_reps, previous_avg_working=previous_avg_a, expected_work_sets=expected_work_sets_a,
+        )
+    else:
+        anomalies_a = AnomalyFlags()
     if body.block_b_reported_volume is None:
         previous_avg_b = await workouts.get_previous_avg_working(
             user.id, BlockType.B, before=workout.performed_at,
@@ -1479,18 +1542,25 @@ async def delete_history_workout(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> HistoryDeleteResponse:
-    """Удаляет запись истории (issue #146) — ТОЛЬКО внесённые не в цепочку
-    каскада (бэкдейт/свободные подтягивания, participates_in_cascade=False):
-    у них нет sequence_number и нет последующих тренировок цепочки, которые
-    нужно было бы пересчитывать при исчезновении записи. Обычные тренировки
-    цепочки каскада 400-ятся явно, не молча игнорируют запрос — удаление для
-    них не реализовано, пока не согласовано, должно ли оно запускать
-    recalculate_cascade (см. issue #146).
+    """Удаляет запись истории (issue #146). Два пути в зависимости от
+    participates_in_cascade:
 
-    Архивирует, не удаляет молча — see app.services.workout_deletion.
-    delete_noncascade_workout. Подтверждение "точно удалить?" — на
+    - False (бэкдейт/свободные подтягивания) — нет sequence_number и нет
+      последующих тренировок цепочки, пересчитывать нечего
+      (delete_noncascade_workout).
+    - True (обычная тренировка) — решение Кирилла, вариант A: удаление
+      пересчитывает каскад для всей цепочки, начиная с позиции удалённой
+      записи (delete_cascade_workout/WorkoutRepository.
+      recalculate_cascade_on_delete) — реальный кейс: тренировка
+      задублирована по ошибке, без пересчёта дубль продолжал бы искажать
+      прогрессию задним числом у всех последующих тренировок.
+
+    Архивирует, не удаляет молча в обоих случаях — см.
+    app.services.workout_deletion. Подтверждение "точно удалить?" — на
     фронтенде (window.confirm, тот же паттерн, что и в App.tsx для потери
-    прогресса живой тренировки), не отдельный шаг на бэкенде."""
+    прогресса живой тренировки), не отдельный шаг на бэкенде; для каскадных
+    записей фронтенд использует более строгую формулировку (предупреждает
+    про пересчёт целей последующих тренировок)."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
@@ -1498,10 +1568,18 @@ async def delete_history_workout(
     workout = await WorkoutRepository(session).get_by_id(workout_id)
     if workout is None or workout.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    if workout.participates_in_cascade:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cascade workouts cannot be deleted yet")
+    if not _history_is_editable(workout):
+        # Та же граница допустимости, что и у правки (_history_is_editable) —
+        # в частности, отсекает ещё не завершённую (STARTED) живую тренировку:
+        # у неё participates_in_cascade=True, но sequence_number ещё не
+        # выставлен, recalculate_cascade_on_delete не смог бы найти её позицию
+        # в цепочке.
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Workout is not deletable")
 
-    await delete_noncascade_workout(session, workout)
+    if workout.participates_in_cascade:
+        await delete_cascade_workout(session, workout)
+    else:
+        await delete_noncascade_workout(session, workout)
     return HistoryDeleteResponse(status="ok")
 
 

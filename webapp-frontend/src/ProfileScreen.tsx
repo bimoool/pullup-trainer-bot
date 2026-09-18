@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
 import { fetchGtoStatus, fetchProfile, fetchWsfStatus, type GtoStatus, type ProfileResponse, type WsfStatus } from "./api";
+import { BandItemsScreen } from "./BandItemsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
@@ -185,6 +186,8 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   // Форма правки личных данных (issue #125) — тот же приём swap'а, что и
   // showAchievements выше.
   const [showEditProfile, setShowEditProfile] = useState(false);
+  // Список личных резин (issue #148) — тот же приём swap'а.
+  const [showBandItems, setShowBandItems] = useState(false);
   // Разряд ГТО (issue #71) — отдельный запрос от /api/profile: своя
   // концепция (не AchievementItem), не критична для остального экрана,
   // поэтому её сбой не должен ронять всю вкладку "Профиль" (гасится
@@ -273,6 +276,10 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     );
   }
 
+  if (showBandItems) {
+    return <BandItemsScreen initDataRaw={initDataRaw} onBack={() => setShowBandItems(false)} />;
+  }
+
   return (
     <div>
       <p className="plan-title">Профиль</p>
@@ -311,6 +318,13 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
         <p className="section-title">Справка</p>
         <Button mode="outline" size="m" stretched onClick={onOpenFaq}>
           ❓ Как выбрать резину
+        </Button>
+      </div>
+
+      <div className="profile-card">
+        <p className="section-title">Мои резины</p>
+        <Button mode="outline" size="m" stretched onClick={() => setShowBandItems(true)}>
+          🎗️ Переименовать или удалить
         </Button>
       </div>
 

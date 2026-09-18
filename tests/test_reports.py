@@ -20,6 +20,7 @@ def _record(
     b_equipment_type=EquipmentType.BAND, b_equipment_value=BAND,
     a_equipment_changed=False, b_equipment_changed=False,
     a_equipment_item_id=None, b_equipment_item_id=None,
+    a_equipment_item_name=None, b_equipment_item_name=None,
     workout_set_id: int | None = None, exercise_type: ExerciseType | None = None,
     b_reported_volume: int | None = None, participates_in_cascade: bool = True,
 ) -> WorkoutRecord:
@@ -29,12 +30,14 @@ def _record(
             log=BlockLog(working_reps=a_reps, max_reps=a_max), target_before=10, target_after=11,
             equipment_changed=a_equipment_changed, equipment_type=a_equipment_type,
             equipment_value=a_equipment_value, equipment_item_id=a_equipment_item_id,
+            equipment_item_name=a_equipment_item_name,
         ),
         block_b=BlockAssignment(
             log=BlockLog(working_reps=b_reps, max_reps=b_max, reported_volume=b_reported_volume),
             target_before=3, target_after=4,
             equipment_changed=b_equipment_changed, equipment_type=b_equipment_type,
             equipment_value=b_equipment_value, equipment_item_id=b_equipment_item_id,
+            equipment_item_name=b_equipment_item_name,
         ),
         workout_set_id=workout_set_id, exercise_type=exercise_type,
         participates_in_cascade=participates_in_cascade,
@@ -141,6 +144,47 @@ def test_current_equipment_progress_band_item_change_breaks_segment():
 
     # Сегмент — только newer: другой equipment_item_id считается другим снарядом.
     assert progress.equipment_item_id == 2
+    assert progress.first_volume == progress.current_volume == 45 + 16
+
+
+def test_current_equipment_progress_deleted_band_still_merges_by_name():
+    """issue #148 — резина удалена (ON DELETE SET NULL): обе тренировки на
+    ОДНОЙ и той же (теперь удалённой) резине сохранили один и тот же
+    equipment_item_name снапшот — это по-прежнему один непрерывный сегмент,
+    не разрыв."""
+    first = _record(
+        1, a_equipment_type=EquipmentType.BAND, a_equipment_item_id=None,
+        a_equipment_item_name="зелёная", a_max=12,
+    )
+    second = _record(
+        4, a_equipment_type=EquipmentType.BAND, a_equipment_item_id=None,
+        a_equipment_item_name="зелёная", a_max=16,
+    )
+
+    progress = current_equipment_progress([first, second], "a")
+
+    assert progress.first_volume == 45 + 12
+    assert progress.current_volume == 45 + 16
+
+
+def test_current_equipment_progress_two_different_deleted_bands_do_not_merge():
+    """issue #148 — две РАЗНЫЕ резины, обе впоследствии удалены (оба
+    equipment_item_id — None): без сравнения по equipment_item_name они
+    выглядели бы одним и тем же снарядом. Сегмент должен ограничиться
+    только последней (newer) — той же гарантией, что и
+    test_current_equipment_progress_band_item_change_breaks_segment выше
+    для ещё существующих резин."""
+    older = _record(
+        1, a_equipment_type=EquipmentType.BAND, a_equipment_item_id=None,
+        a_equipment_item_name="зелёная", a_max=12,
+    )
+    newer = _record(
+        4, a_equipment_type=EquipmentType.BAND, a_equipment_item_id=None,
+        a_equipment_item_name="жёлтая", a_max=16,
+    )
+
+    progress = current_equipment_progress([older, newer], "a")
+
     assert progress.first_volume == progress.current_volume == 45 + 16
 
 

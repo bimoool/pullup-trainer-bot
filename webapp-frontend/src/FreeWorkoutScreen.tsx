@@ -1,4 +1,4 @@
-import { Button, Section, Textarea } from "@telegram-apps/telegram-ui";
+import { Button, Placeholder, Section, Spinner, Textarea } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -43,6 +43,14 @@ const MAX_SETS = 20;
  * подход на максимум + явный выбор снаряда (тот же EquipmentTypeFields, что
  * и у бэкдейта — снаряд здесь тоже не наследуется молча). Тот же backend-путь,
  * что и у бота (WorkoutLogService.record_free_workout, не отдельная копия).
+ *
+ * `Placeholder`/`Spinner` вместо `.screen-message` на состояниях загрузки/
+ * ошибки/недоступности (issue #142) — тот же базовый паттерн, что
+ * AchievementsScreen.tsx. Раскладка ввода подходов (`SetInputGrid`,
+ * `.block-section`/`.workout-mode-buttons`/`.set-grid`/`.field-label`) и
+ * общие layout-классы (`.plan-title`/`.action-button`/`.error-banner`/
+ * `.done-card`/`.anomaly-card`) не тронуты — общие с ещё немигрированным
+ * WorkoutScreen.tsx, чистка/замена — в финальном PR 7 по плану.
  */
 export function FreeWorkoutScreen({ initDataRaw, onDone, onCancel }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
@@ -123,12 +131,16 @@ export function FreeWorkoutScreen({ initDataRaw, onDone, onCancel }: Props) {
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю форму…</p>;
+    return (
+      <Placeholder>
+        <Spinner size="m" />
+      </Placeholder>
+    );
   }
   if (state.phase === "error") {
     return (
       <div>
-        <p className="screen-message">Не удалось загрузить форму: {state.message}</p>
+        <Placeholder description={`Не удалось загрузить форму: ${state.message}`} />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>
@@ -138,9 +150,7 @@ export function FreeWorkoutScreen({ initDataRaw, onDone, onCancel }: Props) {
   if (state.phase === "not_ready") {
     return (
       <div>
-        <p className="screen-message">
-          {STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`}
-        </p>
+        <Placeholder description={STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`} />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>

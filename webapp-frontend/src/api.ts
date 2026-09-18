@@ -344,10 +344,9 @@ export interface HistoryEntry {
   workout_id: number;
   performed_at: string;
   is_backdated: boolean;
-  /** issue #146 — удаление реализовано только для записей вне каскада
-   * (бэкдейт/свободные): is_deletable совпадает с is_backdated ровно
-   * сейчас, но это два разных поля с бэкенда (см. HistoryEntryResponse в
-   * app/web/schemas.py), не выведенное на фронтенде из is_backdated. */
+  /** issue #146 — сейчас всегда true (решение Кирилла, вариант A: удаление
+   * каскадной тренировки пересчитывает цепочку целей) — см.
+   * HistoryEntryResponse в app/web/schemas.py. */
   is_deletable: boolean;
   comment: string | null;
   equipment_a: EquipmentInfo;
@@ -508,16 +507,20 @@ export async function fetchWarmup(initDataRaw: string): Promise<WarmupResponse> 
   return apiGet<WarmupResponse>("/api/warmup", initDataRaw);
 }
 
-/** GET/POST /api/equipment/band-items (issue #124, PR 3) — список и
- * заведение личных резин вне контекста плана конкретной тренировки: GET
+/** GET/POST/PATCH/DELETE /api/equipment/band-items (issue #124 PR 3, issue
+ * #148 для PATCH/DELETE) — список, заведение, переименование и удаление
+ * личных резин вне контекста плана конкретной тренировки: GET
  * /api/workout/plan и остальные *_plan-эндпойнты уже отдают band_items как
  * часть своего ответа (тот же источник), но экрану выбора/заведения резины
- * на первой тренировке (WorkoutScreen.tsx) нужен отдельный явный путь, не
- * завязанный на план. PATCH/DELETE сознательно не заведены — паритет с
- * ботом, у которого их тоже нет (см. app/web/routes.py). */
+ * на первой тренировке (WorkoutScreen.tsx) и экрану управления списком
+ * (BandItemsScreen.tsx) нужен отдельный явный путь, не завязанный на план. */
 export interface BandItemCreateRequest {
   name: string;
   resistance_kg: string | null;
+}
+
+export interface BandItemUpdateRequest {
+  name: string;
 }
 
 export async function fetchBandItems(initDataRaw: string): Promise<{ items: BandItemInfo[] }> {
@@ -526,6 +529,36 @@ export async function fetchBandItems(initDataRaw: string): Promise<{ items: Band
 
 export async function createBandItem(initDataRaw: string, body: BandItemCreateRequest): Promise<BandItemInfo> {
   return apiPost<BandItemCreateRequest, BandItemInfo>("/api/equipment/band-items", initDataRaw, body);
+}
+
+export async function updateBandItem(
+  initDataRaw: string,
+  itemId: number,
+  body: BandItemUpdateRequest,
+): Promise<BandItemInfo> {
+  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+    method: "PATCH",
+    headers: {
+      "X-Telegram-Init-Data": initDataRaw,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PATCH /api/equipment/band-items/${itemId} failed: ${response.status}`);
+  }
+  return (await response.json()) as BandItemInfo;
+}
+
+export async function deleteBandItem(initDataRaw: string, itemId: number): Promise<BandItemInfo> {
+  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    throw new Error(`DELETE /api/equipment/band-items/${itemId} failed: ${response.status}`);
+  }
+  return (await response.json()) as BandItemInfo;
 }
 
 async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {
@@ -571,6 +604,7 @@ export interface HistoryEditDetail {
   performed_at: string;
   is_editable: boolean;
   comment: string | null;
+  is_free_entry: boolean;
   block_a: HistoryBlockDetail;
   block_b: HistoryBlockDetail;
 }
@@ -586,6 +620,7 @@ export interface HistoryEditDetail {
 export interface HistoryEditRequest {
   block_a_working_reps: number[];
   block_a_max_reps: number;
+  block_a_reported_volume?: number | null;
   block_b_working_reps: number[];
   block_b_max_reps: number;
   block_b_reported_volume?: number | null;
@@ -619,10 +654,9 @@ export async function patchHistoryEdit(
   return (await response.json()) as WorkoutSubmitResponse;
 }
 
-/** DELETE /api/history/{workout_id} (issue #146) — только для записей вне
- * каскада (бэкдейт/свободные, HistoryEntry.is_deletable). Каскадные
- * тренировки отвечают 400 — удаление для них ещё не реализовано (см.
- * app/web/routes.py::delete_history_workout). */
+/** DELETE /api/history/{workout_id} (issue #146) — и каскадные тренировки
+ * (решение Кирилла, вариант A: пересчитывает цепочку целей), и бэкдейт/
+ * свободные (см. app/web/routes.py::delete_history_workout). */
 export async function deleteHistoryWorkout(initDataRaw: string, workoutId: number): Promise<void> {
   const response = await fetch(`/api/history/${workoutId}`, {
     method: "DELETE",

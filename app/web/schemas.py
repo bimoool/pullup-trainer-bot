@@ -321,6 +321,23 @@ class BandItemListResponse(BaseModel):
     items: list[BandItemInfo]
 
 
+class BandItemUpdateRequest(BaseModel):
+    """PATCH /api/equipment/band-items/{id} (issue #148) — переименование
+    только, тот же принцип валидации имени (min/max длина, непустое после
+    strip), что BandItemCreateRequest. resistance_kg/position этим
+    эндпойнтом не правятся — для этого нет формы, не запрашивалось."""
+
+    name: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def _strip_name(self) -> "BandItemUpdateRequest":
+        stripped = self.name.strip()
+        if not stripped:
+            raise ValueError("Название не должно быть пустым")
+        self.name = stripped
+        return self
+
+
 class GtoResponse(BaseModel):
     """GET /api/gto (issue #71) — разряд ГТО по подтягиванию, отдельная
     концепция от обычных ачивок (app.domain.gto, не AchievementRepository):
@@ -398,13 +415,12 @@ class HistoryEntryResponse(BaseModel):
     означает и sequence_number is None), отдельного is_editable не заводим,
     чтобы не дублировать один и тот же факт двумя полями.
 
-    is_deletable (issue #146) — В ОТЛИЧИЕ от is_editable, НЕ совпадает с
-    is_backdated по совпадению: удаление реализовано только для записей вне
-    каскада (бэкдейт/свободные, DELETE /api/history/{workout_id}), поэтому
-    is_deletable == is_backdated ровно сейчас, но это два разных факта —
-    удаление обычных (каскадных) тренировок на бэкенде пока не
-    реализовано вовсе (решение о пересчёте каскада требует отдельного
-    согласования продукта, см. issue #146), не просто скрыто на фронтенде."""
+    is_deletable (issue #146) — теперь всегда True: после решения Кирилла
+    (вариант A — удаление каскадной тренировки пересчитывает цепочку,
+    реальный кейс — тренировка задублирована по ошибке) DELETE
+    /api/history/{workout_id} принимает и каскадные, и бэкдейт/свободные
+    записи (см. app.services.workout_deletion.delete_cascade_workout/
+    delete_noncascade_workout)."""
 
     workout_id: int
     performed_at: str
@@ -635,6 +651,7 @@ class HistoryEditDetailResponse(BaseModel):
     performed_at: str
     is_editable: bool
     comment: str | None
+    is_free_entry: bool
     block_a: HistoryBlockDetail
     block_b: HistoryBlockDetail
 
@@ -656,8 +673,9 @@ class HistoryEditRequest(BaseModel):
     Для обычных (не бэкдейт) и бэкдейт-записей с честной раскладкой это
     поле остаётся None, как и раньше."""
 
-    block_a_working_reps: list[Reps] = Field(min_length=1)
+    block_a_working_reps: list[Reps] = Field(default_factory=list)
     block_a_max_reps: Reps
+    block_a_reported_volume: Reps | None = None
     block_b_working_reps: list[Reps] = Field(default_factory=list)
     block_b_max_reps: Reps
     block_b_reported_volume: Reps | None = None
@@ -669,6 +687,14 @@ class HistoryEditRequest(BaseModel):
     confirm_anomalies: bool = False
 
     @model_validator(mode="after")
+    def _check_block_a_format(self) -> "HistoryEditRequest":
+        if self.block_a_reported_volume is None and not self.block_a_working_reps:
+            raise ValueError("block_a_working_reps is required unless block_a_reported_volume is given")
+        if self.block_a_reported_volume is not None and self.block_a_working_reps:
+            raise ValueError("block_a_working_reps must be empty when block_a_reported_volume is given")
+        return self
+
+    @model_validator(mode="after")
     def _check_block_b_format(self) -> "HistoryEditRequest":
         if self.block_b_reported_volume is None and not self.block_b_working_reps:
             raise ValueError("block_b_working_reps is required unless block_b_reported_volume is given")
@@ -678,9 +704,10 @@ class HistoryEditRequest(BaseModel):
 
 
 class HistoryDeleteResponse(BaseModel):
-    """DELETE /api/history/{workout_id} (issue #146) — только для записей вне
-    каскада (бэкдейт/свободные), см. app.services.workout_deletion.
-    delete_noncascade_workout и app/web/routes.py::delete_history_workout."""
+    """DELETE /api/history/{workout_id} (issue #146) — и каскадные, и
+    бэкдейт/свободные записи, см. app.services.workout_deletion.
+    delete_cascade_workout/delete_noncascade_workout и
+    app/web/routes.py::delete_history_workout."""
 
     status: Literal["ok"]
 

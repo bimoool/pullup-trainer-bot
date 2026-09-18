@@ -528,13 +528,29 @@ def test_volume_block_on_weight_ignores_poor_performance():
 # --- recalculate_volume_block: застой (часть 2, п.2) -------------------------
 
 def test_volume_block_stall_adds_set_after_four_consecutive_non_growing_workouts():
-    # delta=0 (флэт) -> цель не выросла; 4-й подряд застой (consecutive=3+1=4) -> +1 подход
+    # delta=0 (флэт) -> цель не выросла; 4-й подряд застой (consecutive=3+1=4) -> +1 подход.
+    # issue #149: цель на подход пересчитывается, не остаётся прежней —
+    # старый общий объём (20*5=100) делится на новое число подходов (6):
+    # round(100/6)=17 (6*17=102, почти тот же объём, не скачок до 120).
     result = recalculate_volume_block(
         target=20, work_sets=5, working_reps=(20, 20, 20), max_reps=20, volume=80, prev_volume=0,
         equipment_type=EquipmentType.BODYWEIGHT, consecutive_stall_before=3,
     )
-    assert result.new_target == 20
+    assert result.new_target == 17
     assert result.new_work_sets == 6
+    assert result.work_sets_growth_reason == VolumeGrowthReason.STALL
+
+
+def test_volume_block_stall_reduces_target_to_keep_total_volume_flat():
+    # Пример из issue #149: 4 подхода по 10 (итого 40) -> 5 подходов;
+    # новая цель должна заметно снизиться, не остаться равной 10.
+    # round(10*4/5) = round(8.0) = 8 -> 5*8=40, тот же общий объём.
+    result = recalculate_volume_block(
+        target=10, work_sets=4, working_reps=(10, 10, 10, 10), max_reps=10, volume=40, prev_volume=0,
+        equipment_type=EquipmentType.BODYWEIGHT, consecutive_stall_before=3,
+    )
+    assert result.new_target == 8
+    assert result.new_work_sets == 5
     assert result.work_sets_growth_reason == VolumeGrowthReason.STALL
 
 
