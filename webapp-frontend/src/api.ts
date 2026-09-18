@@ -11,6 +11,9 @@ export interface HelloResponse {
   onboarding_step: OnboardingStep;
   readiness_status: string | null;
   days_since_last_workout: number | null;
+  /** Волна 4 многокурсовой платформы (issue #167) — вкладка "Dashboard"
+   * (v2, эксперимент) видна в App.tsx только тестировщикам из ADMIN_IDS. */
+  is_admin: boolean;
 }
 
 /** POST /api/onboarding/baseline (issue #124, PR 2) — тот же смысл, что
