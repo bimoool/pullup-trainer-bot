@@ -14,10 +14,8 @@
 
 ## Что нужно сделать тебе (я не могу сам — нет доступа к Telegram/DNS)
 
-### 1. Завести тестового бота
-Через `@BotFather` в Telegram: `/newbot`, любое имя (например
-`pullup_trainer_staging_bot`). Получишь токен — сохрани, понадобится в
-шаге 3.
+### 1. Тестовый бот — готово ✅
+Токен уже дал, уже сохранён как секрет GitHub Actions (`STAGING_BOT_TOKEN`).
 
 ### 2. DNS-запись
 У регистратора/DNS-панели домена `bimoool.com` — добавить A-запись:
@@ -27,15 +25,13 @@ staging.app.bimoool.com  →  192.241.141.47
 (тот же IP, что уже используется для `app.bimoool.com` — сервер один и
 тот же, просто второй поддомен).
 
-### 3. На сервере (один раз, по SSH)
+### 3. На сервере (один раз, по SSH) — только папка, .env создаётся автоматически
 ```bash
 sudo mkdir -p /opt/pullup-trainer-bot-staging
 sudo chown deploy:deploy /opt/pullup-trainer-bot-staging
-cd /opt/pullup-trainer-bot-staging
-git clone https://github.com/bimoool/pullup-trainer-bot.git .
-cp .env.staging.example .env
-nano .env   # вставить токен из шага 1, остальное можно оставить как в примере
 ```
+Токен бота уже сохранён как секрет GitHub Actions (`STAGING_BOT_TOKEN`) —
+`.env` `deploy-staging.yml` создаёт сам при каждом деплое, вручную редактировать не нужно.
 
 ### 4. Nginx — новый server-блок
 Скопировать существующий блок для `app.bimoool.com` (посмотри, как он

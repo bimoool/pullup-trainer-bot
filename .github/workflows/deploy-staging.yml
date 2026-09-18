@@ -3,11 +3,12 @@ name: Deploy Staging
 # Отдельный, полностью изолированный от прода контур. Ключевое отличие от
 # deploy.yml: тот вызывает ./deploy.sh на сервере (скрипт живёт там же, не
 # в репо) в уже существующий checkout прода. Здесь вместо этого — свой
-# checkout (/opt/pullup-trainer-bot-staging), свой .env.staging (другой
-# BOT_TOKEN, другая POSTGRES_DB), и главное — свой docker compose PROJECT
-# NAME (-p pullup-staging), из-за которого volumes/network/имена
-# контейнеров физически не пересекаются с прод-проектом ни при каких
-# обстоятельствах, даже при ошибке в конфиге.
+# checkout (/opt/pullup-trainer-bot-staging), свой .env (генерируется этим
+# workflow'ом из STAGING_BOT_TOKEN + фиксированных staging-значений, не
+# редактируется вручную), и главное — свой docker compose PROJECT NAME
+# (-p pullup-staging), из-за которого volumes/network/имена контейнеров
+# физически не пересекаются с прод-проектом ни при каких обстоятельствах,
+# даже при ошибке в конфиге.
 
 on:
   workflow_dispatch:
@@ -23,6 +24,8 @@ permissions:
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
+    env:
+      STAGING_BOT_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
     steps:
       - name: Deploy to VPS (staging)
         uses: appleboy/ssh-action@v1.0.3
@@ -31,6 +34,7 @@ jobs:
           username: deploy
           key: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
           command_timeout: 15m
+          envs: STAGING_BOT_TOKEN
           script: |
             set -e
             STAGING_DIR=/opt/pullup-trainer-bot-staging
@@ -41,20 +45,24 @@ jobs:
             git fetch origin
             git checkout "${{ inputs.ref }}"
             git pull origin "${{ inputs.ref }}" --ff-only || true
-            # .env.staging заводится один раз вручную на сервере (см.
-            # .env.staging.example в репозитории) — с отдельным BOT_TOKEN,
-            # отдельным MINI_APP_PORT, отдельным POSTGRES_DB. Не создаём
-            # здесь автоматически, чтобы не затереть секреты случайно.
-            if [ ! -f .env ]; then
-              echo "ОШИБКА: .env отсутствует в $STAGING_DIR — см. .env.staging.example, завести один раз вручную." && exit 1
-            fi
+
+            rm -f .env
+            printf 'BOT_TOKEN=%s\n' "$STAGING_BOT_TOKEN" >> .env
+            printf 'POSTGRES_USER=pullup_staging\n' >> .env
+            printf 'POSTGRES_PASSWORD=pullup_staging\n' >> .env
+            printf 'POSTGRES_DB=pullup_staging\n' >> .env
+            printf 'DATABASE_URL=postgresql+asyncpg://pullup_staging:pullup_staging@db:5432/pullup_staging\n' >> .env
+            printf 'REDIS_URL=redis://redis:6379/0\n' >> .env
+            printf 'LOG_LEVEL=INFO\n' >> .env
+            printf 'ADMIN_IDS=\n' >> .env
+            printf 'MINI_APP_URL=https://staging.app.bimoool.com\n' >> .env
+            printf 'MINI_APP_PORT=8002\n' >> .env
+            chmod 600 .env
+
             docker compose -p pullup-staging up -d --build
             for i in $(seq 1 30); do
               docker compose -p pullup-staging exec -T app python -m alembic upgrade head && break
               sleep 2
             done
             sleep 5
-            # Порт зафиксирован соглашением (см. .env.staging.example) —
-            # не читаем .env в шелл staging-скрипта, чтобы не тащить туда
-            # секреты вроде BOT_TOKEN лишним echo/set -a.
             curl -sf "http://127.0.0.1:8002/health" || (echo "health check failed" && exit 1)
