@@ -1,4 +1,4 @@
-import { Button, Input, Section, Select } from "@telegram-apps/telegram-ui";
+import { Button, Input, Placeholder, Section, Select, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -134,6 +134,12 @@ export function EquipmentTypeFields({
  * даты — "не в будущем" (<input type="date" max={сегодня}>) — календарь
  * бота здесь не переносится 1-в-1 (issue сам разрешает упростить для веба),
  * лимита на глубину бэкдейта в реальном коде бота нет.
+ *
+ * `Placeholder`/`Spinner` вместо `.screen-message` для loading/error/
+ * not_ready (issue #142) — тот же базовый паттерн, что AchievementsScreen.tsx.
+ * `SetInputGrid`/`.block-section`/`.anomaly-card`/`.done-card`/остальная
+ * разметка блоков не тронуты — общий визуальный язык с `WorkoutScreen.tsx`
+ * (PR 6 по плану, ещё не мигрирован), см. тот же вывод в HistoryEditForm.tsx.
  */
 export function BackdateForm({ initDataRaw, onDone, onCancel }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
@@ -236,12 +242,16 @@ export function BackdateForm({ initDataRaw, onDone, onCancel }: Props) {
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю форму…</p>;
+    return (
+      <Placeholder>
+        <Spinner size="m" />
+      </Placeholder>
+    );
   }
   if (state.phase === "error") {
     return (
       <div>
-        <p className="screen-message">Не удалось загрузить форму: {state.message}</p>
+        <Placeholder description={`Не удалось загрузить форму: ${state.message}`} />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>
@@ -251,9 +261,7 @@ export function BackdateForm({ initDataRaw, onDone, onCancel }: Props) {
   if (state.phase === "not_ready") {
     return (
       <div>
-        <p className="screen-message">
-          {STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`}
-        </p>
+        <Placeholder description={STATUS_MESSAGES[state.status] ?? `Форма пока недоступна (статус: ${state.status}).`} />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>
