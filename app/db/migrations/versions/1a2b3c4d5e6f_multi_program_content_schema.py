@@ -201,8 +201,10 @@ def downgrade() -> None:
     op.drop_table('exercises')
     op.drop_table('media_assets')
 
-    # mp_metric_type/mp_week_phase переживают эту миграцию — их дропает
-    # только парная multi_program_plan_schema (там же они используются
-    # в последний раз в порядке зависимостей).
-    for enum_name in ('mp_program_structure_type', 'mp_progression_strategy_type'):
+    # mp_metric_type/mp_week_phase — общие с multi_program_plan_schema, но при
+    # откате она идёт ПЕРВОЙ (более новая миграция откатывается раньше) и уже
+    # дропнула свои таблицы, ссылавшиеся на эти типы (plan_items и т.д.) —
+    # значит к этому моменту program_items выше уже единственная оставшаяся
+    # ссылка, можно безопасно дропать здесь вместе с остальными.
+    for enum_name in ('mp_program_structure_type', 'mp_progression_strategy_type', 'mp_week_phase', 'mp_metric_type'):
         op.execute(f'DROP TYPE IF EXISTS {enum_name}')

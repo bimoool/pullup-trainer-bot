@@ -233,8 +233,11 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_training_plans_user_id'), table_name='training_plans')
     op.drop_table('training_plans')
 
-    # mp_metric_type/mp_week_phase используются в последний раз здесь (см.
-    # multi_program_content_schema, где они создаются) — дропаются вместе с
-    # mp_session_source/mp_session_status, которые нигде больше не нужны.
-    for enum_name in ('mp_session_status', 'mp_session_source', 'mp_week_phase', 'mp_metric_type'):
+    # mp_session_status/mp_session_source используются только здесь — дропаются
+    # сразу. mp_week_phase/mp_metric_type общие с multi_program_content_schema
+    # (program_items.week_phase там всё ещё жив на этот момент отката —
+    # downgrade идёт от новой миграции к старой, значит content_schema
+    # откатывается ВТОРЫМ шагом и должна дропать эти два типа сама, после
+    # своей собственной program_items).
+    for enum_name in ('mp_session_status', 'mp_session_source'):
         op.execute(f'DROP TYPE IF EXISTS {enum_name}')
