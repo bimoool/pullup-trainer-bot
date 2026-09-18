@@ -1,4 +1,4 @@
-import { Button, Input, Section } from "@telegram-apps/telegram-ui";
+import { Button, Input, Placeholder, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -40,6 +40,14 @@ const STATUS_MESSAGES: Record<string, string> = {
  * "🎯 Факультатив" в обычном плане тренировки, либо проактивно из статуса
  * "сегодня отдых" (WorkoutScreen.tsx, status === "too_early") — plan сам
  * сообщает is_rest_day, форма от этого не меняется, только текст.
+ *
+ * `Placeholder`/`Spinner` вместо `.screen-message` на состояниях загрузки/
+ * ошибки/недоступности/исчерпанного лимита (issue #142) — тот же базовый
+ * паттерн, что AchievementsScreen.tsx. Раскладка ввода подходов
+ * (`SetInputGrid`, `.block-section`/`.workout-mode-buttons`) и общие
+ * layout-классы (`.plan-title`/`.action-button`/`.error-banner`/
+ * `.done-card`/`.gap-banner`) не тронуты — общие с ещё немигрированным
+ * WorkoutScreen.tsx, чистка/замена — в финальном PR 7 по плану.
  */
 export function ElectiveScreen({ initDataRaw, onCancel, onDone }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
@@ -132,12 +140,16 @@ export function ElectiveScreen({ initDataRaw, onCancel, onDone }: Props) {
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю факультатив…</p>;
+    return (
+      <Placeholder>
+        <Spinner size="m" />
+      </Placeholder>
+    );
   }
   if (state.phase === "error") {
     return (
       <div>
-        <p className="screen-message">Не удалось загрузить факультатив: {state.message}</p>
+        <Placeholder description={`Не удалось загрузить факультатив: ${state.message}`} />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>
@@ -147,9 +159,9 @@ export function ElectiveScreen({ initDataRaw, onCancel, onDone }: Props) {
   if (state.phase === "not_ready") {
     return (
       <div>
-        <p className="screen-message">
-          {STATUS_MESSAGES[state.status] ?? `Факультатив пока недоступен (статус: ${state.status}).`}
-        </p>
+        <Placeholder
+          description={STATUS_MESSAGES[state.status] ?? `Факультатив пока недоступен (статус: ${state.status}).`}
+        />
         <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
           Назад
         </Button>
@@ -263,9 +275,7 @@ export function ElectiveScreen({ initDataRaw, onCancel, onDone }: Props) {
       </p>
 
       {!plan.elective_allowed && (
-        <p className="screen-message">
-          Факультативы на этой неделе уже использованы — новый будет доступен на следующей неделе.
-        </p>
+        <Placeholder description="Факультативы на этой неделе уже использованы — новый будет доступен на следующей неделе." />
       )}
 
       {plan.elective_allowed &&
