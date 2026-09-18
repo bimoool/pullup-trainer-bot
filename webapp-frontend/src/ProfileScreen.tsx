@@ -1,4 +1,4 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, ButtonCell, Cell, Placeholder, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
@@ -38,10 +38,9 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
   if (!gto.applicable) {
     if (gto.reason === "norm_data_missing") {
       return (
-        <div className="profile-card">
-          <p className="section-title">Разряд ГТО (подтягивание)</p>
-          <p>{`Официальные нормативы ГТО для твоей возрастной ступени (${gto.step_number}) пока не подтверждены — появятся позже.`}</p>
-        </div>
+        <Section header="Разряд ГТО (подтягивание)">
+          <Cell multiline>{`Официальные нормативы ГТО для твоей возрастной ступени (${gto.step_number}) пока не подтверждены — появятся позже.`}</Cell>
+        </Section>
       );
     }
     const text = gto.reason ? GTO_REASON_TEXT[gto.reason] : undefined;
@@ -49,10 +48,9 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
       return null;
     }
     return (
-      <div className="profile-card">
-        <p className="section-title">Разряд ГТО (подтягивание)</p>
-        <p>{text}</p>
-      </div>
+      <Section header="Разряд ГТО (подтягивание)">
+        <Cell multiline>{text}</Cell>
+      </Section>
     );
   }
 
@@ -67,16 +65,15 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
       ? "Вы выполнили норматив ГТО для своей возрастной категории по подтягиваниям."
       : "Норматив ГТО для вашей возрастной категории по подтягиваниям пока не выполнен.";
   return (
-    <div className="profile-card">
-      <p className="section-title">Разряд ГТО (подтягивание)</p>
-      <p>{summaryText}</p>
-      <p>{`Ступень ${gto.step_number} · возраст ${gto.age} · лучший результат ${gto.best_max_reps} за подход`}</p>
-      <p>{rankLabel}</p>
-      <p>{`Бронза от ${gto.bronze_threshold}, серебро от ${gto.silver_threshold}, золото от ${gto.gold_threshold}.`}</p>
+    <Section header="Разряд ГТО (подтягивание)">
+      <Cell multiline>{summaryText}</Cell>
+      <Cell multiline>{`Ступень ${gto.step_number} · возраст ${gto.age} · лучший результат ${gto.best_max_reps} за подход`}</Cell>
+      <Cell multiline>{rankLabel}</Cell>
+      <Cell multiline>{`Бронза от ${gto.bronze_threshold}, серебро от ${gto.silver_threshold}, золото от ${gto.gold_threshold}.`}</Cell>
       {gto.next_rank && gto.reps_to_next_rank !== null && (
-        <p>{`До разряда "${GTO_RANK_LABEL[gto.next_rank] ?? gto.next_rank}" не хватает ${gto.reps_to_next_rank} повторений.`}</p>
+        <Cell multiline>{`До разряда "${GTO_RANK_LABEL[gto.next_rank] ?? gto.next_rank}" не хватает ${gto.reps_to_next_rank} повторений.`}</Cell>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -117,10 +114,9 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
   if (!wsf.applicable) {
     if (wsf.reason === "norm_data_missing") {
       return (
-        <div className="profile-card">
-          <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
-          <p>{`Для твоей весовой категории (${weightCategoryLabel(wsf.weight_category ?? "")}) и ступени отягощения твоих тренировок в таблице WSF пока нет данных.`}</p>
-        </div>
+        <Section header="Разряд WSF (подтягивания с отягощением)">
+          <Cell multiline>{`Для твоей весовой категории (${weightCategoryLabel(wsf.weight_category ?? "")}) и ступени отягощения твоих тренировок в таблице WSF пока нет данных.`}</Cell>
+        </Section>
       );
     }
     const text = wsf.reason ? WSF_REASON_TEXT[wsf.reason] : undefined;
@@ -128,10 +124,9 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
       return null;
     }
     return (
-      <div className="profile-card">
-        <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
-        <p>{text}</p>
-      </div>
+      <Section header="Разряд WSF (подтягивания с отягощением)">
+        <Cell multiline>{text}</Cell>
+      </Section>
     );
   }
 
@@ -149,17 +144,16 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
   const bonusPct = wsf.age_bonus_pct !== null ? Math.round(Number(wsf.age_bonus_pct) * 100) : null;
 
   return (
-    <div className="profile-card">
-      <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
-      <p>{summaryText}</p>
-      <p>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps} повторений на ${stepKg} кг`}</p>
-      <p>{rankLabel}</p>
-      {weightCaveat && <p>{weightCaveat}</p>}
-      {bonusPct !== null && <p>{`Учтён возрастной коэффициент +${bonusPct}%.`}</p>}
+    <Section header="Разряд WSF (подтягивания с отягощением)">
+      <Cell multiline>{summaryText}</Cell>
+      <Cell multiline>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps} повторений на ${stepKg} кг`}</Cell>
+      <Cell multiline>{rankLabel}</Cell>
+      {weightCaveat && <Cell multiline>{weightCaveat}</Cell>}
+      {bonusPct !== null && <Cell multiline>{`Учтён возрастной коэффициент +${bonusPct}%.`}</Cell>}
       {wsf.next_rank && wsf.reps_to_next_rank !== null && (
-        <p>{`До разряда "${WSF_RANK_LABEL[wsf.next_rank] ?? wsf.next_rank}" не хватает ${wsf.reps_to_next_rank} повторений на той же ступени.`}</p>
+        <Cell multiline>{`До разряда "${WSF_RANK_LABEL[wsf.next_rank] ?? wsf.next_rank}" не хватает ${wsf.reps_to_next_rank} повторений на той же ступени.`}</Cell>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -176,7 +170,14 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
  * при открытии), здесь остаётся только строка статуса + переход.
  *
  * "Справка" (issue #102) — тот же приём перехода, что подписка: только
- * кнопка здесь, полный текст на отдельном экране (FaqScreen через App.tsx). */
+ * кнопка здесь, полный текст на отдельном экране (FaqScreen через App.tsx).
+ *
+ * `Section`/`Cell`/`ButtonCell`/`Placeholder` вместо `.profile-card`/
+ * `.section-title`/`.stat-grid`/`.stat-tile`/`.screen-message` (issue #142) —
+ * тот же базовый паттерн, что AchievementsScreen.tsx; счётчик ачивок
+ * специально на `ButtonCell` (рендерит настоящий `<button>`), не на `Cell`
+ * с ручным `onClick` — сохраняет ту же кликабельность-через-клавиатуру,
+ * что уже была задокументирована для него в issue #66. */
 export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Список ачивок (issue #66, п.1) — отдельный экран внутри вкладки, тот же
@@ -250,15 +251,19 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   }, [initDataRaw]);
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю профиль…</p>;
+    return (
+      <Placeholder>
+        <Spinner size="m" />
+      </Placeholder>
+    );
   }
   if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить профиль: {state.message}</p>;
+    return <Placeholder description={`Не удалось загрузить профиль: ${state.message}`} />;
   }
 
   const { profile } = state;
   if (!profile.is_onboarded) {
-    return <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>;
+    return <Placeholder description="Онбординг ещё не пройден. Начни его в боте." />;
   }
 
   if (showAchievements) {
@@ -284,71 +289,60 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     <div>
       <p className="plan-title">Профиль</p>
 
-      <div className="profile-card">
-        <p>
+      <Section>
+        <Cell multiline>
           {profile.days_since_last_workout === null
             ? "Тренировок пока не было."
             : profile.days_since_last_workout === 0
               ? "Последняя тренировка — сегодня."
               : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
-        </p>
-      </div>
+        </Cell>
+      </Section>
 
-      <div className="profile-card">
-        <p className="section-title">Личные данные</p>
-        <p>{`Вес: ${profile.weight_kg ?? "не указано"} кг`}</p>
-        <p>{`Рост: ${profile.height_cm ?? "не указано"} см`}</p>
-        <p>{`Пол: ${profile.gender_label ?? "не указано"}`}</p>
-        <p>{`Возраст: ${profile.age ?? "не указано"}`}</p>
-        <p>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</p>
+      <Section header="Личные данные">
+        <Cell>{`Вес: ${profile.weight_kg ?? "не указано"} кг`}</Cell>
+        <Cell>{`Рост: ${profile.height_cm ?? "не указано"} см`}</Cell>
+        <Cell>{`Пол: ${profile.gender_label ?? "не указано"}`}</Cell>
+        <Cell>{`Возраст: ${profile.age ?? "не указано"}`}</Cell>
+        <Cell>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</Cell>
         <Button mode="outline" size="m" stretched onClick={() => setShowEditProfile(true)}>
           ✏️ Изменить
         </Button>
-      </div>
+      </Section>
 
-      <div className="profile-card">
-        <p className="section-title">Подписка</p>
-        <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
+      <Section header="Подписка">
+        <Cell multiline>{profile.subscription_status_label ?? "Статус подписки недоступен."}</Cell>
         <Button mode="outline" size="m" stretched onClick={onOpenSubscription}>
           ⭐ Подробнее о подписке
         </Button>
-      </div>
+      </Section>
 
-      <div className="profile-card">
-        <p className="section-title">Справка</p>
+      <Section header="Справка">
         <Button mode="outline" size="m" stretched onClick={onOpenFaq}>
           ❓ Как выбрать резину
         </Button>
-      </div>
+      </Section>
 
-      <div className="profile-card">
-        <p className="section-title">Мои резины</p>
+      <Section header="Мои резины">
         <Button mode="outline" size="m" stretched onClick={() => setShowBandItems(true)}>
           🎗️ Переименовать или удалить
         </Button>
-      </div>
+      </Section>
 
       {gto && <GtoCard gto={gto} />}
       {wsf && <WsfCard wsf={wsf} />}
 
-      <div className="stat-grid">
-        <div className="stat-tile">
-          <div className="stat-value">{profile.workouts_count}</div>
-          <div className="stat-label">Тренировок</div>
-        </div>
-        {/* Issue #66 (уточнение): счётчик выглядел некликабельным — теперь
-            это настоящая <button> (тап/клавиатура), не div с обработчиком,
-            плюс явная визуальная подсказка (стрелка, hover/active-состояние
-            в index.css), а не только число. */}
-        <button type="button" className="stat-tile stat-tile-clickable" onClick={() => setShowAchievements(true)}>
-          <div className="stat-value">{profile.achievements_count}</div>
-          <div className="stat-label">Ачивок ›</div>
-        </button>
-        <div className="stat-tile">
-          <div className="stat-value">{profile.coins_balance}</div>
-          <div className="stat-label">Монет</div>
-        </div>
-      </div>
+      <Section header="Статистика">
+        <Cell>{`Тренировок: ${profile.workouts_count}`}</Cell>
+        {/* Issue #66 (уточнение): счётчик выглядел некликабельным — нужна
+            настоящая <button> (тап/клавиатура), не div с обработчиком.
+            ButtonCell (issue #142) рендерит именно <button> по умолчанию —
+            та же семантика, что раньше давал явный type="button". */}
+        <ButtonCell after="›" onClick={() => setShowAchievements(true)}>
+          {`Ачивок: ${profile.achievements_count}`}
+        </ButtonCell>
+        <Cell>{`Монет: ${profile.coins_balance}`}</Cell>
+      </Section>
     </div>
   );
 }
