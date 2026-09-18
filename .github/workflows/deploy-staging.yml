@@ -1,20 +1,17 @@
 name: Deploy Staging
 
-# Отдельный, полностью изолированный от прода контур. Ключевое отличие от
-# deploy.yml: тот вызывает ./deploy.sh на сервере (скрипт живёт там же, не
-# в репо) в уже существующий checkout прода. Здесь вместо этого — свой
-# checkout (/opt/pullup-trainer-bot-staging), свой .env (генерируется этим
-# workflow'ом из STAGING_BOT_TOKEN + фиксированных staging-значений, не
-# редактируется вручную), и главное — свой docker compose PROJECT NAME
-# (-p pullup-staging), из-за которого volumes/network/имена контейнеров
-# физически не пересекаются с прод-проектом ни при каких обстоятельствах,
-# даже при ошибке в конфиге.
+# Отдельный, полностью изолированный от прода контур. Свой SSH-ключ
+# (VPS_STAGING_DEPLOY_SSH_KEY), ограниченный на сервере отдельным
+# forced-command wrapper'ом (deploy-staging-dispatch.sh), не пересекается с
+# production-ключом/ограничением. Секреты STAGING_BOT_TOKEN/STAGING_CLONE_TOKEN
+# читаются скриптом на сервере из ~/.staging-secrets.env, а не прокидываются
+# через SSH-команду — issue #169.
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Ветка/коммит для деплоя на staging"
+        description: "Ветка для деплоя на staging"
         required: true
         default: "main"
 
@@ -24,47 +21,12 @@ permissions:
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
-    env:
-      STAGING_BOT_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
-      STAGING_CLONE_TOKEN: ${{ secrets.STAGING_CLONE_TOKEN }}
     steps:
       - name: Deploy to VPS (staging)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 192.241.141.47
           username: deploy
-          key: ${{ secrets.VPS_DEPLOY_SSH_KEY }}
+          key: ${{ secrets.VPS_STAGING_DEPLOY_SSH_KEY }}
           command_timeout: 15m
-          envs: STAGING_BOT_TOKEN,STAGING_CLONE_TOKEN
-          script: |
-            set -e
-            STAGING_DIR=~/pullup-trainer-bot-staging
-            if [ ! -d "$STAGING_DIR" ]; then
-              git clone "https://x-access-token:${STAGING_CLONE_TOKEN}@github.com/bimoool/pullup-trainer-bot.git" "$STAGING_DIR"
-            fi
-            cd "$STAGING_DIR"
-            git remote set-url origin "https://x-access-token:${STAGING_CLONE_TOKEN}@github.com/bimoool/pullup-trainer-bot.git"
-            git fetch origin
-            git checkout "${{ inputs.ref }}"
-            git pull origin "${{ inputs.ref }}" --ff-only || true
-
-            rm -f .env
-            printf 'BOT_TOKEN=%s\n' "$STAGING_BOT_TOKEN" >> .env
-            printf 'POSTGRES_USER=pullup_staging\n' >> .env
-            printf 'POSTGRES_PASSWORD=pullup_staging\n' >> .env
-            printf 'POSTGRES_DB=pullup_staging\n' >> .env
-            printf 'DATABASE_URL=postgresql+asyncpg://pullup_staging:pullup_staging@db:5432/pullup_staging\n' >> .env
-            printf 'REDIS_URL=redis://redis:6379/0\n' >> .env
-            printf 'LOG_LEVEL=INFO\n' >> .env
-            printf 'ADMIN_IDS=\n' >> .env
-            printf 'MINI_APP_URL=https://staging.app.bimoool.com\n' >> .env
-            printf 'MINI_APP_PORT=8002\n' >> .env
-            chmod 600 .env
-
-            docker compose -p pullup-staging up -d --build
-            for i in $(seq 1 30); do
-              docker compose -p pullup-staging exec -T app python -m alembic upgrade head && break
-              sleep 2
-            done
-            sleep 5
-            curl -sf "http://127.0.0.1:8002/health" || (echo "health check failed" && exit 1)
+          script: ./deploy-staging.sh ${{ inputs.ref }}
