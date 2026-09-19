@@ -15,9 +15,9 @@ const TELEGRAM_ID = 900_002;
 test("первая тренировка (issue #175): Dashboard → подтверждение снаряда → форма → запись", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
-  // Волна 5b (issue #183) — стартовый экран теперь "Главная" (каталог,
-  // пока пустой), а прежний Dashboard целиком переехал на вкладку "Планы"
-  // (crimpd-reference skill: стартовый экран — каталог, не план).
+  // Волна 5b (issue #183) — стартовый экран теперь "Главная" (каталог),
+  // а прежний Dashboard целиком переехал на вкладку "Планы" (crimpd-reference
+  // skill: стартовый экран — каталог, не план).
   await page.getByRole("button", { name: "Планы" }).click();
 
   // Dashboard (issue #175) — честно предупреждает, что это первая

@@ -9,8 +9,8 @@ const TELEGRAM_ID = 900_003;
 test("обычный день тренировки: полный путь ввода результата до записи", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
-  // Волна 5b (issue #183) — стартовый экран теперь "Главная" (каталог,
-  // пока пустой), Dashboard целиком переехал на вкладку "Планы".
+  // Волна 5b (issue #183) — стартовый экран теперь "Главная" (каталог),
+  // Dashboard целиком переехал на вкладку "Планы".
   await page.getByRole("button", { name: "Планы" }).click();
 
   // Dashboard (issue #175) — сводка вместо сразу открытой формы тренировки
