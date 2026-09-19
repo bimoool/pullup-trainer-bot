@@ -3,6 +3,8 @@ import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { DashboardScreen } from "./DashboardScreen";
+import { DashboardV2Screen } from "./DashboardV2Screen";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
@@ -40,15 +42,30 @@ type LoadState =
  * "warmup" (issue #124, PR 1) — тот же приём, что "faq": один вход, с
  * кнопки "🔥 Показать разминку" на WorkoutScreen, "Назад" всегда ведёт на
  * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
- * — открыть разминку можно только оттуда). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
+ * — открыть разминку можно только оттуда).
+ *
+ * "dashboard" (issue #175) — новая вкладка по умолчанию: стартовый экран
+ * приложения — сводка (стрик, счётчики, статус готовности), не открытая
+ * форма тренировки (product-reference skill, референс — Crimpd, где
+ * домашний экран тоже не тренировка). "Начать тренировку" с этого экрана
+ * просто переключает на "workout" — сама форма не дублируется. */
+/* "dashboardV2" (issue #167, волна 4) — экспериментальный экран новой
+ * многокурсовой схемы (эндпоинты новой версии API). Невидимая вкладка, добавляется в нижнее
+ * меню условно и только для ADMIN_IDS (hello.is_admin) — это НЕ стартовый
+ * экран "dashboard" выше, а отдельный испытательный стенд рядом с ним. */
+type Tab = "dashboard" | "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: "dashboard", icon: "🏠", label: "Главная" },
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
   { key: "progress", icon: "📈", label: "Прогресс" },
   { key: "profile", icon: "👤", label: "Профиль" },
 ];
+
+const DASHBOARD_V2_NAV_TAB: { key: Tab; icon: string; label: string } = {
+  key: "dashboardV2", icon: "🧪", label: "Dashboard",
+};
 
 type TelegramWebApp = { initData?: string; version?: string; platform?: string };
 
@@ -79,7 +96,7 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [tab, setTab] = useState<Tab>("workout");
+  const [tab, setTab] = useState<Tab>("dashboard");
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -190,6 +207,10 @@ export function App() {
 
   const isOnboarded = state.data.onboarding_step === "done";
 
+  // Экспериментальная вкладка новой схемы видна только тестировщикам
+
+  const navTabs = state.data.is_admin ? [...NAV_TABS, DASHBOARD_V2_NAV_TAB] : NAV_TABS;
+
   return (
     <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
@@ -203,6 +224,9 @@ export function App() {
           startStep={state.data.onboarding_step}
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
+      )}
+      {isOnboarded && tab === "dashboard" && (
+        <DashboardScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => setTab("workout")} />
       )}
       {isOnboarded && tab === "workout" && (
         <WorkoutScreen
@@ -230,10 +254,13 @@ export function App() {
       {isOnboarded && tab === "warmup" && (
         <WarmupScreen initDataRaw={state.initDataRaw} onBack={() => setTab("workout")} />
       )}
+      {isOnboarded && tab === "dashboardV2" && (
+        <DashboardV2Screen initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
+      )}
 
       {isOnboarded && (
         <Tabbar>
-          {NAV_TABS.map(({ key, icon, label }) => (
+          {navTabs.map(({ key, icon, label }) => (
             <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>
               <span className="bottom-nav-icon">{icon}</span>
             </Tabbar.Item>

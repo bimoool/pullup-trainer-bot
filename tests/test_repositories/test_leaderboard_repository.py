@@ -2,7 +2,7 @@
 raw SQL (sqlalchemy.text()), не ORM select() (см. докстринг в
 app/db/repositories/leaderboard.py). Ожидаемые значения посчитаны вручную
 ниже по каждому тесту, до запуска — тот же принцип, что и остальные тесты
-проекта (docs/testing.md: "доказать, что тест реально ловит баг")."""
+проекта (CLAUDE.md: "доказать, что тест реально ловит баг")."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

@@ -46,7 +46,7 @@ type ChartPoint = { performed_at: string; value_a: number | null; value_b: numbe
 
 /** "strength" (issue #82) — единственная метрика с одной линией (блок Б),
  * не двумя: value_a у неё всегда null (см. app/web/routes.py::_progress_value
- * и объяснение в docs/progression.md, почему "сила" скоуплена на блок Б). */
+ * и объяснение в CLAUDE.md, почему "сила" скоуплена на блок Б). */
 function seriesKeysForMetric(metric: ProgressMetric): SeriesKey[] {
   return metric === "strength" ? ["value_b"] : ["value_a", "value_b"];
 }
@@ -102,7 +102,7 @@ function formatMetricValue(metric: ProgressMetric, value: number): string {
 /** Лёгкий самописный inline-SVG line chart (issue #50, волна 2; issue #82 —
  * факт вместо плана + переменное число серий: 2 для "максимум"/"объём", 1
  * для "сила"). Без новой npm-зависимости (recharts и подобные не добавлены,
- * доступность npm из песочницы непостоянна, см. docs/mini-app.md). Одна общая ось
+ * доступность npm из песочницы непостоянна, см. CLAUDE.md). Одна общая ось
  * Y — обе серии "максимум"/"объём" меряются в тех же повторениях, "сила" не
  * смешивается с ними на одном графике (переключатель метрик, не общая ось). */
 function LineChart({ points, seriesKeys, metric }: { points: ChartPoint[]; seriesKeys: SeriesKey[]; metric: ProgressMetric }) {
