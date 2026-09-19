@@ -2,6 +2,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
+import { fetchPlan, type ProgramInclusionResponseV2 } from "./apiV2";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 
 type Props = {
@@ -52,6 +53,11 @@ function daysSinceLabel(days: number | null): string {
  * дублирует эту логику, только не начинает с неё. */
 export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  // Подключённые курсы (issue #188, волна 6, раздел 10.2: "Подключённые
+  // курсы" внизу списка PlanItem) — отдельный useState/useEffect, не
+  // блокирует остальной экран, если TrainingPlan ещё не создан (fetchPlan
+  // возвращает null, а не ошибку — старая сводка выше работает как прежде).
+  const [programInclusions, setProgramInclusions] = useState<ProgramInclusionResponseV2[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +71,15 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
         if (!cancelled) {
           setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
         }
+      });
+    fetchPlan(initDataRaw)
+      .then((plan) => {
+        if (!cancelled) {
+          setProgramInclusions(plan?.program_inclusions ?? []);
+        }
+      })
+      .catch(() => {
+        // Тихо: список курсов — дополнение к сводке выше, не критичный путь.
       });
     return () => {
       cancelled = true;
@@ -114,6 +129,20 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
       <Button className="action-button" size="l" stretched onClick={onOpenWorkout}>
         {isReady ? "Начать тренировку" : "Открыть «Тренировку»"}
       </Button>
+
+      {programInclusions.length > 0 && (
+        <>
+          <p className="section-title">Подключённые курсы</p>
+          <div className="catalog-list">
+            {programInclusions.map((inclusion) => (
+              <div key={inclusion.id} className="catalog-card">
+                <p className="catalog-card-title">{inclusion.program_name}</p>
+                <p className="hint">{inclusion.is_active ? "Активен" : "Завершён ✓"}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -362,6 +362,52 @@ input[type="number"] {
   margin-top: 4px;
 }
 
+/* Каталог курсов на Главной (issue #188, волна 6) — тот же приём
+   некликабельной/кликабельной плитки, что и .stat-tile-clickable выше,
+   только левым выравниванием текста под название+цель курса вместо
+   центрированного числа. */
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.catalog-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--tg-secondary-bg-color);
+  border-radius: 16px;
+  padding: 14px 16px;
+  transition: background-color 0.15s ease;
+}
+
+.catalog-card:hover {
+  background: color-mix(in srgb, var(--tg-secondary-bg-color) 80%, var(--tg-text-color) 20%);
+}
+
+.catalog-card:active {
+  background: color-mix(in srgb, var(--tg-secondary-bg-color) 65%, var(--tg-text-color) 35%);
+}
+
+.catalog-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+/* Строка подключённого курса на "Планах" (DashboardScreen.tsx) — не кнопка,
+   не открывает карточку курса заново, поэтому без cursor/hover поверх
+   .catalog-card. */
+div.catalog-card {
+  cursor: default;
+}
+
 .history-list {
   display: flex;
   flex-direction: column;

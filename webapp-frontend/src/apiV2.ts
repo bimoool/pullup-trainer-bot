@@ -68,6 +68,25 @@ export async function fetchDashboardStatus(initDataRaw: string): Promise<Dashboa
 }
 
 /**
+ * Каталог курсов (issue #188, волна 6, раздел 10.1/12) — GET /api/v2/programs
+ * существует с волны 3 (issue #165), но не был подключён ни к одному экрану;
+ * HomeScreen.tsx — первый настоящий потребитель.
+ */
+export interface ProgramResponse {
+  id: number;
+  name: string;
+  goal: string;
+  structure_type: string;
+  category: string | null;
+  progression_strategy_type: string | null;
+}
+
+export async function fetchPrograms(initDataRaw: string): Promise<ProgramResponse[]> {
+  const response = await apiV2Get<{ programs: ProgramResponse[] }>("/api/v2/programs", initDataRaw);
+  return response.programs;
+}
+
+/**
  * Волна 5 (issue #185, экран сессии) — те же файлы остаются единственными,
  * которым разрешено упоминать /api/v2 (allowlist в
  * tests/test_web/test_v2_not_wired_to_ui.py); новые экраны сессии
@@ -111,6 +130,19 @@ export interface TrainingPlanResponseV2 {
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {
   const response = await apiV2Get<{ plan: TrainingPlanResponseV2 | null }>("/api/v2/plan", initDataRaw);
   return response.plan;
+}
+
+/**
+ * «Добавить в план» с карточки курса (issue #188, волна 6, раздел 10.3).
+ * Диалог пересечений (10.5) и стартовые target'ы прогрессии — вне охвата
+ * этого чекпоинта (единственный сеяный курс не пересекается сам с собой);
+ * `POST /program-inclusions` — тот же CRUD-эндпоинт волны 3, не дублируется.
+ */
+export async function createProgramInclusion(
+  initDataRaw: string,
+  programId: number,
+): Promise<ProgramInclusionResponseV2> {
+  return apiV2Post("/api/v2/program-inclusions", initDataRaw, { program_id: programId });
 }
 
 // --- Живая сессия: POST /sessions/live, /phase/next, /sets:batch, /complete,

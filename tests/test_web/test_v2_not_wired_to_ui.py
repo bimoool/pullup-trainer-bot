@@ -12,7 +12,12 @@ WorkoutScreen.tsx) по-прежнему не должен ссылаться н
 Волна 5 (issue #185, экран сессии) расширяет allowlist экраном сессии
 целиком (пред-экран/live/итог/журнал-правка + офлайн-слой) — тот же
 испытательный стенд за admin-only вкладкой "dashboardV2" (см.
-SessionV2Lab.tsx), не cutover реального UI."""
+SessionV2Lab.tsx), не cutover реального UI.
+
+Волна 6 (issue #188, каталог + подключение курса) — первый настоящий cutover
+реального UI, не испытательного стенда: HomeScreen.tsx (Главная, каталог
+GET /programs + "Добавить в план") и DashboardScreen.tsx (вкладка "Планы",
+список подключённых курсов из GET /plan) добавлены в allowlist осознанно."""
 
 from pathlib import Path
 
@@ -30,6 +35,8 @@ _ALLOWED_V2_FILES = {
     "SessionEditScreen.tsx",
     "offlineSession.ts",
     "OfflineQueryProvider.tsx",
+    "HomeScreen.tsx",
+    "DashboardScreen.tsx",
 }
 
 
