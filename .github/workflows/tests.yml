@@ -8,10 +8,20 @@ name: Tests
 # Этот workflow закрывает дыру: любой PR и любой push в main проверяется
 # автоматически, до того как ветку кто-то смержит или задеплоит.
 
+# ВАЖНО про расход минут: репозиторий приватный, минуты GitHub Actions
+# платные. Поэтому только `pull_request` — без дублирующего прогона на push
+# в main (тот же код уже проверен в PR), и с path-фильтрами: правка одной
+# документации не должна поднимать Postgres и ставить зависимости.
 on:
   pull_request:
-  push:
-    branches: [main]
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "scripts/**"
+      - "webapp-frontend/**"
+      - "alembic.ini"
+      - "pyproject.toml"
+      - ".github/workflows/tests.yml"
 
 permissions:
   contents: read
