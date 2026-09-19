@@ -176,11 +176,13 @@ async def hello(
     обычный путь ниже, как раньше is_onboarded=True."""
     telegram_id = init_data.user.id
     name = init_data.user.first_name
+    is_admin = settings.is_admin(telegram_id)
 
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return HelloResponse(
             name=name, onboarding_step="not_registered", readiness_status=None, days_since_last_workout=None,
+            is_admin=is_admin,
         )
 
     if user.onboarding_completed_at is None:
@@ -188,12 +190,14 @@ async def hello(
         step = "questionnaire" if baseline is not None else "baseline"
         return HelloResponse(
             name=name, onboarding_step=step, readiness_status=None, days_since_last_workout=None,
+            is_admin=is_admin,
         )
 
     history = await WorkoutRepository(session).list_for_user(user.id)
     if not history:
         return HelloResponse(
             name=name, onboarding_step="done", readiness_status=None, days_since_last_workout=None,
+            is_admin=is_admin,
         )
 
     readiness = check_training_readiness(history[-1].performed_at.date(), datetime.now(UTC).date())
@@ -201,6 +205,7 @@ async def hello(
         name=name, onboarding_step="done",
         readiness_status=readiness.status.value,
         days_since_last_workout=readiness.days_since_last_workout,
+        is_admin=is_admin,
     )
 
 
