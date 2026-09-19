@@ -78,6 +78,7 @@ from app.db.base import async_session_factory
 from app.db.models import Block, BlockType, ElectiveWorkout, User, Workout, WorkoutStatus
 from app.db.models_program import (
     Exercise,
+    PlanItem,
     Program,
     ProgramInclusion,
     ProgressionStrategyProfile,
@@ -606,15 +607,34 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
         training_plan = TrainingPlan(user_id=user.id)
         session.add(training_plan)
         await session.flush()
-        session.add(
-            ProgramInclusion(
-                training_plan_id=training_plan.id,
-                program_id=seed.program_id,
-                snapshot=seed.snapshot,
-                progression_state=progression_state,
-                is_active=True,
-            ),
+        inclusion = ProgramInclusion(
+            training_plan_id=training_plan.id,
+            program_id=seed.program_id,
+            snapshot=seed.snapshot,
+            progression_state=progression_state,
+            is_active=True,
         )
+        session.add(inclusion)
+        await session.flush()
+        # Без этих двух строк ProgramInclusion существует, но PlanItem —
+        # нет: SessionPreScreen.tsx (issue #185) находит "сегодняшнюю
+        # сессию" через plan.plan_items.filter(program_inclusion_id=...),
+        # пустой список там читается как "нечего начинать" и рвёт кнопку
+        # "Начать" ошибкой "Не удалось найти строки плана" — баг найден на
+        # реальном аккаунте, не в тестах (сиды E2E создают PlanItem сами,
+        # см. scripts/e2e_seed.py::seed_v2_session_ready, поэтому CI этого
+        # не ловил). Роли/exercise_id — из снимка программы, тот же
+        # источник, что использует ProgramInclusionService.create_inclusion
+        # для новых (не бэкфилленных) подключений курса.
+        for exercise in inclusion.snapshot["exercises"]:
+            session.add(
+                PlanItem(
+                    training_plan_id=training_plan.id,
+                    exercise_id=exercise["exercise_id"],
+                    count_per_week=3,
+                    program_inclusion_id=inclusion.id,
+                ),
+            )
         await session.commit()
         report.users_migrated_this_run += 1
 

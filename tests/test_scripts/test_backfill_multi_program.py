@@ -7,6 +7,7 @@ from sqlalchemy import select, text
 from app.db.models import EquipmentType, User
 from app.db.models_program import (
     Exercise,
+    PlanItem,
     Program,
     ProgramInclusion,
     SessionBlock,
@@ -69,6 +70,31 @@ async def test_onboarded_zero_workouts_gets_default_progression_state(session, u
         "heavy_equipment_value_next": None,
     }
     assert (await session.execute(select(TrainingSession).where(TrainingSession.user_id == user.id))).scalars().all() == []
+
+
+async def test_backfilled_inclusion_has_plan_items_for_both_blocks(session, user: User):
+    """Реальный баг: SessionPreScreen.tsx (issue #185) находит "сегодняшнюю
+    сессию" через plan.plan_items.filter(program_inclusion_id=...) — без
+    PlanItem кнопка "Начать" рвётся ошибкой "Не удалось найти строки плана"
+    на живом аккаунте, хотя ProgramInclusion существует и выглядит валидным.
+    CI это не ловил: E2E-сиды (scripts/e2e_seed.py::seed_v2_session_ready)
+    создают PlanItem сами, отдельно от backfill — тестировался не тот путь,
+    которым реально мигрируют пользователей."""
+    await _onboard(session, user)
+
+    await backfill_all(session, now=NOW)
+
+    plan = (await session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user.id))).scalar_one()
+    inclusion = (
+        await session.execute(select(ProgramInclusion).where(ProgramInclusion.training_plan_id == plan.id))
+    ).scalar_one()
+    items = (
+        await session.execute(select(PlanItem).where(PlanItem.program_inclusion_id == inclusion.id))
+    ).scalars().all()
+    exercise_ids = {item.exercise_id for item in items}
+    snapshot_exercise_ids = {e["exercise_id"] for e in inclusion.snapshot["exercises"]}
+    assert exercise_ids == snapshot_exercise_ids
+    assert len(items) == 2  # блок A + блок Б
 
 
 async def test_zero_workouts_with_baseline_matches_first_workout_equipment_choice(session, user: User):
