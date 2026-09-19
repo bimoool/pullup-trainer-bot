@@ -13,6 +13,7 @@ import {
 } from "./api";
 import { BackdateForm } from "./BackdateForm";
 import { ElectiveScreen } from "./ElectiveScreen";
+import { EquipmentPlanScreen } from "./EquipmentPlanScreen";
 import { FreeWorkoutScreen } from "./FreeWorkoutScreen";
 import { LiveWorkoutScreen } from "./LiveWorkoutScreen";
 
@@ -564,6 +565,14 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   // planом, а только после явного нажатия 4-й кнопки "📝 Внести результат
   // тренировки", симметрично остальным трём режимам.
   const [showForm, setShowForm] = useState(false);
+  // Экран выбора/подтверждения стартового снаряда (issue #175) — показан
+  // ровно один раз за это открытие Mini App, до самой формы первой
+  // тренировки (см. рендер ниже, после state.phase === "form"). Не
+  // персистится на бэкенде — тот же принцип, что equipment_plan_announced
+  // в FSM бота (app/bot/handlers/equipment.py::_advance_equipment_queue):
+  // одноразовое объявление плана в рамках одного захода, не факт на всю
+  // жизнь пользователя.
+  const [equipmentPlanAcknowledged, setEquipmentPlanAcknowledged] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -867,6 +876,19 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   }
 
   const { plan } = state;
+
+  // Экран выбора/подтверждения стартового снаряда (issue #175) — до формы
+  // первой тренировки, не мелкой строкой на ней (см. EquipmentPlanScreen.tsx).
+  if (plan.is_first_workout && !equipmentPlanAcknowledged) {
+    return (
+      <EquipmentPlanScreen
+        equipmentA={plan.equipment_a}
+        equipmentB={plan.equipment_b}
+        onContinue={() => setEquipmentPlanAcknowledged(true)}
+      />
+    );
+  }
+
   // Баннеры показываются сразу на экране выбора действия, а не только
   // вместе с формой (issue #108) — это контекст, важный до выбора действия
   // (снижена ли цель блока A из-за перерыва, вырос ли объём блока), а не

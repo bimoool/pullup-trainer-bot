@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * baseURL — уже поднятый app/web/main.py (uvicorn), отдающий и /api/*, и
- * собранную статику webapp-frontend/dist одним origin'ом (см. docs/mini-app.md,
+ * собранную статику webapp-frontend/dist одним origin'ом (см. CLAUDE.md,
  * "Mini App: Этап 0"), тот же процесс, что реально работает в проде под
  * Dockerfile.web. Набор НЕ поднимает сервер сам (webServer в конфиге
  * Playwright) — CI явно стартует uvicorn заранее и ждёт /health, чтобы тот

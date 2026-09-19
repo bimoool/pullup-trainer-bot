@@ -31,7 +31,26 @@ WorkoutScreen вообще, независимо от того, есть ли у
 
 Использование (тот же DATABASE_URL/BOT_TOKEN, что у app/web/main.py):
     python scripts/e2e_seed.py ready 900003
-"""
+
+Волна 5 (issue #185, экран сессии) добавляет три сценария многокурсовой
+схемы (app/db/models_program.py) поверх admin-only вкладки "Dashboard" (v2,
+SessionV2Lab.tsx) — тот же приём "не отдельный сервисный слой", что и
+сценарии выше, только сервисы/репозитории уже другие (ProgramInclusionService/
+TrainingSessionLogService волны 3, не WorkoutRepository старой схемы):
+  - v2_session_ready — STEP-курс, block_a work_sets=3 (итого 3+1=4 подхода
+    на сессию) — под E2E "офлайн 4 подхода" раздела 15.
+  - v2_session_complex — Program без стратегии + Complex из 3 упражнений,
+    один PlanItem — под E2E "комплекс из 3, сделал 2".
+  - v2_session_progression_edit — STEP-курс с ОДНОЙ прошлой сессией вчера,
+    числа блока A/Б те же, что tests/test_web/test_v2_live_session.py::
+    test_complete_live_session_applies_step_progression_matching_direct_strategy_call
+    (не выдуманы заново) — под E2E "правка вчерашней сессии".
+
+ВАЖНО: эти сценарии видны только тестировщикам из ADMIN_IDS
+(app.config.settings.is_admin, см. App.tsx::DASHBOARD_V2_NAV_TAB) — CI
+должен добавить telegram_id сценария в ADMIN_IDS отдельным шагом workflow
+(агент, готовивший эту волну, не может редактировать .github/workflows/*,
+см. PR-описание issue #185)."""
 
 import argparse
 import asyncio
@@ -41,12 +60,27 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import async_session_factory
-from app.db.models import Gender
+from app.db.models import Gender, User
+from app.db.models_program import (
+    Complex,
+    ComplexItem,
+    Exercise,
+    PlanItem,
+    Program,
+    ProgressionStrategyProfile,
+)
+from app.db.repositories.equipment_items import EquipmentItemRepository
+from app.db.repositories.training_plans import TrainingPlanRepository
+from app.db.repositories.training_sessions import SessionBlockInput, SetLogInput
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
+from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource
+from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
+from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
+from app.services.session_log import TrainingSessionLogService
 
 BAND_VALUE = Decimal("15.0")
 
@@ -71,18 +105,22 @@ async def seed_not_onboarded(session: AsyncSession, telegram_id: int) -> None:
 
 
 async def seed_first_workout(session: AsyncSession, telegram_id: int) -> None:
-    """Замер на 12 повторений (не 10 — на 10 suggest_starting_equipment
-    отдал бы блоку A резину, а у свежего пользователя нет ни одного
-    заведённого band_item, заведение резины в Mini App — issue #124, PR 3,
-    ещё не сделан; форма первой тренировки не смогла бы дойти до отправки)
-    даёт (BODYWEIGHT, WEIGHT) — блок A на собственном весе, блок Б сразу на
-    отягощении, вес указывается прямо в форме. Анкета пройдена полностью
-    (см. модульный докстрин выше), ни одной тренировки ещё не было — GET
-    /api/workout/plan отдаёт status="ready" с is_first_workout=True."""
+    """Замер на 6 повторений — suggest_starting_equipment(6) даёт (BAND,
+    BODYWEIGHT): блок A на резине, блок Б на собственном весе. Раньше здесь
+    было 12 (даёт (BODYWEIGHT, WEIGHT)), специально ЧТОБЫ избежать резины —
+    заведение резины в Mini App (issue #124, PR 3, BandItemSelect) тогда
+    ещё не было сделано. Оно есть с PR 3 — теперь сценарий сознательно
+    выбирает резину для одного из блоков, чтобы E2E реально проверял новый
+    экран подтверждения стартового снаряда (issue #175,
+    EquipmentPlanScreen.tsx) на случае, где снаряд нужно заранее подготовить
+    (заведение резины через "+ Завести новую резину"), а не только на случае
+    "снаряд не нужен". Анкета пройдена полностью (см. модульный докстрин
+    выше), ни одной тренировки ещё не было — GET /api/workout/plan отдаёт
+    status="ready" с is_first_workout=True."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
     now = datetime.now(UTC)
     onboarding = OnboardingService(session)
-    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=12)
+    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=6)
     await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
     )
@@ -95,7 +133,14 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
     app/db/repositories/workouts.py::_resolve_next_state) — GET
     /api/workout/plan отдаёт status="ready" с work_sets_a=3/work_sets_b=4,
     подтверждено tests/test_web/test_workout.py::
-    test_plan_ready_shows_target_and_equipment."""
+    test_plan_ready_shows_target_and_equipment.
+
+    Заводит реальный EquipmentItem и передаёт его id в record_workout для
+    обоих блоков (issue #173) — без этого equipment_a/b.item_id в ответе
+    GET /api/workout/plan оставался бы null, а WorkoutScreen.tsx::handleSubmit
+    (issue #148, "нечего унаследовать") молча блокировал бы отправку формы,
+    требуя выбор/заведение резины, которого сценарий ready.spec.ts не делает
+    — ровно так падал реальный прогон Playwright в CI (см. issue #173)."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
     now = datetime.now(UTC)
     onboarding = OnboardingService(session)
@@ -105,6 +150,9 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
     await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
     )
+    band_item = await EquipmentItemRepository(session).create(
+        user_id=user.id, name="Резина 15кг", resistance_kg=BAND_VALUE,
+    )
 
     await WorkoutRepository(session).record_workout(
         user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=5),
@@ -112,6 +160,154 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
         block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=band_item.id, block_b_equipment_item_id=band_item.id,
+    )
+
+
+async def _onboard(session: AsyncSession, telegram_id: int) -> User:
+    """Общий для трёх v2-сценариев ниже шаг "пользователь прошёл онбординг"
+    — тот же рецепт, что seed_first_workout, вынесенный в helper, потому что
+    сами v2-сценарии сидируют разные вещи ПОСЛЕ этого шага (STEP-курс/
+    комплекс/история), не другой онбординг."""
+    user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
+    now = datetime.now(UTC)
+    onboarding = OnboardingService(session)
+    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=12)
+    await onboarding.complete_questionnaire_and_start_trial(user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS)
+    return user
+
+
+async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None:
+    """STEP-курс синтетической категории — тот же рецепт, что
+    tests/test_web/test_v2_live_session.py::_setup_step_session (PlanItem на
+    каждую роль заводится напрямую, без ProgramItem: программа синтетическая,
+    без недельной матрицы). work_sets=3 у блока A + дефолтный 1 подход блока
+    Б (см. app.services.live_session._resolve_step_role_block) — сессия из
+    ОБОИХ PlanItem даёт ровно 4 подхода, под E2E "офлайн, 4 подхода"."""
+    user = await _onboard(session, telegram_id)
+
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    program = Program(
+        name="E2E Live Session", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_live_session", progression_strategy_id=profile.id,
+        config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+    )
+    session.add(program)
+    await session.flush()
+    session.add_all([
+        Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_live_session", subcategory="block_a"),
+        Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_live_session", subcategory="block_b"),
+    ])
+    await session.flush()
+
+    inclusion = await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+    role_by_exercise_id = {e["exercise_id"]: e["role"] for e in inclusion.snapshot["exercises"]}
+
+    plans = TrainingPlanRepository(session)
+    plan = await plans.get_for_user(user.id)
+    for exercise_id in role_by_exercise_id:
+        session.add(
+            PlanItem(
+                training_plan_id=plan.id, exercise_id=exercise_id, count_per_week=3,
+                program_inclusion_id=inclusion.id,
+            ),
+        )
+    await session.flush()
+
+
+async def seed_v2_session_complex(session: AsyncSession, telegram_id: int) -> None:
+    """Комплекс из 3 упражнений (order_index 0..2, 1 подход каждое — под
+    E2E "сделал 2 из 3, завершил") — Program БЕЗ стратегии прогрессии:
+    ComplexItem/_resolve_complex_blocks не зависит от неё вовсе (см.
+    app.services.live_session._resolve_complex_blocks)."""
+    user = await _onboard(session, telegram_id)
+
+    program = Program(
+        name="E2E Complex", goal="e2e", structure_type=ProgramStructureType.SINGLE_LESSON,
+        category="e2e_complex", config={},
+    )
+    session.add(program)
+    complex_ = Complex(name="Комплекс на 3")
+    session.add(complex_)
+    await session.flush()
+
+    exercises = [
+        Exercise(name=f"Комплекс, упражнение {i + 1}", metric_type=MetricType.REPS, category="e2e_complex")
+        for i in range(3)
+    ]
+    session.add_all(exercises)
+    await session.flush()
+    for order_index, exercise in enumerate(exercises):
+        session.add(
+            ComplexItem(
+                complex_id=complex_.id, exercise_id=exercise.id, order_index=order_index,
+                sets=1, target_value=Decimal(10), target_unit="reps",
+            ),
+        )
+    await session.flush()
+
+    plans = TrainingPlanRepository(session)
+    plan = await plans.get_or_create_for_user(user.id)
+    session.add(PlanItem(training_plan_id=plan.id, complex_id=complex_.id, count_per_week=1))
+    await session.flush()
+
+
+async def seed_v2_session_progression_edit(session: AsyncSession, telegram_id: int) -> None:
+    """STEP-курс + ОДНА прошлая сессия вчера — числа те же, что уже
+    доказаны в tests/test_web/test_v2_live_session.py::
+    test_complete_live_session_applies_step_progression_matching_direct_strategy_call
+    (11/11/11 блок A, 4/4/4/4 блок Б), не выдуманы заново под E2E. Правка
+    E2E-сценария поднимает блок A до 16/16/16/18(max) — та же сильная
+    правка, что tests/test_web/test_v2_progression_cascade.py::
+    test_preview_and_apply_cascade_recomputes_full_chain_and_converges,
+    гарантированно сдвигающая цель (deltas не пустой)."""
+    user = await _onboard(session, telegram_id)
+
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    program = Program(
+        name="E2E Progression Edit", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_progression_edit", progression_strategy_id=profile.id,
+        config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+    )
+    session.add(program)
+    await session.flush()
+    session.add_all([
+        Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_progression_edit", subcategory="block_a"),
+        Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_progression_edit", subcategory="block_b"),
+    ])
+    await session.flush()
+
+    inclusion = await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+    role_to_exercise_id = {e["role"]: e["exercise_id"] for e in inclusion.snapshot["exercises"]}
+
+    def _sets(exercise_id: int, working: list[int], max_value: int) -> SessionBlockInput:
+        sets = [
+            SetLogInput(set_number=i + 1, metric_type=MetricType.REPS, value=Decimal(r), unit="reps")
+            for i, r in enumerate(working)
+        ]
+        sets.append(
+            SetLogInput(
+                set_number=len(working) + 1, metric_type=MetricType.REPS, value=Decimal(max_value),
+                unit="reps", is_max_set=True,
+            ),
+        )
+        return SessionBlockInput(exercise_id=exercise_id, sets=sets)
+
+    await TrainingSessionLogService(session).record_session(
+        user_id=user.id, source=SessionSource.PLAN, performed_at=datetime.now(UTC) - timedelta(days=1),
+        effort=None, comment=None, program_inclusion_id=inclusion.id,
+        blocks=[
+            _sets(role_to_exercise_id["block_a"], [11, 11, 11], 12),
+            _sets(role_to_exercise_id["block_b"], [4, 4, 4, 4], 4),
+        ],
     )
 
 
@@ -119,6 +315,9 @@ SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
     "ready": seed_ready,
+    "v2_session_ready": seed_v2_session_ready,
+    "v2_session_complex": seed_v2_session_complex,
+    "v2_session_progression_edit": seed_v2_session_progression_edit,
 }
 
 

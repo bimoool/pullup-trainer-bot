@@ -47,6 +47,16 @@ DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
 BOT_TOKEN=e2e-test-token \
 DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
   python scripts/e2e_seed.py ready 900003
+# Волна 5 (issue #185) — сценарии экрана сессии (v2), см. ниже про ADMIN_IDS.
+BOT_TOKEN=e2e-test-token \
+DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
+  python scripts/e2e_seed.py v2_session_ready 900010
+BOT_TOKEN=e2e-test-token \
+DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
+  python scripts/e2e_seed.py v2_session_complex 900011
+BOT_TOKEN=e2e-test-token \
+DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
+  python scripts/e2e_seed.py v2_session_progression_edit 900012
 
 # 6. Прогнать Playwright (BOT_TOKEN тот же самый — им подписывается initData)
 cd webapp-frontend/e2e
@@ -58,12 +68,33 @@ BOT_TOKEN=e2e-test-token npm test
 `not_onboarded` (telegram_id `900001`) ничего не сеет — статус означает
 отсутствие строки `users`, шаг 5 для него не нужен.
 
+## Сценарии экрана сессии (волна 5, issue #185) — нужен ADMIN_IDS
+
+Пред-экран/live/итог/журнал-правка v2 (`SessionV2Lab.tsx`) — вкладка "🧪
+Dashboard" в нижнем меню, видна только `app.config.settings.is_admin`
+(`App.tsx::DASHBOARD_V2_NAV_TAB`) — тот же admin-only испытательный стенд,
+что и `DashboardV2Screen.tsx` с волны 4 (`.claude/skills/multi-program/
+SKILL.md`: старая схема остаётся источником истины до cutover). Локальный
+запуск шага 4 (`uvicorn`) для сценариев `v2_session_*` нужно поднимать с
+`ADMIN_IDS=900010,900011,900012` (или шире) в окружении, иначе кнопка
+"Dashboard" не появится в нижнем меню вообще и сценарии упадут на первом же
+`page.getByRole("button", { name: "Dashboard" })`.
+
+**Известное ограничение этой волны**: `.github/workflows/e2e.yml` не
+обновлён этим PR — агент, готовивший волну, не имеет прав на правку
+`.github/workflows/*`. Чтобы сценарии `v2_session_*` реально гонялись в CI,
+нужно вручную добавить в `e2e.yml`:
+  - `ADMIN_IDS: "900010,900011,900012"` в блок `env:` джобы `e2e`;
+  - в шаг "Seed E2E scenarios" — три вызова `python scripts/e2e_seed.py
+    v2_session_ready 900010` / `v2_session_complex 900011` /
+    `v2_session_progression_edit 900012`, как в шаге 5 выше.
+
 ## Известное ограничение этого PR
 
 `webapp-frontend/e2e/package.json` добавлен без `package-lock.json` —
 npm был недоступен из песочницы Claude в сессии, где готовился этот PR
 (тот же класс непостоянного ограничения сети, что уже не раз фиксировался
-в `docs/mini-app.md` для `webapp-frontend/`). Первый `npm install` в CI или
+в `CLAUDE.md` для `webapp-frontend/`). Первый `npm install` в CI или
 локально сгенерирует лок-файл — его стоит закоммитить в этот же каталог
 после первого успешного прогона, по аналогии с тем, как уже сделано для
 `webapp-frontend/package-lock.json`.
