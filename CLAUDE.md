@@ -2317,6 +2317,29 @@ test_delete_band_item_already_used_in_workout_does_not_break_history`)
 прямым прогоном оригинального теста. Нужен ещё один прогон с доступом к
 `docker compose` для окончательного подтверждения.
 
+## Известный класс бага: `Input`/`Select` из `@telegram-apps/telegram-ui` без `Section` — визуально невидимы (issue #170)
+
+`AppRoot` (`webapp-frontend/src/main.tsx`) задаёт CSS-переменные темы
+(`--tgui--bg_color`/`--tgui--section_bg_color`/`--tgui--outline` и т.п.) на
+весь поддерево, но сам не даёт `Input`/`Select` контрастного фона — их
+собственный фон (`background: var(--tgui--bg_color)`) совпадает с фоном
+страницы, а рамка (`box-shadow` с `--tgui--outline`, ~5% непрозрачности)
+почти не видна. Именно `<Section>` (свой `background:
+var(--tgui--section_bg_color)`, обычно серый на светлой теме) даёт полю
+видимый контраст — без неё поле технически в DOM, принимает фокус/ввод, но
+выглядит пустым местом, ни подписи `header`, ни рамки не разглядеть.
+`OnboardingScreen.tsx` был единственным местом в проекте, где `Input`/
+`Select` рендерились не через `<Section>` (везде — `ProfileEditForm.tsx`/
+`BackdateForm.tsx`/`HistoryEditForm.tsx` — уже оборачивали); исправлено
+обёрткой `<Section className="block-section">` вокруг полей на каждой фазе
+(`baseline_input` и все 5 шагов анкеты), тем же паттерном, что и в
+остальных формах.
+
+**Правило**: `Input`/`Select` из этого кита всегда оборачивать в
+`<Section>` (или `<List>`), не рендерить напрямую в `<div>` — сам компонент
+не подскажет об этом ни ошибкой, ни визуальным сигналом сильнее, чем
+"как будто светлый на светлом".
+
 ## Graphify — карта кода для расследований
 
 `graphifyy` (пакет на PyPI, команда `graphify`) уже в `[project.optional-
