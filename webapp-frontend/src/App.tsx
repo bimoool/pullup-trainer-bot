@@ -3,6 +3,7 @@ import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { DashboardScreen } from "./DashboardScreen";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
@@ -40,8 +41,17 @@ type LoadState =
  * "warmup" (issue #124, PR 1) — тот же приём, что "faq": один вход, с
  * кнопки "🔥 Показать разминку" на WorkoutScreen, "Назад" всегда ведёт на
  * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
- * — открыть разминку можно только оттуда). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
+ * — открыть разминку можно только оттуда).
+ *
+ * "dashboardV2" (issue #167, волна 4 многокурсовой платформы) — тот же
+ * приём, что "subscription": невидимый в NAV_TABS пункт, но в отличие от
+ * "subscription"/"faq" не открывается кнопкой с другого экрана, а вкладкой
+ * нижнего меню, добавляемой в список условно (см. navTabs ниже) — видна
+ * только тестировщикам из ADMIN_IDS (hello.is_admin), не в основном потоке
+ * реальных пользователей. Ветка feature/multi-program и так не деплоится
+ * на прод без отдельного подтверждения (см. issue), это дополнительный
+ * барьер на случай случайного деплоя. */
+type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "workout", icon: "💪", label: "Тренировка" },
@@ -49,6 +59,10 @@ const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
   { key: "progress", icon: "📈", label: "Прогресс" },
   { key: "profile", icon: "👤", label: "Профиль" },
 ];
+
+const DASHBOARD_V2_NAV_TAB: { key: Tab; icon: string; label: string } = {
+  key: "dashboardV2", icon: "🧪", label: "Dashboard",
+};
 
 type TelegramWebApp = { initData?: string; version?: string; platform?: string };
 
@@ -189,6 +203,7 @@ export function App() {
   }
 
   const isOnboarded = state.data.onboarding_step === "done";
+  const navTabs = state.data.is_admin ? [...NAV_TABS, DASHBOARD_V2_NAV_TAB] : NAV_TABS;
 
   return (
     <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
@@ -230,10 +245,13 @@ export function App() {
       {isOnboarded && tab === "warmup" && (
         <WarmupScreen initDataRaw={state.initDataRaw} onBack={() => setTab("workout")} />
       )}
+      {isOnboarded && tab === "dashboardV2" && (
+        <DashboardScreen initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
+      )}
 
       {isOnboarded && (
         <Tabbar>
-          {NAV_TABS.map(({ key, icon, label }) => (
+          {navTabs.map(({ key, icon, label }) => (
             <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>
               <span className="bottom-nav-icon">{icon}</span>
             </Tabbar.Item>
