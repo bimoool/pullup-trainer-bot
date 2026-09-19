@@ -12,7 +12,14 @@ WorkoutScreen.tsx) по-прежнему не должен ссылаться н
 Волна 5 (issue #185, экран сессии) расширяет allowlist экраном сессии
 целиком (пред-экран/live/итог/журнал-правка + офлайн-слой) — тот же
 испытательный стенд за admin-only вкладкой "dashboardV2" (см.
-SessionV2Lab.tsx), не cutover реального UI."""
+SessionV2Lab.tsx), не cutover реального UI.
+
+Capability A (issue #188, PRODUCT RECOVERY MODE) — первое СОЗНАТЕЛЬНОЕ
+нарушение инварианта не в lab-экране: HomeScreen.tsx (каталог, "Добавить в
+план") и DashboardScreen.tsx (список подключённых курсов) — это и есть
+обычный пользовательский путь "Главная/Планы", не admin-only стенд. Это не
+регрессия изоляции, а её осознанное сужение ровно на ту функциональность,
+которую Golden User Journey требует видеть в обычном UI прямо сейчас."""
 
 from pathlib import Path
 
@@ -20,6 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_SRC = REPO_ROOT / "webapp-frontend" / "src"
 
 _ALLOWED_V2_FILES = {
+    "HomeScreen.tsx",
+    "DashboardScreen.tsx",
     "DashboardV2Screen.tsx",
     "apiV2.ts",
     "SessionV2Lab.tsx",

@@ -1,7 +1,8 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
+import { createProgramInclusion, fetchPlan, fetchPrograms, type ProgramResponseV2 } from "./apiV2";
 import { streakValue } from "./DashboardScreen";
 
 type Props = {
@@ -20,6 +21,13 @@ type ScreenState =
   | { phase: "error"; message: string }
   | { phase: "ready"; dashboard: DashboardResponse };
 
+type CatalogState =
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number> };
+
+type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
+
 /**
  * Стартовый экран Mini App (issue #183, волна 5b; référence — crimpd-reference
  * skill, "Пять вкладок... Главная-каталог"). Каталог курсов — волна 6, здесь
@@ -30,6 +38,45 @@ type ScreenState =
  */
 export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
+  const [addState, setAddState] = useState<AddState>({ phase: "idle" });
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([fetchPrograms(initDataRaw), fetchPlan(initDataRaw)])
+      .then(([programs, plan]) => {
+        if (cancelled) {
+          return;
+        }
+        const includedProgramIds = new Set(
+          (plan?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id),
+        );
+        setCatalog({ phase: "ready", programs, includedProgramIds });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setCatalog({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
+
+  async function handleAddToPlan(programId: number) {
+    setAddState({ phase: "adding", programId });
+    try {
+      await createProgramInclusion(initDataRaw, programId);
+      setCatalog((prev) =>
+        prev.phase === "ready"
+          ? { ...prev, includedProgramIds: new Set(prev.includedProgramIds).add(programId) }
+          : prev,
+      );
+      setAddState({ phase: "idle" });
+    } catch (error) {
+      setAddState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -79,13 +126,38 @@ export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
       </Button>
 
       <p className="section-title">Курсы</p>
-      {/* Каталог — волна 6 (issue #183 обсуждение). Секция сознательно не
-          рисует карточки-заглушки, похожие на рабочий каталог — только
-          честный текст о том, что курсов пока нет. */}
-      <p className="screen-message">
-        Каталог курсов появится здесь позже. Пока доступна тренировка по подтягиваниям — открой её на вкладке
-        «Планы» или кнопкой выше.
-      </p>
+      {/* Capability A (issue #188) — минимальный каталог: одна карточка на
+          seed-программу, без категорий/поиска/уровней (это остаток волны 6,
+          не блокирует "Добавить в план"). Курс уже в плане → кнопка
+          "В плане ✓" неактивна, повторно не добавляет (10.3). */}
+      {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
+      {catalog.phase === "error" && <p className="screen-message">Не удалось загрузить каталог: {catalog.message}</p>}
+      {catalog.phase === "ready" && catalog.programs.length === 0 && (
+        <p className="screen-message">Каталог курсов появится здесь позже.</p>
+      )}
+      {catalog.phase === "ready" &&
+        catalog.programs.map((program) => {
+          const included = catalog.includedProgramIds.has(program.id);
+          const adding = addState.phase === "adding" && addState.programId === program.id;
+          return (
+            <Section key={program.id} className="block-section">
+              <p className="block-subtitle">{program.name}</p>
+              <p className="screen-message">{program.goal}</p>
+              <Button
+                className="action-button"
+                size="m"
+                stretched
+                disabled={included || adding}
+                onClick={() => handleAddToPlan(program.id)}
+              >
+                {included ? "В плане ✓" : adding ? "Добавляю…" : "Добавить в план"}
+              </Button>
+            </Section>
+          );
+        })}
+      {addState.phase === "error" && (
+        <p className="screen-message">Не удалось добавить курс: {addState.message}</p>
+      )}
     </div>
   );
 }

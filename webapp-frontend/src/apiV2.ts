@@ -293,3 +293,28 @@ export async function fetchSessions(initDataRaw: string, limit = 20): Promise<Se
   );
   return response.sessions;
 }
+
+// --- Каталог программ (Capability A, issue #188) — GET /programs список,
+// POST /program-inclusions добавляет курс в единственный TrainingPlan
+// пользователя. Схемы полей зеркалят app/web/schemas_v2.py::ProgramResponse/
+// ProgramInclusionCreateRequest один в один, не выдумывать лишних полей. ---
+
+export interface ProgramResponseV2 {
+  id: number;
+  name: string;
+  goal: string;
+  structure_type: string;
+  category: string | null;
+  progression_strategy_type: string | null;
+}
+
+export async function fetchPrograms(initDataRaw: string): Promise<ProgramResponseV2[]> {
+  const response = await apiV2Get<{ programs: ProgramResponseV2[] }>("/api/v2/programs", initDataRaw);
+  return response.programs;
+}
+
+export async function createProgramInclusion(
+  initDataRaw: string, programId: number,
+): Promise<ProgramInclusionResponseV2> {
+  return apiV2Post("/api/v2/program-inclusions", initDataRaw, { program_id: programId });
+}

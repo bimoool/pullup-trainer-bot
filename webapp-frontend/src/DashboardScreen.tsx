@@ -1,7 +1,8 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
+import { fetchPlan, type ProgramInclusionResponseV2 } from "./apiV2";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 
 type Props = {
@@ -52,6 +53,27 @@ function daysSinceLabel(days: number | null): string {
  * дублирует эту логику, только не начинает с неё. */
 export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  // Подключённые курсы (Capability A, issue #188) — минимальный видимый
+  // результат "Добавить в план" (10.2: "внизу Подключённые курсы"). Отдельный
+  // эффект и молчаливый провал (пустой массив), чтобы не рвать уже рабочую
+  // сводку "Сегодня", если /api/v2/plan недоступен по какой-то причине.
+  const [inclusions, setInclusions] = useState<ProgramInclusionResponseV2[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlan(initDataRaw)
+      .then((plan) => {
+        if (!cancelled) {
+          setInclusions((plan?.program_inclusions ?? []).filter((i) => i.is_active));
+        }
+      })
+      .catch(() => {
+        // молчаливо — см. комментарий у объявления state выше
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +132,17 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
       </div>
 
       <p className="screen-message">{statusText}</p>
+
+      {inclusions.length > 0 && (
+        <>
+          <p className="section-title">Подключённые курсы</p>
+          {inclusions.map((inclusion) => (
+            <Section key={inclusion.id} className="block-section">
+              <p className="block-subtitle">{inclusion.program_name}</p>
+            </Section>
+          ))}
+        </>
+      )}
 
       <Button className="action-button" size="l" stretched onClick={onOpenWorkout}>
         {isReady ? "Начать тренировку" : "Открыть «Тренировку»"}
