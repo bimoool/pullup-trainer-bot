@@ -13,6 +13,8 @@ import {
   type LocalLiveSession,
   type LocalPhaseName,
 } from "./offlineSession";
+import { cancelScheduledPhaseEndSound, schedulePhaseEndSound } from "./phaseAudio";
+import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
 type Props = {
   initDataRaw: string;
@@ -85,6 +87,27 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
     return () => window.clearInterval(timer);
   }, []);
 
+  // Возврат из фона (issue #186, раздел 10.8: "при возврате из фона — пересчёт
+  // от ends_at, никакого замершего таймера") — не ждём следующего тика
+  // setInterval (браузер троттлит его в фоне и может отложить первый тик после
+  // возврата), а сразу пересчитываем `now` по реальным часам.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        setNow(Date.now());
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // Wake Lock (issue #186, раздел 10.8) — включён на всё время активной сессии,
+  // выключается при уходе с этого экрана (завершение или выход).
+  useEffect(() => {
+    enableWakeLock();
+    return () => disableWakeLock();
+  }, []);
+
   async function commitLocal(updated: LocalLiveSession) {
     await saveLocalSession(updated);
     setLocal(updated);
@@ -128,6 +151,39 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initDataRaw]);
+
+  // Источник истины для конца фазы: `ends_at`, присланный сервером для
+  // последнего ПОДТВЕРЖДЁННОГО состояния (issue #186), пока локальная фаза не
+  // убежала вперёд него оптимистичным переходом (pendingPhaseAdvances > 0) —
+  // тогда сервер ещё не знает об этой фазе и её ends_at, используем локальную
+  // оценку длительности (offline-session skill: "клиент — источник правды по
+  // введённым значениям до синхронизации"). Вычисляется здесь, ДО раннего
+  // возврата ниже, чтобы порядок хуков (useEffect для звука) не менялся между
+  // рендерами.
+  const phaseEndsAtMs = ((): number | null => {
+    if (local === null) {
+      return null;
+    }
+    const isSyncedWithServer = local.pendingPhaseAdvances === 0;
+    const serverEndsAt = isSyncedWithServer ? local.server.phase.ends_at : null;
+    if (serverEndsAt !== null) {
+      return new Date(serverEndsAt).getTime();
+    }
+    const duration = localPhaseDurationSeconds(local.localPhase.phaseName);
+    return duration !== null ? new Date(local.localPhaseEnteredAt).getTime() + duration * 1000 : null;
+  })();
+
+  // Звук окончания фазы планируется заранее (issue #186) на собственных часах
+  // Web Audio, привязанных к `phaseEndsAtMs` — не к `now`, которое тикает
+  // каждую секунду и пересоздавало бы планирование на каждый рендер.
+  useEffect(() => {
+    if (phaseEndsAtMs === null) {
+      cancelScheduledPhaseEndSound();
+      return;
+    }
+    schedulePhaseEndSound((phaseEndsAtMs - Date.now()) / 1000);
+    return () => cancelScheduledPhaseEndSound();
+  }, [phaseEndsAtMs]);
 
   if (local === null) {
     return <p className="screen-message">Загружаю тренировку…</p>;
@@ -182,9 +238,7 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
   }
 
   const phaseName = local.localPhase.phaseName;
-  const duration = localPhaseDurationSeconds(phaseName);
-  const elapsed = (now - new Date(local.localPhaseEnteredAt).getTime()) / 1000;
-  const remaining = duration !== null ? Math.max(0, duration - elapsed) : null;
+  const remaining = phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
   const targetsCount = block?.targets.length ?? 0;
   const targetForSet = block?.targets[local.localPhase.setNumber - 1] ?? null;
 
@@ -195,8 +249,10 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
       {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
       {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
 
-      <Section className="block-section" header={PHASE_LABELS[phaseName]}>
-        {remaining !== null && <p className="timer-duration-label">{formatSeconds(remaining)}</p>}
+      <Section className={`block-section phase-card-${phaseName}`} header={PHASE_LABELS[phaseName]}>
+        {remaining !== null && (
+          <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatSeconds(remaining)}</p>
+        )}
         {block !== null && phaseName !== "done" && (
           <p className="block-subtitle">
             Упражнение #{block.exercise_id} · Подход {local.localPhase.setNumber}/{targetsCount}
