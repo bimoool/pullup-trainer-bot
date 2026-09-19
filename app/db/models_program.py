@@ -14,6 +14,7 @@ Block -> SessionBlock (уже есть app.db.models.Block — блок А/Б п
 Реализует только план волны 1 (см. обсуждение в issue #160) — только
 таблицы + SQLAlchemy-модели, без сервисного слоя/бизнес-логики поверх."""
 
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -33,6 +34,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -52,6 +54,23 @@ class SessionStatus(StrEnum):
 
     STARTED = "started"
     COMPLETED = "completed"
+
+
+class SessionPhase(StrEnum):
+    """Фаза внутри ACTIVE-состояния живой сессии (issue #165, продолжение
+    волны 3 — "сессия — live", раздел 11 docs/plan-and-specs.md) — цикл
+    get_ready -> go -> rest по кругу на каждый подход, done — сессия
+    завершена (терминальное значение, используется и как дефолт для строк,
+    никогда не бывших "живыми", см. миграцию 3d4e5f6a7b8c). Чистый
+    датакласс-подобный StrEnum, независимый от app.domain.live_session.
+    SessionPhaseName — та же конвенция "domain не импортирует app.db.*",
+    что у остальных app/domain/ модулей (см. CLAUDE.md); сервисный слой
+    явно конвертирует между ними (app.services.live_session)."""
+
+    GET_READY = "get_ready"
+    GO = "go"
+    REST = "rest"
+    DONE = "done"
 
 
 # --- Контент (не зависит от пользователя) -----------------------------------
@@ -286,6 +305,13 @@ class ProgramInclusion(Base):
     # Форма зависит от strategy_type — тот же принцип, что ProgressionContext/
     # PercentageProgressionContext волны 0 разные, не унифицированные.
     progression_state: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    # Снимок progression_state НА МОМЕНТ создания инклюзии — в отличие от
+    # progression_state выше (живое, мутируемое значение), это поле никогда
+    # не переписывается после создания строки. Нужен как известная точка
+    # старта для app.services.progression_cascade: воспроизвести всю цепочку
+    # тренировок заново при правке исторической сессии, не полагаясь на
+    # снимки состояния на каждую отдельную сессию (их нет).
+    initial_progression_state: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
@@ -341,6 +367,25 @@ class TrainingSession(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # --- Живая (server-driven) сессия (issue #165, продолжение волны 3) ---
+    # client_session_id — идемпотентность POST /sessions/live по офлайн-
+    # контракту (клиент генерирует UUID ДО первого запроса к серверу,
+    # см. app.services.live_session.start_session). NULL и не уникален
+    # относительно других NULL — сессии старого пути (POST /api/v2/sessions,
+    # "записать уже выполненное целиком") никогда его не ставят.
+    client_session_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    phase_name: Mapped[SessionPhase] = mapped_column(
+        _pg_enum(SessionPhase, "mp_session_phase"),
+        nullable=False, default=SessionPhase.DONE, server_default=SessionPhase.DONE.value,
+    )
+    phase_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_block_index: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    current_set_number: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=1, server_default="1")
+    # Монотонный счётчик переходов фазы — см. докстринг миграции 3d4e5f6a7b8c:
+    # офлайн-контракт сравнивает клиентский expected_phase_index с этим полем
+    # одним int, не пересчитывает его на лету из block_index/set_number/
+    # phase_name (риск разойтись с тем, что клиент видел в прошлом ответе).
+    phase_index: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
 
 
 class SessionPlanItem(Base):
@@ -401,7 +446,17 @@ class SetTarget(Base):
 
 class SetLog(Base):
     """Факт по подходу. set_target_id NULL допустим — freeform/backdated
-    тренировки не всегда имеют план, с которым сопоставлять факт."""
+    тренировки не всегда имеют план, с которым сопоставлять факт.
+
+    session_id/set_index — денормализация под батч-эндпоинт живой сессии
+    (issue #165, продолжение волны 3): session_id уже доступен транзитивно
+    через session_block_id -> session_blocks.session_id, но upsert-ключ
+    офлайн-контракта (session_id, set_index) без него потребовал бы JOIN на
+    каждый апсерт батча. NULL у обеих колонок для записей старого пути
+    (POST /api/v2/sessions, TrainingSessionRepository.create_session) —
+    он их не проставляет, а UNIQUE(session_id, set_index) не считает
+    несколько NULL конфликтующими (Postgres), так что старые строки друг
+    другу не мешают."""
 
     __tablename__ = "set_logs"
 
@@ -420,3 +475,11 @@ class SetLog(Base):
     effort: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    session_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
+    set_index: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "set_index", name="uq_set_logs_session_set_index"),
+    )
