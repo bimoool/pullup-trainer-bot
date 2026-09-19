@@ -123,7 +123,9 @@ export function HistoryScreen({ initDataRaw }: Props) {
 
   return (
     <div>
-      <p className="plan-title">История</p>
+      {/* Заголовок переименован в "Журнал" вслед за вкладкой нижнего меню
+          (issue #183, волна 5b) — само содержимое экрана не менялось. */}
+      <p className="plan-title">Журнал</p>
       {deleteError && <p className="screen-message">Не удалось удалить тренировку: {deleteError}</p>}
 
       <div className="history-list">

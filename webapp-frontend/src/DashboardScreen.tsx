@@ -21,8 +21,12 @@ type ScreenState =
 
 /** Та же нижняя граница, что у app.domain.achievements.consecutive_streak_length:
  * 1 — единственная тренировка, это ещё не "серия" в разговорном смысле,
- * поэтому стрик показывается как число только от 2. */
-function streakValue(streak: number, workoutsCount: number): string {
+ * поэтому стрик показывается как число только от 2.
+ *
+ * Экспортирована (issue #183, волна 5b) — тот же расчёт нужен компактному
+ * виджету недели на "Главной" (HomeScreen.tsx), не только полной карточке
+ * здесь на "Планах". */
+export function streakValue(streak: number, workoutsCount: number): string {
   if (workoutsCount === 0 || streak <= 1) {
     return "—";
   }
