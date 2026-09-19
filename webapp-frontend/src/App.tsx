@@ -3,6 +3,7 @@ import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { DashboardScreen } from "./DashboardScreen";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
@@ -40,10 +41,17 @@ type LoadState =
  * "warmup" (issue #124, PR 1) — тот же приём, что "faq": один вход, с
  * кнопки "🔥 Показать разминку" на WorkoutScreen, "Назад" всегда ведёт на
  * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
- * — открыть разминку можно только оттуда). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
+ * — открыть разминку можно только оттуда).
+ *
+ * "dashboard" (issue #175) — новая вкладка по умолчанию: стартовый экран
+ * приложения — сводка (стрик, счётчики, статус готовности), не открытая
+ * форма тренировки (product-reference skill, референс — Crimpd, где
+ * домашний экран тоже не тренировка). "Начать тренировку" с этого экрана
+ * просто переключает на "workout" — сама форма не дублируется. */
+type Tab = "dashboard" | "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: "dashboard", icon: "🏠", label: "Главная" },
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
   { key: "progress", icon: "📈", label: "Прогресс" },
@@ -79,7 +87,7 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [tab, setTab] = useState<Tab>("workout");
+  const [tab, setTab] = useState<Tab>("dashboard");
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -203,6 +211,9 @@ export function App() {
           startStep={state.data.onboarding_step}
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
+      )}
+      {isOnboarded && tab === "dashboard" && (
+        <DashboardScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => setTab("workout")} />
       )}
       {isOnboarded && tab === "workout" && (
         <WorkoutScreen

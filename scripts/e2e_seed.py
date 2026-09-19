@@ -71,18 +71,22 @@ async def seed_not_onboarded(session: AsyncSession, telegram_id: int) -> None:
 
 
 async def seed_first_workout(session: AsyncSession, telegram_id: int) -> None:
-    """Замер на 12 повторений (не 10 — на 10 suggest_starting_equipment
-    отдал бы блоку A резину, а у свежего пользователя нет ни одного
-    заведённого band_item, заведение резины в Mini App — issue #124, PR 3,
-    ещё не сделан; форма первой тренировки не смогла бы дойти до отправки)
-    даёт (BODYWEIGHT, WEIGHT) — блок A на собственном весе, блок Б сразу на
-    отягощении, вес указывается прямо в форме. Анкета пройдена полностью
-    (см. модульный докстрин выше), ни одной тренировки ещё не было — GET
-    /api/workout/plan отдаёт status="ready" с is_first_workout=True."""
+    """Замер на 6 повторений — suggest_starting_equipment(6) даёт (BAND,
+    BODYWEIGHT): блок A на резине, блок Б на собственном весе. Раньше здесь
+    было 12 (даёт (BODYWEIGHT, WEIGHT)), специально ЧТОБЫ избежать резины —
+    заведение резины в Mini App (issue #124, PR 3, BandItemSelect) тогда
+    ещё не было сделано. Оно есть с PR 3 — теперь сценарий сознательно
+    выбирает резину для одного из блоков, чтобы E2E реально проверял новый
+    экран подтверждения стартового снаряда (issue #175,
+    EquipmentPlanScreen.tsx) на случае, где снаряд нужно заранее подготовить
+    (заведение резины через "+ Завести новую резину"), а не только на случае
+    "снаряд не нужен". Анкета пройдена полностью (см. модульный докстрин
+    выше), ни одной тренировки ещё не было — GET /api/workout/plan отдаёт
+    status="ready" с is_first_workout=True."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
     now = datetime.now(UTC)
     onboarding = OnboardingService(session)
-    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=12)
+    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=6)
     await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
     )
