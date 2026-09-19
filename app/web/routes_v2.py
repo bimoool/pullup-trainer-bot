@@ -6,6 +6,8 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +25,7 @@ from app.db.repositories.training_sessions import (
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
 from app.services.live_session import CompleteResult, LiveSessionService
+from app.services.plan_week import PlanWeekService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_log import TrainingSessionLogService
@@ -96,7 +99,7 @@ def _plan_item_response(item: PlanItem) -> PlanItemResponse:
         id=item.id, exercise_id=item.exercise_id, complex_id=item.complex_id,
         count_per_week=item.count_per_week, day_of_week=item.day_of_week,
         week_phase=item.week_phase.value if item.week_phase is not None else None,
-        program_inclusion_id=item.program_inclusion_id,
+        program_inclusion_id=item.program_inclusion_id, plan_week_id=item.plan_week_id,
     )
 
 
@@ -161,6 +164,15 @@ async def get_plan(
     if plan is None:
         return PlanResponse(plan=None)
 
+    # Checkpoint 1 (issue #188), раздел "Rollover": единственная точка,
+    # где новая календарная неделя должна материализоваться сама, без
+    # действия пользователя — "пользователь не может открыть Планы и
+    # остаться на прошлой неделе" (Поправка 4). Тонкий вызов, вся логика —
+    # в PlanWeekService, идемпотентно на каждый GET.
+    await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=datetime.now(UTC).date(),
+    )
+
     inclusions = await plans.list_inclusions(plan.id)
     plan_items = await plans.list_plan_items(plan.id)
     return PlanResponse(
@@ -189,6 +201,12 @@ async def create_program_inclusion(
     )
     if inclusion is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
+    # Checkpoint 1 (issue #188) — тонкий вызов канонического сервиса, вся
+    # логика материализации в PlanWeekService, не здесь (раздел 4 preflight:
+    # "не помещать бизнес-логику materialization непосредственно в route").
+    await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=inclusion.training_plan_id, today=datetime.now(UTC).date(),
+    )
     return _program_inclusion_response(inclusion)
 
 

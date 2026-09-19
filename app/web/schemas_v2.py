@@ -47,6 +47,7 @@ class PlanItemResponse(BaseModel):
     day_of_week: int | None
     week_phase: str | None
     program_inclusion_id: int | None
+    plan_week_id: int | None
 
 
 class TrainingPlanResponse(BaseModel):

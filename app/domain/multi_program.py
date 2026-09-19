@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from enum import StrEnum
 
 
@@ -50,3 +51,34 @@ class SessionSource(StrEnum):
     FREEFORM = "freeform"
     BACKDATED = "backdated"
     ELECTIVE = "elective"
+
+
+# --- Номер недели плана (Checkpoint 1, issue #188) ---------------------------------------
+#
+# TrainingPlan не имеет отдельной start_date — по прямому указанию
+# (не добавлять новую колонку ради этого) номер недели считается от даты
+# TrainingPlan.created_at, с началом недели в понедельник (явно
+# зафиксировано, не оставлено неявным допущением ORM/локали). Чистая
+# функция по date, не datetime — время суток не участвует в расчёте.
+
+
+def _monday_on_or_before(day: date) -> date:
+    return day - timedelta(days=day.weekday())  # Monday.weekday() == 0
+
+
+def plan_week_number(plan_created_at: date, today: date) -> int:
+    """Номер календарной недели плана (1-based), считая от недели, в
+    которую попадает plan_created_at. Недели, наступившие ДО создания
+    плана, не бывает — today раньше plan_created_at не ожидается вызывающим
+    кодом, но при равных датах корректно даёт 1."""
+    origin_monday = _monday_on_or_before(plan_created_at)
+    current_monday = _monday_on_or_before(today)
+    return (current_monday - origin_monday).days // 7 + 1
+
+
+def plan_week_start_date(plan_created_at: date, week_number: int) -> date:
+    """Дата понедельника, с которой начинается указанная неделя плана —
+    обратная функция к plan_week_number, нужна при создании строки PlanWeek
+    (её start_date)."""
+    origin_monday = _monday_on_or_before(plan_created_at)
+    return origin_monday + timedelta(weeks=week_number - 1)

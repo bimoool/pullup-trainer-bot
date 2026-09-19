@@ -341,6 +341,15 @@ class PlanItem(Base):
     program_inclusion_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("program_inclusions.id", ondelete="CASCADE"), nullable=True,
     )
+    # Checkpoint 1 (issue #188) — единственный отсутствовавший FK связки
+    # Program/ProgramItem/ProgramInclusion/TrainingPlan/PlanWeek/PlanItem:
+    # plan_weeks существовала с волны 1, но ни одна строка plan_items на неё
+    # не ссылалась. NULL для строк, ещё не прошедших ensure_current_plan_week
+    # (см. app/services/plan_week.py) — целевое состояние после бэкфилла
+    # заполнено у всех.
+    plan_week_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("plan_weeks.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

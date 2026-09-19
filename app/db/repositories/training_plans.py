@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, ProgramInclusion, ProgramItem, TrainingPlan
+from app.db.models_program import PlanItem, PlanWeek, ProgramInclusion, ProgramItem, TrainingPlan
 from app.domain.multi_program import WeekPhase
 
 
@@ -18,6 +18,9 @@ class TrainingPlanRepository:
     async def get_for_user(self, user_id: int) -> TrainingPlan | None:
         result = await self._session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user_id))
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, training_plan_id: int) -> TrainingPlan | None:
+        return await self._session.get(TrainingPlan, training_plan_id)
 
     async def get_or_create_for_user(self, user_id: int) -> TrainingPlan:
         plan = await self.get_for_user(user_id)
@@ -139,6 +142,76 @@ class TrainingPlanRepository:
                 complex_id=program_item.complex_id, count_per_week=program_item.count_per_week,
                 day_of_week=program_item.day_of_week, week_phase=program_item.week_phase,
                 program_inclusion_id=program_inclusion_id,
+            )
+            self._session.add(item)
+            items.append(item)
+        if items:
+            await self._session.flush()
+        return items
+
+    # --- PlanWeek (Checkpoint 1, issue #188) ---------------------------------------------
+
+    async def get_plan_week(self, *, training_plan_id: int, week_number: int) -> PlanWeek | None:
+        result = await self._session.execute(
+            select(PlanWeek).where(
+                PlanWeek.training_plan_id == training_plan_id, PlanWeek.week_number == week_number,
+            ),
+        )
+        return result.scalar_one_or_none()
+
+    async def create_plan_week(
+        self, *, training_plan_id: int, week_number: int, start_date, phase: WeekPhase,
+    ) -> PlanWeek:
+        week = PlanWeek(
+            training_plan_id=training_plan_id, week_number=week_number, start_date=start_date, phase=phase,
+        )
+        self._session.add(week)
+        await self._session.flush()
+        return week
+
+    async def list_unweeked_plan_items(self, *, program_inclusion_id: int) -> list[PlanItem]:
+        """PlanItem этой инклюзии, ещё не прошедшие ensure_current_plan_week
+        (plan_week_id IS NULL) — свежесозданные bulk_create_plan_items_from_
+        program_items (issue #188, checkpoint 1) или строки, мигрированные
+        бэкфиллом до этого чекпоинта."""
+        result = await self._session.execute(
+            select(PlanItem).where(
+                PlanItem.program_inclusion_id == program_inclusion_id, PlanItem.plan_week_id.is_(None),
+            ),
+        )
+        return list(result.scalars().all())
+
+    async def list_plan_items_for_week(self, *, program_inclusion_id: int, plan_week_id: int) -> list[PlanItem]:
+        result = await self._session.execute(
+            select(PlanItem).where(
+                PlanItem.program_inclusion_id == program_inclusion_id, PlanItem.plan_week_id == plan_week_id,
+            ),
+        )
+        return list(result.scalars().all())
+
+    async def attach_plan_items_to_week(self, *, plan_items: list[PlanItem], plan_week_id: int) -> None:
+        for item in plan_items:
+            item.plan_week_id = plan_week_id
+        if plan_items:
+            await self._session.flush()
+
+    async def create_plan_items_for_week_from_program_items(
+        self, *, training_plan_id: int, program_inclusion_id: int, plan_week_id: int,
+        program_items: list[ProgramItem],
+    ) -> list[PlanItem]:
+        """Rollover (issue #188, checkpoint 1, раздел 7): та же копирующая
+        логика, что bulk_create_plan_items_from_program_items при создании
+        инклюзии, но для НОВОЙ недели — прошлая неделя не трогается, здесь
+        всегда создаются новые строки, не апдейт старых."""
+        items = []
+        for program_item in program_items:
+            if program_item.exercise_id is None:
+                continue
+            item = PlanItem(
+                training_plan_id=training_plan_id, exercise_id=program_item.exercise_id,
+                complex_id=program_item.complex_id, count_per_week=program_item.count_per_week,
+                day_of_week=program_item.day_of_week, week_phase=program_item.week_phase,
+                program_inclusion_id=program_inclusion_id, plan_week_id=plan_week_id,
             )
             self._session.add(item)
             items.append(item)

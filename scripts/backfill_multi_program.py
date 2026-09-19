@@ -78,9 +78,9 @@ from app.db.base import async_session_factory
 from app.db.models import Block, BlockType, ElectiveWorkout, User, Workout, WorkoutStatus
 from app.db.models_program import (
     Exercise,
-    PlanItem,
     Program,
     ProgramInclusion,
+    ProgramItem,
     ProgressionStrategyProfile,
     SessionBlock,
     SessionStatus,
@@ -89,6 +89,8 @@ from app.db.models_program import (
     TrainingSession,
 )
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.programs import ProgramRepository
+from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import (
@@ -111,9 +113,10 @@ from app.domain.constants import (
     ExerciseType,
 )
 from app.domain.electives import ElectiveType
-from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource
+from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource, WeekPhase
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.services.plan_week import PlanWeekService
 
 _PROGRAM_NAME = "Подтягивания"
 _STRATEGY_PROFILE_NAME = "Пошаговая прогрессия подтягиваний"
@@ -210,6 +213,34 @@ async def _get_or_create_program(session: AsyncSession, *, progression_strategy_
     return program
 
 
+async def _get_or_create_program_item(session: AsyncSession, *, program_id: int, exercise_id: int) -> ProgramItem:
+    """Checkpoint 1 (issue #188) — read-only-аудит нашёл дословно в этом же
+    файле: «семя «Подтягивания» — пустой ProgramItem» (см. докстринг
+    bulk_create_plan_items_from_program_items в training_plans.py). Без
+    этих строк PlanWeekService.ensure_current_plan_week ничего не
+    материализует — уже написанный механизм копирования ProgramItem ->
+    PlanItem работал бы на пустом множестве.
+
+    day_of_week=NULL (свободный пул недели, не конкретный день — подход к
+    подтягиваниям определяет MIN_REST_DAYS, не календарь, см. докстринг
+    backfill_all выше) week_phase=BASE (единственная реально используемая
+    фаза для этой программы — периодизации rest/peak в живом алгоритме
+    прогрессии подтягиваний нет)."""
+    result = await session.execute(
+        select(ProgramItem).where(ProgramItem.program_id == program_id, ProgramItem.exercise_id == exercise_id),
+    )
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        return existing
+    item = ProgramItem(
+        program_id=program_id, exercise_id=exercise_id, week_phase=WeekPhase.BASE,
+        count_per_week=3, day_of_week=None,
+    )
+    session.add(item)
+    await session.flush()
+    return item
+
+
 async def seed_catalog(session: AsyncSession) -> SeedCatalog:
     """Идемпотентный (find-or-create по имени) seed справочных данных —
     вызывается один раз за прогон, до цикла по пользователям."""
@@ -217,6 +248,8 @@ async def seed_catalog(session: AsyncSession) -> SeedCatalog:
     program = await _get_or_create_program(session, progression_strategy_id=profile.id)
     exercise_a = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_A_NAME, subcategory="block_a")
     exercise_b = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_B_NAME, subcategory="block_b")
+    await _get_or_create_program_item(session, program_id=program.id, exercise_id=exercise_a.id)
+    await _get_or_create_program_item(session, program_id=program.id, exercise_id=exercise_b.id)
     elective_exercise_ids = {}
     for elective_type, name in _ELECTIVE_EXERCISE_NAMES.items():
         exercise = await _get_or_create_exercise(
@@ -579,10 +612,27 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
 
     seed = None if dry_run else await seed_catalog(session)
     workout_repo = WorkoutRepository(session)
+    program_repo = ProgramRepository(session)
+    plans_repo = TrainingPlanRepository(session)
 
     for user in users:
         if await _is_already_migrated(session, user.id):
             report.users_already_migrated += 1
+            if not dry_run:
+                # Checkpoint 1 (issue #188): пользователи, смигрированные
+                # ДО этого чекпоинта (сегодняшним ручным фиксом, до
+                # появления ProgramItem/PlanWeekService), уже имеют
+                # PlanItem с plan_week_id=NULL. ensure_current_plan_week
+                # находит их веткой "unweeked" (см. app/services/
+                # plan_week.py) и просто привязывает — не создаёт дублей,
+                # не трогает progression_state/историю. Тот же метод, что
+                # использует routes_v2.py для обычных пользователей.
+                plan = await plans_repo.get_for_user(user.id)
+                if plan is not None:
+                    await PlanWeekService(session).ensure_current_plan_week(
+                        training_plan_id=plan.id, today=now.date(),
+                    )
+                    await session.commit()
             continue
 
         history = await workout_repo.list_for_user(user.id)
@@ -616,25 +666,23 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
         )
         session.add(inclusion)
         await session.flush()
-        # Без этих двух строк ProgramInclusion существует, но PlanItem —
-        # нет: SessionPreScreen.tsx (issue #185) находит "сегодняшнюю
-        # сессию" через plan.plan_items.filter(program_inclusion_id=...),
-        # пустой список там читается как "нечего начинать" и рвёт кнопку
-        # "Начать" ошибкой "Не удалось найти строки плана" — баг найден на
-        # реальном аккаунте, не в тестах (сиды E2E создают PlanItem сами,
-        # см. scripts/e2e_seed.py::seed_v2_session_ready, поэтому CI этого
-        # не ловил). Роли/exercise_id — из снимка программы, тот же
-        # источник, что использует ProgramInclusionService.create_inclusion
-        # для новых (не бэкфилленных) подключений курса.
-        for exercise in inclusion.snapshot["exercises"]:
-            session.add(
-                PlanItem(
-                    training_plan_id=training_plan.id,
-                    exercise_id=exercise["exercise_id"],
-                    count_per_week=3,
-                    program_inclusion_id=inclusion.id,
-                ),
-            )
+        # Checkpoint 1 (issue #188): раньше здесь была ручная вставка
+        # PlanItem в обход ProgramItem (тот самый второй путь, который
+        # прямо запрещён Поправкой 7 — "нельзя сохранять два постоянных
+        # пути: новые пользователи через inclusion service, старые через
+        # специальную логику backfill навсегда"). seed_catalog теперь
+        # заполняет ProgramItem для обоих блоков — используем ТОТ ЖЕ
+        # репозиторный метод, которым пользуется ProgramInclusionService.
+        # create_inclusion для новых (не бэкфилленных) подключений курса.
+        program_items = await program_repo.list_program_items(seed.program_id)
+        await plans_repo.bulk_create_plan_items_from_program_items(
+            training_plan_id=training_plan.id, program_inclusion_id=inclusion.id, program_items=program_items,
+        )
+        await session.flush()
+        # Материализация в текущую PlanWeek — тот же PlanWeekService, что
+        # routes_v2.py вызывает на POST /program-inclusions/GET /plan для
+        # обычных пользователей (Поправка 7: один канонический путь).
+        await PlanWeekService(session).ensure_current_plan_week(training_plan_id=training_plan.id, today=now.date())
         await session.commit()
         report.users_migrated_this_run += 1
 
