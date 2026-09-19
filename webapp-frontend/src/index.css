@@ -670,3 +670,12 @@ input[type="number"] {
   color: var(--tg-hint-color);
   padding: 2px 0;
 }
+
+/* Слайдер "Как тяжело?" на live-экране сессии (issue #185, раздел 10.8) —
+   пять сегментов эффорта вместо настоящего Slider-компонента кита (тот не
+   даёт дискретных подписанных шагов "из коробки"). */
+.effort-segment-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
