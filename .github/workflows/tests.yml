@@ -1,0 +1,89 @@
+name: Tests
+
+# До issue #171 `pytest`/`ruff` не запускались НИ В ОДНОМ workflow — 1139
+# тестов гонялись только локально, вручную, автором продукта. Практический
+# эффект был подтверждён дважды за одну сессию: сломанный `test_hello.py`
+# (новое поле `is_admin` не добавили в старые ассерты) нашёлся глазами уже
+# после мержа, а расхождение backfill/Dashboard — вообще вручную в Telegram.
+# Этот workflow закрывает дыру: любой PR и любой push в main проверяется
+# автоматически, до того как ветку кто-то смержит или задеплоит.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Новый push в ту же ветку отменяет предыдущий прогон — не жечь раннеры
+  # на заведомо устаревшем коде.
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,web]"
+      - run: ruff check app/ tests/ scripts/
+      - run: ruff format --check app/ tests/ scripts/
+        continue-on-error: true
+
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # tests/conftest.py ожидает pullup:pullup@localhost/pullup_test
+        # (переопределяется TEST_DATABASE_URL) — те же креды, что e2e.yml.
+        image: postgres:16
+        env:
+          POSTGRES_USER: pullup
+          POSTGRES_PASSWORD: pullup
+          POSTGRES_DB: pullup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pullup"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_test
+      DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_test
+      BOT_TOKEN: ci-test-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,web]"
+      - name: Apply migrations
+        run: alembic upgrade head
+      - name: Run tests
+        run: pytest -q --maxfail=20
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: webapp-frontend/package-lock.json
+      - working-directory: webapp-frontend
+        run: npm ci
+      - name: Typecheck + build
+        working-directory: webapp-frontend
+        run: npm run build
