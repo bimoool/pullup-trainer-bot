@@ -95,6 +95,39 @@ class WorkoutPlanResponse(BaseModel):
     is_first_workout: bool = False
 
 
+class DashboardResponse(BaseModel):
+    """GET /api/dashboard — стартовый экран Mini App (issue #175): обзорная
+    витрина вместо сразу открытой формы тренировки. status/target_*/
+    equipment_*/is_* — то же самое, что и WorkoutPlanResponse выше, тот же
+    _resolve_plan_context (app/web/routes.py), не отдельный пересчёт
+    готовности: Dashboard не вводит тренировку сам, только показывает, что
+    предстоит, и переключает на WorkoutScreen по кнопке "Начать".
+
+    streak_days/total_workouts/workouts_last_7_days/days_since_last_workout —
+    честные фактические числа (issue #175, п.4 "не выдумывай данных, которых
+    нет"): недельной квоты тренировок в старой схеме не существует (каденс
+    задаёт MIN_REST_DAYS, не план на неделю), поэтому "на этой неделе"
+    показывает то, что реально было, а не план/факт против выдуманной цели.
+
+    ready_at — только при status == "too_early" (дата, когда
+    check_training_readiness снова разрешит тренировку), иначе None."""
+
+    status: str
+    target_a: int | None = None
+    target_b: int | None = None
+    equipment_a: EquipmentInfo | None = None
+    equipment_b: EquipmentInfo | None = None
+    is_first_workout: bool = False
+    is_gap_rollback: bool = False
+    is_deload_a: bool = False
+    is_heavy_b: bool = False
+    ready_at: date | None = None
+    streak_days: int = 0
+    total_workouts: int = 0
+    workouts_last_7_days: int = 0
+    days_since_last_workout: int | None = None
+
+
 Reps = Annotated[int, Field(ge=MIN_REPS, le=MAX_REPS)]
 # Те же границы, что app.bot.parsing.parse_reps проверяет для живого ввода
 # в боте — единственный источник (MAX_REPS=999, см. CLAUDE.md), не

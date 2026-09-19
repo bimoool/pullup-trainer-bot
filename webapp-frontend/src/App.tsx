@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { fetchHello, type HelloResponse } from "./api";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
+import { HomeScreen } from "./HomeScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
@@ -40,10 +41,18 @@ type LoadState =
  * "warmup" (issue #124, PR 1) — тот же приём, что "faq": один вход, с
  * кнопки "🔥 Показать разминку" на WorkoutScreen, "Назад" всегда ведёт на
  * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
- * — открыть разминку можно только оттуда). */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
+ * — открыть разминку можно только оттуда).
+ *
+ * "home" (issue #175) — стартовая вкладка вместо "workout": по архитектуре
+ * (.claude/skills/product-reference/SKILL.md) приложение не может
+ * открываться сразу на открытой тренировке. HomeScreen.tsx ничего не
+ * вводит сам — кнопка "Начать тренировку" там просто переключает на
+ * "workout", вся логика статусов/форм остаётся в WorkoutScreen.tsx как
+ * есть. */
+type Tab = "home" | "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: "home", icon: "🏠", label: "Главная" },
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
   { key: "progress", icon: "📈", label: "Прогресс" },
@@ -79,7 +88,7 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [tab, setTab] = useState<Tab>("workout");
+  const [tab, setTab] = useState<Tab>("home");
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -203,6 +212,9 @@ export function App() {
           startStep={state.data.onboarding_step}
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
+      )}
+      {isOnboarded && tab === "home" && (
+        <HomeScreen initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
       )}
       {isOnboarded && tab === "workout" && (
         <WorkoutScreen

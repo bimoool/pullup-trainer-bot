@@ -33,7 +33,7 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
-from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
+from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode, consecutive_streak_length
 from app.domain.anomalies import AnomalyFlags, detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
@@ -98,6 +98,7 @@ from app.web.schemas import (
     BandItemListResponse,
     BandItemUpdateRequest,
     CycleVolumeResponse,
+    DashboardResponse,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
     ElectiveSubmitResponse,
@@ -823,6 +824,72 @@ async def get_workout_plan(
         is_heavy_b=context.is_heavy_b,
         is_deload_a=context.is_deload_a,
         is_first_workout=context.is_first_workout,
+    )
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DashboardResponse:
+    """Стартовый экран Mini App (issue #175) — раньше приложение сразу
+    открывалось на "Текущем плане" (готовой форме ввода тренировки), что
+    противоречит принятой архитектуре (.claude/skills/product-reference/
+    SKILL.md, п.1): стартовый экран — обзорная витрина, а не открытая
+    тренировка. Статус — тот же _resolve_plan_context, что и GET
+    /api/workout/plan (единый источник правды о готовности, не отдельный
+    пересчёт) — CTA "Начать тренировку" на фронтенде просто переключает
+    вкладку на WorkoutScreen, сама тренировка по-прежнему вводится там.
+
+    streak/total_workouts/workouts_last_7_days — честные фактические числа
+    (issue #175, п.4): недельной квоты тренировок в старой (единственный
+    источник — подтягивания) схеме не существует, каденс задаёт
+    MIN_REST_DAYS, не план на неделю, поэтому "на этой неделе" показывает
+    факт, а не факт против выдуманной цели."""
+    telegram_id = init_data.user.id
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    if user is None:
+        return DashboardResponse(status="not_onboarded")
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    dates = [record.performed_at.date() for record in history]
+    now = datetime.now(UTC)
+    week_ago = now - timedelta(days=7)
+    workouts_last_7_days = sum(1 for record in history if record.performed_at >= week_ago)
+    streak_days = consecutive_streak_length(dates)
+    days_since_last_workout = (now.date() - dates[-1]).days if dates else None
+
+    context = await _resolve_plan_context(session, telegram_id, now=now)
+
+    ready_at = None
+    if context.status == "too_early" and history:
+        ready_at = check_training_readiness(history[-1].performed_at.date(), now.date()).ready_at
+
+    common_fields = {
+        "streak_days": streak_days,
+        "total_workouts": len(history),
+        "workouts_last_7_days": workouts_last_7_days,
+        "days_since_last_workout": days_since_last_workout,
+    }
+
+    if context.status != "ready":
+        return DashboardResponse(status=context.status, ready_at=ready_at, **common_fields)
+
+    return DashboardResponse(
+        status="ready",
+        target_a=context.target_a,
+        target_b=context.target_b,
+        equipment_a=_equipment_info(
+            context.equipment_a_type, context.equipment_a_value, context.equipment_a_item_id,
+        ),
+        equipment_b=_equipment_info(
+            context.equipment_b_type, context.equipment_b_value, context.equipment_b_item_id,
+        ),
+        is_first_workout=context.is_first_workout,
+        is_gap_rollback=context.is_gap_rollback,
+        is_deload_a=context.is_deload_a,
+        is_heavy_b=context.is_heavy_b,
+        **common_fields,
     )
 
 

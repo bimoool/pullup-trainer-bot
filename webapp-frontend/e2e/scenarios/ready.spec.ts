@@ -9,6 +9,10 @@ const TELEGRAM_ID = 900_003;
 test("обычный день тренировки: полный путь ввода результата до записи", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
+  // Стартовый экран теперь "Главная" (issue #175) — переходим на
+  // "Тренировку" явно, прежде чем ввести результат.
+  await page.getByText("Тренировка", { exact: true }).click();
+
   await expect(page.getByText("Текущий план")).toBeVisible();
   await page.getByRole("button", { name: "📝 Внести результат тренировки" }).click();
 

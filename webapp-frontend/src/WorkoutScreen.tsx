@@ -105,6 +105,63 @@ const WORK_SETS_GROWTH_NOTICES: Record<string, string> = {
     "а число подходов увеличено, чтобы продолжить расти дальше.",
 };
 
+// Явный шаг подтверждения стартового снаряда после замера (issue #175, п.2)
+// — раньше пользователь впервые узнавал о нужном снаряде мелкой строкой
+// прямо на форме первой тренировки (banners ниже), что не читалось как
+// "подготовь это заранее". Тот же смысл, что EquipmentStates бота
+// (app/bot/handlers/equipment.py), просто отдельным явным экраном перед
+// формой, а не переспросом внутри неё.
+// Отображаемая буква блока Б — кириллическая "Б" (как в заголовках форм,
+// "Блок Б — силовой" ниже и в BackdateForm.tsx/HistoryEditForm.tsx), не
+// латинская "B" — та используется в проекте только в строке итога записанной
+// тренировки ("Блок B: {result_b}", см. done-card ниже), не в заголовках/
+// пояснениях. letter здесь — просто то, что подставляется в текст, не тот
+// же "A"|"B", что различает блоки в остальном коде компонента.
+const EQUIPMENT_INTRO_LINES: Record<string, (letter: string) => string> = {
+  band:
+    (letter) =>
+      `Блок ${letter}: по результату замера стартуешь на резине — дополнительное сопротивление помогает ` +
+      "подтягиваться, пока не хватает силы на собственном весе. Подбери подходящую резину в зале до " +
+      "тренировки, выбрать или завести её можно будет на следующем экране.",
+  weight:
+    (letter) =>
+      `Блок ${letter}: по результату замера сразу нужен дополнительный вес (например, пояс с отягощением ` +
+      "или гантель между стоп) — подготовь его до тренировки, точное значение укажешь на следующем экране.",
+  bodyweight: (letter) => `Блок ${letter}: справляешься на собственном весе — дополнительный снаряд не нужен.`,
+  australian: (letter) => `Блок ${letter}: австралийские подтягивания, дополнительный снаряд не нужен.`,
+};
+
+function equipmentIntroLine(letter: string, equipmentType: string | undefined): string {
+  if (!equipmentType) {
+    return `Блок ${letter}: снаряд уточним на следующем экране.`;
+  }
+  const build = EQUIPMENT_INTRO_LINES[equipmentType];
+  return build ? build(letter) : `Блок ${letter}: снаряд уточним на следующем экране.`;
+}
+
+function EquipmentIntroScreen({ plan, onConfirm }: { plan: WorkoutPlanResponse; onConfirm: () => void }) {
+  return (
+    <div>
+      <p className="plan-title">Стартовый снаряд</p>
+      <p className="screen-message">
+        Мы подобрали стартовый снаряд по результату твоего замера — прежде чем начать первую тренировку, проверь,
+        что нужно подготовить.
+      </p>
+      <div className="profile-card">
+        <p className="section-title">Блок A — объёмный</p>
+        <p>{equipmentIntroLine("A", plan.equipment_a?.type)}</p>
+      </div>
+      <div className="profile-card">
+        <p className="section-title">Блок Б — силовой</p>
+        <p>{equipmentIntroLine("Б", plan.equipment_b?.type)}</p>
+      </div>
+      <Button className="action-button" size="l" stretched onClick={onConfirm}>
+        Понятно, к тренировке
+      </Button>
+    </div>
+  );
+}
+
 function closeMiniApp() {
   (window as unknown as { Telegram?: { WebApp?: { close?: () => void } } }).Telegram?.WebApp?.close?.();
 }
@@ -564,6 +621,10 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   // planом, а только после явного нажатия 4-й кнопки "📝 Внести результат
   // тренировки", симметрично остальным трём режимам.
   const [showForm, setShowForm] = useState(false);
+  // Подтверждение стартового снаряда (issue #175, п.2) — показывается один
+  // раз за сессию экрана, до формы первой тренировки (см. EquipmentIntroScreen
+  // выше и его использование в рендере ниже).
+  const [equipmentConfirmed, setEquipmentConfirmed] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -867,6 +928,13 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   }
 
   const { plan } = state;
+
+  // Явный шаг подтверждения снаряда (issue #175, п.2) — до формы первой
+  // тренировки, не мелкой строкой внутри неё (см. EquipmentIntroScreen выше).
+  if (plan.is_first_workout && !equipmentConfirmed) {
+    return <EquipmentIntroScreen plan={plan} onConfirm={() => setEquipmentConfirmed(true)} />;
+  }
+
   // Баннеры показываются сразу на экране выбора действия, а не только
   // вместе с формой (issue #108) — это контекст, важный до выбора действия
   // (снижена ли цель блока A из-за перерыва, вырос ли объём блока), а не

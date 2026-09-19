@@ -110,6 +110,35 @@ export interface WorkoutPlanResponse {
   is_first_workout: boolean;
 }
 
+/** GET /api/dashboard (issue #175) — стартовый экран Mini App: обзорная
+ * витрина вместо сразу открытой формы тренировки. status/target/equipment/
+ * is_first_workout и остальные is_-флаги — тот же смысл, что и в
+ * WorkoutPlanResponse выше, тот же _resolve_plan_context на бэкенде — не
+ * отдельный пересчёт готовности.
+ *
+ * streak_days/total_workouts/workouts_last_7_days/days_since_last_workout —
+ * честные фактические числа (issue #175, п.4): недельной квоты тренировок
+ * в текущей схеме не существует (единственный источник — подтягивания,
+ * каденс задаёт MIN_REST_DAYS, не план на неделю).
+ *
+ * ready_at — только при status === "too_early" ("YYYY-MM-DD"). */
+export interface DashboardResponse {
+  status: string;
+  target_a: number | null;
+  target_b: number | null;
+  equipment_a: EquipmentInfo | null;
+  equipment_b: EquipmentInfo | null;
+  is_first_workout: boolean;
+  is_gap_rollback: boolean;
+  is_deload_a: boolean;
+  is_heavy_b: boolean;
+  ready_at: string | null;
+  streak_days: number;
+  total_workouts: number;
+  workouts_last_7_days: number;
+  days_since_last_workout: number | null;
+}
+
 export interface AnomalyFlags {
   large_value: number | null;
   previous_avg: number | null;
@@ -214,6 +243,10 @@ export async function fetchHello(initDataRaw: string): Promise<HelloResponse> {
 
 export async function fetchWorkoutPlan(initDataRaw: string): Promise<WorkoutPlanResponse> {
   return apiGet<WorkoutPlanResponse>("/api/workout/plan", initDataRaw);
+}
+
+export async function fetchDashboard(initDataRaw: string): Promise<DashboardResponse> {
+  return apiGet<DashboardResponse>("/api/dashboard", initDataRaw);
 }
 
 export async function fetchProfile(initDataRaw: string): Promise<ProfileResponse> {
