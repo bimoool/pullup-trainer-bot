@@ -12,11 +12,19 @@ on:
 
 jobs:
   claude:
+    # ВАЖНО: агент тратит подписку Claude и минуты Actions, поэтому запускать
+    # его может только владелец репозитория. Без этой проверки в ПУБЛИЧНОМ
+    # репозитории любой человек мог бы открыть issue с '@claude' и жечь
+    # чужую подписку. В приватном это было неважно — при публикации стало бы
+    # открытой дверью.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event.sender.login == github.repository_owner ||
+       github.event.comment.author_association == 'OWNER' ||
+       github.event.issue.author_association == 'OWNER') &&
+      ((github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))))
     runs-on: ubuntu-latest
     permissions:
       contents: read
