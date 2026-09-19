@@ -1,7 +1,13 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import Exercise, Program, ProgramItem, ProgressionStrategyProfile
+from app.db.models_program import (
+    ComplexItem,
+    Exercise,
+    Program,
+    ProgramItem,
+    ProgressionStrategyProfile,
+)
 
 
 class ProgramRepository:
@@ -18,6 +24,21 @@ class ProgramRepository:
 
     async def get_by_id(self, program_id: int) -> Program | None:
         return await self._session.get(Program, program_id)
+
+    async def get_exercise(self, exercise_id: int) -> Exercise | None:
+        """Read-only — Exercise ещё каталожная сущность на этой волне, не
+        трогается сервисом. Нужен app.services.live_session, чтобы узнать
+        metric_type упражнения при резолве блоков живой сессии."""
+        return await self._session.get(Exercise, exercise_id)
+
+    async def list_complex_items(self, complex_id: int) -> list[ComplexItem]:
+        """Состав комплекса по order_index — тот же порядок, в котором
+        app.services.live_session разворачивает Complex в SessionBlock'и
+        живой сессии (issue #165, продолжение волны 3)."""
+        result = await self._session.execute(
+            select(ComplexItem).where(ComplexItem.complex_id == complex_id).order_by(ComplexItem.order_index),
+        )
+        return list(result.scalars().all())
 
     async def get_strategy_profile(self, profile_id: int) -> ProgressionStrategyProfile | None:
         return await self._session.get(ProgressionStrategyProfile, profile_id)

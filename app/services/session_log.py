@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models_program import ProgramInclusion
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
+    SessionBlockDetail,
     SessionBlockInput,
     SessionDetail,
     SetLogInput,
@@ -51,6 +52,26 @@ def _equipment_type_from_state(block_state: dict) -> EquipmentType:
 def _equipment_value_from_state(block_state: dict) -> Decimal | None:
     value = block_state.get("equipment_value")
     return Decimal(value) if value is not None else None
+
+
+def _session_block_input_from_detail(block: SessionBlockDetail) -> SessionBlockInput:
+    """Обратное преобразование SessionBlockDetail (то, что вернул
+    репозиторий при чтении) -> SessionBlockInput (то, что принимают
+    _match_step_blocks/create_session) — общий хелпер для
+    app.services.live_session (завершение живой сессии) и
+    app.services.progression_cascade (реплей истории при правке), обоим
+    нужно скормить УЖЕ ЗАГРУЖЕННУЮ сессию в _match_step_blocks, не только
+    свежесобранный запрос."""
+    return SessionBlockInput(
+        exercise_id=block.exercise_id, complex_id=block.complex_id,
+        sets=[
+            SetLogInput(
+                set_number=log.set_number, metric_type=log.metric_type, value=log.value, unit=log.unit,
+                is_max_set=log.is_max_set, effort=log.effort, note=log.note,
+            )
+            for log in block.set_logs
+        ],
+    )
 
 
 def _block_log_from_sets(sets: list[SetLogInput]) -> BlockLog:

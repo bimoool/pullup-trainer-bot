@@ -31,6 +31,9 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_e2e
       BOT_TOKEN: e2e-test-token
+      # Экран сессии v2 (issue #185) виден только admin — три id ниже
+      # соответствуют сидам v2_session_* в scripts/e2e_seed.py.
+      ADMIN_IDS: "900010,900011,900012"
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +72,9 @@ jobs:
         run: |
           python scripts/e2e_seed.py first_workout 900002
           python scripts/e2e_seed.py ready 900003
+          python scripts/e2e_seed.py v2_session_ready 900010
+          python scripts/e2e_seed.py v2_session_complex 900011
+          python scripts/e2e_seed.py v2_session_progression_edit 900012
 
       - name: Install Playwright
         working-directory: webapp-frontend/e2e

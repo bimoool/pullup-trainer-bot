@@ -14,6 +14,7 @@ from app.db.models_program import PlanItem, Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
+    BatchSetLogInput,
     SessionBlockInput,
     SessionDetail,
     SetLogInput,
@@ -21,7 +22,9 @@ from app.db.repositories.training_sessions import (
 )
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
+from app.services.live_session import CompleteResult, LiveSessionService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
+from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_log import TrainingSessionLogService
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -41,8 +44,24 @@ from app.web.schemas_v2 import (
     SessionListResponse,
     SessionProgressionResponse,
     SessionResponse,
+    SetLogInputSchema,
     SetLogResponse,
     TrainingPlanResponse,
+)
+from app.web.schemas_v2_session import (
+    LiveSessionActiveResponse,
+    LiveSessionBlockResponse,
+    LiveSessionCompleteRequest,
+    LiveSessionCompleteResponse,
+    LiveSessionPhaseNextRequest,
+    LiveSessionPhaseResponse,
+    LiveSessionResponse,
+    LiveSessionStartRequest,
+    LiveSetBatchRequest,
+    LiveSetTargetResponse,
+    PlanItemDeltaResponse,
+    ProgressionPreviewRequest,
+    ProgressionPreviewResponse,
 )
 
 router_v2 = APIRouter(prefix="/api/v2")
@@ -275,3 +294,228 @@ async def create_session(
     return _session_response(
         result.session, progression=progression, skipped_reason=result.progression_skipped_reason,
     )
+
+
+# --- Живая (server-driven) сессия -------------------------------------------------------
+#
+# Раздел 12 docs/plan-and-specs.md буквально называет эти пути "POST
+# /sessions", "POST /sessions/{id}/phase/next" и т.д. — БЕЗ "/live". Это
+# УЖЕ занято выше: POST /api/v2/sessions (волна 3, issue #165) — другой
+# сценарий ("записать целиком уже выполненную тренировку" — источник plan/
+# freeform/backdated/elective одним запросом), не сервер-управляемая
+# пошаговая сессия из этого раздела. Чтобы не переиспользовать один путь
+# для двух разных контрактов (разная форма тела, разный смысл), все новые
+# эндпоинты этого раздела живут под /sessions/live — намеренное отклонение
+# от буквального текста спеки, не недосмотр.
+#
+# GET /sessions/live/active объявлен ПЕРВЫМ среди /sessions/live/{id}/...
+# роутов — порядок регистрации важен для FastAPI: конкретный литеральный
+# путь должен идти раньше параметризованного {session_id}, иначе "active"
+# рискует быть склеен как значение session_id (см. план задачи).
+
+
+def _live_session_response_fields(detail: SessionDetail) -> dict:
+    return {
+        "id": detail.id, "client_session_id": detail.client_session_id, "status": detail.status.value,
+        "phase": LiveSessionPhaseResponse(name=detail.phase_name.value, ends_at=detail.phase_ends_at),
+        "phase_index": detail.phase_index, "current_block_index": detail.current_block_index,
+        "current_set_number": detail.current_set_number,
+        "blocks": [
+            LiveSessionBlockResponse(
+                order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
+                targets=[
+                    LiveSetTargetResponse(
+                        set_number=target.set_number, metric_type=target.metric_type.value,
+                        value=str(target.value), unit=target.unit,
+                    )
+                    for target in block.set_targets
+                ],
+                set_logs=[
+                    SetLogResponse(
+                        set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
+                        value=str(log.value), unit=log.unit,
+                        effort=str(log.effort) if log.effort is not None else None, note=log.note,
+                    )
+                    for log in block.set_logs
+                ],
+            )
+            for block in detail.blocks
+        ],
+    }
+
+
+def _live_session_response(detail: SessionDetail) -> LiveSessionResponse:
+    return LiveSessionResponse(**_live_session_response_fields(detail))
+
+
+def _live_session_complete_response(result: CompleteResult) -> LiveSessionCompleteResponse:
+    progression = None
+    if result.progression_result is not None:
+        progression = SessionProgressionResponse(
+            block_a=BlockProgressionResponse(
+                target_before=result.progression_result.block_a.target_before,
+                target_after=result.progression_result.block_a.target_after,
+                equipment_changed=result.progression_result.block_a.equipment_changed,
+            ),
+            block_b=BlockProgressionResponse(
+                target_before=result.progression_result.block_b.target_before,
+                target_after=result.progression_result.block_b.target_after,
+                equipment_changed=result.progression_result.block_b.equipment_changed,
+            ),
+        )
+    return LiveSessionCompleteResponse(
+        **_live_session_response_fields(result.session),
+        progression_result=progression, progression_skipped_reason=result.progression_skipped_reason,
+    )
+
+
+@router_v2.post("/sessions/live", response_model=LiveSessionResponse)
+async def start_live_session(
+    body: LiveSessionStartRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionResponse:
+    user = await _require_user(session, init_data)
+    result = await LiveSessionService(session).start_session(
+        user_id=user.id, client_session_id=body.client_session_id, plan_item_ids=body.plan_item_ids,
+    )
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
+    return _live_session_response(result.session)
+
+
+@router_v2.get("/sessions/live/active", response_model=LiveSessionActiveResponse)
+async def get_active_live_session(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionActiveResponse:
+    user = await _require_user(session, init_data)
+    result = await LiveSessionService(session).get_active(user_id=user.id)
+    return LiveSessionActiveResponse(session=_live_session_response(result.session) if result is not None else None)
+
+
+@router_v2.post("/sessions/live/{session_id}/phase/next", response_model=LiveSessionResponse)
+async def advance_live_session_phase(
+    session_id: int,
+    body: LiveSessionPhaseNextRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionResponse:
+    user = await _require_user(session, init_data)
+    result = await LiveSessionService(session).advance_phase(
+        session_id=session_id, user_id=user.id, expected_phase_index=body.expected_phase_index,
+    )
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    return _live_session_response(result.session)
+
+
+@router_v2.post("/sessions/live/{session_id}/sets:batch", response_model=LiveSessionResponse)
+async def batch_live_session_sets(
+    session_id: int,
+    body: LiveSetBatchRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionResponse:
+    user = await _require_user(session, init_data)
+    entries = [
+        BatchSetLogInput(
+            set_index=entry.set_index, exercise_id=entry.exercise_id, value=entry.value,
+            effort=entry.effort, note=entry.note,
+        )
+        for entry in body.sets
+    ]
+    try:
+        result = await LiveSessionService(session).batch_sets(
+            session_id=session_id, user_id=user.id, entries=entries,
+        )
+    except ValueError as exc:
+        # Exercise из батча не найден среди блоков сессии — см. докстринг
+        # TrainingSessionRepository.upsert_set_logs_batch: репозиторий сам
+        # не знает про HTTPException, роут переводит ValueError в 404.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    return _live_session_response(result.session)
+
+
+@router_v2.post("/sessions/live/{session_id}/complete", response_model=LiveSessionCompleteResponse)
+async def complete_live_session(
+    session_id: int,
+    body: LiveSessionCompleteRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionCompleteResponse:
+    user = await _require_user(session, init_data)
+    result, not_found = await LiveSessionService(session).complete_session(
+        session_id=session_id, user_id=user.id, abandoned=body.abandoned,
+    )
+    if not_found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    return _live_session_complete_response(result)
+
+
+# --- Каскад прогрессии (правка исторической сессии) -------------------------------------
+
+
+def _set_log_inputs(sets: list[SetLogInputSchema] | None) -> list[SetLogInput] | None:
+    if sets is None:
+        return None
+    return [
+        SetLogInput(
+            set_number=s.set_number, metric_type=MetricType(s.metric_type), value=s.value, unit=s.unit,
+            is_max_set=s.is_max_set, effort=s.effort, note=s.note,
+        )
+        for s in sets
+    ]
+
+
+def _progression_preview_response(deltas) -> ProgressionPreviewResponse:
+    return ProgressionPreviewResponse(
+        deltas=[
+            PlanItemDeltaResponse(plan_item_id=d.plan_item_id, exercise=d.exercise, before=d.before, after=d.after)
+            for d in deltas
+        ],
+    )
+
+
+@router_v2.post("/program-inclusions/{inclusion_id}/progression/preview", response_model=ProgressionPreviewResponse)
+async def preview_progression_cascade(
+    inclusion_id: int,
+    body: ProgressionPreviewRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProgressionPreviewResponse:
+    user = await _require_user(session, init_data)
+    deltas, not_applicable = await ProgressionCascadeService(session).preview(
+        inclusion_id=inclusion_id, user_id=user.id, edited_session_id=body.edited_session_id,
+        edited_block_a_sets=_set_log_inputs(body.block_a), edited_block_b_sets=_set_log_inputs(body.block_b),
+    )
+    if deltas is None:
+        if not_applicable:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "ProgramInclusion is not a step-strategy inclusion",
+            )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ProgramInclusion or session not found")
+    return _progression_preview_response(deltas)
+
+
+@router_v2.post("/program-inclusions/{inclusion_id}/progression/apply", response_model=ProgressionPreviewResponse)
+async def apply_progression_cascade(
+    inclusion_id: int,
+    body: ProgressionPreviewRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProgressionPreviewResponse:
+    user = await _require_user(session, init_data)
+    deltas, not_applicable = await ProgressionCascadeService(session).apply(
+        inclusion_id=inclusion_id, user_id=user.id, edited_session_id=body.edited_session_id,
+        edited_block_a_sets=_set_log_inputs(body.block_a), edited_block_b_sets=_set_log_inputs(body.block_b),
+    )
+    if deltas is None:
+        if not_applicable:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "ProgramInclusion is not a step-strategy inclusion",
+            )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ProgramInclusion or session not found")
+    return _progression_preview_response(deltas)

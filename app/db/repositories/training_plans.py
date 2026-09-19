@@ -53,10 +53,20 @@ class TrainingPlanRepository:
 
     async def create_inclusion(
         self, *, training_plan_id: int, program_id: int, snapshot: dict, progression_state: dict,
+        initial_progression_state: dict | None = None,
     ) -> ProgramInclusion:
+        """initial_progression_state по умолчанию — та же самая переданная
+        progression_state (обычный случай: на момент создания инклюзии
+        живое и стартовое значение совпадают, живое начинает мутировать
+        только с первой сессией). Отдельный параметр — на случай, если
+        когда-нибудь понадобится завести инклюзию с уже отличающимися
+        значениями (сейчас такого вызывающего кода нет)."""
         inclusion = ProgramInclusion(
             training_plan_id=training_plan_id, program_id=program_id,
             snapshot=snapshot, progression_state=progression_state, is_active=True,
+            initial_progression_state=(
+                initial_progression_state if initial_progression_state is not None else progression_state
+            ),
         )
         self._session.add(inclusion)
         await self._session.flush()
@@ -79,6 +89,20 @@ class TrainingPlanRepository:
             query = query.where(PlanItem.program_inclusion_id == program_inclusion_id)
         result = await self._session.execute(query.order_by(PlanItem.id))
         return list(result.scalars().all())
+
+    async def get_plan_item_for_user(self, plan_item_id: int, user_id: int) -> PlanItem | None:
+        """Ownership-проверка через join на training_plans — 404, не 403,
+        тот же принцип, что get_inclusion_for_user (CLAUDE.md). Нужен
+        app.services.live_session при старте живой сессии: каждый
+        plan_item_id из запроса должен принадлежать вызывающему
+        пользователю, иначе нельзя раскрыть чужой PlanItem как 200/404
+        двусмысленно."""
+        result = await self._session.execute(
+            select(PlanItem)
+            .join(TrainingPlan, PlanItem.training_plan_id == TrainingPlan.id)
+            .where(PlanItem.id == plan_item_id, TrainingPlan.user_id == user_id),
+        )
+        return result.scalar_one_or_none()
 
     async def create_plan_item(
         self, *, training_plan_id: int, exercise_id: int, complex_id: int | None,
