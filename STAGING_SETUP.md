@@ -20,7 +20,7 @@
 ### 2. DNS-запись
 У регистратора/DNS-панели домена `bimoool.com` — добавить A-запись:
 ```
-staging.app.bimoool.com  →  <VPS_HOST>
+staging.app.bimoool.com  →  192.241.141.47
 ```
 (тот же IP, что уже используется для `app.bimoool.com` — сервер один и
 тот же, просто второй поддомен).

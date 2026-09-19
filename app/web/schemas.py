@@ -20,6 +20,14 @@ class HelloResponse(BaseModel):
     onboarding_step: Literal["not_registered", "baseline", "questionnaire", "done"]
     readiness_status: str | None
     days_since_last_workout: int | None
+    # Волна 4 многокурсовой платформы (issue #167) — переключение на
+    # экспериментальный Dashboard (webapp-frontend/src/DashboardScreen.tsx)
+    # доступно только тестировщикам из ADMIN_IDS, тот же принцип, что
+    # обходы лимитов для тестирования вживую (CLAUDE.md): не query-параметр
+    # (Mini App открывается фиксированной кнопкой, не произвольным URL, см.
+    # issue #30/#141), а поле ответа, которое App.tsx читает один раз при
+    # загрузке.
+    is_admin: bool = False
 
 
 class EquipmentInfo(BaseModel):
