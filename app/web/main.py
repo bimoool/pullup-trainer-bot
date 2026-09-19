@@ -7,7 +7,7 @@ from app.web.routes import router
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
 # тот же процесс FastAPI отдаёт и /api/*, и статику одним origin'ом, без
-# CORS (см. CLAUDE.md, Mini App: Этап 0). Путь совпадает с COPY в
+# CORS (см. docs/mini-app.md, Mini App: Этап 0). Путь совпадает с COPY в
 # Dockerfile.web.
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "webapp-frontend" / "dist"
 
