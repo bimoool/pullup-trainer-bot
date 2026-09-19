@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
 import { DashboardScreen } from "./DashboardScreen";
-import { DashboardV2Screen } from "./DashboardV2Screen";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
+import { SessionV2Lab } from "./SessionV2Lab";
 import { SubscriptionScreen } from "./SubscriptionScreen";
 import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
@@ -276,7 +276,7 @@ export function App() {
         <WarmupScreen initDataRaw={state.initDataRaw} onBack={() => setTab("workout")} />
       )}
       {isOnboarded && tab === "dashboardV2" && (
-        <DashboardV2Screen initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
+        <SessionV2Lab initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
       )}
 
       {isOnboarded && (
