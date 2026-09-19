@@ -11,6 +11,21 @@ export interface HelloResponse {
   onboarding_step: OnboardingStep;
   readiness_status: string | null;
   days_since_last_workout: number | null;
+  /** Волна 4 многокурсовой платформы (issue #167) — вкладка "Dashboard"
+   * (v2, эксперимент) видна в App.tsx только тестировщикам из ADMIN_IDS. */
+  is_admin: boolean;
+}
+
+/** GET /api/dashboard (issue #175) — стартовый экран, тот же status, что
+ * WorkoutPlanResponse.status (один источник правды о готовности к
+ * тренировке). streak/workouts_count — реально посчитанные цифры, не
+ * выдуманная "недельная норма" (её нет в однокурсовой системе подтягиваний). */
+export interface DashboardResponse {
+  status: string;
+  workouts_count: number;
+  streak: number;
+  days_since_last_workout: number | null;
+  is_first_workout: boolean;
 }
 
 /** POST /api/onboarding/baseline (issue #124, PR 2) — тот же смысл, что
@@ -210,6 +225,10 @@ async function apiGet<T>(path: string, initDataRaw: string): Promise<T> {
 
 export async function fetchHello(initDataRaw: string): Promise<HelloResponse> {
   return apiGet<HelloResponse>("/api/hello", initDataRaw);
+}
+
+export async function fetchDashboard(initDataRaw: string): Promise<DashboardResponse> {
+  return apiGet<DashboardResponse>("/api/dashboard", initDataRaw);
 }
 
 export async function fetchWorkoutPlan(initDataRaw: string): Promise<WorkoutPlanResponse> {
