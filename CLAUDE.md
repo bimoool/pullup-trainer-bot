@@ -2,7 +2,7 @@
 
 Telegram-бот-тренер по подтягиваниям. Python 3.12, aiogram 3, PostgreSQL 16,
 SQLAlchemy 2 (async), Alembic, APScheduler, Redis (FSM-хранилище), gspread,
-openpyxl. Long polling, без вебхука. Хостится на VPS `192.241.141.47`
+openpyxl. Long polling, без вебхука. Хостится на VPS `<VPS_HOST>`
 (root SSH, `/root/pullup-trainer-bot`, GitHub `bimoool/pullup-trainer-bot`).
 
 **VPS общий с другим проектом** (`reeltrack-bot`/`reeltrack-postgres`,
@@ -102,8 +102,8 @@ Telegram. Не заводить локальных копий с обратно�
 
 ```bash
 git push origin main
-ssh root@192.241.141.47 "cd /root/pullup-trainer-bot && git pull && docker compose build app"
-ssh root@192.241.141.47 "cd /root/pullup-trainer-bot && docker compose up -d app"
+ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && git pull && docker compose build app"
+ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && docker compose up -d app"
 ```
 
 С миграцией — **сначала прогнать её локально** против непустых таблиц
@@ -111,7 +111,7 @@ ssh root@192.241.141.47 "cd /root/pullup-trainer-bot && docker compose up -d app
 прежде чем `alembic upgrade head` на проде:
 
 ```bash
-ssh root@192.241.141.47 "cd /root/pullup-trainer-bot && docker compose run --rm app alembic upgrade head"
+ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && docker compose run --rm app alembic upgrade head"
 ```
 
 Причина этого правила — реальный инцидент (ревизия формулы прогрессии
@@ -229,7 +229,7 @@ telegram_id из списка:
 ## Mini App: Этап 0 (issue #15)
 
 Домен `app.bimoool.com` подтверждён (2026-08-31) — A-запись резолвится в
-`192.241.141.47`, этот VPS. Веб-слой: `app/web/` (FastAPI, тонкий слой
+`<VPS_HOST>`, этот VPS. Веб-слой: `app/web/` (FastAPI, тонкий слой
 поверх тех же `repositories`/`services`/`domain`, что и бот — не дублирует
 логику), `webapp-frontend/` (React + Vite, вне пакета `app`, собирается в
 статику и отдаётся тем же FastAPI-процессом одним origin'ом, без CORS),

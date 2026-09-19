@@ -1,0 +1,40 @@
+name: Notify on failure
+
+# Кирилл узнавал о красном CI только когда сам заходил посмотреть — то есть
+# часами позже. Этот workflow шлёт сообщение в Telegram сразу, как только
+# любой из основных прогонов упал. Дешёвый (несколько секунд ubuntu-latest),
+# запускается только по факту падения.
+
+on:
+  workflow_run:
+    workflows: ["Tests", "E2E (Mini App)", "Deploy", "Deploy Staging", "Claude Code"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram message
+        env:
+          TG_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.NOTIFY_CHAT_ID }}
+          WF: ${{ github.event.workflow_run.name }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "Нет TG_TOKEN/NOTIFY_CHAT_ID — уведомление пропущено"
+            exit 0
+          fi
+          TEXT="🔴 Упал прогон: ${WF}
+    ветка: ${BRANCH}
+    ${URL}"
+          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true" > /dev/null
+          echo "Уведомление отправлено"
