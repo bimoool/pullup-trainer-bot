@@ -71,8 +71,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev,web]"
-      - name: Apply migrations
-        run: alembic upgrade head
+      # Миграции отдельным шагом НЕ нужны: tests/conftest.py сам создаёт
+      # pullup_test и накатывает на неё `alembic upgrade head`
+      # (фикстура test_dsn). Отдельный шаг здесь только падал, потому что
+      # целевой базы на тот момент ещё не существует.
       - name: Run tests
         run: pytest -q --maxfail=20
 
