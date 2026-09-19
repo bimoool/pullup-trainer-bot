@@ -22,6 +22,7 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.electives import ElectiveType
 from app.domain.multi_program import SessionSource
+from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.session import BlockLog
 from scripts.backfill_multi_program import backfill_all, seed_catalog
 
@@ -68,6 +69,44 @@ async def test_onboarded_zero_workouts_gets_default_progression_state(session, u
         "heavy_equipment_value_next": None,
     }
     assert (await session.execute(select(TrainingSession).where(TrainingSession.user_id == user.id))).scalars().all() == []
+
+
+async def test_zero_workouts_with_baseline_matches_first_workout_equipment_choice(session, user: User):
+    """Реальный баг issue #172: свежий онбординг, замер 12 повторений, ни
+    одной тренировки — Dashboard (progression_state) должен показывать тот
+    же стартовый снаряд/цель, что и старый экран «Тренировка» для первой
+    тренировки (_resolve_plan_context в app/web/routes.py:
+    suggest_starting_equipment/initial_volume_target по замеру), а не
+    заглушку resolve_next_targets (BAND, плоская base_target), которая для
+    пустой истории baseline вообще не знает. Числа взяты из реального
+    репорта в issue (замер 12 -> цель блока A 9, блок A на собственном
+    весе, блок Б на отягощении), сверены и с прямым вызовом тех же
+    доменных функций, что использует старая схема (см. CLAUDE.md "Стиль
+    тестирования" — не цифра, посчитанная руками наугад, а то же
+    вычисление, что и в проде)."""
+    await _onboard(session, user)
+    await BaselineRepository(session).create(user_id=user.id, performed_at=NOW - timedelta(days=1), reps=12)
+    expected_equipment_a, expected_equipment_b = suggest_starting_equipment(12)
+    expected_target_a = initial_volume_target(12)
+    assert (expected_target_a, expected_equipment_a, expected_equipment_b) == (
+        9, EquipmentType.BODYWEIGHT, EquipmentType.WEIGHT,
+    )  # ручной расчёт по плану issue, проверка предпосылки теста
+
+    await backfill_all(session, now=NOW)
+
+    plan = (await session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user.id))).scalar_one()
+    inclusion = (
+        await session.execute(select(ProgramInclusion).where(ProgramInclusion.training_plan_id == plan.id))
+    ).scalar_one()
+    state = inclusion.progression_state
+    assert state["block_a"]["target"] == 9
+    assert state["block_a"]["equipment_type"] == expected_equipment_a.value
+    assert state["block_a"]["equipment_value"] is None
+    assert state["block_a"]["needs_new_equipment"] is True
+    assert state["block_b"]["target"] == 3
+    assert state["block_b"]["equipment_type"] == expected_equipment_b.value
+    assert state["block_b"]["equipment_value"] is None
+    assert state["block_b"]["needs_new_equipment"] is True
 
 
 async def test_band_user_progression_state_matches_equipment(session, user: User):
