@@ -12,7 +12,13 @@
    backfill и progression_state — ТЕКУЩИМ состоянием прогрессии (то же
    самое, что отдаёт WorkoutRepository.resolve_next_targets, публичный
    вход, которым уже пользуются хендлеры бота, чтобы показать план ДО
-   следующей тренировки).
+   следующей тренировки). Отдельно (issue #172) — для пользователя БЕЗ
+   единой тренировки resolve_next_targets отдаёт baseline-агностичную
+   заглушку (снаряд BAND, флаг "спроси заново"), а не то, что реально
+   показывает экран первой тренировки; _build_progression_state в этом
+   случае досчитывает стартовый снаряд/цель блока A по замеру теми же
+   suggest_starting_equipment/initial_volume_target, что использует
+   _resolve_plan_context (app/web/routes.py) — см. докстринг функции.
 3. Переносит ВСЮ историю app.db.models.Workout (issue #160 завела
    SessionSource.PLAN/FREEFORM/BACKDATED ровно под комбинации
    participates_in_cascade/is_free_entry не просто так) в
@@ -61,7 +67,7 @@ SessionBlock/SetLog не рассчитаны на эти детали — см.
 import argparse
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -81,6 +87,7 @@ from app.db.models_program import (
     TrainingPlan,
     TrainingSession,
 )
+from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import (
@@ -104,6 +111,7 @@ from app.domain.constants import (
 )
 from app.domain.electives import ElectiveType
 from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource
+from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
 
 _PROGRAM_NAME = "Подтягивания"
@@ -397,7 +405,7 @@ def _decimal_str(value: Decimal | None) -> str | None:
 
 
 async def _build_progression_state(
-    session: AsyncSession, workout_repo: WorkoutRepository, user_id: int, *, now: datetime,
+    session: AsyncSession, workout_repo: WorkoutRepository, user_id: int, *, now: datetime, history: list[Workout],
 ) -> dict:
     """Снимок ТЕКУЩЕГО состояния прогрессии — то же самое, что показывает
     хендлеру resolve_next_targets (публичный вход, уже используется ботом
@@ -405,12 +413,32 @@ async def _build_progression_state(
     которые в NextBlockState не входят (внутренние для каскада) — считаются
     той же комбинацией приватных хелперов, что использует сам
     WorkoutRepository внутри complete_workout (осознанное разовое
-    исключение, не копирование логики: тот же самый код, не его копия)."""
+    исключение, не копирование логики: тот же самый код, не его копия).
+
+    Реальный баг (issue #172): для пользователя БЕЗ единой тренировки
+    resolve_next_targets намеренно отдаёт заглушку (equipment_type=BAND,
+    target=block_config.base_target, needs_new_equipment=True) — сигнал
+    "спроси снаряд у пользователя на первой тренировке", а не готовое
+    состояние; сама заглушка ничего не знает о замере пользователя. Экран
+    "Тренировка" для ПЕРВОЙ тренировки эту заглушку не показывает вовсе —
+    _resolve_plan_context (app/web/routes.py) и handle_start_workout бота
+    для пустой истории считают стартовый снаряд/цель блока A по замеру
+    (suggest_starting_equipment/initial_volume_target), в обход
+    resolve_next_targets. Backfill раньше слепо брал заглушку как есть —
+    здесь тот же расчёт по замеру, тем же путём, что и реальный экран,
+    чтобы progression_state не расходился с тем, что видит пользователь."""
     state_a, state_b = await workout_repo.resolve_next_targets(user_id)
 
-    history = _exclude_free_entries(await workout_repo.list_for_user(user_id))
-    history_a = _exclude_deload_entries(history)
-    history_b = _exclude_heavy_entries(history)
+    if not history:
+        baseline = await BaselineRepository(session).get_latest_for_user(user_id)
+        baseline_reps = baseline.reps if baseline is not None else 0
+        equipment_a_type, equipment_b_type = suggest_starting_equipment(baseline_reps)
+        state_a = replace(state_a, target=initial_volume_target(baseline_reps), equipment_type=equipment_a_type)
+        state_b = replace(state_b, equipment_type=equipment_b_type)
+
+    history_no_free = _exclude_free_entries(history)
+    history_a = _exclude_deload_entries(history_no_free)
+    history_b = _exclude_heavy_entries(history_no_free)
     weak_streak_a = _weak_streak(history_a, BlockType.A)
     stall_streak_a = _stall_streak(history_a)
     weak_streak_b = _weak_streak(history_b, BlockType.B)
@@ -574,7 +602,7 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
                 session, elective, exercise_id=seed.elective_exercise_ids[elective.elective_type],
             )
 
-        progression_state = await _build_progression_state(session, workout_repo, user.id, now=now)
+        progression_state = await _build_progression_state(session, workout_repo, user.id, now=now, history=history)
         training_plan = TrainingPlan(user_id=user.id)
         session.add(training_plan)
         await session.flush()
