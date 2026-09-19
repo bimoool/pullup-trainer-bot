@@ -18,9 +18,7 @@ jobs:
     # чужую подписку. В приватном это было неважно — при публикации стало бы
     # открытой дверью.
     if: |
-      (github.event.sender.login == github.repository_owner ||
-       github.event.comment.author_association == 'OWNER' ||
-       github.event.issue.author_association == 'OWNER') &&
+      github.actor == github.repository_owner &&
       ((github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
