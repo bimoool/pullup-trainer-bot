@@ -1,0 +1,186 @@
+"""Pydantic-схемы для app/web/routes_v2.py (issue #165, волна 3) — новая
+многокурсовая схема (app/db/models_program.py), параллельно app/web/schemas.py
+(старая схема подтягиваний), не расширяет его: поля/формы здесь принципиально
+другие (Exercise/TrainingSession вместо Block/Workout)."""
+
+from datetime import datetime
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, model_validator
+
+# --- Каталог (read-only на этой волне) ---------------------------------------------
+
+
+class ProgramResponse(BaseModel):
+    id: int
+    name: str
+    goal: str
+    structure_type: str
+    category: str | None
+    progression_strategy_type: str | None
+
+
+class ProgramListResponse(BaseModel):
+    programs: list[ProgramResponse]
+
+
+# --- План пользователя --------------------------------------------------------------
+
+
+class ProgramInclusionResponse(BaseModel):
+    id: int
+    program_id: int
+    program_name: str
+    is_active: bool
+    started_at: datetime
+    expires_at: datetime | None
+    snapshot: dict
+    progression_state: dict
+
+
+class PlanItemResponse(BaseModel):
+    id: int
+    exercise_id: int
+    complex_id: int | None
+    count_per_week: int
+    day_of_week: int | None
+    week_phase: str | None
+    program_inclusion_id: int | None
+
+
+class TrainingPlanResponse(BaseModel):
+    id: int
+    created_at: datetime
+    program_inclusions: list[ProgramInclusionResponse]
+    plan_items: list[PlanItemResponse]
+
+
+class PlanResponse(BaseModel):
+    """None, если TrainingPlan для пользователя ещё не создан — GET не
+    создаёт его молча (побочный эффект на чтении), см. план issue #165:
+    план создаётся лениво первым POST /program-inclusions или
+    POST /plan-items."""
+
+    plan: TrainingPlanResponse | None
+
+
+class PlanItemListResponse(BaseModel):
+    items: list[PlanItemResponse]
+
+
+# --- POST /program-inclusions --------------------------------------------------------
+
+
+class ProgramInclusionCreateRequest(BaseModel):
+    program_id: int
+    # Для STEP-стратегии — стартовые значения цепочки; None значит "с нуля",
+    # как у нового пользователя без замера (config.block_a/b.base_target).
+    # Интеграция с AssessmentResult — вне охвата этой волны (план issue #165,
+    # открытый вопрос, подтверждено Кириллом).
+    initial_target_a: int | None = None
+    initial_target_b: int | None = None
+    initial_volume_a: int = 0
+    initial_volume_b: int = 0
+
+
+# --- Сессии ---------------------------------------------------------------------------
+
+
+class SetLogInputSchema(BaseModel):
+    set_number: int
+    metric_type: Literal["reps", "time", "weight", "angle", "distance"]
+    value: Decimal
+    unit: str
+    is_max_set: bool = False
+    effort: Decimal | None = None
+    note: str | None = None
+
+
+class SessionBlockInputSchema(BaseModel):
+    sets: list[SetLogInputSchema]
+    exercise_id: int | None = None
+    complex_id: int | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "SessionBlockInputSchema":
+        if (self.exercise_id is None) == (self.complex_id is None):
+            raise ValueError("ровно одно из exercise_id/complex_id")
+        if not self.sets:
+            raise ValueError("sets не может быть пустым")
+        return self
+
+
+class SessionCreateRequest(BaseModel):
+    source: Literal["plan", "freeform", "backdated", "elective"]
+    performed_at: datetime
+    blocks: list[SessionBlockInputSchema]
+    program_inclusion_id: int | None = None
+    effort: Decimal | None = None
+    comment: str | None = None
+
+
+class SetLogResponse(BaseModel):
+    set_number: int
+    is_max_set: bool
+    metric_type: str
+    value: str
+    unit: str
+    effort: str | None
+    note: str | None
+
+
+class SessionBlockResponse(BaseModel):
+    order_index: int
+    exercise_id: int | None
+    complex_id: int | None
+    set_logs: list[SetLogResponse]
+
+
+class BlockProgressionResponse(BaseModel):
+    target_before: int
+    target_after: int
+    equipment_changed: bool
+
+
+class SessionProgressionResponse(BaseModel):
+    block_a: BlockProgressionResponse
+    block_b: BlockProgressionResponse
+
+
+class SessionResponse(BaseModel):
+    id: int
+    source: str
+    status: str
+    performed_at: datetime
+    effort: str | None
+    comment: str | None
+    blocks: list[SessionBlockResponse]
+    # None, если пересчёт прогрессии не применялся к этой сессии — вместе с
+    # progression_skipped_reason объясняет ПОЧЕМУ (не молчаливое отсутствие,
+    # см. CLAUDE.md о явных пробелах): "no_program_inclusion"/
+    # "not_step_strategy"/"blocks_do_not_match_step_roles" либо None, если
+    # пересчёт применился.
+    progression_result: SessionProgressionResponse | None
+    progression_skipped_reason: str | None
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionResponse]
+
+
+# --- Строки недельной матрицы (ручной ввод) -------------------------------------------
+
+
+class PlanItemCreateRequest(BaseModel):
+    count_per_week: int
+    exercise_id: int | None = None
+    complex_id: int | None = None
+    day_of_week: int | None = None
+    week_phase: Literal["base", "rest", "peak"] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "PlanItemCreateRequest":
+        if (self.exercise_id is None) == (self.complex_id is None):
+            raise ValueError("ровно одно из exercise_id/complex_id")
+        return self

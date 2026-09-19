@@ -20,6 +20,24 @@ class HelloResponse(BaseModel):
     onboarding_step: Literal["not_registered", "baseline", "questionnaire", "done"]
     readiness_status: str | None
     days_since_last_workout: int | None
+    # feature/multi-program — вкладка "Dashboard" (v2, эксперимент) видна в
+    # App.tsx только тестировщикам из ADMIN_IDS.
+    is_admin: bool = False
+
+
+class DashboardResponse(BaseModel):
+    """Вкладка "Планы" (перенесённый Dashboard, feature/multi-program) —
+    status переиспользует ровно _resolve_plan_context (app/web/routes.py),
+    тот же путь, что GET /api/workout/plan — один источник правды о
+    готовности к тренировке, не вторая копия правил. streak —
+    app.domain.achievements.consecutive_streak_length, та же функция, что
+    считает ачивку TEN_WORKOUTS_STREAK, не своя эвристика."""
+
+    status: str
+    workouts_count: int = 0
+    streak: int = 0
+    days_since_last_workout: int | None = None
+    is_first_workout: bool = False
 
 
 class EquipmentInfo(BaseModel):
