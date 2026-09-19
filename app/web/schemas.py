@@ -20,6 +20,36 @@ class HelloResponse(BaseModel):
     onboarding_step: Literal["not_registered", "baseline", "questionnaire", "done"]
     readiness_status: str | None
     days_since_last_workout: int | None
+    # Волна 4 многокурсовой платформы (issue #167) — переключение на
+    # экспериментальный Dashboard (webapp-frontend/src/DashboardScreen.tsx)
+    # доступно только тестировщикам из ADMIN_IDS, тот же принцип, что
+    # обходы лимитов для тестирования вживую (CLAUDE.md): не query-параметр
+    # (Mini App открывается фиксированной кнопкой, не произвольным URL, см.
+    # issue #30/#141), а поле ответа, которое App.tsx читает один раз при
+    # загрузке.
+    is_admin: bool = False
+
+
+class DashboardResponse(BaseModel):
+    """Стартовый экран Mini App (issue #175) — единый план вместо открытой
+    тренировки (product-reference skill/docs/architecture-multicourse.md:
+    Dashboard, не WorkoutScreen, референс — Crimpd). status — тот же
+    словарь, что WorkoutPlanResponse.status (app/web/routes.py::
+    _resolve_plan_context, общий путь, не вторая копия правил готовности) —
+    "Тренировка" сама решает, показать форму или причину недоступности,
+    Dashboard только не открывает её первым экраном.
+
+    Только честные, реально посчитанные цифры — не выдуманный "план на
+    неделю" (в этой однокурсовой системе подтягиваний нет понятия
+    "недельной нормы тренировок", придумывать её не стали): streak —
+    app.domain.achievements.consecutive_streak_length, та же функция, что
+    считает ачивку TEN_WORKOUTS_STREAK, не своя эвристика."""
+
+    status: str
+    workouts_count: int = 0
+    streak: int = 0
+    days_since_last_workout: int | None = None
+    is_first_workout: bool = False
 
 
 class EquipmentInfo(BaseModel):

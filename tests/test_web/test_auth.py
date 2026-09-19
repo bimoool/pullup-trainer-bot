@@ -20,7 +20,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.config import settings
-from app.web.auth import get_validated_init_data
+from app.web.auth import INIT_DATA_MAX_AGE_SECONDS, get_validated_init_data
 
 
 def _sign(fields: dict, bot_token: str) -> str:
@@ -90,9 +90,34 @@ def test_init_data_signed_with_wrong_bot_token_is_rejected(monkeypatch):
 def test_expired_init_data_is_rejected(monkeypatch):
     monkeypatch.setattr(settings, "bot_token", "test-bot-token")
     raw = _build_init_data(
-        telegram_id=42, first_name="Кирилл", bot_token="test-bot-token", auth_date=int(time.time()) - 7200,
+        telegram_id=42,
+        first_name="Кирилл",
+        bot_token="test-bot-token",
+        auth_date=int(time.time()) - INIT_DATA_MAX_AGE_SECONDS - 3600,
     )
 
     with pytest.raises(HTTPException) as exc_info:
         get_validated_init_data(x_telegram_init_data=raw)
     assert exc_info.value.status_code == 401
+
+
+def test_init_data_from_hour_long_session_is_still_accepted(monkeypatch):
+    # issue #187: initData читается ОДИН раз при открытии Mini App
+    # (App.tsx, useEffect on mount) и живёт в React-состоянии, не
+    # обновляясь, пока вкладка открыта (Telegram тоже не обновляет
+    # initData сам в открытом WebView) — а тренировка с разминкой,
+    # подходами и заминкой легко занимает больше часа. Старый
+    # INIT_DATA_MAX_AGE_SECONDS=3600 значил, что ЛЮБОЙ запрос
+    # (например, финальная отправка тренировки) после часа с момента
+    # открытия падал 401 — приложение "отваливалось" посреди тренировки.
+    monkeypatch.setattr(settings, "bot_token", "test-bot-token")
+    raw = _build_init_data(
+        telegram_id=42,
+        first_name="Кирилл",
+        bot_token="test-bot-token",
+        auth_date=int(time.time()) - 3700,
+    )
+
+    init_data = get_validated_init_data(x_telegram_init_data=raw)
+
+    assert init_data.user.id == 42

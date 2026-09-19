@@ -670,3 +670,46 @@ input[type="number"] {
   color: var(--tg-hint-color);
   padding: 2px 0;
 }
+
+/* Слайдер "Как тяжело?" на live-экране сессии (issue #185, раздел 10.8) —
+   пять сегментов эффорта вместо настоящего Slider-компонента кита (тот не
+   даёт дискретных подписанных шагов "из коробки"). */
+.effort-segment-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+/* Цвет фазы live-таймера (issue #186, раздел 10.8): get_ready — оранжевый
+   "Приготовься", go — зелёный "Пошёл", rest — синий "Отдых". Полупрозрачный
+   фон карточки + сплошной цвет цифр таймера — фаза читается и с расстояния
+   (крупный таймер), и как акцент на самой карточке. */
+.phase-card-get_ready {
+  background: rgba(255, 152, 0, 0.14);
+  border: 1.5px solid rgba(255, 152, 0, 0.4);
+  border-radius: 16px;
+}
+
+.phase-card-go {
+  background: rgba(52, 199, 89, 0.14);
+  border: 1.5px solid rgba(52, 199, 89, 0.4);
+  border-radius: 16px;
+}
+
+.phase-card-rest {
+  background: rgba(10, 132, 255, 0.14);
+  border: 1.5px solid rgba(10, 132, 255, 0.4);
+  border-radius: 16px;
+}
+
+.phase-timer-get_ready {
+  color: #f57c00;
+}
+
+.phase-timer-go {
+  color: #2e8b57;
+}
+
+.phase-timer-rest {
+  color: #0a84ff;
+}
