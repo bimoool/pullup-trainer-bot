@@ -15,6 +15,7 @@ from app.db.models_program import (
     TrainingPlan,
 )
 from app.db.repositories.training_plans import TrainingPlanRepository
+from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from app.services.plan_week import PlanWeekService
 
@@ -190,3 +191,86 @@ async def test_non_recurring_program_is_not_materialized(session, user: User):
     assert week is not None  # неделя всё равно создаётся (плановая ось не зависит от программы)
     items = await _plan_items(session, plan.id)
     assert items == []  # но материализации нет — программе это не подходит
+
+
+# --- Ownership / no cross-contamination (Кирилл, отдельная проверка) --------------------
+#
+# list_unweeked_plan_items фильтрует строго по program_inclusion_id — риск
+# был бы, если бы фильтр случайно захватывал что-то более широкое (другой
+# план, другую инклюзию, ручные строки). Проверяем это фактом, не
+# рассуждением: два независимых плана с той же самой программой + ручной
+# PlanItem без инклюзии рядом — ensure_current_plan_week на ОДНОМ плане не
+# должен тронуть ничего постороннего.
+
+
+async def test_unweeked_attach_does_not_touch_other_plans_inclusion(session, user: User):
+    """Два разных пользователя, два разных TrainingPlan, оба подключили ТУ
+    ЖЕ программу (program_id общий — как оно и будет с единственной
+    'Подтягивания' в каталоге). ensure_current_plan_week для плана A не
+    должен привязать/создать PlanWeek и не должен трогать unweeked-строки
+    плана B."""
+    program, program_items = await _make_recurring_program(session)
+
+    plan_a = await _make_plan_with_inclusion(session, user, program)
+
+    other_user = await UserRepository(session).create(telegram_id=1002, username="other")
+    plan_b = await _make_plan_with_inclusion(session, other_user, program)
+
+    inclusion_a = (await TrainingPlanRepository(session).list_inclusions(plan_a.id))[0]
+    inclusion_b = (await TrainingPlanRepository(session).list_inclusions(plan_b.id))[0]
+
+    # Оба плана в состоянии "только что создана инклюзия" — unweeked строки
+    # есть у обоих, независимо друг от друга.
+    await TrainingPlanRepository(session).bulk_create_plan_items_from_program_items(
+        training_plan_id=plan_a.id, program_inclusion_id=inclusion_a.id, program_items=program_items,
+    )
+    items_b = await TrainingPlanRepository(session).bulk_create_plan_items_from_program_items(
+        training_plan_id=plan_b.id, program_inclusion_id=inclusion_b.id, program_items=program_items,
+    )
+    items_b_ids_before = {item.id for item in items_b}
+
+    week_a = await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan_a.id, today=date(2026, 9, 21),
+    )
+
+    # План A материализован.
+    items_a_after = await _plan_items(session, plan_a.id)
+    assert all(item.plan_week_id == week_a.id for item in items_a_after)
+
+    # План B — НИ ОДНА строка не тронута, plan_week_id всё ещё NULL, и для
+    # него не создалась никакая PlanWeek побочно.
+    items_b_after = await _plan_items(session, plan_b.id)
+    assert {item.id for item in items_b_after} == items_b_ids_before
+    assert all(item.plan_week_id is None for item in items_b_after)
+    assert await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan_b.id, week_number=1) is None
+
+
+async def test_manually_added_plan_item_without_inclusion_is_never_attached(session, user: User):
+    """PlanItem, добавленный вручную (program_inclusion_id=NULL — тот же
+    путь, что POST /plan-items с program_inclusion_id=None), должен остаться
+    plan_week_id=NULL после ensure_current_plan_week — Checkpoint 1 явно НЕ
+    трогает ручные строки (раздел 'Do not touch': PATCH PlanItem вне
+    скоупа), только материализует RECURRING-инклюзии."""
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program)
+    inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
+
+    await TrainingPlanRepository(session).bulk_create_plan_items_from_program_items(
+        training_plan_id=plan.id, program_inclusion_id=inclusion.id, program_items=program_items,
+    )
+    manual_item = await TrainingPlanRepository(session).create_plan_item(
+        training_plan_id=plan.id, exercise_id=program_items[0].exercise_id, complex_id=None,
+        count_per_week=1, day_of_week=3, week_phase=None, program_inclusion_id=None,
+    )
+
+    week = await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=date(2026, 9, 21),
+    )
+
+    items = await _plan_items(session, plan.id)
+    recurring_items = [item for item in items if item.program_inclusion_id == inclusion.id]
+    manual_after = next(item for item in items if item.id == manual_item.id)
+
+    assert all(item.plan_week_id == week.id for item in recurring_items)  # инклюзия привязана
+    assert manual_after.plan_week_id is None  # ручная строка НЕ тронута
+    assert manual_after.program_inclusion_id is None
