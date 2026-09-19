@@ -458,7 +458,7 @@ class ProgressPointResponse(BaseModel):
       epley_progress (issue #96): реальное сопротивление резины физически
       неизвестно, сравнивать его с кг нельзя ни в каком виде, даже со знаком
       минус. value_a всегда null (метрика скоуплена на блок Б, см.
-      CLAUDE.md); value_b — null для BAND/AUSTRALIAN (там либо неизвестное,
+      docs/progression.md); value_b — null для BAND/AUSTRALIAN (там либо неизвестное,
       либо отсутствующее число в кг).
 
     is_heavy_b (issue #117) — чередующаяся тяжёлая тренировка блока Б

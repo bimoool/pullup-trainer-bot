@@ -25,7 +25,7 @@ def upgrade() -> None:
 
     # blocks_archive_admin_reset — тот же снимок структуры (CREATE TABLE ...
     # (LIKE blocks)), что уже один раз ловил рассинхрон при похожей правке
-    # (e2c7a4f19d3b, см. CLAUDE.md) — добавляем колонку синхронно, иначе
+    # (e2c7a4f19d3b, см. docs/deploy.md) — добавляем колонку синхронно, иначе
     # "🧪 Полный сброс" сломается на первом же вызове после этой ревизии.
     op.add_column(
         'blocks_archive_admin_reset', sa.Column('work_sets_growth_reason', sa.String(length=10), nullable=True),

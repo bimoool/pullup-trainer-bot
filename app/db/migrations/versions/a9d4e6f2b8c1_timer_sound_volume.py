@@ -21,7 +21,7 @@ depends_on: str | Sequence[str] | None = None
 # app.domain.constants.DEFAULT_TIMER_SOUND_VOLUME_PERCENT), без server_default
 # — NULL здесь постоянное валидное состояние, не временное. users не входит в
 # список *_archive_admin_reset таблиц (workouts/blocks/workout_sets/
-# baselines/equipment_items, см. CLAUDE.md) — архивные таблицы не тронуты.
+# baselines/equipment_items, см. docs/deploy.md) — архивные таблицы не тронуты.
 
 
 def upgrade() -> None:

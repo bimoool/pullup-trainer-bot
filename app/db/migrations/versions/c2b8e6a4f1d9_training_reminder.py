@@ -20,8 +20,8 @@ depends_on: str | Sequence[str] | None = None
 # принципу NULL-значит-дефолт/не-отправляли, что и a9d4e6f2b8c1
 # (sound_volume_percent); training_reminder_enabled — явный тумблер с
 # server_default 'false' (по умолчанию выключено). users не входит в
-# список *_archive_admin_reset таблиц (см. CLAUDE.md) — архивные таблицы
-# не тронуты.
+# список *_archive_admin_reset таблиц (см. docs/deploy.md) — архивные
+# таблицы не тронуты.
 
 
 def upgrade() -> None:

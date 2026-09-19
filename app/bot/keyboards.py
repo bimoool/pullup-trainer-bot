@@ -74,7 +74,7 @@ def onboarding_mini_app_keyboard() -> InlineKeyboardMarkup:
     список сломанных способов запуска не включает InlineKeyboardButton,
     прикреплённую к обычному сообщению бота — не то же самое, что кнопка
     постоянной нижней клавиатуры. Не проверено вживую (тот же класс
-    ограничения песочницы, что и весь раздел Mini App в CLAUDE.md) — вызывать
+    ограничения песочницы, что и весь раздел Mini App в docs/mini-app.md) — вызывать
     только когда settings.mini_app_url задан (см. вызывающий код), иначе
     WebAppInfo(url="") гарантированно невалиден для Bot API."""
     builder = InlineKeyboardBuilder()
@@ -252,7 +252,7 @@ def backdate_block_b_mode_keyboard() -> InlineKeyboardMarkup:
     "не помню, сколько было в каждом подходе, но общая сумма знаю". Раньше
     единственный способ (свободный текст на BLOCK_B_PROMPT) провоцировал
     ввод одного числа вместо раскладки — то число ловилось как настоящий
-    максимум за подход и искажало прогрессию (см. CLAUDE.md)."""
+    максимум за подход и искажало прогрессию (см. docs/progression.md)."""
     builder = InlineKeyboardBuilder()
     builder.button(text=texts.BACKDATE_BLOCK_B_MODE_STRUCTURED_BUTTON, callback_data="backdate_block_b_mode:structured")
     builder.button(text=texts.BACKDATE_BLOCK_B_MODE_TOTAL_BUTTON, callback_data="backdate_block_b_mode:total")

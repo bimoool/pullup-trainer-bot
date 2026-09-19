@@ -20,7 +20,7 @@ depends_on: str | Sequence[str] | None = None
 # результаты уже завершённых подходов, переживает закрытие Telegram
 # посреди тренировки. Не трогает *_archive_admin_reset таблицы (тот список
 # ограничен workouts/blocks/workout_sets/baselines/equipment_items, см.
-# CLAUDE.md) — черновик к прогрессии/истории тренировок не относится,
+# docs/deploy.md) — черновик к прогрессии/истории тренировок не относится,
 # как и active_timers.
 
 

@@ -1283,7 +1283,7 @@ async def pay_subscription(
     RobokassaService.create_payment_link, что handle_pay_robokassa бота
     (app/bot/handlers/subscription.py), без параметров amount_rub/
     description (диагностический платёж на 1₽ остаётся только в /admin
-    бота, см. CLAUDE.md). Подтверждение — тем же воркером
+    бота, см. docs/payments.md). Подтверждение — тем же воркером
     sync_robokassa_payments, отдельного пути опроса для Mini App нет.
 
     404 у неонбордившегося (в Mini App недостижимо вживую — экран

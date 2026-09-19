@@ -20,8 +20,8 @@ depends_on: str | Sequence[str] | None = None
 # app.domain.constants.DEFAULT_REST_SECONDS_BLOCK_A/B/DEFAULT_BIG_BREAK_SECONDS),
 # без server_default: NULL здесь постоянное валидное состояние, не временное.
 # users не входит в список *_archive_admin_reset таблиц (workouts/blocks/
-# workout_sets/baselines/equipment_items, см. CLAUDE.md) — архивные таблицы
-# не тронуты.
+# workout_sets/baselines/equipment_items, см. docs/deploy.md) — архивные
+# таблицы не тронуты.
 
 
 def upgrade() -> None:

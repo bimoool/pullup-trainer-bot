@@ -17,7 +17,7 @@ depends_on: str | Sequence[str] | None = None
 
 # Не трогает *_archive_admin_reset таблицы (issue #59) — тот список
 # ограничен workouts/blocks/workout_sets/baselines/equipment_items (см.
-# CLAUDE.md), активный таймер к прогрессии/истории тренировок не относится.
+# docs/deploy.md), активный таймер к прогрессии/истории тренировок не относится.
 
 
 def upgrade() -> None:

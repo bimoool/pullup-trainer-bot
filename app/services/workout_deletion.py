@@ -73,7 +73,7 @@ async def delete_noncascade_workout(session: AsyncSession, workout: Workout) -> 
     актуальном состоянии слепка схемы workouts/blocks — заводить второй
     набор архивных таблиц под ещё один сценарий "не терять удалённые
     строки" означало бы дублировать то же самое обязательство синхронизации
-    при каждом ALTER TABLE (см. правило в CLAUDE.md про список из пяти
+    при каждом ALTER TABLE (см. правило в docs/deploy.md про список из пяти
     *_archive_admin_reset таблиц), не давая ничего взамен."""
     if workout.participates_in_cascade:
         raise ValueError("cannot delete_noncascade_workout a workout that participates in the cascade")
