@@ -57,6 +57,14 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
   const [value, setValue] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  // Двойной тап (issue #187, баг 2): быстрый повторный клик по "Готов"/
+  // "Готово"/"Завершить" реально шлёт второй запрос до перерисовки кнопки —
+  // ref, а не state, чтобы не ждать лишнего рендера между кликами. Хук
+  // объявлен здесь, рядом с остальными, а не ближе к использованию —
+  // ниже есть ранний `return` (local === null), хуки после него нарушают
+  // правило "одинаковый порядок хуков на каждый рендер" (было поймано
+  // самим React: "Minified React error #310" при первой попытке).
+  const actionInFlight = useRef(false);
 
   function setLocal(updated: LocalLiveSession) {
     localRef.current = updated;
@@ -193,38 +201,61 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
   const block = local.server.blocks[local.localPhase.blockIndex] ?? null;
   const totalPending = local.pendingSets.length + local.pendingPhaseAdvances + (local.completeRequested ? 1 : 0);
 
-  function advancePhase() {
-    if (local === null) {
+  // Двойной тап: подтверждено репродукцией (issue #187, баг 2) — быстрый
+  // повторный клик по "Готов"/"Готово"/"Завершить" реально шлёт второй
+  // запрос до того, как React успевает перерисовать кнопку. Сервер
+  // (LiveSessionService.advance_phase, CAS по expected_phase_index) не даёт
+  // этому испортить данные — фаза не перескакивает, — но лишний запрос всё
+  // равно уходит. actionInFlight объявлен выше, рядом с остальными хуками.
+
+  async function guardedAction(action: () => Promise<void>) {
+    if (actionInFlight.current) {
       return;
     }
-    const newPhase = nextLocalPhase(local.localPhase, counts);
-    void commitLocal({
-      ...local,
-      localPhase: newPhase,
-      localPhaseEnteredAt: new Date().toISOString(),
-      pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
+    actionInFlight.current = true;
+    try {
+      await action();
+    } finally {
+      actionInFlight.current = false;
+    }
+  }
+
+  function advancePhase() {
+    void guardedAction(async () => {
+      if (local === null) {
+        return;
+      }
+      const newPhase = nextLocalPhase(local.localPhase, counts);
+      await commitLocal({
+        ...local,
+        localPhase: newPhase,
+        localPhaseEnteredAt: new Date().toISOString(),
+        pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
+      });
     });
   }
 
   function logSet() {
-    if (local === null || block === null || block.exercise_id === null || value.trim() === "") {
-      return;
-    }
-    const newPhase = nextLocalPhase(local.localPhase, counts);
-    void commitLocal({
-      ...local,
-      pendingSets: [
-        ...local.pendingSets,
-        { setIndex: local.nextSetIndex, exerciseId: block.exercise_id, value: value.trim(), effort, note: note.trim() || null },
-      ],
-      nextSetIndex: local.nextSetIndex + 1,
-      localPhase: newPhase,
-      localPhaseEnteredAt: new Date().toISOString(),
-      pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
+    void guardedAction(async () => {
+      if (local === null || block === null || block.exercise_id === null || value.trim() === "") {
+        return;
+      }
+      const newPhase = nextLocalPhase(local.localPhase, counts);
+      await commitLocal({
+        ...local,
+        pendingSets: [
+          ...local.pendingSets,
+          { setIndex: local.nextSetIndex, exerciseId: block.exercise_id, value: value.trim(), effort, note: note.trim() || null },
+        ],
+        nextSetIndex: local.nextSetIndex + 1,
+        localPhase: newPhase,
+        localPhaseEnteredAt: new Date().toISOString(),
+        pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
+      });
+      setValue("");
+      setEffort(null);
+      setNote("");
     });
-    setValue("");
-    setEffort(null);
-    setNote("");
   }
 
   function handleFinish() {
@@ -234,7 +265,12 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
     if (!window.confirm("Закончить сессию? Что сделано — зачтено, остальное останется в плане.")) {
       return;
     }
-    void commitLocal({ ...local, completeRequested: { abandoned: false } });
+    void guardedAction(async () => {
+      if (local === null) {
+        return;
+      }
+      await commitLocal({ ...local, completeRequested: { abandoned: false } });
+    });
   }
 
   const phaseName = local.localPhase.phaseName;
