@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.web.routes import router
+from app.web.routes_v2 import router_v2
+from app.web.routes_v2_dashboard import router_v2_dashboard
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
 # тот же процесс FastAPI отдаёт и /api/*, и статику одним origin'ом, без
@@ -13,6 +15,14 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "webapp-frontend" / "dist"
 
 app = FastAPI(title="pullup-trainer-bot mini app")
 app.include_router(router)
+# Новая многокурсовая схема (issue #165, волна 3) — отдельный префикс
+# /api/v2, параллельно старым /api/* маршрутам, НЕ подключена к
+# webapp-frontend/ (см. докстринг app/web/routes_v2.py).
+app.include_router(router_v2)
+# Волна 4 (issue #167) — единственный pull-up-специфичный /api/v2/*
+# эндпоинт, ПОДКЛЮЧЁННЫЙ к webapp-frontend/ (DashboardScreen.tsx), в
+# отличие от router_v2 выше (см. докстринг routes_v2_dashboard.py).
+app.include_router(router_v2_dashboard)
 
 
 @app.get("/health")
