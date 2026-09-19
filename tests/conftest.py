@@ -22,6 +22,12 @@ TABLES = (
     "active_timers", "workout_drafts",
     "blocks_archive_admin_reset", "workouts_archive_admin_reset", "workout_sets_archive_admin_reset",
     "baselines_archive_admin_reset", "equipment_items_archive_admin_reset",
+    # Многокурсовая платформа (feature/multi-program) — только "корневые" для
+    # TRUNCATE ... CASCADE таблицы: session_blocks/set_targets/set_logs/
+    # session_plan_items (дети training_sessions), program_inclusions/
+    # plan_items/plan_weeks (дети training_plans), program_items (ребёнок
+    # programs) чистятся каскадом сами, отдельно перечислять не нужно.
+    "training_plans", "training_sessions", "programs", "exercises", "progression_strategy_profiles",
     "users",
 )
 
