@@ -1,137 +1,114 @@
-import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { fetchDashboardStatus, type DashboardBlockResponse, type DashboardStatusResponse } from "./apiV2";
+import { fetchDashboard, type DashboardResponse } from "./api";
+import { STATUS_MESSAGES } from "./WorkoutScreen";
 
 type Props = {
   initDataRaw: string;
-  /** Сам процесс тренировки (таймер/ввод/сохранение) в этой волне не
-   * переписан (issue #167, п.2 задачи) — кнопки действий здесь переключают
-   * вкладку обратно на проверенный старый "workout" (WorkoutScreen.tsx),
-   * не реализуют свою логику записи заново. */
-  onGoToWorkout: () => void;
+  /** Быстрый старт (issue #175) — переключает нижнюю вкладку на
+   * "Тренировку" (App.tsx), сама форма живёт там же, где и раньше: Dashboard
+   * не дублирует WorkoutScreen, только не открывается на нём по умолчанию
+   * (product-reference skill: стартовый экран — сводка, не открытая
+   * тренировка). */
+  onOpenWorkout: () => void;
 };
 
 type ScreenState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "not_ready"; status: string }
-  | { phase: "ready"; data: DashboardStatusResponse };
+  | { phase: "ready"; dashboard: DashboardResponse };
 
-// Статусы, которые эта волна не обрабатывает картой блоков — тот же принцип,
-// что STATUS_MESSAGES в WorkoutScreen.tsx для старой схемы, набор статусов
-// другой (см. app/web/schemas_v2_dashboard.py::DashboardStatusResponse).
-const STATUS_MESSAGES: Record<string, string> = {
-  not_migrated: "У этого аккаунта ещё нет активного курса в новой схеме (/api/v2) — перенос через бэкфилл-скрипт.",
-  too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
-  gap_retest_required: "Был долгий перерыв — нужен повторный замер (в старой схеме доступно в боте/Тренировке).",
-  multiple_active_inclusions: "У аккаунта больше одного активного курса — Dashboard пока не умеет их различать.",
-};
-
-const WORK_SETS_GROWTH_NOTICES: Record<string, string> = {
-  stall: "Объём блока A подрос — несколько тренировок подряд без роста цели.",
-  ceiling: "Объём блока A подрос — цель уже у потолка одного подхода.",
-};
-
-function BlockCard({ letter, block }: { letter: "A" | "Б"; block: DashboardBlockResponse }) {
-  return (
-    <Section className="block-section" header={`Блок ${letter} — цель ${block.target}`}>
-      <div className="block-header">
-        <div className="block-badge">{letter}</div>
-        <p className="block-subtitle">
-          {`${block.work_sets} рабочих ${block.work_sets === 1 ? "подход" : "подхода"}`}
-          {" · "}
-          {block.equipment.label}
-        </p>
-      </div>
-      {block.equipment.needs_new_equipment && (
-        <p className="gap-banner">Снаряд для этого блока будет пересмотрен на следующей тренировке.</p>
-      )}
-    </Section>
-  );
+/** Та же нижняя граница, что у app.domain.achievements.consecutive_streak_length:
+ * 1 — единственная тренировка, это ещё не "серия" в разговорном смысле,
+ * поэтому стрик показывается как число только от 2. */
+function streakValue(streak: number, workoutsCount: number): string {
+  if (workoutsCount === 0 || streak <= 1) {
+    return "—";
+  }
+  return `🔥 ${streak}`;
 }
 
-/**
- * Экспериментальный экран (issue #167, волна 4) — читает статус курса через
- * /api/v2/dashboard/status (app/web/routes_v2_dashboard.py), а не через
- * старый /api/workout/plan (app/web/routes.py::_resolve_plan_context).
- * Read-only витрина: без форм ввода подхода, без живого таймера — сам
- * процесс тренировки остаётся на WorkoutScreen.tsx (см. onGoToWorkout выше).
- *
- * Данные читаются из ProgramInclusion.progression_state — это состояние
- * двигает вперёд ТОЛЬКО POST /api/v2/sessions, которого эта волна не
- * вызывает ниоткуда из реального UI (см. CLAUDE.md/issue #167): если
- * тренировки для этого аккаунта продолжают идти старым путём (бот/обычная
- * "Тренировка"), цифры здесь отражают состояние на момент последнего
- * бэкфилла/ручного вызова /api/v2/sessions, а не последнюю реальную
- * тренировку — известное ограничение волны 3, не баг этого экрана.
- */
-export function DashboardScreen({ initDataRaw, onGoToWorkout }: Props) {
+function daysSinceLabel(days: number | null): string {
+  if (days === null) {
+    return "—";
+  }
+  if (days === 0) {
+    return "Сегодня";
+  }
+  return `${days} дн. назад`;
+}
+
+/** Только честные статусы (issue #175, docs/architecture-multicourse.md:
+ * "нельзя предлагать действие, которое гарантированно не может завершиться
+ * успехом") — кнопка ниже обещает "начать тренировку" ТОЛЬКО на status=
+ * "ready". На любом другом статусе она просто открывает раздел "Тренировка",
+ * где WorkoutScreen (тот же STATUS_MESSAGES) объясняет причину и предлагает
+ * то, что реально доступно (факультатив/бэкдейт/бот) — Dashboard не
+ * дублирует эту логику, только не начинает с неё. */
+export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      try {
-        const data = await fetchDashboardStatus(initDataRaw);
-        if (cancelled) {
-          return;
+    fetchDashboard(initDataRaw)
+      .then((dashboard) => {
+        if (!cancelled) {
+          setState({ phase: "ready", dashboard });
         }
-        setState(data.status === "ready" ? { phase: "ready", data } : { phase: "not_ready", status: data.status });
-      } catch (error) {
+      })
+      .catch((error) => {
         if (!cancelled) {
           setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
         }
-      }
-    }
-    void load();
+      });
     return () => {
       cancelled = true;
     };
   }, [initDataRaw]);
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю статус курса (v2)…</p>;
+    return <p className="screen-message">Загружаю…</p>;
   }
   if (state.phase === "error") {
     return <p className="screen-message">Не удалось загрузить: {state.message}</p>;
   }
-  if (state.phase === "not_ready") {
-    return (
-      <div>
-        <p className="plan-title">Dashboard (v2, эксперимент)</p>
-        <p className="screen-message">
-          {STATUS_MESSAGES[state.status] ?? `Статус пока не поддержан здесь: ${state.status}.`}
-        </p>
-        <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
-          Перейти в обычную "Тренировку"
-        </Button>
-      </div>
-    );
+
+  const { dashboard } = state;
+  const isReady = dashboard.status === "ready";
+
+  let statusText: string;
+  if (isReady && dashboard.is_first_workout) {
+    statusText = "Это будет твоя первая тренировка — сначала подберём снаряд по замеру.";
+  } else if (isReady) {
+    statusText = "Готов к тренировке.";
+  } else {
+    statusText = STATUS_MESSAGES[dashboard.status] ?? `Статус: ${dashboard.status}`;
   }
 
-  const { data } = state;
   return (
     <div>
-      <p className="plan-title">Dashboard (v2, эксперимент)</p>
-      <p className="screen-message">
-        Курс: {data.program_name ?? "без названия"}. Данные — из новой многокурсовой схемы (/api/v2), могут отставать
-        от последней реальной тренировки, пока она записывается обычным путём.
-      </p>
-      {data.is_gap_rollback && <p className="gap-banner">Был перерыв — цель блока A немного снижена, это нормально.</p>}
-      {data.work_sets_growth_reason && (
-        <p className="gap-banner">{WORK_SETS_GROWTH_NOTICES[data.work_sets_growth_reason]}</p>
-      )}
-      <p className="gap-banner">
-        Тест на максимум блока A и чередование тяжёлой блока Б пока не поддержаны в Dashboard — см. обычный экран
-        "Тренировка".
-      </p>
+      <p className="plan-title">Сегодня</p>
 
-      {data.block_a && <BlockCard letter="A" block={data.block_a} />}
-      {data.block_b && <BlockCard letter="Б" block={data.block_b} />}
+      <div className="stat-grid">
+        <div className="stat-tile">
+          <div className="stat-value">{dashboard.workouts_count}</div>
+          <div className="stat-label">Тренировок всего</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-value">{streakValue(dashboard.streak, dashboard.workouts_count)}</div>
+          <div className="stat-label">Подряд без перерыва</div>
+        </div>
+        <div className="stat-tile">
+          <div className="stat-value">{daysSinceLabel(dashboard.days_since_last_workout)}</div>
+          <div className="stat-label">Последняя тренировка</div>
+        </div>
+      </div>
 
-      <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
-        Внести результат в обычной "Тренировке"
+      <p className="screen-message">{statusText}</p>
+
+      <Button className="action-button" size="l" stretched onClick={onOpenWorkout}>
+        {isReady ? "Начать тренировку" : "Открыть «Тренировку»"}
       </Button>
     </div>
   );

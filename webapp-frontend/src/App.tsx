@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
 import { DashboardScreen } from "./DashboardScreen";
+import { DashboardV2Screen } from "./DashboardV2Screen";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
@@ -43,17 +44,19 @@ type LoadState =
  * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
  * — открыть разминку можно только оттуда).
  *
- * "dashboardV2" (issue #167, волна 4 многокурсовой платформы) — тот же
- * приём, что "subscription": невидимый в NAV_TABS пункт, но в отличие от
- * "subscription"/"faq" не открывается кнопкой с другого экрана, а вкладкой
- * нижнего меню, добавляемой в список условно (см. navTabs ниже) — видна
- * только тестировщикам из ADMIN_IDS (hello.is_admin), не в основном потоке
- * реальных пользователей. Ветка feature/multi-program и так не деплоится
- * на прод без отдельного подтверждения (см. issue), это дополнительный
- * барьер на случай случайного деплоя. */
-type Tab = "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
+ * "dashboard" (issue #175) — новая вкладка по умолчанию: стартовый экран
+ * приложения — сводка (стрик, счётчики, статус готовности), не открытая
+ * форма тренировки (product-reference skill, референс — Crimpd, где
+ * домашний экран тоже не тренировка). "Начать тренировку" с этого экрана
+ * просто переключает на "workout" — сама форма не дублируется. */
+/* "dashboardV2" (issue #167, волна 4) — экспериментальный экран новой
+ * многокурсовой схемы (/api/v2). Невидимая вкладка, добавляется в нижнее
+ * меню условно и только для ADMIN_IDS (hello.is_admin) — это НЕ стартовый
+ * экран "dashboard" выше, а отдельный испытательный стенд рядом с ним. */
+type Tab = "dashboard" | "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: "dashboard", icon: "🏠", label: "Главная" },
   { key: "workout", icon: "💪", label: "Тренировка" },
   { key: "history", icon: "📜", label: "История" },
   { key: "progress", icon: "📈", label: "Прогресс" },
@@ -93,7 +96,7 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [tab, setTab] = useState<Tab>("workout");
+  const [tab, setTab] = useState<Tab>("dashboard");
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -203,6 +206,9 @@ export function App() {
   }
 
   const isOnboarded = state.data.onboarding_step === "done";
+
+  // Экспериментальная вкладка новой схемы видна только тестировщикам
+
   const navTabs = state.data.is_admin ? [...NAV_TABS, DASHBOARD_V2_NAV_TAB] : NAV_TABS;
 
   return (
@@ -218,6 +224,9 @@ export function App() {
           startStep={state.data.onboarding_step}
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
+      )}
+      {isOnboarded && tab === "dashboard" && (
+        <DashboardScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => setTab("workout")} />
       )}
       {isOnboarded && tab === "workout" && (
         <WorkoutScreen
@@ -246,7 +255,7 @@ export function App() {
         <WarmupScreen initDataRaw={state.initDataRaw} onBack={() => setTab("workout")} />
       )}
       {isOnboarded && tab === "dashboardV2" && (
-        <DashboardScreen initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
+        <DashboardV2Screen initDataRaw={state.initDataRaw} onGoToWorkout={() => setTab("workout")} />
       )}
 
       {isOnboarded && (

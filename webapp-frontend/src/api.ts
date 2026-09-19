@@ -16,6 +16,18 @@ export interface HelloResponse {
   is_admin: boolean;
 }
 
+/** GET /api/dashboard (issue #175) — стартовый экран, тот же status, что
+ * WorkoutPlanResponse.status (один источник правды о готовности к
+ * тренировке). streak/workouts_count — реально посчитанные цифры, не
+ * выдуманная "недельная норма" (её нет в однокурсовой системе подтягиваний). */
+export interface DashboardResponse {
+  status: string;
+  workouts_count: number;
+  streak: number;
+  days_since_last_workout: number | null;
+  is_first_workout: boolean;
+}
+
 /** POST /api/onboarding/baseline (issue #124, PR 2) — тот же смысл, что
  * handle_baseline_reps/handle_baseline_confirm бота (app/bot/handlers/
  * onboarding.py): максимум подтягиваний на собственном весе, один подход.
@@ -213,6 +225,10 @@ async function apiGet<T>(path: string, initDataRaw: string): Promise<T> {
 
 export async function fetchHello(initDataRaw: string): Promise<HelloResponse> {
   return apiGet<HelloResponse>("/api/hello", initDataRaw);
+}
+
+export async function fetchDashboard(initDataRaw: string): Promise<DashboardResponse> {
+  return apiGet<DashboardResponse>("/api/dashboard", initDataRaw);
 }
 
 export async function fetchWorkoutPlan(initDataRaw: string): Promise<WorkoutPlanResponse> {

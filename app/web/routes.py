@@ -33,7 +33,7 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
-from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
+from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode, consecutive_streak_length
 from app.domain.anomalies import AnomalyFlags, detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
@@ -98,6 +98,7 @@ from app.web.schemas import (
     BandItemListResponse,
     BandItemUpdateRequest,
     CycleVolumeResponse,
+    DashboardResponse,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
     ElectiveSubmitResponse,
@@ -206,6 +207,42 @@ async def hello(
         readiness_status=readiness.status.value,
         days_since_last_workout=readiness.days_since_last_workout,
         is_admin=is_admin,
+    )
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DashboardResponse:
+    """Стартовый экран Mini App (issue #175) — App.tsx открывает этот
+    экран первым вместо WorkoutScreen (см. docs/architecture-multicourse.md
+    §3 "Dashboard", .claude/skills/product-reference/SKILL.md, референс —
+    Crimpd: домашний экран не открытая тренировка).
+
+    status переиспользует ровно _resolve_plan_context, тот же путь, что
+    GET /api/workout/plan — один источник правды о готовности к тренировке,
+    не вторая копия правил. onboarding_incomplete здесь тоже недостижим в
+    норме (App.tsx рендерит OnboardingScreen раньше, см. onboarding_step),
+    защита на сервере — по той же причине, что и в _resolve_plan_context."""
+    telegram_id = init_data.user.id
+    now = datetime.now(UTC)
+    context = await _resolve_plan_context(session, telegram_id, now=now)
+
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    if user is None:
+        return DashboardResponse(status=context.status)
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    streak = consecutive_streak_length([record.performed_at.date() for record in history])
+    days_since_last_workout = (now.date() - history[-1].performed_at.date()).days if history else None
+
+    return DashboardResponse(
+        status=context.status,
+        workouts_count=len(history),
+        streak=streak,
+        days_since_last_workout=days_since_last_workout,
+        is_first_workout=context.is_first_workout,
     )
 
 
