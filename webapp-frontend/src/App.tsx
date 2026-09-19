@@ -1,4 +1,10 @@
-import { retrieveLaunchParams } from "@telegram-apps/sdk";
+import {
+  hideBackButton,
+  mountBackButton,
+  onBackButtonClick,
+  retrieveLaunchParams,
+  showBackButton,
+} from "@telegram-apps/sdk";
 import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
@@ -7,6 +13,7 @@ import { DashboardScreen } from "./DashboardScreen";
 import { DashboardV2Screen } from "./DashboardV2Screen";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
+import { HomeScreen } from "./HomeScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { ProgressScreen } from "./ProgressScreen";
@@ -44,24 +51,51 @@ type LoadState =
  * "Тренировку" (в отличие от "faq", запоминать возвратную вкладку не нужно
  * — открыть разминку можно только оттуда).
  *
- * "dashboard" (issue #175) — новая вкладка по умолчанию: стартовый экран
- * приложения — сводка (стрик, счётчики, статус готовности), не открытая
- * форма тренировки (product-reference skill, референс — Crimpd, где
- * домашний экран тоже не тренировка). "Начать тренировку" с этого экрана
- * просто переключает на "workout" — сама форма не дублируется. */
+ * "dashboard"/"plans" (issue #175, волна 4) — стартовым экраном было
+ * "Dashboard": сводка (стрик, счётчики, статус готовности) вместо сразу
+ * открытой формы тренировки (product-reference skill, референс — Crimpd).
+ * Волна 5b (issue #183, crimpd-reference skill) развела это на пять вкладок
+ * по референсу: сама сводка (DashboardScreen.tsx, без изменений содержимого)
+ * переехала под ключом "plans" во вкладку "Планы", а стартовым экраном стал
+ * новый компактный "home" (HomeScreen.tsx) — виджет "на этой неделе" сверху
+ * + честная заглушка под каталог курсов (волна 6, ещё не сделан). "Начать
+ * тренировку" что с "home", что с "plans" одинаково переключает на
+ * "workout" — форма по-прежнему не дублируется, просто вкладки нижнего меню
+ * у неё больше нет (открывается только отсюда, back — ниже). */
 /* "dashboardV2" (issue #167, волна 4) — экспериментальный экран новой
  * многокурсовой схемы (эндпоинты новой версии API). Невидимая вкладка, добавляется в нижнее
  * меню условно и только для ADMIN_IDS (hello.is_admin) — это НЕ стартовый
- * экран "dashboard" выше, а отдельный испытательный стенд рядом с ним. */
-type Tab = "dashboard" | "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
+ * экран "home"/"plans" выше, а отдельный испытательный стенд рядом с ними. */
+type Tab = "home" | "plans" | "workout" | "history" | "progress" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
 
 const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
-  { key: "dashboard", icon: "🏠", label: "Главная" },
-  { key: "workout", icon: "💪", label: "Тренировка" },
-  { key: "history", icon: "📜", label: "История" },
-  { key: "progress", icon: "📈", label: "Прогресс" },
+  { key: "home", icon: "🏠", label: "Главная" },
+  { key: "plans", icon: "🗓", label: "Планы" },
+  { key: "history", icon: "📜", label: "Журнал" },
+  { key: "progress", icon: "📈", label: "Аналитика" },
   { key: "profile", icon: "👤", label: "Профиль" },
 ];
+
+/** Куда ведёт аппаратная/телеграмная кнопка "назад" (telegram-miniapp
+ * skill: обрабатывается через @telegram-apps/sdk, не руками) — null для
+ * вкладок нижнего меню, у них назад некуда, сама Tabbar остаётся видимой.
+ * "warmup"/"subscription" всегда возвращают на конкретный экран (открыты
+ * только оттуда), "workout"/"faq" запоминают, откуда открыли (см.
+ * workoutReturnTab/faqReturnTab). */
+function backTargetFor(tab: Tab, workoutReturnTab: Tab, faqReturnTab: Tab): Tab | null {
+  switch (tab) {
+    case "workout":
+      return workoutReturnTab;
+    case "faq":
+      return faqReturnTab;
+    case "warmup":
+      return "workout";
+    case "subscription":
+      return "profile";
+    default:
+      return null;
+  }
+}
 
 const DASHBOARD_V2_NAV_TAB: { key: Tab; icon: string; label: string } = {
   key: "dashboardV2", icon: "🧪", label: "Dashboard",
@@ -96,7 +130,7 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>("home");
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -106,10 +140,19 @@ export function App() {
   // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
   // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
   const [faqReturnTab, setFaqReturnTab] = useState<Tab>("profile");
+  // "Тренировка" (issue #183, волна 5b) больше не пункт нижнего меню —
+  // открывается кнопкой с "Главной" или с "Планов", запоминаем, откуда,
+  // ровно тем же приёмом, что faqReturnTab выше.
+  const [workoutReturnTab, setWorkoutReturnTab] = useState<Tab>("home");
 
   function openFaq(from: Tab) {
     setFaqReturnTab(from);
     setTab("faq");
+  }
+
+  function openWorkout(from: Tab) {
+    setWorkoutReturnTab(from);
+    setTab("workout");
   }
 
   function handleTabClick(key: Tab) {
@@ -121,6 +164,34 @@ export function App() {
     }
     setTab(key);
   }
+
+  // Аппаратная/телеграмная кнопка "назад" (telegram-miniapp skill: только
+  // через @telegram-apps/sdk, не руками) — показана ровно на экранах,
+  // открытых не из нижнего меню (backTargetFor выше), ведёт назад тем же
+  // guarded-путём, что и клик по вкладке (не в обход подтверждения потери
+  // прогресса живой тренировки — та же проверка, что в handleTabClick).
+  // ifAvailable() молча ничего не делает вне Telegram (e2e/обычный
+  // браузер) — Tabbar остаётся видимой и служит запасным выходом с любого
+  // экрана независимо от этого.
+  useEffect(() => {
+    const target = backTargetFor(tab, workoutReturnTab, faqReturnTab);
+    if (target === null) {
+      hideBackButton.ifAvailable();
+      return;
+    }
+    mountBackButton.ifAvailable();
+    showBackButton.ifAvailable();
+    const off = onBackButtonClick.ifAvailable(() => {
+      if (liveWorkoutActive && !window.confirm("Прогресс тренировки будет потерян — уйти?")) {
+        return;
+      }
+      setTab(target);
+    });
+    return () => {
+      off?.();
+      hideBackButton.ifAvailable();
+    };
+  }, [tab, workoutReturnTab, faqReturnTab, liveWorkoutActive]);
 
   // Переиспользуется и начальной загрузкой, и завершением онбординга
   // (OnboardingScreen.tsx::onComplete, issue #124, PR 2) — initDataRaw уже
@@ -225,8 +296,11 @@ export function App() {
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
       )}
-      {isOnboarded && tab === "dashboard" && (
-        <DashboardScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => setTab("workout")} />
+      {isOnboarded && tab === "home" && (
+        <HomeScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => openWorkout("home")} />
+      )}
+      {isOnboarded && tab === "plans" && (
+        <DashboardScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => openWorkout("plans")} />
       )}
       {isOnboarded && tab === "workout" && (
         <WorkoutScreen

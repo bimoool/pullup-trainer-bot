@@ -6,12 +6,62 @@ import { openAppAs } from "../fixtures/setup";
 // снаряд обоих блоков уже BAND (см. scripts/e2e_seed.py::seed_ready).
 const TELEGRAM_ID = 900_003;
 
-test("обычный день тренировки: полный путь ввода результата до записи", async ({ page }) => {
+test("обычный день тренировки: пять вкладок навигации, потом полный путь ввода результата до записи", async ({
+  page,
+}) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
-  // Dashboard (issue #175) — новый стартовый экран Mini App вместо сразу
-  // открытой формы тренировки (product-reference skill, референс — Crimpd).
+  // "Главная" (волна 5b, issue #183, crimpd-reference skill) — новый
+  // стартовый экран Mini App вместо сразу открытой формы тренировки
+  // (product-reference skill, референс — Crimpd): компактный виджет "на
+  // этой неделе" + честная заглушка под каталог курсов (волна 6, ещё не
+  // сделан — не имитация рабочего списка).
   await expect(page.getByText("Готов к тренировке.")).toBeVisible();
+  await expect(page.getByText("Скоро здесь появится каталог курсов")).toBeVisible();
+
+  // Ровно пять пунктов нижнего меню, "Тренировка" среди них нет — открыть
+  // форму можно только кнопкой (см. ниже), не пунктом меню.
+  for (const label of ["Главная", "Планы", "Журнал", "Аналитика", "Профиль"]) {
+    await expect(page.getByRole("button", { name: label })).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: "Тренировка", exact: true })).toHaveCount(0);
+
+  // "Планы" — бывший Dashboard (issue #175), содержимое не переписывалось
+  // (issue #183: только переезд) — тот же текст готовности и те же счётчики.
+  await page.getByRole("button", { name: "Планы" }).click();
+  await expect(page.getByText("Готов к тренировке.")).toBeVisible();
+  await expect(page.getByText("Тренировок всего")).toBeVisible();
+
+  // "Журнал" (бывшая "История", не переписывалась) — у этого сценария уже
+  // есть одна тренировка, список не пустой.
+  await page.getByRole("button", { name: "Журнал" }).click();
+  await expect(page.locator(".history-card")).toHaveCount(1);
+
+  // "Аналитика" (бывший "Прогресс", не переписывалась) — с одной
+  // тренировкой графику не из чего строиться, это ожидаемое пустое
+  // состояние, не баг.
+  await page.getByRole("button", { name: "Аналитика" }).click();
+  await expect(
+    page.getByText("Пока недостаточно тренировок для графика — нужно хотя бы две."),
+  ).toBeVisible();
+
+  // "Профиль" (не переписывался).
+  await page.getByRole("button", { name: "Профиль" }).click();
+  await expect(page.getByText("Разряд ГТО (подтягивание)")).toBeVisible();
+
+  // "Тренировка" открывается кнопкой с "Планов" (тот же путь, что раньше
+  // был кнопкой на Dashboard) — назад ведёт клик по любой вкладке Tabbar,
+  // она остаётся видимой поверх формы (telegram-miniapp skill: "экран, с
+  // которого нельзя вернуться — ошибка"; SDK BackButton недоступен вне
+  // настоящего Telegram-клиента — mockTelegramWebApp не поднимает мост
+  // postEvent, — так что здесь проверяем именно этот запасной путь).
+  await page.getByRole("button", { name: "Планы" }).click();
+  await page.getByRole("button", { name: "Начать тренировку" }).click();
+  await expect(page.getByText("Текущий план")).toBeVisible();
+  await page.getByRole("button", { name: "Планы" }).click();
+  await expect(page.getByText("Готов к тренировке.")).toBeVisible();
+
+  // Теперь по-настоящему проходим форму до записи.
   await page.getByRole("button", { name: "Начать тренировку" }).click();
 
   await expect(page.getByText("Текущий план")).toBeVisible();
