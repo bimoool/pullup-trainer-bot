@@ -6,6 +6,7 @@ import ReactDOM from "react-dom/client";
 
 import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { OfflineQueryProvider } from "./OfflineQueryProvider";
 import "./index.css";
 
 // issue #34: window.Telegram.WebApp — тот же мост, что App.tsx уже использует
@@ -104,7 +105,9 @@ try {
     <React.StrictMode>
       <ErrorBoundary>
         <AppRoot appearance={telegramColorScheme}>
-          <App />
+          <OfflineQueryProvider>
+            <App />
+          </OfflineQueryProvider>
         </AppRoot>
       </ErrorBoundary>
     </React.StrictMode>,
