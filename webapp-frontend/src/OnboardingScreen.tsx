@@ -1,4 +1,4 @@
-import { Button, Input, Select } from "@telegram-apps/telegram-ui";
+import { Button, Input, Section, Select } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -199,16 +199,18 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
       <div>
         <p className="plan-title">Замер</p>
         <p className="screen-message">{BASELINE_GUIDE}</p>
-        <Input
-          header="Сколько подтягиваний вышло?"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={999}
-          aria-label="Число подтягиваний"
-          value={repsInput}
-          onChange={(e) => setRepsInput(e.target.value)}
-        />
+        <Section className="block-section">
+          <Input
+            header="Сколько подтягиваний вышло?"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={999}
+            aria-label="Число подтягиваний"
+            value={repsInput}
+            onChange={(e) => setRepsInput(e.target.value)}
+          />
+        </Section>
         {formError && <p className="error-banner">{formError}</p>}
         <Button className="action-button" size="l" stretched onClick={handleBaselineNext}>
           Далее
@@ -275,70 +277,72 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
         Шаг {step + 1} из {QUESTIONNAIRE_STEPS.length}
       </p>
 
-      {current === "weight" && (
-        <Input
-          header="Твой вес в кг?"
-          type="number"
-          inputMode="decimal"
-          min={0}
-          step="0.1"
-          placeholder="Например: 78"
-          aria-label="Вес, кг"
-          value={weightKg}
-          onChange={(e) => setWeightKg(e.target.value)}
-        />
-      )}
-      {current === "height" && (
-        <Input
-          header="Рост в см?"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          placeholder="Например: 180"
-          aria-label="Рост, см"
-          value={heightCm}
-          onChange={(e) => setHeightCm(e.target.value)}
-        />
-      )}
-      {current === "gender" && (
-        <Select
-          header="Пол?"
-          aria-label="Пол"
-          value={gender}
-          onChange={(e) => setGender(e.target.value as "male" | "female" | "")}
-        >
-          <option value="">Выбери</option>
-          {GENDER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-      )}
-      {current === "birth_date" && (
-        <Input
-          header="Дата рождения?"
-          type="date"
-          aria-label="Дата рождения"
-          value={birthDate}
-          onChange={(e) => setBirthDate(e.target.value)}
-        />
-      )}
-      {current === "timezone" && (
-        <Select
-          header="Часовой пояс?"
-          aria-label="Часовой пояс"
-          value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-        >
-          <option value="">Выбери</option>
-          {timezoneOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-      )}
+      <Section className="block-section">
+        {current === "weight" && (
+          <Input
+            header="Твой вес в кг?"
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.1"
+            placeholder="Например: 78"
+            aria-label="Вес, кг"
+            value={weightKg}
+            onChange={(e) => setWeightKg(e.target.value)}
+          />
+        )}
+        {current === "height" && (
+          <Input
+            header="Рост в см?"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            placeholder="Например: 180"
+            aria-label="Рост, см"
+            value={heightCm}
+            onChange={(e) => setHeightCm(e.target.value)}
+          />
+        )}
+        {current === "gender" && (
+          <Select
+            header="Пол?"
+            aria-label="Пол"
+            value={gender}
+            onChange={(e) => setGender(e.target.value as "male" | "female" | "")}
+          >
+            <option value="">Выбери</option>
+            {GENDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        )}
+        {current === "birth_date" && (
+          <Input
+            header="Дата рождения?"
+            type="date"
+            aria-label="Дата рождения"
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+          />
+        )}
+        {current === "timezone" && (
+          <Select
+            header="Часовой пояс?"
+            aria-label="Часовой пояс"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+          >
+            <option value="">Выбери</option>
+            {timezoneOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Section>
 
       {formError && <p className="error-banner">{formError}</p>}
 
