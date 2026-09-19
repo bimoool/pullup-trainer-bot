@@ -42,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import async_session_factory
 from app.db.models import Gender
+from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
@@ -71,18 +72,22 @@ async def seed_not_onboarded(session: AsyncSession, telegram_id: int) -> None:
 
 
 async def seed_first_workout(session: AsyncSession, telegram_id: int) -> None:
-    """Замер на 12 повторений (не 10 — на 10 suggest_starting_equipment
-    отдал бы блоку A резину, а у свежего пользователя нет ни одного
-    заведённого band_item, заведение резины в Mini App — issue #124, PR 3,
-    ещё не сделан; форма первой тренировки не смогла бы дойти до отправки)
-    даёт (BODYWEIGHT, WEIGHT) — блок A на собственном весе, блок Б сразу на
-    отягощении, вес указывается прямо в форме. Анкета пройдена полностью
-    (см. модульный докстрин выше), ни одной тренировки ещё не было — GET
-    /api/workout/plan отдаёт status="ready" с is_first_workout=True."""
+    """Замер на 6 повторений — suggest_starting_equipment(6) даёт (BAND,
+    BODYWEIGHT): блок A на резине, блок Б на собственном весе. Раньше здесь
+    было 12 (даёт (BODYWEIGHT, WEIGHT)), специально ЧТОБЫ избежать резины —
+    заведение резины в Mini App (issue #124, PR 3, BandItemSelect) тогда
+    ещё не было сделано. Оно есть с PR 3 — теперь сценарий сознательно
+    выбирает резину для одного из блоков, чтобы E2E реально проверял новый
+    экран подтверждения стартового снаряда (issue #175,
+    EquipmentPlanScreen.tsx) на случае, где снаряд нужно заранее подготовить
+    (заведение резины через "+ Завести новую резину"), а не только на случае
+    "снаряд не нужен". Анкета пройдена полностью (см. модульный докстрин
+    выше), ни одной тренировки ещё не было — GET /api/workout/plan отдаёт
+    status="ready" с is_first_workout=True."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
     now = datetime.now(UTC)
     onboarding = OnboardingService(session)
-    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=12)
+    await onboarding.record_baseline_and_start(user_id=user.id, performed_at=now, reps=6)
     await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
     )
@@ -95,7 +100,14 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
     app/db/repositories/workouts.py::_resolve_next_state) — GET
     /api/workout/plan отдаёт status="ready" с work_sets_a=3/work_sets_b=4,
     подтверждено tests/test_web/test_workout.py::
-    test_plan_ready_shows_target_and_equipment."""
+    test_plan_ready_shows_target_and_equipment.
+
+    Заводит реальный EquipmentItem и передаёт его id в record_workout для
+    обоих блоков (issue #173) — без этого equipment_a/b.item_id в ответе
+    GET /api/workout/plan оставался бы null, а WorkoutScreen.tsx::handleSubmit
+    (issue #148, "нечего унаследовать") молча блокировал бы отправку формы,
+    требуя выбор/заведение резины, которого сценарий ready.spec.ts не делает
+    — ровно так падал реальный прогон Playwright в CI (см. issue #173)."""
     user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
     now = datetime.now(UTC)
     onboarding = OnboardingService(session)
@@ -105,6 +117,9 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
     await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
     )
+    band_item = await EquipmentItemRepository(session).create(
+        user_id=user.id, name="Резина 15кг", resistance_kg=BAND_VALUE,
+    )
 
     await WorkoutRepository(session).record_workout(
         user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=5),
@@ -112,6 +127,7 @@ async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
         block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
         block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=band_item.id, block_b_equipment_item_id=band_item.id,
     )
 
 

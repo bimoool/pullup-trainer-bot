@@ -63,7 +63,7 @@ BOT_TOKEN=e2e-test-token npm test
 `webapp-frontend/e2e/package.json` добавлен без `package-lock.json` —
 npm был недоступен из песочницы Claude в сессии, где готовился этот PR
 (тот же класс непостоянного ограничения сети, что уже не раз фиксировался
-в `docs/mini-app.md` для `webapp-frontend/`). Первый `npm install` в CI или
+в `CLAUDE.md` для `webapp-frontend/`). Первый `npm install` в CI или
 локально сгенерирует лок-файл — его стоит закоммитить в этот же каталог
 после первого успешного прогона, по аналогии с тем, как уже сделано для
 `webapp-frontend/package-lock.json`.

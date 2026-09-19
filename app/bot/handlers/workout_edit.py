@@ -389,8 +389,8 @@ async def handle_edit_block_b_total_max_skip(
     result = BlockLog(working_reps=(), max_reps=0, reported_volume=data["edit_block_b_total"])
     await callback.message.edit_reply_markup(reply_markup=None)
     # telegram_id — явно от callback.from_user, НЕ от callback.message.from_user
-    # (см. "Известный класс бага: callback.message.from_user" в
-    # docs/incidents.md — тот же приём, что и везде в этом файле/backdate.py).
+    # (см. критический баг Части 10 в CLAUDE.md — тот же приём, что и везде
+    # в этом файле/backdate.py).
     await _apply_edit_block_b(callback.message, state, session, result, telegram_id=callback.from_user.id)
     await callback.answer()
 
