@@ -48,7 +48,11 @@ jobs:
         env:
           POSTGRES_USER: pullup
           POSTGRES_PASSWORD: pullup
-          POSTGRES_DB: pullup_test
+          # Именно `pullup`, не `pullup_test`: tests/conftest.py
+          # (_ensure_database_exists) подключается к служебной базе `pullup`
+          # и САМ создаёт из неё pullup_test. Без неё весь набор падает
+          # с InvalidCatalogNameError — 699 ошибок на первом прогоне CI.
+          POSTGRES_DB: pullup
         ports:
           - 5432:5432
         options: >-
