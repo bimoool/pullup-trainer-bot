@@ -75,6 +75,8 @@ jobs:
           python scripts/e2e_seed.py v2_session_ready 900010
           python scripts/e2e_seed.py v2_session_complex 900011
           python scripts/e2e_seed.py v2_session_progression_edit 900012
+          python scripts/e2e_seed.py plan_week_ready 900013
+          python scripts/e2e_seed.py plan_week_grouping 900014
 
       - name: Install Playwright
         working-directory: webapp-frontend/e2e

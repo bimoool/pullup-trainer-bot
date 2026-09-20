@@ -373,6 +373,60 @@ async def seed_plan_week_ready(session: AsyncSession, telegram_id: int) -> None:
     )
 
 
+async def seed_plan_week_grouping(session: AsyncSession, telegram_id: int) -> None:
+    """Integration fix (issue #188, checkpoint 2 review) — прямой воспроизводящий
+    сценарий бага Worker B: RECURRING-курс с ДВУМЯ ProgramItem, оба
+    day_of_week=NULL, одна ProgramInclusion — ровно форма реального сида
+    "Подтягивания" (scripts/backfill_multi_program.py::seed_catalog).
+    Без group-фикса это две отдельные строки ("Блок A"/"Блок Б"); с фиксом —
+    одна карточка с program_name инклюзии.
+
+    Отдельно — один ручной PlanItem (program_inclusion_id=NULL, тот же
+    day_of_week=NULL, что у пары выше) — должен остаться своей отдельной
+    карточкой, не слипнуться ни с группой, ни с потенциальным вторым ручным
+    PlanItem."""
+    user = await _onboard(session, telegram_id)
+
+    program = Program(
+        name="Подтягивания (E2E group)", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_plan_week_group", config={},
+    )
+    session.add(program)
+    await session.flush()
+
+    block_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_plan_week_group")
+    block_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_plan_week_group")
+    manual_exercise = Exercise(name="Растяжка", metric_type=MetricType.TIME, category="e2e_plan_week_group")
+    session.add_all([block_a, block_b, manual_exercise])
+    await session.flush()
+
+    session.add_all([
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
+            count_per_week=3, day_of_week=None,
+        ),
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
+            count_per_week=3, day_of_week=None,
+        ),
+    ])
+    await session.flush()
+
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+
+    plan = await TrainingPlanRepository(session).get_for_user(user.id)
+    if plan is not None:
+        session.add(
+            PlanItem(
+                training_plan_id=plan.id, exercise_id=manual_exercise.id,
+                count_per_week=2, day_of_week=None, program_inclusion_id=None,
+            ),
+        )
+        await session.flush()
+
+
 SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
@@ -381,6 +435,7 @@ SCENARIOS = {
     "v2_session_complex": seed_v2_session_complex,
     "v2_session_progression_edit": seed_v2_session_progression_edit,
     "plan_week_ready": seed_plan_week_ready,
+    "plan_week_grouping": seed_plan_week_grouping,
 }
 
 

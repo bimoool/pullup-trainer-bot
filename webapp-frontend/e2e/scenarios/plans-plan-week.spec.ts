@@ -42,11 +42,16 @@ test("«Планы»: видна текущая неделя плана, эле�
 
   // Визуально — текущая неделя подписана явно ("текущая"), элементы видны и
   // разделены на "по дням"/"свободный пул" (не смешаны в один список).
+  // Разный day_of_week у двух PlanItem одной инклюзии — остаются двумя
+  // карточками (integration fix, issue #188: ключ группировки —
+  // (program_inclusion_id, day_of_week), не просто program_inclusion_id).
+  // Заголовок теперь ВСЕГДА program_name инклюзии, не имя Exercise —
+  // эти два ассерта раньше проверяли имя упражнения, теперь устарели.
   await expect(page.getByText("Неделя 1 · текущая · База")).toBeVisible();
   await expect(page.getByText("Вторник")).toBeVisible();
-  await expect(page.getByText("По вторникам · 1×/нед")).toBeVisible();
+  await expect(page.getByText("Расписание недели (E2E) · 1×/нед")).toBeVisible();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Свободная тренировка · 3×/нед")).toBeVisible();
+  await expect(page.getByText("Расписание недели (E2E) · 3×/нед")).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);

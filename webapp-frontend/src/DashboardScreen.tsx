@@ -39,6 +39,47 @@ function exerciseLabel(item: PlanItemResponseV2, inclusions: ProgramInclusionRes
   return item.complex_id !== null ? "Комплекс" : `Упражнение #${item.exercise_id}`;
 }
 
+type PlanItemGroup = { key: string; title: string; items: PlanItemResponseV2[] };
+
+/** Группировка строк плана в пользовательские карточки тренировки —
+ * integration fix (issue #188, checkpoint 2 review): без этого «Подтягивания»
+ * (2 PlanItem — Блок A/Блок Б, одна ProgramInclusion) показывались двумя
+ * отдельными строками вместо одной карточки "Подтягивания".
+ *
+ * Ключ группы — (program_inclusion_id, day_of_week), day_of_week=NULL
+ * (свободный пул) — валидный самостоятельный бакет, не особый случай.
+ * Тот же группирующий ключ уже использует SessionPreScreen.tsx::
+ * planItemIdsForInclusion для старта живой сессии — не новая семантика,
+ * подтверждено read-only review (issue #194).
+ *
+ * Заголовок карточки — ProgramInclusionResponse.program_name, не имя
+ * отдельного упражнения (issue #192/#193 путали это).
+ *
+ * Ручные строки (program_inclusion_id=NULL) НЕ объединяются друг с другом
+ * автоматически, даже при совпадении дня — каждая своя отдельная карточка
+ * (докстринг PlanItem, app/db/models_program.py: "строки от разных
+ * источников не объединяются автоматически"). */
+function groupPlanItems(items: PlanItemResponseV2[], inclusions: ProgramInclusionResponseV2[]): PlanItemGroup[] {
+  const groups = new Map<string, PlanItemGroup>();
+  let manualSeq = 0;
+  for (const item of items) {
+    if (item.program_inclusion_id === null) {
+      const key = `manual:${item.id}:${manualSeq++}`;
+      groups.set(key, { key, title: exerciseLabel(item, inclusions), items: [item] });
+      continue;
+    }
+    const key = `${item.program_inclusion_id}:${item.day_of_week ?? "null"}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      const inclusion = inclusions.find((i) => i.id === item.program_inclusion_id);
+      groups.set(key, { key, title: inclusion?.program_name ?? exerciseLabel(item, inclusions), items: [item] });
+    }
+  }
+  return [...groups.values()];
+}
+
 type Props = {
   initDataRaw: string;
   /** Быстрый старт (issue #175) — переключает нижнюю вкладку на
@@ -224,9 +265,10 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
                 {days.map(([day, dayItems]) => (
                   <div key={day} className="plan-week-day-group">
                     <p className="block-subtitle">{DAY_NAMES[day] ?? `День ${day}`}</p>
-                    {dayItems.map((item) => (
-                      <p key={item.id} className="plan-item-row">
-                        {exerciseLabel(item, plan.inclusions)} · {item.count_per_week}×/нед
+                    {groupPlanItems(dayItems, plan.inclusions).map((group) => (
+                      <p key={group.key} className="plan-item-row">
+                        {group.title}
+                        {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
                       </p>
                     ))}
                   </div>
@@ -234,9 +276,10 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
                 {freePool.length > 0 && (
                   <div className="plan-week-day-group">
                     <p className="block-subtitle">Свободный пул</p>
-                    {freePool.map((item) => (
-                      <p key={item.id} className="plan-item-row">
-                        {exerciseLabel(item, plan.inclusions)} · {item.count_per_week}×/нед
+                    {groupPlanItems(freePool, plan.inclusions).map((group) => (
+                      <p key={group.key} className="plan-item-row">
+                        {group.title}
+                        {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
                       </p>
                     ))}
                   </div>
