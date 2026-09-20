@@ -27,6 +27,19 @@ type Props = {
    * состояния прогрессии пользователя. Admin-стенд (SessionV2Lab) не
    * передаёт этот проп — сохраняет старое поведение автопоиска. */
   planItemIds?: number[];
+  /** Checkpoint 4B (issue #188) — manual PlanItem (program_inclusion_id=NULL,
+   * "Планка"/"Отжимания") не имеет ProgramInclusion вообще — весь STEP/
+   * readiness-путь ниже (findActiveInclusion, fetchDashboardStatus)
+   * структурно неприменим и упал бы в "no_course", ложно блокируя старт
+   * тренировки без курса. manual=true пропускает этот путь целиком —
+   * planItemIds обязателен вместе с ним (та же группа, что DashboardScreen
+   * уже вычислил через groupPlanItems, не пересчитывается заново).
+   * Program-backed путь (manual не передан) не изменён ни на строку. */
+  manual?: boolean;
+  /** Заголовок manual-сессии — то же group.title, что уже показывает
+   * карточка на "Планах" ("Планка"/"Отжимания"), не пересчитывается
+   * заново через Exercise Library здесь. */
+  title?: string;
 };
 
 /**
@@ -66,6 +79,7 @@ type ScreenState =
   | { phase: "needs_assessment" }
   | { phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[] }
   | { phase: "ready_generic"; programName: string; planItemIds: number[] }
+  | { phase: "ready_manual"; title: string; planItemIds: number[] }
   | { phase: "starting"; planItemIds: number[] };
 
 function BlockTargetCard({ letter, block }: { letter: "A" | "Б"; block: DashboardBlockResponse }) {
@@ -90,12 +104,29 @@ function planItemIdsForInclusion(plan: TrainingPlanResponseV2, inclusion: Progra
   return plan.plan_items.filter((item) => item.program_inclusion_id === inclusion.id).map((item) => item.id);
 }
 
-export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds }: Props) {
+export function SessionPreScreen({
+  initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds, manual, title,
+}: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      // Manual-ветка (issue #188, Checkpoint 4B) — ни findActiveInclusion,
+      // ни fetchDashboardStatus здесь не вызываются вообще: у manual
+      // PlanItem нет ProgramInclusion, читать по нему readiness
+      // невозможно и не нужно, это не тот же вопрос.
+      if (manual) {
+        if (!cancelled) {
+          if (explicitPlanItemIds === undefined || explicitPlanItemIds.length === 0) {
+            setState({ phase: "error", message: "Не удалось определить упражнение для тренировки." });
+          } else {
+            setState({ phase: "ready_manual", title: title ?? "Тренировка", planItemIds: explicitPlanItemIds });
+          }
+        }
+        return;
+      }
+
       try {
         const plan = await fetchPlan(initDataRaw);
         const inclusion = findActiveInclusion(plan);
@@ -143,7 +174,8 @@ export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout, planIt
     return () => {
       cancelled = true;
     };
-  }, [initDataRaw]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- explicitPlanItemIds/title стабильны на время жизни экрана (новый маунт на новый Start), пересчитывать по ним не нужно
+  }, [initDataRaw, manual]);
 
   async function handleStart(planItemIds: number[]) {
     setState({ phase: "starting", planItemIds });
@@ -205,8 +237,11 @@ export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout, planIt
   const isStarting = state.phase === "starting";
   const step = state.phase === "ready_step" ? state : null;
   const generic = state.phase === "ready_generic" ? state : null;
-  const planItemIds = step?.planItemIds ?? generic?.planItemIds ?? (state.phase === "starting" ? state.planItemIds : []);
-  const programName = step?.programName ?? generic?.programName ?? null;
+  const manualReady = state.phase === "ready_manual" ? state : null;
+  const planItemIds =
+    step?.planItemIds ?? generic?.planItemIds ?? manualReady?.planItemIds
+    ?? (state.phase === "starting" ? state.planItemIds : []);
+  const programName = step?.programName ?? generic?.programName ?? manualReady?.title ?? null;
 
   return (
     <div>

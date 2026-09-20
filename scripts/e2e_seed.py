@@ -67,6 +67,7 @@ import asyncio
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import async_session_factory
@@ -79,6 +80,7 @@ from app.db.models_program import (
     Program,
     ProgramItem,
     ProgressionStrategyProfile,
+    TrainingPlan,
 )
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
@@ -86,7 +88,14 @@ from app.db.repositories.training_sessions import SessionBlockInput, SetLogInput
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
-from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource, WeekPhase
+from app.domain.multi_program import (
+    MetricType,
+    ProgramStructureType,
+    SessionSource,
+    WeekPhase,
+    plan_week_number,
+    plan_week_start_date,
+)
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
@@ -524,6 +533,47 @@ async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) 
     )
 
 
+async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int) -> None:
+    """Checkpoint 4B (issue #188) — две manual PlanItem уже размещены по
+    дням в текущей неделе (program_inclusion_id=NULL, ровно как их создаёт
+    picker из Checkpoint 3), готовые к прямому клику "Начать": Планка
+    (metric_type=time) — среда, Отжимания (metric_type=reps) — пятница.
+
+    Никакой Program/ProgramInclusion не заводится вообще — manual-flow не
+    должен от них зависеть (issue #188, ключевой пункт 6). PlanWeek
+    материализуется тем же доменным расчётом, что и настоящий
+    ensure_current_plan_week (app/domain/multi_program.py::plan_week_number/
+    plan_week_start_date), не собственной датой наугад."""
+    user = await _onboard(session, telegram_id)
+    await seed_exercise_library(session)
+
+    plan = TrainingPlan(user_id=user.id)
+    session.add(plan)
+    await session.flush()
+
+    today = datetime.now(UTC).date()
+    week_number = plan_week_number(plan.created_at.date(), today)
+    week_start = plan_week_start_date(plan.created_at.date(), week_number)
+    week = await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=week_number, start_date=week_start, phase=WeekPhase.BASE,
+    )
+
+    plank = (await session.execute(select(Exercise).where(Exercise.name == "Планка"))).scalar_one()
+    pushups = (await session.execute(select(Exercise).where(Exercise.name == "Отжимания"))).scalar_one()
+
+    session.add_all([
+        PlanItem(
+            training_plan_id=plan.id, exercise_id=plank.id, count_per_week=1,
+            day_of_week=2, program_inclusion_id=None, plan_week_id=week.id,
+        ),
+        PlanItem(
+            training_plan_id=plan.id, exercise_id=pushups.id, count_per_week=1,
+            day_of_week=4, program_inclusion_id=None, plan_week_id=week.id,
+        ),
+    ])
+    await session.flush()
+
+
 SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
@@ -535,6 +585,7 @@ SCENARIOS = {
     "plan_week_grouping": seed_plan_week_grouping,
     "plan_week_add_exercise": seed_plan_week_add_exercise,
     "plan_week_start_session": seed_plan_week_start_session,
+    "plan_week_manual_session": seed_plan_week_manual_session,
 }
 
 
