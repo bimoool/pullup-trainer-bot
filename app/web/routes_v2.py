@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, PlanWeek, Program, ProgramInclusion
+from app.db.models_program import Exercise, PlanItem, PlanWeek, Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -33,6 +34,8 @@ from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2 import (
     BlockProgressionResponse,
+    ExerciseListResponse,
+    ExerciseResponse,
     PlanItemCreateRequest,
     PlanItemListResponse,
     PlanItemResponse,
@@ -155,6 +158,32 @@ async def list_programs(
         strategy_type_value = strategy_profile.strategy_type.value if strategy_profile is not None else None
         responses.append(_program_response(program, strategy_type_value))
     return ProgramListResponse(programs=responses)
+
+
+@router_v2.get("/exercises", response_model=ExerciseListResponse)
+async def list_exercises(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ExerciseListResponse:
+    """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
+    Не требует admin-доступа (обычный пользователь должен пользоваться
+    библиотекой). Отдаёт только поля, реально существующие в Exercise
+    model — не equipment/difficulty/duration/muscles."""
+    await _require_user(session, init_data)
+    result = await session.execute(select(Exercise).order_by(Exercise.id))
+    exercises = result.scalars().all()
+    return ExerciseListResponse(
+        exercises=[
+            ExerciseResponse(
+                id=ex.id,
+                name=ex.name,
+                metric_type=ex.metric_type.value,
+                category=ex.category,
+                subcategory=ex.subcategory,
+            )
+            for ex in exercises
+        ],
+    )
 
 
 # --- План ------------------------------------------------------------------------------

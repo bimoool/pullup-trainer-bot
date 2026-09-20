@@ -25,6 +25,22 @@ class ProgramListResponse(BaseModel):
     programs: list[ProgramResponse]
 
 
+class ExerciseResponse(BaseModel):
+    """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
+    Только поля, реально существующие в Exercise model (не equipment/
+    difficulty/duration/muscles — этих полей в схеме волны 1 нет)."""
+
+    id: int
+    name: str
+    metric_type: str
+    category: str
+    subcategory: str | None
+
+
+class ExerciseListResponse(BaseModel):
+    exercises: list[ExerciseResponse]
+
+
 # --- План пользователя --------------------------------------------------------------
 
 
