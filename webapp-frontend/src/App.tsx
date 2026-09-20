@@ -3,7 +3,9 @@ import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchHello, type HelloResponse } from "./api";
+import { fetchActiveLiveSession, type LiveSessionResponse } from "./apiV2";
 import { DashboardScreen } from "./DashboardScreen";
+import { PlanSessionFlow } from "./PlanSessionFlow";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
@@ -117,6 +119,17 @@ export function App() {
   // потеряло бы прогресс молча, поэтому переключение вкладок при активной
   // живой тренировке сначала спрашивает подтверждение.
   const [liveWorkoutActive, setLiveWorkoutActive] = useState(false);
+  // Checkpoint 4A (issue #188) — "Начать" на program-backed карточке
+  // PlanWeek (DashboardScreen.tsx) ведёт сюда, не в старый WorkoutScreen.
+  // Полноэкранный оверлей поверх табов (та же идея, что liveWorkoutActive
+  // выше не позволяет молча потерять прогресс) — вместо диалога
+  // подтверждения (раздел 15: "не делать большой offline redesign")
+  // выход из потока доступен только через собственный onClose экранов
+  // (SessionPreScreen.onGoToWorkout на отмену, SessionSummaryScreen.onClose
+  // после Complete), не через обычные табы/нижнее меню.
+  const [v2Session, setV2Session] = useState<{ planItemIds: number[] } | { resumedSession: LiveSessionResponse } | null>(
+    null,
+  );
   // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
   // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
   const [faqReturnTab, setFaqReturnTab] = useState<Tab>("profile");
@@ -204,6 +217,36 @@ export function App() {
     };
   }, []);
 
+  // Checkpoint 4A (issue #188), раздел 10 — reload/recovery: без этого
+  // эффекта перезагрузка страницы посреди STARTED v2-сессии возвращала
+  // пользователя на "Главная" с полностью потерянным местом в сессии
+  // (найдено живым Playwright-прогоном, не гипотеза) — повторный клик
+  // "Начать" породил бы ВТОРУЮ TrainingSession (свежий client_session_id
+  // не совпал бы с исходным). Тот же fetchActiveLiveSession, что уже
+  // использует SessionV2Lab.tsx — не новый механизм. Проверяется один раз
+  // после готовности initDataRaw, не на каждый рендер/смену вкладки.
+  useEffect(() => {
+    if (state.status !== "ready") {
+      return;
+    }
+    let cancelled = false;
+    fetchActiveLiveSession(state.initDataRaw)
+      .then((activeSession) => {
+        if (!cancelled && activeSession !== null) {
+          setV2Session({ resumedSession: activeSession });
+        }
+      })
+      .catch(() => {
+        // молчаливо — отсутствие активной сессии (или сетевой сбой этой
+        // проверки) не должно блокировать обычную загрузку приложения.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- запуск ровно
+    // один раз на переход в "ready", не на каждое изменение initDataRaw.
+  }, [state.status]);
+
   if (state.status === "loading") {
     return (
       <div className="app-shell">
@@ -215,6 +258,19 @@ export function App() {
     return (
       <div className="app-shell">
         <p className="screen-message">Не удалось загрузить: {state.message}</p>
+      </div>
+    );
+  }
+
+  if (v2Session !== null) {
+    return (
+      <div className="app-shell">
+        <PlanSessionFlow
+          initDataRaw={state.initDataRaw}
+          planItemIds={"planItemIds" in v2Session ? v2Session.planItemIds : []}
+          initialSession={"resumedSession" in v2Session ? v2Session.resumedSession : null}
+          onClose={() => setV2Session(null)}
+        />
       </div>
     );
   }
@@ -247,7 +303,11 @@ export function App() {
         />
       )}
       {isOnboarded && tab === "plans" && (
-        <DashboardScreen initDataRaw={state.initDataRaw} onOpenWorkout={() => setTab("workout")} />
+        <DashboardScreen
+          initDataRaw={state.initDataRaw}
+          onOpenWorkout={() => setTab("workout")}
+          onStartSession={(planItemIds) => setV2Session({ planItemIds })}
+        />
       )}
       {isOnboarded && tab === "workout" && (
         <WorkoutScreen

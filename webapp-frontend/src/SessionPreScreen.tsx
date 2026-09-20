@@ -15,6 +15,18 @@ type Props = {
   initDataRaw: string;
   onStarted: (session: LiveSessionResponse) => void;
   onGoToWorkout: () => void;
+  /** Checkpoint 4A (issue #188) — явный набор PlanItem с карточки PlanWeek
+   * ("Планы" → группа "Подтягивания" → "Начать"), той же группирующей
+   * семантики (program_inclusion_id, day_of_week), что DashboardScreen.tsx
+   * ::groupPlanItems уже применяет для отображения. Когда передан —
+   * ЗАМЕНЯЕТ результат planItemIdsForInclusion ниже (Dashboard уже знает
+   * точную группу, пересчитывать её здесь заново по exercise/category не
+   * нужно — раздел 5 задачи), но НЕ отменяет STEP readiness-проверку
+   * (dashboard/status, too_early/gap_retest_required остаются как есть,
+   * раздел 6) — она не зависит от того, откуда взялись id, только от
+   * состояния прогрессии пользователя. Admin-стенд (SessionV2Lab) не
+   * передаёт этот проп — сохраняет старое поведение автопоиска. */
+  planItemIds?: number[];
 };
 
 /**
@@ -78,7 +90,7 @@ function planItemIdsForInclusion(plan: TrainingPlanResponseV2, inclusion: Progra
   return plan.plan_items.filter((item) => item.program_inclusion_id === inclusion.id).map((item) => item.id);
 }
 
-export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout }: Props) {
+export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
   useEffect(() => {
@@ -99,7 +111,7 @@ export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout }: Prop
             setState({
               phase: "ready_generic",
               programName: inclusion.program_name,
-              planItemIds: planItemIdsForInclusion(plan, inclusion),
+              planItemIds: explicitPlanItemIds ?? planItemIdsForInclusion(plan, inclusion),
             });
           }
           return;
@@ -112,7 +124,7 @@ export function SessionPreScreen({ initDataRaw, onStarted, onGoToWorkout }: Prop
         if (data.status === "ready" && data.block_a && data.block_b) {
           setState({
             phase: "ready_step", blockA: data.block_a, blockB: data.block_b, programName: data.program_name,
-            planItemIds: planItemIdsForInclusion(plan, inclusion),
+            planItemIds: explicitPlanItemIds ?? planItemIdsForInclusion(plan, inclusion),
           });
         } else if (data.status === "too_early") {
           setState({ phase: "blocked" });
