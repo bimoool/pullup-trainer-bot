@@ -10,9 +10,10 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, PlanWeek, Program, ProgramInclusion
+from app.db.models_program import Exercise, PlanItem, PlanWeek, Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -33,6 +34,8 @@ from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2 import (
     BlockProgressionResponse,
+    ExerciseListResponse,
+    ExerciseResponse,
     PlanItemCreateRequest,
     PlanItemListResponse,
     PlanItemResponse,
@@ -157,6 +160,49 @@ async def list_programs(
     return ProgramListResponse(programs=responses)
 
 
+@router_v2.get("/exercises", response_model=ExerciseListResponse)
+async def list_exercises(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ExerciseListResponse:
+    """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
+    Не требует admin-доступа (обычный пользователь должен пользоваться
+    библиотекой). Отдаёт только поля, реально существующие в Exercise
+    model — не equipment/difficulty/duration/muscles.
+
+    Product-contract gap, найден живым Playwright-прогоном Checkpoint 3
+    (не в исходном issue #196): без фильтра сюда попадали и внутренние
+    step-роли программ (subcategory="block_a"/"block_b" — "Подтягивания —
+    объём/сила"), позволяя пользователю добавить чужой строительный блок
+    программы как самостоятельное упражнение. Исключение — по УЖЕ
+    существующей конвенции, не новой эвристике: та же пара значений
+    subcategory, которую ProgramRepository.find_step_role_exercises()
+    использует для резолва StepProgressionStrategy (подтверждено Кириллом
+    в issue #165 как достаточное, без новой колонки). Exercise с
+    subcategory=NULL (обычные библиотечные упражнения) — не задет, явный
+    OR по IS NULL, потому что NOT IN(...) в SQL сам по себе отбрасывает
+    NULL-строки (three-valued logic), не включает их."""
+    await _require_user(session, init_data)
+    result = await session.execute(
+        select(Exercise)
+        .where(Exercise.subcategory.is_(None) | Exercise.subcategory.not_in(["block_a", "block_b"]))
+        .order_by(Exercise.id),
+    )
+    exercises = result.scalars().all()
+    return ExerciseListResponse(
+        exercises=[
+            ExerciseResponse(
+                id=ex.id,
+                name=ex.name,
+                metric_type=ex.metric_type.value,
+                category=ex.category,
+                subcategory=ex.subcategory,
+            )
+            for ex in exercises
+        ],
+    )
+
+
 # --- План ------------------------------------------------------------------------------
 
 
@@ -250,11 +296,18 @@ async def create_plan_item(
     user = await _require_user(session, init_data)
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
+
+    # Checkpoint 3B (issue #197): ownership-проверка plan_week_id, если передан
+    if body.plan_week_id is not None:
+        week = await plans.get_plan_week_for_user(body.plan_week_id, user.id)
+        if week is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanWeek not found")
+
     item = await plans.create_plan_item(
         training_plan_id=plan.id, exercise_id=body.exercise_id, complex_id=body.complex_id,
         count_per_week=body.count_per_week, day_of_week=body.day_of_week,
         week_phase=WeekPhase(body.week_phase) if body.week_phase is not None else None,
-        program_inclusion_id=None,
+        program_inclusion_id=None, plan_week_id=body.plan_week_id,
     )
     return _plan_item_response(item)
 

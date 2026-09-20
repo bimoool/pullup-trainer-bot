@@ -108,14 +108,28 @@ class TrainingPlanRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_plan_week_for_user(self, plan_week_id: int, user_id: int) -> PlanWeek | None:
+        """Ownership-проверка через join на training_plans — 404, не 403,
+        тот же принцип, что get_plan_item_for_user/get_inclusion_for_user
+        (CLAUDE.md). Нужен issue #197 Checkpoint 3B для проверки, что
+        plan_week_id в POST /api/v2/plan-items принадлежит вызывающему
+        пользователю."""
+        result = await self._session.execute(
+            select(PlanWeek)
+            .join(TrainingPlan, PlanWeek.training_plan_id == TrainingPlan.id)
+            .where(PlanWeek.id == plan_week_id, TrainingPlan.user_id == user_id),
+        )
+        return result.scalar_one_or_none()
+
     async def create_plan_item(
         self, *, training_plan_id: int, exercise_id: int, complex_id: int | None,
         count_per_week: int, day_of_week: int | None, week_phase: WeekPhase | None, program_inclusion_id: int | None,
+        plan_week_id: int | None = None,
     ) -> PlanItem:
         item = PlanItem(
             training_plan_id=training_plan_id, exercise_id=exercise_id, complex_id=complex_id,
             count_per_week=count_per_week, day_of_week=day_of_week, week_phase=week_phase,
-            program_inclusion_id=program_inclusion_id,
+            program_inclusion_id=program_inclusion_id, plan_week_id=plan_week_id,
         )
         self._session.add(item)
         await self._session.flush()

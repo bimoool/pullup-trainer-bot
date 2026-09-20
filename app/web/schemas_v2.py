@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 # --- Каталог (read-only на этой волне) ---------------------------------------------
 
@@ -23,6 +23,22 @@ class ProgramResponse(BaseModel):
 
 class ProgramListResponse(BaseModel):
     programs: list[ProgramResponse]
+
+
+class ExerciseResponse(BaseModel):
+    """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
+    Только поля, реально существующие в Exercise model (не equipment/
+    difficulty/duration/muscles — этих полей в схеме волны 1 нет)."""
+
+    id: int
+    name: str
+    metric_type: str
+    category: str
+    subcategory: str | None
+
+
+class ExerciseListResponse(BaseModel):
+    exercises: list[ExerciseResponse]
 
 
 # --- План пользователя --------------------------------------------------------------
@@ -191,8 +207,15 @@ class PlanItemCreateRequest(BaseModel):
     count_per_week: int
     exercise_id: int | None = None
     complex_id: int | None = None
-    day_of_week: int | None = None
+    # Checkpoint 3B (issue #197) требовал "невалидный day_of_week
+    # отклоняется" — Worker B написал тест на это (test_create_plan_item_
+    # with_invalid_day_of_week_is_rejected), но саму валидацию не добавил;
+    # реальный прогон integration review поймал 200 OK на day_of_week=7,
+    # где ожидался 422. Field(ge=0, le=6) — тот же диапазон, что
+    # DashboardScreen.tsx::DAY_NAMES (0=понедельник..6=воскресенье).
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
     week_phase: Literal["base", "rest", "peak"] | None = None
+    plan_week_id: int | None = None
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> "PlanItemCreateRequest":

@@ -92,6 +92,7 @@ from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.session_log import TrainingSessionLogService
+from scripts.seed_exercise_library import seed_exercise_library
 
 BAND_VALUE = Decimal("15.0")
 
@@ -427,6 +428,51 @@ async def seed_plan_week_grouping(session: AsyncSession, telegram_id: int) -> No
         await session.flush()
 
 
+async def seed_plan_week_add_exercise(session: AsyncSession, telegram_id: int) -> None:
+    """Checkpoint 3 (issue #188) — Golden Journey "Планы -> Добавить
+    упражнение": активная RECURRING-инклюзия «Подтягивания» (2 блока,
+    day_of_week=NULL — тот же вид, что реальный сид) + засеянная Exercise
+    Library (Планка/Отжимания, scripts/seed_exercise_library.py). Первый
+    GET /api/v2/plan материализует текущую PlanWeek сам (ensure_current_
+    plan_week вызывается из самого роута, issue #188 checkpoint 1) —
+    здесь этого не делаем, только готовим исходные данные.
+
+    Не переиспользует seed_plan_week_grouping (900014) намеренно — там уже
+    есть свой ручной PlanItem "Растяжка" в свободном пуле, который сбивал
+    бы точные assert'ы этого сценария (ожидается только "Подтягивания" в
+    свободном пуле до добавления Планки/Отжиманий)."""
+    user = await _onboard(session, telegram_id)
+    await seed_exercise_library(session)
+
+    program = Program(
+        name="Подтягивания", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_add_exercise", config={},
+    )
+    session.add(program)
+    await session.flush()
+
+    block_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_add_exercise")
+    block_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_add_exercise")
+    session.add_all([block_a, block_b])
+    await session.flush()
+
+    session.add_all([
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
+            count_per_week=3, day_of_week=None,
+        ),
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
+            count_per_week=3, day_of_week=None,
+        ),
+    ])
+    await session.flush()
+
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+
+
 SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
@@ -436,6 +482,7 @@ SCENARIOS = {
     "v2_session_progression_edit": seed_v2_session_progression_edit,
     "plan_week_ready": seed_plan_week_ready,
     "plan_week_grouping": seed_plan_week_grouping,
+    "plan_week_add_exercise": seed_plan_week_add_exercise,
 }
 
 

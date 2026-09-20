@@ -67,6 +67,21 @@ export async function fetchDashboardStatus(initDataRaw: string): Promise<Dashboa
   return apiV2Get<DashboardStatusResponse>("/api/v2/dashboard/status", initDataRaw);
 }
 
+// --- GET /api/v2/exercises (Checkpoint 3A, issue #196) — Exercise Library без UI ----
+
+export interface ExerciseResponseV2 {
+  id: number;
+  name: string;
+  metric_type: string;
+  category: string;
+  subcategory: string | null;
+}
+
+export async function fetchExercises(initDataRaw: string): Promise<ExerciseResponseV2[]> {
+  const response = await apiV2Get<{ exercises: ExerciseResponseV2[] }>("/api/v2/exercises", initDataRaw);
+  return response.exercises;
+}
+
 /**
  * Волна 5 (issue #185, экран сессии) — те же файлы остаются единственными,
  * которым разрешено упоминать /api/v2 (allowlist в
@@ -333,4 +348,22 @@ export async function createProgramInclusion(
   initDataRaw: string, programId: number,
 ): Promise<ProgramInclusionResponseV2> {
   return apiV2Post("/api/v2/program-inclusions", initDataRaw, { program_id: programId });
+}
+
+// --- POST /plan-items — создание manual PlanItem (issue #197, Checkpoint 3B) ---
+
+export interface PlanItemCreateRequest {
+  count_per_week: number;
+  exercise_id?: number;
+  complex_id?: number;
+  day_of_week?: number | null;
+  week_phase?: "base" | "rest" | "peak" | null;
+  plan_week_id?: number | null;
+}
+
+export async function createPlanItem(
+  initDataRaw: string,
+  request: PlanItemCreateRequest,
+): Promise<PlanItemResponseV2> {
+  return apiV2Post("/api/v2/plan-items", initDataRaw, request);
 }

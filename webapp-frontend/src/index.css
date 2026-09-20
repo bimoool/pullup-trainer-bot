@@ -142,6 +142,27 @@ input[type="number"] {
   opacity: 0.7;
 }
 
+/* Checkpoint 3 (issue #188) — picker "+ Добавить упражнение": каждый
+   вариант (Exercise/день) — та же .program-card-button база, с рамкой и
+   отступом, чтобы список кликабельных строк не сливался визуально; выбор
+   подсвечивается акцентной рамкой, тот же токен, что .plan-week-current. */
+.plan-exercise-option {
+  border: 1px solid var(--tg-theme-hint-color, #999);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.plan-exercise-option-selected {
+  border-color: var(--tg-link-color);
+  border-width: 1.5px;
+}
+
+.plan-add-exercise-button {
+  color: var(--tg-link-color);
+  padding: 6px 0;
+}
+
 .block-header {
   display: flex;
   align-items: center;
