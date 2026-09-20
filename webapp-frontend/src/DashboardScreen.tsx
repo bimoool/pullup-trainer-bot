@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
 import {
+  createPlanItem,
+  type ExerciseResponseV2,
+  fetchExercises,
   fetchPlan,
   type PlanItemResponseV2,
   type PlanWeekResponseV2,
@@ -23,18 +26,29 @@ const WEEK_PHASE_LABELS: Record<string, string> = {
   base: "База", rest: "Отдых", peak: "Пик",
 };
 
-/** Имя строки плана для отображения — берётся из snapshot.exercises той
- * инклюзии, что произвела эту строку (program_inclusion_id), а не хранится
- * на самом PlanItem (issue #188: PlanItemResponse отдаёт только exercise_id).
- * Ручные строки (program_inclusion_id=NULL, ещё не подключён UI — POST
- * /plan-items не вызывается ниоткуда из фронтенда) не найдут совпадения ни
- * у одной инклюзии — честный фолбэк по id, не выдуманное название. */
-function exerciseLabel(item: PlanItemResponseV2, inclusions: ProgramInclusionResponseV2[]): string {
+/** Имя строки плана для отображения. Checkpoint 3 (issue #188, Worker C
+ * blocking fix) — раньше искало только в snapshot.exercises инклюзии,
+ * поэтому manual PlanItem (program_inclusion_id=NULL — «Планка»/
+ * «Отжимания», добавленные через picker ниже) всегда падали в фолбэк
+ * "Упражнение #id". Порядок разрешения: (1) snapshot той инклюзии, что
+ * произвела строку — для program-backed PlanItem; (2) Exercise Library
+ * (GET /exercises, загружена этим же экраном для picker'а) — для manual;
+ * (3) `Упражнение #id`/`Комплекс` — только если оба источника не знают
+ * это имя (реально недостижимо для реально созданных через этот экран
+ * строк, честный фолбэк на случай рассинхрона данных). Backend-схема не
+ * менялась — по прямому указанию, имя не хранится на самом PlanItem. */
+function exerciseLabel(
+  item: PlanItemResponseV2, inclusions: ProgramInclusionResponseV2[], exercises: ExerciseResponseV2[],
+): string {
   for (const inclusion of inclusions) {
     const match = inclusion.snapshot.exercises?.find((exercise) => exercise.exercise_id === item.exercise_id);
     if (match) {
       return match.name;
     }
+  }
+  const libraryMatch = exercises.find((exercise) => exercise.id === item.exercise_id);
+  if (libraryMatch) {
+    return libraryMatch.name;
   }
   return item.complex_id !== null ? "Комплекс" : `Упражнение #${item.exercise_id}`;
 }
@@ -59,13 +73,15 @@ type PlanItemGroup = { key: string; title: string; items: PlanItemResponseV2[] }
  * автоматически, даже при совпадении дня — каждая своя отдельная карточка
  * (докстринг PlanItem, app/db/models_program.py: "строки от разных
  * источников не объединяются автоматически"). */
-function groupPlanItems(items: PlanItemResponseV2[], inclusions: ProgramInclusionResponseV2[]): PlanItemGroup[] {
+function groupPlanItems(
+  items: PlanItemResponseV2[], inclusions: ProgramInclusionResponseV2[], exercises: ExerciseResponseV2[],
+): PlanItemGroup[] {
   const groups = new Map<string, PlanItemGroup>();
   let manualSeq = 0;
   for (const item of items) {
     if (item.program_inclusion_id === null) {
       const key = `manual:${item.id}:${manualSeq++}`;
-      groups.set(key, { key, title: exerciseLabel(item, inclusions), items: [item] });
+      groups.set(key, { key, title: exerciseLabel(item, inclusions, exercises), items: [item] });
       continue;
     }
     const key = `${item.program_inclusion_id}:${item.day_of_week ?? "null"}`;
@@ -74,7 +90,10 @@ function groupPlanItems(items: PlanItemResponseV2[], inclusions: ProgramInclusio
       existing.items.push(item);
     } else {
       const inclusion = inclusions.find((i) => i.id === item.program_inclusion_id);
-      groups.set(key, { key, title: inclusion?.program_name ?? exerciseLabel(item, inclusions), items: [item] });
+      groups.set(
+        key,
+        { key, title: inclusion?.program_name ?? exerciseLabel(item, inclusions, exercises), items: [item] },
+      );
     }
   }
   return [...groups.values()];
@@ -127,6 +146,21 @@ type PlanState = {
 
 const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
 
+type ExercisesState =
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "ready"; exercises: ExerciseResponseV2[] };
+
+// Checkpoint 3 (issue #188) — picker "+ Добавить упражнение" внутри текущей
+// PlanWeek. day: null означает "Свободный пул" — валидный выбор, не
+// "не выбрано". exerciseId: null означает "не выбрано" — кнопка "Добавить"
+// неактивна до выбора.
+type PickerState =
+  | { phase: "closed" }
+  | { phase: "picking"; weekId: number; exerciseId: number | null; day: number | null }
+  | { phase: "adding"; weekId: number; exerciseId: number; day: number | null }
+  | { phase: "add-error"; weekId: number; exerciseId: number; day: number | null; message: string };
+
 /** Только честные статусы (issue #175, docs/architecture-multicourse.md:
  * "нельзя предлагать действие, которое гарантированно не может завершиться
  * успехом") — кнопка ниже обещает "начать тренировку" ТОЛЬКО на status=
@@ -142,6 +176,65 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
   // молчаливый провал (пустое состояние), чтобы не рвать уже рабочую сводку
   // "Сегодня", если /api/v2/plan недоступен по какой-то причине.
   const [plan, setPlan] = useState<PlanState>(EMPTY_PLAN);
+  // Exercise Library (issue #196) — загружается один раз при открытии
+  // "Планов", тем же способом, что и dashboard/plan выше: отдельный эффект,
+  // молчаливый провал не рвёт остальной экран, если /api/v2/exercises
+  // недоступен по какой-то причине — просто не будет "+ Добавить упражнение".
+  const [exercisesState, setExercisesState] = useState<ExercisesState>({ phase: "loading" });
+  const [picker, setPicker] = useState<PickerState>({ phase: "closed" });
+
+  function reloadPlan() {
+    return fetchPlan(initDataRaw).then((data) => {
+      setPlan(
+        data === null
+          ? EMPTY_PLAN
+          : {
+              inclusions: data.program_inclusions.filter((i) => i.is_active),
+              items: data.plan_items,
+              weeks: data.plan_weeks,
+            },
+      );
+    });
+  }
+
+  function handleAddExercise(weekId: number) {
+    setPicker({ phase: "picking", weekId, exerciseId: null, day: null });
+  }
+
+  function updatePickerSelection(patch: { exerciseId?: number; day?: number | null }) {
+    if (picker.phase !== "picking" && picker.phase !== "add-error") {
+      return;
+    }
+    setPicker({
+      phase: "picking", weekId: picker.weekId,
+      exerciseId: patch.exerciseId ?? picker.exerciseId,
+      day: patch.day !== undefined ? patch.day : picker.day,
+    });
+  }
+
+  function handleConfirmAdd() {
+    if (picker.phase !== "picking" || picker.exerciseId === null) {
+      return;
+    }
+    const { weekId, exerciseId, day } = picker;
+    setPicker({ phase: "adding", weekId, exerciseId, day });
+    createPlanItem(initDataRaw, {
+      exercise_id: exerciseId, plan_week_id: weekId, day_of_week: day, count_per_week: 1,
+    })
+      .then(() => reloadPlan())
+      .then(() => {
+        // Checkpoint 3 (issue #188, раздел 5): не добавлять строку локально
+        // — refetch реального GET /plan, UI строится из серверного
+        // состояния, не из оптимистичного предположения.
+        setPicker({ phase: "closed" });
+      })
+      .catch((error) => {
+        setPicker({
+          phase: "add-error", weekId, exerciseId, day,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +254,24 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
       })
       .catch(() => {
         // молчаливо — см. комментарий у объявления state выше
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchExercises(initDataRaw)
+      .then((exercises) => {
+        if (!cancelled) {
+          setExercisesState({ phase: "ready", exercises });
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setExercisesState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+        }
       });
     return () => {
       cancelled = true;
@@ -201,6 +312,7 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
   // (тот же порядок "свежее сверху", что и в HistoryScreen.tsx).
   const currentWeekId = plan.weeks.length > 0 ? plan.weeks[plan.weeks.length - 1].id : null;
   const weeksNewestFirst = [...plan.weeks].reverse();
+  const libraryExercises = exercisesState.phase === "ready" ? exercisesState.exercises : [];
 
   let statusText: string;
   if (isReady && dashboard.is_first_workout) {
@@ -265,7 +377,7 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
                 {days.map(([day, dayItems]) => (
                   <div key={day} className="plan-week-day-group">
                     <p className="block-subtitle">{DAY_NAMES[day] ?? `День ${day}`}</p>
-                    {groupPlanItems(dayItems, plan.inclusions).map((group) => (
+                    {groupPlanItems(dayItems, plan.inclusions, libraryExercises).map((group) => (
                       <p key={group.key} className="plan-item-row">
                         {group.title}
                         {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
@@ -276,7 +388,7 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
                 {freePool.length > 0 && (
                   <div className="plan-week-day-group">
                     <p className="block-subtitle">Свободный пул</p>
-                    {groupPlanItems(freePool, plan.inclusions).map((group) => (
+                    {groupPlanItems(freePool, plan.inclusions, libraryExercises).map((group) => (
                       <p key={group.key} className="plan-item-row">
                         {group.title}
                         {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
@@ -284,10 +396,95 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
                     ))}
                   </div>
                 )}
+                {isCurrent && (
+                  <div className="plan-week-day-group">
+                    <button
+                      type="button"
+                      className="program-card-button plan-add-exercise-button"
+                      onClick={() => handleAddExercise(week.id)}
+                    >
+                      + Добавить упражнение
+                    </button>
+                  </div>
+                )}
               </Section>
             );
           })}
         </>
+      )}
+
+      {picker.phase !== "closed" && (
+        <Section className="block-section" header="Добавить упражнение">
+          {exercisesState.phase === "loading" && <p className="screen-message">Загружаю библиотеку…</p>}
+          {exercisesState.phase === "error" && (
+            <p className="screen-message">Не удалось загрузить упражнения: {exercisesState.message}</p>
+          )}
+          {exercisesState.phase === "ready" && (
+            <div className="plan-week-day-group">
+              {exercisesState.exercises.map((exercise) => (
+                <button
+                  key={exercise.id}
+                  type="button"
+                  disabled={picker.phase === "adding"}
+                  className={
+                    picker.exerciseId === exercise.id
+                      ? "program-card-button plan-exercise-option plan-exercise-option-selected"
+                      : "program-card-button plan-exercise-option"
+                  }
+                  onClick={() => updatePickerSelection({ exerciseId: exercise.id })}
+                >
+                  {exercise.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p className="block-subtitle">День</p>
+          <div className="plan-week-day-group">
+            <button
+              type="button"
+              disabled={picker.phase === "adding"}
+              className={
+                picker.day === null
+                  ? "program-card-button plan-exercise-option plan-exercise-option-selected"
+                  : "program-card-button plan-exercise-option"
+              }
+              onClick={() => updatePickerSelection({ day: null })}
+            >
+              Свободный пул
+            </button>
+            {DAY_NAMES.map((name, dayIndex) => (
+              <button
+                key={dayIndex}
+                type="button"
+                disabled={picker.phase === "adding"}
+                className={
+                  picker.day === dayIndex
+                    ? "program-card-button plan-exercise-option plan-exercise-option-selected"
+                    : "program-card-button plan-exercise-option"
+                }
+                onClick={() => updatePickerSelection({ day: dayIndex })}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+
+          {picker.phase === "add-error" && (
+            <p className="screen-message">Не удалось добавить: {picker.message}</p>
+          )}
+
+          <Button
+            className="action-button" size="m" stretched
+            disabled={picker.exerciseId === null || picker.phase === "adding"}
+            onClick={handleConfirmAdd}
+          >
+            {picker.phase === "adding" ? "Добавляю…" : "Добавить"}
+          </Button>
+          <Button mode="outline" size="s" disabled={picker.phase === "adding"} onClick={() => setPicker({ phase: "closed" })}>
+            Отмена
+          </Button>
+        </Section>
       )}
 
       {plan.inclusions.length > 0 && (
