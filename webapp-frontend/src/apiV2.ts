@@ -99,6 +99,21 @@ export interface PlanItemResponseV2 {
   day_of_week: number | null;
   week_phase: string | null;
   program_inclusion_id: number | null;
+  plan_week_id: number | null;
+}
+
+/**
+ * issue #193 (WORKER B) — реальная PlanWeek (Checkpoint 1/1.1, issue #188),
+ * не то же самое, что PlanItemResponseV2.week_phase (свойство самой строки
+ * плана, унаследованное от ProgramItem, не привязка к конкретной
+ * календарной неделе). "Планы" группирует plan_items по plan_week_id,
+ * ссылающемуся на id из этого списка, а не по week_phase.
+ */
+export interface PlanWeekResponseV2 {
+  id: number;
+  week_number: number;
+  start_date: string;
+  phase: string;
 }
 
 export interface TrainingPlanResponseV2 {
@@ -106,6 +121,7 @@ export interface TrainingPlanResponseV2 {
   created_at: string;
   program_inclusions: ProgramInclusionResponseV2[];
   plan_items: PlanItemResponseV2[];
+  plan_weeks: PlanWeekResponseV2[];
 }
 
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {

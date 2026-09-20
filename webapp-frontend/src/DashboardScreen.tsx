@@ -2,8 +2,42 @@ import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
-import { fetchPlan, type ProgramInclusionResponseV2 } from "./apiV2";
+import {
+  fetchPlan,
+  type PlanItemResponseV2,
+  type PlanWeekResponseV2,
+  type ProgramInclusionResponseV2,
+} from "./apiV2";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
+
+// issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
+// (Python date.weekday()), тот же порядок, что и остальной код проекта
+// использует для дат: ни одна существующая строка PlanItem.day_of_week
+// сейчас не NULL (см. scripts/backfill_multi_program.py — реальный сид
+// "Подтягивания" целиком свободный пул), так что до этого issue нумерация
+// нигде не была задокументирована и не использовалась — выбрана здесь
+// первый раз.
+const DAY_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"];
+
+const WEEK_PHASE_LABELS: Record<string, string> = {
+  base: "База", rest: "Отдых", peak: "Пик",
+};
+
+/** Имя строки плана для отображения — берётся из snapshot.exercises той
+ * инклюзии, что произвела эту строку (program_inclusion_id), а не хранится
+ * на самом PlanItem (issue #188: PlanItemResponse отдаёт только exercise_id).
+ * Ручные строки (program_inclusion_id=NULL, ещё не подключён UI — POST
+ * /plan-items не вызывается ниоткуда из фронтенда) не найдут совпадения ни
+ * у одной инклюзии — честный фолбэк по id, не выдуманное название. */
+function exerciseLabel(item: PlanItemResponseV2, inclusions: ProgramInclusionResponseV2[]): string {
+  for (const inclusion of inclusions) {
+    const match = inclusion.snapshot.exercises?.find((exercise) => exercise.exercise_id === item.exercise_id);
+    if (match) {
+      return match.name;
+    }
+  }
+  return item.complex_id !== null ? "Комплекс" : `Упражнение #${item.exercise_id}`;
+}
 
 type Props = {
   initDataRaw: string;
@@ -44,6 +78,14 @@ function daysSinceLabel(days: number | null): string {
   return `${days} дн. назад`;
 }
 
+type PlanState = {
+  inclusions: ProgramInclusionResponseV2[];
+  items: PlanItemResponseV2[];
+  weeks: PlanWeekResponseV2[];
+};
+
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
+
 /** Только честные статусы (issue #175, docs/architecture-multicourse.md:
  * "нельзя предлагать действие, которое гарантированно не может завершиться
  * успехом") — кнопка ниже обещает "начать тренировку" ТОЛЬКО на status=
@@ -53,18 +95,27 @@ function daysSinceLabel(days: number | null): string {
  * дублирует эту логику, только не начинает с неё. */
 export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
-  // Подключённые курсы (Capability A, issue #188) — минимальный видимый
-  // результат "Добавить в план" (10.2: "внизу Подключённые курсы"). Отдельный
-  // эффект и молчаливый провал (пустой массив), чтобы не рвать уже рабочую
-  // сводку "Сегодня", если /api/v2/plan недоступен по какой-то причине.
-  const [inclusions, setInclusions] = useState<ProgramInclusionResponseV2[]>([]);
+  // Подключённые курсы + реальные PlanWeek (Capability A issue #188, недели
+  // — issue #193) — минимальный видимый результат "Добавить в план" (10.2:
+  // "полоса недель ... внизу Подключённые курсы"). Отдельный эффект и
+  // молчаливый провал (пустое состояние), чтобы не рвать уже рабочую сводку
+  // "Сегодня", если /api/v2/plan недоступен по какой-то причине.
+  const [plan, setPlan] = useState<PlanState>(EMPTY_PLAN);
 
   useEffect(() => {
     let cancelled = false;
     fetchPlan(initDataRaw)
-      .then((plan) => {
+      .then((data) => {
         if (!cancelled) {
-          setInclusions((plan?.program_inclusions ?? []).filter((i) => i.is_active));
+          setPlan(
+            data === null
+              ? EMPTY_PLAN
+              : {
+                  inclusions: data.program_inclusions.filter((i) => i.is_active),
+                  items: data.plan_items,
+                  weeks: data.plan_weeks,
+                },
+          );
         }
       })
       .catch(() => {
@@ -102,6 +153,13 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
 
   const { dashboard } = state;
   const isReady = dashboard.status === "ready";
+  // Последняя неделя списка — всегда текущая: list_plan_weeks сортирует по
+  // возрастанию week_number, а ensure_current_plan_week (issue #188,
+  // вызывается на каждый GET /api/v2/plan) никогда не создаёт недели
+  // наперёд, только текущую календарную. Показ — от текущей к прошлым
+  // (тот же порядок "свежее сверху", что и в HistoryScreen.tsx).
+  const currentWeekId = plan.weeks.length > 0 ? plan.weeks[plan.weeks.length - 1].id : null;
+  const weeksNewestFirst = [...plan.weeks].reverse();
 
   let statusText: string;
   if (isReady && dashboard.is_first_workout) {
@@ -133,10 +191,66 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
 
       <p className="screen-message">{statusText}</p>
 
-      {inclusions.length > 0 && (
+      {weeksNewestFirst.length > 0 && (
+        <>
+          <p className="section-title">Недели плана</p>
+          {weeksNewestFirst.map((week) => {
+            const isCurrent = week.id === currentWeekId;
+            const weekItems = plan.items.filter((item) => item.plan_week_id === week.id);
+            const freePool = weekItems.filter((item) => item.day_of_week === null);
+            const byDay = new Map<number, PlanItemResponseV2[]>();
+            for (const item of weekItems) {
+              if (item.day_of_week === null) {
+                continue;
+              }
+              const dayItems = byDay.get(item.day_of_week) ?? [];
+              dayItems.push(item);
+              byDay.set(item.day_of_week, dayItems);
+            }
+            const days = [...byDay.entries()].sort(([a], [b]) => a - b);
+
+            return (
+              <Section
+                key={week.id}
+                className={isCurrent ? "block-section plan-week-current" : "block-section plan-week-past"}
+                header={
+                  `Неделя ${week.week_number}${isCurrent ? " · текущая" : ""} · `
+                  + `${WEEK_PHASE_LABELS[week.phase] ?? week.phase}`
+                }
+              >
+                {weekItems.length === 0 && (
+                  <p className="block-subtitle">На эту неделю пока ничего не запланировано.</p>
+                )}
+                {days.map(([day, dayItems]) => (
+                  <div key={day} className="plan-week-day-group">
+                    <p className="block-subtitle">{DAY_NAMES[day] ?? `День ${day}`}</p>
+                    {dayItems.map((item) => (
+                      <p key={item.id} className="plan-item-row">
+                        {exerciseLabel(item, plan.inclusions)} · {item.count_per_week}×/нед
+                      </p>
+                    ))}
+                  </div>
+                ))}
+                {freePool.length > 0 && (
+                  <div className="plan-week-day-group">
+                    <p className="block-subtitle">Свободный пул</p>
+                    {freePool.map((item) => (
+                      <p key={item.id} className="plan-item-row">
+                        {exerciseLabel(item, plan.inclusions)} · {item.count_per_week}×/нед
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            );
+          })}
+        </>
+      )}
+
+      {plan.inclusions.length > 0 && (
         <>
           <p className="section-title">Подключённые курсы</p>
-          {inclusions.map((inclusion) => (
+          {plan.inclusions.map((inclusion) => (
             <Section key={inclusion.id} className="block-section">
               <p className="block-subtitle">{inclusion.program_name}</p>
             </Section>

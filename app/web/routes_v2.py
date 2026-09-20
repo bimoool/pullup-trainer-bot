@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, Program, ProgramInclusion
+from app.db.models_program import PlanItem, PlanWeek, Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -37,6 +37,7 @@ from app.web.schemas_v2 import (
     PlanItemListResponse,
     PlanItemResponse,
     PlanResponse,
+    PlanWeekResponse,
     ProgramInclusionCreateRequest,
     ProgramInclusionResponse,
     ProgramListResponse,
@@ -100,6 +101,12 @@ def _plan_item_response(item: PlanItem) -> PlanItemResponse:
         count_per_week=item.count_per_week, day_of_week=item.day_of_week,
         week_phase=item.week_phase.value if item.week_phase is not None else None,
         program_inclusion_id=item.program_inclusion_id, plan_week_id=item.plan_week_id,
+    )
+
+
+def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
+    return PlanWeekResponse(
+        id=week.id, week_number=week.week_number, start_date=week.start_date, phase=week.phase.value,
     )
 
 
@@ -175,11 +182,13 @@ async def get_plan(
 
     inclusions = await plans.list_inclusions(plan.id)
     plan_items = await plans.list_plan_items(plan.id)
+    plan_weeks = await plans.list_plan_weeks(plan.id)
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
             program_inclusions=[_program_inclusion_response(inclusion) for inclusion in inclusions],
             plan_items=[_plan_item_response(item) for item in plan_items],
+            plan_weeks=[_plan_week_response(week) for week in plan_weeks],
         ),
     )
 

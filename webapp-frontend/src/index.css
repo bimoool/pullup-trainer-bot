@@ -148,6 +148,26 @@ input[type="number"] {
   margin: 2px 0 0;
 }
 
+/* issue #193 — "Планы" отличает текущую PlanWeek от прошлых недель
+   визуально: акцентная рамка на текущей, приглушение прошлых. */
+.plan-week-current {
+  border: 1.5px solid var(--tg-link-color);
+  border-radius: 12px;
+}
+
+.plan-week-past {
+  opacity: 0.65;
+}
+
+.plan-week-day-group {
+  margin-top: 10px;
+}
+
+.plan-item-row {
+  font-size: 14px;
+  margin: 4px 0 0;
+}
+
 .field-label {
   display: block;
   font-size: 12px;
