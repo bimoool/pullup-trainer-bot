@@ -3,7 +3,7 @@
 (старая схема подтягиваний), не расширяет его: поля/формы здесь принципиально
 другие (Exercise/TrainingSession вместо Block/Workout)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -50,11 +50,25 @@ class PlanItemResponse(BaseModel):
     plan_week_id: int | None
 
 
+class PlanWeekResponse(BaseModel):
+    """issue #193 — PlanWeek не отдавалась в GET /api/v2/plan вообще, хотя
+    Checkpoint 1/1.1 (issue #188) уже материализует её и проставляет
+    PlanItem.plan_week_id. Без этого поля фронтенд не мог сгруппировать
+    plan_items по РЕАЛЬНОЙ неделе (только по week_phase — общее свойство
+    строки плана, не то же самое, что конкретная календарная неделя)."""
+
+    id: int
+    week_number: int
+    start_date: date
+    phase: str
+
+
 class TrainingPlanResponse(BaseModel):
     id: int
     created_at: datetime
     program_inclusions: list[ProgramInclusionResponse]
     plan_items: list[PlanItemResponse]
+    plan_weeks: list[PlanWeekResponse]
 
 
 class PlanResponse(BaseModel):

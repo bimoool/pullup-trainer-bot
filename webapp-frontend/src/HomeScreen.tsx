@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchDashboard, type DashboardResponse } from "./api";
 import { createProgramInclusion, fetchPlan, fetchPrograms, type ProgramResponseV2 } from "./apiV2";
 import { streakValue } from "./DashboardScreen";
+import { ProgramDetailScreen } from "./ProgramDetailScreen";
 
 type Props = {
   initDataRaw: string;
@@ -40,6 +41,10 @@ export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
+  // Program Detail (issue #192) — тот же приём "swap внутри вкладки", что
+  // showAchievements в ProfileScreen: id, не boolean, чтобы Detail-экран мог
+  // прочитать конкретную карточку каталога.
+  const [selectedProgramId, setSelectedProgramId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +101,24 @@ export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
     };
   }, [initDataRaw]);
 
+  if (selectedProgramId !== null && catalog.phase === "ready") {
+    const program = catalog.programs.find((p) => p.id === selectedProgramId);
+    if (program) {
+      const included = catalog.includedProgramIds.has(program.id);
+      const adding = addState.phase === "adding" && addState.programId === program.id;
+      return (
+        <ProgramDetailScreen
+          program={program}
+          included={included}
+          adding={adding}
+          addError={addState.phase === "error" ? addState.message : null}
+          onAdd={() => void handleAddToPlan(program.id)}
+          onBack={() => setSelectedProgramId(null)}
+        />
+      );
+    }
+  }
+
   return (
     <div>
       <p className="plan-title">Главная</p>
@@ -127,9 +150,11 @@ export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
 
       <p className="section-title">Курсы</p>
       {/* Capability A (issue #188) — минимальный каталог: одна карточка на
-          seed-программу, без категорий/поиска/уровней (это остаток волны 6,
-          не блокирует "Добавить в план"). Курс уже в плане → кнопка
-          "В плане ✓" неактивна, повторно не добавляет (10.3). */}
+          seed-программу, без категорий/поиска/уровней (это остаток волны 6).
+          Issue #192 — карточка сама больше не выполняет действие, тап ведёт
+          на отдельный Program Detail (ProgramDetailScreen.tsx), туда же
+          переехала кнопка "Добавить в план"/"В плане ✓"; здесь остаётся
+          только статус — краткий текст, не кнопка. */}
       {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
       {catalog.phase === "error" && <p className="screen-message">Не удалось загрузить каталог: {catalog.message}</p>}
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
@@ -138,26 +163,20 @@ export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
       {catalog.phase === "ready" &&
         catalog.programs.map((program) => {
           const included = catalog.includedProgramIds.has(program.id);
-          const adding = addState.phase === "adding" && addState.programId === program.id;
           return (
             <Section key={program.id} className="block-section">
-              <p className="block-subtitle">{program.name}</p>
-              <p className="screen-message">{program.goal}</p>
-              <Button
-                className="action-button"
-                size="m"
-                stretched
-                disabled={included || adding}
-                onClick={() => handleAddToPlan(program.id)}
+              <button
+                type="button"
+                className="program-card-button"
+                onClick={() => setSelectedProgramId(program.id)}
               >
-                {included ? "В плане ✓" : adding ? "Добавляю…" : "Добавить в план"}
-              </Button>
+                <p className="block-subtitle">{program.name}</p>
+                <p className="screen-message">{program.goal}</p>
+                {included && <p className="hint">✓ В плане</p>}
+              </button>
             </Section>
           );
         })}
-      {addState.phase === "error" && (
-        <p className="screen-message">Не удалось добавить курс: {addState.message}</p>
-      )}
     </div>
   );
 }

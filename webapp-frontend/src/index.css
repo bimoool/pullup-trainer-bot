@@ -121,6 +121,27 @@ input[type="number"] {
   margin-bottom: 16px;
 }
 
+/* Program Detail (issue #192) — вся карточка каталога на Главной кликабельна
+   и ведёт на отдельный экран (не разворачивается на месте) — настоящая
+   <button>, не div с обработчиком, тот же принцип, что stat-tile-clickable
+   в ProfileScreen.tsx. */
+.program-card-button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.program-card-button:active {
+  opacity: 0.7;
+}
+
 .block-header {
   display: flex;
   align-items: center;
@@ -146,6 +167,26 @@ input[type="number"] {
   font-size: 13px;
   color: var(--tg-subtitle-text-color);
   margin: 2px 0 0;
+}
+
+/* issue #193 — "Планы" отличает текущую PlanWeek от прошлых недель
+   визуально: акцентная рамка на текущей, приглушение прошлых. */
+.plan-week-current {
+  border: 1.5px solid var(--tg-link-color);
+  border-radius: 12px;
+}
+
+.plan-week-past {
+  opacity: 0.65;
+}
+
+.plan-week-day-group {
+  margin-top: 10px;
+}
+
+.plan-item-row {
+  font-size: 14px;
+  margin: 4px 0 0;
 }
 
 .field-label {
