@@ -79,6 +79,7 @@ jobs:
           python scripts/e2e_seed.py plan_week_grouping 900014
           python scripts/e2e_seed.py plan_week_add_exercise 900015
           python scripts/e2e_seed.py plan_week_start_session 900016
+          python scripts/e2e_seed.py plan_week_manual_session 900017
 
       - name: Install Playwright
         working-directory: webapp-frontend/e2e

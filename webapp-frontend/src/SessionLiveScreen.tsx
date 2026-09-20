@@ -20,6 +20,12 @@ type Props = {
   initDataRaw: string;
   initialSession: LiveSessionResponse;
   onCompleted: (result: LiveSessionCompleteResponse) => void;
+  /** Checkpoint 4B (issue #188) — LiveSessionResponse отдаёт только
+   * exercise_id, не имя (проверено дословно по типу). Опционален — лаба
+   * (SessionV2Lab.tsx) не передаёт его, получает прежний фолбэк
+   * "Упражнение #id" без изменений; production-путь (PlanSessionFlow.tsx)
+   * передаёт резолвер, построенный один раз из Exercise Library. */
+  resolveExerciseName?: (exerciseId: number) => string;
 };
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
@@ -48,7 +54,7 @@ function formatSeconds(total: number): string {
  * заменяет локальное состояние (offline-session skill: "клиент заменяет
  * локальное состояние серверным, а не мержит вручную").
  */
-export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: Props) {
+export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, resolveExerciseName }: Props) {
   const [local, setLocalState] = useState<LocalLiveSession | null>(null);
   const localRef = useRef<LocalLiveSession | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -291,8 +297,13 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted }: 
         )}
         {block !== null && phaseName !== "done" && (
           <p className="block-subtitle">
-            Упражнение #{block.exercise_id} · Подход {local.localPhase.setNumber}/{targetsCount}
-            {targetForSet ? ` · Цель: ${targetForSet.value} ${targetForSet.unit}` : ""}
+            {block.exercise_id !== null && resolveExerciseName
+              ? resolveExerciseName(block.exercise_id)
+              : `Упражнение #${block.exercise_id}`}
+            {" "}· Подход {local.localPhase.setNumber}/{targetsCount}
+            {targetForSet !== null && Number(targetForSet.value) > 0
+              ? ` · Цель: ${targetForSet.value} ${targetForSet.unit}`
+              : ""}
           </p>
         )}
       </Section>

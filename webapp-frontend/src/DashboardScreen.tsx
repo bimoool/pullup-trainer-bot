@@ -107,13 +107,16 @@ type Props = {
    * (product-reference skill: стартовый экран — сводка, не открытая
    * тренировка). */
   onOpenWorkout: () => void;
-  /** Checkpoint 4A (issue #188) — "Начать" на карточке program-backed
-   * группы (program_inclusion_id !== null, "Подтягивания") ведёт сюда с
-   * точным набором plan_item_id этой группы (тот же ключ, что
+  /** Checkpoint 4A/4B (issue #188) — "Начать" на карточке любой группы
+   * (program-backed "Подтягивания" ИЛИ manual "Планка"/"Отжимания") ведёт
+   * сюда с точным набором plan_item_id этой группы (тот же ключ, что
    * groupPlanItems уже использует для отображения — не пересчитывается
-   * заново). Manual-группы (Планка/Отжимания) кнопку не получают —
-   * Checkpoint 4A их сознательно не трогает (issue #188, раздел 11). */
-  onStartSession: (planItemIds: number[]) => void;
+   * заново). manual=true — program_inclusion_id этой группы NULL, у
+   * SessionPreScreen нет ProgramInclusion, по которому читать readiness
+   * (не тот же вопрос, что STEP-readiness "Подтягиваний"). title — то же
+   * group.title, что уже показывает карточка, не пересчитывается заново
+   * через Exercise Library на следующем экране. */
+  onStartSession: (planItemIds: number[], options: { manual: boolean; title: string }) => void;
 };
 
 type ScreenState =
@@ -369,11 +372,10 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: 
             }
             const days = [...byDay.entries()].sort(([a], [b]) => a - b);
 
-            // Checkpoint 4A (issue #188) — "Начать" только на program-backed
-            // группе (program_inclusion_id !== null — "Подтягивания") и
-            // только у текущей недели (isCurrent), тот же смысл, что уже
-            // ограничивает "+ Добавить упражнение" ниже. Manual-группы
-            // (Планка/Отжимания) кнопку не получают — вне scope 4A.
+            // Checkpoint 4A/4B (issue #188) — "Начать" на любой группе
+            // текущей недели (program-backed ИЛИ manual), тот же принцип,
+            // что уже ограничивает "+ Добавить упражнение" ниже —
+            // isCurrent, не тип группы.
             function renderGroupRow(group: PlanItemGroup) {
               const isProgramBacked = group.items[0]?.program_inclusion_id !== null;
               return (
@@ -382,11 +384,14 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: 
                     {group.title}
                     {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
                   </p>
-                  {isCurrent && isProgramBacked && (
+                  {isCurrent && (
                     <button
                       type="button"
                       className="program-card-button plan-add-exercise-button"
-                      onClick={() => onStartSession(group.items.map((item) => item.id))}
+                      onClick={() => onStartSession(
+                        group.items.map((item) => item.id),
+                        { manual: !isProgramBacked, title: group.title },
+                      )}
                     >
                       Начать
                     </button>

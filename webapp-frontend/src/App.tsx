@@ -127,9 +127,9 @@ export function App() {
   // выход из потока доступен только через собственный onClose экранов
   // (SessionPreScreen.onGoToWorkout на отмену, SessionSummaryScreen.onClose
   // после Complete), не через обычные табы/нижнее меню.
-  const [v2Session, setV2Session] = useState<{ planItemIds: number[] } | { resumedSession: LiveSessionResponse } | null>(
-    null,
-  );
+  const [v2Session, setV2Session] = useState<
+    { planItemIds: number[]; manual: boolean; title: string } | { resumedSession: LiveSessionResponse } | null
+  >(null);
   // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
   // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
   const [faqReturnTab, setFaqReturnTab] = useState<Tab>("profile");
@@ -268,6 +268,8 @@ export function App() {
         <PlanSessionFlow
           initDataRaw={state.initDataRaw}
           planItemIds={"planItemIds" in v2Session ? v2Session.planItemIds : []}
+          manual={"manual" in v2Session ? v2Session.manual : false}
+          title={"title" in v2Session ? v2Session.title : ""}
           initialSession={"resumedSession" in v2Session ? v2Session.resumedSession : null}
           onClose={() => setV2Session(null)}
         />
@@ -306,7 +308,7 @@ export function App() {
         <DashboardScreen
           initDataRaw={state.initDataRaw}
           onOpenWorkout={() => setTab("workout")}
-          onStartSession={(planItemIds) => setV2Session({ planItemIds })}
+          onStartSession={(planItemIds, options) => setV2Session({ planItemIds, ...options })}
         />
       )}
       {isOnboarded && tab === "workout" && (
