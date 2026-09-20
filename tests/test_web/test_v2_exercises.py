@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 
 from app.db.models import User
 from app.db.models_program import Exercise
+from app.domain.multi_program import MetricType
 from scripts.seed_exercise_library import seed_exercise_library
 from tests.test_web._v2_client import v2_get
 
@@ -115,3 +116,28 @@ async def test_exercise_response_fields_match_model(session, user: User):
     assert "difficulty" not in exercise
     assert "duration" not in exercise
     assert "muscles" not in exercise
+
+
+async def test_internal_step_role_exercises_are_excluded_from_library(session, user: User):
+    """Product-contract gap, найден живым Playwright-прогоном Checkpoint 3
+    (не в исходном issue #196): GET /exercises отдавал и Планку/Отжимания,
+    и внутренние блоки программ (subcategory=block_a/block_b) — пользователь
+    мог добавить чужой строительный блок как самостоятельное упражнение.
+
+    Фильтр — по уже существующей конвенции, не новой: та же пара значений
+    subcategory, которую ProgramRepository.find_step_role_exercises()
+    использует для StepProgressionStrategy (подтверждено в issue #165)."""
+    await seed_exercise_library(session)
+    session.add_all([
+        Exercise(name="Подтягивания — объём", metric_type=MetricType.REPS, category="pull_ups", subcategory="block_a"),
+        Exercise(name="Подтягивания — сила", metric_type=MetricType.REPS, category="pull_ups", subcategory="block_b"),
+    ])
+    await session.flush()
+
+    response = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/exercises")
+    names = {ex["name"] for ex in response.json()["exercises"]}
+
+    assert "Планка" in names
+    assert "Отжимания" in names
+    assert "Подтягивания — объём" not in names
+    assert "Подтягивания — сила" not in names

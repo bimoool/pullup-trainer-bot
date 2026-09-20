@@ -168,9 +168,26 @@ async def list_exercises(
     """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
     Не требует admin-доступа (обычный пользователь должен пользоваться
     библиотекой). Отдаёт только поля, реально существующие в Exercise
-    model — не equipment/difficulty/duration/muscles."""
+    model — не equipment/difficulty/duration/muscles.
+
+    Product-contract gap, найден живым Playwright-прогоном Checkpoint 3
+    (не в исходном issue #196): без фильтра сюда попадали и внутренние
+    step-роли программ (subcategory="block_a"/"block_b" — "Подтягивания —
+    объём/сила"), позволяя пользователю добавить чужой строительный блок
+    программы как самостоятельное упражнение. Исключение — по УЖЕ
+    существующей конвенции, не новой эвристике: та же пара значений
+    subcategory, которую ProgramRepository.find_step_role_exercises()
+    использует для резолва StepProgressionStrategy (подтверждено Кириллом
+    в issue #165 как достаточное, без новой колонки). Exercise с
+    subcategory=NULL (обычные библиотечные упражнения) — не задет, явный
+    OR по IS NULL, потому что NOT IN(...) в SQL сам по себе отбрасывает
+    NULL-строки (three-valued logic), не включает их."""
     await _require_user(session, init_data)
-    result = await session.execute(select(Exercise).order_by(Exercise.id))
+    result = await session.execute(
+        select(Exercise)
+        .where(Exercise.subcategory.is_(None) | Exercise.subcategory.not_in(["block_a", "block_b"]))
+        .order_by(Exercise.id),
+    )
     exercises = result.scalars().all()
     return ExerciseListResponse(
         exercises=[
