@@ -279,11 +279,18 @@ async def create_plan_item(
     user = await _require_user(session, init_data)
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
+
+    # Checkpoint 3B (issue #197): ownership-проверка plan_week_id, если передан
+    if body.plan_week_id is not None:
+        week = await plans.get_plan_week_for_user(body.plan_week_id, user.id)
+        if week is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanWeek not found")
+
     item = await plans.create_plan_item(
         training_plan_id=plan.id, exercise_id=body.exercise_id, complex_id=body.complex_id,
         count_per_week=body.count_per_week, day_of_week=body.day_of_week,
         week_phase=WeekPhase(body.week_phase) if body.week_phase is not None else None,
-        program_inclusion_id=None,
+        program_inclusion_id=None, plan_week_id=body.plan_week_id,
     )
     return _plan_item_response(item)
 

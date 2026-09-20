@@ -209,6 +209,7 @@ class PlanItemCreateRequest(BaseModel):
     complex_id: int | None = None
     day_of_week: int | None = None
     week_phase: Literal["base", "rest", "peak"] | None = None
+    plan_week_id: int | None = None
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> "PlanItemCreateRequest":
