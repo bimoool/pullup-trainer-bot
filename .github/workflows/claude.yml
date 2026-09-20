@@ -34,7 +34,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          ref: feature/multi-program
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -57,6 +58,13 @@ jobs:
         with:
           model: claude-sonnet-4-5
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # canonical integration branch (issue #188, orchestration recovery
+          # 2026-09-19) — без этого checkout брал default branch (main),
+          # каждый @claude в обычном Issue терял continuity с
+          # feature/multi-program. base_branch — штатный input действия
+          # (docs/usage.md), не обходной путь.
+          base_branch: feature/multi-program
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
