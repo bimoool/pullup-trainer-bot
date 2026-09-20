@@ -334,3 +334,21 @@ export async function createProgramInclusion(
 ): Promise<ProgramInclusionResponseV2> {
   return apiV2Post("/api/v2/program-inclusions", initDataRaw, { program_id: programId });
 }
+
+// --- POST /plan-items — создание manual PlanItem (issue #197, Checkpoint 3B) ---
+
+export interface PlanItemCreateRequest {
+  count_per_week: number;
+  exercise_id?: number;
+  complex_id?: number;
+  day_of_week?: number | null;
+  week_phase?: "base" | "rest" | "peak" | null;
+  plan_week_id?: number | null;
+}
+
+export async function createPlanItem(
+  initDataRaw: string,
+  request: PlanItemCreateRequest,
+): Promise<PlanItemResponseV2> {
+  return apiV2Post("/api/v2/plan-items", initDataRaw, request);
+}
