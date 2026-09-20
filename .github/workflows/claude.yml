@@ -34,7 +34,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          ref: feature/multi-program
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,8 +50,21 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
+        # Модель закреплена осознанно: Sonnet по умолчанию — он справляется
+        # с обычными задачами и стоит заметно дешевле. Для тяжёлых
+        # архитектурных волн модель повышается точечно, правкой этой строки,
+        # а не по умолчанию для всего подряд (минуты Actions ограничены,
+        # облачный агент — самый дорогой их потребитель).
         with:
+          model: claude-sonnet-4-5
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # canonical integration branch (issue #188, orchestration recovery
+          # 2026-09-19) — без этого checkout брал default branch (main),
+          # каждый @claude в обычном Issue терял continuity с
+          # feature/multi-program. base_branch — штатный input действия
+          # (docs/usage.md), не обходной путь.
+          base_branch: feature/multi-program
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
