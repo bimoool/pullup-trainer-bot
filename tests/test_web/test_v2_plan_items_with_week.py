@@ -102,7 +102,8 @@ async def test_create_plan_item_with_foreign_plan_week_id_is_404(session, user: 
     assert response.status_code == 404
 
     # Проверяем, что запись не создалась
-    items = await plans.list_plan_items(await plans.get_for_user(user.id).id)
+    own_plan = await plans.get_for_user(user.id)
+    items = await plans.list_plan_items(own_plan.id)
     assert len(items) == 0
 
 
