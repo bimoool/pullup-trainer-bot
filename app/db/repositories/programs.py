@@ -64,3 +64,24 @@ class ProgramRepository:
             select(Exercise).where(Exercise.category == category, Exercise.subcategory.in_(["block_a", "block_b"])),
         )
         return {exercise.subcategory: exercise for exercise in result.scalars().all()}
+
+
+def program_items_snapshot(program_items: list[ProgramItem]) -> list[dict]:
+    """Единственная точка сериализации ProgramItem в форму
+    ProgramInclusion.snapshot["program_items"] (checkpoint 1.1, issue #188
+    — контрактный баг: до этого исправления app.services.program_inclusion
+    ._build_snapshot и scripts/backfill_multi_program.py::seed_catalog
+    строили ДВА разных снимка, второй без program_items вообще, хотя
+    докстринг первого ложно утверждал обратное).
+
+    Вызывается и обычным путём подключения курса, и бэкфиллом, и
+    нормализацией легаси-снимков — ни один из них не должен собирать этот
+    список заново вручную."""
+    return [
+        {
+            "id": item.id, "exercise_id": item.exercise_id, "complex_id": item.complex_id,
+            "count_per_week": item.count_per_week, "day_of_week": item.day_of_week,
+            "week_phase": item.week_phase.value,
+        }
+        for item in program_items
+    ]

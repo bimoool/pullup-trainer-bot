@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import PlanItem, PlanWeek, ProgramInclusion, ProgramItem, TrainingPlan
@@ -162,12 +163,34 @@ class TrainingPlanRepository:
     async def create_plan_week(
         self, *, training_plan_id: int, week_number: int, start_date, phase: WeekPhase,
     ) -> PlanWeek:
-        week = PlanWeek(
-            training_plan_id=training_plan_id, week_number=week_number, start_date=start_date, phase=phase,
+        """Checkpoint 1.1 (issue #188), п.7 — воспроизведено конкурентным
+        тестом (3 параллельных вызова ensure_current_plan_week на одном
+        training_plan_id): uq_plan_weeks_plan_week_number (уже существует
+        в модели с волны 1, не новый constraint) реально не даёт создать
+        дубль на уровне БД, но проигравший запрос без этого падал
+        необработанной IntegrityError. INSERT ... ON CONFLICT DO NOTHING
+        вместо naive add()+flush() — не session.rollback() специально: этот
+        метод вызывается из середины более крупной транзакции (например,
+        сразу после bulk_create_plan_items_from_program_items при POST
+        /program-inclusions в той же сессии), полный откат стёр бы и её."""
+        stmt = (
+            pg_insert(PlanWeek)
+            .values(training_plan_id=training_plan_id, week_number=week_number, start_date=start_date, phase=phase)
+            .on_conflict_do_nothing(constraint="uq_plan_weeks_plan_week_number")
+            .returning(PlanWeek)
         )
-        self._session.add(week)
-        await self._session.flush()
-        return week
+        result = await self._session.execute(stmt)
+        week = result.scalar_one_or_none()
+        if week is not None:
+            return week
+        # Проиграли гонку — победитель уже закоммитил свою строку, читаем её.
+        existing = await self.get_plan_week(training_plan_id=training_plan_id, week_number=week_number)
+        if existing is None:  # pragma: no cover — теоретически недостижимо
+            raise RuntimeError(
+                f"plan_week for training_plan_id={training_plan_id} week_number={week_number} "
+                "vanished between ON CONFLICT and re-select",
+            )
+        return existing
 
     async def list_unweeked_plan_items(self, *, program_inclusion_id: int) -> list[PlanItem]:
         """PlanItem этой инклюзии, ещё не прошедшие ensure_current_plan_week
@@ -195,22 +218,33 @@ class TrainingPlanRepository:
         if plan_items:
             await self._session.flush()
 
-    async def create_plan_items_for_week_from_program_items(
+    async def create_plan_items_for_week_from_snapshot(
         self, *, training_plan_id: int, program_inclusion_id: int, plan_week_id: int,
-        program_items: list[ProgramItem],
+        program_items_snapshot: list[dict],
     ) -> list[PlanItem]:
-        """Rollover (issue #188, checkpoint 1, раздел 7): та же копирующая
-        логика, что bulk_create_plan_items_from_program_items при создании
-        инклюзии, но для НОВОЙ недели — прошлая неделя не трогается, здесь
-        всегда создаются новые строки, не апдейт старых."""
+        """Rollover (issue #188, checkpoint 1.1) — источник ТОЛЬКО
+        ProgramInclusion.snapshot["program_items"], не live ProgramItem.
+        Контрактный баг checkpoint 1: если Program изменится после
+        подключения, уже существующий пользователь не должен получить
+        другую программу на следующей неделе — snapshot зафиксирован на
+        момент подключения (см. ProgramInclusion docstring), program_id
+        после подключения — только provenance.
+
+        Та же копирующая логика, что bulk_create_plan_items_from_program_
+        items при создании инклюзии, но для НОВОЙ недели — прошлая неделя
+        не трогается, здесь всегда создаются новые строки, не апдейт
+        старых."""
         items = []
-        for program_item in program_items:
-            if program_item.exercise_id is None:
+        for program_item in program_items_snapshot:
+            exercise_id = program_item.get("exercise_id")
+            if exercise_id is None:
                 continue
+            week_phase_value = program_item.get("week_phase")
             item = PlanItem(
-                training_plan_id=training_plan_id, exercise_id=program_item.exercise_id,
-                complex_id=program_item.complex_id, count_per_week=program_item.count_per_week,
-                day_of_week=program_item.day_of_week, week_phase=program_item.week_phase,
+                training_plan_id=training_plan_id, exercise_id=exercise_id,
+                complex_id=program_item.get("complex_id"), count_per_week=program_item["count_per_week"],
+                day_of_week=program_item.get("day_of_week"),
+                week_phase=WeekPhase(week_phase_value) if week_phase_value is not None else None,
                 program_inclusion_id=program_inclusion_id, plan_week_id=plan_week_id,
             )
             self._session.add(item)

@@ -8,8 +8,10 @@ from app.db.models import EquipmentType, User
 from app.db.models_program import (
     Exercise,
     PlanItem,
+    PlanWeek,
     Program,
     ProgramInclusion,
+    ProgramItem,
     SessionBlock,
     SetLog,
     TrainingPlan,
@@ -399,3 +401,61 @@ async def test_dry_run_does_not_write_anything(session, user: User):
     assert (await session.execute(select(TrainingPlan))).scalars().all() == []
     assert (await session.execute(select(TrainingSession))).scalars().all() == []
     assert (await session.execute(select(Program))).scalars().all() == []
+
+
+# --- Legacy snapshot normalization (Кирилл, checkpoint 1.1 — контрактный баг) -----------
+#
+# ProgramInclusion, созданные ДО checkpoint 1.1, имеют snapshot без ключа
+# "program_items" (старый формат seed_catalog). normalize_legacy_snapshots
+# обязана привести их к канонической форме идемпотентно, не трогая
+# progression_state/PlanItem/PlanWeek/историю.
+
+
+async def test_legacy_snapshot_without_program_items_gets_normalized(session, user: User):
+    # Первый прогон — заводит Program/ProgramItem (современный seed) и
+    # мигрирует обычного пользователя современным путём (для сравнения).
+    await _onboard(session, user)
+    await backfill_all(session, now=NOW)
+
+    program = (await session.execute(select(Program))).scalar_one()
+
+    # Второй пользователь — имитация ЛЕГАСИ-инклюзии до checkpoint 1.1:
+    # snapshot старого формата, program_items отсутствует вообще.
+    legacy_user = await UserRepository(session).create(telegram_id=555002, username="legacy")
+    legacy_plan = TrainingPlan(user_id=legacy_user.id, created_at=NOW - timedelta(days=30))
+    session.add(legacy_plan)
+    await session.flush()
+    legacy_inclusion = ProgramInclusion(
+        training_plan_id=legacy_plan.id, program_id=program.id,
+        snapshot={"schema_version": 1, "program_name": program.name, "structure_type": "recurring"},
+        progression_state={"strategy_type": "step", "block_a": {"target": 9}},  # маркер "не тронуто"
+        is_active=True,
+    )
+    session.add(legacy_inclusion)
+    await session.commit()
+
+    # Повторный прогон backfill — legacy_user уже "мигрирован" (TrainingPlan
+    # существует), обычный цикл его пропустит; нормализация снимка не
+    # зависит от этого цикла, отрабатывает отдельно и до него.
+    report2 = await backfill_all(session, now=NOW)
+    assert report2.legacy_snapshots_normalized == 1
+    assert "Нормализовано legacy-снимков (program_items добавлен): 1" in report2.render()
+
+    await session.refresh(legacy_inclusion)
+    assert legacy_inclusion.snapshot["program_items"]  # непусто
+    seed_program_items = (
+        await session.execute(select(ProgramItem).where(ProgramItem.program_id == program.id))
+    ).scalars().all()
+    assert {item["exercise_id"] for item in legacy_inclusion.snapshot["program_items"]} == {
+        pi.exercise_id for pi in seed_program_items
+    }
+    assert legacy_inclusion.progression_state == {"strategy_type": "step", "block_a": {"target": 9}}  # не тронут
+    assert (await session.execute(select(PlanItem).where(PlanItem.training_plan_id == legacy_plan.id))).scalars().all() == []
+    assert (await session.execute(select(PlanWeek).where(PlanWeek.training_plan_id == legacy_plan.id))).scalars().all() == []
+
+    # Третий прогон — идемпотентность: уже нормализованный снимок не трогается повторно.
+    snapshot_before = dict(legacy_inclusion.snapshot)
+    report3 = await backfill_all(session, now=NOW)
+    assert report3.legacy_snapshots_normalized == 0
+    await session.refresh(legacy_inclusion)
+    assert legacy_inclusion.snapshot == snapshot_before

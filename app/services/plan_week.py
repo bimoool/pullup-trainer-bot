@@ -54,8 +54,23 @@ class PlanWeekService:
         for inclusion in inclusions:
             if not inclusion.is_active:
                 continue
-            program = await self._programs.get_by_id(inclusion.program_id)
-            if program is None or program.structure_type != ProgramStructureType.RECURRING:
+
+            # Checkpoint 1.1 (issue #188) — контрактный баг checkpoint 1:
+            # structure_type и program_items читаются из snapshot, не из
+            # live Program/ProgramItem. program_id используется ТОЛЬКО как
+            # provenance-фолбэк — legacy-снимок до нормализации (см.
+            # scripts/backfill_multi_program.py::normalize_legacy_snapshots)
+            # может не иметь structure_type, тогда и только тогда идём в
+            # живую Program за ним, за program_items — никогда (нет
+            # безопасного фолбэка на "актуальную" структуру курса без
+            # искажения snapshot semantics, поэтому пустой snapshot
+            # ["program_items"] просто не материализуется, до нормализации).
+            snapshot = inclusion.snapshot or {}
+            structure_type_value = snapshot.get("structure_type")
+            if structure_type_value is None:
+                program = await self._programs.get_by_id(inclusion.program_id)
+                structure_type_value = program.structure_type.value if program is not None else None
+            if structure_type_value != ProgramStructureType.RECURRING.value:
                 # FIXED/SINGLE_LESSON не материализуются понедельно этим
                 # сервисом в этом чекпоинте — ни одной такой программы в
                 # каталоге пока нет (read-only-аудит, раздел C), решать
@@ -78,13 +93,20 @@ class PlanWeekService:
             if existing_this_week:
                 continue  # уже материализовано в эту неделю — идемпотентность
 
+            program_items_snapshot = snapshot.get("program_items")
+            if not program_items_snapshot:
+                continue  # legacy-снимок без program_items — нормализуется отдельно, не здесь
+
             # Rollover (раздел 7 preflight): предыдущая неделя(и) уже имеют
-            # свои PlanItem, наступила новая — клонируем шаблон заново,
-            # прошлые недели не трогаем.
-            program_items = await self._programs.list_program_items(program.id)
-            await self._plans.create_plan_items_for_week_from_program_items(
+            # свои PlanItem, наступила новая — клонируем ИЗ SNAPSHOT заново,
+            # прошлые недели не трогаем. Live Program могла измениться с
+            # момента подключения — это не должно повлиять на уже
+            # подключённого пользователя (snapshot immutability, issue #188
+            # checkpoint 1.1, см. tests/test_services/test_plan_week_service
+            # .py::test_rollover_uses_snapshot_not_live_program).
+            await self._plans.create_plan_items_for_week_from_snapshot(
                 training_plan_id=training_plan_id, program_inclusion_id=inclusion.id,
-                plan_week_id=week.id, program_items=program_items,
+                plan_week_id=week.id, program_items_snapshot=program_items_snapshot,
             )
 
         return week

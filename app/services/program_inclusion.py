@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import Program, ProgramInclusion
-from app.db.repositories.programs import ProgramRepository
+from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
 from app.domain.progression_strategy import ProgressionStrategyType
@@ -21,10 +21,10 @@ class ProgramInclusionRequest:
 def _build_snapshot(
     program: Program, program_items: list, step_roles: dict, strategy_type: ProgressionStrategyType | None,
 ) -> dict:
-    """Форма снимка — та же, что уже строит scripts/backfill_multi_program.py
-    ::seed_catalog для seed-Program «Подтягивания» (issue #163) — не второй,
-    другой формат: GET /api/v2/plan/будущий читающий код не должен различать
-    "инклюзия из backfill" и "инклюзия из POST /program-inclusions"."""
+    """Форма снимка — единственная, см. app.db.repositories.programs
+    ::program_items_snapshot (issue #188, checkpoint 1.1 — раньше здесь и
+    в scripts/backfill_multi_program.py::seed_catalog были два разных
+    формата, второй без program_items вообще)."""
     exercises = [
         {
             "role": role, "exercise_id": exercise.id,
@@ -39,14 +39,7 @@ def _build_snapshot(
         "progression_strategy_type": strategy_type.value if strategy_type is not None else None,
         "config": program.config,
         "exercises": exercises,
-        "program_items": [
-            {
-                "id": item.id, "exercise_id": item.exercise_id, "complex_id": item.complex_id,
-                "count_per_week": item.count_per_week, "day_of_week": item.day_of_week,
-                "week_phase": item.week_phase.value,
-            }
-            for item in program_items
-        ],
+        "program_items": program_items_snapshot(program_items),
     }
 
 

@@ -89,7 +89,7 @@ from app.db.models_program import (
     TrainingSession,
 )
 from app.db.repositories.baselines import BaselineRepository
-from app.db.repositories.programs import ProgramRepository
+from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -248,8 +248,8 @@ async def seed_catalog(session: AsyncSession) -> SeedCatalog:
     program = await _get_or_create_program(session, progression_strategy_id=profile.id)
     exercise_a = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_A_NAME, subcategory="block_a")
     exercise_b = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_B_NAME, subcategory="block_b")
-    await _get_or_create_program_item(session, program_id=program.id, exercise_id=exercise_a.id)
-    await _get_or_create_program_item(session, program_id=program.id, exercise_id=exercise_b.id)
+    program_item_a = await _get_or_create_program_item(session, program_id=program.id, exercise_id=exercise_a.id)
+    program_item_b = await _get_or_create_program_item(session, program_id=program.id, exercise_id=exercise_b.id)
     elective_exercise_ids = {}
     for elective_type, name in _ELECTIVE_EXERCISE_NAMES.items():
         exercise = await _get_or_create_exercise(
@@ -273,6 +273,11 @@ async def seed_catalog(session: AsyncSession) -> SeedCatalog:
                 "name": exercise_b.name, "metric_type": exercise_b.metric_type.value,
             },
         ],
+        # Issue #188, checkpoint 1.1 — раньше этого ключа тут не было вообще
+        # (контрактный баг: rollover в PlanWeekService читал live ProgramItem
+        # вместо snapshot). program_items_snapshot — тот же хелпер, что
+        # app.services.program_inclusion._build_snapshot, единственная форма.
+        "program_items": program_items_snapshot([program_item_a, program_item_b]),
     }
     return SeedCatalog(
         program_id=program.id,
@@ -561,6 +566,7 @@ class BackfillReport:
     training_sessions_elective_total: int = 0
     workouts_completed_expected: int = 0
     electives_expected: int = 0
+    legacy_snapshots_normalized: int = 0
 
     def render(self) -> str:
         lines = [
@@ -592,8 +598,35 @@ class BackfillReport:
                 f"TrainingSession elective всего: {self.training_sessions_elective_total} "
                 f"(ожидается {self.electives_expected}) [{elective_ok}]"
             ),
+            f"Нормализовано legacy-снимков (program_items добавлен): {self.legacy_snapshots_normalized}",
         ]
         return "\n".join(lines)
+
+
+async def normalize_legacy_snapshots(session: AsyncSession, *, program_id: int, program_items_snap: list[dict]) -> int:
+    """Checkpoint 1.1 (issue #188) — контрактный баг: ProgramInclusion,
+    созданные до этого чекпоинта, имеют snapshot без ключа "program_items"
+    (старый формат seed_catalog). PlanWeekService.ensure_current_plan_week
+    читает rollover ИЗ snapshot, не из live Program — без нормализации эти
+    пользователи просто не получат материализации на следующей неделе
+    (тихий gap, не искажение данных, но и не задуманное поведение).
+
+    Идемпотентно: снимок, у которого "program_items" уже есть, не трогаем
+    вообще — ни то же самое значение не перезаписываем, ни оборачиваем.
+    Не меняет progression_state/started_at/PlanItem/PlanWeek/историю —
+    только один ключ внутри JSON-снимка той же самой ProgramInclusion.
+    Возвращает число нормализованных строк (для отчёта)."""
+    result = await session.execute(select(ProgramInclusion).where(ProgramInclusion.program_id == program_id))
+    normalized = 0
+    for inclusion in result.scalars().all():
+        snapshot = inclusion.snapshot or {}
+        if snapshot.get("program_items"):
+            continue
+        inclusion.snapshot = {**snapshot, "program_items": program_items_snap}
+        normalized += 1
+    if normalized:
+        await session.flush()
+    return normalized
 
 
 async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = False) -> BackfillReport:
@@ -611,6 +644,14 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     report = BackfillReport(dry_run=dry_run, users_onboarded=len(users))
 
     seed = None if dry_run else await seed_catalog(session)
+    if seed is not None:
+        # Checkpoint 1.1 (issue #188) — нормализация ДО цикла по
+        # пользователям: не зависит от того, кто в этом прогоне "новый",
+        # трогает существующие ProgramInclusion сразу и один раз.
+        report.legacy_snapshots_normalized = await normalize_legacy_snapshots(
+            session, program_id=seed.program_id, program_items_snap=seed.snapshot["program_items"],
+        )
+        await session.commit()
     workout_repo = WorkoutRepository(session)
     program_repo = ProgramRepository(session)
     plans_repo = TrainingPlanRepository(session)

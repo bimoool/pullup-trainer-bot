@@ -3,17 +3,23 @@
 Пять обязательных сценариев из preflight (раздел 9): новый пользователь,
 идемпотентность, бэкфилл/старые данные, rollover, ownership."""
 
+import asyncio
 from datetime import UTC, date, datetime
+
+from sqlalchemy import select as sa_select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.models import User
 from app.db.models_program import (
     Exercise,
     PlanItem,
+    PlanWeek,
     Program,
     ProgramInclusion,
     ProgramItem,
     TrainingPlan,
 )
+from app.db.repositories.programs import program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
@@ -54,12 +60,23 @@ async def _make_recurring_program(session, *, category: str = "synthetic") -> tu
 _DEFAULT_PLAN_CREATED_AT = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)  # понедельник, полдень — время суток не участвует в расчёте (домен), но нужно для NOT NULL
 
 
-async def _make_plan_with_inclusion(session, user: User, program: Program, *, created_at=None) -> TrainingPlan:
+async def _make_plan_with_inclusion(
+    session, user: User, program: Program, *, created_at=None, program_items: list[ProgramItem] | None = None,
+) -> TrainingPlan:
+    """Checkpoint 1.1 (issue #188): snapshot строится через ту же
+    program_items_snapshot, что и настоящий путь подключения — тестам,
+    которые доходят до rollover-клонирования, недостаточно snapshot={},
+    оно больше не читает live ProgramItem. program_items=None оставляет
+    snapshot без "program_items" — используется только там, где тест
+    специально проверяет фолбэк/легаси-случай."""
     plan = TrainingPlan(user_id=user.id, created_at=created_at or _DEFAULT_PLAN_CREATED_AT)
     session.add(plan)
     await session.flush()
+    snapshot: dict = {"structure_type": program.structure_type.value}
+    if program_items is not None:
+        snapshot["program_items"] = program_items_snapshot(program_items)
     inclusion = ProgramInclusion(
-        training_plan_id=plan.id, program_id=program.id, snapshot={}, progression_state={}, is_active=True,
+        training_plan_id=plan.id, program_id=program.id, snapshot=snapshot, progression_state={}, is_active=True,
     )
     session.add(inclusion)
     await session.flush()
@@ -74,8 +91,8 @@ async def _plan_items(session, plan_id: int) -> list[PlanItem]:
 
 
 async def test_new_inclusion_materializes_into_current_week(session, user: User):
-    program, _ = await _make_recurring_program(session)
-    plan = await _make_plan_with_inclusion(session, user, program, created_at=None)
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, created_at=None, program_items=program_items)
 
     week = await PlanWeekService(session).ensure_current_plan_week(
         training_plan_id=plan.id, today=date(2026, 9, 21),  # понедельник
@@ -92,8 +109,8 @@ async def test_new_inclusion_materializes_into_current_week(session, user: User)
 
 
 async def test_two_calls_same_day_create_no_duplicates(session, user: User):
-    program, _ = await _make_recurring_program(session)
-    plan = await _make_plan_with_inclusion(session, user, program)
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
     service = PlanWeekService(session)
 
     week1 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
@@ -133,8 +150,8 @@ async def test_unweeked_existing_plan_items_get_attached_not_duplicated(session,
 
 
 async def test_rollover_creates_new_items_in_new_week_keeps_old_week_intact(session, user: User):
-    program, _ = await _make_recurring_program(session)
-    plan = await _make_plan_with_inclusion(session, user, program)
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
     service = PlanWeekService(session)
 
     week1 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
@@ -161,6 +178,67 @@ async def test_rollover_creates_new_items_in_new_week_keeps_old_week_intact(sess
     assert len(all_items_again) == 4
 
 
+# --- Snapshot immutability (Кирилл, checkpoint 1.1 — контрактный баг) -------------------
+#
+# ProgramInclusion.snapshot зафиксирован на момент подключения; program_id
+# после этого — только provenance, не источник контента. Rollover обязан
+# читать snapshot, не live ProgramItem — иначе пользователь, подключивший
+# курс месяц назад, получит другую программу на следующей неделе просто
+# потому, что кто-то отредактировал каталог.
+
+
+async def test_rollover_uses_snapshot_not_live_program(session, user: User):
+    program, program_items = await _make_recurring_program(session, category="immut")
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+
+    await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=date(2026, 9, 21),
+    )
+    week1_items = await _plan_items(session, plan.id)
+    assert len(week1_items) == 2
+
+    # Мутация LIVE Program ПОСЛЕ подключения — третий ProgramItem, которого
+    # в snapshot этого пользователя нет и быть не должно.
+    block_c = Exercise(name="Блок В", metric_type=MetricType.REPS, category="immut", subcategory="block_c")
+    session.add(block_c)
+    await session.flush()
+    session.add(
+        ProgramItem(program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_c.id, count_per_week=2),
+    )
+    await session.flush()
+
+    week2 = await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=date(2026, 9, 28),
+    )
+    week2_items = [item for item in await _plan_items(session, plan.id) if item.plan_week_id == week2.id]
+
+    assert len(week2_items) == 2  # НЕ 3 — новый ProgramItem программы не просочился
+    assert block_c.id not in {item.exercise_id for item in week2_items}
+
+
+async def test_new_inclusion_after_program_mutation_gets_new_structure(session, user: User):
+    """Обратная сторона того же контракта: НОВОЕ подключение, сделанное
+    ПОСЛЕ правки каталога, обязано снять снимок с уже изменённой Program —
+    snapshot фиксируется в момент подключения, не раньше."""
+    program, program_items = await _make_recurring_program(session, category="immut2")
+
+    block_c = Exercise(name="Блок В", metric_type=MetricType.REPS, category="immut2", subcategory="block_c")
+    session.add(block_c)
+    await session.flush()
+    item_c = ProgramItem(program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_c.id, count_per_week=2)
+    session.add(item_c)
+    await session.flush()
+
+    plan = await _make_plan_with_inclusion(
+        session, user, program, program_items=[*program_items, item_c],  # снимок берёт АКТУАЛЬНОЕ состояние
+    )
+
+    await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
+    items = await _plan_items(session, plan.id)
+    assert {item.exercise_id for item in items} == {program_items[0].exercise_id, program_items[1].exercise_id, block_c.id}
+    assert len(items) == 3
+
+
 # --- Ownership -----------------------------------------------------------------------
 
 
@@ -170,6 +248,55 @@ async def test_unknown_training_plan_id_raises(session):
     except ValueError:
         return
     raise AssertionError("expected ValueError for unknown training_plan_id")
+
+
+# --- Concurrency (Кирилл, checkpoint 1.1, п.7) -------------------------------------------
+#
+# uq_plan_weeks_plan_week_number существует с волны 1 (не новый constraint
+# — найден в модели, не в тексте миграции по "unique=", моя же ошибка при
+# первой проверке). Воспроизведено реальной гонкой (3 независимых
+# соединения, не один AsyncSession — иначе гонки физически нет): без
+# ON CONFLICT проигравший вызов падал необработанной IntegrityError.
+
+
+async def test_concurrent_ensure_calls_do_not_raise_and_agree_on_one_week(test_dsn):
+    """Единственный тест в этом файле не использующий фикстуру session —
+    ей одна транзакция на тест, гонки внутри одной транзакции не бывает."""
+    setup_engine = create_async_engine(test_dsn)
+    factory = async_sessionmaker(setup_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as setup_session:
+        setup_user = await UserRepository(setup_session).create(telegram_id=1003, username="racer")
+        program, program_items = await _make_recurring_program(setup_session, category="race")
+        plan = await _make_plan_with_inclusion(setup_session, setup_user, program, program_items=program_items)
+        await setup_session.commit()
+        plan_id = plan.id
+    await setup_engine.dispose()
+
+    async def call() -> int:
+        engine = create_async_engine(test_dsn)
+        try:
+            async with async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)() as call_session:
+                week = await PlanWeekService(call_session).ensure_current_plan_week(
+                    training_plan_id=plan_id, today=date(2026, 9, 21),
+                )
+                await call_session.commit()
+                return week.id
+        finally:
+            await engine.dispose()
+
+    week_ids = await asyncio.gather(call(), call(), call())  # ни одного исключения — сам gather бы его поднял
+
+    assert len(set(week_ids)) == 1  # все три вызова сошлись на одной и той же неделе
+
+    check_engine = create_async_engine(test_dsn)
+    async with async_sessionmaker(check_engine, class_=AsyncSession, expire_on_commit=False)() as check_session:
+        rows = await TrainingPlanRepository(check_session).list_inclusions(plan_id)
+        assert rows  # sanity — план не потерялся
+        weeks = (
+            await check_session.execute(sa_select(PlanWeek).where(PlanWeek.training_plan_id == plan_id))
+        ).scalars().all()
+        assert len(weeks) == 1  # ни одного дубля на уровне БД
+    await check_engine.dispose()
 
 
 # --- Regression: FIXED/SINGLE_LESSON программы не материализуются понедельно ------------
