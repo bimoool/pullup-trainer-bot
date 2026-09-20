@@ -192,6 +192,21 @@ class TrainingPlanRepository:
             )
         return existing
 
+    async def list_plan_weeks(self, training_plan_id: int) -> list[PlanWeek]:
+        """Все PlanWeek плана, по возрастанию week_number — issue #193
+        (WORKER B): GET /api/v2/plan раньше отдавал plan_items/
+        program_inclusions, но ни одной PlanWeek, хотя ensure_current_plan_week
+        (Checkpoint 1, issue #188) уже материализует их. Последний элемент
+        этого списка — всегда текущая неделя (ensure_current_plan_week
+        вызывается перед этим методом на каждый GET и никогда не создаёт
+        недели наперёд)."""
+        result = await self._session.execute(
+            select(PlanWeek)
+            .where(PlanWeek.training_plan_id == training_plan_id)
+            .order_by(PlanWeek.week_number),
+        )
+        return list(result.scalars().all())
+
     async def list_unweeked_plan_items(self, *, program_inclusion_id: int) -> list[PlanItem]:
         """PlanItem этой инклюзии, ещё не прошедшие ensure_current_plan_week
         (plan_week_id IS NULL) — свежесозданные bulk_create_plan_items_from_

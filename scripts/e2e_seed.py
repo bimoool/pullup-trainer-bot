@@ -50,7 +50,17 @@ TrainingSessionLogService волны 3, не WorkoutRepository старой сх
 (app.config.settings.is_admin, см. App.tsx::DASHBOARD_V2_NAV_TAB) — CI
 должен добавить telegram_id сценария в ADMIN_IDS отдельным шагом workflow
 (агент, готовивший эту волну, не может редактировать .github/workflows/*,
-см. PR-описание issue #185)."""
+см. PR-описание issue #185).
+
+issue #193 (WORKER B, "Планы" → реальные PlanWeek) добавляет
+plan_week_ready — НЕ admin-only (вкладка "Планы"/DashboardScreen.tsx видна
+всем пользователям, не только ADMIN_IDS, в отличие от сценариев волны 5
+выше). RECURRING-курс с одним PlanItem на день недели и одним в свободном
+пуле — ни один из v2_session_* сценариев такого не даёт (все их PlanItem
+day_of_week=NULL, они сделаны под экран сессии, не под "Планы"). CI должен
+добавить отдельный шаг `python scripts/e2e_seed.py plan_week_ready
+<telegram_id>` (тот же класс ограничения, что и ADMIN_IDS выше — агент не
+может редактировать .github/workflows/e2e.yml)."""
 
 import argparse
 import asyncio
@@ -67,6 +77,7 @@ from app.db.models_program import (
     Exercise,
     PlanItem,
     Program,
+    ProgramItem,
     ProgressionStrategyProfile,
 )
 from app.db.repositories.equipment_items import EquipmentItemRepository
@@ -75,7 +86,7 @@ from app.db.repositories.training_sessions import SessionBlockInput, SetLogInput
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
-from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource
+from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource, WeekPhase
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
@@ -311,6 +322,57 @@ async def seed_v2_session_progression_edit(session: AsyncSession, telegram_id: i
     )
 
 
+async def seed_plan_week_ready(session: AsyncSession, telegram_id: int) -> None:
+    """issue #193 (WORKER B) — RECURRING-курс с ДВУМЯ ProgramItem: один
+    закреплён за днём недели (day_of_week=1, вторник — см. соглашение
+    DashboardScreen.tsx::DAY_NAMES), второй — свободный пул (day_of_week=
+    NULL), тот же вид, что реальный сид "Подтягивания"
+    (scripts/backfill_multi_program.py). Ни один из трёх уже существующих
+    v2_session_* сценариев не даёт day_of_week-строку — они устроены под
+    экран сессии (issue #185, "не трогать"), не под "Планы" — поэтому нужен
+    отдельный сценарий, не переиспользование существующего telegram_id.
+
+    Программа НАМЕРЕННО без ProgressionStrategyProfile (как
+    _make_recurring_program в tests/test_services/test_plan_week_service.py)
+    — "Планы" (DashboardScreen.tsx) в этом issue показывает только состав
+    недели, не прогрессию/цели.
+
+    GET /api/v2/plan сам материализует текущую PlanWeek и привязывает эти
+    PlanItem к ней (ensure_current_plan_week, issue #188) — сидирование
+    здесь останавливается на создании инклюзии, тот же принцип, что и у
+    остальных v2_session_* сценариев выше (ничего не вызывает
+    PlanWeekService заранее, это ответственность самого GET-эндпоинта)."""
+    user = await _onboard(session, telegram_id)
+
+    program = Program(
+        name="Расписание недели (E2E)", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_plan_week", config={},
+    )
+    session.add(program)
+    await session.flush()
+
+    exercise_day = Exercise(name="По вторникам", metric_type=MetricType.REPS, category="e2e_plan_week")
+    exercise_pool = Exercise(name="Свободная тренировка", metric_type=MetricType.REPS, category="e2e_plan_week")
+    session.add_all([exercise_day, exercise_pool])
+    await session.flush()
+
+    session.add_all([
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=exercise_day.id,
+            count_per_week=1, day_of_week=1,
+        ),
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=exercise_pool.id,
+            count_per_week=3, day_of_week=None,
+        ),
+    ])
+    await session.flush()
+
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+
+
 SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
@@ -318,6 +380,7 @@ SCENARIOS = {
     "v2_session_ready": seed_v2_session_ready,
     "v2_session_complex": seed_v2_session_complex,
     "v2_session_progression_edit": seed_v2_session_progression_edit,
+    "plan_week_ready": seed_plan_week_ready,
 }
 
 
