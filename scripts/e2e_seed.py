@@ -473,6 +473,57 @@ async def seed_plan_week_add_exercise(session: AsyncSession, telegram_id: int) -
     )
 
 
+async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) -> None:
+    """Checkpoint 4A (issue #188) — реальная STEP-программа "Подтягивания",
+    материализованная через настоящий create_inclusion (ProgramItem +
+    PlanWeek, не напрямую PlanItem, как в seed_v2_session_ready — той
+    нужна была только готовая сессия, этой нужна ещё и реальная недельная
+    карточка на "Планах", откуда стартует Golden Journey).
+
+    Свежая инклюзия, ни одной TrainingSession в истории — readiness
+    (app/web/routes_v2_dashboard.py::get_dashboard_status) проверяет
+    too_early только если есть last_sessions, у новой инклюзии их нет —
+    "ready" гарантирован без манипуляции датами."""
+    user = await _onboard(session, telegram_id)
+
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+
+    program = Program(
+        name="Подтягивания", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_start_session", progression_strategy_id=profile.id,
+        config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+    )
+    session.add(program)
+    await session.flush()
+
+    block_a = Exercise(
+        name="Блок A", metric_type=MetricType.REPS, category="e2e_start_session", subcategory="block_a",
+    )
+    block_b = Exercise(
+        name="Блок Б", metric_type=MetricType.REPS, category="e2e_start_session", subcategory="block_b",
+    )
+    session.add_all([block_a, block_b])
+    await session.flush()
+
+    session.add_all([
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
+            count_per_week=3, day_of_week=None,
+        ),
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
+            count_per_week=3, day_of_week=None,
+        ),
+    ])
+    await session.flush()
+
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+
+
 SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
@@ -483,6 +534,7 @@ SCENARIOS = {
     "plan_week_ready": seed_plan_week_ready,
     "plan_week_grouping": seed_plan_week_grouping,
     "plan_week_add_exercise": seed_plan_week_add_exercise,
+    "plan_week_start_session": seed_plan_week_start_session,
 }
 
 

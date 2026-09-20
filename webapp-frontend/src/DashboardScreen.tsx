@@ -107,6 +107,13 @@ type Props = {
    * (product-reference skill: стартовый экран — сводка, не открытая
    * тренировка). */
   onOpenWorkout: () => void;
+  /** Checkpoint 4A (issue #188) — "Начать" на карточке program-backed
+   * группы (program_inclusion_id !== null, "Подтягивания") ведёт сюда с
+   * точным набором plan_item_id этой группы (тот же ключ, что
+   * groupPlanItems уже использует для отображения — не пересчитывается
+   * заново). Manual-группы (Планка/Отжимания) кнопку не получают —
+   * Checkpoint 4A их сознательно не трогает (issue #188, раздел 11). */
+  onStartSession: (planItemIds: number[]) => void;
 };
 
 type ScreenState =
@@ -168,7 +175,7 @@ type PickerState =
  * где WorkoutScreen (тот же STATUS_MESSAGES) объясняет причину и предлагает
  * то, что реально доступно (факультатив/бэкдейт/бот) — Dashboard не
  * дублирует эту логику, только не начинает с неё. */
-export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
+export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Подключённые курсы + реальные PlanWeek (Capability A issue #188, недели
   // — issue #193) — минимальный видимый результат "Добавить в план" (10.2:
@@ -362,6 +369,32 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
             }
             const days = [...byDay.entries()].sort(([a], [b]) => a - b);
 
+            // Checkpoint 4A (issue #188) — "Начать" только на program-backed
+            // группе (program_inclusion_id !== null — "Подтягивания") и
+            // только у текущей недели (isCurrent), тот же смысл, что уже
+            // ограничивает "+ Добавить упражнение" ниже. Manual-группы
+            // (Планка/Отжимания) кнопку не получают — вне scope 4A.
+            function renderGroupRow(group: PlanItemGroup) {
+              const isProgramBacked = group.items[0]?.program_inclusion_id !== null;
+              return (
+                <div key={group.key} className="plan-week-day-group">
+                  <p className="plan-item-row">
+                    {group.title}
+                    {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
+                  </p>
+                  {isCurrent && isProgramBacked && (
+                    <button
+                      type="button"
+                      className="program-card-button plan-add-exercise-button"
+                      onClick={() => onStartSession(group.items.map((item) => item.id))}
+                    >
+                      Начать
+                    </button>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <Section
                 key={week.id}
@@ -377,23 +410,13 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout }: Props) {
                 {days.map(([day, dayItems]) => (
                   <div key={day} className="plan-week-day-group">
                     <p className="block-subtitle">{DAY_NAMES[day] ?? `День ${day}`}</p>
-                    {groupPlanItems(dayItems, plan.inclusions, libraryExercises).map((group) => (
-                      <p key={group.key} className="plan-item-row">
-                        {group.title}
-                        {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
-                      </p>
-                    ))}
+                    {groupPlanItems(dayItems, plan.inclusions, libraryExercises).map(renderGroupRow)}
                   </div>
                 ))}
                 {freePool.length > 0 && (
                   <div className="plan-week-day-group">
                     <p className="block-subtitle">Свободный пул</p>
-                    {groupPlanItems(freePool, plan.inclusions, libraryExercises).map((group) => (
-                      <p key={group.key} className="plan-item-row">
-                        {group.title}
-                        {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
-                      </p>
-                    ))}
+                    {groupPlanItems(freePool, plan.inclusions, libraryExercises).map(renderGroupRow)}
                   </div>
                 )}
                 {isCurrent && (
