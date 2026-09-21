@@ -101,12 +101,6 @@ function groupPlanItems(
 
 type Props = {
   initDataRaw: string;
-  /** Быстрый старт (issue #175) — переключает нижнюю вкладку на
-   * "Тренировку" (App.tsx), сама форма живёт там же, где и раньше: Dashboard
-   * не дублирует WorkoutScreen, только не открывается на нём по умолчанию
-   * (product-reference skill: стартовый экран — сводка, не открытая
-   * тренировка). */
-  onOpenWorkout: () => void;
   /** Checkpoint 4A/4B (issue #188) — "Начать" на карточке любой группы
    * (program-backed "Подтягивания" ИЛИ manual "Планка"/"Отжимания") ведёт
    * сюда с точным набором plan_item_id этой группы (тот же ключ, что
@@ -178,7 +172,7 @@ type PickerState =
  * где WorkoutScreen (тот же STATUS_MESSAGES) объясняет причину и предлагает
  * то, что реально доступно (факультатив/бэкдейт/бот) — Dashboard не
  * дублирует эту логику, только не начинает с неё. */
-export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: Props) {
+export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Подключённые курсы + реальные PlanWeek (Capability A issue #188, недели
   // — issue #193) — минимальный видимый результат "Добавить в план" (10.2:
@@ -543,10 +537,6 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: 
           ))}
         </>
       )}
-
-      <Button className="action-button" size="l" stretched onClick={onOpenWorkout}>
-        {isReady ? "Начать тренировку" : "Открыть «Тренировку»"}
-      </Button>
     </div>
   );
 }
