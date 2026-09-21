@@ -108,6 +108,34 @@ class TrainingPlanRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_plan_items_by_ids_for_user(self, plan_item_ids: list[int], user_id: int) -> list[PlanItem]:
+        """Checkpoint 4C (issue #188) — batch-версия get_plan_item_for_user
+        для Журнала: резолв source metadata нескольких сессий одним
+        запросом, не по одной на сессию. Тот же ownership-принцип (join на
+        training_plans по user_id) — чужой PlanItem никогда не попадёт в
+        результат, даже если session_plan_items ссылается на него по
+        какой-то причине (не должно происходить, но join не даёт
+        просочиться молча)."""
+        if not plan_item_ids:
+            return []
+        result = await self._session.execute(
+            select(PlanItem)
+            .join(TrainingPlan, PlanItem.training_plan_id == TrainingPlan.id)
+            .where(PlanItem.id.in_(plan_item_ids), TrainingPlan.user_id == user_id),
+        )
+        return list(result.scalars().all())
+
+    async def list_inclusions_by_ids(self, inclusion_ids: list[int]) -> list[ProgramInclusion]:
+        """Checkpoint 4C (issue #188) — batch-версия get_inclusion_by_id
+        для Журнала. Ownership здесь не нужна отдельно: inclusion_ids
+        приходят только из PlanItem, уже отфильтрованных
+        list_plan_items_by_ids_for_user выше — транзитивно тот же
+        пользователь."""
+        if not inclusion_ids:
+            return []
+        result = await self._session.execute(select(ProgramInclusion).where(ProgramInclusion.id.in_(inclusion_ids)))
+        return list(result.scalars().all())
+
     async def get_plan_week_for_user(self, plan_week_id: int, user_id: int) -> PlanWeek | None:
         """Ownership-проверка через join на training_plans — 404, не 403,
         тот же принцип, что get_plan_item_for_user/get_inclusion_for_user

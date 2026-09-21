@@ -7,13 +7,21 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 (CLAUDE.md)."""
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import Exercise, PlanItem, PlanWeek, Program, ProgramInclusion
+from app.db.models_program import (
+    Exercise,
+    PlanItem,
+    PlanWeek,
+    Program,
+    ProgramInclusion,
+    SessionStatus,
+)
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -115,11 +123,12 @@ def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
 
 def _session_response(
     detail: SessionDetail, *, progression: SessionProgressionResponse | None, skipped_reason: str | None,
+    title: str | None = None,
 ) -> SessionResponse:
     return SessionResponse(
         id=detail.id, source=detail.source.value, status=detail.status.value,
         performed_at=detail.performed_at, effort=str(detail.effort) if detail.effort is not None else None,
-        comment=detail.comment,
+        comment=detail.comment, title=title,
         blocks=[
             SessionBlockResponse(
                 order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
@@ -315,17 +324,84 @@ async def create_plan_item(
 # --- Сессии ------------------------------------------------------------------------------
 
 
+async def _resolve_session_titles(
+    session: AsyncSession, details: list[SessionDetail], user_id: int,
+) -> dict[int, str | None]:
+    """Checkpoint 4C (issue #188) — единственное место, где SessionPlanItem
+    читается (заполняется с Checkpoint 4A, ранее нигде не читалась).
+    Батч на всю страницу — 3 запроса суммарно, не по 3 на сессию:
+    SessionPlanItem -> PlanItem -> (ProgramInclusion | Exercise).
+
+    Program-backed: если хотя бы один source PlanItem имеет
+    program_inclusion_id — заголовок это ProgramInclusion.program_name
+    ("Подтягивания"), не имя отдельного блока ("Блок A"/"Блок Б" никогда
+    не должны стать пользовательской карточкой верхнего уровня).
+    Manual: все source PlanItem имеют program_inclusion_id=NULL —
+    заголовок это имя Exercise (единственного, по факту 4B: одна manual-
+    группа = одна TrainingSession).
+    Отсутствует совсем — сессия создана мимо create_live_session
+    (до Checkpoint 4A) или связанный PlanItem с тех пор удалён — честный
+    None, не выдуманное имя."""
+    plans = TrainingPlanRepository(session)
+    sessions_repo = TrainingSessionRepository(session)
+
+    session_ids = [detail.id for detail in details]
+    plan_item_ids_by_session = await sessions_repo.list_plan_item_ids_by_session(session_ids)
+
+    all_plan_item_ids = sorted({pid for ids in plan_item_ids_by_session.values() for pid in ids})
+    plan_items = await plans.list_plan_items_by_ids_for_user(all_plan_item_ids, user_id)
+    plan_items_by_id = {item.id: item for item in plan_items}
+
+    inclusion_ids = sorted({item.program_inclusion_id for item in plan_items if item.program_inclusion_id is not None})
+    inclusions = await plans.list_inclusions_by_ids(inclusion_ids)
+    program_name_by_inclusion = {
+        inclusion.id: inclusion.snapshot.get("program_name", "") for inclusion in inclusions
+    }
+
+    manual_exercise_ids = sorted({
+        item.exercise_id for item in plan_items
+        if item.program_inclusion_id is None and item.exercise_id is not None
+    })
+    exercises = await ProgramRepository(session).list_exercises_by_ids(manual_exercise_ids)
+    exercise_name_by_id = {exercise.id: exercise.name for exercise in exercises}
+
+    titles: dict[int, str | None] = {}
+    for detail in details:
+        source_items = [
+            plan_items_by_id[pid] for pid in plan_item_ids_by_session.get(detail.id, []) if pid in plan_items_by_id
+        ]
+        program_backed = next((item for item in source_items if item.program_inclusion_id is not None), None)
+        if program_backed is not None:
+            titles[detail.id] = program_name_by_inclusion.get(program_backed.program_inclusion_id)
+        elif source_items and source_items[0].exercise_id is not None:
+            titles[detail.id] = exercise_name_by_id.get(source_items[0].exercise_id)
+        else:
+            titles[detail.id] = None
+    return titles
+
+
 @router_v2.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    status_filter: Literal["started", "completed"] | None = Query(default=None, alias="status"),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> SessionListResponse:
+    """status (Checkpoint 4C) — опциональный фильтр, без параметра ведёт
+    себя как раньше (и STARTED, и COMPLETED) — SessionV2Lab.tsx/
+    SessionJournalScreen.tsx его не передают, их поведение не меняется."""
     user = await _require_user(session, init_data)
-    details = await TrainingSessionRepository(session).list_for_user(user.id, limit=limit, offset=offset)
+    status_value = SessionStatus(status_filter) if status_filter is not None else None
+    details = await TrainingSessionRepository(session).list_for_user(
+        user.id, limit=limit, offset=offset, status=status_value,
+    )
+    titles = await _resolve_session_titles(session, details, user.id)
     return SessionListResponse(
-        sessions=[_session_response(detail, progression=None, skipped_reason=None) for detail in details],
+        sessions=[
+            _session_response(detail, progression=None, skipped_reason=None, title=titles.get(detail.id))
+            for detail in details
+        ],
     )
 
 

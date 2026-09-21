@@ -313,14 +313,21 @@ export interface SessionResponseV2 {
   performed_at: string;
   effort: string | null;
   comment: string | null;
+  /** Checkpoint 4C (issue #188) — резолвится на бэкенде через
+   * SessionPlanItem, не пересчитывается на фронте. null — сессия без связи
+   * (легаси POST /sessions в обход live-flow, или до Checkpoint 4A). */
+  title: string | null;
   blocks: { order_index: number; exercise_id: number | null; complex_id: number | null; set_logs: SetLogResponseV2[] }[];
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
 }
 
-export async function fetchSessions(initDataRaw: string, limit = 20): Promise<SessionResponseV2[]> {
+export async function fetchSessions(
+  initDataRaw: string, limit = 20, status?: "started" | "completed",
+): Promise<SessionResponseV2[]> {
+  const statusParam = status ? `&status=${status}` : "";
   const response = await apiV2Get<{ sessions: SessionResponseV2[] }>(
-    `/api/v2/sessions?limit=${limit}`, initDataRaw,
+    `/api/v2/sessions?limit=${limit}${statusParam}`, initDataRaw,
   );
   return response.sessions;
 }

@@ -31,6 +31,16 @@ class ProgramRepository:
         metric_type упражнения при резолве блоков живой сессии."""
         return await self._session.get(Exercise, exercise_id)
 
+    async def list_exercises_by_ids(self, exercise_ids: list[int]) -> list[Exercise]:
+        """Checkpoint 4C (issue #188) — batch-версия get_exercise для
+        резолва названий manual-сессий в Журнале одним запросом на
+        страницу, не по одному на сессию (раздел 5 задачи — 'не делать
+        N+1 на фронте'; здесь тот же принцип и на бэкенде)."""
+        if not exercise_ids:
+            return []
+        result = await self._session.execute(select(Exercise).where(Exercise.id.in_(exercise_ids)))
+        return list(result.scalars().all())
+
     async def list_complex_items(self, complex_id: int) -> list[ComplexItem]:
         """Состав комплекса по order_index — тот же порядок, в котором
         app.services.live_session разворачивает Complex в SessionBlock'и
