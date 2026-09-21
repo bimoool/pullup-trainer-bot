@@ -784,7 +784,13 @@ input[type="number"] {
    padding-bottom поднимает содержимое Tabbar выше home indicator на iPhone.
    Tabbar сам fixed-позиционирован библиотекой (bottom: 0), этот padding
    делает его физически выше на величину safe-area. На обычных устройствах
-   env() = 0px, визуально ничего не меняется. */
-[class*="tgui"][class*="abbar"] {
-  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+   env() = 0px, визуально ничего не меняется.
+
+   Integration review (H1) — исходный селектор [class*="tgui"][class*="abbar"]
+   не совпадал ни с чем: библиотека рендерит только content-hashed классы
+   (tgui-<hash>, без читаемой подстроки "abbar" — проверено по факту в
+   node_modules). Tabbar теперь получает явный className="bottom-tabbar"
+   (App.tsx) — таргетируем его напрямую, не гадаем по хэшу библиотеки. */
+.bottom-tabbar {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

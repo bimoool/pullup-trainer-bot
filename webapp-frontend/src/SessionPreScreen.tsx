@@ -207,7 +207,7 @@ export function SessionPreScreen({
   if (state.phase === "blocked") {
     return (
       <div>
-        <p className="plan-title">Сессия (v2)</p>
+        <p className="plan-title">Сессия</p>
         <p className="screen-message">
           Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.
         </p>
@@ -220,7 +220,7 @@ export function SessionPreScreen({
   if (state.phase === "needs_assessment") {
     return (
       <div>
-        <p className="plan-title">Сессия (v2)</p>
+        <p className="plan-title">Сессия</p>
         <p className="screen-message">Был долгий перерыв — сначала нужен повторный замер.</p>
         <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
           Пройти замер в обычной "Тренировке"
@@ -231,7 +231,7 @@ export function SessionPreScreen({
   if (state.phase === "no_course") {
     return (
       <div>
-        <p className="plan-title">Сессия (v2)</p>
+        <p className="plan-title">Сессия</p>
         <p className="screen-message">Нет активного курса для этого экрана (или их больше одного).</p>
         <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
           Перейти в обычную "Тренировку"
@@ -251,7 +251,7 @@ export function SessionPreScreen({
 
   return (
     <div>
-      <p className="plan-title">Сессия (v2){programName ? ` — ${programName}` : ""}</p>
+      <p className="plan-title">Сессия{programName ? ` — ${programName}` : ""}</p>
       {step && (
         <>
           <BlockTargetCard letter="A" block={step.blockA} />
