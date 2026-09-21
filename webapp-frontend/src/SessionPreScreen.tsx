@@ -10,6 +10,7 @@ import {
   type ProgramInclusionResponseV2,
   type TrainingPlanResponseV2,
 } from "./apiV2";
+import { useBackButton } from "./useBackButton";
 
 type Props = {
   initDataRaw: string;
@@ -108,6 +109,11 @@ export function SessionPreScreen({
   initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds, manual, title,
 }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+
+  // issue #202: Telegram BackButton — переиспользует существующий onGoToWorkout
+  // (тот же хендлер, что у кнопок "Перейти в обычную Тренировку" в blocked/
+  // needs_assessment/no_course фазах — не создаёт вторую логику выхода)
+  useBackButton(onGoToWorkout, [onGoToWorkout]);
 
   useEffect(() => {
     let cancelled = false;
