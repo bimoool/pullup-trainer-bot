@@ -8,10 +8,6 @@ import { ProgramDetailScreen } from "./ProgramDetailScreen";
 
 type Props = {
   initDataRaw: string;
-  /** Открывает вкладку "Тренировка" (не пункт нижнего меню — issue #183,
-   * волна 5b, см. App.tsx). WorkoutScreen сам показывает нужное состояние
-   * (форма, "не готов", бэкдейт и т.п.) — Главная не дублирует эту логику. */
-  onOpenWorkout: () => void;
   /** Открывает вкладку "Планы" — туда переехал прежний Dashboard (issue #175,
    * волна 4) целиком, со сводкой недели и статусом готовности. */
   onOpenPlans: () => void;
@@ -37,7 +33,7 @@ type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { p
  * готовности, кнопка "Начать тренировку") осталась на "Планах"
  * (DashboardScreen.tsx) как есть — здесь только компактный виджет недели.
  */
-export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
+export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
@@ -142,10 +138,6 @@ export function HomeScreen({ initDataRaw, onOpenWorkout, onOpenPlans }: Props) {
 
       <Button className="action-button" size="l" stretched onClick={onOpenPlans}>
         К плану
-      </Button>
-
-      <Button className="action-button" size="l" stretched mode="outline" onClick={onOpenWorkout}>
-        Тренировка
       </Button>
 
       <p className="section-title">Курсы</p>

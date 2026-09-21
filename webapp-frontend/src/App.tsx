@@ -300,14 +300,12 @@ export function App() {
       {isOnboarded && tab === "home" && (
         <HomeScreen
           initDataRaw={state.initDataRaw}
-          onOpenWorkout={() => setTab("workout")}
           onOpenPlans={() => setTab("plans")}
         />
       )}
       {isOnboarded && tab === "plans" && (
         <DashboardScreen
           initDataRaw={state.initDataRaw}
-          onOpenWorkout={() => setTab("workout")}
           onStartSession={(planItemIds, options) => setV2Session({ planItemIds, ...options })}
         />
       )}
