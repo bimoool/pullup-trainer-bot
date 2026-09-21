@@ -297,12 +297,7 @@ export function App() {
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
       )}
-      {isOnboarded && tab === "home" && (
-        <HomeScreen
-          initDataRaw={state.initDataRaw}
-          onOpenPlans={() => setTab("plans")}
-        />
-      )}
+      {isOnboarded && tab === "home" && <HomeScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "plans" && (
         <DashboardScreen
           initDataRaw={state.initDataRaw}
