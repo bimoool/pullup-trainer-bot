@@ -71,9 +71,13 @@ input[type="number"] {
 
 /* Задел под навигацию (issue #45, часть 3) — нижние вкладки поверх
    контента, поэтому app-shell-with-nav добавляет запас снизу под высоту
-   .bottom-nav, чтобы последняя карточка экрана не пряталась под ней. */
+   .bottom-nav, чтобы последняя карточка экрана не пряталась под ней.
+
+   issue #203 — safe-area для iPhone: calc включает базовую высоту nav (88px)
+   плюс env(safe-area-inset-bottom) для устройств с home indicator. На обычных
+   устройствах env() возвращает 0px, поведение не меняется. */
 .app-shell-with-nav {
-  padding-bottom: 88px;
+  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 }
 
 .bottom-nav-icon {
@@ -774,4 +778,13 @@ input[type="number"] {
 
 .phase-timer-rest {
   color: #0a84ff;
+}
+
+/* issue #203 — safe-area для нижнего Tabbar из @telegram-apps/telegram-ui:
+   padding-bottom поднимает содержимое Tabbar выше home indicator на iPhone.
+   Tabbar сам fixed-позиционирован библиотекой (bottom: 0), этот padding
+   делает его физически выше на величину safe-area. На обычных устройствах
+   env() = 0px, визуально ничего не меняется. */
+[class*="tgui"][class*="abbar"] {
+  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
 }
