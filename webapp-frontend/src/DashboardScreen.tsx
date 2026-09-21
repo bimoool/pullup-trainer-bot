@@ -192,6 +192,17 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: 
   // недоступен по какой-то причине — просто не будет "+ Добавить упражнение".
   const [exercisesState, setExercisesState] = useState<ExercisesState>({ phase: "loading" });
   const [picker, setPicker] = useState<PickerState>({ phase: "closed" });
+  // H1, microfix 2 (issue #188) — UI-guard против двойного тапа "Начать":
+  // onStartSession синхронно переключает App.tsx на PlanSessionFlow
+  // (никакого сетевого запроса на этом уровне, сам запрос — уже внутри
+  // SessionPreScreen после навигации), поэтому окно гонки — доля секунды
+  // между кликом и следующим рендером React, но два очень быстрых тапа
+  // успевают попасть в него оба. Backend остаётся последней защитой
+  // (client_session_id-идемпотентность, Checkpoint 4A) — это только UX,
+  // не замена ей. Сброс "при ошибке" не нужен отдельно: onStartSession
+  // здесь не может провалиться сам по себе (это не API-вызов), при успехе
+  // компонент размонтируется вместе с переходом на PlanSessionFlow.
+  const [startingGroupKey, setStartingGroupKey] = useState<string | null>(null);
 
   function reloadPlan() {
     return fetchPlan(initDataRaw).then((data) => {
@@ -388,12 +399,19 @@ export function DashboardScreen({ initDataRaw, onOpenWorkout, onStartSession }: 
                     <button
                       type="button"
                       className="program-card-button plan-add-exercise-button"
-                      onClick={() => onStartSession(
-                        group.items.map((item) => item.id),
-                        { manual: !isProgramBacked, title: group.title },
-                      )}
+                      disabled={startingGroupKey !== null}
+                      onClick={() => {
+                        if (startingGroupKey !== null) {
+                          return;
+                        }
+                        setStartingGroupKey(group.key);
+                        onStartSession(
+                          group.items.map((item) => item.id),
+                          { manual: !isProgramBacked, title: group.title },
+                        );
+                      }}
                     >
-                      Начать
+                      {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
                     </button>
                   )}
                 </div>

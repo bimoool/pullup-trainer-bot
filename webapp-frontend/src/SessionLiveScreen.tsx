@@ -14,6 +14,7 @@ import {
   type LocalPhaseName,
 } from "./offlineSession";
 import { cancelScheduledPhaseEndSound, schedulePhaseEndSound } from "./phaseAudio";
+import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
 type Props = {
@@ -198,6 +199,18 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
     schedulePhaseEndSound((phaseEndsAtMs - Date.now()) / 1000);
     return () => cancelScheduledPhaseEndSound();
   }, [phaseEndsAtMs]);
+
+  // issue #202/#310 (integration review, H1) — useBackButton должен
+  // вызываться безусловно, до любого раннего return: изначально стоял
+  // ПОСЛЕ "if (local === null) return ..." ниже — на первом рендере
+  // (local ещё null) хук не вызывался вовсе, на следующих — вызывался,
+  // классическое нарушение Rules of Hooks (React error #310, найдено
+  // живым Playwright-прогоном, воспроизводимо, не флап). handleFinish —
+  // function declaration, hoisted, доступна здесь независимо от текстовой
+  // позиции своего определения ниже; сама вызывается (через клик) только
+  // когда local уже точно не null, поэтому её собственное тело не нужно
+  // менять.
+  useBackButton(handleFinish, [local]);
 
   if (local === null) {
     return <p className="screen-message">Загружаю тренировку…</p>;

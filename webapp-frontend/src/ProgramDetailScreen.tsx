@@ -1,6 +1,7 @@
 import { Button } from "@telegram-apps/telegram-ui";
 
 import type { ProgramResponseV2 } from "./apiV2";
+import { useBackButton } from "./useBackButton";
 
 type Props = {
   program: ProgramResponseV2;
@@ -41,6 +42,10 @@ const STRUCTURE_TYPE_LABELS: Record<string, string> = {
  */
 export function ProgramDetailScreen({ program, included, adding, addError, onAdd, onBack }: Props) {
   const structureLabel = STRUCTURE_TYPE_LABELS[program.structure_type] ?? program.structure_type;
+
+  // issue #202: Telegram BackButton — переиспользует существующий onBack
+  // (тот же хендлер, что у "← Назад" ниже), не создаёт вторую логику
+  useBackButton(onBack, [onBack]);
 
   return (
     <div>

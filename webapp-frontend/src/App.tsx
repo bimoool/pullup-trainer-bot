@@ -342,7 +342,15 @@ export function App() {
       )}
 
       {isOnboarded && (
-        <Tabbar>
+        // issue #203 (integration review, H1) — library Tabbar рендерит
+        // только content-hashed классы (tgui-<hash>, проверено по факту в
+        // node_modules/@telegram-apps/telegram-ui/dist/components/Layout/
+        // Tabbar/Tabbar.js) — [class*="abbar"] из исходного H1B-фикса не
+        // совпадал ни с чем (буквы "abbar" там физически нет). Tabbar
+        // поддерживает className как реальный, документированный проп
+        // (Tabbar.js: classNames(..., className)) — используем его вместо
+        // угадывания по хэшу библиотеки.
+        <Tabbar className="bottom-tabbar">
           {navTabs.map(({ key, icon, label }) => (
             <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>
               <span className="bottom-nav-icon">{icon}</span>
