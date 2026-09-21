@@ -14,6 +14,7 @@ import {
   type LocalPhaseName,
 } from "./offlineSession";
 import { cancelScheduledPhaseEndSound, schedulePhaseEndSound } from "./phaseAudio";
+import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
 type Props = {
@@ -278,6 +279,11 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
       await commitLocal({ ...local, completeRequested: { abandoned: false } });
     });
   }
+
+  // issue #202: Telegram BackButton — переиспользует существующий handleFinish
+  // (тот же confirm-диалог "Закончить сессию?", что у кнопки "Завершить" —
+  // не создаёт вторую бизнес-логику выхода, подключается к существующей)
+  useBackButton(handleFinish, [local]);
 
   const phaseName = local.localPhase.phaseName;
   const remaining = phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
