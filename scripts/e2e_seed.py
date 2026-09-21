@@ -574,6 +574,88 @@ async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int)
     await session.flush()
 
 
+async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None:
+    """Checkpoint 4C (issue #188) — один пользователь для полного combined
+    Journal acceptance: одна legacy Workout запись (тот же рецепт, что
+    seed_ready — record_workout напрямую, не через API) + реальная STEP-
+    программа "Подтягивания" (тот же рецепт, что
+    seed_plan_week_start_session, свежая инклюзия без истории v2-сессий —
+    readiness "ready" гарантирован) + два manual PlanItem, размещённых по
+    дням (тот же рецепт, что seed_plan_week_manual_session). Ни одна v2-
+    сессия ещё не начата — Golden Journey (раздел 15 задачи) проходит их
+    вживую через Playwright, не заранее готовыми записями."""
+    user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
+    now = datetime.now(UTC)
+    onboarding = OnboardingService(session)
+    _baseline, workout_set, _user = await onboarding.record_baseline_and_start(
+        user_id=user.id, performed_at=now, reps=10,
+    )
+    await onboarding.complete_questionnaire_and_start_trial(user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS)
+    band_item = await EquipmentItemRepository(session).create(
+        user_id=user.id, name="Резина 15кг", resistance_kg=BAND_VALUE,
+    )
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=10),
+        block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=band_item.id, block_b_equipment_item_id=band_item.id,
+    )  # legacy-история — должна остаться видна после combined Journal (раздел 16)
+
+    await seed_exercise_library(session)
+
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    program = Program(
+        name="Подтягивания", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+        category="e2e_journal_combined", progression_strategy_id=profile.id,
+        config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+    )
+    session.add(program)
+    await session.flush()
+    block_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_journal_combined", subcategory="block_a")
+    block_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_journal_combined", subcategory="block_b")
+    session.add_all([block_a, block_b])
+    await session.flush()
+    session.add_all([
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
+            count_per_week=3, day_of_week=None,
+        ),
+        ProgramItem(
+            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
+            count_per_week=3, day_of_week=None,
+        ),
+    ])
+    await session.flush()
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+
+    plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
+    today = now.date()
+    week_number = plan_week_number(plan.created_at.date(), today)
+    week_start = plan_week_start_date(plan.created_at.date(), week_number)
+    week = await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=week_number, start_date=week_start, phase=WeekPhase.BASE,
+    )
+    plank = (await session.execute(select(Exercise).where(Exercise.name == "Планка"))).scalar_one()
+    pushups = (await session.execute(select(Exercise).where(Exercise.name == "Отжимания"))).scalar_one()
+    session.add_all([
+        PlanItem(
+            training_plan_id=plan.id, exercise_id=plank.id, count_per_week=1,
+            day_of_week=2, program_inclusion_id=None, plan_week_id=week.id,
+        ),
+        PlanItem(
+            training_plan_id=plan.id, exercise_id=pushups.id, count_per_week=1,
+            day_of_week=4, program_inclusion_id=None, plan_week_id=week.id,
+        ),
+    ])
+    await session.flush()
+
+
 SCENARIOS = {
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
@@ -586,6 +668,7 @@ SCENARIOS = {
     "plan_week_add_exercise": seed_plan_week_add_exercise,
     "plan_week_start_session": seed_plan_week_start_session,
     "plan_week_manual_session": seed_plan_week_manual_session,
+    "journal_combined": seed_journal_combined,
 }
 
 

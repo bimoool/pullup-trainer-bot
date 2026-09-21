@@ -217,6 +217,24 @@ class TrainingSessionRepository:
         if plan_item_ids:
             await self._session.flush()
 
+    async def list_plan_item_ids_by_session(self, session_ids: list[int]) -> dict[int, list[int]]:
+        """Checkpoint 4C (issue #188) — первое чтение SessionPlanItem за всю
+        историю таблицы (заполняется с Checkpoint 4A, до сих пор нигде не
+        читалась — см. аудит Checkpoint 4). Один запрос на страницу
+        Журнала, не по одному на сессию. Сессии, созданные до появления
+        этой связи (или каким-то путём мимо create_live_session), просто не
+        попадут в возвращаемый словарь — вызывающий код обязан сам решить
+        фолбэк, эта функция не гадает."""
+        if not session_ids:
+            return {}
+        result = await self._session.execute(
+            select(SessionPlanItem).where(SessionPlanItem.session_id.in_(session_ids)),
+        )
+        by_session: dict[int, list[int]] = {}
+        for row in result.scalars().all():
+            by_session.setdefault(row.session_id, []).append(row.plan_item_id)
+        return by_session
+
     async def get_by_client_session_id(self, user_id: int, client_session_id: uuid.UUID) -> TrainingSession | None:
         """Идемпотентность старта живой сессии (офлайн-контракт) — POST
         /sessions/live с уже виденным client_session_id должен вернуть
@@ -428,16 +446,24 @@ class TrainingSessionRepository:
             )
         return details
 
-    async def list_for_user(self, user_id: int, *, limit: int = 50, offset: int = 0) -> list[SessionDetail]:
+    async def list_for_user(
+        self, user_id: int, *, limit: int = 50, offset: int = 0, status: SessionStatus | None = None,
+    ) -> list[SessionDetail]:
         """offset/limit — срез уже загруженного списка (тот же приём, что
         GET /api/history, issue #50), не отдельный SQL LIMIT/OFFSET —
         типичный объём истории одного пользователя не требует БД-пагинации,
-        см. CLAUDE.md."""
-        result = await self._session.execute(
-            select(TrainingSession).where(TrainingSession.user_id == user_id).order_by(
-                TrainingSession.performed_at.desc(),
-            ),
-        )
+        см. CLAUDE.md.
+
+        status (Checkpoint 4C, issue #188) — опциональный фильтр, default
+        None сохраняет старое поведение (и STARTED, и COMPLETED) для уже
+        существующих потребителей (SessionV2Lab.tsx/SessionJournalScreen.tsx
+        через GET /sessions без параметра). Журналу обычного пользователя
+        нужны только завершённые — раздел 3 задачи явно требует не менять
+        поведение без параметра."""
+        query = select(TrainingSession).where(TrainingSession.user_id == user_id)
+        if status is not None:
+            query = query.where(TrainingSession.status == status)
+        result = await self._session.execute(query.order_by(TrainingSession.performed_at.desc()))
         all_sessions = list(result.scalars().all())
         page = all_sessions[offset:offset + limit]
         return await self._load_details(page)

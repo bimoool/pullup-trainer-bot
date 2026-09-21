@@ -186,6 +186,14 @@ class SessionResponse(BaseModel):
     performed_at: datetime
     effort: str | None
     comment: str | None
+    # Checkpoint 4C (issue #188) — резолвится на бэкенде через
+    # SessionPlanItem -> PlanItem -> ProgramInclusion.program_name
+    # (program-backed) или -> Exercise.name (manual), не пересчитывается на
+    # фронте (раздел 5 задачи — не N+1 на фронте). None — сессия без
+    # SessionPlanItem вообще (создана мимо create_live_session, до
+    # Checkpoint 4A) либо чужого/удалённого PlanItem — честный пробел, не
+    # выдуманное имя.
+    title: str | None
     blocks: list[SessionBlockResponse]
     # None, если пересчёт прогрессии не применялся к этой сессии — вместе с
     # progression_skipped_reason объясняет ПОЧЕМУ (не молчаливое отсутствие,
