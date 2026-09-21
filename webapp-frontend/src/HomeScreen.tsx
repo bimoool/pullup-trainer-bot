@@ -1,22 +1,12 @@
-import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { fetchDashboard, type DashboardResponse } from "./api";
 import { createProgramInclusion, fetchPlan, fetchPrograms, type ProgramResponseV2 } from "./apiV2";
-import { streakValue } from "./DashboardScreen";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 
 type Props = {
   initDataRaw: string;
-  /** Открывает вкладку "Планы" — туда переехал прежний Dashboard (issue #175,
-   * волна 4) целиком, со сводкой недели и статусом готовности. */
-  onOpenPlans: () => void;
 };
-
-type ScreenState =
-  | { phase: "loading" }
-  | { phase: "error"; message: string }
-  | { phase: "ready"; dashboard: DashboardResponse };
 
 type CatalogState =
   | { phase: "loading" }
@@ -26,15 +16,13 @@ type CatalogState =
 type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
 
 /**
- * Стартовый экран Mini App (issue #183, волна 5b; référence — crimpd-reference
- * skill, "Пять вкладок... Главная-каталог"). Каталог курсов — волна 6, здесь
- * ещё нет ни одного курса, поэтому вместо заглушки, похожей на рабочий
- * каталог, — честный текст. Полная сводка (сколько тренировок, статус
- * готовности, кнопка "Начать тренировку") осталась на "Планах"
- * (DashboardScreen.tsx) как есть — здесь только компактный виджет недели.
+ * Стартовый экран Mini App — каталог программ (issue #205, Checkpoint 5B;
+ * crimpd-reference skill: "Главная = каталог программ / вход в Program Detail").
+ * Home не дублирует Plans/Analytics/workout controls — только каталог, состояние
+ * "В плане", переход в Program Detail. Полная сводка (статус готовности,
+ * кнопка "Начать тренировку") на "Планах" (DashboardScreen.tsx).
  */
-export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
-  const [state, setState] = useState<ScreenState>({ phase: "loading" });
+export function HomeScreen({ initDataRaw }: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
   // Program Detail (issue #192) — тот же приём "swap внутри вкладки", что
@@ -79,24 +67,6 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
     }
   }
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchDashboard(initDataRaw)
-      .then((dashboard) => {
-        if (!cancelled) {
-          setState({ phase: "ready", dashboard });
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [initDataRaw]);
-
   if (selectedProgramId !== null && catalog.phase === "ready") {
     const program = catalog.programs.find((p) => p.id === selectedProgramId);
     if (program) {
@@ -118,27 +88,6 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
   return (
     <div>
       <p className="plan-title">Главная</p>
-
-      {state.phase === "loading" && <p className="screen-message">Загружаю…</p>}
-      {state.phase === "error" && <p className="screen-message">Не удалось загрузить: {state.message}</p>}
-      {state.phase === "ready" && (
-        <div className="stat-grid">
-          <div className="stat-tile">
-            <div className="stat-value">{state.dashboard.workouts_count}</div>
-            <div className="stat-label">Тренировок всего</div>
-          </div>
-          <div className="stat-tile">
-            <div className="stat-value">
-              {streakValue(state.dashboard.streak, state.dashboard.workouts_count)}
-            </div>
-            <div className="stat-label">Подряд без перерыва</div>
-          </div>
-        </div>
-      )}
-
-      <Button className="action-button" size="l" stretched onClick={onOpenPlans}>
-        К плану
-      </Button>
 
       <p className="section-title">Курсы</p>
       {/* Capability A (issue #188) — минимальный каталог: одна карточка на
