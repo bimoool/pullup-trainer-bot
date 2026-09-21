@@ -200,6 +200,18 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
     return () => cancelScheduledPhaseEndSound();
   }, [phaseEndsAtMs]);
 
+  // issue #202/#310 (integration review, H1) — useBackButton должен
+  // вызываться безусловно, до любого раннего return: изначально стоял
+  // ПОСЛЕ "if (local === null) return ..." ниже — на первом рендере
+  // (local ещё null) хук не вызывался вовсе, на следующих — вызывался,
+  // классическое нарушение Rules of Hooks (React error #310, найдено
+  // живым Playwright-прогоном, воспроизводимо, не флап). handleFinish —
+  // function declaration, hoisted, доступна здесь независимо от текстовой
+  // позиции своего определения ниже; сама вызывается (через клик) только
+  // когда local уже точно не null, поэтому её собственное тело не нужно
+  // менять.
+  useBackButton(handleFinish, [local]);
+
   if (local === null) {
     return <p className="screen-message">Загружаю тренировку…</p>;
   }
@@ -279,11 +291,6 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
       await commitLocal({ ...local, completeRequested: { abandoned: false } });
     });
   }
-
-  // issue #202: Telegram BackButton — переиспользует существующий handleFinish
-  // (тот же confirm-диалог "Закончить сессию?", что у кнопки "Завершить" —
-  // не создаёт вторую бизнес-логику выхода, подключается к существующей)
-  useBackButton(handleFinish, [local]);
 
   const phaseName = local.localPhase.phaseName;
   const remaining = phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
