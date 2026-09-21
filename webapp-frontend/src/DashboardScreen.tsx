@@ -132,16 +132,6 @@ export function streakValue(streak: number, workoutsCount: number): string {
   return `🔥 ${streak}`;
 }
 
-function daysSinceLabel(days: number | null): string {
-  if (days === null) {
-    return "—";
-  }
-  if (days === 0) {
-    return "Сегодня";
-  }
-  return `${days} дн. назад`;
-}
-
 type PlanState = {
   inclusions: ProgramInclusionResponseV2[];
   items: PlanItemResponseV2[];
@@ -340,28 +330,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
 
   return (
     <div>
-      <p className="plan-title">Сегодня</p>
-
-      <div className="stat-grid">
-        <div className="stat-tile">
-          <div className="stat-value">{dashboard.workouts_count}</div>
-          <div className="stat-label">Тренировок всего</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-value">{streakValue(dashboard.streak, dashboard.workouts_count)}</div>
-          <div className="stat-label">Подряд без перерыва</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-value">{daysSinceLabel(dashboard.days_since_last_workout)}</div>
-          <div className="stat-label">Последняя тренировка</div>
-        </div>
-      </div>
-
-      <p className="screen-message">{statusText}</p>
-
       {weeksNewestFirst.length > 0 && (
         <>
-          <p className="section-title">Недели плана</p>
           {weeksNewestFirst.map((week) => {
             const isCurrent = week.id === currentWeekId;
             const weekItems = plan.items.filter((item) => item.plan_week_id === week.id);
@@ -421,6 +391,9 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                   + `${WEEK_PHASE_LABELS[week.phase] ?? week.phase}`
                 }
               >
+                {isCurrent && !isReady && (
+                  <p className="block-subtitle" style={{ marginBottom: "12px" }}>{statusText}</p>
+                )}
                 {weekItems.length === 0 && (
                   <p className="block-subtitle">На эту неделю пока ничего не запланировано.</p>
                 )}
@@ -525,17 +498,6 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
             Отмена
           </Button>
         </Section>
-      )}
-
-      {plan.inclusions.length > 0 && (
-        <>
-          <p className="section-title">Подключённые курсы</p>
-          {plan.inclusions.map((inclusion) => (
-            <Section key={inclusion.id} className="block-section">
-              <p className="block-subtitle">{inclusion.program_name}</p>
-            </Section>
-          ))}
-        </>
       )}
     </div>
   );
