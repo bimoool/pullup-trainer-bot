@@ -53,6 +53,13 @@ export function HomeScreen({ initDataRaw }: Props) {
   }, [initDataRaw]);
 
   async function handleAddToPlan(programId: number) {
+    // Guard against duplicate in-flight requests (issue #211, HA-3: double-tap
+    // protection). Error state intentionally NOT blocked — single intentional
+    // click after error clears it and retries (тот же UX-паттерн, что
+    // startingGroupKey в DashboardScreen.tsx::renderGroupRow).
+    if (addState.phase === "adding") {
+      return;
+    }
     setAddState({ phase: "adding", programId });
     try {
       await createProgramInclusion(initDataRaw, programId);
