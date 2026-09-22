@@ -23,7 +23,7 @@ discriminated union (отмечено в докстринге DefinitionProtocol
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
 
 class ProtocolType(StrEnum):
@@ -222,9 +222,43 @@ class Interval(BaseModel):
 
 
 # Discriminated union — все definition-типы в одном Annotated.
+#
+# Integration fix (Phase B1, issue #215) — исходный single-field
+# Field(discriminator="type") был структурно сломан: StaticRepsSets и
+# ProgressionRepsSets (аналогично StaticTimeSets/ProgressionTimeSets)
+# несут ОДНО и то же значение type="reps_sets"/"time_sets", различаясь
+# только вложенным prescription.source — Pydantic требует уникального
+# значения дискриминатора на вариант, а не два класса на одно значение.
+# Обнаружено только сейчас (не в Phase A1's собственных 34 тестах),
+# потому что ни один из них не строил TypeAdapter(DefinitionProtocol)
+# целиком — каждый класс проверялся по отдельности
+# (StaticRepsSets.model_validate(...) и т.д.), сама сборка union
+# никогда не вызывалась. Исправлено callable Discriminator, различающим
+# reps_sets/time_sets по составному ключу "type_source"; max_effort и
+# interval — по одному варианту на type, коллизии не было и нет.
+def _protocol_discriminator(value: object) -> str:
+    if isinstance(value, dict):
+        protocol_type = value.get("type")
+        prescription = value.get("prescription")
+        source = prescription.get("source") if isinstance(prescription, dict) else None
+    else:
+        protocol_type = getattr(value, "type", None)
+        prescription = getattr(value, "prescription", None)
+        source = getattr(prescription, "source", None) if prescription is not None else None
+
+    if protocol_type in (ProtocolType.REPS_SETS, ProtocolType.TIME_SETS, "reps_sets", "time_sets") and source is not None:
+        return f"{protocol_type}_{source}"
+    return protocol_type
+
+
 DefinitionProtocol = Annotated[
-    StaticRepsSets | ProgressionRepsSets | StaticTimeSets | ProgressionTimeSets | StaticMaxEffort | Interval,
-    Field(discriminator="type"),
+    Annotated[StaticRepsSets, Tag("reps_sets_static")]
+    | Annotated[ProgressionRepsSets, Tag("reps_sets_progression")]
+    | Annotated[StaticTimeSets, Tag("time_sets_static")]
+    | Annotated[ProgressionTimeSets, Tag("time_sets_progression")]
+    | Annotated[StaticMaxEffort, Tag("max_effort")]
+    | Annotated[Interval, Tag("interval")],
+    Discriminator(_protocol_discriminator),
 ]
 
 

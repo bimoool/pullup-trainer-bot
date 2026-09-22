@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import PlanItem, ProgramInclusion, SessionPhase, SessionStatus
@@ -34,7 +35,7 @@ from app.db.repositories.training_sessions import (
     SetTargetInput,
     TrainingSessionRepository,
 )
-from app.domain.interval_timing import IntervalTiming, compute_interval_timing
+from app.domain.interval_timing import IntervalPhase, compute_interval_timing
 from app.domain.live_session import (
     DEFAULT_UNIT_BY_METRIC_TYPE,
     BlockPlan,
@@ -164,15 +165,10 @@ class LiveSessionService:
         protocols: dict[int, DefinitionProtocol] = {}
         for item in items:
             if item.protocol is not None:
-                try:
-                    from pydantic import TypeAdapter
-                    protocol = TypeAdapter(DefinitionProtocol).validate_python(item.protocol)
-                    protocols[item.id] = protocol
-                    if protocol.type == ProtocolType.INTERVAL:
-                        has_interval = True
-                except Exception:
-                    # Невалидный protocol — fallback на старый путь (игнорируем)
-                    pass
+                protocol = TypeAdapter(DefinitionProtocol).validate_python(item.protocol)
+                protocols[item.id] = protocol
+                if protocol.type == ProtocolType.INTERVAL:
+                    has_interval = True
 
         blocks: list[SessionBlockInput] = []
         targets_by_block: list[list[SetTargetInput]] = []
@@ -326,11 +322,21 @@ class LiveSessionService:
         training_session = await self._sessions.get_active_for_user(user_id)
         if training_session is None:
             return None
-        # Phase B1 (issue #215): lazy finalization для expired interval сессий
-        await self._finalize_expired_interval_if_needed(training_session.id, user_id)
-        return await self._build_result(training_session.id, user_id)
+        # Phase B1 (issue #215, раздел 5) — lazy finalization для expired
+        # interval сессий. Если финализация только что завершила её
+        # (status стал COMPLETED), эндпоинт НЕ должен отдавать её как
+        # "активную" — /sessions/live/active семантически означает "есть,
+        # что продолжить", не "существует какая-то сессия". Перечитываем
+        # статус после финализации и возвращаем None, если сессия больше
+        # не STARTED — фронт идёт в Summary/Journal обычным путём, не
+        # получает ложное "resume" состояние.
+        await self.finalize_expired_interval_if_needed(training_session.id, user_id)
+        result = await self._build_result(training_session.id, user_id)
+        if result is not None and result.session.status != SessionStatus.STARTED:
+            return None
+        return result
 
-    async def _finalize_expired_interval_if_needed(self, session_id: int, user_id: int) -> None:
+    async def finalize_expired_interval_if_needed(self, session_id: int, user_id: int) -> None:
         """Lazy completion для expired interval workouts (Phase B1, issue #215).
         Идемпотентен — повторный вызов безопасен (mark_completed уже
         идемпотентен по конструкции, см. app.services.live_session.py:277).
@@ -350,12 +356,13 @@ class LiveSessionService:
         if detail.workout_snapshot is None:
             return  # standard STEP/manual path, не interval
 
-        # Парсинг snapshot для извлечения протоколов
-        try:
-            from pydantic import TypeAdapter
-            snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
-        except Exception:
-            return  # невалидный snapshot — игнорируем
+        # Парсинг snapshot для извлечения протоколов — намеренно без try/except
+        # (issue #215, п.6): workout_snapshot пишется только системой при
+        # старте (Phase A1 Pydantic-валидированный WorkoutSnapshot.model_dump()),
+        # никогда пользовательским вводом — если он не парсится, это реальный
+        # баг данных, который не должен молча оставлять interval-сессию
+        # незавершённой.
+        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
 
         # Проверка: есть ли interval блоки
         interval_blocks: list[tuple[int, ResolvedInterval]] = []
@@ -366,32 +373,48 @@ class LiveSessionService:
         if not interval_blocks:
             return  # нет interval блоков (не должно случиться, но защита)
 
-        # Проверка: expired?
+        # Проверка: expired? Один вызов compute_interval_timing на блок,
+        # переиспользуется и для записи result, и для итоговой проверки
+        # all_expired ниже — не пересчитывается дважды.
         now = datetime.now(UTC)
-        for block_id, protocol in interval_blocks:
-            timing = compute_interval_timing(
+        timings = [
+            (block_id, protocol, compute_interval_timing(
                 performed_at=detail.performed_at, now=now,
                 total_duration_seconds=protocol.total_duration_seconds,
                 work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
-            )
+            ))
+            for block_id, protocol in interval_blocks
+        ]
 
-            if now >= timing.total_end_at:
-                # Expired — финализация
-                result = {
-                    "completed_cycles": timing.completed_cycles,
-                    "actual_duration_seconds": protocol.total_duration_seconds,
-                }
-                await self._sessions.save_interval_block_result(block_id, result)
+        for block_id, protocol, timing in timings:
+            if timing.phase != IntervalPhase.DONE:
+                continue
+            # issue #215, раздел 2 — все 6 полей контракта обязательны.
+            # completed_at/actual_duration_seconds берутся из ПЛАНОВОГО
+            # дедлайна протокола (timing.total_end_at/total_duration_seconds),
+            # НЕ из now — если пользователь вернулся через 10 минут после
+            # deadline, тренировка всё равно длилась ровно 180 секунд, не
+            # 600+.
+            result = {
+                "type": "interval",
+                "started_at": timing.execution_started_at.isoformat(),
+                "completed_at": timing.total_end_at.isoformat(),
+                "planned_duration_seconds": protocol.total_duration_seconds,
+                "actual_duration_seconds": protocol.total_duration_seconds,
+                "completed_cycles": timing.completed_cycles,
+            }
+            await self._sessions.save_interval_block_result(block_id, result)
 
-        # Финализация сессии целиком (если все блоки expired)
-        all_expired = all(
-            compute_interval_timing(
-                performed_at=detail.performed_at, now=now,
-                total_duration_seconds=protocol.total_duration_seconds,
-                work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
-            ).phase == IntervalPhase.DONE
-            for _, protocol in interval_blocks
-        )
+        # Финализация сессии целиком (если все interval-блоки истекли).
+        # Идемпотентность повторного/параллельного вызова: result полностью
+        # детерминирован входными (performed_at, protocol) — НЕ зависит от
+        # того, какой из конкурентных вызовов "выиграл" гонку записи, оба
+        # вычисляют и пишут байт-в-байт одинаковый result. mark_completed
+        # (см. app.services.live_session.py:277) уже идемпотентен по
+        # конструкции — конкурентные UPDATE на одну строку сериализуются
+        # обычной row-level блокировкой PostgreSQL, дополнительная
+        # distributed-lock машинерия не нужна.
+        all_expired = all(timing.phase == IntervalPhase.DONE for _, _, timing in timings)
 
         if all_expired:
             await self._sessions.mark_completed(session_id)

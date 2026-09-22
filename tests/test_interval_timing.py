@@ -15,9 +15,11 @@ unit-тесты без БД/aiogram, offset-driven (explicit now parameter), п�
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
-from app.domain.interval_timing import IntervalPhase, calculate_completed_cycles, compute_interval_timing
+from app.domain.interval_timing import (
+    IntervalPhase,
+    calculate_completed_cycles,
+    compute_interval_timing,
+)
 
 
 class TestCalculateCompletedCycles:
@@ -154,14 +156,21 @@ class TestComputeIntervalTiming:
         assert timing.completed_cycles == 1  # первый завершён, второй не полный
 
     def test_truncated_final_rest(self):
-        """Финальный REST короче, чем rest_seconds (total кончается посреди REST)."""
+        """Финальный REST короче, чем rest_seconds (total кончается посреди REST).
+
+        work=10, rest=10, cycle=20: WORK[0,10), REST[10,20). Чтобы REST
+        реально обрезался, total_duration_seconds должен попасть ВНУТРЬ
+        интервала REST, не WORK следующего цикла — total=25 (изначальный
+        сценарий воркера) обрывает НАЧАЛО второго WORK (стартует на 20-й
+        секунде elapsed), не REST; исправлено на total=15, обрывающий
+        первый REST на 15-й секунде (вместо полных 20)."""
         performed_at = datetime(2026, 9, 22, 10, 0, 0, tzinfo=UTC)
-        # total=25: 5+10 (work) +10 (rest) +5 секунд второго REST, не 10
-        now = performed_at + timedelta(seconds=5 + 23)
+        # elapsed=13: внутри REST[10,20), total=15 обрежет его на 15-й секунде
+        now = performed_at + timedelta(seconds=5 + 13)
 
         timing = compute_interval_timing(
             performed_at=performed_at, now=now,
-            total_duration_seconds=25, work_seconds=10, rest_seconds=10,
+            total_duration_seconds=15, work_seconds=10, rest_seconds=10,
         )
 
         assert timing.phase == IntervalPhase.REST

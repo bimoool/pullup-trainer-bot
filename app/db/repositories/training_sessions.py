@@ -100,6 +100,7 @@ class SessionBlockDetail:
     complex_id: int | None
     set_logs: list[SessionSetLogDetail] = field(default_factory=list)
     set_targets: list[SessionSetTargetDetail] = field(default_factory=list)
+    result: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,7 @@ class SessionDetail:
     current_block_index: int = 0
     current_set_number: int = 1
     phase_index: int = 0
+    workout_snapshot: dict | None = None
     blocks: list[SessionBlockDetail] = field(default_factory=list)
 
 
@@ -443,6 +445,7 @@ class TrainingSessionRepository:
                         )
                         for target in set_targets_by_block[block.id]
                     ],
+                    result=block.result,
                 )
                 for block in blocks_by_session[session_row.id]
             ]
@@ -454,6 +457,7 @@ class TrainingSessionRepository:
                     phase_name=session_row.phase_name, phase_ends_at=session_row.phase_ends_at,
                     current_block_index=session_row.current_block_index,
                     current_set_number=session_row.current_set_number, phase_index=session_row.phase_index,
+                    workout_snapshot=session_row.workout_snapshot,
                     blocks=block_details,
                 ),
             )

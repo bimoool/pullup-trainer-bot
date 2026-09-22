@@ -11,6 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +33,10 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.db.repositories.users import UserRepository
+from app.domain.interval_timing import compute_interval_timing
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
+from app.domain.workout_protocol import ProtocolType, ResolvedInterval
+from app.domain.workout_snapshot import WorkoutSnapshot
 from app.services.live_session import CompleteResult, LiveSessionService
 from app.services.plan_week import PlanWeekService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
@@ -64,6 +68,7 @@ from app.web.schemas_v2 import (
     TrainingPlanResponse,
 )
 from app.web.schemas_v2_session import (
+    IntervalStateResponse,
     LiveSessionActiveResponse,
     LiveSessionBlockResponse,
     LiveSessionCompleteRequest,
@@ -393,6 +398,21 @@ async def list_sessions(
     SessionJournalScreen.tsx его не передают, их поведение не меняется."""
     user = await _require_user(session, init_data)
     status_value = SessionStatus(status_filter) if status_filter is not None else None
+    # Phase B1 (issue #215, раздел 4) — второй call site lazy finalization:
+    # пользователь мог не заходить в /sessions/live/active вообще (например
+    # сразу открыл Журнал со status=completed после deadline) — expired
+    # interval должен материализоваться и здесь. Проверяем STARTED-строки
+    # ЭТОГО пользователя НЕЗАВИСИМО от запрошенного status_value — если
+    # финализировать только среди уже отфильтрованных по completed строк,
+    # ни одна STARTED-сессия никогда бы не попала в эту проверку вообще.
+    # Только user.id — не сканирует чужие сессии и не всю таблицу.
+    live_sessions = LiveSessionService(session)
+    started_details = await TrainingSessionRepository(session).list_for_user(
+        user.id, limit=200, offset=0, status=SessionStatus.STARTED,
+    )
+    for detail in started_details:
+        await live_sessions.finalize_expired_interval_if_needed(detail.id, user.id)
+
     details = await TrainingSessionRepository(session).list_for_user(
         user.id, limit=limit, offset=offset, status=status_value,
     )
@@ -474,44 +494,37 @@ def _live_session_response_fields(detail: SessionDetail) -> dict:
     """Построение LiveSessionResponse из SessionDetail. Phase B1 (issue #215):
     добавляет server_time (UTC timestamp генерации) и interval state (только
     для interval workouts, вычисляется на лету из workout_snapshot)."""
-    from datetime import UTC, datetime
-
-    from pydantic import TypeAdapter
-
-    from app.domain.interval_timing import compute_interval_timing
-    from app.domain.workout_protocol import ProtocolType, ResolvedInterval
-    from app.domain.workout_snapshot import WorkoutSnapshot
-    from app.web.schemas_v2_session import IntervalStateResponse
-
     now = datetime.now(UTC)
 
-    # Phase B1: вычисление interval state, если workout_snapshot присутствует
+    # Phase B1: вычисление interval state, если workout_snapshot присутствует.
+    # Намеренно без try/except (issue #215, п.6) — workout_snapshot пишется
+    # только системой при старте (Phase A1 Pydantic-валидированный
+    # WorkoutSnapshot.model_dump()), никогда пользовательским вводом; сбой
+    # парсинга здесь означает реальную порчу данных, которую нельзя молча
+    # прятать.
     interval_state: IntervalStateResponse | None = None
     if detail.workout_snapshot is not None:
-        try:
-            snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
-            # Ищем первый interval блок (пока поддерживается один interval на сессию)
-            for item_snapshot in snapshot.items:
-                if item_snapshot.protocol.type == ProtocolType.INTERVAL:
-                    protocol = TypeAdapter(ResolvedInterval).validate_python(item_snapshot.protocol.model_dump())
-                    timing = compute_interval_timing(
-                        performed_at=detail.performed_at, now=now,
-                        total_duration_seconds=protocol.total_duration_seconds,
-                        work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
-                    )
-                    interval_state = IntervalStateResponse(
-                        execution_started_at=timing.execution_started_at,
-                        total_end_at=timing.total_end_at,
-                        phase=timing.phase.value,
-                        phase_ends_at=timing.phase_ends_at,
-                        total_duration_seconds=timing.total_duration_seconds,
-                        work_seconds=timing.work_seconds,
-                        rest_seconds=timing.rest_seconds,
-                        completed_cycles=timing.completed_cycles,
-                    )
-                    break  # только первый interval блок
-        except Exception:
-            pass  # невалидный snapshot — игнорируем, interval_state остаётся None
+        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
+        # Ищем первый interval блок (пока поддерживается один interval на сессию)
+        for item_snapshot in snapshot.items:
+            if item_snapshot.protocol.type == ProtocolType.INTERVAL:
+                protocol = TypeAdapter(ResolvedInterval).validate_python(item_snapshot.protocol.model_dump())
+                timing = compute_interval_timing(
+                    performed_at=detail.performed_at, now=now,
+                    total_duration_seconds=protocol.total_duration_seconds,
+                    work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+                )
+                interval_state = IntervalStateResponse(
+                    execution_started_at=timing.execution_started_at,
+                    total_end_at=timing.total_end_at,
+                    phase=timing.phase.value,
+                    phase_ends_at=timing.phase_ends_at,
+                    total_duration_seconds=timing.total_duration_seconds,
+                    work_seconds=timing.work_seconds,
+                    rest_seconds=timing.rest_seconds,
+                    completed_cycles=timing.completed_cycles,
+                )
+                break  # только первый interval блок
 
     return {
         "id": detail.id, "client_session_id": detail.client_session_id, "status": detail.status.value,
