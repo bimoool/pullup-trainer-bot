@@ -208,6 +208,28 @@ export interface WorkoutSubmitResponse {
 }
 
 /**
+ * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
+ * FastAPI возвращает `{"detail": "message"}` — берём detail, если это строка.
+ * Для 422 (Pydantic validation) detail — массив объектов, не строка — fallback.
+ */
+async function extractErrorMessage(
+  method: string,
+  path: string,
+  response: Response,
+): Promise<string> {
+  const fallback = `${method} ${path} failed: ${response.status}`;
+  try {
+    const data = await response.json();
+    if (data && typeof data.detail === "string") {
+      return data.detail;
+    }
+  } catch {
+    // JSON parsing failed or response already consumed — use fallback
+  }
+  return fallback;
+}
+
+/**
  * Один origin с бэкендом (см. app/web/main.py — та же FastAPI-статика),
  * поэтому относительный путь без CORS. initDataRaw — сырая, не
  * распарсенная на клиенте query-string (см. app/web/auth.py: доверять
@@ -218,7 +240,8 @@ async function apiGet<T>(path: string, initDataRaw: string): Promise<T> {
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`GET ${path} failed: ${response.status}`);
+    const message = await extractErrorMessage("GET", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as T;
 }
@@ -261,7 +284,8 @@ export async function updateProfile(initDataRaw: string, body: ProfileUpdateRequ
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/profile failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/profile", response);
+    throw new Error(message);
   }
   return (await response.json()) as ProfileResponse;
 }
@@ -499,7 +523,8 @@ export async function paySubscription(initDataRaw: string): Promise<PaymentLinkR
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`POST /api/subscription/pay failed: ${response.status}`);
+    const message = await extractErrorMessage("POST", "/api/subscription/pay", response);
+    throw new Error(message);
   }
   return (await response.json()) as PaymentLinkResponse;
 }
@@ -555,7 +580,8 @@ export async function updateBandItem(
   itemId: number,
   body: BandItemUpdateRequest,
 ): Promise<BandItemInfo> {
-  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+  const path = `/api/equipment/band-items/${itemId}`;
+  const response = await fetch(path, {
     method: "PATCH",
     headers: {
       "X-Telegram-Init-Data": initDataRaw,
@@ -564,18 +590,21 @@ export async function updateBandItem(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PATCH /api/equipment/band-items/${itemId} failed: ${response.status}`);
+    const message = await extractErrorMessage("PATCH", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as BandItemInfo;
 }
 
 export async function deleteBandItem(initDataRaw: string, itemId: number): Promise<BandItemInfo> {
-  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+  const path = `/api/equipment/band-items/${itemId}`;
+  const response = await fetch(path, {
     method: "DELETE",
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/equipment/band-items/${itemId} failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as BandItemInfo;
 }
@@ -590,7 +619,8 @@ async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: 
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed: ${response.status}`);
+    const message = await extractErrorMessage("POST", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as TResult;
 }
@@ -659,7 +689,8 @@ export async function patchHistoryEdit(
   workoutId: number,
   body: HistoryEditRequest,
 ): Promise<WorkoutSubmitResponse> {
-  const response = await fetch(`/api/history/${workoutId}`, {
+  const path = `/api/history/${workoutId}`;
+  const response = await fetch(path, {
     method: "PATCH",
     headers: {
       "X-Telegram-Init-Data": initDataRaw,
@@ -668,7 +699,8 @@ export async function patchHistoryEdit(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PATCH /api/history/${workoutId} failed: ${response.status}`);
+    const message = await extractErrorMessage("PATCH", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as WorkoutSubmitResponse;
 }
@@ -677,12 +709,14 @@ export async function patchHistoryEdit(
  * (решение Кирилла, вариант A: пересчитывает цепочку целей), и бэкдейт/
  * свободные (см. app/web/routes.py::delete_history_workout). */
 export async function deleteHistoryWorkout(initDataRaw: string, workoutId: number): Promise<void> {
-  const response = await fetch(`/api/history/${workoutId}`, {
+  const path = `/api/history/${workoutId}`;
+  const response = await fetch(path, {
     method: "DELETE",
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/history/${workoutId} failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", path, response);
+    throw new Error(message);
   }
 }
 
@@ -805,7 +839,8 @@ export async function saveWorkoutDraft(initDataRaw: string, body: WorkoutDraftRe
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/workout/draft failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/workout/draft", response);
+    throw new Error(message);
   }
   return (await response.json()) as WorkoutDraft;
 }
@@ -816,7 +851,8 @@ export async function deleteWorkoutDraft(initDataRaw: string): Promise<WorkoutDr
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/workout/draft failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", "/api/workout/draft", response);
+    throw new Error(message);
   }
   return (await response.json()) as WorkoutDraft;
 }
@@ -862,7 +898,8 @@ export async function cancelTimer(initDataRaw: string): Promise<TimerStatus> {
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/timer failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", "/api/timer", response);
+    throw new Error(message);
   }
   return (await response.json()) as TimerStatus;
 }
@@ -901,7 +938,8 @@ export async function updateTimerPreferences(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/timer/preferences failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/timer/preferences", response);
+    throw new Error(message);
   }
   return (await response.json()) as TimerPreferences;
 }
@@ -1030,7 +1068,8 @@ export async function updateLeaderboardDisplayName(
     body: JSON.stringify({ display_name: displayName }),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/leaderboard/display-name failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/leaderboard/display-name", response);
+    throw new Error(message);
   }
   return (await response.json()) as { display_name: string | null };
 }
