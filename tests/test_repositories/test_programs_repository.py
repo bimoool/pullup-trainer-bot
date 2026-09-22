@@ -1,4 +1,11 @@
-from app.db.models_program import Exercise, Program, ProgramItem, ProgressionStrategyProfile
+from app.db.models_program import (
+    Complex,
+    ComplexItem,
+    Exercise,
+    Program,
+    ProgramItem,
+    ProgressionStrategyProfile,
+)
 from app.db.repositories.programs import ProgramRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from app.domain.progression_strategy import ProgressionStrategyType
@@ -79,3 +86,92 @@ async def test_get_strategy_profile_returns_saved_profile(session):
 
     assert fetched is not None
     assert fetched.strategy_type == ProgressionStrategyType.STEP
+
+
+# --- Phase A1 (issue #214, Worker B) — Complex/ComplexItem protocol tests ---
+
+
+async def test_create_complex_item_with_protocol_saves_and_reads_correctly(session):
+    """ComplexItem.protocol — произвольный JSON сохраняется и читается без потерь."""
+    exercise = Exercise(name="Intervals", metric_type=MetricType.TIME, category="cardio")
+    session.add(exercise)
+    await session.flush()
+
+    complex = await ProgramRepository(session).create_complex(name="HIIT Workout")
+    protocol_data = {"type": "interval", "work": 30, "rest": 15, "rounds": 8}
+    await ProgramRepository(session).create_complex_item(
+        complex_id=complex.id,
+        exercise_id=exercise.id,
+        order_index=0,
+        sets=1,
+        protocol=protocol_data,
+    )
+    await session.commit()
+
+    # Re-read from DB
+    fetched_items = await ProgramRepository(session).list_complex_items(complex.id)
+    assert len(fetched_items) == 1
+    assert fetched_items[0].protocol == protocol_data
+
+
+async def test_legacy_complex_item_without_protocol_reads_as_null(session):
+    """Существующий ComplexItem без protocol (созданный до миграции) читается корректно."""
+    exercise = Exercise(name="Push-ups", metric_type=MetricType.REPS, category="strength")
+    complex = Complex(name="Legacy Complex")
+    session.add_all([exercise, complex])
+    await session.flush()
+
+    # Создать ComplexItem напрямую (минуя create_complex_item), не проставляя protocol
+    item = ComplexItem(
+        complex_id=complex.id,
+        exercise_id=exercise.id,
+        order_index=0,
+        sets=3,
+        target_value=10,
+        target_unit="reps",
+        rest_seconds=60,
+        # protocol явно НЕ указан — остаётся NULL
+    )
+    session.add(item)
+    await session.commit()
+
+    # Re-read from DB
+    fetched_items = await ProgramRepository(session).list_complex_items(complex.id)
+    assert len(fetched_items) == 1
+    assert fetched_items[0].protocol is None
+    # Legacy поля должны остаться
+    assert fetched_items[0].sets == 3
+    assert fetched_items[0].target_value == 10
+    assert fetched_items[0].rest_seconds == 60
+
+
+async def test_create_complex_defaults_to_system_source_type(session):
+    """Complex.source_type по умолчанию 'system' при создании без явного указания."""
+    complex = await ProgramRepository(session).create_complex(name="Catalog Workout")
+    await session.commit()
+
+    fetched = await ProgramRepository(session).get_complex(complex.id)
+    assert fetched is not None
+    assert fetched.source_type == "system"
+    assert fetched.owner_user_id is None
+
+
+async def test_create_complex_with_user_source_and_owner(session):
+    """Complex с source_type='user' + owner_user_id сохраняется и читается корректно."""
+    # Создать фиктивного пользователя для FK
+    from app.db.models import User
+    user = User(telegram_id=12345, username="testuser")
+    session.add(user)
+    await session.flush()
+
+    complex = await ProgramRepository(session).create_complex(
+        name="My Custom Workout",
+        source_type="user",
+        owner_user_id=user.id,
+    )
+    await session.commit()
+
+    fetched = await ProgramRepository(session).get_complex(complex.id)
+    assert fetched is not None
+    assert fetched.source_type == "user"
+    assert fetched.owner_user_id == user.id
