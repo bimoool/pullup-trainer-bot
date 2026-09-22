@@ -97,6 +97,7 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
         initialSession={screen.session}
         onCompleted={(result) => setScreen({ kind: "summary", result })}
         resolveExerciseName={resolveExerciseName}
+        title={title}
       />
     );
   }
