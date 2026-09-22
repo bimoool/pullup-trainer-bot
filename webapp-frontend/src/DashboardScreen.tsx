@@ -218,6 +218,12 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   }
 
   function handleConfirmAdd() {
+    // Guard against duplicate in-flight requests (issue #211, HA-3: double-tap
+    // protection after user changes selection in "add-error" → "picking"
+    // transition). Slightly redundant with second check, but explicit intent.
+    if (picker.phase === "adding") {
+      return;
+    }
     if (picker.phase !== "picking" || picker.exerciseId === null) {
       return;
     }
