@@ -73,8 +73,8 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
     };
   }, [initDataRaw]);
 
-  function resolveExerciseName(exerciseId: number): string {
-    return libraryExercises.find((exercise) => exercise.id === exerciseId)?.name ?? `Упражнение #${exerciseId}`;
+  function resolveExerciseName(exerciseId: number): string | null {
+    return libraryExercises.find((exercise) => exercise.id === exerciseId)?.name ?? null;
   }
 
   if (screen.kind === "pre") {
@@ -97,9 +97,14 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
         initialSession={screen.session}
         onCompleted={(result) => setScreen({ kind: "summary", result })}
         resolveExerciseName={resolveExerciseName}
+        title={title}
       />
     );
   }
 
-  return <SessionSummaryScreen result={screen.result} onClose={onClose} resolveExerciseName={resolveExerciseName} />;
+  return (
+    <SessionSummaryScreen
+      result={screen.result} onClose={onClose} resolveExerciseName={resolveExerciseName} title={title}
+    />
+  );
 }

@@ -23,10 +23,18 @@ type Props = {
   onCompleted: (result: LiveSessionCompleteResponse) => void;
   /** Checkpoint 4B (issue #188) — LiveSessionResponse отдаёт только
    * exercise_id, не имя (проверено дословно по типу). Опционален — лаба
-   * (SessionV2Lab.tsx) не передаёт его, получает прежний фолбэк
-   * "Упражнение #id" без изменений; production-путь (PlanSessionFlow.tsx)
-   * передаёт резолвер, построенный один раз из Exercise Library. */
-  resolveExerciseName?: (exerciseId: number) => string;
+   * (SessionV2Lab.tsx) не передаёт его вовсе, значит name всегда null для
+   * неё — та же логика ниже (null = label не показывается) применяется и
+   * там, техническое "Упражнение #id" в лабе тоже больше не показывается
+   * (integration fix, issue #188) — не отдельное поведение, тот же общий
+   * компонент. production-путь (PlanSessionFlow.tsx) передаёт резолвер,
+   * построенный один раз из Exercise Library. */
+  resolveExerciseName?: (exerciseId: number) => string | null;
+  /** Заголовок тренировки верхнего уровня ("Подтягивания"/"Планка") — тот
+   * же title, что уже передан в SessionPreScreen/SessionSummaryScreen.
+   * Опционален — лаба не передаёт его, "Живая тренировка" остаётся общим
+   * заголовком без изменений. */
+  title?: string;
 };
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
@@ -55,7 +63,7 @@ function formatSeconds(total: number): string {
  * заменяет локальное состояние (offline-session skill: "клиент заменяет
  * локальное состояние серверным, а не мержит вручную").
  */
-export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, resolveExerciseName }: Props) {
+export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, resolveExerciseName, title }: Props) {
   const [local, setLocalState] = useState<LocalLiveSession | null>(null);
   const localRef = useRef<LocalLiveSession | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -300,6 +308,7 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
   return (
     <div>
       <p className="plan-title">Живая тренировка</p>
+      {title && <p className="block-subtitle">{title}</p>}
       {!isOnline && <p className="gap-banner">Нет сети — подходы сохраняются локально и уйдут батчем при подключении.</p>}
       {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
       {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
@@ -308,17 +317,28 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
         {remaining !== null && (
           <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatSeconds(remaining)}</p>
         )}
-        {block !== null && phaseName !== "done" && (
-          <p className="block-subtitle">
-            {block.exercise_id !== null && resolveExerciseName
-              ? resolveExerciseName(block.exercise_id)
-              : `Упражнение #${block.exercise_id}`}
-            {" "}· Подход {local.localPhase.setNumber}/{targetsCount}
-            {targetForSet !== null && Number(targetForSet.value) > 0
-              ? ` · Цель: ${targetForSet.value} ${targetForSet.unit}`
-              : ""}
-          </p>
-        )}
+        {block !== null && phaseName !== "done" && (() => {
+          // Integration fix (issue #188) — тот же контракт, что уже
+          // применён в Summary (commit 2959f5d): resolveExerciseName
+          // возвращает string | null, null значит "имени действительно
+          // нет" (internal STEP-роль, Checkpoint 3C намеренно прячет её
+          // из GET /exercises) — не "Упражнение #id" и не выдуманный
+          // термин, а просто отсутствие label вовсе. Живая тренировка
+          // всё ещё "Подтягивания" (заголовок экрана/Section не отсюда,
+          // это только подпись конкретного блока внутри неё).
+          const name = block.exercise_id !== null && resolveExerciseName
+            ? resolveExerciseName(block.exercise_id)
+            : null;
+          return (
+            <p className="block-subtitle">
+              {name !== null && `${name} · `}
+              Подход {local.localPhase.setNumber}/{targetsCount}
+              {targetForSet !== null && Number(targetForSet.value) > 0
+                ? ` · Цель: ${targetForSet.value} ${targetForSet.unit}`
+                : ""}
+            </p>
+          );
+        })()}
       </Section>
 
       {phaseName === "get_ready" && (

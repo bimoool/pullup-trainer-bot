@@ -7,6 +7,28 @@
  * allowlist в tests/test_web/test_v2_not_wired_to_ui.py.
  */
 
+/**
+ * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
+ * FastAPI возвращает `{"detail": "message"}` — берём detail, если это строка.
+ * Для 422 (Pydantic validation) detail — массив объектов, не строка — fallback.
+ */
+async function extractErrorMessage(
+  method: string,
+  path: string,
+  response: Response,
+): Promise<string> {
+  const fallback = `${method} ${path} failed: ${response.status}`;
+  try {
+    const data = await response.json();
+    if (data && typeof data.detail === "string") {
+      return data.detail;
+    }
+  } catch {
+    // JSON parsing failed or response already consumed — use fallback
+  }
+  return fallback;
+}
+
 export interface DashboardEquipmentResponse {
   type: string;
   value: string | null;
@@ -46,7 +68,8 @@ async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`GET ${path} failed: ${response.status}`);
+    const message = await extractErrorMessage("GET", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as T;
 }
@@ -58,7 +81,8 @@ async function apiV2Post<TBody, TResult>(path: string, initDataRaw: string, body
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed: ${response.status}`);
+    const message = await extractErrorMessage("POST", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as TResult;
 }
