@@ -26,7 +26,7 @@ type Props = {
    * (SessionV2Lab.tsx) не передаёт его, получает прежний фолбэк
    * "Упражнение #id" без изменений; production-путь (PlanSessionFlow.tsx)
    * передаёт резолвер, построенный один раз из Exercise Library. */
-  resolveExerciseName?: (exerciseId: number) => string;
+  resolveExerciseName?: (exerciseId: number) => string | null;
 };
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
@@ -310,9 +310,8 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
         )}
         {block !== null && phaseName !== "done" && (
           <p className="block-subtitle">
-            {block.exercise_id !== null && resolveExerciseName
-              ? resolveExerciseName(block.exercise_id)
-              : `Упражнение #${block.exercise_id}`}
+            {(block.exercise_id !== null && resolveExerciseName ? resolveExerciseName(block.exercise_id) : null)
+              ?? `Упражнение #${block.exercise_id}`}
             {" "}· Подход {local.localPhase.setNumber}/{targetsCount}
             {targetForSet !== null && Number(targetForSet.value) > 0
               ? ` · Цель: ${targetForSet.value} ${targetForSet.unit}`
