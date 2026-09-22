@@ -1,7 +1,7 @@
 """interval workout snapshot and result fields
 
-Revision ID: 5f6a7b8c9d0e
-Revises: 4e5f6a7b8c9d
+Revision ID: a1b2c3d4e5f6
+Revises: 5f6a7b8c9d0e
 Create Date: 2026-09-22 17:00:00.000000
 
 """
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = '5f6a7b8c9d0e'
-down_revision: str | None = '4e5f6a7b8c9d'
+revision: str = 'a1b2c3d4e5f6'
+down_revision: str | None = '5f6a7b8c9d0e'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
