@@ -73,19 +73,19 @@ type Props = {
  */
 
 type ScreenState =
-  | { phase: "loading" }
-  | { phase: "error"; message: string }
-  | { phase: "no_course" }
-  | { phase: "blocked" }
-  | { phase: "needs_assessment" }
+  | { phase: "loading"; title?: string }
+  | { phase: "error"; message: string; title?: string }
+  | { phase: "no_course"; title?: string }
+  | { phase: "blocked"; title?: string }
+  | { phase: "needs_assessment"; title?: string }
   | { phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[] }
   | { phase: "ready_generic"; programName: string; planItemIds: number[] }
   | { phase: "ready_manual"; title: string; planItemIds: number[] }
-  | { phase: "starting"; planItemIds: number[] };
+  | { phase: "starting"; planItemIds: number[]; title?: string };
 
-function BlockTargetCard({ letter, block }: { letter: "A" | "Б"; block: DashboardBlockResponse }) {
+function BlockTargetCard({ index, block }: { index: number; block: DashboardBlockResponse }) {
   return (
-    <Section className="block-section" header={`Блок ${letter} — цель ${block.target}`}>
+    <Section className="block-section" header={`Цель ${index}: ${block.target} повторений`}>
       <p className="block-subtitle">
         {`${block.work_sets} рабочих ${block.work_sets === 1 ? "подход" : "подхода"}`} · {block.equipment.label}
       </p>
@@ -125,7 +125,7 @@ export function SessionPreScreen({
       if (manual) {
         if (!cancelled) {
           if (explicitPlanItemIds === undefined || explicitPlanItemIds.length === 0) {
-            setState({ phase: "error", message: "Не удалось определить упражнение для тренировки." });
+            setState({ phase: "error", message: "Не удалось определить упражнение для тренировки.", title });
           } else {
             setState({ phase: "ready_manual", title: title ?? "Тренировка", planItemIds: explicitPlanItemIds });
           }
@@ -138,7 +138,7 @@ export function SessionPreScreen({
         const inclusion = findActiveInclusion(plan);
         if (plan === null || inclusion === null) {
           if (!cancelled) {
-            setState({ phase: "no_course" });
+            setState({ phase: "no_course", title });
           }
           return;
         }
@@ -164,15 +164,15 @@ export function SessionPreScreen({
             planItemIds: explicitPlanItemIds ?? planItemIdsForInclusion(plan, inclusion),
           });
         } else if (data.status === "too_early") {
-          setState({ phase: "blocked" });
+          setState({ phase: "blocked", title: title ?? data.program_name ?? undefined });
         } else if (data.status === "gap_retest_required") {
-          setState({ phase: "needs_assessment" });
+          setState({ phase: "needs_assessment", title: title ?? data.program_name ?? undefined });
         } else {
-          setState({ phase: "no_course" });
+          setState({ phase: "no_course", title: title ?? data.program_name ?? undefined });
         }
       } catch (error) {
         if (!cancelled) {
-          setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+          setState({ phase: "error", message: error instanceof Error ? error.message : String(error), title });
         }
       }
     }
@@ -183,31 +183,39 @@ export function SessionPreScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- explicitPlanItemIds/title стабильны на время жизни экрана (новый маунт на новый Start), пересчитывать по ним не нужно
   }, [initDataRaw, manual]);
 
-  async function handleStart(planItemIds: number[]) {
-    setState({ phase: "starting", planItemIds });
+  async function handleStart(planItemIds: number[], currentTitle?: string) {
+    setState({ phase: "starting", planItemIds, title: currentTitle });
     try {
       if (planItemIds.length === 0) {
-        setState({ phase: "error", message: "Не удалось найти строки плана для сегодняшней сессии." });
+        setState({ phase: "error", message: "Не удалось найти строки плана для сегодняшней сессии.", title: currentTitle });
         return;
       }
       const clientSessionId = crypto.randomUUID();
       const session = await startLiveSession(initDataRaw, clientSessionId, planItemIds);
       onStarted(session);
     } catch (error) {
-      setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setState({ phase: "error", message: error instanceof Error ? error.message : String(error), title: currentTitle });
     }
   }
 
   if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю пред-экран тренировки…</p>;
+    const displayTitle = state.title ?? title ?? "Сессия";
+    return <p className="screen-message">Загружаю {displayTitle.toLowerCase()}…</p>;
   }
   if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить: {state.message}</p>;
-  }
-  if (state.phase === "blocked") {
+    const displayTitle = state.title ?? title ?? "Сессия";
     return (
       <div>
-        <p className="plan-title">Сессия</p>
+        <p className="plan-title">{displayTitle}</p>
+        <p className="screen-message">Не удалось загрузить: {state.message}</p>
+      </div>
+    );
+  }
+  if (state.phase === "blocked") {
+    const displayTitle = state.title ?? title ?? "Сессия";
+    return (
+      <div>
+        <p className="plan-title">{displayTitle}</p>
         <p className="screen-message">
           Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.
         </p>
@@ -218,9 +226,10 @@ export function SessionPreScreen({
     );
   }
   if (state.phase === "needs_assessment") {
+    const displayTitle = state.title ?? title ?? "Сессия";
     return (
       <div>
-        <p className="plan-title">Сессия</p>
+        <p className="plan-title">{displayTitle}</p>
         <p className="screen-message">Был долгий перерыв — сначала нужен повторный замер.</p>
         <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
           Пройти замер в обычной "Тренировке"
@@ -229,9 +238,10 @@ export function SessionPreScreen({
     );
   }
   if (state.phase === "no_course") {
+    const displayTitle = state.title ?? title ?? "Сессия";
     return (
       <div>
-        <p className="plan-title">Сессия</p>
+        <p className="plan-title">{displayTitle}</p>
         <p className="screen-message">Нет активного курса для этого экрана (или их больше одного).</p>
         <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
           Перейти в обычную "Тренировку"
@@ -248,19 +258,20 @@ export function SessionPreScreen({
     step?.planItemIds ?? generic?.planItemIds ?? manualReady?.planItemIds
     ?? (state.phase === "starting" ? state.planItemIds : []);
   const programName = step?.programName ?? generic?.programName ?? manualReady?.title ?? null;
+  const displayTitle = programName ?? title ?? (state.phase === "starting" ? state.title : undefined) ?? "Сессия";
 
   return (
     <div>
-      <p className="plan-title">Сессия{programName ? ` — ${programName}` : ""}</p>
+      <p className="plan-title">{displayTitle}</p>
       {step && (
         <>
-          <BlockTargetCard letter="A" block={step.blockA} />
-          <BlockTargetCard letter="Б" block={step.blockB} />
+          <BlockTargetCard index={1} block={step.blockA} />
+          <BlockTargetCard index={2} block={step.blockB} />
         </>
       )}
       <Button
         className="action-button" size="l" stretched disabled={isStarting}
-        onClick={() => void handleStart(planItemIds)}
+        onClick={() => void handleStart(planItemIds, displayTitle)}
       >
         {isStarting ? <Spinner size="s" /> : "Начать"}
       </Button>

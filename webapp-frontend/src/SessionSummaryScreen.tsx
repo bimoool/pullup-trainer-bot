@@ -58,12 +58,22 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName }: P
 
       {result.progression_result && (
         <Section className="block-section" header="Новая цель">
-          <p className="block-subtitle">
-            Блок A: {result.progression_result.block_a.target_before} → {result.progression_result.block_a.target_after}
-          </p>
-          <p className="block-subtitle">
-            Блок Б: {result.progression_result.block_b.target_before} → {result.progression_result.block_b.target_after}
-          </p>
+          {result.blocks.length >= 1 && (
+            <p className="block-subtitle">
+              {result.blocks[0].exercise_id !== null && resolveExerciseName
+                ? resolveExerciseName(result.blocks[0].exercise_id)
+                : "Первое упражнение"}:{" "}
+              {result.progression_result.block_a.target_before} → {result.progression_result.block_a.target_after}
+            </p>
+          )}
+          {result.blocks.length >= 2 && (
+            <p className="block-subtitle">
+              {result.blocks[1].exercise_id !== null && resolveExerciseName
+                ? resolveExerciseName(result.blocks[1].exercise_id)
+                : "Второе упражнение"}:{" "}
+              {result.progression_result.block_b.target_before} → {result.progression_result.block_b.target_after}
+            </p>
+          )}
         </Section>
       )}
       {result.progression_skipped_reason && (
