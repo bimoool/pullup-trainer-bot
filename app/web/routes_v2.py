@@ -471,6 +471,48 @@ async def create_session(
 
 
 def _live_session_response_fields(detail: SessionDetail) -> dict:
+    """Построение LiveSessionResponse из SessionDetail. Phase B1 (issue #215):
+    добавляет server_time (UTC timestamp генерации) и interval state (только
+    для interval workouts, вычисляется на лету из workout_snapshot)."""
+    from datetime import UTC, datetime
+
+    from pydantic import TypeAdapter
+
+    from app.domain.interval_timing import compute_interval_timing
+    from app.domain.workout_protocol import ProtocolType, ResolvedInterval
+    from app.domain.workout_snapshot import WorkoutSnapshot
+    from app.web.schemas_v2_session import IntervalStateResponse
+
+    now = datetime.now(UTC)
+
+    # Phase B1: вычисление interval state, если workout_snapshot присутствует
+    interval_state: IntervalStateResponse | None = None
+    if detail.workout_snapshot is not None:
+        try:
+            snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
+            # Ищем первый interval блок (пока поддерживается один interval на сессию)
+            for item_snapshot in snapshot.items:
+                if item_snapshot.protocol.type == ProtocolType.INTERVAL:
+                    protocol = TypeAdapter(ResolvedInterval).validate_python(item_snapshot.protocol.model_dump())
+                    timing = compute_interval_timing(
+                        performed_at=detail.performed_at, now=now,
+                        total_duration_seconds=protocol.total_duration_seconds,
+                        work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+                    )
+                    interval_state = IntervalStateResponse(
+                        execution_started_at=timing.execution_started_at,
+                        total_end_at=timing.total_end_at,
+                        phase=timing.phase.value,
+                        phase_ends_at=timing.phase_ends_at,
+                        total_duration_seconds=timing.total_duration_seconds,
+                        work_seconds=timing.work_seconds,
+                        rest_seconds=timing.rest_seconds,
+                        completed_cycles=timing.completed_cycles,
+                    )
+                    break  # только первый interval блок
+        except Exception:
+            pass  # невалидный snapshot — игнорируем, interval_state остаётся None
+
     return {
         "id": detail.id, "client_session_id": detail.client_session_id, "status": detail.status.value,
         "phase": LiveSessionPhaseResponse(name=detail.phase_name.value, ends_at=detail.phase_ends_at),
@@ -497,6 +539,8 @@ def _live_session_response_fields(detail: SessionDetail) -> dict:
             )
             for block in detail.blocks
         ],
+        "server_time": now,
+        "interval": interval_state,
     }
 
 

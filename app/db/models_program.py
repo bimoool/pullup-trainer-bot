@@ -412,6 +412,12 @@ class TrainingSession(Base):
     # одним int, не пересчитывает его на лету из block_index/set_number/
     # phase_name (риск разойтись с тем, что клиент видел в прошлом ответе).
     phase_index: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    # --- Interval workout snapshot (Phase B1, issue #215) ---
+    # Immutable resolved WorkoutSnapshot (app.domain.workout_snapshot) на момент
+    # старта interval-сессии — переживает изменение ComplexItem.protocol после
+    # старта (снапшот не меняется). NULL для legacy rows и для non-interval
+    # сессий (standard STEP/manual path).
+    workout_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class SessionPlanItem(Base):
@@ -446,6 +452,10 @@ class SessionBlock(Base):
     order_index: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     exercise_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("exercises.id"), nullable=True)
     complex_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("complexes.id"), nullable=True)
+    # Interval workout result (Phase B1, issue #215) — summary после
+    # finalization (lazy completion при GET active/list): completed_cycles,
+    # actual_duration_seconds. NULL для legacy rows и для non-interval blocks.
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
