@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
+    Complex,
     ComplexItem,
     Exercise,
     Program,
@@ -13,7 +14,10 @@ from app.db.models_program import (
 class ProgramRepository:
     """Read-only на этой волне (issue #165, волна 3) — администрирование
     каталога (создание/правка Program/ProgramItem/Exercise) не запрошено,
-    единственный писатель каталога пока scripts/backfill_multi_program.py."""
+    единственный писатель каталога пока scripts/backfill_multi_program.py.
+
+    Phase A1 (issue #214, Worker B) добавляет минимальные write-методы для
+    Complex/ComplexItem — только под protocol storage, не полноценное CRUD."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -74,6 +78,56 @@ class ProgramRepository:
             select(Exercise).where(Exercise.category == category, Exercise.subcategory.in_(["block_a", "block_b"])),
         )
         return {exercise.subcategory: exercise for exercise in result.scalars().all()}
+
+    # --- Complex/ComplexItem write methods (Phase A1, issue #214) ---
+
+    async def get_complex(self, complex_id: int) -> Complex | None:
+        """Read Complex с новыми полями source_type/owner_user_id (Phase A1)."""
+        return await self._session.get(Complex, complex_id)
+
+    async def create_complex(
+        self,
+        *,
+        name: str,
+        source_type: str = "system",
+        owner_user_id: int | None = None,
+    ) -> Complex:
+        """Минимальный create для Complex с новыми полями (Phase A1).
+        Инвариант (system → owner_user_id IS NULL, user → owner_user_id IS NOT NULL)
+        проверяется вызывающим сервисным слоем, не здесь."""
+        complex = Complex(name=name, source_type=source_type, owner_user_id=owner_user_id)
+        self._session.add(complex)
+        await self._session.flush()
+        return complex
+
+    async def create_complex_item(
+        self,
+        *,
+        complex_id: int,
+        exercise_id: int,
+        order_index: int,
+        sets: int,
+        target_value: float | None = None,
+        target_unit: str | None = None,
+        rest_seconds: int | None = None,
+        protocol: dict | None = None,
+    ) -> ComplexItem:
+        """Минимальный create для ComplexItem с новым полем protocol (Phase A1).
+        Старые поля sets/target_value/target_unit/rest_seconds остаются
+        для backward compatibility."""
+        item = ComplexItem(
+            complex_id=complex_id,
+            exercise_id=exercise_id,
+            order_index=order_index,
+            sets=sets,
+            target_value=target_value,
+            target_unit=target_unit,
+            rest_seconds=rest_seconds,
+            protocol=protocol,
+        )
+        self._session.add(item)
+        await self._session.flush()
+        return item
 
 
 def program_items_snapshot(program_items: list[ProgramItem]) -> list[dict]:
