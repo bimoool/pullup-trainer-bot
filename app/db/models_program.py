@@ -115,12 +115,23 @@ class Exercise(Base):
 class Complex(Base):
     """Именованная связка нескольких Exercise — сам Complex не задаёт общий
     тайминг, только группирует (см. ComplexItem — там свои sets/reps/rest
-    на каждое упражнение внутри)."""
+    на каждое упражнение внутри).
+
+    source_type — "system" (каталожный комплекс, доступен всем) или "user"
+    (пользовательский комплекс, привязан к owner_user_id). Инвариант
+    (system → owner_user_id IS NULL, user → owner_user_id IS NOT NULL)
+    проверяется на уровне сервисного слоя, не DB CHECK-констрейнтом —
+    в проекте их нигде не используют (см. ProgramItem, "ровно одно из
+    exercise_id/complex_id" — тот же принцип валидации сервисным слоем)."""
 
     __tablename__ = "complexes"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="system", server_default="system")
+    owner_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -128,7 +139,12 @@ class Complex(Base):
 class ComplexItem(Base):
     """Состав комплекса — нормализованная дочерняя таблица (не JSONB на
     Complex), потому что каждое упражнение внутри несёт собственные
-    sets/target_value/rest_seconds."""
+    sets/target_value/rest_seconds.
+
+    protocol — произвольный JSON-объект (Pydantic-схема определяется Worker A
+    параллельно, здесь просто JSONB-колонка). NULL для legacy-записей
+    (созданных до введения protocol) — старые поля sets/target_value/
+    target_unit/rest_seconds остаются compatibility path."""
 
     __tablename__ = "complex_items"
 
@@ -142,6 +158,7 @@ class ComplexItem(Base):
     target_value: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
     target_unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
     rest_seconds: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    protocol: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
