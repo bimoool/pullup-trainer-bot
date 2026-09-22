@@ -1,4 +1,11 @@
-from app.db.models_program import Complex, ComplexItem, Exercise, Program, ProgramItem, ProgressionStrategyProfile
+from app.db.models_program import (
+    Complex,
+    ComplexItem,
+    Exercise,
+    Program,
+    ProgramItem,
+    ProgressionStrategyProfile,
+)
 from app.db.repositories.programs import ProgramRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from app.domain.progression_strategy import ProgressionStrategyType
@@ -92,7 +99,7 @@ async def test_create_complex_item_with_protocol_saves_and_reads_correctly(sessi
 
     complex = await ProgramRepository(session).create_complex(name="HIIT Workout")
     protocol_data = {"type": "interval", "work": 30, "rest": 15, "rounds": 8}
-    item = await ProgramRepository(session).create_complex_item(
+    await ProgramRepository(session).create_complex_item(
         complex_id=complex.id,
         exercise_id=exercise.id,
         order_index=0,
