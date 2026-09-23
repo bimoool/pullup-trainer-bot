@@ -342,18 +342,37 @@ class LiveSessionService:
 
     def _interval_result_dict(
         self, protocol: ResolvedInterval, execution_started_at: datetime, total_end_at: datetime, now: datetime,
+        *, is_deadline_completion: bool,
     ) -> dict:
-        """Общий helper (issue #215, gate fix) — используется и lazy
-        finalizer'ом (только когда timing.phase уже DONE — now естественно
-        >= total_end_at), и complete_session (может вызываться РАНЬШЕ
-        дедлайна — пользователь явно прервал тренировку). completed_at =
-        min(now, total_end_at) — единая формула покрывает оба случая:
-        для нормального автозавершения даёт ровно total_end_at (now уже
-        >= него), для раннего прерывания — реальный момент now (значит
-        actual_duration_seconds отражает то, что пользователь реально
-        сделал, не выдуманные 180 секунд для незаконченной тренировки)."""
-        completed_at = min(now, total_end_at)
-        elapsed_seconds = (completed_at - execution_started_at).total_seconds()
+        """Общий helper (issue #215, gate fix). Два разных случая, разная
+        семантика completed_at/actual_duration_seconds — НЕ угадывается из
+        `now` относительно `total_end_at` (это и было корнем бага: min(now,
+        total_end_at) зависел от того, успел ли HTTP-запрос дойти до
+        сервера строго до/после дедлайна — сетевой/event-loop джиттер в
+        доли секунды мог дать elapsed=8.97 вместо ровно 9.0, round()
+        занижал секунду).
+
+        is_deadline_completion=True (нормальное автозавершение — lazy
+        finalizer, вызывается ТОЛЬКО когда timing.phase уже DONE, то есть
+        now>=total_end_at уже гарантирован этим условием на call site; или
+        complete_session с abandoned=False — единственный вызывающий это
+        IntervalLiveScreen.tsx's deadline-эффект, срабатывающий только
+        когда клиент уже считает phase='done'): completed_at/
+        actual_duration_seconds — ВСЕГДА ровно total_end_at/
+        planned_duration_seconds, детерминированно, независимо от
+        фактического now.
+
+        is_deadline_completion=False (ручное раннее прерывание —
+        complete_session с abandoned=True, IntervalLiveScreen.tsx's
+        BackButton): completed_at=now (реальный факт, тренировка правда
+        закончилась раньше, actual_duration_seconds честно меньше
+        planned)."""
+        if is_deadline_completion:
+            completed_at = total_end_at
+            elapsed_seconds = protocol.total_duration_seconds
+        else:
+            completed_at = min(now, total_end_at)
+            elapsed_seconds = (completed_at - execution_started_at).total_seconds()
         completed_cycles = calculate_completed_cycles(
             elapsed_seconds=elapsed_seconds, total_duration_seconds=protocol.total_duration_seconds,
             work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
@@ -415,7 +434,12 @@ class LiveSessionService:
         for block_id, protocol, timing in timings:
             if timing.phase != IntervalPhase.DONE:
                 continue
-            result = self._interval_result_dict(protocol, timing.execution_started_at, timing.total_end_at, now)
+            # is_deadline_completion=True: гарантировано условием выше
+            # (только DONE-блоки доходят сюда) — lazy finalizer по
+            # определению вызывается для истёкших сессий.
+            result = self._interval_result_dict(
+                protocol, timing.execution_started_at, timing.total_end_at, now, is_deadline_completion=True,
+            )
             await self._sessions.save_interval_block_result(block_id, result)
 
         # Финализация сессии целиком (если все interval-блоки истекли).
@@ -452,10 +476,16 @@ class LiveSessionService:
         # BackButton, IntervalLiveScreen.tsx) должен писать interval result
         # точно так же, как lazy finalizer — иначе SessionBlock.result
         # остаётся null для сессий, завершённых этим путём (найдено живой
-        # проверкой, не гипотетически). now не капается заранее — сам
-        # _interval_result_dict берёт min(now, total_end_at) корректно и
-        # для раннего прерывания (now < total_end_at — реальный elapsed),
-        # и для нормального завершения на/после дедлайна.
+        # проверкой, не гипотетически).
+        #
+        # is_deadline_completion = not abandoned: уже существующий флаг —
+        # IntervalLiveScreen.tsx's deadline-эффект вызывает complete с
+        # abandoned=False (нормальное автозавершение, семантика "ровно
+        # запланированная длительность", независимо от того, на сколько
+        # миллисекунд раньше/позже дедлайна сетевой запрос реально дошёл
+        # до сервера — это и было корнем найденного бага: min(now,
+        # total_end_at) зависел от таймингов запроса). BackButton вызывает
+        # с abandoned=True (реальное раннее прерывание, честный elapsed).
         interval_blocks = await self._parse_interval_blocks(detail)
         if interval_blocks:
             now = datetime.now(UTC)
@@ -465,7 +495,10 @@ class LiveSessionService:
                     total_duration_seconds=protocol.total_duration_seconds,
                     work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
                 )
-                result = self._interval_result_dict(protocol, timing.execution_started_at, timing.total_end_at, now)
+                result = self._interval_result_dict(
+                    protocol, timing.execution_started_at, timing.total_end_at, now,
+                    is_deadline_completion=not abandoned,
+                )
                 await self._sessions.save_interval_block_result(block_id, result)
 
         progression_result: SessionProgressionResult | None = None

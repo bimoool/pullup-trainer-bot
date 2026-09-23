@@ -492,3 +492,64 @@ async def test_standard_step_session_unaffected_by_interval_finalizer(session: A
     unchanged = await TrainingSessionRepository(session).get_for_user(result.session.id, user.id)
     assert unchanged.status == SessionStatus.STARTED  # не тронута interval-логикой
     assert len(unchanged.blocks) == 2  # оба блока (Блок A + Блок Б) целы
+
+
+async def test_automatic_deadline_completion_gives_exact_planned_duration(
+    session: AsyncSession, interval_plan_item: PlanItem, interval_user: User,
+):
+    """Regression (Кирилл) — найденный баг: min(now, total_end_at) зависел
+    от таймингов HTTP-запроса, мог занизить actual_duration_seconds на
+    секунду при сетевом/event-loop джиттере в доли секунды. Explicit
+    complete с abandoned=False (нормальное автозавершение на дедлайне,
+    тот же путь, что IntervalLiveScreen.tsx's deadline-эффект вызывает)
+    обязан дать ТОЧНО planned_duration_seconds, даже если now подан с
+    небольшим опережением до total_end_at — is_deadline_completion=True
+    больше не зависит от now вообще для этих двух полей."""
+    service = LiveSessionService(session)
+    result = await service.start_session(
+        user_id=interval_user.id, client_session_id=uuid.uuid4(), plan_item_ids=[interval_plan_item.id],
+    )
+    assert result is not None
+    session_id = result.session.id
+    # 180/10/20 протокол (interval_complex фикстура) — performed_at
+    # сдвинут так, что "сейчас" оказывается РОВНО на дедлайне (не позже) —
+    # имитирует худший случай гонки, который вызвал баг.
+    performed_at = datetime.now(UTC) - timedelta(seconds=5 + 180)  # get_ready(5) + total(180)
+    await _set_performed_at(session, session_id, performed_at)
+
+    complete_result, not_found = await service.complete_session(
+        session_id=session_id, user_id=interval_user.id, abandoned=False,
+    )
+    assert not_found is False
+    result_json = complete_result.session.blocks[0].result
+    assert result_json["planned_duration_seconds"] == 180
+    assert result_json["actual_duration_seconds"] == 180  # НЕ 179
+    assert result_json["completed_cycles"] == 6  # 180/10/20 -> 6, контрактный кейс
+    expected_deadline = performed_at + timedelta(seconds=5 + 180)
+    completed_at = datetime.fromisoformat(result_json["completed_at"])
+    assert completed_at == expected_deadline  # точное равенство, не приближённо
+
+
+async def test_manual_early_stop_gives_honest_shorter_duration(
+    session: AsyncSession, interval_plan_item: PlanItem, interval_user: User,
+):
+    """Regression (Кирилл) — сохранить существующую семантику раннего
+    прерывания: abandoned=True должен по-прежнему давать честный, меньший
+    planned actual_duration_seconds, не 'исправленные' 180 секунд."""
+    service = LiveSessionService(session)
+    result = await service.start_session(
+        user_id=interval_user.id, client_session_id=uuid.uuid4(), plan_item_ids=[interval_plan_item.id],
+    )
+    assert result is not None
+    session_id = result.session.id
+    performed_at = datetime.now(UTC) - timedelta(seconds=5 + 45)  # get_ready(5) + только 45с из 180
+    await _set_performed_at(session, session_id, performed_at)
+
+    complete_result, not_found = await service.complete_session(
+        session_id=session_id, user_id=interval_user.id, abandoned=True,
+    )
+    assert not_found is False
+    result_json = complete_result.session.blocks[0].result
+    assert result_json["planned_duration_seconds"] == 180
+    assert result_json["actual_duration_seconds"] == 45  # честный elapsed, не 180
+    assert result_json["completed_cycles"] == 2  # 45/10/20: floor((45-10)/30)+1=2
