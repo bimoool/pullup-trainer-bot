@@ -174,6 +174,9 @@ class SessionBlockResponse(BaseModel):
     exercise_id: int | None
     complex_id: int | None
     set_logs: list[SetLogResponse]
+    # Phase B2 gate fix (issue #215) — тот же result, что LiveSessionBlockResponse,
+    # нужен Журналу для отображения завершённых interval-тренировок.
+    result: dict | None = None
 
 
 class BlockProgressionResponse(BaseModel):

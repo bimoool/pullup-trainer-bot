@@ -370,7 +370,14 @@ export interface SessionResponseV2 {
    * SessionPlanItem, не пересчитывается на фронте. null — сессия без связи
    * (легаси POST /sessions в обход live-flow, или до Checkpoint 4A). */
   title: string | null;
-  blocks: { order_index: number; exercise_id: number | null; complex_id: number | null; set_logs: SetLogResponseV2[] }[];
+  blocks: {
+    order_index: number;
+    exercise_id: number | null;
+    complex_id: number | null;
+    set_logs: SetLogResponseV2[];
+    /** Phase B2 gate fix (issue #215) — interval result для Журнала. */
+    result: Record<string, unknown> | null;
+  }[];
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
 }

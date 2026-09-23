@@ -138,6 +138,7 @@ def _session_response(
         blocks=[
             SessionBlockResponse(
                 order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
+                result=block.result,
                 set_logs=[
                     SetLogResponse(
                         set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,

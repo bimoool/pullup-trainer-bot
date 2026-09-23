@@ -166,17 +166,38 @@ export function HistoryScreen({ initDataRaw }: Props) {
 
       {hasV2Sessions && (
         <div className="history-list">
-          {v2Sessions?.map((session) => (
-            <div className="history-card" key={`v2-${session.id}`}>
-              <p className="history-date">{formatSessionDate(session.performed_at)}</p>
-              <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
-              {session.blocks.map((block) => (
-                <p key={block.order_index}>
-                  {block.set_logs.map((log) => `${log.value} ${log.unit}`).join(" / ")}
-                </p>
-              ))}
-            </div>
-          ))}
+          {v2Sessions?.map((session) => {
+            // Phase B2 (issue #215, раздел 18) — узкая interval-ветка, не
+            // Journal redesign: completed interval session показывает то
+            // же минимальное summary, что и SessionSummaryScreen, не
+            // SetLog rows/fake targets/Упражнение #id.
+            const intervalResult = session.blocks.length > 0
+              && typeof session.blocks[0].result === "object" && session.blocks[0].result !== null
+              && (session.blocks[0].result as { type?: unknown }).type === "interval"
+              ? session.blocks[0].result as {
+                  actual_duration_seconds: number; completed_cycles: number;
+                }
+              : null;
+            return (
+              <div className="history-card" key={`v2-${session.id}`}>
+                <p className="history-date">{formatSessionDate(session.performed_at)}</p>
+                <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
+                {intervalResult !== null ? (
+                  <p>
+                    {Math.floor(intervalResult.actual_duration_seconds / 60)}:
+                    {String(intervalResult.actual_duration_seconds % 60).padStart(2, "0")}
+                    {" · "}{intervalResult.completed_cycles} интервалов
+                  </p>
+                ) : (
+                  session.blocks.map((block) => (
+                    <p key={block.order_index}>
+                      {block.set_logs.map((log) => `${log.value} ${log.unit}`).join(" / ")}
+                    </p>
+                  ))
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
