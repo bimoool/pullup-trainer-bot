@@ -88,6 +88,21 @@ class LiveSessionBlockResponse(BaseModel):
     set_logs: list[SetLogResponse]
 
 
+class IntervalStateResponse(BaseModel):
+    """Phase B1 (issue #215): server-authoritative interval timing state —
+    вычисляется на лету по performed_at + protocol, не персистится в БД.
+    Только для interval workouts, None для standard STEP/manual path."""
+
+    execution_started_at: datetime
+    total_end_at: datetime
+    phase: str  # get_ready|work|rest|done
+    phase_ends_at: datetime | None
+    total_duration_seconds: int
+    work_seconds: int
+    rest_seconds: int
+    completed_cycles: int
+
+
 class LiveSessionResponse(BaseModel):
     id: int
     client_session_id: UUID
@@ -97,6 +112,8 @@ class LiveSessionResponse(BaseModel):
     current_block_index: int
     current_set_number: int
     blocks: list[LiveSessionBlockResponse]
+    server_time: datetime  # Phase B1: UTC timestamp генерации ответа
+    interval: IntervalStateResponse | None  # Phase B1: только для interval workouts
 
 
 class LiveSessionCompleteResponse(LiveSessionResponse):

@@ -11,6 +11,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
+from pydantic import TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +33,10 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.db.repositories.users import UserRepository
+from app.domain.interval_timing import compute_interval_timing
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
+from app.domain.workout_protocol import ProtocolType, ResolvedInterval
+from app.domain.workout_snapshot import WorkoutSnapshot
 from app.services.live_session import CompleteResult, LiveSessionService
 from app.services.plan_week import PlanWeekService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
@@ -64,6 +68,7 @@ from app.web.schemas_v2 import (
     TrainingPlanResponse,
 )
 from app.web.schemas_v2_session import (
+    IntervalStateResponse,
     LiveSessionActiveResponse,
     LiveSessionBlockResponse,
     LiveSessionCompleteRequest,
@@ -329,16 +334,23 @@ async def _resolve_session_titles(
 ) -> dict[int, str | None]:
     """Checkpoint 4C (issue #188) — единственное место, где SessionPlanItem
     читается (заполняется с Checkpoint 4A, ранее нигде не читалась).
-    Батч на всю страницу — 3 запроса суммарно, не по 3 на сессию:
-    SessionPlanItem -> PlanItem -> (ProgramInclusion | Exercise).
+    Батч на всю страницу — 4 запроса суммарно (было 3 до Phase B1), не по
+    N на сессию: SessionPlanItem -> PlanItem -> (ProgramInclusion |
+    Complex | Exercise).
 
     Program-backed: если хотя бы один source PlanItem имеет
     program_inclusion_id — заголовок это ProgramInclusion.program_name
     ("Подтягивания"), не имя отдельного блока ("Блок A"/"Блок Б" никогда
     не должны стать пользовательской карточкой верхнего уровня).
-    Manual: все source PlanItem имеют program_inclusion_id=NULL —
-    заголовок это имя Exercise (единственного, по факту 4B: одна manual-
-    группа = одна TrainingSession).
+    Complex-backed (Phase B1, issue #215) — PlanItem.complex_id, но не
+    program_inclusion_id (system/user Workout, не курс) — заголовок это
+    Complex.name ("3 минуты подтягиваний"), НЕ Exercise.name отдельного
+    упражнения внутри Workout — проверяется раньше exercise_id-ветки,
+    иначе несвязанный/decoy exercise_id на complex-based PlanItem дал бы
+    неверное имя.
+    Manual: все source PlanItem имеют program_inclusion_id=NULL и
+    complex_id=NULL — заголовок это имя Exercise (единственного, по факту
+    4B: одна manual-группа = одна TrainingSession).
     Отсутствует совсем — сессия создана мимо create_live_session
     (до Checkpoint 4A) или связанный PlanItem с тех пор удалён — честный
     None, не выдуманное имя."""
@@ -360,10 +372,22 @@ async def _resolve_session_titles(
 
     manual_exercise_ids = sorted({
         item.exercise_id for item in plan_items
-        if item.program_inclusion_id is None and item.exercise_id is not None
+        if item.program_inclusion_id is None and item.complex_id is None and item.exercise_id is not None
     })
     exercises = await ProgramRepository(session).list_exercises_by_ids(manual_exercise_ids)
     exercise_name_by_id = {exercise.id: exercise.name for exercise in exercises}
+
+    # Phase B1 gate fix (issue #215) — Workout title (Complex.name), не
+    # Exercise.name. До этого фикса функция вообще не проверяла
+    # item.complex_id — для complex-based PlanItem (Checkpoint A1/B1
+    # interval workouts) title резолвился бы через exercise_id ветку
+    # ниже, что для decoy/несвязанного exercise_id дало бы неверное имя.
+    workout_complex_ids = sorted({
+        item.complex_id for item in plan_items
+        if item.program_inclusion_id is None and item.complex_id is not None
+    })
+    complexes = await ProgramRepository(session).list_complexes_by_ids(workout_complex_ids)
+    workout_title_by_complex_id = {complex_.id: complex_.name for complex_ in complexes}
 
     titles: dict[int, str | None] = {}
     for detail in details:
@@ -371,8 +395,11 @@ async def _resolve_session_titles(
             plan_items_by_id[pid] for pid in plan_item_ids_by_session.get(detail.id, []) if pid in plan_items_by_id
         ]
         program_backed = next((item for item in source_items if item.program_inclusion_id is not None), None)
+        complex_backed = next((item for item in source_items if item.complex_id is not None), None)
         if program_backed is not None:
             titles[detail.id] = program_name_by_inclusion.get(program_backed.program_inclusion_id)
+        elif complex_backed is not None:
+            titles[detail.id] = workout_title_by_complex_id.get(complex_backed.complex_id)
         elif source_items and source_items[0].exercise_id is not None:
             titles[detail.id] = exercise_name_by_id.get(source_items[0].exercise_id)
         else:
@@ -393,6 +420,21 @@ async def list_sessions(
     SessionJournalScreen.tsx его не передают, их поведение не меняется."""
     user = await _require_user(session, init_data)
     status_value = SessionStatus(status_filter) if status_filter is not None else None
+    # Phase B1 (issue #215, раздел 4) — второй call site lazy finalization:
+    # пользователь мог не заходить в /sessions/live/active вообще (например
+    # сразу открыл Журнал со status=completed после deadline) — expired
+    # interval должен материализоваться и здесь. Проверяем STARTED-строки
+    # ЭТОГО пользователя НЕЗАВИСИМО от запрошенного status_value — если
+    # финализировать только среди уже отфильтрованных по completed строк,
+    # ни одна STARTED-сессия никогда бы не попала в эту проверку вообще.
+    # Только user.id — не сканирует чужие сессии и не всю таблицу.
+    live_sessions = LiveSessionService(session)
+    started_details = await TrainingSessionRepository(session).list_for_user(
+        user.id, limit=200, offset=0, status=SessionStatus.STARTED,
+    )
+    for detail in started_details:
+        await live_sessions.finalize_expired_interval_if_needed(detail.id, user.id)
+
     details = await TrainingSessionRepository(session).list_for_user(
         user.id, limit=limit, offset=offset, status=status_value,
     )
@@ -471,6 +513,41 @@ async def create_session(
 
 
 def _live_session_response_fields(detail: SessionDetail) -> dict:
+    """Построение LiveSessionResponse из SessionDetail. Phase B1 (issue #215):
+    добавляет server_time (UTC timestamp генерации) и interval state (только
+    для interval workouts, вычисляется на лету из workout_snapshot)."""
+    now = datetime.now(UTC)
+
+    # Phase B1: вычисление interval state, если workout_snapshot присутствует.
+    # Намеренно без try/except (issue #215, п.6) — workout_snapshot пишется
+    # только системой при старте (Phase A1 Pydantic-валидированный
+    # WorkoutSnapshot.model_dump()), никогда пользовательским вводом; сбой
+    # парсинга здесь означает реальную порчу данных, которую нельзя молча
+    # прятать.
+    interval_state: IntervalStateResponse | None = None
+    if detail.workout_snapshot is not None:
+        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
+        # Ищем первый interval блок (пока поддерживается один interval на сессию)
+        for item_snapshot in snapshot.items:
+            if item_snapshot.protocol.type == ProtocolType.INTERVAL:
+                protocol = TypeAdapter(ResolvedInterval).validate_python(item_snapshot.protocol.model_dump())
+                timing = compute_interval_timing(
+                    performed_at=detail.performed_at, now=now,
+                    total_duration_seconds=protocol.total_duration_seconds,
+                    work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+                )
+                interval_state = IntervalStateResponse(
+                    execution_started_at=timing.execution_started_at,
+                    total_end_at=timing.total_end_at,
+                    phase=timing.phase.value,
+                    phase_ends_at=timing.phase_ends_at,
+                    total_duration_seconds=timing.total_duration_seconds,
+                    work_seconds=timing.work_seconds,
+                    rest_seconds=timing.rest_seconds,
+                    completed_cycles=timing.completed_cycles,
+                )
+                break  # только первый interval блок
+
     return {
         "id": detail.id, "client_session_id": detail.client_session_id, "status": detail.status.value,
         "phase": LiveSessionPhaseResponse(name=detail.phase_name.value, ends_at=detail.phase_ends_at),
@@ -497,6 +574,8 @@ def _live_session_response_fields(detail: SessionDetail) -> dict:
             )
             for block in detail.blocks
         ],
+        "server_time": now,
+        "interval": interval_state,
     }
 
 

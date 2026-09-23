@@ -100,6 +100,7 @@ class SessionBlockDetail:
     complex_id: int | None
     set_logs: list[SessionSetLogDetail] = field(default_factory=list)
     set_targets: list[SessionSetTargetDetail] = field(default_factory=list)
+    result: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,7 @@ class SessionDetail:
     current_block_index: int = 0
     current_set_number: int = 1
     phase_index: int = 0
+    workout_snapshot: dict | None = None
     blocks: list[SessionBlockDetail] = field(default_factory=list)
 
 
@@ -173,7 +175,7 @@ class TrainingSessionRepository:
     async def create_live_session(
         self, *, user_id: int, client_session_id: uuid.UUID, source: SessionSource, performed_at: datetime,
         plan_item_ids: list[int], blocks: list[SessionBlockInput], targets_by_block: list[list[SetTargetInput]],
-        phase_ends_at: datetime | None,
+        phase_ends_at: datetime | None, workout_snapshot: dict | None = None,
     ) -> TrainingSession:
         """Старт живой сессии (POST /sessions/live) — status=STARTED,
         phase_name=GET_READY (уже применяется здесь, не через отдельный
@@ -181,12 +183,17 @@ class TrainingSessionRepository:
         blocks[i].sets игнорируется (для живой сессии подходы ещё не
         выполнены — targets_by_block[i] несёт план, SetLog появятся позже
         через upsert_set_logs_batch); SessionBlockInput переиспользуется
-        целиком ради exercise_id/complex_id, не заводим отдельный тип."""
+        целиком ради exercise_id/complex_id, не заводим отдельный тип.
+
+        workout_snapshot (Phase B1, issue #215) — immutable WorkoutSnapshot для
+        interval workouts, NULL для standard (STEP/manual) path. Сохраняется один
+        раз при старте, не меняется при изменении ComplexItem.protocol после."""
         training_session = TrainingSession(
             user_id=user_id, source=source, status=SessionStatus.STARTED, performed_at=performed_at,
             effort=None, comment=None, client_session_id=client_session_id,
             phase_name=SessionPhase.GET_READY, phase_ends_at=phase_ends_at,
             current_block_index=0, current_set_number=1, phase_index=0,
+            workout_snapshot=workout_snapshot,
         )
         self._session.add(training_session)
         await self._session.flush()
@@ -375,6 +382,14 @@ class TrainingSessionRepository:
         training_session.phase_ends_at = None
         await self._session.flush()
 
+    async def save_interval_block_result(self, block_id: int, result: dict) -> None:
+        """Phase B1 (issue #215): сохранение result для interval SessionBlock
+        после lazy finalization. Вызывается только для interval blocks, не
+        для standard STEP/manual path (те не имеют result вообще)."""
+        block = await self._session.get(SessionBlock, block_id)
+        block.result = result
+        await self._session.flush()
+
     async def _load_details(self, sessions: list[TrainingSession]) -> list[SessionDetail]:
         if not sessions:
             return []
@@ -430,6 +445,7 @@ class TrainingSessionRepository:
                         )
                         for target in set_targets_by_block[block.id]
                     ],
+                    result=block.result,
                 )
                 for block in blocks_by_session[session_row.id]
             ]
@@ -441,6 +457,7 @@ class TrainingSessionRepository:
                     phase_name=session_row.phase_name, phase_ends_at=session_row.phase_ends_at,
                     current_block_index=session_row.current_block_index,
                     current_set_number=session_row.current_set_number, phase_index=session_row.phase_index,
+                    workout_snapshot=session_row.workout_snapshot,
                     blocks=block_details,
                 ),
             )

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import PlanItem, ProgramInclusion, SessionPhase, SessionStatus
@@ -34,6 +35,7 @@ from app.db.repositories.training_sessions import (
     SetTargetInput,
     TrainingSessionRepository,
 )
+from app.domain.interval_timing import IntervalPhase, compute_interval_timing
 from app.domain.live_session import (
     DEFAULT_UNIT_BY_METRIC_TYPE,
     BlockPlan,
@@ -44,6 +46,8 @@ from app.domain.live_session import (
 )
 from app.domain.multi_program import MetricType, SessionSource
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.workout_protocol import DefinitionProtocol, ProtocolType, ResolvedInterval
+from app.domain.workout_snapshot import WorkoutSnapshot, build_workout_snapshot
 from app.services.session_log import (
     SessionProgressionResult,
     _apply_step_progression,
@@ -104,13 +108,18 @@ class LiveSessionService:
 
         resolved_blocks: list[SessionBlockInput] = []
         resolved_targets: list[list[SetTargetInput]] = []
+        workout_snapshot: dict | None = None
         for plan_item_id in plan_item_ids:
             plan_item = await self._plans.get_plan_item_for_user(plan_item_id, user_id)
             if plan_item is None or plan_item.training_plan_id != plan.id:
                 return None
-            blocks, targets = await self._resolve_blocks_for_plan_item(plan_item)
+            blocks, targets, snapshot = await self._resolve_blocks_for_plan_item(plan_item)
             resolved_blocks.extend(blocks)
             resolved_targets.extend(targets)
+            # Phase B1 (issue #215): workout_snapshot только для interval workouts
+            # (один на всю сессию, не несколько), не для standard STEP/manual path.
+            if snapshot is not None:
+                workout_snapshot = snapshot
 
         block_plans = [BlockPlan(sets_count=len(targets)) for targets in resolved_targets]
         phase_state = initial_phase(block_plans)
@@ -120,38 +129,81 @@ class LiveSessionService:
             user_id=user_id, client_session_id=client_session_id, source=SessionSource.PLAN,
             performed_at=datetime.now(UTC), plan_item_ids=plan_item_ids,
             blocks=resolved_blocks, targets_by_block=resolved_targets, phase_ends_at=phase_ends_at,
+            workout_snapshot=workout_snapshot,
         )
         return await self._build_result(training_session.id, user_id)
 
     async def _resolve_blocks_for_plan_item(
         self, plan_item: PlanItem,
-    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]]:
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], dict | None]:
+        """Резолвит блоки/targets/snapshot для одного PlanItem. Третий элемент
+        (workout_snapshot) — только для interval workouts (Phase B1), None для
+        standard STEP/manual path."""
         if plan_item.complex_id is not None:
             return await self._resolve_complex_blocks(plan_item.complex_id)
-        return await self._resolve_exercise_block(plan_item)
+        blocks, targets = await self._resolve_exercise_block(plan_item)
+        return blocks, targets, None  # exercise path никогда не interval
 
     async def _resolve_complex_blocks(
         self, complex_id: int,
-    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]]:
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], dict | None]:
         """Один SessionBlock на каждый ComplexItem, по order_index —
         target_value/target_unit NULL у ComplexItem (оба поля опциональны
         в схеме) падают на тот же fallback, что и в
         _resolve_plain_exercise_block ниже (значение 0 / дефолтная единица
-        по metric_type), не на отдельную вторую заглушку."""
+        по metric_type), не на отдельную вторую заглушку.
+
+        Phase B1 (issue #215): если хотя бы один ComplexItem.protocol.type ==
+        "interval", создаёт workout_snapshot (build_workout_snapshot) и для
+        interval-блоков возвращает НОЛЬ SetTarget (interval execution path —
+        server-authoritative timing, не targets). Standard path (STEP/manual,
+        без protocol) — старое поведение, snapshot=None."""
         items = await self._programs.list_complex_items(complex_id)
+
+        # Проверка: есть ли хотя бы один interval protocol
+        has_interval = False
+        protocols: dict[int, DefinitionProtocol] = {}
+        for item in items:
+            if item.protocol is not None:
+                protocol = TypeAdapter(DefinitionProtocol).validate_python(item.protocol)
+                protocols[item.id] = protocol
+                if protocol.type == ProtocolType.INTERVAL:
+                    has_interval = True
+
         blocks: list[SessionBlockInput] = []
         targets_by_block: list[list[SetTargetInput]] = []
+
         for item in items:
             exercise = await self._programs.get_exercise(item.exercise_id)
-            metric_type = exercise.metric_type
-            value = item.target_value if item.target_value is not None else Decimal(0)
-            unit = item.target_unit if item.target_unit is not None else DEFAULT_UNIT_BY_METRIC_TYPE[metric_type]
-            blocks.append(SessionBlockInput(exercise_id=item.exercise_id, sets=[]))
-            targets_by_block.append([
-                SetTargetInput(set_number=i + 1, metric_type=metric_type, value=value, unit=unit)
-                for i in range(item.sets)
-            ])
-        return blocks, targets_by_block
+            protocol = protocols.get(item.id)
+
+            # Interval block — ноль targets (timing-driven execution)
+            if protocol is not None and protocol.type == ProtocolType.INTERVAL:
+                blocks.append(SessionBlockInput(exercise_id=item.exercise_id, sets=[]))
+                targets_by_block.append([])  # пустой список targets
+            else:
+                # Standard path — старая логика
+                metric_type = exercise.metric_type
+                value = item.target_value if item.target_value is not None else Decimal(0)
+                unit = item.target_unit if item.target_unit is not None else DEFAULT_UNIT_BY_METRIC_TYPE[metric_type]
+                blocks.append(SessionBlockInput(exercise_id=item.exercise_id, sets=[]))
+                targets_by_block.append([
+                    SetTargetInput(set_number=i + 1, metric_type=metric_type, value=value, unit=unit)
+                    for i in range(item.sets)
+                ])
+
+        # Создание snapshot только если есть interval
+        snapshot_dict: dict | None = None
+        if has_interval:
+            complex = await self._programs.get_complex(complex_id)
+            exercises = {item.exercise_id: await self._programs.get_exercise(item.exercise_id) for item in items}
+            snapshot = build_workout_snapshot(
+                workout=complex, items=items, exercises=exercises, protocols=protocols,
+                progression_resolver=None,  # interval не использует progression
+            )
+            snapshot_dict = snapshot.model_dump()
+
+        return blocks, targets_by_block, snapshot_dict
 
     async def _resolve_exercise_block(
         self, plan_item: PlanItem,
@@ -270,7 +322,102 @@ class LiveSessionService:
         training_session = await self._sessions.get_active_for_user(user_id)
         if training_session is None:
             return None
-        return await self._build_result(training_session.id, user_id)
+        # Phase B1 (issue #215, раздел 5) — lazy finalization для expired
+        # interval сессий. Если финализация только что завершила её
+        # (status стал COMPLETED), эндпоинт НЕ должен отдавать её как
+        # "активную" — /sessions/live/active семантически означает "есть,
+        # что продолжить", не "существует какая-то сессия". Перечитываем
+        # статус после финализации и возвращаем None, если сессия больше
+        # не STARTED — фронт идёт в Summary/Journal обычным путём, не
+        # получает ложное "resume" состояние.
+        await self.finalize_expired_interval_if_needed(training_session.id, user_id)
+        result = await self._build_result(training_session.id, user_id)
+        if result is not None and result.session.status != SessionStatus.STARTED:
+            return None
+        return result
+
+    async def finalize_expired_interval_if_needed(self, session_id: int, user_id: int) -> None:
+        """Lazy completion для expired interval workouts (Phase B1, issue #215).
+        Идемпотентен — повторный вызов безопасен (mark_completed уже
+        идемпотентен по конструкции, см. app.services.live_session.py:277).
+
+        Минимум два call site (по контракту Phase B1):
+        1. GET /sessions/live/active (recovery path)
+        2. Путь листинга сессий (если пользователь открывает Журнал без захода
+           в Live, expired interval должен материализоваться и там).
+
+        Не копирует finalization-логику между call sites — один helper,
+        несколько вызовов."""
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        if detail is None or detail.status != SessionStatus.STARTED:
+            return
+
+        # Проверка: interval workout?
+        if detail.workout_snapshot is None:
+            return  # standard STEP/manual path, не interval
+
+        # Парсинг snapshot для извлечения протоколов — намеренно без try/except
+        # (issue #215, п.6): workout_snapshot пишется только системой при
+        # старте (Phase A1 Pydantic-валидированный WorkoutSnapshot.model_dump()),
+        # никогда пользовательским вводом — если он не парсится, это реальный
+        # баг данных, который не должен молча оставлять interval-сессию
+        # незавершённой.
+        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
+
+        # Проверка: есть ли interval блоки
+        interval_blocks: list[tuple[int, ResolvedInterval]] = []
+        for block_detail, item_snapshot in zip(detail.blocks, snapshot.items, strict=False):
+            if item_snapshot.protocol.type == ProtocolType.INTERVAL:
+                interval_blocks.append((block_detail.id, item_snapshot.protocol))
+
+        if not interval_blocks:
+            return  # нет interval блоков (не должно случиться, но защита)
+
+        # Проверка: expired? Один вызов compute_interval_timing на блок,
+        # переиспользуется и для записи result, и для итоговой проверки
+        # all_expired ниже — не пересчитывается дважды.
+        now = datetime.now(UTC)
+        timings = [
+            (block_id, protocol, compute_interval_timing(
+                performed_at=detail.performed_at, now=now,
+                total_duration_seconds=protocol.total_duration_seconds,
+                work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+            ))
+            for block_id, protocol in interval_blocks
+        ]
+
+        for block_id, protocol, timing in timings:
+            if timing.phase != IntervalPhase.DONE:
+                continue
+            # issue #215, раздел 2 — все 6 полей контракта обязательны.
+            # completed_at/actual_duration_seconds берутся из ПЛАНОВОГО
+            # дедлайна протокола (timing.total_end_at/total_duration_seconds),
+            # НЕ из now — если пользователь вернулся через 10 минут после
+            # deadline, тренировка всё равно длилась ровно 180 секунд, не
+            # 600+.
+            result = {
+                "type": "interval",
+                "started_at": timing.execution_started_at.isoformat(),
+                "completed_at": timing.total_end_at.isoformat(),
+                "planned_duration_seconds": protocol.total_duration_seconds,
+                "actual_duration_seconds": protocol.total_duration_seconds,
+                "completed_cycles": timing.completed_cycles,
+            }
+            await self._sessions.save_interval_block_result(block_id, result)
+
+        # Финализация сессии целиком (если все interval-блоки истекли).
+        # Идемпотентность повторного/параллельного вызова: result полностью
+        # детерминирован входными (performed_at, protocol) — НЕ зависит от
+        # того, какой из конкурентных вызовов "выиграл" гонку записи, оба
+        # вычисляют и пишут байт-в-байт одинаковый result. mark_completed
+        # (см. app.services.live_session.py:277) уже идемпотентен по
+        # конструкции — конкурентные UPDATE на одну строку сериализуются
+        # обычной row-level блокировкой PostgreSQL, дополнительная
+        # distributed-lock машинерия не нужна.
+        all_expired = all(timing.phase == IntervalPhase.DONE for _, _, timing in timings)
+
+        if all_expired:
+            await self._sessions.mark_completed(session_id)
 
     # --- Завершение -------------------------------------------------------
 
