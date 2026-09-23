@@ -35,7 +35,11 @@ from app.db.repositories.training_sessions import (
     SetTargetInput,
     TrainingSessionRepository,
 )
-from app.domain.interval_timing import IntervalPhase, compute_interval_timing
+from app.domain.interval_timing import (
+    IntervalPhase,
+    calculate_completed_cycles,
+    compute_interval_timing,
+)
 from app.domain.live_session import (
     DEFAULT_UNIT_BY_METRIC_TYPE,
     BlockPlan,
@@ -336,6 +340,45 @@ class LiveSessionService:
             return None
         return result
 
+    def _interval_result_dict(
+        self, protocol: ResolvedInterval, execution_started_at: datetime, total_end_at: datetime, now: datetime,
+    ) -> dict:
+        """Общий helper (issue #215, gate fix) — используется и lazy
+        finalizer'ом (только когда timing.phase уже DONE — now естественно
+        >= total_end_at), и complete_session (может вызываться РАНЬШЕ
+        дедлайна — пользователь явно прервал тренировку). completed_at =
+        min(now, total_end_at) — единая формула покрывает оба случая:
+        для нормального автозавершения даёт ровно total_end_at (now уже
+        >= него), для раннего прерывания — реальный момент now (значит
+        actual_duration_seconds отражает то, что пользователь реально
+        сделал, не выдуманные 180 секунд для незаконченной тренировки)."""
+        completed_at = min(now, total_end_at)
+        elapsed_seconds = (completed_at - execution_started_at).total_seconds()
+        completed_cycles = calculate_completed_cycles(
+            elapsed_seconds=elapsed_seconds, total_duration_seconds=protocol.total_duration_seconds,
+            work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+        )
+        return {
+            "type": "interval",
+            "started_at": execution_started_at.isoformat(),
+            "completed_at": completed_at.isoformat(),
+            "planned_duration_seconds": protocol.total_duration_seconds,
+            "actual_duration_seconds": round(elapsed_seconds),
+            "completed_cycles": completed_cycles,
+        }
+
+    async def _parse_interval_blocks(self, detail: SessionDetail) -> list[tuple[int, ResolvedInterval]]:
+        """Общая часть snapshot-парсинга для finalize_expired_interval_if_needed
+        и complete_session — не дублировать между ними."""
+        if detail.workout_snapshot is None:
+            return []
+        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
+        return [
+            (block_detail.id, item_snapshot.protocol)
+            for block_detail, item_snapshot in zip(detail.blocks, snapshot.items, strict=False)
+            if item_snapshot.protocol.type == ProtocolType.INTERVAL
+        ]
+
     async def finalize_expired_interval_if_needed(self, session_id: int, user_id: int) -> None:
         """Lazy completion для expired interval workouts (Phase B1, issue #215).
         Идемпотентен — повторный вызов безопасен (mark_completed уже
@@ -352,26 +395,9 @@ class LiveSessionService:
         if detail is None or detail.status != SessionStatus.STARTED:
             return
 
-        # Проверка: interval workout?
-        if detail.workout_snapshot is None:
-            return  # standard STEP/manual path, не interval
-
-        # Парсинг snapshot для извлечения протоколов — намеренно без try/except
-        # (issue #215, п.6): workout_snapshot пишется только системой при
-        # старте (Phase A1 Pydantic-валидированный WorkoutSnapshot.model_dump()),
-        # никогда пользовательским вводом — если он не парсится, это реальный
-        # баг данных, который не должен молча оставлять interval-сессию
-        # незавершённой.
-        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
-
-        # Проверка: есть ли interval блоки
-        interval_blocks: list[tuple[int, ResolvedInterval]] = []
-        for block_detail, item_snapshot in zip(detail.blocks, snapshot.items, strict=False):
-            if item_snapshot.protocol.type == ProtocolType.INTERVAL:
-                interval_blocks.append((block_detail.id, item_snapshot.protocol))
-
+        interval_blocks = await self._parse_interval_blocks(detail)
         if not interval_blocks:
-            return  # нет interval блоков (не должно случиться, но защита)
+            return  # нет interval блоков — standard STEP/manual путь или не найдено
 
         # Проверка: expired? Один вызов compute_interval_timing на блок,
         # переиспользуется и для записи result, и для итоговой проверки
@@ -389,20 +415,7 @@ class LiveSessionService:
         for block_id, protocol, timing in timings:
             if timing.phase != IntervalPhase.DONE:
                 continue
-            # issue #215, раздел 2 — все 6 полей контракта обязательны.
-            # completed_at/actual_duration_seconds берутся из ПЛАНОВОГО
-            # дедлайна протокола (timing.total_end_at/total_duration_seconds),
-            # НЕ из now — если пользователь вернулся через 10 минут после
-            # deadline, тренировка всё равно длилась ровно 180 секунд, не
-            # 600+.
-            result = {
-                "type": "interval",
-                "started_at": timing.execution_started_at.isoformat(),
-                "completed_at": timing.total_end_at.isoformat(),
-                "planned_duration_seconds": protocol.total_duration_seconds,
-                "actual_duration_seconds": protocol.total_duration_seconds,
-                "completed_cycles": timing.completed_cycles,
-            }
+            result = self._interval_result_dict(protocol, timing.execution_started_at, timing.total_end_at, now)
             await self._sessions.save_interval_block_result(block_id, result)
 
         # Финализация сессии целиком (если все interval-блоки истекли).
@@ -433,6 +446,27 @@ class LiveSessionService:
             return None, True
 
         await self._sessions.mark_completed(session_id)
+
+        # Phase B2 gate fix (issue #215) — explicit complete (вызывается
+        # фронтендом на дедлайне ИЛИ при раннем прерывании через
+        # BackButton, IntervalLiveScreen.tsx) должен писать interval result
+        # точно так же, как lazy finalizer — иначе SessionBlock.result
+        # остаётся null для сессий, завершённых этим путём (найдено живой
+        # проверкой, не гипотетически). now не капается заранее — сам
+        # _interval_result_dict берёт min(now, total_end_at) корректно и
+        # для раннего прерывания (now < total_end_at — реальный elapsed),
+        # и для нормального завершения на/после дедлайна.
+        interval_blocks = await self._parse_interval_blocks(detail)
+        if interval_blocks:
+            now = datetime.now(UTC)
+            for block_id, protocol in interval_blocks:
+                timing = compute_interval_timing(
+                    performed_at=detail.performed_at, now=now,
+                    total_duration_seconds=protocol.total_duration_seconds,
+                    work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+                )
+                result = self._interval_result_dict(protocol, timing.execution_started_at, timing.total_end_at, now)
+                await self._sessions.save_interval_block_result(block_id, result)
 
         progression_result: SessionProgressionResult | None = None
         skipped_reason: str | None = None

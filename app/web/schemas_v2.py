@@ -64,6 +64,14 @@ class PlanItemResponse(BaseModel):
     week_phase: str | None
     program_inclusion_id: int | None
     plan_week_id: int | None
+    # Phase B2 gate fix (issue #215) — Workout title (Complex.name) для
+    # complex-based PlanItem (interval/будущие Workout-based карточки).
+    # Без этого DashboardScreen.tsx::exerciseLabel не могла показать
+    # реальное название ("3 минуты подтягиваний") — только "Комплекс"
+    # (технический fallback) или, что хуже, имя несвязанного exercise_id.
+    # Опционально, None для call site'ов, не резолвящих его (не всем
+    # нужно на каждый PlanItem-запрос — только листингу на "Планах").
+    complex_name: str | None = None
 
 
 class PlanWeekResponse(BaseModel):

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { type ExerciseResponseV2, fetchExercises, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
+import { IntervalLiveScreen } from "./IntervalLiveScreen";
 import { SessionLiveScreen } from "./SessionLiveScreen";
 import { SessionPreScreen } from "./SessionPreScreen";
 import { SessionSummaryScreen } from "./SessionSummaryScreen";
@@ -91,6 +92,22 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
   }
 
   if (screen.kind === "live") {
+    // Phase B2 (issue #215) — interval получает отдельную rendering
+    // branch (раздел 13), не встраивается в SessionLiveScreen.tsx's
+    // offline-очередь/ручной ввод подхода, которые interval не нужны.
+    // Единственный сигнал — screen.session.interval !== null, тот же
+    // признак, что backend уже кладёт в LiveSessionResponse только для
+    // interval-блоков (Phase B1).
+    if (screen.session.interval !== null) {
+      return (
+        <IntervalLiveScreen
+          initDataRaw={initDataRaw}
+          initialSession={screen.session}
+          onCompleted={(result) => setScreen({ kind: "summary", result })}
+          title={title}
+        />
+      );
+    }
     return (
       <SessionLiveScreen
         initDataRaw={initDataRaw}

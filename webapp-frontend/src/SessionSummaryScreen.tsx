@@ -44,7 +44,55 @@ const SKIPPED_REASON_LABELS: Record<string, string> = {
  * 3, унаследованный сюда, а не забытая фронтенд-доработка; рисовать
  * "+N монет" без реального начисления значило бы врать пользователю.
  */
+function formatMinutesSeconds(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+type IntervalResult = {
+  type: "interval";
+  planned_duration_seconds: number;
+  actual_duration_seconds: number;
+  completed_cycles: number;
+};
+
+function isIntervalResult(value: unknown): value is IntervalResult {
+  return typeof value === "object" && value !== null && (value as { type?: unknown }).type === "interval";
+}
+
 export function SessionSummaryScreen({ result, onClose, resolveExerciseName, title }: Props) {
+  // Phase B2 (issue #215, раздел 17) — interval получает отдельную
+  // rendering-ветку: не SetLog rows, не fake targets, не Упражнение #id.
+  // Источник данных — уже полученный result.blocks[].result (сам result
+  // на бэкенде читает TrainingSession.workout_snapshot + SessionBlock.result,
+  // не live Complex definition — Summary здесь просто отображает то, что
+  // уже пришло, никакого отдельного запроса).
+  const intervalResult = result.blocks.length > 0 && isIntervalResult(result.blocks[0].result)
+    ? result.blocks[0].result
+    : null;
+
+  if (intervalResult !== null) {
+    return (
+      <div>
+        {title && <p className="plan-title">{title}</p>}
+        <p className="plan-title">Тренировка завершена</p>
+        <Section className="block-section">
+          <p className="block-subtitle">{formatMinutesSeconds(intervalResult.actual_duration_seconds)} выполнено</p>
+          {result.interval && (
+            <p className="block-subtitle">
+              {result.interval.work_seconds} сек работа / {result.interval.rest_seconds} сек отдых
+            </p>
+          )}
+          <p className="block-subtitle">{intervalResult.completed_cycles} рабочих интервалов</p>
+        </Section>
+        <Button className="action-button" size="l" stretched onClick={onClose}>
+          Закрыть
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div>
       {title && <p className="plan-title">{title}</p>}

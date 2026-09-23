@@ -86,6 +86,11 @@ class LiveSessionBlockResponse(BaseModel):
     complex_id: int | None
     targets: list[LiveSetTargetResponse]
     set_logs: list[SetLogResponse]
+    # Phase B2 gate fix (issue #215) — SessionBlock.result (Phase B1), для
+    # interval — полный контракт {type, started_at, completed_at,
+    # planned_duration_seconds, actual_duration_seconds, completed_cycles}.
+    # None для standard STANDARD/REPS/MAX блоков (result там не пишется).
+    result: dict | None = None
 
 
 class IntervalStateResponse(BaseModel):

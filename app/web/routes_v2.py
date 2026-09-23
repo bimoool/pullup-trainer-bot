@@ -111,12 +111,13 @@ def _program_inclusion_response(inclusion: ProgramInclusion) -> ProgramInclusion
     )
 
 
-def _plan_item_response(item: PlanItem) -> PlanItemResponse:
+def _plan_item_response(item: PlanItem, complex_name_by_id: dict[int, str] | None = None) -> PlanItemResponse:
     return PlanItemResponse(
         id=item.id, exercise_id=item.exercise_id, complex_id=item.complex_id,
         count_per_week=item.count_per_week, day_of_week=item.day_of_week,
         week_phase=item.week_phase.value if item.week_phase is not None else None,
         program_inclusion_id=item.program_inclusion_id, plan_week_id=item.plan_week_id,
+        complex_name=(complex_name_by_id or {}).get(item.complex_id) if item.complex_id is not None else None,
     )
 
 
@@ -243,11 +244,15 @@ async def get_plan(
     inclusions = await plans.list_inclusions(plan.id)
     plan_items = await plans.list_plan_items(plan.id)
     plan_weeks = await plans.list_plan_weeks(plan.id)
+    # Phase B2 gate fix (issue #215) — batch, не по одному на PlanItem.
+    complex_ids = sorted({item.complex_id for item in plan_items if item.complex_id is not None})
+    complexes = await ProgramRepository(session).list_complexes_by_ids(complex_ids)
+    complex_name_by_id = {complex_.id: complex_.name for complex_ in complexes}
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
             program_inclusions=[_program_inclusion_response(inclusion) for inclusion in inclusions],
-            plan_items=[_plan_item_response(item) for item in plan_items],
+            plan_items=[_plan_item_response(item, complex_name_by_id) for item in plan_items],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
         ),
     )
@@ -556,6 +561,7 @@ def _live_session_response_fields(detail: SessionDetail) -> dict:
         "blocks": [
             LiveSessionBlockResponse(
                 order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
+                result=block.result,
                 targets=[
                     LiveSetTargetResponse(
                         set_number=target.set_number, metric_type=target.metric_type.value,

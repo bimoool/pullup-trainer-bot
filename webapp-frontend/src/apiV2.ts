@@ -139,6 +139,9 @@ export interface PlanItemResponseV2 {
   week_phase: string | null;
   program_inclusion_id: number | null;
   plan_week_id: number | null;
+  /** Phase B2 gate fix (issue #215) — Workout title (Complex.name), не
+   * Exercise.name — только для complex-based PlanItem. */
+  complex_name: string | null;
 }
 
 /**
@@ -199,6 +202,11 @@ export interface LiveSessionBlockResponse {
   complex_id: number | null;
   targets: LiveSetTargetResponse[];
   set_logs: SetLogResponseV2[];
+  /** Phase B2 gate fix (issue #215) — SessionBlock.result (Phase B1),
+   * контракт для interval: {type: "interval", started_at, completed_at,
+   * planned_duration_seconds, actual_duration_seconds, completed_cycles}.
+   * null для standard STANDARD/REPS/MAX блоков. */
+  result: Record<string, unknown> | null;
 }
 
 export interface BlockProgressionResponseV2 {
@@ -212,6 +220,20 @@ export interface SessionProgressionResponseV2 {
   block_b: BlockProgressionResponseV2;
 }
 
+/** Phase B1 (issue #215) — server-authoritative interval timing state,
+ * вычисляется бэкендом на лету из performed_at+protocol, не персистится.
+ * Только для interval workouts, null для standard STEP/manual path. */
+export interface IntervalStateResponse {
+  execution_started_at: string;
+  total_end_at: string;
+  phase: "get_ready" | "work" | "rest" | "done";
+  phase_ends_at: string | null;
+  total_duration_seconds: number;
+  work_seconds: number;
+  rest_seconds: number;
+  completed_cycles: number;
+}
+
 export interface LiveSessionResponse {
   id: number;
   client_session_id: string;
@@ -221,6 +243,13 @@ export interface LiveSessionResponse {
   current_block_index: number;
   current_set_number: number;
   blocks: LiveSessionBlockResponse[];
+  /** Phase B1 (issue #215) — момент генерации ответа на сервере, НЕ
+   * persisted значение. Клиент вычисляет clockOffsetMs = parse(server_time)
+   * - Date.now() один раз на каждый ответ, дальше использует
+   * Date.now() + clockOffsetMs как скорректированное "сейчас" — не
+   * сравнивает абсолютные серверные timestamps с голым Date.now(). */
+  server_time: string;
+  interval: IntervalStateResponse | null;
 }
 
 export interface LiveSessionCompleteResponse extends LiveSessionResponse {

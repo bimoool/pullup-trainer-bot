@@ -40,6 +40,15 @@ const WEEK_PHASE_LABELS: Record<string, string> = {
 function exerciseLabel(
   item: PlanItemResponseV2, inclusions: ProgramInclusionResponseV2[], exercises: ExerciseResponseV2[],
 ): string {
+  // Phase B2 gate fix (issue #215) — Workout title (Complex.name) имеет
+  // приоритет над резолвом через exercise_id для complex-based PlanItem:
+  // exercise_id на таком PlanItem может быть посторонним/decoy значением
+  // (интервальные Workout не хранят "какое упражнение" через exercise_id
+  // вообще — это делает ComplexItem внутри Workout), реальное имя
+  // тренировки только в Complex.name.
+  if (item.complex_id !== null && item.complex_name !== null) {
+    return item.complex_name;
+  }
   for (const inclusion of inclusions) {
     const match = inclusion.snapshot.exercises?.find((exercise) => exercise.exercise_id === item.exercise_id);
     if (match) {
