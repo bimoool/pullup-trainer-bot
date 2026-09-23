@@ -250,6 +250,11 @@ export interface LiveSessionResponse {
    * сравнивает абсолютные серверные timestamps с голым Date.now(). */
   server_time: string;
   interval: IntervalStateResponse | null;
+  /** Phase B2 gate fix (issue #215) — резолвится бэкендом (тот же путь,
+   * что Журнал уже использует), нужен для reload/recovery: без него
+   * PlanSessionFlow/IntervalLiveScreen получали пустой title после
+   * перезагрузки посреди тренировки. */
+  title: string | null;
 }
 
 export interface LiveSessionCompleteResponse extends LiveSessionResponse {

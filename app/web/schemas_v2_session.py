@@ -119,6 +119,14 @@ class LiveSessionResponse(BaseModel):
     blocks: list[LiveSessionBlockResponse]
     server_time: datetime  # Phase B1: UTC timestamp генерации ответа
     interval: IntervalStateResponse | None  # Phase B1: только для interval workouts
+    # Phase B2 gate fix (issue #215) — найдено живым reload-прогоном:
+    # /sessions/live/active не резолвил title вообще, App.tsx's resumedSession
+    # ветка передавала PlanSessionFlow пустую строку — "3 минуты подтягиваний"
+    # исчезал после reload (был тем же пробелом и для standard-сессий,
+    # раньше не был явно виден/потребован). Опционально — None, если сессия
+    # не resolvable (тот же честный пробел, что _resolve_session_titles
+    # уже применяет для Журнала).
+    title: str | None = None
 
 
 class LiveSessionCompleteResponse(LiveSessionResponse):

@@ -269,7 +269,7 @@ export function App() {
           initDataRaw={state.initDataRaw}
           planItemIds={"planItemIds" in v2Session ? v2Session.planItemIds : []}
           manual={"manual" in v2Session ? v2Session.manual : false}
-          title={"title" in v2Session ? v2Session.title : ""}
+          title={"title" in v2Session ? v2Session.title : (v2Session.resumedSession.title ?? "")}
           initialSession={"resumedSession" in v2Session ? v2Session.resumedSession : null}
           onClose={() => setV2Session(null)}
         />

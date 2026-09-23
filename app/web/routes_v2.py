@@ -518,7 +518,7 @@ async def create_session(
 # рискует быть склеен как значение session_id (см. план задачи).
 
 
-def _live_session_response_fields(detail: SessionDetail) -> dict:
+def _live_session_response_fields(detail: SessionDetail, *, title: str | None = None) -> dict:
     """Построение LiveSessionResponse из SessionDetail. Phase B1 (issue #215):
     добавляет server_time (UTC timestamp генерации) и interval state (только
     для interval workouts, вычисляется на лету из workout_snapshot)."""
@@ -583,11 +583,12 @@ def _live_session_response_fields(detail: SessionDetail) -> dict:
         ],
         "server_time": now,
         "interval": interval_state,
+        "title": title,
     }
 
 
-def _live_session_response(detail: SessionDetail) -> LiveSessionResponse:
-    return LiveSessionResponse(**_live_session_response_fields(detail))
+def _live_session_response(detail: SessionDetail, *, title: str | None = None) -> LiveSessionResponse:
+    return LiveSessionResponse(**_live_session_response_fields(detail, title=title))
 
 
 def _live_session_complete_response(result: CompleteResult) -> LiveSessionCompleteResponse:
@@ -623,7 +624,8 @@ async def start_live_session(
     )
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
-    return _live_session_response(result.session)
+    titles = await _resolve_session_titles(session, [result.session], user.id)
+    return _live_session_response(result.session, title=titles.get(result.session.id))
 
 
 @router_v2.get("/sessions/live/active", response_model=LiveSessionActiveResponse)
@@ -633,7 +635,14 @@ async def get_active_live_session(
 ) -> LiveSessionActiveResponse:
     user = await _require_user(session, init_data)
     result = await LiveSessionService(session).get_active(user_id=user.id)
-    return LiveSessionActiveResponse(session=_live_session_response(result.session) if result is not None else None)
+    if result is None:
+        return LiveSessionActiveResponse(session=None)
+    # Phase B2 gate fix (issue #215) — тот же batch-резолвер, что Журнал
+    # уже использует (_resolve_session_titles), с единственной сессией —
+    # без него reload посреди тренировки терял заголовок вовсе (найдено
+    # живым прогоном).
+    titles = await _resolve_session_titles(session, [result.session], user.id)
+    return LiveSessionActiveResponse(session=_live_session_response(result.session, title=titles.get(result.session.id)))
 
 
 @router_v2.post("/sessions/live/{session_id}/phase/next", response_model=LiveSessionResponse)
