@@ -152,11 +152,15 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, t
           </p>
         </Section>
       ) : (
+        // WORK визуально = "go" (зелёный, активная фаза), REST = "rest"
+        // (синий) — переиспользованы уже существующие, стилизованные
+        // классы SessionLiveScreen.tsx (.phase-card-go/.phase-card-rest,
+        // index.css), не изобретены новые unstyled interval-phase-*.
         <Section
-          className={`block-section interval-phase-card interval-phase-${state.phase}`}
+          className={`block-section phase-card-${state.phase === "work" ? "go" : "rest"}`}
           header={PHASE_LABELS[state.phase]}
         >
-          <p className={`timer-duration-label interval-timer-${state.phase}`}>
+          <p className={`timer-duration-label phase-timer-${state.phase === "work" ? "go" : "rest"}`}>
             {formatSeconds(state.remainingInPhaseSeconds)}
           </p>
           <p className="block-subtitle">Осталось: {formatSeconds(state.remainingTotalSeconds)}</p>
