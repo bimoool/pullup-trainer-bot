@@ -4,9 +4,10 @@
 невозможно выразить в самом типе, не просто соглашение)."""
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from app.domain.workout_protocol import (
+    DefinitionProtocol,
     Interval,
     ProgressionRepsSets,
     ProgressionTimeSets,
@@ -475,4 +476,91 @@ def test_resolved_max_effort_rejects_prescription_field_structurally():
             "type": "max_effort",
             "attempts": [{"is_max": True}],
             "prescription": {"source": "static", "attempts": 1},
+        })
+
+
+# ============================================================================
+# DefinitionProtocol — discriminated union regression (issue #215, gate 5)
+#
+# Найденный при интеграции Phase B1 баг: изначальный
+# Field(discriminator="type") был структурно сломан для reps_sets/
+# time_sets — StaticRepsSets и ProgressionRepsSets несут одно и то же
+# значение type="reps_sets", различаясь только вложенным
+# prescription.source; Pydantic требует уникального значения дискриминатора
+# на вариант union, а не два класса на одно значение. Ни один из тестов
+# выше не находил эту ошибку, потому что каждый класс проверялся отдельно
+# (StaticRepsSets.model_validate(...) и т.д.) — сама сборка
+# TypeAdapter(DefinitionProtocol) не вызывалась НИ РАЗУ до этого момента.
+# Эти тесты специально конструируют union целиком и парсят через него.
+# ============================================================================
+
+_definition_adapter = TypeAdapter(DefinitionProtocol)
+
+
+def test_definition_protocol_union_constructs_without_error():
+    """Сама сборка TypeAdapter(DefinitionProtocol) не должна падать —
+    именно это упало в исходном баге (TypeError на конструирование схемы,
+    ещё до какого-либо .validate_python() вызова)."""
+    assert _definition_adapter is not None
+
+
+def test_definition_protocol_parses_static_reps_sets():
+    result = _definition_adapter.validate_python({
+        "type": "reps_sets", "prescription": {"source": "static", "sets": 3, "reps": 15}, "rest_seconds": 90,
+    })
+    assert isinstance(result, StaticRepsSets)
+    assert result.prescription.sets == 3
+    assert result.prescription.reps == 15
+
+
+def test_definition_protocol_parses_progression_reps_sets():
+    result = _definition_adapter.validate_python({
+        "type": "reps_sets", "prescription": {"source": "progression"}, "rest_seconds": 90,
+    })
+    assert isinstance(result, ProgressionRepsSets)
+
+
+def test_definition_protocol_parses_static_time_sets():
+    result = _definition_adapter.validate_python({
+        "type": "time_sets", "prescription": {"source": "static", "sets": 3, "duration_seconds": 30}, "rest_seconds": 60,
+    })
+    assert isinstance(result, StaticTimeSets)
+    assert result.prescription.duration_seconds == 30
+
+
+def test_definition_protocol_parses_progression_time_sets():
+    result = _definition_adapter.validate_python({
+        "type": "time_sets", "prescription": {"source": "progression"}, "rest_seconds": 60,
+    })
+    assert isinstance(result, ProgressionTimeSets)
+
+
+def test_definition_protocol_parses_max_effort():
+    result = _definition_adapter.validate_python({
+        "type": "max_effort", "prescription": {"source": "static", "attempts": 1},
+    })
+    assert isinstance(result, StaticMaxEffort)
+    assert result.prescription.attempts == 1
+
+
+def test_definition_protocol_parses_interval():
+    result = _definition_adapter.validate_python({
+        "type": "interval", "total_duration_seconds": 180, "work_seconds": 10, "rest_seconds": 20, "starts_with": "work",
+    })
+    assert isinstance(result, Interval)
+    assert result.total_duration_seconds == 180
+
+
+def test_definition_protocol_rejects_unknown_type():
+    with pytest.raises(ValidationError):
+        _definition_adapter.validate_python({"type": "amrap", "rest_seconds": 90})
+
+
+def test_definition_protocol_rejects_reps_sets_without_prescription_source():
+    """Ambiguous payload — type=reps_sets, но prescription.source отсутствует
+    вовсе (не static, не progression) — должен быть отклонён, не тихо
+    выбрать первый попавшийся вариант union."""
+    with pytest.raises(ValidationError):
+        _definition_adapter.validate_python({
+            "type": "reps_sets", "prescription": {"sets": 3, "reps": 15}, "rest_seconds": 90,
         })

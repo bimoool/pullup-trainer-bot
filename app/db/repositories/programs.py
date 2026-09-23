@@ -45,6 +45,20 @@ class ProgramRepository:
         result = await self._session.execute(select(Exercise).where(Exercise.id.in_(exercise_ids)))
         return list(result.scalars().all())
 
+    async def list_complexes_by_ids(self, complex_ids: list[int]) -> list[Complex]:
+        """Phase B1 gate fix (issue #215) — batch-версия get_complex для
+        резолва Workout title (Complex.name) в Журнале/списке сессий, тот
+        же batch-принцип, что list_exercises_by_ids выше. Нужна, потому
+        что _resolve_session_titles до этого фикса вообще не знал про
+        complex_id-based PlanItem — резолвил title только через
+        program_inclusion_id/exercise_id, никогда не проверяя complex_id,
+        и потому мог случайно взять несвязанный exercise_id вместо
+        настоящего названия Workout."""
+        if not complex_ids:
+            return []
+        result = await self._session.execute(select(Complex).where(Complex.id.in_(complex_ids)))
+        return list(result.scalars().all())
+
     async def list_complex_items(self, complex_id: int) -> list[ComplexItem]:
         """Состав комплекса по order_index — тот же порядок, в котором
         app.services.live_session разворачивает Complex в SessionBlock'и

@@ -31,12 +31,12 @@ pytestmark = pytest.mark.asyncio
 async def interval_complex(session: AsyncSession) -> Complex:
     """Interval workout: один ComplexItem с protocol.type='interval'."""
     exercise = Exercise(
-        name="Подтягивания 3min", metric_type=MetricType.REPS, category="pull",
+        name="Подтягивания", metric_type=MetricType.REPS, category="pull",
     )
     session.add(exercise)
     await session.flush()
 
-    complex = Complex(name="Табата подтягивания", source_type="system")
+    complex = Complex(name="3 минуты подтягиваний", source_type="system")
     session.add(complex)
     await session.flush()
 
@@ -71,13 +71,31 @@ async def interval_plan_item(session: AsyncSession, interval_complex: Complex, i
     interval_user фикстурой (models_program.py не заводит ORM-relationship
     PlanItem.training_plan, см. докстринг SessionDetail — обращение к
     несуществующему атрибуту было реальным багом исходной фикстуры
-    воркера, ни разу не запускавшейся из-за заблокированного sandbox)."""
+    воркера, ни разу не запускавшейся из-за заблокированного sandbox).
+
+    Correction (Кирилл, gate 1) — PlanItem.exercise_id обязателен (NOT
+    NULL), но раньше сюда подставлялся interval_complex.id (id Complex,
+    не Exercise) — работало только по случайному совпадению отдельных
+    Postgres-sequence в изолированной тестовой транзакции, не доказывало
+    ничего о реальном routing через complex_id. Теперь — заведомо ДРУГОЙ,
+    настоящий Exercise ("decoy"), которого нет ни в одном ComplexItem этого
+    Workout: если бы resolver случайно пошёл по старому exercise_id-path
+    вместо PlanItem.complex_id, snapshot содержал бы имя decoy-упражнения
+    вместо реального "Подтягивания" из ComplexItem — тест ниже это явно
+    проверяет."""
+    decoy_exercise = Exercise(
+        name="ФИКСТУРА: если это имя попало в snapshot — resolver пошёл по exercise_id, не complex_id",
+        metric_type=MetricType.REPS, category="decoy_do_not_use",
+    )
+    session.add(decoy_exercise)
+    await session.flush()
+
     plan = TrainingPlan(user_id=interval_user.id)
     session.add(plan)
     await session.flush()
 
     plan_item = PlanItem(
-        training_plan_id=plan.id, exercise_id=interval_complex.id, complex_id=interval_complex.id,
+        training_plan_id=plan.id, exercise_id=decoy_exercise.id, complex_id=interval_complex.id,
         count_per_week=3, day_of_week=1,
     )
     session.add(plan_item)
@@ -106,9 +124,21 @@ async def test_start_interval_workout_creates_snapshot(
     assert "workout_id" in detail.workout_snapshot
     assert "items" in detail.workout_snapshot
 
+    # Gate 1 (Кирилл) — решающее доказательство: resolver реально пошёл по
+    # PlanItem.complex_id, не по PlanItem.exercise_id (decoy). Реальное
+    # упражнение из ComplexItem — "Подтягивания", а не decoy-имя.
+    snapshot_text = str(detail.workout_snapshot)
+    assert "ФИКСТУРА" not in snapshot_text, (
+        "snapshot содержит decoy exercise_id — resolver пошёл по старому "
+        "exercise_id-path, не по PlanItem.complex_id!"
+    )
+    assert detail.workout_snapshot["items"][0]["exercise_name"] == "Подтягивания"
+
     # Проверка: один SessionBlock, ноль SetTargets
     assert len(detail.blocks) == 1
     assert len(detail.blocks[0].set_targets) == 0  # interval — без targets
+    # Тот же decoy-инвариант на уровне SessionBlock.exercise_id.
+    assert detail.blocks[0].exercise_id != interval_plan_item.exercise_id
 
 
 async def test_start_interval_duplicate_protection(
@@ -340,6 +370,70 @@ async def test_lazy_finalizer_idempotent_when_called_twice(session: AsyncSession
     assert second.status == first_status == SessionStatus.COMPLETED
     assert second.blocks[0].result == first_result  # идентичный JSON, не дубль
     assert len(second.blocks) == 1  # ни одного нового SessionBlock не создано
+
+
+async def test_concurrent_finalizer_calls_produce_one_stable_result(
+    session: AsyncSession, interval_plan_item: PlanItem, interval_user: User, test_dsn: str,
+):
+    """Настоящий concurrency-тест (Кирилл, gate 3) — не sequential-вызов
+    дважды (уже покрыт test_lazy_finalizer_idempotent_when_called_twice),
+    а два ДЕЙСТВИТЕЛЬНО независимых DB-соединения (свой AsyncSession на
+    каждое, тот же принцип, что сам session fixture использует — свой
+    engine на тест), вызывающие финализацию одной и той же expired
+    TrainingSession через asyncio.gather (параллельно на event loop, не
+    последовательно). После обоих: один SessionBlock, один result,
+    идентичный completed_at, никаких duplicate side effects. Никакого
+    искусственного lock не добавлено — deterministic result (полностью
+    функция от performed_at+protocol, не от того, какой вызов "выиграл")
+    плюс обычная PostgreSQL row-level блокировка на UPDATE — уже
+    достаточная защита, доказывается фактом ниже, не предположением."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    service = LiveSessionService(session)
+    result = await service.start_session(
+        user_id=interval_user.id, client_session_id=uuid.uuid4(),
+        plan_item_ids=[interval_plan_item.id],
+    )
+    assert result is not None
+    session_id = result.session.id
+    user_id = interval_user.id
+    past = datetime.now(UTC) - timedelta(seconds=200)
+    await _set_performed_at(session, session_id, past)
+    await session.commit()  # видимо для других соединений
+
+    engine_a = create_async_engine(test_dsn)
+    engine_b = create_async_engine(test_dsn)
+    try:
+        factory_a = async_sessionmaker(engine_a, class_=AsyncSession, expire_on_commit=False)
+        factory_b = async_sessionmaker(engine_b, class_=AsyncSession, expire_on_commit=False)
+
+        async def _finalize_via(factory):
+            async with factory() as independent_session:
+                independent_service = LiveSessionService(independent_session)
+                await independent_service.finalize_expired_interval_if_needed(session_id, user_id)
+                await independent_session.commit()
+
+        await asyncio.gather(_finalize_via(factory_a), _finalize_via(factory_b))
+    finally:
+        await engine_a.dispose()
+        await engine_b.dispose()
+
+    final = await TrainingSessionRepository(session).get_for_user(session_id, user_id)
+    assert final.status == SessionStatus.COMPLETED
+    assert len(final.blocks) == 1  # ни одного лишнего SessionBlock
+    result_json = final.blocks[0].result
+    assert result_json is not None
+    assert result_json["type"] == "interval"
+    assert result_json["completed_cycles"] == 6
+    # completed_at/started_at — полностью детерминированы (performed_at +
+    # protocol), поэтому у победившего вызова СОВПАДАЮТ с ожидаемым
+    # значением, независимо от того, какая из двух гонок реально что-то
+    # записала первой.
+    expected_deadline = past + timedelta(seconds=5 + 180)
+    completed_at = datetime.fromisoformat(result_json["completed_at"])
+    assert abs((completed_at - expected_deadline).total_seconds()) < 1
 
 
 async def test_journal_only_recovery_without_active_lookup(session: AsyncSession, interval_plan_item: PlanItem, interval_user: User):
