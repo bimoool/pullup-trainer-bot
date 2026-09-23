@@ -25,7 +25,7 @@ from app.db.models import User
 from app.db.models_program import Exercise
 from app.domain.multi_program import MetricType
 from scripts.seed_exercise_library import seed_exercise_library
-from tests.test_web._v2_client import v2_get
+from tests.test_web._v2_client import v2_get, v2_post
 
 
 async def test_list_exercises_returns_existing_exercises(session, user: User):
@@ -141,3 +141,127 @@ async def test_internal_step_role_exercises_are_excluded_from_library(session, u
     assert "Отжимания" in names
     assert "Подтягивания — объём" not in names
     assert "Подтягивания — сила" not in names
+
+
+# ============================================================================
+# Phase C1 (issue #188) — Exercise ownership foundation, security tests
+# ============================================================================
+
+
+async def _create_second_user(session, telegram_id: int) -> User:
+    """Второй, независимый пользователь для isolation-тестов — user из
+    conftest.py фикстуры один, для User A/User B нужен ещё один."""
+    from app.db.repositories.users import UserRepository
+
+    users = UserRepository(session)
+    second_user = await users.create(telegram_id=telegram_id, username="second_user")
+    return second_user
+
+
+async def test_user_sees_system_and_own_exercises_not_others(session, user: User):
+    """User A видит все system Exercise и свои user Exercise, не видит
+    user Exercise другого пользователя (User B)."""
+    await seed_exercise_library(session)
+    user_b = await _create_second_user(session, telegram_id=980002)
+
+    create_a = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "Моё упражнение A"})
+    assert create_a.status_code == 200
+    create_b = await v2_post(session, telegram_id=user_b.telegram_id, path="/api/v2/exercises", payload={"name": "Моё упражнение B"})
+    assert create_b.status_code == 200
+
+    response = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/exercises")
+    names = {ex["name"] for ex in response.json()["exercises"]}
+
+    assert "Планка" in names  # system, видно всем
+    assert "Отжимания" in names  # system, видно всем
+    assert "Моё упражнение A" in names  # своё
+    assert "Моё упражнение B" not in names  # чужое — не должно течь
+
+
+async def test_user_b_does_not_see_user_a_exercise_symmetric(session, user: User):
+    """Симметричная проверка — User B видит своё и system, не видит User A."""
+    await seed_exercise_library(session)
+    user_b = await _create_second_user(session, telegram_id=980003)
+
+    await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "Упражнение пользователя A"})
+    await v2_post(session, telegram_id=user_b.telegram_id, path="/api/v2/exercises", payload={"name": "Упражнение пользователя B"})
+
+    response = await v2_get(session, telegram_id=user_b.telegram_id, path="/api/v2/exercises")
+    names = {ex["name"] for ex in response.json()["exercises"]}
+
+    assert "Планка" in names
+    assert "Упражнение пользователя B" in names
+    assert "Упражнение пользователя A" not in names
+
+
+async def test_get_visible_exercise_for_user_returns_none_for_others_exercise(session, user: User):
+    """Repository-уровень (get_visible_exercise_for_user) — чужой user
+    Exercise даёт None, не объект (route-уровень конвертирует в 404, если
+    detail route используется — сам route пока не существует, проверяем
+    сам helper напрямую)."""
+    from app.db.repositories.programs import ProgramRepository
+
+    user_b = await _create_second_user(session, telegram_id=980004)
+    create_b = await v2_post(session, telegram_id=user_b.telegram_id, path="/api/v2/exercises", payload={"name": "Приватное B"})
+    exercise_b_id = create_b.json()["id"]
+
+    repo = ProgramRepository(session)
+    visible_to_owner = await repo.get_visible_exercise_for_user(exercise_b_id, user_b.id)
+    visible_to_stranger = await repo.get_visible_exercise_for_user(exercise_b_id, user.id)
+
+    assert visible_to_owner is not None
+    assert visible_to_owner.name == "Приватное B"
+    assert visible_to_stranger is None  # чужое — None, не объект
+
+
+async def test_get_visible_exercise_for_user_allows_system_exercise_to_anyone(session, user: User):
+    await seed_exercise_library(session)
+    from sqlalchemy import select as sa_select
+
+    result = await session.execute(sa_select(Exercise).where(Exercise.name == "Планка"))
+    plank = result.scalar_one()
+
+    from app.db.repositories.programs import ProgramRepository
+
+    repo = ProgramRepository(session)
+    visible = await repo.get_visible_exercise_for_user(plank.id, user.id)
+    assert visible is not None  # system — видно любому
+
+
+async def test_create_exercise_sets_correct_ownership(session, user: User):
+    response = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "Новое упражнение"})
+    assert response.status_code == 200
+    exercise_id = response.json()["id"]
+
+    result = await session.execute(select(Exercise).where(Exercise.id == exercise_id))
+    exercise = result.scalar_one()
+    assert exercise.source_type == "user"
+    assert exercise.owner_user_id == user.id
+
+
+async def test_create_exercise_duplicate_names_allowed_across_owners(session, user: User):
+    """Дубликаты имён разрешены: system/user, user A/user B, user A/user A."""
+    await seed_exercise_library(session)
+    user_b = await _create_second_user(session, telegram_id=980005)
+
+    r1 = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "Подтягивания"})
+    assert r1.status_code == 200  # совпадает с возможным system-именем — разрешено
+
+    r2 = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "Подтягивания"})
+    assert r2.status_code == 200  # user A дважды одно и то же имя — разрешено
+
+    r3 = await v2_post(session, telegram_id=user_b.telegram_id, path="/api/v2/exercises", payload={"name": "Подтягивания"})
+    assert r3.status_code == 200  # user B то же имя, что user A — разрешено
+
+    assert r1.json()["id"] != r2.json()["id"] != r3.json()["id"]
+
+
+async def test_create_exercise_rejects_empty_name(session, user: User):
+    response = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "   "})
+    assert response.status_code == 422
+
+
+async def test_create_exercise_trims_whitespace(session, user: User):
+    response = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": "  Приседания  "})
+    assert response.status_code == 200
+    assert response.json()["name"] == "Приседания"

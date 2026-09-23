@@ -91,11 +91,17 @@ class MediaAsset(Base):
 
 
 class Exercise(Base):
-    """Каталожная единица — не привязана к пользователю. variants — список
-    исполнений по снаряду/целевому RPE ({code, equipment_type, target_rpe,
-    description}), свободная JSONB-форма на этой волне: без FK на
-    app.domain.constants.EquipmentType, чтобы каталог multi-program не тащил
-    зависимость на pull-up-специфичный enum."""
+    """Каталожная единица. variants — список исполнений по снаряду/целевому
+    RPE ({code, equipment_type, target_rpe, description}), свободная JSONB-
+    форма на этой волне: без FK на app.domain.constants.EquipmentType, чтобы
+    каталог multi-program не тащил зависимость на pull-up-специфичный enum.
+
+    source_type/owner_user_id — Phase C1 (issue #188), тот же паттерн, что
+    Complex.source_type/owner_user_id (Phase A1): "system" (каталожное,
+    доступно всем) или "user" (создано пользователем через Workout Builder,
+    видимо только владельцу). Инвариант (system -> owner_user_id IS NULL,
+    user -> owner_user_id == current_user.id) — сервисный слой, не DB
+    CHECK, тот же принцип, что у Complex."""
 
     __tablename__ = "exercises"
 
@@ -107,6 +113,10 @@ class Exercise(Base):
     variants: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     media_asset_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("media_assets.id", ondelete="SET NULL"), nullable=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="system", server_default="system")
+    owner_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

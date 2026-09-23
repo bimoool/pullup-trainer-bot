@@ -9,6 +9,7 @@ from app.db.models_program import (
     ProgramItem,
     ProgressionStrategyProfile,
 )
+from app.domain.multi_program import MetricType
 
 
 class ProgramRepository:
@@ -17,7 +18,12 @@ class ProgramRepository:
     единственный писатель каталога пока scripts/backfill_multi_program.py.
 
     Phase A1 (issue #214, Worker B) добавляет минимальные write-методы для
-    Complex/ComplexItem — только под protocol storage, не полноценное CRUD."""
+    Complex/ComplexItem — только под protocol storage, не полноценное CRUD.
+
+    Phase C1 (issue #188) добавляет create_user_exercise — минимальный
+    write-метод под пользовательский Exercise (Workout Builder foundation),
+    тот же принцип: узкая capability, не полноценное CRUD (update/delete/
+    rename Exercise — явно вне scope этой волны)."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -94,6 +100,37 @@ class ProgramRepository:
         return {exercise.subcategory: exercise for exercise in result.scalars().all()}
 
     # --- Complex/ComplexItem write methods (Phase A1, issue #214) ---
+
+    async def get_visible_exercise_for_user(self, exercise_id: int, user_id: int) -> Exercise | None:
+        """Phase C1 (issue #188) — тот же get_X_for_user-паттерн, что уже
+        системно используется в проекте (app.db.repositories.training_plans).
+        Возвращает Exercise только если он system (видим всем) или user
+        exercise, принадлежащий именно этому user_id — иначе None. Route-
+        уровень конвертирует None -> 404, не 403 (существующая конвенция
+        проекта — не раскрывать существование чужого ресурса)."""
+        exercise = await self._session.get(Exercise, exercise_id)
+        if exercise is None:
+            return None
+        if exercise.source_type == "system" or exercise.owner_user_id == user_id:
+            return exercise
+        return None
+
+    async def create_user_exercise(self, *, name: str, owner_user_id: int) -> Exercise:
+        """Phase C1 (issue #188) — создание пользовательского Exercise через
+        Workout Builder. Всегда source_type='user' — system Exercise через
+        этот путь создать нельзя (тот же принцип, что create_complex не
+        принимает source_type снаружи для пользовательского пути). Минимум
+        обязательных полей модели — metric_type/category нужны схемой,
+        значения по умолчанию для нового пользовательского упражнения без
+        дополнительного UI на этой волне (Builder ещё не выбирает тип
+        метрики отдельно от самого упражнения на этом шаге)."""
+        exercise = Exercise(
+            name=name, metric_type=MetricType.REPS, category="user",
+            source_type="user", owner_user_id=owner_user_id,
+        )
+        self._session.add(exercise)
+        await self._session.flush()
+        return exercise
 
     async def get_complex(self, complex_id: int) -> Complex | None:
         """Read Complex с новыми полями source_type/owner_user_id (Phase A1)."""

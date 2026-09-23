@@ -46,6 +46,7 @@ from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2 import (
     BlockProgressionResponse,
+    ExerciseCreateRequest,
     ExerciseListResponse,
     ExerciseResponse,
     PlanItemCreateRequest,
@@ -197,11 +198,18 @@ async def list_exercises(
     в issue #165 как достаточное, без новой колонки). Exercise с
     subcategory=NULL (обычные библиотечные упражнения) — не задет, явный
     OR по IS NULL, потому что NOT IN(...) в SQL сам по себе отбрасывает
-    NULL-строки (three-valued logic), не включает их."""
-    await _require_user(session, init_data)
+    NULL-строки (three-valued logic), не включает их.
+
+    Phase C1 (issue #188) — добавлена visibility-фильтрация: обычный
+    пользователь видит все system Exercise и только свои user Exercise, не
+    чужие. Тот же принцип, что get_X_for_user-семейство методов уже
+    применяет системно (app.db.repositories.training_plans) — не новая
+    эвристика."""
+    user = await _require_user(session, init_data)
     result = await session.execute(
         select(Exercise)
         .where(Exercise.subcategory.is_(None) | Exercise.subcategory.not_in(["block_a", "block_b"]))
+        .where((Exercise.source_type == "system") | (Exercise.owner_user_id == user.id))
         .order_by(Exercise.id),
     )
     exercises = result.scalars().all()
@@ -216,6 +224,27 @@ async def list_exercises(
             )
             for ex in exercises
         ],
+    )
+
+
+@router_v2.post("/exercises", response_model=ExerciseResponse)
+async def create_exercise(
+    body: ExerciseCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ExerciseResponse:
+    """Phase C1 (issue #188) — минимальный CREATE для пользовательского
+    Exercise (Workout Builder foundation). System Exercise через этот путь
+    создать нельзя — source_type всегда "user", owner_user_id всегда
+    текущий пользователь (ProgramRepository.create_user_exercise не
+    принимает эти значения снаружи). rename/delete/update — явно вне
+    scope этой волны (см. issue #188, Phase C1)."""
+    user = await _require_user(session, init_data)
+    exercise = await ProgramRepository(session).create_user_exercise(name=body.name, owner_user_id=user.id)
+    await session.commit()
+    return ExerciseResponse(
+        id=exercise.id, name=exercise.name, metric_type=exercise.metric_type.value,
+        category=exercise.category, subcategory=exercise.subcategory,
     )
 
 

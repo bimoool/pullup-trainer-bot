@@ -7,7 +7,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # --- Каталог (read-only на этой волне) ---------------------------------------------
 
@@ -39,6 +39,23 @@ class ExerciseResponse(BaseModel):
 
 class ExerciseListResponse(BaseModel):
     exercises: list[ExerciseResponse]
+
+
+class ExerciseCreateRequest(BaseModel):
+    """Phase C1 (issue #188) — минимальный запрос для пользовательского
+    Exercise (Workout Builder foundation). Только name — global uniqueness
+    намеренно не проверяется (пользовательские "Подтягивания" от разных
+    владельцев и от system должны сосуществовать)."""
+
+    name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def _trim_name(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Название не может быть пустым")
+        return trimmed
 
 
 # --- План пользователя --------------------------------------------------------------
