@@ -160,7 +160,7 @@ async def test_http_golden_journey_full_interval_lifecycle(session: AsyncSession
     assert result_json["completed_cycles"] == 6
     expected_deadline = past + timedelta(seconds=5 + 180)
     completed_at = datetime.fromisoformat(result_json["completed_at"])
-    assert abs((completed_at - expected_deadline).total_seconds()) < 1
+    assert completed_at == expected_deadline  # gate (Кирилл) — точное равенство, не ±1с
 
 
 async def test_list_sessions_user_isolation(session: AsyncSession):

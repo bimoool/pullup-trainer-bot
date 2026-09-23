@@ -338,7 +338,7 @@ async def test_long_absence_completed_at_is_protocol_deadline_not_reopen_time(
     )
     result_json = final_detail.blocks[0].result
     completed_at = datetime.fromisoformat(result_json["completed_at"])
-    assert abs((completed_at - expected_deadline).total_seconds()) < 1
+    assert completed_at == expected_deadline  # gate (Кирилл) — точное равенство, не ±1с
     assert result_json["actual_duration_seconds"] == 180  # НЕ 600+
 
 
@@ -433,7 +433,7 @@ async def test_concurrent_finalizer_calls_produce_one_stable_result(
     # записала первой.
     expected_deadline = past + timedelta(seconds=5 + 180)
     completed_at = datetime.fromisoformat(result_json["completed_at"])
-    assert abs((completed_at - expected_deadline).total_seconds()) < 1
+    assert completed_at == expected_deadline  # gate (Кирилл) — точное равенство, не ±1с
 
 
 async def test_journal_only_recovery_without_active_lookup(session: AsyncSession, interval_plan_item: PlanItem, interval_user: User):
