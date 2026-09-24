@@ -12,6 +12,8 @@ import {
   type ProgramInclusionResponseV2,
 } from "./apiV2";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
+import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
+import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
 // (Python date.weekday()), тот же порядок, что и остальной код проекта
@@ -149,6 +151,13 @@ type PlanState = {
 
 const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
 
+// Phase C4a (issue #188) — «Мои тренировки» swap-state.
+type MyWorkoutsView =
+  | { kind: "closed" }
+  | { kind: "list" }
+  | { kind: "create" }
+  | { kind: "edit"; workoutId: number };
+
 type ExercisesState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
@@ -196,6 +205,10 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   // здесь не может провалиться сам по себе (это не API-вызов), при успехе
   // компонент размонтируется вместе с переходом на PlanSessionFlow.
   const [startingGroupKey, setStartingGroupKey] = useState<string | null>(null);
+  // Phase C4a (issue #188) — «Мои тренировки», локальный swap-state внутри
+  // Планов, тот же принцип, что HomeScreen.tsx уже использует для
+  // ProgramDetailScreen (selectedProgramId), не отдельный App.tsx Tab.
+  const [myWorkoutsView, setMyWorkoutsView] = useState<MyWorkoutsView>({ kind: "closed" });
 
   function reloadPlan() {
     return fetchPlan(initDataRaw).then((data) => {
@@ -316,6 +329,47 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
     };
   }, [initDataRaw]);
 
+  // Phase C4a (issue #188) — «Мои тренировки» swap, до loading/error
+  // ранних return'ов выше: не зависит от Plans-данных вообще, доступен
+  // даже если /api/v2/dashboard ещё грузится/упал.
+  if (myWorkoutsView.kind === "list") {
+    return (
+      <MyWorkoutsScreen
+        initDataRaw={initDataRaw}
+        onBack={() => setMyWorkoutsView({ kind: "closed" })}
+        onCreateWorkout={() => setMyWorkoutsView({ kind: "create" })}
+        onOpenWorkout={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
+      />
+    );
+  }
+  if (myWorkoutsView.kind === "create") {
+    return (
+      <WorkoutEditorScreen
+        // key: без него React переиспользует тот же instance при переходе
+        // create -> edit (одинаковая позиция в дереве), stale internal
+        // state (saving) протекает между режимами — найдено живым
+        // прогоном (кнопка "Сохранить" оставалась disabled/пустой на
+        // Edit-экране сразу после успешного create).
+        key="create"
+        initDataRaw={initDataRaw}
+        workoutId={null}
+        onBack={() => setMyWorkoutsView({ kind: "list" })}
+        onSaved={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
+      />
+    );
+  }
+  if (myWorkoutsView.kind === "edit") {
+    return (
+      <WorkoutEditorScreen
+        key={`edit-${myWorkoutsView.workoutId}`}
+        initDataRaw={initDataRaw}
+        workoutId={myWorkoutsView.workoutId}
+        onBack={() => setMyWorkoutsView({ kind: "list" })}
+        onSaved={() => setMyWorkoutsView({ kind: "list" })}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю…</p>;
   }
@@ -345,6 +399,15 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
 
   return (
     <div>
+      {/* Phase C4a (issue #188) — entry point, не ломает существующую
+          навигацию/карточки плана ниже, просто дополнительная кнопка
+          сверху экрана. */}
+      <Button
+        className="action-button" size="m"
+        onClick={() => setMyWorkoutsView({ kind: "list" })}
+      >
+        Мои тренировки
+      </Button>
       {weeksNewestFirst.length > 0 && (
         <>
           {weeksNewestFirst.map((week) => {

@@ -87,6 +87,19 @@ async function apiV2Post<TBody, TResult>(path: string, initDataRaw: string, body
   return (await response.json()) as TResult;
 }
 
+async function apiV2Patch<TBody, TResult>(path: string, initDataRaw: string, body: TBody): Promise<TResult> {
+  const response = await fetch(path, {
+    method: "PATCH",
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const message = await extractErrorMessage("PATCH", path, response);
+    throw new Error(message);
+  }
+  return (await response.json()) as TResult;
+}
+
 export async function fetchDashboardStatus(initDataRaw: string): Promise<DashboardStatusResponse> {
   return apiV2Get<DashboardStatusResponse>("/api/v2/dashboard/status", initDataRaw);
 }
@@ -104,6 +117,44 @@ export interface ExerciseResponseV2 {
 export async function fetchExercises(initDataRaw: string): Promise<ExerciseResponseV2[]> {
   const response = await apiV2Get<{ exercises: ExerciseResponseV2[] }>("/api/v2/exercises", initDataRaw);
   return response.exercises;
+}
+
+// --- Workout (Phase C2/C4a, issue #188) — «Мои тренировки» ------------------------
+
+/** items опционально — заполняется только detail-эндпоинтом (GET
+ * /workouts/{id}), list/create/patch его не возвращают (см. backend
+ * app/web/routes_v2.py::_workout_response). */
+export interface WorkoutItemResponseV2 {
+  id: number;
+  exercise_id: number;
+  exercise_name: string;
+  order_index: number;
+  protocol: Record<string, unknown>;
+}
+
+export interface WorkoutResponseV2 {
+  id: number;
+  title: string;
+  source_type: string;
+  owner_user_id: number | null;
+  items: WorkoutItemResponseV2[] | null;
+}
+
+export async function listWorkouts(initDataRaw: string): Promise<WorkoutResponseV2[]> {
+  const response = await apiV2Get<{ workouts: WorkoutResponseV2[] }>("/api/v2/workouts", initDataRaw);
+  return response.workouts;
+}
+
+export async function createWorkout(initDataRaw: string, title: string): Promise<WorkoutResponseV2> {
+  return apiV2Post<{ title: string }, WorkoutResponseV2>("/api/v2/workouts", initDataRaw, { title });
+}
+
+export async function getWorkout(initDataRaw: string, workoutId: number): Promise<WorkoutResponseV2> {
+  return apiV2Get<WorkoutResponseV2>(`/api/v2/workouts/${workoutId}`, initDataRaw);
+}
+
+export async function updateWorkout(initDataRaw: string, workoutId: number, title: string): Promise<WorkoutResponseV2> {
+  return apiV2Patch<{ title: string }, WorkoutResponseV2>(`/api/v2/workouts/${workoutId}`, initDataRaw, { title });
 }
 
 /**
