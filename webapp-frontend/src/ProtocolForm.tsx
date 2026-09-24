@@ -142,13 +142,15 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
     <div>
       <p className="plan-title">{initialExerciseName}</p>
       <p className="block-subtitle">Тип тренировки</p>
-      <SegmentedControl>
-        {(Object.keys(KIND_LABELS) as ProtocolKind[]).map((option) => (
-          <SegmentedControl.Item key={option} selected={kind === option} onClick={() => setKind(option)}>
-            {KIND_LABELS[option]}
-          </SegmentedControl.Item>
-        ))}
-      </SegmentedControl>
+      <div className="protocol-type-selector">
+        <SegmentedControl>
+          {(Object.keys(KIND_LABELS) as ProtocolKind[]).map((option) => (
+            <SegmentedControl.Item key={option} selected={kind === option} onClick={() => setKind(option)}>
+              {KIND_LABELS[option]}
+            </SegmentedControl.Item>
+          ))}
+        </SegmentedControl>
+      </div>
 
       {kind === "reps_sets" && (
         <Section className="block-section">

@@ -794,3 +794,26 @@ input[type="number"] {
 .bottom-tabbar {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* Phase C4b-2 (issue #188) QA-found blocker — SegmentedControl.Item's
+   встроенный padding (10px 24px) оставляет слишком мало места для
+   русских слов ("Повторения", "Интервалы") на 4-way split в 390px
+   viewport — текст обрезался ("По...", "Инт..."), обнаружено живым QA-
+   скриншотом. Та же стабильная стратегия таргетинга, что уже
+   используется для Tabbar чуть выше: явный className-wrapper
+   (ProtocolForm.tsx), не гадаем по content-hashed классам библиотеки;
+   [role="tab"] — семантический, стабильный ARIA-атрибут, не завязан на
+   версию @telegram-apps/telegram-ui. Сокращён horizontal padding и
+   font-size, разрешён перенос на вторую строку вместо обрезания (полное
+   слово на 2 строках лучше, чем "По..." на одной). */
+.protocol-type-selector button[role="tab"] {
+  padding: 8px 4px;
+  font-size: 0;
+}
+
+.protocol-type-selector button[role="tab"] span:not([aria-hidden]) {
+  font-size: 12px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
