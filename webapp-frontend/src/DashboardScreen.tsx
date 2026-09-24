@@ -542,7 +542,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                   {mutableItem !== null && !isRemoveConfirming && (
                     <>
                       <Button
-                        size="s"
+                        size="s" mode="outline"
                         onClick={() => setMyWorkoutsView({
                           kind: "move-plan-item", planItemId: mutableItem.id,
                           title: group.title, currentDayOfWeek: mutableItem.day_of_week,
@@ -568,7 +568,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                       <p className="block-subtitle">Убрать «{group.title}» из плана?</p>
                       {removeError && <p className="gap-banner">{removeError}</p>}
                       <Button
-                        size="s" disabled={isRemoving}
+                        size="s" mode="outline" disabled={isRemoving}
                         onClick={() => void handleRemovePlanItem(mutableItem.id)}
                       >
                         {isRemoving ? "Убираю…" : "Убрать"}
