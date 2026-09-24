@@ -200,6 +200,36 @@ class TrainingPlanRepository:
         await self._session.flush()
         return item
 
+    async def update_mutable_plan_item_day(self, plan_item_id: int, user_id: int, day_of_week: int | None) -> PlanItem | None:
+        """Phase D2 (issue #188) — Move. Ownership через уже существующий
+        get_plan_item_for_user (не дублируем join-логику). STEP/program-
+        backed (program_inclusion_id IS NOT NULL) — архитектурное решение
+        этой волны: не редактируются через Plan Management вообще, тот же
+        None-возврат, что чужой PlanItem — route конвертирует в 404, не
+        раскрывая пользователю разницу между "не ваше" и "нельзя менять
+        программные строки". plan_week_id в этой волне не меняется (по
+        заданию — PlanItem остаётся в той же current PlanWeek)."""
+        item = await self.get_plan_item_for_user(plan_item_id, user_id)
+        if item is None or item.program_inclusion_id is not None:
+            return None
+        item.day_of_week = day_of_week
+        await self._session.flush()
+        return item
+
+    async def delete_mutable_plan_item(self, plan_item_id: int, user_id: int) -> bool:
+        """Phase D2 (issue #188) — Remove. Тот же mutability guard, что
+        update_mutable_plan_item_day — STEP/program-backed недоступны.
+        Удаляет только саму строку PlanItem — Exercise/Complex/ComplexItem/
+        ProgramInclusion/TrainingSession/workout_snapshot не задеты (нет
+        каскада на них с этой стороны, PlanItem — листовая таблица
+        относительно них)."""
+        item = await self.get_plan_item_for_user(plan_item_id, user_id)
+        if item is None or item.program_inclusion_id is not None:
+            return False
+        await self._session.delete(item)
+        await self._session.flush()
+        return True
+
     async def bulk_create_plan_items_from_program_items(
         self, *, training_plan_id: int, program_inclusion_id: int, program_items: list[ProgramItem],
     ) -> list[PlanItem]:

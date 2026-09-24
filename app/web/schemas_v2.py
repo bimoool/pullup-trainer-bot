@@ -178,6 +178,13 @@ class PlanItemResponse(BaseModel):
     # Опционально, None для call site'ов, не резолвящих его (не всем
     # нужно на каждый PlanItem-запрос — только листингу на "Планах").
     complex_name: str | None = None
+    # Phase D2 (issue #188) — "user"|"system"|None (нет complex_id вовсе).
+    # Нужен frontend, чтобы решить, показывать ли "Редактировать
+    # тренировку" на карточке (только для user Workout, не system).
+    # owner_user_id намеренно НЕ отдаётся — user Workout текущего
+    # пользователя уже ownership-safe через сам PlanItem (принадлежит его
+    # TrainingPlan), лишний backend detail фронтенду не нужен.
+    complex_source_type: str | None = None
 
 
 class PlanWeekResponse(BaseModel):
@@ -347,3 +354,13 @@ class PlanItemCreateRequest(BaseModel):
         if (self.exercise_id is None) == (self.complex_id is None):
             raise ValueError("ровно одно из exercise_id/complex_id")
         return self
+
+
+class PlanItemMoveRequest(BaseModel):
+    """Phase D2 (issue #188) — тот же диапазон/семантика, что
+    PlanItemCreateRequest.day_of_week (Field(ge=0, le=6), None = свободный
+    пул). Обязательное поле (без default) — запрос должен явно указать
+    намерение (конкретный день ИЛИ null), пропущенное поле — 422, не тихо
+    трактуется как "свободный пул"."""
+
+    day_of_week: int | None = Field(ge=0, le=6)

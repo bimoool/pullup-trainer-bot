@@ -53,6 +53,7 @@ from app.web.schemas_v2 import (
     ExerciseResponse,
     PlanItemCreateRequest,
     PlanItemListResponse,
+    PlanItemMoveRequest,
     PlanItemResponse,
     PlanResponse,
     PlanWeekResponse,
@@ -122,13 +123,19 @@ def _program_inclusion_response(inclusion: ProgramInclusion) -> ProgramInclusion
     )
 
 
-def _plan_item_response(item: PlanItem, complex_name_by_id: dict[int, str] | None = None) -> PlanItemResponse:
+def _plan_item_response(
+    item: PlanItem, complex_name_by_id: dict[int, str] | None = None,
+    complex_source_type_by_id: dict[int, str] | None = None,
+) -> PlanItemResponse:
     return PlanItemResponse(
         id=item.id, exercise_id=item.exercise_id, complex_id=item.complex_id,
         count_per_week=item.count_per_week, day_of_week=item.day_of_week,
         week_phase=item.week_phase.value if item.week_phase is not None else None,
         program_inclusion_id=item.program_inclusion_id, plan_week_id=item.plan_week_id,
         complex_name=(complex_name_by_id or {}).get(item.complex_id) if item.complex_id is not None else None,
+        complex_source_type=(
+            (complex_source_type_by_id or {}).get(item.complex_id) if item.complex_id is not None else None
+        ),
     )
 
 
@@ -503,11 +510,16 @@ async def get_plan(
     complex_ids = sorted({item.complex_id for item in plan_items if item.complex_id is not None})
     complexes = await ProgramRepository(session).list_complexes_by_ids(complex_ids)
     complex_name_by_id = {complex_.id: complex_.name for complex_ in complexes}
+    # Phase D2 (issue #188) — тот же уже полученный complexes список, ни
+    # одного дополнительного запроса.
+    complex_source_type_by_id = {complex_.id: complex_.source_type for complex_ in complexes}
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
             program_inclusions=[_program_inclusion_response(inclusion) for inclusion in inclusions],
-            plan_items=[_plan_item_response(item, complex_name_by_id) for item in plan_items],
+            plan_items=[
+                _plan_item_response(item, complex_name_by_id, complex_source_type_by_id) for item in plan_items
+            ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
         ),
     )
@@ -587,6 +599,43 @@ async def create_plan_item(
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return _plan_item_response(item)
+
+
+@router_v2.patch("/plan-items/{plan_item_id}", response_model=PlanItemResponse)
+async def move_plan_item(
+    plan_item_id: int,
+    body: PlanItemMoveRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> PlanItemResponse:
+    """Phase D2 (issue #188) — Move. plan_week_id не меняется в этой волне
+    (PlanItem остаётся в той же current PlanWeek). STEP/program-backed
+    (program_inclusion_id IS NOT NULL) и чужой PlanItem — оба дают 404,
+    не раскрывая пользователю причину (существующая 404-конвенция
+    проекта)."""
+    user = await _require_user(session, init_data)
+    plans = TrainingPlanRepository(session)
+    item = await plans.update_mutable_plan_item_day(plan_item_id, user.id, body.day_of_week)
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
+    return _plan_item_response(item)
+
+
+@router_v2.delete("/plan-items/{plan_item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_plan_item(
+    plan_item_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Phase D2 (issue #188) — Remove. Удаляет только саму строку
+    PlanItem — Exercise/Complex/ComplexItem/ProgramInclusion/
+    TrainingSession/workout_snapshot/Journal history не задеты. STEP/
+    program-backed и чужой PlanItem — оба 404."""
+    user = await _require_user(session, init_data)
+    plans = TrainingPlanRepository(session)
+    deleted = await plans.delete_mutable_plan_item(plan_item_id, user.id)
+    if not deleted:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
 
 
 # --- Сессии ------------------------------------------------------------------------------
