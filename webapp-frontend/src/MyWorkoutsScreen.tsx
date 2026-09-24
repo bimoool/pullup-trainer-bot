@@ -9,6 +9,7 @@ type Props = {
   onBack: () => void;
   onCreateWorkout: () => void;
   onOpenWorkout: (workoutId: number) => void;
+  onAddToPlan: (workoutId: number, workoutTitle: string) => void;
 };
 
 type ListState =
@@ -17,12 +18,12 @@ type ListState =
   | { phase: "error"; message: string };
 
 /**
- * Phase C4a (issue #188) — «Мои тренировки», список user-owned Workout
- * поверх уже готового Phase C2 API (GET /workouts). Только list/empty-
- * state/entry points — item editor/Add to Plan/delete явно вне scope
- * этого chunk (следующие волны).
+ * Phase C4a/C5a (issue #188) — «Мои тренировки», список user-owned
+ * Workout поверх уже готового Phase C2 API (GET /workouts). C5a добавляет
+ * «Добавить в план» на каждую карточку — не primary action, отдельная
+ * кнопка рядом с открытием на редактирование, не вместо неё.
  */
-export function MyWorkoutsScreen({ initDataRaw, onBack, onCreateWorkout, onOpenWorkout }: Props) {
+export function MyWorkoutsScreen({ initDataRaw, onBack, onCreateWorkout, onOpenWorkout, onAddToPlan }: Props) {
   const [state, setState] = useState<ListState>({ phase: "loading" });
 
   useEffect(() => {
@@ -63,14 +64,18 @@ export function MyWorkoutsScreen({ initDataRaw, onBack, onCreateWorkout, onOpenW
       {state.phase === "ready" && state.workouts.length > 0 && (
         <Section className="block-section">
           {state.workouts.map((workout) => (
-            <button
-              key={workout.id}
-              type="button"
-              className="program-card-button"
-              onClick={() => onOpenWorkout(workout.id)}
-            >
-              {workout.title}
-            </button>
+            <div key={workout.id} className="plan-week-day-group">
+              <button
+                type="button"
+                className="program-card-button"
+                onClick={() => onOpenWorkout(workout.id)}
+              >
+                {workout.title}
+              </button>
+              <Button size="s" onClick={() => onAddToPlan(workout.id, workout.title)}>
+                Добавить в план
+              </Button>
+            </div>
           ))}
         </Section>
       )}

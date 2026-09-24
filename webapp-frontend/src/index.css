@@ -817,3 +817,15 @@ input[type="number"] {
   line-height: 1.2;
 }
 
+/* Phase C5a (issue #188) — минимальная flex-row раскладка для 7 дневных
+   кнопок в Add to Plan (нет существующего переиспользуемого day-picker
+   компонента в проекте — "+ Добавить упражнение" не предлагает выбор дня
+   через отдельный виджет). Не redesign — просто перенос кнопок в ряд с
+   переносом на mobile-ширине. */
+.week-day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+

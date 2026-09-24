@@ -28,6 +28,10 @@ type Props = {
    * 4: "после Save → переход на экран редактирования"); при
    * редактировании caller возвращается в «Мои тренировки» (раздел 5). */
   onSaved: (workoutId: number) => void;
+  /** Phase C5a (issue #188) — кнопка "Добавить в план" в edit-режиме
+   * (не primary action — рядом с Сохранить, не вместо). Отсутствует в
+   * create-режиме (workoutId ещё null, добавлять в план нечего). */
+  onAddToPlan: (workoutId: number, workoutTitle: string) => void;
 };
 
 /** Phase C4b-1 (issue #188) — sub-view Item Builder'а внутри edit-режима,
@@ -45,7 +49,7 @@ type ItemBuilderView =
  * добавление через Exercise Picker + Protocol Form, редактирование,
  * удаление, move ↑/↓) поверх уже готового C3 API.
  */
-export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }: Props) {
+export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, onAddToPlan }: Props) {
   const isEditing = workoutId !== null;
 
   const [title, setTitle] = useState("");
@@ -263,6 +267,15 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }:
       )}
 
       {saveError && <p className="gap-banner">Не удалось сохранить: {saveError}</p>}
+
+      {isEditing && workoutId !== null && (
+        <Button
+          className="action-button" size="m" stretched mode="outline"
+          onClick={() => onAddToPlan(workoutId, title)}
+        >
+          Добавить в план
+        </Button>
+      )}
 
       <Button
         className="action-button" size="l" stretched

@@ -12,6 +12,7 @@ import {
   type ProgramInclusionResponseV2,
 } from "./apiV2";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
+import { AddToPlanScreen } from "./AddToPlanScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 
@@ -151,12 +152,13 @@ type PlanState = {
 
 const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
 
-// Phase C4a (issue #188) — «Мои тренировки» swap-state.
+// Phase C4a/C5a (issue #188) — «Мои тренировки» swap-state.
 type MyWorkoutsView =
   | { kind: "closed" }
   | { kind: "list" }
   | { kind: "create" }
-  | { kind: "edit"; workoutId: number };
+  | { kind: "edit"; workoutId: number }
+  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" };
 
 type ExercisesState =
   | { phase: "loading" }
@@ -339,6 +341,31 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onCreateWorkout={() => setMyWorkoutsView({ kind: "create" })}
         onOpenWorkout={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
+        onAddToPlan={(workoutId, workoutTitle) =>
+          setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "list" })}
+      />
+    );
+  }
+  if (myWorkoutsView.kind === "add-to-plan") {
+    return (
+      <AddToPlanScreen
+        initDataRaw={initDataRaw}
+        workoutId={myWorkoutsView.workoutId}
+        workoutTitle={myWorkoutsView.workoutTitle}
+        onBack={() => {
+          if (myWorkoutsView.returnTo === "edit") {
+            setMyWorkoutsView({ kind: "edit", workoutId: myWorkoutsView.workoutId });
+          } else {
+            setMyWorkoutsView({ kind: "list" });
+          }
+        }}
+        onSuccess={() => {
+          // issue #188, раздел 10 — переиспользуем уже существующий
+          // reloadPlan() (тот же, что "+ Добавить упражнение" вызывает
+          // после своего create), не пишем новую логику отрисовки.
+          setMyWorkoutsView({ kind: "closed" });
+          reloadPlan();
+        }}
       />
     );
   }
@@ -355,6 +382,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         workoutId={null}
         onBack={() => setMyWorkoutsView({ kind: "list" })}
         onSaved={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
+        onAddToPlan={() => {}}
       />
     );
   }
@@ -366,6 +394,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         workoutId={myWorkoutsView.workoutId}
         onBack={() => setMyWorkoutsView({ kind: "list" })}
         onSaved={() => setMyWorkoutsView({ kind: "list" })}
+        onAddToPlan={(workoutId, workoutTitle) =>
+          setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "edit" })}
       />
     );
   }
