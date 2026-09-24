@@ -117,7 +117,7 @@ def _resolve_protocol(protocol: DefinitionProtocol, exercise_id: int, resolver: 
 
     if isinstance(protocol, StaticMaxEffort):
         attempts = [ResolvedMaxEffortAttempt(is_max=True) for _ in range(protocol.prescription.attempts)]
-        return ResolvedMaxEffort(attempts=attempts)
+        return ResolvedMaxEffort(attempts=attempts, rest_seconds=protocol.rest_seconds)
 
     if isinstance(protocol, Interval):
         # У Interval нет source=progression (issue #213 докстринг) —

@@ -162,14 +162,23 @@ class StaticMaxEffort(BaseModel):
     """MAX_EFFORT: один или несколько попыток на максимум (all-out, до отказа).
     Пример: 1 попытка на максимальное число повторений.
 
-    Validation: attempts >= 1. rest_seconds между попытками здесь не
-    определено (отдых между попытками — продуктовое решение вне схемы
-    протокола, пока не нужен)."""
+    Validation: attempts >= 1, rest_seconds >= 0.
+
+    rest_seconds — Phase C4b-1.5 (issue #188), UX Contract v1 явно требует
+    поле "Отдых" для MAX-формы Builder'а, изначальная схема (Phase A1) его
+    не несла вовсе. default=0 — backward compatibility: старый max_effort
+    JSON без rest_seconds (созданный до этого фикса) по-прежнему валиден,
+    читается как "без отдыха между попытками", не как ошибка.
+    """
 
     type: Literal[ProtocolType.MAX_EFFORT] = ProtocolType.MAX_EFFORT
     prescription: Annotated[
         "StaticMaxEffortPrescription",
         Field(description="Число попыток на максимум"),
+    ]
+    rest_seconds: Annotated[
+        int,
+        Field(ge=0, default=0, description="Отдых между попытками, секунд"),
     ]
 
 
@@ -328,7 +337,10 @@ class ResolvedMaxEffortAttempt(BaseModel):
 
 class ResolvedMaxEffort(BaseModel):
     """Resolved MAX_EFFORT: массив попыток на максимум. Поля
-    prescription/source отсутствуют."""
+    prescription/source отсутствуют. rest_seconds — Phase C4b-1.5
+    (issue #188), сохраняется из definition (не resolve-специфичное
+    значение, просто проходит насквозь, как rest_seconds у reps_sets/
+    time_sets)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -337,6 +349,7 @@ class ResolvedMaxEffort(BaseModel):
         list[ResolvedMaxEffortAttempt],
         Field(min_length=1, description="Попытки на максимум"),
     ]
+    rest_seconds: Annotated[int, Field(ge=0, description="Отдых между попытками, секунд")]
 
 
 class ResolvedInterval(BaseModel):

@@ -63,12 +63,11 @@ type Props = {
  * повторно, здесь только UI-уровень (issue #188, раздел 13 — "не
  * показывать raw backend JSON", человекочитаемые ошибки до отправки).
  *
- * MAX-форма НЕ включает поле "Отдых" — расхождение с буквальным текстом
- * задания (раздел 6), найдено при проверке реальной схемы:
- * StaticMaxEffort (app/domain/workout_protocol.py) не имеет rest_seconds
- * вообще (докстринг: "между попытками здесь не определено, пока не
- * нужен") — показать поле, которое ничего не сохраняет, было бы обманчиво
- * для пользователя. Backend в этом chunk не менялся (по заданию).
+ * MAX-форма (Phase C4b-1.5, issue #188) включает поле "Отдых" —
+ * StaticMaxEffort.rest_seconds добавлен в app/domain/workout_protocol.py
+ * специально под этот UX-контракт (изначальная Phase A1 схема его не
+ * несла, C4b-1 честно зафиксировал это как расхождение вместо обманчивого
+ * no-op поля; C4b-1.5 закрывает разрыв на backend+frontend вместе).
  */
 export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, onSubmit, submitLabel }: Props) {
   const [kind, setKind] = useState<ProtocolKind>(kindFromProtocol(initialProtocol));
@@ -79,6 +78,7 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
   const [durationSeconds, setDurationSeconds] = useState<number>(Number(initialPrescription.duration_seconds ?? 30));
   const [restSeconds, setRestSeconds] = useState<number>(Number(initialProtocol?.rest_seconds ?? 60));
   const [attempts, setAttempts] = useState<number>(Number(initialPrescription.attempts ?? 1));
+  const [maxRestSeconds, setMaxRestSeconds] = useState<number>(Number(initialProtocol?.rest_seconds ?? 0));
   const [totalSeconds, setTotalSeconds] = useState<number>(Number(initialProtocol?.total_duration_seconds ?? 180));
   const [workSeconds, setWorkSeconds] = useState<number>(Number(initialProtocol?.work_seconds ?? 10));
   const [intervalRestSeconds, setIntervalRestSeconds] = useState<number>(Number(initialProtocol?.rest_seconds ?? 20));
@@ -107,7 +107,12 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
     }
     if (kind === "max_effort") {
       if (attempts <= 0) return fail("Укажите количество попыток");
-      return { type: "max_effort", prescription: { source: "static", attempts } };
+      if (maxRestSeconds < 0) return fail("Отдых не может быть отрицательным");
+      return {
+        type: "max_effort",
+        prescription: { source: "static", attempts },
+        rest_seconds: maxRestSeconds,
+      };
     }
     // interval
     if (totalSeconds <= 0) return fail("Укажите общую длительность тренировки");
@@ -164,6 +169,7 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
       {kind === "max_effort" && (
         <Section className="block-section">
           <NumberField header="Попытки" value={attempts} onChange={setAttempts} />
+          <TimeInputField header="Отдых" seconds={maxRestSeconds} onChange={setMaxRestSeconds} />
         </Section>
       )}
 
@@ -222,7 +228,10 @@ export function formatProtocolSummary(protocol: ProtocolFormValue): string {
     return `${prescription.sets ?? "?"} × ${duration} · отдых ${rest}`;
   }
   if (type === "max_effort") {
-    return `Максимум · ${prescription.attempts ?? "?"} попыт.`;
+    const rest = formatSecondsAsMinutesSeconds(Number(protocol.rest_seconds ?? 0));
+    const attemptsCount = Number(prescription.attempts ?? 0);
+    const attemptsWord = attemptsCount === 1 ? "попытка" : "попытки";
+    return `${attemptsCount} ${attemptsWord} · отдых ${rest}`;
   }
   return "Тренировка";
 }

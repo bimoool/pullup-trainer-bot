@@ -91,6 +91,22 @@ def test_max_effort_snapshot():
     assert isinstance(resolved, ResolvedMaxEffort)
     assert len(resolved.attempts) == 1
     assert resolved.attempts[0].is_max is True
+    assert resolved.rest_seconds == 0  # default backward-compat
+
+
+def test_max_effort_snapshot_preserves_rest_seconds():
+    """Phase C4b-1.5 (issue #188) — snapshot builder должен сохранять
+    явно заданный rest_seconds, не только default."""
+    workout = _complex(3, "Подтягивания на максимум")
+    item = _item(3, exercise_id=12, order_index=0)
+    exercises = {12: _exercise(12, "Подтягивания")}
+    protocol = StaticMaxEffort(prescription=StaticMaxEffortPrescription(attempts=3), rest_seconds=180)
+
+    snapshot = build_workout_snapshot(workout, [item], exercises, {3: protocol})
+
+    resolved = snapshot.items[0].protocol
+    assert isinstance(resolved, ResolvedMaxEffort)
+    assert resolved.rest_seconds == 180
 
 
 def test_interval_snapshot_unchanged_from_definition():

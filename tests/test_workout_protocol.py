@@ -218,6 +218,59 @@ def test_static_max_effort_accepts_multiple_attempts():
     assert protocol.prescription.attempts == 3
 
 
+def test_static_max_effort_with_rest_seconds_valid():
+    """Phase C4b-1.5 (issue #188) — rest_seconds явно передан, валиден."""
+    protocol = StaticMaxEffort.model_validate({
+        "type": "max_effort",
+        "prescription": {"source": "static", "attempts": 3},
+        "rest_seconds": 180,
+    })
+
+    assert protocol.rest_seconds == 180
+
+
+def test_static_max_effort_rest_seconds_zero_valid():
+    protocol = StaticMaxEffort.model_validate({
+        "type": "max_effort",
+        "prescription": {"source": "static", "attempts": 1},
+        "rest_seconds": 0,
+    })
+
+    assert protocol.rest_seconds == 0
+
+
+def test_static_max_effort_negative_rest_seconds_rejected():
+    with pytest.raises(ValidationError) as exc_info:
+        StaticMaxEffort.model_validate({
+            "type": "max_effort",
+            "prescription": {"source": "static", "attempts": 1},
+            "rest_seconds": -1,
+        })
+    assert "rest_seconds" in str(exc_info.value).lower()
+
+
+def test_static_max_effort_backward_compatible_without_rest_seconds():
+    """Старый max_effort JSON (созданный до Phase C4b-1.5) без rest_seconds
+    вообще — по-прежнему валиден, default=0."""
+    protocol = StaticMaxEffort.model_validate({
+        "type": "max_effort",
+        "prescription": {"source": "static", "attempts": 2},
+    })
+
+    assert protocol.rest_seconds == 0
+
+
+def test_resolved_max_effort_requires_rest_seconds():
+    """ResolvedMaxEffort — rest_seconds обязателен на resolved-стороне (не
+    backward-compat случай — снимки строятся заново каждый раз builder'ом,
+    не читаются напрямую из старого JSON)."""
+    resolved = ResolvedMaxEffort(attempts=[{"is_max": True}], rest_seconds=180)
+    assert resolved.rest_seconds == 180
+
+    with pytest.raises(ValidationError):
+        ResolvedMaxEffort(attempts=[{"is_max": True}])
+
+
 # ============================================================================
 # Interval validation
 # ============================================================================
@@ -394,6 +447,7 @@ def test_resolved_max_effort_has_no_prescription_field():
     protocol = ResolvedMaxEffort.model_validate({
         "type": "max_effort",
         "attempts": [{"is_max": True}],
+        "rest_seconds": 0,
     })
 
     assert not hasattr(protocol, "prescription")
