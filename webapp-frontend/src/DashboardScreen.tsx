@@ -10,9 +10,11 @@ import {
   type PlanItemResponseV2,
   type PlanWeekResponseV2,
   type ProgramInclusionResponseV2,
+  removePlanItem,
 } from "./apiV2";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { AddToPlanScreen } from "./AddToPlanScreen";
+import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 
@@ -152,13 +154,15 @@ type PlanState = {
 
 const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
 
-// Phase C4a/C5a (issue #188) — «Мои тренировки» swap-state.
+// Phase C4a/C5a/D3 (issue #188) — «Мои тренировки» + Plans card actions
+// swap-state.
 type MyWorkoutsView =
   | { kind: "closed" }
   | { kind: "list" }
   | { kind: "create" }
   | { kind: "edit"; workoutId: number }
-  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" };
+  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" }
+  | { kind: "move-plan-item"; planItemId: number; title: string; currentDayOfWeek: number | null };
 
 type ExercisesState =
   | { phase: "loading" }
@@ -211,6 +215,12 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   // Планов, тот же принцип, что HomeScreen.tsx уже использует для
   // ProgramDetailScreen (selectedProgramId), не отдельный App.tsx Tab.
   const [myWorkoutsView, setMyWorkoutsView] = useState<MyWorkoutsView>({ kind: "closed" });
+  // Phase D3 (issue #188) — inline "Убрать из плана?" confirm на карточке,
+  // тот же паттерн, что WorkoutEditorScreen.tsx уже использует для
+  // удаления item'а (deleteConfirmItemId).
+  const [removeConfirmPlanItemId, setRemoveConfirmPlanItemId] = useState<number | null>(null);
+  const [removingPlanItemId, setRemovingPlanItemId] = useState<number | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   function reloadPlan() {
     return fetchPlan(initDataRaw).then((data) => {
@@ -224,6 +234,22 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
             },
       );
     });
+  }
+
+  // Phase D3 (issue #188) — «Убрать из плана». Confirm/Cancel — inline на
+  // карточке, тот же паттерн, что WorkoutEditorScreen.tsx уже использует.
+  async function handleRemovePlanItem(planItemId: number) {
+    setRemovingPlanItemId(planItemId);
+    setRemoveError(null);
+    try {
+      await removePlanItem(initDataRaw, planItemId);
+      setRemoveConfirmPlanItemId(null);
+      await reloadPlan();
+    } catch (error) {
+      setRemoveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRemovingPlanItemId(null);
+    }
   }
 
   function handleAddExercise(weekId: number) {
@@ -369,6 +395,21 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
       />
     );
   }
+  if (myWorkoutsView.kind === "move-plan-item") {
+    return (
+      <MovePlanItemScreen
+        initDataRaw={initDataRaw}
+        planItemId={myWorkoutsView.planItemId}
+        title={myWorkoutsView.title}
+        currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
+        onBack={() => setMyWorkoutsView({ kind: "closed" })}
+        onSuccess={() => {
+          setMyWorkoutsView({ kind: "closed" });
+          reloadPlan();
+        }}
+      />
+    );
+  }
   if (myWorkoutsView.kind === "create") {
     return (
       <WorkoutEditorScreen
@@ -461,6 +502,18 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
             // isCurrent, не тип группы.
             function renderGroupRow(group: PlanItemGroup) {
               const isProgramBacked = group.items[0]?.program_inclusion_id !== null;
+              // Phase D3 (issue #188) — Move/Remove/Edit доступны только
+              // для НЕ program-backed групп (раздел 10 — "STEP-group...
+              // Move/Remove/Edit отсутствуют полностью"). Такие группы
+              // всегда состоят ровно из одного PlanItem (groupPlanItems
+              // не объединяет manual/user-Workout строки друг с другом,
+              // докстринг PlanItem), поэтому group.items[0] — единственный
+              // и весь предмет действия, не случайный выбор из нескольких.
+              const mutableItem = !isProgramBacked ? group.items[0] : null;
+              const isRemoveConfirming = mutableItem !== null && removeConfirmPlanItemId === mutableItem.id;
+              const isRemoving = mutableItem !== null && removingPlanItemId === mutableItem.id;
+              const canEditWorkout = mutableItem !== null
+                && mutableItem.complex_id !== null && mutableItem.complex_source_type === "user";
               return (
                 <div key={group.key} className="plan-week-day-group">
                   <p className="plan-item-row">
@@ -485,6 +538,45 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                     >
                       {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
                     </button>
+                  )}
+                  {mutableItem !== null && !isRemoveConfirming && (
+                    <>
+                      <Button
+                        size="s"
+                        onClick={() => setMyWorkoutsView({
+                          kind: "move-plan-item", planItemId: mutableItem.id,
+                          title: group.title, currentDayOfWeek: mutableItem.day_of_week,
+                        })}
+                      >
+                        Перенести
+                      </Button>
+                      <Button size="s" mode="outline" onClick={() => setRemoveConfirmPlanItemId(mutableItem.id)}>
+                        Убрать из плана
+                      </Button>
+                      {canEditWorkout && (
+                        <Button
+                          size="s" mode="outline"
+                          onClick={() => setMyWorkoutsView({ kind: "edit", workoutId: mutableItem.complex_id! })}
+                        >
+                          Редактировать тренировку
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {mutableItem !== null && isRemoveConfirming && (
+                    <>
+                      <p className="block-subtitle">Убрать «{group.title}» из плана?</p>
+                      {removeError && <p className="gap-banner">{removeError}</p>}
+                      <Button
+                        size="s" disabled={isRemoving}
+                        onClick={() => void handleRemovePlanItem(mutableItem.id)}
+                      >
+                        {isRemoving ? "Убираю…" : "Убрать"}
+                      </Button>
+                      <Button size="s" mode="outline" disabled={isRemoving} onClick={() => setRemoveConfirmPlanItemId(null)}>
+                        Отмена
+                      </Button>
+                    </>
                   )}
                 </div>
               );

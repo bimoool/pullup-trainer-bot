@@ -1,7 +1,8 @@
-import { Button, Section, Spinner } from "@telegram-apps/telegram-ui";
+import { Button, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { createPlanItem, fetchPlan } from "./apiV2";
+import { DayPicker } from "./DayPicker";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -15,18 +16,13 @@ type Props = {
   onSuccess: () => void;
 };
 
-const DAY_LABELS: { value: number; label: string }[] = [
-  { value: 0, label: "Пн" }, { value: 1, label: "Вт" }, { value: 2, label: "Ср" },
-  { value: 3, label: "Чт" }, { value: 4, label: "Пт" }, { value: 5, label: "Сб" }, { value: 6, label: "Вс" },
-];
-
 type LoadState =
   | { phase: "loading" }
   | { phase: "ready"; planWeekId: number | null }
   | { phase: "error"; message: string };
 
 /**
- * Phase C5a/C5b (issue #188) — минимальный Add to Plan flow поверх уже
+ * Phase C5a/C5b/D3 (issue #188) — минимальный Add to Plan flow поверх уже
  * существующего PlanItem API (createPlanItem, тот же паттерн, что
  * DashboardScreen.tsx's "+ Добавить упражнение" уже использует —
  * count_per_week: 1, plan_week_id = текущая неделя, day_of_week = выбор
@@ -41,6 +37,9 @@ type LoadState =
  * placeholder из первого ComplexItem выбранного Workout, если
  * exercise_id не передан) — frontend не должен знать/дублировать эту
  * деталь.
+ *
+ * DayPicker (D3) — вынесен в отдельный компонент, переиспользуется
+ * MovePlanItemScreen.tsx, разметка/стили не изменены.
  */
 export function AddToPlanScreen({ initDataRaw, workoutId, workoutTitle, onBack, onSuccess }: Props) {
   const [loadState, setLoadState] = useState<LoadState>({ phase: "loading" });
@@ -106,26 +105,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, workoutTitle, onBack, 
       <p className="plan-title">Добавить в план</p>
       <p className="block-subtitle">{workoutTitle}</p>
 
-      <Section className="block-section" header="День">
-        <div className="week-day-picker">
-          {DAY_LABELS.map(({ value, label }) => (
-            <Button
-              key={value} size="s"
-              mode={selectedDay === value ? "filled" : "outline"}
-              onClick={() => setSelectedDay(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        <Button
-          size="s" stretched
-          mode={selectedDay === "free_pool" ? "filled" : "outline"}
-          onClick={() => setSelectedDay("free_pool")}
-        >
-          Свободный пул
-        </Button>
-      </Section>
+      <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
 
       {submitError && <p className="gap-banner">Не удалось добавить: {submitError}</p>}
 

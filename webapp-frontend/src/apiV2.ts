@@ -247,6 +247,11 @@ export interface PlanItemResponseV2 {
   /** Phase B2 gate fix (issue #215) — Workout title (Complex.name), не
    * Exercise.name — только для complex-based PlanItem. */
   complex_name: string | null;
+  /** Phase D2/D3 (issue #188) — "user"|"system"|null (нет complex_id
+   * вовсе). Решает, показывать ли "Редактировать тренировку" на
+   * карточке (только для user Workout). owner_user_id намеренно не
+   * отдаётся backend'ом. */
+  complex_source_type: "user" | "system" | null;
 }
 
 /**
@@ -543,4 +548,21 @@ export async function createPlanItem(
   request: PlanItemCreateRequest,
 ): Promise<PlanItemResponseV2> {
   return apiV2Post("/api/v2/plan-items", initDataRaw, request);
+}
+
+/** Phase D3 (issue #188) — под уже существующий D2 PATCH /plan-items/{id}.
+ * dayOfWeek: number (0=Пн..6=Вс) | null (свободный пул) — поле обязательно
+ * на backend-стороне (PlanItemMoveRequest без default), явная передача
+ * null здесь так же обязательна, не опускается. */
+export async function movePlanItem(
+  initDataRaw: string, planItemId: number, dayOfWeek: number | null,
+): Promise<PlanItemResponseV2> {
+  return apiV2Patch<{ day_of_week: number | null }, PlanItemResponseV2>(
+    `/api/v2/plan-items/${planItemId}`, initDataRaw, { day_of_week: dayOfWeek },
+  );
+}
+
+/** Phase D3 (issue #188) — под уже существующий D2 DELETE /plan-items/{id}. */
+export async function removePlanItem(initDataRaw: string, planItemId: number): Promise<void> {
+  return apiV2Delete(`/api/v2/plan-items/${planItemId}`, initDataRaw);
 }
