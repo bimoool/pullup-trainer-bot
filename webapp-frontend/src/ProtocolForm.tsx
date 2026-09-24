@@ -145,7 +145,19 @@ export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, o
       <div className="protocol-type-selector">
         <SegmentedControl>
           {(Object.keys(KIND_LABELS) as ProtocolKind[]).map((option) => (
-            <SegmentedControl.Item key={option} selected={kind === option} onClick={() => setKind(option)}>
+            <SegmentedControl.Item
+              key={option} selected={kind === option}
+              onClick={() => {
+                // QA-found bug (C4b-2 continuation) — validationError не
+                // сбрасывался при смене типа тренировки: сообщение об
+                // ошибке одной формы (например "Укажите количество
+                // попыток" от Max) оставалось видимым при переключении
+                // на совсем другую форму (Interval), где такого поля
+                // нет вовсе — вводило пользователя в заблуждение.
+                setValidationError(null);
+                setKind(option);
+              }}
+            >
               {KIND_LABELS[option]}
             </SegmentedControl.Item>
           ))}
