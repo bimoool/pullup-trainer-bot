@@ -26,12 +26,21 @@ type LoadState =
   | { phase: "error"; message: string };
 
 /**
- * Phase C5a (issue #188) — минимальный Add to Plan flow поверх уже
+ * Phase C5a/C5b (issue #188) — минимальный Add to Plan flow поверх уже
  * существующего PlanItem API (createPlanItem, тот же паттерн, что
  * DashboardScreen.tsx's "+ Добавить упражнение" уже использует —
  * count_per_week: 1, plan_week_id = текущая неделя, day_of_week = выбор
  * пользователя или null для свободного пула). Не создаёт новую
  * календарную модель, не пишет отдельный PlanItem-эндпоинт.
+ *
+ * Отправляется ТОЛЬКО complex_id, без exercise_id (C5b QA-fix) —
+ * PlanItemCreateRequest._exactly_one_target (app/web/schemas_v2.py)
+ * требует ровно одно из exercise_id/complex_id, оба вместе дают 422.
+ * PlanItem.exercise_id — NOT NULL на уровне БД, но это уже решено на
+ * backend-стороне (TrainingPlanRepository.create_plan_item резолвит
+ * placeholder из первого ComplexItem выбранного Workout, если
+ * exercise_id не передан) — frontend не должен знать/дублировать эту
+ * деталь.
  */
 export function AddToPlanScreen({ initDataRaw, workoutId, workoutTitle, onBack, onSuccess }: Props) {
   const [loadState, setLoadState] = useState<LoadState>({ phase: "loading" });

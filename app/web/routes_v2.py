@@ -577,12 +577,15 @@ async def create_plan_item(
         if week is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanWeek not found")
 
-    item = await plans.create_plan_item(
-        training_plan_id=plan.id, exercise_id=body.exercise_id, complex_id=body.complex_id,
-        count_per_week=body.count_per_week, day_of_week=body.day_of_week,
-        week_phase=WeekPhase(body.week_phase) if body.week_phase is not None else None,
-        program_inclusion_id=None, plan_week_id=body.plan_week_id,
-    )
+    try:
+        item = await plans.create_plan_item(
+            training_plan_id=plan.id, exercise_id=body.exercise_id, complex_id=body.complex_id,
+            count_per_week=body.count_per_week, day_of_week=body.day_of_week,
+            week_phase=WeekPhase(body.week_phase) if body.week_phase is not None else None,
+            program_inclusion_id=None, plan_week_id=body.plan_week_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return _plan_item_response(item)
 
 

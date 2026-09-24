@@ -2,7 +2,14 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, PlanWeek, ProgramInclusion, ProgramItem, TrainingPlan
+from app.db.models_program import (
+    ComplexItem,
+    PlanItem,
+    PlanWeek,
+    ProgramInclusion,
+    ProgramItem,
+    TrainingPlan,
+)
 from app.domain.multi_program import WeekPhase
 
 
@@ -150,12 +157,42 @@ class TrainingPlanRepository:
         return result.scalar_one_or_none()
 
     async def create_plan_item(
-        self, *, training_plan_id: int, exercise_id: int, complex_id: int | None,
+        self, *, training_plan_id: int, exercise_id: int | None, complex_id: int | None,
         count_per_week: int, day_of_week: int | None, week_phase: WeekPhase | None, program_inclusion_id: int | None,
         plan_week_id: int | None = None,
     ) -> PlanItem:
+        """C5b QA-fix (issue #188) — найдено живым 500-error логом: PlanItem
+        API-контракт (PlanItemCreateRequest._exactly_one_target) требует
+        РОВНО ОДНО из exercise_id/complex_id, но PlanItem.exercise_id — NOT
+        NULL на уровне БД (models_program.py). Раньше это никогда не било
+        живым HTTP-путём: все Complex-based PlanItem до этого чанка
+        создавались только прямой ORM-вставкой в seed/тестовых скриптах,
+        где exercise_id подставлялся вручную явно — сам этот repository-
+        метод никогда не вызывался с exercise_id=None и complex_id!=None
+        через реальный /api/v2/plan-items запрос.
+
+        Тот же принцип, что уже подтверждён в Phase B1/C3 (PlanItem.
+        exercise_id — vestigial placeholder, когда complex_id ведёт
+        routing, реальный источник упражнения — ComplexItem внутри
+        Complex, не это поле): при exercise_id=None и complex_id заданном
+        резолвим placeholder из первого ComplexItem этого Complex по
+        order_index. Если у Complex вообще нет items — не можем создать
+        валидную строку (тот же NOT NULL), поднимаем ValueError с понятным
+        текстом, route конвертирует в 422, не 500."""
+        resolved_exercise_id = exercise_id
+        if resolved_exercise_id is None and complex_id is not None:
+            result = await self._session.execute(
+                select(ComplexItem.exercise_id)
+                .where(ComplexItem.complex_id == complex_id)
+                .order_by(ComplexItem.order_index)
+                .limit(1),
+            )
+            resolved_exercise_id = result.scalar_one_or_none()
+            if resolved_exercise_id is None:
+                raise ValueError("У выбранной тренировки нет упражнений")
+
         item = PlanItem(
-            training_plan_id=training_plan_id, exercise_id=exercise_id, complex_id=complex_id,
+            training_plan_id=training_plan_id, exercise_id=resolved_exercise_id, complex_id=complex_id,
             count_per_week=count_per_week, day_of_week=day_of_week, week_phase=week_phase,
             program_inclusion_id=program_inclusion_id, plan_week_id=plan_week_id,
         )
