@@ -58,16 +58,32 @@ class ExerciseCreateRequest(BaseModel):
         return trimmed
 
 
+class WorkoutItemResponse(BaseModel):
+    """Phase C3 (issue #188) — один пункт Workout, user-facing поля only
+    (exercise_name уже резолвлено, не сырой internal label)."""
+
+    id: int
+    exercise_id: int
+    exercise_name: str
+    order_index: int
+    protocol: dict
+
+
 class WorkoutResponse(BaseModel):
     """Phase C2 (issue #188) — минимальный ответ для экрана "Мои
     тренировки"/detail. title — продуктовый термин (Complex.name в БД, не
     переименовано в схеме хранения — issue #188 прямо просит не делать
-    искусственный rename поля)."""
+    искусственный rename поля).
+
+    items — Phase C3, опционально: заполняется только detail-эндпоинтом
+    (GET /workouts/{id}), list/create/patch его не запрашивают (не делать
+    N+1 на списке "Мои тренировки")."""
 
     id: int
     title: str
     source_type: str
     owner_user_id: int | None
+    items: list[WorkoutItemResponse] | None = None
 
 
 class WorkoutListResponse(BaseModel):
@@ -99,6 +115,36 @@ class WorkoutUpdateRequest(BaseModel):
         if not trimmed:
             raise ValueError("Название не может быть пустым")
         return trimmed
+
+
+class WorkoutItemCreateRequest(BaseModel):
+    """Phase C3 (issue #188) — protocol валидируется через
+    app.domain.workout_protocol.UserWorkoutProtocol (без progression-
+    вариантов) на уровне route, не здесь — сырой dict принимается схемой,
+    типизированная валидация происходит отдельным шагом, чтобы дать
+    человекочитаемую ошибку, специфичную для protocol-контракта, не общую
+    pydantic-ошибку на вложенном поле."""
+
+    exercise_id: int
+    protocol: dict
+
+
+class WorkoutItemUpdateRequest(BaseModel):
+    """Оба поля опциональны, но хотя бы одно обязательно — order_index
+    через этот endpoint никогда не меняется (см. move-endpoint отдельно)."""
+
+    exercise_id: int | None = None
+    protocol: dict | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> "WorkoutItemUpdateRequest":
+        if self.exercise_id is None and self.protocol is None:
+            raise ValueError("Нужно указать exercise_id или protocol")
+        return self
+
+
+class WorkoutItemMoveRequest(BaseModel):
+    direction: Literal["up", "down"]
 
 
 # --- План пользователя --------------------------------------------------------------

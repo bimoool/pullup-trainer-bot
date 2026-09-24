@@ -370,3 +370,23 @@ ResolvedProtocol = Annotated[
     ResolvedRepsSets | ResolvedTimeSets | ResolvedMaxEffort | ResolvedInterval,
     Field(discriminator="type"),
 ]
+
+
+# Phase C3 (issue #188) — сужённый union БЕЗ progression-вариантов
+# (ProgressionRepsSets/ProgressionTimeSets), для user-owned Workout
+# Builder: обычный пользователь не должен уметь через сырой JSON
+# протолкнуть prescription.source="progression" — этот режим относится
+# только к program-authoring context, которого в Phase C Builder MVP нет
+# вообще (см. issue #188, UX Contract v1, "REPS UX" — режим B недоступен
+# для полностью самостоятельной пользовательской тренировки).
+#
+# Простой Field(discriminator="type") здесь корректен и достаточен (не
+# нужен callable Discriminator+Tag, как у полного DefinitionProtocol) —
+# без Progression-вариантов каждый оставшийся тип несёт УНИКАЛЬНОЕ
+# значение type (reps_sets/time_sets/max_effort/interval, по одному
+# варианту на значение), коллизии дискриминатора, из-за которой
+# понадобился callable-обходной путь для DefinitionProtocol, здесь нет.
+UserWorkoutProtocol = Annotated[
+    StaticRepsSets | StaticTimeSets | StaticMaxEffort | Interval,
+    Field(discriminator="type"),
+]

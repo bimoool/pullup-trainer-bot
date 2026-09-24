@@ -11,12 +11,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from init_data_py import InitData
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
     Complex,
+    ComplexItem,
     Exercise,
     PlanItem,
     PlanWeek,
@@ -36,7 +37,7 @@ from app.db.repositories.training_sessions import (
 from app.db.repositories.users import UserRepository
 from app.domain.interval_timing import compute_interval_timing
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
-from app.domain.workout_protocol import ProtocolType, ResolvedInterval
+from app.domain.workout_protocol import ProtocolType, ResolvedInterval, UserWorkoutProtocol
 from app.domain.workout_snapshot import WorkoutSnapshot
 from app.services.live_session import CompleteResult, LiveSessionService
 from app.services.plan_week import PlanWeekService
@@ -69,6 +70,10 @@ from app.web.schemas_v2 import (
     SetLogResponse,
     TrainingPlanResponse,
     WorkoutCreateRequest,
+    WorkoutItemCreateRequest,
+    WorkoutItemMoveRequest,
+    WorkoutItemResponse,
+    WorkoutItemUpdateRequest,
     WorkoutListResponse,
     WorkoutResponse,
     WorkoutUpdateRequest,
@@ -253,11 +258,30 @@ async def create_exercise(
     )
 
 
-def _workout_response(complex_: Complex) -> WorkoutResponse:
+def _workout_response(complex_: Complex, items: list[WorkoutItemResponse] | None = None) -> WorkoutResponse:
     return WorkoutResponse(
         id=complex_.id, title=complex_.name, source_type=complex_.source_type,
-        owner_user_id=complex_.owner_user_id,
+        owner_user_id=complex_.owner_user_id, items=items,
     )
+
+
+async def _build_workout_item_responses(
+    session: AsyncSession, items: list[ComplexItem],
+) -> list[WorkoutItemResponse]:
+    """Phase C3 (issue #188) — batch-резолвинг exercise_name, не по
+    одному на item (тот же принцип, что list_exercises_by_ids уже
+    применяется везде в проекте для этой цели)."""
+    exercise_ids = sorted({item.exercise_id for item in items})
+    exercises = await ProgramRepository(session).list_exercises_by_ids(exercise_ids)
+    name_by_id = {exercise.id: exercise.name for exercise in exercises}
+    return [
+        WorkoutItemResponse(
+            id=item.id, exercise_id=item.exercise_id,
+            exercise_name=name_by_id.get(item.exercise_id, f"Упражнение #{item.exercise_id}"),
+            order_index=item.order_index, protocol=item.protocol or {},
+        )
+        for item in items
+    ]
 
 
 @router_v2.post("/workouts", response_model=WorkoutResponse)
@@ -299,12 +323,133 @@ async def get_workout_detail(
     session: AsyncSession = Depends(get_session),
 ) -> WorkoutResponse:
     """Видим: system (любому) или свой user Workout. Чужой user Workout —
-    404, не 403 (существующая конвенция проекта)."""
+    404, не 403 (существующая конвенция проекта). Phase C3 — теперь
+    включает ordered items (order_index ASC, тот же порядок, что
+    list_complex_items уже гарантирует)."""
     user = await _require_user(session, init_data)
-    workout = await ProgramRepository(session).get_visible_workout_for_user(workout_id, user.id)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_visible_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    return _workout_response(workout)
+    complex_items = await program_repo.list_complex_items(workout_id)
+    items = await _build_workout_item_responses(session, complex_items)
+    return _workout_response(workout, items=items)
+
+
+@router_v2.post("/workouts/{workout_id}/items", response_model=WorkoutItemResponse)
+async def add_workout_item(
+    workout_id: int,
+    body: WorkoutItemCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutItemResponse:
+    """Phase C3 (issue #188) — только editable (свой user) Workout, не
+    system, не чужой. Exercise должен быть visible current_user (system
+    или свой user Exercise) — тот же get_visible_exercise_for_user, что
+    C1 уже определил. protocol валидируется через UserWorkoutProtocol
+    (без progression-вариантов — обычный Workout Builder не должен
+    протолкнуть prescription.source='progression' через сырой JSON)."""
+    user = await _require_user(session, init_data)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    exercise = await program_repo.get_visible_exercise_for_user(body.exercise_id, user.id)
+    if exercise is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+    try:
+        validated_protocol = TypeAdapter(UserWorkoutProtocol).validate_python(body.protocol)
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    item = await program_repo.add_workout_item(
+        complex_id=workout_id, exercise_id=body.exercise_id,
+        protocol=validated_protocol.model_dump(mode="json"),
+    )
+    await session.commit()
+    return (await _build_workout_item_responses(session, [item]))[0]
+
+
+@router_v2.patch("/workouts/{workout_id}/items/{item_id}", response_model=WorkoutItemResponse)
+async def update_workout_item(
+    workout_id: int,
+    item_id: int,
+    body: WorkoutItemUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutItemResponse:
+    """order_index через этот endpoint никогда не меняется (см. move)."""
+    user = await _require_user(session, init_data)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    item = await program_repo.get_complex_item(item_id)
+    if item is None or item.complex_id != workout_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
+
+    new_exercise_id = body.exercise_id
+    if new_exercise_id is not None:
+        exercise = await program_repo.get_visible_exercise_for_user(new_exercise_id, user.id)
+        if exercise is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+
+    new_protocol = None
+    if body.protocol is not None:
+        try:
+            validated_protocol = TypeAdapter(UserWorkoutProtocol).validate_python(body.protocol)
+        except ValidationError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        new_protocol = validated_protocol.model_dump(mode="json")
+
+    updated = await program_repo.update_workout_item(item_id, exercise_id=new_exercise_id, protocol=new_protocol)
+    await session.commit()
+    return (await _build_workout_item_responses(session, [updated]))[0]
+
+
+@router_v2.delete("/workouts/{workout_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workout_item(
+    workout_id: int,
+    item_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Удаляет item из editable Workout, нормализует order_index
+    оставшихся (0, 1, 2, ... без дырок)."""
+    user = await _require_user(session, init_data)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    item = await program_repo.get_complex_item(item_id)
+    if item is None or item.complex_id != workout_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
+    await program_repo.delete_workout_item(item_id)
+    await session.commit()
+
+
+@router_v2.post("/workouts/{workout_id}/items/{item_id}/move", response_model=WorkoutResponse)
+async def move_workout_item(
+    workout_id: int,
+    item_id: int,
+    body: WorkoutItemMoveRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutResponse:
+    """Простой swap с соседом. На границе (первый+up, последний+down) —
+    idempotent no-op, не ошибка (см. репозиторный докстринг)."""
+    user = await _require_user(session, init_data)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    item = await program_repo.get_complex_item(item_id)
+    if item is None or item.complex_id != workout_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
+    await program_repo.move_workout_item(item_id, direction=body.direction)
+    await session.commit()
+    refreshed_complex_items = await program_repo.list_complex_items(workout_id)
+    items = await _build_workout_item_responses(session, refreshed_complex_items)
+    return _workout_response(workout, items=items)
 
 
 @router_v2.patch("/workouts/{workout_id}", response_model=WorkoutResponse)

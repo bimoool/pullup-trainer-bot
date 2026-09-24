@@ -27,7 +27,11 @@ class ProgramRepository:
 
     Phase C2 (issue #188) добавляет Workout core (list/visibility/edit-
     guard/update title) — тот же get_X_for_user-паттерн, только title
-    editing, без WorkoutItem CRUD/reorder/delete (следующая волна)."""
+    editing, без WorkoutItem CRUD/reorder/delete (следующая волна).
+
+    Phase C3 (issue #188) добавляет WorkoutItem CRUD (add/update/delete/
+    move) — order_index управляется автоматически (append/compact/swap),
+    никогда не задаётся напрямую вызывающим кодом извне репозитория."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -225,6 +229,85 @@ class ProgramRepository:
         self._session.add(item)
         await self._session.flush()
         return item
+
+    async def get_complex_item(self, item_id: int) -> ComplexItem | None:
+        """Phase C3 (issue #188) — read одного ComplexItem по id, для
+        ownership-проверки (item принадлежит editable Workout) перед
+        update/delete/move."""
+        return await self._session.get(ComplexItem, item_id)
+
+    async def add_workout_item(self, *, complex_id: int, exercise_id: int, protocol: dict) -> ComplexItem:
+        """Phase C3 — order_index автоматически: max(existing)+1, 0 для
+        первого item (тот же 0-based convention, что уже используют
+        create_complex_item's вызывающие места и workout_snapshot.py's
+        сортировка). sets=0 — тот же placeholder, что Phase B1 уже
+        использует для protocol-JSONB-driven items (legacy-поле, реальный
+        источник правды — protocol)."""
+        existing = await self.list_complex_items(complex_id)
+        next_order_index = (max((item.order_index for item in existing), default=-1)) + 1
+        return await self.create_complex_item(
+            complex_id=complex_id, exercise_id=exercise_id, order_index=next_order_index,
+            sets=0, protocol=protocol,
+        )
+
+    async def update_workout_item(
+        self, item_id: int, *, exercise_id: int | None = None, protocol: dict | None = None,
+    ) -> ComplexItem | None:
+        """Phase C3 — оба поля опциональны на уровне repository (route
+        уже требует хотя бы одно через схему), order_index этим методом
+        никогда не меняется (раздел 4 задачи)."""
+        item = await self._session.get(ComplexItem, item_id)
+        if item is None:
+            return None
+        if exercise_id is not None:
+            item.exercise_id = exercise_id
+        if protocol is not None:
+            item.protocol = protocol
+        await self._session.flush()
+        return item
+
+    async def delete_workout_item(self, item_id: int) -> None:
+        """Phase C3 — удаляет item и нормализует order_index оставшихся
+        (0, 1, 2, ... без дырок), тот же принцип, что и раньше — порядок
+        item'ов внутри Workout всегда плотный 0-based."""
+        item = await self._session.get(ComplexItem, item_id)
+        if item is None:
+            return
+        complex_id = item.complex_id
+        await self._session.delete(item)
+        await self._session.flush()
+
+        remaining = await self.list_complex_items(complex_id)
+        for index, remaining_item in enumerate(remaining):
+            if remaining_item.order_index != index:
+                remaining_item.order_index = index
+        await self._session.flush()
+
+    async def move_workout_item(self, item_id: int, *, direction: str) -> bool:
+        """Phase C3 — простой swap с соседом по order_index, не
+        произвольный target index (drag-and-drop явно вне scope MVP).
+        Возвращает False (idempotent no-op) на границе — первый item +
+        "up", последний + "down" — не ошибка, просто нечего двигать; это
+        решение, не 409/422, потому что попытка подвинуть первый элемент
+        ещё выше — не некорректный запрос пользователя (кнопка ↑ на
+        первой позиции по UX-контракту уже disabled, но backend не должен
+        падать, если фронт всё же вызовет её по гонке/багу)."""
+        item = await self._session.get(ComplexItem, item_id)
+        if item is None:
+            return False
+        siblings = await self.list_complex_items(item.complex_id)
+        position = next((i for i, sibling in enumerate(siblings) if sibling.id == item_id), None)
+        if position is None:
+            return False
+
+        swap_position = position - 1 if direction == "up" else position + 1
+        if swap_position < 0 or swap_position >= len(siblings):
+            return False  # граница — idempotent no-op, не ошибка
+
+        neighbor = siblings[swap_position]
+        item.order_index, neighbor.order_index = neighbor.order_index, item.order_index
+        await self._session.flush()
+        return True
 
 
 def program_items_snapshot(program_items: list[ProgramItem]) -> list[dict]:
