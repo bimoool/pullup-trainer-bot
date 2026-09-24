@@ -1,15 +1,26 @@
 import { Button, Input, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { createWorkout, getWorkout, updateWorkout } from "./apiV2";
+import {
+  addWorkoutItem,
+  createWorkout,
+  deleteWorkoutItem,
+  type ExerciseResponseV2,
+  getWorkout,
+  moveWorkoutItem,
+  updateWorkout,
+  updateWorkoutItem,
+  type WorkoutItemResponseV2,
+} from "./apiV2";
+import { ExercisePickerScreen } from "./ExercisePickerScreen";
+import { formatProtocolSummary, ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
   initDataRaw: string;
   /** null — создание нового Workout («Новая тренировка», только поле
    * названия). number — редактирование существующего («Редактировать
-   * тренировку», название + placeholder для будущих упражнений — item
-   * editor явно вне scope этого chunk, C4b). */
+   * тренировку», название + список упражнений). */
   workoutId: number | null;
   onBack: () => void;
   /** Вызывается после успешного Save с id сохранённого Workout — при
@@ -19,22 +30,33 @@ type Props = {
   onSaved: (workoutId: number) => void;
 };
 
+/** Phase C4b-1 (issue #188) — sub-view Item Builder'а внутри edit-режима,
+ * тот же локальный screen-state pattern, что весь Builder уже использует
+ * (DashboardScreen.tsx::myWorkoutsView), не глобальный App navigation. */
+type ItemBuilderView =
+  | { kind: "editor" }
+  | { kind: "picker" }
+  | { kind: "new-item-protocol"; exercise: ExerciseResponseV2 }
+  | { kind: "edit-item-protocol"; item: WorkoutItemResponseV2 };
+
 /**
- * Phase C4a (issue #188) — единый shell для create/edit, оба режима — по
- * сути одно и то же поле (название) + Save, различается только заголовок,
- * наличие placeholder-секции "Упражнения" в edit-режиме и то, куда
- * переходит caller после успешного Save (см. onSaved выше). Item editor/
- * Exercise Picker/protocol forms/reorder — явно вне scope, следующая
- * волна (C4b).
+ * Phase C4a/C4b-1 (issue #188) — единый shell для create/edit Workout.
+ * Create: только название. Edit: название + полный item builder (список,
+ * добавление через Exercise Picker + Protocol Form, редактирование,
+ * удаление, move ↑/↓) поверх уже готового C3 API.
  */
 export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }: Props) {
   const isEditing = workoutId !== null;
 
   const [title, setTitle] = useState("");
+  const [items, setItems] = useState<WorkoutItemResponseV2[]>([]);
   const [loading, setLoading] = useState(isEditing);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [itemActionError, setItemActionError] = useState<string | null>(null);
+  const [itemView, setItemView] = useState<ItemBuilderView>({ kind: "editor" });
+  const [deleteConfirmItemId, setDeleteConfirmItemId] = useState<number | null>(null);
 
   useEffect(() => {
     if (workoutId === null) {
@@ -45,6 +67,7 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }:
       .then((workout) => {
         if (!cancelled) {
           setTitle(workout.title);
+          setItems(workout.items ?? []);
           setLoading(false);
         }
       })
@@ -59,7 +82,20 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }:
     };
   }, [initDataRaw, workoutId]);
 
-  useBackButton(onBack, [onBack]);
+  // BackButton внутри item builder sub-view должен вести назад в
+  // editor, не сразу наружу (issue #188, раздел 14 — "обратно в Workout
+  // Editor"), поэтому переопределяем обработчик в зависимости от
+  // itemView, а не просто вызываем onBack всегда.
+  useBackButton(
+    () => {
+      if (itemView.kind !== "editor") {
+        setItemView({ kind: "editor" });
+      } else {
+        onBack();
+      }
+    },
+    [itemView, onBack],
+  );
 
   async function handleSave() {
     setSaving(true);
@@ -80,11 +116,100 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }:
     }
   }
 
+  async function handleAddItem(exercise: ExerciseResponseV2, protocol: ProtocolFormValue) {
+    if (workoutId === null) {
+      return;
+    }
+    setItemActionError(null);
+    try {
+      const created = await addWorkoutItem(initDataRaw, workoutId, exercise.id, protocol);
+      setItems((current) => [...current, created]);
+      setItemView({ kind: "editor" });
+    } catch (error) {
+      setItemActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleUpdateItem(item: WorkoutItemResponseV2, protocol: ProtocolFormValue) {
+    if (workoutId === null) {
+      return;
+    }
+    setItemActionError(null);
+    try {
+      const updated = await updateWorkoutItem(initDataRaw, workoutId, item.id, { protocol });
+      setItems((current) => current.map((existing) => (existing.id === updated.id ? updated : existing)));
+      setItemView({ kind: "editor" });
+    } catch (error) {
+      setItemActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleDeleteItem(itemId: number) {
+    if (workoutId === null) {
+      return;
+    }
+    setItemActionError(null);
+    try {
+      await deleteWorkoutItem(initDataRaw, workoutId, itemId);
+      setItems((current) => current.filter((item) => item.id !== itemId));
+      setDeleteConfirmItemId(null);
+    } catch (error) {
+      setItemActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function handleMoveItem(itemId: number, direction: "up" | "down") {
+    if (workoutId === null) {
+      return;
+    }
+    setItemActionError(null);
+    try {
+      const updated = await moveWorkoutItem(initDataRaw, workoutId, itemId, direction);
+      setItems(updated.items ?? []);
+    } catch (error) {
+      setItemActionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   if (loading) {
     return <Spinner size="m" />;
   }
   if (loadError) {
     return <p className="gap-banner">Не удалось загрузить: {loadError}</p>;
+  }
+
+  if (itemView.kind === "picker") {
+    return (
+      <ExercisePickerScreen
+        initDataRaw={initDataRaw}
+        onBack={() => setItemView({ kind: "editor" })}
+        onSelect={(exercise) => setItemView({ kind: "new-item-protocol", exercise })}
+      />
+    );
+  }
+
+  if (itemView.kind === "new-item-protocol") {
+    return (
+      <ProtocolForm
+        initialExerciseName={itemView.exercise.name}
+        initialProtocol={null}
+        submitLabel="Добавить"
+        onCancel={() => setItemView({ kind: "editor" })}
+        onSubmit={(protocol) => void handleAddItem(itemView.exercise, protocol)}
+      />
+    );
+  }
+
+  if (itemView.kind === "edit-item-protocol") {
+    return (
+      <ProtocolForm
+        initialExerciseName={itemView.item.exercise_name}
+        initialProtocol={itemView.item.protocol}
+        submitLabel="Сохранить"
+        onCancel={() => setItemView({ kind: "editor" })}
+        onSubmit={(protocol) => void handleUpdateItem(itemView.item, protocol)}
+      />
+    );
   }
 
   return (
@@ -100,7 +225,40 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved }:
 
       {isEditing && (
         <Section className="block-section" header="Упражнения">
-          <p className="screen-message">Пока не добавлены</p>
+          {items.length === 0 && <p className="screen-message">Пока не добавлены</p>}
+          {items.map((item, index) => (
+            <div key={item.id} className="plan-week-day-group">
+              <p className="plan-item-row">{item.exercise_name}</p>
+              <p className="block-subtitle">{formatProtocolSummary(item.protocol)}</p>
+              <Button size="s" onClick={() => setItemView({ kind: "edit-item-protocol", item })}>
+                Редактировать
+              </Button>
+              <Button size="s" disabled={index === 0} onClick={() => void handleMoveItem(item.id, "up")}>
+                ↑
+              </Button>
+              <Button size="s" disabled={index === items.length - 1} onClick={() => void handleMoveItem(item.id, "down")}>
+                ↓
+              </Button>
+              {deleteConfirmItemId === item.id ? (
+                <>
+                  <Button size="s" mode="outline" onClick={() => void handleDeleteItem(item.id)}>
+                    Подтвердить удаление
+                  </Button>
+                  <Button size="s" mode="outline" onClick={() => setDeleteConfirmItemId(null)}>
+                    Отмена
+                  </Button>
+                </>
+              ) : (
+                <Button size="s" mode="outline" onClick={() => setDeleteConfirmItemId(item.id)}>
+                  Удалить
+                </Button>
+              )}
+            </div>
+          ))}
+          {itemActionError && <p className="gap-banner">{itemActionError}</p>}
+          <Button className="action-button" size="m" stretched onClick={() => setItemView({ kind: "picker" })}>
+            Добавить упражнение
+          </Button>
         </Section>
       )}
 

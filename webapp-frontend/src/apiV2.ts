@@ -100,6 +100,17 @@ async function apiV2Patch<TBody, TResult>(path: string, initDataRaw: string, bod
   return (await response.json()) as TResult;
 }
 
+async function apiV2Delete(path: string, initDataRaw: string): Promise<void> {
+  const response = await fetch(path, {
+    method: "DELETE",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    const message = await extractErrorMessage("DELETE", path, response);
+    throw new Error(message);
+  }
+}
+
 export async function fetchDashboardStatus(initDataRaw: string): Promise<DashboardStatusResponse> {
   return apiV2Get<DashboardStatusResponse>("/api/v2/dashboard/status", initDataRaw);
 }
@@ -155,6 +166,49 @@ export async function getWorkout(initDataRaw: string, workoutId: number): Promis
 
 export async function updateWorkout(initDataRaw: string, workoutId: number, title: string): Promise<WorkoutResponseV2> {
   return apiV2Patch<{ title: string }, WorkoutResponseV2>(`/api/v2/workouts/${workoutId}`, initDataRaw, { title });
+}
+
+/** Phase C4b-1 (issue #188) — под уже существующий C1 POST /exercises
+ * (backend готов с C1, frontend не был подключён — теперь Exercise
+ * Picker его использует для "Создать своё упражнение"). */
+export async function createExercise(initDataRaw: string, name: string): Promise<ExerciseResponseV2> {
+  return apiV2Post<{ name: string }, ExerciseResponseV2>("/api/v2/exercises", initDataRaw, { name });
+}
+
+export async function addWorkoutItem(
+  initDataRaw: string, workoutId: number, exerciseId: number, protocol: Record<string, unknown>,
+): Promise<WorkoutItemResponseV2> {
+  return apiV2Post<{ exercise_id: number; protocol: Record<string, unknown> }, WorkoutItemResponseV2>(
+    `/api/v2/workouts/${workoutId}/items`, initDataRaw, { exercise_id: exerciseId, protocol },
+  );
+}
+
+export async function updateWorkoutItem(
+  initDataRaw: string, workoutId: number, itemId: number,
+  changes: { exerciseId?: number; protocol?: Record<string, unknown> },
+): Promise<WorkoutItemResponseV2> {
+  const body: { exercise_id?: number; protocol?: Record<string, unknown> } = {};
+  if (changes.exerciseId !== undefined) {
+    body.exercise_id = changes.exerciseId;
+  }
+  if (changes.protocol !== undefined) {
+    body.protocol = changes.protocol;
+  }
+  return apiV2Patch<typeof body, WorkoutItemResponseV2>(
+    `/api/v2/workouts/${workoutId}/items/${itemId}`, initDataRaw, body,
+  );
+}
+
+export async function deleteWorkoutItem(initDataRaw: string, workoutId: number, itemId: number): Promise<void> {
+  return apiV2Delete(`/api/v2/workouts/${workoutId}/items/${itemId}`, initDataRaw);
+}
+
+export async function moveWorkoutItem(
+  initDataRaw: string, workoutId: number, itemId: number, direction: "up" | "down",
+): Promise<WorkoutResponseV2> {
+  return apiV2Post<{ direction: "up" | "down" }, WorkoutResponseV2>(
+    `/api/v2/workouts/${workoutId}/items/${itemId}/move`, initDataRaw, { direction },
+  );
 }
 
 /**
