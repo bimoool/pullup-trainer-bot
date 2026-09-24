@@ -23,7 +23,11 @@ class ProgramRepository:
     Phase C1 (issue #188) добавляет create_user_exercise — минимальный
     write-метод под пользовательский Exercise (Workout Builder foundation),
     тот же принцип: узкая capability, не полноценное CRUD (update/delete/
-    rename Exercise — явно вне scope этой волны)."""
+    rename Exercise — явно вне scope этой волны).
+
+    Phase C2 (issue #188) добавляет Workout core (list/visibility/edit-
+    guard/update title) — тот же get_X_for_user-паттерн, только title
+    editing, без WorkoutItem CRUD/reorder/delete (следующая волна)."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -135,6 +139,48 @@ class ProgramRepository:
     async def get_complex(self, complex_id: int) -> Complex | None:
         """Read Complex с новыми полями source_type/owner_user_id (Phase A1)."""
         return await self._session.get(Complex, complex_id)
+
+    async def list_user_workouts(self, user_id: int) -> list[Complex]:
+        """Phase C2 (issue #188) — только user Workout текущего владельца,
+        не system и не чужие. Для экрана "Мои тренировки" — не каталог
+        (system Workout здесь намеренно не включается, отдельный endpoint
+        для каталога не проектируется на этой волне)."""
+        result = await self._session.execute(
+            select(Complex).where(Complex.owner_user_id == user_id).order_by(Complex.id),
+        )
+        return list(result.scalars().all())
+
+    async def get_visible_workout_for_user(self, complex_id: int, user_id: int) -> Complex | None:
+        """Тот же get_X_for_user-паттерн, что уже системно используется в
+        проекте (training_plans.py, и C1's get_visible_exercise_for_user).
+        Видим: system (любому) или свой user Workout. Иначе None — route
+        конвертирует в 404, не 403."""
+        complex_ = await self._session.get(Complex, complex_id)
+        if complex_ is None:
+            return None
+        if complex_.source_type == "system" or complex_.owner_user_id == user_id:
+            return complex_
+        return None
+
+    async def get_editable_workout_for_user(self, complex_id: int, user_id: int) -> Complex | None:
+        """Строже, чем get_visible_workout_for_user — system Workout
+        НЕ редактируем никем через этот путь (read-only для всех
+        обычных пользователей), только свой user Workout."""
+        complex_ = await self._session.get(Complex, complex_id)
+        if complex_ is None:
+            return None
+        if complex_.source_type == "user" and complex_.owner_user_id == user_id:
+            return complex_
+        return None
+
+    async def update_complex_title(self, complex_id: int, title: str) -> None:
+        """Минимальное обновление названия — ownership уже проверен
+        вызывающим кодом через get_editable_workout_for_user, здесь только
+        сам UPDATE."""
+        complex_ = await self._session.get(Complex, complex_id)
+        if complex_ is not None:
+            complex_.name = title
+            await self._session.flush()
 
     async def create_complex(
         self,

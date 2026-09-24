@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
+    Complex,
     Exercise,
     PlanItem,
     PlanWeek,
@@ -67,6 +68,10 @@ from app.web.schemas_v2 import (
     SetLogInputSchema,
     SetLogResponse,
     TrainingPlanResponse,
+    WorkoutCreateRequest,
+    WorkoutListResponse,
+    WorkoutResponse,
+    WorkoutUpdateRequest,
 )
 from app.web.schemas_v2_session import (
     IntervalStateResponse,
@@ -246,6 +251,81 @@ async def create_exercise(
         id=exercise.id, name=exercise.name, metric_type=exercise.metric_type.value,
         category=exercise.category, subcategory=exercise.subcategory,
     )
+
+
+def _workout_response(complex_: Complex) -> WorkoutResponse:
+    return WorkoutResponse(
+        id=complex_.id, title=complex_.name, source_type=complex_.source_type,
+        owner_user_id=complex_.owner_user_id,
+    )
+
+
+@router_v2.post("/workouts", response_model=WorkoutResponse)
+async def create_workout(
+    body: WorkoutCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutResponse:
+    """Phase C2 (issue #188) — минимальный CREATE для Workout (продуктовое
+    имя; техническое хранилище — Complex, без rename, см. ADR
+    docs/adr/WORKOUT_PROTOCOL_V1.md). Всегда source_type='user',
+    owner_user_id=текущий пользователь — system Workout через этот путь
+    создать нельзя (create_complex не получает эти значения снаружи)."""
+    user = await _require_user(session, init_data)
+    workout = await ProgramRepository(session).create_complex(
+        name=body.title, source_type="user", owner_user_id=user.id,
+    )
+    await session.commit()
+    return _workout_response(workout)
+
+
+@router_v2.get("/workouts", response_model=WorkoutListResponse)
+async def list_my_workouts(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutListResponse:
+    """Phase C2 (issue #188) — только user Workout текущего владельца, для
+    экрана "Мои тренировки". System Workout сюда намеренно не входит —
+    отдельный endpoint для каталога не проектируется на этой волне."""
+    user = await _require_user(session, init_data)
+    workouts = await ProgramRepository(session).list_user_workouts(user.id)
+    return WorkoutListResponse(workouts=[_workout_response(w) for w in workouts])
+
+
+@router_v2.get("/workouts/{workout_id}", response_model=WorkoutResponse)
+async def get_workout_detail(
+    workout_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutResponse:
+    """Видим: system (любому) или свой user Workout. Чужой user Workout —
+    404, не 403 (существующая конвенция проекта)."""
+    user = await _require_user(session, init_data)
+    workout = await ProgramRepository(session).get_visible_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    return _workout_response(workout)
+
+
+@router_v2.patch("/workouts/{workout_id}", response_model=WorkoutResponse)
+async def update_workout_title(
+    workout_id: int,
+    body: WorkoutUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutResponse:
+    """Редактируем: только свой user Workout. System Workout — read-only
+    для всех обычных пользователей, тоже 404 при попытке PATCH (не
+    раскрывает пользователю, что Workout вообще существует под чужим/
+    системным владением — та же 404-конвенция, что и всюду в проекте)."""
+    user = await _require_user(session, init_data)
+    workout = await ProgramRepository(session).get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    await ProgramRepository(session).update_complex_title(workout_id, body.title)
+    await session.commit()
+    refreshed = await ProgramRepository(session).get_complex(workout_id)
+    return _workout_response(refreshed)
 
 
 # --- План ------------------------------------------------------------------------------

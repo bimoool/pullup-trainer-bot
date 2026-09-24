@@ -58,6 +58,49 @@ class ExerciseCreateRequest(BaseModel):
         return trimmed
 
 
+class WorkoutResponse(BaseModel):
+    """Phase C2 (issue #188) — минимальный ответ для экрана "Мои
+    тренировки"/detail. title — продуктовый термин (Complex.name в БД, не
+    переименовано в схеме хранения — issue #188 прямо просит не делать
+    искусственный rename поля)."""
+
+    id: int
+    title: str
+    source_type: str
+    owner_user_id: int | None
+
+
+class WorkoutListResponse(BaseModel):
+    workouts: list[WorkoutResponse]
+
+
+class WorkoutCreateRequest(BaseModel):
+    """Global uniqueness намеренно не проверяется — тот же принцип, что
+    ExerciseCreateRequest."""
+
+    title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def _trim_title(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Название не может быть пустым")
+        return trimmed
+
+
+class WorkoutUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def _trim_title(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Название не может быть пустым")
+        return trimmed
+
+
 # --- План пользователя --------------------------------------------------------------
 
 

@@ -51,3 +51,14 @@ async def v2_post(session, telegram_id: int, path: str, payload: dict):
             return await client.post(path, json=payload)
     finally:
         app.dependency_overrides.clear()
+
+
+async def v2_patch(session, telegram_id: int, path: str, payload: dict):
+    """Phase C2 (issue #188) — тот же паттерн, что v2_get/v2_post, для
+    PATCH /workouts/{id}."""
+    _override_dependencies(session, telegram_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.patch(path, json=payload)
+    finally:
+        app.dependency_overrides.clear()
