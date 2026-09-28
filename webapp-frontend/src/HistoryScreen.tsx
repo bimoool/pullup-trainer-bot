@@ -2,8 +2,9 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
-import { fetchSessions, type SessionResponseV2 } from "./apiV2";
 import { HistoryEditForm } from "./HistoryEditForm";
+import { JournalV2Cards, JournalV2Detail } from "./JournalV2";
+import { useJournalV2 } from "./useJournalV2";
 
 type Props = { initDataRaw: string };
 
@@ -22,45 +23,18 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-/** Checkpoint 4C (issue #188) — performed_at v2-сессии полная ISO-дата со
- * временем (не только "YYYY-MM-DD", как у legacy HistoryEntry), берём
- * только дату той жеформы "ДД.ММ.ГГГГ", день уже фиксирован сервером. */
-function formatSessionDate(isoDateTime: string): string {
-  return formatDate(isoDateTime.slice(0, 10));
-}
-
 export function HistoryScreen({ initDataRaw }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Checkpoint 4C (issue #188) — combined Journal: completed TrainingSession
-  // (новая схема) поверх legacy Workout ниже, обе модели остаются разными,
-  // не сливаются в общий список и не портят HistoryEntry-контракт legacy
-  // (раздел 2 задачи — не заполнять equipment_a/result_a и т.п. для
-  // TrainingSession). Отдельный эффект/состояние — сбой этой секции не
-  // должен ронять уже рабочую legacy-историю.
-  const [v2Sessions, setV2Sessions] = useState<SessionResponseV2[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSessions(initDataRaw, 50, "completed")
-      .then((sessions) => {
-        if (!cancelled) {
-          setV2Sessions(sessions);
-        }
-      })
-      .catch(() => {
-        // молчаливо — секция новых тренировок просто не появится, legacy
-        // ниже продолжает работать независимо (см. комментарий у стейта).
-        if (!cancelled) {
-          setV2Sessions([]);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [initDataRaw]);
+  // Журнал v2 (R2): завершённые TrainingSession поверх legacy Workout ниже —
+  // модели остаются разными и НЕ сливаются в одну хронологию. Состояние
+  // (загруженные страницы) живёт здесь, выше экрана деталей: возврат из
+  // деталей сохраняет уже загруженный Журнал. Сбой этой секции не роняет
+  // legacy-историю ниже.
+  const journal = useJournalV2(initDataRaw);
+  const [detailSessionId, setDetailSessionId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,14 +120,32 @@ export function HistoryScreen({ initDataRaw }: Props) {
     );
   }
 
+  const detailSession = detailSessionId !== null
+    ? journal.state.phase === "ready" ? journal.state.items.find((item) => item.id === detailSessionId) ?? null : null
+    : null;
+  if (detailSession !== null) {
+    return (
+      <JournalV2Detail
+        initDataRaw={initDataRaw}
+        session={detailSession}
+        onBack={() => setDetailSessionId(null)}
+        onDeleted={(sessionId) => {
+          journal.removeById(sessionId);
+          setDetailSessionId(null);
+        }}
+      />
+    );
+  }
+
   if (state.phase === "loading") {
     return <p className="screen-message">Загружаю историю…</p>;
   }
   if (state.phase === "error") {
     return <p className="screen-message">Не удалось загрузить историю: {state.message}</p>;
   }
-  const hasV2Sessions = v2Sessions !== null && v2Sessions.length > 0;
-  if (state.items.length === 0 && !hasV2Sessions && v2Sessions !== null) {
+  const v2Items = journal.state.phase === "ready" ? journal.state.items : [];
+  const hasV2Sessions = v2Items.length > 0;
+  if (state.items.length === 0 && !hasV2Sessions && journal.state.phase !== "loading") {
     return <p className="screen-message">Пока нет ни одной тренировки.</p>;
   }
 
@@ -164,41 +156,18 @@ export function HistoryScreen({ initDataRaw }: Props) {
       <p className="plan-title">Журнал</p>
       {deleteError && <p className="screen-message">Не удалось удалить тренировку: {deleteError}</p>}
 
+      {journal.state.phase === "error" && (
+        <p className="screen-message">Не удалось загрузить новые тренировки: {journal.state.message}</p>
+      )}
       {hasV2Sessions && (
-        <div className="history-list">
-          {v2Sessions?.map((session) => {
-            // Phase B2 (issue #215, раздел 18) — узкая interval-ветка, не
-            // Journal redesign: completed interval session показывает то
-            // же минимальное summary, что и SessionSummaryScreen, не
-            // SetLog rows/fake targets/Упражнение #id.
-            const intervalResult = session.blocks.length > 0
-              && typeof session.blocks[0].result === "object" && session.blocks[0].result !== null
-              && (session.blocks[0].result as { type?: unknown }).type === "interval"
-              ? session.blocks[0].result as {
-                  actual_duration_seconds: number; completed_cycles: number;
-                }
-              : null;
-            return (
-              <div className="history-card" key={`v2-${session.id}`}>
-                <p className="history-date">{formatSessionDate(session.performed_at)}</p>
-                <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
-                {intervalResult !== null ? (
-                  <p>
-                    {Math.floor(intervalResult.actual_duration_seconds / 60)}:
-                    {String(intervalResult.actual_duration_seconds % 60).padStart(2, "0")}
-                    {" · "}{intervalResult.completed_cycles} интервалов
-                  </p>
-                ) : (
-                  session.blocks.map((block) => (
-                    <p key={block.order_index}>
-                      {block.set_logs.map((log) => `${log.value} ${log.unit}`).join(" / ")}
-                    </p>
-                  ))
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <JournalV2Cards
+          sessions={v2Items}
+          hasMore={journal.state.phase === "ready" && journal.state.hasMore}
+          loadingMore={journal.loadingMore}
+          moreError={journal.moreError}
+          onLoadMore={() => void journal.loadMore()}
+          onOpen={setDetailSessionId}
+        />
       )}
 
       {state.items.length === 0 && hasV2Sessions ? null : (

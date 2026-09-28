@@ -1,5 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
+import { clickAndSync, noWakeLock, playSets, startWorkout } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py builder_workouts 910001 — шесть пользовательских Builder
@@ -11,40 +12,6 @@ const TELEGRAM_ID = 910_001;
 // Один пользователь — одна активная сессия за раз.
 test.describe.configure({ mode: "serial" });
 test.setTimeout(120_000);
-
-async function startWorkout(page: Page, title: string) {
-  await page.getByRole("button", { name: "Планы" }).click();
-  const group = page.locator(".plan-week-day-group").filter({ has: page.getByText(title, { exact: false }) })
-    .filter({ hasText: new RegExp(`^${title}`) });
-  await group.getByRole("button", { name: "Начать", exact: true }).click();
-  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
-  await expect(page.getByText("Живая тренировка")).toBeVisible();
-}
-
-/** Клик + ожидание ответа сервера: повторный тап во время уже идущего
- * запроса приложение намеренно отбрасывает (guardedAction). */
-async function clickAndSync(page: Page, name: string, urlPart: string) {
-  const response = page.waitForResponse((r) => r.url().includes(urlPart) && r.status() === 200);
-  await page.getByRole("button", { name, exact: true }).click();
-  await response;
-}
-
-/** Один обычный блок целиком: подходы с отдыхом; после последнего подхода
- * не трогает ничего. */
-async function playSets(page: Page, values: string[], rest = true) {
-  for (let i = 0; i < values.length; i += 1) {
-    await clickAndSync(page, "Готов", "/phase/next");
-    await expect(page.getByText("Пошёл")).toBeVisible();
-    await page.getByLabel(/Результат|Секунды|Повторений/).fill(values[i]);
-    await clickAndSync(page, "Готово", "/sets:batch");
-    if (i < values.length - 1 && rest) {
-      await clickAndSync(page, "Пропустить отдых", "/phase/next");
-    }
-  }
-}
-
-// Headless Chromium не даёт Wake Lock — шум окружения, не баг приложения.
-const noWakeLock = (errors: string[]) => errors.filter((e) => !e.includes("Wake Lock"));
 
 test("A. reps standalone: цели из prescription, Summary после последнего блока", async ({ page }) => {
   page.on("dialog", (dialog) => void dialog.accept());

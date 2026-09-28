@@ -10,7 +10,12 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.web.schemas_v2 import SessionProgressionResponse, SetLogInputSchema, SetLogResponse
+from app.web.schemas_v2 import (
+    IntervalConfigResponse,
+    SessionProgressionResponse,
+    SetLogInputSchema,
+    SetLogResponse,
+)
 
 # --- POST /sessions/live -----------------------------------------------------------------
 
@@ -106,18 +111,12 @@ class LiveSessionBlockResponse(BaseModel):
     exercise_name: str | None = None
     rest_seconds: int | None = None
     started_at: datetime | None = None
-    interval_config: "IntervalConfigResponse | None" = None
+    interval_config: IntervalConfigResponse | None = None
     # Phase B2 gate fix (issue #215) — SessionBlock.result (Phase B1), для
     # interval — полный контракт {type, started_at, completed_at,
     # planned_duration_seconds, actual_duration_seconds, completed_cycles}.
     # None для standard STANDARD/REPS/MAX блоков (result там не пишется).
     result: dict | None = None
-
-
-class IntervalConfigResponse(BaseModel):
-    total_duration_seconds: int
-    work_seconds: int
-    rest_seconds: int
 
 
 class IntervalStateResponse(BaseModel):

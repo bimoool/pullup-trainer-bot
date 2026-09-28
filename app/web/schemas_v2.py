@@ -282,6 +282,20 @@ class SetLogResponse(BaseModel):
     note: str | None
 
 
+class SessionSetTargetResponse(BaseModel):
+    set_number: int
+    is_max_set: bool
+    metric_type: str
+    value: str
+    unit: str
+
+
+class IntervalConfigResponse(BaseModel):
+    total_duration_seconds: int
+    work_seconds: int
+    rest_seconds: int
+
+
 class SessionBlockResponse(BaseModel):
     order_index: int
     exercise_id: int | None
@@ -290,6 +304,17 @@ class SessionBlockResponse(BaseModel):
     # Phase B2 gate fix (issue #215) — тот же result, что LiveSessionBlockResponse,
     # нужен Журналу для отображения завершённых interval-тренировок.
     result: dict | None = None
+    # REBUILD-1 (R2) — всё, что нужно Журналу v2 для независимого рендера
+    # КАЖДОГО блока. protocol_type — из ЗАМОРОЖЕННОГО снимка по позиции
+    # (None у STEP/legacy без снимка), не из изменяемого ComplexItem.
+    # exercise_name — из снимка либо из каталога; None, если человекочитаемого
+    # имени нет (внутренние STEP-роли). set_targets без интерпретации: у
+    # max_effort/legacy value=0 — "цели нет", не план.
+    protocol_type: str | None = None
+    exercise_name: str | None = None
+    started_at: datetime | None = None
+    set_targets: list[SessionSetTargetResponse] = []
+    interval_config: IntervalConfigResponse | None = None
 
 
 class BlockProgressionResponse(BaseModel):
@@ -319,6 +344,10 @@ class SessionResponse(BaseModel):
     # выдуманное имя.
     title: str | None
     blocks: list[SessionBlockResponse]
+    # R2 — сервер решает, можно ли безопасно удалить (Builder-сессия без
+    # связи с прогрессией); фронт показывает "Удалить" ТОЛЬКО при true, без
+    # своих эвристик. Определяется app.services.session_deletion.
+    can_delete: bool = False
     # None, если пересчёт прогрессии не применялся к этой сессии — вместе с
     # progression_skipped_reason объясняет ПОЧЕМУ (не молчаливое отсутствие,
     # см. CLAUDE.md о явных пробелах): "no_program_inclusion"/
@@ -330,6 +359,8 @@ class SessionResponse(BaseModel):
 
 class SessionListResponse(BaseModel):
     sessions: list[SessionResponse]
+    # R2 — есть ли ещё страницы после этого (limit+1 запрошено на сервере).
+    has_more: bool = False
 
 
 # --- Строки недельной матрицы (ручной ввод) -------------------------------------------

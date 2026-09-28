@@ -410,6 +410,14 @@ class TrainingSessionRepository:
         training_session.phase_ends_at = None
         await self._session.flush()
 
+    async def delete_session(self, session_id: int) -> None:
+        """Удаляет ТОЛЬКО дерево TrainingSession: session_plan_items,
+        session_blocks, set_targets, set_logs уходят каскадом FK (ondelete=
+        CASCADE). Определения (Complex/ComplexItem/Exercise) и PlanItem не
+        затрагиваются — на них у дерева сессии нет каскада."""
+        await self._session.execute(delete(TrainingSession).where(TrainingSession.id == session_id))
+        await self._session.flush()
+
     async def lock_session(self, session_id: int) -> None:
         """SELECT ... FOR UPDATE строки сессии — сериализует конкурентные
         start/finish блока (двойной клик, два вкладки), чтобы проверка

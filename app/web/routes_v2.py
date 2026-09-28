@@ -49,6 +49,7 @@ from app.services.live_session import (
 from app.services.plan_week import PlanWeekService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.progression_cascade import ProgressionCascadeService
+from app.services.session_deletion import SessionDeletionService
 from app.services.session_log import TrainingSessionLogService
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -73,6 +74,7 @@ from app.web.schemas_v2 import (
     SessionListResponse,
     SessionProgressionResponse,
     SessionResponse,
+    SessionSetTargetResponse,
     SetLogInputSchema,
     SetLogResponse,
     TrainingPlanResponse,
@@ -155,29 +157,62 @@ def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
 
 def _session_response(
     detail: SessionDetail, *, progression: SessionProgressionResponse | None, skipped_reason: str | None,
-    title: str | None = None,
+    title: str | None = None, exercise_names: dict[int, str] | None = None, can_delete: bool = False,
 ) -> SessionResponse:
+    """exercise_names — имена из каталога для блоков без замороженного снимка
+    (manual/STEP); внутренние STEP-роли в него не попадают, поэтому у их
+    блоков имени нет (None), а не техническое "Блок A"."""
+    snapshot_items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
+
+    def _block(block, item) -> SessionBlockResponse:
+        name = item.exercise_name if item is not None else (exercise_names or {}).get(block.exercise_id)
+        protocol = interval_protocol(item.protocol) if item is not None else None
+        return SessionBlockResponse(
+            order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
+            result=block.result, protocol_type=item.protocol.type.value if item is not None else None,
+            exercise_name=name, started_at=block_started_at(detail, block.order_index) if item is not None else None,
+            set_targets=[
+                SessionSetTargetResponse(
+                    set_number=t.set_number, is_max_set=t.is_max_set, metric_type=t.metric_type.value,
+                    value=str(t.value), unit=t.unit,
+                )
+                for t in block.set_targets
+            ],
+            interval_config=(
+                IntervalConfigResponse(
+                    total_duration_seconds=protocol.total_duration_seconds,
+                    work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+                )
+                if protocol is not None else None
+            ),
+            set_logs=[
+                SetLogResponse(
+                    set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
+                    value=str(log.value), unit=log.unit,
+                    effort=str(log.effort) if log.effort is not None else None, note=log.note,
+                )
+                for log in block.set_logs
+            ],
+        )
+
     return SessionResponse(
         id=detail.id, source=detail.source.value, status=detail.status.value,
         performed_at=detail.performed_at, effort=str(detail.effort) if detail.effort is not None else None,
-        comment=detail.comment, title=title,
-        blocks=[
-            SessionBlockResponse(
-                order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
-                result=block.result,
-                set_logs=[
-                    SetLogResponse(
-                        set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
-                        value=str(log.value), unit=log.unit,
-                        effort=str(log.effort) if log.effort is not None else None, note=log.note,
-                    )
-                    for log in block.set_logs
-                ],
-            )
-            for block in detail.blocks
-        ],
+        comment=detail.comment, title=title, can_delete=can_delete,
+        blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
         progression_result=progression, progression_skipped_reason=skipped_reason,
     )
+
+
+async def _catalog_exercise_names(session: AsyncSession, details: list[SessionDetail]) -> dict[int, str]:
+    """Имена упражнений блоков одним запросом. Внутренние STEP-роли
+    (subcategory block_a/block_b — тот же фильтр, что GET /exercises) не
+    получают имени: человекочитаемого у них нет."""
+    exercise_ids = sorted({
+        block.exercise_id for detail in details for block in detail.blocks if block.exercise_id is not None
+    })
+    exercises = await ProgramRepository(session).list_exercises_by_ids(exercise_ids)
+    return {ex.id: ex.name for ex in exercises if ex.subcategory not in ("block_a", "block_b")}
 
 
 # --- Каталог ---------------------------------------------------------------------------
@@ -755,16 +790,43 @@ async def list_sessions(
     for detail in started_details:
         await live_sessions.finalize_expired_interval_if_needed(detail.id, user.id)
 
-    details = await TrainingSessionRepository(session).list_for_user(
-        user.id, limit=limit, offset=offset, status=status_value,
+    # limit+1 — только чтобы честно ответить has_more без отдельного запроса.
+    fetched = await TrainingSessionRepository(session).list_for_user(
+        user.id, limit=limit + 1, offset=offset, status=status_value,
     )
+    has_more = len(fetched) > limit
+    details = fetched[:limit]
     titles = await _resolve_session_titles(session, details, user.id)
+    names = await _catalog_exercise_names(session, details)
+    verdicts = await SessionDeletionService(session).evaluate(details, user.id)
     return SessionListResponse(
         sessions=[
-            _session_response(detail, progression=None, skipped_reason=None, title=titles.get(detail.id))
+            _session_response(
+                detail, progression=None, skipped_reason=None, title=titles.get(detail.id),
+                exercise_names=names, can_delete=verdicts[detail.id].can_delete,
+            )
             for detail in details
         ],
+        has_more=has_more,
     )
+
+
+@router_v2.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """R2 — консервативное удаление завершённой Builder-сессии. Чужая/
+    несуществующая — 404 (не раскрывает существование); небезопасная или
+    недоказуемо безопасная — 409 с человекочитаемой причиной, ничего не
+    удаляется. Удаляется только дерево TrainingSession."""
+    user = await _require_user(session, init_data)
+    found, verdict = await SessionDeletionService(session).delete(session_id, user.id)
+    if not found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    if not verdict.can_delete:
+        raise HTTPException(status.HTTP_409_CONFLICT, verdict.reason)
 
 
 def _block_input(block: SessionBlockInputSchema) -> SessionBlockInput:

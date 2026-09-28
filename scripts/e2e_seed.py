@@ -84,7 +84,11 @@ from app.db.models_program import (
 )
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
-from app.db.repositories.training_sessions import SessionBlockInput, SetLogInput
+from app.db.repositories.training_sessions import (
+    SessionBlockInput,
+    SetLogInput,
+    TrainingSessionRepository,
+)
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
@@ -656,7 +660,7 @@ async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
-async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> None:
+async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> Exercise:
     """REBUILD-1 — пять пользовательских Builder Workout в текущей неделе:
     по одному на протокол (reps/time/max/interval) и смешанная
     reps -> interval -> max. Интервал короткий (15 с) — истечение в середине
@@ -705,9 +709,31 @@ async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> None
             day_of_week=day % 7, program_inclusion_id=None, plan_week_id=week.id,
         ))
     await session.flush()
+    return pull
+
+
+async def seed_journal_v2(session: AsyncSession, telegram_id: int) -> None:
+    """REBUILD-1 (R2) — те же Builder Workout, что builder_workouts, плюс 30
+    завершённых "исторических" сессий (без снимка — их удалять нельзя) для
+    пагинации Журнала (>25). Сессии разнесены по времени, самая свежая — №0."""
+    pull = await seed_builder_workouts(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    repo = TrainingSessionRepository(session)
+    now = datetime.now(UTC)
+    for index in range(30):
+        await repo.create_session(
+            user_id=user.id, source=SessionSource.PLAN, performed_at=now - timedelta(days=1, hours=index),
+            effort=None, comment=None,
+            blocks=[SessionBlockInput(exercise_id=pull.id, sets=[
+                SetLogInput(set_number=1, metric_type=MetricType.REPS, value=Decimal(10 + index), unit="reps"),
+                SetLogInput(set_number=2, metric_type=MetricType.REPS, value=Decimal(9 + index), unit="reps"),
+            ])],
+        )
+    await session.flush()
 
 
 SCENARIOS = {
+    "journal_v2": seed_journal_v2,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,

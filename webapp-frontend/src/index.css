@@ -451,6 +451,18 @@ input[type="number"] {
   margin-bottom: 0;
 }
 
+.history-card-clickable {
+  cursor: pointer;
+}
+
+.journal-block {
+  margin-top: 6px;
+}
+
+.journal-block-header {
+  font-weight: 600;
+}
+
 .history-date {
   font-weight: 700;
   font-size: 15px;

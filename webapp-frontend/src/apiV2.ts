@@ -529,16 +529,37 @@ export interface SessionResponseV2 {
    * SessionPlanItem, не пересчитывается на фронте. null — сессия без связи
    * (легаси POST /sessions в обход live-flow, или до Checkpoint 4A). */
   title: string | null;
-  blocks: {
-    order_index: number;
-    exercise_id: number | null;
-    complex_id: number | null;
-    set_logs: SetLogResponseV2[];
-    /** Phase B2 gate fix (issue #215) — interval result для Журнала. */
-    result: Record<string, unknown> | null;
-  }[];
+  blocks: SessionBlockResponseV2[];
+  /** R2 — серверное решение "можно ли безопасно удалить"; фронт показывает
+   * "Удалить" только при true и не строит своих эвристик. */
+  can_delete: boolean;
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
+}
+
+export interface SessionSetTargetResponseV2 {
+  set_number: number;
+  is_max_set: boolean;
+  metric_type: string;
+  value: string;
+  unit: string;
+}
+
+/** R2 — блок сессии для Журнала: каждый блок рендерится независимо, его
+ * протокол (protocol_type) берётся из замороженного снимка по позиции. */
+export interface SessionBlockResponseV2 {
+  order_index: number;
+  exercise_id: number | null;
+  complex_id: number | null;
+  set_logs: SetLogResponseV2[];
+  /** Phase B2 gate fix (issue #215) — interval result для Журнала. */
+  result: Record<string, unknown> | null;
+  protocol_type: ProtocolType | null;
+  /** null — человекочитаемого имени нет (внутренняя STEP-роль). */
+  exercise_name: string | null;
+  started_at: string | null;
+  set_targets: SessionSetTargetResponseV2[];
+  interval_config: IntervalConfigResponse | null;
 }
 
 export async function fetchSessions(
@@ -549,6 +570,27 @@ export async function fetchSessions(
     `/api/v2/sessions?limit=${limit}${statusParam}`, initDataRaw,
   );
   return response.sessions;
+}
+
+export interface SessionsPage {
+  sessions: SessionResponseV2[];
+  has_more: boolean;
+}
+
+/** Страница Журнала v2 — тот же GET /sessions (limit/offset), has_more
+ * считает сервер. */
+export async function fetchSessionsPage(
+  initDataRaw: string, limit: number, offset: number, status: "started" | "completed",
+): Promise<SessionsPage> {
+  return apiV2Get<SessionsPage>(
+    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}`, initDataRaw,
+  );
+}
+
+/** 404 — чужая/несуществующая, 409 — небезопасно удалять (текст причины
+ * человекочитаемый, приходит в Error.message). */
+export async function deleteSession(initDataRaw: string, sessionId: number): Promise<void> {
+  return apiV2Delete(`/api/v2/sessions/${sessionId}`, initDataRaw);
 }
 
 // --- Каталог программ (Capability A, issue #188) — GET /programs список,

@@ -62,3 +62,13 @@ async def v2_patch(session, telegram_id: int, path: str, payload: dict):
             return await client.patch(path, json=payload)
     finally:
         app.dependency_overrides.clear()
+
+
+async def v2_delete(session, telegram_id: int, path: str):
+    """R2 (REBUILD-1) — DELETE /sessions/{id}."""
+    _override_dependencies(session, telegram_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.delete(path)
+    finally:
+        app.dependency_overrides.clear()
