@@ -95,6 +95,21 @@ test("Journal v2: карточки всех протоколов, детали, 
   await expect(page.getByRole("button", { name: /Удалить/ })).toHaveCount(0);
   await page.getByRole("button", { name: "← Назад" }).click();
 
+  // Тот же отказ по реальному HTTP: 409 с человекочитаемой причиной, ничего не удалено;
+  // чужой/несуществующий id — 404.
+  const initData = await page.evaluate(
+    () => (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp.initData,
+  );
+  const headers = { "X-Telegram-Init-Data": initData };
+  const listing = await page.request.get("/api/v2/sessions?status=completed&limit=200", { headers });
+  const unsafe = (await listing.json()).sessions.find((s: { can_delete: boolean }) => !s.can_delete);
+  const denied = await page.request.delete(`/api/v2/sessions/${unsafe.id}`, { headers });
+  expect(denied.status()).toBe(409);
+  expect((await denied.json()).detail).toMatch(/[А-Яа-я]{6,}/);
+  expect((await page.request.delete("/api/v2/sessions/99999999", { headers })).status()).toBe(404);
+  const after = await page.request.get("/api/v2/sessions?status=completed&limit=200", { headers });
+  expect((await after.json()).sessions.some((s: { id: number }) => s.id === unsafe.id)).toBe(true);
+
   // --- Безопасное удаление: двойной клик -> один DELETE; следующий offset не ломается ---
   const deleteRequests: string[] = [];
   page.on("request", (request) => {

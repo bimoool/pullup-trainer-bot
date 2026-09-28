@@ -98,3 +98,20 @@ npm был недоступен из песочницы Claude в сессии, 
 локально сгенерирует лок-файл — его стоит закоммитить в этот же каталог
 после первого успешного прогона, по аналогии с тем, как уже сделано для
 `webapp-frontend/package-lock.json`.
+
+## REBUILD-1: Builder / Journal v2 / Analytics v2
+
+Три набора сценариев (каждый — со своим сидом на СВЕЖЕЙ БД; сиды не пересидируют
+существующего пользователя, а `builder-execution`/`journal-v2` меняют данные — перед
+повторным прогоном пересоздайте БД или пользователей):
+
+```bash
+python scripts/e2e_seed.py builder_workouts 910001   # builder-execution.spec.ts
+python scripts/e2e_seed.py journal_v2       910002   # journal-v2.spec.ts (+ 30 исторических сессий)
+python scripts/e2e_seed.py analytics_v2     910003   # analytics-v2.spec.ts (часовой пояс Pacific/Kiritimati)
+npx playwright test builder-execution journal-v2 analytics-v2 --workers=1
+```
+
+Сценарии `builder-execution` и `journal-v2` идут по реальному времени (interval 15 с). Сценарии
+`plans-manual-session`, `plans-start-session`, `journal-combined`, `plans-grouping` устарели
+относительно текущих экранов и падают и на базе `830f205` (см. `docs/ENGINEERING_NOTES.md`).
