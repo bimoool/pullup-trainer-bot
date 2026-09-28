@@ -66,6 +66,9 @@ class BlockPlan:
     к следующему блоку."""
 
     sets_count: int
+    # REBUILD-1 (R1): отдых из протокола Builder-блока; None — продуктовый
+    # дефолт DEFAULT_REST_SECONDS (legacy/STEP блоки).
+    rest_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -155,7 +158,7 @@ def next_phase(
             )
         return PhaseState(
             phase_name=SessionPhaseName.REST, block_index=current.block_index, set_number=current.set_number,
-            ends_at_offset_seconds=rest_seconds,
+            ends_at_offset_seconds=block.rest_seconds if block.rest_seconds is not None else rest_seconds,
         )
 
     # current.phase_name == SessionPhaseName.REST

@@ -1,7 +1,12 @@
 import { Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
-import { completeLiveSession, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
+import {
+  completeLiveSession,
+  finishLiveIntervalBlock,
+  type LiveSessionCompleteResponse,
+  type LiveSessionResponse,
+} from "./apiV2";
 import { computeClockOffsetMs, computeIntervalState, type IntervalPhase } from "./intervalTiming";
 import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
@@ -16,6 +21,9 @@ type Props = {
    * которые interval вообще не нужны). */
   initialSession: LiveSessionResponse;
   onCompleted: (result: LiveSessionCompleteResponse) => void;
+  /** R1 — interval-блок в СЕРЕДИНЕ тренировки закончился: сессия осталась
+   * "started" и ждёт следующий блок (interstitial). */
+  onAdvanced?: (session: LiveSessionResponse) => void;
   title?: string;
 };
 
@@ -50,7 +58,7 @@ function formatSeconds(totalSeconds: number): string {
  * (Phase B1 backend contract) — не создаётся собственный client-side
  * completed result.
  */
-export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, title }: Props) {
+export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, onAdvanced, title }: Props) {
   const interval = initialSession.interval;
 
   // issue #215/#310 — все хуки ДО любого раннего return (тот же паттерн,
@@ -65,6 +73,7 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, t
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
 
+  const blockName = initialSession.blocks[initialSession.current_block_index]?.exercise_name ?? null;
   const executionStartedAtMs = interval !== null ? new Date(interval.execution_started_at).getTime() : 0;
 
   // Лёгкий тик 250мс (issue #215, раздел 20) — плавный countdown, фаза
@@ -109,9 +118,15 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, t
     }
     completionRequestedRef.current = true;
     setCompleting(true);
-    completeLiveSession(initDataRaw, initialSession.id, false)
+    // Дедлайн ЭТОГО блока: сервер сам решает — продвинуть сессию к
+    // следующему блоку (середина) или завершить её (последний блок).
+    finishLiveIntervalBlock(initDataRaw, initialSession.id, initialSession.current_block_index)
       .then((result) => {
-        onCompleted(result);
+        if (result.status === "completed") {
+          onCompleted(result);
+        } else {
+          onAdvanced?.(result);
+        }
       })
       .catch((error) => {
         setCompleteError(error instanceof Error ? error.message : String(error));
@@ -141,6 +156,7 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, t
     <div>
       <p className="plan-title">Живая тренировка</p>
       {title && <p className="block-subtitle">{title}</p>}
+      {blockName && <p className="block-subtitle">{blockName} · Интервалы</p>}
       {completeError && (
         <p className="gap-banner">Не удалось завершить: {completeError}. Пробую снова…</p>
       )}

@@ -317,6 +317,22 @@ export interface LiveSessionBlockResponse {
    * planned_duration_seconds, actual_duration_seconds, completed_cycles}.
    * null для standard STANDARD/REPS/MAX блоков. */
   result: Record<string, unknown> | null;
+  /** R1 — идентичность блока из ЗАМОРОЖЕННОГО снимка тренировки (не из
+   * изменяемого Workout). null у legacy/STEP-блоков без снимка. */
+  protocol_type: ProtocolType | null;
+  exercise_name: string | null;
+  rest_seconds: number | null;
+  /** Эффективное время начала блока; null — блок ещё не начат. */
+  started_at: string | null;
+  interval_config: IntervalConfigResponse | null;
+}
+
+export type ProtocolType = "reps_sets" | "time_sets" | "max_effort" | "interval";
+
+export interface IntervalConfigResponse {
+  total_duration_seconds: number;
+  work_seconds: number;
+  rest_seconds: number;
 }
 
 export interface BlockProgressionResponseV2 {
@@ -360,6 +376,9 @@ export interface LiveSessionResponse {
    * сравнивает абсолютные серверные timestamps с голым Date.now(). */
   server_time: string;
   interval: IntervalStateResponse | null;
+  /** R1 — сессия стоит перед ещё не начатым блоком: показывается
+   * interstitial "Следующее упражнение … Начать", блок сам не стартует. */
+  awaiting_block_start: boolean;
   /** Phase B2 gate fix (issue #215) — резолвится бэкендом (тот же путь,
    * что Журнал уже использует), нужен для reload/recovery: без него
    * PlanSessionFlow/IntervalLiveScreen получали пустой title после
@@ -378,6 +397,9 @@ export interface LiveSetBatchEntry {
   value: string;
   effort?: string | null;
   note?: string | null;
+  /** R1 — блок, для которого записан подход (одно упражнение может
+   * встречаться в тренировке несколько раз). */
+  block_index?: number | null;
 }
 
 export async function startLiveSession(
@@ -414,6 +436,28 @@ export async function batchLiveSessionSets(
   sets: LiveSetBatchEntry[],
 ): Promise<LiveSessionResponse> {
   return apiV2Post(`/api/v2/sessions/live/${sessionId}/sets:batch`, initDataRaw, { sets });
+}
+
+export async function startLiveBlock(
+  initDataRaw: string,
+  sessionId: number,
+  expectedBlockIndex: number,
+): Promise<LiveSessionResponse> {
+  return apiV2Post(`/api/v2/sessions/live/${sessionId}/blocks/start`, initDataRaw, {
+    expected_block_index: expectedBlockIndex,
+  });
+}
+
+/** Дедлайн interval-блока: середина тренировки — сессия остаётся "started"
+ * и ждёт следующий блок; последний блок — статус "completed". */
+export async function finishLiveIntervalBlock(
+  initDataRaw: string,
+  sessionId: number,
+  expectedBlockIndex: number,
+): Promise<LiveSessionCompleteResponse> {
+  return apiV2Post(`/api/v2/sessions/live/${sessionId}/blocks/finish`, initDataRaw, {
+    expected_block_index: expectedBlockIndex,
+  });
 }
 
 export async function completeLiveSession(

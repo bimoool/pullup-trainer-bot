@@ -1,6 +1,7 @@
 import { Button, Section } from "@telegram-apps/telegram-ui";
 
-import type { LiveSessionCompleteResponse } from "./apiV2";
+import type { LiveSessionCompleteResponse, SetLogResponseV2 } from "./apiV2";
+import { formatDuration, formatIntervalsCount, formatNumber } from "./blockFormat";
 
 type Props = {
   result: LiveSessionCompleteResponse;
@@ -44,12 +45,6 @@ const SKIPPED_REASON_LABELS: Record<string, string> = {
  * 3, унаследованный сюда, а не забытая фронтенд-доработка; рисовать
  * "+N монет" без реального начисления значило бы врать пользователю.
  */
-function formatMinutesSeconds(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
 type IntervalResult = {
   type: "interval";
   planned_duration_seconds: number;
@@ -61,66 +56,67 @@ function isIntervalResult(value: unknown): value is IntervalResult {
   return typeof value === "object" && value !== null && (value as { type?: unknown }).type === "interval";
 }
 
-export function SessionSummaryScreen({ result, onClose, resolveExerciseName, title }: Props) {
-  // Phase B2 (issue #215, раздел 17) — interval получает отдельную
-  // rendering-ветку: не SetLog rows, не fake targets, не Упражнение #id.
-  // Источник данных — уже полученный result.blocks[].result (сам result
-  // на бэкенде читает TrainingSession.workout_snapshot + SessionBlock.result,
-  // не live Complex definition — Summary здесь просто отображает то, что
-  // уже пришло, никакого отдельного запроса).
-  const intervalResult = result.blocks.length > 0 && isIntervalResult(result.blocks[0].result)
-    ? result.blocks[0].result
-    : null;
-
-  if (intervalResult !== null) {
-    return (
-      <div>
-        {title && <p className="plan-title">{title}</p>}
-        <p className="plan-title">Тренировка завершена</p>
-        <Section className="block-section">
-          <p className="block-subtitle">{formatMinutesSeconds(intervalResult.actual_duration_seconds)} выполнено</p>
-          {result.interval && (
-            <p className="block-subtitle">
-              {result.interval.work_seconds} сек работа / {result.interval.rest_seconds} сек отдых
-            </p>
-          )}
-          <p className="block-subtitle">{intervalResult.completed_cycles} рабочих интервалов</p>
-        </Section>
-        <Button className="action-button" size="l" stretched onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
-    );
+/** Значение одного подхода без технических хвостов ("8.00 reps"). */
+function formatLogValue(log: SetLogResponseV2): string {
+  if (log.unit === "s") {
+    return formatDuration(Number(log.value));
   }
+  if (log.unit === "reps") {
+    return `${formatNumber(log.value)} повт.`;
+  }
+  return `${formatNumber(log.value)} ${log.unit}`;
+}
 
+export function SessionSummaryScreen({ result, onClose, resolveExerciseName, title }: Props) {
+  // R1 (инвариант J): каждый блок рендерится НЕЗАВИСИМО — interval в любой
+  // позиции, рядом с reps/time/max. Ни один блок не определяет вид всей
+  // сессии. Данные — то, что уже пришло в result (идентичность протокола из
+  // замороженного снимка), отдельных запросов нет.
   return (
     <div>
       {title && <p className="plan-title">{title}</p>}
       <p className="plan-title">Тренировка завершена</p>
 
       {result.blocks.map((block) => {
+        // name=null (internal STEP-роль без публичного имени) значит заголовок
+        // несёт только статус/счёт — не "Блок A", не "Упражнение #id".
+        const name = block.exercise_name !== null
+          ? block.exercise_name
+          : block.exercise_id !== null && resolveExerciseName
+            ? resolveExerciseName(block.exercise_id)
+            : (block.complex_id !== null ? "Комплекс" : null);
         const target = block.targets.length;
         const done = block.set_logs.length;
-        const isComplete = target > 0 && done >= target;
-        // Integration fix (H2 hardening) — name=null (internal STEP-роль
-        // без публичного имени, Checkpoint 3C) значит заголовок секции не
-        // несёт имени вовсе, только статус/счёт — не "Блок A", не
-        // "Упражнение #id", не выдуманный термин (раздел 5/8 задачи).
-        // complex_id-путь (Комплекс) не тронут — вне scope этого фикса.
-        const name = block.exercise_id !== null && resolveExerciseName
-          ? resolveExerciseName(block.exercise_id)
-          : (block.complex_id !== null ? "Комплекс" : null);
-        const header = name !== null
-          ? `${isComplete ? "✅" : "▫️"} ${name} — ${done}/${target}`
-          : `${isComplete ? "✅" : "▫️"} ${done}/${target}`;
+        const intervalResult = isIntervalResult(block.result) ? block.result : null;
+        const isMax = block.protocol_type === "max_effort";
+        const isComplete = intervalResult !== null || (target > 0 && done >= target);
+        const status = isComplete ? "✅" : "▫️";
+        const counter = intervalResult !== null || target === 0 ? "" : ` — ${done}/${target}`;
+        const header = `${status}${name !== null ? ` ${name}` : ""}${counter}`;
+        const best = isMax && done > 0 ? Math.max(...block.set_logs.map((log) => Number(log.value))) : null;
         return (
           <Section key={block.order_index} className="block-section" header={header}>
-            {block.set_logs.map((log) => (
-              <p key={log.set_number} className="block-subtitle">
-                Подход {log.set_number}: {log.value} {log.unit}
-              </p>
-            ))}
-            {done === 0 && <p className="block-subtitle">Не выполнено — осталось в плане.</p>}
+            {intervalResult !== null ? (
+              <>
+                <p className="block-subtitle">{formatDuration(intervalResult.actual_duration_seconds)} выполнено</p>
+                {block.interval_config && (
+                  <p className="block-subtitle">
+                    {block.interval_config.work_seconds} сек работа / {block.interval_config.rest_seconds} сек отдых
+                  </p>
+                )}
+                <p className="block-subtitle">{formatIntervalsCount(intervalResult.completed_cycles)}</p>
+              </>
+            ) : (
+              <>
+                {block.set_logs.map((log) => (
+                  <p key={log.set_number} className="block-subtitle">
+                    {isMax ? "Попытка" : "Подход"} {log.set_number}: {formatLogValue(log)}
+                  </p>
+                ))}
+                {best !== null && <p className="block-subtitle">Лучший результат: {formatNumber(best)}</p>}
+                {done === 0 && <p className="block-subtitle">Не выполнено — осталось в плане.</p>}
+              </>
+            )}
           </Section>
         );
       })}

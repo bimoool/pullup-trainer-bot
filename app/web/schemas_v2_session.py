@@ -35,6 +35,17 @@ class LiveSessionPhaseNextRequest(BaseModel):
     expected_phase_index: int
 
 
+# --- POST /sessions/live/{id}/blocks/start | /blocks/finish -------------------------------
+
+
+class LiveSessionBlockRequest(BaseModel):
+    """expected_block_index — блок, который клиент считает текущим. Не
+    совпал (клиент отстал/обогнал, двойной клик) — сервер молча отдаёт
+    текущее состояние без изменений, как и phase/next."""
+
+    expected_block_index: int
+
+
 # --- POST /sessions/live/{id}/sets:batch --------------------------------------------------
 
 
@@ -52,6 +63,9 @@ class LiveSetBatchEntry(BaseModel):
     effort: Decimal | None = None
     note: str | None = None
     client_ts: datetime | None = None
+    # R1: блок, для которого записан подход (дубли упражнения в тренировке);
+    # None — старый клиент, берётся текущий блок сессии.
+    block_index: int | None = None
 
 
 class LiveSetBatchRequest(BaseModel):
@@ -86,11 +100,24 @@ class LiveSessionBlockResponse(BaseModel):
     complex_id: int | None
     targets: list[LiveSetTargetResponse]
     set_logs: list[SetLogResponse]
+    # R1: идентичность блока берётся из ЗАМОРОЖЕННОГО снимка (позиционно), не
+    # из изменяемого ComplexItem. None у legacy/STEP-блоков (без снимка).
+    protocol_type: str | None = None
+    exercise_name: str | None = None
+    rest_seconds: int | None = None
+    started_at: datetime | None = None
+    interval_config: "IntervalConfigResponse | None" = None
     # Phase B2 gate fix (issue #215) — SessionBlock.result (Phase B1), для
     # interval — полный контракт {type, started_at, completed_at,
     # planned_duration_seconds, actual_duration_seconds, completed_cycles}.
     # None для standard STANDARD/REPS/MAX блоков (result там не пишется).
     result: dict | None = None
+
+
+class IntervalConfigResponse(BaseModel):
+    total_duration_seconds: int
+    work_seconds: int
+    rest_seconds: int
 
 
 class IntervalStateResponse(BaseModel):
@@ -118,7 +145,10 @@ class LiveSessionResponse(BaseModel):
     current_set_number: int
     blocks: list[LiveSessionBlockResponse]
     server_time: datetime  # Phase B1: UTC timestamp генерации ответа
-    interval: IntervalStateResponse | None  # Phase B1: только для interval workouts
+    interval: IntervalStateResponse | None  # R1: ТЕКУЩИЙ начатый interval-блок, иначе None
+    # R1: сессия стоит перед ещё не начатым блоком — фронт показывает
+    # interstitial "Готово ✓ / Следующее упражнение / Начать".
+    awaiting_block_start: bool = False
     # Phase B2 gate fix (issue #215) — найдено живым reload-прогоном:
     # /sessions/live/active не резолвил title вообще, App.tsx's resumedSession
     # ветка передавала PlanSessionFlow пустую строку — "3 минуты подтягиваний"

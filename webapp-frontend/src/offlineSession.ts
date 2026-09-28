@@ -31,7 +31,10 @@ import {
 
 const STORE_KEY = "pullup:v2:live-session";
 
-export type LocalPhaseName = "get_ready" | "go" | "rest" | "done";
+/** "between" — клиентское имя серверного состояния "сессия стоит перед ещё не
+ * начатым блоком" (awaiting_block_start): между блоками показывается
+ * interstitial, следующий блок стартует только явным "Начать". */
+export type LocalPhaseName = "get_ready" | "go" | "rest" | "between" | "done";
 
 export interface LocalPhaseState {
   phaseName: LocalPhaseName;
@@ -55,8 +58,13 @@ const DEFAULT_REST_SECONDS = 90;
  * пока ответ сервера ещё не пришёл (офлайн) или в полёте (онлайн, до ответа
  * — оптимистичный UI). Как только ответ сервера приходит, он ЗАМЕНЯЕТ этот
  * локальный расчёт целиком (см. flushLocalSession ниже), а не мёржится с ним. */
-export function nextLocalPhase(current: LocalPhaseState, blockSetCounts: number[]): LocalPhaseState {
-  if (current.phaseName === "done") {
+export function nextLocalPhase(
+  current: LocalPhaseState,
+  blockSetCounts: number[],
+  manualTransitions = false,
+): LocalPhaseState {
+  if (current.phaseName === "done" || current.phaseName === "between") {
+    // "between" покидается только явным startLiveBlock, не переходом фазы.
     return current;
   }
   if (blockSetCounts.length === 0 || current.blockIndex >= blockSetCounts.length) {
@@ -75,7 +83,13 @@ export function nextLocalPhase(current: LocalPhaseState, blockSetCounts: number[
       return { phaseName: "done", blockIndex: current.blockIndex, setNumber: current.setNumber };
     }
     if (isLastSetOfBlock) {
-      return { phaseName: "get_ready", blockIndex: current.blockIndex + 1, setNumber: 1 };
+      // Builder-тренировка: следующий блок ждёт явного "Начать"; STEP и
+      // legacy-комплексы идут по-старому (сразу get_ready следующего блока).
+      return {
+        phaseName: manualTransitions ? "between" : "get_ready",
+        blockIndex: current.blockIndex + 1,
+        setNumber: 1,
+      };
     }
     return { phaseName: "rest", blockIndex: current.blockIndex, setNumber: current.setNumber };
   }
@@ -84,18 +98,21 @@ export function nextLocalPhase(current: LocalPhaseState, blockSetCounts: number[
   return { phaseName: "get_ready", blockIndex: current.blockIndex, setNumber: current.setNumber + 1 };
 }
 
-export function localPhaseDurationSeconds(phaseName: LocalPhaseName): number | null {
+export function localPhaseDurationSeconds(phaseName: LocalPhaseName, restSeconds?: number | null): number | null {
   if (phaseName === "get_ready") {
     return GET_READY_SECONDS;
   }
   if (phaseName === "rest") {
-    return DEFAULT_REST_SECONDS;
+    return restSeconds ?? DEFAULT_REST_SECONDS;
   }
   return null;
 }
 
 export interface QueuedSet {
   setIndex: number;
+  /** Блок, в котором введён подход — сервер адресует запись блоком, не
+   * только exercise_id (одно упражнение может повторяться в тренировке). */
+  blockIndex: number;
   exerciseId: number;
   value: string;
   effort?: string | null;
@@ -138,6 +155,26 @@ export async function clearLocalSession(): Promise<void> {
   await del(STORE_KEY);
 }
 
+/** Локальный черновик можно переиспользовать только если он относится к
+ * той же сессии и либо ещё несёт неотправленное, либо не отстаёт от
+ * серверного состояния. Иначе (сессия ушла вперёд без нас — например,
+ * прошёл interval-блок, где IndexedDB не используется) старый снимок
+ * "протёк" бы в следующий блок. */
+export function isLocalSessionReusable(existing: LocalLiveSession | null, session: LiveSessionResponse): boolean {
+  if (existing === null || existing.serverSessionId !== session.id) {
+    return false;
+  }
+  const hasPending =
+    existing.pendingSets.length > 0 || existing.pendingPhaseAdvances > 0 || existing.completeRequested !== null;
+  return hasPending || existing.server.phase_index === session.phase_index;
+}
+
+/** Ручной старт блоков — только у Builder-сессий: там каждый блок несёт
+ * protocol_type из замороженного снимка (у STEP/legacy — null). */
+export function hasManualTransitions(server: LiveSessionResponse): boolean {
+  return server.blocks.length > 0 && server.blocks.every((block) => block.protocol_type !== null);
+}
+
 export function blockSetCounts(server: LiveSessionResponse): number[] {
   return server.blocks.map((block) => block.targets.length);
 }
@@ -147,7 +184,11 @@ export function initialLocalSession(clientSessionId: string, server: LiveSession
     clientSessionId,
     serverSessionId: server.id,
     server,
-    localPhase: { phaseName: server.phase.name, blockIndex: server.current_block_index, setNumber: server.current_set_number },
+    localPhase: {
+      phaseName: server.awaiting_block_start ? "between" : server.phase.name,
+      blockIndex: server.current_block_index,
+      setNumber: server.current_set_number,
+    },
     localPhaseEnteredAt: new Date().toISOString(),
     nextSetIndex: server.blocks.reduce((sum, block) => sum + block.set_logs.length, 0),
     pendingSets: [],
@@ -181,6 +222,7 @@ export async function flushLocalSession(
       local.serverSessionId,
       local.pendingSets.map((entry) => ({
         set_index: entry.setIndex,
+        block_index: entry.blockIndex,
         exercise_id: entry.exerciseId,
         value: entry.value,
         effort: entry.effort ?? null,

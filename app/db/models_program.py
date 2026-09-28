@@ -466,6 +466,11 @@ class SessionBlock(Base):
     # finalization (lazy completion при GET active/list): completed_cycles,
     # actual_duration_seconds. NULL для legacy rows и для non-interval blocks.
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # REBUILD-1 (R1): когда пользователь явно начал этот блок (server-
+    # authoritative таймер interval-блока отсчитывается от него). NULL —
+    # блок не начат; у старых сессий блок 0 с NULL читается как "начат в
+    # performed_at" (см. app.services.live_session._block_started_at).
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

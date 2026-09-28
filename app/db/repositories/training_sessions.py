@@ -64,6 +64,12 @@ class BatchSetLogInput:
     value: Decimal
     effort: Decimal | None = None
     note: str | None = None
+    # REBUILD-1 (R1): порядковый индекс блока, для которого клиент записал
+    # подход. Нужен, потому что одно упражнение может встречаться в
+    # тренировке несколько раз, а отложенный офлайн-батч может дойти уже
+    # после перехода сервера к следующему блоку. None — старый клиент:
+    # берётся текущий блок сессии.
+    block_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,7 @@ class SessionBlockDetail:
     set_logs: list[SessionSetLogDetail] = field(default_factory=list)
     set_targets: list[SessionSetTargetDetail] = field(default_factory=list)
     result: dict | None = None
+    started_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -296,11 +303,11 @@ class TrainingSessionRepository:
         подходов одного блока получил бы одинаковый set_number вместо
         1,2,3."""
         blocks_result = await self._session.execute(
-            select(SessionBlock).where(SessionBlock.session_id == session_id),
+            select(SessionBlock).where(SessionBlock.session_id == session_id).order_by(SessionBlock.order_index),
         )
-        block_by_exercise_id: dict[int, SessionBlock] = {
-            block.exercise_id: block for block in blocks_result.scalars().all() if block.exercise_id is not None
-        }
+        blocks = list(blocks_result.scalars().all())
+        training_session = await self._session.get(TrainingSession, session_id)
+        current_block_index = training_session.current_block_index
 
         exercise_ids = {entry.exercise_id for entry in entries}
         exercises_result = await self._session.execute(select(Exercise).where(Exercise.id.in_(exercise_ids)))
@@ -318,7 +325,7 @@ class TrainingSessionRepository:
             count_by_block_id[log.session_block_id] = count_by_block_id.get(log.session_block_id, 0) + 1
 
         for entry in entries:
-            block = block_by_exercise_id.get(entry.exercise_id)
+            block = self._resolve_batch_block(blocks, entry, current_block_index)
             if block is None:
                 raise ValueError(
                     f"Упражнение {entry.exercise_id} не найдено среди блоков сессии {session_id}",
@@ -345,6 +352,27 @@ class TrainingSessionRepository:
             existing_by_set_index[entry.set_index] = new_log
 
         await self._session.flush()
+
+    @staticmethod
+    def _resolve_batch_block(
+        blocks: list[SessionBlock], entry: BatchSetLogInput, current_block_index: int,
+    ) -> SessionBlock | None:
+        """REBUILD-1 (R1, инвариант H): подход адресуется БЛОКОМ, не только
+        exercise_id — иначе повтор одного упражнения в тренировке писал бы
+        все подходы в один и тот же блок. Явный block_index проверяется на
+        совпадение упражнения (чужой/сбитый индекс — не запись в чужой блок,
+        а ошибка); без block_index (старый клиент) — текущий блок сессии,
+        если упражнение совпало, иначе первый блок с этим упражнением (как
+        раньше)."""
+        if entry.block_index is not None:
+            block = next((b for b in blocks if b.order_index == entry.block_index), None)
+            if block is None or block.exercise_id != entry.exercise_id:
+                return None
+            return block
+        current = next((b for b in blocks if b.order_index == current_block_index), None)
+        if current is not None and current.exercise_id == entry.exercise_id:
+            return current
+        return next((b for b in blocks if b.exercise_id == entry.exercise_id), None)
 
     async def update_set_logs_for_blocks(
         self, *, session_block_ids_with_sets: list[tuple[int, list[SetLogInput]]],
@@ -380,6 +408,19 @@ class TrainingSessionRepository:
         training_session.status = SessionStatus.COMPLETED
         training_session.phase_name = SessionPhase.DONE
         training_session.phase_ends_at = None
+        await self._session.flush()
+
+    async def lock_session(self, session_id: int) -> None:
+        """SELECT ... FOR UPDATE строки сессии — сериализует конкурентные
+        start/finish блока (двойной клик, два вкладки), чтобы проверка
+        "блок ещё не начат" и запись started_at не гонялись."""
+        await self._session.execute(
+            select(TrainingSession.id).where(TrainingSession.id == session_id).with_for_update(),
+        )
+
+    async def mark_block_started(self, block_id: int, started_at: datetime) -> None:
+        block = await self._session.get(SessionBlock, block_id)
+        block.started_at = started_at
         await self._session.flush()
 
     async def save_interval_block_result(self, block_id: int, result: dict) -> None:
@@ -445,7 +486,7 @@ class TrainingSessionRepository:
                         )
                         for target in set_targets_by_block[block.id]
                     ],
-                    result=block.result,
+                    result=block.result, started_at=block.started_at,
                 )
                 for block in blocks_by_session[session_row.id]
             ]

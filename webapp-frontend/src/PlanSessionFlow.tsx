@@ -98,21 +98,33 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
     // Единственный сигнал — screen.session.interval !== null, тот же
     // признак, что backend уже кладёт в LiveSessionResponse только для
     // interval-блоков (Phase B1).
+    //
+    // R1: смешанная тренировка идёт блок за блоком; interval — только когда
+    // ТЕКУЩИЙ блок interval И начат (session.interval — серверная проекция),
+    // не начатый interval-блок показывается interstitial'ом внутри
+    // SessionLiveScreen. key по (сессия, блок) — экран и его локальное
+    // состояние пересоздаются на каждом блоке, ничего не протекает дальше.
+    const blockKey = `${screen.session.id}-${screen.session.current_block_index}`;
+    const onSessionUpdate = (session: LiveSessionResponse) => setScreen({ kind: "live", session });
     if (screen.session.interval !== null) {
       return (
         <IntervalLiveScreen
+          key={blockKey}
           initDataRaw={initDataRaw}
           initialSession={screen.session}
           onCompleted={(result) => setScreen({ kind: "summary", result })}
+          onAdvanced={onSessionUpdate}
           title={title}
         />
       );
     }
     return (
       <SessionLiveScreen
+        key={blockKey}
         initDataRaw={initDataRaw}
         initialSession={screen.session}
         onCompleted={(result) => setScreen({ kind: "summary", result })}
+        onSessionUpdate={onSessionUpdate}
         resolveExerciseName={resolveExerciseName}
         title={title}
       />

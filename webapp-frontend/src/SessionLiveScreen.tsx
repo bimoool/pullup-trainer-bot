@@ -1,11 +1,16 @@
 import { Button, Input, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
-import type { LiveSessionCompleteResponse, LiveSessionResponse } from "./apiV2";
+import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
+import { BlockTransition } from "./BlockTransition";
+import { describeBlockPlan, formatDuration, formatNumber, formatTarget } from "./blockFormat";
 import {
   blockSetCounts,
+  clearLocalSession,
   flushLocalSession,
+  hasManualTransitions,
   initialLocalSession,
+  isLocalSessionReusable,
   loadLocalSession,
   localPhaseDurationSeconds,
   nextLocalPhase,
@@ -35,23 +40,21 @@ type Props = {
    * Опционален — лаба не передаёт его, "Живая тренировка" остаётся общим
    * заголовком без изменений. */
   title?: string;
+  /** R1 — вызывается, когда сервер отдал новое состояние сессии вне обычного
+   * потока подходов (явный старт следующего блока): PlanSessionFlow по нему
+   * решает, какой экран нужен блоку (обычный/interval). */
+  onSessionUpdate?: (session: LiveSessionResponse) => void;
 };
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
   get_ready: "Приготовься",
   go: "Пошёл",
   rest: "Отдых",
+  between: "Готово",
   done: "Готово",
 };
 
 const EFFORT_OPTIONS = ["1", "2", "3", "4", "5"];
-
-function formatSeconds(total: number): string {
-  const clamped = Math.max(0, Math.round(total));
-  const minutes = Math.floor(clamped / 60);
-  const seconds = clamped % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 
 /**
  * Live-экран сессии (issue #185, раздел 10.8 docs/plan-and-specs.md).
@@ -63,7 +66,9 @@ function formatSeconds(total: number): string {
  * заменяет локальное состояние (offline-session skill: "клиент заменяет
  * локальное состояние серверным, а не мержит вручную").
  */
-export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, resolveExerciseName, title }: Props) {
+export function SessionLiveScreen({
+  initDataRaw, initialSession, onCompleted, resolveExerciseName, title, onSessionUpdate,
+}: Props) {
   const [local, setLocalState] = useState<LocalLiveSession | null>(null);
   const localRef = useRef<LocalLiveSession | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -72,6 +77,8 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
   const [value, setValue] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [startingBlock, setStartingBlock] = useState(false);
+  const [startBlockError, setStartBlockError] = useState<string | null>(null);
   // Двойной тап (issue #187, баг 2): быстрый повторный клик по "Готов"/
   // "Готово"/"Завершить" реально шлёт второй запрос до перерисовки кнопки —
   // ref, а не state, чтобы не ждать лишнего рендера между кликами. Хук
@@ -90,8 +97,11 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
     let cancelled = false;
     async function init() {
       const existing = await loadLocalSession();
+      // Старый локальный снимок переиспользуется только если он не отстаёт
+      // от сервера (см. isLocalSessionReusable) — иначе состояние прошлого
+      // блока протекло бы в следующий.
       const next =
-        existing !== null && existing.serverSessionId === initialSession.id
+        existing !== null && isLocalSessionReusable(existing, initialSession)
           ? existing
           : initialLocalSession(initialSession.client_session_id, initialSession);
       if (!cancelled) {
@@ -140,6 +150,7 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
     try {
       const result = await flushLocalSession(initDataRaw, updated);
       if (updated.completeRequested) {
+        await clearLocalSession();
         onCompleted(result as LiveSessionCompleteResponse);
         return;
       }
@@ -192,7 +203,9 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
     if (serverEndsAt !== null) {
       return new Date(serverEndsAt).getTime();
     }
-    const duration = localPhaseDurationSeconds(local.localPhase.phaseName);
+    const duration = localPhaseDurationSeconds(
+      local.localPhase.phaseName, local.server.blocks[local.localPhase.blockIndex]?.rest_seconds,
+    );
     return duration !== null ? new Date(local.localPhaseEnteredAt).getTime() + duration * 1000 : null;
   })();
 
@@ -218,6 +231,22 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
   // позиции своего определения ниже; сама вызывается (через клик) только
   // когда local уже точно не null, поэтому её собственное тело не нужно
   // менять.
+  // R1 (инвариант I): значения формы подхода не переживают смену блока/
+  // подхода/фазы — ни один локальный ввод предыдущего блока не попадает в
+  // следующий (для time-блока поле сразу содержит цель).
+  const formBlockIndex = local?.localPhase.blockIndex ?? -1;
+  const formSetNumber = local?.localPhase.setNumber ?? -1;
+  const formPhaseName = local?.localPhase.phaseName ?? null;
+  const formTarget = local?.server.blocks[formBlockIndex]?.targets[formSetNumber - 1] ?? null;
+  useEffect(() => {
+    setValue(
+      formTarget !== null && formTarget.unit === "s" && Number(formTarget.value) > 0 ? formatNumber(formTarget.value) : "",
+    );
+    setEffort(null);
+    setNote("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formBlockIndex, formSetNumber, formPhaseName]);
+
   useBackButton(handleFinish, [local]);
 
   if (local === null) {
@@ -252,7 +281,7 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
       if (local === null) {
         return;
       }
-      const newPhase = nextLocalPhase(local.localPhase, counts);
+      const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
       await commitLocal({
         ...local,
         localPhase: newPhase,
@@ -267,12 +296,15 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
       if (local === null || block === null || block.exercise_id === null || value.trim() === "") {
         return;
       }
-      const newPhase = nextLocalPhase(local.localPhase, counts);
+      const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
       await commitLocal({
         ...local,
         pendingSets: [
           ...local.pendingSets,
-          { setIndex: local.nextSetIndex, exerciseId: block.exercise_id, value: value.trim(), effort, note: note.trim() || null },
+          {
+            setIndex: local.nextSetIndex, blockIndex: local.localPhase.blockIndex, exerciseId: block.exercise_id,
+            value: value.trim(), effort, note: note.trim() || null,
+          },
         ],
         nextSetIndex: local.nextSetIndex + 1,
         localPhase: newPhase,
@@ -300,10 +332,53 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
     });
   }
 
+  // R1: явный "Начать" следующего блока. Сначала досылаем накопленное (сервер
+  // должен быть уже у границы блока), потом стартуем блок; двойной клик
+  // отсекается guardedAction, а сам старт идемпотентен на сервере. Ошибка —
+  // кнопка остаётся, можно повторить.
+  function startNextBlock() {
+    void guardedAction(async () => {
+      if (local === null) {
+        return;
+      }
+      setStartingBlock(true);
+      setStartBlockError(null);
+      try {
+        if (local.pendingSets.length > 0 || local.pendingPhaseAdvances > 0) {
+          await flushLocalSession(initDataRaw, { ...local, completeRequested: null });
+        }
+        const started = await startLiveBlock(initDataRaw, local.serverSessionId, local.localPhase.blockIndex);
+        await clearLocalSession();
+        const fresh = initialLocalSession(local.clientSessionId, started);
+        await saveLocalSession(fresh);
+        setLocal(fresh);
+        setSyncError(null);
+        onSessionUpdate?.(started);
+      } catch (error) {
+        setStartBlockError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setStartingBlock(false);
+      }
+    });
+  }
+
   const phaseName = local.localPhase.phaseName;
   const remaining = phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
   const targetsCount = block?.targets.length ?? 0;
   const targetForSet = block?.targets[local.localPhase.setNumber - 1] ?? null;
+  const isMaxBlock = block?.protocol_type === "max_effort";
+  const isTimeBlock = block?.protocol_type === "time_sets" || (block !== null && targetForSet?.unit === "s");
+  // Имя блока — из замороженного снимка тренировки, если он есть, иначе из
+  // библиотеки (legacy/STEP). null — имени нет, label не показываем.
+  const blockName = (candidate: typeof block): string | null => {
+    if (candidate === null) {
+      return null;
+    }
+    if (candidate.exercise_name !== null) {
+      return candidate.exercise_name;
+    }
+    return candidate.exercise_id !== null && resolveExerciseName ? resolveExerciseName(candidate.exercise_id) : null;
+  };
 
   return (
     <div>
@@ -313,33 +388,38 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
       {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
       {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
 
+      {phaseName === "between" && block !== null ? (
+        <BlockTransition
+          block={block} name={blockName(block)} starting={startingBlock} error={startBlockError}
+          onStart={startNextBlock}
+        />
+      ) : (
       <Section className={`block-section phase-card-${phaseName}`} header={PHASE_LABELS[phaseName]}>
         {remaining !== null && (
-          <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatSeconds(remaining)}</p>
+          <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatDuration(remaining)}</p>
         )}
         {block !== null && phaseName !== "done" && (() => {
-          // Integration fix (issue #188) — тот же контракт, что уже
-          // применён в Summary (commit 2959f5d): resolveExerciseName
-          // возвращает string | null, null значит "имени действительно
-          // нет" (internal STEP-роль, Checkpoint 3C намеренно прячет её
-          // из GET /exercises) — не "Упражнение #id" и не выдуманный
-          // термин, а просто отсутствие label вовсе. Живая тренировка
-          // всё ещё "Подтягивания" (заголовок экрана/Section не отсюда,
-          // это только подпись конкретного блока внутри неё).
-          const name = block.exercise_id !== null && resolveExerciseName
-            ? resolveExerciseName(block.exercise_id)
-            : null;
+          // name=null значит "имени действительно нет" (internal STEP-роль,
+          // Checkpoint 3C) — не "Упражнение #id" и не выдуманный термин.
+          const name = blockName(block);
+          const planText = targetForSet !== null ? formatTarget(targetForSet) : null;
           return (
-            <p className="block-subtitle">
-              {name !== null && `${name} · `}
-              Подход {local.localPhase.setNumber}/{targetsCount}
-              {targetForSet !== null && Number(targetForSet.value) > 0
-                ? ` · Цель: ${targetForSet.value} ${targetForSet.unit}`
-                : ""}
-            </p>
+            <>
+              <p className="block-subtitle">
+                {name !== null && `${name} · `}
+                {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
+                {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
+              </p>
+              {phaseName === "get_ready" && (
+                <p className="block-subtitle">
+                  {describeBlockPlan(block.protocol_type, block.targets, block.interval_config)}
+                </p>
+              )}
+            </>
           );
         })()}
       </Section>
+      )}
 
       {phaseName === "get_ready" && (
         <Button className="action-button" size="l" stretched onClick={advancePhase}>
@@ -355,8 +435,8 @@ export function SessionLiveScreen({ initDataRaw, initialSession, onCompleted, re
               причина, по которой WorkoutScreen.tsx/BackdateForm.tsx везде
               используют явный aria-label, не полагаются на header. */}
           <Input
-            header="Результат"
-            aria-label="Результат"
+            header={isTimeBlock ? "Секунды" : isMaxBlock ? "Повторений" : "Результат"}
+            aria-label={isTimeBlock ? "Секунды" : isMaxBlock ? "Повторений" : "Результат"}
             type="number"
             inputMode="decimal"
             value={value}

@@ -164,3 +164,15 @@ def build_workout_snapshot(
         for item in sorted(items, key=lambda i: i.order_index)
     ]
     return WorkoutSnapshot(workout_id=workout.id, title=workout.name, items=item_snapshots)
+
+
+def positional_snapshot_items(snapshot: dict | None, block_count: int) -> list[WorkoutItemSnapshot | None]:
+    """Замороженные пункты снимка, выровненные ПО ПОЗИЦИИ с блоками сессии
+    (блок i <-> items[i]; SessionBlock создаётся в порядке снимка). Идентичность
+    протокола блока берётся отсюда, а не из изменяемого ComplexItem (REBUILD-1,
+    R1/R2). Без снимка (legacy/STEP) или при несовпадении длины — None на
+    недостающих позициях, не догадка."""
+    if snapshot is None:
+        return [None] * block_count
+    items = WorkoutSnapshot.model_validate(snapshot).items
+    return [items[i] if i < len(items) else None for i in range(block_count)]

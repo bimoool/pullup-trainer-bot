@@ -656,7 +656,59 @@ async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
+async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> None:
+    """REBUILD-1 — пять пользовательских Builder Workout в текущей неделе:
+    по одному на протокол (reps/time/max/interval) и смешанная
+    reps -> interval -> max. Интервал короткий (15 с) — истечение в середине
+    тренировки проверяется реальным временем."""
+    user = await _onboard(session, telegram_id)
+    plan = TrainingPlan(user_id=user.id)
+    session.add(plan)
+    await session.flush()
+    today = datetime.now(UTC).date()
+    week_number = plan_week_number(plan.created_at.date(), today)
+    week = await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=week_number,
+        start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
+    )
+
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_builder")
+    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_builder")
+    push = Exercise(name="Отжимания", metric_type=MetricType.REPS, category="e2e_builder")
+    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_builder")
+    session.add_all([pull, plank, push, burpee])
+    await session.flush()
+
+    reps = {"type": "reps_sets", "rest_seconds": 2, "prescription": {"source": "static", "sets": 2, "reps": 8}}
+    time_ = {"type": "time_sets", "rest_seconds": 2, "prescription": {"source": "static", "sets": 2, "duration_seconds": 30}}
+    max_ = {"type": "max_effort", "rest_seconds": 2, "prescription": {"source": "static", "attempts": 2}}
+    interval = {"type": "interval", "total_duration_seconds": 15, "work_seconds": 5, "rest_seconds": 5, "starts_with": "work"}
+
+    workouts = [
+        ("Только reps", [(pull, reps)]),
+        ("Только time", [(plank, time_)]),
+        ("Только max", [(push, max_)]),
+        ("Только interval", [(burpee, interval)]),
+        ("Смешанная", [(pull, reps), (burpee, interval), (push, max_)]),
+        ("Дубли", [(pull, reps), (plank, time_), (pull, max_)]),
+    ]
+    for day, (title, items) in enumerate(workouts):
+        workout = Complex(name=title, source_type="user", owner_user_id=user.id)
+        session.add(workout)
+        await session.flush()
+        for index, (exercise, protocol) in enumerate(items):
+            session.add(ComplexItem(
+                complex_id=workout.id, exercise_id=exercise.id, order_index=index, sets=0, protocol=protocol,
+            ))
+        session.add(PlanItem(
+            training_plan_id=plan.id, exercise_id=items[0][0].id, complex_id=workout.id, count_per_week=1,
+            day_of_week=day % 7, program_inclusion_id=None, plan_week_id=week.id,
+        ))
+    await session.flush()
+
+
 SCENARIOS = {
+    "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
     "ready": seed_ready,

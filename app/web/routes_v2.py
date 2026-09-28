@@ -35,11 +35,17 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.db.repositories.users import UserRepository
-from app.domain.interval_timing import compute_interval_timing
+from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
-from app.domain.workout_protocol import ProtocolType, ResolvedInterval, UserWorkoutProtocol
-from app.domain.workout_snapshot import WorkoutSnapshot
-from app.services.live_session import CompleteResult, LiveSessionService
+from app.domain.workout_protocol import UserWorkoutProtocol
+from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.live_session import (
+    CompleteResult,
+    LiveSessionService,
+    awaiting_block_start,
+    block_started_at,
+    current_interval_timing,
+)
 from app.services.plan_week import PlanWeekService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.progression_cascade import ProgressionCascadeService
@@ -80,8 +86,10 @@ from app.web.schemas_v2 import (
     WorkoutUpdateRequest,
 )
 from app.web.schemas_v2_session import (
+    IntervalConfigResponse,
     IntervalStateResponse,
     LiveSessionActiveResponse,
+    LiveSessionBlockRequest,
     LiveSessionBlockResponse,
     LiveSessionCompleteRequest,
     LiveSessionCompleteResponse,
@@ -825,40 +833,38 @@ async def create_session(
 
 
 def _live_session_response_fields(detail: SessionDetail, *, title: str | None = None) -> dict:
-    """Построение LiveSessionResponse из SessionDetail. Phase B1 (issue #215):
-    добавляет server_time (UTC timestamp генерации) и interval state (только
-    для interval workouts, вычисляется на лету из workout_snapshot)."""
-    now = datetime.now(UTC)
+    """Построение LiveSessionResponse из SessionDetail. interval — состояние
+    ТЕКУЩЕГО начатого interval-блока (вычисляется на лету, не персистится);
+    не начатый interval-блок как активный не проецируется. Идентичность
+    протокола каждого блока — из замороженного workout_snapshot по позиции.
 
-    # Phase B1: вычисление interval state, если workout_snapshot присутствует.
-    # Намеренно без try/except (issue #215, п.6) — workout_snapshot пишется
-    # только системой при старте (Phase A1 Pydantic-валидированный
-    # WorkoutSnapshot.model_dump()), никогда пользовательским вводом; сбой
-    # парсинга здесь означает реальную порчу данных, которую нельзя молча
-    # прятать.
+    Намеренно без try/except вокруг парсинга снимка: он пишется только
+    системой при старте, сбой парсинга — реальная порча данных."""
+    now = datetime.now(UTC)
+    snapshot_items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
+
     interval_state: IntervalStateResponse | None = None
-    if detail.workout_snapshot is not None:
-        snapshot = TypeAdapter(WorkoutSnapshot).validate_python(detail.workout_snapshot)
-        # Ищем первый interval блок (пока поддерживается один interval на сессию)
-        for item_snapshot in snapshot.items:
-            if item_snapshot.protocol.type == ProtocolType.INTERVAL:
-                protocol = TypeAdapter(ResolvedInterval).validate_python(item_snapshot.protocol.model_dump())
-                timing = compute_interval_timing(
-                    performed_at=detail.performed_at, now=now,
-                    total_duration_seconds=protocol.total_duration_seconds,
-                    work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
-                )
-                interval_state = IntervalStateResponse(
-                    execution_started_at=timing.execution_started_at,
-                    total_end_at=timing.total_end_at,
-                    phase=timing.phase.value,
-                    phase_ends_at=timing.phase_ends_at,
-                    total_duration_seconds=timing.total_duration_seconds,
-                    work_seconds=timing.work_seconds,
-                    rest_seconds=timing.rest_seconds,
-                    completed_cycles=timing.completed_cycles,
-                )
-                break  # только первый interval блок
+    timing = current_interval_timing(detail, now)
+    if timing is not None:
+        interval_state = IntervalStateResponse(
+            execution_started_at=timing.execution_started_at,
+            total_end_at=timing.total_end_at,
+            phase=timing.phase.value,
+            phase_ends_at=timing.phase_ends_at,
+            total_duration_seconds=timing.total_duration_seconds,
+            work_seconds=timing.work_seconds,
+            rest_seconds=timing.rest_seconds,
+            completed_cycles=timing.completed_cycles,
+        )
+
+    def _interval_config(item) -> IntervalConfigResponse | None:
+        protocol = interval_protocol(item.protocol) if item is not None else None
+        if protocol is None:
+            return None
+        return IntervalConfigResponse(
+            total_duration_seconds=protocol.total_duration_seconds,
+            work_seconds=protocol.work_seconds, rest_seconds=protocol.rest_seconds,
+        )
 
     return {
         "id": detail.id, "client_session_id": detail.client_session_id, "status": detail.status.value,
@@ -869,6 +875,11 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
             LiveSessionBlockResponse(
                 order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
                 result=block.result,
+                protocol_type=item.protocol.type.value if item is not None else None,
+                exercise_name=item.exercise_name if item is not None else None,
+                rest_seconds=rest_seconds_for_protocol(item.protocol) if item is not None else None,
+                started_at=block_started_at(detail, block.order_index),
+                interval_config=_interval_config(item),
                 targets=[
                     LiveSetTargetResponse(
                         set_number=target.set_number, metric_type=target.metric_type.value,
@@ -885,10 +896,11 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                     for log in block.set_logs
                 ],
             )
-            for block in detail.blocks
+            for block, item in zip(detail.blocks, snapshot_items, strict=True)
         ],
         "server_time": now,
         "interval": interval_state,
+        "awaiting_block_start": awaiting_block_start(detail),
         "title": title,
     }
 
@@ -925,9 +937,12 @@ async def start_live_session(
     session: AsyncSession = Depends(get_session),
 ) -> LiveSessionResponse:
     user = await _require_user(session, init_data)
-    result = await LiveSessionService(session).start_session(
-        user_id=user.id, client_session_id=body.client_session_id, plan_item_ids=body.plan_item_ids,
-    )
+    try:
+        result = await LiveSessionService(session).start_session(
+            user_id=user.id, client_session_id=body.client_session_id, plan_item_ids=body.plan_item_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
     titles = await _resolve_session_titles(session, [result.session], user.id)
@@ -967,6 +982,43 @@ async def advance_live_session_phase(
     return _live_session_response(result.session)
 
 
+@router_v2.post("/sessions/live/{session_id}/blocks/start", response_model=LiveSessionResponse)
+async def start_live_session_block(
+    session_id: int,
+    body: LiveSessionBlockRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionResponse:
+    """R1 — явный "Начать" следующего блока после interstitial. Идемпотентен
+    (двойной клик стартует блок один раз)."""
+    user = await _require_user(session, init_data)
+    result = await LiveSessionService(session).start_block(
+        session_id=session_id, user_id=user.id, expected_block_index=body.expected_block_index,
+    )
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    return _live_session_response(result.session)
+
+
+@router_v2.post("/sessions/live/{session_id}/blocks/finish", response_model=LiveSessionCompleteResponse)
+async def finish_live_session_interval_block(
+    session_id: int,
+    body: LiveSessionBlockRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionCompleteResponse:
+    """R1 — клиент дошёл до дедлайна interval-блока. Середина тренировки —
+    сессия остаётся STARTED и ждёт следующий блок; последний блок —
+    завершает сессию."""
+    user = await _require_user(session, init_data)
+    result, not_found = await LiveSessionService(session).finish_interval_block(
+        session_id=session_id, user_id=user.id, expected_block_index=body.expected_block_index,
+    )
+    if not_found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    return _live_session_complete_response(result)
+
+
 @router_v2.post("/sessions/live/{session_id}/sets:batch", response_model=LiveSessionResponse)
 async def batch_live_session_sets(
     session_id: int,
@@ -978,7 +1030,7 @@ async def batch_live_session_sets(
     entries = [
         BatchSetLogInput(
             set_index=entry.set_index, exercise_id=entry.exercise_id, value=entry.value,
-            effort=entry.effort, note=entry.note,
+            effort=entry.effort, note=entry.note, block_index=entry.block_index,
         )
         for entry in body.sets
     ]
