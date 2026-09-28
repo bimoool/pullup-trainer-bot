@@ -652,3 +652,60 @@ export async function movePlanItem(
 export async function removePlanItem(initDataRaw: string, planItemId: number): Promise<void> {
   return apiV2Delete(`/api/v2/plan-items/${planItemId}`, initDataRaw);
 }
+
+// --- Analytics v2: GET /api/v2/analytics/training (REBUILD-1, R3) ---------------------
+// Отдельный конвейер завершённых TrainingSession, считается на бэкенде по ВСЕМ
+// сессиям пользователя (не выводится из страниц Журнала).
+
+export interface AnalyticsWeekV2 {
+  week_start: string;
+  sessions: number;
+  active_days: number;
+}
+
+export interface AnalyticsPointV2 {
+  at: string;
+  value: string;
+  best: string | null;
+  cumulative_best: string | null;
+  is_new_pb: boolean | null;
+  cycles: number | null;
+}
+
+export interface AnalyticsPanelV2 {
+  protocol_type: ProtocolType;
+  session_count: number;
+  /** "reps" | "s"; null у interval. */
+  unit: string | null;
+  total_reps: string | null;
+  total_work_seconds: string | null;
+  set_count: number | null;
+  best_set: string | null;
+  attempt_count: number | null;
+  best: string | null;
+  actual_duration_seconds: number | null;
+  cycles: number | null;
+  points: AnalyticsPointV2[];
+  /** Сколько точек всего (в points — не больше 200 последних). */
+  points_total: number;
+}
+
+export interface AnalyticsExerciseV2 {
+  exercise_id: number;
+  exercise_name: string;
+  panels: AnalyticsPanelV2[];
+}
+
+export interface TrainingAnalyticsV2 {
+  timezone: string;
+  activity: {
+    sessions_last_30_days: number;
+    active_days_last_30_days: number;
+    weeks: AnalyticsWeekV2[];
+  };
+  exercises: AnalyticsExerciseV2[];
+}
+
+export async function fetchTrainingAnalytics(initDataRaw: string): Promise<TrainingAnalyticsV2> {
+  return apiV2Get<TrainingAnalyticsV2>("/api/v2/analytics/training", initDataRaw);
+}

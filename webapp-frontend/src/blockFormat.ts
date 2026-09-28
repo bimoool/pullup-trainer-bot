@@ -11,6 +11,17 @@ export function formatDuration(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+/** m:ss до часа, h:mm:ss от часа — суммарное время в работе. */
+export function formatLongDuration(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.round(totalSeconds));
+  if (clamped < 3600) {
+    return formatDuration(clamped);
+  }
+  const hours = Math.floor(clamped / 3600);
+  const rest = clamped % 3600;
+  return `${hours}:${String(Math.floor(rest / 60)).padStart(2, "0")}:${String(rest % 60).padStart(2, "0")}`;
+}
+
 /** "8.00" -> "8"; "22.5" -> "22.5". */
 export function formatNumber(value: string | number): string {
   const numeric = typeof value === "number" ? value : Number(value);

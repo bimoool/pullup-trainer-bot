@@ -80,7 +80,11 @@ from app.db.models_program import (
     Program,
     ProgramItem,
     ProgressionStrategyProfile,
+    SessionBlock,
+    SessionStatus,
+    SetLog,
     TrainingPlan,
+    TrainingSession,
 )
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
@@ -732,7 +736,73 @@ async def seed_journal_v2(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
+    """REBUILD-1 (R3) — детерминированные данные для Analytics v2 (часовой
+    пояс Pacific/Kiritimati, +14):
+      * 205 старых сессий (40+ дней назад, только "Подтягивания" reps) —
+        всего сессий >200 (аналитика не зависит от страниц Журнала);
+      * max 10 дней назад (19, точка отсчёта), time 9 дней назад, смешанная
+        (reps -> interval -> max 21 того же упражнения) 8 дней назад — новый
+        рекорд;
+      * граничная сессия: понедельник текущей ЛОКАЛЬНОЙ недели 00:30 по
+        местному времени (в UTC это воскресенье прошлой недели);
+    в окне 30 дней ровно 4 сессии."""
+    from zoneinfo import ZoneInfo
+
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Pacific/Kiritimati"
+    tz = ZoneInfo("Pacific/Kiritimati")
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_analytics")
+    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_analytics")
+    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_analytics")
+    session.add_all([pull, plank, burpee])
+    await session.flush()
+
+    reps = {"type": "reps_sets", "sets": [{"target_reps": 8}], "rest_seconds": 0}
+    time_ = {"type": "time_sets", "sets": [{"target_seconds": 30}], "rest_seconds": 0}
+    max_ = {"type": "max_effort", "attempts": [{"is_max": True}], "rest_seconds": 0}
+    interval = {"type": "interval", "total_duration_seconds": 60, "work_seconds": 10, "rest_seconds": 20, "starts_with": "work"}
+
+    async def add(at: datetime, blocks: list[tuple[Exercise, dict, list[int], dict | None]]) -> None:
+        training = TrainingSession(
+            user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED, performed_at=at,
+            workout_snapshot={
+                "workout_id": 1, "title": "Аналитика",
+                "items": [
+                    {"exercise_id": ex.id, "exercise_name": ex.name, "order": i, "protocol": proto}
+                    for i, (ex, proto, _, _) in enumerate(blocks)
+                ],
+            },
+        )
+        session.add(training)
+        await session.flush()
+        for index, (exercise, _proto, values, result) in enumerate(blocks):
+            block = SessionBlock(session_id=training.id, order_index=index, exercise_id=exercise.id, result=result)
+            session.add(block)
+            await session.flush()
+            unit = "s" if exercise.metric_type == MetricType.TIME else "reps"
+            for number, value in enumerate(values, start=1):
+                session.add(SetLog(
+                    session_block_id=block.id, set_number=number, metric_type=exercise.metric_type,
+                    value=Decimal(value), unit=unit,
+                ))
+
+    now = datetime.now(UTC)
+    for i in range(205):
+        await add(now - timedelta(days=40, minutes=i), [(pull, reps, [5, 4], None)])
+    interval_result = {"type": "interval", "actual_duration_seconds": 60, "completed_cycles": 2}
+    await add(now - timedelta(days=8), [(pull, reps, [8, 7], None), (burpee, interval, [], interval_result), (pull, max_, [21], None)])
+    await add(now - timedelta(days=9), [(plank, time_, [30, 25], None)])
+    await add(now - timedelta(days=10), [(pull, max_, [19], None)])
+    local_today = now.astimezone(tz).date()
+    local_monday = local_today - timedelta(days=local_today.weekday())
+    boundary = datetime.combine(local_monday, datetime.min.time(), tzinfo=tz) + timedelta(minutes=30)
+    await add(boundary, [(pull, reps, [5], None)])
+    await session.flush()
+
+
 SCENARIOS = {
+    "analytics_v2": seed_analytics_v2,
     "journal_v2": seed_journal_v2,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,

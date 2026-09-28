@@ -534,6 +534,16 @@ class TrainingSessionRepository:
         page = all_sessions[offset:offset + limit]
         return await self._load_details(page)
 
+    async def list_all_completed(self, user_id: int) -> list[SessionDetail]:
+        """ВСЕ завершённые сессии пользователя (для аналитики) — не зависит от
+        пагинации Журнала. Порядок — по performed_at по возрастанию."""
+        result = await self._session.execute(
+            select(TrainingSession)
+            .where(TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED)
+            .order_by(TrainingSession.performed_at),
+        )
+        return await self._load_details(list(result.scalars().all()))
+
     async def get_for_user(self, session_id: int, user_id: int) -> SessionDetail | None:
         result = await self._session.execute(
             select(TrainingSession).where(TrainingSession.id == session_id, TrainingSession.user_id == user_id),

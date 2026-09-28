@@ -424,8 +424,6 @@ export function ProgressScreen({ initDataRaw }: Props) {
     <div>
       {/* Заголовок переименован в "Аналитика" вслед за вкладкой нижнего меню
           (issue #183, волна 5b) — само содержимое экрана не менялось. */}
-      <p className="plan-title">Аналитика</p>
-
       <div className="workout-mode-buttons">
         {PROGRESS_SECTIONS.map((option) => (
           <button

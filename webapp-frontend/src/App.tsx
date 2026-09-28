@@ -11,7 +11,7 @@ import { HistoryScreen } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
-import { ProgressScreen } from "./ProgressScreen";
+import { AnalyticsScreen } from "./AnalyticsScreen";
 import { SessionV2Lab } from "./SessionV2Lab";
 import { SubscriptionScreen } from "./SubscriptionScreen";
 import { WarmupScreen } from "./WarmupScreen";
@@ -313,7 +313,7 @@ export function App() {
         />
       )}
       {isOnboarded && tab === "journal" && <HistoryScreen initDataRaw={state.initDataRaw} />}
-      {isOnboarded && tab === "analytics" && <ProgressScreen initDataRaw={state.initDataRaw} />}
+      {isOnboarded && tab === "analytics" && <AnalyticsScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "profile" && (
         <ProfileScreen
           initDataRaw={state.initDataRaw}
