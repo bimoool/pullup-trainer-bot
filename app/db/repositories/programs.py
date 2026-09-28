@@ -150,9 +150,38 @@ class ProgramRepository:
         (system Workout здесь намеренно не включается, отдельный endpoint
         для каталога не проектируется на этой волне)."""
         result = await self._session.execute(
-            select(Complex).where(Complex.owner_user_id == user_id).order_by(Complex.id),
+            select(Complex)
+            .where(Complex.source_type == "user", Complex.owner_user_id == user_id)
+            .order_by(Complex.id),
         )
         return list(result.scalars().all())
+
+    async def list_complex_items_by_complex_ids(self, complex_ids: list[int]) -> dict[int, list[ComplexItem]]:
+        """Состав нескольких Workout ОДНИМ запросом (по order_index) — для
+        списка "Мои тренировки" без N+1. Workout без items остаётся в словаре
+        с пустым списком."""
+        grouped: dict[int, list[ComplexItem]] = {complex_id: [] for complex_id in complex_ids}
+        if not complex_ids:
+            return grouped
+        result = await self._session.execute(
+            select(ComplexItem)
+            .where(ComplexItem.complex_id.in_(complex_ids))
+            .order_by(ComplexItem.complex_id, ComplexItem.order_index),
+        )
+        for item in result.scalars().all():
+            grouped[item.complex_id].append(item)
+        return grouped
+
+    async def get_publicly_attachable_exercise_for_user(self, exercise_id: int, user_id: int) -> Exercise | None:
+        """G2 (REBUILD-1, R4) — Exercise, который обычный пользователь вправе
+        привязать к своему плану публичным POST /plan-items: видимый ему (system
+        или свой user) И не внутренняя STEP-роль (subcategory block_a/block_b —
+        та же граница, что у публичной библиотеки GET /exercises). None —
+        роут отвечает 404 (не отличая "нет" от "чужое/внутреннее")."""
+        exercise = await self.get_visible_exercise_for_user(exercise_id, user_id)
+        if exercise is None or exercise.subcategory in ("block_a", "block_b"):
+            return None
+        return exercise
 
     async def get_visible_workout_for_user(self, complex_id: int, user_id: int) -> Complex | None:
         """Тот же get_X_for_user-паттерн, что уже системно используется в

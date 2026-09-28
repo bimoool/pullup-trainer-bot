@@ -316,14 +316,14 @@ def _workout_response(complex_: Complex, items: list[WorkoutItemResponse] | None
 
 
 async def _build_workout_item_responses(
-    session: AsyncSession, items: list[ComplexItem],
+    session: AsyncSession, items: list[ComplexItem], name_by_id: dict[int, str] | None = None,
 ) -> list[WorkoutItemResponse]:
     """Phase C3 (issue #188) — batch-резолвинг exercise_name, не по
     одному на item (тот же принцип, что list_exercises_by_ids уже
     применяется везде в проекте для этой цели)."""
-    exercise_ids = sorted({item.exercise_id for item in items})
-    exercises = await ProgramRepository(session).list_exercises_by_ids(exercise_ids)
-    name_by_id = {exercise.id: exercise.name for exercise in exercises}
+    if name_by_id is None:
+        exercises = await ProgramRepository(session).list_exercises_by_ids(sorted({item.exercise_id for item in items}))
+        name_by_id = {exercise.id: exercise.name for exercise in exercises}
     return [
         WorkoutItemResponse(
             id=item.id, exercise_id=item.exercise_id,
@@ -358,12 +358,26 @@ async def list_my_workouts(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> WorkoutListResponse:
-    """Phase C2 (issue #188) — только user Workout текущего владельца, для
-    экрана "Мои тренировки". System Workout сюда намеренно не входит —
-    отдельный endpoint для каталога не проектируется на этой волне."""
+    """Phase C2 (issue #188) — только user Workout текущего владельца
+    (source_type == user AND owner_user_id == текущий пользователь), для
+    экрана "Мои тренировки" и карточек Главной (items включены). System
+    Workout сюда намеренно не входит — публичного каталога нет."""
     user = await _require_user(session, init_data)
-    workouts = await ProgramRepository(session).list_user_workouts(user.id)
-    return WorkoutListResponse(workouts=[_workout_response(w) for w in workouts])
+    programs = ProgramRepository(session)
+    workouts = await programs.list_user_workouts(user.id)
+    # Состав всех тренировок — двумя запросами на весь список (items и имена
+    # упражнений), не по запросу на каждую: карточкам Главной нужны items.
+    items_by_workout = await programs.list_complex_items_by_complex_ids([w.id for w in workouts])
+    exercise_ids = sorted({item.exercise_id for items in items_by_workout.values() for item in items})
+    name_by_id = {ex.id: ex.name for ex in await programs.list_exercises_by_ids(exercise_ids)}
+    return WorkoutListResponse(
+        workouts=[
+            _workout_response(
+                w, items=await _build_workout_item_responses(session, items_by_workout[w.id], name_by_id),
+            )
+            for w in workouts
+        ],
+    )
 
 
 @router_v2.get("/workouts/{workout_id}", response_model=WorkoutResponse)
@@ -624,7 +638,28 @@ async def create_plan_item(
     ProgramItem -> PlanItem), не этот эндпоинт."""
     user = await _require_user(session, init_data)
     plans = TrainingPlanRepository(session)
+    programs = ProgramRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
+
+    # G2 (REBUILD-1, R4) — публичный путь не должен привязывать к плану
+    # произвольный объект по id. ВСЕ проверки — до создания PlanItem (при
+    # отказе строка не создаётся; пустой TrainingPlan — обычное состояние
+    # любого пользователя, не утечка). Недоступное и несуществующее
+    # неразличимы: одинаковый 404.
+    #   * exercise_id — system Exercise из публичной библиотеки или СВОЙ
+    #     user Exercise; не чужой и не внутренняя STEP-роль;
+    #   * complex_id — только СВОЙ user Workout; system/программные Complex и
+    #     чужие Workout — отказ. Внутренние пути материализации
+    #     (ProgramInclusion/STEP) эту проверку не проходят: они не идут через
+    #     публичный эндпоинт.
+    if body.exercise_id is not None and (
+        await programs.get_publicly_attachable_exercise_for_user(body.exercise_id, user.id) is None
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+    if body.complex_id is not None and (
+        await programs.get_editable_workout_for_user(body.complex_id, user.id) is None
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
 
     # Checkpoint 3B (issue #197): ownership-проверка plan_week_id, если передан
     if body.plan_week_id is not None:
