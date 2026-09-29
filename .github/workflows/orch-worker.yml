@@ -168,7 +168,7 @@ jobs:
           claude_args: >-
             --model ${{ inputs.model }}
             --max-turns 200
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Bash(python -m pytest:*),Bash(pytest:*),Bash(ruff:*),Bash(python:*),Bash(alembic:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(cd:*)"
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Bash(git cherry-pick:*),Bash(python -m pytest:*),Bash(pytest:*),Bash(ruff:*),Bash(python:*),Bash(alembic:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(cd:*)"
             --disallowedTools "Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git merge:*),Bash(git rebase:*),Bash(git reset:*),Bash(gh:*)"
 
       - name: Push branch (checkpoint — always, even after a timeout)

@@ -213,3 +213,36 @@ python scripts/orch.py resume         # active issue, its pushed branch, exact w
 
 An existing pushed `orch/issue-<N>` branch is **continued**, never duplicated. Read the issue's
 latest `📍 Checkpoint` / `🤖 Worker result` comment first.
+
+### Automation (GitHub Actions) — what runs by itself
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `orch-planner.yml` | `workflow_dispatch` (owner, or worker hop) | `plan` dry-run/apply, `start-batch` (owner only), `stop-batch`, `status`; dispatches the worker |
+| `orch-worker.yml` | `workflow_dispatch` (planner, or owner) | Claude implements the brief → always-push → ruff/pytest/frontend gate → merge `--no-ff` into base → `worker-record` → dispatches planner while the batch runs |
+| `orch-status.yml` | push to `develop/current`, dispatch | rewrites the pinned dashboard issue (#230) |
+
+Level **A**: planner → worker → planner runs unattended once the owner starts a batch
+(proved live on the sandbox branch, #229). Owner commands, from any computer with `gh`:
+
+```bash
+gh workflow run orch-planner.yml --ref develop/current -f command=plan                       # dry run
+gh workflow run orch-planner.yml --ref develop/current -f command=start-batch               # approve batch (5)
+gh workflow run orch-planner.yml --ref develop/current -f command=plan -f apply=true -f dispatch_worker=true   # go
+gh workflow run orch-planner.yml --ref develop/current -f command=stop-batch                # emergency stop
+```
+
+Guards: base only `develop/current` or `orch-sandbox/*` (never `main`, no prod secrets in orch
+jobs); owner-only human actor, `github-actions[bot]` only for hops; one worker at a time
+(`concurrency: orch-worker`), state writers serialized (`orch-state`); hop counter ≤ 20; batch
+limit 5 completed / 8 attempts; issue text never reaches a shell (brief file → agent; only the
+validated issue number is interpolated); agent cannot push/merge/checkout/`gh` (post-steps do);
+forbidden paths + destructive-migration grep; GITHUB_TOKEN pushes/comments trigger no workflows
+(so no event loops) — only explicit dispatches chain.
+
+Gotchas: `workflow_dispatch` only works for workflows GitHub already knows — files on `main` or
+files that have had a run; each orch workflow therefore has a path-filtered `push` trigger whose
+job is skipped (the skipped run registers it). A *new* branch push does not match `paths`, so a
+new sandbox needs one commit that touches the workflow files. claude-code-action refuses bot
+actors unless `allowed_bots: github-actions` is set. Issue templates and `claude.yml` (@claude)
+are read from `main` only — they apply after an owner-approved main merge.

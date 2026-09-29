@@ -53,6 +53,12 @@
 Проверка: pytest 1420 passed; ruff чисто; `tsc -b` + vite build; E2E на чистой БД в режиме CI —
 23 passed, 4 skipped (карантин), 0 failed.
 
+## ORCH-1 — кросс-девайсная оркестрация (#229)
+
+Состояние задач — GitHub Issues (`status:*`), вид — `docs/PROJECT_STATUS.md` + закреплённый #230;
+planner → worker → planner в Actions (`orch-*.yml`, `scripts/orch.py`), лимит 5 задач на пакет,
+первый живой пакет запускает только владелец. Правила — `docs/AGENT_EXECUTION_MODEL.md` § Orchestration.
+
 ## Дальше
 
 1. ~~Draft PR `develop/current` → `main` и CI (#222)~~ — PR #226 (draft), CI зелёный.
