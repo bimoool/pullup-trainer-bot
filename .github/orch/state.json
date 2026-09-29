@@ -2,9 +2,11 @@
   "canonical_branch": "develop/current",
   "canonical_pr": 226,
   "phase": "Post UX-1: owner iPhone QA on staging (#224) → P0/P1 fixes → production (owner decision)",
-  "trusted_authors": ["bimoool"],
+  "trusted_authors": [
+    "bimoool"
+  ],
   "scope_label": null,
-  "dashboard_issue": null,
+  "dashboard_issue": 230,
   "staging_health_url": "https://staging.app.bimoool.com/health",
   "owner_notes": [
     "Approve the first live autonomous batch: `gh workflow run orch-planner.yml --ref develop/current -f command=start-batch`",

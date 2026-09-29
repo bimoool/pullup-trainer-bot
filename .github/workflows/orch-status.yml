@@ -1,0 +1,60 @@
+name: Orch Status
+
+# Keeps the pinned "Project Status" issue (orch:dashboard) fresh after every human/agent push to
+# develop/current, so the owner sees current state from any device without running anything.
+# It only rewrites that issue body — no commit (pushes would otherwise race every local session).
+# docs/PROJECT_STATUS.md itself is committed by the planner/worker at every state transition
+# and by `-f commit=true` below.
+#
+# Push-triggered workflows run the file from the pushed commit, so this works on develop/current
+# without touching main. Pushes made by GITHUB_TOKEN (orch-planner/worker) trigger nothing,
+# so this cannot loop.
+
+on:
+  push:
+    branches: [develop/current]
+    paths-ignore:
+      - docs/PROJECT_STATUS.md
+      - .github/orch/**
+      - .github/task/**
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "also commit docs/PROJECT_STATUS.md to develop/current"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # only used when commit=true
+  issues: write
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: orch-state
+  cancel-in-progress: false
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop/current
+          fetch-depth: 50
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Refresh
+        run: |
+          git config user.name "orch-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "${{ inputs.commit }}" = "true" ]; then
+            python scripts/orch.py status --publish --push
+          else
+            python scripts/orch.py status --publish
+          fi
+          cat docs/PROJECT_STATUS.md >> "$GITHUB_STEP_SUMMARY"
