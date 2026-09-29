@@ -456,6 +456,19 @@ def worker_branch(issue: int) -> str:
     return f"orch/issue-{issue}"
 
 
+_BODY_BRANCH_RE = re.compile(r"^\s*\**Branch:?\**:?\s*`([^`]+)`", re.MULTILINE | re.IGNORECASE)
+
+
+def task_branch(issue: Issue, brief_text: str = "") -> str:
+    """Where the work for an in-progress issue lives: the brief's BRANCH if the brief is for this
+    issue, else a ``Branch: `name` `` line in the issue body (interactive tasks), else the
+    worker default ``orch/issue-N``."""
+    if brief_issue(brief_text) == issue.number and parse_brief(brief_text).get("BRANCH"):
+        return parse_brief(brief_text)["BRANCH"]
+    m = _BODY_BRANCH_RE.search(issue.body or "")
+    return m.group(1) if m else worker_branch(issue.number)
+
+
 def render_brief(issue: Issue, state: dict, base_sha: str, now: str) -> str:
     s = parse_sections(issue.body)
     b = state["batch"]
@@ -613,6 +626,7 @@ class StatusContext:
     pr: dict | None = None
     brief_text: str = ""
     active_branch_sha: str | None = None
+    active_branch: str | None = None
     last_worker_run: dict | None = None
     staging: str = "unknown"
     production: str = "unknown"
@@ -663,7 +677,7 @@ def render_status(ctx: StatusContext) -> str:
         for i in active:
             L.append(f"- {_link(i)} {i.title}")
             L.append(
-                f"  - branch `{worker_branch(i.number)}`: "
+                f"  - branch `{ctx.active_branch or task_branch(i, ctx.brief_text)}`: "
                 + (
                     f"pushed `{ctx.active_branch_sha[:12]}`"
                     if ctx.active_branch_sha
@@ -917,7 +931,8 @@ def gather_status(gh: Gh, state: dict, issues: list[Issue] | None = None) -> Sta
         ctx.pr = gh.pr(state["canonical_pr"])
     active = active_issues(issues, state)
     if active:
-        ctx.active_branch_sha = remote_branch_sha(worker_branch(active[0].number))
+        ctx.active_branch = task_branch(active[0], ctx.brief_text)
+        ctx.active_branch_sha = remote_branch_sha(ctx.active_branch)
         run_ = gh.last_run("orch-worker.yml")
         if run_ and f"#{active[0].number}" in (run_.get("displayTitle") or ""):
             ctx.last_worker_run = run_
@@ -1106,7 +1121,7 @@ def cmd_resume(args, gh: Gh) -> int:
         )
         return 0
     i = active[0]
-    br = worker_branch(i.number)
+    br = task_branch(i, read(BRIEF_PATH))
     sha = remote_branch_sha(br)
     print(f"ACTIVE: #{i.number} {i.title}\n  {i.url}\n  brief: {BRIEF_PATH}")
     if sha:

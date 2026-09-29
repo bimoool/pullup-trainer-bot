@@ -405,3 +405,10 @@ def test_status_page_is_short_and_complete(repo):
         assert heading in text
     assert len(text.splitlines()) < 150
     assert json.loads((repo / orch.STATE_PATH).read_text())["canonical_branch"] == "develop/current"
+
+
+def test_task_branch_sources():
+    i = issue(7, ["status:in-progress"], b="Branch: `infra/x-y`\n\n## Goal\nx")
+    assert orch.task_branch(i) == "infra/x-y"
+    assert orch.task_branch(i, "ISSUE: #7\nBRANCH: orch/issue-7\n") == "orch/issue-7"
+    assert orch.task_branch(issue(8)) == "orch/issue-8"
