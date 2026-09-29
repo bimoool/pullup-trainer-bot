@@ -122,4 +122,4 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          { echo '```'; python scripts/orch.py batch show | head -1; echo '```'; cat docs/PROJECT_STATUS.md; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '```'; python scripts/orch.py batch show | head -1; echo '```'; cat docs/PROJECT_STATUS.md 2>/dev/null || true; } >> "$GITHUB_STEP_SUMMARY"
