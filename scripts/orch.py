@@ -865,7 +865,9 @@ class Gh:
 
 
 def git_code_sha(branch: str) -> str:
-    ref = f"origin/{branch}"
+    # On the canonical branch itself HEAD is authoritative (it may be about to be pushed).
+    on_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], check=False).strip() == branch
+    ref = "HEAD" if on_branch else f"origin/{branch}"
     try:
         log = run(["git", "log", ref, "-n", "50", "--format=%H%x09%s"])
     except RuntimeError:
