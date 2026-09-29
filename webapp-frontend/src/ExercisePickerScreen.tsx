@@ -1,4 +1,4 @@
-import { Button, Input, Section, Spinner } from "@telegram-apps/telegram-ui";
+import { Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useMemo, useState } from "react";
 
 import { createExercise, type ExerciseResponseV2, fetchExercises } from "./apiV2";
@@ -26,7 +26,6 @@ type ListState =
 export function ExercisePickerScreen({ initDataRaw, onBack, onSelect }: Props) {
   const [state, setState] = useState<ListState>({ phase: "loading" });
   const [query, setQuery] = useState("");
-  const [creatingName, setCreatingName] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,72 +59,52 @@ export function ExercisePickerScreen({ initDataRaw, onBack, onSelect }: Props) {
     return state.exercises.filter((exercise) => exercise.name.toLowerCase().includes(needle));
   }, [state, query]);
 
-  async function handleCreateOwn() {
-    const name = creatingName?.trim() ?? "";
-    if (name === "") {
-      return;
-    }
+  const trimmed = query.trim();
+  const exactMatch = state.phase === "ready" && state.exercises.some((exercise) => exercise.name.toLowerCase() === trimmed.toLowerCase());
+
+  async function createFromQuery(name: string) {
     setCreateError(null);
     try {
-      const created = await createExercise(initDataRaw, name);
-      onSelect(created);
+      onSelect(await createExercise(initDataRaw, name));
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : String(error));
     }
   }
 
   return (
-    <div>
-      <p className="plan-title">Добавить упражнение</p>
+    <div className="ux-form">
+      <h2 className="plan-title">Добавить упражнение</h2>
+      <p className="ux-helper">Выберите упражнение — на следующем шаге настроите подходы и отдых. Нет нужного? Введите название, и появится «Создать своё».</p>
 
-      <Input
-        placeholder="Поиск"
+      <input
+        className="ux-text-input"
+        type="search"
+        aria-label="Поиск упражнения"
+        placeholder="Поиск упражнения"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
 
       {state.phase === "loading" && <Spinner size="m" />}
-      {state.phase === "error" && (
-        <p className="gap-banner">Не удалось загрузить: {state.message}</p>
-      )}
+      {state.phase === "error" && <p className="gap-banner">Не удалось загрузить: {state.message}</p>}
       {state.phase === "ready" && (
-        <Section className="block-section">
+        <div className="ux-pick-list" role="list">
           {filtered.map((exercise) => (
-            <button
-              key={exercise.id}
-              type="button"
-              className="program-card-button"
-              onClick={() => onSelect(exercise)}
-            >
-              {exercise.name}
+            <button key={exercise.id} type="button" role="listitem" className="ux-pick" onClick={() => onSelect(exercise)}>
+              <span>{exercise.name}</span>
+              <span className="ux-chevron" aria-hidden="true">›</span>
             </button>
           ))}
-          {filtered.length === 0 && <p className="screen-message">Ничего не найдено</p>}
-        </Section>
+          {filtered.length === 0 && <p className="ux-helper">Ничего не найдено</p>}
+          {trimmed !== "" && !exactMatch && (
+            <button type="button" className="ux-pick ux-pick-create" onClick={() => void createFromQuery(trimmed)}>
+              <span>Создать своё: «{trimmed}»</span>
+              <span className="ux-chevron" aria-hidden="true">+</span>
+            </button>
+          )}
+        </div>
       )}
-
-      {creatingName === null ? (
-        <Button className="action-button" size="m" stretched onClick={() => setCreatingName("")}>
-          Создать своё упражнение
-        </Button>
-      ) : (
-        <Section className="block-section">
-          <Input
-            header="Название"
-            value={creatingName}
-            onChange={(event) => setCreatingName(event.target.value)}
-            placeholder="Название упражнения"
-          />
-          {createError && <p className="gap-banner">Не удалось создать: {createError}</p>}
-          <Button
-            className="action-button" size="m" stretched
-            disabled={creatingName.trim().length === 0}
-            onClick={() => void handleCreateOwn()}
-          >
-            Создать
-          </Button>
-        </Section>
-      )}
+      {createError && <p className="gap-banner">Не удалось создать: {createError}</p>}
     </div>
   );
 }

@@ -968,3 +968,99 @@ input[type="number"] {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ===== UX-1: Builder (тип работы, параметры, превью, список упражнений) =====
+   Общие правила: цели касания ≥ 44 px, подпись слева / значение справа, поля
+   ввода с рамкой (видно, что редактируются), главная кнопка одна и заметная,
+   второстепенное — текстом/контуром. Цвета только из --tg-* переменных. */
+.ux-form { padding-bottom: 8px; }
+.ux-eyebrow { margin: 0; font-size: 13px; color: var(--tg-subtitle-text-color); }
+.ux-exercise-name { margin: 2px 0 16px; font-size: 22px; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
+.ux-section-label { display: block; margin: 20px 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--tg-subtitle-text-color); }
+.ux-helper { margin: 0 0 12px; font-size: 14px; line-height: 1.4; color: var(--tg-subtitle-text-color); }
+.ux-error { margin: 12px 0 0; font-size: 14px; color: var(--tg-destructive-text-color); }
+.ux-field { display: block; }
+.ux-text-input {
+  width: 100%; min-height: 48px; padding: 0 14px; font: inherit; font-size: 16px;
+  color: var(--tg-text-color); background: var(--tg-bg-color);
+  border: 1.5px solid var(--tg-secondary-bg-color); border-radius: 12px; outline: none;
+}
+.ux-text-input:focus { border-color: var(--tg-button-color); }
+
+.ux-kind-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ux-kind {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  min-height: 88px; padding: 12px; font: inherit; color: var(--tg-text-color);
+  background: var(--tg-bg-color); border: 1.5px solid var(--tg-secondary-bg-color); border-radius: 12px;
+}
+.ux-kind-selected { border-color: var(--tg-button-color); background: color-mix(in srgb, var(--tg-button-color) 8%, var(--tg-bg-color)); }
+.ux-kind-title { font-size: 16px; font-weight: 700; }
+.ux-kind-desc { font-size: 12.5px; line-height: 1.3; color: var(--tg-subtitle-text-color); }
+.ux-kind-selected .ux-kind-title { color: var(--tg-button-color); }
+
+.ux-card { background: var(--tg-secondary-bg-color); border-radius: 14px; padding: 4px 12px; }
+.ux-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 12px 0; }
+.ux-row + .ux-row { border-top: 1px solid color-mix(in srgb, var(--tg-hint-color) 25%, transparent); }
+.ux-row-label { display: flex; flex-direction: column; gap: 2px; flex: 1 1 130px; min-width: 0; }
+.ux-row-title { font-size: 15px; font-weight: 600; }
+.ux-row-hint { font-size: 12px; color: var(--tg-subtitle-text-color); }
+.ux-control { display: flex; align-items: center; gap: 6px; }
+.ux-step {
+  width: 44px; height: 44px; flex: none; font: inherit; font-size: 22px; line-height: 1;
+  color: var(--tg-button-color); background: var(--tg-bg-color);
+  border: 1.5px solid var(--tg-button-color); border-radius: 50%;
+}
+.ux-step:disabled { color: var(--tg-hint-color); border-color: var(--tg-hint-color); opacity: 0.5; }
+.ux-input {
+  width: 56px; height: 44px; padding: 0 4px; text-align: center; font: inherit; font-size: 18px; font-weight: 700;
+  color: var(--tg-text-color); background: var(--tg-bg-color);
+  border: 1.5px solid color-mix(in srgb, var(--tg-hint-color) 45%, transparent); border-radius: 10px; outline: none;
+}
+.ux-input-time { width: 72px; }
+.ux-input:focus { border-color: var(--tg-button-color); }
+.ux-unit { flex-basis: 100%; text-align: right; margin-top: -4px; font-size: 11px; color: var(--tg-subtitle-text-color); }
+.ux-row-stack { flex-direction: column; align-items: stretch; }
+.ux-choice { display: flex; gap: 8px; }
+.ux-choice-item {
+  flex: 1; min-height: 44px; font: inherit; font-size: 15px; color: var(--tg-text-color);
+  background: var(--tg-bg-color); border: 1.5px solid transparent; border-radius: 10px;
+}
+.ux-choice-selected { border-color: var(--tg-button-color); color: var(--tg-button-color); font-weight: 700; }
+
+.ux-preview {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 16px; padding: 12px 14px;
+  border-radius: 14px; background: color-mix(in srgb, var(--tg-button-color) 10%, var(--tg-bg-color));
+}
+.ux-preview-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--tg-subtitle-text-color); }
+.ux-preview-main { font-size: 20px; font-weight: 700; }
+.ux-preview-detail { font-size: 14px; color: var(--tg-subtitle-text-color); }
+
+.ux-primary, .ux-secondary, .ux-add-button {
+  display: block; width: 100%; min-height: 50px; margin-top: 16px; font: inherit; font-size: 16px; font-weight: 600; border-radius: 12px;
+}
+.ux-primary { color: var(--tg-button-text-color); background: var(--tg-button-color); border: 0; }
+.ux-primary:disabled { opacity: 0.4; }
+.ux-secondary { color: var(--tg-text-color); background: var(--tg-bg-color); border: 1.5px solid var(--tg-secondary-bg-color); }
+.ux-add-button { color: var(--tg-button-color); background: transparent; border: 1.5px dashed var(--tg-button-color); }
+.ux-link-button { display: block; width: 100%; min-height: 44px; margin-top: 4px; font: inherit; font-size: 15px; color: var(--tg-subtitle-text-color); background: none; border: 0; }
+.ux-link-button.ux-inline { width: auto; margin: 0; padding: 0 10px; font-size: 14px; }
+.ux-destructive { color: var(--tg-destructive-text-color); }
+
+.ux-item-list { display: flex; flex-direction: column; gap: 10px; }
+.ux-item { background: var(--tg-secondary-bg-color); border-radius: 14px; overflow: hidden; }
+.ux-item-main { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 12px 14px 8px; text-align: left; font: inherit; color: var(--tg-text-color); background: none; border: 0; position: relative; }
+.ux-item-name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; padding-right: 76px; }
+.ux-item-kind { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--tg-button-color); }
+.ux-item-line { font-size: 17px; font-weight: 600; margin-top: 2px; }
+.ux-item-detail { font-size: 13px; color: var(--tg-subtitle-text-color); }
+.ux-item-edit { position: absolute; top: 12px; right: 14px; font-size: 13px; color: var(--tg-button-color); }
+.ux-item-actions { display: flex; align-items: center; gap: 6px; padding: 0 8px 8px 14px; flex-wrap: wrap; }
+.ux-icon-button { width: 44px; height: 44px; font: inherit; font-size: 18px; color: var(--tg-text-color); background: var(--tg-bg-color); border: 0; border-radius: 10px; }
+.ux-icon-button:disabled { opacity: 0.35; }
+.ux-danger-button { min-height: 44px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 600; color: #fff; background: var(--tg-destructive-text-color); border: 0; border-radius: 10px; }
+
+.ux-pick-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.ux-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 52px; padding: 8px 14px; text-align: left; font: inherit; font-size: 16px; color: var(--tg-text-color); background: var(--tg-secondary-bg-color); border: 0; border-radius: 12px; overflow-wrap: anywhere; }
+.ux-pick-create { color: var(--tg-button-color); font-weight: 600; }
+.ux-chevron { color: var(--tg-hint-color); font-size: 20px; }
+.ux-row-stack .ux-row-label { flex: none; }

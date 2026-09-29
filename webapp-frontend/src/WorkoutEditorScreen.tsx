@@ -1,4 +1,4 @@
-import { Button, Input, Section, Spinner } from "@telegram-apps/telegram-ui";
+import { Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -13,7 +13,7 @@ import {
   type WorkoutItemResponseV2,
 } from "./apiV2";
 import { ExercisePickerScreen } from "./ExercisePickerScreen";
-import { formatProtocolSummary, ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
+import { ProtocolForm, summarizeProtocol, type ProtocolFormValue } from "./ProtocolForm";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -216,74 +216,84 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
     );
   }
 
+  const canSave = !saving && title.trim().length > 0;
   return (
-    <div>
+    <div className="ux-form">
       <p className="plan-title">{isEditing ? "Редактировать тренировку" : "Новая тренировка"}</p>
 
-      <Input
-        header="Название"
-        value={title}
-        onChange={(event) => setTitle(event.target.value)}
-        placeholder="Например, 3 минуты подтягиваний"
-      />
+      <label className="ux-field">
+        <span className="ux-section-label">Название</span>
+        <input
+          className="ux-text-input"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          placeholder="Например, 3 минуты подтягиваний"
+        />
+      </label>
+
+      {!isEditing && (
+        <p className="ux-helper">
+          Сначала название. Упражнения, подходы и отдых вы настроите на следующем шаге.
+        </p>
+      )}
 
       {isEditing && (
-        <Section className="block-section" header="Упражнения">
-          {items.length === 0 && <p className="screen-message">Пока не добавлены</p>}
-          {items.map((item, index) => (
-            <div key={item.id} className="plan-week-day-group">
-              <p className="plan-item-row">{item.exercise_name}</p>
-              <p className="block-subtitle">{formatProtocolSummary(item.protocol)}</p>
-              <Button size="s" onClick={() => setItemView({ kind: "edit-item-protocol", item })}>
-                Редактировать
-              </Button>
-              <Button size="s" disabled={index === 0} onClick={() => void handleMoveItem(item.id, "up")}>
-                ↑
-              </Button>
-              <Button size="s" disabled={index === items.length - 1} onClick={() => void handleMoveItem(item.id, "down")}>
-                ↓
-              </Button>
-              {deleteConfirmItemId === item.id ? (
-                <>
-                  <Button size="s" mode="outline" onClick={() => void handleDeleteItem(item.id)}>
-                    Подтвердить удаление
-                  </Button>
-                  <Button size="s" mode="outline" onClick={() => setDeleteConfirmItemId(null)}>
-                    Отмена
-                  </Button>
-                </>
-              ) : (
-                <Button size="s" mode="outline" onClick={() => setDeleteConfirmItemId(item.id)}>
-                  Удалить
-                </Button>
-              )}
-            </div>
-          ))}
+        <>
+          <p className="ux-section-label">Упражнения{items.length > 0 ? ` · ${items.length}` : ""}</p>
+          {items.length === 0 && (
+            <p className="ux-helper">Пока пусто. Добавьте первое упражнение и настройте, как его выполнять.</p>
+          )}
+          <div className="ux-item-list" data-testid="workout-items">
+            {items.map((item, index) => {
+              const summary = summarizeProtocol(item.protocol);
+              return (
+                <div key={item.id} className="ux-item" data-testid="workout-item">
+                  <button
+                    type="button"
+                    className="ux-item-main"
+                    aria-label={`Изменить: ${item.exercise_name}`}
+                    onClick={() => setItemView({ kind: "edit-item-protocol", item })}
+                  >
+                    <span className="ux-item-name">{item.exercise_name}</span>
+                    <span className="ux-item-kind">{summary.kindTitle}</span>
+                    <span className="ux-item-line">{summary.lines[0]}</span>
+                    <span className="ux-item-detail">{summary.lines[1]}</span>
+                    <span className="ux-item-edit" aria-hidden="true">Изменить ›</span>
+                  </button>
+                  <div className="ux-item-actions">
+                    <button type="button" className="ux-icon-button" aria-label="Переместить выше" disabled={index === 0} onClick={() => void handleMoveItem(item.id, "up")}>↑</button>
+                    <button type="button" className="ux-icon-button" aria-label="Переместить ниже" disabled={index === items.length - 1} onClick={() => void handleMoveItem(item.id, "down")}>↓</button>
+                    {deleteConfirmItemId === item.id ? (
+                      <>
+                        <button type="button" className="ux-danger-button" onClick={() => void handleDeleteItem(item.id)}>Да, удалить</button>
+                        <button type="button" className="ux-link-button ux-inline" onClick={() => setDeleteConfirmItemId(null)}>Отмена</button>
+                      </>
+                    ) : (
+                      <button type="button" className="ux-link-button ux-inline ux-destructive" onClick={() => setDeleteConfirmItemId(item.id)}>Удалить</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
           {itemActionError && <p className="gap-banner">{itemActionError}</p>}
-          <Button className="action-button" size="m" stretched onClick={() => setItemView({ kind: "picker" })}>
-            Добавить упражнение
-          </Button>
-        </Section>
+          <button type="button" className="ux-add-button" onClick={() => setItemView({ kind: "picker" })}>
+            + Добавить упражнение
+          </button>
+        </>
       )}
 
       {saveError && <p className="gap-banner">Не удалось сохранить: {saveError}</p>}
 
       {isEditing && workoutId !== null && (
-        <Button
-          className="action-button" size="m" stretched mode="outline"
-          onClick={() => onAddToPlan(workoutId, title)}
-        >
+        <button type="button" className="ux-secondary" onClick={() => onAddToPlan(workoutId, title)}>
           Добавить в план
-        </Button>
+        </button>
       )}
 
-      <Button
-        className="action-button" size="l" stretched
-        disabled={saving || title.trim().length === 0}
-        onClick={() => void handleSave()}
-      >
-        {saving ? <Spinner size="s" /> : "Сохранить"}
-      </Button>
+      <button type="button" className="ux-primary" disabled={!canSave} onClick={() => void handleSave()}>
+        {saving ? <Spinner size="s" /> : isEditing ? "Сохранить" : "Создать и добавить упражнения"}
+      </button>
     </div>
   );
 }

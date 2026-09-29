@@ -1,51 +1,12 @@
-import { Button, Input, Section, SegmentedControl } from "@telegram-apps/telegram-ui";
 import { useState } from "react";
 
-import { TimeInputField } from "./TimeInputField";
-import { formatSecondsAsMinutesSeconds } from "./timeInput";
+import { StepperRow, TimeRow } from "./BuilderFields";
+import {
+  buildProtocol, draftFromProtocol, PROTOCOL_KINDS, previewLines, type ProtocolDraft, type ProtocolFormValue,
+} from "./protocolConfig";
 
-export type ProtocolFormValue = Record<string, unknown>;
-
-type ProtocolKind = "reps_sets" | "time_sets" | "max_effort" | "interval";
-
-const KIND_LABELS: Record<ProtocolKind, string> = {
-  reps_sets: "Повторения",
-  time_sets: "Время",
-  max_effort: "Максимум",
-  interval: "Интервалы",
-};
-
-function kindFromProtocol(protocol: ProtocolFormValue | null): ProtocolKind {
-  const type = protocol?.type;
-  if (type === "reps_sets" || type === "time_sets" || type === "max_effort" || type === "interval") {
-    return type;
-  }
-  return "reps_sets";
-}
-
-/** Phase C4b-1 (issue #188) — количество рабочих интервалов, та же
- * формула, что app/domain/interval_timing.py::calculate_completed_cycles
- * (не приближённо, "≈" не используется — issue #188 раздел 7 прямо
- * запрещает). elapsed для превью — весь total_duration_seconds (сколько
- * рабочих фаз ПОМЕСТИТСЯ в заданное общее время), не текущее "прошедшее
- * время" (превью считается до старта тренировки, elapsed здесь
- * концептуально другое значение, чем во время live-исполнения, но
- * формула идентична — то же самое "сколько WORK-фаз завершится за total
- * секунд"). */
-function calculateWorkIntervalsPreview(totalSeconds: number, workSeconds: number, restSeconds: number): number {
-  if (workSeconds <= 0) {
-    return 0;
-  }
-  const cappedElapsed = Math.min(totalSeconds, totalSeconds);
-  if (cappedElapsed < workSeconds) {
-    return 0;
-  }
-  const cycleDuration = workSeconds + restSeconds;
-  if (cycleDuration <= 0) {
-    return 0;
-  }
-  return Math.floor((cappedElapsed - workSeconds) / cycleDuration) + 1;
-}
+export type { ProtocolFormValue } from "./protocolConfig";
+export { summarizeProtocol } from "./protocolConfig";
 
 type Props = {
   initialExerciseName: string;
@@ -56,214 +17,115 @@ type Props = {
 };
 
 /**
- * Phase C4b-1 (issue #188) — выбор типа тренировки + форма параметров,
- * один компонент на все 4 типа (переключение по SegmentedControl, не 4
- * отдельных экрана). Собирает protocol dict, соответствующий
- * app.domain.workout_protocol.UserWorkoutProtocol — backend валидирует
- * повторно, здесь только UI-уровень (issue #188, раздел 13 — "не
- * показывать raw backend JSON", человекочитаемые ошибки до отправки).
- *
- * MAX-форма (Phase C4b-1.5, issue #188) включает поле "Отдых" —
- * StaticMaxEffort.rest_seconds добавлен в app/domain/workout_protocol.py
- * специально под этот UX-контракт (изначальная Phase A1 схема его не
- * несла, C4b-1 честно зафиксировал это как расхождение вместо обманчивого
- * no-op поля; C4b-1.5 закрывает разрыв на backend+frontend вместе).
+ * UX-1 — «Как выполнять упражнение»: 1) какое упражнение, 2) тип работы (карточки с
+ * объяснением, не однословные табы), 3) явно подписанные параметры, 4) превью «Так
+ * будет в тренировке», 5) главная кнопка. Все значения хранятся в одном draft
+ * (protocolConfig.ts) — при смене типа введённое не теряется; превью и protocol для
+ * backend строятся из этого же draft. Backend-контракт не менялся.
  */
 export function ProtocolForm({ initialExerciseName, initialProtocol, onCancel, onSubmit, submitLabel }: Props) {
-  const [kind, setKind] = useState<ProtocolKind>(kindFromProtocol(initialProtocol));
+  const [draft, setDraft] = useState<ProtocolDraft>(() => draftFromProtocol(initialProtocol));
+  const patch = (changes: Partial<ProtocolDraft>) => setDraft((current) => ({ ...current, ...changes }));
 
-  const initialPrescription = (initialProtocol?.prescription ?? {}) as Record<string, unknown>;
-  const [sets, setSets] = useState<number>(Number(initialPrescription.sets ?? 3));
-  const [reps, setReps] = useState<number>(Number(initialPrescription.reps ?? 10));
-  const [durationSeconds, setDurationSeconds] = useState<number>(Number(initialPrescription.duration_seconds ?? 30));
-  const [restSeconds, setRestSeconds] = useState<number>(Number(initialProtocol?.rest_seconds ?? 60));
-  const [attempts, setAttempts] = useState<number>(Number(initialPrescription.attempts ?? 1));
-  const [maxRestSeconds, setMaxRestSeconds] = useState<number>(Number(initialProtocol?.rest_seconds ?? 0));
-  const [totalSeconds, setTotalSeconds] = useState<number>(Number(initialProtocol?.total_duration_seconds ?? 180));
-  const [workSeconds, setWorkSeconds] = useState<number>(Number(initialProtocol?.work_seconds ?? 10));
-  const [intervalRestSeconds, setIntervalRestSeconds] = useState<number>(Number(initialProtocol?.rest_seconds ?? 20));
-  const [startsWith, setStartsWith] = useState<"work" | "rest">(
-    initialProtocol?.starts_with === "rest" ? "rest" : "work",
-  );
-
-  const [validationError, setValidationError] = useState<string | null>(null);
-
-  function buildProtocol(): ProtocolFormValue | null {
-    if (kind === "reps_sets") {
-      if (sets <= 0) return fail("Укажите количество подходов");
-      if (reps <= 0) return fail("Укажите цель по повторениям");
-      if (restSeconds < 0) return fail("Отдых не может быть отрицательным");
-      return { type: "reps_sets", prescription: { source: "static", sets, reps }, rest_seconds: restSeconds };
-    }
-    if (kind === "time_sets") {
-      if (sets <= 0) return fail("Укажите количество подходов");
-      if (durationSeconds <= 0) return fail("Укажите длительность подхода");
-      if (restSeconds < 0) return fail("Отдых не может быть отрицательным");
-      return {
-        type: "time_sets",
-        prescription: { source: "static", sets, duration_seconds: durationSeconds },
-        rest_seconds: restSeconds,
-      };
-    }
-    if (kind === "max_effort") {
-      if (attempts <= 0) return fail("Укажите количество попыток");
-      if (maxRestSeconds < 0) return fail("Отдых не может быть отрицательным");
-      return {
-        type: "max_effort",
-        prescription: { source: "static", attempts },
-        rest_seconds: maxRestSeconds,
-      };
-    }
-    // interval
-    if (totalSeconds <= 0) return fail("Укажите общую длительность тренировки");
-    if (workSeconds <= 0) return fail("Укажите длительность фазы работы");
-    if (intervalRestSeconds < 0) return fail("Отдых не может быть отрицательным");
-    if (workSeconds > totalSeconds) return fail("Работа не может быть длиннее всей тренировки");
-    return {
-      type: "interval", total_duration_seconds: totalSeconds, work_seconds: workSeconds,
-      rest_seconds: intervalRestSeconds, starts_with: startsWith,
-    };
-  }
-
-  function fail(message: string): null {
-    setValidationError(message);
-    return null;
-  }
+  const built = buildProtocol(draft);
+  const [previewMain, previewDetail] = previewLines(draft);
 
   function handleSubmit() {
-    setValidationError(null);
-    const protocol = buildProtocol();
-    if (protocol !== null) {
-      onSubmit(protocol);
+    if (built.ok) {
+      onSubmit(built.protocol);
     }
   }
 
   return (
-    <div>
-      <p className="plan-title">{initialExerciseName}</p>
-      <p className="block-subtitle">Тип тренировки</p>
-      <div className="protocol-type-selector">
-        <SegmentedControl>
-          {(Object.keys(KIND_LABELS) as ProtocolKind[]).map((option) => (
-            <SegmentedControl.Item
-              key={option} selected={kind === option}
-              onClick={() => {
-                // QA-found bug (C4b-2 continuation) — validationError не
-                // сбрасывался при смене типа тренировки: сообщение об
-                // ошибке одной формы (например "Укажите количество
-                // попыток" от Max) оставалось видимым при переключении
-                // на совсем другую форму (Interval), где такого поля
-                // нет вовсе — вводило пользователя в заблуждение.
-                setValidationError(null);
-                setKind(option);
-              }}
-            >
-              {KIND_LABELS[option]}
-            </SegmentedControl.Item>
-          ))}
-        </SegmentedControl>
+    <div className="ux-form">
+      <p className="ux-eyebrow">Упражнение</p>
+      <h2 className="ux-exercise-name">{initialExerciseName}</h2>
+
+      <p className="ux-section-label">Тип работы</p>
+      <div className="ux-kind-list" role="radiogroup" aria-label="Тип работы">
+        {PROTOCOL_KINDS.map((option) => (
+          <button
+            key={option.kind}
+            type="button"
+            role="radio"
+            aria-checked={draft.kind === option.kind}
+            className={`ux-kind${draft.kind === option.kind ? " ux-kind-selected" : ""}`}
+            onClick={() => {
+              patch({ kind: option.kind });
+            }}
+          >
+            <span className="ux-kind-title">{option.title}</span>
+            <span className="ux-kind-desc">{option.description}</span>
+          </button>
+        ))}
       </div>
 
-      {kind === "reps_sets" && (
-        <Section className="block-section">
-          <NumberField header="Подходы" value={sets} onChange={setSets} />
-          <NumberField header="Повторения" value={reps} onChange={setReps} />
-          <TimeInputField header="Отдых" seconds={restSeconds} onChange={setRestSeconds} />
-        </Section>
-      )}
+      <p className="ux-section-label">Параметры</p>
+      <div className="ux-card" data-testid="protocol-fields">
+        {draft.kind === "reps_sets" && (
+          <>
+            <StepperRow label="Подходы" hint="Сколько раз повторить" value={draft.sets} onChange={(sets) => patch({ sets })} />
+            <StepperRow label="Повторения в подходе" hint="Одинаково в каждом подходе" value={draft.reps} onChange={(reps) => patch({ reps })} />
+            <TimeRow label="Отдых между подходами" seconds={draft.restSeconds} step={15} onChange={(restSeconds) => patch({ restSeconds })} />
+          </>
+        )}
+        {draft.kind === "time_sets" && (
+          <>
+            <StepperRow label="Подходы" hint="Сколько раз повторить" value={draft.sets} onChange={(sets) => patch({ sets })} />
+            <TimeRow label="Время подхода" hint="Сколько длится один подход" seconds={draft.durationSeconds} min={1} onChange={(durationSeconds) => patch({ durationSeconds })} />
+            <TimeRow label="Отдых между подходами" seconds={draft.restSeconds} step={15} onChange={(restSeconds) => patch({ restSeconds })} />
+          </>
+        )}
+        {draft.kind === "max_effort" && (
+          <>
+            <StepperRow label="Количество попыток" hint="В каждой — максимум, цели нет" value={draft.attempts} onChange={(attempts) => patch({ attempts })} />
+            <TimeRow label="Отдых между попытками" seconds={draft.maxRestSeconds} step={15} onChange={(maxRestSeconds) => patch({ maxRestSeconds })} />
+          </>
+        )}
+        {draft.kind === "interval" && (
+          <>
+            <TimeRow label="Работа" hint="Длина рабочего интервала" seconds={draft.workSeconds} min={1} onChange={(workSeconds) => patch({ workSeconds })} />
+            <TimeRow label="Отдых" hint="Пауза после работы" seconds={draft.intervalRestSeconds} onChange={(intervalRestSeconds) => patch({ intervalRestSeconds })} />
+            <TimeRow label="Общее время" hint="Раунды считаются по нему" seconds={draft.totalSeconds} step={15} min={1} onChange={(totalSeconds) => patch({ totalSeconds })} />
+            <div className="ux-row ux-row-stack">
+              <div className="ux-row-label">
+                <span className="ux-row-title">Начать с</span>
+              </div>
+              <div className="ux-choice" role="radiogroup" aria-label="Начать с">
+                {(["work", "rest"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.startsWith === option}
+                    className={`ux-choice-item${draft.startsWith === option ? " ux-choice-selected" : ""}`}
+                    onClick={() => patch({ startsWith: option })}
+                  >
+                    {option === "work" ? "Работы" : "Отдыха"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
-      {kind === "time_sets" && (
-        <Section className="block-section">
-          <NumberField header="Подходы" value={sets} onChange={setSets} />
-          <TimeInputField header="Длительность подхода" seconds={durationSeconds} onChange={setDurationSeconds} />
-          <TimeInputField header="Отдых" seconds={restSeconds} onChange={setRestSeconds} />
-        </Section>
-      )}
+      <div className="ux-preview" data-testid="protocol-preview" aria-live="polite">
+        <span className="ux-preview-label">Так будет в тренировке</span>
+        {built.ok ? (
+          <>
+            <span className="ux-preview-main">{previewMain}</span>
+            <span className="ux-preview-detail">{previewDetail}</span>
+          </>
+        ) : (
+          <span className="ux-preview-detail">Заполните все поля, чтобы увидеть итог</span>
+        )}
+      </div>
 
-      {kind === "max_effort" && (
-        <Section className="block-section">
-          <NumberField header="Попытки" value={attempts} onChange={setAttempts} />
-          <TimeInputField header="Отдых" seconds={maxRestSeconds} onChange={setMaxRestSeconds} />
-        </Section>
-      )}
+      {!built.ok && <p className="ux-error" role="alert">{built.error}</p>}
 
-      {kind === "interval" && (
-        <Section className="block-section">
-          <TimeInputField header="Общее время" seconds={totalSeconds} onChange={setTotalSeconds} />
-          <TimeInputField header="Работа" seconds={workSeconds} onChange={setWorkSeconds} />
-          <TimeInputField header="Отдых" seconds={intervalRestSeconds} onChange={setIntervalRestSeconds} />
-          <SegmentedControl>
-            <SegmentedControl.Item selected={startsWith === "work"} onClick={() => setStartsWith("work")}>
-              Работа
-            </SegmentedControl.Item>
-            <SegmentedControl.Item selected={startsWith === "rest"} onClick={() => setStartsWith("rest")}>
-              Отдых
-            </SegmentedControl.Item>
-          </SegmentedControl>
-          {workSeconds > 0 && totalSeconds >= workSeconds && (
-            <p className="block-subtitle">
-              {calculateWorkIntervalsPreview(totalSeconds, workSeconds, intervalRestSeconds)} рабочих интервалов
-            </p>
-          )}
-        </Section>
-      )}
-
-      {validationError && <p className="gap-banner">{validationError}</p>}
-
-      <Button className="action-button" size="l" stretched onClick={handleSubmit}>
-        {submitLabel}
-      </Button>
-      <Button className="action-button" size="l" stretched mode="outline" onClick={onCancel}>
-        Отмена
-      </Button>
+      <button type="button" className="ux-primary" disabled={!built.ok} onClick={handleSubmit}>{submitLabel}</button>
+      <button type="button" className="ux-link-button" onClick={onCancel}>Отмена</button>
     </div>
-  );
-}
-
-/** Phase C4b-1 (issue #188) — краткое summary для карточки в списке items,
- * тот же формат, что задание приводит примером: "Интервалы · 03:00 ·
- * 00:10 / 00:20" / "3 × 00:45 · отдых 01:00". */
-export function formatProtocolSummary(protocol: ProtocolFormValue): string {
-  const type = protocol.type;
-  if (type === "interval") {
-    const total = formatSecondsAsMinutesSeconds(Number(protocol.total_duration_seconds ?? 0));
-    const work = formatSecondsAsMinutesSeconds(Number(protocol.work_seconds ?? 0));
-    const rest = formatSecondsAsMinutesSeconds(Number(protocol.rest_seconds ?? 0));
-    return `Интервалы · ${total} · ${work} / ${rest}`;
-  }
-  const prescription = (protocol.prescription ?? {}) as Record<string, unknown>;
-  if (type === "reps_sets") {
-    const rest = formatSecondsAsMinutesSeconds(Number(protocol.rest_seconds ?? 0));
-    return `${prescription.sets ?? "?"} × ${prescription.reps ?? "?"} · отдых ${rest}`;
-  }
-  if (type === "time_sets") {
-    const duration = formatSecondsAsMinutesSeconds(Number(prescription.duration_seconds ?? 0));
-    const rest = formatSecondsAsMinutesSeconds(Number(protocol.rest_seconds ?? 0));
-    return `${prescription.sets ?? "?"} × ${duration} · отдых ${rest}`;
-  }
-  if (type === "max_effort") {
-    const rest = formatSecondsAsMinutesSeconds(Number(protocol.rest_seconds ?? 0));
-    const attemptsCount = Number(prescription.attempts ?? 0);
-    const attemptsWord = attemptsCount === 1 ? "попытка" : "попытки";
-    return `${attemptsCount} ${attemptsWord} · отдых ${rest}`;
-  }
-  return "Тренировка";
-}
-
-function NumberField({ header, value, onChange }: { header: string; value: number; onChange: (value: number) => void }) {
-  const [text, setText] = useState(String(value));
-  return (
-    <Input
-      header={header}
-      type="number"
-      value={text}
-      onChange={(event) => {
-        setText(event.target.value);
-        const parsed = Number(event.target.value);
-        if (!Number.isNaN(parsed)) {
-          onChange(parsed);
-        }
-      }}
-    />
   );
 }

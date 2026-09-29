@@ -7,7 +7,7 @@ import { openAppAs } from "../fixtures/setup";
 // Reusable black-box capture of OUR app for docs/REFERENCE_UX_REVIEW.md.
 // Skipped unless UX_CAPTURE=1. Output: $UX_CAPTURE_DIR/<label>/<width>/<name>.png + <name>.txt
 // (visible text + accessibility-relevant controls), so shots can be paired with Crimpd
-// captures by name. Seeds: scripts/e2e_seed_all.sh (920002 Builder, 910001 execution).
+// captures by name. Seeds: scripts/e2e_seed_all.sh (920003 Builder, 910001 execution).
 test.skip(!process.env.UX_CAPTURE, "set UX_CAPTURE=1 to capture screens");
 test.setTimeout(180_000);
 
@@ -34,26 +34,26 @@ async function shot(page: Page, width: number, name: string) {
 for (const width of WIDTHS) {
   test(`capture builder+home @${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
-    await openAppAs(page, 920_002);
+    await openAppAs(page, 920_003);
     await page.getByTestId("my-workouts").waitFor();
     await shot(page, width, "01_home");
 
     await page.getByRole("button", { name: "Создать", exact: true }).click();
     await shot(page, width, "02_create_entry");
     await page.getByRole("textbox").fill("UX Capture");
-    await page.getByRole("button", { name: "Сохранить" }).click();
+    await page.getByRole("button", { name: /^(Сохранить|Создать и добавить упражнения)$/ }).click();
     await page.getByText("Редактировать тренировку").waitFor();
     await shot(page, width, "03_editor_empty");
 
-    await page.getByRole("button", { name: "Добавить упражнение" }).click();
+    await page.getByRole("button", { name: /^(\+ )?Добавить упражнение$/ }).click();
     await shot(page, width, "04_exercise_picker");
-    await page.locator(".program-card-button").first().click();
+    await page.locator(".program-card-button, .ux-pick").first().click();
     await shot(page, width, "05_protocol_reps");
     for (const [label, name] of [["Время", "06_protocol_time"], ["Максимум", "07_protocol_max"], ["Интервалы", "08_protocol_interval"]]) {
-      await page.getByRole("tab", { name: label }).click();
+      await page.getByRole(await page.getByRole("radio", { name: label }).count() ? "radio" : "tab", { name: new RegExp(`^${label}`) }).click();
       await shot(page, width, name);
     }
-    await page.getByRole("tab", { name: "Повторения" }).click();
+    await page.getByRole(await page.getByRole("radio").count() ? "radio" : "tab", { name: /^Повторения/ }).first().click();
     await page.getByRole("button", { name: /^(Добавить|Готово|Добавить упражнение)$/ }).last().click();
     await shot(page, width, "09_editor_with_item");
 

@@ -75,7 +75,7 @@ test("Главная: открыть Мою тренировку, создать
   await page.getByRole("button", { name: "Создать", exact: true }).click();
   await expect(page.getByText("Новая тренировка", { exact: true })).toBeVisible();
   await page.getByRole("textbox").fill(title);
-  await page.getByRole("button", { name: "Сохранить" }).click();
+  await page.getByRole("button", { name: "Создать и добавить упражнения" }).click();
   await expect(page.getByText("Редактировать тренировку")).toBeVisible();
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByTestId("my-workout-card").filter({ hasText: title })).toBeVisible();
