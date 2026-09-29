@@ -1,4 +1,4 @@
-name: Orch Worker
+name: Orch Worker 
 
 # ORCH-1 worker (docs/WORKER_AGENT.md): implements exactly ONE status:in-progress issue whose
 # brief is .github/task/current.md on the base branch. Dispatched by orch-planner.yml (or by the

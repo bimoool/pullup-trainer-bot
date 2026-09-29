@@ -1,4 +1,4 @@
-name: Orch Planner
+name: Orch Planner 
 
 # ORCH-1 planner (docs/PLANNER_AGENT.md). Deterministic — `scripts/orch.py`, no LLM, never writes
 # product code. Dispatched by the owner (`gh workflow run orch-planner.yml --ref develop/current`)
