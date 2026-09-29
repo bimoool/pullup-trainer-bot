@@ -439,6 +439,28 @@ export function SessionLiveScreen({
       {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
       {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
 
+      {phaseName !== "between" && block !== null && phaseName !== "done" && (() => {
+        // name=null значит "имени действительно нет" (internal STEP-роль,
+        // Checkpoint 3C) — не "Упражнение #id" и не выдуманный термин.
+        // UX-1: «что сейчас делаю» — крупным блоком над таймером (раньше мелкий
+        // серый текст, налезавший на рамку карточки фазы).
+        const name = blockName(block);
+        const planText = targetForSet !== null ? formatTarget(targetForSet) : null;
+        return (
+          <div className="live-now" data-testid="live-now">
+            {name !== null && <p className="live-exercise">{name}</p>}
+            <p className="live-target">
+              {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
+              {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
+            </p>
+            {phaseName === "get_ready" && (
+              <p className="block-subtitle">
+                {describeBlockPlan(block.protocol_type, block.targets, block.interval_config)}
+              </p>
+            )}
+          </div>
+        );
+      })()}
       {phaseName === "between" && block !== null ? (
         <BlockTransition
           block={block} name={blockName(block)} starting={startingBlock} error={startBlockError}
@@ -449,26 +471,6 @@ export function SessionLiveScreen({
         {remaining !== null && (
           <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatDuration(remaining)}</p>
         )}
-        {block !== null && phaseName !== "done" && (() => {
-          // name=null значит "имени действительно нет" (internal STEP-роль,
-          // Checkpoint 3C) — не "Упражнение #id" и не выдуманный термин.
-          const name = blockName(block);
-          const planText = targetForSet !== null ? formatTarget(targetForSet) : null;
-          return (
-            <>
-              <p className="block-subtitle">
-                {name !== null && `${name} · `}
-                {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
-                {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
-              </p>
-              {phaseName === "get_ready" && (
-                <p className="block-subtitle">
-                  {describeBlockPlan(block.protocol_type, block.targets, block.interval_config)}
-                </p>
-              )}
-            </>
-          );
-        })()}
       </Section>
       )}
 

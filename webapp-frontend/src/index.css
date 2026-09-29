@@ -1064,3 +1064,13 @@ input[type="number"] {
 .ux-pick-create { color: var(--tg-button-color); font-weight: 600; }
 .ux-chevron { color: var(--tg-hint-color); font-size: 20px; }
 .ux-row-stack .ux-row-label { flex: none; }
+
+/* UX-1: активная тренировка — «что сейчас делаю» крупно, над карточкой фазы. */
+.live-now { margin: 4px 0 12px; }
+.live-exercise { margin: 0; font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.live-target { margin: 4px 0 0; font-size: 16px; font-weight: 600; color: var(--tg-subtitle-text-color); }
+
+/* UX-1: программы — горизонтальный ряд с «выглядывающей» следующей карточкой
+   (как карусели референса), чтобы «Мои тренировки» и «Создать» не уезжали вниз. */
+.home-program-row { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px 8px; padding: 0 16px 4px; -webkit-overflow-scrolling: touch; }
+.home-program-row .home-program-card { flex: 0 0 76%; margin-bottom: 0; }

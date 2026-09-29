@@ -193,11 +193,12 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
         <p className="screen-message">Каталог курсов появится здесь позже.</p>
       )}
-      {catalog.phase === "ready" &&
-        catalog.programs.map((program) => {
+      {catalog.phase === "ready" && (
+        <div className="home-program-row" data-testid="program-row">
+        {catalog.programs.map((program) => {
           const included = catalog.includedProgramIds.has(program.id);
           return (
-            <Section key={program.id} className="block-section">
+            <Section key={program.id} className="block-section home-program-card">
               <button
                 type="button"
                 className="program-card-button"
@@ -210,6 +211,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
             </Section>
           );
         })}
+        </div>
+      )}
 
       <div className="home-section-header">
         <p className="section-title">Мои тренировки</p>

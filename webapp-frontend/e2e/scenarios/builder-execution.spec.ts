@@ -94,14 +94,16 @@ test("E. mixed reps -> interval -> max: ручные переходы, reload, �
   await playSets(page, ["8", "8"]);
   await expect(page.getByText("Готово ✓")).toBeVisible();
   await expect(page.getByText("Следующее упражнение")).toBeVisible();
-  await expect(page.getByText("Бёрпи · 0:15 · 5/5 сек")).toBeVisible();
+  await expect(page.getByText("Бёрпи", { exact: true })).toBeVisible();
+  await expect(page.getByText("0:15 · 5/5 сек")).toBeVisible();
   await expect(page.getByText("Тренировка завершена")).toHaveCount(0); // Summary не раньше последнего блока
   await expect(page.getByRole("button", { name: "Пропустить" })).toHaveCount(0);
 
   // --- reload, пока следующий блок не начат: interstitial восстановился ---
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByText("Следующее упражнение")).toBeVisible();
-  await expect(page.getByText("Бёрпи · 0:15 · 5/5 сек")).toBeVisible();
+  await expect(page.getByText("Бёрпи", { exact: true })).toBeVisible();
+  await expect(page.getByText("0:15 · 5/5 сек")).toBeVisible();
   await expect(page.getByText("Подготовка")).toHaveCount(0); // interval ещё не идёт
 
   // --- retry: первый blocks/start падает, кнопка остаётся, второй проходит ---
@@ -134,7 +136,8 @@ test("E. mixed reps -> interval -> max: ручные переходы, reload, �
 
   // --- истечение interval в СЕРЕДИНЕ: interstitial max-блока, не Summary ---
   await expect(page.getByText("Следующее упражнение")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("Отжимания · Максимум · 2 попытки")).toBeVisible();
+  await expect(page.getByText("Отжимания", { exact: true })).toBeVisible();
+  await expect(page.getByText("Максимум · 2 попытки")).toBeVisible();
   await expect(page.getByText("Тренировка завершена")).toHaveCount(0);
 
   // --- блок 2 (max), затем Summary с тремя независимыми блоками ---

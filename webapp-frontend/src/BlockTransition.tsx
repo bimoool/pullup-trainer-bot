@@ -23,7 +23,8 @@ export function BlockTransition({ block, name, starting, error, onStart }: Props
   return (
     <Section className="block-section phase-card-done" header="Готово ✓">
       <p className="block-subtitle">Следующее упражнение</p>
-      <p className="plan-title">{[name, plan].filter((part) => part !== null).join(" · ")}</p>
+      {name !== null && <p className="live-exercise">{name}</p>}
+      <p className="live-target">{plan}</p>
       {error && <p className="gap-banner">Не удалось начать: {error}. Попробуйте ещё раз.</p>}
       <Button className="action-button" size="l" stretched disabled={starting} onClick={onStart}>
         Начать
