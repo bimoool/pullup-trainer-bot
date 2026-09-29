@@ -2,6 +2,7 @@ import { test, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { clickAndSync, playSets } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // Reusable black-box capture of OUR app for docs/REFERENCE_UX_REVIEW.md.
@@ -19,7 +20,7 @@ async function shot(page: Page, width: number, name: string) {
   const dir = path.join(OUT, LABEL, String(width));
   fs.mkdirSync(dir, { recursive: true });
   await page.waitForTimeout(250);
-  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
+  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: !name.startsWith("01_") });
   const controls = await page.evaluate(() =>
     Array.from(document.querySelectorAll("button, input, textarea, select, [role=tab]"))
       .map((el) => {
@@ -80,5 +81,11 @@ for (const width of WIDTHS) {
     await page.getByRole("button", { name: "Готов", exact: true }).click();
     await page.getByText("Пошёл").waitFor();
     await shot(page, width, "23_live_set_running");
+    await page.getByLabel(/Результат/).fill("8");
+    await clickAndSync(page, "Готово", "/sets:batch");
+    await clickAndSync(page, "Пропустить отдых", "/phase/next");
+    await playSets(page, ["8"]);
+    await page.getByText("Следующее упражнение").waitFor();
+    await shot(page, width, "24_block_transition");
   });
 }

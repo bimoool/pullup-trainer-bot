@@ -467,11 +467,12 @@ export function SessionLiveScreen({
           onStart={startNextBlock}
         />
       ) : (
-      <Section className={`block-section phase-card-${phaseName}`} header={PHASE_LABELS[phaseName]}>
+      <div className={`phase-panel phase-card-${phaseName}`}>
+        <h2 className="phase-panel-label">{PHASE_LABELS[phaseName]}</h2>
         {remaining !== null && (
           <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatDuration(remaining)}</p>
         )}
-      </Section>
+      </div>
       )}
 
       {phaseName === "get_ready" && (

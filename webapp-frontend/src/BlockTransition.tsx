@@ -1,4 +1,4 @@
-import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Button } from "@telegram-apps/telegram-ui";
 
 import type { LiveSessionBlockResponse } from "./apiV2";
 import { describeBlockPlan } from "./blockFormat";
@@ -21,7 +21,8 @@ type Props = {
 export function BlockTransition({ block, name, starting, error, onStart }: Props) {
   const plan = describeBlockPlan(block.protocol_type, block.targets, block.interval_config);
   return (
-    <Section className="block-section phase-card-done" header="Готово ✓">
+    <div className="phase-panel phase-card-done">
+      <h2 className="phase-panel-label">Готово ✓</h2>
       <p className="block-subtitle">Следующее упражнение</p>
       {name !== null && <p className="live-exercise">{name}</p>}
       <p className="live-target">{plan}</p>
@@ -29,6 +30,6 @@ export function BlockTransition({ block, name, starting, error, onStart }: Props
       <Button className="action-button" size="l" stretched disabled={starting} onClick={onStart}>
         Начать
       </Button>
-    </Section>
+    </div>
   );
 }

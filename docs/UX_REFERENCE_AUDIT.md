@@ -50,8 +50,22 @@ Evidence tags: OBSERVED / INFERRED / UNKNOWN.
 6. **B6** Exercise picker: no selected/empty-search affordance.
 7. **B7** Active-session header hierarchy (current exercise/target).
 
-## Acceptance ledger (filled in UX-D)
+## Acceptance ledger (UX-D)
 
-| Gap | Status |
-|---|---|
-| B1–B7 | TBD |
+| Gap | Status | Evidence |
+|---|---|---|
+| B1 protocol choice unexplained | **FIXED** | 4 radio cards with one-line explanations (`builder-ux.spec.ts`, `protocolConfig.test.ts`) |
+| B2 ambiguous rows / no units / no steppers | **FIXED** | labelled −/+ rows and mm:ss rows: «Подходы», «Повторения в подходе», «Отдых между подходами», «Количество попыток», «Работа/Отдых/Общее время» |
+| B3 no preview before save | **FIXED** | "Так будет в тренировке", derived from the same draft that is sent (`previewLines`) |
+| B4 editor row weight/tap targets | **FIXED** | whole card opens edit; ↑↓ 44 px icons; delete inline confirm; same summary as preview |
+| B5 create dead-end | **FIXED** | helper text + "Создать и добавить упражнения", disabled until name |
+| B6 exercise picker | **FIXED** | chevrons, helper, "Создать своё: «query»" row; no separate form |
+| B7 active-session hierarchy | **FIXED** | exercise name large, "Подход n/m · Цель" under it; phase panel replaces misaligned Section; transition shows name + plan |
+| Home: programs push "Мои тренировки" off-screen | **FIXED** | horizontal program row with peeking card |
+| Reps per-set targets (Crimpd-style set table) | **INTENTIONAL DIFFERENCE / C** | backend stores one static target; not faked |
+| Interval "rounds" as an input | **INTENTIONAL DIFFERENCE / C** | not stored; derived from total time and shown |
+| Workout detail = editor, no Start | **INTENTIONAL DIFFERENCE** | start is plan-scoped in our model |
+| Wizard pager / category steps | **INTENTIONAL DIFFERENCE / C** | no category model |
+| Hero photos, favorites, Log Workout shortcut | **DEFERRED / C** | need new backend capabilities |
+| Result-input unit hint on live screen, effort chips wording | **DEFERRED** | minor; not journey-blocking |
+| Add-to-plan sheet, Journal, Analytics deep review | **DEFERRED** | not re-audited this phase |

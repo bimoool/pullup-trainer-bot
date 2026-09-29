@@ -1074,3 +1074,9 @@ input[type="number"] {
    (как карусели референса), чтобы «Мои тренировки» и «Создать» не уезжали вниз. */
 .home-program-row { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px 8px; padding: 0 16px 4px; -webkit-overflow-scrolling: touch; }
 .home-program-row .home-program-card { flex: 0 0 76%; margin-bottom: 0; }
+
+.phase-panel { margin-bottom: 16px; padding: 14px 16px; border-radius: 16px; text-align: center; }
+.phase-panel-label { margin: 0; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--tg-subtitle-text-color); }
+.phase-panel .timer-duration-label { margin: 4px 0 0; font-size: 48px; font-weight: 800; }
+.phase-card-done { background: color-mix(in srgb, var(--tg-button-color) 8%, var(--tg-bg-color)); border: 1.5px solid color-mix(in srgb, var(--tg-button-color) 30%, transparent); text-align: left; }
+.phase-card-done .action-button { margin-top: 12px; }

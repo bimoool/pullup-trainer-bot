@@ -95,7 +95,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"  # native TypeScript type stripping for tests/*.test.ts
           cache: npm
           cache-dependency-path: webapp-frontend/package-lock.json
       - working-directory: webapp-frontend
@@ -103,3 +103,6 @@ jobs:
       - name: Typecheck + build
         working-directory: webapp-frontend
         run: npm run build
+      - name: Unit tests (protocol config)
+        working-directory: webapp-frontend
+        run: npm run test:unit
