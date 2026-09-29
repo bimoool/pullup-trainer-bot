@@ -229,6 +229,14 @@ export function App() {
     if (state.status !== "ready") {
       return;
     }
+    // "not_registered" — строки users ещё нет, а эндпоинты новой схемы
+    // отвечают 404 "User not found" на незарегистрированного пользователя:
+    // активной сессии у него быть не может, запрос был бы заведомо лишним
+    // (и давал 404 в консоли). "Нет активной сессии" у существующего
+    // пользователя — обычный 200 {session: null}.
+    if (state.data.onboarding_step === "not_registered") {
+      return;
+    }
     let cancelled = false;
     fetchActiveLiveSession(state.initDataRaw)
       .then((activeSession) => {

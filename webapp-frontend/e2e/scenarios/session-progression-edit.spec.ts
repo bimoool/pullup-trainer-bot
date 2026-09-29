@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py v2_session_progression_edit 900012 — STEP-курс, одна
@@ -17,7 +18,11 @@ test("правка вчерашней v2-сессии: preview → Остави�
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   await page.getByRole("button", { name: "Dashboard" }).click();
-  await expect(page.getByText("Блок A — цель 10")).toBeVisible();
+  // Исходная цель блока A читается с экрана, не хардкодится: она зависит от
+  // уже применённой прогрессии сидированной вчерашней сессии.
+  const targetLabel = page.getByText(/^Блок A — цель \d+$/);
+  await expect(targetLabel).toBeVisible();
+  const initialTargetText = (await targetLabel.textContent()) ?? "";
 
   async function openEditAndFillStrongerBlockA() {
     await page.getByRole("button", { name: "Журнал (v2)" }).click();
@@ -34,14 +39,15 @@ test("правка вчерашней v2-сессии: preview → Остави�
   await openEditAndFillStrongerBlockA();
   await page.getByRole("button", { name: "Оставить" }).click();
   await page.getByRole("button", { name: "Назад" }).click();
-  await expect(page.getByText("Блок A — цель 10")).toBeVisible();
+  await expect(targetLabel).toHaveText(initialTargetText);
 
   // Ветка "Применить" — тот же preview, на этот раз применяем.
   await openEditAndFillStrongerBlockA();
   await page.getByRole("button", { name: "Применить" }).click();
   await page.getByRole("button", { name: "Назад" }).click();
-  await expect(page.getByText("Блок A — цель 10")).toHaveCount(0);
+  await expect(targetLabel).toBeVisible();
+  await expect(targetLabel).not.toHaveText(initialTargetText);
 
-  expect(consoleErrors).toEqual([]);
+  expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);
 });

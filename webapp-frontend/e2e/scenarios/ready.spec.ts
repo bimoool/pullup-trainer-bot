@@ -2,43 +2,30 @@ import { expect, test } from "@playwright/test";
 
 import { openAppAs } from "../fixtures/setup";
 
-// scripts/e2e_seed.py ready 900003 — одна прошлая тренировка 5 дней назад,
-// снаряд обоих блоков уже BAND (см. scripts/e2e_seed.py::seed_ready).
+// scripts/e2e_seed.py ready 900003 — одна прошлая тренировка 5 дней назад
+// (старая схема: блоки Объём/Сила на резине), плана на неделю нет.
 const TELEGRAM_ID = 900_003;
 
-test("обычный день тренировки: полный путь ввода результата до записи", async ({ page }) => {
+// Старый путь "Планы → Начать тренировку → Внести результат" (WorkoutScreen)
+// убран из продукта в Checkpoint 5A (feat: remove legacy global workout entry
+// points) — единственный вход в тренировку теперь карточки плана (см.
+// first-workout.spec.ts, builder-execution.spec.ts). Возвращающийся
+// пользователь видит: глобальной кнопки старта нет ни на «Главной», ни в
+// «Планах», а прошлая тренировка доступна в «Журнале».
+test("возвращающийся пользователь: нет глобального старта, прошлая тренировка — в Журнале", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
-  // Волна 5b (issue #183) — стартовый экран теперь "Главная" (каталог,
-  // пока пустой), Dashboard целиком переехал на вкладку "Планы".
+  await expect(page.getByRole("button", { name: "Начать тренировку" })).toHaveCount(0);
+
   await page.getByRole("button", { name: "Планы" }).click();
+  await expect(page.getByRole("heading", { name: "Мои тренировки" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Начать тренировку" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
 
-  // Dashboard (issue #175) — сводка вместо сразу открытой формы тренировки
-  // (product-reference skill, референс — Crimpd).
-  await expect(page.getByText("Готов к тренировке.")).toBeVisible();
-  await page.getByRole("button", { name: "Начать тренировку" }).click();
-
-  await expect(page.getByText("Текущий план")).toBeVisible();
-  await page.getByRole("button", { name: "📝 Внести результат тренировки" }).click();
-
-  // work_sets_a=3/work_sets_b=4 для этого сидирования (подтверждено
-  // tests/test_web/test_workout.py::test_plan_ready_shows_target_and_equipment)
-  // — те же значения, что и в прошлой тренировке, чтобы гарантированно не
-  // задеть detect_anomalies (резкий скачок относительно среднего) и дойти
-  // до записи без промежуточного экрана подтверждения аномалии.
-  for (const n of [1, 2, 3]) {
-    await page.getByLabel(`Блок A, подход ${n}`).fill("10");
-  }
-  await page.getByLabel("Блок A, подход на максимум").fill("11");
-
-  for (const n of [1, 2, 3, 4]) {
-    await page.getByLabel(`Блок B, подход ${n}`).fill("3");
-  }
-  await page.getByLabel("Блок B, подход на максимум").fill("3");
-
-  await page.getByRole("button", { name: "Записать тренировку" }).click();
-
-  await expect(page.getByText("Тренировка записана")).toBeVisible();
+  await page.getByRole("button", { name: "Журнал" }).click();
+  await expect(page.getByText("Объём (резина): 10, 10, 10, максимум 11, следующая цель 11")).toBeVisible();
+  await expect(page.getByText("Сила (резина): 3, 3, 3, 3, максимум 3, следующая цель 3")).toBeVisible();
+  await expect(page.getByRole("button", { name: "✏️ Изменить" })).toHaveCount(1);
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);

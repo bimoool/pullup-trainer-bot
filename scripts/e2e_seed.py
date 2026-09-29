@@ -153,6 +153,38 @@ async def seed_first_workout(session: AsyncSession, telegram_id: int) -> None:
     await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS,
     )
+    # Курс в каталоге "Главной" — единственный путь начать первую тренировку
+    # (глобальный старт убран, Checkpoint 5A): "Добавить в план" -> карточка
+    # в "Планах" -> "Начать". Тот же STEP-курс, что у v2_session_ready, но
+    # БЕЗ инклюзии — пользователь включает его сам.
+    # Курс глобальный (каталог общий для всех), а не строки пользователя —
+    # find-or-create по category, чтобы повторный сид не плодил дубли в
+    # каталоге "Главной" (клик по названию был бы неоднозначным).
+    category = "e2e_first_workout"
+    program = (await session.execute(select(Program).where(Program.category == category))).scalars().first()
+    if program is None:
+        profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+        session.add(profile)
+        await session.flush()
+        program = Program(
+            name="Первая тренировка", goal="e2e", structure_type=ProgramStructureType.RECURRING,
+            category=category, progression_strategy_id=profile.id,
+            config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+        )
+        session.add(program)
+        await session.flush()
+        block_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category=category, subcategory="block_a")
+        block_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category=category, subcategory="block_b")
+        session.add_all([block_a, block_b])
+        await session.flush()
+        session.add_all([
+            ProgramItem(
+                program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=exercise.id,
+                count_per_week=3, day_of_week=None,
+            )
+            for exercise in (block_a, block_b)
+        ])
+        await session.flush()
 
 
 async def seed_ready(session: AsyncSession, telegram_id: int) -> None:
@@ -279,10 +311,18 @@ async def seed_v2_session_complex(session: AsyncSession, telegram_id: int) -> No
         )
     await session.flush()
 
+    # Комплекс должен быть в ТЕКУЩЕЙ неделе плана — вкладка "Планы" показывает
+    # только элементы с plan_week_id (иначе "ничего не запланировано").
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
+    week_number = plan_week_number(plan.created_at.date(), datetime.now(UTC).date())
+    week = await plans.create_plan_week(
+        training_plan_id=plan.id, week_number=week_number,
+        start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
+    )
     session.add(PlanItem(
         training_plan_id=plan.id, exercise_id=exercises[0].id, complex_id=complex_.id, count_per_week=1,
+        plan_week_id=week.id,
     ))
     await session.flush()
 
