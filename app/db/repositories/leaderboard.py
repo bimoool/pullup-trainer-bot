@@ -6,7 +6,7 @@ from app.domain.leaderboard import LeaderboardEntry, LeaderboardMetric
 # max по элементам JSONB-массива working_reps (jsonb_array_elements_text) и
 # RANK() OVER по всем пользователям разом не выражаются штатным ORM
 # select() без raw-фрагментов — единственное место в проекте на
-# sqlalchemy.text() вместо ORM select(), см. CLAUDE.md ("Google Sheets"/
+# sqlalchemy.text() вместо ORM select(), см. docs/mini-app.md (issue #67) —
 # репозитории обычно грузят полные ORM-объекты и агрегируют в Python, но
 # здесь это означало бы тянуть блоки ВСЕХ пользователей в память при каждом
 # открытии лидерборда).

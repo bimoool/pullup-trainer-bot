@@ -23,10 +23,9 @@ dev = [
     "ruff>=0.6",
     "httpx>=0.27",
     # Инструмент для расследования кода агентом (не для продакшена), см.
-    # CLAUDE.md "Graphify — карта кода для расследований" — граф вызовов/
-    # импортов по AST, без LLM, вместо серии ручных grep по запутанным
-    # межфайловым цепочкам (is_heavy → suggest_heavy_weight_kg →
-    # recalculate_cascade и т.п.).
+    # скилл codebase-map — граф вызовов/импортов по AST, без LLM, вместо
+    # серии ручных grep по запутанным межфайловым цепочкам (is_heavy →
+    # suggest_heavy_weight_kg → recalculate_cascade и т.п.).
     "graphifyy>=0.9",
 ]
 # Отдельный веб-сервис (app/web/, Mini App) — свой Docker-образ
