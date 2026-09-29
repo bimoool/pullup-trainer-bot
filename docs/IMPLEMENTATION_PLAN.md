@@ -55,8 +55,10 @@
 
 ## Дальше
 
-1. Draft PR `develop/current` → `main` и CI (#222).
-2. Staging (#223) → QA на реальном iPhone (#224) → P0/P1 → production.
+1. ~~Draft PR `develop/current` → `main` и CI (#222)~~ — PR #226 (draft), CI зелёный.
+2. ~~Staging (#223)~~ — `4610cb6` выкачен на staging 2026-09-29, миграция до `c3d4e5f6a7b8`, health/статика/auth-границы
+   проверены; аутентифицированный E2E против staging недоступен (нужен staging BOT_TOKEN + сид БД).
+   → QA на реальном iPhone (#224, чек-лист `docs/IPHONE_QA_CHECKLIST.md`) → P0/P1 → production.
 
 Известный долг: монеты/ачивки v2 (#225; см. `PROJECT_SPEC.md §6`); сходимость legacy/v2
 прогрессии и истории; скорость pytest; намеренно закарантиненные устаревшие E2E
