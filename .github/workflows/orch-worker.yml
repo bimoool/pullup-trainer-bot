@@ -16,6 +16,12 @@ name: Orch Worker
 # batch allows it; one worker at a time (concurrency group); no production secrets in this job.
 
 on:
+  # Registration only: GitHub dispatches a workflow only if it "knows" it, and it knows files on
+  # main or files that have had a run. This path-filtered push creates a (skipped) run when this
+  # file changes on develop/current or a sandbox branch — so main is never needed.
+  push:
+    branches: [develop/current, "orch-sandbox/**"]
+    paths: [.github/workflows/orch-worker.yml]
   workflow_dispatch:
     inputs:
       issue:
@@ -47,7 +53,7 @@ jobs:
   worker:
     runs-on: ubuntu-latest
     timeout-minutes: 100
-    if: github.actor == github.repository_owner || github.actor == 'github-actions[bot]'
+    if: github.event_name == 'workflow_dispatch' && (github.actor == github.repository_owner || github.actor == 'github-actions[bot]')
     services:
       postgres:
         image: postgres:16

@@ -14,6 +14,12 @@ name: Orch Planner
 # shared concurrency group for every state writer.
 
 on:
+  # Registration only: GitHub dispatches a workflow only if it "knows" it, and it knows files on
+  # main or files that have had a run. This path-filtered push creates a (skipped) run when this
+  # file changes on develop/current or a sandbox branch — so main is never needed.
+  push:
+    branches: [develop/current, "orch-sandbox/**"]
+    paths: [.github/workflows/orch-planner.yml]
   workflow_dispatch:
     inputs:
       command:
@@ -57,7 +63,7 @@ jobs:
     timeout-minutes: 10
     # Only the owner may drive orchestration by hand; automation hops come from the worker
     # (actor stays the dispatching user for GITHUB_TOKEN dispatches: github-actions[bot]).
-    if: github.actor == github.repository_owner || github.actor == 'github-actions[bot]'
+    if: github.event_name == 'workflow_dispatch' && (github.actor == github.repository_owner || github.actor == 'github-actions[bot]')
     env:
       GH_TOKEN: ${{ github.token }}
       BASE: ${{ inputs.base }}
