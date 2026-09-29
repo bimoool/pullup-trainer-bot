@@ -1,51 +1,6 @@
 # Current task brief
 
-<!-- Written by the planner (scripts/orch.py). Exactly one active brief. The worker reads
-     it; only the planner / finish step rewrites it. -->
+<!-- Written by the planner (scripts/orch.py). Exactly one active brief. -->
 
-ISSUE: #234
-TITLE: ORCH-TEST 2 — worker smoke: create sandbox second file
-URL: https://github.com/bimoool/pullup-trainer-bot/issues/234
-PRIORITY: p2
-TYPE: infra
-BASE BRANCH: orch-sandbox/orch1-test
-BASE SHA: e1ea54d884105a91da5267fdf54819c5da27926f
-BRANCH: orch/issue-234
-BATCH: 1 (task 1/2)
-SELECTED AT: 2026-09-29 19:06 UTC
-
-## Goal
-
-Create the file `sandbox/orch-smoke/second.md` containing exactly one line: `second task from the ORCH-1 worker`.
-
-## Acceptance criteria
-
-- [ ] `sandbox/orch-smoke/second.md` exists with exactly that line
-- [ ] no other files changed
-
-## Files / areas
-
-Not specified — locate via `.claude/skills/codebase-map` and real code.
-
-## Tests required
-
-No new tests; the workflow runs ruff + pytest as usual.
-
-Always: `ruff check app/ tests/ scripts/`, `pytest -q`; frontend touched → `npm run build && npm run test:unit` in `webapp-frontend/`.
-
-## Do not touch
-
-- `main` — never merge, never push
-- production deploy (`deploy.yml`) — never run
-- `.github/workflows/**`, `.github/orch/**`, `.github/task/**`, `docs/PROJECT_STATUS.md`
-- destructive / non-additive Alembic migrations
-- secrets, tokens, `.env*`
-- other issues' scope — no drive-by features
-- issue 'Out of scope': Any product code, docs, workflows.
-
-## Stop conditions
-
-- acceptance criteria ambiguous or contradict PROJECT_SPEC/constitution → VERDICT needs-owner
-- task needs a product/security decision, credentials, prod, real device → VERDICT needs-owner
-- tests cannot be made green within scope → VERDICT blocked (push what exists, explain)
-- scope turns out to be >1 task → do the first coherent part, VERDICT blocked with split proposal
+ISSUE: none
+LAST: #234 → blocked (2026-09-29 19:08 UTC)
