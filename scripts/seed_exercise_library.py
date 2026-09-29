@@ -23,7 +23,7 @@ async def _get_or_create_exercise(session, *, name: str, metric_type: MetricType
     функция (эти упражнения не принадлежат программе «Подтягивания»,
     не заводятся как ProgramItem). subcategory=None для обоих — не
     block_a/block_b/elective_*, это свободные упражнения библиотеки."""
-    result = await session.execute(select(Exercise).where(Exercise.name == name))
+    result = await session.execute(select(Exercise).where(Exercise.name == name, Exercise.owner_user_id.is_(None)))
     existing = result.scalar_one_or_none()
     if existing is not None:
         return existing

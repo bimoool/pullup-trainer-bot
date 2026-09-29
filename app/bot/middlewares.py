@@ -74,5 +74,8 @@ class MediaGroupMiddleware(BaseMiddleware):
 
         await asyncio.sleep(ALBUM_DEBOUNCE_SECONDS)
         del self._albums[media_group_id]
-        data["album"] = album
+        # Порядок прихода Update в конкурентных задачах недетерминирован —
+        # порядок частей альбома для хендлера задаёт message_id (Telegram
+        # выдаёт их по возрастанию в порядке альбома).
+        data["album"] = sorted(album, key=lambda m: m.message_id)
         return await handler(event, data)

@@ -67,10 +67,10 @@ import asyncio
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.base import async_session_factory
+from app.db.base import Base, async_session_factory
 from app.db.models import Gender, User
 from app.db.models_program import (
     Complex,
@@ -281,7 +281,9 @@ async def seed_v2_session_complex(session: AsyncSession, telegram_id: int) -> No
 
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
-    session.add(PlanItem(training_plan_id=plan.id, complex_id=complex_.id, count_per_week=1))
+    session.add(PlanItem(
+        training_plan_id=plan.id, exercise_id=exercises[0].id, complex_id=complex_.id, count_per_week=1,
+    ))
     await session.flush()
 
 
@@ -566,8 +568,8 @@ async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int)
         training_plan_id=plan.id, week_number=week_number, start_date=week_start, phase=WeekPhase.BASE,
     )
 
-    plank = (await session.execute(select(Exercise).where(Exercise.name == "Планка"))).scalar_one()
-    pushups = (await session.execute(select(Exercise).where(Exercise.name == "Отжимания"))).scalar_one()
+    plank = (await session.execute(select(Exercise).where(Exercise.name == "Планка", Exercise.owner_user_id.is_(None)))).scalar_one()
+    pushups = (await session.execute(select(Exercise).where(Exercise.name == "Отжимания", Exercise.owner_user_id.is_(None)))).scalar_one()
 
     session.add_all([
         PlanItem(
@@ -649,8 +651,8 @@ async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None
     week = await TrainingPlanRepository(session).create_plan_week(
         training_plan_id=plan.id, week_number=week_number, start_date=week_start, phase=WeekPhase.BASE,
     )
-    plank = (await session.execute(select(Exercise).where(Exercise.name == "Планка"))).scalar_one()
-    pushups = (await session.execute(select(Exercise).where(Exercise.name == "Отжимания"))).scalar_one()
+    plank = (await session.execute(select(Exercise).where(Exercise.name == "Планка", Exercise.owner_user_id.is_(None)))).scalar_one()
+    pushups = (await session.execute(select(Exercise).where(Exercise.name == "Отжимания", Exercise.owner_user_id.is_(None)))).scalar_one()
     session.add_all([
         PlanItem(
             training_plan_id=plan.id, exercise_id=plank.id, count_per_week=1,
@@ -680,10 +682,10 @@ async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> Exer
         start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
     )
 
-    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_builder")
-    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_builder")
-    push = Exercise(name="Отжимания", metric_type=MetricType.REPS, category="e2e_builder")
-    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_builder")
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_builder", source_type="user", owner_user_id=user.id)
+    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_builder", source_type="user", owner_user_id=user.id)
+    push = Exercise(name="Отжимания", metric_type=MetricType.REPS, category="e2e_builder", source_type="user", owner_user_id=user.id)
+    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_builder", source_type="user", owner_user_id=user.id)
     session.add_all([pull, plank, push, burpee])
     await session.flush()
 
@@ -752,9 +754,9 @@ async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     user = await _onboard(session, telegram_id)
     user.timezone = "Pacific/Kiritimati"
     tz = ZoneInfo("Pacific/Kiritimati")
-    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_analytics")
-    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_analytics")
-    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_analytics")
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_analytics", source_type="user", owner_user_id=user.id)
+    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_analytics", source_type="user", owner_user_id=user.id)
+    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_analytics", source_type="user", owner_user_id=user.id)
     session.add_all([pull, plank, burpee])
     await session.flush()
 
@@ -820,6 +822,29 @@ SCENARIOS = {
 }
 
 
+async def _purge_dependents(session: AsyncSession, table, pks: list, seen: set) -> None:
+    """Рекурсивно удаляет строки всех таблиц, ссылающихся FK на `table`
+    (по метаданным моделей), у которых ссылка попадает в `pks`. Только для
+    тестовых пользователей E2E-сида."""
+    for child in Base.metadata.sorted_tables:
+        for fk in child.foreign_keys:
+            if fk.column.table is not table or (child.name, fk.parent.name) in seen:
+                continue
+            seen.add((child.name, fk.parent.name))
+            pk_col = list(child.primary_key.columns)[0]
+            rows = (await session.execute(select(pk_col).where(fk.parent.in_(pks)))).scalars().all()
+            if rows:
+                await _purge_dependents(session, child, list(rows), seen)
+                await session.execute(delete(child).where(pk_col.in_(rows)))
+
+
+async def _purge_user(session: AsyncSession, user_id: int) -> None:
+    users = User.__table__
+    await _purge_dependents(session, users, [user_id], set())
+    await session.execute(delete(users).where(users.c.id == user_id))
+    await session.flush()
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -831,15 +856,11 @@ async def main() -> None:
     async with async_session_factory() as session:
         existing = await UserRepository(session).get_by_telegram_id(args.telegram_id)
         if existing is not None:
-            # CI гоняет это против свежей БД (сервис postgres поднимается
-            # заново на каждый workflow run) — здесь только защита от
-            # повторного локального прогона на непустой БД, где повторная
-            # запись того же telegram_id упала бы на UNIQUE-констрейнте.
-            print(
-                f"telegram_id={args.telegram_id} уже сидирован, пропускаю "
-                "(нужна чистая БД для пересидирования)"
-            )
-            return
+            # Идемпотентность (delete-recreate): повторный прогон (локально
+            # или перезапуск CI-шага на той же БД) стирает прошлые строки
+            # этого тестового пользователя и сидирует заново — состояние
+            # каждый раз детерминированное, без UNIQUE-падения.
+            await _purge_user(session, existing.id)
         await SCENARIOS[args.scenario](session, args.telegram_id)
         await session.commit()
     print(f"готово: {args.scenario} -> telegram_id={args.telegram_id}")
