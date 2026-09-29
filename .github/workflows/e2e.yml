@@ -9,6 +9,7 @@ on:
       - "app/domain/**"
       - "app/services/**"
       - "scripts/e2e_seed.py"
+      - "scripts/e2e_seed_all.sh"
       - "alembic.ini"
 
 jobs:
@@ -69,21 +70,7 @@ jobs:
       - name: Seed E2E scenarios
         # not_onboarded (900001) не сеет ничего — статус означает
         # отсутствие строки users, см. scripts/e2e_seed.py::seed_not_onboarded.
-        run: |
-          python scripts/e2e_seed.py first_workout 900002
-          python scripts/e2e_seed.py ready 900003
-          python scripts/e2e_seed.py v2_session_ready 900010
-          python scripts/e2e_seed.py v2_session_complex 900011
-          python scripts/e2e_seed.py v2_session_progression_edit 900012
-          python scripts/e2e_seed.py plan_week_ready 900013
-          python scripts/e2e_seed.py plan_week_grouping 900014
-          python scripts/e2e_seed.py plan_week_add_exercise 900015
-          python scripts/e2e_seed.py plan_week_start_session 900016
-          python scripts/e2e_seed.py plan_week_manual_session 900017
-          python scripts/e2e_seed.py journal_combined 900018
-          python scripts/e2e_seed.py builder_workouts 910001
-          python scripts/e2e_seed.py journal_v2 910002
-          python scripts/e2e_seed.py analytics_v2 910003
+        run: scripts/e2e_seed_all.sh
 
       - name: Install Playwright
         working-directory: webapp-frontend/e2e

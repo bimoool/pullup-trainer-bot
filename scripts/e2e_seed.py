@@ -877,7 +877,33 @@ async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
+    """GJ — Golden Journey: вернувшийся пользователь с одной своей Workout
+    («Золотая тренировка», reps 2 x 8) и пустой текущей неделей плана — её ещё
+    нужно добавить в план, начать, завершить, увидеть в Аналитике/Журнале."""
+    user = await _onboard(session, telegram_id)
+    plan = TrainingPlan(user_id=user.id)
+    session.add(plan)
+    await session.flush()
+    today = datetime.now(UTC).date()
+    week_number = plan_week_number(plan.created_at.date(), today)
+    await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=week_number,
+        start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
+    )
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_golden", source_type="user", owner_user_id=user.id)
+    session.add(pull)
+    await session.flush()
+    workout = Complex(name="Золотая тренировка", source_type="user", owner_user_id=user.id)
+    session.add(workout)
+    await session.flush()
+    protocol = {"type": "reps_sets", "rest_seconds": 2, "prescription": {"source": "static", "sets": 2, "reps": 8}}
+    session.add(ComplexItem(complex_id=workout.id, exercise_id=pull.id, order_index=0, sets=0, protocol=protocol))
+    await session.flush()
+
+
 SCENARIOS = {
+    "golden_journey": seed_golden_journey,
     "home_workouts": seed_home_workouts,
     "analytics_v2": seed_analytics_v2,
     "journal_v2": seed_journal_v2,
@@ -906,7 +932,7 @@ async def _purge_dependents(session: AsyncSession, table, pks: list, seen: set) 
             if fk.column.table is not table or (child.name, fk.parent.name) in seen:
                 continue
             seen.add((child.name, fk.parent.name))
-            pk_col = list(child.primary_key.columns)[0]
+            pk_col = next(iter(child.primary_key.columns))
             rows = (await session.execute(select(pk_col).where(fk.parent.in_(pks)))).scalars().all()
             if rows:
                 await _purge_dependents(session, child, list(rows), seen)

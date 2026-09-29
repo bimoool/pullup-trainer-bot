@@ -22,3 +22,4 @@ seed journal_v2 910002
 seed analytics_v2 910003
 seed home_workouts 920001
 seed home_workouts 920002
+seed golden_journey 930001

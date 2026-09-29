@@ -125,6 +125,8 @@ test("E. mixed reps -> interval -> max: ручные переходы, reload, �
   expect(blockStarts.length - before).toBe(1);
 
   // --- reload посреди активного interval: серверное время, не сброс ---
+  // Намеренная пауза: проверяем, что серверное время interval реально идёт, а не сбрасывается
+  // reload-ом — заменить событием нельзя, ждём именно wall-clock.
   await page.waitForTimeout(6_000);
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByText(/Работа|Отдых/).first()).toBeVisible();
