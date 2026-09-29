@@ -31,16 +31,27 @@
 
 Проверка: см. раздел «Отчёт о проверке» ниже.
 
-## Дальше (не сделано, вне реконструкции)
+## После REBUILD-1 (сделано, канонические ветки → `develop/current`)
 
-1. **G3** — Home/«Мои тренировки»: discovery UI (отдельная задача; REF-1 идёт независимо).
-2. **Golden Journey** — постоянный полный E2E (issue #221).
-3. **Монеты v2** — начисление за завершённые `TrainingSession` не реализовано (см. `PROJECT_SPEC.md §6`).
-4. Устаревшие E2E-сценарии базы (`plans-manual-session`, `plans-start-session`, `journal-combined`,
-   `plans-grouping`) — обновить под текущие экраны.
-5. Решение владельца: дословная сверка «жёсткого удаления Builder-сессии» с Принципом V
-   конституции; формулировка про `CLAUDE.md` в конституции (теперь — короткая точка входа,
-   живые заметки в `docs/ENGINEERING_NOTES.md`).
+| Что | Коммит |
+|---|---|
+| PRE-G3 стабилизация: порядок альбома, современные E2E-сиды, идемпотентные seed-ы, карантин устаревших specs | `cde9a6f`, `791daff` |
+| Гонка `sets:batch` (reconnect + Complete) исправлена, `complete` идемпотентен | `9ac0dc7` |
+| Референс Crimpd 8.5.3 (`android-ref-lab`, санитизированный `CRIMPD_PRODUCT_REFERENCE.md`), аудит архитектуры/тестов (#217, #218) | — |
+| DOCS-3: `AGENT_EXECUTION_MODEL.md`, конституция v1.1 (безопасное удаление Builder-сессии), `CLAUDE.md` — короткая точка входа | `cfa2d41` |
+
+Каноническая линия разработки — **`develop/current`** (не `feature/multi-program`).
+
+## Дальше
+
+1. **G3** — Home/«Мои тренировки»: discovery UI.
+2. **G4** — итоговый продуктовый QA + ограниченные P0/P1.
+3. **Golden Journey** — постоянный современный E2E в CI (#221), затем PR/CI (#222).
+4. Staging (#223) → QA на реальном iPhone (#224) → P0/P1 → production.
+
+Известный долг: монеты/ачивки v2 (#225; см. `PROJECT_SPEC.md §6`); сходимость legacy/v2
+прогрессии и истории; скорость pytest; намеренно закарантиненные устаревшие E2E
+(`plans-manual-session`, `plans-start-session`, `journal-combined`, `plans-grouping`).
 
 ## Как вести работу
 
