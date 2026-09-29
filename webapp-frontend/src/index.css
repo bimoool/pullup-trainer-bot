@@ -825,6 +825,14 @@ input[type="number"] {
   text-overflow: clip;
 }
 
+/* Linux/Android-шрифты шире macOS: на самых узких экранах ещё чуть меньше. */
+@media (max-width: 360px) {
+  .bottom-tabbar button > span {
+    font-size: 9px;
+    letter-spacing: -0.02em;
+  }
+}
+
 /* Phase C4b-2 (issue #188) QA-found blocker — SegmentedControl.Item's
    встроенный padding (10px 24px) оставляет слишком мало места для
    русских слов ("Повторения", "Интервалы") на 4-way split в 390px

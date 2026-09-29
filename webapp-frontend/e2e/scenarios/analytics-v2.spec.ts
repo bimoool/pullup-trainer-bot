@@ -95,9 +95,5 @@ for (const width of [320, 390]) {
     await expect(page.locator('[data-protocol="reps_sets"]')).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
-    await page.screenshot({
-      path: `/private/tmp/claude-502/-Users-kirillv--Documents-Claude-Code/010cf90a-bbbb-4078-9b71-ebab29a4d0ae/scratchpad/analytics-${width}.png`,
-      fullPage: true,
-    });
   });
 }
