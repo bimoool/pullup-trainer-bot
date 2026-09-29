@@ -1,20 +1,27 @@
 <!--
 Sync Impact Report
 ==================
-Version change: [TEMPLATE] → 1.0.0 (initial ratification)
-Modified principles: n/a (first concrete adoption from placeholder template)
-Added sections:
-  - Core Principles I–VII (Чистая архитектура domain/; План перед кодом;
-    Безопасность токенов/секретов; Доказанное тестовое покрытие;
-    Архивировать, не удалять; Явная обработка ошибок; Деплой-дисциплина)
-  - Технологический стек и инфраструктура (Section 2)
-  - Рабочий процесс и живая документация (Section 3)
-  - Governance
-Removed sections: all bracketed template placeholders
-Deferred TODOs: none — ratification date set to date of adoption since no
-  earlier governing document existed for this project.
-Templates requiring follow-up: none (this command does not modify
-  dependent templates; they read this constitution at runtime).
+Version change: 1.0.0 → 1.1.0 (Minor: document roles clarified, Builder-session exception added)
+Modified principles:
+  - Principle V (Архивировать, не удалять): added narrow exception for hard-delete
+    of completed user-owned Builder sessions when backend proves independence
+    from protected progression (matches PROJECT_SPEC §3 and IMPLEMENTATION_PLAN status).
+Modified sections:
+  - "Рабочий процесс и живая документация": added subsection "Роли документов"
+    clarifying CLAUDE.md as short entrypoint, PROJECT_SPEC as behavior,
+    IMPLEMENTATION_PLAN as status, ENGINEERING_NOTES as detailed engineering journal.
+New documents:
+  - docs/AGENT_EXECUTION_MODEL.md: canonical rules for Claude/Code agents
+    (context isolation, model routing, checkpoint safety, reference-first UX).
+Rationale:
+  - Constitution Principle V and PROJECT_SPEC §3 had aligned on Builder-session
+    safe-delete; adding exception to constitution makes the alignment explicit
+    for all agents reading the constitution as source of truth.
+  - Document roles were implicit in file names but not stated; explicit clarity
+    prevents agents from conflating CLAUDE.md (entrypoint) with
+    ENGINEERING_NOTES.md (detailed notes).
+  - Agent execution model was established through practice (REBUILD-1 checkpoints,
+    accepted worktrees); formalizing it ensures consistency across future tasks.
 -->
 
 # pullup-trainer-bot Constitution
@@ -105,9 +112,20 @@ Rationale: только демонстрация факта, что тест п�
 есть — значение остаётся в определении enum как «исторический, не
 используется», с комментарием рядом.
 
+**Узкое исключение: жёсткое удаление завершённой Builder-сессии.** Пользовательская
+Builder-сессия MAY быть удалена жёстко (не в архив) ONLY если бэкенд
+доказал её независимость от защищённой прогрессии/истории через предикат
+безопасного удаления (см. `docs/PROJECT_SPEC.md §3`). Условия (все сразу):
+сессия завершена; не связана с program-backed `PlanItem`; валидный
+замороженный снимок с user-owned Workout; блоки не совпадают с STEP-ролями
+пользователя. Всё недоказанное — отказ с 409. Это исключение остаётся
+узким: история и прогрессия по-прежнему архивируются по умолчанию,
+hard-delete используется ONLY для записей, отделённых бэкендом.
+
 Rationale: тренировочная история — это то, ради чего существует продукт;
 необратимая потеря прогресса пользователя недопустима даже ради чистоты
-схемы.
+схемы. Исключение для Builder-сессий отражает их природу как личные планы
+пользователя, а не системные/программные записи.
 
 ### VI. Явная обработка ошибок, не общий catch-all в проде
 
@@ -185,15 +203,27 @@ VPS `<VPS_HOST>` разделён с другим проектом (`reeltrack-b
 знает и не меняется — обход существует только в вызывающем bot/repository
 слое.
 
-`CLAUDE.md` — живой документ проекта: после значимой новой фичи или
-явно установленного нового соглашения он MUST обновляться (добавление
-или правка соответствующей записи), не дожидаясь отдельной просьбы.
-Записи формулируются по фактическому состоянию кода/истории на момент
-правки, не по памяти о более раннем состоянии проекта. Числовые
-константы продуктовых решений (не научных фактов — потолок повторений,
-шаг прогрессии, стартовый вес) MUST быть явно зафиксированы в докстринге
-там, где вводятся, с указанием, что это осознанный выбор, а не выведенная
-величина.
+### Роли документов
+
+**`CLAUDE.md`** — короткая (intentionally) обязательная точка входа для всех агентов. Содержит:
+- Гейт перед кодом (ветка/HEAD, git status, основные файлы для чтения).
+- Приоритет источников (конституция > PROJECT_SPEC > IMPLEMENTATION_PLAN > ENGINEERING_NOTES > код).
+- Нерушимые правила в краткой форме (с перекрёстными ссылками на полный текст в конституции/PROJECT_SPEC).
+- Базовые команды и ловушки при прогоне.
+Не разворачивается в большой документ; подробности остаются в соответствующих документах ниже.
+
+**`docs/PROJECT_SPEC.md`** — принятое продуктовое поведение (независимо от реализации).
+
+**`docs/IMPLEMENTATION_PLAN.md`** — статус работ, что сделано, что дальше, как вести разработку.
+
+**`docs/ENGINEERING_NOTES.md`** — бывший полный `CLAUDE.md`, теперь — живой журнал установленных решений,
+инцидентов, ловушек и неочевидных деталей реализации. Сюда переносятся: реальные баги с диагностикой,
+архитектурные выводы, зависимости, которые комментарии в коде ссылают как "CLAUDE.md: раздел X"
+(заголовки сохранены для обратной совместимости ссылок).
+
+**Апдейты:** новая фича → правка `PROJECT_SPEC.md` в том же PR; неочевидное решение/инцидент → `ENGINEERING_NOTES.md`;
+изменился статус работ → `IMPLEMENTATION_PLAN.md`; кейс затронул архитектурный принцип → правка `constitution.md`
+(редко, требует явного согласования и версионирования).
 
 ## Governance
 
@@ -216,4 +246,4 @@ VPS `<VPS_HOST>` разделён с другим проектом (`reeltrack-b
 - **PATCH** — уточнение формулировок, исправление опечаток, не меняющее
   смысл требований.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-03
+**Version**: 1.1.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-29
