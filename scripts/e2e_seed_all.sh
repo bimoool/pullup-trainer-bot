@@ -4,6 +4,8 @@
 # Используется и в CI (.github/workflows/e2e.yml), и локально — один источник правды.
 # not_onboarded (900001) не сеет ничего: статус = отсутствие строки users.
 set -euo pipefail
+# e2e_seed.py импортирует пакет scripts.* — корень репозитория должен быть в sys.path.
+export PYTHONPATH="${PYTHONPATH:-.}"
 PY="${PYTHON:-python}"
 seed() { "$PY" scripts/e2e_seed.py "$1" "$2"; }
 seed first_workout 900002
