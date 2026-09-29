@@ -13,7 +13,7 @@
   ],
   "batch": {
     "id": 0,
-    "limit": 1,
+    "limit": 2,
     "max_attempts": 8,
     "status": "idle",
     "approved_by": null,
