@@ -128,7 +128,8 @@ Agents read the repository first, memory second. If memory contradicts the repos
 
 ## Constitution Precedence
 
-When multiple documents provide guidance:
+When multiple documents provide guidance (for executing a tracked task, the owner decision and the
+issue's acceptance criteria sit on top — see *Orchestration → Precedence for a task* below):
 
 1. **Constitution** (`.specify/memory/constitution.md`) — architectural principles, non-negotiable.
 2. **PROJECT_SPEC** (`docs/PROJECT_SPEC.md`) — accepted product behavior.
@@ -138,3 +139,77 @@ When multiple documents provide guidance:
 6. **Chat/memory** — lowest priority; used for context, not as source of truth.
 
 At each level, the item above wins on conflicts. If no guidance from above, descend to the next level. If still unresolved → stop and ask the owner, do not invent.
+
+## Orchestration (ORCH-1) — GitHub is the task state
+
+Claude Code chats/sessions are **disposable**. Nothing needed to resume may live only in a
+Claude sidebar, local memory, an unpushed branch, a local todo file or terminal scrollback.
+Everything required lives in: **GitHub Issues** (labels + comments), **pushed git history**,
+canonical docs, and three orchestration files on `develop/current`:
+
+| File | Role | Written by |
+|---|---|---|
+| `.github/orch/state.json` | canonical branch/PR, phase, batch counter | planner / finish step / owner |
+| `.github/task/current.md` | the ONE active execution brief (`ISSUE: none` when idle) | planner / finish step |
+| `docs/PROJECT_STATUS.md` | short human view (+ mirrored to the pinned `orch:dashboard` issue) | `scripts/orch.py status` |
+
+### Precedence for a task
+
+1. explicit owner decision (issue comment/label by the owner)
+2. the GitHub issue's acceptance criteria — *what* this task must do
+3. constitution + this document — *how* any task must be done
+4. `docs/PROJECT_SPEC.md` 5. `docs/IMPLEMENTATION_PLAN.md` 6. actual code
+7. `docs/PROJECT_STATUS.md` (a generated **view**, never authority on behaviour) 8. historical docs/chat
+
+Acceptance criteria that contradict the constitution or PROJECT_SPEC are not executed: that is
+an owner stop condition (`status:needs-owner`), resolved by the owner, then the lower doc is fixed.
+
+### Task states (labels; exactly one `status:*` per open issue)
+
+```
+status:backlog ──(owner/planner session: template complete, AC clear)──▶ status:ready
+status:ready ──(planner selects; one at a time)──▶ status:in-progress
+status:in-progress ──(worker: AC met, verification green, merged to develop/current)──▶ status:done + closed
+status:in-progress ──(technical blocker)──▶ status:blocked
+status:ready | in-progress ──(decision/credentials/device/prod/vague AC)──▶ status:needs-owner
+status:blocked | needs-owner ──(owner resolves, comments)──▶ status:ready
+```
+
+Never `ready`+`in-progress`, never `in-progress`+`done`, never two open `in-progress` issues —
+`python scripts/orch.py check` reports violations and the planner refuses to run on them.
+Also: `priority:p0|p1|p2`, `type:bug|feature|ux|infra|qa`, `orch:owner-approved` (owner cleared a
+stop-condition tripwire), `orch:dashboard` (status issue), `orch:test` (orchestrator test issues).
+
+### Loop
+
+**Planner** (`docs/PLANNER_AGENT.md`) → selects ONE ready issue, labels it in-progress, writes the
+brief, pushes state → dispatches **Worker** (`docs/WORKER_AGENT.md`) → implements on
+`orch/issue-<N>`, verification, merge to `develop/current`, labels/closes, increments batch →
+dispatches **Planner** again. Actions workflows: `orch-planner.yml`, `orch-worker.yml`,
+`orch-status.yml` (all `workflow_dispatch`/push on `develop/current`; see their headers).
+
+### Batch limit
+
+At most **5 completed** tasks (and at most 8 worker attempts) per batch. Then the batch is
+`owner-review`, `PROJECT_STATUS` shows `AUTONOMOUS BATCH n: 5/5 — STOP — OWNER REVIEW REQUIRED`,
+and nothing starts a sixth task. Only the owner starts a batch:
+`gh workflow run orch-planner.yml --ref develop/current -f command=start-batch`
+(or `python scripts/orch.py batch start --push` on develop/current). `-f command=stop-batch` stops.
+
+### Cross-device checkpoint rule
+
+**commit → push → issue comment → PROJECT_STATUS refresh**, after each accepted block and at
+least every 30–60 min of long work (`python scripts/orch.py checkpoint --issue N --note …`).
+If a machine dies, another one resumes from `origin` + the issue — never from memory.
+
+### Resume from another computer
+
+```bash
+git clone https://github.com/bimoool/pullup-trainer-bot && cd pullup-trainer-bot   # or: git fetch
+git switch develop/current && git pull
+cat docs/PROJECT_STATUS.md            # or open the pinned "Project Status" issue on GitHub
+python scripts/orch.py resume         # active issue, its pushed branch, exact worktree command
+```
+
+An existing pushed `orch/issue-<N>` branch is **continued**, never duplicated. Read the issue's
+latest `📍 Checkpoint` / `🤖 Worker result` comment first.

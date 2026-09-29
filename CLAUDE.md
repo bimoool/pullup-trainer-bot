@@ -15,6 +15,14 @@
 6. **Конфликты и пробелы:** документы расходятся между собой, с кодом или продуктовое решение
    нигде не записано → **остановиться и спросить владельца**, не придумывать.
 
+## Состояние задач и оркестрация
+
+Текущее состояние — `docs/PROJECT_STATUS.md` (или закреплённый issue «Project Status»), задачи —
+GitHub Issues с метками `status:*`. Чат/сессия одноразовы: всё нужное для продолжения — в GitHub
+и запушенных ветках (`python scripts/orch.py resume`). Цикл planner → worker, лимит 5 задач,
+правило чекпойнта commit → push → комментарий → статус: `docs/AGENT_EXECUTION_MODEL.md`
+§ Orchestration, `docs/PLANNER_AGENT.md`, `docs/WORKER_AGENT.md`.
+
 ## Приоритет источников
 
 `.specify/memory/constitution.md` > `docs/PROJECT_SPEC.md` > `docs/IMPLEMENTATION_PLAN.md` >
