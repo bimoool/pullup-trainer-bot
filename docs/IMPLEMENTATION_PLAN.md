@@ -42,12 +42,21 @@
 
 Каноническая линия разработки — **`develop/current`** (не `feature/multi-program`).
 
+## Phase G (develop/current)
+
+| Что | Коммит |
+|---|---|
+| G3 Главная / «Мои тренировки» | `91086c9` |
+| G4 QA + P1 (Tabbar на 320px) | `3979dd0` |
+| Golden Journey E2E + сиды CI (`scripts/e2e_seed_all.sh`) | `07beb74` |
+
+Проверка: pytest 1420 passed; ruff чисто; `tsc -b` + vite build; E2E на чистой БД в режиме CI —
+23 passed, 4 skipped (карантин), 0 failed.
+
 ## Дальше
 
-1. **G3** — Home/«Мои тренировки»: discovery UI.
-2. **G4** — итоговый продуктовый QA + ограниченные P0/P1.
-3. **Golden Journey** — постоянный современный E2E в CI (#221), затем PR/CI (#222).
-4. Staging (#223) → QA на реальном iPhone (#224) → P0/P1 → production.
+1. Draft PR `develop/current` → `main` и CI (#222).
+2. Staging (#223) → QA на реальном iPhone (#224) → P0/P1 → production.
 
 Известный долг: монеты/ачивки v2 (#225; см. `PROJECT_SPEC.md §6`); сходимость legacy/v2
 прогрессии и истории; скорость pytest; намеренно закарантиненные устаревшие E2E
