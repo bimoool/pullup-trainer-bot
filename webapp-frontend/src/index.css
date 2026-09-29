@@ -805,6 +805,24 @@ input[type="number"] {
    (App.tsx) — таргетируем его напрямую, не гадаем по хэшу библиотеки. */
 .bottom-tabbar {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* G4: библиотечный фон полупрозрачный (0.95) — текст страницы просвечивал
+     сквозь подписи вкладок. */
+  background-color: var(--tg-bg-color);
+}
+
+/* G4: на 320px подписи вкладок обрезались ("Г…", "П…") — пять вкладок по 64px.
+   Уменьшаем боковые отступы и шрифт, обрезку заменяем на полное слово. */
+.bottom-tabbar button {
+  min-width: 0;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.bottom-tabbar button > span {
+  font-size: 10px;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 /* Phase C4b-2 (issue #188) QA-found blocker — SegmentedControl.Item's

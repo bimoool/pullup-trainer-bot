@@ -46,6 +46,15 @@ for (const width of [320, 390]) {
     expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(navBox.y + 1);
     await expectNoHorizontalOverflow(page);
 
+    // G4: подписи пяти вкладок читаются целиком (не "Г…") и не выходят за свою кнопку.
+    const clipped = await nav.locator("button").evaluateAll((buttons) =>
+      buttons.filter((button) => {
+        const label = button.querySelector(":scope > span") as HTMLElement | null;
+        return !label || label.scrollWidth > button.clientWidth || label.getBoundingClientRect().width > button.clientWidth;
+      }).length,
+    );
+    expect(clipped).toBe(0);
+
     expect(noWakeLock(consoleErrors)).toEqual([]);
     expect(apiFailures).toEqual([]);
   });
