@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
@@ -301,20 +302,40 @@ class TrainingSessionRepository:
         session_block_id) + 1 НА МОМЕНТ ОБРАБОТКИ, считается по ходу цикла
         (не одним запросом до цикла) — иначе батч из нескольких новых
         подходов одного блока получил бы одинаковый set_number вместо
-        1,2,3."""
+        1,2,3.
+
+        Конкурентность (fix/concurrent-set-batch): реконнект и тап
+        "Завершить" могли одновременно дослать ОДИН И ТОТ ЖЕ батч — оба
+        запроса видели "строки нет" и оба делали INSERT, второй падал на
+        uq_set_logs_session_set_index (500). Теперь весь батч идёт под
+        SELECT ... FOR UPDATE строки сессии (тот же lock_session, что у
+        complete/start_block — единый порядок блокировок, без дедлоков):
+        второй запрос ждёт коммита первого и в READ COMMITTED уже видит его
+        строки — становится обычным идемпотентным повтором, и set_number
+        считается по реальному, а не устаревшему содержимому блока. Новые
+        строки вставляются INSERT ... ON CONFLICT (session_id, set_index)
+        DO UPDATE — страховка на уровне БД: даже писатель в обход блокировки
+        не может вернуть 500 на дубле, только сойтись к одной строке."""
+        training_session = await self.lock_session(session_id)
+        current_block_index = training_session.current_block_index
         blocks_result = await self._session.execute(
             select(SessionBlock).where(SessionBlock.session_id == session_id).order_by(SessionBlock.order_index),
         )
         blocks = list(blocks_result.scalars().all())
-        training_session = await self._session.get(TrainingSession, session_id)
-        current_block_index = training_session.current_block_index
 
-        exercise_ids = {entry.exercise_id for entry in entries}
+        # Повтор set_index внутри одного батча — последняя запись побеждает
+        # (как и раньше: вторая перезаписывала первую), строка одна.
+        unique_entries = list({entry.set_index: entry for entry in entries}.values())
+
+        exercise_ids = {entry.exercise_id for entry in unique_entries}
         exercises_result = await self._session.execute(select(Exercise).where(Exercise.id.in_(exercise_ids)))
         metric_type_by_exercise_id = {exercise.id: exercise.metric_type for exercise in exercises_result.scalars()}
 
+        # populate_existing: SetLog этой сессии могли попасть в identity map
+        # раньше (get_for_user до блокировки) — после ожидания блокировки
+        # нужны закоммиченные конкурентом значения, не кэш сессии.
         existing_logs_result = await self._session.execute(
-            select(SetLog).where(SetLog.session_id == session_id),
+            select(SetLog).where(SetLog.session_id == session_id).execution_options(populate_existing=True),
         )
         existing_logs = list(existing_logs_result.scalars().all())
         existing_by_set_index: dict[int, SetLog] = {
@@ -324,7 +345,7 @@ class TrainingSessionRepository:
         for log in existing_logs:
             count_by_block_id[log.session_block_id] = count_by_block_id.get(log.session_block_id, 0) + 1
 
-        for entry in entries:
+        for entry in unique_entries:
             block = self._resolve_batch_block(blocks, entry, current_block_index)
             if block is None:
                 raise ValueError(
@@ -343,13 +364,21 @@ class TrainingSessionRepository:
                 continue
 
             count_by_block_id[block.id] = count_by_block_id.get(block.id, 0) + 1
-            new_log = SetLog(
+            insert_stmt = pg_insert(SetLog).values(
                 session_block_id=block.id, session_id=session_id, set_index=entry.set_index,
                 set_number=count_by_block_id[block.id], is_max_set=False, metric_type=metric_type,
                 value=entry.value, unit=unit, effort=entry.effort, note=entry.note,
             )
-            self._session.add(new_log)
-            existing_by_set_index[entry.set_index] = new_log
+            await self._session.execute(
+                insert_stmt.on_conflict_do_update(
+                    constraint="uq_set_logs_session_set_index",
+                    set_={
+                        "value": insert_stmt.excluded.value, "effort": insert_stmt.excluded.effort,
+                        "note": insert_stmt.excluded.note, "metric_type": insert_stmt.excluded.metric_type,
+                        "unit": insert_stmt.excluded.unit,
+                    },
+                ),
+            )
 
         await self._session.flush()
 
@@ -418,13 +447,19 @@ class TrainingSessionRepository:
         await self._session.execute(delete(TrainingSession).where(TrainingSession.id == session_id))
         await self._session.flush()
 
-    async def lock_session(self, session_id: int) -> None:
+    async def lock_session(self, session_id: int) -> TrainingSession | None:
         """SELECT ... FOR UPDATE строки сессии — сериализует конкурентные
-        start/finish блока (двойной клик, два вкладки), чтобы проверка
-        "блок ещё не начат" и запись started_at не гонялись."""
-        await self._session.execute(
-            select(TrainingSession.id).where(TrainingSession.id == session_id).with_for_update(),
+        start/finish блока (двойной клик, два вкладки), батчи подходов и
+        завершение, чтобы проверки ("блок ещё не начат", "строки ещё нет",
+        "сессия ещё не завершена") и последующая запись не гонялись.
+        populate_existing: после ожидания блокировки строка в identity map
+        обновляется закоммиченным конкурентом состоянием (иначе status/
+        current_block_index остались бы из снимка ДО блокировки)."""
+        result = await self._session.execute(
+            select(TrainingSession).where(TrainingSession.id == session_id).with_for_update()
+            .execution_options(populate_existing=True),
         )
+        return result.scalar_one_or_none()
 
     async def mark_block_started(self, block_id: int, started_at: datetime) -> None:
         block = await self._session.get(SessionBlock, block_id)
@@ -446,7 +481,7 @@ class TrainingSessionRepository:
         blocks_result = await self._session.execute(
             select(SessionBlock).where(SessionBlock.session_id.in_(session_ids)).order_by(
                 SessionBlock.session_id, SessionBlock.order_index,
-            ),
+            ).execution_options(populate_existing=True),
         )
         blocks = list(blocks_result.scalars().all())
 
@@ -457,7 +492,7 @@ class TrainingSessionRepository:
             logs_result = await self._session.execute(
                 select(SetLog).where(SetLog.session_block_id.in_(block_ids)).order_by(
                     SetLog.session_block_id, SetLog.set_number,
-                ),
+                ).execution_options(populate_existing=True),
             )
             for log in logs_result.scalars().all():
                 set_logs_by_block[log.session_block_id].append(log)
@@ -545,8 +580,12 @@ class TrainingSessionRepository:
         return await self._load_details(list(result.scalars().all()))
 
     async def get_for_user(self, session_id: int, user_id: int) -> SessionDetail | None:
+        # populate_existing (здесь и в _load_details): повторное чтение после
+        # lock_session обязано видеть закоммиченное конкурентом состояние, а
+        # не кэш identity map из первого чтения в этом же запросе.
         result = await self._session.execute(
-            select(TrainingSession).where(TrainingSession.id == session_id, TrainingSession.user_id == user_id),
+            select(TrainingSession).where(TrainingSession.id == session_id, TrainingSession.user_id == user_id)
+            .execution_options(populate_existing=True),
         )
         training_session = result.scalar_one_or_none()
         if training_session is None:

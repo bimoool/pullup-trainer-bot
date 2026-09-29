@@ -78,6 +78,11 @@ class LiveSessionResult:
     session: SessionDetail
 
 
+# progression_skipped_reason повторного complete уже завершённой сессии:
+# прогрессия была применена (или пропущена) первым завершением, не этим.
+ALREADY_COMPLETED_REASON = "already_completed"
+
+
 @dataclass(frozen=True)
 class CompleteResult:
     session: SessionDetail
@@ -614,6 +619,22 @@ class LiveSessionService:
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None:
             return None, True
+
+        # Идемпотентность завершения (fix/concurrent-set-batch): двойной
+        # флаш (реконнект + "Завершить") или повтор после потерянного ответа
+        # присылают complete второй раз. Под блокировкой строки сессии (тот
+        # же lock_session, что у sets:batch) перечитываем статус: уже
+        # завершённая сессия — 200 с текущим состоянием, БЕЗ повторной
+        # прогрессии/interval result (иначе цель курса сдвинулась бы дважды).
+        await self._sessions.lock_session(session_id)
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        if detail.status != SessionStatus.STARTED:
+            return (
+                CompleteResult(
+                    session=detail, progression_result=None, progression_skipped_reason=ALREADY_COMPLETED_REASON,
+                ),
+                False,
+            )
 
         await self._sessions.mark_completed(session_id)
 

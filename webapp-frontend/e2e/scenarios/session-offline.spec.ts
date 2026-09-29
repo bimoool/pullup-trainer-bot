@@ -61,18 +61,28 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
   await expect(page.getByText(/Нет сети/)).toBeVisible();
 
-  // Реконнект сам запускает синхронизацию накопленных подходов (событие
-  // "online" -> POST /sets:batch) — ждём её завершения и только потом
-  // завершаем. Одновременный тап "Завершить" в окне реконнекта шлёт второй
-  // такой же батч параллельно и ловит 500 (uq_set_logs_session_set_index) —
-  // отдельный продуктовый баг, вынесен из этой стабилизации.
-  const syncResponse = page.waitForResponse((r) => r.url().includes("/sets%3Abatch") || r.url().includes("/sets:batch"));
+  // Враждебный тайминг НАМЕРЕННО (fix/concurrent-set-batch): реконнект сам
+  // запускает синхронизацию накопленного (событие "online" -> POST
+  // /sets:batch), и "Завершить" тапается СРАЗУ, не дожидаясь её. Раньше это
+  // слало второй такой же батч параллельно и ловило 500
+  // (uq_set_logs_session_set_index); теперь сервер к дублю устойчив, а клиент
+  // досылает одним флашем за раз. Не добавлять сюда ожидание синхронизации.
+  const liveResponses: { path: string; status: number }[] = [];
+  page.on("response", (response) => {
+    const url = decodeURIComponent(response.url());
+    if (url.includes("/api/v2/sessions/live/")) {
+      liveResponses.push({ path: new URL(url).pathname, status: response.status() });
+    }
+  });
   await context.setOffline(false);
-  expect((await syncResponse).status()).toBe(200);
-  await expect(page.getByText(/Нет сети/)).toHaveCount(0);
   await page.getByRole("button", { name: "Завершить" }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  expect(liveResponses.filter((r) => r.status >= 500)).toEqual([]);
+  expect(liveResponses.some((r) => r.path.endsWith("/sets:batch") && r.status === 200)).toBe(true);
+  expect(liveResponses.filter((r) => r.path.endsWith("/complete"))).toEqual([
+    expect.objectContaining({ status: 200 }),
+  ]);
   // 3 подхода блока A + 1 подход блока Б = 4/4 показаны выполненными.
   await expect(page.getByText(/— 3\/3/)).toBeVisible();
   await expect(page.getByText(/— 1\/1/)).toBeVisible();

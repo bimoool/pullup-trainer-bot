@@ -9,11 +9,13 @@ import {
   clearLocalSession,
   flushLocalSession,
   hasManualTransitions,
+  hasPendingWork,
   initialLocalSession,
   isLocalSessionReusable,
   loadLocalSession,
   localPhaseDurationSeconds,
   nextLocalPhase,
+  rebaseLocalSession,
   saveLocalSession,
   type LocalLiveSession,
   type LocalPhaseName,
@@ -87,6 +89,14 @@ export function SessionLiveScreen({
   // правило "одинаковый порядок хуков на каждый рендер" (было поймано
   // самим React: "Minified React error #310" при первой попытке).
   const actionInFlight = useRef(false);
+  // Single-flight синхронизации (fix/concurrent-set-batch): событие "online"
+  // и тап "Завершить" в окне реконнекта раньше запускали ДВА параллельных
+  // флаша одного и того же снимка (два одинаковых sets:batch). Сервер к
+  // этому устойчив (блокировка сессии + ON CONFLICT, идемпотентный
+  // complete), но лишние запросы и повторные переходы фазы от устаревшего
+  // снимка не нужны: второй вызов лишь просит ещё один проход после текущего.
+  const syncInFlight = useRef<Promise<void> | null>(null);
+  const resyncRequested = useRef(false);
 
   function setLocal(updated: LocalLiveSession) {
     localRef.current = updated;
@@ -142,37 +152,71 @@ export function SessionLiveScreen({
   }, []);
 
   async function commitLocal(updated: LocalLiveSession) {
-    await saveLocalSession(updated);
+    // localRef обновляется синхронно, ДО await: флаш, завершившийся во время
+    // записи в IndexedDB, уже видит это действие и перенесёт его (rebase).
     setLocal(updated);
-    if (!navigator.onLine) {
-      return;
+    await saveLocalSession(updated);
+    // Сеть — НЕ под guardedAction: действие уже зафиксировано локально, а
+    // досылку ведёт single-flight syncLocal. Если ждать её здесь, тап
+    // "Завершить" во время реконнект-флаша молча отбрасывался бы
+    // actionInFlight предыдущего действия.
+    void syncLocal();
+  }
+
+  /** Досылает localRef.current, не больше одного флаша одновременно. Вызов во
+   * время флаша не шлёт второй параллельный запрос, а ставит ещё один проход
+   * — по свежему состоянию после ответа сервера — и ждёт его. */
+  function syncLocal(): Promise<void> {
+    if (syncInFlight.current !== null) {
+      resyncRequested.current = true;
+      return syncInFlight.current;
     }
-    try {
-      const result = await flushLocalSession(initDataRaw, updated);
-      if (updated.completeRequested) {
-        await clearLocalSession();
-        onCompleted(result as LiveSessionCompleteResponse);
+    // .finally — всегда асинхронно (микротаска), т.е. ПОСЛЕ присваивания
+    // ниже, даже если цикл вышел сразу (офлайн/нечего слать).
+    const run = runSyncLoop().finally(() => {
+      syncInFlight.current = null;
+      if (resyncRequested.current) {
+        // Запрос пришёл уже после последней проверки цикла — не теряем его.
+        resyncRequested.current = false;
+        void syncLocal();
+      }
+    });
+    syncInFlight.current = run;
+    return run;
+  }
+
+  async function runSyncLoop(): Promise<void> {
+    do {
+      resyncRequested.current = false;
+      const snapshot = localRef.current;
+      if (snapshot === null || !navigator.onLine || !hasPendingWork(snapshot)) {
         return;
       }
-      const fresh = initialLocalSession(updated.clientSessionId, result as LiveSessionResponse);
-      await saveLocalSession(fresh);
-      setLocal(fresh);
-      setSyncError(null);
-    } catch (error) {
-      setSyncError(error instanceof Error ? error.message : String(error));
-    }
+      try {
+        const result = await flushLocalSession(initDataRaw, snapshot);
+        if (snapshot.completeRequested) {
+          await clearLocalSession();
+          onCompleted(result as LiveSessionCompleteResponse);
+          return;
+        }
+        const fresh = rebaseLocalSession(snapshot, localRef.current ?? snapshot, result as LiveSessionResponse);
+        setLocal(fresh);
+        await saveLocalSession(fresh);
+        setSyncError(null);
+        if (hasPendingWork(fresh)) {
+          resyncRequested.current = true;
+        }
+      } catch (error) {
+        setSyncError(error instanceof Error ? error.message : String(error));
+        return;
+      }
+    } while (resyncRequested.current);
   }
 
   useEffect(() => {
     function handleOnline() {
       setIsOnline(true);
-      const current = localRef.current;
-      if (
-        current !== null &&
-        (current.pendingSets.length > 0 || current.pendingPhaseAdvances > 0 || current.completeRequested !== null)
-      ) {
-        void commitLocal(current);
-      }
+      void syncLocal();
     }
     function handleOffline() {
       setIsOnline(false);
@@ -325,10 +369,13 @@ export function SessionLiveScreen({
       return;
     }
     void guardedAction(async () => {
-      if (local === null) {
+      // Из localRef, не из замыкания рендера: реконнект-флаш мог уже
+      // заменить состояние, пока был открыт confirm.
+      const current = localRef.current ?? local;
+      if (current === null) {
         return;
       }
-      await commitLocal({ ...local, completeRequested: { abandoned: false } });
+      await commitLocal({ ...current, completeRequested: { abandoned: false } });
     });
   }
 
@@ -344,12 +391,16 @@ export function SessionLiveScreen({
       setStartingBlock(true);
       setStartBlockError(null);
       try {
-        if (local.pendingSets.length > 0 || local.pendingPhaseAdvances > 0) {
-          await flushLocalSession(initDataRaw, { ...local, completeRequested: null });
+        // Через тот же single-flight, что реконнект: иначе "Начать" сразу
+        // после возврата сети слал бы второй параллельный флаш.
+        await syncLocal();
+        const synced = localRef.current ?? local;
+        if (synced.pendingSets.length > 0 || synced.pendingPhaseAdvances > 0) {
+          throw new Error(navigator.onLine ? "Не удалось отправить подходы, попробуйте ещё раз" : "Нет сети");
         }
-        const started = await startLiveBlock(initDataRaw, local.serverSessionId, local.localPhase.blockIndex);
+        const started = await startLiveBlock(initDataRaw, synced.serverSessionId, synced.localPhase.blockIndex);
         await clearLocalSession();
-        const fresh = initialLocalSession(local.clientSessionId, started);
+        const fresh = initialLocalSession(synced.clientSessionId, started);
         await saveLocalSession(fresh);
         setLocal(fresh);
         setSyncError(null);

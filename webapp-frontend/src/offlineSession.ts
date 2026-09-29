@@ -197,6 +197,39 @@ export function initialLocalSession(clientSessionId: string, server: LiveSession
   };
 }
 
+export function hasPendingWork(local: LocalLiveSession): boolean {
+  return local.pendingSets.length > 0 || local.pendingPhaseAdvances > 0 || local.completeRequested !== null;
+}
+
+/**
+ * Ответ сервера на флаш снимка `flushed` заменяет локальное состояние (см.
+ * докстринг модуля) — но пока флаш был в полёте, пользователь мог добавить
+ * новое (тап "Завершить" в окне реконнекта, подход, переход фазы). Это
+ * новое не должно потеряться вместе со старым снимком: поверх свежего
+ * серверного состояния переносится только то, что появилось ПОСЛЕ `flushed`.
+ */
+export function rebaseLocalSession(
+  flushed: LocalLiveSession,
+  current: LocalLiveSession,
+  server: LiveSessionResponse,
+): LocalLiveSession {
+  const fresh = initialLocalSession(current.clientSessionId, server);
+  const newerSets = current.pendingSets.filter((entry) => entry.setIndex >= flushed.nextSetIndex);
+  const newerAdvances = Math.max(0, current.pendingPhaseAdvances - flushed.pendingPhaseAdvances);
+  const rebased = { ...fresh, completeRequested: current.completeRequested };
+  if (newerSets.length === 0 && newerAdvances === 0) {
+    return rebased;
+  }
+  return {
+    ...rebased,
+    localPhase: current.localPhase,
+    localPhaseEnteredAt: current.localPhaseEnteredAt,
+    nextSetIndex: Math.max(fresh.nextSetIndex, current.nextSetIndex),
+    pendingSets: newerSets,
+    pendingPhaseAdvances: newerAdvances,
+  };
+}
+
 /**
  * Досылает всё, что накопилось локально, пока сети не было (или пока не
  * дождались ответа) — переходы фазы по порядку, затем батч подходов одним
