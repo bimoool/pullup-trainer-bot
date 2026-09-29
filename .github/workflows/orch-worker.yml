@@ -143,6 +143,9 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # The planner dispatches this run with GITHUB_TOKEN → actor github-actions[bot]. Only
+          # that bot is allowed (job `if` already limits humans to the repository owner).
+          allowed_bots: github-actions
           prompt: |
             You are the ORCH-1 WORKER for GitHub issue #${{ inputs.issue }} of this repository.
 
