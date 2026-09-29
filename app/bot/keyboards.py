@@ -529,18 +529,36 @@ def admin_menu_keyboard(sheet_url: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def admin_user_list_keyboard(users: list) -> InlineKeyboardMarkup:
-    """users — User ORM-объекты. Статус подписки (и дата окончания, если
-    есть — см. format_subscription_status) добавлен прямо в подпись кнопки
-    (запрос автора: дата была не видна ни в карточке, ни в списке)."""
+ADMIN_USERS_PAGE_SIZE = 20
+
+
+def admin_user_list_keyboard(users: list, page: int = 0) -> InlineKeyboardMarkup:
+    """users — User ORM-объекты (весь список); режется на страницы по
+    ADMIN_USERS_PAGE_SIZE. Telegram принимает не больше 100 кнопок в одном
+    reply_markup — без пагинации список падал с «reply markup is too long»,
+    когда пользователей стало больше ~100. Статус подписки (и дата окончания,
+    если есть — см. format_subscription_status) в подписи кнопки."""
+    total_pages = max(1, -(-len(users) // ADMIN_USERS_PAGE_SIZE))
+    page = min(max(page, 0), total_pages - 1)
+    start = page * ADMIN_USERS_PAGE_SIZE
     builder = InlineKeyboardBuilder()
-    for user in users:
+    for user in users[start:start + ADMIN_USERS_PAGE_SIZE]:
         name = f"@{user.username}" if user.username else f"id {user.telegram_id}"
         label = f"{name} — {format_subscription_status(user, show_expired_date=True)}"
         builder.button(text=label, callback_data=f"admin_user:{user.id}")
-    builder.button(text="← Назад", callback_data="admin_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+    sizes = [1] * len(users[start:start + ADMIN_USERS_PAGE_SIZE])
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="◀️", callback_data=f"admin_users:{page - 1}"))
+        nav.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text="▶️", callback_data=f"admin_users:{page + 1}"))
+        builder.row(*nav)
+        sizes.append(len(nav))
+    builder.row(InlineKeyboardButton(text="← Назад", callback_data="admin_menu"))
+    sizes.append(1)
+    return builder.adjust(*sizes).as_markup()
 
 
 def admin_user_card_keyboard(user_id: int) -> InlineKeyboardMarkup:

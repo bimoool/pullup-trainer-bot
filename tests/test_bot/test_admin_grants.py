@@ -298,3 +298,36 @@ async def test_grant_days_push_failure_does_not_block_the_extension(
         and "Подписка на 14 дней выдана" in (m.text or "")
     ]
     assert len(admin_confirmations) == 1
+
+
+async def test_user_list_is_paginated_under_telegram_button_limit(
+    session, user: User, bot: Bot, dispatcher: Dispatcher, monkeypatch,
+):
+    """Регрессия: список пользователей падал с «reply markup is too long»,
+    когда пользователей стало больше ~100 (лимит Telegram — 100 кнопок)."""
+    monkeypatch.setattr(settings, "admin_ids", str(user.telegram_id))
+    repo = UserRepository(session)
+    for i in range(130):
+        await repo.create(telegram_id=700000 + i, username=f"bulk_{i}")
+
+    async def open_page(data: str) -> list:
+        bot.session.sent_methods.clear()
+        await dispatcher.feed_update(
+            bot, _callback_update(telegram_id=user.telegram_id, data=data), session=session,
+        )
+        [listing] = [
+            m for m in bot.session.sent_methods
+            if isinstance(m, SendMessage) and m.text == texts.ADMIN_USERS_HEADER
+        ]
+        return [b for row in listing.reply_markup.inline_keyboard for b in row]
+
+    first = await open_page("admin_users")
+    assert len(first) <= 100
+    assert "admin_users:1" in [b.callback_data for b in first]
+    assert "admin_users:0" not in [b.callback_data for b in first]
+
+    last = await open_page("admin_users:99")  # за пределами — зажимается в последнюю
+    assert len(last) <= 100
+    last_data = [b.callback_data for b in last]
+    assert "admin_users:5" in last_data  # ◀️ на предпоследнюю
+    assert not any(d and d.startswith("admin_users:") and int(d.split(":")[1]) > 5 for d in last_data)  # ▶️ нет

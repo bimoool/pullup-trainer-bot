@@ -100,14 +100,15 @@ async def handle_admin_funnel(callback: CallbackQuery, session: AsyncSession) ->
     await callback.answer()
 
 
-@router.callback_query(F.data == "admin_users")
+@router.callback_query(F.data.regexp(r"^admin_users(:\d+)?$"))
 async def handle_admin_users(callback: CallbackQuery, session: AsyncSession) -> None:
     if not _is_admin(callback.from_user.id):
         await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
         return
 
+    page = int(callback.data.partition(":")[2] or 0)
     users = await UserRepository(session).list_all()
-    await callback.message.answer(texts.ADMIN_USERS_HEADER, reply_markup=admin_user_list_keyboard(users))
+    await callback.message.answer(texts.ADMIN_USERS_HEADER, reply_markup=admin_user_list_keyboard(users, page))
     await callback.answer()
 
 
