@@ -31,7 +31,7 @@ export function formatNumber(value: string | number): string {
   return String(numeric);
 }
 
-function plural(count: number, one: string, few: string, many: string): string {
+export function plural(count: number, one: string, few: string, many: string): string {
   const mod100 = count % 100;
   const mod10 = count % 10;
   if (mod100 >= 11 && mod100 <= 14) {

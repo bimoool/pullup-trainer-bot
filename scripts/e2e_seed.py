@@ -843,7 +843,42 @@ async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
+    """G3 — Главная/«Мои тренировки»: у пользователя две своих Workout (одна
+    с длинным русским названием и тремя упражнениями, одна пустая) и
+    чужая Workout другого пользователя, которая на Главной появляться не
+    должна. Каталог Программ приходит из миграций."""
+    user = await _onboard(session, telegram_id)
+    foreign_telegram_id = telegram_id + 1_000_000
+    foreign_existing = await UserRepository(session).get_by_telegram_id(foreign_telegram_id)
+    if foreign_existing is not None:
+        await _purge_user(session, foreign_existing.id)
+    foreign = await _onboard(session, foreign_telegram_id)
+
+    def exercise(name: str, owner: User) -> Exercise:
+        return Exercise(name=name, metric_type=MetricType.REPS, category="e2e_home", source_type="user", owner_user_id=owner.id)
+
+    pull, push, plank = exercise("Подтягивания", user), exercise("Отжимания", user), exercise("Планка", user)
+    foreign_ex = exercise("Чужое упражнение", foreign)
+    session.add_all([pull, push, plank, foreign_ex])
+    await session.flush()
+    reps = {"type": "reps_sets", "rest_seconds": 0, "prescription": {"source": "static", "sets": 3, "reps": 8}}
+    workouts = [
+        (user, "Очень длинная утренняя тренировка на все группы мышц и выносливость", [(pull, reps), (push, reps), (plank, reps)]),
+        (user, "Пустая заготовка", []),
+        (foreign, "Чужая тренировка", [(foreign_ex, reps)]),
+    ]
+    for owner, title, items in workouts:
+        workout = Complex(name=title, source_type="user", owner_user_id=owner.id)
+        session.add(workout)
+        await session.flush()
+        for index, (ex, protocol) in enumerate(items):
+            session.add(ComplexItem(complex_id=workout.id, exercise_id=ex.id, order_index=index, sets=0, protocol=protocol))
+    await session.flush()
+
+
 SCENARIOS = {
+    "home_workouts": seed_home_workouts,
     "analytics_v2": seed_analytics_v2,
     "journal_v2": seed_journal_v2,
     "builder_workouts": seed_builder_workouts,

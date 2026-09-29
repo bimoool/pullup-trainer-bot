@@ -889,3 +889,56 @@ input[type="number"] {
 .analytics-panel {
   margin-bottom: 12px;
 }
+
+/* G3 — «Мои тренировки» на Главной: компактные карточки, только реальные данные. */
+.home-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.home-workout-list {
+  list-style: none;
+  margin: 8px 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-workout-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 12px;
+  background: var(--tg-secondary-bg-color);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-workout-card:active {
+  opacity: 0.7;
+}
+
+.home-workout-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.home-workout-meta,
+.home-workout-names {
+  font-size: 13px;
+  color: var(--tg-hint-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
