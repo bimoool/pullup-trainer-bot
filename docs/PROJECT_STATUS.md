@@ -39,7 +39,7 @@ Post UX-1: owner iPhone QA on staging (#224) → P0/P1 fixes → production (own
 - [#187](https://github.com/bimoool/pullup-trainer-bot/issues/187) Три бага с реального использования: закрытие Mini App при долгой сессии, двойной ввод блока, нет свободных подтягиваний (2026-09-29)
 
 ## AUTONOMOUS BATCH
-- **AUTONOMOUS BATCH 3: 1/5 (running; attempts 3/8)**
+- **AUTONOMOUS BATCH 3: idle — queue empty, no worker dispatched (1/5); owner: `/orch approve` on a complete issue**
 - completed: #245
 - stop condition: 5 completed tasks or 8 attempts → OWNER REVIEW REQUIRED; no task starts after that
 
