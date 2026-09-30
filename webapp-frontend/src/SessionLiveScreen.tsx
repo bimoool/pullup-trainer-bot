@@ -97,6 +97,10 @@ export function SessionLiveScreen({
   // снимка не нужны: второй вызов лишь просит ещё один проход после текущего.
   const syncInFlight = useRef<Promise<void> | null>(null);
   const resyncRequested = useRef(false);
+  // После успешного complete сессия закрыта: повторные тапы "Завершить" (в окне
+  // реконнект-флаша) не должны ни слать второй complete, ни воскрешать
+  // очищенный черновик в IndexedDB.
+  const completedRef = useRef(false);
 
   function setLocal(updated: LocalLiveSession) {
     localRef.current = updated;
@@ -155,6 +159,9 @@ export function SessionLiveScreen({
     // localRef обновляется синхронно, ДО await: флаш, завершившийся во время
     // записи в IndexedDB, уже видит это действие и перенесёт его (rebase).
     setLocal(updated);
+    if (completedRef.current) {
+      return;
+    }
     await saveLocalSession(updated);
     // Сеть — НЕ под guardedAction: действие уже зафиксировано локально, а
     // досылку ведёт single-flight syncLocal. Если ждать её здесь, тап
@@ -175,7 +182,7 @@ export function SessionLiveScreen({
     // ниже, даже если цикл вышел сразу (офлайн/нечего слать).
     const run = runSyncLoop().finally(() => {
       syncInFlight.current = null;
-      if (resyncRequested.current) {
+      if (resyncRequested.current && !completedRef.current) {
         // Запрос пришёл уже после последней проверки цикла — не теряем его.
         resyncRequested.current = false;
         void syncLocal();
@@ -189,12 +196,13 @@ export function SessionLiveScreen({
     do {
       resyncRequested.current = false;
       const snapshot = localRef.current;
-      if (snapshot === null || !navigator.onLine || !hasPendingWork(snapshot)) {
+      if (completedRef.current || snapshot === null || !navigator.onLine || !hasPendingWork(snapshot)) {
         return;
       }
       try {
         const result = await flushLocalSession(initDataRaw, snapshot);
         if (snapshot.completeRequested) {
+          completedRef.current = true;
           await clearLocalSession();
           onCompleted(result as LiveSessionCompleteResponse);
           return;
