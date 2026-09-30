@@ -1,4 +1,5 @@
 """Security/batch regression tests for the GitHub owner UI; no network/database."""
+
 import datetime as dt
 import importlib.util
 import sys
@@ -6,7 +7,9 @@ import unittest
 from pathlib import Path
 
 for name in ("orch", "orch_control"):
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parents[1] / "scripts" / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(
+        name, Path(__file__).resolve().parents[1] / "scripts" / f"{name}.py"
+    )
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -18,7 +21,13 @@ class OwnerControlTests(unittest.TestCase):
     def setUp(self):
         self.now = dt.datetime(2026, 9, 30, 12, tzinfo=dt.UTC)
         self.issue = {"number": 230, "state": "open", "labels": []}
-        self.comment = {"user": {"login": "bimoool"}, "body": "/orch start", "created_at": "2026-09-30T11:59:00Z", "updated_at": "2026-09-30T11:59:00Z", "issue_url": "https://api.github.com/repos/bimoool/pullup-trainer-bot/issues/230"}
+        self.comment = {
+            "user": {"login": "bimoool"},
+            "body": "/orch start",
+            "created_at": "2026-09-30T11:59:00Z",
+            "updated_at": "2026-09-30T11:59:00Z",
+            "issue_url": "https://api.github.com/repos/bimoool/pullup-trainer-bot/issues/230",
+        }
         self.state = orch.default_state()
 
     def auth(self, base="develop/current"):
@@ -32,7 +41,13 @@ class OwnerControlTests(unittest.TestCase):
                 self.auth()
 
     def test_no_shell_or_free_form_targets(self):
-        for body in ("/orch start; touch /tmp/pwn", "/orch start main", "/orch start\nwhoami", "/orch start $(id)", "/orch sandbox-start other"):
+        for body in (
+            "/orch start; touch /tmp/pwn",
+            "/orch start main",
+            "/orch start\nwhoami",
+            "/orch start $(id)",
+            "/orch sandbox-start other",
+        ):
             self.comment["body"] = body
             with self.assertRaises(ValueError):
                 self.auth()
@@ -42,7 +57,11 @@ class OwnerControlTests(unittest.TestCase):
                 self.auth(base)
 
     def test_location_edit_expiry_and_pr(self):
-        for key, val in (("updated_at", "2026-09-30T12:00:00Z"), ("issue_url", "https://api.github.com/repos/evil/repo/issues/230"), ("created_at", "2020-01-01T00:00:00Z")):
+        for key, val in (
+            ("updated_at", "2026-09-30T12:00:00Z"),
+            ("issue_url", "https://api.github.com/repos/evil/repo/issues/230"),
+            ("created_at", "2020-01-01T00:00:00Z"),
+        ):
             old = self.comment[key]
             self.comment[key] = val
             with self.assertRaises(ValueError):
@@ -94,6 +113,16 @@ class OwnerControlTests(unittest.TestCase):
             orch.batch_record(self.state, n, "done")
         self.assertEqual(self.state["batch"]["status"], "owner-review")
         self.assertFalse(orch.batch_can_start(self.state)[0])
+
+    def test_stop_survives_cancelled_run_and_ignores_other_actors_and_base(self):
+        comments = [
+            dict(self.comment, id=10, body="/orch stop"),
+            dict(self.comment, id=11, body="/orch start"),
+            dict(self.comment, id=12, body="/orch stop", user={"login": "collaborator"}),
+            dict(self.comment, id=13, body="/orch sandbox-stop"),
+        ]
+        self.assertEqual(control.stop_watermark(comments, "develop/current"), 10)
+        self.assertEqual(control.stop_watermark(comments, control.SANDBOX), 13)
 
     def test_sandbox_fixed_target(self):
         self.comment["body"] = "/orch sandbox-start"
