@@ -18,8 +18,11 @@
     "status": "running",
     "approved_by": "bimoool",
     "started_at": "2026-09-29 19:55 UTC",
-    "completed": [],
+    "completed": [
+      235
+    ],
     "attempts": [
+      235,
       235
     ]
   },
