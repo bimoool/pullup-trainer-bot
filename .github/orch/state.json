@@ -18,8 +18,12 @@
     "status": "running",
     "approved_by": "bimoool",
     "started_at": "2026-09-30 20:23 UTC",
-    "completed": [],
-    "attempts": []
+    "completed": [
+      243
+    ],
+    "attempts": [
+      243
+    ]
   },
   "staging_health_url": "https://staging.app.bimoool.com/health",
   "last_owner_comment_id": 5919180804
