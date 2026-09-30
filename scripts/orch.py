@@ -349,6 +349,7 @@ def batch_start(state: dict, by: str, now: str, limit: int | None = None) -> Non
         "started_at": now,
         "completed": [],
         "attempts": [],
+        "idle_reason": None,
     }
 
 
@@ -374,6 +375,11 @@ def batch_line(state: dict) -> str:
         return f"AUTONOMOUS BATCH {b['id']}: {n}/{lim} (running; attempts {len(b['attempts'])}/{b['max_attempts']})"
     if b["status"] == "stopped":
         return f"AUTONOMOUS BATCH {b['id']}: {n}/{lim} — stopped by owner"
+    if b.get("idle_reason") == "empty-queue":
+        return (
+            f"AUTONOMOUS BATCH {b['id']}: idle — queue empty, no worker dispatched ({n}/{lim}); "
+            "owner: `/orch approve` on a complete issue"
+        )
     return f"AUTONOMOUS BATCH: not running ({n}/{lim} last batch) — owner starts one explicitly"
 
 
@@ -1105,6 +1111,7 @@ def cmd_plan(args, gh: Gh) -> int:
     state = load_state()
     issues = gh.list_issues()
     decision = plan(issues, state)
+    args.decision = decision
     print(
         f"PLANNER ({'APPLY' if args.apply else 'DRY RUN'}): {decision.action} — {decision.message}"
     )
@@ -1132,6 +1139,11 @@ def cmd_plan(args, gh: Gh) -> int:
         )
     elif decision.action == "batch-stop" and state["batch"]["status"] == "running":
         state["batch"]["status"] = "owner-review"
+    elif decision.action == "none-ready" and state["batch"]["status"] == "running":
+        # Empty queue: stop presenting the batch as coding; `/orch approve` restarts it.
+        state["batch"]["status"] = "idle"
+        state["batch"]["idle_reason"] = "empty-queue"
+    args.decision = decision
     save_state(state)
     refresh_status(gh, state, issues, publish=args.publish)
     if args.push:
