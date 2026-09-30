@@ -7,7 +7,7 @@ name: Notify on failure
 
 on:
   workflow_run:
-    workflows: ["Tests", "E2E (Mini App)", "Deploy", "Deploy Staging", "Claude Code"]
+    workflows: ["Tests", "E2E (Mini App)", "Deploy", "Deploy Staging", "Claude Code", "Orch Planner", "Orch Worker"]
     types: [completed]
 
 permissions:
@@ -30,9 +30,7 @@ jobs:
             echo "Нет TG_TOKEN/NOTIFY_CHAT_ID — уведомление пропущено"
             exit 0
           fi
-          TEXT="🔴 Упал прогон: ${WF}
-    ветка: ${BRANCH}
-    ${URL}"
+          TEXT=$(printf '🔴 Упал прогон: %s\nветка: %s\n%s' "${WF}" "${BRANCH}" "${URL}")
           curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \
             --data-urlencode "text=${TEXT}" \
