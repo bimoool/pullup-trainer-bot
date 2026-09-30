@@ -584,13 +584,47 @@ def forbidden_changes(changed_paths: list[str], diff_text: str) -> list[str]:
     return out
 
 
+RESULT_VERDICTS = ("done", "blocked", "needs-owner")
+RESULT_REQUIRED_FIELDS = ("VERDICT", "SUMMARY", "ACCEPTANCE", "TESTS")
+
+
 def parse_result(text: str) -> dict[str, str]:
     """Worker result file: `VERDICT: done|blocked|needs-owner` + free-form sections."""
     fields = parse_brief(text)
     verdict = fields.get("VERDICT", "").lower()
-    if verdict not in ("done", "blocked", "needs-owner"):
+    if verdict not in RESULT_VERDICTS:
         verdict = "blocked"
-    return {"verdict": verdict, "text": (text or "").strip()}
+    return {
+        "verdict": verdict,
+        "text": (text or "").strip(),
+        "error": result_contract_error(text) or "",
+    }
+
+
+def result_contract_error(text: str | None) -> str | None:
+    """None if `text` satisfies the worker result contract, else why it does not.
+
+    A missing/empty file and a malformed one are orchestration-contract failures — never a
+    worker verdict — so they can neither mark a task done nor pass as an honest `blocked`.
+    """
+    if not (text or "").strip():
+        return "result file missing or empty"
+    fields = parse_brief(text)
+    verdict = fields.get("VERDICT", "").lower()
+    if verdict not in RESULT_VERDICTS:
+        return (
+            f"malformed result: VERDICT must be one of {', '.join(RESULT_VERDICTS)} "
+            f"(got '{verdict or 'none'}')"
+        )
+    missing = [k for k in RESULT_REQUIRED_FIELDS if k not in fields]
+    if missing:
+        return "malformed result: missing " + ", ".join(missing)
+    return None
+
+
+def read_result(path: str | None) -> dict[str, str]:
+    p = Path(path) if path else None
+    return parse_result(p.read_text() if p and p.is_file() else "")
 
 
 def final_verdict(
@@ -1173,18 +1207,24 @@ def cmd_worker_record(args, gh: Gh) -> int:
     """Finish step: labels, issue report, batch counter, idle brief, status, (optional) push."""
     state = load_state()
     issue = gh.get_issue(args.issue)
-    result = parse_result(
-        Path(args.result_file).read_text()
-        if args.result_file and Path(args.result_file).exists()
-        else ""
-    )
-    verdict, why = final_verdict(
-        result["verdict"] if args.result_file else args.verdict,
-        args.tests_ok == "1",
-        args.commits_ahead,
-        [x for x in (args.forbidden or "").split("\n") if x.strip()],
-        None if args.merged == "" else args.merged == "1",
-    )
+    result = read_result(args.result_file) if args.result_file else {"error": "", "text": ""}
+    forbidden = [x for x in (args.forbidden or "").split("\n") if x.strip()]
+    if result["error"]:
+        # Orchestration-contract failure: the agent's claim is unusable, so nothing is done.
+        verdict = "needs-owner" if forbidden else "blocked"
+        why = (
+            f"ORCH CONTRACT FAILURE — {result['error']} (commits: {args.commits_ahead}, "
+            f"verification {'green' if args.tests_ok == '1' else 'not green'}); "
+            "branch left pushed, work preserved, NOT marked done"
+        )
+    else:
+        verdict, why = final_verdict(
+            parse_result(result["text"])["verdict"] if args.result_file else args.verdict,
+            args.tests_ok == "1",
+            args.commits_ahead,
+            forbidden,
+            None if args.merged == "" else args.merged == "1",
+        )
     label = {
         "done": "status:done",
         "blocked": "status:blocked",
@@ -1202,7 +1242,7 @@ def cmd_worker_record(args, gh: Gh) -> int:
         "",
         "<details><summary>Worker report</summary>",
         "",
-        result["text"] or "(no result file)",
+        result["text"] or "(no usable result file — see ORCH CONTRACT FAILURE above)",
         "",
         "</details>",
     ]

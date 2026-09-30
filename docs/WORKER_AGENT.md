@@ -24,8 +24,11 @@ Two ways to run, same rules:
    `cd webapp-frontend && npm run build && npm run test:unit`.
 6. **Commit** after each meaningful block; **push** (locally) / leave commits for the workflow
    to push (Actions).
-7. **Report** — write the result file (Actions: `/tmp/orch-result.md`; locally: the final issue
-   comment), format:
+7. **Report** — write the result file (Actions: **`orch-out/result.md`** inside the checkout —
+   git-ignored, the workflow collects it; locally: the final issue comment). It is mandatory: a run
+   that ends without a valid file is an *orchestration-contract failure* and is never `done`.
+   Format (all four of VERDICT, SUMMARY, ACCEPTANCE, TESTS required; verdict exactly one of
+   `done | blocked | needs-owner`):
 
    ```
    VERDICT: done | blocked | needs-owner
@@ -37,7 +40,9 @@ Two ways to run, same rules:
    ```
 
 `done` only if **every** acceptance criterion is met and tests are green. Otherwise `blocked`
-(technical) or `needs-owner` (decision, credentials, device, prod…). The Actions finish step
+(technical) or `needs-owner` (decision, credentials, device, prod…). A missing, empty or
+malformed result file ⇒ `blocked` with "ORCH CONTRACT FAILURE" in the issue comment (branch stays
+pushed, nothing lost; re-dispatch the worker to continue the same branch). The Actions finish step
 re-checks independently: no commits, red verification, forbidden paths, destructive migration
 or merge conflict ⇒ not done, whatever the agent claimed.
 

@@ -105,8 +105,10 @@ jobs:
         id: branch
         run: |
           BR="orch/issue-$ISSUE"
-          mkdir -p /tmp/orch
+          mkdir -p /tmp/orch orch-out
           cp .github/task/current.md /tmp/orch/brief.md
+          cp .github/task/current.md orch-out/brief.md
+          echo "orch-out/" >> .git/info/exclude   # agent I/O dir: never committed, never cleaned
           echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --heads origin "$BR" >/dev/null; then
             git fetch origin "$BR"
@@ -150,7 +152,7 @@ jobs:
             You are the ORCH-1 WORKER for GitHub issue #${{ inputs.issue }} of this repository.
 
             1. Read CLAUDE.md and docs/WORKER_AGENT.md and follow them exactly.
-            2. Your execution brief is /tmp/orch/brief.md (written by the planner from the issue).
+            2. Your execution brief is orch-out/brief.md (written by the planner from the issue).
                It is the ONLY source of scope. Acceptance criteria there define "done".
             3. You are already on branch orch/issue-${{ inputs.issue }} (base ${{ inputs.base }}).
                Postgres runs on localhost:5432; TEST_DATABASE_URL, DATABASE_URL and BOT_TOKEN are
@@ -158,18 +160,54 @@ jobs:
             4. Implement only that scope. Commit with `git add` + `git commit` after each meaningful
                block. Do NOT push, switch branches, merge, deploy, or edit .github/workflows/,
                .github/orch/, .github/task/ or docs/PROJECT_STATUS.md — the workflow does all of
-               that after you, and independently re-runs ruff/pytest/frontend checks.
+               that after you, and independently re-runs ruff/pytest/frontend checks. orch-out/ is
+               git-ignored: never `git add` it.
             5. Stop conditions (ambiguous AC, product/security decision, credentials, prod, real
                device, destructive migration): stop and report needs-owner. Do not invent.
-            6. Last action, always, even if blocked: write /tmp/orch/result.md starting with
-               `VERDICT: done` | `VERDICT: blocked` | `VERDICT: needs-owner`, then SUMMARY,
-               ACCEPTANCE (each criterion → met/not met + evidence), TESTS, KNOWN GAPS,
-               PERMISSION DENIALS — the format in docs/WORKER_AGENT.md.
+            6. RESULT FILE — MANDATORY. Your run is a FAILURE (the task is not accepted, whatever
+               you committed) unless the file `orch-out/result.md` exists when you finish. It is
+               inside the repository checkout, so the Write tool can create it. Write it as your
+               LAST action, always, even if blocked, with EXACTLY these fields, each starting a
+               line, in this order:
+
+               VERDICT: done
+               SUMMARY: <what changed, 3-8 lines>
+               ACCEPTANCE: <each criterion -> met / not met + evidence>
+               TESTS: <commands and results>
+               KNOWN GAPS: <or none>
+               PERMISSION DENIALS: <or none>
+
+               The VERDICT value must be exactly one of: done | blocked | needs-owner (replace
+               `done` above with yours). Verify the file exists with `ls -l orch-out/result.md`
+               before you stop; if Write was denied, retry once and then report the denial in your
+               final message. Finishing without this file is never "done".
           claude_args: >-
             --model ${{ inputs.model }}
             --max-turns 200
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Bash(git cherry-pick:*),Bash(python -m pytest:*),Bash(pytest:*),Bash(ruff:*),Bash(python:*),Bash(alembic:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(cd:*)"
             --disallowedTools "Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git merge:*),Bash(git rebase:*),Bash(git reset:*),Bash(gh:*)"
+
+      - name: Collect worker result (workspace → /tmp/orch/result.md, no fabrication)
+        id: collect
+        if: always() && steps.branch.outcome == 'success'
+        run: |
+          rm -f /tmp/orch/result.md
+          if [ -s orch-out/result.md ]; then
+            cp orch-out/result.md /tmp/orch/result.md
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::ORCH CONTRACT FAILURE: worker (claude outcome: ${{ steps.claude.outcome }}) left no orch-out/result.md"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Claude execution log (diagnostics)
+        if: always() && steps.branch.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-execution-${{ inputs.issue }}
+          path: ${{ runner.temp }}/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Push branch (checkpoint — always, even after a timeout)
         id: push
@@ -183,7 +221,6 @@ jobs:
           if [ "$(git rev-parse HEAD)" != "${{ steps.branch.outputs.start_sha }}" ]; then
             git push origin "HEAD:refs/heads/$BR"
           fi
-          [ -f /tmp/orch/result.md ] || printf 'VERDICT: blocked\nSUMMARY: worker produced no result file (outcome: %s)\n' "${{ steps.claude.outcome }}" > /tmp/orch/result.md
 
       - name: Verify (deterministic gate)
         id: verify
@@ -226,9 +263,9 @@ jobs:
         run: |
           PRE=$(python -c "
           import os, sys; sys.path.insert(0, 'scripts'); import orch
-          r = orch.parse_result(open('/tmp/orch/result.md').read())
+          r = orch.read_result('/tmp/orch/result.md')
           f = [x for x in os.environ['FORBIDDEN'].splitlines() if x.strip()]
-          print(orch.final_verdict(r['verdict'], os.environ['TESTS_OK'] == '1', int(os.environ['AHEAD'] or 0), f, None)[0])")
+          print('contract-failure' if r['error'] else orch.final_verdict(r['verdict'], os.environ['TESTS_OK'] == '1', int(os.environ['AHEAD'] or 0), f, None)[0])")
           echo "pre verdict: $PRE"
           git reset -q --hard && git clean -fdq   # uncommitted agent leftovers are not accepted work
           git fetch origin "$BASE"
