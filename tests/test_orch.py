@@ -513,3 +513,41 @@ def test_done_result_without_confirmed_merge_is_not_done(repo, tmp_path):
     assert gh.issues[7].state == "OPEN" and "status:blocked" in gh.issues[7].labels
     assert "merge into base failed" in gh.comments[7][-1]
     assert orch.load_state()["batch"]["completed"] == []
+
+
+def _control():
+    spec = importlib.util.spec_from_file_location(
+        "orch_control", Path(__file__).resolve().parents[1] / "scripts" / "orch_control.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["orch_control"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_empty_queue_idles_batch_and_approval_restarts(repo):
+    """#243: none-ready must not leave the batch 'running'; approve restarts planner → worker."""
+    control = _control()
+    state = orch.load_state()
+    assert control.transition(state, "start", 10, False)
+    orch.save_state(state)
+    gh = FakeGh([issue(1, ["status:backlog"])])
+    args = ns(apply=True)
+    orch.cmd_plan(args, gh)
+    assert args.decision.action == "none-ready"
+    state = orch.load_state()
+    assert state["batch"]["status"] == "idle"
+    line = orch.batch_line(state)
+    assert "queue empty" in line and "/orch approve" in line
+    msg = control.idle_message("start", args.decision)
+    assert "no worker was dispatched" in msg and "/orch approve" in msg
+    # Approval starts a fresh batch without a second /orch start.
+    assert control.transition(state, "approve", 11, False)
+    assert state["batch"]["status"] == "running"
+    assert state["batch"]["idle_reason"] is None
+    orch.save_state(state)
+    gh.issues[2] = issue(2, ["status:ready"])
+    args = ns(apply=True)
+    orch.cmd_plan(args, gh)
+    assert args.decision.action == "select"
+    assert "status:in-progress" in gh.issues[2].labels

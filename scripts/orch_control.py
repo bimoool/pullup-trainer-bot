@@ -192,7 +192,20 @@ def apply_owner_event(comment_id: str, base: str) -> None:
         ),
     )
     if command != "stop" and not paused(base):
-        orch.cmd_plan(SimpleNamespace(apply=True, publish=True, push=True), gh)
+        plan_args = SimpleNamespace(apply=True, publish=True, push=True)
+        orch.cmd_plan(plan_args, gh)
+        if plan_args.decision.action == "none-ready":
+            gh.comment(DASHBOARD, idle_message(command, plan_args.decision))
+
+
+def idle_message(command: str, decision) -> str:
+    return (
+        f"💤 **Queue empty:** owner `{command}` found no executable `status:ready` issue, so "
+        "**no worker was dispatched** and the batch is idle (not coding).\n\n"
+        "Owner action: comment `/orch approve` on a complete issue — planner → worker then starts "
+        "automatically; no second `/orch start` is needed."
+        + "".join(f"\n- rejected #{i.number}: {r.reason}" for i, r in decision.rejected)
+    )
 
 
 def main() -> None:
