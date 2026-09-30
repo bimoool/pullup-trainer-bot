@@ -902,7 +902,25 @@ async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_session_recovery(session: AsyncSession, telegram_id: int) -> None:
+    """Восстановление активной сессии (issue #246): одна своя Workout, reps
+    3 x 8 с отдыхом 60 с — достаточно длинный, чтобы фон/перезагрузка
+    происходили посреди отдыха. Старт — из свободного пула «Планов» (как у
+    golden_journey); admin не нужен."""
+    await seed_golden_journey(session, telegram_id)
+    workout = (
+        await session.execute(
+            select(Complex).where(Complex.owner_user_id == (await UserRepository(session).get_by_telegram_id(telegram_id)).id)
+        )
+    ).scalar_one()
+    workout.name = "Тренировка восстановления"
+    item = (await session.execute(select(ComplexItem).where(ComplexItem.complex_id == workout.id))).scalar_one()
+    item.protocol = {"type": "reps_sets", "rest_seconds": 60, "prescription": {"source": "static", "sets": 3, "reps": 8}}
+    await session.flush()
+
+
 SCENARIOS = {
+    "session_recovery": seed_session_recovery,
     "golden_journey": seed_golden_journey,
     "home_workouts": seed_home_workouts,
     "analytics_v2": seed_analytics_v2,

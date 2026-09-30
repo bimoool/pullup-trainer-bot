@@ -13,7 +13,7 @@ import {
   initialLocalSession,
   isLocalSessionReusable,
   loadLocalSession,
-  localPhaseDurationSeconds,
+  localPhaseEndsAtMs,
   nextLocalPhase,
   rebaseLocalSession,
   saveLocalSession,
@@ -246,20 +246,7 @@ export function SessionLiveScreen({
   // введённым значениям до синхронизации"). Вычисляется здесь, ДО раннего
   // возврата ниже, чтобы порядок хуков (useEffect для звука) не менялся между
   // рендерами.
-  const phaseEndsAtMs = ((): number | null => {
-    if (local === null) {
-      return null;
-    }
-    const isSyncedWithServer = local.pendingPhaseAdvances === 0;
-    const serverEndsAt = isSyncedWithServer ? local.server.phase.ends_at : null;
-    if (serverEndsAt !== null) {
-      return new Date(serverEndsAt).getTime();
-    }
-    const duration = localPhaseDurationSeconds(
-      local.localPhase.phaseName, local.server.blocks[local.localPhase.blockIndex]?.rest_seconds,
-    );
-    return duration !== null ? new Date(local.localPhaseEnteredAt).getTime() + duration * 1000 : null;
-  })();
+  const phaseEndsAtMs = local === null ? null : localPhaseEndsAtMs(local);
 
   // Звук окончания фазы планируется заранее (issue #186) на собственных часах
   // Web Audio, привязанных к `phaseEndsAtMs` — не к `now`, которое тикает

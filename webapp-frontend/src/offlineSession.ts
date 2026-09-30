@@ -27,7 +27,7 @@ import {
   completeLiveSession,
   type LiveSessionCompleteResponse,
   type LiveSessionResponse,
-} from "./apiV2";
+} from "./apiV2.ts";
 
 const STORE_KEY = "pullup:v2:live-session";
 
@@ -195,6 +195,21 @@ export function initialLocalSession(clientSessionId: string, server: LiveSession
     pendingPhaseAdvances: 0,
     completeRequested: null,
   };
+}
+
+/** Конец текущей фазы в мс (epoch) — из `ends_at` сервера, пока локальная
+ * фаза не убежала вперёд оптимистичным переходом, иначе из момента входа в
+ * локальную фазу + её длительность. Чистая функция от сохранённого снимка, а
+ * не от "сейчас": после возврата из фона/перезагрузки остаток считается как
+ * `endsAt - Date.now()`, а не начинается заново. */
+export function localPhaseEndsAtMs(local: LocalLiveSession): number | null {
+  if (local.pendingPhaseAdvances === 0 && local.server.phase.ends_at !== null) {
+    return new Date(local.server.phase.ends_at).getTime();
+  }
+  const duration = localPhaseDurationSeconds(
+    local.localPhase.phaseName, local.server.blocks[local.localPhase.blockIndex]?.rest_seconds,
+  );
+  return duration !== null ? new Date(local.localPhaseEnteredAt).getTime() + duration * 1000 : null;
 }
 
 export function hasPendingWork(local: LocalLiveSession): boolean {
