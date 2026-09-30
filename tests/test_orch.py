@@ -267,6 +267,99 @@ def test_parse_result_defaults_to_blocked():
     assert orch.parse_result("I think it's finished")["verdict"] == "blocked"
 
 
+def result_text(verdict="done", **drop):
+    fields = {
+        "VERDICT": verdict,
+        "SUMMARY": "cherry-picked f80c7ff",
+        "ACCEPTANCE": "all met",
+        "TESTS": "pytest 1443 passed",
+        "KNOWN GAPS": "none",
+        "PERMISSION DENIALS": "none",
+    }
+    for k in drop:
+        fields.pop(k.replace("_", " ").upper())
+    return "\n".join(f"{k}: {v}" for k, v in fields.items()) + "\n"
+
+
+@pytest.mark.parametrize("verdict", ["done", "blocked", "needs-owner"])
+def test_result_contract_accepts_every_valid_verdict(verdict):
+    r = orch.parse_result(result_text(verdict))
+    assert r["error"] == "" and r["verdict"] == verdict
+
+
+@pytest.mark.parametrize(
+    "text, why",
+    [
+        ("", "missing"),
+        ("   \n", "missing"),
+        ("I finished the task, all good.", "VERDICT"),
+        (result_text("finished"), "VERDICT"),
+        (result_text("pending"), "VERDICT"),
+        (result_text(summary=1), "SUMMARY"),
+        (result_text(acceptance=1, tests=1), "ACCEPTANCE, TESTS"),
+    ],
+)
+def test_result_contract_rejects_missing_or_malformed(text, why):
+    assert why in (orch.result_contract_error(text) or "")
+    assert orch.parse_result(text)["error"]
+
+
+def record_case(repo, tmp_path, result, **kw):
+    """One in-progress issue, worker finished with green tests + commits; returns (gh, n)."""
+    gh = FakeGh([issue(7, ["status:ready", "priority:p1"])])
+    st = orch.load_state()
+    orch.batch_start(st, by="owner", now="t0")
+    orch.save_state(st)
+    orch.cmd_plan(ns(apply=True), gh)
+    f = None
+    if result is not None:
+        f = tmp_path / "result.md"
+        f.write_text(result)
+    orch.cmd_worker_record(
+        record_args(7, result_file=str(f) if f else str(tmp_path / "nope.md"), **kw), gh
+    )
+    return gh
+
+
+def test_valid_done_result_marks_done(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("done"))
+    assert gh.issues[7].state == "CLOSED" and "status:done" in gh.issues[7].labels
+    assert orch.load_state()["batch"]["completed"] == [7]
+
+
+def test_valid_blocked_and_needs_owner_results_are_recorded(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("blocked"))
+    assert "status:blocked" in gh.issues[7].labels and gh.issues[7].state == "OPEN"
+    assert "worker reported blocked" in gh.comments[7][-1]
+    assert orch.load_state()["batch"]["completed"] == []
+
+
+def test_valid_needs_owner_result_is_recorded(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("needs-owner"))
+    assert "status:needs-owner" in gh.issues[7].labels and gh.issues[7].state == "OPEN"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [None, "", "Successfully implemented the fix!", result_text("done", tests=1)],
+    ids=["missing-file", "empty-file", "prose-only", "missing-field"],
+)
+def test_missing_or_malformed_result_blocks_and_never_marks_done(repo, tmp_path, result):
+    # Claude step "succeeded", branch has commits, verification is green, merge succeeded.
+    gh = record_case(repo, tmp_path, result, tests_ok="1", commits_ahead=1, merged="1")
+    assert gh.issues[7].state == "OPEN"
+    assert "status:blocked" in gh.issues[7].labels and "status:done" not in gh.issues[7].labels
+    comment = gh.comments[7][-1]
+    assert "ORCH CONTRACT FAILURE" in comment and "NOT marked done" in comment
+    assert orch.load_state()["batch"]["completed"] == []
+
+
+def test_successful_claude_output_alone_never_counts_as_done(repo, tmp_path):
+    # No result file at all, forbidden paths touched: still no done, escalated to the owner.
+    gh = record_case(repo, tmp_path, None, forbidden=".github/workflows/x.yml")
+    assert "status:needs-owner" in gh.issues[7].labels and gh.issues[7].state == "OPEN"
+
+
 # --------------------------------------------------------------------------- simulation
 
 
