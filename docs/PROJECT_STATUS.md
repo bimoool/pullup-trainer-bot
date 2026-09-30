@@ -13,10 +13,10 @@ Post UX-1: owner iPhone QA on staging (#224) → P0/P1 fixes → production (own
 ## IN PROGRESS
 - [#244](https://github.com/bimoool/pullup-trainer-bot/issues/244) Automate critical iPhone-width layout regression coverage
   - branch `orch/issue-244`: not pushed yet
-  - worker: no Actions run recorded (local worker or not dispatched)
+  - worker: in_progress/… · [run](https://github.com/bimoool/pullup-trainer-bot/actions/runs/36783892311)
 
 ## READY NEXT
-- none
+1. [#246](https://github.com/bimoool/pullup-trainer-bot/issues/246) Cover active-session recovery after background and reopen (p1)
 
 ## BLOCKED
 - none
@@ -30,7 +30,6 @@ Post UX-1: owner iPhone QA on staging (#224) → P0/P1 fixes → production (own
 
 ## BACKLOG (not ready)
 - [#245](https://github.com/bimoool/pullup-trainer-bot/issues/245) Cover reconnect plus immediate workout completion race
-- [#246](https://github.com/bimoool/pullup-trainer-bot/issues/246) Cover active-session recovery after background and reopen
 - [#225](https://github.com/bimoool/pullup-trainer-bot/issues/225) v2 coins/achievements integration
 - [#236](https://github.com/bimoool/pullup-trainer-bot/issues/236) notify-failure.yml reports a 'workflow file issue' failure on every push
 
