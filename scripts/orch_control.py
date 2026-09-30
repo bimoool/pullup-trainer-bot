@@ -111,6 +111,7 @@ def apply_owner_event(comment_id: str, base: str) -> None:
         gh.set_status(issue.number, "status:ready", issue.labels)
     label = pause_label(base)
     if command == "stop":
+        orch.run(["gh", "label", "create", label, "--color", "d93f0b", "--description", "Owner paused ORCH task selection", "--force"])
         orch.run(["gh", "issue", "edit", str(DASHBOARD), "--add-label", label])
     elif state["batch"]["status"] == "running":
         orch.run(["gh", "issue", "edit", str(DASHBOARD), "--remove-label", label])

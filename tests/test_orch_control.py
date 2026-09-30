@@ -48,6 +48,10 @@ class OwnerControlTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.auth()
             self.comment[key] = old
+        self.comment["created_at"] = self.comment["updated_at"] = "2020-01-01T00:00:00Z"
+        with self.assertRaises(ValueError):
+            self.auth()
+        self.comment["created_at"] = self.comment["updated_at"] = "2026-09-30T11:59:00Z"
         self.issue["pull_request"] = {"url": "pr"}
         with self.assertRaises(ValueError):
             self.auth()
