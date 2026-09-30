@@ -1,7 +1,7 @@
 {
   "canonical_branch": "orch-sandbox/orch2-merge-proof",
   "canonical_pr": null,
-  "phase": "ORCH merge-path live proof sandbox \u2014 NOT canonical",
+  "phase": "ORCH merge-path live proof sandbox — NOT canonical",
   "trusted_authors": [
     "bimoool"
   ],
@@ -11,12 +11,12 @@
     "sandbox branch for ORCH merge-path live proof; delete after"
   ],
   "batch": {
-    "id": 0,
+    "id": 1,
     "limit": 1,
     "max_attempts": 8,
-    "status": "idle",
-    "approved_by": null,
-    "started_at": null,
+    "status": "running",
+    "approved_by": "bimoool",
+    "started_at": "2026-09-30 06:13 UTC",
     "completed": [],
     "attempts": []
   },
