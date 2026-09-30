@@ -505,3 +505,11 @@ def test_task_branch_sources():
     assert orch.task_branch(i) == "infra/x-y"
     assert orch.task_branch(i, "ISSUE: #7\nBRANCH: orch/issue-7\n") == "orch/issue-7"
     assert orch.task_branch(issue(8)) == "orch/issue-8"
+
+
+def test_done_result_without_confirmed_merge_is_not_done(repo, tmp_path):
+    # merge step failed/skipped (empty MERGED): the agent's DONE + green tests must not count.
+    gh = record_case(repo, tmp_path, result_text("done"), merged="")
+    assert gh.issues[7].state == "OPEN" and "status:blocked" in gh.issues[7].labels
+    assert "merge into base failed" in gh.comments[7][-1]
+    assert orch.load_state()["batch"]["completed"] == []

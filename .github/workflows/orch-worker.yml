@@ -105,7 +105,8 @@ jobs:
         id: branch
         run: |
           BR="orch/issue-$ISSUE"
-          mkdir -p /tmp/orch orch-out
+          mkdir -p /tmp/orch/lib orch-out
+          cp scripts/orch.py /tmp/orch/lib/orch.py   # gate logic always comes from base, not from a stale worker branch
           cp .github/task/current.md /tmp/orch/brief.md
           cp .github/task/current.md orch-out/brief.md
           echo "orch-out/" >> .git/info/exclude   # agent I/O dir: never committed, never cleaned
@@ -233,7 +234,7 @@ jobs:
           git diff --name-only "$BASE_SHA...HEAD" > /tmp/orch/changed.txt
           git diff "$BASE_SHA...HEAD" -- alembic/ > /tmp/orch/migrations.diff || true
           python - <<'PY' > /tmp/orch/forbidden.txt
-          import sys; sys.path.insert(0, "scripts"); import orch
+          import sys; sys.path.insert(0, "/tmp/orch/lib"); import orch
           changed = open("/tmp/orch/changed.txt").read().split()
           added = "\n".join(l for l in open("/tmp/orch/migrations.diff").read().splitlines() if l.startswith("+"))
           print("\n".join(orch.forbidden_changes(changed, added)))
@@ -262,7 +263,7 @@ jobs:
           FORBIDDEN: ${{ steps.verify.outputs.forbidden }}
         run: |
           PRE=$(python -c "
-          import os, sys; sys.path.insert(0, 'scripts'); import orch
+          import os, sys; sys.path.insert(0, '/tmp/orch/lib'); import orch
           r = orch.read_result('/tmp/orch/result.md')
           f = [x for x in os.environ['FORBIDDEN'].splitlines() if x.strip()]
           print('contract-failure' if r['error'] else orch.final_verdict(r['verdict'], os.environ['TESTS_OK'] == '1', int(os.environ['AHEAD'] or 0), f, None)[0])")
@@ -286,7 +287,7 @@ jobs:
           SUMMARY: ${{ steps.verify.outputs.summary || 'verification did not run' }}
           AHEAD: ${{ steps.push.outputs.commits_ahead || '0' }}
           FORBIDDEN: ${{ steps.verify.outputs.forbidden }}
-          MERGED: ${{ steps.merge.outputs.merged }}
+          MERGED: ${{ steps.merge.outputs.merged || '0' }} # merge step failed/skipped ⇒ not merged ⇒ never done
           SHA: ${{ steps.push.outputs.sha }}
         run: |
           if [ "$(git rev-parse --abbrev-ref HEAD)" != "$BASE" ]; then

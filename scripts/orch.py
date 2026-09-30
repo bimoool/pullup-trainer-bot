@@ -1223,7 +1223,8 @@ def cmd_worker_record(args, gh: Gh) -> int:
             args.tests_ok == "1",
             args.commits_ahead,
             forbidden,
-            None if args.merged == "" else args.merged == "1",
+            # With a result file (Actions) an unknown merge state means "not merged": never done.
+            None if args.merged == "" and not args.result_file else args.merged == "1",
         )
     label = {
         "done": "status:done",
