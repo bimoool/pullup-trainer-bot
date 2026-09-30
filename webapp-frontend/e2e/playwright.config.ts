@@ -11,6 +11,9 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8001";
 
+const MOBILE_SPEC = /mobile-layout\.spec\.ts$/;
+const MOBILE_WIDTHS = [320, 375, 390];
+
 export default defineConfig({
   testDir: "./scenarios",
   fullyParallel: true,
@@ -22,5 +25,14 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", testIgnore: MOBILE_SPEC, use: { ...devices["Desktop Chrome"] } },
+    // Узкий набор критичных мобильных проверок (issue #244): только
+    // mobile-layout.spec.ts, а не весь десктопный набор на каждой ширине.
+    ...MOBILE_WIDTHS.map((width) => ({
+      name: `mobile-${width}`,
+      testMatch: MOBILE_SPEC,
+      use: { ...devices["Pixel 5"], viewport: { width, height: 740 } },
+    })),
+  ],
 });

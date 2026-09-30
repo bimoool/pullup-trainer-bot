@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { collectConsoleErrors, collectUnexpectedApiFailures } from "./assertions";
 import { buildInitData, getTestBotToken } from "./initData";
-import { mockTelegramWebApp } from "./telegramMock";
+import { mockTelegramWebApp, type TelegramTheme } from "./telegramMock";
 
 /**
  * Общий вход в приложение для сценариев — подписывает initData на
@@ -17,13 +17,13 @@ import { mockTelegramWebApp } from "./telegramMock";
 export async function openAppAs(
   page: Page,
   telegramId: number,
-  options: { allowedApiStatuses?: number[]; firstName?: string } = {},
+  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme } = {},
 ): Promise<{ consoleErrors: string[]; apiFailures: string[] }> {
   const consoleErrors = collectConsoleErrors(page);
   const apiFailures = collectUnexpectedApiFailures(page, options.allowedApiStatuses ?? []);
 
   const initDataRaw = buildInitData({ id: telegramId, firstName: options.firstName ?? "E2E" }, getTestBotToken());
-  await mockTelegramWebApp(page, initDataRaw);
+  await mockTelegramWebApp(page, initDataRaw, options.theme);
   await page.goto("/");
 
   return { consoleErrors, apiFailures };
