@@ -99,7 +99,9 @@ jobs:
 
       - name: Guard (single in-progress issue, brief match, batch allows)
         id: guard
-        run: python scripts/orch.py worker-guard --issue "$ISSUE" --base "$BASE"
+        run: |
+          python scripts/orch_control.py pause-check --base "$BASE"
+          python scripts/orch.py worker-guard --issue "$ISSUE" --base "$BASE"
 
       - name: Prepare branch (continue a pushed branch, never duplicate)
         id: branch
@@ -304,6 +306,12 @@ jobs:
         run: |
           gh workflow run orch-planner.yml --ref "$BASE" -f command=plan -f apply=true -f dispatch_worker=true -f base="$BASE" -f depth="$((DEPTH + 1))"
           echo "planner dispatched (hop $((DEPTH + 1)))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dashboard result notification
+        if: always() && steps.guard.outcome == 'success'
+        run: |
+          { echo "Worker #$ISSUE on $BASE finished: $RUN_URL"; python scripts/orch.py batch show | head -1; } > /tmp/orch-dashboard.txt
+          gh issue comment 230 --body-file /tmp/orch-dashboard.txt
 
       - name: Summary
         if: always()

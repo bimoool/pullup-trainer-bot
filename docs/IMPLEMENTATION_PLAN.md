@@ -89,3 +89,8 @@ planner → worker → planner в Actions (`orch-*.yml`, `scripts/orch.py`), л�
 - Фронтенд: `tsc -b` + `vite build` чисто.
 - Браузерный QA (реальные FastAPI + Postgres + Chromium/Playwright): `builder-execution` (6 сценариев:
   reps/time/max/interval/смешанный/дубли), `journal-v2`, `analytics-v2` (4, включая 320/390 px).
+
+## ORCH-2 — GitHub owner UI
+
+Owner-comment dispatcher on main → existing planner/worker on develop/current.
+Controls, safety boundaries and sandbox proof: [ORCH_OWNER_UI.md](ORCH_OWNER_UI.md).

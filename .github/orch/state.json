@@ -8,7 +8,7 @@
   "scope_label": null,
   "dashboard_issue": 230,
   "owner_notes": [
-    "Approve the first live autonomous batch: `gh workflow run orch-planner.yml --ref develop/current -f command=start-batch`",
+    "Phone UI: `/orch start` or `/orch stop` in #230; `/orch approve` on a task. See docs/ORCH_OWNER_UI.md.",
     "`claude.yml` (@claude trigger) still runs from `main` and checks out `feature/multi-program`; the fix on develop/current only takes effect after an owner-approved main merge"
   ],
   "batch": {
