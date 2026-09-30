@@ -4,9 +4,9 @@ name: Orch Planner
 # product code. Dispatched by the owner (`gh workflow run orch-planner.yml --ref develop/current`)
 # or by orch-worker.yml after a finished task while a batch runs.
 #
-# Why workflow_dispatch and not issue/label events: issue-event workflows always run the file
-# from the DEFAULT branch (main), which automation must never touch; a dispatch runs this file
-# from develop/current. Dispatches made with GITHUB_TOKEN are the one event GitHub lets a
+# ORCH-2 issue-comment dispatcher is the only orchestration bridge on main. It dispatches
+# this planner on develop/current; owner-event independently verifies the owner comment.
+# Product code is never merged to main by orchestration. Dispatches made with GITHUB_TOKEN are the one event GitHub lets a
 # workflow trigger (pushes/comments by GITHUB_TOKEN trigger nothing → no accidental loops).
 #
 # Loop guards: batch limit (5 completed / 8 attempts, .github/orch/state.json), one
