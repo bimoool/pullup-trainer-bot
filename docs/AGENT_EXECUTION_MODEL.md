@@ -246,3 +246,8 @@ job is skipped (the skipped run registers it). A *new* branch push does not matc
 new sandbox needs one commit that touches the workflow files. claude-code-action refuses bot
 actors unless `allowed_bots: github-actions` is set. Issue templates and `claude.yml` (@claude)
 are read from `main` only — they apply after an owner-approved main merge.
+
+### ORCH-2 owner UI
+
+Use `/orch start` / `/orch stop` on #230 or `/orch approve` on a task.
+See [ORCH_OWNER_UI.md](ORCH_OWNER_UI.md). GitHub runs independently of chat/watchers.

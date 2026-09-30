@@ -4,9 +4,9 @@ name: Orch Planner
 # product code. Dispatched by the owner (`gh workflow run orch-planner.yml --ref develop/current`)
 # or by orch-worker.yml after a finished task while a batch runs.
 #
-# Why workflow_dispatch and not issue/label events: issue-event workflows always run the file
-# from the DEFAULT branch (main), which automation must never touch; a dispatch runs this file
-# from develop/current. Dispatches made with GITHUB_TOKEN are the one event GitHub lets a
+# ORCH-2 issue-comment dispatcher is the only orchestration bridge on main. It dispatches
+# this planner on develop/current; owner-event independently verifies the owner comment.
+# Product code is never merged to main by orchestration. Dispatches made with GITHUB_TOKEN are the one event GitHub lets a
 # workflow trigger (pushes/comments by GITHUB_TOKEN trigger nothing → no accidental loops).
 #
 # Loop guards: batch limit (5 completed / 8 attempts, .github/orch/state.json), one
@@ -25,8 +25,11 @@ on:
       command:
         description: "plan | start-batch | stop-batch | status"
         type: choice
-        options: [plan, start-batch, stop-batch, status]
+        options: [plan, start-batch, stop-batch, status, owner-event]
         default: plan
+      owner_comment_id:
+        description: "Internal: owner comment id, independently verified through GitHub API"
+        default: ""
       apply:
         description: "plan: apply the decision (false = dry run, changes nothing)"
         type: boolean
@@ -70,9 +73,14 @@ jobs:
       COMMAND: ${{ inputs.command }}
       DEPTH: ${{ inputs.depth }}
       LIMIT: ${{ inputs.limit }}
+      OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
     steps:
       - name: Validate inputs (no free text reaches a shell unquoted)
         run: |
+          if [ "$COMMAND" = owner-event ]; then
+            [[ "$GITHUB_REF" = refs/heads/develop/current ]] || exit 1
+            [[ "$BASE" = develop/current || "$BASE" = orch-sandbox/orch2-ui-proof ]] || exit 1
+          fi
           [[ "$BASE" =~ ^(develop/current|orch-sandbox/[A-Za-z0-9._-]+)$ ]] || { echo "::error::base '$BASE' not allowed"; exit 1; }
           [[ "$DEPTH" =~ ^[0-9]{1,2}$ ]] || { echo "::error::bad depth"; exit 1; }
           [[ "$LIMIT" =~ ^[1-9]$ ]] || { echo "::error::limit must be 1..9"; exit 1; }
@@ -99,10 +107,14 @@ jobs:
         id: plan
         run: |
           case "$COMMAND" in
+            owner-event) python scripts/orch_control.py event --comment-id "$OWNER_COMMENT_ID" --base "$BASE" ;;
             start-batch) python scripts/orch.py batch start --limit "$LIMIT" --by "${{ github.actor }}" --publish --push ;;
             stop-batch)  python scripts/orch.py batch stop --publish --push ;;
             status)      python scripts/orch.py status --publish --push ;;
             plan)
+              if ! python scripts/orch_control.py pause-check --base "$BASE"; then
+                echo "action=owner-paused" >> "$GITHUB_OUTPUT"; exit 0
+              fi
               if [ "${{ inputs.apply }}" = "true" ]; then
                 python scripts/orch.py plan --apply --publish --push
               else
@@ -111,13 +123,18 @@ jobs:
           esac
 
       - name: Dispatch worker
-        if: inputs.command == 'plan' && inputs.apply && inputs.dispatch_worker && steps.plan.outputs.action == 'select' && steps.plan.outputs.issue != ''
+        if: (inputs.command == 'plan' || inputs.command == 'owner-event') && inputs.apply && inputs.dispatch_worker && steps.plan.outputs.action == 'select' && steps.plan.outputs.issue != ''
         env:
           ISSUE: ${{ steps.plan.outputs.issue }}
         run: |
           [[ "$ISSUE" =~ ^[0-9]+$ ]] || exit 1
           gh workflow run orch-worker.yml --ref "$BASE" -f issue="$ISSUE" -f base="$BASE" -f depth="$((DEPTH + 1))"
           echo "dispatched worker for #$ISSUE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify owner-command failure
+        if: failure() && inputs.command == 'owner-event'
+        run: |
+          gh issue comment 230 --body "Owner command failed; inspect https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. No success is implied by dispatch acknowledgement."
 
       - name: Summary
         if: always()
