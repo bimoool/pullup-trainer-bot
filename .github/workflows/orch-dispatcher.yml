@@ -1,0 +1,48 @@
+name: Orch Owner Dispatcher
+# Must exist on default branch. Never checks out code or accesses product/deploy secrets.
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  issues: write
+  actions: write
+concurrency:
+  group: orch-owner-dispatcher
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'bimoool/pullup-trainer-bot' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner &&
+      github.event.comment.user.login == github.repository_owner &&
+      !github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/orch ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea9 # v7
+        with:
+          script: |
+            const command = context.payload.comment.body.trim();
+            const dashboard = context.issue.number === 230;
+            const canonical = ['/orch start', '/orch stop'];
+            const sandbox = ['/orch sandbox-start', '/orch sandbox-stop'];
+            const allowed = dashboard
+              ? [...canonical, ...sandbox].includes(command)
+              : command === '/orch approve';
+            if (!allowed || context.payload.issue.state !== 'open') {
+              core.setFailed('Unsupported command/location. Use start/stop on #230 or approve on an open task.');
+              return;
+            }
+            const base = sandbox.includes(command) ? 'orch-sandbox/orch2-ui-proof' : 'develop/current';
+            await github.rest.actions.createWorkflowDispatch({
+              ...context.repo, workflow_id: 'orch-planner.yml', ref: 'develop/current',
+              inputs: {command: 'owner-event', owner_comment_id: String(context.payload.comment.id),
+                base, apply: 'true', dispatch_worker: 'true'}
+            });
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: 230,
+              body: `🕹️ Owner request ${context.payload.comment.html_url} forwarded to planner on \`develop/current\` (target \`${base}\`). This is dispatch acknowledgement, not completion.\n\n[Dispatcher run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+            });
