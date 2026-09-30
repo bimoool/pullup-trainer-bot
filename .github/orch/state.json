@@ -14,11 +14,15 @@
     "id": 1,
     "limit": 1,
     "max_attempts": 8,
-    "status": "running",
+    "status": "owner-review",
     "approved_by": "bimoool",
     "started_at": "2026-09-30 07:08 UTC",
-    "completed": [],
-    "attempts": []
+    "completed": [
+      241
+    ],
+    "attempts": [
+      241
+    ]
   },
   "last_owner_comment_id": 5906047619
 }
