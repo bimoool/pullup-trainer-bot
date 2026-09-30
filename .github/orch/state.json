@@ -11,13 +11,14 @@
     "Isolated ORCH-2 proof; /orch sandbox-start on #230; one task only."
   ],
   "batch": {
-    "id": 0,
+    "id": 1,
     "limit": 1,
     "max_attempts": 8,
-    "status": "idle",
-    "approved_by": null,
-    "started_at": null,
+    "status": "running",
+    "approved_by": "bimoool",
+    "started_at": "2026-09-30 07:08 UTC",
     "completed": [],
     "attempts": []
-  }
+  },
+  "last_owner_comment_id": 5906047619
 }
