@@ -28,7 +28,8 @@ test("live-сессия (v2): комплекс из 3 упражнений, за
   // Упражнение 1 из 3.
   await page.getByRole("button", { name: "Готов" }).click();
   await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await page.getByLabel("Результат").fill("10");
+  await expect(page.getByTestId("result-hint")).toContainText("Цель:");
+  await page.getByLabel("Повторений").fill("10");
   await page.getByRole("button", { name: "Готово" }).click();
 
   // Один подход на упражнение -> сразу get_ready следующего упражнения
@@ -39,7 +40,8 @@ test("live-сессия (v2): комплекс из 3 упражнений, за
   // Упражнение 2 из 3.
   await page.getByRole("button", { name: "Готов" }).click();
   await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await page.getByLabel("Результат").fill("10");
+  await expect(page.getByTestId("result-hint")).toContainText("Цель:");
+  await page.getByLabel("Повторений").fill("10");
   await page.getByRole("button", { name: "Готово" }).click();
 
   // Упражнение 3 не трогаем — завершаем сессию досрочно.

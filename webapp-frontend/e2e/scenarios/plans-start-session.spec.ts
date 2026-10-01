@@ -45,7 +45,8 @@ test.fixme("«Планы» → Подтягивания → Начать → liv
   // --- Записать реальный подход ---
   await page.getByRole("button", { name: "Готов", exact: true }).click();
   await page.waitForTimeout(500);
-  await page.getByRole("textbox", { name: "Результат" }).fill("10");
+  await expect(page.getByTestId("result-hint")).toContainText("Цель:");
+  await page.getByRole("textbox", { name: "Повторений" }).fill("10");
 
   const setResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/sets:batch") && response.status() === 200,

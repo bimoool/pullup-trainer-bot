@@ -100,3 +100,24 @@ export function describeBlockPlan(
   }
   return values.map((value) => (unit === "s" ? formatSecondsShort(value) : formatNumber(value))).join(" · ");
 }
+
+/** Подпись поля результата в живой сессии и подсказка с целью подхода.
+ * «Результат» — только запасной вариант для неизвестной единицы; у max-блока
+ * цели-подсказки нет (не выдумываем). */
+export function resultInputLabel(
+  protocolType: ProtocolType | null,
+  target: LiveSetTargetResponse | null,
+): { label: string; hint: string | null } {
+  const planText = target !== null ? formatTarget(target) : null;
+  const hint = planText !== null ? `Цель: ${planText}` : null;
+  if (protocolType === "max_effort") {
+    return { label: "Повторений", hint: null };
+  }
+  if (protocolType === "time_sets" || target?.unit === "s") {
+    return { label: "Секунды", hint };
+  }
+  if (target?.unit === "reps") {
+    return { label: "Повторений", hint };
+  }
+  return { label: "Результат", hint };
+}

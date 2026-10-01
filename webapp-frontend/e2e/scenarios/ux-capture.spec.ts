@@ -81,7 +81,7 @@ for (const width of WIDTHS) {
     await page.getByRole("button", { name: "Готов", exact: true }).click();
     await page.getByText("Пошёл").waitFor();
     await shot(page, width, "23_live_set_running");
-    await page.getByLabel(/Результат/).fill("8");
+    await page.getByLabel("Повторений").fill("8");
     await clickAndSync(page, "Готово", "/sets:batch");
     await clickAndSync(page, "Пропустить отдых", "/phase/next");
     await playSets(page, ["8"]);
