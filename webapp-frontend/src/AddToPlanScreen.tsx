@@ -7,7 +7,9 @@ import { useBackButton } from "./useBackButton";
 
 type Props = {
   initDataRaw: string;
-  workoutId: number;
+  /** Ровно одно из workoutId / exerciseId (Workout или библиотечное упражнение). */
+  workoutId?: number;
+  exerciseId?: number;
   workoutTitle: string;
   onBack: () => void;
   /** Вызывается после успешного добавления — caller закрывает весь
@@ -41,7 +43,7 @@ type LoadState =
  * DayPicker (D3) — вынесен в отдельный компонент, переиспользуется
  * MovePlanItemScreen.tsx, разметка/стили не изменены.
  */
-export function AddToPlanScreen({ initDataRaw, workoutId, workoutTitle, onBack, onSuccess }: Props) {
+export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTitle, onBack, onSuccess }: Props) {
   const [loadState, setLoadState] = useState<LoadState>({ phase: "loading" });
   const [selectedDay, setSelectedDay] = useState<number | "free_pool" | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -81,7 +83,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, workoutTitle, onBack, 
     setSubmitError(null);
     try {
       await createPlanItem(initDataRaw, {
-        complex_id: workoutId,
+        ...(exerciseId !== undefined ? { exercise_id: exerciseId } : { complex_id: workoutId }),
         plan_week_id: loadState.planWeekId,
         day_of_week: selectedDay === "free_pool" ? null : selectedDay,
         count_per_week: 1,

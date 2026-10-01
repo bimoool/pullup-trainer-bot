@@ -24,10 +24,10 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Sticky header with search pill + «+» | H1, G4; HO 2; RM §0 | HomeScreen.tsx (no header actions) | MISSING | no search, no quick actions | sticky «Что потренируем сегодня?» + «+» | #254 | — |
-| Search screen: live filter, «FOUND N», clear | S1, S4; RM §3; FI F4 | none | MISSING | no search | search over programs, own workouts, exercises | #254 | — |
-| Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | none | MISSING | — | category chips (#254), favorites chip (#272); equipment: DOMAIN — exercises have no equipment field | #254, #272 | — |
-| Category rows (horizontal carousels, «N Workouts») | H2–H4, H13; HO 3 | one «Курсы» program row | PARTIAL | no grouping by category | programs grouped by `Program.category` rows | #254 | — |
+| Sticky header with search pill + «+» | H1, G4; HO 2; RM §0 | HomeScreen.tsx sticky header (search pill + «+») | DONE | — | sticky «Что потренируем сегодня?» + «+» | #254 | crimpd-parity.spec.ts «Home» |
+| Search screen: live filter, «FOUND N», clear | S1, S4; RM §3; FI F4 | SearchScreen.tsx (client-side) | DONE | — | search over programs, own workouts, exercises | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
+| Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | category chips on Search | PARTIAL | favorites chip (#272) | category chips (#254, done), favorites chip (#272); equipment: DOMAIN — exercises have no equipment field | #254, #272 | crimpd-parity.spec.ts «Home» (category chips) |
+| Category rows (horizontal carousels, «N Workouts») | H2–H4, H13; HO 3 | program rows grouped by category («Другое» for none) | DONE | — | programs grouped by `Program.category` rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
 | Category screen (info, Featured / All) | H4; d/category_all_tab | none | MISSING | — | category row → filtered search (Featured tab: DOMAIN — no editorial flag yet; collections cover curation) | #254, #271 | — |
 | Featured playlists carousel | H5; HO 4 | none | MISSING | no collections model | «Подборки» row from curated collections | #271 | — |
 | «Create Custom Workouts» banner | H6 | «Создать» button on Главная | DONE | — | — | — | home-discovery.spec.ts |
@@ -36,7 +36,7 @@ any merge into `develop/current`.
 | Favorite Workouts row | H9 | none | MISSING | no favorites | «Избранное» row | #272 | — |
 | «Start Open Climbing Session» banner | H10; J9 | — | DOMAIN-EQUIVALENT | climbing-specific | free activity logging + Start from Workout Detail cover it | #263, #273 | — |
 | Assessment Tests carousel | H11 | none (baseline only at onboarding) | MISSING | no tests surface | «Тесты» row on Главная + hub | #260 | — |
-| «+» sheet (session / log / create / cancel) | H12; d/plus_sheet; FI F2 | none | MISSING | — | sheet with working actions only; log entries added by #263 | #254, #263 | — |
+| «+» sheet (session / log / create / cancel) | H12; d/plus_sheet; FI F2 | «+» sheet in Home header | PARTIAL | log entries (#263) | sheet with working actions only; log entries added by #263 | #254, #263 | crimpd-parity.spec.ts «Home» (create / today / cancel) |
 | No plan/streak widget on Home | H14 | Home has no week widget | DONE | — | (our skill once planned a week widget; Crimpd has none — Plans tab owns the week) | — | crimpd-parity Baseline |
 
 ## Workout Detail
