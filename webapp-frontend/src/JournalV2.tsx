@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { effortWithWord } from "./effortScale";
 import { describeJournalBlock, formatSessionDateTime } from "./journalFormat";
+import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
 
 /** Карточка завершённой TrainingSession (Журнал v2). Каждый блок сессии
@@ -69,18 +70,24 @@ export function JournalV2Footer({
  * нет. Telegram BackButton и видимая кнопка "← Назад" вызывают один и тот
  * же onBack (единая навигация экрана, не вторая система). */
 export function JournalV2Detail({
-  initDataRaw, session, onBack, onDeleted,
+  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned,
 }: {
   initDataRaw: string;
   session: SessionResponseV2;
+  timeZone: string;
   onBack: () => void;
   onDeleted: (sessionId: number) => void;
+  /** Запись изменена (#262) — экран перезагружает Журнал. */
+  onEdited: () => void;
+  /** Создан клон на дату "YYYY-MM-DD" (#262). */
+  onCloned: (date: string) => void;
 }) {
+  const [mode, setMode] = useState<"view" | "edit" | "clone">("view");
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteInFlight = useRef(false);
 
-  useBackButton(onBack, [onBack]);
+  useBackButton(mode === "view" ? onBack : () => setMode("view"), [mode, onBack]);
 
   async function handleDelete() {
     if (deleteInFlight.current) {
@@ -100,6 +107,23 @@ export function JournalV2Detail({
       deleteInFlight.current = false;
       setDeleting(false);
     }
+  }
+
+  if (mode === "edit") {
+    return (
+      <JournalV2EditForm
+        initDataRaw={initDataRaw} session={session} timeZone={timeZone}
+        onCancel={() => setMode("view")} onSaved={onEdited}
+      />
+    );
+  }
+  if (mode === "clone") {
+    return (
+      <JournalV2CloneForm
+        initDataRaw={initDataRaw} session={session} timeZone={timeZone}
+        onCancel={() => setMode("view")} onCloned={onCloned}
+      />
+    );
   }
 
   return (
@@ -133,6 +157,16 @@ export function JournalV2Detail({
       )}
       {session.comment && <p className="hint" data-testid="journal-workout-comment">Комментарий: {session.comment}</p>}
       {deleteError !== null && <p className="gap-banner">{deleteError}</p>}
+      {session.can_edit && (
+        <>
+          <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("edit")}>
+            ✏️ Изменить
+          </Button>
+          <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("clone")}>
+            ⧉ Повторить (клонировать)
+          </Button>
+        </>
+      )}
       {session.can_delete && (
         <Button className="action-button" size="l" stretched mode="outline" loading={deleting} onClick={() => void handleDelete()}>
           🗑 Удалить
