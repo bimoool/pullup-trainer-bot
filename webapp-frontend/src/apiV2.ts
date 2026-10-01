@@ -767,8 +767,27 @@ export interface AnalyticsExerciseV2 {
   panels: AnalyticsPanelV2[];
 }
 
+export interface AnalyticsMetricWeekV2 {
+  /** Понедельник недели (локальная дата пользователя). */
+  week_start: string;
+  workouts: number;
+  /** Целые минуты; тренировки без валидной длительности не входят. */
+  minutes: number;
+}
+
+export interface AnalyticsMetricsV2 {
+  date_from: string;
+  date_to: string;
+  weeks: AnalyticsMetricWeekV2[];
+  total_workouts: number;
+  total_minutes: number;
+  /** Тренировки диапазона без данных о времени (в минуты не входят). */
+  without_duration: number;
+}
+
 export interface TrainingAnalyticsV2 {
   timezone: string;
+  metrics: AnalyticsMetricsV2;
   activity: {
     sessions_last_30_days: number;
     active_days_last_30_days: number;
@@ -777,6 +796,10 @@ export interface TrainingAnalyticsV2 {
   exercises: AnalyticsExerciseV2[];
 }
 
-export async function fetchTrainingAnalytics(initDataRaw: string): Promise<TrainingAnalyticsV2> {
-  return apiV2Get<TrainingAnalyticsV2>("/api/v2/analytics/training", initDataRaw);
+/** Без range — сервер берёт последние 30 локальных дней (пресет «1 мес»). */
+export async function fetchTrainingAnalytics(
+  initDataRaw: string, range?: { from: string; to: string },
+): Promise<TrainingAnalyticsV2> {
+  const query = range ? `?from=${range.from}&to=${range.to}` : "";
+  return apiV2Get<TrainingAnalyticsV2>(`/api/v2/analytics/training${query}`, initDataRaw);
 }

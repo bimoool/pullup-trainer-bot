@@ -26,6 +26,8 @@ seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002
 seed analytics_v2 910003
+seed analytics_metric 995001
+seed analytics_metric 995002
 seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003

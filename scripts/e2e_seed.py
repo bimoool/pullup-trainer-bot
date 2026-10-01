@@ -938,6 +938,23 @@ async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_analytics_metric(session: AsyncSession, telegram_id: int) -> None:
+    """#259 — метрика «Тренировки / Минуты» (часовой пояс по умолчанию, МСК):
+      * 3 дня назад — 40 мин, 5 дней назад — 30 мин (обе в окне 1 мес);
+      * 6 дней назад — без completed_at («без данных о времени»);
+      * 50 дней назад — 60 мин (виден только в 3 мес и в «Свой»).
+    1 мес: 3 тренировки / 70 мин / 1 без времени; 3 мес: 4 / 130 / 1."""
+    user = await _onboard(session, telegram_id)
+    now = datetime.now(UTC)
+    for days_ago, minutes in ((3, 40), (5, 30), (6, None), (50, 60)):
+        performed_at = now - timedelta(days=days_ago)
+        session.add(TrainingSession(
+            user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED, performed_at=performed_at,
+            completed_at=None if minutes is None else performed_at + timedelta(minutes=minutes),
+        ))
+    await session.flush()
+
+
 async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     """G3 — Главная/«Мои тренировки»: у пользователя две своих Workout (одна
     с длинным русским названием и тремя упражнениями, одна пустая) и
@@ -1078,6 +1095,7 @@ SCENARIOS = {
     "home_discovery": seed_home_discovery,
     "workout_detail": seed_workout_detail,
     "analytics_v2": seed_analytics_v2,
+    "analytics_metric": seed_analytics_metric,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
     "builder_workouts": seed_builder_workouts,

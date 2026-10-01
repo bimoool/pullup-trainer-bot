@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { clickAndSync } from "../fixtures/builderFlow";
+import { clickAndSync, noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
@@ -52,7 +52,9 @@ for (const width of WIDTHS) {
 
       // Аналитика: переключатель «Тренировки | Программа», по умолчанию «Тренировки».
       await openTab(page, "Аналитика");
-      await expect(page.getByRole("tab", { name: "Тренировки", selected: true })).toBeVisible();
+      await expect(
+        page.getByRole("tablist", { name: "Раздел аналитики" }).getByRole("tab", { name: "Тренировки", selected: true }),
+      ).toBeVisible();
       await expectNoHorizontalOverflow(page, "Аналитика");
 
       await openTab(page, "Профиль");
@@ -563,6 +565,106 @@ for (const width of WIDTHS) {
       await expect(next).toBeDisabled();
 
       expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
+}
+
+// --- Analytics metric (#259): «Тренировки | Минуты», период 1 мес / 3 мес / Свой, недельные столбики ---
+// Seed: scripts/e2e_seed.py analytics_metric — 3 и 5 дней назад по 40 и 30 мин, 6 дней назад без
+// времени, 50 дней назад 60 мин. 1 мес: 3 тренировки / 70 мин / 1 без времени; 3 мес: 4 / 130 / 1.
+// Только чтение — retry безопасен.
+const METRIC_USERS = { 320: { id: 995_001, theme: "light" }, 390: { id: 995_002, theme: "dark" } } as const;
+
+function mskDaysAgo(days: number): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(new Date(Date.now() - days * 86_400_000));
+}
+
+/** Значения столбиков из aria-label графика: «… (с понедельника): 28.09: 2, 05.10: 0». */
+async function chartValues(page: Page): Promise<number[]> {
+  const label = (await page.locator(".analytics-weeks-chart").getAttribute("aria-label")) ?? "";
+  return label.split("): ")[1].split(", ").map((entry) => Number(entry.split(": ")[1]));
+}
+
+for (const width of WIDTHS) {
+  const { id, theme } = METRIC_USERS[width as 320 | 390];
+  test.describe(`Analytics metric @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("по умолчанию 1 мес / Тренировки; переключение метрики, периода и «Свой»", async ({ page }) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, id, { theme });
+      await openTab(page, "Аналитика");
+      const card = page.getByTestId("analytics-metrics");
+      const metricTab = (name: string) => card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name });
+      const rangeTab = (name: string) => card.getByRole("tablist", { name: "Период" }).getByRole("tab", { name });
+      const total = page.getByTestId("analytics-metric-total");
+
+      // Значения по умолчанию.
+      await expect(metricTab("Тренировки")).toHaveAttribute("aria-selected", "true");
+      await expect(rangeTab("1 мес")).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator(".analytics-weeks-chart")).toHaveAttribute("data-metric", "workouts");
+      await expect(total).toContainText("Всего тренировок: 3");
+      expect((await chartValues(page)).reduce((a, b) => a + b, 0)).toBe(3);
+      await expect(page.getByTestId("analytics-no-duration")).toHaveCount(0); // только в «Минуты»
+      await expect(page.getByTestId("analytics-custom-range")).toHaveCount(0);
+      await expectNoHorizontalOverflow(page, "Аналитика: 1 мес / Тренировки");
+
+      // Минуты: сумма по неделям = 70, тренировка без времени не в минутах, но названа.
+      await metricTab("Минуты").click();
+      await expect(page.locator(".analytics-weeks-chart")).toHaveAttribute("data-metric", "minutes");
+      expect((await chartValues(page)).reduce((a, b) => a + b, 0)).toBe(70);
+      await expect(total).toContainText("Всего минут: 1 ч 10 мин");
+      await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
+      await expectNoHorizontalOverflow(page, "Аналитика: Минуты");
+
+      // (i): определения обеих метрик, закрывается.
+      await card.getByRole("button", { name: "Что значат метрики" }).click();
+      const sheet = page.getByRole("dialog", { name: "Что значат метрики" });
+      await expect(sheet).toContainText("Тренировки — сколько завершённых");
+      await expect(sheet).toContainText("Минуты — сумма длительностей");
+      await expect(sheet).toContainText("от 1 минуты до 6 часов");
+      await expectNoHorizontalOverflow(page, "Аналитика: шторка определений");
+      await sheet.getByRole("button", { name: "Закрыть" }).click();
+      await expect(sheet).toHaveCount(0);
+
+      // 3 мес: запрос с from/to; недели начинаются с понедельника; 130 мин, 4 тренировки.
+      const response = page.waitForResponse((r) => r.url().includes("/api/v2/analytics/training?from="));
+      await rangeTab("3 мес").click();
+      const body = await (await response).json();
+      expect(body.metrics.weeks.length).toBeGreaterThanOrEqual(13);
+      for (const week of body.metrics.weeks as { week_start: string }[]) {
+        expect(new Date(`${week.week_start}T00:00:00Z`).getUTCDay()).toBe(1);
+      }
+      await expect(total).toContainText("Всего минут: 2 ч 10 мин");
+      await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
+      await metricTab("Тренировки").click();
+      await expect(total).toContainText("Всего тренировок: 4");
+      await expectNoHorizontalOverflow(page, "Аналитика: 3 мес");
+
+      // Свой: даты + «Применить»; перевёрнутый диапазон не применяется.
+      await rangeTab("Свой").click();
+      const custom = page.getByTestId("analytics-custom-range");
+      const apply = custom.getByRole("button", { name: "Применить" });
+      await expectNoHorizontalOverflow(page, "Аналитика: Свой");
+      await custom.getByLabel("С", { exact: true }).fill(mskDaysAgo(51));
+      await custom.getByLabel("По", { exact: true }).fill(mskDaysAgo(49));
+      await expect(apply).toBeEnabled();
+      await custom.getByLabel("С", { exact: true }).fill(mskDaysAgo(40)); // позже «По»
+      await expect(apply).toBeDisabled();
+      await expect(custom).toContainText("Начало позже конца");
+      await custom.getByLabel("С", { exact: true }).fill(mskDaysAgo(51));
+      await apply.click();
+      await expect(total).toContainText("Всего тренировок: 1");
+      await metricTab("Минуты").click();
+      await expect(total).toContainText("Всего минут: 1 ч");
+      await expect(page.getByTestId("analytics-no-duration")).toHaveCount(0); // у этой тренировки время есть
+
+      // Назад на «1 мес» — снова 70 минут.
+      await rangeTab("1 мес").click();
+      await expect(total).toContainText("Всего минут: 1 ч 10 мин");
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });
   });
