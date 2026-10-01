@@ -212,6 +212,9 @@ class PlanItemResponse(BaseModel):
     # пользователя уже ownership-safe через сам PlanItem (принадлежит его
     # TrainingPlan), лишний backend detail фронтенду не нужен.
     complex_source_type: str | None = None
+    # issue #258 — сколько раз выполнен на своей неделе (завершённые сессии
+    # через SessionPlanItem, дата в часовом поясе пользователя). Не колонка.
+    done_count: int = 0
 
 
 class PlanWeekResponse(BaseModel):

@@ -82,3 +82,21 @@ def plan_week_start_date(plan_created_at: date, week_number: int) -> date:
     (её start_date)."""
     origin_monday = _monday_on_or_before(plan_created_at)
     return origin_monday + timedelta(weeks=week_number - 1)
+
+
+def count_done_per_plan_item(
+    week_start_by_item: dict[int, date], performed_dates: list[tuple[int, date]],
+) -> dict[int, int]:
+    """Сколько раз каждый PlanItem выполнен на СВОЕЙ неделе (issue #258).
+    week_start_by_item — plan_item_id -> понедельник его PlanWeek;
+    performed_dates — (plan_item_id, локальная дата завершённой сессии) по
+    одной паре на сессию (SessionPlanItem уникален по (session, plan_item),
+    поэтому смешанная сессия считается ровно один раз на каждый свой item).
+    Чистая функция: перевод performed_at в часовой пояс пользователя — на
+    вызывающем."""
+    done = {item_id: 0 for item_id in week_start_by_item}
+    for item_id, local_date in performed_dates:
+        start = week_start_by_item.get(item_id)
+        if start is not None and start <= local_date < start + timedelta(days=7):
+            done[item_id] += 1
+    return done
