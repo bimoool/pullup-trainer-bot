@@ -9,10 +9,10 @@ URL: https://github.com/bimoool/pullup-trainer-bot/issues/249
 PRIORITY: p1
 TYPE: qa
 BASE BRANCH: develop/current
-BASE SHA: 3c0361eaf4444a6e7540bb4e5371ef29ffd84d34
+BASE SHA: 37741f98a8afeaf4bcf71c77cd6a95d23ca57837
 BRANCH: orch/issue-249
-BATCH: 4 (task 1/5)
-SELECTED AT: 2026-10-01 04:45 UTC
+BATCH: 5 (task 1/5)
+SELECTED AT: 2026-10-01 05:05 UTC
 
 ## Goal
 
