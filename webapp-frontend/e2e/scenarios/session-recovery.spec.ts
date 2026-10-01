@@ -81,10 +81,10 @@ test("активная тренировка: фон/передний план, r
   expect(restAfterReload).toBeLessThanOrEqual(restForeground);
   expect(restAfterReload).toBeLessThan(restBefore - 3);
 
-  // --- подходы не потеряны и не задвоены: продолжаем с подхода 2 ---
-  await expect(page.getByText(/Подход 2\/3/)).toBeVisible();
+  // --- подходы не потеряны и не задвоены: после отдыха продолжаем с подхода 2 ---
   // Действие после reload уходит в ту же сессию, что была создана при старте.
   await clickAndSync(page, "Пропустить отдых", `/api/v2/sessions/live/${sessionId}/phase/next`);
+  await expect(page.getByText(/Подход 2\/3/)).toBeVisible();
   await playSets(page, ["7", "6"]);
   await clickAndSync(page, "Завершить", "/complete");
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
