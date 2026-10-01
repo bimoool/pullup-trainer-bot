@@ -44,7 +44,7 @@ from app.domain.journal_calendar import (
     month_date_range,
     parse_month,
 )
-from app.domain.multi_program import MetricType, SessionSource, WeekPhase
+from app.domain.multi_program import MetricType, SessionSource, WeekPhase, count_done_per_plan_item
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.live_session import (
@@ -150,7 +150,7 @@ def _program_inclusion_response(inclusion: ProgramInclusion) -> ProgramInclusion
 
 def _plan_item_response(
     item: PlanItem, complex_name_by_id: dict[int, str] | None = None,
-    complex_source_type_by_id: dict[int, str] | None = None,
+    complex_source_type_by_id: dict[int, str] | None = None, done_count: int = 0,
 ) -> PlanItemResponse:
     return PlanItemResponse(
         id=item.id, exercise_id=item.exercise_id, complex_id=item.complex_id,
@@ -161,6 +161,7 @@ def _plan_item_response(
         complex_source_type=(
             (complex_source_type_by_id or {}).get(item.complex_id) if item.complex_id is not None else None
         ),
+        done_count=done_count,
     )
 
 
@@ -680,12 +681,29 @@ async def get_plan(
     # Phase D2 (issue #188) — тот же уже полученный complexes список, ни
     # одного дополнительного запроса.
     complex_source_type_by_id = {complex_.id: complex_.source_type for complex_ in complexes}
+    # issue #258 — счётчики «сделано» на неделю каждого item, в часовом поясе
+    # пользователя; не хранимый статус, считается из SessionPlanItem.
+    tz = resolve_timezone(user.timezone)
+    week_start_by_id = {week.id: week.start_date for week in plan_weeks}
+    week_start_by_item = {
+        item.id: week_start_by_id[item.plan_week_id]
+        for item in plan_items if item.plan_week_id in week_start_by_id
+    }
+    performed = await plans.list_completed_session_times_by_plan_item(
+        user_id=user.id, plan_item_ids=list(week_start_by_item),
+    )
+    done_by_item = count_done_per_plan_item(
+        week_start_by_item, [(item_id, at.astimezone(tz).date()) for item_id, at in performed],
+    )
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
             program_inclusions=[_program_inclusion_response(inclusion) for inclusion in inclusions],
             plan_items=[
-                _plan_item_response(item, complex_name_by_id, complex_source_type_by_id) for item in plan_items
+                _plan_item_response(
+                    item, complex_name_by_id, complex_source_type_by_id, done_by_item.get(item.id, 0),
+                )
+                for item in plan_items
             ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
         ),

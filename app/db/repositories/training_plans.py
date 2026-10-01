@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +10,10 @@ from app.db.models_program import (
     PlanWeek,
     ProgramInclusion,
     ProgramItem,
+    SessionPlanItem,
+    SessionStatus,
     TrainingPlan,
+    TrainingSession,
 )
 from app.domain.multi_program import WeekPhase
 
@@ -376,3 +381,22 @@ class TrainingPlanRepository:
         if items:
             await self._session.flush()
         return items
+
+    async def list_completed_session_times_by_plan_item(
+        self, *, user_id: int, plan_item_ids: list[int],
+    ) -> list[tuple[int, datetime]]:
+        """(plan_item_id, performed_at) по одной паре на ЗАВЕРШЁННУЮ сессию
+        пользователя, связанную через SessionPlanItem (issue #258). Недоделанные
+        (STARTED) сессии не считаются; чужие сессии — тоже (user_id)."""
+        if not plan_item_ids:
+            return []
+        result = await self._session.execute(
+            select(SessionPlanItem.plan_item_id, TrainingSession.performed_at)
+            .join(TrainingSession, TrainingSession.id == SessionPlanItem.session_id)
+            .where(
+                SessionPlanItem.plan_item_id.in_(plan_item_ids),
+                TrainingSession.user_id == user_id,
+                TrainingSession.status == SessionStatus.COMPLETED,
+            ),
+        )
+        return [(row[0], row[1]) for row in result.all()]

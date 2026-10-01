@@ -78,11 +78,11 @@ any merge into `develop/current`.
 | Skill Templates grid | P6 | «Курсы» on Главная | PARTIAL | programs not shown on Plans, no preview | programs = templates; schedule preview | #266 | — |
 | Template detail: level, hours/week, week schedule, phases | P7; d/plan_template_schedule | ProgramDetailScreen (name/goal only) | MISSING | no content preview | schedule preview from ProgramItem/config | #266 | — |
 | Add template/workout to plan | P7, W5 | program-inclusions, plan-items | DONE | — | — | — | golden-journey.spec.ts, plans-add-exercise.spec.ts |
-| Week stepper with phase chip and dates | P9 | vertical list of weeks | MISSING | no navigation | ‹ Неделя · даты › | #258 | — |
-| Per-row done counters «0/1», week progress | P3, P9–P10 | none (PlanItem has no status) | MISSING | — | done/planned per item and week | #258 | — |
+| Week stepper with phase chip and dates | P9 | one-week view with ‹ Неделя N · даты › + phase chip | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», planWeekNav.test.ts |
+| Per-row done counters «0/1», week progress | P3, P9–P10 | `done_count` in GET /api/v2/plan (derived, no column); «N из M» header | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», tests/test_web/test_v2_plan_done_counts.py |
 | Schedule future weeks | P9 «Schedule» (unobserved beyond label) | current week only | MISSING | — | up to 4 weeks ahead | #275 | — |
 | Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items) | PARTIAL | no move across weeks | move across weeks | #275 | plans-plan-week.spec.ts |
-| Completed / skipped state | P10 | none | MISSING | — | counters; unfinished burns at week end (our rule) | #258 | — |
+| Completed / skipped state | P10 | counters «сделано/план»; past weeks read-only, unfinished stays as is | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week» |
 | Clone plan incl. schedule | P11 (menu label only) | none | MISSING | — | copy week schedule → next week (one-plan model) | #275 | — |
 | Edit plan / change start date / delete plan | P11 | none | DOMAIN-EQUIVALENT | single open-ended plan | remove a program from plan instead | #266 | — |
 | Crimpd+ upsell on plans | P1 | our subscription (Robokassa) elsewhere | DOMAIN-EQUIVALENT | our own paywall model | — | — | — |

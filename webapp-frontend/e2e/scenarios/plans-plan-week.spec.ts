@@ -47,11 +47,15 @@ test("«Планы»: видна текущая неделя плана, эле�
   // (program_inclusion_id, day_of_week), не просто program_inclusion_id).
   // Заголовок теперь ВСЕГДА program_name инклюзии, не имя Exercise —
   // эти два ассерта раньше проверяли имя упражнения, теперь устарели.
-  await expect(page.getByText("Неделя 1 · текущая · База")).toBeVisible();
+  // issue #258 — шапка недели теперь степпер «Неделя N · даты» + чип фазы,
+  // «×/нед» заменено счётчиком «сделано/план».
+  await expect(page.getByTestId("plan-week-label")).toContainText("Неделя 1 ·");
+  await expect(page.getByTestId("plan-week-stepper")).toContainText("База");
+  await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя");
   await expect(page.getByText("Вторник")).toBeVisible();
-  await expect(page.getByText("Расписание недели (E2E) · 1×/нед")).toBeVisible();
+  await expect(page.getByText("Расписание недели (E2E) · 0/1")).toBeVisible();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Расписание недели (E2E) · 3×/нед")).toBeVisible();
+  await expect(page.getByText("Расписание недели (E2E) · 0/3")).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);

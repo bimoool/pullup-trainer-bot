@@ -53,7 +53,8 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   // --- Grouping regression (Checkpoint 2): Block A/Б не появились отдельно ---
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Подтягивания", { exact: true })).toHaveCount(1);
+  // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
+  await expect(page.getByText(/^Подтягивания · \d+\/\d+$/)).toHaveCount(1);
 
   expect(apiFailures).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -73,7 +74,8 @@ test("«Планы»: добавить Планку в Среду и Отжим�
 
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Подтягивания", { exact: true })).toHaveCount(1);
+  // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
+  await expect(page.getByText(/^Подтягивания · \d+\/\d+$/)).toHaveCount(1);
   await expect(page.getByText("Среда")).toBeVisible();
   await expect(page.getByText(/^Планка · /)).toBeVisible();
   await expect(page.getByText("Пятница")).toBeVisible();

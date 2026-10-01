@@ -211,6 +211,47 @@ html {
   opacity: 0.65;
 }
 
+.plan-week-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-week-stepper-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.plan-week-step {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--tg-link-color);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.plan-week-step:disabled {
+  opacity: 0.3;
+}
+
+.plan-week-chip {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--tg-secondary-bg-color, rgba(127, 127, 127, 0.15));
+  color: var(--tg-subtitle-text-color);
+}
+
 .plan-week-day-group {
   margin-top: 10px;
 }
