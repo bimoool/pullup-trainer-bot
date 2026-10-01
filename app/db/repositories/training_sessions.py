@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -549,6 +549,7 @@ class TrainingSessionRepository:
 
     async def list_for_user(
         self, user_id: int, *, limit: int = 50, offset: int = 0, status: SessionStatus | None = None,
+        performed_from: datetime | None = None, performed_to: datetime | None = None,
     ) -> list[SessionDetail]:
         """offset/limit — срез уже загруженного списка (тот же приём, что
         GET /api/history, issue #50), не отдельный SQL LIMIT/OFFSET —
@@ -560,14 +561,44 @@ class TrainingSessionRepository:
         существующих потребителей (SessionV2Lab.tsx/SessionJournalScreen.tsx
         через GET /sessions без параметра). Журналу обычного пользователя
         нужны только завершённые — раздел 3 задачи явно требует не менять
-        поведение без параметра."""
+        поведение без параметра.
+
+        performed_from/performed_to (#256) — полуинтервал [from, to) по
+        performed_at (Журнал по месяцам), оба необязательны."""
         query = select(TrainingSession).where(TrainingSession.user_id == user_id)
         if status is not None:
             query = query.where(TrainingSession.status == status)
+        if performed_from is not None:
+            query = query.where(TrainingSession.performed_at >= performed_from)
+        if performed_to is not None:
+            query = query.where(TrainingSession.performed_at < performed_to)
         result = await self._session.execute(query.order_by(TrainingSession.performed_at.desc()))
         all_sessions = list(result.scalars().all())
         page = all_sessions[offset:offset + limit]
         return await self._load_details(page)
+
+    async def completed_performed_at(
+        self, user_id: int, performed_from: datetime, performed_to: datetime,
+    ) -> list[datetime]:
+        """Только моменты завершённых сессий в [from, to) — для календаря Журнала
+        (без загрузки блоков/подходов)."""
+        result = await self._session.execute(
+            select(TrainingSession.performed_at).where(
+                TrainingSession.user_id == user_id,
+                TrainingSession.status == SessionStatus.COMPLETED,
+                TrainingSession.performed_at >= performed_from,
+                TrainingSession.performed_at < performed_to,
+            ),
+        )
+        return list(result.scalars().all())
+
+    async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
+        result = await self._session.execute(
+            select(func.max(TrainingSession.performed_at)).where(
+                TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
+            ),
+        )
+        return result.scalar_one_or_none()
 
     async def list_all_completed(self, user_id: int) -> list[SessionDetail]:
         """ВСЕ завершённые сессии пользователя (для аналитики) — не зависит от
