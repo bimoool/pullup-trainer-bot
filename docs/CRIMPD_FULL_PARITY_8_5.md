@@ -26,14 +26,14 @@ any merge into `develop/current`.
 |---|---|---|---|---|---|---|---|
 | Sticky header with search pill + «+» | H1, G4; HO 2; RM §0 | HomeScreen.tsx sticky header (search pill + «+») | DONE | — | sticky «Что потренируем сегодня?» + «+» | #254 | crimpd-parity.spec.ts «Home» |
 | Search screen: live filter, «FOUND N», clear | S1, S4; RM §3; FI F4 | SearchScreen.tsx (client-side) | DONE | — | search over programs, own workouts, exercises | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
-| Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | category chips on Search | PARTIAL | favorites chip (#272) | category chips (#254, done), favorites chip (#272); equipment: DOMAIN — exercises have no equipment field | #254, #272 | crimpd-parity.spec.ts «Home» (category chips) |
+| Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | category + «Избранное» chips on Search | PARTIAL | equipment: DOMAIN — exercises have no equipment field | category chips (#254, done), favorites chip (#272, done) | #254, #272 | crimpd-parity.spec.ts «Home» (category chips), «Favorites» (chip) |
 | Category rows (horizontal carousels, «N Workouts») | H2–H4, H13; HO 3 | program rows grouped by category («Другое» for none) | DONE | — | programs grouped by `Program.category` rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
 | Category screen (info, Featured / All) | H4; d/category_all_tab | none | MISSING | — | category row → filtered search (Featured tab: DOMAIN — no editorial flag yet; collections cover curation) | #254, #271 | — |
 | Featured playlists carousel | H5; HO 4 | none | MISSING | no collections model | «Подборки» row from curated collections | #271 | — |
 | «Create Custom Workouts» banner | H6 | «Создать» button on Главная | DONE | — | — | — | home-discovery.spec.ts |
 | My Workouts grid | H7 | «Мои тренировки» list | DONE | — | — | — | home-discovery.spec.ts, crimpd-parity Baseline |
 | «Log Cross-Training» banner / entry | H8 | unreachable FreeWorkoutScreen | MISSING | no reachable free activity logging | Journal «+ Записать» → «Другую активность», also in «+» sheet | #263 | — |
-| Favorite Workouts row | H9 | none | MISSING | no favorites | «Избранное» row | #272 | — |
+| Favorite Workouts row | H9 | «Избранное» row on Главная (workouts + programs; hint only if never favorited) | DONE | — | — | #272 | crimpd-parity.spec.ts «Favorites»; tests/test_web/test_v2_favorites.py |
 | «Start Open Climbing Session» banner | H10; J9 | — | DOMAIN-EQUIVALENT | climbing-specific | free activity logging + Start from Workout Detail cover it | #263, #273 | — |
 | Assessment Tests carousel | H11 | none (baseline only at onboarding) | MISSING | no tests surface | «Тесты» row on Главная + hub | #260 | — |
 | «+» sheet (session / log / create / cancel) | H12; d/plus_sheet; FI F2 | «+» sheet in Home header | PARTIAL | log entries (#263) | sheet with working actions only; log entries added by #263 | #254, #263 | crimpd-parity.spec.ts «Home» (create / today / cancel) |
@@ -48,7 +48,7 @@ any merge into `develop/current`.
 | Exercise rows with sets·reps·rest | W8 | detail + editor rows (shared formatters) | DONE | — | — | #255 | crimpd-parity.spec.ts «Workout Detail», builder-ux.spec.ts |
 | Start Workout | W3, W9; X1 | start only from Plans card | MISSING | no ad-hoc start | «Начать» → freeform live session | #273 | — |
 | Log Workout | W3, W6 | unreachable BackdateForm | MISSING | — | «Записать» → backdated log | #263, #273 | — |
-| Favorite (instant toggle) | W3–W4 | none | MISSING | — | heart toggle | #272 | — |
+| Favorite (instant toggle) | W3–W4 | ♡/♥ on Workout Detail and Program Detail, optimistic, reverted on error | DONE | — | — | #272 | crimpd-parity.spec.ts «Favorites» (toggle, reload, error revert) |
 | Add to Plan (2-step sheet: new / existing plan) | W5; d/add_to_plan_sheet; FI F8 | AddToPlanScreen (day picker), round button on detail | DOMAIN-EQUIVALENT | — | one active plan → add to plan + day directly (no «new plan» step) | #255 (entry on detail) | plans-add-exercise.spec.ts, crimpd-parity.spec.ts «Workout Detail» |
 | Logged Workouts history (range, load previous) | W11 | Workout Detail «История» (`GET /api/v2/workouts/{id}/sessions`; no range / load-more yet) | DONE | — | — | #255 | test_v2_workout_sessions.py, crimpd-parity.spec.ts «Workout Detail» |
 | Hero photo / Overview video | W1 | none | MISSING | no media for user workouts; videos blocked on content (#3) | system/program media when MediaAsset content exists | #3 (owner content) | — |

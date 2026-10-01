@@ -29,6 +29,14 @@ seed home_workouts 920004
 seed home_discovery 940001
 seed home_discovery 940002
 seed workout_detail 950001
+seed home_discovery 960001
+seed home_discovery 960002
+seed home_discovery 960003
+seed home_discovery 960004
+seed home_discovery 960005
+seed home_discovery 960006
+seed home_discovery 960007
+seed home_discovery 960008
 seed golden_journey 930001
 seed session_recovery 930002
 seed session_recovery 930003

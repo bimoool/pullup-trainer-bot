@@ -1111,3 +1111,11 @@ html {
 .workout-detail-action-icon { display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--tg-button-color); color: var(--tg-button-text-color); font-size: 22px; }
 .workout-detail-action-label { font-size: 13px; text-align: center; overflow-wrap: anywhere; }
 .workout-detail-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--tg-secondary-bg-color); }
+
+/* Избранное (#272): сердечко рядом с названием. */
+.favorite-title-row { display: flex; align-items: center; gap: 8px; }
+.favorite-title-row .plan-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.favorite-heart { flex: 0 0 auto; width: 44px; height: 44px; border: none; background: none; font-size: 28px; line-height: 1; color: var(--tg-hint-color, rgba(127, 127, 127, 0.9)); cursor: pointer; }
+.favorite-heart-on { color: #e5484d; }
+.favorite-heart:disabled { opacity: 0.5; }
+.favorite-error { color: #e5484d; }

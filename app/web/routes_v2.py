@@ -25,6 +25,7 @@ from app.db.models_program import (
     ProgramInclusion,
     SessionStatus,
 )
+from app.db.repositories.favorites import FavoriteRepository
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -58,6 +59,8 @@ from app.web.schemas_v2 import (
     ExerciseCreateRequest,
     ExerciseListResponse,
     ExerciseResponse,
+    FavoriteListResponse,
+    FavoriteResponse,
     PlanItemCreateRequest,
     PlanItemListResponse,
     PlanItemMoveRequest,
@@ -237,6 +240,77 @@ async def list_programs(
         strategy_type_value = strategy_profile.strategy_type.value if strategy_profile is not None else None
         responses.append(_program_response(program, strategy_type_value))
     return ProgramListResponse(programs=responses)
+
+
+# --- Избранное (issue #272) -------------------------------------------------------------
+
+
+async def _favorite_target_exists(session: AsyncSession, user_id: int, target_type: str, target_id: int) -> bool:
+    """Избранное — только видимое пользователю: свои user-тренировки и программы
+    каталога (у Program нет флага публикации — каталог виден всем). Остальное — нет."""
+    programs = ProgramRepository(session)
+    if target_type == "workout":
+        return await programs.get_editable_workout_for_user(target_id, user_id) is not None
+    if target_type == "program":
+        return await programs.get_by_id(target_id) is not None
+    return False
+
+
+@router_v2.get("/favorites", response_model=FavoriteListResponse)
+async def list_favorites(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> FavoriteListResponse:
+    """Избранное, новые первыми. Удалённые/ставшие недоступными цели в список
+    не попадают (строки не удаляются — просто фильтруются)."""
+    user = await _require_user(session, init_data)
+    programs = ProgramRepository(session)
+    rows = await FavoriteRepository(session).list_for_user(user.id)
+    workouts = {w.id: w for w in await programs.list_user_workouts(user.id)}
+    program_by_id = {p.id: p for p in await programs.list_all()}
+    favorites: list[FavoriteResponse] = []
+    for row in rows:
+        if row.target_type == "workout" and row.target_id in workouts:
+            favorites.append(FavoriteResponse(
+                target_type="workout", target_id=row.target_id, title=workouts[row.target_id].name,
+                subtitle="Своя тренировка",
+            ))
+        elif row.target_type == "program" and row.target_id in program_by_id:
+            program = program_by_id[row.target_id]
+            favorites.append(FavoriteResponse(
+                target_type="program", target_id=row.target_id, title=program.name, subtitle=program.goal,
+            ))
+    return FavoriteListResponse(favorites=favorites)
+
+
+@router_v2.put("/favorites/{target_type}/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def add_favorite(
+    target_type: str,
+    target_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Идемпотентно. Недоступная/несуществующая цель или неизвестный тип — 404."""
+    user = await _require_user(session, init_data)
+    if not await _favorite_target_exists(session, user.id, target_type, target_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Favorite target not found")
+    await FavoriteRepository(session).add(user.id, target_type, target_id)
+    await session.commit()
+
+
+@router_v2.delete("/favorites/{target_type}/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_favorite(
+    target_type: str,
+    target_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Идемпотентно: снять можно и то, чего нет. Неизвестный тип — 404."""
+    user = await _require_user(session, init_data)
+    if target_type not in ("workout", "program"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Favorite target not found")
+    await FavoriteRepository(session).remove(user.id, target_type, target_id)
+    await session.commit()
 
 
 @router_v2.get("/exercises", response_model=ExerciseListResponse)

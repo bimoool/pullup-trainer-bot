@@ -1,4 +1,4 @@
-import type { ExerciseResponseV2, ProgramResponseV2, WorkoutResponseV2 } from "./apiV2";
+import type { FavoriteV2, ExerciseResponseV2, ProgramResponseV2, WorkoutResponseV2 } from "./apiV2";
 
 /** Название ряда для программ без категории. */
 export const OTHER_CATEGORY = "Другое";
@@ -56,22 +56,28 @@ export type SearchResults = {
 };
 
 /** Клиентский поиск по подстроке (без учёта регистра) + фильтр категории.
- * У тренировок категории нет — при активном фильтре категории они скрыты. */
+ * У тренировок категории нет — при активном фильтре категории они скрыты.
+ * `favorites` != null — чип «Избранное»: только избранные программы и тренировки
+ * (упражнения в избранное не добавляются). */
 export function searchContent(
   data: { programs: ProgramResponseV2[]; workouts: WorkoutResponseV2[]; exercises: ExerciseResponseV2[] },
   rawQuery: string,
   category: string | null,
+  favorites: FavoriteV2[] | null = null,
 ): SearchResults {
+  const inFavorites = (type: FavoriteV2["target_type"], id: number) =>
+    favorites === null || favorites.some((f) => f.target_type === type && f.target_id === id);
   const query = rawQuery.trim().toLocaleLowerCase("ru");
   const programs = data.programs.filter(
-    (p) => (category === null || (p.category ?? "").trim() === category)
+    (p) => inFavorites("program", p.id)
+      && (category === null || (p.category ?? "").trim() === category)
       && (query === "" || matches(p.name, query) || matches(p.goal ?? "", query)),
   );
   const workouts = category !== null
     ? []
-    : data.workouts.filter((w) => query === "" || matches(w.title, query));
+    : data.workouts.filter((w) => inFavorites("workout", w.id) && (query === "" || matches(w.title, query)));
   const exercises = data.exercises.filter(
-    (e) => (category === null || (e.category ?? "").trim() === category)
+    (e) => favorites === null && (category === null || (e.category ?? "").trim() === category)
       && (query === "" || matches(e.name, query)),
   );
   return { programs, workouts, exercises, total: programs.length + workouts.length + exercises.length };

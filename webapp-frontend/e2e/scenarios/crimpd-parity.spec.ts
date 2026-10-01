@@ -226,3 +226,98 @@ for (const width of WIDTHS) {
     });
   }
 }
+
+// --- Favorites (#272): сердечко на деталях, ряд «Избранное» на Главной, чип в поиске -------
+// Seed: scripts/e2e_seed.py home_discovery 960001..960008 — по пользователю на (ширина, тема,
+// сценарий), т.к. избранное сохраняется на сервере и сценарии меняют его состояние.
+const FAVORITES_USERS: Record<string, number> = {
+  "320-light-flow": 960_001, "320-dark-flow": 960_002, "390-light-flow": 960_003, "390-dark-flow": 960_004,
+  "320-light-error": 960_005, "320-dark-error": 960_006, "390-light-error": 960_007, "390-dark-error": 960_008,
+};
+
+for (const width of WIDTHS) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Favorites @${width}px ${theme}`, () => {
+      test.use({ viewport: { width, height: 760 } });
+
+      test("тумблер, сохранение после перезагрузки, ряд на Главной и чип в поиске", async ({ page }) => {
+        const { consoleErrors, apiFailures } = await openAppAs(
+          page, FAVORITES_USERS[`${width}-${theme}-flow`], { theme, backButton: true },
+        );
+        const heart = page.getByTestId("favorite-heart");
+
+        // Никогда не добавлял: честная подсказка вместо пустого ряда.
+        await expect(page.getByTestId("favorites-hint")).toHaveText("Нажмите ♡ на тренировке, чтобы добавить");
+
+        // Тренировка: мгновенный тумблер.
+        await page.getByTestId("my-workout-card").filter({ hasText: LONG_TITLE }).click();
+        await expect(heart).toBeEnabled();
+        await expect(heart).toHaveAttribute("aria-pressed", "false");
+        await heart.click();
+        await expect(heart).toHaveAttribute("aria-pressed", "true");
+        await expectNoHorizontalOverflow(page, "Workout Detail с ♥");
+
+        // Программа: то же на Program Detail.
+        await pressTelegramBackButton(page);
+        await page.locator(".program-card-button").filter({ hasText: "Дискавери: сила" }).first().click();
+        await expect(heart).toBeEnabled();
+        await heart.click();
+        await expect(heart).toHaveAttribute("aria-pressed", "true");
+        await expectNoHorizontalOverflow(page, "Program Detail с ♥");
+        await pressTelegramBackButton(page);
+
+        // Ряд на Главной; переживает перезагрузку; подсказки больше нет.
+        const row = page.getByTestId("favorites-row");
+        await expect(row.getByTestId("favorite-card")).toHaveCount(2);
+        await expect(page.getByTestId("favorites-hint")).toHaveCount(0);
+        await page.reload();
+        await expect(page.getByTestId("favorites-row").getByTestId("favorite-card")).toHaveCount(2);
+        await expectNoHorizontalOverflow(page, "Главная с избранным");
+
+        // Карточка ряда открывает деталь, сердечко уже включено.
+        await page.getByTestId("favorites-row").getByTestId("favorite-card").filter({ hasText: LONG_TITLE }).click();
+        await expect(page.getByTestId("workout-detail")).toBeVisible();
+        await expect(heart).toHaveAttribute("aria-pressed", "true");
+        await pressTelegramBackButton(page);
+
+        // Поиск: чип «Избранное» оставляет только избранные программы/тренировки.
+        await page.getByTestId("home-search-pill").click();
+        const chip = page.getByTestId("search-chip-favorites");
+        await expect(chip).toBeVisible();
+        await chip.click();
+        await expect(page.getByTestId("search-result-program")).toHaveCount(1);
+        await expect(page.getByTestId("search-result-workout")).toHaveCount(1);
+        await expect(page.getByTestId("search-result-exercise")).toHaveCount(0);
+        await expectNoHorizontalOverflow(page, "Поиск «Избранное»");
+        await chip.click();
+        await expect(page.getByTestId("search-result-exercise").first()).toBeVisible();
+        await page.getByRole("button", { name: "Закрыть" }).click();
+
+        // Снять оба: ряд скрывается (подсказка — только тому, кто ни разу не добавлял).
+        for (const card of [LONG_TITLE, /Дискавери: сила/]) {
+          await page.getByTestId("favorites-row").getByTestId("favorite-card").filter({ hasText: card }).click();
+          await expect(heart).toHaveAttribute("aria-pressed", "true");
+          await heart.click();
+          await expect(heart).toHaveAttribute("aria-pressed", "false");
+          await pressTelegramBackButton(page);
+        }
+        await expect(page.getByTestId("favorites-row")).toHaveCount(0);
+
+        expect(consoleErrors).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
+      test("при ошибке запроса сердечко откатывается с короткой ошибкой", async ({ page }) => {
+        await openAppAs(page, FAVORITES_USERS[`${width}-${theme}-error`], { theme, backButton: true });
+        await page.route("**/api/v2/favorites/**", (route) => route.fulfill({ status: 500, body: "boom" }));
+        await page.getByTestId("my-workout-card").filter({ hasText: LONG_TITLE }).click();
+        const heart = page.getByTestId("favorite-heart");
+        await expect(heart).toBeEnabled();
+        await heart.click();
+        await expect(page.getByTestId("favorite-error")).toHaveText("Не удалось обновить избранное");
+        await expect(heart).toHaveAttribute("aria-pressed", "false");
+        await expectNoHorizontalOverflow(page, "Workout Detail с ошибкой");
+      });
+    });
+  }
+}

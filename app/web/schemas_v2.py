@@ -104,6 +104,19 @@ class WorkoutListResponse(BaseModel):
     workouts: list[WorkoutResponse]
 
 
+class FavoriteResponse(BaseModel):
+    """Один элемент Избранного (issue #272); title — имя тренировки/программы."""
+
+    target_type: Literal["workout", "program"]
+    target_id: int
+    title: str
+    subtitle: str | None = None
+
+
+class FavoriteListResponse(BaseModel):
+    favorites: list[FavoriteResponse]
+
+
 class WorkoutCreateRequest(BaseModel):
     """Global uniqueness намеренно не проверяется — тот же принцип, что
     ExerciseCreateRequest."""

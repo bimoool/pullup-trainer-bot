@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  fetchExercises, fetchPrograms, listWorkouts,
-  type ExerciseResponseV2, type ProgramResponseV2, type WorkoutResponseV2,
+  fetchExercises, fetchPrograms, listFavorites, listWorkouts,
+  type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { collectCategories, searchContent } from "./homeDiscovery";
 import { useBackButton } from "./useBackButton";
 
-export type SearchState = { query: string; category: string | null };
+export type SearchState = { query: string; category: string | null; favoritesOnly: boolean };
 
 type Props = {
   initDataRaw: string;
@@ -19,7 +19,9 @@ type Props = {
   onOpenExercise: (exerciseId: number, name: string) => void;
 };
 
-type Data = { programs: ProgramResponseV2[]; workouts: WorkoutResponseV2[]; exercises: ExerciseResponseV2[] };
+type Data = {
+  programs: ProgramResponseV2[]; workouts: WorkoutResponseV2[]; exercises: ExerciseResponseV2[]; favorites: FavoriteV2[];
+};
 type LoadState = { phase: "loading" } | { phase: "error"; message: string } | { phase: "ready"; data: Data };
 
 /**
@@ -41,10 +43,12 @@ export function SearchScreen({
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchPrograms(initDataRaw), listWorkouts(initDataRaw), fetchExercises(initDataRaw)])
-      .then(([programs, workouts, exercises]) => {
+    Promise.all([
+      fetchPrograms(initDataRaw), listWorkouts(initDataRaw), fetchExercises(initDataRaw), listFavorites(initDataRaw),
+    ])
+      .then(([programs, workouts, exercises, favorites]) => {
         if (!cancelled) {
-          setLoad({ phase: "ready", data: { programs, workouts, exercises } });
+          setLoad({ phase: "ready", data: { programs, workouts, exercises, favorites } });
         }
       })
       .catch((error) => {
@@ -63,8 +67,8 @@ export function SearchScreen({
     [data],
   );
   const results = useMemo(
-    () => (data ? searchContent(data, state.query, state.category) : null),
-    [data, state.query, state.category],
+    () => (data ? searchContent(data, state.query, state.category, state.favoritesOnly ? data.favorites : null) : null),
+    [data, state.query, state.category, state.favoritesOnly],
   );
 
   return (
@@ -82,8 +86,17 @@ export function SearchScreen({
         <button type="button" className="search-close" onClick={onClose}>Закрыть</button>
       </div>
 
-      {categories.length > 0 && (
+      {data && (
         <div className="search-chips" data-testid="search-chips">
+          <button
+            type="button"
+            className={state.favoritesOnly ? "search-chip search-chip-active" : "search-chip"}
+            data-testid="search-chip-favorites"
+            aria-pressed={state.favoritesOnly}
+            onClick={() => onStateChange({ ...state, favoritesOnly: !state.favoritesOnly })}
+          >
+            Избранное
+          </button>
           {categories.map((category) => (
             <button
               key={category}
