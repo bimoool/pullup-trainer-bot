@@ -415,6 +415,30 @@ def active_issues(issues: list[Issue], state: dict) -> list[Issue]:
     ]
 
 
+DEP_REF_RE = re.compile(r"#(\d+)")
+
+
+def promotable(issues: list[Issue]) -> list[tuple[Issue, list[int]]]:
+    """Owner-approved `status:backlog` issues whose Dependencies section names only finished
+    issues (closed + `status:done`). Pure. An unknown/unfinished dependency keeps it in
+    backlog, so the ready queue never lists a task that cannot be done yet."""
+    by_number = {i.number: i for i in issues}
+    out = []
+    for i in issues:
+        if not i.is_open or i.status != ["status:backlog"] or OWNER_APPROVED_LABEL not in i.labels:
+            continue
+        deps_text = section(parse_sections(i.body), "dependencies") or ""
+        deps = sorted({int(n) for n in DEP_REF_RE.findall(deps_text)} - {i.number})
+        if not deps:
+            continue
+        if all(
+            (d := by_number.get(n)) is not None and not d.is_open and "status:done" in d.labels
+            for n in deps
+        ):
+            out.append((i, deps))
+    return out
+
+
 @dataclasses.dataclass
 class PlanDecision:
     action: str  # select | active-exists | batch-stop | none-ready | invariant-violation
@@ -1144,6 +1168,17 @@ def apply_rejections(gh: Gh, decision: PlanDecision) -> None:
 def cmd_plan(args, gh: Gh) -> int:
     state = load_state()
     issues = gh.list_issues()
+    if args.apply:
+        for issue, deps in promotable(issues):
+            gh.set_status(issue.number, "status:ready", issue.labels)
+            issue.labels = (issue.labels - set(STATUS_LABELS)) | {"status:ready"}
+            gh.comment(
+                issue.number,
+                "🧭 **Planner:** dependencies done ("
+                + ", ".join(f"#{n}" for n in deps)
+                + ") → promoted `status:backlog` → `status:ready`.",
+            )
+            print(f"  promote #{issue.number} (deps done: {deps})")
     decision = plan(issues, state)
     args.decision = decision
     print(
