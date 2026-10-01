@@ -4,7 +4,7 @@ docs/plan-and-specs.md) — отдельный файл от app/web/schemas_v2.
 большой, см. план задачи), но переиспользует оттуда SetLogResponse/
 SessionProgressionResponse/SetLogInputSchema, не дублирует их формы."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -210,3 +210,42 @@ class ProgressionPreviewResponse(BaseModel):
     цели), не ошибка — см. app.services.progression_cascade.preview."""
 
     deltas: list[PlanItemDeltaResponse]
+
+
+# --- PATCH /sessions/{id} и POST /sessions/{id}/clone (#262) ------------------------------
+
+
+class SessionSetEditSchema(BaseModel):
+    """Подход блока (order_index + set_number) — value/effort/note заменяются
+    целиком (effort/note = null очищают). Новые подходы добавить нельзя."""
+
+    block_index: int = Field(ge=0)
+    set_number: int = Field(ge=1)
+    value: Decimal = Field(ge=0, le=Decimal("99999.99"))
+    effort: Decimal | None = Field(default=None, ge=1, le=5)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def _blank_note_is_none(cls, value: str | None) -> str | None:
+        return (value.strip() or None) if value is not None else None
+
+
+class SessionEditRequest(BaseModel):
+    """Незаданные поля не меняются; effort/comment = null очищают.
+    performed_on — ЛОКАЛЬНЫЙ день пользователя (не в будущем), время суток
+    сохраняется."""
+
+    performed_on: date | None = None
+    effort: Decimal | None = Field(default=None, ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+    sets: list[SessionSetEditSchema] = Field(default_factory=list, max_length=200)
+
+    @field_validator("comment")
+    @classmethod
+    def _blank_comment_is_none(cls, value: str | None) -> str | None:
+        return (value.strip() or None) if value is not None else None
+
+
+class SessionCloneRequest(BaseModel):
+    performed_on: date | None = None  # по умолчанию — сегодня (локальный день)
