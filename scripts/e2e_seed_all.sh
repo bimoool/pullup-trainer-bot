@@ -26,3 +26,5 @@ seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003
 seed golden_journey 930001
+seed session_recovery 930002
+seed session_recovery 930003
