@@ -70,6 +70,15 @@ planner → worker → planner в Actions (`orch-*.yml`, `scripts/orch.py`), л�
 прогрессии и истории; скорость pytest; намеренно закарантиненные устаревшие E2E
 (`plans-manual-session`, `plans-start-session`, `journal-combined`, `plans-grouping`).
 
+## CRIMPD-PARITY — полный функциональный паритет с Crimpd 8.5.x (с 2026-10-02)
+
+Решение владельца: Crimpd 8.5.x is the full functional UX reference. Replicate user-visible
+capabilities where technically possible, adapted to our training domain. Differences require an
+explicit documented domain/platform reason. Матрица и issues — `docs/CRIMPD_FULL_PARITY_8_5.md`;
+кампания идёт через оркестратор (issues `CRIMPD P0/P1/P2/QA`), каждая задача добавляет свою
+проверку в `webapp-frontend/e2e/scenarios/crimpd-parity.spec.ts`. Приоритет — видимая
+пользователю поверхность (Главная → Избранное → Детали тренировки → …), не инфраструктура.
+
 ## Как вести работу
 
 1. Перед кодом — гейт из `CLAUDE.md` (ветка/HEAD/дерево, `PROJECT_SPEC`, этот файл, нужные
