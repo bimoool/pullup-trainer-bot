@@ -38,7 +38,7 @@ Post UX-1: owner iPhone QA on staging (#224) → P0/P1 fixes → production (own
 - [#246](https://github.com/bimoool/pullup-trainer-bot/issues/246) Cover active-session recovery after background and reopen (2026-10-01)
 
 ## AUTONOMOUS BATCH
-- **AUTONOMOUS BATCH 5: 4/5 (running; attempts 4/8)**
+- **AUTONOMOUS BATCH 5: idle — queue empty, no worker dispatched (4/5); owner: `/orch approve` on a complete issue**
 - completed: #249, #250, #252, #253
 - stop condition: 5 completed tasks or 8 attempts → OWNER REVIEW REQUIRED; no task starts after that
 
