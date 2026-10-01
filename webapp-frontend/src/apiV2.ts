@@ -156,6 +156,22 @@ export async function listWorkouts(initDataRaw: string): Promise<WorkoutResponse
   return response.workouts;
 }
 
+/** История одной тренировки (Workout Detail): завершённые сессии пользователя,
+ * чей замороженный снимок ссылается на этот Workout; новые первыми. */
+export interface WorkoutSessionSummaryV2 {
+  id: number;
+  performed_at: string;
+  exercises_count: number;
+  sets_done: number;
+}
+
+export async function listWorkoutSessions(initDataRaw: string, workoutId: number): Promise<WorkoutSessionSummaryV2[]> {
+  const response = await apiV2Get<{ sessions: WorkoutSessionSummaryV2[] }>(
+    `/api/v2/workouts/${workoutId}/sessions`, initDataRaw,
+  );
+  return response.sessions;
+}
+
 export async function createWorkout(initDataRaw: string, title: string): Promise<WorkoutResponseV2> {
   return apiV2Post<{ title: string }, WorkoutResponseV2>("/api/v2/workouts", initDataRaw, { title });
 }

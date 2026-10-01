@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { openAppAs } from "../fixtures/setup";
+import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
 // Crimpd 8.5.x full-parity contract (docs/CRIMPD_FULL_PARITY_8_5.md).
 //
@@ -154,6 +155,73 @@ for (const width of WIDTHS) {
         await page.getByRole("button", { name: "Закрыть" }).click();
         await expect(page.getByTestId("home-search-pill")).toBeVisible();
         expect(await page.evaluate(() => window.scrollY)).toBe(before);
+      });
+    });
+  }
+}
+
+// --- Workout Detail (#255): read-only карточка своей тренировки ----------------------------
+// Seed: scripts/e2e_seed.py workout_detail (читающий пользователь; у «Очень длинной…» две
+// завершённые сессии со снимком, у «Пустая заготовка» истории нет, «Планка по времени»
+// даёт оценку длительности).
+const DETAIL_USER = 950_001;
+const LONG_TITLE = /Очень длинная утренняя/;
+
+for (const width of WIDTHS) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Workout Detail @${width}px ${theme}`, () => {
+      test.use({ viewport: { width, height: 760 } });
+
+      test("карточка с Главной открывает деталь: сводка, упражнения, действия, история", async ({ page }) => {
+        const { consoleErrors, apiFailures } = await openAppAs(page, DETAIL_USER, { theme, backButton: true });
+
+        await page.getByTestId("my-workout-card").filter({ hasText: LONG_TITLE }).click();
+        await expect(page.getByTestId("workout-detail")).toBeVisible();
+        await expect(page.getByTestId("workout-detail-title")).toHaveText(LONG_TITLE);
+        await expect(page.getByTestId("workout-detail-subtitle")).toHaveText("Своя тренировка");
+        // 3 упражнения на повторения — длительность по полям протокола не посчитать → без оценки.
+        await expect(page.getByTestId("workout-detail-meta")).toHaveText("3 упражнения");
+        await expect(page.getByTestId("workout-detail-items").locator("li")).toHaveCount(3);
+        await expect(page.getByTestId("workout-detail-items")).toContainText("3 × 8 повторений");
+        await expect(page.getByRole("button", { name: "Добавить в план" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Редактировать" })).toBeVisible();
+        await expect(page.getByTestId("workout-detail-history-row")).toHaveCount(2);
+        await expectNoHorizontalOverflow(page, "Workout Detail");
+
+        // «Редактировать» → редактор; назад → снова деталь.
+        await page.getByRole("button", { name: "Редактировать" }).click();
+        await expect(page.getByTestId("workout-detail")).toHaveCount(0);
+        await pressTelegramBackButton(page);
+        await expect(page.getByTestId("workout-detail")).toBeVisible();
+
+        // «Добавить в план» → AddToPlanScreen; назад → деталь; назад → Главная.
+        await page.getByRole("button", { name: "Добавить в план" }).click();
+        await expect(page.getByTestId("workout-detail")).toHaveCount(0);
+        await pressTelegramBackButton(page);
+        await expect(page.getByTestId("workout-detail")).toBeVisible();
+        await pressTelegramBackButton(page);
+        await expect(page.getByTestId("my-workouts")).toBeVisible();
+
+        expect(consoleErrors).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
+      test("пустая история и оценка длительности; вход из «Мои тренировки»", async ({ page }) => {
+        await openAppAs(page, DETAIL_USER, { theme, backButton: true });
+        await openTab(page, "Планы");
+        await page.getByRole("button", { name: "Мои тренировки" }).click();
+        await page.getByRole("button", { name: "Пустая заготовка" }).click();
+        await expect(page.getByTestId("workout-detail-title")).toHaveText("Пустая заготовка");
+        await expect(page.getByTestId("workout-detail-history-empty")).toHaveText("Вы ещё не выполняли эту тренировку");
+        await expect(page.getByTestId("workout-detail-meta")).toHaveText("Пока без упражнений");
+        await pressTelegramBackButton(page);
+
+        await page.getByRole("button", { name: "Планка по времени" }).click();
+        // 3 × 30 с + 2 × 60 с отдыха = 210 с → ≈ 4 мин.
+        await expect(page.getByTestId("workout-detail-meta")).toHaveText("1 упражнение · ≈ 4 мин");
+        await expect(page.getByTestId("workout-detail-items")).toContainText("3 × 30 сек · отдых 1:00");
+        await expect(page.getByTestId("workout-detail-history-empty")).toBeVisible();
+        await expectNoHorizontalOverflow(page, "Workout Detail");
       });
     });
   }

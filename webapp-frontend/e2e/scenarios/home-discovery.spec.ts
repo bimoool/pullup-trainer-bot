@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
+import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
 // scripts/e2e_seed.py home_workouts — 920001 (только чтение): две свои Workout
 // (длинное русское название с тремя упражнениями и пустая) + чужая Workout,
@@ -61,13 +62,17 @@ for (const width of [320, 390]) {
 }
 
 test("Главная: открыть Мою тренировку, создать новую, навигация цела", async ({ page }) => {
-  const { consoleErrors, apiFailures } = await openAppAs(page, CREATE_ID);
+  const { consoleErrors, apiFailures } = await openAppAs(page, CREATE_ID, { backButton: true });
 
-  // Открыть существующую → редактор с её упражнениями → «Сохранить» возвращает на Главную.
+  // Открыть существующую → деталь (#255) → «Редактировать» → редактор → «Сохранить» → деталь → назад на Главную.
   await page.getByTestId("my-workout-card").filter({ hasText: "Очень длинная" }).click();
+  await expect(page.getByTestId("workout-detail")).toBeVisible();
+  await page.getByRole("button", { name: "Редактировать" }).click();
   await expect(page.getByText("Редактировать тренировку")).toBeVisible();
   await expect(page.getByText("Подтягивания", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByTestId("workout-detail")).toBeVisible();
+  await pressTelegramBackButton(page);
   await expect(page.getByTestId("my-workouts")).toBeVisible();
 
   // Создать: вход с Главной → форма → сохранение → редактор → «Сохранить» → Главная с новой карточкой.
@@ -78,6 +83,8 @@ test("Главная: открыть Мою тренировку, создать
   await page.getByRole("button", { name: "Создать и добавить упражнения" }).click();
   await expect(page.getByText("Редактировать тренировку")).toBeVisible();
   await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByTestId("workout-detail-title")).toHaveText(title);
+  await pressTelegramBackButton(page);
   await expect(page.getByTestId("my-workout-card").filter({ hasText: title })).toBeVisible();
   await expect(page.getByTestId("my-workout-card")).toHaveCount(3);
 
