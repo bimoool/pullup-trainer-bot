@@ -34,6 +34,7 @@ import re
 import subprocess
 import sys
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -808,9 +809,9 @@ def render_status(ctx: StatusContext) -> str:
 # --------------------------------------------------------------------------- I/O adapters
 
 
-def run(cmd: list[str], check: bool = True, cwd: Path = ROOT) -> str:
+def run(cmd: list[str], check: bool = True, cwd: Path | None = None) -> str:
     for attempt in range(3):  # gh/git over flaky networks: retry transient failures
-        res = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
+        res = subprocess.run(cmd, cwd=cwd or ROOT, capture_output=True, text=True, check=False)
         transient = res.returncode != 0 and re.search(
             r"timeout|TLS|connection reset|502|503", res.stderr, re.IGNORECASE
         )
@@ -1006,9 +1007,16 @@ def gather_status(gh: Gh, state: dict, issues: list[Issue] | None = None) -> Sta
     return ctx
 
 
-def commit_and_push(paths: list[str], message: str, branch: str) -> bool:
+def commit_and_push(
+    paths: list[str], message: str, branch: str, reapply: Callable[[], None] | None = None
+) -> bool:
     """Commit orchestration files to the canonical branch and push (retry on races).
-    Refuses to run unless the checkout IS that branch — never writes elsewhere."""
+    Refuses to run unless the checkout IS that branch — never writes elsewhere.
+
+    The files are generated, so a textual merge conflict with a concurrent writer (e.g. an
+    owner stop landing while a worker records) is resolved by re-deriving them: with
+    `reapply`, the commit is dropped, the checkout reset to the remote branch, and `reapply()`
+    rewrites the files from the remote state before committing again."""
     if not ALLOWED_BASE_RE.match(branch):
         raise SystemExit(f"refusing to push to '{branch}'")
     current = run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
@@ -1029,7 +1037,24 @@ def commit_and_push(paths: list[str], message: str, branch: str) -> bool:
             == 0
         ):
             return True
-        run(["git", "pull", "--no-rebase", "--no-edit", "origin", branch])
+        run(["git", "fetch", "origin", branch])
+        merged = subprocess.run(
+            ["git", "merge", "--no-edit", f"origin/{branch}"],
+            cwd=ROOT,
+            capture_output=True,
+            check=False,
+        )
+        if merged.returncode == 0:
+            continue
+        subprocess.run(["git", "merge", "--abort"], cwd=ROOT, capture_output=True, check=False)
+        if reapply is None:
+            raise SystemExit(f"merge conflict with origin/{branch}: {merged.stdout.decode()[:300]}")
+        run(["git", "reset", "-q", "--hard", f"origin/{branch}"])
+        reapply()
+        run(["git", "add", "--", *paths])
+        if not run(["git", "diff", "--cached", "--name-only"]).strip():
+            return False
+        run(["git", "commit", "-m", f"{ORCH_COMMIT_PREFIX} {message}"])
     raise SystemExit("push failed after retries")
 
 
@@ -1302,11 +1327,23 @@ def cmd_worker_record(args, gh: Gh) -> int:
     write(BRIEF_PATH, render_idle_brief(f"#{issue.number} → {verdict} ({utcnow()})"))
     save_state(state)
     refresh_status(gh, state, publish=args.publish)
+
+    def reapply() -> None:
+        # Concurrent writer won the race: record this run on top of ITS state (keeps e.g. an
+        # owner stop) — labels/comment above are already applied and stay as they are.
+        nonlocal state
+        state = load_state()
+        batch_record(state, issue.number, verdict)
+        write(BRIEF_PATH, render_idle_brief(f"#{issue.number} → {verdict} ({utcnow()})"))
+        save_state(state)
+        refresh_status(gh, state, publish=args.publish)
+
     if args.push:
         commit_and_push(
             [STATE_PATH, BRIEF_PATH, STATUS_PATH],
             f"worker #{issue.number} → {verdict}; {batch_line(state)}",
             state["canonical_branch"],
+            reapply=reapply,
         )
     ok, why_not = batch_can_start(state)
     out = os.environ.get("GITHUB_OUTPUT")
