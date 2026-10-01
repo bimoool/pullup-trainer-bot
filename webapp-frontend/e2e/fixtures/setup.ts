@@ -17,13 +17,13 @@ import { mockTelegramWebApp, type TelegramTheme } from "./telegramMock";
 export async function openAppAs(
   page: Page,
   telegramId: number,
-  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme } = {},
+  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean } = {},
 ): Promise<{ consoleErrors: string[]; apiFailures: string[] }> {
   const consoleErrors = collectConsoleErrors(page);
   const apiFailures = collectUnexpectedApiFailures(page, options.allowedApiStatuses ?? []);
 
   const initDataRaw = buildInitData({ id: telegramId, firstName: options.firstName ?? "E2E" }, getTestBotToken());
-  await mockTelegramWebApp(page, initDataRaw, options.theme);
+  await mockTelegramWebApp(page, initDataRaw, options.theme, { backButton: options.backButton });
   await page.goto("/");
 
   return { consoleErrors, apiFailures };

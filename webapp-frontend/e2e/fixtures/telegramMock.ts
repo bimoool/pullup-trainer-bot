@@ -50,11 +50,55 @@ const THEME_PARAMS: Record<TelegramTheme, Record<string, string>> = {
   },
 };
 
+/**
+ * BackButton (issue #249). Opt-in: без `backButton: true` мок ведёт себя как
+ * раньше (SDK недоступен → useBackButton ничего не делает). С флагом мок
+ * повторяет то, что делает mockTelegramEnv из @telegram-apps/sdk: кладёт
+ * launch params (версия 7.0 ≥ 6.1) в sessionStorage и объявляет
+ * window.TelegramWebviewProxy.postEvent, куда SDK шлёт
+ * web_app_setup_back_button; видимость кнопки запоминается в
+ * window.__tgBackButtonVisible. Клик — pressTelegramBackButton().
+ */
+export async function pressTelegramBackButton(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    // Тот же вид события, что доставляет настоящий клиент (и SDK-мок).
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        data: JSON.stringify({ eventType: "back_button_pressed", eventData: "" }),
+        source: window.parent,
+      }),
+    );
+  });
+}
+
+export async function isTelegramBackButtonVisible(page: Page): Promise<boolean> {
+  return page.evaluate(() => (window as unknown as { __tgBackButtonVisible?: boolean }).__tgBackButtonVisible === true);
+}
+
 export async function mockTelegramWebApp(
   page: Page,
   initDataRaw: string,
   theme: TelegramTheme = "light",
+  options: { backButton?: boolean } = {},
 ): Promise<void> {
+  if (options.backButton) {
+    await page.addInitScript(() => {
+      const params = new URLSearchParams({
+        tgWebAppPlatform: "tdesktop",
+        tgWebAppThemeParams: "{}",
+        tgWebAppVersion: "7.0",
+      });
+      sessionStorage.setItem("tapps/launchParams", JSON.stringify(params.toString()));
+      (window as unknown as { TelegramWebviewProxy: unknown }).TelegramWebviewProxy = {
+        postEvent: (eventType: string, eventData: string) => {
+          if (eventType === "web_app_setup_back_button") {
+            const { is_visible: visible } = JSON.parse(eventData || "{}") as { is_visible?: boolean };
+            (window as unknown as { __tgBackButtonVisible: boolean }).__tgBackButtonVisible = visible === true;
+          }
+        },
+      };
+    });
+  }
   await page.route("https://telegram.org/js/telegram-web-app.js", (route) =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
   );
