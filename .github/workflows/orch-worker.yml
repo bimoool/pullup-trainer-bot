@@ -290,7 +290,7 @@ jobs:
             SUMMARY="$SUMMARY; frontend n/a"
           fi
           : > /tmp/orch/evidence.md
-          [ "$OK" = 1 ] || { echo "### pytest (tail)"; echo '```'; tail -40 /tmp/orch/pytest.txt; echo '```'; } >> /tmp/orch/evidence.md
+          [ "$OK" = 1 ] || { echo "### pytest (tail)"; echo '```'; tail -n 40 /tmp/orch/pytest.txt || true; echo '```'; } >> /tmp/orch/evidence.md
           # Real Mini App E2E — same paths as e2e.yml. Runner taken from the BASE commit (a worker
           # cannot alter it); fresh DB; full suite. Red E2E ⇒ not merged, whatever the agent said.
           if grep -qE '^(webapp-frontend/|app/(web|db|domain|services)/|scripts/e2e_seed(\.py|_all\.sh)$|alembic/|alembic\.ini$)' /tmp/orch/changed.txt; then
@@ -303,7 +303,8 @@ jobs:
               OK=0
               SUMMARY="$SUMMARY; e2e FAILED ($(grep -Eo '[0-9]+ (failed|flaky|passed)' /tmp/orch/e2e.txt | tr '\n' ' '))"
               echo "e2e_ran=failed" >> "$GITHUB_OUTPUT"
-              { echo "### Playwright E2E (tail)"; echo '```'; tail -60 /tmp/orch/e2e.txt /tmp/orch/e2e-install.txt 2>/dev/null; echo '```'; } >> /tmp/orch/evidence.md
+              # GNU tail rejects obsolete `-60` with several files: one file per call, never fatal.
+              { echo "### Playwright E2E (tail)"; echo '```'; grep -E '^\s+[0-9]+ (failed|flaky)|^\s+\[' /tmp/orch/e2e.txt 2>/dev/null | tail -n 40 || true; echo '---'; tail -n 80 /tmp/orch/e2e.txt 2>/dev/null || true; tail -n 20 /tmp/orch/e2e-install.txt 2>/dev/null || true; echo '```'; } >> /tmp/orch/evidence.md
             fi
           else
             SUMMARY="$SUMMARY; e2e n/a (no E2E-relevant paths)"
@@ -313,8 +314,8 @@ jobs:
           {
             echo "forbidden<<ORCH_EOF"; cat /tmp/orch/forbidden.txt; echo "ORCH_EOF"
           } >> "$GITHUB_OUTPUT"
-          tail -30 /tmp/orch/pytest.txt
-          tail -40 /tmp/orch/e2e.txt 2>/dev/null || true
+          tail -n 30 /tmp/orch/pytest.txt || true
+          tail -n 40 /tmp/orch/e2e.txt 2>/dev/null || true
 
       - name: Upload E2E report (gate failure)
         if: always() && steps.verify.outputs.e2e_ran == 'failed'
