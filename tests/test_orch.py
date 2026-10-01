@@ -144,6 +144,7 @@ def record_args(n, **kw):
         "merged": "1",
         "sha": "d" * 40,
         "run_url": "",
+        "evidence_file": "",
         "publish": True,
         "push": False,
     }
@@ -459,11 +460,14 @@ def test_failed_worker_does_not_count_and_attempts_cap(repo):
     st = orch.load_state()
     orch.batch_start(st, by="owner", now="t0")
     orch.save_state(st)
-    for _ in range(8):
+    for k in range(8):
         orch.cmd_plan(ns(apply=True), gh)
         n = next(i.number for i in gh.issues.values() if "status:in-progress" in i.labels)
+        assert n == k // 2 + 1  # a gate-red task is retried once, then the next one starts
         orch.cmd_worker_record(record_args(n, tests_ok="0"), gh)  # agent says done, CI red
-        assert gh.issues[n].labels == {"status:blocked", "priority:p1"}
+        # 1st red gate → auto-retry (ready); 2nd → blocked. The 8th attempt ends the batch.
+        expect = "status:ready" if k % 2 == 0 and k < 7 else "status:blocked"
+        assert gh.issues[n].labels == {expect, "priority:p1"}
         assert gh.issues[n].state == "OPEN"
     st = orch.load_state()
     assert st["batch"]["completed"] == [] and len(st["batch"]["attempts"]) == 8
@@ -551,3 +555,62 @@ def test_empty_queue_idles_batch_and_approval_restarts(repo):
     orch.cmd_plan(args, gh)
     assert args.decision.action == "select"
     assert "status:in-progress" in gh.issues[2].labels
+
+
+def test_red_gate_retries_once_with_evidence_then_blocks(repo, tmp_path):
+    """Agent done + red deterministic gate (e.g. Playwright E2E) → ready once, then blocked."""
+    ev = tmp_path / "evidence.md"
+    ev.write_text("### Playwright E2E (tail)\n1 failed: mobile-layout.spec.ts")
+    gh = record_case(
+        repo,
+        tmp_path,
+        result_text("done"),
+        tests_ok="0",
+        evidence_file=str(ev),
+        tests_summary="ruff ok; pytest 1 passed; frontend ok; e2e FAILED (1 failed)",
+    )
+    assert gh.issues[7].labels == {"status:ready", "priority:p1"} and gh.issues[7].state == "OPEN"
+    comment = gh.comments[7][-1]
+    assert "AUTO-RETRY (1/2" in comment and "1 failed: mobile-layout.spec.ts" in comment
+    assert "e2e FAILED" in comment
+    st = orch.load_state()
+    assert st["batch"]["completed"] == [] and st["batch"]["attempts"] == [7]
+    # Planner re-selects it; second red gate → blocked for the owner, not an endless loop.
+    orch.cmd_plan(ns(apply=True), gh)
+    assert "status:in-progress" in gh.issues[7].labels
+    orch.cmd_worker_record(
+        record_args(7, result_file=str(tmp_path / "result.md"), tests_ok="0"), gh
+    )
+    assert "status:blocked" in gh.issues[7].labels and "AUTO-RETRY" not in gh.comments[7][-1]
+
+
+@pytest.mark.parametrize("verdict", ["blocked", "needs-owner"])
+def test_agent_blocked_is_never_auto_retried(repo, tmp_path, verdict):
+    gh = record_case(repo, tmp_path, result_text(verdict), tests_ok="0")
+    assert f"status:{verdict}" in gh.issues[7].labels
+
+
+def test_no_commits_or_forbidden_paths_are_never_auto_retried(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("done"), tests_ok="0", commits_ahead=0)
+    assert "status:blocked" in gh.issues[7].labels
+
+
+def test_worker_workflow_runs_real_e2e_in_gate_and_never_asks_agent_to_install():
+    wf = (Path(__file__).resolve().parent.parent / ".github/workflows/orch-worker.yml").read_text()
+    # Toolchain installed by the workflow, before the agent.
+    assert wf.index("npx playwright install --with-deps chromium") < wf.index("name: Claude worker")
+    # Gate: base-commit runner, fresh DB, failure feeds evidence; agent never owns Playwright.
+    assert 'git show "$BASE_SHA:.github/orch/e2e.sh"' in wf and "--fresh" in wf
+    assert "NOT responsible for installing Playwright" in wf
+    assert "--evidence-file /tmp/orch/evidence.md" in wf
+    for path in ("webapp-frontend/", "app/(web|db|domain|services)/", "scripts/e2e_seed"):
+        assert path in wf
+    runner = (Path(__file__).resolve().parent.parent / ".github/orch/e2e.sh").read_text()
+    for step in (
+        "alembic upgrade head",
+        "npm run build",
+        "/health",
+        "e2e_seed_all.sh",
+        "E2E_BASE_URL=http://127.0.0.1:8001 npx playwright test",
+    ):
+        assert step in runner

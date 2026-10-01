@@ -591,6 +591,10 @@ def forbidden_changes(changed_paths: list[str], diff_text: str) -> list[str]:
 
 
 RESULT_VERDICTS = ("done", "blocked", "needs-owner")
+# Worker runs per issue per batch when the agent claimed done but only the deterministic gate
+# (ruff/pytest/frontend/E2E) is red: the issue goes back to status:ready once, and the next
+# worker resumes the same branch with the gate evidence. Then it is blocked for the owner.
+GATE_RETRY_LIMIT = 2
 RESULT_REQUIRED_FIELDS = ("VERDICT", "SUMMARY", "ACCEPTANCE", "TESTS")
 
 
@@ -648,7 +652,7 @@ def final_verdict(
     if commits_ahead <= 0:
         return "blocked", "worker reported done but produced no commits"
     if not tests_ok:
-        return "blocked", "worker reported done but verification (ruff/pytest/frontend) failed"
+        return "blocked", "worker reported done but verification (ruff/pytest/frontend/e2e) failed"
     if merged is False:
         return "blocked", "merge into base failed (conflict) — branch left for review"
     return "done", "acceptance claimed by worker, verification green, merged into base"
@@ -1221,6 +1225,14 @@ def cmd_worker_record(args, gh: Gh) -> int:
     issue = gh.get_issue(args.issue)
     result = read_result(args.result_file) if args.result_file else {"error": "", "text": ""}
     forbidden = [x for x in (args.forbidden or "").split("\n") if x.strip()]
+    agent_verdict = parse_result(result["text"])["verdict"] if args.result_file else args.verdict
+    gate_red_only = (
+        not result["error"]
+        and agent_verdict == "done"
+        and args.commits_ahead > 0
+        and not forbidden
+        and args.tests_ok != "1"
+    )
     if result["error"]:
         # Orchestration-contract failure: the agent's claim is unusable, so nothing is done.
         verdict = "needs-owner" if forbidden else "blocked"
@@ -1231,7 +1243,7 @@ def cmd_worker_record(args, gh: Gh) -> int:
         )
     else:
         verdict, why = final_verdict(
-            parse_result(result["text"])["verdict"] if args.result_file else args.verdict,
+            agent_verdict,
             args.tests_ok == "1",
             args.commits_ahead,
             forbidden,
@@ -1244,7 +1256,22 @@ def cmd_worker_record(args, gh: Gh) -> int:
         "needs-owner": "status:needs-owner",
     }[verdict]
     batch_record(state, issue.number, verdict)
+    runs = state["batch"]["attempts"].count(issue.number)
+    if (
+        verdict == "blocked"
+        and gate_red_only
+        and runs < GATE_RETRY_LIMIT
+        and batch_can_start(state)[0]
+    ):
+        label = "status:ready"
+        why += (
+            f" — AUTO-RETRY ({runs}/{GATE_RETRY_LIMIT} runs): back to status:ready; the next "
+            "worker resumes this branch with the gate evidence below"
+        )
     gh.set_status(issue.number, label, issue.labels)
+    evidence = ""
+    if getattr(args, "evidence_file", None) and Path(args.evidence_file).is_file():
+        evidence = Path(args.evidence_file).read_text().strip()[-6000:]
     report = [
         f"🤖 **Worker result: {verdict.upper()}** — {why}",
         "",
@@ -1253,6 +1280,11 @@ def cmd_worker_record(args, gh: Gh) -> int:
         f"- run: {args.run_url or 'local'}",
         f"- {batch_line(state)}",
         "",
+        *(
+            ["<details><summary>Gate evidence</summary>", "", evidence, "", "</details>", ""]
+            if evidence
+            else []
+        ),
         "<details><summary>Worker report</summary>",
         "",
         result["text"] or "(no usable result file — see ORCH CONTRACT FAILURE above)",
@@ -1325,6 +1357,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--merged", choices=["", "0", "1"], default="")
     s.add_argument("--sha", default="")
     s.add_argument("--run-url", default="")
+    s.add_argument("--evidence-file", default="", help="gate failure tails for the report")
     s.add_argument("--publish", action="store_true")
     s.add_argument("--push", action="store_true")
     args = p.parse_args(argv)

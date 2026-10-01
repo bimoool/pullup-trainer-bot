@@ -219,7 +219,7 @@ latest `📍 Checkpoint` / `🤖 Worker result` comment first.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `orch-planner.yml` | `workflow_dispatch` (owner, or worker hop) | `plan` dry-run/apply, `start-batch` (owner only), `stop-batch`, `status`; dispatches the worker |
-| `orch-worker.yml` | `workflow_dispatch` (planner, or owner) | Claude implements the brief → always-push → ruff/pytest/frontend gate → merge `--no-ff` into base → `worker-record` → dispatches planner while the batch runs |
+| `orch-worker.yml` | `workflow_dispatch` (planner, or owner) | Claude implements the brief → always-push → ruff/pytest/frontend + real Playwright E2E gate (E2E-relevant paths; toolchain owned by the workflow, never the agent; red gate ⇒ one auto-retry on the same branch, then blocked) → merge `--no-ff` into base → `worker-record` → dispatches planner while the batch runs |
 | `orch-status.yml` | push to `develop/current`, dispatch | rewrites the pinned dashboard issue (#230) |
 
 Level **A**: planner → worker → planner runs unattended once the owner starts a batch
