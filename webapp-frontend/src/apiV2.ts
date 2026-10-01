@@ -803,3 +803,62 @@ export async function fetchTrainingAnalytics(
   const query = range ? `?from=${range.from}&to=${range.to}` : "";
   return apiV2Get<TrainingAnalyticsV2>(`/api/v2/analytics/training${query}`, initDataRaw);
 }
+
+// --- Тесты (Assessment Tests, #260): протоколы и свои замеры, вне прогрессии ---------------
+
+export interface AssessmentResultV2 {
+  id: number;
+  protocol_id: number;
+  performed_on: string; // YYYY-MM-DD
+  value: string;
+  unit: string;
+  note: string | null;
+}
+
+export interface AssessmentProtocolV2 {
+  id: number;
+  name: string;
+  description: string | null;
+  metric_type: string;
+  unit: string;
+  last_result: AssessmentResultV2 | null;
+  results_count: number;
+  trend: string[]; // старые → новые
+}
+
+export async function listAssessments(initDataRaw: string): Promise<AssessmentProtocolV2[]> {
+  const response = await apiV2Get<{ protocols: AssessmentProtocolV2[] }>("/api/v2/assessments", initDataRaw);
+  return response.protocols;
+}
+
+export async function getAssessment(
+  initDataRaw: string, protocolId: number,
+): Promise<{ protocol: AssessmentProtocolV2; results: AssessmentResultV2[] }> {
+  return apiV2Get(`/api/v2/assessments/${protocolId}/results`, initDataRaw);
+}
+
+export interface AssessmentResultInput {
+  performed_on: string;
+  value: number;
+  note: string | null;
+}
+
+export async function createAssessmentResult(
+  initDataRaw: string, protocolId: number, input: AssessmentResultInput,
+): Promise<AssessmentResultV2> {
+  return apiV2Post<AssessmentResultInput, AssessmentResultV2>(
+    `/api/v2/assessments/${protocolId}/results`, initDataRaw, input,
+  );
+}
+
+export async function updateAssessmentResult(
+  initDataRaw: string, resultId: number, input: AssessmentResultInput,
+): Promise<AssessmentResultV2> {
+  return apiV2Patch<AssessmentResultInput, AssessmentResultV2>(
+    `/api/v2/assessments/results/${resultId}`, initDataRaw, input,
+  );
+}
+
+export async function deleteAssessmentResult(initDataRaw: string, resultId: number): Promise<void> {
+  return apiV2Delete(`/api/v2/assessments/results/${resultId}`, initDataRaw);
+}
