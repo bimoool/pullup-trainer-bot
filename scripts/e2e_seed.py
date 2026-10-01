@@ -73,6 +73,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.base import Base, async_session_factory
 from app.db.models import Gender, User
 from app.db.models_program import (
+    AssessmentProtocol,
+    AssessmentResult,
     Complex,
     ComplexItem,
     Exercise,
@@ -955,6 +957,23 @@ async def seed_analytics_metric(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
+async def seed_tests_hub(session: AsyncSession, telegram_id: int) -> None:
+    """#260 — хаб «Тесты»: онбордящийся пользователь с двумя замерами «Максимум подтягиваний»
+    (10 повт. 20 дней назад, 12 повт. 5 дней назад); остальные протоколы (засеяны миграцией)
+    без результатов. Протоколы берутся по имени — сид их не создаёт."""
+    user = await _onboard(session, telegram_id)
+    protocol = (await session.execute(
+        select(AssessmentProtocol).where(AssessmentProtocol.name == "Максимум подтягиваний"),
+    )).scalar_one()
+    now = datetime.now(UTC)
+    for days_ago, value in ((20, 10), (5, 12)):
+        session.add(AssessmentResult(
+            user_id=user.id, protocol_id=protocol.id, performed_at=now - timedelta(days=days_ago),
+            value=value, unit="повт.",
+        ))
+    await session.flush()
+
+
 async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     """G3 — Главная/«Мои тренировки»: у пользователя две своих Workout (одна
     с длинным русским названием и тремя упражнениями, одна пустая) и
@@ -1096,6 +1115,7 @@ SCENARIOS = {
     "workout_detail": seed_workout_detail,
     "analytics_v2": seed_analytics_v2,
     "analytics_metric": seed_analytics_metric,
+    "tests_hub": seed_tests_hub,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
     "builder_workouts": seed_builder_workouts,

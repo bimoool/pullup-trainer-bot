@@ -35,7 +35,7 @@ any merge into `develop/current`.
 | «Log Cross-Training» banner / entry | H8 | unreachable FreeWorkoutScreen | MISSING | no reachable free activity logging | Journal «+ Записать» → «Другую активность», also in «+» sheet | #263 | — |
 | Favorite Workouts row | H9 | «Избранное» row on Главная (workouts + programs; hint only if never favorited) | DONE | — | — | #272 | crimpd-parity.spec.ts «Favorites»; tests/test_web/test_v2_favorites.py |
 | «Start Open Climbing Session» banner | H10; J9 | — | DOMAIN-EQUIVALENT | climbing-specific | free activity logging + Start from Workout Detail cover it | #263, #273 | — |
-| Assessment Tests carousel | H11 | none (baseline only at onboarding) | MISSING | no tests surface | «Тесты» row on Главная + hub | #260 | — |
+| Assessment Tests carousel | H11 | «Тесты» row on Главная → hub (cards: last result, trend) | DONE | — | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
 | «+» sheet (session / log / create / cancel) | H12; d/plus_sheet; FI F2 | «+» sheet in Home header | PARTIAL | log entries (#263) | sheet with working actions only; log entries added by #263 | #254, #263 | crimpd-parity.spec.ts «Home» (create / today / cancel) |
 | No plan/streak widget on Home | H14 | Home has no week widget | DONE | — | (our skill once planned a week widget; Crimpd has none — Plans tab owns the week) | — | crimpd-parity Baseline |
 
@@ -150,8 +150,8 @@ any merge into `develop/current`.
 | Attribute history | R2 *(target screens unobserved)* | single values | MISSING | — | weight/height history with trend | #270 | — |
 | Edit / delete historical metrics | — | none | MISSING | — | edit/delete entries | #270 | — |
 | Grade chart (boulder/route) | R3 | GTO / WSF cards | DOMAIN-EQUIVALENT | no climbing grades | our norms (GTO/WSF) | — | — |
-| Assessments (primary / additional, last result, sparkline) | R4–R5 | none | MISSING | — | Tests hub | #260 | — |
-| Test detail: chart, history | R6, R8 | none | MISSING | — | trend + history + record | #260 | — |
+| Assessments (primary / additional, last result, sparkline) | R4–R5 | «Тесты» card on Профиль (3 seeded protocols, last result, mini-trend ≥2) | DONE | no primary/additional split | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
+| Test detail: chart, history | R6, R8 | description, SVG trend, history (newest first), record / edit / delete own results | DONE | — | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
 | Peer Insights | R7 | leaderboard (legacy data) | MISSING | — | percentile vs cohort, ≥20 users or honest «мало данных» | #276 | — |
 | Units (kg/lb, cm/in) | R11 | hard-coded metric | MISSING | — | display units | #268 | — |
 | Timezone | R11 | ProfileEditForm timezone | DONE | — | — | — | — |

@@ -10,6 +10,7 @@ import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favori
 import { groupProgramsByCategory } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
+import { TestsScreen } from "./TestsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import { formatExerciseCount, formatExerciseNames, formatFirstProtocol } from "./workoutCardFormat";
@@ -69,6 +70,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
   const [searching, setSearching] = useState(false);
   const [searchState, setSearchState] = useState<SearchState>({ query: "", category: null, favoritesOnly: false });
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Хаб «Тесты» (#260) — локальный swap внутри вкладки, как Program/Workout Detail.
+  const [showTests, setShowTests] = useState(false);
   const savedScrollY = useRef<number | null>(null);
 
   useLayoutEffect(() => {
@@ -253,6 +256,10 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
     }
   }
 
+  if (showTests) {
+    return <TestsScreen initDataRaw={initDataRaw} onBack={() => setShowTests(false)} />;
+  }
+
   if (searching) {
     return (
       <SearchScreen
@@ -336,6 +343,11 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
           </div>
         );
       })()}
+
+      <button type="button" className="home-tests-row" data-testid="home-tests-row" onClick={() => setShowTests(true)}>
+        <span className="home-tests-row-title">Тесты</span>
+        <span className="hint">Максимум, вис, вес — результаты и динамика ›</span>
+      </button>
 
       {/* Capability A (issue #188) — минимальный каталог: одна карточка на
           seed-программу, без категорий/поиска/уровней (это остаток волны 6).

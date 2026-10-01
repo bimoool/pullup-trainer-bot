@@ -669,3 +669,115 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+// --- Tests (#260): хаб «Тесты» — карточки, тренд, запись/правка/удаление результата ---------------
+// Seed: scripts/e2e_seed.py tests_hub — «Максимум подтягиваний»: 10 повт. (20 дней назад) и 12 повт.
+// (5 дней назад); «Вис на перекладине, сек» и «Подтягивания с весом, кг» без результатов.
+// Тест сам пишет и удаляет результаты «Вис…»; по пользователю на ширину/тему и на retry.
+const TESTS_USERS = { 320: { id: 996_001, theme: "light" }, 390: { id: 996_002, theme: "dark" } } as const;
+const HANG_NAME = "Вис на перекладине, сек";
+const PULLUPS_NAME = "Максимум подтягиваний";
+
+function ruDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+for (const width of WIDTHS) {
+  const { id, theme } = TESTS_USERS[width as 320 | 390];
+  test.describe(`Tests @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("карточки с Главной и Профиля; запись, график, правка и удаление результата", async ({ page }, testInfo) => {
+      const dialogs: string[] = [];
+      page.on("dialog", (dialog) => {
+        dialogs.push(dialog.message());
+        void dialog.accept();
+      });
+      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry * 10, { theme, backButton: true });
+      const card = (name: string) => page.getByTestId("test-card").filter({ hasText: name });
+      const rows = page.getByTestId("test-history-row");
+
+      // Главная: строка «Тесты» ведёт в хаб; три карточки, у проходивших тест — результат и тренд.
+      await page.getByTestId("home-tests-row").click();
+      await expect(page.getByTestId("test-card")).toHaveCount(3);
+      await expect(card(PULLUPS_NAME).getByTestId("test-card-last")).toHaveText(`12 повт. · ${ruDate(mskDaysAgo(5))}`);
+      await expect(card(PULLUPS_NAME).getByTestId("test-card-trend")).toBeVisible();
+      await expect(card(HANG_NAME).getByTestId("test-card-last")).toHaveText("Ещё не проходили");
+      await expect(card(HANG_NAME).getByTestId("test-card-trend")).toHaveCount(0);
+      await expectNoHorizontalOverflow(page, "Тесты: список");
+
+      // Деталь теста без результатов: описание, пояснение про прогрессию, пустая история и график.
+      await card(HANG_NAME).click();
+      await expect(page.getByTestId("test-detail-title")).toHaveText(HANG_NAME);
+      await expect(page.getByTestId("test-detail-description")).not.toBeEmpty();
+      await expect(page.getByTestId("test-detail-note")).toContainText("не влияют на прогрессию");
+      await expect(page.getByTestId("test-history-empty")).toBeVisible();
+      await expect(page.getByTestId("test-chart-empty")).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Тест: пустая деталь");
+
+      // Валидация формы: нулевое значение не уходит на сервер.
+      const form = page.getByTestId("test-form");
+      await form.getByLabel("Результат, сек").fill("0");
+      await form.getByRole("button", { name: "Записать результат" }).click();
+      await expect(page.getByTestId("test-form-error")).toHaveText("Введите значение больше нуля");
+      await expect(rows).toHaveCount(0);
+
+      // Запись двух результатов: сегодня и два дня назад; новые первыми, график появляется со второго.
+      await form.getByLabel("Результат, сек").fill("42,5");
+      await form.getByLabel("Заметка (необязательно)").fill("с резиной");
+      await form.getByRole("button", { name: "Записать результат" }).click();
+      await expect(rows).toHaveCount(1);
+      await expect(rows.first()).toContainText("42.5 сек");
+      await expect(rows.first()).toContainText("с резиной");
+      await expect(page.getByTestId("test-chart-empty")).toBeVisible();
+      await form.getByLabel("Дата").fill(mskDaysAgo(2));
+      await form.getByLabel("Результат, сек").fill("50");
+      await form.getByRole("button", { name: "Записать результат" }).click();
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toContainText("42.5 сек");
+      await expect(rows.nth(1)).toContainText("50 сек");
+      await expect(rows.nth(1)).toContainText(ruDate(mskDaysAgo(2)));
+      await expect(page.getByTestId("test-chart")).toHaveAttribute("data-points", "2");
+      await expectNoHorizontalOverflow(page, "Тест: история и график");
+
+      // Правка: значение меняется, форма возвращается к записи.
+      await rows.nth(0).getByRole("button", { name: /^Изменить/ }).click();
+      await expect(form).toContainText("Изменить результат");
+      await form.getByLabel("Результат, сек").fill("45");
+      await form.getByRole("button", { name: "Сохранить" }).click();
+      await expect(rows.nth(0)).toContainText("45 сек");
+      await expect(form).toContainText("Записать результат");
+
+      // Список показывает последний результат и тренд.
+      await pressTelegramBackButton(page);
+      await expect(card(HANG_NAME).getByTestId("test-card-trend")).toBeVisible();
+      await expect(card(HANG_NAME).getByTestId("test-card-last")).toContainText("45 сек · ");
+
+      // Удаление с подтверждением: оба результата, график исчезает.
+      await card(HANG_NAME).click();
+      await rows.nth(0).getByRole("button", { name: /^Удалить/ }).click();
+      await expect(rows).toHaveCount(1);
+      await expect(page.getByTestId("test-chart-empty")).toBeVisible();
+      await rows.nth(0).getByRole("button", { name: /^Удалить/ }).click();
+      await expect(page.getByTestId("test-history-empty")).toBeVisible();
+      expect(dialogs).toHaveLength(2);
+      expect(dialogs[0]).toContain("Удалить результат 45 сек");
+
+      // Профиль: тот же список в карточке «Тесты»; деталь с историей и графиком.
+      await openTab(page, "Профиль");
+      const profileTests = page.getByTestId("profile-tests");
+      await expect(profileTests.getByTestId("test-card")).toHaveCount(3);
+      await expect(profileTests.getByTestId("test-card").filter({ hasText: HANG_NAME }).getByTestId("test-card-last"))
+        .toHaveText("Ещё не проходили");
+      await profileTests.getByTestId("test-card").filter({ hasText: PULLUPS_NAME }).click();
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toContainText("12 повт.");
+      await expect(page.getByTestId("test-chart")).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Профиль → деталь теста");
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
+}

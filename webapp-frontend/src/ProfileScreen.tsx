@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
 import { fetchGtoStatus, fetchProfile, fetchWsfStatus, type GtoStatus, type ProfileResponse, type WsfStatus } from "./api";
+import { NOT_IN_PROGRESSION_NOTE } from "./assessmentsFormat";
 import { BandItemsScreen } from "./BandItemsScreen";
+import { TestDetailScreen } from "./TestDetailScreen";
+import { TestsList } from "./TestsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
@@ -188,6 +191,8 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   const [showEditProfile, setShowEditProfile] = useState(false);
   // Список личных резин (issue #148) — тот же приём swap'а.
   const [showBandItems, setShowBandItems] = useState(false);
+  // Деталь теста (#260) — тот же приём swap'а; список карточек — TestsList в карточке «Тесты».
+  const [testProtocolId, setTestProtocolId] = useState<number | null>(null);
   // Разряд ГТО (issue #71) — отдельный запрос от /api/profile: своя
   // концепция (не AchievementItem), не критична для остального экрана,
   // поэтому её сбой не должен ронять всю вкладку "Профиль" (гасится
@@ -280,6 +285,14 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     return <BandItemsScreen initDataRaw={initDataRaw} onBack={() => setShowBandItems(false)} />;
   }
 
+  if (testProtocolId !== null) {
+    return (
+      <TestDetailScreen
+        initDataRaw={initDataRaw} protocolId={testProtocolId} onBack={() => setTestProtocolId(null)}
+      />
+    );
+  }
+
   return (
     <div>
       <p className="plan-title">Профиль</p>
@@ -304,6 +317,12 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
         <Button mode="outline" size="m" stretched onClick={() => setShowEditProfile(true)}>
           ✏️ Изменить
         </Button>
+      </div>
+
+      <div className="profile-card" data-testid="profile-tests">
+        <p className="section-title">Тесты</p>
+        <TestsList initDataRaw={initDataRaw} onOpen={(protocol) => setTestProtocolId(protocol.id)} />
+        <p className="hint">{NOT_IN_PROGRESSION_NOTE}</p>
       </div>
 
       <div className="profile-card">
