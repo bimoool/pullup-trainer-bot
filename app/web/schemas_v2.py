@@ -86,6 +86,20 @@ class WorkoutResponse(BaseModel):
     items: list[WorkoutItemResponse] | None = None
 
 
+class WorkoutSessionSummaryResponse(BaseModel):
+    """Одна выполненная сессия в истории конкретной тренировки (экран Workout
+    Detail): дата и короткий результат — сколько упражнений и подходов залогировано."""
+
+    id: int
+    performed_at: datetime
+    exercises_count: int
+    sets_done: int
+
+
+class WorkoutSessionsResponse(BaseModel):
+    sessions: list[WorkoutSessionSummaryResponse]
+
+
 class WorkoutListResponse(BaseModel):
     workouts: list[WorkoutResponse]
 

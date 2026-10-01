@@ -85,6 +85,8 @@ from app.web.schemas_v2 import (
     WorkoutItemUpdateRequest,
     WorkoutListResponse,
     WorkoutResponse,
+    WorkoutSessionsResponse,
+    WorkoutSessionSummaryResponse,
     WorkoutUpdateRequest,
 )
 from app.web.schemas_v2_session import (
@@ -398,6 +400,30 @@ async def get_workout_detail(
     complex_items = await program_repo.list_complex_items(workout_id)
     items = await _build_workout_item_responses(session, complex_items)
     return _workout_response(workout, items=items)
+
+
+@router_v2.get("/workouts/{workout_id}/sessions", response_model=WorkoutSessionsResponse)
+async def list_workout_sessions(
+    workout_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutSessionsResponse:
+    """История одной тренировки: завершённые v2-сессии текущего пользователя,
+    чей замороженный workout_snapshot ссылается на этот Workout, новые первыми.
+    Видимость — как у GET /workouts/{id} (чужой user Workout — 404)."""
+    user = await _require_user(session, init_data)
+    if await ProgramRepository(session).get_visible_workout_for_user(workout_id, user.id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    details = await TrainingSessionRepository(session).list_completed_for_workout(user.id, workout_id)
+    return WorkoutSessionsResponse(
+        sessions=[
+            WorkoutSessionSummaryResponse(
+                id=detail.id, performed_at=detail.performed_at, exercises_count=len(detail.blocks),
+                sets_done=sum(len(block.set_logs) for block in detail.blocks),
+            )
+            for detail in details
+        ],
+    )
 
 
 @router_v2.post("/workouts/{workout_id}/items", response_model=WorkoutItemResponse)
