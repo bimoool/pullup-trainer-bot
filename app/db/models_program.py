@@ -144,6 +144,10 @@ class Complex(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Мягкое удаление пользовательской тренировки (issue #261): определение не
+    # уничтожается (снимки сессий и PlanItem могли на него ссылаться), а
+    # скрывается из всех пользовательских выборок.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ComplexItem(Base):

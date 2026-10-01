@@ -186,6 +186,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
         onBack={closeWorkoutView}
         onSaved={(workoutId) => setWorkoutView({ kind: "edit", workoutId })}
         onAddToPlan={() => {}}
+        onDeleted={closeWorkoutView}
+        onDuplicated={closeWorkoutView}
       />
     );
   }
@@ -210,6 +212,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
         onBack={() => setWorkoutView({ kind: "detail", workoutId: workoutView.workoutId })}
         onSaved={() => setWorkoutView({ kind: "detail", workoutId: workoutView.workoutId })}
         onAddToPlan={(workoutId, workoutTitle) => setWorkoutView({ kind: "add-to-plan", workoutId, workoutTitle })}
+        onDeleted={closeWorkoutView}
+        onDuplicated={closeWorkoutView}
       />
     );
   }

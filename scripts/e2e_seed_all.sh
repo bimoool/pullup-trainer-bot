@@ -39,6 +39,10 @@ seed home_workouts 920004
 seed home_discovery 940001
 seed home_discovery 940002
 seed workout_detail 950001
+seed workout_detail 997101
+seed workout_detail 997102
+seed workout_detail 997103
+seed workout_detail 997104
 seed home_discovery 960001
 seed home_discovery 960002
 seed home_discovery 960003

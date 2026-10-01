@@ -781,3 +781,74 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+// --- Workout delete/duplicate (#261): «Дублировать» и «Удалить тренировку» в редакторе ----
+// Seed: scripts/e2e_seed.py workout_detail 997101..997104 — по пользователю на (ширина, тема),
+// т.к. сценарий меняет состав тренировок на сервере. «Очень длинная…» имеет 2 завершённые
+// сессии со снимком — после удаления они остаются, а сама тренировка пропадает из списков.
+const DELETE_DUPLICATE_USERS: Record<string, number> = {
+  "320-light": 997_101, "320-dark": 997_102, "390-light": 997_103, "390-dark": 997_104,
+};
+
+for (const width of WIDTHS) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Workout delete/duplicate @${width}px ${theme}`, () => {
+      test.use({ viewport: { width, height: 760 } });
+
+      test("дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска", async ({ page }) => {
+        const userId = DELETE_DUPLICATE_USERS[`${width}-${theme}`];
+        const { consoleErrors, apiFailures } = await openAppAs(page, userId, { theme, backButton: true });
+        const cards = page.getByTestId("my-workout-card");
+
+        // Дублировать: редактор → «Дублировать» → на Главной сразу появляется «… (копия)».
+        await cards.filter({ hasText: LONG_TITLE }).first().click();
+        await page.getByRole("button", { name: "Редактировать" }).click();
+        await expect(page.getByRole("button", { name: "Дублировать" })).toBeVisible();
+        await expectNoHorizontalOverflow(page, "Редактор с «Дублировать» и «Удалить»");
+        await page.getByRole("button", { name: "Дублировать" }).click();
+        await expect(page.getByTestId("my-workouts")).toBeVisible();
+        const copy = cards.filter({ hasText: "(копия)" });
+        await expect(copy).toHaveCount(1);
+        await copy.click();
+        await expect(page.getByTestId("workout-detail-title")).toContainText("(копия)");
+        await expect(page.getByTestId("workout-detail-items").locator("li")).toHaveCount(3);
+        await pressTelegramBackButton(page);
+
+        // Удалить копию: сначала подтверждение с текстом, «Отмена» ничего не удаляет.
+        await copy.click();
+        await page.getByRole("button", { name: "Редактировать" }).click();
+        await page.getByRole("button", { name: "Удалить тренировку" }).click();
+        await expect(page.getByTestId("workout-delete")).toContainText(
+          "Удалить тренировку? Это не удалит уже выполненные тренировки из журнала.",
+        );
+        await expectNoHorizontalOverflow(page, "Подтверждение удаления тренировки");
+        await page.getByTestId("workout-delete").getByRole("button", { name: "Отмена" }).click();
+        await expect(page.getByRole("button", { name: "Удалить тренировку" })).toBeVisible();
+        await page.getByRole("button", { name: "Удалить тренировку" }).click();
+        await page.getByRole("button", { name: "Да, удалить" }).click();
+        await expect(page.getByTestId("my-workouts")).toBeVisible();
+        await expect(cards.filter({ hasText: "(копия)" })).toHaveCount(0);
+        await expect(cards.filter({ hasText: LONG_TITLE })).toHaveCount(1);
+
+        // Удалить оригинал: исчезает с Главной и из поиска, после перезагрузки тоже.
+        await cards.filter({ hasText: LONG_TITLE }).click();
+        await page.getByRole("button", { name: "Редактировать" }).click();
+        await page.getByRole("button", { name: "Удалить тренировку" }).click();
+        await page.getByRole("button", { name: "Да, удалить" }).click();
+        await expect(page.getByTestId("my-workouts")).toBeVisible();
+        await expect(cards.filter({ hasText: LONG_TITLE })).toHaveCount(0);
+
+        await page.getByTestId("home-search-pill").click();
+        await page.getByRole("searchbox", { name: "Поиск" }).fill("Очень длинная");
+        await expect(page.getByTestId("search-result-workout")).toHaveCount(0);
+
+        await openAppAs(page, userId, { theme, backButton: true });
+        await expect(cards.filter({ hasText: LONG_TITLE })).toHaveCount(0);
+        await expect(cards.filter({ hasText: "Пустая заготовка" })).toHaveCount(1);
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+    });
+  }
+}
