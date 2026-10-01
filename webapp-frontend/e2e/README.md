@@ -89,6 +89,17 @@ SKILL.md`: старая схема остаётся источником ист�
     v2_session_ready 900010` / `v2_session_complex 900011` /
     `v2_session_progression_edit 900012`, как в шаге 5 выше.
 
+## Мобильная раскладка (issue #244)
+
+`scenarios/mobile-layout.spec.ts` идёт отдельными проектами `mobile-320`, `mobile-375`,
+`mobile-390` (десктопный проект `chromium` его игнорирует). Проверяет пять вкладок нижней
+навигации: подписи видны и не обрезаны, нет горизонтального overflow страницы; в светлой и тёмной
+теме Telegram (`openAppAs(..., { theme })`). Читает посеянного `ready` (900003), ничего не меняет.
+
+```bash
+npx playwright test --project=mobile-320 --project=mobile-375 --project=mobile-390
+```
+
 ## Известное ограничение этого PR
 
 `webapp-frontend/e2e/package.json` добавлен без `package-lock.json` —

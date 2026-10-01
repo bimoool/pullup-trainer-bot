@@ -29,19 +29,44 @@ import type { Page } from "@playwright/test";
  * отдаём пустой файл — тогда наш мок остаётся единственным источником
  * window.Telegram, независимо от порядка выполнения тегов в <head>.
  */
-export async function mockTelegramWebApp(page: Page, initDataRaw: string): Promise<void> {
+export type TelegramTheme = "light" | "dark";
+
+// Параметры темы, как их шлёт настоящий клиент Telegram (набор themeParams из
+// Bot API), — main.tsx переносит их в CSS-переменные. "light" оставляет
+// прежнее поведение мока (пустые themeParams → дефолты из index.css).
+const THEME_PARAMS: Record<TelegramTheme, Record<string, string>> = {
+  light: {},
+  dark: {
+    bg_color: "#17212b",
+    text_color: "#f5f5f5",
+    hint_color: "#708499",
+    link_color: "#6ab3f3",
+    button_color: "#5288c1",
+    button_text_color: "#ffffff",
+    secondary_bg_color: "#232e3c",
+    section_bg_color: "#17212b",
+    subtitle_text_color: "#708499",
+    destructive_text_color: "#ec3942",
+  },
+};
+
+export async function mockTelegramWebApp(
+  page: Page,
+  initDataRaw: string,
+  theme: TelegramTheme = "light",
+): Promise<void> {
   await page.route("https://telegram.org/js/telegram-web-app.js", (route) =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
   );
-  await page.addInitScript((raw: string) => {
+  await page.addInitScript(({ raw, colorScheme, themeParams }) => {
     (window as unknown as { Telegram: unknown }).Telegram = {
       WebApp: {
         initData: raw,
         initDataUnsafe: {},
         version: "7.0",
         platform: "tdesktop",
-        colorScheme: "light",
-        themeParams: {},
+        colorScheme,
+        themeParams,
         ready: () => {},
         expand: () => {},
         close: () => {},
@@ -56,5 +81,5 @@ export async function mockTelegramWebApp(page: Page, initDataRaw: string): Promi
         },
       },
     };
-  }, initDataRaw);
+  }, { raw: initDataRaw, colorScheme: theme, themeParams: THEME_PARAMS[theme] });
 }
