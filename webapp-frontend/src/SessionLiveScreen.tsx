@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
 import { BlockTransition } from "./BlockTransition";
-import { describeBlockPlan, formatDuration, formatNumber, formatTarget } from "./blockFormat";
+import { describeBlockPlan, formatDuration, formatNumber, formatTarget, resultInputLabel } from "./blockFormat";
 import {
   blockSetCounts,
   clearLocalSession,
@@ -413,7 +413,7 @@ export function SessionLiveScreen({
   const targetsCount = block?.targets.length ?? 0;
   const targetForSet = block?.targets[local.localPhase.setNumber - 1] ?? null;
   const isMaxBlock = block?.protocol_type === "max_effort";
-  const isTimeBlock = block?.protocol_type === "time_sets" || (block !== null && targetForSet?.unit === "s");
+  const inputLabel = resultInputLabel(block?.protocol_type ?? null, targetForSet);
   // Имя блока — из замороженного снимка тренировки, если он есть, иначе из
   // библиотеки (legacy/STEP). null — имени нет, label не показываем.
   const blockName = (candidate: typeof block): string | null => {
@@ -484,13 +484,16 @@ export function SessionLiveScreen({
               причина, по которой WorkoutScreen.tsx/BackdateForm.tsx везде
               используют явный aria-label, не полагаются на header. */}
           <Input
-            header={isTimeBlock ? "Секунды" : isMaxBlock ? "Повторений" : "Результат"}
-            aria-label={isTimeBlock ? "Секунды" : isMaxBlock ? "Повторений" : "Результат"}
+            header={inputLabel.label}
+            aria-label={inputLabel.label}
             type="number"
             inputMode="decimal"
             value={value}
             onChange={(e) => setValue(e.target.value)}
           />
+          {inputLabel.hint !== null && (
+            <p className="block-subtitle" data-testid="result-hint">{inputLabel.hint}</p>
+          )}
           <div className="effort-segment-row">
             {EFFORT_OPTIONS.map((option) => (
               <Button

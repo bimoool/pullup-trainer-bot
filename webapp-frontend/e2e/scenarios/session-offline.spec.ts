@@ -41,7 +41,7 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   for (let i = 0; i < 3; i += 1) {
     await page.getByRole("button", { name: "Готов" }).click();
     await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-    await page.getByLabel("Результат").fill("10");
+    await page.getByLabel("Повторений").fill("10");
     await page.getByRole("button", { name: "Готово" }).click();
     if (i < 2) {
       await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
@@ -55,7 +55,7 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Готов" }).click();
   await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await page.getByLabel("Результат").fill("3");
+  await page.getByLabel("Повторений").fill("3");
   await page.getByRole("button", { name: "Готово" }).click();
 
   await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
