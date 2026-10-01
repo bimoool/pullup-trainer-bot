@@ -20,11 +20,13 @@
     "started_at": "2026-10-01 22:06 UTC",
     "completed": [
       258,
-      259
+      259,
+      260
     ],
     "attempts": [
       258,
-      259
+      259,
+      260
     ],
     "idle_reason": null
   },
