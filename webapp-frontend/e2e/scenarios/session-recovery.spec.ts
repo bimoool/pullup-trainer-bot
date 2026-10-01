@@ -7,7 +7,6 @@ import { openAppAs } from "../fixtures/setup";
 // (issue #246). scripts/e2e_seed.py session_recovery 930002: Workout
 // «Тренировка восстановления», reps 3 x 8, отдых 60 с. Admin не нужен —
 // путь обычного пользователя: Планы → Начать.
-const TELEGRAM_ID = 930_002;
 const TITLE = "Тренировка восстановления";
 
 test.setTimeout(120_000);
@@ -21,9 +20,13 @@ async function shownSeconds(page: import("@playwright/test").Page): Promise<numb
 
 test("активная тренировка: фон/передний план, reload — та же сессия, подходы не дублируются, таймер по часам", async ({
   page,
-}) => {
+}, testInfo) => {
+  // Playwright retry shares the CI database with the first attempt. Each
+  // attempt gets a separately seeded user so a failed attempt cannot leave an
+  // active session or move the workout out of the free pool for the retry.
+  const telegramId = 930_002 + testInfo.retry;
   page.on("dialog", (dialog) => void dialog.accept());
-  const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
+  const { consoleErrors, apiFailures } = await openAppAs(page, telegramId);
 
   // --- старт из свободного пула «Планов» ---
   await page.getByTestId("my-workout-card").filter({ hasText: TITLE }).click();
@@ -75,7 +78,8 @@ test("активная тренировка: фон/передний план, r
 
   // Таймер продолжил с того места, а не начался заново с 60 с.
   const restAfterReload = await shownSeconds(page);
-  expect(restAfterReload).toBeLessThan(restForeground);
+  expect(restAfterReload).toBeLessThanOrEqual(restForeground);
+  expect(restAfterReload).toBeLessThan(restBefore - 3);
 
   // --- подходы не потеряны и не задвоены: продолжаем с подхода 2 ---
   await expect(page.getByText(/Подход 2\/3/)).toBeVisible();
