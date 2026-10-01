@@ -768,13 +768,51 @@ async def seed_journal_v2(session: AsyncSession, telegram_id: int) -> None:
     now = datetime.now(UTC)
     for index in range(30):
         await repo.create_session(
-            user_id=user.id, source=SessionSource.PLAN, performed_at=now - timedelta(days=1, hours=index),
+            # минуты, не дни: Журнал листается по месяцам (#256) — все 30 сессий
+            # должны остаться в том же месяце, что и живые тренировки теста.
+            user_id=user.id, source=SessionSource.PLAN, performed_at=now - timedelta(minutes=5 + index),
             effort=None, comment=None,
             blocks=[SessionBlockInput(exercise_id=pull.id, sets=[
                 SetLogInput(set_number=1, metric_type=MetricType.REPS, value=Decimal(10 + index), unit="reps"),
                 SetLogInput(set_number=2, metric_type=MetricType.REPS, value=Decimal(9 + index), unit="reps"),
             ])],
         )
+    await session.flush()
+
+
+async def seed_journal_calendar(session: AsyncSession, telegram_id: int) -> None:
+    """#256 — календарь Журнала (пояс Europe/Moscow): завершённые сессии без
+    снимка в ПРЕДЫДУЩЕМ месяце — 10-го, дважды 15-го и 20-го в 12:00 МСК — и
+    одна сессия «только что» в текущем месяце. Остальные дни и месяц до
+    предыдущего пусты."""
+    from zoneinfo import ZoneInfo
+
+    user = await _onboard(session, telegram_id)
+    tz = ZoneInfo("Europe/Moscow")
+    user.timezone = "Europe/Moscow"
+    pull = Exercise(
+        name="Подтягивания", metric_type=MetricType.REPS, category="e2e_journal_calendar",
+        source_type="user", owner_user_id=user.id,
+    )
+    session.add(pull)
+    await session.flush()
+    repo = TrainingSessionRepository(session)
+    now = datetime.now(UTC)
+    local_today = now.astimezone(tz).date()
+    previous_month_last = local_today.replace(day=1) - timedelta(days=1)
+
+    async def add(at: datetime, reps: int) -> None:
+        await repo.create_session(
+            user_id=user.id, source=SessionSource.PLAN, performed_at=at, effort=None, comment=None,
+            blocks=[SessionBlockInput(exercise_id=pull.id, sets=[
+                SetLogInput(set_number=1, metric_type=MetricType.REPS, value=Decimal(reps), unit="reps"),
+            ])],
+        )
+
+    for day, hour, reps in ((10, 12, 8), (15, 12, 9), (15, 18, 10), (20, 12, 11)):
+        at = datetime(previous_month_last.year, previous_month_last.month, day, hour, tzinfo=tz)
+        await add(at.astimezone(UTC), reps)
+    await add(now - timedelta(minutes=5), 12)
     await session.flush()
 
 
@@ -984,6 +1022,7 @@ SCENARIOS = {
     "workout_detail": seed_workout_detail,
     "analytics_v2": seed_analytics_v2,
     "journal_v2": seed_journal_v2,
+    "journal_calendar": seed_journal_calendar,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,

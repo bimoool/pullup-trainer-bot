@@ -6,7 +6,7 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -36,7 +36,14 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workouts import WorkoutRepository
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
+from app.domain.journal_calendar import (
+    local_day_counts,
+    local_range_bounds_utc,
+    month_date_range,
+    parse_month,
+)
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
@@ -52,6 +59,7 @@ from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclu
 from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_deletion import SessionDeletionService
 from app.services.session_log import TrainingSessionLogService
+from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2 import (
@@ -61,6 +69,8 @@ from app.web.schemas_v2 import (
     ExerciseResponse,
     FavoriteListResponse,
     FavoriteResponse,
+    JournalDayResponse,
+    JournalDaysResponse,
     PlanItemCreateRequest,
     PlanItemListResponse,
     PlanItemMoveRequest,
@@ -902,13 +912,25 @@ async def list_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     status_filter: Literal["started", "completed"] | None = Query(default=None, alias="status"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> SessionListResponse:
     """status (Checkpoint 4C) — опциональный фильтр, без параметра ведёт
     себя как раньше (и STARTED, и COMPLETED) — SessionV2Lab.tsx/
-    SessionJournalScreen.tsx его не передают, их поведение не меняется."""
+    SessionJournalScreen.tsx его не передают, их поведение не меняется.
+
+    date_from/date_to (#256) — включительно, ЛОКАЛЬНЫЕ дни пользователя (его
+    часовой пояс, как в Analytics v2); Журнал грузит месяц за запрос."""
     user = await _require_user(session, init_data)
+    performed_from = performed_to = None
+    if date_from is not None or date_to is not None:
+        tz = resolve_timezone(user.timezone)
+        if date_from is not None:
+            performed_from = local_range_bounds_utc(date_from, date_from, tz)[0]
+        if date_to is not None:
+            performed_to = local_range_bounds_utc(date_to, date_to, tz)[1]
     status_value = SessionStatus(status_filter) if status_filter is not None else None
     # Phase B1 (issue #215, раздел 4) — второй call site lazy finalization:
     # пользователь мог не заходить в /sessions/live/active вообще (например
@@ -928,6 +950,7 @@ async def list_sessions(
     # limit+1 — только чтобы честно ответить has_more без отдельного запроса.
     fetched = await TrainingSessionRepository(session).list_for_user(
         user.id, limit=limit + 1, offset=offset, status=status_value,
+        performed_from=performed_from, performed_to=performed_to,
     )
     has_more = len(fetched) > limit
     details = fetched[:limit]
@@ -943,6 +966,51 @@ async def list_sessions(
             for detail in details
         ],
         has_more=has_more,
+    )
+
+
+@router_v2.get("/journal/days", response_model=JournalDaysResponse)
+async def journal_days(
+    month: str = Query(..., description="YYYY-MM"),
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> JournalDaysResponse:
+    """Календарь Журнала (#256): сколько завершённых тренировок в каждый день
+    месяца. v2-сессии — по локальному дню пользователя (timezone, дефолт проекта
+    — Europe/Moscow, как в Analytics v2); legacy Workout — по дате, которую
+    показывает карточка Истории (UTC-дата performed_at). Только агрегаты по
+    границам месяца, без сканирования всей истории."""
+    try:
+        year, month_number = parse_month(month)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    user = await _require_user(session, init_data)
+    tz = resolve_timezone(user.timezone)
+    first_day, last_day = month_date_range(year, month_number)
+    sessions_repo = TrainingSessionRepository(session)
+    workouts_repo = WorkoutRepository(session)
+
+    start, end = local_range_bounds_utc(first_day, last_day, tz)
+    counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end), tz)
+    legacy_start, legacy_end = local_range_bounds_utc(first_day, last_day, UTC)
+    for day, count in local_day_counts(
+        await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end), UTC,
+    ).items():
+        counts[day] = counts.get(day, 0) + count
+
+    latest_days: list[date] = []
+    latest_session = await sessions_repo.latest_completed_performed_at(user.id)
+    if latest_session is not None:
+        latest_days.append(latest_session.astimezone(tz).date())
+    latest_workout = await workouts_repo.latest_completed_performed_at(user.id)
+    if latest_workout is not None:
+        latest_days.append(latest_workout.astimezone(UTC).date())
+    latest = max(latest_days) if latest_days else None
+    return JournalDaysResponse(
+        month=f"{year:04d}-{month_number:02d}",
+        timezone=str(tz),
+        days=[JournalDayResponse(date=day.isoformat(), count=counts[day]) for day in sorted(counts)],
+        latest_month=f"{latest.year:04d}-{latest.month:02d}" if latest is not None else None,
     )
 
 

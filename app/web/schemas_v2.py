@@ -384,6 +384,23 @@ class SessionResponse(BaseModel):
     progression_skipped_reason: str | None
 
 
+class JournalDayResponse(BaseModel):
+    date: str  # YYYY-MM-DD, локальный день пользователя
+    count: int
+
+
+class JournalDaysResponse(BaseModel):
+    """GET /journal/days (#256): дни месяца с завершёнными тренировками
+    (v2-сессии по дню в часовом поясе пользователя + legacy Workout по
+    показываемой дате). latest_month — месяц самой свежей тренировки вообще
+    (YYYY-MM) или null: клиент прыгает туда, если текущий месяц пуст."""
+
+    month: str
+    timezone: str
+    days: list[JournalDayResponse]
+    latest_month: str | None = None
+
+
 class SessionListResponse(BaseModel):
     sessions: list[SessionResponse]
     # R2 — есть ли ещё страницы после этого (limit+1 запрошено на сервере).

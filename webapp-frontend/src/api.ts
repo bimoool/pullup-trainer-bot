@@ -435,8 +435,11 @@ export interface ProgressData {
   points: ProgressPoint[];
 }
 
-export async function fetchHistory(initDataRaw: string, offset: number, limit = 20): Promise<HistoryPage> {
-  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}`, initDataRaw);
+export async function fetchHistory(
+  initDataRaw: string, offset: number, limit = 20, range?: { from: string; to: string },
+): Promise<HistoryPage> {
+  const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
+  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}${dates}`, initDataRaw);
 }
 
 export async function fetchProgress(initDataRaw: string, metric: ProgressMetric): Promise<ProgressData> {

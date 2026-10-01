@@ -321,3 +321,104 @@ for (const width of WIDTHS) {
     });
   }
 }
+
+// --- #256 Journal calendar -------------------------------------------------------------
+// scripts/e2e_seed.py journal_calendar: предыдущий месяц — сессии 10-го, дважды 15-го и 20-го
+// (12:00/18:00 МСК), текущий месяц — одна сессия «только что»; всё остальное пусто.
+const MONTHS = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+const JOURNAL_USERS: Record<number, number> = { 320: 970_001, 390: 970_002 };
+
+function mskMonth(offset: number): { key: string; label: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit" })
+    .formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const index = year * 12 + (month - 1) + offset;
+  const y = Math.floor(index / 12);
+  const m = (index % 12) + 1;
+  return { key: `${y}-${String(m).padStart(2, "0")}`, label: `${MONTHS[m - 1]} ${y}` };
+}
+
+for (const width of WIDTHS) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`Journal calendar @${width}px ${theme}`, () => {
+      test.use({ viewport: { width, height: 760 } });
+
+      test("месяц-бар, точки на днях, выбор дня, переключение месяца, пустой месяц", async ({ page }) => {
+        const { consoleErrors, apiFailures } = await openAppAs(page, JOURNAL_USERS[width], { theme });
+        const requests: string[] = [];
+        page.on("request", (request) => requests.push(request.url()));
+        await openTab(page, "Журнал");
+
+        const current = mskMonth(0);
+        const previous = mskMonth(-1);
+        const monthLabel = page.locator(".journal-month-label");
+        const cards = page.locator(".history-card-clickable");
+
+        // Месяц-бар сверху, календарь свёрнут; в текущем месяце — одна тренировка.
+        await expect(monthLabel).toContainText(current.label);
+        await expect(page.locator(".journal-calendar-grid")).toHaveCount(0);
+        await expect(cards).toHaveCount(1);
+        await expect(page.locator(".journal-week")).toHaveCount(1);
+        await expectNoHorizontalOverflow(page, "Журнал: месяц-бар");
+
+        // Тап по подписи раскрывает календарь: Пн первым, точка у сегодняшнего дня.
+        await monthLabel.click();
+        await expect(page.locator(".journal-calendar-grid")).toBeVisible();
+        await expect(page.locator(".journal-calendar-weekday").first()).toHaveText("Пн");
+        await expect(page.locator(".journal-calendar-weekday").last()).toHaveText("Вс");
+        await expect(page.locator('.journal-calendar-day[data-has-training="true"]')).toHaveCount(1);
+        await expect(page.locator(".journal-calendar-today")).toHaveCount(1);
+        await expectNoHorizontalOverflow(page, "Журнал: календарь");
+
+        // Предыдущий месяц: точки ровно на 10/15/20; список — 4 карточки, сгруппированные по дням.
+        await page.getByRole("button", { name: "Предыдущий месяц" }).click();
+        await expect(monthLabel).toContainText(previous.label);
+        await expect(cards).toHaveCount(4);
+        for (const day of ["10", "15", "20"]) {
+          await expect(page.locator(`[data-date="${previous.key}-${day}"][data-has-training="true"]`)).toBeVisible();
+        }
+        await expect(page.locator(`[data-date="${previous.key}-11"]`)).toHaveAttribute("data-has-training", "false");
+        await expect(page.locator('.journal-calendar-day[data-has-training="true"]')).toHaveCount(3);
+        await expect(page.locator(".journal-day")).toHaveCount(3);
+        await expect(page.locator(".journal-week-header").first()).toBeVisible();
+        await expect(page.locator(".journal-day-header").first()).toContainText(/\d/);
+        await expectNoHorizontalOverflow(page, "Журнал: прошлый месяц");
+
+        // Выбор дня фильтрует список запросом с диапазоном дня; повторный тап снимает выбор.
+        const day15 = page.locator(`.journal-calendar-day[data-date="${previous.key}-15"]`);
+        await day15.click();
+        await expect(day15).toHaveAttribute("aria-pressed", "true");
+        await expect(cards).toHaveCount(2);
+        await expect(page.locator(".journal-day")).toHaveCount(1);
+        expect(requests.some((url) => url.includes(`date_from=${previous.key}-15&date_to=${previous.key}-15`))).toBe(true);
+        await day15.click();
+        await expect(day15).toHaveAttribute("aria-pressed", "false");
+        await expect(cards).toHaveCount(4);
+
+        // День без тренировок — пустое состояние; смена месяца сбрасывает выбор.
+        await page.locator(`.journal-calendar-day[data-date="${previous.key}-11"]`).click();
+        await expect(page.getByText("В этот день тренировок нет")).toBeVisible();
+        await page.getByRole("button", { name: "Предыдущий месяц" }).click();
+        await expect(monthLabel).toContainText(mskMonth(-2).label);
+        await expect(page.getByText("В этом месяце тренировок нет")).toBeVisible();
+        await expect(cards).toHaveCount(0);
+        await expectNoHorizontalOverflow(page, "Журнал: пустой месяц");
+
+        // Назад к текущему месяцу двумя «›»; данные запрашиваются по месяцам, а не всей историей.
+        const next = page.getByRole("button", { name: "Следующий месяц" });
+        await next.click();
+        await next.click();
+        await expect(monthLabel).toContainText(current.label);
+        await expect(cards).toHaveCount(1);
+        expect(requests.filter((url) => url.includes("/api/v2/sessions?")).every((url) => url.includes("date_from="))).toBe(true);
+
+        expect(consoleErrors).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+    });
+  }
+}

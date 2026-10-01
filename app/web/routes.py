@@ -1094,6 +1094,8 @@ async def delete_workout_draft(
 async def get_history(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> HistoryResponse:
@@ -1114,6 +1116,12 @@ async def get_history(
         return HistoryResponse(items=[], has_more=False)
 
     history = await WorkoutRepository(session).list_for_user(user.id)
+    # date_from/date_to (#256, Журнал по месяцам) — включительно, по той же дате,
+    # что показывает карточка (performed_at.date()).
+    if date_from is not None:
+        history = [w for w in history if w.performed_at.date() >= date_from]
+    if date_to is not None:
+        history = [w for w in history if w.performed_at.date() <= date_to]
     newest_first = list(reversed(history))
     page = newest_first[offset : offset + limit]
 

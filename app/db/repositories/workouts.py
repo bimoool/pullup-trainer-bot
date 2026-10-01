@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -278,6 +278,27 @@ class WorkoutRepository:
             .limit(limit),
         )
         return list(result.scalars().all())
+
+    async def completed_performed_at(
+        self, user_id: int, performed_from: datetime, performed_to: datetime,
+    ) -> list[datetime]:
+        """Только performed_at завершённых legacy-тренировок в [from, to) —
+        календарь Журнала (#256), без загрузки блоков."""
+        result = await self._session.execute(
+            select(Workout.performed_at).where(
+                Workout.user_id == user_id, Workout.status == WorkoutStatus.COMPLETED,
+                Workout.performed_at >= performed_from, Workout.performed_at < performed_to,
+            ),
+        )
+        return list(result.scalars().all())
+
+    async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
+        result = await self._session.execute(
+            select(func.max(Workout.performed_at)).where(
+                Workout.user_id == user_id, Workout.status == WorkoutStatus.COMPLETED,
+            ),
+        )
+        return result.scalar_one_or_none()
 
     async def list_for_user(self, user_id: int) -> list[Workout]:
         """ВСЕ завершённые тренировки, любого происхождения (включая
