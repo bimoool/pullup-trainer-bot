@@ -5,50 +5,54 @@ import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { describeJournalBlock, formatSessionDateTime } from "./journalFormat";
 import { useBackButton } from "./useBackButton";
 
-/** Карточки завершённых TrainingSession (Журнал v2). Каждый блок сессии
+/** Карточка завершённой TrainingSession (Журнал v2). Каждый блок сессии
  * рендерится независимо — ни один блок не определяет вид всей карточки. */
-export function JournalV2Cards({
-  sessions, hasMore, loadingMore, moreError, onLoadMore, onOpen,
+export function JournalSessionCard({
+  session, onOpen,
 }: {
-  sessions: SessionResponseV2[];
+  session: SessionResponseV2;
+  onOpen: (sessionId: number) => void;
+}) {
+  return (
+    <div
+      className="history-card history-card-clickable"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(session.id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(session.id);
+        }
+      }}
+    >
+      <p className="history-date">{formatSessionDateTime(session.performed_at)}</p>
+      <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
+      {session.blocks.map((block) => {
+        const view = describeJournalBlock(block);
+        return (
+          <div key={block.order_index} className="journal-block">
+            {view.header !== null && <p className="journal-block-header">{view.header}</p>}
+            <p>{view.fact}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Ошибка догрузки + «Показать ещё» под списком сессий. */
+export function JournalV2Footer({
+  hasMore, loadingMore, moreError, onLoadMore,
+}: {
   hasMore: boolean;
   loadingMore: boolean;
   moreError: string | null;
   onLoadMore: () => void;
-  onOpen: (sessionId: number) => void;
 }) {
   return (
     <div>
-      <div className="history-list">
-        {sessions.map((session) => (
-          <div
-            className="history-card history-card-clickable"
-            key={`v2-${session.id}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => onOpen(session.id)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                onOpen(session.id);
-              }
-            }}
-          >
-            <p className="history-date">{formatSessionDateTime(session.performed_at)}</p>
-            <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
-            {session.blocks.map((block) => {
-              const view = describeJournalBlock(block);
-              return (
-                <div key={block.order_index} className="journal-block">
-                  {view.header !== null && <p className="journal-block-header">{view.header}</p>}
-                  <p>{view.fact}</p>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      {moreError !== null && (
+      {moreError !== null &&(
         <p className="gap-banner">Не удалось загрузить ещё: {moreError}. Загруженные тренировки сохранены.</p>
       )}
       {hasMore && (

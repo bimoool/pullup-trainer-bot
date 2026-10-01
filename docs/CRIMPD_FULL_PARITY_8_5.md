@@ -113,8 +113,8 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Month bar + expandable calendar with dots | J1–J2; d/logbook_month_picker; FI F5 | flat list | MISSING | — | month bar + calendar | #256 | — |
-| Week / day grouping, infinite scroll | J3 | «Показать ещё» paging | PARTIAL | no grouping | week bands + day headers | #256 | journal-v2.spec.ts (paging) |
+| Month bar + expandable calendar with dots | J1–J2; d/logbook_month_picker; FI F5 | JournalCalendar (month bar, Mon-first grid, dots, day select) + `GET /api/v2/journal/days` | DONE | — | month bar + calendar | #256 | crimpd-parity.spec.ts «Journal calendar»; tests/test_web/test_v2_journal_calendar.py |
+| Week / day grouping, infinite scroll | J3 | JournalTimeline: week bands + day headers, per-month «Показать ещё» paging | DONE | — | week bands + day headers | #256 | crimpd-parity.spec.ts «Journal calendar»; journal-v2.spec.ts (paging) |
 | Log card stats (intensity, completion, TUT, duration, workload) | J4 | v2 cards: plan vs fact, effort, comment | DOMAIN-EQUIVALENT | TUT/workload not stored | our per-protocol results; duration after #259 | #259 | journal-v2.spec.ts |
 | Log detail sheet (session + exercise details) | J5; d/logbook_ref_sheet | JournalV2Detail | DONE | — | — | — | journal-v2.spec.ts |
 | View Workout from log | J5 | none | MISSING | — | link to Workout Detail | #255 | — |

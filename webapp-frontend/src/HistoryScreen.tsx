@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 
 import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
 import { HistoryEditForm } from "./HistoryEditForm";
-import { JournalV2Cards, JournalV2Detail } from "./JournalV2";
+import { JournalCalendar } from "./JournalCalendar";
+import { localDateKey, monthRange } from "./journalCalendar";
+import { JournalSessionCard, JournalV2Detail, JournalV2Footer } from "./JournalV2";
+import { JournalTimeline } from "./JournalTimeline";
 import { useJournalV2 } from "./useJournalV2";
 
 type Props = { initDataRaw: string };
@@ -35,12 +38,24 @@ export function HistoryScreen({ initDataRaw }: Props) {
   // legacy-историю ниже.
   const journal = useJournalV2(initDataRaw);
   const [detailSessionId, setDetailSessionId] = useState<number | null>(null);
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+
+  // Legacy-история грузится за тот же месяц/день, что и v2 (#256): диапазон
+  // уходит на бэкенд, клиент не фильтрует полную историю.
+  const range = journal.month === null ? null : journal.day !== null
+    ? { from: journal.day, to: journal.day }
+    : monthRange(journal.month);
+  const rangeKey = range === null ? null : `${range.from}..${range.to}`;
 
   useEffect(() => {
+    if (range === null) {
+      return;
+    }
     let cancelled = false;
+    setState({ phase: "loading" });
     async function load() {
       try {
-        const page = await fetchHistory(initDataRaw, 0, PAGE_SIZE);
+        const page = await fetchHistory(initDataRaw, 0, PAGE_SIZE, range ?? undefined);
         if (!cancelled) {
           setState({ phase: "ready", items: page.items, hasMore: page.has_more, loadingMore: false });
         }
@@ -54,11 +69,12 @@ export function HistoryScreen({ initDataRaw }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [initDataRaw]);
+    // range пересоздаётся каждый рендер — зависим от его строкового ключа
+  }, [initDataRaw, rangeKey]);
 
   async function reloadFirstPage() {
     try {
-      const page = await fetchHistory(initDataRaw, 0, PAGE_SIZE);
+      const page = await fetchHistory(initDataRaw, 0, PAGE_SIZE, range ?? undefined);
       setState({ phase: "ready", items: page.items, hasMore: page.has_more, loadingMore: false });
     } catch (error) {
       setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
@@ -71,7 +87,7 @@ export function HistoryScreen({ initDataRaw }: Props) {
     }
     setState({ ...state, loadingMore: true });
     try {
-      const page = await fetchHistory(initDataRaw, state.items.length, PAGE_SIZE);
+      const page = await fetchHistory(initDataRaw, state.items.length, PAGE_SIZE, range ?? undefined);
       setState({
         phase: "ready",
         items: [...state.items, ...page.items],
@@ -99,6 +115,7 @@ export function HistoryScreen({ initDataRaw }: Props) {
     try {
       await deleteHistoryWorkout(initDataRaw, workoutId);
       await reloadFirstPage();
+      journal.refreshDays();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -137,89 +154,102 @@ export function HistoryScreen({ initDataRaw }: Props) {
     );
   }
 
-  if (state.phase === "loading") {
-    return <p className="screen-message">Загружаю историю…</p>;
+  function legacyCard(entry: HistoryEntry) {
+    return (
+      <div className="history-card" key={`legacy-${entry.workout_id}`}>
+        <p className="history-date">
+          {formatDate(entry.performed_at)}
+          {entry.is_backdated && <span className="hint"> (задним числом)</span>}
+        </p>
+        <p>
+          Объём ({entry.equipment_a.label}): {entry.result_a}
+          {entry.target_a !== null && `, следующая цель ${entry.target_a}`}
+        </p>
+        <p>
+          Сила ({entry.equipment_b.label}): {entry.result_b}
+          {entry.target_b !== null && `, следующая цель ${entry.target_b}`}
+        </p>
+        {entry.comment && <p className="hint">Комментарий: {entry.comment}</p>}
+        <div className="history-card-actions">
+          {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
+              редактируются (issue #106) — просто без пересчёта цели/каскада
+              на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
+              одна для всех записей. */}
+          <Button mode="outline" size="s" onClick={() => setEditingWorkoutId(entry.workout_id)}>
+            ✏️ Изменить
+          </Button>
+          {/* Удаление (issue #146) — теперь и для каскадных тренировок
+              (решение Кирилла, вариант A: удаление пересчитывает цепочку
+              целей), не только бэкдейт/свободных — is_deletable
+              (HistoryEntry в api.ts) сейчас всегда true. */}
+          {entry.is_deletable && (
+            <Button
+              mode="outline"
+              size="s"
+              loading={deletingWorkoutId === entry.workout_id}
+              onClick={() => void handleDelete(entry.workout_id, entry.is_backdated)}
+            >
+              🗑 Удалить
+            </Button>
+          )}
+        </div>
+      </div>
+    );
   }
-  if (state.phase === "error") {
-    return <p className="screen-message">Не удалось загрузить историю: {state.message}</p>;
-  }
+
   const v2Items = journal.state.phase === "ready" ? journal.state.items : [];
-  const hasV2Sessions = v2Items.length > 0;
-  if (state.items.length === 0 && !hasV2Sessions && journal.state.phase !== "loading") {
-    return <p className="screen-message">Пока нет ни одной тренировки.</p>;
-  }
+  const legacyItems = state.phase === "ready" ? state.items : [];
+  const loading = journal.month === null ? journal.state.phase !== "error" : journal.state.phase === "loading" || state.phase === "loading";
+  const timelineEntries = [
+    ...v2Items.map((session) => ({
+      date: localDateKey(session.performed_at, journal.timezone),
+      node: <JournalSessionCard key={`v2-${session.id}`} session={session} onOpen={setDetailSessionId} />,
+    })),
+    ...legacyItems.map((entry) => ({ date: entry.performed_at, node: legacyCard(entry) })),
+  ];
 
   return (
     <div>
       {/* Заголовок переименован в "Журнал" вслед за вкладкой нижнего меню
           (issue #183, волна 5b) — само содержимое экрана не менялось. */}
       <p className="plan-title">Журнал</p>
+      {journal.month !== null && (
+        <JournalCalendar
+          month={journal.month}
+          dayCounts={journal.dayCounts}
+          selectedDay={journal.day}
+          today={localDateKey(new Date().toISOString(), journal.timezone)}
+          expanded={calendarExpanded}
+          onToggleExpanded={() => setCalendarExpanded((value) => !value)}
+          onShift={journal.shift}
+          onToggleDay={journal.toggleDay}
+        />
+      )}
       {deleteError && <p className="screen-message">Не удалось удалить тренировку: {deleteError}</p>}
 
       {journal.state.phase === "error" && (
         <p className="screen-message">Не удалось загрузить новые тренировки: {journal.state.message}</p>
       )}
-      {hasV2Sessions && (
-        <JournalV2Cards
-          sessions={v2Items}
+      {state.phase === "error" && (
+        <p className="screen-message">Не удалось загрузить историю: {state.message}</p>
+      )}
+      {loading && <p className="screen-message">Загружаю историю…</p>}
+      {!loading && journal.month !== null && timelineEntries.length === 0
+        && journal.state.phase !== "error" && state.phase !== "error" && (
+        <p className="screen-message">
+          {journal.day !== null ? "В этот день тренировок нет" : "В этом месяце тренировок нет"}
+        </p>
+      )}
+      {!loading && timelineEntries.length > 0 && <JournalTimeline entries={timelineEntries} />}
+      {!loading && (
+        <JournalV2Footer
           hasMore={journal.state.phase === "ready" && journal.state.hasMore}
           loadingMore={journal.loadingMore}
           moreError={journal.moreError}
           onLoadMore={() => void journal.loadMore()}
-          onOpen={setDetailSessionId}
         />
       )}
-
-      {state.items.length === 0 && hasV2Sessions ? null : (
-      <div className="history-list">
-        {state.items.map((entry) => (
-          <div className="history-card" key={entry.workout_id}>
-            <p className="history-date">
-              {formatDate(entry.performed_at)}
-              {entry.is_backdated && <span className="hint"> (задним числом)</span>}
-            </p>
-            <p>
-              Объём ({entry.equipment_a.label}): {entry.result_a}
-              {entry.target_a !== null && `, следующая цель ${entry.target_a}`}
-            </p>
-            <p>
-              Сила ({entry.equipment_b.label}): {entry.result_b}
-              {entry.target_b !== null && `, следующая цель ${entry.target_b}`}
-            </p>
-            {entry.comment && <p className="hint">Комментарий: {entry.comment}</p>}
-            <div className="history-card-actions">
-              {/* Внесённые не в цепочку (бэкдейт/свободные, is_backdated) тоже
-                  редактируются (issue #106) — просто без пересчёта цели/каскада
-                  на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
-                  одна для всех записей. */}
-              <Button
-                mode="outline"
-                size="s"
-                onClick={() => setEditingWorkoutId(entry.workout_id)}
-              >
-                ✏️ Изменить
-              </Button>
-              {/* Удаление (issue #146) — теперь и для каскадных тренировок
-                  (решение Кирилла, вариант A: удаление пересчитывает цепочку
-                  целей), не только бэкдейт/свободных — is_deletable
-                  (HistoryEntry в api.ts) сейчас всегда true. */}
-              {entry.is_deletable && (
-                <Button
-                  mode="outline"
-                  size="s"
-                  loading={deletingWorkoutId === entry.workout_id}
-                  onClick={() => void handleDelete(entry.workout_id, entry.is_backdated)}
-                >
-                  🗑 Удалить
-                </Button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      )}
-
-      {state.items.length > 0 && state.hasMore && (
+      {!loading && state.phase === "ready" && state.items.length > 0 && state.hasMore && (
         <Button mode="outline" size="m" stretched onClick={() => void loadMore()} loading={state.loadingMore}>
           Показать ещё
         </Button>

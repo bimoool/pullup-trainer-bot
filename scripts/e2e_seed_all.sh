@@ -21,6 +21,8 @@ seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed builder_workouts 910001
 seed journal_v2 910002
+seed journal_calendar 970001
+seed journal_calendar 970002
 seed analytics_v2 910003
 seed home_workouts 920001
 seed home_workouts 920002

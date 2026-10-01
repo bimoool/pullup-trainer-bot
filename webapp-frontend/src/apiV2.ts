@@ -630,10 +630,24 @@ export interface SessionsPage {
  * считает сервер. */
 export async function fetchSessionsPage(
   initDataRaw: string, limit: number, offset: number, status: "started" | "completed",
+  range?: { from: string; to: string },
 ): Promise<SessionsPage> {
+  const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
   return apiV2Get<SessionsPage>(
-    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}`, initDataRaw,
+    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}${dates}`, initDataRaw,
   );
+}
+
+/** GET /journal/days (#256) — дни месяца с завершёнными тренировками. */
+export interface JournalDaysResponse {
+  month: string;
+  timezone: string;
+  days: { date: string; count: number }[];
+  latest_month: string | null;
+}
+
+export async function fetchJournalDays(initDataRaw: string, month: string): Promise<JournalDaysResponse> {
+  return apiV2Get<JournalDaysResponse>(`/api/v2/journal/days?month=${month}`, initDataRaw);
 }
 
 /** 404 — чужая/несуществующая, 409 — небезопасно удалять (текст причины
