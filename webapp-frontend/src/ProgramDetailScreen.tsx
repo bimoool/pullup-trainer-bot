@@ -1,9 +1,11 @@
 import { Button } from "@telegram-apps/telegram-ui";
 
 import type { ProgramResponseV2 } from "./apiV2";
+import { FavoriteHeart } from "./FavoriteHeart";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
+  initDataRaw: string;
   program: ProgramResponseV2;
   included: boolean;
   adding: boolean;
@@ -40,7 +42,7 @@ const STRUCTURE_TYPE_LABELS: Record<string, string> = {
  * остаются в HomeScreen, чтобы возврат назад сразу показывал актуальный
  * статус без повторного запроса.
  */
-export function ProgramDetailScreen({ program, included, adding, addError, onAdd, onBack }: Props) {
+export function ProgramDetailScreen({ initDataRaw, program, included, adding, addError, onAdd, onBack }: Props) {
   const structureLabel = STRUCTURE_TYPE_LABELS[program.structure_type] ?? program.structure_type;
 
   // issue #202: Telegram BackButton — переиспользует существующий onBack
@@ -52,7 +54,10 @@ export function ProgramDetailScreen({ program, included, adding, addError, onAdd
       <Button mode="outline" size="s" onClick={onBack}>
         ← Назад
       </Button>
-      <p className="plan-title">{program.name}</p>
+      <div className="favorite-title-row">
+        <p className="plan-title" data-testid="program-detail-title">{program.name}</p>
+        <FavoriteHeart initDataRaw={initDataRaw} targetType="program" targetId={program.id} />
+      </div>
 
       <div className="profile-card">
         <p>{program.goal}</p>

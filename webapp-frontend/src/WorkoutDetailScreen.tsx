@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   getWorkout, listWorkoutSessions, type WorkoutResponseV2, type WorkoutSessionSummaryV2,
 } from "./apiV2";
+import { FavoriteHeart } from "./FavoriteHeart";
 import { formatExerciseCount } from "./workoutCardFormat";
 import {
   estimateWorkoutSeconds, formatEstimate, formatItemSummary, formatSetsDone,
@@ -72,7 +73,10 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
 
   return (
     <div data-testid="workout-detail">
-      <p className="plan-title" data-testid="workout-detail-title">{workout.title}</p>
+      <div className="favorite-title-row">
+        <p className="plan-title" data-testid="workout-detail-title">{workout.title}</p>
+        <FavoriteHeart initDataRaw={initDataRaw} targetType="workout" targetId={workout.id} />
+      </div>
       <p className="hint" data-testid="workout-detail-subtitle">Своя тренировка</p>
       <p className="hint" data-testid="workout-detail-meta">
         {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}

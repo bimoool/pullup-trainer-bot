@@ -100,6 +100,17 @@ async function apiV2Patch<TBody, TResult>(path: string, initDataRaw: string, bod
   return (await response.json()) as TResult;
 }
 
+async function apiV2Put(path: string, initDataRaw: string): Promise<void> {
+  const response = await fetch(path, {
+    method: "PUT",
+    headers: { "X-Telegram-Init-Data": initDataRaw },
+  });
+  if (!response.ok) {
+    const message = await extractErrorMessage("PUT", path, response);
+    throw new Error(message);
+  }
+}
+
 async function apiV2Delete(path: string, initDataRaw: string): Promise<void> {
   const response = await fetch(path, {
     method: "DELETE",
@@ -163,6 +174,28 @@ export interface WorkoutSessionSummaryV2 {
   performed_at: string;
   exercises_count: number;
   sets_done: number;
+}
+
+export type FavoriteTargetType = "workout" | "program";
+
+export interface FavoriteV2 {
+  target_type: FavoriteTargetType;
+  target_id: number;
+  title: string;
+  subtitle: string | null;
+}
+
+export async function listFavorites(initDataRaw: string): Promise<FavoriteV2[]> {
+  const response = await apiV2Get<{ favorites: FavoriteV2[] }>("/api/v2/favorites", initDataRaw);
+  return response.favorites;
+}
+
+/** Идемпотентно: PUT ставит, DELETE снимает (issue #272). */
+export async function setFavorite(
+  initDataRaw: string, targetType: FavoriteTargetType, targetId: number, favorite: boolean,
+): Promise<void> {
+  const path = `/api/v2/favorites/${targetType}/${targetId}`;
+  return favorite ? apiV2Put(path, initDataRaw) : apiV2Delete(path, initDataRaw);
 }
 
 export async function listWorkoutSessions(initDataRaw: string, workoutId: number): Promise<WorkoutSessionSummaryV2[]> {

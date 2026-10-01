@@ -2,10 +2,11 @@ import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
-  createProgramInclusion, fetchPlan, fetchPrograms, listWorkouts,
-  type ProgramResponseV2, type WorkoutResponseV2,
+  createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listWorkouts,
+  type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { AddToPlanScreen } from "./AddToPlanScreen";
+import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { groupProgramsByCategory } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
@@ -60,10 +61,13 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
   const [workouts, setWorkouts] = useState<WorkoutsState>({ phase: "loading" });
   const [workoutView, setWorkoutView] = useState<WorkoutView>({ kind: "closed" });
   const [workoutsReloadKey, setWorkoutsReloadKey] = useState(0);
+  // Избранное (issue #272): null — ещё не загружено/не удалось (ряд тогда скрыт).
+  const [favorites, setFavorites] = useState<FavoriteV2[] | null>(null);
+  const [favoritesReloadKey, setFavoritesReloadKey] = useState(0);
   // Поиск (issue #254) и «+»-шторка. Поиск остаётся «открытым» под Program Detail /
   // редактором, чтобы «назад» оттуда возвращал в результаты, а не на Главную.
   const [searching, setSearching] = useState(false);
-  const [searchState, setSearchState] = useState<SearchState>({ query: "", category: null });
+  const [searchState, setSearchState] = useState<SearchState>({ query: "", category: null, favoritesOnly: false });
   const [sheetOpen, setSheetOpen] = useState(false);
   const savedScrollY = useRef<number | null>(null);
 
@@ -76,7 +80,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
 
   function openSearch() {
     savedScrollY.current = window.scrollY;
-    setSearchState({ query: "", category: null });
+    setSearchState({ query: "", category: null, favoritesOnly: false });
     setSearching(true);
   }
 
@@ -98,9 +102,32 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
     };
   }, [initDataRaw, workoutsReloadKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    listFavorites(initDataRaw)
+      .then((list) => {
+        if (!cancelled) {
+          if (list.length > 0) {
+            markFavoritesSeen();
+          }
+          setFavorites(list);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw, favoritesReloadKey]);
+
   function closeWorkoutView() {
     setWorkoutView({ kind: "closed" });
     setWorkoutsReloadKey((key) => key + 1);
+    setFavoritesReloadKey((key) => key + 1);
+  }
+
+  function closeProgramDetail() {
+    setSelectedProgramId(null);
+    setFavoritesReloadKey((key) => key + 1);
   }
 
   useEffect(() => {
@@ -214,12 +241,13 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
       const adding = addState.phase === "adding" && addState.programId === program.id;
       return (
         <ProgramDetailScreen
+          initDataRaw={initDataRaw}
           program={program}
           included={included}
           adding={adding}
           addError={addState.phase === "error" ? addState.message : null}
           onAdd={() => void handleAddToPlan(program.id)}
-          onBack={() => setSelectedProgramId(null)}
+          onBack={closeProgramDetail}
         />
       );
     }
@@ -275,6 +303,39 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
       )}
 
       <p className="plan-title">Главная</p>
+
+      {favorites !== null && (() => {
+        const mode = favoritesRowMode(favorites.length, readFavoritesSeen());
+        if (mode === "hidden") {
+          return null;
+        }
+        return (
+          <div data-testid="favorites-row">
+            <p className="section-title">Избранное</p>
+            {mode === "hint" ? (
+              <p className="screen-message" data-testid="favorites-hint">Нажмите ♡ на тренировке, чтобы добавить</p>
+            ) : (
+              <div className="home-program-row">
+                {favorites.map((favorite) => (
+                  <Section key={`${favorite.target_type}-${favorite.target_id}`} className="block-section home-program-card">
+                    <button
+                      type="button"
+                      className="program-card-button"
+                      data-testid="favorite-card"
+                      onClick={() => (favorite.target_type === "workout"
+                        ? setWorkoutView({ kind: "detail", workoutId: favorite.target_id })
+                        : setSelectedProgramId(favorite.target_id))}
+                    >
+                      <p className="block-subtitle">{favorite.title}</p>
+                      {favorite.subtitle && <p className="screen-message">{favorite.subtitle}</p>}
+                    </button>
+                  </Section>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Capability A (issue #188) — минимальный каталог: одна карточка на
           seed-программу, без категорий/поиска/уровней (это остаток волны 6).
