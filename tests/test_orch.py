@@ -656,3 +656,42 @@ def test_commit_and_push_rederives_state_on_conflict_with_concurrent_writer(tmp_
     git(b, "pull", "-q")
     final = json.loads((b / orch.STATE_PATH).read_text())
     assert final["batch"]["status"] == "stopped" and final["batch"]["attempts"] == [249]
+
+
+def dep_body(deps: str) -> str:
+    return GOOD_BODY.replace("## Tests", f"## Dependencies\n{deps}\n\n## Tests")
+
+
+def test_promotable_requires_all_dependencies_done_and_owner_approval():
+    approved = ["status:backlog", "priority:p0", "orch:owner-approved"]
+    issues = [
+        issue(1, ["status:done"], state="CLOSED"),
+        issue(2, ["status:in-progress"]),
+        issue(3, ["status:blocked"], state="CLOSED"),
+        issue(10, approved, b=dep_body("#1 — stays backlog until done")),
+        issue(11, approved, b=dep_body("#1, #2")),  # #2 still running
+        issue(12, approved, b=dep_body("#3")),  # closed but not done
+        issue(13, approved, b=dep_body("#999")),  # unknown
+        issue(14, approved, b=dep_body("none")),  # backlog for another reason
+        issue(15, ["status:backlog"], b=dep_body("#1")),  # not owner-approved
+        issue(16, ["status:ready", "orch:owner-approved"], b=dep_body("#1")),
+    ]
+    assert [(i.number, deps) for i, deps in orch.promotable(issues)] == [(10, [1])]
+
+
+def test_planner_promotes_then_selects_dependent_task(repo):
+    gh = FakeGh(
+        [
+            issue(1, ["status:done"], state="CLOSED"),
+            issue(10, ["status:backlog", "priority:p0", "orch:owner-approved"], b=dep_body("#1")),
+            issue(20, ["status:ready", "priority:p1"]),
+        ]
+    )
+    st = orch.load_state()
+    orch.batch_start(st, by="owner", now="t0")
+    orch.save_state(st)
+    orch.cmd_plan(ns(apply=False), gh)
+    assert "status:backlog" in gh.issues[10].labels  # dry run changes nothing
+    orch.cmd_plan(ns(apply=True), gh)
+    assert "status:in-progress" in gh.issues[10].labels  # promoted, then p0 beats p1
+    assert any("promoted" in c for c in gh.comments[10])
