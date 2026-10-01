@@ -12,26 +12,16 @@
     "`claude.yml` (@claude trigger) still runs from `main` and checks out `feature/multi-program`; the fix on develop/current only takes effect after an owner-approved main merge"
   ],
   "batch": {
-    "id": 5,
+    "id": 6,
     "limit": 5,
     "max_attempts": 8,
-    "status": "idle",
+    "status": "running",
     "approved_by": "bimoool",
-    "started_at": "2026-10-01 05:05 UTC",
-    "completed": [
-      249,
-      250,
-      252,
-      253
-    ],
-    "attempts": [
-      249,
-      250,
-      252,
-      253
-    ],
-    "idle_reason": "empty-queue"
+    "started_at": "2026-10-01 19:57 UTC",
+    "completed": [],
+    "attempts": [],
+    "idle_reason": null
   },
   "staging_health_url": "https://staging.app.bimoool.com/health",
-  "last_owner_comment_id": 5925114615
+  "last_owner_comment_id": 5939427276
 }
