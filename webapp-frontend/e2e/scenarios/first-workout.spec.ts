@@ -26,6 +26,7 @@ test("первая тренировка: курс из каталога → в �
   await startWorkout(page, PROGRAM);
   await playSets(page, ["10"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена", { exact: true })).toBeVisible();
   await expect(page.getByText(/— 1\/3/)).toBeVisible(); // один из трёх подходов блока A

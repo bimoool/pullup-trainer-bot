@@ -65,6 +65,7 @@ test.fixme("«Планы» → manual «Планка»/«Отжимания» �
     (response) => response.url().includes("/complete") && response.status() === 200,
   );
   await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
   const completed = await completeResponsePromise.then((r) => r.json());
   expect(completed.id).toBe(plankSessionId);
   expect(completed.status).toBe("completed");

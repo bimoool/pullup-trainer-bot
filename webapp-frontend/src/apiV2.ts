@@ -513,8 +513,14 @@ export async function completeLiveSession(
   initDataRaw: string,
   sessionId: number,
   abandoned: boolean,
+  review?: { effort?: string | null; comment?: string | null },
 ): Promise<LiveSessionCompleteResponse> {
-  return apiV2Post(`/api/v2/sessions/live/${sessionId}/complete`, initDataRaw, { abandoned });
+  // effort/comment — оценка тренировки целиком (необязательно); пустое не шлём.
+  return apiV2Post(`/api/v2/sessions/live/${sessionId}/complete`, initDataRaw, {
+    abandoned,
+    ...(review?.effort ? { effort: review.effort } : {}),
+    ...(review?.comment ? { comment: review.comment } : {}),
+  });
 }
 
 // --- Каскад прогрессии (правка исторической сессии, раздел 10.6/15) --------

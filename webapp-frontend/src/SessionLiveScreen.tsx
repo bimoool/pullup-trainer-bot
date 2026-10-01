@@ -1,4 +1,4 @@
-import { Button, Input, Section } from "@telegram-apps/telegram-ui";
+import { Button, Input, Section, Textarea } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
 import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
@@ -21,6 +21,7 @@ import {
   type LocalPhaseName,
 } from "./offlineSession";
 import { cancelScheduledPhaseEndSound, schedulePhaseEndSound } from "./phaseAudio";
+import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX, WORKOUT_EFFORT_PROMPT } from "./effortScale";
 import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
@@ -56,7 +57,6 @@ const PHASE_LABELS: Record<LocalPhaseName, string> = {
   done: "Готово",
 };
 
-const EFFORT_OPTIONS = ["1", "2", "3", "4", "5"];
 
 /**
  * Live-экран сессии (issue #185, раздел 10.8 docs/plan-and-specs.md).
@@ -79,6 +79,10 @@ export function SessionLiveScreen({
   const [value, setValue] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  // Review-шаг перед завершением: оценка тренировки целиком + заметка.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewEffort, setReviewEffort] = useState<string | null>(null);
+  const [reviewComment, setReviewComment] = useState("");
   const [startingBlock, setStartingBlock] = useState(false);
   const [startBlockError, setStartBlockError] = useState<string | null>(null);
   // Двойной тап (issue #187, баг 2): быстрый повторный клик по "Готов"/
@@ -374,6 +378,21 @@ export function SessionLiveScreen({
     });
   }
 
+  // «Завершить» открывает review-шаг (оценка и заметка необязательны); явное
+  // «Сохранить и завершить» служит подтверждением вместо window.confirm.
+  function submitReview() {
+    void guardedAction(async () => {
+      const current = localRef.current ?? local;
+      if (current === null) {
+        return;
+      }
+      await commitLocal({
+        ...current,
+        completeRequested: { abandoned: false, ...reviewPayload(reviewEffort, reviewComment) },
+      });
+    });
+  }
+
   // R1: явный "Начать" следующего блока. Сначала досылаем накопленное (сервер
   // должен быть уже у границы блока), потом стартуем блок; двойной клик
   // отсекается guardedAction, а сам старт идемпотентен на сервере. Ошибка —
@@ -494,15 +513,18 @@ export function SessionLiveScreen({
           {inputLabel.hint !== null && (
             <p className="block-subtitle" data-testid="result-hint">{inputLabel.hint}</p>
           )}
-          <div className="effort-segment-row">
-            {EFFORT_OPTIONS.map((option) => (
+          <p className="block-subtitle">{SET_EFFORT_PROMPT}</p>
+          <div className="effort-segment-row effort-labelled" data-testid="set-effort">
+            {EFFORT_SCALE.map((option) => (
               <Button
-                key={option}
+                key={option.value}
                 size="s"
-                mode={effort === option ? "filled" : "outline"}
-                onClick={() => setEffort(option)}
+                mode={effort === option.value ? "filled" : "outline"}
+                aria-pressed={effort === option.value}
+                onClick={() => setEffort(option.value)}
               >
-                {option}
+                <span className="effort-num">{option.value}</span>
+                <span className="effort-word">{option.label}</span>
               </Button>
             ))}
           </div>
@@ -523,9 +545,46 @@ export function SessionLiveScreen({
         <p className="screen-message">Все подходы плана выполнены — можно завершить сессию.</p>
       )}
 
-      <Button className="action-button" size="l" stretched mode="outline" onClick={handleFinish}>
-        Завершить
-      </Button>
+      {reviewOpen ? (
+        <Section className="block-section" header="Как прошла тренировка?">
+          <div data-testid="workout-review">
+            <p className="block-subtitle">
+              {WORKOUT_EFFORT_PROMPT} Что сделано — зачтено, остальное останется в плане.
+            </p>
+            <div className="effort-segment-row effort-labelled" data-testid="workout-effort">
+              {EFFORT_SCALE.map((option) => (
+                <Button
+                  key={option.value}
+                  size="s"
+                  mode={reviewEffort === option.value ? "filled" : "outline"}
+                  aria-pressed={reviewEffort === option.value}
+                  onClick={() => setReviewEffort(reviewEffort === option.value ? null : option.value)}
+                >
+                  <span className="effort-num">{option.value}</span>
+                  <span className="effort-word">{option.label}</span>
+                </Button>
+              ))}
+            </div>
+            <Textarea
+              header="Заметка"
+              aria-label="Заметка к тренировке"
+              maxLength={WORKOUT_COMMENT_MAX}
+              value={reviewComment}
+              onChange={(e) => setReviewComment(e.target.value)}
+            />
+            <Button className="action-button" size="l" stretched onClick={submitReview}>
+              Сохранить и завершить
+            </Button>
+            <Button className="action-button" size="l" stretched mode="outline" onClick={() => setReviewOpen(false)}>
+              Назад
+            </Button>
+          </div>
+        </Section>
+      ) : (
+        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setReviewOpen(true)}>
+          Завершить
+        </Button>
+      )}
     </div>
   );
 }

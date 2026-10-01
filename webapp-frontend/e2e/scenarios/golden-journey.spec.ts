@@ -47,7 +47,8 @@ test("Golden Journey: Главная → в план → тренировка �
   await expect(page.getByText("Живая тренировка")).toBeVisible();
   await expect(page.getByText(/Подход 1\/2 · Цель: 8 повт\./)).toBeVisible();
   await playSets(page, ["8", "7"]);
-  await clickAndSync(page, "Завершить", "/complete");
+  await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await clickAndSync(page, "Сохранить и завершить", "/complete");
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText("Подход 1: 8 повт.")).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();

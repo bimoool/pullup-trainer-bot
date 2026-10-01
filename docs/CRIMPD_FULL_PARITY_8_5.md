@@ -95,8 +95,8 @@ any merge into `develop/current`.
 | Timer phases (get ready → work → rest → done) | X3, X8 | phases get_ready/go/rest/between/done | DONE | — | — | — | builder-execution.spec.ts, session-complex.spec.ts |
 | Set / rep display «1/3 SET» | X5 | «Подход n/N · Цель» | DONE | — | — | — | builder-execution.spec.ts |
 | Logging during session (per set) | X5 | «Внести подход» value + note | DONE | — | — | — | builder-execution.spec.ts |
-| Per-set effort «How hard was this set?» with words | X5, X12 | chips «1»…«5» without words | PARTIAL | no meaning | labelled scale | #257 | — |
-| Workout effort + additional notes at end | X10 | DB fields exist, no UI | MISSING | — | review step on finish | #257 | — |
+| Per-set effort «How hard was this set?» with words | X5, X12 | chips «1»…«5» + words (Очень легко…Предел) | DONE | — | — | #257 | crimpd-parity.spec.ts «Live effort»; tests/effortScale.test.ts |
+| Workout effort + additional notes at end | X10 | review step on finish → /complete effort+comment, shown in Journal | DONE | — | — | #257 | crimpd-parity.spec.ts «Live effort»; tests/test_web/test_v2_live_session_review.py |
 | Logging panel follows timer (collapsed work / expanded rest) | SKILL rule 3; Crimpd shows manual toggle X5–X6 *(auto rule unobserved)* | static section | MISSING | — | auto collapse/expand | #265 | — |
 | GET READY in final 10 s *(unobserved in Crimpd; owner target)* | X13 | 5 s get-ready at block start only | PARTIAL | no cue before next set | «Приготовься» last 10 s of rest | #265 | — |
 | Add Set beyond prescribed | X10 | none | MISSING | — | «+ Ещё подход» | #264 | — |

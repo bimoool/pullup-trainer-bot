@@ -22,6 +22,7 @@ test("A. reps standalone: цели из prescription, Summary после пос�
   await playSets(page, ["8", "7"]);
   await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText("Подход 1: 8 повт.")).toBeVisible();
@@ -43,6 +44,7 @@ test("B. time standalone: секунды, цель 0:30", async ({ page }) => {
   await clickAndSync(page, "Пропустить отдых", "/phase/next");
   await playSets(page, ["30"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText("Подход 1: 0:28")).toBeVisible();
@@ -59,6 +61,7 @@ test("C. max standalone: попытки без выдуманной цели", a
   await expect(page.getByText(/Цель/)).toHaveCount(0);
   await playSets(page, ["20", "22"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText("Лучший результат: 22")).toBeVisible();
@@ -145,6 +148,7 @@ test("E. mixed reps -> interval -> max: ручные переходы, reload, �
   await expect(page.getByText(/Попытка 1\/2 · Максимум/)).toBeVisible();
   await playSets(page, ["18", "22"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText(/Подтягивания — 2\/2/)).toBeVisible();
@@ -164,6 +168,7 @@ test("F. дубли упражнения: подходы второго блок
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // Подтягивания (max) — блок 2
   await playSets(page, ["15", "17"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText(/Подтягивания — 2\/2/)).toHaveCount(2); // оба блока сохранили свои подходы
