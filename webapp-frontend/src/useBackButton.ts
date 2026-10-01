@@ -34,12 +34,18 @@ export function useBackButton(onClickHandler: () => void, deps: React.Dependency
     // unavailable (тот же принцип graceful degradation, что у initData
     // в App.tsx — см. issue #23/#28). SDK v2.11.3 оборачивает методы в
     // SafeWrapped с методом .isAvailable().
-    if (!mountBackButton.isAvailable?.() || !showBackButton.isAvailable?.()) {
+    if (!mountBackButton.isAvailable?.()) {
       return;
     }
 
-    // mount() + show() — показать кнопку (backButton по умолчанию скрыт)
+    // mount() + show() — показать кнопку (backButton по умолчанию скрыт).
+    // showBackButton.isAvailable() истинно только ПОСЛЕ mount() (SDK требует
+    // смонтированный компонент), поэтому проверяем его после монтирования —
+    // иначе кнопка вообще никогда не показывалась (issue #249).
     mountBackButton();
+    if (!showBackButton.isAvailable?.()) {
+      return;
+    }
     showBackButton();
 
     // Подписка на событие клика — onClick() возвращает cleanup-функцию
