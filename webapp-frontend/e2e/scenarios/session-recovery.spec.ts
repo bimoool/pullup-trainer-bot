@@ -86,7 +86,8 @@ test("активная тренировка: фон/передний план, r
   await clickAndSync(page, "Пропустить отдых", `/api/v2/sessions/live/${sessionId}/phase/next`);
   await expect(page.getByText(/Подход 2\/3/)).toBeVisible();
   await playSets(page, ["7", "6"]);
-  await clickAndSync(page, "Завершить", "/complete");
+  await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await clickAndSync(page, "Сохранить и завершить", "/complete");
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText("Подход 1: 8 повт.")).toBeVisible();
   await expect(page.getByText("Подход 2: 7 повт.")).toBeVisible();

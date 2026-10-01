@@ -47,6 +47,7 @@ test("live-сессия (v2): комплекс из 3 упражнений, за
   // Упражнение 3 не трогаем — завершаем сессию досрочно.
   await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await expect(page.getByText(/— 1\/1/)).toHaveCount(2); // два выполненных упражнения

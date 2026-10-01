@@ -76,6 +76,7 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   });
   await context.setOffline(false);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   expect(liveResponses.filter((r) => r.status >= 500)).toEqual([]);

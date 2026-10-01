@@ -49,6 +49,7 @@ test.fixme("Планы → Подтягивания/Планка → Complete �
     (response) => response.url().includes("/complete") && response.status() === 200,
   );
   await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
   await pullupsCompletePromise;
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
 
@@ -63,6 +64,7 @@ test.fixme("Планы → Подтягивания/Планка → Complete �
     (response) => response.url().includes("/complete") && response.status() === 200,
   );
   await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
   await plankCompletePromise;
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
 

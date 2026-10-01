@@ -46,3 +46,7 @@ seed session_recovery 930004
 seed session_recovery 930005
 seed session_recovery 930006
 seed session_recovery 930007
+seed golden_journey 980001
+seed golden_journey 980002
+seed golden_journey 980011
+seed golden_journey 980012

@@ -40,6 +40,7 @@ test("Summary: BackButton не воскрешает сессию, «Закрыт
   await playSets(page, ["8"], false);
   const complete = page.waitForResponse((r) => r.url().includes(`/api/v2/sessions/live/${sessionId}/complete`));
   await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
   expect((await complete).status()).toBe(200);
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   expect(completeRequests).toHaveLength(1);

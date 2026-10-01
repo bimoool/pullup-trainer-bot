@@ -18,6 +18,7 @@ test("Journal v2: карточки всех протоколов, детали, 
   await startWorkout(page, "Только time");
   await playSets(page, ["30", "25"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 
@@ -28,6 +29,7 @@ test("Journal v2: карточки всех протоколов, детали, 
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   await playSets(page, ["18", "22"]);
   await page.getByRole("button", { name: "Завершить" }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 

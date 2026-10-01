@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { clickAndSync } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
@@ -421,4 +422,91 @@ for (const width of WIDTHS) {
       });
     });
   }
+}
+
+// --- Live effort (#257): подписанные чипы усилия, review-шаг, значения в Журнале ------------
+// Seed: scripts/e2e_seed.py golden_journey (своя Workout «Золотая тренировка», reps 2 x 8);
+// по пользователю на ширину/тему и на попытку retry (retry делит БД с первой попыткой).
+const EFFORT_TITLE = "Золотая тренировка";
+const EFFORT_USERS = { 320: { id: 980_001, theme: "light" }, 390: { id: 980_011, theme: "dark" } } as const;
+
+for (const width of WIDTHS) {
+  const { id, theme } = EFFORT_USERS[width as 320 | 390];
+  test.describe(`Live effort @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 760 } });
+    test.setTimeout(120_000);
+
+    test("чипы со словами, review-шаг «Как прошла тренировка?», оценка и заметка в Журнале", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry, { theme });
+      const completeBodies: unknown[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().includes("/complete")) {
+          completeBodies.push(request.postDataJSON());
+        }
+      });
+
+      // В план → старт.
+      await page.getByTestId("my-workout-card").filter({ hasText: EFFORT_TITLE }).click();
+      await page.getByRole("button", { name: "Добавить в план" }).click();
+      await page.getByRole("button", { name: "Свободный пул" }).click();
+      await page.getByRole("button", { name: "Добавить", exact: true }).click();
+      const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
+      await group.getByRole("button", { name: "Начать", exact: true }).click();
+      await page.getByRole("button", { name: "Начать", exact: true }).click();
+      await expect(page.getByText("Живая тренировка")).toBeVisible();
+
+      // Подход 1: вопрос и подписанные чипы 1–5.
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByText("Насколько тяжело было?")).toBeVisible();
+      const chips = page.getByTestId("set-effort").getByRole("button");
+      await expect(chips).toHaveCount(5);
+      const words = ["Очень легко", "Легко", "Средне", "Тяжело", "Предел"];
+      for (let i = 0; i < 5; i += 1) {
+        await expect(chips.nth(i)).toContainText(String(i + 1));
+        await expect(chips.nth(i)).toContainText(words[i]);
+      }
+      await expectNoHorizontalOverflow(page, "Live: чипы усилия");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await chips.nth(3).click(); // «Тяжело» — сохраняется как 4
+      await expect(chips.nth(3)).toHaveAttribute("aria-pressed", "true");
+      await clickAndSync(page, "Готово", "/sets:batch");
+      await clickAndSync(page, "Пропустить отдых", "/phase/next");
+      await clickAndSync(page, "Готов", "/phase/next");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("7");
+      await clickAndSync(page, "Готово", "/sets:batch");
+
+      // Review-шаг: открывается по «Завершить», «Назад» возвращает, оценка необязательна.
+      await page.getByRole("button", { name: "Завершить", exact: true }).click();
+      const review = page.getByTestId("workout-review");
+      await expect(review).toContainText("Как прошла тренировка?");
+      await expect(review.getByTestId("workout-effort").getByRole("button")).toHaveCount(5);
+      await expect(review.getByLabel("Заметка к тренировке")).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Live: review-шаг");
+      await review.getByRole("button", { name: "Назад", exact: true }).click();
+      await expect(review).toHaveCount(0);
+      await page.getByRole("button", { name: "Завершить", exact: true }).click();
+      expect(completeBodies).toEqual([]); // без «Сохранить и завершить» ничего не завершено
+
+      await review.getByTestId("workout-effort").getByRole("button").nth(4).click(); // «Предел»
+      await review.getByLabel("Заметка к тренировке").fill("Хорошо потянул, локоть тянет");
+      await clickAndSync(page, "Сохранить и завершить", "/complete");
+      await expect(page.getByText("Тренировка завершена")).toBeVisible();
+      expect(completeBodies).toEqual([
+        { abandoned: false, effort: "5", comment: "Хорошо потянул, локоть тянет" },
+      ]);
+      await page.getByRole("button", { name: "Закрыть" }).click();
+
+      // Журнал: оценка тренировки со словом, заметка, усилие подхода.
+      await openTab(page, "Журнал");
+      await page.locator(".history-card").filter({ hasText: EFFORT_TITLE }).click();
+      await expect(page.getByTestId("journal-workout-effort")).toContainText("5 Предел");
+      await expect(page.getByTestId("journal-workout-comment")).toContainText("Хорошо потянул, локоть тянет");
+      await expect(page.getByText(/усилие 4 Тяжело/)).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Журнал: детали с оценкой");
+
+      expect(consoleErrors.filter((e) => !e.includes("Wake Lock"))).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
 }

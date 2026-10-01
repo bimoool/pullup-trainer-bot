@@ -1323,6 +1323,7 @@ async def complete_live_session(
     user = await _require_user(session, init_data)
     result, not_found = await LiveSessionService(session).complete_session(
         session_id=session_id, user_id=user.id, abandoned=body.abandoned,
+        effort=body.effort, comment=body.comment,
     )
     if not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")

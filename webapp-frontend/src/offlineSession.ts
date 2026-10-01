@@ -139,7 +139,7 @@ export interface LocalLiveSession {
   nextSetIndex: number;
   pendingSets: QueuedSet[];
   pendingPhaseAdvances: number;
-  completeRequested: { abandoned: boolean } | null;
+  completeRequested: { abandoned: boolean; effort?: string | null; comment?: string | null } | null;
 }
 
 export async function loadLocalSession(): Promise<LocalLiveSession | null> {
@@ -280,7 +280,10 @@ export async function flushLocalSession(
   }
 
   if (local.completeRequested) {
-    return completeLiveSession(initDataRaw, local.serverSessionId, local.completeRequested.abandoned);
+    return completeLiveSession(initDataRaw, local.serverSessionId, local.completeRequested.abandoned, {
+      effort: local.completeRequested.effort ?? null,
+      comment: local.completeRequested.comment ?? null,
+    });
   }
 
   return server;

@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.web.schemas_v2 import (
     IntervalConfigResponse,
@@ -82,6 +82,17 @@ class LiveSetBatchRequest(BaseModel):
 
 class LiveSessionCompleteRequest(BaseModel):
     abandoned: bool = False
+    # Оценка тренировки целиком (необязательно); на прогрессию не влияет.
+    effort: Decimal | None = Field(default=None, ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("comment")
+    @classmethod
+    def _blank_comment_is_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 # --- Общий ответ по живой сессии -----------------------------------------------------------

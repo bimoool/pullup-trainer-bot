@@ -2,6 +2,7 @@ import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
+import { effortWithWord } from "./effortScale";
 import { describeJournalBlock, formatSessionDateTime } from "./journalFormat";
 import { useBackButton } from "./useBackButton";
 
@@ -119,7 +120,7 @@ export function JournalV2Detail({
             {block.set_logs.filter((log) => log.effort !== null || log.note).map((log) => (
               <p key={log.set_number} className="hint">
                 Подход {log.set_number}
-                {log.effort !== null && ` · усилие ${log.effort}`}
+                {log.effort !== null && ` · усилие ${effortWithWord(log.effort)}`}
                 {log.note && ` · ${log.note}`}
               </p>
             ))}
@@ -127,8 +128,10 @@ export function JournalV2Detail({
         );
       })}
 
-      {session.effort !== null && <p className="block-subtitle">Усилие: {session.effort}</p>}
-      {session.comment && <p className="hint">Комментарий: {session.comment}</p>}
+      {session.effort !== null && (
+        <p className="block-subtitle" data-testid="journal-workout-effort">Усилие: {effortWithWord(session.effort)}</p>
+      )}
+      {session.comment && <p className="hint" data-testid="journal-workout-comment">Комментарий: {session.comment}</p>}
       {deleteError !== null && <p className="gap-banner">{deleteError}</p>}
       {session.can_delete && (
         <Button className="action-button" size="l" stretched mode="outline" loading={deleting} onClick={() => void handleDelete()}>
