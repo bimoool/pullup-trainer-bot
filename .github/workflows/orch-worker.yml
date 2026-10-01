@@ -6,7 +6,8 @@ name: Orch Worker
 #
 # The agent only edits and commits. Everything that decides state is deterministic and runs
 # after it, in this file: push (always — a timed-out run still leaves its commits on origin),
-# verification (ruff, pytest on real Postgres, frontend build/unit), forbidden-path and
+# verification (ruff, pytest on real Postgres, frontend build/unit, real Playwright E2E for
+# E2E-relevant paths — the agent is never responsible for Playwright), forbidden-path and
 # destructive-migration checks, merge into the base branch, labels/comment/batch counter via
 # `scripts/orch.py worker-record`, and the hop back to the planner.
 #
@@ -111,6 +112,7 @@ jobs:
           cp scripts/orch.py /tmp/orch/lib/orch.py   # gate logic always comes from base, not from a stale worker branch
           cp .github/task/current.md /tmp/orch/brief.md
           cp .github/task/current.md orch-out/brief.md
+          cp .github/orch/e2e.sh orch-out/e2e.sh     # real E2E runner for the agent (the gate uses the base-commit copy)
           echo "orch-out/" >> .git/info/exclude   # agent I/O dir: never committed, never cleaned
           echo "base_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --heads origin "$BR" >/dev/null; then
@@ -140,6 +142,26 @@ jobs:
         working-directory: webapp-frontend
         run: npm ci
 
+      # The workflow — not the agent — owns the E2E toolchain: Playwright cannot be installed from
+      # inside the agent's tool sandbox. Installed before the agent so it can run real E2E via
+      # `bash orch-out/e2e.sh`; the gate below re-runs the full suite independently.
+      - name: Install E2E dependencies (Playwright chromium)
+        id: e2e_deps
+        continue-on-error: true # the gate retries the install and fails closed
+        working-directory: webapp-frontend/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Previous attempt evidence (resumed branch)
+        if: steps.branch.outputs.resumed == 'true'
+        run: |
+          # Last finish-step report on this issue (gate failures included) → file for the agent.
+          gh issue view "$ISSUE" --json comments \
+            -q '[.comments[] | select(.body | startswith("🤖 **Worker result"))] | last | .body // empty' \
+            > orch-out/previous-attempt.md || true
+          [ -s orch-out/previous-attempt.md ] || rm -f orch-out/previous-attempt.md
+
       - name: Claude worker
         id: claude
         continue-on-error: true
@@ -159,15 +181,32 @@ jobs:
                It is the ONLY source of scope. Acceptance criteria there define "done".
             3. You are already on branch orch/issue-${{ inputs.issue }} (base ${{ inputs.base }}).
                Postgres runs on localhost:5432; TEST_DATABASE_URL, DATABASE_URL and BOT_TOKEN are
-               set; Python deps and webapp-frontend/node_modules are installed.
+               set; Python deps and webapp-frontend/node_modules are installed. If the file
+               orch-out/previous-attempt.md exists, this branch already holds an earlier attempt:
+               read it first (it has the deterministic gate's evidence), keep the existing commits
+               and fix what failed instead of starting over. If the implementation is already
+               complete on the branch, verify it and report — do not redo it.
             4. Implement only that scope. Commit with `git add` + `git commit` after each meaningful
                block. Do NOT push, switch branches, merge, deploy, or edit .github/workflows/,
                .github/orch/, .github/task/ or docs/PROJECT_STATUS.md — the workflow does all of
-               that after you, and independently re-runs ruff/pytest/frontend checks. orch-out/ is
-               git-ignored: never `git add` it.
-            5. Stop conditions (ambiguous AC, product/security decision, credentials, prod, real
+               that after you, and independently re-runs ruff/pytest/frontend/E2E checks.
+               orch-out/ is git-ignored: never `git add` it.
+            5. E2E (Playwright): you are NOT responsible for installing Playwright or any npm
+               package — never try. The workflow pre-installed them. Run the real Mini App E2E
+               environment (migrated DB, built frontend, uvicorn, seeds, chromium) with:
+                 bash orch-out/e2e.sh scenarios/<file>.spec.ts   (one spec; extra playwright args ok)
+                 bash orch-out/e2e.sh                            (whole suite)
+               New E2E seeds go into scripts/e2e_seed.py + scripts/e2e_seed_all.sh.
+               After you finish, the workflow's deterministic gate runs ruff, pytest, frontend
+               build/unit AND the full Playwright suite on your commits; nothing merges unless all
+               are green. So if E2E cannot run in your session for an environmental reason
+               (install, browser, sandbox, permission), that alone is NEVER a reason for
+               VERDICT: blocked — when the implementation is complete, report done and write
+               "E2E not run locally: <reason>; deterministic gate runs it" under KNOWN GAPS.
+               A real test failure you could not fix is different: report it honestly.
+            6. Stop conditions (ambiguous AC, product/security decision, credentials, prod, real
                device, destructive migration): stop and report needs-owner. Do not invent.
-            6. RESULT FILE — MANDATORY. Your run is a FAILURE (the task is not accepted, whatever
+            7. RESULT FILE — MANDATORY. Your run is a FAILURE (the task is not accepted, whatever
                you committed) unless the file `orch-out/result.md` exists when you finish. It is
                inside the repository checkout, so the Write tool can create it. Write it as your
                LAST action, always, even if blocked, with EXACTLY these fields, each starting a
@@ -187,7 +226,7 @@ jobs:
           claude_args: >-
             --model ${{ inputs.model }}
             --max-turns 200
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Bash(git cherry-pick:*),Bash(python -m pytest:*),Bash(pytest:*),Bash(ruff:*),Bash(python:*),Bash(alembic:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(cd:*)"
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,TodoWrite,Bash(git add:*),Bash(git commit:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Bash(git cherry-pick:*),Bash(python -m pytest:*),Bash(pytest:*),Bash(ruff:*),Bash(python:*),Bash(alembic:*),Bash(npm run:*),Bash(npm test:*),Bash(npx tsc:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(find:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(cd:*),Bash(bash orch-out/e2e.sh:*),Bash(npx playwright:*)"
             --disallowedTools "Bash(git push:*),Bash(git checkout:*),Bash(git switch:*),Bash(git merge:*),Bash(git rebase:*),Bash(git reset:*),Bash(gh:*)"
 
       - name: Collect worker result (workspace → /tmp/orch/result.md, no fabrication)
@@ -233,6 +272,7 @@ jobs:
           if [ "${{ steps.push.outputs.commits_ahead }}" = "0" ]; then
             printf 'tests_ok=0\nsummary=no commits — nothing to verify\nforbidden=\n' >> "$GITHUB_OUTPUT"; exit 0
           fi
+          git reset -q --hard && git clean -fdq   # verify committed work only (orch-out/ is ignored, kept)
           git diff --name-only "$BASE_SHA...HEAD" > /tmp/orch/changed.txt
           git diff "$BASE_SHA...HEAD" -- alembic/ > /tmp/orch/migrations.diff || true
           python - <<'PY' > /tmp/orch/forbidden.txt
@@ -249,12 +289,44 @@ jobs:
           else
             SUMMARY="$SUMMARY; frontend n/a"
           fi
+          : > /tmp/orch/evidence.md
+          [ "$OK" = 1 ] || { echo "### pytest (tail)"; echo '```'; tail -40 /tmp/orch/pytest.txt; echo '```'; } >> /tmp/orch/evidence.md
+          # Real Mini App E2E — same paths as e2e.yml. Runner taken from the BASE commit (a worker
+          # cannot alter it); fresh DB; full suite. Red E2E ⇒ not merged, whatever the agent said.
+          if grep -qE '^(webapp-frontend/|app/(web|db|domain|services)/|scripts/e2e_seed(\.py|_all\.sh)$|alembic/|alembic\.ini$)' /tmp/orch/changed.txt; then
+            if git show "$BASE_SHA:.github/orch/e2e.sh" > /tmp/orch/gate-e2e.sh 2>/dev/null \
+              && (cd webapp-frontend/e2e && npm ci && npx playwright install --with-deps chromium) > /tmp/orch/e2e-install.txt 2>&1 \
+              && ORCH_E2E_LOG_DIR=/tmp/orch/e2e bash /tmp/orch/gate-e2e.sh --fresh > /tmp/orch/e2e.txt 2>&1; then
+              SUMMARY="$SUMMARY; e2e ok ($(grep -Eo '[0-9]+ passed' /tmp/orch/e2e.txt | tail -1))"
+              echo "e2e_ran=ok" >> "$GITHUB_OUTPUT"
+            else
+              OK=0
+              SUMMARY="$SUMMARY; e2e FAILED ($(grep -Eo '[0-9]+ (failed|flaky|passed)' /tmp/orch/e2e.txt | tr '\n' ' '))"
+              echo "e2e_ran=failed" >> "$GITHUB_OUTPUT"
+              { echo "### Playwright E2E (tail)"; echo '```'; tail -60 /tmp/orch/e2e.txt /tmp/orch/e2e-install.txt 2>/dev/null; echo '```'; } >> /tmp/orch/evidence.md
+            fi
+          else
+            SUMMARY="$SUMMARY; e2e n/a (no E2E-relevant paths)"
+          fi
           echo "tests_ok=$OK" >> "$GITHUB_OUTPUT"
           echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
           {
             echo "forbidden<<ORCH_EOF"; cat /tmp/orch/forbidden.txt; echo "ORCH_EOF"
           } >> "$GITHUB_OUTPUT"
           tail -30 /tmp/orch/pytest.txt
+          tail -40 /tmp/orch/e2e.txt 2>/dev/null || true
+
+      - name: Upload E2E report (gate failure)
+        if: always() && steps.verify.outputs.e2e_ran == 'failed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: orch-e2e-${{ inputs.issue }}
+          path: |
+            webapp-frontend/e2e/playwright-report/
+            /tmp/orch/e2e/
+            /tmp/orch/e2e.txt
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Merge into base if the gate passes
         id: merge
@@ -299,7 +371,7 @@ jobs:
             --result-file /tmp/orch/result.md \
             --tests-ok "$TESTS_OK" --tests-summary "$SUMMARY" \
             --commits-ahead "$AHEAD" --forbidden "$FORBIDDEN" --merged "$MERGED" \
-            --sha "$SHA" --run-url "$RUN_URL" --publish --push
+            --sha "$SHA" --run-url "$RUN_URL" --evidence-file /tmp/orch/evidence.md --publish --push
 
       - name: Hand back to the planner (only while the batch runs)
         if: always() && steps.record.outcome == 'success' && steps.record.outputs.continue == 'true'
