@@ -534,3 +534,22 @@ class SetLog(Base):
     __table_args__ = (
         UniqueConstraint("session_id", "set_index", name="uq_set_logs_session_set_index"),
     )
+
+
+class UserFavorite(Base):
+    """Избранное пользователя (issue #272): тренировка (user Complex) или
+    программа. target_id полиморфный — без FK; удалённые/невидимые цели
+    отфильтровываются при чтении списка, определения не затрагиваются."""
+
+    __tablename__ = "user_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "target_type", "target_id", name="uq_user_favorites_user_target"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    target_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
