@@ -340,6 +340,8 @@ async def test_long_absence_completed_at_is_protocol_deadline_not_reopen_time(
     completed_at = datetime.fromisoformat(result_json["completed_at"])
     assert completed_at == expected_deadline  # gate (Кирилл) — точное равенство, не ±1с
     assert result_json["actual_duration_seconds"] == 180  # НЕ 600+
+    # #259: момент завершения сессии при авто-финише — дедлайн, не момент ленивой финализации.
+    assert final_detail.completed_at == expected_deadline
 
 
 async def test_lazy_finalizer_idempotent_when_called_twice(session: AsyncSession, interval_plan_item: PlanItem, interval_user: User):

@@ -399,6 +399,9 @@ class TrainingSession(Base):
         server_default=SessionStatus.STARTED.value,
     )
     performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Момент завершения (#259): NULL у сессий до миграции — без backfill-догадок;
+    # длительность = completed_at - performed_at.
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     effort: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

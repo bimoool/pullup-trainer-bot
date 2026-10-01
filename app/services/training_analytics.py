@@ -2,7 +2,7 @@
 сессий пользователя (не через страницы Журнала) и перевод их в вход чистого
 домена app.domain.training_analytics."""
 
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +13,9 @@ from app.domain.training_analytics import (
     AnalyticsBlock,
     AnalyticsSession,
     AnalyticsSetLog,
+    MetricsSeries,
     TrainingAnalytics,
+    compute_metrics_series,
     compute_training_analytics,
 )
 from app.domain.workout_snapshot import positional_snapshot_items
@@ -36,6 +38,7 @@ def to_analytics_session(detail: SessionDetail) -> AnalyticsSession:
     items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
     return AnalyticsSession(
         performed_at=detail.performed_at,
+        completed_at=detail.completed_at,
         blocks=[
             AnalyticsBlock(
                 exercise_id=block.exercise_id,
@@ -53,8 +56,11 @@ class TrainingAnalyticsService:
     def __init__(self, session: AsyncSession) -> None:
         self._sessions = TrainingSessionRepository(session)
 
-    async def build(self, *, user_id: int, timezone: str | None, now: datetime) -> tuple[TrainingAnalytics, ZoneInfo]:
+    async def build(
+        self, *, user_id: int, timezone: str | None, now: datetime, date_from: date, date_to: date,
+    ) -> tuple[TrainingAnalytics, MetricsSeries, ZoneInfo]:
         tz = resolve_timezone(timezone)
         details = await self._sessions.list_all_completed(user_id)
-        analytics = compute_training_analytics([to_analytics_session(d) for d in details], now, tz)
-        return analytics, tz
+        sessions = [to_analytics_session(d) for d in details]
+        analytics = compute_training_analytics(sessions, now, tz)
+        return analytics, compute_metrics_series(sessions, date_from, date_to, now, tz), tz

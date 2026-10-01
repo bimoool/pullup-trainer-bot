@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import delete, func, select
@@ -131,6 +131,7 @@ class SessionDetail:
     performed_at: datetime
     effort: Decimal | None
     comment: str | None
+    completed_at: datetime | None = None
     client_session_id: uuid.UUID | None = None
     phase_name: SessionPhase = SessionPhase.DONE
     phase_ends_at: datetime | None = None
@@ -154,10 +155,12 @@ class TrainingSessionRepository:
     async def create_session(
         self, *, user_id: int, source: SessionSource, performed_at: datetime,
         effort: Decimal | None, comment: str | None, blocks: list[SessionBlockInput],
+        completed_at: datetime | None = None,
     ) -> TrainingSession:
         training_session = TrainingSession(
             user_id=user_id, source=source, status=SessionStatus.COMPLETED,
             performed_at=performed_at, effort=effort, comment=comment,
+            completed_at=completed_at if completed_at is not None else datetime.now(UTC),
         )
         self._session.add(training_session)
         await self._session.flush()
@@ -440,7 +443,7 @@ class TrainingSessionRepository:
             training_session.comment = comment
         await self._session.flush()
 
-    async def mark_completed(self, session_id: int) -> None:
+    async def mark_completed(self, session_id: int, completed_at: datetime | None = None) -> None:
         """Завершение живой сессии — status/phase_name/phase_ends_at только;
         "зачтено ли что-то в прогрессию" (abandoned) — транзитная деталь
         запроса, не состояние сессии, поэтому не персистится здесь (решает
@@ -448,6 +451,7 @@ class TrainingSessionRepository:
         одинаково в обоих случаях)."""
         training_session = await self._session.get(TrainingSession, session_id)
         training_session.status = SessionStatus.COMPLETED
+        training_session.completed_at = completed_at if completed_at is not None else datetime.now(UTC)
         training_session.phase_name = SessionPhase.DONE
         training_session.phase_ends_at = None
         await self._session.flush()
@@ -550,7 +554,7 @@ class TrainingSessionRepository:
                 SessionDetail(
                     id=session_row.id, source=session_row.source, status=session_row.status,
                     performed_at=session_row.performed_at, effort=session_row.effort,
-                    comment=session_row.comment, client_session_id=session_row.client_session_id,
+                    comment=session_row.comment, completed_at=session_row.completed_at, client_session_id=session_row.client_session_id,
                     phase_name=session_row.phase_name, phase_ends_at=session_row.phase_ends_at,
                     current_block_index=session_row.current_block_index,
                     current_set_number=session_row.current_set_number, phase_index=session_row.phase_index,
