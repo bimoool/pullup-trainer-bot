@@ -614,3 +614,45 @@ def test_worker_workflow_runs_real_e2e_in_gate_and_never_asks_agent_to_install()
         "E2E_BASE_URL=http://127.0.0.1:8001 npx playwright test",
     ):
         assert step in runner
+
+
+def test_commit_and_push_rederives_state_on_conflict_with_concurrent_writer(tmp_path, monkeypatch):
+    """Owner stop lands on origin while a worker records: the record is re-applied on top."""
+    import subprocess
+
+    def git(cwd, *a):
+        return subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)
+
+    origin, a, b = tmp_path / "origin.git", tmp_path / "a", tmp_path / "b"
+    git(tmp_path, "init", "-q", "--bare", "-b", "develop/current", str(origin))
+    git(tmp_path, "clone", "-q", str(origin), str(a))
+    for c in (a,):
+        git(c, "config", "user.email", "t@t"), git(c, "config", "user.name", "t")
+        git(c, "switch", "-q", "-c", "develop/current")
+    monkeypatch.setattr(orch, "ROOT", a)
+    (a / ".github/orch").mkdir(parents=True)
+    st = orch.default_state()
+    st["batch"].update(status="running", id=4)
+    orch.save_state(st)
+    git(a, "add", "."), git(a, "commit", "-qm", "init"), git(a, "push", "-q", "origin", "HEAD")
+    git(tmp_path, "clone", "-q", "-b", "develop/current", str(origin), str(b))
+    git(b, "config", "user.email", "t@t"), git(b, "config", "user.name", "t")
+    # Concurrent writer (planner applying an owner stop) pushes first.
+    sb = json.loads((b / orch.STATE_PATH).read_text())
+    sb["batch"]["status"] = "stopped"
+    (b / orch.STATE_PATH).write_text(json.dumps(sb, indent=2) + "\n")
+    git(b, "commit", "-qam", "owner stop"), git(b, "push", "-q", "origin", "HEAD")
+    # Worker records on its stale checkout → conflicting state.json.
+    st = orch.load_state()
+    orch.batch_record(st, 249, "blocked")
+    orch.save_state(st)
+
+    def reapply():
+        s2 = orch.load_state()
+        orch.batch_record(s2, 249, "blocked")
+        orch.save_state(s2)
+
+    assert orch.commit_and_push([orch.STATE_PATH], "worker #249", "develop/current", reapply)
+    git(b, "pull", "-q")
+    final = json.loads((b / orch.STATE_PATH).read_text())
+    assert final["batch"]["status"] == "stopped" and final["batch"]["attempts"] == [249]
