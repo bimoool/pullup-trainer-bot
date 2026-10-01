@@ -431,6 +431,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         onBack={() => setMyWorkoutsView({ kind: "list" })}
         onSaved={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
         onAddToPlan={() => {}}
+        onDeleted={() => setMyWorkoutsView({ kind: "list" })}
+        onDuplicated={() => setMyWorkoutsView({ kind: "list" })}
       />
     );
   }
@@ -457,6 +459,11 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         onSaved={() => setMyWorkoutsView({ kind: "detail", workoutId: myWorkoutsView.workoutId })}
         onAddToPlan={(workoutId, workoutTitle) =>
           setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "edit" })}
+        onDeleted={() => {
+          reloadPlan();
+          setMyWorkoutsView({ kind: "list" });
+        }}
+        onDuplicated={() => setMyWorkoutsView({ kind: "list" })}
       />
     );
   }

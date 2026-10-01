@@ -1,3 +1,6 @@
+import copy as copy_module
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -151,7 +154,9 @@ class ProgramRepository:
         для каталога не проектируется на этой волне)."""
         result = await self._session.execute(
             select(Complex)
-            .where(Complex.source_type == "user", Complex.owner_user_id == user_id)
+            .where(
+                Complex.source_type == "user", Complex.owner_user_id == user_id, Complex.archived_at.is_(None),
+            )
             .order_by(Complex.id),
         )
         return list(result.scalars().all())
@@ -189,7 +194,7 @@ class ProgramRepository:
         Видим: system (любому) или свой user Workout. Иначе None — route
         конвертирует в 404, не 403."""
         complex_ = await self._session.get(Complex, complex_id)
-        if complex_ is None:
+        if complex_ is None or complex_.archived_at is not None:
             return None
         if complex_.source_type == "system" or complex_.owner_user_id == user_id:
             return complex_
@@ -200,11 +205,31 @@ class ProgramRepository:
         НЕ редактируем никем через этот путь (read-only для всех
         обычных пользователей), только свой user Workout."""
         complex_ = await self._session.get(Complex, complex_id)
-        if complex_ is None:
+        if complex_ is None or complex_.archived_at is not None:
             return None
         if complex_.source_type == "user" and complex_.owner_user_id == user_id:
             return complex_
         return None
+
+    async def archive_workout(self, workout: Complex) -> None:
+        """Issue #261 — мягкое удаление: строка Complex и её ComplexItem остаются
+        (на них ссылаются замороженные снимки сессий), но пропадают из выборок."""
+        workout.archived_at = datetime.now(UTC)
+        await self._session.flush()
+
+    async def duplicate_workout(self, workout: Complex, *, owner_user_id: int, name: str) -> Complex:
+        """Issue #261 — копия тренировки владельца: новый user Complex + копии
+        ComplexItem (exercise_id, порядок, protocol и legacy-поля)."""
+        copy = await self.create_complex(name=name, source_type="user", owner_user_id=owner_user_id)
+        for item in await self.list_complex_items(workout.id):
+            await self.create_complex_item(
+                complex_id=copy.id, exercise_id=item.exercise_id, order_index=item.order_index,
+                sets=item.sets,
+                target_value=float(item.target_value) if item.target_value is not None else None,
+                target_unit=item.target_unit, rest_seconds=item.rest_seconds,
+                protocol=copy_module.deepcopy(item.protocol) if item.protocol is not None else None,
+            )
+        return copy
 
     async def update_complex_title(self, complex_id: int, title: str) -> None:
         """Минимальное обновление названия — ownership уже проверен

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -234,6 +234,24 @@ class TrainingPlanRepository:
         await self._session.delete(item)
         await self._session.flush()
         return True
+
+    async def delete_plan_items_for_workout(self, user_id: int, complex_id: int) -> int:
+        """Issue #261 — при удалении пользовательской тренировки убирает из плана
+        её ручные PlanItem (program-backed не трогаем — user Workout не бывает в
+        каталожных Program). Определения и снимки сессий не задеты; уходят лишь
+        строки PlanItem и их связи session_plan_items (CASCADE)."""
+        plan = await self.get_for_user(user_id)
+        if plan is None:
+            return 0
+        result = await self._session.execute(
+            delete(PlanItem).where(
+                PlanItem.training_plan_id == plan.id,
+                PlanItem.complex_id == complex_id,
+                PlanItem.program_inclusion_id.is_(None),
+            ),
+        )
+        await self._session.flush()
+        return result.rowcount or 0
 
     async def bulk_create_plan_items_from_program_items(
         self, *, training_plan_id: int, program_inclusion_id: int, program_items: list[ProgramItem],

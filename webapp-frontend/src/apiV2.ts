@@ -224,6 +224,18 @@ export async function createExercise(initDataRaw: string, name: string): Promise
   return apiV2Post<{ name: string }, ExerciseResponseV2>("/api/v2/exercises", initDataRaw, { name });
 }
 
+/** Мягкое удаление своей тренировки (issue #261): история в Журнале остаётся. */
+export async function deleteWorkout(initDataRaw: string, workoutId: number): Promise<void> {
+  return apiV2Delete(`/api/v2/workouts/${workoutId}`, initDataRaw);
+}
+
+/** Копия «<название> (копия)» с тем же составом и протоколами (issue #261). */
+export async function duplicateWorkout(initDataRaw: string, workoutId: number): Promise<WorkoutResponseV2> {
+  return apiV2Post<Record<string, never>, WorkoutResponseV2>(
+    `/api/v2/workouts/${workoutId}/duplicate`, initDataRaw, {},
+  );
+}
+
 export async function addWorkoutItem(
   initDataRaw: string, workoutId: number, exerciseId: number, protocol: Record<string, unknown>,
 ): Promise<WorkoutItemResponseV2> {

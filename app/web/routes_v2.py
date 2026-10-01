@@ -648,6 +648,47 @@ async def update_workout_title(
     return _workout_response(refreshed)
 
 
+@router_v2.delete("/workouts/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workout(
+    workout_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Issue #261 — мягкое удаление своего user Workout (чужой/system/уже
+    удалённый — 404). Определение Complex/ComplexItem не уничтожается: на него
+    ссылаются замороженные снимки завершённых сессий, они остаются в Журнале.
+    Ручные PlanItem этой тренировки убираются из плана, избранное — тоже."""
+    user = await _require_user(session, init_data)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    await TrainingPlanRepository(session).delete_plan_items_for_workout(user.id, workout_id)
+    await FavoriteRepository(session).remove(user.id, "workout", workout_id)
+    await program_repo.archive_workout(workout)
+    await session.commit()
+
+
+@router_v2.post("/workouts/{workout_id}/duplicate", response_model=WorkoutResponse)
+async def duplicate_workout(
+    workout_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutResponse:
+    """Issue #261 — «<название> (копия)» со скопированным составом и протоколами,
+    тот же владелец. Только свой user Workout (иначе 404)."""
+    user = await _require_user(session, init_data)
+    program_repo = ProgramRepository(session)
+    workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
+    if workout is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    name = f"{workout.name} (копия)"[:255]
+    copy = await program_repo.duplicate_workout(workout, owner_user_id=user.id, name=name)
+    await session.commit()
+    items = await _build_workout_item_responses(session, await program_repo.list_complex_items(copy.id))
+    return _workout_response(copy, items=items)
+
+
 # --- План ------------------------------------------------------------------------------
 
 

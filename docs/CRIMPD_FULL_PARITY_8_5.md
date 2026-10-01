@@ -52,7 +52,7 @@ any merge into `develop/current`.
 | Add to Plan (2-step sheet: new / existing plan) | W5; d/add_to_plan_sheet; FI F8 | AddToPlanScreen (day picker), round button on detail | DOMAIN-EQUIVALENT | — | one active plan → add to plan + day directly (no «new plan» step) | #255 (entry on detail) | plans-add-exercise.spec.ts, crimpd-parity.spec.ts «Workout Detail» |
 | Logged Workouts history (range, load previous) | W11 | Workout Detail «История» (`GET /api/v2/workouts/{id}/sessions`; no range / load-more yet) | DONE | — | — | #255 | test_v2_workout_sessions.py, crimpd-parity.spec.ts «Workout Detail» |
 | Hero photo / Overview video | W1 | none | MISSING | no media for user workouts; videos blocked on content (#3) | system/program media when MediaAsset content exists | #3 (owner content) | — |
-| Edit / delete workout | C11 | edit yes, delete no | PARTIAL | no delete / duplicate | delete with confirmation (history preserved) + duplicate | #261 | home-discovery.spec.ts (edit) |
+| Edit / delete workout | C11 | editor: «Удалить тренировку» (inline confirmation, soft-archive, history/Journal preserved, manual plan items removed) + «Дублировать» («… (копия)») | DONE | — | — | #261 | crimpd-parity.spec.ts «Workout delete/duplicate»; tests/test_web/test_v2_workout_delete_duplicate.py; home-discovery.spec.ts (edit) |
 
 ## Custom Workouts (builder)
 

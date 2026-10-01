@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import {
   addWorkoutItem,
   createWorkout,
+  deleteWorkout,
   deleteWorkoutItem,
+  duplicateWorkout,
   type ExerciseResponseV2,
   getWorkout,
   moveWorkoutItem,
@@ -32,7 +34,14 @@ type Props = {
    * (не primary action — рядом с Сохранить, не вместо). Отсутствует в
    * create-режиме (workoutId ещё null, добавлять в план нечего). */
   onAddToPlan: (workoutId: number, workoutTitle: string) => void;
+  /** Issue #261 — после «Удалить тренировку» (мягкое удаление на бэкенде). */
+  onDeleted: () => void;
+  /** Issue #261 — после «Дублировать»: caller возвращается к списку, копия уже в нём. */
+  onDuplicated: (workoutId: number) => void;
 };
+
+export const DELETE_WORKOUT_CONFIRM_TEXT =
+  "Удалить тренировку? Это не удалит уже выполненные тренировки из журнала.";
 
 /** Phase C4b-1 (issue #188) — sub-view Item Builder'а внутри edit-режима,
  * тот же локальный screen-state pattern, что весь Builder уже использует
@@ -49,7 +58,7 @@ type ItemBuilderView =
  * добавление через Exercise Picker + Protocol Form, редактирование,
  * удаление, move ↑/↓) поверх уже готового C3 API.
  */
-export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, onAddToPlan }: Props) {
+export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, onAddToPlan, onDeleted, onDuplicated }: Props) {
   const isEditing = workoutId !== null;
 
   const [title, setTitle] = useState("");
@@ -60,6 +69,9 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
   const [saveError, setSaveError] = useState<string | null>(null);
   const [itemActionError, setItemActionError] = useState<string | null>(null);
   const [itemView, setItemView] = useState<ItemBuilderView>({ kind: "editor" });
+  const [workoutDeleteConfirm, setWorkoutDeleteConfirm] = useState(false);
+  const [workoutBusy, setWorkoutBusy] = useState(false);
+  const [workoutActionError, setWorkoutActionError] = useState<string | null>(null);
   const [deleteConfirmItemId, setDeleteConfirmItemId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -117,6 +129,36 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteWorkout() {
+    if (workoutId === null) {
+      return;
+    }
+    setWorkoutBusy(true);
+    setWorkoutActionError(null);
+    try {
+      await deleteWorkout(initDataRaw, workoutId);
+      onDeleted();
+    } catch (error) {
+      setWorkoutActionError(error instanceof Error ? error.message : String(error));
+      setWorkoutBusy(false);
+    }
+  }
+
+  async function handleDuplicateWorkout() {
+    if (workoutId === null) {
+      return;
+    }
+    setWorkoutBusy(true);
+    setWorkoutActionError(null);
+    try {
+      const copy = await duplicateWorkout(initDataRaw, workoutId);
+      onDuplicated(copy.id);
+    } catch (error) {
+      setWorkoutActionError(error instanceof Error ? error.message : String(error));
+      setWorkoutBusy(false);
     }
   }
 
@@ -291,9 +333,36 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
         </button>
       )}
 
+      {isEditing && (
+        <button type="button" className="ux-secondary" disabled={workoutBusy} onClick={() => void handleDuplicateWorkout()}>
+          Дублировать
+        </button>
+      )}
+
       <button type="button" className="ux-primary" disabled={!canSave} onClick={() => void handleSave()}>
         {saving ? <Spinner size="s" /> : isEditing ? "Сохранить" : "Создать и добавить упражнения"}
       </button>
+
+      {isEditing && (
+        <div className="ux-delete-workout" data-testid="workout-delete">
+          {workoutActionError && <p className="gap-banner">{workoutActionError}</p>}
+          {workoutDeleteConfirm ? (
+            <>
+              <p className="ux-helper" role="alert">{DELETE_WORKOUT_CONFIRM_TEXT}</p>
+              <button type="button" className="ux-danger-button" disabled={workoutBusy} onClick={() => void handleDeleteWorkout()}>
+                Да, удалить
+              </button>
+              <button type="button" className="ux-link-button ux-inline" onClick={() => setWorkoutDeleteConfirm(false)}>
+                Отмена
+              </button>
+            </>
+          ) : (
+            <button type="button" className="ux-link-button ux-destructive" onClick={() => setWorkoutDeleteConfirm(true)}>
+              Удалить тренировку
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
