@@ -18,8 +18,12 @@
     "status": "running",
     "approved_by": "bimoool",
     "started_at": "2026-10-01 19:57 UTC",
-    "completed": [],
-    "attempts": [],
+    "completed": [
+      254
+    ],
+    "attempts": [
+      254
+    ],
     "idle_reason": null
   },
   "staging_health_url": "https://staging.app.bimoool.com/health",
