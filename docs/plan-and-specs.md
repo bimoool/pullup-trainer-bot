@@ -74,7 +74,7 @@
 
 **Только наше (в Crimpd нет):** бот с напоминаниями, монеты/достижения/лидерборд, подписка Robokassa, `rest_policy` с жёсткой блокировкой для силовых, нормативы ГТО/ВСФ, автопрогрессия с preview-каскадом, Telegram-авторизация.
 
-**Что в Crimpd есть, а нам не нужно:** грейды скалолазания, Peer Insights по тестам (отложить), сторонние playlists от коучей (отложить), логирование кросс-тренинга (заменяет наш freeform — уже есть).
+**Мандат 2026-10-02 (заменяет прежний список «нам не нужно»):** Crimpd 8.5.x is the full functional UX reference. Replicate user-visible capabilities where technically possible, adapted to our training domain. Differences require an explicit documented domain/platform reason. Законные отличия: грейды скалолазания → наши тесты/нормативы; Peer Insights → по нашим тестам на реальных агрегатах (не отложено); playlists → кураторские подборки наших тренировок/программ (не отложено); кросс-тренинг → наш freeform; нативные Live Activities — platform difference. Матрица: `docs/CRIMPD_FULL_PARITY_8_5.md`.
 
 ---
 

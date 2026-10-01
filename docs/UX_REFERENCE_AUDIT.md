@@ -1,5 +1,13 @@
 # UX-1 — Reference audit (Crimpd 8.5.3 vs. staging Mini App)
 
+> **Superseded scope (owner, 2026-10-02):** Crimpd 8.5.x is the full functional UX reference.
+> Replicate user-visible capabilities where technically possible, adapted to our training domain.
+> Differences require an explicit documented domain/platform reason. The DEFERRED and
+> plan-scoped "INTENTIONAL DIFFERENCE" verdicts below (workout detail without Start, favorites,
+> Log shortcut, Journal/Analytics deep parity, add-to-plan sheet) are **reopened** and tracked in
+> `docs/CRIMPD_FULL_PARITY_8_5.md`. Data-model facts (one static reps target, interval rounds
+> derived from total time) remain valid constraints unless a parity issue changes the model.
+
 Temporary working document. Black-box only. Evidence: sanitized reference in
 `~/android-ref-lab/` (CRIMPD_PRODUCT_REFERENCE.md, FLOW_INDEX.md, `screens_shareable/`) and our
 app captured with `webapp-frontend/e2e/scenarios/ux-capture.spec.ts` at 390/320 px (label `before`).
@@ -64,8 +72,8 @@ Evidence tags: OBSERVED / INFERRED / UNKNOWN.
 | Home: programs push "Мои тренировки" off-screen | **FIXED** | horizontal program row with peeking card |
 | Reps per-set targets (Crimpd-style set table) | **INTENTIONAL DIFFERENCE / C** | backend stores one static target; not faked |
 | Interval "rounds" as an input | **INTENTIONAL DIFFERENCE / C** | not stored; derived from total time and shown |
-| Workout detail = editor, no Start | **INTENTIONAL DIFFERENCE** | start is plan-scoped in our model |
+| Workout detail = editor, no Start | **REOPENED (2026-10-02)** | full parity mandate — see CRIMPD_FULL_PARITY_8_5.md |
 | Wizard pager / category steps | **INTENTIONAL DIFFERENCE / C** | no category model |
-| Hero photos, favorites, Log Workout shortcut | **DEFERRED / C** | need new backend capabilities |
+| Hero photos, favorites, Log Workout shortcut | **REOPENED (2026-10-02)** | favorites + Log are parity issues; hero media tracked in matrix |
 | Result-input unit hint on live screen, effort chips wording | **DEFERRED** | minor; not journey-blocking |
-| Add-to-plan sheet, Journal, Analytics deep review | **DEFERRED** | not re-audited this phase |
+| Add-to-plan sheet, Journal, Analytics deep review | **REOPENED (2026-10-02)** | parity issues in CRIMPD_FULL_PARITY_8_5.md |

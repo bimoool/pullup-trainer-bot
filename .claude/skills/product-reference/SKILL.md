@@ -18,6 +18,14 @@ description: Что мы строим и на что равняемся. Чит�
 
 # Референс — Crimpd
 
+> **Мандат (владелец, 2026-10-02): Crimpd 8.5.x — полный функциональный UX-референс.**
+> Crimpd 8.5.x is the full functional UX reference. Replicate user-visible capabilities where
+> technically possible, adapted to our training domain. Differences require an explicit
+> documented domain/platform reason.
+> Матрица паритета и статус каждой возможности — `docs/CRIMPD_FULL_PARITY_8_5.md`.
+> «Отложено» / «не нужно» / «intentional difference» без доменной или платформенной причины
+> больше не основание оставлять возможность недоступной.
+
 Функциональный образец — приложение **Crimpd**. Когда неясно, как должен
 вести себя экран, ответ «как в Crimpd». Дизайн делается отдельным заходом,
 функциональная модель — уже зафиксирована.
