@@ -18,6 +18,9 @@ import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
+import {
+  currentWeekIndex, groupCounter, localToday, stepWeek, weekProgress, weekRangeLabel,
+} from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
 // (Python date.weekday()), тот же порядок, что и остальной код проекта
@@ -223,6 +226,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   const [removeConfirmPlanItemId, setRemoveConfirmPlanItemId] = useState<number | null>(null);
   const [removingPlanItemId, setRemovingPlanItemId] = useState<number | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  // issue #258 — выбранная неделя (id PlanWeek); null = текущая.
+  const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
 
   function reloadPlan() {
     return fetchPlan(initDataRaw).then((data) => {
@@ -465,13 +470,14 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
 
   const { dashboard } = state;
   const isReady = dashboard.status === "ready";
-  // Последняя неделя списка — всегда текущая: list_plan_weeks сортирует по
-  // возрастанию week_number, а ensure_current_plan_week (issue #188,
-  // вызывается на каждый GET /api/v2/plan) никогда не создаёт недели
-  // наперёд, только текущую календарную. Показ — от текущей к прошлым
-  // (тот же порядок "свежее сверху", что и в HistoryScreen.tsx).
-  const currentWeekId = plan.weeks.length > 0 ? plan.weeks[plan.weeks.length - 1].id : null;
-  const weeksNewestFirst = [...plan.weeks].reverse();
+  // issue #258 — одна неделя за раз. Список — по возрастанию week_number;
+  // текущая = последняя начавшаяся (ensure_current_plan_week не создаёт недели
+  // наперёд, но будущие недели допустимы — тогда › пойдёт дальше текущей).
+  const currentIndex = plan.weeks.length > 0 ? currentWeekIndex(plan.weeks, localToday()) : 0;
+  const currentWeekId = plan.weeks.length > 0 ? plan.weeks[currentIndex].id : null;
+  const selectedIndexRaw = plan.weeks.findIndex((week) => week.id === selectedWeekId);
+  const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;
+  const visibleWeeks = plan.weeks.length > 0 ? [plan.weeks[selectedIndex]] : [];
   const libraryExercises = exercisesState.phase === "ready" ? exercisesState.exercises : [];
 
   let statusText: string;
@@ -494,9 +500,9 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
       >
         Мои тренировки
       </Button>
-      {weeksNewestFirst.length > 0 && (
+      {visibleWeeks.length > 0 && (
         <>
-          {weeksNewestFirst.map((week) => {
+          {visibleWeeks.map((week) => {
             const isCurrent = week.id === currentWeekId;
             const weekItems = plan.items.filter((item) => item.plan_week_id === week.id);
             const freePool = weekItems.filter((item) => item.day_of_week === null);
@@ -510,6 +516,9 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
               byDay.set(item.day_of_week, dayItems);
             }
             const days = [...byDay.entries()].sort(([a], [b]) => a - b);
+            const weekProgressValue = weekProgress(
+              groupPlanItems(weekItems, plan.inclusions, libraryExercises).map((group) => group.items),
+            );
 
             // Checkpoint 4A/4B (issue #188) — "Начать" на любой группе
             // текущей недели (program-backed ИЛИ manual), тот же принцип,
@@ -533,7 +542,10 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                 <div key={group.key} className="plan-week-day-group">
                   <p className="plan-item-row">
                     {group.title}
-                    {group.items.length === 1 && ` · ${group.items[0].count_per_week}×/нед`}
+                    {" · "}
+                    <span data-testid="plan-item-counter">
+                      {`${groupCounter(group.items).done}/${groupCounter(group.items).planned}`}
+                    </span>
                   </p>
                   {isCurrent && (
                     <button
@@ -554,7 +566,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                       {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
                     </button>
                   )}
-                  {mutableItem !== null && !isRemoveConfirming && (
+                  {isCurrent && mutableItem !== null && !isRemoveConfirming && (
                     <>
                       <Button
                         size="s" mode="outline"
@@ -578,7 +590,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
                       )}
                     </>
                   )}
-                  {mutableItem !== null && isRemoveConfirming && (
+                  {isCurrent && mutableItem !== null && isRemoveConfirming && (
                     <>
                       <p className="block-subtitle">Убрать «{group.title}» из плана?</p>
                       {removeError && <p className="gap-banner">{removeError}</p>}
@@ -601,11 +613,33 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
               <Section
                 key={week.id}
                 className={isCurrent ? "block-section plan-week-current" : "block-section plan-week-past"}
-                header={
-                  `Неделя ${week.week_number}${isCurrent ? " · текущая" : ""} · `
-                  + `${WEEK_PHASE_LABELS[week.phase] ?? week.phase}`
-                }
               >
+                <div className="plan-week-stepper" data-testid="plan-week-stepper">
+                  <button
+                    type="button" aria-label="Предыдущая неделя" className="plan-week-step"
+                    disabled={selectedIndex === 0}
+                    onClick={() => setSelectedWeekId(plan.weeks[stepWeek(selectedIndex, -1, plan.weeks.length)].id)}
+                  >
+                    ‹
+                  </button>
+                  <div className="plan-week-stepper-label">
+                    <span data-testid="plan-week-label">
+                      {`Неделя ${week.week_number} · ${weekRangeLabel(week.start_date)}`}
+                    </span>
+                    <span className="plan-week-chip">{WEEK_PHASE_LABELS[week.phase] ?? week.phase}</span>
+                  </div>
+                  <button
+                    type="button" aria-label="Следующая неделя" className="plan-week-step"
+                    disabled={selectedIndex >= plan.weeks.length - 1}
+                    onClick={() => setSelectedWeekId(plan.weeks[stepWeek(selectedIndex, 1, plan.weeks.length)].id)}
+                  >
+                    ›
+                  </button>
+                </div>
+                <p className="block-subtitle" data-testid="plan-week-progress">
+                  {isCurrent ? "Текущая неделя · " : ""}
+                  {`${weekProgressValue.done} из ${weekProgressValue.total}`}
+                </p>
                 {isCurrent && !isReady && (
                   <p className="block-subtitle" style={{ marginBottom: "12px" }}>{statusText}</p>
                 )}

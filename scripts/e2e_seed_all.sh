@@ -19,6 +19,8 @@ seed plan_week_add_exercise 900015
 seed plan_week_start_session 900016
 seed plan_week_manual_session 900017
 seed journal_combined 900018
+seed plan_week_stepper 990001
+seed plan_week_stepper 990002
 seed builder_workouts 910001
 seed journal_v2 910002
 seed journal_calendar 970001

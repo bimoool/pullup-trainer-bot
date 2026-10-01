@@ -301,6 +301,8 @@ export interface PlanItemResponseV2 {
    * карточке (только для user Workout). owner_user_id намеренно не
    * отдаётся backend'ом. */
   complex_source_type: "user" | "system" | null;
+  /** issue #258 — выполнений на своей неделе (завершённые сессии). */
+  done_count: number;
 }
 
 /**

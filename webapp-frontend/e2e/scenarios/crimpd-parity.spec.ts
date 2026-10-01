@@ -510,3 +510,60 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+// --- Plans week (#258): степпер недели, счётчики «сделано/план», read-only прошлые недели --------
+// Seed: scripts/e2e_seed.py plan_week_stepper — прошлая неделя («Планка» 1/1) и текущая
+// («Планка» 1/2, «Отжимания» 0/1); только чтение, поэтому retry безопасен.
+const PLANS_WEEK_USERS = { 320: { id: 990_001, theme: "light" }, 390: { id: 990_002, theme: "dark" } } as const;
+
+for (const width of WIDTHS) {
+  const { id, theme } = PLANS_WEEK_USERS[width as 320 | 390];
+  test.describe(`Plans week @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 760 } });
+
+    test("степпер недели, счётчики, прогресс «N из M», прошлая неделя read-only", async ({ page }) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, id, { theme });
+      await openTab(page, "Планы");
+
+      const label = page.getByTestId("plan-week-label");
+      const progress = page.getByTestId("plan-week-progress");
+      const counters = page.getByTestId("plan-item-counter");
+      const prev = page.getByRole("button", { name: "Предыдущая неделя" });
+      const next = page.getByRole("button", { name: "Следующая неделя" });
+
+      // По умолчанию — текущая неделя, ровно одна, › остановлен (будущих недель нет).
+      await expect(label).toHaveCount(1);
+      await expect(label).toContainText(/Неделя \d+ · \d{1,2} \S+ – \d{1,2} \S+/);
+      await expect(page.getByTestId("plan-week-stepper")).toContainText("База");
+      await expect(next).toBeDisabled();
+      await expect(prev).toBeEnabled();
+      await expect(progress).toContainText("Текущая неделя · 1 из 3");
+      await expect(counters).toHaveText(["1/2", "0/1"]);
+      await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(2);
+      await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Перенести" })).toHaveCount(2);
+      await expectNoHorizontalOverflow(page, "Plans week: текущая");
+      const currentLabel = await label.textContent();
+
+      // ‹ — прошлая неделя: свои дата и счётчик, действия текущей недели скрыты.
+      await prev.click();
+      await expect(label).not.toHaveText(currentLabel ?? "");
+      await expect(progress).toHaveText("1 из 1");
+      await expect(counters).toHaveText(["1/1"]);
+      await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Перенести" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Убрать из плана" })).toHaveCount(0);
+      await expect(next).toBeEnabled();
+      await expectNoHorizontalOverflow(page, "Plans week: прошлая");
+
+      // › возвращает на текущую.
+      await next.click();
+      await expect(label).toHaveText(currentLabel ?? "");
+      await expect(next).toBeDisabled();
+
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
+}

@@ -81,6 +81,7 @@ from app.db.models_program import (
     ProgramItem,
     ProgressionStrategyProfile,
     SessionBlock,
+    SessionPlanItem,
     SessionStatus,
     SetLog,
     TrainingPlan,
@@ -624,6 +625,62 @@ async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int)
     await session.flush()
 
 
+async def seed_plan_week_stepper(session: AsyncSession, telegram_id: int) -> None:
+    """issue #258 — две недели плана (прошлая и текущая), manual PlanItem'ы со
+    счётчиками: текущая — «Планка» 2×/нед (1 завершённая сессия → 1/2) и
+    «Отжимания» 1×/нед (0/1); прошлая — «Планка» 1×/нед (1/1). Сессии
+    заведены напрямую (COMPLETED + SessionPlanItem), сам тест только читает."""
+    user = await _onboard(session, telegram_id)
+    await seed_exercise_library(session)
+
+    now = datetime.now(UTC)
+    plan = TrainingPlan(user_id=user.id, created_at=now - timedelta(days=14))
+    session.add(plan)
+    await session.flush()
+
+    created = plan.created_at.date()
+    current_number = plan_week_number(created, now.date())
+    plans = TrainingPlanRepository(session)
+    previous = await plans.create_plan_week(
+        training_plan_id=plan.id, week_number=current_number - 1,
+        start_date=plan_week_start_date(created, current_number - 1), phase=WeekPhase.BASE,
+    )
+    current = await plans.create_plan_week(
+        training_plan_id=plan.id, week_number=current_number,
+        start_date=plan_week_start_date(created, current_number), phase=WeekPhase.BASE,
+    )
+
+    async def exercise(name: str) -> Exercise:
+        return (await session.execute(
+            select(Exercise).where(Exercise.name == name, Exercise.owner_user_id.is_(None)),
+        )).scalar_one()
+
+    plank, pushups = await exercise("Планка"), await exercise("Отжимания")
+    item_plank = PlanItem(
+        training_plan_id=plan.id, exercise_id=plank.id, count_per_week=2, day_of_week=2, plan_week_id=current.id,
+    )
+    item_pushups = PlanItem(
+        training_plan_id=plan.id, exercise_id=pushups.id, count_per_week=1, day_of_week=4, plan_week_id=current.id,
+    )
+    item_prev = PlanItem(
+        training_plan_id=plan.id, exercise_id=plank.id, count_per_week=1, day_of_week=1, plan_week_id=previous.id,
+    )
+    session.add_all([item_plank, item_pushups, item_prev])
+    await session.flush()
+
+    def noon(week) -> datetime:
+        return datetime.combine(week.start_date, datetime.min.time(), tzinfo=UTC) + timedelta(hours=12)
+
+    for item, week in ((item_plank, current), (item_prev, previous)):
+        training_session = TrainingSession(
+            user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED, performed_at=noon(week),
+        )
+        session.add(training_session)
+        await session.flush()
+        session.add(SessionPlanItem(session_id=training_session.id, plan_item_id=item.id))
+    await session.flush()
+
+
 async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None:
     """Checkpoint 4C (issue #188) — один пользователь для полного combined
     Journal acceptance: одна legacy Workout запись (тот же рецепт, что
@@ -1036,6 +1093,7 @@ SCENARIOS = {
     "plan_week_start_session": seed_plan_week_start_session,
     "plan_week_manual_session": seed_plan_week_manual_session,
     "journal_combined": seed_journal_combined,
+    "plan_week_stepper": seed_plan_week_stepper,
 }
 
 
