@@ -62,3 +62,99 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+// --- Home (#254): sticky search, category rows, «+» sheet --------------------------------
+// Seed: scripts/e2e_seed.py home_discovery (программы в ≥2 категориях + «Другое», свои
+// тренировки/упражнения); у светлого и тёмного прогона свой пользователь.
+const HOME_USER_LIGHT = 940_001;
+const HOME_USER_DARK = 940_002;
+
+for (const width of WIDTHS) {
+  for (const [theme, userId] of [["light", HOME_USER_LIGHT], ["dark", HOME_USER_DARK]] as const) {
+    test.describe(`Home @${width}px ${theme}`, () => {
+      test.use({ viewport: { width, height: 700 } });
+
+      test("sticky поиск, ряды категорий, поиск с фильтром и «+»-шторка", async ({ page }) => {
+        const { consoleErrors, apiFailures } = await openAppAs(page, userId, { theme });
+
+        // Ряды по категориям + «Другое».
+        const titles = page.getByTestId("program-category-title");
+        await expect(titles.first()).toBeVisible();
+        expect(await titles.count()).toBeGreaterThanOrEqual(3);
+        await expect(titles.filter({ hasText: "e2e_discovery_strength" })).toHaveCount(1);
+        await expect(titles.filter({ hasText: "e2e_discovery_mobility" })).toHaveCount(1);
+        await expect(titles.last()).toHaveText("Другое");
+        await expectNoHorizontalOverflow(page, "Главная");
+
+        // Шапка остаётся видимой при прокрутке.
+        const pill = page.getByTestId("home-search-pill");
+        await expect(pill).toHaveText("Что потренируем сегодня?");
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await expect(pill).toBeInViewport();
+        await expect(page.getByTestId("home-plus")).toBeInViewport();
+        await page.evaluate(() => window.scrollTo(0, 0));
+
+        // «+»: рабочие действия + «Отмена».
+        await page.getByTestId("home-plus").click();
+        await expect(page.getByRole("button", { name: "Создать тренировку" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Тренировка на сегодня" })).toBeVisible();
+        await page.getByRole("button", { name: "Отмена" }).click();
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await page.getByTestId("home-plus").click();
+        await page.getByRole("button", { name: "Создать тренировку" }).click();
+        await expect(page.getByText("Новая тренировка")).toBeVisible();
+        await page.reload();
+        await page.getByTestId("home-plus").click();
+        await page.getByRole("button", { name: "Тренировка на сегодня" }).click();
+        await expect(page.getByTestId("home-search-pill")).toHaveCount(0);
+        await openTab(page, "Главная");
+
+        // Поиск: автофокус, счётчик, группы, пустое состояние.
+        await page.getByTestId("home-search-pill").click();
+        const input = page.getByRole("searchbox", { name: "Поиск" });
+        await expect(input).toBeFocused();
+        const count = page.getByTestId("search-count");
+        await expect(count).toContainText("Найдено:");
+        await input.fill("Дискавери");
+        await expect(count).toHaveText("Найдено: 3");
+        await expect(page.getByTestId("search-result-program")).toHaveCount(3);
+        await input.fill("Подтягивания");
+        await expect(page.getByTestId("search-result-exercise").first()).toBeVisible();
+        await input.fill("Пустая заготовка");
+        await expect(page.getByTestId("search-result-workout")).toHaveCount(1);
+        await input.fill("такого-нет-zzz");
+        await expect(page.getByTestId("search-empty")).toHaveText("Ничего не найдено");
+        await expect(count).toHaveText("Найдено: 0");
+
+        // Чипы категорий из реальных данных; сброс возвращает всё.
+        await input.fill("");
+        const chips = page.getByTestId("search-chips");
+        await chips.getByRole("button", { name: "e2e_discovery_mobility" }).click();
+        await expect(page.getByTestId("search-result-program")).toHaveCount(1);
+        await expect(page.getByTestId("search-result-workout")).toHaveCount(0);
+        await expectNoHorizontalOverflow(page, "Поиск");
+        await chips.getByRole("button", { name: "Сбросить" }).click();
+        await expect(page.getByTestId("search-result-workout").first()).toBeVisible();
+
+        // Результат открывает существующий экран (Program Detail).
+        await input.fill("Дискавери: сила");
+        await page.getByTestId("search-result-program").click();
+        await expect(page.getByRole("button", { name: /Добавить в план/ })).toBeVisible();
+
+        expect(consoleErrors).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
+      test("закрытие поиска возвращает на Главную с сохранённой прокруткой", async ({ page }) => {
+        await openAppAs(page, userId, { theme });
+        await expect(page.getByTestId("program-category-title").first()).toBeVisible();
+        await page.evaluate(() => window.scrollTo(0, 200));
+        const before = await page.evaluate(() => window.scrollY);
+        await page.getByTestId("home-search-pill").click();
+        await page.getByRole("button", { name: "Закрыть" }).click();
+        await expect(page.getByTestId("home-search-pill")).toBeVisible();
+        expect(await page.evaluate(() => window.scrollY)).toBe(before);
+      });
+    });
+  }
+}

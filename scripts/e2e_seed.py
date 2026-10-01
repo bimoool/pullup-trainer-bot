@@ -877,6 +877,29 @@ async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_home_discovery(session: AsyncSession, telegram_id: int) -> None:
+    """#254 — Главная как витрина: свои тренировки/упражнения как у home_workouts +
+    программы каталога минимум в двух категориях (глобальные, find-or-create по имени)
+    и одна без категории (ряд «Другое»)."""
+    await seed_home_workouts(session, telegram_id)
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    for name, category in (
+        ("Дискавери: сила", "e2e_discovery_strength"),
+        ("Дискавери: гибкость", "e2e_discovery_mobility"),
+        ("Дискавери: без категории", None),
+    ):
+        existing = (await session.execute(select(Program).where(Program.name == name))).scalars().first()
+        if existing is None:
+            session.add(Program(
+                name=name, goal=f"цель {name}", structure_type=ProgramStructureType.RECURRING,
+                category=category, progression_strategy_id=profile.id,
+                config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+            ))
+    await session.flush()
+
+
 async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     """GJ — Golden Journey: вернувшийся пользователь с одной своей Workout
     («Золотая тренировка», reps 2 x 8) и пустой текущей неделей плана — её ещё
@@ -923,6 +946,7 @@ SCENARIOS = {
     "session_recovery": seed_session_recovery,
     "golden_journey": seed_golden_journey,
     "home_workouts": seed_home_workouts,
+    "home_discovery": seed_home_discovery,
     "analytics_v2": seed_analytics_v2,
     "journal_v2": seed_journal_v2,
     "builder_workouts": seed_builder_workouts,

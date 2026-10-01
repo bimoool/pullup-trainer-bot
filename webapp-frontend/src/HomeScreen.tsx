@@ -1,12 +1,14 @@
 import { Button, Section } from "@telegram-apps/telegram-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   createProgramInclusion, fetchPlan, fetchPrograms, listWorkouts,
   type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { AddToPlanScreen } from "./AddToPlanScreen";
+import { groupProgramsByCategory } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
+import { SearchScreen, type SearchState } from "./SearchScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import { formatExerciseCount, formatExerciseNames, formatFirstProtocol } from "./workoutCardFormat";
 
@@ -28,7 +30,8 @@ type WorkoutView =
   | { kind: "closed" }
   | { kind: "create" }
   | { kind: "edit"; workoutId: number }
-  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string };
+  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string }
+  | { kind: "add-exercise"; exerciseId: number; exerciseName: string };
 
 type CatalogState =
   | { phase: "loading" }
@@ -55,6 +58,25 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
   const [workouts, setWorkouts] = useState<WorkoutsState>({ phase: "loading" });
   const [workoutView, setWorkoutView] = useState<WorkoutView>({ kind: "closed" });
   const [workoutsReloadKey, setWorkoutsReloadKey] = useState(0);
+  // Поиск (issue #254) и «+»-шторка. Поиск остаётся «открытым» под Program Detail /
+  // редактором, чтобы «назад» оттуда возвращал в результаты, а не на Главную.
+  const [searching, setSearching] = useState(false);
+  const [searchState, setSearchState] = useState<SearchState>({ query: "", category: null });
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const savedScrollY = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!searching && savedScrollY.current !== null) {
+      window.scrollTo(0, savedScrollY.current);
+      savedScrollY.current = null;
+    }
+  }, [searching]);
+
+  function openSearch() {
+    savedScrollY.current = window.scrollY;
+    setSearchState({ query: "", category: null });
+    setSearching(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +181,18 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
     );
   }
 
+  if (workoutView.kind === "add-exercise") {
+    return (
+      <AddToPlanScreen
+        initDataRaw={initDataRaw}
+        exerciseId={workoutView.exerciseId}
+        workoutTitle={workoutView.exerciseName}
+        onBack={() => setWorkoutView({ kind: "closed" })}
+        onSuccess={onOpenPlans}
+      />
+    );
+  }
+
   if (selectedProgramId !== null && catalog.phase === "ready") {
     const program = catalog.programs.find((p) => p.id === selectedProgramId);
     if (program) {
@@ -177,11 +211,57 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
     }
   }
 
+  if (searching) {
+    return (
+      <SearchScreen
+        initDataRaw={initDataRaw}
+        state={searchState}
+        onStateChange={setSearchState}
+        onClose={() => setSearching(false)}
+        onOpenProgram={setSelectedProgramId}
+        onOpenWorkout={(workoutId) => setWorkoutView({ kind: "edit", workoutId })}
+        onOpenExercise={(exerciseId, exerciseName) => setWorkoutView({ kind: "add-exercise", exerciseId, exerciseName })}
+      />
+    );
+  }
+
   return (
     <div>
+      <div className="home-sticky-header" data-testid="home-header">
+        <button type="button" className="home-search-pill" data-testid="home-search-pill" onClick={openSearch}>
+          Что потренируем сегодня?
+        </button>
+        <button
+          type="button" className="home-plus-button" aria-label="Быстрые действия"
+          data-testid="home-plus" onClick={() => setSheetOpen(true)}
+        >
+          +
+        </button>
+      </div>
+      {sheetOpen && (
+        <div className="home-sheet-backdrop" data-testid="home-sheet-backdrop" onClick={() => setSheetOpen(false)}>
+          <div className="home-sheet" role="dialog" aria-label="Быстрые действия" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button" className="home-sheet-action"
+              onClick={() => { setSheetOpen(false); setWorkoutView({ kind: "create" }); }}
+            >
+              Создать тренировку
+            </button>
+            <button
+              type="button" className="home-sheet-action"
+              onClick={() => { setSheetOpen(false); onOpenPlans(); }}
+            >
+              Тренировка на сегодня
+            </button>
+            <button type="button" className="home-sheet-action home-sheet-cancel" onClick={() => setSheetOpen(false)}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+
       <p className="plan-title">Главная</p>
 
-      <p className="section-title">Курсы</p>
       {/* Capability A (issue #188) — минимальный каталог: одна карточка на
           seed-программу, без категорий/поиска/уровней (это остаток волны 6).
           Issue #192 — карточка сама больше не выполняет действие, тап ведёт
@@ -193,26 +273,29 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
         <p className="screen-message">Каталог курсов появится здесь позже.</p>
       )}
-      {catalog.phase === "ready" && (
-        <div className="home-program-row" data-testid="program-row">
-        {catalog.programs.map((program) => {
-          const included = catalog.includedProgramIds.has(program.id);
-          return (
-            <Section key={program.id} className="block-section home-program-card">
-              <button
-                type="button"
-                className="program-card-button"
-                onClick={() => setSelectedProgramId(program.id)}
-              >
-                <p className="block-subtitle">{program.name}</p>
-                <p className="screen-message">{program.goal}</p>
-                {included && <p className="hint">✓ В плане</p>}
-              </button>
-            </Section>
-          );
-        })}
+      {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row) => (
+        <div key={row.category} data-testid="program-category">
+          <p className="section-title" data-testid="program-category-title">{row.category}</p>
+          <div className="home-program-row" data-testid="program-row">
+            {row.programs.map((program) => {
+              const included = catalog.includedProgramIds.has(program.id);
+              return (
+                <Section key={program.id} className="block-section home-program-card">
+                  <button
+                    type="button"
+                    className="program-card-button"
+                    onClick={() => setSelectedProgramId(program.id)}
+                  >
+                    <p className="block-subtitle">{program.name}</p>
+                    <p className="screen-message">{program.goal}</p>
+                    {included && <p className="hint">✓ В плане</p>}
+                  </button>
+                </Section>
+              );
+            })}
+          </div>
         </div>
-      )}
+      ))}
 
       <div className="home-section-header">
         <p className="section-title">Мои тренировки</p>
