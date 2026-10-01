@@ -611,6 +611,7 @@ class LiveSessionService:
 
     async def complete_session(
         self, *, session_id: int, user_id: int, abandoned: bool,
+        effort: Decimal | None = None, comment: str | None = None,
     ) -> tuple[CompleteResult | None, bool]:
         """Второй элемент — True, если сессия не найдена/не принадлежит
         пользователю (роут превращает в 404) — тот же (result, not_found)
@@ -629,6 +630,9 @@ class LiveSessionService:
         await self._sessions.lock_session(session_id)
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail.status != SessionStatus.STARTED:
+            if effort is not None or comment is not None:
+                await self._sessions.save_workout_review(session_id, effort=effort, comment=comment)
+                detail = await self._sessions.get_for_user(session_id, user_id)
             return (
                 CompleteResult(
                     session=detail, progression_result=None, progression_skipped_reason=ALREADY_COMPLETED_REASON,
@@ -637,6 +641,8 @@ class LiveSessionService:
             )
 
         await self._sessions.mark_completed(session_id)
+        if effort is not None or comment is not None:
+            await self._sessions.save_workout_review(session_id, effort=effort, comment=comment)
 
         # Явное завершение пишет interval result для ТЕКУЩЕГО начатого
         # interval-блока (предыдущие уже финализированы при переходе, ещё не

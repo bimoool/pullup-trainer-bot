@@ -427,6 +427,19 @@ class TrainingSessionRepository:
                 )
         await self._session.flush()
 
+    async def save_workout_review(
+        self, session_id: int, *, effort: Decimal | None, comment: str | None,
+    ) -> None:
+        """Оценка тренировки целиком (эффорт 1–5 + заметка) при завершении.
+        None-значения никогда не затирают сохранённое: повторный complete
+        без полей (или с другими) ничего не портит — заполняется только пустое."""
+        training_session = await self._session.get(TrainingSession, session_id)
+        if effort is not None and training_session.effort is None:
+            training_session.effort = effort
+        if comment is not None and training_session.comment is None:
+            training_session.comment = comment
+        await self._session.flush()
+
     async def mark_completed(self, session_id: int) -> None:
         """Завершение живой сессии — status/phase_name/phase_ends_at только;
         "зачтено ли что-то в прогрессию" (abandoned) — транзитная деталь
