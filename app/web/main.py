@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from app.web.routes import router
 from app.web.routes_v2 import router_v2
 from app.web.routes_v2_analytics import router_v2_analytics
+from app.web.routes_v2_assessments import router_v2_assessments
 from app.web.routes_v2_dashboard import router_v2_dashboard
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
@@ -26,6 +27,8 @@ app.include_router(router_v2)
 app.include_router(router_v2_dashboard)
 # REBUILD-1 (R3) — аналитика завершённых TrainingSession (Analytics v2).
 app.include_router(router_v2_analytics)
+# CRIMPD #260 — хаб «Тесты»: протоколы и свои замеры (вне каскада прогрессии).
+app.include_router(router_v2_assessments)
 
 
 @app.get("/health")
