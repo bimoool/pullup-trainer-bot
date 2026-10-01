@@ -579,6 +579,20 @@ class TrainingSessionRepository:
         )
         return await self._load_details(list(result.scalars().all()))
 
+    async def list_completed_for_workout(self, user_id: int, workout_id: int) -> list[SessionDetail]:
+        """Завершённые сессии пользователя, чей замороженный workout_snapshot
+        ссылается на этот Workout (workout_snapshot.workout_id). Новые первыми."""
+        result = await self._session.execute(
+            select(TrainingSession)
+            .where(
+                TrainingSession.user_id == user_id,
+                TrainingSession.status == SessionStatus.COMPLETED,
+                TrainingSession.workout_snapshot["workout_id"].astext == str(workout_id),
+            )
+            .order_by(TrainingSession.performed_at.desc(), TrainingSession.id.desc()),
+        )
+        return await self._load_details(list(result.scalars().all()))
+
     async def get_for_user(self, session_id: int, user_id: int) -> SessionDetail | None:
         # populate_existing (здесь и в _load_details): повторное чтение после
         # lock_session обязано видеть закоммиченное конкурентом состояние, а

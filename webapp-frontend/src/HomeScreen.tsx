@@ -9,6 +9,7 @@ import { AddToPlanScreen } from "./AddToPlanScreen";
 import { groupProgramsByCategory } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
+import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import { formatExerciseCount, formatExerciseNames, formatFirstProtocol } from "./workoutCardFormat";
 
@@ -29,6 +30,7 @@ type WorkoutsState =
 type WorkoutView =
   | { kind: "closed" }
   | { kind: "create" }
+  | { kind: "detail"; workoutId: number }
   | { kind: "edit"; workoutId: number }
   | { kind: "add-to-plan"; workoutId: number; workoutTitle: string }
   | { kind: "add-exercise"; exerciseId: number; exerciseName: string };
@@ -157,14 +159,26 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
       />
     );
   }
+  if (workoutView.kind === "detail") {
+    return (
+      <WorkoutDetailScreen
+        key={`detail-${workoutView.workoutId}`}
+        initDataRaw={initDataRaw}
+        workoutId={workoutView.workoutId}
+        onBack={closeWorkoutView}
+        onEdit={(workoutId) => setWorkoutView({ kind: "edit", workoutId })}
+        onAddToPlan={(workoutId, workoutTitle) => setWorkoutView({ kind: "add-to-plan", workoutId, workoutTitle })}
+      />
+    );
+  }
   if (workoutView.kind === "edit") {
     return (
       <WorkoutEditorScreen
         key={`edit-${workoutView.workoutId}`}
         initDataRaw={initDataRaw}
         workoutId={workoutView.workoutId}
-        onBack={closeWorkoutView}
-        onSaved={closeWorkoutView}
+        onBack={() => setWorkoutView({ kind: "detail", workoutId: workoutView.workoutId })}
+        onSaved={() => setWorkoutView({ kind: "detail", workoutId: workoutView.workoutId })}
         onAddToPlan={(workoutId, workoutTitle) => setWorkoutView({ kind: "add-to-plan", workoutId, workoutTitle })}
       />
     );
@@ -175,7 +189,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
         initDataRaw={initDataRaw}
         workoutId={workoutView.workoutId}
         workoutTitle={workoutView.workoutTitle}
-        onBack={() => setWorkoutView({ kind: "edit", workoutId: workoutView.workoutId })}
+        onBack={() => setWorkoutView({ kind: "detail", workoutId: workoutView.workoutId })}
         onSuccess={onOpenPlans}
       />
     );
@@ -219,7 +233,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
         onStateChange={setSearchState}
         onClose={() => setSearching(false)}
         onOpenProgram={setSelectedProgramId}
-        onOpenWorkout={(workoutId) => setWorkoutView({ kind: "edit", workoutId })}
+        onOpenWorkout={(workoutId) => setWorkoutView({ kind: "detail", workoutId })}
         onOpenExercise={(exerciseId, exerciseName) => setWorkoutView({ kind: "add-exercise", exerciseId, exerciseName })}
       />
     );
@@ -329,7 +343,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
                   type="button"
                   className="home-workout-card"
                   data-testid="my-workout-card"
-                  onClick={() => setWorkoutView({ kind: "edit", workoutId: workout.id })}
+                  onClick={() => setWorkoutView({ kind: "detail", workoutId: workout.id })}
                 >
                   <span className="home-workout-title">{workout.title}</span>
                   <span className="home-workout-meta">

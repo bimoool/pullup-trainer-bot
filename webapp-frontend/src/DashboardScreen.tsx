@@ -16,6 +16,7 @@ import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { AddToPlanScreen } from "./AddToPlanScreen";
 import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
+import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -160,8 +161,9 @@ type MyWorkoutsView =
   | { kind: "closed" }
   | { kind: "list" }
   | { kind: "create" }
+  | { kind: "detail"; workoutId: number }
   | { kind: "edit"; workoutId: number }
-  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" }
+  | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" | "detail" }
   | { kind: "move-plan-item"; planItemId: number; title: string; currentDayOfWeek: number | null };
 
 type ExercisesState =
@@ -366,7 +368,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         initDataRaw={initDataRaw}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onCreateWorkout={() => setMyWorkoutsView({ kind: "create" })}
-        onOpenWorkout={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
+        onOpenWorkout={(workoutId) => setMyWorkoutsView({ kind: "detail", workoutId })}
         onAddToPlan={(workoutId, workoutTitle) =>
           setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "list" })}
       />
@@ -379,8 +381,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         workoutId={myWorkoutsView.workoutId}
         workoutTitle={myWorkoutsView.workoutTitle}
         onBack={() => {
-          if (myWorkoutsView.returnTo === "edit") {
-            setMyWorkoutsView({ kind: "edit", workoutId: myWorkoutsView.workoutId });
+          if (myWorkoutsView.returnTo === "edit" || myWorkoutsView.returnTo === "detail") {
+            setMyWorkoutsView({ kind: myWorkoutsView.returnTo, workoutId: myWorkoutsView.workoutId });
           } else {
             setMyWorkoutsView({ kind: "list" });
           }
@@ -427,14 +429,27 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
       />
     );
   }
+  if (myWorkoutsView.kind === "detail") {
+    return (
+      <WorkoutDetailScreen
+        key={`detail-${myWorkoutsView.workoutId}`}
+        initDataRaw={initDataRaw}
+        workoutId={myWorkoutsView.workoutId}
+        onBack={() => setMyWorkoutsView({ kind: "list" })}
+        onEdit={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
+        onAddToPlan={(workoutId, workoutTitle) =>
+          setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "detail" })}
+      />
+    );
+  }
   if (myWorkoutsView.kind === "edit") {
     return (
       <WorkoutEditorScreen
         key={`edit-${myWorkoutsView.workoutId}`}
         initDataRaw={initDataRaw}
         workoutId={myWorkoutsView.workoutId}
-        onBack={() => setMyWorkoutsView({ kind: "list" })}
-        onSaved={() => setMyWorkoutsView({ kind: "list" })}
+        onBack={() => setMyWorkoutsView({ kind: "detail", workoutId: myWorkoutsView.workoutId })}
+        onSaved={() => setMyWorkoutsView({ kind: "detail", workoutId: myWorkoutsView.workoutId })}
         onAddToPlan={(workoutId, workoutTitle) =>
           setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "edit" })}
       />

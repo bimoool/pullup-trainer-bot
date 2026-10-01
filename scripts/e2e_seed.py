@@ -900,6 +900,40 @@ async def seed_home_discovery(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_workout_detail(session: AsyncSession, telegram_id: int) -> None:
+    """#255 — Workout Detail: свои тренировки как у home_workouts + «Интервальная»
+    (time_sets, чтобы была оценка длительности) и две завершённые сессии «Очень длинной…»
+    со снимком (одна без снимка и одна чужой тренировки на историю не влияют)."""
+    await seed_home_workouts(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    long_workout = (await session.execute(
+        select(Complex).where(Complex.owner_user_id == user.id, Complex.name.like("Очень длинная%")),
+    )).scalars().one()
+    plank = (await session.execute(
+        select(Exercise).where(Exercise.owner_user_id == user.id, Exercise.name == "Планка"),
+    )).scalars().one()
+    timed = Complex(name="Планка по времени", source_type="user", owner_user_id=user.id)
+    session.add(timed)
+    await session.flush()
+    session.add(ComplexItem(
+        complex_id=timed.id, exercise_id=plank.id, order_index=0, sets=0,
+        protocol={"type": "time_sets", "rest_seconds": 60, "prescription": {"source": "static", "sets": 3, "duration_seconds": 30}},
+    ))
+    repo = TrainingSessionRepository(session)
+    now = datetime.now(UTC)
+    for days_ago, sets in ((7, 2), (2, 3)):
+        training = await repo.create_session(
+            user_id=user.id, source=SessionSource.PLAN, performed_at=now - timedelta(days=days_ago),
+            effort=None, comment=None,
+            blocks=[SessionBlockInput(exercise_id=plank.id, sets=[
+                SetLogInput(set_number=n, metric_type=MetricType.REPS, value=Decimal(8), unit="reps")
+                for n in range(1, sets + 1)
+            ])],
+        )
+        training.workout_snapshot = {"workout_id": long_workout.id, "title": long_workout.name, "items": []}
+    await session.flush()
+
+
 async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     """GJ — Golden Journey: вернувшийся пользователь с одной своей Workout
     («Золотая тренировка», reps 2 x 8) и пустой текущей неделей плана — её ещё
@@ -947,6 +981,7 @@ SCENARIOS = {
     "golden_journey": seed_golden_journey,
     "home_workouts": seed_home_workouts,
     "home_discovery": seed_home_discovery,
+    "workout_detail": seed_workout_detail,
     "analytics_v2": seed_analytics_v2,
     "journal_v2": seed_journal_v2,
     "builder_workouts": seed_builder_workouts,

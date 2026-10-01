@@ -43,6 +43,7 @@ test("редактор: поля и кнопки достижимы при кл�
   const { width, height: fullHeight } = page.viewportSize()!;
 
   await page.getByTestId("my-workout-card").filter({ hasText: "Пустая заготовка" }).click();
+  await page.getByRole("button", { name: "Редактировать" }).click();
   const name = page.getByRole("textbox");
   await expect(name).toHaveValue("Пустая заготовка");
 

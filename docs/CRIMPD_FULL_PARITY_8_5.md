@@ -43,14 +43,14 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Read-only detail separate from editor | W1–W2, W7, W10; d/41_workout_detail, d/custom_workout_detail | card opens WorkoutEditorScreen | MISSING | no overview | WorkoutDetailScreen | #255 | — |
-| Duration / equipment / description | W7, W10 | none | MISSING | — | estimated duration from stored protocol only; equipment: DOMAIN (not modelled) | #255 | — |
-| Exercise rows with sets·reps·rest | W8 | editor rows (human summary) | PARTIAL | only in editor | same summary on detail | #255 | builder-ux.spec.ts (editor) |
+| Read-only detail separate from editor | W1–W2, W7, W10; d/41_workout_detail, d/custom_workout_detail | WorkoutDetailScreen (card on Главная / «Мои тренировки» opens it; editor via «Редактировать») | DONE | — | — | #255 | crimpd-parity.spec.ts «Workout Detail» |
+| Duration / equipment / description | W7, W10 | «≈ N мин» only when every item is time_sets/interval, otherwise no estimate | DONE | equipment: DOMAIN (not modelled) | estimate from stored protocol only, never a guess | #255 | crimpd-parity.spec.ts «Workout Detail», workoutDetailFormat.test.ts |
+| Exercise rows with sets·reps·rest | W8 | detail + editor rows (shared formatters) | DONE | — | — | #255 | crimpd-parity.spec.ts «Workout Detail», builder-ux.spec.ts |
 | Start Workout | W3, W9; X1 | start only from Plans card | MISSING | no ad-hoc start | «Начать» → freeform live session | #273 | — |
 | Log Workout | W3, W6 | unreachable BackdateForm | MISSING | — | «Записать» → backdated log | #263, #273 | — |
 | Favorite (instant toggle) | W3–W4 | none | MISSING | — | heart toggle | #272 | — |
-| Add to Plan (2-step sheet: new / existing plan) | W5; d/add_to_plan_sheet; FI F8 | AddToPlanScreen (day picker) | DOMAIN-EQUIVALENT | — | one active plan → add to plan + day directly (no «new plan» step) | #255 (entry on detail) | plans-add-exercise.spec.ts |
-| Logged Workouts history (range, load previous) | W11 | none | MISSING | — | «История» of this workout | #255 | — |
+| Add to Plan (2-step sheet: new / existing plan) | W5; d/add_to_plan_sheet; FI F8 | AddToPlanScreen (day picker), round button on detail | DOMAIN-EQUIVALENT | — | one active plan → add to plan + day directly (no «new plan» step) | #255 (entry on detail) | plans-add-exercise.spec.ts, crimpd-parity.spec.ts «Workout Detail» |
+| Logged Workouts history (range, load previous) | W11 | Workout Detail «История» (`GET /api/v2/workouts/{id}/sessions`; no range / load-more yet) | DONE | — | — | #255 | test_v2_workout_sessions.py, crimpd-parity.spec.ts «Workout Detail» |
 | Hero photo / Overview video | W1 | none | MISSING | no media for user workouts; videos blocked on content (#3) | system/program media when MediaAsset content exists | #3 (owner content) | — |
 | Edit / delete workout | C11 | edit yes, delete no | PARTIAL | no delete / duplicate | delete with confirmation (history preserved) + duplicate | #261 | home-discovery.spec.ts (edit) |
 
@@ -65,7 +65,7 @@ any merge into `develop/current`.
 | Sets/reps steppers, rest, rep timer, notes | C5–C6 | ProtocolForm (4 protocols, steppers, mm:ss) | DOMAIN-EQUIVALENT | per-rep timer / tempo not modelled | our protocols reps/time/max/interval; per-set targets one static value (UX_REFERENCE_AUDIT data-model facts) | — | builder-execution.spec.ts |
 | Precise durations (mm:ss) | C5 | time rows mm:ss | DONE | — | — | — | builder-ux.spec.ts |
 | Wizard: type → category → sub-focus | C2, C7–C8 | single form | DOMAIN-EQUIVALENT | user workouts have no category field | category derived from exercises; wizard steps not needed | — | — |
-| Total time in header | C5 | preview «Так будет в тренировке» per item | PARTIAL | no whole-workout total | total estimate on detail | #255 | — |
+| Total time in header | C5 | preview per item + whole-workout estimate on detail | DONE | — | — | #255 | crimpd-parity.spec.ts «Workout Detail», workoutDetailFormat.test.ts |
 | Duplicate workout | (not in Crimpd builder; Clone Log/Plan exist) | none | MISSING | — | «Дублировать» | #261 | — |
 
 ## Training Plans
