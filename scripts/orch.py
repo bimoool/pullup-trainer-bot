@@ -792,6 +792,11 @@ def render_status(ctx: StatusContext) -> str:
         L.append("")
 
     L += [
+        "## Owner controls (phone only)",
+        "Terminal is not required for normal orchestration. #230: `/orch start` · `/orch stop`;",
+        "a task issue: `/orch approve`. Workers verify with the deterministic gate (ruff, pytest,",
+        "frontend, real Playwright E2E) and merge only when green. See docs/ORCH_OWNER_UI.md.",
+        "",
         "## Resume from any computer",
         "`git fetch && git switch develop/current && git pull` → read this file → open the IN PROGRESS issue →",
         "`python scripts/orch.py resume`. Details: docs/AGENT_EXECUTION_MODEL.md § Orchestration.",
