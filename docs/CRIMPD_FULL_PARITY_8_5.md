@@ -130,15 +130,15 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Workout count | A2 | 30-day sessions + 12-week chart | PARTIAL | fixed ranges | metric + range | #259 | analytics-v2.spec.ts |
-| Training minutes (Duration) | A1–A2 | not stored (PROJECT_SPEC §4) | MISSING | no completion timestamp | additive `completed_at`, honest exclusions | #259 | — |
+| Workout count | A2 | metric «Тренировки» × range, weekly | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric»; tests/test_web/test_v2_analytics_metrics.py |
+| Training minutes (Duration) | A1–A2 | metric «Минуты», `completed_at`, honest exclusions («без данных о времени: N») | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric»; test_v2_analytics_metrics.py; test_v2_live_session_review.py |
 | TUT / Workload | A1–A2 | not stored | DOMAIN-EQUIVALENT | no rep tempo / load-intensity model | per-protocol metrics (reps, work time, PB) instead | — | analytics-v2.spec.ts |
-| Range 1 Mo / 3 Mo / Custom | A3 | none | MISSING | — | range tabs + custom dates | #259 | — |
-| Weekly chart | A5 | 12-week sessions chart | PARTIAL | one metric, fixed | metric × range weekly bars | #259 | analytics-v2.spec.ts |
+| Range 1 Mo / 3 Mo / Custom | A3 | tabs 1 мес / 3 мес / Свой (+ «Применить») | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric» |
+| Weekly chart | A5 | weekly SVG bars (Monday-labelled) for metric × range | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric»; analytics-v2.spec.ts |
 | Distribution by type (sunburst) | A4 | none | MISSING | — | SVG donut by category | #274 | — |
 | Multi-month summary table | A6 | none | MISSING | — | summary table + TOTAL | #274 | — |
 | Exercise trends / personal bests | (ours beyond Crimpd) | per-exercise panels, PB markers | DONE | — | — | — | analytics-v2.spec.ts |
-| Info (i) definitions | A1 | none | MISSING | — | definitions sheet | #259 | — |
+| Info (i) definitions | A1 | ⓘ sheet with both metric definitions | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric» |
 | Export CSV | A7 | none | MISSING | — | CSV download | #267 | — |
 | Live recompute on log add/delete | A8 | computed per request | DONE | — | — | — | golden-journey.spec.ts |
 

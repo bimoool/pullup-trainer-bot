@@ -44,6 +44,7 @@ class AnalyticsBlock:
 class AnalyticsSession:
     performed_at: datetime  # aware
     blocks: list[AnalyticsBlock]
+    completed_at: datetime | None = None  # aware; NULL у старых сессий
 
 
 @dataclass(frozen=True)
@@ -245,3 +246,77 @@ def compute_training_analytics(sessions: list[AnalyticsSession], now: datetime, 
     ]
     panels.sort(key=lambda p: (p.exercise_name.lower(), _PROTOCOL_ORDER[p.protocol_type], p.exercise_id))
     return TrainingAnalytics(activity=activity, panels=panels)
+
+
+# --- Метрики по неделям: тренировки / минуты (CRIMPD, #259) ------------------------
+
+MIN_DURATION_SECONDS = 60
+MAX_DURATION_SECONDS = 6 * 3600
+MAX_RANGE_DAYS = 366
+
+
+@dataclass(frozen=True)
+class WeekMetric:
+    week_start: date  # понедельник
+    workouts: int
+    minutes: int  # целые минуты: сумма секунд недели // 60
+
+
+@dataclass(frozen=True)
+class MetricsSeries:
+    date_from: date
+    date_to: date
+    weeks: list[WeekMetric]
+    total_workouts: int
+    total_minutes: int
+    without_duration: int  # тренировки диапазона, не попавшие в минуты
+
+
+def session_duration_seconds(session: AnalyticsSession) -> int | None:
+    """completed_at - performed_at только если оба есть и результат в
+    [1 мин, 6 ч]; иначе None (сессия — тренировка, но не минуты)."""
+    if session.completed_at is None:
+        return None
+    seconds = (session.completed_at - session.performed_at).total_seconds()
+    if MIN_DURATION_SECONDS <= seconds <= MAX_DURATION_SECONDS:
+        return int(seconds)
+    return None
+
+
+def compute_metrics_series(
+    sessions: list[AnalyticsSession], date_from: date, date_to: date, now: datetime, tz: ZoneInfo,
+) -> MetricsSeries:
+    """Недельные ряды (недели с понедельника в часовом поясе пользователя)
+    по локальным дням [date_from, date_to]; сессии из будущего исключены.
+    Каждая неделя диапазона присутствует в ряду, даже пустая."""
+    week_seconds: dict[date, int] = {}
+    week_workouts: dict[date, int] = {}
+    without = 0
+    total_seconds = 0
+    total_workouts = 0
+    for session in _completed_past(sessions, now):
+        local_day = session.performed_at.astimezone(tz).date()
+        if not date_from <= local_day <= date_to:
+            continue
+        week = _week_start(local_day)
+        week_workouts[week] = week_workouts.get(week, 0) + 1
+        total_workouts += 1
+        seconds = session_duration_seconds(session)
+        if seconds is None:
+            without += 1
+            continue
+        week_seconds[week] = week_seconds.get(week, 0) + seconds
+        total_seconds += seconds
+
+    weeks: list[WeekMetric] = []
+    week = _week_start(date_from)
+    last = _week_start(date_to)
+    while week <= last:
+        weeks.append(WeekMetric(
+            week_start=week, workouts=week_workouts.get(week, 0), minutes=week_seconds.get(week, 0) // 60,
+        ))
+        week += timedelta(weeks=1)
+    return MetricsSeries(
+        date_from=date_from, date_to=date_to, weeks=weeks, total_workouts=total_workouts,
+        total_minutes=total_seconds // 60, without_duration=without,
+    )

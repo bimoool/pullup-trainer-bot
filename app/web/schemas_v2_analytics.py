@@ -52,7 +52,27 @@ class AnalyticsExerciseResponse(BaseModel):
     panels: list[AnalyticsPanelResponse]
 
 
+class AnalyticsMetricWeekResponse(BaseModel):
+    week_start: date
+    workouts: int
+    minutes: int
+
+
+class AnalyticsMetricsResponse(BaseModel):
+    """Недельные ряды обеих метрик за [date_from, date_to] (локальные даты
+    пользователя). without_duration — тренировки диапазона без валидной
+    длительности (в минуты не входят)."""
+
+    date_from: date
+    date_to: date
+    weeks: list[AnalyticsMetricWeekResponse]
+    total_workouts: int
+    total_minutes: int
+    without_duration: int
+
+
 class TrainingAnalyticsResponse(BaseModel):
     timezone: str
+    metrics: AnalyticsMetricsResponse
     activity: AnalyticsActivityResponse
     exercises: list[AnalyticsExerciseResponse]

@@ -568,7 +568,7 @@ class LiveSessionService:
             await self._sessions.save_interval_block_result(detail.blocks[index].id, result)
 
         if index >= len(detail.blocks) - 1:
-            await self._sessions.mark_completed(session_id)
+            await self._sessions.mark_completed(session_id, completed_at=timing.total_end_at)
             return "completed"
         await self._sessions.advance_phase(
             session_id, phase_name=SessionPhase.GET_READY, phase_ends_at=None,

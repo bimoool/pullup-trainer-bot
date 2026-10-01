@@ -3,10 +3,14 @@ POST /sessions/live/{id}/complete принимает необязательны�
 comment (≤1000), хранит их на TrainingSession, не затирает повтором без них."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.db.models import User
+from app.db.models_program import TrainingSession
+from app.db.repositories.training_sessions import TrainingSessionRepository
+from app.domain.multi_program import SessionSource
 from tests.test_web._v2_client import v2_get, v2_post
 from tests.test_web.test_v2_live_session import _setup_step_session
 
@@ -43,6 +47,30 @@ async def test_complete_stores_workout_effort_and_comment(session, user: User):
     card = await _journal_card(session, user, session_id)
     assert float(card["effort"]) == 4.0
     assert card["comment"] == "Тяжело, но ок"
+
+
+async def test_complete_sets_completed_at_once(session, user: User):
+    """#259: completed_at ставится при завершении и не двигается повтором."""
+    session_id = await _start(session, user)
+    row = await session.get(TrainingSession, session_id)
+    assert row.completed_at is None
+
+    await _complete(session, user, session_id)
+    await session.refresh(row)
+    first = row.completed_at
+    assert first is not None and abs((datetime.now(UTC) - first).total_seconds()) < 60
+
+    await _complete(session, user, session_id)
+    await session.refresh(row)
+    assert row.completed_at == first
+
+
+async def test_manual_session_create_sets_completed_at(session, user: User):
+    row = await TrainingSessionRepository(session).create_session(
+        user_id=user.id, source=SessionSource.PLAN, performed_at=datetime.now(UTC) - timedelta(days=2),
+        effort=None, comment=None, blocks=[],
+    )
+    assert row.completed_at is not None
 
 
 async def test_complete_without_review_fields_still_works(session, user: User):

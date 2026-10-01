@@ -16,7 +16,8 @@ test("Analytics v2: активность, панели протоколов, р�
   await page.getByRole("button", { name: "Аналитика" }).click();
 
   // По умолчанию — "Тренировки"; Программа не показана.
-  await expect(page.getByRole("tab", { name: "Тренировки", selected: true })).toBeVisible();
+  const sections = page.getByRole("tablist", { name: "Раздел аналитики" });
+  await expect(sections.getByRole("tab", { name: "Тренировки", selected: true })).toBeVisible();
   await expect(page.getByText("📈 График")).toHaveCount(0);
 
   // 30 дней: ровно 4 сессии в 4 разных локальных днях.
@@ -24,10 +25,12 @@ test("Analytics v2: активность, панели протоколов, р�
   await expect(activity.locator(".analytics-stat").filter({ hasText: "Тренировок за 30 дней" })).toContainText("4");
   await expect(activity.locator(".analytics-stat").filter({ hasText: "Активных дней" })).toContainText("4");
 
-  // 12 недель (с понедельника): граничная сессия попала в ТЕКУЩУЮ локальную неделю, а не в прошлую.
+  // Недели (с понедельника), пресет «1 мес» = 30 дней → 5–6 недель: граничная сессия попала в
+  // ТЕКУЩУЮ локальную неделю, а не в прошлую.
   const label = (await page.locator(".analytics-weeks-chart").getAttribute("aria-label")) ?? "";
   const entries = label.split(": ").slice(1).join(": ").split(", ");
-  expect(entries).toHaveLength(12);
+  expect(entries.length).toBeGreaterThanOrEqual(5);
+  expect(entries.length).toBeLessThanOrEqual(6);
   expect(entries[entries.length - 1]).toMatch(/: 1$/);
 
   // Селектор упражнений; по умолчанию первое (Бёрпи -> интервалы).
@@ -82,7 +85,7 @@ test("Analytics v2: ошибка не блокирует «Программу»;
   await page.getByRole("tab", { name: "Программа" }).click();
   await expect(page.getByRole("button", { name: "📈 График" })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Тренировки" }).click();
+  await page.getByRole("tablist", { name: "Раздел аналитики" }).getByRole("tab", { name: "Тренировки" }).click();
   await expect(page.locator(".analytics-activity-cards")).toBeVisible(); // повторная загрузка прошла
 });
 
