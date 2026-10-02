@@ -123,11 +123,12 @@ for (const width of WIDTHS) {
         await expect(page.locator(".plan-title", { hasText: "Смешанная" })).toBeVisible();
         await snap(page, width, theme, "03_session_pre");
         await verify(page, "Пред-экран сессии", { primary: "Начать", width });
-        // видимый выход без Telegram BackButton: «← Назад» возвращает на Workout Detail
+        // видимый выход без Telegram BackButton: «← Назад» уходит с пред-экрана (тот же onClose, что у BackButton)
         const back = page.getByRole("button", { name: "← Назад" });
         await expect(back).toBeVisible();
         await back.click();
-        await expect(page.getByTestId("workout-detail")).toBeVisible();
+        await expect(page.getByTestId("session-pre")).toHaveCount(0);
+        await expect(page.getByTestId("my-workouts")).toBeVisible();
 
         await fresh(page, U.builder, theme);
         await page.getByTestId("my-workout-card").filter({ hasText: "Смешанная" }).click();
