@@ -39,7 +39,8 @@ async function snap(page: Page, width: number, theme: TelegramTheme, name: strin
 async function filledButtons(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const probe = document.createElement("div");
-    probe.style.background = "var(--tg-button-color)";
+    // #290: заливка главного CTA — затемнённый акцент (белый текст ≥ AA)
+    probe.style.background = "var(--vp-accent-solid, var(--tg-button-color))";
     document.body.appendChild(probe);
     const accent = getComputedStyle(probe).backgroundColor;
     probe.remove();
@@ -275,8 +276,8 @@ for (const width of WIDTHS) {
         await expect(page.getByTestId("program-detail-title")).toBeVisible();
         await expect(page.getByTestId("program-cover")).toBeVisible();
         const chevron = (await page.getByRole("button", { name: "← Назад" }).boundingBox())!;
-        expect(Math.round(chevron.width), "круглая «назад» 40 px").toBe(40);
-        expect(Math.round(chevron.height)).toBe(40);
+        expect(Math.round(chevron.width), "круглая «назад» 44 px (цель касания, #290)").toBe(44);
+        expect(Math.round(chevron.height)).toBe(44);
         await snap(page, width, theme, "16_program_detail");
         await verify(page, "Program Detail", { primary: "Добавить в план", width });
 
