@@ -12,7 +12,8 @@ import { defineConfig, devices } from "@playwright/test";
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8001";
 
 const MOBILE_SPEC = /mobile-layout\.spec\.ts$/;
-const PARITY_SPEC = /crimpd-parity\.spec\.ts$/;
+// crimpd-parity.spec.ts (baseline + first blocks) and one file per parity task in scenarios/parity/.
+const PARITY_SPEC = /(crimpd-parity|parity\/[^/]+)\.spec\.ts$/;
 const MOBILE_WIDTHS = [320, 375, 390];
 // Экранная клавиатура в редакторе тренировки (issue #250): только 320 и 390.
 const KEYBOARD_SPEC = /keyboard-viewport\.spec\.ts$/;
