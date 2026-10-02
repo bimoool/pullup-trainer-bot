@@ -65,7 +65,9 @@ test("Summary: BackButton не воскрешает сессию, «Закрыт
 
   // Повторное открытие — завершённая сессия не оживает как активная.
   if ((await startGroup().count()) > 0) {
-    await startGroup().getByRole("button", { name: /^Начать: / }).click();
+    // Строка выполнена (1/1): основного «Начать: …» нет, повторный вход — «Повторить: …» (#277 K).
+    await expect(startGroup().getByRole("button", { name: /^Начать: / })).toHaveCount(0);
+    await startGroup().getByRole("button", { name: /^Повторить: / }).click();
     await expect(page.getByText("Живая тренировка")).toHaveCount(0);
   }
   await page.reload();
