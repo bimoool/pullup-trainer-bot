@@ -10,8 +10,9 @@ const TELEGRAM_ID = 900_015;
 // Блок «Сегодня» повторяет сегодняшние названия — ищем только в недельном списке (plans-row).
 const rowTitle = (page: Page, name: string) =>
   page.getByTestId("plans-row").locator(".plans-row-title").filter({ hasText: new RegExp(`^${name}$`) });
-const rowCounter = (page: Page, name: string) =>
-  page.getByTestId("plans-row").filter({ has: rowTitle(page, name) }).getByTestId("plan-item-counter");
+const rowCounter = (page: Page, name: string) => page.getByTestId("plans-row")
+  .filter({ has: page.locator(".plans-row-title").filter({ hasText: new RegExp(`^${name}$`) }) })
+  .getByTestId("plan-item-counter");
 
 test("«Планы»: добавить Планку в Среду и Отжимания в Пятницу через picker", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
