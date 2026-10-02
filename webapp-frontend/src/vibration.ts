@@ -4,6 +4,12 @@
 
 const STORAGE_KEY = "pullup.timerVibration";
 
+type WebAppApi = {
+  HapticFeedback?: HapticApi;
+  /** Telegram.WebApp.isVersionAtLeast — на старых клиентах может отсутствовать. */
+  isVersionAtLeast?: (version: string) => boolean;
+};
+
 type HapticApi = {
   notificationOccurred?: (type: "error" | "success" | "warning") => void;
   impactOccurred?: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
@@ -31,9 +37,12 @@ export function vibratePhaseEnd(): boolean {
   if (!isVibrationEnabled()) {
     return false;
   }
-  const haptic = (window as unknown as { Telegram?: { WebApp?: { HapticFeedback?: HapticApi } } })
-    .Telegram?.WebApp?.HapticFeedback;
-  if (haptic?.notificationOccurred) {
+  const webApp = (window as unknown as { Telegram?: { WebApp?: WebAppApi } }).Telegram?.WebApp;
+  const haptic = webApp?.HapticFeedback;
+  // До Bot API 6.1 объект HapticFeedback уже есть, но вызовы — пустышка (#284 C2): без проверки
+  // версии сигнал «ушёл» (true), а телефон молчит, и navigator.vibrate не пробуется.
+  const hapticSupported = webApp?.isVersionAtLeast?.("6.1") ?? true;
+  if (hapticSupported && haptic?.notificationOccurred) {
     haptic.notificationOccurred("success");
     return true;
   }
