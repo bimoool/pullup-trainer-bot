@@ -10,6 +10,7 @@ import {
   playWarningBeep,
   setSoundVolumePercent,
 } from "./sound";
+import { vibratePhaseEnd } from "./vibration";
 
 const VOLUME_STEP_PERCENT = 25;
 
@@ -176,6 +177,7 @@ export function TimerScreen({
     if (remaining === 0) {
       beeped.add(0);
       playTimerBeep();
+      vibratePhaseEnd();
     } else if (remaining === WARNING_MARK_SECONDS) {
       beeped.add(remaining);
       playWarningBeep();

@@ -1381,3 +1381,11 @@ html {
 }
 .journal-edit-textarea { min-height: 88px; resize: vertical; font-family: inherit; }
 .journal-edit-set { padding: 0 16px; }
+
+/* Настройки: строка-переключатель (#281) */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}

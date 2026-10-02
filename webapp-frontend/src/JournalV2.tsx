@@ -75,7 +75,7 @@ export function JournalV2Footer({
  * нет. Telegram BackButton и видимая кнопка "← Назад" вызывают один и тот
  * же onBack (единая навигация экрана, не вторая система). */
 export function JournalV2Detail({
-  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned,
+  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned, onOpenWorkout,
 }: {
   initDataRaw: string;
   session: SessionResponseV2;
@@ -86,6 +86,8 @@ export function JournalV2Detail({
   onEdited: () => void;
   /** Создан клон на дату "YYYY-MM-DD" (#262). */
   onCloned: (date: string) => void;
+  /** «Открыть тренировку» (#281) — Workout Detail тренировки, из которой выполнена запись. */
+  onOpenWorkout?: (workoutId: number) => void;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "clone">("view");
   const [deleting, setDeleting] = useState(false);
@@ -165,6 +167,14 @@ export function JournalV2Detail({
       )}
       {session.comment && <p className="hint" data-testid="journal-workout-comment">Комментарий: {session.comment}</p>}
       {deleteError !== null && <p className="gap-banner">{deleteError}</p>}
+      {onOpenWorkout && session.workout_id != null && (
+        <Button
+          className="action-button" size="l" stretched mode="outline" data-testid="journal-open-workout"
+          onClick={() => onOpenWorkout(session.workout_id as number)}
+        >
+          Открыть тренировку
+        </Button>
+      )}
       {session.can_edit && (
         <>
           <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("edit")}>

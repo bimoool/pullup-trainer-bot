@@ -1,4 +1,6 @@
-import type { FavoriteV2, ExerciseResponseV2, ProgramResponseV2, WorkoutResponseV2 } from "./apiV2";
+import type {
+  AssessmentProtocolV2, FavoriteV2, ExerciseResponseV2, ProgramResponseV2, WorkoutResponseV2,
+} from "./apiV2";
 
 /** Название ряда для программ без категории. */
 export const OTHER_CATEGORY = "Другое";
@@ -52,33 +54,47 @@ export type SearchResults = {
   programs: ProgramResponseV2[];
   workouts: WorkoutResponseV2[];
   exercises: ExerciseResponseV2[];
+  /** Тесты (Assessment Tests, #281 D6): отдельная группа результатов поиска. */
+  tests: AssessmentProtocolV2[];
   total: number;
 };
 
 /** Клиентский поиск по подстроке (без учёта регистра) + фильтр категории.
  * У тренировок категории нет — при активном фильтре категории они скрыты.
  * `favorites` != null — чип «Избранное»: только избранные программы и тренировки
- * (упражнения в избранное не добавляются). */
+ * (упражнения в избранное не добавляются). Тесты (#281): у них нет категории и они не
+ * добавляются в избранное — скрыты при фильтре категории/избранного; `testsOnly` — чип
+ * «Тесты»: только тесты. */
 export function searchContent(
-  data: { programs: ProgramResponseV2[]; workouts: WorkoutResponseV2[]; exercises: ExerciseResponseV2[] },
+  data: {
+    programs: ProgramResponseV2[]; workouts: WorkoutResponseV2[]; exercises: ExerciseResponseV2[];
+    assessments?: AssessmentProtocolV2[];
+  },
   rawQuery: string,
   category: string | null,
   favorites: FavoriteV2[] | null = null,
+  testsOnly = false,
 ): SearchResults {
   const inFavorites = (type: FavoriteV2["target_type"], id: number) =>
     favorites === null || favorites.some((f) => f.target_type === type && f.target_id === id);
   const query = rawQuery.trim().toLocaleLowerCase("ru");
-  const programs = data.programs.filter(
+  const programs = testsOnly ? [] : data.programs.filter(
     (p) => inFavorites("program", p.id)
       && (category === null || (p.category ?? "").trim() === category)
       && (query === "" || matches(p.name, query) || matches(p.goal ?? "", query)),
   );
-  const workouts = category !== null
+  const workouts = category !== null || testsOnly
     ? []
     : data.workouts.filter((w) => inFavorites("workout", w.id) && (query === "" || matches(w.title, query)));
-  const exercises = data.exercises.filter(
+  const exercises = testsOnly ? [] : data.exercises.filter(
     (e) => favorites === null && (category === null || (e.category ?? "").trim() === category)
       && (query === "" || matches(e.name, query)),
   );
-  return { programs, workouts, exercises, total: programs.length + workouts.length + exercises.length };
+  const tests = category !== null || favorites !== null
+    ? []
+    : (data.assessments ?? []).filter((t) => query === "" || matches(t.name, query) || matches(t.description ?? "", query));
+  return {
+    programs, workouts, exercises, tests,
+    total: programs.length + workouts.length + exercises.length + tests.length,
+  };
 }
