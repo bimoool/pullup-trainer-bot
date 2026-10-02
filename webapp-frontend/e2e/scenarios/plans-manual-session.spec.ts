@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py plan_week_manual_session 900017 — две manual PlanItem
@@ -7,9 +8,7 @@ import { openAppAs } from "../fixtures/setup";
 // Program/ProgramInclusion вообще. НЕ admin-only.
 const TELEGRAM_ID = 900_017;
 
-// Stale: UI/продукт изменились после Waves 5-6 (не регресс) — карантин до
-// переписывания селекторов под текущий UI (pre-G3 stabilization).
-test.fixme("«Планы» → manual «Планка»/«Отжимания» → Start без ProgramInclusion → Complete → Summary", async ({ page }) => {
+test("«Планы» → manual «Планка»/«Отжимания» → Start без ProgramInclusion → Complete → Summary", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   await page.getByRole("button", { name: "Планы" }).click();
@@ -21,8 +20,8 @@ test.fixme("«Планы» → manual «Планка»/«Отжимания» �
   await expect(weekTitle("Отжимания")).toBeVisible();
 
   // --- Планка: Start без всякого ProgramInclusion/STEP readiness ---
-  const startButtons = page.getByRole("button", { name: /^Начать: / });
-  await startButtons.first().click();
+  // Конкретно строка «Планка» недельного списка (а не первая кнопка — порядок зависит от «сегодня»).
+  await page.getByTestId("plans-row").filter({ hasText: "Планка" }).getByRole("button", { name: /^Начать: Планка/ }).click();
   await page.waitForTimeout(800);
 
   // manual pre-screen НЕ должен показать no_course/blocked/needs_assessment
@@ -42,12 +41,12 @@ test.fixme("«Планы» → manual «Планка»/«Отжимания» �
   // --- Реальное имя, не "Упражнение #id", единица "s", без "Цель: 0" ---
   await page.waitForTimeout(800);
   await expect(page.getByText(/^Упражнение #/)).toHaveCount(0);
-  await expect(page.getByText("Планка", { exact: false })).toBeVisible();
+  await expect(page.getByTestId("live-now").getByText("Планка", { exact: true })).toBeVisible();
   await expect(page.getByText(/Цель: 0/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Готов", exact: true }).click();
   await page.waitForSelector("text=Пошёл", { timeout: 8000 });
-  await page.getByLabel("Результат").fill("30");
+  await page.getByLabel(/Результат|Секунды|Повторений/).fill("30");
   const setResponsePromise = page.waitForResponse(
     (response) => response.url().includes("sets:batch") && response.status() === 200,
   );
@@ -78,5 +77,5 @@ test.fixme("«Планы» → manual «Планка»/«Отжимания» �
   await expect(page.getByText(/30/)).toBeVisible();
 
   expect(apiFailures).toEqual([]);
-  expect(consoleErrors).toEqual([]);
+  expect(noWakeLock(consoleErrors)).toEqual([]);
 });

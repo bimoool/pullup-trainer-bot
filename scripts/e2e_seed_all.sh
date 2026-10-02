@@ -144,6 +144,8 @@ seed collections 997703
 seed body_metrics 997704
 seed ready 997706
 seed tests_hub 997707
+# Integrity (wave 13): 997708 — Журнал для visual-screens (только чтение); 910002 мутирует journal-v2.spec.ts и больше не делится.
+seed journal_v2 997708
 # #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
 for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
 # #280 «Journal entry sheet»: 998101 (320 px light) / 998111 (390 px dark) — закрытие шторки и форма из неё (только чтение);
