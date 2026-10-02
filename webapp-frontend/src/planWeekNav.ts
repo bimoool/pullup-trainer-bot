@@ -116,3 +116,16 @@ export function weekProgress(groups: ItemLike[][]): { done: number; total: numbe
   }
   return { done, total };
 }
+
+/** Ширина полосы прогресса, 0–100 (целое): сделано/план, зажато в границы; пустой план — 0. */
+export function progressPercent(done: number, total: number): number {
+  if (!(total > 0) || !(done > 0)) {
+    return 0;
+  }
+  return Math.min(100, Math.round((done / total) * 100));
+}
+
+/** Индекс сегодняшнего дня по соглашению PlanItem.day_of_week: 0 = понедельник … 6 = воскресенье. */
+export function todayDayIndex(now: Date = new Date()): number {
+  return (now.getDay() + 6) % 7;
+}

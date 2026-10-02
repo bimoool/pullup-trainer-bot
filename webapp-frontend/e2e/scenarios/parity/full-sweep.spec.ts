@@ -4,6 +4,7 @@ import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
 import {
   captureDownloads, COMBOS, expectScreenHealthy, openJournalEntry, openTab, selectMetric,
 } from "../../fixtures/parity";
+import { pickPlanAction, pickRowAction } from "../../fixtures/plans";
 import { openAppAs } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
 
@@ -335,7 +336,7 @@ const FLOWS: Flow[] = [
     run: async ({ page }) => {
       await openTab(page, "Планы");
       await visit(page, {
-        where: "Планы → Перенести", open: () => byName(page, "Перенести").first().click(),
+        where: "Планы → Перенести", open: () => pickRowAction(page, "Перенести"),
         dest: [page.getByText("Перенести", { exact: true }), byName(page, "Сохранить")], exit: "telegram", origin: plansMarker(page),
       });
       await visit(page, {
@@ -724,7 +725,8 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       const label = page.getByTestId("plan-week-label");
       const next = page.getByRole("button", { name: "Следующая неделя" });
       const prev = page.getByRole("button", { name: "Предыдущая неделя" });
-      const copyButton = page.getByRole("button", { name: "Скопировать неделю → на следующую" });
+      const copyConfirmation = page.getByText(/Скопировать свои тренировки и упражнения/);
+      const copyAction = "Скопировать неделю → на следующую" as const;
 
       await expect(label).toContainText(/Неделя \d+ · \d{1,2} \S+ – \d{1,2} \S+/);
       await expect(page.getByRole("button", { name: "Начать", exact: true })).not.toHaveCount(0);
@@ -753,18 +755,18 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       await expect(label).toHaveText(current);
 
       // Копирование недели: подтверждение, «Отмена» ничего не делает, «Скопировать» даёт итог.
-      await copyButton.click();
-      await expect(page.getByText(/Скопировать свои тренировки и упражнения/)).toBeVisible();
+      await pickPlanAction(page, copyAction);
+      await expect(copyConfirmation).toBeVisible();
       await page.getByRole("button", { name: "Отмена" }).click();
-      await expect(copyButton).toBeVisible();
-      await copyButton.click();
+      await expect(copyConfirmation).toHaveCount(0);
+      await pickPlanAction(page, copyAction);
       await page.getByRole("button", { name: "Скопировать", exact: true }).click();
       await expect(page.getByTestId("plan-week-copy-result")).toContainText(/Скопировано: \d+, пропущено дублей: \d+/);
       await expect(label).not.toHaveText(current); // после копирования открыта следующая неделя
       await expectScreenHealthy(page, "Планы: после копирования");
 
       // Перенос на другую неделю: выбор недели есть и ведёт назад.
-      await page.getByRole("button", { name: "Перенести" }).first().click();
+      await pickRowAction(page, "Перенести");
       await expect(page.getByTestId("move-week-picker")).toBeVisible();
       await expectScreenHealthy(page, "Планы: перенос");
       await pressTelegramBackButton(page);

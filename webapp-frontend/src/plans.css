@@ -1,0 +1,312 @@
+/* ==========================================================================
+   Планы (#286 B): строка дня «полоска + название + чип + Начать + ⋯», нижние листы,
+   карточка плана с полосой прогресса, блок «Сегодня», вкладки с подчёркиванием.
+   Подключается после screens.css и до telegram-safe-area.css (safe-area переопределяет отступы).
+   ========================================================================== */
+
+/* ---------- вкладки «Сейчас | Завершённые»: подчёркнутые, по ширине текста ---------- */
+.workout-mode-buttons.plans-tabs {
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-3);
+}
+
+.plans-tabs.vp-tabs .leaderboard-tab {
+  flex: 0 0 auto;
+  padding: 8px var(--vp-sp-3);
+}
+
+/* ---------- карточка плана (курса) ---------- */
+.plans-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+}
+
+.plans-card-head .block-subtitle {
+  margin: 0;
+}
+
+.plans-course-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+}
+
+.plans-course-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.plans-course-head .plan-item-row {
+  overflow-wrap: anywhere;
+}
+
+.plans-course .plans-more {
+  margin: -6px -8px -6px 0;
+}
+
+.plans-progress {
+  height: 8px;
+  margin-top: var(--vp-sp-2);
+  border-radius: var(--vp-radius-pill);
+  background: color-mix(in srgb, var(--cat, var(--vp-accent)) 26%, transparent);
+  overflow: hidden;
+}
+
+.plans-progress-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--cat, var(--vp-accent));
+}
+
+.plans-confirm {
+  margin-top: var(--vp-sp-2);
+}
+
+.plans-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-2);
+}
+
+/* ---------- недельная карточка: без акцентного кольца (текущая неделя — не «фокус»), без рамки ---------- */
+.app-shell .plans-week-card,
+.app-shell .plans-week-card.plan-week-current {
+  border: 0;
+  box-shadow: var(--vp-shadow);
+  padding: var(--vp-sp-2) var(--vp-sp-3) var(--vp-sp-3);
+}
+
+.plans-week-card .plan-week-stepper {
+  gap: var(--vp-sp-1);
+}
+
+.plans-week-card .plan-week-step {
+  min-width: 40px;
+  min-height: 44px;
+  font-size: 22px;
+}
+
+/* «Неделя 1 · 28 сен – 4 окт» в одну строку и на 320 */
+.plans-week-card .plan-week-stepper-label {
+  gap: 2px;
+}
+
+.plans-week-card [data-testid="plan-week-label"] {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.plans-week-card [data-testid="plan-week-progress"] {
+  margin: var(--vp-sp-1) 0 0;
+}
+
+.plans-week-card > div > .plans-progress {
+  margin: var(--vp-sp-1) 0 var(--vp-sp-2);
+}
+
+/* ---------- строка дня ---------- */
+.plan-week-day-group.plans-row {
+  --tint: var(--cat, var(--vp-accent));
+  padding: var(--vp-sp-2) 0;
+}
+
+.plan-week-day-group .plan-week-day-group.plans-row + .plan-week-day-group.plans-row {
+  margin-top: 0;
+  padding-top: var(--vp-sp-2);
+  border-top: 1px dashed var(--vp-divider);
+}
+
+.plans-row-main {
+  --tint: var(--cat, var(--vp-accent));
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  min-width: 0;
+  min-height: 44px;
+}
+
+.plans-row-bar {
+  flex: 0 0 4px;
+  align-self: stretch;
+  min-height: 28px;
+  border-radius: 2px;
+  background: var(--tint);
+}
+
+.plans-row-text {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  min-width: 0;
+}
+
+.plans-row-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plans-row-chip {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--vp-radius-pill);
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  color: var(--tint);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 320: чип «0/1» уходит под название — название остаётся в одну строку и не обрезается */
+@media (max-width: 359px) {
+  .plans-row-text {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .plans-row-title {
+    max-width: 100%;
+  }
+
+  .plans-start {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .plans-row-main {
+    gap: 6px;
+  }
+}
+
+.plans-row-chip[data-done="true"] {
+  background: color-mix(in srgb, var(--vp-cat-3) 18%, transparent);
+  color: var(--vp-cat-3);
+}
+
+.plans-start {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.plans-start:disabled {
+  opacity: 0.5;
+}
+
+.plans-more {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--tg-subtitle-text-color);
+}
+
+.plans-more:active {
+  background: var(--vp-accent-soft);
+}
+
+/* ---------- блок «Сегодня» ---------- */
+.profile-card.plans-today {
+  margin-bottom: var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-2);
+}
+
+.profile-card .plans-today-title {
+  margin: 0 0 var(--vp-sp-1);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--tg-subtitle-text-color);
+}
+
+.plans-today .plans-row-main {
+  padding: 2px 0;
+}
+
+/* ---------- нижний лист действий ---------- */
+.plans-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.plans-sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  padding: var(--vp-sp-3) var(--vp-sp-4) calc(var(--vp-sp-3) + var(--vp-safe-bottom, 0px));
+  border-radius: var(--vp-radius-card) var(--vp-radius-card) 0 0;
+  background: var(--vp-card-bg);
+  outline: none;
+}
+
+.plans-sheet-title {
+  margin: 0 0 var(--vp-sp-1);
+  padding: 0 var(--vp-sp-2);
+  overflow: hidden;
+  color: var(--tg-subtitle-text-color);
+  font-size: var(--vp-fs-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plans-sheet-action {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: var(--vp-sp-3) var(--vp-sp-2);
+  border: 0;
+  border-radius: var(--vp-radius-inner);
+  background: none;
+  color: var(--tg-text-color);
+  font: inherit;
+  font-size: 17px;
+  text-align: left;
+}
+
+.plans-sheet-action:active {
+  background: var(--vp-accent-soft);
+}
+
+.plans-sheet-action:disabled {
+  opacity: 0.45;
+}
+
+.plans-sheet-danger {
+  color: var(--vp-cat-1);
+}
+
+.plans-sheet-cancel {
+  color: var(--tg-subtitle-text-color);
+}

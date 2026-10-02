@@ -74,3 +74,22 @@ test("resolveCurrentWeekIndex/Id: current_week_id сервера важнее «
   assert.equal(resolveCurrentWeekId(weeks, 99, "2026-10-06"), 2);
   assert.equal(resolveCurrentWeekId([], 5, "2026-10-06"), null);
 });
+
+test("progressPercent: доли, зажим, пустой план", async () => {
+  const { progressPercent } = await import("../src/planWeekNav.ts");
+  assert.equal(progressPercent(0, 6), 0);
+  assert.equal(progressPercent(1, 3), 33);
+  assert.equal(progressPercent(2, 3), 67);
+  assert.equal(progressPercent(6, 6), 100);
+  assert.equal(progressPercent(9, 6), 100);
+  assert.equal(progressPercent(0, 0), 0);
+  assert.equal(progressPercent(3, 0), 0);
+  assert.equal(progressPercent(-1, 4), 0);
+});
+
+test("todayDayIndex: 0 = понедельник … 6 = воскресенье", async () => {
+  const { todayDayIndex } = await import("../src/planWeekNav.ts");
+  assert.equal(todayDayIndex(new Date(2026, 9, 5)), 0); // пн
+  assert.equal(todayDayIndex(new Date(2026, 9, 2)), 4); // пт
+  assert.equal(todayDayIndex(new Date(2026, 9, 4)), 6); // вс
+});
