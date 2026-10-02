@@ -27,7 +27,7 @@ async function startLive(page: Page) {
   await page.getByRole("button", { name: "Свободный пул" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
-  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await group.getByRole("button", { name: /^Начать: / }).click();
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
   await expect(page.getByRole("heading", { name: "Приготовься", exact: true, level: 2 })).toBeVisible();
 }
@@ -212,7 +212,7 @@ for (const width of WIDTHS) {
       const restarted = page.waitForResponse((r) => r.url().endsWith("/api/v2/sessions/live") && r.request().method() === "POST");
       await page.locator(".bottom-tabbar").getByRole("button", { name: "Планы" }).click();
       const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
-      await group.getByRole("button", { name: "Начать", exact: true }).first().click();
+      await group.getByRole("button", { name: /^Начать: / }).first().click();
       await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
       const secondId = ((await (await restarted).json()) as { id: number }).id;
       expect(secondId).not.toBe(firstId);

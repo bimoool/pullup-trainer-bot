@@ -25,7 +25,7 @@ async function startLive(page: Page) {
   await page.getByRole("button", { name: "Свободный пул" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
-  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await group.getByRole("button", { name: /^Начать: / }).click();
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
   await expect(page.getByRole("heading", { name: "Приготовься", exact: true, level: 2 })).toBeVisible();
 }
