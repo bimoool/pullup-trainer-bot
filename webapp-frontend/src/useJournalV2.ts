@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchJournalDays, fetchSessionsPage, type JournalDaysResponse, type SessionResponseV2 } from "./apiV2";
-import { currentMonthIn, DEFAULT_JOURNAL_TZ, monthRange, shiftMonth } from "./journalCalendar";
+import { currentMonthIn, DEFAULT_JOURNAL_TZ, monthRange, shiftMonth } from "./journalCalendarModel";
 
 export const JOURNAL_PAGE_SIZE = 25;
 

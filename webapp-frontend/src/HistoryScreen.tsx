@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
 import { HistoryEditForm } from "./HistoryEditForm";
 import { JournalCalendar } from "./JournalCalendar";
-import { localDateKey, monthRange } from "./journalCalendar";
+import { localDateKey, monthRange } from "./journalCalendarModel";
 import { JournalSessionCard, JournalV2Detail, JournalV2Footer } from "./JournalV2";
 import { JournalTimeline } from "./JournalTimeline";
 import { BackdatedWorkoutForm, FreeActivityForm, LogActivitySheet, type LogKind } from "./LogActivitySheet";

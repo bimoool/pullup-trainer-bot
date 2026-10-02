@@ -7,7 +7,7 @@ import {
   formatShare,
   formatTableMinutes,
   ringArcPath,
-} from "./analyticsDistribution";
+} from "./analyticsDistributionModel";
 import { formatMinutes } from "./analyticsMetric";
 
 const SIZE = 180;

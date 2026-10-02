@@ -1,6 +1,6 @@
 import type { SessionEditRequestV2, SessionResponseV2 } from "./apiV2";
 import { WORKOUT_COMMENT_MAX } from "./effortScale.ts";
-import { localDateKey } from "./journalCalendar.ts";
+import { localDateKey } from "./journalCalendarModel.ts";
 
 /** Лимиты зеркалят app/web/schemas_v2_session.py::SessionSetEditSchema. */
 export const SET_NOTE_MAX = 500;
