@@ -113,7 +113,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
       {submitError && <p className="gap-banner">Не удалось добавить: {submitError}</p>}
 
       <Button
-        className="action-button" size="l" stretched
+        className="action-button vs-primary" size="l" stretched
         disabled={selectedDay === null || submitting}
         onClick={() => void handleSubmit()}
       >

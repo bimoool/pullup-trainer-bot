@@ -48,7 +48,7 @@ export function CollectionScreen({ initDataRaw, collectionId, onBack, onOpenProg
 
   return (
     <div data-testid="collection-screen">
-      <Button mode="outline" size="s" onClick={onBack}>
+      <Button className="vs-back" mode="outline" size="s" onClick={onBack}>
         ← Назад
       </Button>
       {state.phase === "loading" && <p className="screen-message">Загружаю подборку…</p>}

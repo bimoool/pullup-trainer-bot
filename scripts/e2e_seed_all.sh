@@ -125,3 +125,11 @@ for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done
 # 997691/997692 — только для снимков (ux-capture), не для тестов.
 for id in 997601 997602 997611 997612 997621 997622 997631 997632 997691; do seed session_recovery "$id"; done
 seed builder_workouts 997692
+# Visual secondary screens (#280, tier 3): 9977xx — только чтение (320/390 × light/dark делят пользователя), без retry.
+seed builder_workouts 997701
+seed home_discovery 997702
+seed collections 997703
+seed body_metrics 997704
+seed peer_cohort_female 997705
+seed ready 997706
+seed tests_hub 997707

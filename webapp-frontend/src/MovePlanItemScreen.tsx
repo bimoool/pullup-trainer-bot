@@ -84,7 +84,7 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
       {submitError && <p className="gap-banner">Не удалось перенести: {submitError}</p>}
 
       <Button
-        className="action-button" size="l" stretched
+        className="action-button vs-primary" size="l" stretched
         disabled={selectedDay === null || submitting}
         onClick={() => void handleSubmit()}
       >

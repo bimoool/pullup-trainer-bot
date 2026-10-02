@@ -192,7 +192,7 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
   }
 
   return (
-    <div data-testid="settings-screen">
+    <div data-testid="settings-screen" className="settings-screen">
       <p className="plan-title">Настройки</p>
 
       <p className="section-title">Профиль</p>
@@ -300,10 +300,11 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
       <div className="profile-card">
         <p className="section-title">Подписка</p>
         <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
-        <Button mode="outline" size="m" stretched onClick={onOpenSubscription}>
+        <Button className="vs-row-button" mode="outline" size="m" stretched onClick={onOpenSubscription}>
           ⭐ Подробнее о подписке
         </Button>
         <Button
+          className="vs-row-button"
           mode="outline"
           size="m"
           stretched
@@ -316,17 +317,17 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
 
       <div className="profile-card">
         <p className="section-title">Данные</p>
-        <Button mode="outline" size="m" stretched data-testid="settings-export" onClick={() => void handleExport()}>
+        <Button className="vs-row-button" mode="outline" size="m" stretched data-testid="settings-export" onClick={() => void handleExport()}>
           ⬇️ Скачать историю
         </Button>
         {exportError && <p className="error-banner" role="alert">{exportError}</p>}
       </div>
 
       {error && <p className="error-banner">{error}</p>}
-      <Button className="action-button" size="l" stretched disabled={saving} data-testid="settings-save" onClick={() => void handleSave()}>
+      <Button className="action-button vs-primary" size="l" stretched disabled={saving} data-testid="settings-save" onClick={() => void handleSave()}>
         {saving ? "Сохраняю…" : "Сохранить"}
       </Button>
-      <Button className="action-button" size="l" stretched mode="outline" disabled={saving} data-testid="settings-cancel" onClick={onBack}>
+      <Button className="action-button vs-secondary" size="l" stretched mode="outline" disabled={saving} data-testid="settings-cancel" onClick={onBack}>
         Отмена
       </Button>
     </div>

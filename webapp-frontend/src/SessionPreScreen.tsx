@@ -99,6 +99,16 @@ function BlockTargetCard({ index, block }: { index: number; block: DashboardBloc
   );
 }
 
+/** Шапка пред-экрана (#280): эйбрау + название — тот же язык, что у шапки Live Session. */
+function PreHeader({ title, eyebrow = "Готовы к старту" }: { title: string; eyebrow?: string }) {
+  return (
+    <header className="pre-header">
+      <p className="pre-eyebrow">{eyebrow}</p>
+      <p className="plan-title pre-title">{title}</p>
+    </header>
+  );
+}
+
 function findActiveInclusion(plan: TrainingPlanResponseV2 | null): ProgramInclusionResponseV2 | null {
   if (plan === null) {
     return null;
@@ -234,8 +244,8 @@ export function SessionPreScreen({
   if (state.phase === "error") {
     const displayTitle = state.title ?? title ?? "Сессия";
     return (
-      <div>
-        <p className="plan-title">{displayTitle}</p>
+      <div className="pre-screen">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message">Не удалось загрузить: {state.message}</p>
       </div>
     );
@@ -243,38 +253,44 @@ export function SessionPreScreen({
   if (state.phase === "blocked") {
     const displayTitle = state.title ?? title ?? "Сессия";
     return (
-      <div>
-        <p className="plan-title">{displayTitle}</p>
+      <div className="pre-screen">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message">
           Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.
         </p>
-        <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
-          Перейти в обычную "Тренировку"
-        </Button>
+        <div className="pre-transport">
+          <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>
+            Перейти в обычную "Тренировку"
+          </Button>
+        </div>
       </div>
     );
   }
   if (state.phase === "needs_assessment") {
     const displayTitle = state.title ?? title ?? "Сессия";
     return (
-      <div>
-        <p className="plan-title">{displayTitle}</p>
+      <div className="pre-screen">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message">Был долгий перерыв — сначала нужен повторный замер.</p>
-        <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
-          Пройти замер в обычной "Тренировке"
-        </Button>
+        <div className="pre-transport">
+          <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>
+            Пройти замер в обычной "Тренировке"
+          </Button>
+        </div>
       </div>
     );
   }
   if (state.phase === "no_course") {
     const displayTitle = state.title ?? title ?? "Сессия";
     return (
-      <div>
-        <p className="plan-title">{displayTitle}</p>
+      <div className="pre-screen">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message">Нет активного курса для этого экрана (или их больше одного).</p>
-        <Button className="action-button" size="l" stretched onClick={onGoToWorkout}>
-          Перейти в обычную "Тренировку"
-        </Button>
+        <div className="pre-transport">
+          <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>
+            Перейти в обычную "Тренировку"
+          </Button>
+        </div>
       </div>
     );
   }
@@ -291,36 +307,43 @@ export function SessionPreScreen({
 
   if (activeConflict !== null && !isStarting) {
     return (
-      <div data-testid="active-session-conflict">
-        <p className="plan-title">{displayTitle}</p>
+      <div className="pre-screen" data-testid="active-session-conflict">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message">
           Уже идёт другая тренировка{activeConflict.title ? ` — «${activeConflict.title}»` : ""}. Сначала продолжи или заверши её.
         </p>
-        <Button className="action-button" size="l" stretched onClick={() => onStarted(activeConflict)}>
-          Продолжить текущую
-        </Button>
-        <Button className="action-button" size="l" stretched mode="plain" onClick={onGoToWorkout}>
-          Назад
-        </Button>
+        <div className="pre-transport">
+          <Button className="action-button vs-primary" size="l" stretched onClick={() => onStarted(activeConflict)}>
+            Продолжить текущую
+          </Button>
+          <Button className="action-button vs-plain" size="l" stretched mode="plain" onClick={onGoToWorkout}>
+            Назад
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <p className="plan-title">{displayTitle}</p>
+    <div className="pre-screen" data-testid="session-pre">
+      <Button className="vs-back" mode="outline" size="s" data-testid="session-pre-back" onClick={onGoToWorkout}>
+        ← Назад
+      </Button>
+      <PreHeader title={displayTitle} />
       {step && (
         <>
           <BlockTargetCard index={1} block={step.blockA} />
           <BlockTargetCard index={2} block={step.blockB} />
         </>
       )}
-      <Button
-        className="action-button" size="l" stretched disabled={isStarting}
-        onClick={() => void handleStart(planItemIds, displayTitle)}
-      >
-        {isStarting ? <Spinner size="s" /> : "Начать"}
-      </Button>
+      <div className="pre-transport">
+        <Button
+          className="action-button vs-primary" size="l" stretched disabled={isStarting}
+          onClick={() => void handleStart(planItemIds, displayTitle)}
+        >
+          {isStarting ? <Spinner size="s" /> : "Начать"}
+        </Button>
+      </div>
     </div>
   );
 }

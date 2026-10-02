@@ -147,7 +147,9 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
       <p className="hint" data-testid="test-detail-note">{NOT_IN_PROGRESSION_NOTE}</p>
 
       <p className="section-title">Динамика</p>
-      <TrendChart results={results} unit={protocol.unit} name={protocol.name} />
+      <div className="profile-card vs-chart-card">
+        <TrendChart results={results} unit={protocol.unit} name={protocol.name} />
+      </div>
 
       <PeerInsightsCard
         initDataRaw={initDataRaw} protocolId={protocol.id} integerOnly={protocol.metric_type === "reps"}
@@ -173,12 +175,12 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
         />
         {formError && <p className="favorite-error" role="alert" data-testid="test-form-error">{formError}</p>}
         <div className="test-actions">
-          <button type="button" className="workout-detail-action" disabled={saving} onClick={() => void submit()}>
-            <span className="workout-detail-action-label">{editingId === null ? "Записать результат" : "Сохранить"}</span>
+          <button type="button" className="vs-btn vs-primary" disabled={saving} onClick={() => void submit()}>
+            {editingId === null ? "Записать результат" : "Сохранить"}
           </button>
           {editingId !== null && (
-            <button type="button" className="workout-detail-action" onClick={resetForm}>
-              <span className="workout-detail-action-label">Отмена</span>
+            <button type="button" className="vs-btn vs-secondary" onClick={resetForm}>
+              Отмена
             </button>
           )}
         </div>

@@ -328,15 +328,14 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
       {saveError && <p className="gap-banner">Не удалось сохранить: {saveError}</p>}
 
       {isEditing && workoutId !== null && (
-        <button type="button" className="ux-secondary" onClick={() => onAddToPlan(workoutId, title)}>
-          Добавить в план
-        </button>
-      )}
-
-      {isEditing && (
-        <button type="button" className="ux-secondary" disabled={workoutBusy} onClick={() => void handleDuplicateWorkout()}>
-          Дублировать
-        </button>
+        <div className="ux-secondary-row">
+          <button type="button" className="ux-secondary" onClick={() => onAddToPlan(workoutId, title)}>
+            Добавить в план
+          </button>
+          <button type="button" className="ux-secondary" disabled={workoutBusy} onClick={() => void handleDuplicateWorkout()}>
+            Дублировать
+          </button>
+        </div>
       )}
 
       <button type="button" className="ux-primary" disabled={!canSave} onClick={() => void handleSave()}>

@@ -1,0 +1,902 @@
+/*
+ * Второстепенные экраны (#280, tier 3): пред-экран сессии, Builder (создание / редактор / выбор
+ * упражнения / протокол), Настройки, история веса, «Тесты» и деталь теста (+ PeerInsightsCard),
+ * Program Detail, подборка, поиск, «Добавить в план» / «Перенести».
+ * Грузится ПОСЛЕ shell.css и live.css; использует только токены --vp-* и --tg-*, существующие
+ * токены не меняет. Язык тот же, что у оболочки: серая страница + белые карточки, сгруппированные
+ * строки с разделителями, подписи секций, ОДИН залитый главный CTA на экран, остальное — tonal.
+ * Поведение, роли и testid не меняются; разметка получила только классы vs-* / pre-*.
+ * Целые line-height — иначе keyboard-viewport ловит дробные сдвиги.
+ */
+
+/* ---------- кнопки: главный CTA (залитый), вторичная (tonal), чип, «назад» ---------- */
+.app-shell button.vs-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  margin: var(--vp-sp-5) 0 0;
+  padding: 0 var(--vp-sp-4);
+  border: 0;
+  border-radius: 14px;
+  background: var(--vp-accent);
+  color: var(--tg-button-text-color);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  box-shadow: none;
+  cursor: pointer;
+}
+.app-shell button.vs-primary * {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.app-shell button.vs-primary:disabled {
+  opacity: 0.4;
+}
+
+.app-shell button.vs-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  margin: var(--vp-sp-2) 0 0;
+  padding: 0 var(--vp-sp-4);
+  border: 0;
+  border-radius: 14px;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  box-shadow: none;
+  cursor: pointer;
+}
+.app-shell button.vs-secondary * {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.app-shell button.vs-secondary:disabled {
+  opacity: 0.5;
+}
+
+/* пара кнопок в одну строку (форма замера) */
+.app-shell button.vs-inline {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* «Назад» вверху экрана — белая пилюля */
+.app-shell button.vs-back {
+  min-height: 36px;
+  padding: 0 var(--vp-sp-4);
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-card-bg);
+  color: var(--tg-text-color);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: var(--vp-shadow);
+}
+
+/* текстовая «ссылка»-кнопка под главным действием */
+.app-shell button.vs-plain {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin: var(--vp-sp-1) 0 0;
+  border: 0;
+  background: none;
+  color: var(--tg-subtitle-text-color);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+/* малые действия в строке списка */
+.app-shell button.vs-chip {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: none;
+}
+.app-shell button.vs-chip * {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.app-shell button.vs-chip[data-testid$="delete"] {
+  background: color-mix(in srgb, var(--tg-destructive-text-color) 12%, transparent);
+  color: var(--tg-destructive-text-color);
+}
+
+/* строка-кнопка внутри карточки (подписка, оферта, скачать) */
+.app-shell button.vs-row-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  margin: var(--vp-sp-2) 0 0;
+  border: 0;
+  border-radius: var(--vp-radius-inner);
+  background: var(--vp-page-bg);
+  color: var(--tg-text-color);
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.app-shell button.vs-row-button * {
+  color: inherit;
+  font-size: inherit;
+}
+
+/* общий каркас нативной кнопки (деталь теста) */
+.app-shell button.vs-btn {
+  font: inherit;
+}
+
+/* сгруппированный список строк: одна карточка, разделители между строками */
+.app-shell .vs-rows,
+.app-shell [data-testid="tests-list"],
+.app-shell [data-testid="test-history"],
+.app-shell .search-list,
+.app-shell .collection-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0 0 var(--vp-sp-3);
+  padding: 0;
+  list-style: none;
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  overflow: hidden;
+}
+.app-shell .vs-rows > * + *,
+.app-shell [data-testid="tests-list"] > * + *,
+.app-shell [data-testid="test-history"] > * + *,
+.app-shell .search-list > li + li,
+.app-shell .collection-item-list > li + li {
+  border-top: 1px solid var(--vp-divider);
+}
+
+/* ---------- пред-экран сессии ---------- */
+.pre-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 8px - var(--vp-nav-h) - 20px - env(safe-area-inset-bottom, 0px));
+  min-height: calc(100dvh - 8px - var(--vp-nav-h) - 20px - env(safe-area-inset-bottom, 0px));
+}
+.pre-screen > .vs-back {
+  align-self: flex-start;
+  margin: var(--vp-sp-1) 0 0;
+}
+.pre-header {
+  margin: var(--vp-sp-3) 0 var(--vp-sp-4);
+}
+.pre-eyebrow {
+  margin: 0;
+  font-size: var(--vp-fs-meta);
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+.pre-header .plan-title {
+  margin: var(--vp-sp-1) 0 0;
+}
+.pre-screen .block-section {
+  margin-bottom: var(--vp-sp-2);
+}
+.pre-screen .block-subtitle {
+  margin: 0;
+  padding: 0 var(--vp-sp-4) var(--vp-sp-3);
+  font-size: var(--vp-fs-body);
+  color: var(--tg-subtitle-text-color);
+}
+/* главное действие — внизу экрана над навигацией, как транспорт Live Session */
+.pre-transport {
+  position: sticky;
+  bottom: calc(var(--vp-nav-h) + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  margin: auto calc(var(--vp-sp-4) * -1) 0;
+  padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-4);
+  background: linear-gradient(to bottom, transparent, var(--vp-page-bg) 14px);
+}
+.pre-transport button.vs-primary {
+  margin-top: 0;
+  min-height: 58px;
+  border-radius: 18px;
+  font-size: 18px;
+}
+
+/* ---------- Builder (ux-*): единый язык форм ---------- */
+.app-shell .ux-form {
+  padding-bottom: var(--vp-sp-2);
+}
+.ux-eyebrow {
+  font-size: var(--vp-fs-meta);
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+.ux-exercise-name {
+  margin: var(--vp-sp-1) 0 var(--vp-sp-2);
+  font-size: 24px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.ux-section-label {
+  margin: var(--vp-sp-6) 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-meta);
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--tg-hint-color);
+}
+.ux-helper {
+  font-size: var(--vp-fs-meta);
+  line-height: 18px;
+  color: var(--tg-hint-color);
+}
+.app-shell .ux-text-input {
+  min-height: 52px;
+  background: var(--vp-card-bg);
+  border: 1.5px solid transparent;
+  border-radius: var(--vp-radius-inner);
+  box-shadow: var(--vp-shadow);
+}
+.app-shell .ux-text-input:focus {
+  border-color: var(--vp-accent);
+}
+.ux-field {
+  margin-top: var(--vp-sp-1);
+}
+
+/* тип работы: карточки 2×2, выбранная — акцентная рамка */
+.ux-kind-list {
+  gap: var(--vp-sp-2);
+}
+.app-shell .ux-kind {
+  min-height: 92px;
+  background: var(--vp-card-bg);
+  border: 2px solid transparent;
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.app-shell .ux-kind-selected {
+  border-color: var(--vp-accent);
+  background: color-mix(in srgb, var(--vp-accent) 8%, var(--vp-card-bg));
+}
+.ux-kind-desc {
+  color: var(--tg-hint-color);
+}
+
+/* параметры: карточка со строками «подпись слева — значение справа» */
+.app-shell .ux-card {
+  padding: 0 var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+.ux-row {
+  padding: var(--vp-sp-3) 0;
+}
+.ux-row + .ux-row {
+  border-top-color: var(--vp-divider);
+}
+.ux-row-title {
+  font-size: var(--vp-fs-body);
+  line-height: 20px;
+}
+.ux-row-hint {
+  font-size: var(--vp-fs-meta);
+  line-height: 16px;
+  color: var(--tg-hint-color);
+}
+.app-shell .ux-step {
+  background: transparent;
+  border-color: var(--vp-accent);
+  color: var(--vp-accent);
+}
+.app-shell .ux-step:disabled {
+  border-color: var(--vp-divider);
+  color: var(--tg-hint-color);
+}
+.app-shell .ux-input {
+  background: var(--vp-page-bg);
+  border: 1.5px solid transparent;
+  border-radius: var(--vp-radius-inner);
+}
+.app-shell .ux-input:focus {
+  border-color: var(--vp-accent);
+}
+.app-shell .ux-choice-item {
+  background: var(--vp-page-bg);
+  border: 2px solid transparent;
+  border-radius: var(--vp-radius-inner);
+}
+.app-shell .ux-choice-selected {
+  background: var(--vp-accent-soft);
+  border-color: var(--vp-accent);
+}
+.ux-unit {
+  color: var(--tg-hint-color);
+}
+.app-shell .ux-preview {
+  margin-top: var(--vp-sp-4);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-accent-soft);
+}
+.ux-preview-label {
+  color: var(--tg-hint-color);
+}
+.ux-preview-main {
+  line-height: 26px;
+}
+
+/* кнопки форм */
+.app-shell .ux-primary,
+.app-shell .ux-secondary,
+.app-shell .ux-add-button {
+  min-height: 52px;
+  margin-top: var(--vp-sp-5);
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+}
+.app-shell .ux-primary {
+  box-shadow: none;
+}
+.app-shell .ux-secondary {
+  min-height: 48px;
+  margin-top: 0;
+  border: 0;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font-size: 14px;
+}
+.ux-secondary-row {
+  display: flex;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-5);
+}
+.ux-secondary-row .ux-secondary {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ux-secondary-row + .ux-primary {
+  margin-top: var(--vp-sp-3);
+}
+.app-shell .ux-add-button {
+  margin-top: var(--vp-sp-3);
+  border: 1.5px dashed color-mix(in srgb, var(--vp-accent) 60%, transparent);
+  background: var(--vp-card-bg);
+  color: var(--vp-accent);
+}
+.ux-link-button {
+  color: var(--tg-subtitle-text-color);
+}
+.ux-delete-workout {
+  margin-top: var(--vp-sp-2);
+  text-align: center;
+}
+
+/* список упражнений редактора — одна карточка, строки с разделителями */
+.app-shell .ux-item-list {
+  gap: 0;
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  overflow: hidden;
+}
+.app-shell .ux-item {
+  border-radius: 0;
+  background: none;
+}
+.ux-item + .ux-item {
+  border-top: 1px solid var(--vp-divider);
+}
+.ux-item-main {
+  padding: var(--vp-sp-4) var(--vp-sp-4) var(--vp-sp-2);
+}
+.ux-item-name {
+  line-height: 20px;
+}
+.ux-item-kind {
+  letter-spacing: 0.04em;
+  line-height: 16px;
+}
+.ux-item-line {
+  line-height: 22px;
+}
+.ux-item-edit {
+  top: var(--vp-sp-4);
+  right: var(--vp-sp-4);
+}
+.ux-item-actions {
+  padding: 0 var(--vp-sp-2) var(--vp-sp-2) var(--vp-sp-3);
+}
+.app-shell .ux-icon-button {
+  background: var(--vp-page-bg);
+  border-radius: var(--vp-radius-inner);
+}
+
+/* выбор упражнения: список-группа */
+.app-shell .ux-pick-list {
+  gap: 0;
+  margin-top: var(--vp-sp-3);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  overflow: hidden;
+}
+.app-shell .ux-pick {
+  min-height: 52px;
+  border-radius: 0;
+  background: none;
+  font-size: var(--vp-fs-card);
+  line-height: 20px;
+}
+.ux-pick + .ux-pick,
+.ux-pick-list > p + .ux-pick {
+  border-top: 1px solid var(--vp-divider);
+}
+.ux-pick-list > .ux-helper {
+  margin: 0;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+}
+
+/* ---------- «Добавить в план» / «Перенести»: выбор дня ---------- */
+.app-shell .week-day-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 var(--vp-sp-4) var(--vp-sp-2);
+}
+.app-shell .week-day-picker > button {
+  min-width: 0;
+  width: 100%;
+  height: 44px;
+  padding: 0;
+  border-radius: var(--vp-radius-inner);
+  font-size: 14px;
+  font-weight: 700;
+}
+.app-shell .week-day-picker + button {
+  display: flex;
+  width: calc(100% - 2 * var(--vp-sp-4));
+  margin: 0 var(--vp-sp-4) var(--vp-sp-4);
+  min-height: 44px;
+}
+/* неделя в «Перенести»: выбираемые строки */
+.app-shell [data-testid="move-week-picker"] {
+  margin: var(--vp-sp-4) 0 var(--vp-sp-3);
+  padding: 0;
+  border: 0;
+}
+.app-shell [data-testid="move-week-picker"] .block-subtitle {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+.app-shell .plan-exercise-option {
+  min-height: 48px;
+  margin-bottom: var(--vp-sp-2);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border: 2px solid transparent;
+  border-radius: var(--vp-radius-inner);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+}
+.app-shell .plan-exercise-option-selected {
+  border-color: var(--vp-accent);
+  background: color-mix(in srgb, var(--vp-accent) 8%, var(--vp-card-bg));
+}
+/* название тренировки под заголовком «Добавить в план» / «Перенести» */
+.app-shell .plan-title + .block-subtitle {
+  margin: calc(-1 * var(--vp-sp-2)) 0 var(--vp-sp-4);
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+  color: var(--tg-subtitle-text-color);
+}
+
+/* ---------- Настройки ---------- */
+.settings-screen .search-chips {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0;
+  overflow: visible;
+  margin: 0 0 var(--vp-sp-3);
+  padding: 3px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-page-bg);
+}
+.settings-screen .search-chip,
+.settings-screen .search-chip-active {
+  min-height: 36px;
+  padding: 0 var(--vp-sp-2);
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: transparent;
+  box-shadow: none;
+  color: var(--tg-subtitle-text-color);
+  font-size: 14px;
+  font-weight: 600;
+}
+.settings-screen .search-chip-active {
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  color: var(--tg-text-color);
+  font-weight: 700;
+}
+.settings-screen .profile-card .hint {
+  margin: 0 0 var(--vp-sp-2);
+}
+.settings-screen .profile-card > p:not(.hint):not(.section-title) {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-body);
+}
+.settings-screen .settings-toggle-row {
+  justify-content: space-between;
+  flex-direction: row-reverse;
+  margin-top: var(--vp-sp-2);
+  border-top: 1px solid var(--vp-divider);
+  font-size: var(--vp-fs-body);
+}
+.settings-screen input[type="range"] {
+  accent-color: var(--vp-accent);
+}
+.settings-screen .error-banner {
+  margin-top: var(--vp-sp-3);
+}
+.settings-screen button.vs-secondary {
+  margin-top: var(--vp-sp-2);
+}
+
+/* ---------- история веса / роста ---------- */
+[data-testid="body-metrics-screen"] .profile-card {
+  margin-bottom: var(--vp-sp-3);
+}
+[data-testid="body-metrics-current"] {
+  margin: 0;
+  font-size: var(--vp-fs-title);
+  line-height: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+[data-testid="body-metrics-delta"] {
+  margin: var(--vp-sp-1) 0 0;
+  font-size: var(--vp-fs-meta);
+  color: var(--tg-hint-color);
+}
+.body-metrics-trend {
+  max-height: 150px;
+  margin-top: var(--vp-sp-3);
+}
+[data-testid="body-metrics-screen"] button.vs-primary[data-testid="body-metrics-add"] {
+  margin: 0 0 var(--vp-sp-3);
+}
+.vs-form-card .band-create-actions {
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-3);
+}
+.vs-form-card .band-create-actions button {
+  min-height: 48px;
+}
+.vs-rows .history-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.vs-rows .history-card > p {
+  min-width: 0;
+  white-space: nowrap;
+  margin: 0;
+  font-size: var(--vp-fs-card);
+}
+.vs-rows .history-card .band-create-actions {
+  flex: 0 0 auto;
+  margin: 0;
+  gap: var(--vp-sp-1);
+}
+[data-testid="body-metrics-back"] {
+  margin-top: var(--vp-sp-2);
+}
+
+/* ---------- Тесты ---------- */
+.app-shell [data-testid="tests-list"] .history-card,
+.app-shell [data-testid="tests-list"] .test-card {
+  position: relative;
+  min-height: 64px;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  margin: 0;
+}
+.test-card-name {
+  font-size: var(--vp-fs-card);
+  line-height: 20px;
+  font-weight: 700;
+}
+.test-card .hint {
+  font-size: var(--vp-fs-meta);
+  line-height: 18px;
+}
+.test-card-spark {
+  margin-right: var(--vp-sp-1);
+}
+
+/* деталь теста */
+[data-testid="test-detail"] > .hint {
+  margin: 0 0 var(--vp-sp-2);
+  line-height: 18px;
+}
+[data-testid="test-detail-note"] {
+  padding: var(--vp-sp-2) var(--vp-sp-3);
+  border-radius: var(--vp-radius-inner);
+  background: var(--vp-accent-soft);
+  color: var(--tg-subtitle-text-color);
+}
+.vs-chart-card {
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+}
+.vs-chart-card > p {
+  margin: 0;
+}
+.vs-chart-card .analytics-trend-chart {
+  max-height: 170px;
+}
+[data-testid="peer-insights-percentile"] {
+  margin: var(--vp-sp-1) 0;
+  font-size: var(--vp-fs-card);
+  line-height: 20px;
+}
+[data-testid="peer-insights-median"] {
+  margin: 0;
+  font-size: var(--vp-fs-body);
+}
+[data-testid="peer-insights-bar"] {
+  height: 10px !important;
+  border-radius: 5px !important;
+  background: var(--vp-page-bg) !important;
+}
+[data-testid="peer-insights-bar-fill"] {
+  background: var(--vp-accent) !important;
+  border-radius: 5px;
+}
+[data-testid="test-form"] .field-label {
+  margin: var(--vp-sp-3) 0 6px;
+  font-size: var(--vp-fs-meta);
+  line-height: 16px;
+  letter-spacing: 0.06em;
+  color: var(--tg-hint-color);
+}
+[data-testid="test-form"] .section-title + .field-label {
+  margin-top: var(--vp-sp-1);
+}
+[data-testid="test-form"] input.set-input {
+  display: block;
+  width: 100%;
+  height: 48px;
+  margin-bottom: 0;
+  padding: 0 var(--vp-sp-3);
+  border: 1.5px solid transparent;
+  border-radius: var(--vp-radius-inner);
+  background: var(--vp-page-bg);
+  color: var(--tg-text-color);
+  font: inherit;
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+  text-align: left;
+}
+[data-testid="test-form"] input.set-input:focus {
+  border-color: var(--vp-accent);
+}
+[data-testid="test-form"] .test-actions {
+  flex-direction: column;
+  gap: 0;
+  margin-top: var(--vp-sp-4);
+}
+[data-testid="test-form"] .test-actions button.vs-primary {
+  margin-top: 0;
+}
+[data-testid="test-form"] .favorite-error {
+  margin: var(--vp-sp-3) 0 0;
+  font-size: 14px;
+  color: var(--tg-destructive-text-color);
+}
+[data-testid="test-history"] .test-history-row {
+  flex-direction: row;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  align-items: center;
+}
+[data-testid="test-history"] .test-history-main {
+  align-items: flex-start;
+}
+[data-testid="test-history"] .home-workout-title {
+  font-size: var(--vp-fs-card);
+}
+.test-history-actions {
+  gap: var(--vp-sp-1);
+}
+.app-shell .test-row-button {
+  min-height: 36px;
+  padding: 0 var(--vp-sp-3);
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font-weight: 700;
+  font-size: 13px;
+}
+.app-shell .test-row-button[aria-label^="Удалить"] {
+  background: color-mix(in srgb, var(--tg-destructive-text-color) 12%, transparent);
+  color: var(--tg-destructive-text-color);
+}
+[data-testid="test-history-empty"] {
+  padding: var(--vp-sp-4);
+}
+
+/* ---------- Program Detail ---------- */
+[data-testid="program-detail-title"] {
+  margin-bottom: var(--vp-sp-2);
+}
+[data-testid="program-schedule"] .block-subtitle {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+[data-testid="program-schedule"] .plan-week-day-group {
+  padding: var(--vp-sp-3) 0 0;
+  border-top: 1px solid var(--vp-divider);
+}
+[data-testid="program-schedule"] .plan-week-day-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+[data-testid="program-schedule-phase-chip"] {
+  display: inline-block;
+  margin-bottom: var(--vp-sp-1);
+  padding: 3px 12px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+[data-testid="program-schedule-row"] {
+  margin: 0;
+  padding: var(--vp-sp-2) 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+[data-testid="program-schedule-row"] + [data-testid="program-schedule-row"] {
+  border-top: 1px solid var(--vp-divider);
+}
+
+/* ---------- Подборка ---------- */
+.app-shell .collection-hero {
+  margin-top: var(--vp-sp-3);
+}
+.collection-hero [data-testid="collection-author"] {
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.collection-hero .plan-title {
+  margin: var(--vp-sp-1) 0;
+}
+.app-shell .collection-item-list .block-section {
+  margin: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.app-shell .collection-item-list .collection-card-button {
+  position: relative;
+  padding: var(--vp-sp-3) 40px var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+}
+.collection-item-list .collection-card-button::after {
+  content: "›";
+  position: absolute;
+  right: var(--vp-sp-4);
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 26px;
+  line-height: 1;
+  color: var(--tg-hint-color);
+}
+.collection-item-list .collection-card-button .hint {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---------- Поиск ---------- */
+.app-shell .search-chip {
+  min-height: 36px;
+  padding: 0 var(--vp-sp-4);
+}
+.app-shell .search-chip-active {
+  background: var(--vp-accent-soft);
+  box-shadow: none;
+  color: var(--vp-accent);
+  font-weight: 700;
+}
+.app-shell .search-result {
+  position: relative;
+  min-height: 56px;
+  gap: 2px;
+  justify-content: center;
+  padding: var(--vp-sp-3) 40px var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.search-result::after {
+  content: "›";
+  position: absolute;
+  right: var(--vp-sp-4);
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 26px;
+  line-height: 1;
+  color: var(--tg-hint-color);
+}
+.search-result .home-workout-title {
+  font-size: var(--vp-fs-card);
+  line-height: 20px;
+}
+.search-result .home-workout-meta {
+  line-height: 18px;
+}
+[data-testid="search-count"] {
+  margin: var(--vp-sp-1) 0 0;
+}

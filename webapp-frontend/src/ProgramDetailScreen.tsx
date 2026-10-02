@@ -70,7 +70,7 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
 
   return (
     <div>
-      <Button mode="outline" size="s" onClick={onBack}>
+      <Button className="vs-back" mode="outline" size="s" onClick={onBack}>
         ← Назад
       </Button>
       <div className="favorite-title-row">
@@ -108,7 +108,7 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
       )}
 
       <Button
-        className="action-button"
+        className="action-button vs-primary"
         size="l"
         stretched
         disabled={included || adding}
