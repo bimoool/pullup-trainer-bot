@@ -171,3 +171,6 @@ for id in 991001 991002 991003 991004 991011 991012 991013 991014; do seed build
 # (session_recovery, мутирует: план → сессия), 99614x/99615x/99616x/99617x — Журнал (journal_edit, только чтение); каждый + retry (id+1).
 for id in 996101 996102 996111 996112 996121 996122 996131 996132; do seed session_recovery "$id"; done
 for id in 996141 996142 996151 996152 996161 996162 996171 996172; do seed journal_edit "$id"; done
+# «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
+# на тест id + retry (≤ +3); session_recovery.
+for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done
