@@ -59,6 +59,10 @@ def _unit(protocol: AssessmentProtocol) -> str:
     return _UNITS.get(protocol.metric_type, "")
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 def _local_date(user: User, moment: datetime) -> date:
     return moment.astimezone(resolve_timezone(user.timezone)).date()
 
@@ -144,7 +148,9 @@ async def get_peer_insights(
     бы малую группу (1–19 человек), подавляются для всех (#284: `shown_cohorts`),
     на пользователя действует лимит запросов (429). Нет результата — status=no_result, когорта
     меньше 20 — insufficient. Чужие результаты не читаются: свой — по user.id, остальные только
-    внутри одного агрегирующего SQL (`AssessmentRepository.peer_cohorts`)."""
+    внутри одного агрегирующего SQL (`AssessmentRepository.peer_cohorts`). Возрастные
+    ступени — от «сегодня» в фиксированном поясе проекта (DEFAULT_TIMEZONE), не в поясе зрителя:
+    набор когорт — функция данных, а не того, кто и из какого пояса смотрит (#285)."""
     user = await _current_user(init_data, session)
     retry_after = peer_insights_limiter.acquire(user.id)
     if retry_after > 0:
@@ -158,7 +164,10 @@ async def get_peer_insights(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found")
     own = await repo.list_results_for_user(user.id, protocol_id)
     own_value = own[0].value if own else None
-    today = _local_date(user, datetime.now(UTC))
+    # Возрастные ступени когорт считаются от «сегодня» в ФИКСИРОВАННОМ поясе проекта (resolve_timezone(None)
+    # → DEFAULT_TIMEZONE), а не в поясе зрителя: иначе у соседей у границы дня/дня рождения один и тот же
+    # набор людей давал бы разные когорты — показанный набор зависит только от данных (#285 L4).
+    today = _utcnow().astimezone(resolve_timezone(None)).date()
     gender = user.gender.value if user.gender is not None else None
     bucket = age_bucket(user.birth_date, today)
     cohorts = {} if own_value is None else await repo.peer_cohorts(protocol_id, own_value, today)

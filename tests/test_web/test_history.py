@@ -42,11 +42,13 @@ def _override_dependencies(session, telegram_id: int) -> None:
     app.dependency_overrides[get_session] = _override_session
 
 
-async def _get_history(session, telegram_id: int, *, offset: int = 0, limit: int = 20) -> dict:
+async def _get_history(
+    session, telegram_id: int, *, offset: int = 0, limit: int = 20, **filters: str,
+) -> dict:
     _override_dependencies(session, telegram_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.get("/api/history", params={"offset": offset, "limit": limit})
+            response = await client.get("/api/history", params={"offset": offset, "limit": limit, **filters})
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 200
@@ -140,3 +142,26 @@ async def test_history_marks_backdated_workouts(session):
     body = await _get_history(session, telegram_id=user.telegram_id)
 
     assert body["items"][0]["is_backdated"] is True
+
+
+async def test_history_target_only_on_globally_latest_even_with_month_filter(session):
+    """#285 L2: is_latest считался после фильтра date_from/date_to — у новейшей карточки каждого
+    месяца показывалась «следующая цель». Она только у самой свежей записи всей истории."""
+    user = await UserRepository(session).create(telegram_id=52010, username="months")
+    baseline = await BaselineRepository(session).create(
+        user_id=user.id, performed_at=datetime(2026, 8, 1, tzinfo=UTC), reps=10,
+    )
+    workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
+    await _record_workout(session, user.id, workout_set.id, datetime(2026, 9, 12, tzinfo=UTC), working_a=11)
+    await _record_workout(session, user.id, workout_set.id, datetime(2026, 10, 3, tzinfo=UTC), working_a=12)
+
+    september = await _get_history(session, user.telegram_id, date_from="2026-09-01", date_to="2026-09-30")
+    assert [item["performed_at"] for item in september["items"]] == ["2026-09-12"]
+    assert september["items"][0]["target_a"] is None and september["items"][0]["target_b"] is None
+
+    october = await _get_history(session, user.telegram_id, date_from="2026-10-01", date_to="2026-10-31")
+    assert october["items"][0]["target_a"] is not None and october["items"][0]["target_b"] is not None
+
+    # Без фильтра и на второй странице — то же правило.
+    page_two = await _get_history(session, user.telegram_id, offset=1, limit=1)
+    assert page_two["items"][0]["performed_at"] == "2026-09-12" and page_two["items"][0]["target_a"] is None

@@ -382,7 +382,9 @@ export async function fetchWsfStatus(initDataRaw: string): Promise<WsfStatus> {
 /** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
  * что печатает бот в app.bot.handlers.history.format_history_entry, только
  * структурированные под карточку. target_a/target_b заполнены только у
- * самой свежей записи во всей истории. */
+ * самой свежей записи во всей истории пользователя — независимо от
+ * date_from/date_to и offset/limit (не «последней в выборке»: у старых
+ * месяцев цели нет). */
 export interface HistoryEntry {
   workout_id: number;
   performed_at: string;

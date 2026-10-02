@@ -396,3 +396,27 @@ async def test_peer_insights_endpoint_is_rate_limited_per_user_with_friendly_429
     assert "Слишком много" in blocked.json()["detail"] and int(blocked.headers["retry-after"]) >= 1
     # лимит per-user: другой пользователь не затронут
     assert (await v2_get(session, other.telegram_id, f"{BASE}/{pid}/peer-insights")).status_code == 200
+
+
+async def test_cohort_set_does_not_depend_on_viewer_timezone_near_midnight(session, monkeypatch):
+    """#285 L4: ступени считались от «сегодня» зрителя. 20 мужчин, которым исполняется 30 в «день по
+    поясу проекта» (Москва), для зрителя из Окленда (уже 6 октября) были 30-летними, для зрителя из
+    Лос-Анджелеса (ещё 5 октября) — 29-летними: одни и те же данные давали разные когорты."""
+    from app.web import routes_v2_assessments
+
+    monkeypatch.setattr(routes_v2_assessments, "_utcnow", lambda: datetime(2026, 10, 5, 22, 30, tzinfo=UTC))
+    pid = await _pid(session)
+    # Москва: 6 октября 01:30 → исполняется 30 лет с 1996-10-06; Окленд — 6 окт 11:30; Лос-Анджелес — 5 окт 15:30.
+    await _cohort(session, pid, [8] * 20, Gender.MALE, date(1996, 10, 6))
+    viewer_nz = await _make_user(session, Gender.MALE, date(1990, 1, 15))
+    viewer_nz.timezone = "Pacific/Auckland"
+    viewer_us = await _make_user(session, Gender.MALE, date(1990, 1, 15))
+    viewer_us.timezone = "America/Los_Angeles"
+    await _result(session, viewer_nz, pid, 10)
+    await _result(session, viewer_us, pid, 10)
+
+    body_nz = await _insights(session, viewer_nz, pid)
+    body_us = await _insights(session, viewer_us, pid)
+    assert body_nz == body_us
+    # Ступень 30–39 по «сегодня» проекта (6 октября): 20 + двое зрителей = 22 человека.
+    assert body_nz["cohort"] == {"level": "gender_age", "label": "Мужчины 30–39 лет", "size_bucket": "20–49"}
