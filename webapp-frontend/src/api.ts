@@ -1,3 +1,5 @@
+import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
+
 /** onboarding_step (issue #124, PR 2) — четыре состояния вместо булева
  * is_onboarded (тот приравнивал "есть строка User" к "онбординг пройден",
  * хотя анкета могла быть не завершена): "not_registered" — строки User ещё
@@ -218,6 +220,10 @@ async function extractErrorMessage(
   response: Response,
 ): Promise<string> {
   const fallback = `${method} ${path} failed: ${response.status}`;
+  if (response.status === 401) {
+    // initData просрочен/невалиден — понятная подсказка вместо «Invalid Telegram initData» (#224).
+    return SESSION_EXPIRED_MESSAGE;
+  }
   try {
     const data = await response.json();
     if (data && typeof data.detail === "string") {
@@ -382,7 +388,9 @@ export async function fetchWsfStatus(initDataRaw: string): Promise<WsfStatus> {
 /** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
  * что печатает бот в app.bot.handlers.history.format_history_entry, только
  * структурированные под карточку. target_a/target_b заполнены только у
- * самой свежей записи во всей истории. */
+ * самой свежей записи во всей истории пользователя — независимо от
+ * date_from/date_to и offset/limit (не «последней в выборке»: у старых
+ * месяцев цели нет). */
 export interface HistoryEntry {
   workout_id: number;
   performed_at: string;

@@ -21,6 +21,8 @@ import { THEME_LABEL } from "./theme";
 import { isVibrationEnabled, setVibrationEnabled } from "./vibration";
 import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
+import { useBackButton } from "./useBackButton";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -77,6 +79,8 @@ function Choice<T extends string>({
  * «Отмена» отбрасывает всё. Хранение веса/роста метрическое: единицы — только показ/ввод.
  */
 export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSubscription }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
   const saved = useDisplayPrefs();
   const [weightUnit, setWeightUnit] = useState<WeightUnit>(saved.weight_unit);
   const [heightUnit, setHeightUnit] = useState<HeightUnit>(saved.height_unit);
@@ -199,22 +203,19 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
       <Section className="block-section">
         <Input
           header={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.1"
           aria-label="Вес"
           value={weightText}
-          onChange={(e) => setWeightText(e.target.value)}
+          onChange={(e) => setWeightText(sanitizeDecimalInput(e.target.value))}
         />
         <Input
           header={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
           aria-label="Рост"
           value={heightText}
-          onChange={(e) => setHeightText(e.target.value)}
+          onChange={(e) => setHeightText(sanitizeDecimalInput(e.target.value))}
         />
         <Select header="Пол" aria-label="Пол" value={gender} onChange={(e) => setGender(e.target.value)}>
           <option value="">Не указан</option>

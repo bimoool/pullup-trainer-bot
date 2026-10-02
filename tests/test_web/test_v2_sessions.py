@@ -141,14 +141,17 @@ async def test_create_session_applies_step_progression_matching_direct_strategy_
 
 async def test_create_session_without_inclusion_only_writes_fact(session, user: User):
     program = await _make_step_program(session)
-    inclusion = await _create_inclusion(session, user.telegram_id, program.id)
-    roles = _exercise_ids_by_role(inclusion)
+    await _create_inclusion(session, user.telegram_id, program.id)
+    # #285: внутренние STEP-роли вне программы не принимаются — пишем обычное упражнение.
+    plain = Exercise(name="Обычное", metric_type=MetricType.REPS, category="plain_sessions")
+    session.add(plain)
+    await session.flush()
 
     response = await v2_post(
         session, telegram_id=user.telegram_id, path="/api/v2/sessions",
         payload={
             "source": "freeform", "performed_at": "2026-01-05T10:00:00Z",
-            "blocks": [_sets_block(roles["block_a"], [20], 22)],
+            "blocks": [_sets_block(plain.id, [20], 22)],
         },
     )
 

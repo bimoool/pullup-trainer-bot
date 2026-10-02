@@ -145,8 +145,9 @@ function MetricsCard({ data, metric, rangeKey, draft, onMetric, onRange, onDraft
   const total = metric === "minutes" ? formatMinutes(metrics.total_minutes) : `${metrics.total_workouts}`;
   return (
     <div className="profile-card" data-testid="analytics-metrics">
+      {/* Шапка карточки: выбор метрики (сегмент) + «ⓘ»; период — подчёркнутые табы ниже. */}
       <div className="analytics-metric-header">
-        <div className="workout-mode-buttons" role="tablist" aria-label="Метрика">
+        <div className="workout-mode-buttons vp-segment" role="tablist" aria-label="Метрика">
           {METRIC_TABS.map((tab) => (
             <button
               key={tab.key} type="button" role="tab" aria-selected={tab.key === metric}
@@ -161,7 +162,7 @@ function MetricsCard({ data, metric, rangeKey, draft, onMetric, onRange, onDraft
           ⓘ
         </button>
       </div>
-      <div className="workout-mode-buttons" role="tablist" aria-label="Период">
+      <div className="workout-mode-buttons vp-tabs" role="tablist" aria-label="Период">
         {RANGE_TABS.map((tab) => (
           <button
             key={tab.key} type="button" role="tab" aria-selected={tab.key === rangeKey}

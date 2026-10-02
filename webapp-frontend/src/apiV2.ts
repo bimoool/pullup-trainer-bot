@@ -8,6 +8,7 @@
  */
 
 import type { SessionCreatePayload } from "./journalLog";
+import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
 import type { PeerInsights } from "./peerInsightsFormat";
 
 /**
@@ -21,6 +22,10 @@ async function extractErrorMessage(
   response: Response,
 ): Promise<string> {
   const fallback = `${method} ${path} failed: ${response.status}`;
+  if (response.status === 401) {
+    // initData просрочен/невалиден — понятная подсказка вместо «Invalid Telegram initData» (#224).
+    return SESSION_EXPIRED_MESSAGE;
+  }
   try {
     const data = await response.json();
     if (data && typeof data.detail === "string") {

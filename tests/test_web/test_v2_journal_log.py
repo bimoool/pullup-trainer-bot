@@ -169,3 +169,36 @@ async def test_freeform_activity_can_be_deleted_backdated_cannot(session: AsyncS
     other = await _user(session, 960264)
     foreign = await v2_delete(session, telegram_id=other.telegram_id, path=f"/api/v2/sessions/{backdated['id']}")
     assert foreign.status_code == 404
+
+
+async def test_step_role_exercise_is_rejected_outside_a_program_session(session: AsyncSession, user: User):
+    """#285: блок на системное STEP-упражнение (pull_ups/block_a) совпал бы с отпечатком backfill-копии
+    и пропал из Журнала/дней/CSV — вне сессии программы такой блок отклоняется (422), сессия не создаётся."""
+    step_a = Exercise(
+        name="Блок A", metric_type=MetricType.REPS, category="pull_ups", subcategory="block_a", source_type="system",
+    )
+    step_b = Exercise(
+        name="Блок Б", metric_type=MetricType.REPS, category="pull_ups", subcategory="block_b", source_type="system",
+    )
+    plain = await _exercise(session)
+    session.add_all([step_a, step_b])
+    await session.flush()
+
+    for source in ("backdated", "freeform", "plan"):
+        for step in (step_a, step_b):
+            response = await v2_post(
+                session, telegram_id=user.telegram_id, path="/api/v2/sessions",
+                payload=_backdated(step.id, source=source),
+            )
+            assert response.status_code == 422, (source, step.subcategory, response.text)
+    # Второй блок тоже проверяется (не только первый).
+    mixed = _backdated(plain.id)
+    mixed["blocks"].append(_backdated(step_a.id)["blocks"][0])
+    mixed["blocks"][1]["sets"][0]["set_number"] = 1
+    assert (await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/sessions", payload=mixed)).status_code == 422
+
+    listed = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/sessions?status=completed")
+    assert listed.json()["sessions"] == []
+    # Обычное упражнение по-прежнему записывается.
+    ok = await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/sessions", payload=_backdated(plain.id))
+    assert ok.status_code == 200, ok.text

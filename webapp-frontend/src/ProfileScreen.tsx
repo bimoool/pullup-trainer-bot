@@ -1,4 +1,3 @@
-import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
@@ -18,6 +17,7 @@ import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsList } from "./TestsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
 import { useDisplayPrefs } from "./displayPrefs";
+import { ProfileGroup, ProfileRow } from "./ProfileRows";
 import { SettingsScreen } from "./SettingsScreen";
 import { formatHeight, formatWeight } from "./units";
 
@@ -353,75 +353,6 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
         </button>
       </div>
 
-      <div className="profile-card">
-        <p>
-          {profile.days_since_last_workout === null
-            ? "Тренировок пока не было."
-            : profile.days_since_last_workout === 0
-              ? "Последняя тренировка — сегодня."
-              : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
-        </p>
-      </div>
-
-      <div className="profile-card">
-        <p className="section-title">Личные данные</p>
-        <p
-          className="profile-link-row"
-          role="button"
-          tabIndex={0}
-          aria-label="История веса"
-          data-testid="profile-weight"
-          onClick={() => setBodyMetric("weight_kg")}
-          onKeyDown={(e) => e.key === "Enter" && setBodyMetric("weight_kg")}
-        >{`Вес: ${formatWeight(profile.weight_kg, prefs.weight_unit)}`}</p>
-        <p
-          className="profile-link-row"
-          role="button"
-          tabIndex={0}
-          aria-label="История роста"
-          data-testid="profile-height"
-          onClick={() => setBodyMetric("height_cm")}
-          onKeyDown={(e) => e.key === "Enter" && setBodyMetric("height_cm")}
-        >{`Рост: ${formatHeight(profile.height_cm, prefs.height_unit)}`}</p>
-        <p>{`Пол: ${profile.gender_label ?? "не указано"}`}</p>
-        <p>{`Возраст: ${profile.age ?? "не указано"}`}</p>
-        <p>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</p>
-        <Button mode="outline" size="m" stretched onClick={() => setShowEditProfile(true)}>
-          ✏️ Изменить
-        </Button>
-      </div>
-
-      <div className="profile-card" data-testid="profile-tests">
-        <p className="section-title">Тесты</p>
-        <TestsList initDataRaw={initDataRaw} onOpen={(protocol) => setTestProtocolId(protocol.id)} />
-        <p className="hint">{NOT_IN_PROGRESSION_NOTE}</p>
-      </div>
-
-      <div className="profile-card">
-        <p className="section-title">Подписка</p>
-        <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
-        <Button mode="outline" size="m" stretched onClick={onOpenSubscription}>
-          ⭐ Подробнее о подписке
-        </Button>
-      </div>
-
-      <div className="profile-card">
-        <p className="section-title">Справка</p>
-        <Button mode="outline" size="m" stretched onClick={onOpenFaq}>
-          ❓ Как выбрать резину
-        </Button>
-      </div>
-
-      <div className="profile-card">
-        <p className="section-title">Мои резины</p>
-        <Button mode="outline" size="m" stretched onClick={() => setShowBandItems(true)}>
-          🎗️ Переименовать или удалить
-        </Button>
-      </div>
-
-      {gto && <GtoCard gto={gto} />}
-      {wsf && <WsfCard wsf={wsf} />}
-
       <div className="stat-grid">
         <div className="stat-tile">
           <div className="stat-value">{profile.workouts_count}</div>
@@ -440,6 +371,48 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
           <div className="stat-label">Монет</div>
         </div>
       </div>
+
+      <p className="profile-last-workout hint">
+        {profile.days_since_last_workout === null
+          ? "Тренировок пока не было."
+          : profile.days_since_last_workout === 0
+            ? "Последняя тренировка — сегодня."
+            : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
+      </p>
+
+      <ProfileGroup title="Личные данные">
+        <ProfileRow
+          icon="weight" label="Вес" value={formatWeight(profile.weight_kg, prefs.weight_unit)}
+          ariaLabel="История веса" testId="profile-weight" onClick={() => setBodyMetric("weight_kg")}
+        />
+        <ProfileRow
+          icon="height" label="Рост" value={formatHeight(profile.height_cm, prefs.height_unit)}
+          ariaLabel="История роста" testId="profile-height" onClick={() => setBodyMetric("height_cm")}
+        />
+        <ProfileRow icon="person" label="Пол" value={profile.gender_label ?? "не указано"} />
+        <ProfileRow icon="calendar" label="Возраст" value={String(profile.age ?? "не указано")} />
+        <ProfileRow icon="clock" label="Часовой пояс" value={profile.timezone_label ?? "не указано"} stacked />
+        <ProfileRow icon="edit" label="Изменить" onClick={() => setShowEditProfile(true)} />
+      </ProfileGroup>
+
+      <ProfileGroup
+        title="Тесты" testId="profile-tests"
+        note={<p className="hint profile-group-note">{NOT_IN_PROGRESSION_NOTE}</p>}
+      >
+        <TestsList initDataRaw={initDataRaw} onOpen={(protocol) => setTestProtocolId(protocol.id)} />
+      </ProfileGroup>
+
+      <ProfileGroup title="Аккаунт">
+        <ProfileRow
+          icon="star" label="Подписка" value={profile.subscription_status_label ?? "статус недоступен"}
+          onClick={onOpenSubscription} stacked
+        />
+        <ProfileRow icon="help" label="Справка" value="Как выбрать резину" onClick={onOpenFaq} stacked />
+        <ProfileRow icon="band" label="Мои резины" value="Переименовать или удалить" onClick={() => setShowBandItems(true)} stacked />
+      </ProfileGroup>
+
+      {gto && <GtoCard gto={gto} />}
+      {wsf && <WsfCard wsf={wsf} />}
     </div>
   );
 }
