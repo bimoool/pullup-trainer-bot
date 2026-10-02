@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { listFavorites, setFavorite, type FavoriteTargetType } from "./apiV2";
 import { isFavorite, markFavoritesSeen } from "./favorites";
+import { Icon } from "./Icon";
 
 type Props = {
   initDataRaw: string;
@@ -62,7 +63,7 @@ export function FavoriteHeart({ initDataRaw, targetType, targetId }: Props) {
         disabled={!loaded}
         onClick={() => void toggle()}
       >
-        {favorite ? "♥" : "♡"}
+        <Icon name="heart" size={26} filled={favorite} />
       </button>
       {error && <p className="hint favorite-error" data-testid="favorite-error" role="alert">{error}</p>}
     </>

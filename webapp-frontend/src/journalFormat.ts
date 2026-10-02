@@ -1,5 +1,5 @@
 import type { ProtocolType, SessionBlockResponseV2 } from "./apiV2";
-import { formatAttempts, formatDuration, formatIntervalsCount, formatNumber } from "./blockFormat";
+import { formatAttempts, formatDuration, formatIntervalsCount, formatNumber } from "./blockFormat.ts";
 
 /** Представление одного блока Журнала v2 (карточка и детали). Значения
  * всегда человекочитаемые: без сырых id, JSON протокола, "8.00 reps" и без
@@ -90,4 +90,21 @@ export function describeJournalBlock(block: SessionBlockResponseV2): JournalBloc
     protocolLabel,
     completed: logs.length > 0,
   };
+}
+
+/** Название записи: заголовок с бэкенда; у факультатива заголовка нет, а имя упражнения («Факультатив — 3 минуты
+ * подтягиваний») — единственное, что отличает запись, поэтому берётся из первого блока; иначе «Тренировка». */
+export function journalEntryTitle(
+  session: { title: string | null; source: string; blocks: SessionBlockResponseV2[] },
+): string {
+  if (session.title !== null) {
+    return session.title;
+  }
+  if (session.source === "elective") {
+    const header = session.blocks.length > 0 ? describeJournalBlock(session.blocks[0]).header : null;
+    if (header !== null) {
+      return header;
+    }
+  }
+  return "Тренировка";
 }

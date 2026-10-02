@@ -25,7 +25,7 @@ test("возвращающийся пользователь: нет глобал
   await page.getByRole("button", { name: "Журнал" }).click();
   await expect(page.getByText("Объём (резина): 10, 10, 10, максимум 11, следующая цель 11")).toBeVisible();
   await expect(page.getByText("Сила (резина): 3, 3, 3, 3, максимум 3, следующая цель 3")).toBeVisible();
-  await expect(page.getByRole("button", { name: "✏️ Изменить" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Изменить", exact: true })).toHaveCount(1);
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);

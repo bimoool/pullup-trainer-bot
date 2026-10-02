@@ -1,6 +1,7 @@
 import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { Icon } from "./Icon";
 import {
   createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listWorkouts,
   type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
@@ -448,7 +449,7 @@ export function HomeScreen({
                   >
                     <p className="home-card-title">{program.name}</p>
                     <p className="home-card-meta">{program.goal}</p>
-                    {included && <p className="hint home-card-status">✓ В плане</p>}
+                    {included && <p className="hint home-card-status"><Icon name="check" size={14} strokeWidth={2.4} className="vp-icon-lead" />В плане</p>}
                   </button>
                 </div>
               );
@@ -521,7 +522,7 @@ export function HomeScreen({
         }
         if (mode === "hint") {
           // Пустого ряда с крупным заголовком нет (как в эталоне): только тихая подсказка.
-          return <p className="home-favorites-hint" data-testid="favorites-hint">Нажмите ♡ на тренировке, чтобы добавить</p>;
+          return <p className="home-favorites-hint" data-testid="favorites-hint">Нажмите <Icon name="heart" size={14} className="vp-icon-inline" /> на тренировке, чтобы добавить</p>;
         }
         return (
           <div data-testid="favorites-row">

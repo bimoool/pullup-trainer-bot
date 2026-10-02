@@ -12,9 +12,19 @@
   --vp-kind-elective: var(--vp-cat-4);
   --vp-kind-backdated: var(--vp-cat-2);
   --vp-kind-legacy: var(--tg-hint-color);
+  /* цвета шкалы усилия как ТЕКСТ (≥ 4.5:1 на светлой карточке при 11–13px) */
+  --vp-effort-easy: #1b7a42;
+  --vp-effort-mid: #8a5a00;
+  --vp-effort-hard: #b45309;
 }
 
-/* ---------- Журнал: компактная карточка записи (2 строки) ---------- */
+:root[data-vp-scheme="dark"] {
+  --vp-effort-easy: #4cc380;
+  --vp-effort-mid: #e0b13a;
+  --vp-effort-hard: #f08a3c;
+}
+
+/* ---------- Журнал: карточка записи — бейдж типа + название/время + сетка из 3 подписанных показателей (#286) ---------- */
 .history-card.journal-card {
   position: relative;
   display: flex;
@@ -44,13 +54,13 @@
 
 .history-card .journal-card-title {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--vp-sp-2);
-  margin: 0 0 2px;
+  margin: 0 0 8px;
 }
 
 .journal-card-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -66,31 +76,51 @@
   color: var(--tg-hint-color);
 }
 
-.history-card .journal-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px var(--vp-sp-3);
-  margin: 0;
-  font-size: var(--vp-fs-meta);
-  line-height: 1.35;
-  color: var(--tg-subtitle-text-color);
-}
-
+/* бейдж типа записи: цвет метки на мягкой подложке */
 .journal-kind-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 700;
+  line-height: 1.3;
   color: var(--kind);
+  background: color-mix(in srgb, var(--kind) 14%, transparent);
 }
 
-.journal-card .journal-block {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 6px;
+/* сетка показателей: 3 равные колонки, подпись сверху, значение снизу */
+.history-card .journal-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--vp-sp-2);
   margin: 0;
 }
 
-.journal-card .journal-block-header {
-  font-weight: 600;
+.journal-stat {
+  min-width: 0;
+}
+
+.journal-stat-label {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--tg-hint-color);
+}
+
+.journal-stat-value {
+  margin: 1px 0 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
   color: var(--tg-text-color);
 }
 
@@ -124,10 +154,9 @@
 .journal-day-num { color: var(--vp-accent); }
 
 /* усилие на карточке: цвет по шкале 1–5 (effortScale) */
-.journal-effort { font-weight: 700; color: var(--tg-subtitle-text-color); }
-.journal-effort[data-effort="1"], .journal-effort[data-effort="2"] { color: #2e9e5b; }
-.journal-effort[data-effort="3"] { color: #c98a00; }
-.journal-effort[data-effort="4"] { color: #e0701a; }
+.journal-effort[data-effort="1"], .journal-effort[data-effort="2"] { color: var(--vp-effort-easy); }
+.journal-effort[data-effort="3"] { color: var(--vp-effort-mid); }
+.journal-effort[data-effort="4"] { color: var(--vp-effort-hard); }
 .journal-effort[data-effort="5"] { color: var(--tg-destructive-text-color); }
 
 .journal-day-header {
@@ -623,7 +652,7 @@
   border-radius: 0;
   background: none;
   font: inherit;
-  font-size: 15px;
+  font-size: 16px; /* iOS: поле ввода < 16px зумит страницу */
   font-weight: 700;
   color: var(--tg-text-color);
   text-overflow: ellipsis;
@@ -852,6 +881,7 @@
 
 /* ---------- шторка записи Журнала (#280) ---------- */
 .journal-sheet { max-width: 480px; margin: 0 auto; }
+.journal-sheet:focus { outline: none; }
 .journal-sheet-title {
   display: flex;
   align-items: baseline;
@@ -885,3 +915,21 @@
 }
 .journal-back-button:focus-visible { outline: 2px solid var(--vp-accent); outline-offset: 2px; }
 .block-section .journal-detail-line { padding: 0 var(--vp-sp-4); }
+
+/* иконка внутри строки текста (шеврон у месяца, сердечко в подсказке) */
+.vp-icon-inline {
+  vertical-align: -0.15em;
+}
+
+/* только для скринридеров: текст есть в дереве доступности, но не виден */
+.vp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

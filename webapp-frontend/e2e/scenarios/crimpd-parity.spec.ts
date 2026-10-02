@@ -188,12 +188,12 @@ for (const width of WIDTHS) {
         await expect(page.getByTestId("workout-detail-items").locator("li")).toHaveCount(3);
         await expect(page.getByTestId("workout-detail-items")).toContainText("3 × 8 повторений");
         await expect(page.getByRole("button", { name: "Добавить в план" })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Редактировать" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Изменить", exact: true })).toBeVisible();
         await expect(page.getByTestId("workout-detail-history-row")).toHaveCount(2);
         await expectNoHorizontalOverflow(page, "Workout Detail");
 
-        // «Редактировать» → редактор; назад → снова деталь.
-        await page.getByRole("button", { name: "Редактировать" }).click();
+        // «Изменить» → редактор; назад → снова деталь.
+        await page.getByRole("button", { name: "Изменить", exact: true }).click();
         await expect(page.getByTestId("workout-detail")).toHaveCount(0);
         await pressTelegramBackButton(page);
         await expect(page.getByTestId("workout-detail")).toBeVisible();
@@ -251,7 +251,7 @@ for (const width of WIDTHS) {
         const heart = page.getByTestId("favorite-heart");
 
         // Никогда не добавлял: честная подсказка вместо пустого ряда.
-        await expect(page.getByTestId("favorites-hint")).toHaveText("Нажмите ♡ на тренировке, чтобы добавить");
+        await expect(page.getByTestId("favorites-hint")).toHaveText("Нажмите на тренировке, чтобы добавить");
 
         // Тренировка: мгновенный тумблер.
         await page.getByTestId("my-workout-card").filter({ hasText: LONG_TITLE }).click();
@@ -805,7 +805,7 @@ for (const width of WIDTHS) {
 
         // Дублировать: редактор → «Дублировать» → на Главной сразу появляется «… (копия)».
         await cards.filter({ hasText: LONG_TITLE }).first().click();
-        await page.getByRole("button", { name: "Редактировать" }).click();
+        await page.getByRole("button", { name: "Изменить", exact: true }).click();
         await expect(page.getByRole("button", { name: "Дублировать" })).toBeVisible();
         await expectNoHorizontalOverflow(page, "Редактор с «Дублировать» и «Удалить»");
         await page.getByRole("button", { name: "Дублировать" }).click();
@@ -819,7 +819,7 @@ for (const width of WIDTHS) {
 
         // Удалить копию: сначала подтверждение с текстом, «Отмена» ничего не удаляет.
         await copy.click();
-        await page.getByRole("button", { name: "Редактировать" }).click();
+        await page.getByRole("button", { name: "Изменить", exact: true }).click();
         await page.getByRole("button", { name: "Удалить тренировку" }).click();
         await expect(page.getByTestId("workout-delete")).toContainText(
           "Удалить тренировку? Это не удалит уже выполненные тренировки из журнала.",
@@ -835,7 +835,7 @@ for (const width of WIDTHS) {
 
         // Удалить оригинал: исчезает с Главной и из поиска, после перезагрузки тоже.
         await cards.filter({ hasText: LONG_TITLE }).click();
-        await page.getByRole("button", { name: "Редактировать" }).click();
+        await page.getByRole("button", { name: "Изменить", exact: true }).click();
         await page.getByRole("button", { name: "Удалить тренировку" }).click();
         await page.getByRole("button", { name: "Да, удалить" }).click();
         await expect(page.getByTestId("my-workouts")).toBeVisible();

@@ -75,16 +75,16 @@ type LoadState =
  * экран "home" выше, а отдельный испытательный стенд рядом с ним. */
 type Tab = "home" | "workout" | "plans" | "journal" | "analytics" | "profile" | "subscription" | "faq" | "warmup" | "dashboardV2";
 
-const NAV_TABS: { key: Tab; icon: string; label: string }[] = [
-  { key: "home", icon: "🏠", label: "Главная" },
-  { key: "plans", icon: "🗓", label: "Планы" },
-  { key: "journal", icon: "📜", label: "Журнал" },
-  { key: "analytics", icon: "📈", label: "Аналитика" },
-  { key: "profile", icon: "👤", label: "Профиль" },
+const NAV_TABS: { key: Tab; label: string }[] = [
+  { key: "home", label: "Главная" },
+  { key: "plans", label: "Планы" },
+  { key: "journal", label: "Журнал" },
+  { key: "analytics", label: "Аналитика" },
+  { key: "profile", label: "Профиль" },
 ];
 
-const DASHBOARD_V2_NAV_TAB: { key: Tab; icon: string; label: string } = {
-  key: "dashboardV2", icon: "🧪", label: "Dashboard",
+const DASHBOARD_V2_NAV_TAB: { key: Tab; label: string } = {
+  key: "dashboardV2", label: "Dashboard",
 };
 
 type TelegramWebApp = { initData?: string; version?: string; platform?: string };

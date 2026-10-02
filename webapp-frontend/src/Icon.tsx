@@ -37,6 +37,9 @@ export const ICON_PATHS = {
   volumeDown: <><path d="M4.5 9.8h3l4-3.3v11l-4-3.3h-3z" /><path d="M15 9.2a4 4 0 0 1 0 5.6" /></>,
   chevronRight: <path d="m9 5 7 7-7 7" />,
   chevronDown: <path d="m5 9 7 7 7-7" />,
+  chevronUp: <path d="m5 15 7-7 7 7" />,
+  heart: <path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z" />,
+  download: <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14" />,
   info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.2M12 7.9v.1" /></>,
   play: <path d="M8 5.5v13l10.5-6.5L8 5.5Z" />,
   weightlift: <><path d="M3.5 10v4M6.5 8v8M17.5 8v8M20.5 10v4M6.5 12h11" /></>,
@@ -44,15 +47,15 @@ export const ICON_PATHS = {
 
 export type IconName = keyof typeof ICON_PATHS;
 
-type Props = { name: IconName | string; size?: number; strokeWidth?: number; className?: string };
+type Props = { name: IconName | string; size?: number; strokeWidth?: number; className?: string; /** Залить фигуру цветом текста (активное сердечко). */ filled?: boolean };
 
 /** Декоративная SVG-иконка: `aria-hidden`, цвет = currentColor. Неизвестное имя рисует «person». */
-export function Icon({ name, size = 18, strokeWidth = 1.9, className }: Props) {
+export function Icon({ name, size = 18, strokeWidth = 1.9, className, filled = false }: Props) {
   const paths = (ICON_PATHS as Record<string, ReactNode>)[name] ?? ICON_PATHS.person;
   return (
     <svg
       className={className === undefined ? "vp-icon" : `vp-icon ${className}`}
-      width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      width={size} height={size} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor"
       strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"
     >
       {paths}

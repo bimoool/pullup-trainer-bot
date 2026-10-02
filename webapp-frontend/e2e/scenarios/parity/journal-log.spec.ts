@@ -70,7 +70,10 @@ for (const width of WIDTHS) {
       // Карточка: тип и длительность; календарь показывает день с точкой.
       const activityCard = cards.filter({ hasText: "Плавание" });
       await expect(activityCard).toHaveCount(1);
-      await expect(activityCard.getByTestId("journal-activity-duration")).toHaveText("Длительность: 1:15");
+      await expect(activityCard.getByTestId("journal-activity-duration")).toHaveText("1:15");
+      await expect(activityCard.locator(".journal-stat[data-stat=\"duration\"] .journal-stat-label")).toHaveText("Длительность");
+      await expect(activityCard.locator(".journal-stat[data-stat=\"distance\"] .journal-stat-value")).toHaveText("—");
+      await expect(activityCard.getByTestId("journal-card-effort")).toHaveText("3");
       await expectNoHorizontalOverflow(page, "Журнал: карточка активности");
       await page.locator(".journal-month-label").click();
       await expect(page.locator(`[data-date="${yesterday}"][data-has-training="true"]`)).toBeVisible();
@@ -94,9 +97,13 @@ for (const width of WIDTHS) {
 
       const backdatedCard = cards.filter({ hasText: "Записана задним числом" });
       await expect(backdatedCard).toHaveCount(1);
-      await expect(backdatedCard).toContainText("8 · 7");
+      // карточка — суммы (#286): 2 подхода, 15 повторов, усилие 4; факт по подходам «8 · 7» — в деталях записи
+      await expect(backdatedCard.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      await expect(backdatedCard.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("15");
+      await expect(backdatedCard.getByTestId("journal-card-effort")).toHaveText("4");
       await expect(cards).toHaveCount(2);
       await openJournalEntry(page, backdatedCard);
+      await expect(page.getByText("Факт: 8 · 7")).toBeVisible();
       await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
       await expect(page.getByTestId("journal-workout-comment")).toContainText("без таймера");
       await page.getByRole("button", { name: "← Назад" }).click();

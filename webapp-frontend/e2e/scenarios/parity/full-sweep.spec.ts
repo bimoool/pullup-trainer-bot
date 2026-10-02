@@ -245,7 +245,7 @@ const FLOWS: Flow[] = [
     run: async ({ page, mode }) => {
       await visit(page, {
         where: "Главная → программа", open: () => byName(page, new RegExp(COURSE), false).first().click(),
-        dest: [page.getByText("Расписание · 8 нед."), mode === "populated" ? page.getByText("В плане ✓") : byName(page, "Добавить в план")],
+        dest: [page.getByText("Расписание · 8 нед."), mode === "populated" ? page.getByRole("button", { name: "В плане", exact: true }) : byName(page, "Добавить в план")],
         exit: { button: byName(page, "← Назад") }, origin: homeMarker(page),
       });
     },
@@ -280,7 +280,7 @@ const FLOWS: Flow[] = [
         dest: [byName(page, "Добавить", true)], exit: "telegram", origin: detail,
       });
       await visit(page, {
-        where: "Деталь → Редактировать", open: () => byName(page, "Редактировать").click(),
+        where: "Деталь → Изменить", open: () => byName(page, "Изменить").click(),
         dest: [page.getByText("Редактировать тренировку")], exit: "telegram", origin: detail,
       });
       await pressTelegramBackButton(page);
@@ -373,10 +373,10 @@ const FLOWS: Flow[] = [
       await openTab(page, "Журнал");
       const month = page.getByRole("button", { name: /^(?:Предыдущий|Следующий) месяц$/ });
       await expect(month).toHaveCount(2);
-      await page.getByRole("button", { name: /20\d\d ▾$/ }).click();
+      await page.getByRole("button", { name: /20\d\d$/ }).click();
       await expect(page.getByText("Пн", { exact: true })).toBeVisible();
       await expectScreenHealthy(page, "Журнал: календарь");
-      const label = page.getByRole("button", { name: /20\d\d ▴$/ });
+      const label = page.getByRole("button", { name: /20\d\d$/ });
       const before = await label.innerText();
       await month.first().click();
       await expect(label).not.toHaveText(before);
@@ -623,7 +623,10 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       // Журнал показывает запись (сегодняшняя — по названию Workout и значениям подходов).
       await openTab(page, "Журнал");
       await expect(page.getByText(WORKOUT, { exact: true }).first()).toBeVisible();
-      await expect(page.getByText("8 · 7", { exact: true }).first()).toBeVisible();
+      // карточка — суммы подходов/повторов (#286); сами «8 · 7» — в деталях записи
+      const todayCard = page.locator(".journal-card").filter({ hasText: WORKOUT }).first();
+      await expect(todayCard.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      await expect(todayCard.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("15");
       await expectScreenHealthy(page, "Журнал после тренировки");
 
       // #281: из записи Журнала — «Открыть тренировку» → деталь; назад — в Журнал.

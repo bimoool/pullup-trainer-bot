@@ -38,15 +38,14 @@ test("Journal v2: карточки всех протоколов, детали, 
   await page.getByRole("button", { name: "Журнал" }).click();
   const mixed = page.locator(".history-card").filter({ hasText: "Смешанная" });
   await expect(mixed).toBeVisible();
-  await expect(mixed.getByText("Подтягивания", { exact: true })).toBeVisible();
-  await expect(mixed.getByText("8 · 7", { exact: true })).toBeVisible();
-  await expect(mixed.getByText("Бёрпи · Интервалы")).toBeVisible();
-  await expect(mixed.getByText("0:15 · 2 интервала")).toBeVisible();
-  await expect(mixed.getByText("Отжимания · Максимум повторений")).toBeVisible();
-  await expect(mixed.getByText("2 попытки · лучший 22")).toBeVisible();
+  // Карточка (#286, референс Crimpd) — сетка суммарных показателей; факты по блокам смотрим в деталях записи.
+  const statValue = (card: typeof mixed, key: string) => card.locator(`.journal-stat[data-stat="${key}"] .journal-stat-value`);
+  await expect(statValue(mixed, "sets")).toHaveText("4"); // 2 подхода + 2 попытки на максимум (интервал подходов не даёт)
+  await expect(statValue(mixed, "reps")).toHaveText("55"); // 8 + 7 + 18 + 22
   const timeCard = page.locator(".history-card").filter({ hasText: "Только time" });
-  await expect(timeCard.getByText("Планка", { exact: true })).toBeVisible();
-  await expect(timeCard.getByText("0:30 · 0:25", { exact: true })).toBeVisible();
+  await expect(statValue(timeCard, "sets")).toHaveText("2");
+  await expect(timeCard.locator(".journal-stat[data-stat=\"time\"] .journal-stat-label")).toHaveText("Время");
+  await expect(statValue(timeCard, "time")).toHaveText("0:55");
   await expect(page.locator(".history-card").filter({ hasText: /\.00|reps|"type"|Упражнение #/ })).toHaveCount(0);
 
   // --- Пагинация: первая страница 25, "Показать ещё" дозагружает без дублей ---
@@ -80,6 +79,9 @@ test("Journal v2: карточки всех протоколов, детали, 
   // --- Детали: из уже загруженного объекта (запросов нет), Back сохраняет состояние ---
   const requestsBeforeDetail = sessionRequests;
   await openJournalEntry(page, mixed);
+  await expect(page.getByText("Подтягивания", { exact: true })).toBeVisible();
+  await expect(page.getByText("Бёрпи · Интервалы")).toBeVisible();
+  await expect(page.getByText("Отжимания · Максимум повторений")).toBeVisible();
   await expect(page.getByText("Подходы с повторениями")).toBeVisible();
   await expect(page.getByText("План: 8 · 8")).toBeVisible();
   await expect(page.getByText("Факт: 8 · 7")).toBeVisible();

@@ -63,7 +63,7 @@ test("Golden Journey: Главная → в план → тренировка �
   // --- Журнал: карточка, детали, безопасное удаление ---
   await page.getByRole("button", { name: "Журнал" }).click();
   const entry = page.locator(".history-card").filter({ hasText: TITLE });
-  await expect(entry.getByText("8 · 7", { exact: true })).toBeVisible();
+  await expect(entry.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("15"); // 8 + 7, факт «8 · 7» — в деталях
   await openJournalEntry(page, entry);
   await expect(page.getByText("Факт: 8 · 7")).toBeVisible();
   await page.getByRole("button", { name: /Удалить/ }).click();

@@ -1,6 +1,7 @@
 import { Button, Input, Section, Select } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
+import { Icon } from "./Icon";
 import {
   fetchTimerPreferences,
   fetchTimezoneOptions,
@@ -302,7 +303,7 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         <p className="section-title">Подписка</p>
         <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
         <Button className="vs-row-button" mode="outline" size="m" stretched onClick={onOpenSubscription}>
-          ⭐ Подробнее о подписке
+          <Icon name="star" size={18} className="vp-icon-lead" />Подробнее о подписке
         </Button>
         <Button
           className="vs-row-button"
@@ -312,14 +313,14 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
           data-testid="settings-oferta"
           onClick={() => openExternalLink(new URL(OFERTA_URL, window.location.origin).toString())}
         >
-          📄 Открыть текст оферты
+          <Icon name="file" size={18} className="vp-icon-lead" />Открыть текст оферты
         </Button>
       </div>
 
       <div className="profile-card">
         <p className="section-title">Данные</p>
         <Button className="vs-row-button" mode="outline" size="m" stretched data-testid="settings-export" onClick={() => void handleExport()}>
-          ⬇️ Скачать историю
+          <Icon name="download" size={18} className="vp-icon-lead" />Скачать историю
         </Button>
         {exportError && <p className="error-banner" role="alert">{exportError}</p>}
       </div>

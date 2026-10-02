@@ -3,7 +3,9 @@ import { useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { effortWithWord } from "./effortScale";
-import { describeJournalBlock } from "./journalFormat";
+import { describeJournalBlock, journalEntryTitle } from "./journalFormat";
+import { journalCardStats } from "./journalStats";
+import { Icon } from "./Icon";
 import { formatSessionDateTime, formatSessionTime } from "./journalTime";
 import { JOURNAL_KIND_LABELS, journalKind } from "./journalKind";
 import { formatDurationHm } from "./journalLog";
@@ -41,31 +43,30 @@ export function JournalSessionCard({
     >
       <span className="journal-card-marker" aria-hidden="true" data-testid="journal-kind-marker" />
       <div className="journal-card-body">
-        {/* Компактная карточка: строка 1 — название + время, строка 2 — тип/длительность/блоки. */}
+        {/* Референс Crimpd (#286): строка «бейдж типа + название + время», ниже сетка из 3 подписанных показателей.
+            Факты по блокам — в деталях записи (журнал показывает суммы). */}
         <p className="journal-card-title">
-          <span className="journal-card-name">{session.title ?? "Тренировка"}</span>
+          <span className="journal-kind-label" data-testid="journal-kind-badge">{JOURNAL_KIND_LABELS[kind]}</span>
+          <span className="journal-card-name">{journalEntryTitle(session)}</span>
           <span className="journal-card-time">{formatSessionTime(session.performed_at, timeZone)}</span>
         </p>
-        <p className="journal-card-meta">
-          {kind !== "plan" && <span className="journal-kind-label">{JOURNAL_KIND_LABELS[kind]}</span>}
-          {session.duration_seconds != null && (
-            <span data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</span>
-          )}
-          {session.effort !== null && (
-            <span className="journal-effort" data-effort={String(Number(session.effort))} data-testid="journal-card-effort">
-              Усилие {Number(session.effort)}
-            </span>
-          )}
-          {session.blocks.map((block) => {
-            const view = describeJournalBlock(block);
-            return (
-              <span key={block.order_index} className="journal-block">
-                {view.header !== null && <span className="journal-block-header">{view.header}</span>}
-                <span className="journal-block-fact">{view.fact}</span>
-              </span>
-            );
-          })}
-        </p>
+        <dl className="journal-stat-grid" data-testid="journal-stat-grid">
+          {journalCardStats(session).map((stat) => (
+            <div key={stat.key} className="journal-stat" data-stat={stat.key}>
+              <dt className="journal-stat-label">{stat.label}</dt>
+              <dd
+                className={stat.effort !== null ? "journal-stat-value journal-effort" : "journal-stat-value"}
+                data-effort={stat.effort !== null ? String(stat.effort) : undefined}
+                data-testid={
+                  stat.key === "effort" ? "journal-card-effort" : stat.key === "duration" ? "journal-activity-duration" : undefined
+                }
+                title={stat.effort !== null ? effortWithWord(stat.effort) ?? undefined : undefined}
+              >
+                {stat.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </div>
   );
@@ -167,7 +168,7 @@ export function JournalV2Detail({
           <path d="M15 5l-7 7 7 7" />
         </svg>
       </button>
-      <p className="plan-title">{session.title ?? "Тренировка"}</p>
+      <p className="plan-title">{journalEntryTitle(session)}</p>
       <p className="history-date">{formatSessionDateTime(session.performed_at, timeZone)}</p>
       {session.duration_seconds != null && (
         <p className="block-subtitle" data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</p>
@@ -207,18 +208,18 @@ export function JournalV2Detail({
       {session.can_edit && (
         <>
           <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("edit")}>
-            ✏️ Изменить
+            <Icon name="edit" size={18} className="vp-icon-lead" />Изменить
           </Button>
           {session.source !== "elective" && (
             <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("clone")}>
-              ⧉ Повторить (клонировать)
+              <Icon name="repeat" size={18} className="vp-icon-lead" />Повторить (клонировать)
             </Button>
           )}
         </>
       )}
       {session.can_delete && (
         <Button className="action-button" size="l" stretched mode="outline" loading={deleting} onClick={() => void handleDelete()}>
-          🗑 Удалить
+          <Icon name="trash" size={18} className="vp-icon-lead" />Удалить
         </Button>
       )}
     </div>

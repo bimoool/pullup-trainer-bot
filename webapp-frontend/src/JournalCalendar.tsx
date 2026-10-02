@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 import { buildMonthGrid, monthLabel, WEEKDAY_HEADERS } from "./journalCalendarModel";
 
 /** Месяц-бар «‹ Октябрь 2026 ›» и раскрывающийся календарь (#256): Пн-первая
@@ -27,7 +28,7 @@ export function JournalCalendar({
           aria-expanded={expanded}
           onClick={onToggleExpanded}
         >
-          {monthLabel(month)} {expanded ? "▴" : "▾"}
+          {monthLabel(month)} <Icon name={expanded ? "chevronUp" : "chevronDown"} size={14} strokeWidth={2.4} className="vp-icon-inline" />
         </button>
         <button type="button" className="journal-month-arrow" aria-label="Следующий месяц" onClick={() => onShift(1)}>
           ›

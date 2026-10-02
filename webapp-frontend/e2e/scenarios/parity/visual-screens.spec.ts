@@ -24,27 +24,61 @@ for (const width of WIDTHS) {
       test.use({ viewport: { width, height: 740 } });
       test.setTimeout(90_000);
 
-      test("Журнал: карточка из 2 строк с цветной меткой типа, заголовок дня, календарь без overflow", async ({ page }) => {
+      test("Журнал: карточка «бейдж + название» и подписанная сетка из 3 показателей, цветная метка типа, заголовок дня, календарь без overflow", async ({ page }) => {
         const { consoleErrors, apiFailures } = await open(page, USERS.journal, theme, "Журнал");
         await expect(page.locator(".journal-card").first()).toBeVisible();
-        // компактность проверяем на записи из одного блока (многоблочные переносят блоки в строку меты)
-        const card = page.locator(".journal-card").filter({ hasNot: page.locator(".journal-block + .journal-block") }).first();
-        await expect(card).toBeVisible();
+        const card = page.locator(".journal-card").first();
         await expect(page.locator(".journal-day-header").first()).toBeVisible();
         await expect(page.locator(".journal-week-header").first()).toBeVisible();
 
+        // Референс Crimpd (#286): строка «бейдж типа + название (+ время)», ниже сетка из 3 подписанных колонок.
         const body = card.locator(".journal-card-body");
-        await expect(body.locator("> p"), "ровно две строки: название и мета").toHaveCount(2);
-        await expect(body.locator(".journal-card-title")).toBeVisible();
-        await expect(body.locator(".journal-card-meta")).toBeVisible();
+        await expect(body.locator("> *"), "две части: строка заголовка и сетка показателей").toHaveCount(2);
+        const title = body.locator(".journal-card-title");
+        await expect(title).toBeVisible();
+        await expect(title.getByTestId("journal-kind-badge")).toBeVisible();
+        await expect(title.locator(".journal-card-name")).not.toBeEmpty();
+        const grid = body.getByTestId("journal-stat-grid");
+        await expect(grid).toBeVisible();
+        const stats = grid.locator(".journal-stat");
+        await expect(stats, "3 показателя").toHaveCount(3);
+        for (const stat of await stats.all()) {
+          await expect(stat.locator(".journal-stat-label")).not.toBeEmpty();
+          await expect(stat.locator(".journal-stat-value")).not.toBeEmpty();
+        }
+        await expect(grid.locator(".journal-stat-label").last()).toHaveText("Усилие");
+        const columns = await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
+        expect(columns, "3 колонки").toBe(3);
+        const xs = await Promise.all((await stats.all()).map(async (stat) => (await stat.boundingBox())!.x));
+        expect(xs[0] < xs[1] && xs[1] < xs[2], "показатели в один ряд слева направо").toBe(true);
         const marker = card.getByTestId("journal-kind-marker");
         await expect(marker).toBeVisible();
         const markerColor = await marker.evaluate((el) => getComputedStyle(el).backgroundColor);
         expect(markerColor).not.toBe("rgba(0, 0, 0, 0)");
+        // цвет усилия на карточке читаем как текст: контраст ≥ 4.5:1 с фоном карточки (шкала effortScale 1–4; 5 — системный «destructive»)
+        const contrasts = await page.evaluate(() => {
+          const toRgb = (css: string) => {
+            const ctx = document.createElement("canvas").getContext("2d")!;
+            ctx.fillStyle = "#000"; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1);
+            return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3);
+          };
+          const lum = ([r, g, b]: number[]) => {
+            const [R, G, B] = [r, g, b].map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+            return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+          };
+          return Array.from(document.querySelectorAll<HTMLElement>('.journal-card .journal-effort[data-effort]'))
+            .filter((el) => Number(el.dataset.effort) <= 4)
+            .map((el) => {
+              const fg = lum(toRgb(getComputedStyle(el).color));
+              const bg = lum(toRgb(getComputedStyle(el.closest(".journal-card")!).backgroundColor));
+              return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+            });
+        });
+        for (const ratio of contrasts) {
+          expect(ratio, "контраст цвета усилия на карточке").toBeGreaterThanOrEqual(4.5);
+        }
         const kind = await card.getAttribute("data-kind");
         expect(["plan", "freeform", "logged", "elective", "backdated"]).toContain(kind);
-        const box = (await card.boundingBox())!;
-        expect(box.height, "компактная карточка одного блока").toBeLessThanOrEqual(84);
         await expectNoHorizontalOverflow(page, "Журнал: лента");
 
         await page.locator(".journal-month-label").click();
@@ -88,6 +122,9 @@ for (const width of WIDTHS) {
         // метрика — выпадающий список в той же шапке, что и период
         const header = card.getByTestId("analytics-header");
         await expect(header.getByRole("combobox", { name: "Метрика" }).locator("option")).toHaveText(["Тренировки", "Минуты"]);
+        // iOS зумит страницу при фокусе на поле < 16px: селект метрики не должен быть мельче
+        const metricFont = await header.getByRole("combobox", { name: "Метрика" }).evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+        expect(metricFont, "селект метрики ≥ 16px (без iOS-зума)").toBeGreaterThanOrEqual(16);
         await expect(page.getByRole("tablist", { name: "Раздел аналитики" }).getByRole("tab", { selected: true }))
           .toHaveText("Тренировки");
 

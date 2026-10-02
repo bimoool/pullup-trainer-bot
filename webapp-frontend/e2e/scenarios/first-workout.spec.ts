@@ -21,7 +21,7 @@ test("первая тренировка: курс из каталога → в �
   await expect(page.getByRole("button", { name: "Начать тренировку" })).toHaveCount(0);
   await page.getByRole("button", { name: PROGRAM }).click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
-  await expect(page.getByRole("button", { name: "В плане ✓" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "В плане", exact: true })).toBeVisible();
 
   await startWorkout(page, PROGRAM);
   await playSets(page, ["10"]);
@@ -30,6 +30,8 @@ test("первая тренировка: курс из каталога → в �
 
   await expect(page.getByText("Тренировка завершена", { exact: true })).toBeVisible();
   await expect(page.getByText(/— 1\/3/)).toBeVisible(); // один из трёх подходов блока A
+  // статус блока не только иконкой: скринридер слышит «не выполнено» (1 из 3 подходов)
+  await expect(page.locator(".live-card-title").filter({ hasText: /— 1\/3/ }).locator(".vp-sr-only")).toHaveText(", не выполнено");
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);

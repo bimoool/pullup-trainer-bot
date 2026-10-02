@@ -1,6 +1,7 @@
 import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
+import { Icon } from "./Icon";
 import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
 import { HistoryEditForm } from "./HistoryEditForm";
 import { JournalCalendar } from "./JournalCalendar";
@@ -249,7 +250,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
               на бэкенде (WorkoutRepository.edit_noncascade_workout), кнопка
               одна для всех записей. */}
           <Button mode="outline" size="s" onClick={() => setEditingWorkoutId(entry.workout_id)}>
-            ✏️ Изменить
+            <Icon name="edit" size={16} className="vp-icon-lead" />Изменить
           </Button>
           {/* Удаление (issue #146) — теперь и для каскадных тренировок
               (решение Кирилла, вариант A: удаление пересчитывает цепочку
@@ -262,7 +263,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
               loading={deletingWorkoutId === entry.workout_id}
               onClick={() => void handleDelete(entry.workout_id, entry.is_backdated)}
             >
-              🗑 Удалить
+              <Icon name="trash" size={16} className="vp-icon-lead" />Удалить
             </Button>
           )}
         </div>
@@ -302,6 +303,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
       )}
       {sheetSession !== null && (
         <JournalEntrySheet
+          key={sheetSession.id}
           initDataRaw={initDataRaw}
           session={sheetSession}
           timeZone={journal.timezone}
@@ -313,7 +315,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
           onClone={() => openDetail(sheetSession.id, "clone")}
           onOpenWorkout={() => {
             if (onOpenWorkout !== undefined && journal.month !== null && sheetSession.workout_id != null) {
-              onOpenWorkout(sheetSession.workout_id, { month: journal.month, day: journal.day, sessionId: sheetSession.id });
+              onOpenWorkout(sheetSession.workout_id, { month: journal.month, day: journal.day, sessionId: null });
             }
           }}
           onDeleted={(sessionId) => {

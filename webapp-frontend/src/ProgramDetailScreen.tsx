@@ -2,6 +2,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 
 import { useEffect, useState } from "react";
 
+import { Icon } from "./Icon";
 import { fetchProgramSchedule, type ProgramResponseV2, type ProgramScheduleV2 } from "./apiV2";
 import { BackChevron } from "./BackChevron";
 import { FavoriteHeart } from "./FavoriteHeart";
@@ -126,7 +127,7 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
         disabled={included || adding}
         onClick={onAdd}
       >
-        {included ? "В плане ✓" : adding ? "Добавляю…" : "Добавить в план"}
+        {included ? <><Icon name="check" size={18} strokeWidth={2.4} className="vp-icon-lead" />В плане</> : adding ? "Добавляю…" : "Добавить в план"}
       </Button>
       {addError && <p className="screen-message">Не удалось добавить курс: {addError}</p>}
     </div>
