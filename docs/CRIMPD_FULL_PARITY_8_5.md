@@ -31,7 +31,7 @@ any merge into `develop/current`.
 | Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | category + «Избранное» chips on Search | PARTIAL | equipment: DOMAIN — exercises have no equipment field | category chips (#254, done), favorites chip (#272, done) | #254, #272 | crimpd-parity.spec.ts «Home» (category chips), «Favorites» (chip) |
 | Category rows (horizontal carousels, «N Workouts») | H2–H4, H13; HO 3 | program rows grouped by category («Другое» for none) | DONE | — | programs grouped by `Program.category` rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
 | Category screen (info, Featured / All) | H4; d/category_all_tab | none | MISSING | — | category row → filtered search (Featured tab: DOMAIN — no editorial flag yet; collections cover curation) | #254, #271 | — |
-| Featured playlists carousel | H5; HO 4 | none | MISSING | no collections model | «Подборки» row from curated collections | #271 | — |
+| Featured playlists carousel | H5; HO 4 | CollectionsRow.tsx on Главная; `GET /api/v2/collections` | DONE | — | «Подборки» row from curated collections (card: author, title, count, description; hidden when none) | #271 | parity/collections.spec.ts «Collections» (320/390, light/dark); tests/test_web/test_v2_collections.py; tests/collectionsFormat.test.ts |
 | «Create Custom Workouts» banner | H6 | «Создать» button on Главная | DONE | — | — | — | home-discovery.spec.ts |
 | My Workouts grid | H7 | «Мои тренировки» list | DONE | — | — | — | home-discovery.spec.ts, crimpd-parity Baseline |
 | «Log Cross-Training» banner / entry | H8 | Журнал «+ Записать» → «Другую активность»; «+» sheet на Главной → «Записать в журнал» | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
@@ -169,7 +169,7 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Curated playlists (creator, description, workouts) | D1; d/playlist_detail | none | MISSING | — | curated collections (author «Турникмэн», no social links) | #271 | — |
+| Curated playlists (creator, description, workouts) | D1; d/playlist_detail | CollectionScreen.tsx; `GET /api/v2/collections/{id}` | DONE | items are programs and system exercises (no public system-workout catalog exists, PROJECT_SPEC §5) | curated collections (author «Турникмэн», no social links) | #271 | parity/collections.spec.ts «Collections»; tests/test_web/test_v2_collections.py (visibility, 404); tests/test_scripts/test_seed_collections.py |
 | Category collections (sub-focus cards) | D3 | programs not grouped | MISSING | — | category rows | #254 | — |
 | Templates (levels, phases) | D4 | Programs (structure types) | PARTIAL | no preview | schedule preview | #266 | — |
 | Progressions (lettered / % variants) | D5 | programs + auto-progression (ours) | DOMAIN-EQUIVALENT | our progression model | — | — | session-progression-edit.spec.ts |

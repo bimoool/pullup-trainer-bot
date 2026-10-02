@@ -1002,3 +1002,34 @@ export async function updateAssessmentResult(
 export async function deleteAssessmentResult(initDataRaw: string, resultId: number): Promise<void> {
   return apiV2Delete(`/api/v2/assessments/results/${resultId}`, initDataRaw);
 }
+
+/** Редакционные подборки (CRIMPD #271): витрина на Главной и экран подборки. */
+export interface CollectionSummaryV2 {
+  id: number;
+  title: string;
+  description: string | null;
+  author: string;
+  items_count: number;
+  programs_count: number;
+  exercises_count: number;
+}
+
+export interface CollectionItemV2 {
+  item_type: "program" | "exercise";
+  target_id: number;
+  title: string;
+  subtitle: string | null;
+}
+
+export interface CollectionDetailV2 extends CollectionSummaryV2 {
+  items: CollectionItemV2[];
+}
+
+export async function fetchCollections(initDataRaw: string): Promise<CollectionSummaryV2[]> {
+  const response = await apiV2Get<{ collections: CollectionSummaryV2[] }>("/api/v2/collections", initDataRaw);
+  return response.collections;
+}
+
+export async function fetchCollection(initDataRaw: string, collectionId: number): Promise<CollectionDetailV2> {
+  return apiV2Get<CollectionDetailV2>(`/api/v2/collections/${collectionId}`, initDataRaw);
+}

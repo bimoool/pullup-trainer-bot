@@ -91,6 +91,7 @@ from app.db.models_program import (
     TrainingSession,
 )
 from app.db.repositories.body_metrics import BodyMetricRepository
+from app.db.repositories.collections import CollectionRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -1363,7 +1364,56 @@ async def seed_body_metrics(session: AsyncSession, telegram_id: int) -> None:
     await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal("76.5"), now - timedelta(days=14))
 
 
+async def seed_collections_scenario(session: AsyncSession, telegram_id: int) -> None:
+    """#271 «Collections»: онбордившийся пользователь + глобальные (find-or-create) две
+    программы «Подборка: …», system-упражнение «Подборка: упражнение», приватное user-упражнение
+    и две подборки: опубликованная «E2E: подборка» (2 программы + system- и приватное упражнение —
+    приватное не должно показываться) и неопубликованный черновик (на Главной не виден)."""
+    user = await _onboard(session, telegram_id)
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    program_ids: list[int] = []
+    for name, category in (("Подборка: сила", "e2e_collection_strength"), ("Подборка: гибкость", "e2e_collection_mobility")):
+        program = (await session.execute(select(Program).where(Program.name == name))).scalars().first()
+        if program is None:
+            program = Program(
+                name=name, goal=f"цель {name}", structure_type=ProgramStructureType.RECURRING,
+                category=category, progression_strategy_id=profile.id,
+                config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+            )
+            session.add(program)
+            await session.flush()
+        program_ids.append(program.id)
+    system_exercise = (await session.execute(
+        select(Exercise).where(Exercise.name == "Подборка: упражнение", Exercise.source_type == "system"),
+    )).scalars().first()
+    if system_exercise is None:
+        system_exercise = Exercise(
+            name="Подборка: упражнение", metric_type=MetricType.REPS, category="e2e_collection", source_type="system",
+        )
+        session.add(system_exercise)
+    private_exercise = Exercise(
+        name="Подборка: приватное", metric_type=MetricType.REPS, category="e2e_collection",
+        source_type="user", owner_user_id=user.id,
+    )
+    session.add(private_exercise)
+    await session.flush()
+    repo = CollectionRepository(session)
+    await repo.upsert_collection(
+        slug="e2e-collection", title="E2E: подборка", sort_order=-100,
+        description="Подборка для E2E: две программы и упражнение, приватное содержимое скрыто.",
+        program_ids=program_ids, exercise_ids=[system_exercise.id, private_exercise.id],
+    )
+    await repo.upsert_collection(
+        slug="e2e-draft", title="E2E: черновик", description="Не опубликовано", sort_order=-99,
+        is_published=False, program_ids=program_ids,
+    )
+    await session.flush()
+
+
 SCENARIOS = {
+    "collections": seed_collections_scenario,
     "analytics_distribution": seed_analytics_distribution,
     "body_metrics": seed_body_metrics,
     "background_interval": seed_background_interval,
