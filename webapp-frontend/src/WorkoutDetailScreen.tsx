@@ -162,11 +162,12 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           </span>
           <span className="workout-detail-action-label">Добавить в план</span>
         </button>
-        <button type="button" className="workout-detail-action" onClick={() => onEdit(workout.id)}>
+        {/* Видимая подпись короткая (в 4 колонки на 320 «Редактировать» не помещается), имя для AT и тестов — полное. */}
+        <button type="button" className="workout-detail-action" aria-label="Редактировать" onClick={() => onEdit(workout.id)}>
           <span className="workout-detail-action-icon" aria-hidden="true">
             <ActionIcon path="M4.5 19.5l1-4L16 5l3 3-10.5 10.5zM14 7l3 3" />
           </span>
-          <span className="workout-detail-action-label">Редактировать</span>
+          <span className="workout-detail-action-label">Изменить</span>
         </button>
       </div>
 
