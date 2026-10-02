@@ -133,4 +133,61 @@ for (const width of WIDTHS) {
     await page.waitForTimeout(800);
     await shot(page, width, "38_tests_hub_vp", false);
   });
+
+  // Live Session (пре-экран, работа, отдых, итог), Настройки, Коллекции (#280/#277, волна 13).
+  // Сиды: session_recovery (9976xx, как в parity/visual-live), ready (997706), collections (9994xx).
+  test(`capture live+settings+collections @${width}`, async ({ page }) => {
+    test.setTimeout(240_000);
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.setViewportSize({ width, height: width === 320 ? 640 : 844 });
+    const liveUser = ({ 320: { light: 997_601, dark: 997_611 }, 390: { light: 997_621, dark: 997_631 } } as Record<number, Record<string, number>>)[width]?.[THEME] ?? 997_601;
+    const TITLE = "Тренировка восстановления";
+    await openAppAs(page, liveUser, { theme: THEME });
+    await page.getByTestId("my-workout-card").filter({ hasText: TITLE }).click();
+    await page.getByRole("button", { name: "Добавить в план" }).click();
+    await page.getByRole("button", { name: "Свободный пул" }).click();
+    await page.getByRole("button", { name: "Добавить", exact: true }).click();
+    const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
+    await group.getByRole("button", { name: /^Начать: / }).click();
+    await shot(page, width, "40_live_pre_screen", false);
+    await page.getByRole("button", { name: "Начать", exact: true }).click();
+    await page.getByText("Живая тренировка").waitFor();
+    await shot(page, width, "41_live_get_ready", false);
+    await clickAndSync(page, "Готов", "/phase/next");
+    await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+    await shot(page, width, "42_live_work", false);
+    await clickAndSync(page, "Готово", "/sets:batch");
+    await page.getByRole("heading", { name: "Отдых", exact: true, level: 2 }).waitFor();
+    await shot(page, width, "43_live_rest", false);
+    for (const reps of ["7", "6"]) {
+      await clickAndSync(page, "Пропустить отдых", "/phase/next");
+      await clickAndSync(page, "Готов", "/phase/next");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill(reps);
+      await clickAndSync(page, "Готово", "/sets:batch");
+    }
+    await page.getByRole("button", { name: "Завершить", exact: true }).click();
+    await page.getByTestId("workout-review").waitFor();
+    await shot(page, width, "44_live_review_sheet", false);
+    await page.getByTestId("workout-review").getByTestId("workout-effort").getByRole("button").nth(2).click();
+    await clickAndSync(page, "Сохранить и завершить", "/complete");
+    await page.getByText("Тренировка завершена").waitFor();
+    await shot(page, width, "45_live_summary", false);
+
+    await page.goto("about:blank");
+    await openAppAs(page, 997_706, { theme: THEME });
+    await page.locator(".bottom-tabbar").getByRole("button", { name: "Профиль" }).click();
+    await page.getByTestId("profile-settings").click();
+    await page.getByTestId("settings-screen").waitFor();
+    await shot(page, width, "46_settings");
+
+    await page.goto("about:blank");
+    await openAppAs(page, width === 320 ? 999_401 : 999_411, { theme: THEME });
+    await page.getByTestId("collections-row").waitFor();
+    await shot(page, width, "47_home_collections", false);
+    await page.getByTestId("collections-row").scrollIntoViewIfNeeded();
+    await shot(page, width, "47_home_collections_row_vp", false);
+    await page.getByTestId("collection-card").first().click();
+    await page.waitForTimeout(800);
+    await shot(page, width, "48_collection_detail_vp", false);
+  });
 }
