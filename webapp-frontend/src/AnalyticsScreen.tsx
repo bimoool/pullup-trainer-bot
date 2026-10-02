@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { createExportLink } from "./apiV2";
+import { type ExportWebApp, startDownload } from "./exportDownload";
 import { ProgressScreen } from "./ProgressScreen";
 import { TrainingAnalytics } from "./TrainingAnalytics";
 
@@ -11,6 +13,35 @@ const MODES: { key: Mode; label: string }[] = [
   { key: "training", label: "Тренировки" },
   { key: "program", label: "Программа" },
 ];
+
+/** Карточка «Экспорт данных — CSV» (#267): подписанная ссылка → downloadFile в Telegram, иначе открыть. */
+function ExportCard({ initDataRaw }: Props) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function download() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await createExportLink(initDataRaw);
+      const webApp = (window as unknown as { Telegram?: { WebApp?: ExportWebApp } }).Telegram?.WebApp;
+      startDownload(url, { webApp, origin: window.location.origin, open: (target) => window.open(target, "_blank") });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось подготовить файл");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="profile-card" data-testid="export-card">
+      <p className="section-title">Экспорт данных — CSV</p>
+      <p className="hint">Вся история тренировок: по строке на подход, открывается в Excel.</p>
+      <button type="button" className="action-button" data-testid="export-download" disabled={busy} onClick={download}>
+        Скачать
+      </button>
+      {error && <p className="error-banner"data-testid="export-error" role="alert">{error}</p>}
+    </div>
+  );
+}
 
 /** Вкладка "Аналитика": сверху переключатель "Тренировки | Программа".
  * По умолчанию — "Тренировки" (Analytics v2, TrainingSession); прежняя
@@ -36,6 +67,7 @@ export function AnalyticsScreen({ initDataRaw }: Props) {
         ))}
       </div>
       {mode === "training" ? <TrainingAnalytics initDataRaw={initDataRaw} /> : <ProgressScreen initDataRaw={initDataRaw} />}
+      <ExportCard initDataRaw={initDataRaw} />
     </div>
   );
 }
