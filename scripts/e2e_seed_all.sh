@@ -103,3 +103,8 @@ for id in 999121 999122 999131 999132; do seed background_interval "$id"; done
 for id in 999201 999202 999203 999204 999211 999212 999213 999214; do seed body_metrics "$id"; done
 # Analytics distribution (#274): 999301/999311 (320/390 px, только чтение), каждый + retry (id+1).
 for id in 999301 999302 999311 999312; do seed analytics_distribution "$id"; done
+# Residual gaps (#281): 9973xx — Журнал → «Открыть тренировку» (workout_detail), Главная «Все ›» + тесты в поиске
+# (home_discovery, только чтение), 9974xx — вибрация конца фазы (golden_journey, отдых 2 с); каждый + retry (id+1).
+for id in 997301 997302 997311 997312; do seed workout_detail "$id"; done
+for id in 997321 997322 997331 997332; do seed home_discovery "$id"; done
+for id in 997401 997402 997403 997404 997411 997412 997413 997414; do seed golden_journey "$id"; done
