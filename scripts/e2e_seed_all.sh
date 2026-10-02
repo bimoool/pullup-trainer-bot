@@ -182,3 +182,5 @@ for id in 996141 996142 996151 996152 996161 996162 996171 996172; do seed journ
 # «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
 # на тест id + retry (≤ +3); session_recovery.
 for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done
+# A11y follow-up (#290, a11y2): Live-панель оценки на 320/390 × light/dark — 998821/998823/998825/998827, каждый + retry (id+1); session_recovery (мутирует).
+for id in 998821 998822 998823 998824 998825 998826 998827 998828; do seed session_recovery "$id"; done

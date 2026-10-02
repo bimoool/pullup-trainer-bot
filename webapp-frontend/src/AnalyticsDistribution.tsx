@@ -99,6 +99,7 @@ export function DistributionTable({ dist, homeOrder = [] }: { dist: AnalyticsDis
     .filter(hasValue)
     .reduce((sum, category) => sum + 1 + category.subcategories.filter(hasValue).length, 0);
   const hiddenCount = allRows - shownRows;
+  // Нет ни одной строки с данными (новый пользователь): раскрывать нечего, кроме нулей каталога — без кнопки (#290).
   return (
     <div className="profile-card analytics-summary-card" data-testid="analytics-summary">
       <p className="section-title">Сводка</p>
@@ -117,7 +118,7 @@ export function DistributionTable({ dist, homeOrder = [] }: { dist: AnalyticsDis
           </tr>
         </tbody>
       </table>
-      {(hiddenCount > 0 || showAll) && (
+      {((hiddenCount > 0 && shownRows > 0) || showAll) && (
         <button
           type="button" className="analytics-show-all" data-testid="summary-show-all" aria-expanded={showAll}
           onClick={() => setShowAll((value) => !value)}

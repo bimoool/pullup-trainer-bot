@@ -1,4 +1,5 @@
 import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
@@ -165,7 +166,20 @@ export function streakValue(streak: number, workoutsCount: number): string {
   if (workoutsCount === 0 || streak <= 1) {
     return "—";
   }
-  return `🔥 ${streak}`;
+  return String(streak);
+}
+
+/** Серия с SVG-пламенем вместо эмодзи (#290): число из streakValue, «—» без значка. */
+export function StreakValue({ streak, workoutsCount }: { streak: number; workoutsCount: number }) {
+  const value = streakValue(streak, workoutsCount);
+  if (value === "—") {
+    return <>{value}</>;
+  }
+  return (
+    <span className="streak-value">
+      <Icon name="flame" size={16} /> {value}
+    </span>
+  );
 }
 
 type PlanState = {

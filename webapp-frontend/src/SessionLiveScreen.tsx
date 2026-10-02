@@ -1,4 +1,5 @@
 import { Button } from "@telegram-apps/telegram-ui";
+import { Icon } from "./Icon";
 import { useEffect, useRef, useState } from "react";
 
 import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
@@ -111,6 +112,14 @@ export function SessionLiveScreen({
   // #265: ручное раскрытие/сворачивание панели записи; null — решает фаза
   // (работа: свёрнута, длинный отдых: раскрыта). Сбрасывается при смене фазы.
   const [panelOpen, setPanelOpen] = useState<boolean | null>(null);
+  // #290: при открытии панели «Оценка и заметка» её органы управления должны быть видны над липким
+  // транспортом (на 320px он перекрывал оценку 1–5 до прокрутки). Только прокрутка — состояние не трогаем;
+  // scroll-padding-bottom (live.css) оставляет место под транспортом.
+  useEffect(() => {
+    if (panelOpen === true) {
+      document.querySelector<HTMLElement>('[data-testid="log-panel"] .live-effort')?.scrollIntoView({ block: "nearest" });
+    }
+  }, [panelOpen]);
   // Review-шаг перед завершением: оценка тренировки целиком + заметка.
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
@@ -949,7 +958,7 @@ export function SessionLiveScreen({
                 type="button" className="live-link-button live-edit-button" data-testid="log-panel-toggle"
                 aria-expanded={false} aria-label="Изменить" onClick={startEditPrevious}
               >
-                <span aria-hidden="true">✎</span> Изменить
+                <Icon name="edit" size={14} /> Изменить
               </button>
             </div>
           )}
