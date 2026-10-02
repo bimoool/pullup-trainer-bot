@@ -1382,6 +1382,14 @@ html {
 .journal-edit-textarea { min-height: 88px; resize: vertical; font-family: inherit; }
 .journal-edit-set { padding: 0 16px; }
 
+/* Настройки: строка-переключатель (#281) */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
 /* Подборки (CRIMPD #271): ряд на Главной и экран подборки — только новые классы,
    ряд/карточка переиспользуют .home-program-row / .home-program-card; кнопка — свой класс, чтобы
    E2E-селекторы `.program-card-button` (каталог программ) не цеплялись за подборки. */

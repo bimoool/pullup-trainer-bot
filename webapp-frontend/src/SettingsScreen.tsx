@@ -18,6 +18,7 @@ import { setDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
 import { downloadHistoryCsv } from "./exportAction";
 import { OFERTA_URL, openExternalLink } from "./SubscriptionScreen";
 import { THEME_LABEL } from "./theme";
+import { isVibrationEnabled, setVibrationEnabled } from "./vibration";
 import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
 
@@ -91,6 +92,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
   const [timezoneOptions, setTimezoneOptions] = useState<TimezoneOption[]>([]);
   const [volume, setVolume] = useState<number | null>(null);
   const [initialVolume, setInitialVolume] = useState<number | null>(null);
+  // Вибрация (#281) — настройка этого устройства (localStorage), в черновике до «Сохранить».
+  const [vibration, setVibration] = useState(isVibrationEnabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -168,6 +171,7 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
       if (volume !== null && volume !== initialVolume) {
         await updateTimerPreferences(initDataRaw, { sound_volume_percent: volume });
       }
+      setVibrationEnabled(vibration);
       setDisplayPrefs(prefs);
       onSaved(updated);
       onBack();
@@ -280,6 +284,17 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
             />
           </>
         )}
+        <label className="settings-toggle-row" htmlFor="settings-vibration">
+          <input
+            id="settings-vibration"
+            type="checkbox"
+            data-testid="settings-vibration"
+            checked={vibration}
+            onChange={(e) => setVibration(e.target.checked)}
+          />
+          <span>Вибрация в конце фазы</span>
+        </label>
+        <p className="hint">Настройка этого устройства: срабатывает, пока экран тренировки открыт.</p>
       </div>
 
       <div className="profile-card">

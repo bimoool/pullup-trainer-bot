@@ -118,6 +118,8 @@ export function App() {
   const [journalLogRequest, setJournalLogRequest] = useState(0);
   // «Записать» на Workout Detail: тренировка, которой предзаполняется форма записи.
   const [journalLogWorkoutId, setJournalLogWorkoutId] = useState<number | null>(null);
+  // «Открыть тренировку» из Журнала (#281): Главная открывается сразу на Workout Detail.
+  const [homeWorkoutId, setHomeWorkoutId] = useState<number | null>(null);
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -347,6 +349,9 @@ export function App() {
           onOpenJournalLog={() => { setJournalLogWorkoutId(null); setJournalLogRequest((value) => value + 1); setTab("journal"); }}
           onStartWorkout={startWorkout}
           onLogWorkout={logWorkout}
+          initialWorkoutId={homeWorkoutId}
+          onInitialWorkoutShown={() => setHomeWorkoutId(null)}
+          onExitInitialWorkout={() => setTab("journal")}
         />
       )}
       {isOnboarded && tab === "plans" && (
@@ -365,7 +370,7 @@ export function App() {
           onOpenWarmup={() => setTab("warmup")}
         />
       )}
-      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} />}
+      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} onOpenWorkout={(workoutId) => { setHomeWorkoutId(workoutId); setTab("home"); }} />}
       {isOnboarded && tab === "analytics" && <AnalyticsScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "profile" && (
         <ProfileScreen

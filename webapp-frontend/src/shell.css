@@ -967,3 +967,24 @@ html {
 .collection-text {
   font-size: var(--vp-fs-meta);
 }
+
+/* несколько занятий в один день: аккуратный разделитель между строками */
+.plan-week-day-group .plan-week-day-group + .plan-week-day-group {
+  margin-top: var(--vp-sp-3);
+  padding-top: var(--vp-sp-3);
+  border-top: 1px dashed var(--vp-divider);
+}
+
+/* «Все ›» у группы каталога (#281): тихое действие справа в заголовке, не кнопка-CTA */
+.home-group-header .home-group-all {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--tg-subtitle-text-color);
+  font-weight: 600;
+}
+
+.settings-toggle-row input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--vp-accent);
+}

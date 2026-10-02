@@ -628,6 +628,8 @@ export interface SessionResponseV2 {
   can_delete: boolean;
   /** #262 — тот же серверный предикат: «Изменить»/«Повторить» только при true. */
   can_edit: boolean;
+  /** #281 — своя живая тренировка, из которой выполнена сессия; «Открыть тренировку» только при не-null. */
+  workout_id?: number | null;
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
 }

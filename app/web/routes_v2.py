@@ -217,6 +217,7 @@ def _set_log_note(source: SessionSource, note: str | None) -> str | None:
 def _session_response(
     detail: SessionDetail, *, progression: SessionProgressionResponse | None, skipped_reason: str | None,
     title: str | None = None, exercise_names: dict[int, str] | None = None, can_delete: bool = False,
+    workout_id: int | None = None,
 ) -> SessionResponse:
     """exercise_names — имена из каталога для блоков без замороженного снимка
     (manual/STEP); внутренние STEP-роли в него не попадают, поэтому у их
@@ -261,8 +262,23 @@ def _session_response(
         comment=detail.comment, title=activity_label(detail.activity_type) or title, can_delete=can_delete,
         can_edit=can_delete, activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
         blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
-        progression_result=progression, progression_skipped_reason=skipped_reason,
+        progression_result=progression, progression_skipped_reason=skipped_reason, workout_id=workout_id,
     )
+
+
+async def _openable_workout_ids(
+    session: AsyncSession, details: list[SessionDetail], user_id: int,
+) -> dict[int, int]:
+    """session_id -> workout_id для сессий, чей замороженный снимок ссылается на ЖИВУЮ
+    свою тренировку пользователя (Журнал «Открыть тренировку», #281). Удалённая
+    (архивная) или чужая тренировка — ссылки нет, а не мёртвая кнопка."""
+    referenced: dict[int, int] = {}
+    for detail in details:
+        raw = (detail.workout_snapshot or {}).get("workout_id")
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            referenced[detail.id] = raw
+    own = await ProgramRepository(session).list_own_workout_ids(sorted(set(referenced.values())), user_id)
+    return {session_id: workout_id for session_id, workout_id in referenced.items() if workout_id in own}
 
 
 async def _catalog_exercise_names(session: AsyncSession, details: list[SessionDetail]) -> dict[int, str]:
@@ -1195,11 +1211,13 @@ async def list_sessions(
     titles = await _resolve_session_titles(session, details, user.id)
     names = await _catalog_exercise_names(session, details)
     verdicts = await SessionDeletionService(session).evaluate(details, user.id)
+    workout_ids = await _openable_workout_ids(session, details, user.id)
     return SessionListResponse(
         sessions=[
             _session_response(
                 detail, progression=None, skipped_reason=None, title=titles.get(detail.id),
                 exercise_names=names, can_delete=verdicts[detail.id].can_delete,
+                workout_id=workout_ids.get(detail.id),
             )
             for detail in details
         ],
@@ -1284,9 +1302,10 @@ async def _single_session_response(session: AsyncSession, session_id: int, user_
     titles = await _resolve_session_titles(session, [detail], user_id)
     names = await _catalog_exercise_names(session, [detail])
     verdict = (await SessionDeletionService(session).evaluate([detail], user_id))[detail.id]
+    workout_ids = await _openable_workout_ids(session, [detail], user_id)
     return _session_response(
         detail, progression=None, skipped_reason=None, title=titles.get(detail.id),
-        exercise_names=names, can_delete=verdict.can_delete,
+        exercise_names=names, can_delete=verdict.can_delete, workout_id=workout_ids.get(detail.id),
     )
 
 

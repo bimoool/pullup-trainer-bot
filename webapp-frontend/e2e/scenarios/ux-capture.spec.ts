@@ -62,6 +62,8 @@ for (const width of WIDTHS) {
     await page.getByRole("button", { name: "Сохранить" }).last().click();
     await page.getByTestId("my-workouts").waitFor();
     await page.getByTestId("my-workout-card").filter({ hasText: "Очень длинная" }).click();
+    await page.getByTestId("workout-detail").waitFor();
+    await page.getByRole("button", { name: "Редактировать" }).click();
     await page.getByText("Редактировать тренировку").waitFor();
     await shot(page, width, "10_workout_detail_edit");
     await page.getByRole("button", { name: "Добавить в план" }).click();
