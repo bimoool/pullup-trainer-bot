@@ -356,16 +356,8 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
 
   return (
     <div>
-      <div className="profile-identity" data-testid="profile-identity">
-        <div className="profile-avatar" aria-hidden="true">
-          {initial !== "" ? initial : <Icon name="person" size={26} />}
-        </div>
-        <div className="profile-identity-text">
-          <h1 className="profile-name" data-testid="profile-name">{firstName !== "" ? firstName : "Профиль"}</h1>
-          <p className="hint profile-identity-meta" data-testid="profile-identity-meta">
-            {subtitle !== "" ? subtitle : "Пол и возраст не указаны"}
-          </p>
-        </div>
+      <div className="profile-title-row">
+        <p className="plan-title">Профиль</p>
         <button
           type="button"
           className="search-chip"
@@ -375,6 +367,18 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
         >
           <Icon name="settings" size={22} />
         </button>
+      </div>
+
+      <div className="profile-identity" data-testid="profile-identity">
+        <div className="profile-avatar" aria-hidden="true">
+          {initial !== "" ? initial : <Icon name="person" size={26} />}
+        </div>
+        <div className="profile-identity-text">
+          <p className="profile-name" data-testid="profile-name">{firstName !== "" ? firstName : "Без имени"}</p>
+          <p className="hint profile-identity-meta" data-testid="profile-identity-meta">
+            {subtitle !== "" ? subtitle : "Пол и возраст не указаны"}
+          </p>
+        </div>
       </div>
 
       <div className="stat-grid">

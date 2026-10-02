@@ -366,12 +366,18 @@
 .vp-icon-pending { color: var(--tg-hint-color); }
 
 /* ---------- Профиль (#286 C2): шапка-идентичность, крупные вес/рост, тесты с бейджем ---------- */
+.profile-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .profile-identity {
   display: flex;
   align-items: center;
   gap: var(--vp-sp-3);
-  margin: var(--vp-sp-2) 0 var(--vp-sp-3);
-  padding: var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-4);
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
   border-radius: var(--vp-radius-card);
   background: var(--vp-card-bg);
   box-shadow: var(--vp-shadow);
@@ -408,11 +414,6 @@
 
 .profile-identity-meta {
   margin: 2px 0 0;
-}
-
-.app-shell .profile-identity [data-testid="profile-settings"] {
-  background: var(--vp-page-bg);
-  box-shadow: none;
 }
 
 .profile-metrics {
