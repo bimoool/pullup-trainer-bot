@@ -9,13 +9,16 @@ import {
   type ExerciseResponseV2,
   fetchExercises,
   fetchPlan,
+  fetchPrograms,
   type PlanItemResponseV2,
   type PlanWeekResponseV2,
+  type ProgramResponseV2,
   type ProgramInclusionResponseV2,
   removePlanItem,
   deactivateProgramInclusion,
   type TrainingPlanResponseV2,
 } from "./apiV2";
+import { programCategoryColorVar } from "./homeDiscovery";
 import { completedInclusions, inclusionDateRange, inclusionWeekLabel } from "./plansOverview";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { AddToPlanScreen } from "./AddToPlanScreen";
@@ -232,6 +235,9 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // недоступен по какой-то причине — просто не будет "+ Добавить упражнение".
   const [exercisesState, setExercisesState] = useState<ExercisesState>({ phase: "loading" });
   const [picker, setPicker] = useState<PickerState>({ phase: "closed" });
+  // Каталог нужен только чтобы подкрасить карточки курсов цветом категории (как группы Главной, #280);
+  // сбой молча — карточки остаются нейтральными.
+  const [catalogPrograms, setCatalogPrograms] = useState<ProgramResponseV2[]>([]);
   // H1, microfix 2 (issue #188) — UI-guard против двойного тапа "Начать":
   // onStartSession синхронно переключает App.tsx на PlanSessionFlow
   // (никакого сетевого запроса на этом уровне, сам запрос — уже внутри
@@ -391,6 +397,16 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       .catch(() => {
         // молчаливо — см. комментарий у объявления state выше
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPrograms(initDataRaw)
+      .then((programs) => !cancelled && setCatalogPrograms(programs))
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -558,6 +574,10 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;
   const visibleWeeks = plan.weeks.length > 0 ? [plan.weeks[selectedIndex]] : [];
   const libraryExercises = exercisesState.phase === "ready" ? exercisesState.exercises : [];
+  const courseTint = (programId: number) => {
+    const color = programCategoryColorVar(catalogPrograms, programId);
+    return color === null ? undefined : ({ ["--cat" as string]: color });
+  };
   const activeInclusions = plan.inclusions.filter((i) => i.is_active);
   const finishedInclusions = completedInclusions(plan.inclusions);
 
@@ -603,7 +623,10 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
             </p>
           )}
           {finishedInclusions.map((inclusion) => (
-            <div key={inclusion.id} className="plan-week-day-group" data-testid="plans-completed-row">
+            <div
+              key={inclusion.id} className="plan-week-day-group plans-course" data-testid="plans-completed-row"
+              style={courseTint(inclusion.program_id)}
+            >
               <p className="plan-item-row">{inclusion.program_name}</p>
               <p className="block-subtitle">{inclusionDateRange(inclusion)}</p>
             </div>
@@ -629,7 +652,10 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
             const confirming = removeInclusionConfirmId === inclusion.id;
             const removing = removingInclusionId === inclusion.id;
             return (
-              <div key={inclusion.id} className="plan-week-day-group" data-testid="plans-now-inclusion">
+              <div
+                key={inclusion.id} className="plan-week-day-group plans-course" data-testid="plans-now-inclusion"
+                style={courseTint(inclusion.program_id)}
+              >
                 <p className="plan-item-row">{inclusion.program_name}</p>
                 <p className="block-subtitle">
                   {weekLabel ? `${weekLabel} · ` : ""}

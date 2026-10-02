@@ -4,9 +4,9 @@
 import type { AnalyticsDistributionV2 } from "./apiV2";
 import type { MetricKey } from "./analyticsMetric";
 
-/** Категориальная палитра проекта: первая пара — из графика «Программа»/аналитики
- * (синий/оранжевый), далее различимые в светлой и тёмной теме оттенки. */
-export const CATEGORY_COLORS = ["#2a78d6", "#eb6834", "#2fa36b", "#8e5bd0", "#d6a21f", "#d6457a", "#4a9fb3"] as const;
+/** Категориальная палитра проекта = цвета групп каталога на Главной (`--vp-cat-0..5` в shell.css, #280):
+ * категория i в легенде аналитики имеет тот же цвет, что i-й ряд-группа Главной; 7-й — запасной. */
+export const CATEGORY_COLORS = ["#2f80ed", "#e5484d", "#f08c1a", "#2fa56a", "#8e5bd1", "#1f3a68", "#4a9fb3"] as const;
 /** Нейтральный цвет служебной категории «Другая активность» / «Без категории». */
 export const NEUTRAL_COLOR = "#8a8f98";
 export const OTHER_ACTIVITY = "Другая активность";

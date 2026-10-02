@@ -1,5 +1,5 @@
 import { Button } from "@telegram-apps/telegram-ui";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listWorkouts,
@@ -9,6 +9,7 @@ import { AddToPlanScreen } from "./AddToPlanScreen";
 import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
+import { HomePromo, type PromoKind } from "./HomePromo";
 import { groupProgramsByCategory, OTHER_CATEGORY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { ProgramPendingScreen } from "./ProgramPendingScreen";
@@ -163,6 +164,20 @@ export function HomeScreen({
     setWorkoutView({ kind: "closed" });
     setWorkoutsReloadKey((key) => key + 1);
     setFavoritesReloadKey((key) => key + 1);
+  }
+
+  // Promo-баннеры: после 1-й группы каталога — «план дня», после 2-й — «внести активность» (при <2 групп — внизу), внизу — «свой комплекс».
+  function promoAfter(rowIndex: number): PromoKind | null {
+        return rowIndex === 0 ? "plan" : rowIndex === 1 ? "log" : null;
+  }
+  function runPromo(kind: PromoKind) {
+    if (kind === "plan") {
+      onOpenPlans();
+    } else if (kind === "log") {
+      onOpenJournalLog();
+    } else {
+      setWorkoutView({ kind: "create" });
+    }
   }
 
   function closeProgramDetail() {
@@ -448,8 +463,9 @@ export function HomeScreen({
         <p className="screen-message">Каталог курсов появится здесь позже.</p>
       )}
       {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row, rowIndex) => (
+        <Fragment key={row.category}>
         <div
-          key={row.category} data-testid="program-category" className="home-group"
+          data-testid="program-category" className="home-group"
           style={{ ["--cat" as string]: `var(--vp-cat-${rowIndex % 6})` }}
         >
           <div className="home-group-header">
@@ -483,6 +499,10 @@ export function HomeScreen({
             })}
           </div>
         </div>
+        {promoAfter(rowIndex) !== null && (
+          <HomePromo kind={promoAfter(rowIndex)!} onClick={() => runPromo(promoAfter(rowIndex)!)} />
+        )}
+        </Fragment>
       ))}
 
       <div className="home-section-header">
@@ -536,6 +556,10 @@ export function HomeScreen({
           })}
         </ul>
       )}
+      {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).length < 2 && (
+        <HomePromo kind="log" onClick={() => runPromo("log")} />
+      )}
+      {workouts.phase === "ready" && <HomePromo kind="create" onClick={() => runPromo("create")} />}
     </div>
   );
 }

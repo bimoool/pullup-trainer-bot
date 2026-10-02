@@ -32,6 +32,13 @@ export function groupProgramsByCategory(programs: ProgramResponseV2[]): ProgramR
   ];
 }
 
+/** Цвет программы = цвет её группы-ряда на Главной (`--vp-cat-{rowIndex % 6}`, #280); null — программа не найдена. */
+export function programCategoryColorVar(programs: ProgramResponseV2[], programId: number): string | null {
+  const rows = groupProgramsByCategory(programs);
+  const index = rows.findIndex((row) => row.programs.some((program) => program.id === programId));
+  return index < 0 ? null : `var(--vp-cat-${index % 6})`;
+}
+
 /** Категории, реально присутствующие в загруженных программах и упражнениях. */
 export function collectCategories(
   programs: ProgramResponseV2[], exercises: ExerciseResponseV2[],

@@ -194,7 +194,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
 
   function legacyCard(entry: HistoryEntry) {
     return (
-      <div className="history-card" key={`legacy-${entry.workout_id}`}>
+      <div className="history-card" data-kind="legacy" key={`legacy-${entry.workout_id}`}>
         <p className="history-date">
           {formatDate(entry.performed_at)}
           {entry.is_backdated && <span className="hint"> (задним числом)</span>}
