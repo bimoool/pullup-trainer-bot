@@ -14,7 +14,8 @@ import {
   type TrainingPlanResponseV2,
 } from "./apiV2";
 import { BackChevron } from "./BackChevron";
-import { drainQueuedFinish } from "./offlineSession";
+import { drainQueuedFinish, loadLocalSession } from "./offlineSession";
+import { classifyActiveConflict, type ActiveConflictKind } from "./sessionConflict";
 import { summarizeProtocol } from "./protocolConfig";
 import { useBackButton } from "./useBackButton";
 import { formatExerciseCount } from "./workoutCardFormat";
@@ -99,7 +100,7 @@ type Props = {
 
 type ScreenState =
   | { phase: "loading"; title?: string }
-  | { phase: "error"; message: string; title?: string }
+  | { phase: "error"; message: string; title?: string; retryStart?: number[] }
   | { phase: "no_course"; title?: string }
   | { phase: "blocked"; title?: string }
   | { phase: "needs_assessment"; title?: string }
@@ -149,6 +150,10 @@ export function SessionPreScreen({
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Активная сессия, мешающая старту по workoutId: предлагаем её продолжить.
   const [activeConflict, setActiveConflict] = useState<LiveSessionResponse | null>(null);
+  // N2 (#293): завершение этой активной сессии ещё в очереди → не «Продолжить», а «Завершение отправляется…».
+  const [conflictKind, setConflictKind] = useState<ActiveConflictKind>("continue");
+  // N3 (#293): «Повторить» в фазе error без старта — перезапуск загрузки готовности.
+  const [reloadKey, setReloadKey] = useState(0);
   // Сводка — необязательная подсказка: любой сбой молча оставляет экран без неё.
   const [summary, setSummary] = useState<PreSummary | null>(null);
 
@@ -156,6 +161,17 @@ export function SessionPreScreen({
   // (тот же хендлер, что у кнопок "Перейти в обычную Тренировку" в blocked/
   // needs_assessment/no_course фазах — не создаёт вторую логику выхода)
   useBackButton(onGoToWorkout, [onGoToWorkout], true, false);
+
+  async function showConflict(active: LiveSessionResponse) {
+    let kind: ActiveConflictKind = "continue";
+    try {
+      kind = classifyActiveConflict(active.id, await loadLocalSession());
+    } catch {
+      // нет доступа к локальной очереди — ведём себя как раньше
+    }
+    setConflictKind(kind);
+    setActiveConflict(active);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -171,7 +187,10 @@ export function SessionPreScreen({
             return;
           }
           if (active !== null) {
-            setActiveConflict(active);
+            await showConflict(active);
+            if (cancelled) {
+              return;
+            }
           }
           setState({ phase: "ready_manual", title: title ?? "Тренировка", planItemIds: [] });
         } catch (error) {
@@ -244,7 +263,7 @@ export function SessionPreScreen({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- explicitPlanItemIds/title стабильны на время жизни экрана (новый маунт на новый Start), пересчитывать по ним не нужно
-  }, [initDataRaw, manual, workoutId]);
+  }, [initDataRaw, manual, workoutId, reloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,6 +301,7 @@ export function SessionPreScreen({
   }, [initDataRaw, manual, workoutId]);
 
   async function handleStart(planItemIds: number[], currentTitle?: string) {
+    setActiveConflict(null);
     setState({ phase: "starting", planItemIds, title: currentTitle });
     try {
       await drainBeforeStart(initDataRaw);
@@ -303,7 +323,7 @@ export function SessionPreScreen({
         try {
           const active = await fetchActiveLiveSession(initDataRaw);
           if (active !== null) {
-            setActiveConflict(active);
+            await showConflict(active);
             setState({ phase: "ready_manual", title: currentTitle ?? "Тренировка", planItemIds });
             return;
           }
@@ -311,8 +331,20 @@ export function SessionPreScreen({
           // не смогли узнать активную — показываем исходную ошибку ниже
         }
       }
-      setState({ phase: "error", message: error instanceof Error ? error.message : String(error), title: currentTitle });
+      setState({
+        phase: "error", message: error instanceof Error ? error.message : String(error), title: currentTitle,
+        retryStart: planItemIds,
+      });
     }
+  }
+
+  function handleRetryError(retryStart: number[] | undefined, currentTitle?: string) {
+    if (retryStart !== undefined) {
+      void handleStart(retryStart, currentTitle);
+      return;
+    }
+    setState({ phase: "loading", title: currentTitle });
+    setReloadKey((k) => k + 1);
   }
 
   if (state.phase === "loading") {
@@ -325,6 +357,14 @@ export function SessionPreScreen({
       <div className="pre-screen">
         <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message">Не удалось загрузить: {state.message}</p>
+        <div className="pre-transport">
+          <Button className="action-button vs-primary" size="l" stretched onClick={() => handleRetryError(state.retryStart, state.title)}>
+            Повторить
+          </Button>
+          <Button className="action-button vs-plain" size="l" stretched mode="plain" onClick={onGoToWorkout}>
+            Назад
+          </Button>
+        </div>
       </div>
     );
   }
@@ -382,6 +422,25 @@ export function SessionPreScreen({
     ?? (state.phase === "starting" ? state.planItemIds : []);
   const programName = step?.programName ?? generic?.programName ?? manualReady?.title ?? null;
   const displayTitle = programName ?? title ?? (state.phase === "starting" ? state.title : undefined) ?? "Сессия";
+
+  if (activeConflict !== null && !isStarting && conflictKind === "finish_pending") {
+    return (
+      <div className="pre-screen" data-testid="finish-pending">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
+        <p className="screen-message" role="status">
+          Завершение прошлой тренировки{activeConflict.title ? ` — «${activeConflict.title}»` : ""} ещё отправляется…
+        </p>
+        <div className="pre-transport">
+          <Button className="action-button vs-primary" size="l" stretched onClick={() => void handleStart(planItemIds, displayTitle)}>
+            Повторить
+          </Button>
+          <Button className="action-button vs-plain" size="l" stretched mode="plain" onClick={onGoToWorkout}>
+            Назад
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (activeConflict !== null && !isStarting) {
     return (
