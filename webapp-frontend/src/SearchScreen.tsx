@@ -5,7 +5,7 @@ import {
   type AssessmentProtocolV2, type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { formatLastResult } from "./assessmentsFormat";
-import { collectCategories, searchContent } from "./homeDiscovery";
+import { collectCategories, searchContent, toggleSearchFilter } from "./homeDiscovery";
 import { useBackButton } from "./useBackButton";
 
 export type SearchState = { query: string; category: string | null; favoritesOnly: boolean; testsOnly: boolean };
@@ -99,7 +99,7 @@ export function SearchScreen({
             className={state.favoritesOnly ? "search-chip search-chip-active" : "search-chip"}
             data-testid="search-chip-favorites"
             aria-pressed={state.favoritesOnly}
-            onClick={() => onStateChange({ ...state, favoritesOnly: !state.favoritesOnly })}
+            onClick={() => onStateChange(toggleSearchFilter(state, { kind: "favorites" }))}
           >
             Избранное
           </button>
@@ -108,7 +108,7 @@ export function SearchScreen({
             className={state.testsOnly ? "search-chip search-chip-active" : "search-chip"}
             data-testid="search-chip-tests"
             aria-pressed={state.testsOnly}
-            onClick={() => onStateChange({ ...state, testsOnly: !state.testsOnly })}
+            onClick={() => onStateChange(toggleSearchFilter(state, { kind: "tests" }))}
           >
             Тесты
           </button>
@@ -118,7 +118,7 @@ export function SearchScreen({
               type="button"
               className={category === state.category ? "search-chip search-chip-active" : "search-chip"}
               aria-pressed={category === state.category}
-              onClick={() => onStateChange({ ...state, category: category === state.category ? null : category })}
+              onClick={() => onStateChange(toggleSearchFilter(state, { kind: "category", category }))}
             >
               {category}
             </button>

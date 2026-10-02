@@ -37,9 +37,12 @@ export function formatPeerCohort(cohort: PeerCohort): string {
   return `${cohort.label} · ${cohort.size_bucket} человек`;
 }
 
-/** Процентиль — доля когорты, которую результат обходит: «Лучше, чем у 73% похожих». */
+export const PEER_RATE_LIMITED_TEXT = "Слишком много запросов сравнения. Попробуйте чуть позже.";
+
+/** Процентиль приходит грубой 10-пунктовой полосой (floor, #283): «Лучше, чем у ~70% похожих»;
+ * нижняя полоса 0 — честное «менее 10%». */
 export function formatPeerPercentile(percentile: number): string {
-  return `Лучше, чем у ${percentile}% похожих`;
+  return percentile < 10 ? "Лучше, чем у менее 10% похожих" : `Лучше, чем у ~${percentile}% похожих`;
 }
 
 export function formatPeerMedian(median: string, unit: string): string {

@@ -1,4 +1,4 @@
-import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
@@ -11,6 +11,7 @@ import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { groupProgramsByCategory, OTHER_CATEGORY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
+import { ProgramPendingScreen } from "./ProgramPendingScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
 import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsScreen } from "./TestsScreen";
@@ -281,6 +282,16 @@ export function HomeScreen({
     );
   }
 
+  // Программу открыли, а каталог грузится/упал — не молчим (#283); «Назад» работает.
+  if (selectedProgramId !== null && catalog.phase !== "ready") {
+    return (
+      <ProgramPendingScreen
+        phase={catalog.phase} message={catalog.phase === "error" ? catalog.message : undefined}
+        onBack={closeProgramDetail}
+      />
+    );
+  }
+
   if (selectedProgramId !== null && catalog.phase === "ready") {
     const program = catalog.programs.find((p) => p.id === selectedProgramId);
     if (program) {
@@ -298,6 +309,7 @@ export function HomeScreen({
         />
       );
     }
+    return <ProgramPendingScreen phase="missing" onBack={closeProgramDetail} />;
   }
 
   if (collectionId !== null) {
@@ -339,13 +351,18 @@ export function HomeScreen({
     <div>
       <div className="home-sticky-header" data-testid="home-header">
         <button type="button" className="home-search-pill" data-testid="home-search-pill" onClick={() => openSearch()}>
-          Что потренируем сегодня?
+          <svg className="home-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" />
+          </svg>
+          <span>Что потренируем сегодня?</span>
         </button>
         <button
           type="button" className="home-plus-button" aria-label="Быстрые действия"
           data-testid="home-plus" onClick={() => setSheetOpen(true)}
         >
-          +
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
       </div>
       {sheetOpen && (
@@ -385,13 +402,16 @@ export function HomeScreen({
         }
         return (
           <div data-testid="favorites-row">
-            <p className="section-title">Избранное</p>
+            <div className="home-group-header">
+              <span className="home-group-badge home-group-badge-heart" aria-hidden="true">♥</span>
+              <p className="section-title">Избранное</p>
+            </div>
             {mode === "hint" ? (
               <p className="screen-message" data-testid="favorites-hint">Нажмите ♡ на тренировке, чтобы добавить</p>
             ) : (
               <div className="home-program-row">
                 {favorites.map((favorite) => (
-                  <Section key={`${favorite.target_type}-${favorite.target_id}`} className="block-section home-program-card">
+                  <div key={`${favorite.target_type}-${favorite.target_id}`} className="home-program-card" style={{ ["--cat" as string]: "var(--vp-cat-1)" }}>
                     <button
                       type="button"
                       className="program-card-button"
@@ -400,10 +420,10 @@ export function HomeScreen({
                         ? setWorkoutView({ kind: "detail", workoutId: favorite.target_id })
                         : setSelectedProgramId(favorite.target_id))}
                     >
-                      <p className="block-subtitle">{favorite.title}</p>
-                      {favorite.subtitle && <p className="screen-message">{favorite.subtitle}</p>}
+                      <p className="home-card-title">{favorite.title}</p>
+                      {favorite.subtitle && <p className="home-card-meta">{favorite.subtitle}</p>}
                     </button>
-                  </Section>
+                  </div>
                 ))}
               </div>
             )}
@@ -429,12 +449,19 @@ export function HomeScreen({
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
         <p className="screen-message">Каталог курсов появится здесь позже.</p>
       )}
-      {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row) => (
-        <div key={row.category} data-testid="program-category">
-          <div className="home-section-header">
+      {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row, rowIndex) => (
+        <div
+          key={row.category} data-testid="program-category" className="home-group"
+          style={{ ["--cat" as string]: `var(--vp-cat-${rowIndex % 6})` }}
+        >
+          <div className="home-group-header">
+            <span className="home-group-badge" aria-hidden="true" />
             <p className="section-title" data-testid="program-category-title">{row.category}</p>
             {row.category !== OTHER_CATEGORY && (
-              <Button size="s" mode="plain" data-testid="program-category-all" onClick={() => openSearch(row.category)}>
+              <Button
+                className="home-group-all" size="s" mode="plain" data-testid="program-category-all"
+                onClick={() => openSearch(row.category)}
+              >
                 Все ›
               </Button>
             )}
@@ -443,17 +470,17 @@ export function HomeScreen({
             {row.programs.map((program) => {
               const included = catalog.includedProgramIds.has(program.id);
               return (
-                <Section key={program.id} className="block-section home-program-card">
+                <div key={program.id} className="home-program-card">
                   <button
                     type="button"
                     className="program-card-button"
                     onClick={() => setSelectedProgramId(program.id)}
                   >
-                    <p className="block-subtitle">{program.name}</p>
-                    <p className="screen-message">{program.goal}</p>
-                    {included && <p className="hint">✓ В плане</p>}
+                    <p className="home-card-title">{program.name}</p>
+                    <p className="home-card-meta">{program.goal}</p>
+                    {included && <p className="hint home-card-status">✓ В плане</p>}
                   </button>
-                </Section>
+                </div>
               );
             })}
           </div>
@@ -463,7 +490,7 @@ export function HomeScreen({
       <div className="home-section-header">
         <p className="section-title">Мои тренировки</p>
         {workouts.phase === "ready" && workouts.workouts.length > 0 && (
-          <Button size="s" onClick={() => setWorkoutView({ kind: "create" })}>
+          <Button size="s" mode="bezeled" onClick={() => setWorkoutView({ kind: "create" })}>
             Создать
           </Button>
         )}
@@ -494,6 +521,11 @@ export function HomeScreen({
                   data-testid="my-workout-card"
                   onClick={() => setWorkoutView({ kind: "detail", workoutId: workout.id })}
                 >
+                  <span className="home-workout-badge" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+                      <path d="M3.5 9.5v5M6.5 7v10M17.5 7v10M20.5 9.5v5M6.5 12h11" />
+                    </svg>
+                  </span>
                   <span className="home-workout-title">{workout.title}</span>
                   <span className="home-workout-meta">
                     {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}

@@ -1,7 +1,7 @@
 """#277 (D2) — сводка Профиля учитывает завершённые тренировки Журнала v2, а не только legacy Workout.
 
 Display-only: считаются и legacy, и v2 TrainingSession; перенесённые backfill-ом (#163) не считаются
-дважды (то же правило, что скрывает дубли в Журнале, #282)."""
+дважды: legacy Workout — источник правды, backfill-копии v2 исключаются отпечатком (#284)."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -17,6 +17,7 @@ from app.db.repositories.training_sessions import (
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.multi_program import MetricType, SessionSource
+from tests.test_web._v2_client import v2_delete
 from tests.test_web.test_journal_dedupe import _kwargs, _legacy_user, _migrated_user
 from tests.test_web.test_profile import _get_profile
 
@@ -80,6 +81,18 @@ async def test_profile_does_not_double_count_migrated_workouts(session: AsyncSes
     body = await _get_profile(session, telegram_id=user.telegram_id)
 
     assert body["workouts_count"] == 4
+
+
+async def test_profile_deleted_legacy_does_not_resurrect_backfill_copy(session: AsyncSession):
+    """Legacy — источник правды (#284): после удаления legacy-записи её backfill-копия не считается."""
+    user, _workout_set, _post = await _migrated_user(session, 983005)
+    workout = (await WorkoutRepository(session).list_for_user(user.id))[0]
+    response = await v2_delete(session, user.telegram_id, f"/api/history/{workout.id}")
+    assert response.status_code == 200, response.text
+
+    body = await _get_profile(session, telegram_id=user.telegram_id)
+
+    assert body["workouts_count"] == 3
 
 
 async def test_profile_mixes_legacy_and_newer_v2_session(session: AsyncSession):

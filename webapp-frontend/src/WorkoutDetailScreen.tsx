@@ -76,7 +76,7 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
   const estimate = formatEstimate(estimateWorkoutSeconds(items));
 
   return (
-    <div data-testid="workout-detail">
+    <div data-testid="workout-detail" className="workout-detail">
       <div className="favorite-title-row">
         <p className="plan-title" data-testid="workout-detail-title">{workout.title}</p>
         <FavoriteHeart initDataRaw={initDataRaw} targetType="workout" targetId={workout.id} />
@@ -87,30 +87,25 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
         {estimate ? ` · ${estimate}` : ""}
       </p>
 
-      {(onStart || onLog) && (
-        <div className="workout-detail-actions">
-          {onStart && (
-            <button
-              type="button" className="workout-detail-action" data-testid="workout-detail-start"
-              disabled={items.length === 0} onClick={() => onStart(workout.id, workout.title)}
-            >
-              <span className="workout-detail-action-icon" aria-hidden="true">▶</span>
-              <span className="workout-detail-action-label">Начать</span>
-            </button>
-          )}
-          {onLog && (
-            <button
-              type="button" className="workout-detail-action" data-testid="workout-detail-log"
-              onClick={() => onLog(workout.id)}
-            >
-              <span className="workout-detail-action-icon" aria-hidden="true">✓</span>
-              <span className="workout-detail-action-label">Записать</span>
-            </button>
-          )}
-        </div>
-      )}
-
       <div className="workout-detail-actions">
+        {onStart && (
+          <button
+            type="button" className="workout-detail-action workout-detail-action-primary" data-testid="workout-detail-start"
+            disabled={items.length === 0} onClick={() => onStart(workout.id, workout.title)}
+          >
+            <span className="workout-detail-action-icon" aria-hidden="true">▶</span>
+            <span className="workout-detail-action-label">Начать</span>
+          </button>
+        )}
+        {onLog && (
+          <button
+            type="button" className="workout-detail-action" data-testid="workout-detail-log"
+            onClick={() => onLog(workout.id)}
+          >
+            <span className="workout-detail-action-icon" aria-hidden="true">✓</span>
+            <span className="workout-detail-action-label">Записать</span>
+          </button>
+        )}
         <button
           type="button" className="workout-detail-action"
           onClick={() => onAddToPlan(workout.id, workout.title)}

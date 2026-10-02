@@ -1,4 +1,6 @@
+import json
 from collections.abc import Sequence
+from decimal import Decimal
 from enum import StrEnum
 
 
@@ -77,3 +79,23 @@ def volume_target_goal(current_volume_block_target: int) -> int:
     """Целевой суммарный объём факультатива №4 — текущая плановая цель
     блока на объём × 5 (план 10 -> цель 50)."""
     return current_volume_block_target * VOLUME_TARGET_MULTIPLIER
+
+
+def format_elective_set_note(note: str | None, value: Decimal | None = None) -> str | None:
+    """SetLog.note факультатива — упакованный backfill-ом JSON (формат/снаряд/подходы, #163), не
+    пользовательский текст. Читаемая строка «Подходы: 4 · 3 · 2» или None (нет/битый JSON, нет
+    reps_sequence). Если передано значение подхода и оно не равно сумме подходов (значение
+    поправили в Журнале, а упакованный JSON остался прежним) — разбивка не показывается, чтобы не
+    противоречить «Факт» (#283). Общий форматтер для API Журнала и CSV-экспорта."""
+    if note is None:
+        return None
+    try:
+        payload = json.loads(note)
+    except ValueError:
+        return None
+    sequence = payload.get("reps_sequence") if isinstance(payload, dict) else None
+    if not isinstance(sequence, list) or not sequence or not all(isinstance(n, int) for n in sequence):
+        return None
+    if value is not None and Decimal(sum(sequence)) != value:
+        return None
+    return "Подходы: " + " · ".join(str(n) for n in sequence)

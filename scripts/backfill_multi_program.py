@@ -296,8 +296,8 @@ def _resolve_session_source(workout: Workout) -> SessionSource:
     """Та самая таблица соответствий, ради которой SessionSource в волне 1
     завела FREEFORM/BACKDATED (issue #160) — прямое отражение
     participates_in_cascade/is_free_entry старой схемы. Таблица живёт в
-    app.domain.journal_dedupe: ровно по ней Журнал (#282) скрывает legacy-дубли
-    перенесённых записей, расхождения быть не может."""
+    app.domain.journal_dedupe; отпечаток созданных backfill-ом сессий, которые Журнал (#284) не
+    показывает, — TrainingSessionRepository._backfilled_fingerprint (по первому блоку A)."""
     return resolve_legacy_session_source(
         participates_in_cascade=workout.participates_in_cascade, is_free_entry=workout.is_free_entry,
     )

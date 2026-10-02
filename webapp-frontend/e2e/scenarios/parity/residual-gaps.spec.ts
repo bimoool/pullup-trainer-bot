@@ -60,10 +60,13 @@ for (const width of WIDTHS) {
       await expect(page.getByTestId("workout-detail-history-row")).toHaveCount(2);
       await expectNoHorizontalOverflow(page, "Workout Detail из Журнала");
 
-      // «Назад» (Telegram BackButton) — в Журнал, не на Главную.
+      // «Назад» (Telegram BackButton) — в Журнал на ту же открытую запись (#284 C1), не на Главную;
+      // ещё один «назад» закрывает запись и показывает ленту.
+      await pressTelegramBackButton(page);
+      await expect(page.getByTestId("journal-open-workout")).toBeVisible();
+      await expect(page.getByTestId("workout-detail")).toHaveCount(0);
       await pressTelegramBackButton(page);
       await expect(page.locator(".history-card").first()).toBeVisible();
-      await expect(page.getByTestId("workout-detail")).toHaveCount(0);
 
       // Повторный заход на Главную не открывает старую тренировку.
       await openTab(page, "Главная");

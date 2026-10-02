@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { createPlanItem, fetchPlan } from "./apiV2";
 import { DayPicker } from "./DayPicker";
+import { localToday, resolveCurrentWeekId } from "./planWeekNav";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -56,10 +57,10 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
         if (cancelled) {
           return;
         }
-        // Та же логика "текущая неделя", что DashboardScreen.tsx уже
-        // использует (currentWeekId) — последняя запись в weeks.
-        const currentWeekId = plan !== null && plan.plan_weeks.length > 0
-          ? plan.plan_weeks[plan.plan_weeks.length - 1].id
+        // Текущая неделя — current_week_id с сервера (как в DashboardScreen),
+        // НЕ последняя в списке: после #275 там могут быть будущие недели.
+        const currentWeekId = plan !== null
+          ? resolveCurrentWeekId(plan.plan_weeks, plan.current_week_id, localToday())
           : null;
         setLoadState({ phase: "ready", planWeekId: currentWeekId });
       })

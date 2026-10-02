@@ -1,5 +1,4 @@
 import { retrieveLaunchParams } from "@telegram-apps/sdk";
-import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
@@ -8,7 +7,7 @@ import { fetchActiveLiveSession, type LiveSessionResponse } from "./apiV2";
 import { DashboardScreen } from "./DashboardScreen";
 import { PlanSessionFlow } from "./PlanSessionFlow";
 import { FaqScreen } from "./FaqScreen";
-import { HistoryScreen } from "./HistoryScreen";
+import { HistoryScreen, type JournalRestore } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
@@ -17,6 +16,7 @@ import { SessionV2Lab } from "./SessionV2Lab";
 import { SubscriptionScreen } from "./SubscriptionScreen";
 import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
+import { NavIcon } from "./NavIcon";
 
 type LoadState =
   | { status: "loading" }
@@ -126,6 +126,8 @@ export function App() {
   // Из «Записать» вернулись на Workout Detail: его «назад» ведёт на саму вкладку, не в Журнал.
   const [homeWorkoutFromLog, setHomeWorkoutFromLog] = useState(false);
   const [plansWorkoutId, setPlansWorkoutId] = useState<number | null>(null);
+  // Откуда ушли в «Открыть тренировку»: Back возвращает в тот же месяц Журнала с той же записью.
+  const [journalRestore, setJournalRestore] = useState<JournalRestore | null>(null);
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -162,6 +164,7 @@ export function App() {
     if (liveWorkoutActive && !window.confirm("Прогресс тренировки будет потерян — уйти?")) {
       return;
     }
+    setJournalRestore(null);
     setTab(key);
   }
 
@@ -177,6 +180,13 @@ export function App() {
       setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
     }
   }
+
+  // Журнал уже смонтирован с точкой возврата — дальше она не нужна (иначе повторный заход на вкладку восстановил бы устаревшее).
+  useEffect(() => {
+    if (tab === "journal" && journalRestore !== null) {
+      setJournalRestore(null);
+    }
+  }, [tab, journalRestore]);
 
   useEffect(() => {
     let cancelled = false;
@@ -326,6 +336,7 @@ export function App() {
   const startWorkout = (workoutId: number, title: string) => setV2Session({ workoutId, title });
   const logWorkout = (workoutId: number) => {
     setLogOrigin(tab === "home" || tab === "plans" ? { tab, workoutId } : null);
+    setJournalRestore(null);
     setJournalLogWorkoutId(workoutId);
     setJournalLogRequest((value) => value + 1);
     setTab("journal");
@@ -367,7 +378,7 @@ export function App() {
         <HomeScreen
           initDataRaw={state.initDataRaw}
           onOpenPlans={() => setTab("plans")}
-          onOpenJournalLog={() => { setJournalLogWorkoutId(null); setJournalLogRequest((value) => value + 1); setTab("journal"); }}
+          onOpenJournalLog={() => { setJournalRestore(null); setJournalLogWorkoutId(null); setJournalLogRequest((value) => value + 1); setTab("journal"); }}
           onStartWorkout={startWorkout}
           onLogWorkout={logWorkout}
           initialWorkoutId={homeWorkoutId}
@@ -395,7 +406,7 @@ export function App() {
           onOpenWarmup={() => setTab("warmup")}
         />
       )}
-      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} onLogBack={logOrigin !== null ? backFromLogToWorkout : undefined} onOpenWorkout={(workoutId) => { setHomeWorkoutId(workoutId); setTab("home"); }} />}
+      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} restore={journalRestore} onLogBack={logOrigin !== null ? backFromLogToWorkout : undefined} onOpenWorkout={(workoutId, restore) => { setJournalRestore(restore); setHomeWorkoutId(workoutId); setTab("home"); }} />}
       {isOnboarded && tab === "analytics" && <AnalyticsScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "profile" && (
         <ProfileScreen
@@ -418,21 +429,24 @@ export function App() {
       )}
 
       {isOnboarded && (
-        // issue #203 (integration review, H1) — library Tabbar рендерит
-        // только content-hashed классы (tgui-<hash>, проверено по факту в
-        // node_modules/@telegram-apps/telegram-ui/dist/components/Layout/
-        // Tabbar/Tabbar.js) — [class*="abbar"] из исходного H1B-фикса не
-        // совпадал ни с чем (буквы "abbar" там физически нет). Tabbar
-        // поддерживает className как реальный, документированный проп
-        // (Tabbar.js: classNames(..., className)) — используем его вместо
-        // угадывания по хэшу библиотеки.
-        <Tabbar className="bottom-tabbar">
-          {navTabs.map(({ key, icon, label }) => (
-            <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>
-              <span className="bottom-nav-icon">{icon}</span>
-            </Tabbar.Item>
+        // Нижняя навигация (#280): собственный <nav> вместо Tabbar из tgui — иконка-контур
+        // + подпись, активная вкладка акцентным цветом, safe-area снизу (shell.css).
+        // Контракт для e2e: контейнер .bottom-tabbar, внутри <button> с подписью-<span>
+        // прямым потомком; aria-current="page" у активной вкладки.
+        <nav className="bottom-tabbar" aria-label="Основная навигация">
+          {navTabs.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              className={tab === key ? "bottom-tabbar-item bottom-tabbar-item-active" : "bottom-tabbar-item"}
+              aria-current={tab === key ? "page" : undefined}
+              onClick={() => handleTabClick(key)}
+            >
+              <NavIcon name={key} active={tab === key} />
+              <span>{label}</span>
+            </button>
           ))}
-        </Tabbar>
+        </nav>
       )}
     </div>
   );

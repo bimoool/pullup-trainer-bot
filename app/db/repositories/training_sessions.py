@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import delete, exists, func, select
+from sqlalchemy import ColumnElement, and_, delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -578,6 +578,7 @@ class TrainingSessionRepository:
     async def list_for_user(
         self, user_id: int, *, limit: int = 50, offset: int = 0, status: SessionStatus | None = None,
         performed_from: datetime | None = None, performed_to: datetime | None = None,
+        exclude_backfilled: bool = False,
     ) -> list[SessionDetail]:
         """offset/limit — срез уже загруженного списка (тот же приём, что
         GET /api/history, issue #50), не отдельный SQL LIMIT/OFFSET —
@@ -592,8 +593,13 @@ class TrainingSessionRepository:
         поведение без параметра.
 
         performed_from/performed_to (#256) — полуинтервал [from, to) по
-        performed_at (Журнал по месяцам), оба необязательны."""
+        performed_at (Журнал по месяцам), оба необязательны.
+
+        exclude_backfilled (#284) — скрыть сессии, созданные backfill-ом legacy Workout (отпечаток —
+        _backfilled_fingerprint); срез offset/limit считается уже после скрытия."""
         query = select(TrainingSession).where(TrainingSession.user_id == user_id)
+        if exclude_backfilled:
+            query = query.where(~self._backfilled_fingerprint())
         if status is not None:
             query = query.where(TrainingSession.status == status)
         if performed_from is not None:
@@ -606,39 +612,44 @@ class TrainingSessionRepository:
         return await self._load_details(page)
 
     async def completed_performed_at(
-        self, user_id: int, performed_from: datetime, performed_to: datetime,
+        self, user_id: int, performed_from: datetime, performed_to: datetime, *, exclude_backfilled: bool = False,
     ) -> list[datetime]:
         """Только моменты завершённых сессий в [from, to) — для календаря Журнала
-        (без загрузки блоков/подходов)."""
-        result = await self._session.execute(
-            select(TrainingSession.performed_at).where(
-                TrainingSession.user_id == user_id,
-                TrainingSession.status == SessionStatus.COMPLETED,
-                TrainingSession.performed_at >= performed_from,
-                TrainingSession.performed_at < performed_to,
-            ),
+        (без загрузки блоков/подходов). exclude_backfilled (#284) — как в list_for_user."""
+        query = select(TrainingSession.performed_at).where(
+            TrainingSession.user_id == user_id,
+            TrainingSession.status == SessionStatus.COMPLETED,
+            TrainingSession.performed_at >= performed_from,
+            TrainingSession.performed_at < performed_to,
         )
+        if exclude_backfilled:
+            query = query.where(~self._backfilled_fingerprint())
+        result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    async def count_completed(self, user_id: int) -> int:
-        """Число завершённых сессий пользователя (сводка Профиля, #277)."""
-        result = await self._session.execute(
-            select(func.count()).select_from(TrainingSession).where(
-                TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
-            ),
+    async def count_completed(self, user_id: int, *, exclude_backfilled: bool = False) -> int:
+        """Число завершённых сессий пользователя (сводка Профиля, #277). exclude_backfilled (#284) —
+        без копий, созданных backfill-ом (их историю считает legacy Workout)."""
+        query = select(func.count()).select_from(TrainingSession).where(
+            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
         )
+        if exclude_backfilled:
+            query = query.where(~self._backfilled_fingerprint())
+        result = await self._session.execute(query)
         return int(result.scalar_one())
 
-    async def backfilled_session_keys(self, user_id: int) -> list[tuple[datetime, SessionSource]]:
-        """(performed_at, source) завершённых сессий, созданных backfill-ом legacy Workout (#163) —
-        для display-дедупликации Журнала (#282, app.domain.journal_dedupe).
+    @staticmethod
+    def _backfilled_fingerprint() -> ColumnElement[bool]:
+        """Отпечаток v2-сессии, созданной backfill-ом legacy Workout (#163/#284): то, чем она отличается
+        от сессий живого потока Mini App и электива. Старая схема остаётся источником правды для
+        перенесённой истории (docstring scripts/backfill_multi_program.py), поэтому Журнал такие
+        сессии не показывает — их показывает legacy-карточка со своими действиями.
 
-        Отпечаток backfill-сессии (то, чем она отличается от сессий живого потока Mini App, даже при
-        случайно совпавшем performed_at): source plan/freeform/backdated (не elective), нет
-        client_session_id (его ставит только живой старт), нет workout_snapshot, нет activity_type,
-        нет SessionPlanItem (backfill не привязывает PlanItem), а первый блок — системное упражнение
-        блока A подтягиваний (category=pull_ups, subcategory=block_a — seed_catalog backfill-а;
-        блок A есть у каждой перенесённой записи, в том числе свободной)."""
+        COMPLETED, source plan/freeform/backdated (не elective), нет client_session_id (его ставит
+        только живой старт), нет workout_snapshot, нет activity_type, нет SessionPlanItem (backfill
+        не привязывает PlanItem), а первый блок — системное упражнение блока A подтягиваний
+        (category=pull_ups, subcategory=block_a — seed_catalog backfill-а; блок A есть у каждой
+        перенесённой записи, в том числе свободной). Не зависит от наличия парной legacy-записи."""
         block_a_first = exists().where(
             SessionBlock.session_id == TrainingSession.id, SessionBlock.order_index == 0,
             SessionBlock.exercise_id == Exercise.id,
@@ -646,26 +657,25 @@ class TrainingSessionRepository:
             Exercise.source_type == "system", Exercise.owner_user_id.is_(None),
         )
         has_plan_items = exists().where(SessionPlanItem.session_id == TrainingSession.id)
-        result = await self._session.execute(
-            select(TrainingSession.performed_at, TrainingSession.source).where(
-                TrainingSession.user_id == user_id,
-                TrainingSession.status == SessionStatus.COMPLETED,
-                TrainingSession.source.in_((SessionSource.PLAN, SessionSource.FREEFORM, SessionSource.BACKDATED)),
-                TrainingSession.client_session_id.is_(None),
-                TrainingSession.workout_snapshot.is_(None),
-                TrainingSession.activity_type.is_(None),
-                ~has_plan_items,
-                block_a_first,
-            ),
+        return and_(
+            TrainingSession.status == SessionStatus.COMPLETED,
+            TrainingSession.source.in_((SessionSource.PLAN, SessionSource.FREEFORM, SessionSource.BACKDATED)),
+            TrainingSession.client_session_id.is_(None),
+            TrainingSession.workout_snapshot.is_(None),
+            TrainingSession.activity_type.is_(None),
+            ~has_plan_items,
+            block_a_first,
         )
-        return [(performed_at, source) for performed_at, source in result.all()]
 
-    async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
-        result = await self._session.execute(
-            select(func.max(TrainingSession.performed_at)).where(
-                TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
-            ),
+    async def latest_completed_performed_at(
+        self, user_id: int, *, exclude_backfilled: bool = False,
+    ) -> datetime | None:
+        query = select(func.max(TrainingSession.performed_at)).where(
+            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
         )
+        if exclude_backfilled:
+            query = query.where(~self._backfilled_fingerprint())
+        result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
     async def list_all_completed(self, user_id: int) -> list[SessionDetail]:

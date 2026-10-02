@@ -30,6 +30,7 @@ from app.db.repositories.body_metrics import BodyMetricRepository, LastBodyMetri
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.leaderboard import LeaderboardRepository
+from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -81,7 +82,6 @@ from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
-from app.services.journal_dedupe import journal_workout_summary, list_backfilled_duplicates
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -452,11 +452,19 @@ async def get_profile(
         return ProfileResponse(is_onboarded=False)
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
-    # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2),
-    # без двойного счёта перенесённых backfill-ом.
-    workouts_count, last_performed_at = await journal_workout_summary(session, user.id)
+    # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2). Legacy
+    # Workout — источник правды для перенесённой истории (#284), поэтому v2-копии backfill-а (отпечаток
+    # TrainingSessionRepository._backfilled_fingerprint) не считаются — иначе мигрированный пользователь
+    # посчитан дважды. Display-only: готовность/прогрессия по-прежнему по legacy.
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    sessions_repo = TrainingSessionRepository(session)
+    workouts_count = len(history) + await sessions_repo.count_completed(user.id, exclude_backfilled=True)
+    last_moments = [record.performed_at for record in history]
+    latest_session = await sessions_repo.latest_completed_performed_at(user.id, exclude_backfilled=True)
+    if latest_session is not None:
+        last_moments.append(latest_session)
     days_since_last_workout = (
-        (datetime.now(UTC).date() - last_performed_at.date()).days if last_performed_at is not None else None
+        (datetime.now(UTC).date() - max(last_moments).date()).days if last_moments else None
     )
 
     # Список ачивок с датами (issue #66, п.1) — тот же ACHIEVEMENT_LABELS,
@@ -1106,7 +1114,6 @@ async def get_history(
     limit: int = Query(default=20, ge=1, le=100),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    exclude_migrated: bool = Query(default=False),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> HistoryResponse:
@@ -1123,21 +1130,16 @@ async def get_history(
     развилка без выигрыша при типичном объёме истории одного пользователя.
     Новейшие тренировки — первыми (естественный порядок для ленты).
 
-    exclude_migrated (#282) — только для Журнала, который отдельно показывает v2-сессии: legacy-
-    записи, уже перенесённые backfill-ом (#163) в v2 TrainingSession, скрываются (display-only,
-    правило — app.domain.journal_dedupe), иначе перенесённая тренировка видна дважды. Без флага —
-    прежнее поведение (все legacy-записи)."""
+    Журнал (#284) показывает ВСЕ legacy-карточки: старая схема — источник правды для перенесённой
+    backfill-ом истории, а карточка — единственное представление с «Изменить»/«Удалить». Дубли
+    убирает Журнал v2 (GET /api/v2/sessions?exclude_backfilled=true), не этот эндпоинт. Параметр
+    exclude_migrated (#282) удалён; неизвестные query-параметры FastAPI игнорирует, поэтому старые
+    клиенты с `&exclude_migrated=true` продолжают работать и получают все записи."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return HistoryResponse(items=[], has_more=False)
 
     history = await WorkoutRepository(session).list_for_user(user.id)
-    # Самая свежая запись во всей legacy-истории (цель следующей тренировки показывается только на
-    # ней) определяется ДО скрытия дублей: скрытая v2-копия цели не теряет — её несёт план.
-    latest_workout_id = history[-1].id if history else None
-    if exclude_migrated:
-        hidden_ids = {key.workout_id for key in await list_backfilled_duplicates(session, user.id)}
-        history = [w for w in history if w.id not in hidden_ids]
     # date_from/date_to (#256, Журнал по месяцам) — включительно, по той же дате,
     # что показывает карточка (performed_at.date()).
     if date_from is not None:
@@ -1151,7 +1153,7 @@ async def get_history(
     for workout in page:
         block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
         block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
-        is_latest = workout.id == latest_workout_id
+        is_latest = workout is newest_first[0]
         items.append(
             HistoryEntryResponse(
                 workout_id=workout.id,

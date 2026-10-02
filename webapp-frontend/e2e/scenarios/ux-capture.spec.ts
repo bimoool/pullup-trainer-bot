@@ -15,12 +15,13 @@ test.setTimeout(180_000);
 const LABEL = process.env.UX_LABEL ?? "ours";
 const OUT = process.env.UX_CAPTURE_DIR ?? path.resolve("ux-captures");
 const WIDTHS = (process.env.UX_WIDTHS ?? "390,320").split(",").map(Number);
+const THEME = process.env.UX_THEME === "dark" ? "dark" : "light";
 
-async function shot(page: Page, width: number, name: string) {
+async function shot(page: Page, width: number, name: string, fullPage = !name.startsWith("01_")) {
   const dir = path.join(OUT, LABEL, String(width));
   fs.mkdirSync(dir, { recursive: true });
   await page.waitForTimeout(250);
-  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: !name.startsWith("01_") });
+  await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage });
   const controls = await page.evaluate(() =>
     Array.from(document.querySelectorAll("button, input, textarea, select, [role=tab]"))
       .map((el) => {
@@ -58,10 +59,9 @@ for (const width of WIDTHS) {
     await page.getByRole("button", { name: /^(Добавить|Готово|Добавить упражнение)$/ }).last().click();
     await shot(page, width, "09_editor_with_item");
 
+    // «Сохранить» ведёт на Workout Detail только что собранной тренировки.
     await page.getByRole("button", { name: "Сохранить" }).last().click();
-    await page.getByTestId("my-workouts").waitFor();
-    await page.getByTestId("my-workout-card").filter({ hasText: "Очень длинная" }).click();
-    await page.getByText("Редактировать тренировку").waitFor();
+    await page.getByTestId("workout-detail").waitFor();
     await shot(page, width, "10_workout_detail_edit");
     await page.getByRole("button", { name: "Добавить в план" }).click();
     await shot(page, width, "11_add_to_plan");
@@ -87,5 +87,50 @@ for (const width of WIDTHS) {
     await playSets(page, ["8"]);
     await page.getByText("Следующее упражнение").waitFor();
     await shot(page, width, "24_block_transition");
+  });
+
+  // Все пять вкладок + Workout Detail (#280): паттерны оболочки сравниваются с эталоном.
+  test(`capture tabs @${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.getByTestId("my-workouts").waitFor();
+    await shot(page, width, "30_home_tab");
+    await shot(page, width, "30_home_tab_vp", false);
+    await page.getByTestId("my-workout-card").first().click();
+    await page.getByTestId("workout-detail").waitFor();
+    await shot(page, width, "31_workout_detail");
+    await shot(page, width, "31_workout_detail_vp", false);
+
+    for (const [id, tab, name, ready] of [
+      [900_013, "Планы", "32_plans_tab", null],
+      [910_002, "Журнал", "33_journal_tab", null],
+      [910_003, "Аналитика", "34_analytics_tab", null],
+      [900_003, "Профиль", "35_profile_tab", null],
+    ] as const) {
+      void ready;
+      await page.goto("about:blank");
+      await openAppAs(page, id, { theme: THEME });
+      await page.locator(".bottom-tabbar").getByRole("button", { name: tab }).click();
+      await page.waitForTimeout(1200);
+      await shot(page, width, name);
+      await shot(page, width, `${name}_vp`, false);
+    }
+
+    // Поиск, Program Detail и хаб «Тесты» с Главной (#280).
+    await page.goto("about:blank");
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.getByTestId("home-search-pill").click();
+    await page.waitForTimeout(600);
+    await shot(page, width, "36_search_vp", false);
+    await page.goto("about:blank");
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.locator(".program-card-button").first().click();
+    await page.waitForTimeout(600);
+    await shot(page, width, "37_program_detail_vp", false);
+    await page.goto("about:blank");
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.getByTestId("home-tests-row").click();
+    await page.waitForTimeout(800);
+    await shot(page, width, "38_tests_hub_vp", false);
   });
 }

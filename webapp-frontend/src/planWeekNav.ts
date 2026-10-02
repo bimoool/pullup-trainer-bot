@@ -41,6 +41,32 @@ export function currentWeekIndex(weeks: WeekLike[], today: string): number {
   return index;
 }
 
+/** Индекс текущей недели: сервер отдаёт current_week_id (в часовом поясе
+ * пользователя) — это источник истины; без него (старый ответ) — по локальной
+ * дате устройства. «Последняя неделя» текущей НЕ считается: после #275 в
+ * списке есть будущие недели. */
+export function resolveCurrentWeekIndex(
+  weeks: WeekLike[], currentWeekId: number | null | undefined, today: string,
+): number {
+  if (currentWeekId !== null && currentWeekId !== undefined) {
+    const index = weeks.findIndex((week) => week.id === currentWeekId);
+    if (index >= 0) {
+      return index;
+    }
+  }
+  return currentWeekIndex(weeks, today);
+}
+
+/** id текущей недели (см. resolveCurrentWeekIndex); null, если недель нет. */
+export function resolveCurrentWeekId(
+  weeks: WeekLike[], currentWeekId: number | null | undefined, today: string,
+): number | null {
+  if (weeks.length === 0) {
+    return null;
+  }
+  return weeks[resolveCurrentWeekIndex(weeks, currentWeekId, today)].id;
+}
+
 /** Выбранная неделя ограничена списком: ‹ не уходит левее первой, › —
  * правее последней существующей (будущих недель нет → стоп на текущей). */
 export function stepWeek(index: number, delta: -1 | 1, weekCount: number): number {

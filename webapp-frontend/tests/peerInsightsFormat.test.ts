@@ -3,13 +3,13 @@ import { test } from "node:test";
 
 import {
   formatPeerCohort, formatPeerMedian, formatPeerNext, formatPeerPercentile, peerBarWidth, PEER_INSUFFICIENT_TEXT,
-  peerView, type PeerInsights,
+  PEER_RATE_LIMITED_TEXT, peerView, type PeerInsights,
 } from "../src/peerInsightsFormat.ts";
 
 const ok: PeerInsights = {
   status: "ok", min_cohort_size: 20, unit: "повт.", own_value: "12",
   cohort: { level: "gender_age", label: "Мужчины 30–39 лет", size_bucket: "20–49" },
-  percentile: 73, median: "10.5", next_target: { percentile: 75, value: "15.25" },
+  percentile: 70, median: "10.5", next_target: { percentile: 75, value: "15.25" },
 };
 
 test("insufficient text is the exact contract string", () => {
@@ -26,7 +26,9 @@ test("peerView: ok only with a full aggregate set, never synthesizes numbers", (
 
 test("formatters", () => {
   assert.equal(formatPeerCohort(ok.cohort!), "Мужчины 30–39 лет · 20–49 человек");
-  assert.equal(formatPeerPercentile(73), "Лучше, чем у 73% похожих");
+  assert.equal(formatPeerPercentile(70), "Лучше, чем у ~70% похожих");
+  assert.equal(formatPeerPercentile(10), "Лучше, чем у ~10% похожих");
+  assert.equal(formatPeerPercentile(0), "Лучше, чем у менее 10% похожих"); // нижняя полоса — честно «менее 10%»
   assert.equal(formatPeerMedian("10.5", "повт."), "Медиана: 10.5 повт.");
   assert.equal(formatPeerMedian("8", ""), "Медиана: 8");
 });
@@ -42,4 +44,8 @@ test("peerBarWidth clamps", () => {
   assert.equal(peerBarWidth(-5), 0);
   assert.equal(peerBarWidth(140), 100);
   assert.equal(peerBarWidth(Number.NaN), 0);
+});
+
+test("rate-limited text is friendly Russian copy", () => {
+  assert.equal(PEER_RATE_LIMITED_TEXT, "Слишком много запросов сравнения. Попробуйте чуть позже.");
 });
