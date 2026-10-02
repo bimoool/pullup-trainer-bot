@@ -16,5 +16,11 @@ export function sanitizeDecimalInput(raw: string): string {
       result += char;
     }
   }
-  return result;
+  // «.» / «,» первым символом → «0.»: одиночный разделитель не должен выглядеть как число (#224 review).
+  return result.startsWith(".") ? `0${result}` : result;
+}
+
+/** Полное неотрицательное число для отправки: «12», «12.5», «12.» — да; «» и одиночный «.» — нет. */
+export function isCompleteDecimal(raw: string): boolean {
+  return /^\d+(\.\d*)?$/.test(raw.trim());
 }

@@ -24,8 +24,14 @@ export function absoluteUrl(origin: string, path: string): string {
 export function startDownload(path: string, deps: ExportDeps): "telegram" | "open" {
   const url = absoluteUrl(deps.origin, path);
   if (typeof deps.webApp?.downloadFile === "function") {
-    deps.webApp.downloadFile({ url, file_name: EXPORT_FILE_NAME });
-    return "telegram";
+    // telegram-web-app.js определяет downloadFile всегда, но на клиентах < Bot API 8.0 (и вне
+    // Telegram) метод бросает WebAppMethodUnsupported — тогда открываем ссылку (#224 review).
+    try {
+      deps.webApp.downloadFile({ url, file_name: EXPORT_FILE_NAME });
+      return "telegram";
+    } catch {
+      // падаем в обычное открытие ссылки ниже
+    }
   }
   deps.open(url);
   return "open";
