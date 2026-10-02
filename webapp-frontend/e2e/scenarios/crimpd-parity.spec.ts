@@ -769,6 +769,9 @@ for (const width of WIDTHS) {
       expect(dialogs[0]).toContain("Удалить результат 45 сек");
 
       // Профиль: тот же список в карточке «Тесты»; деталь с историей и графиком.
+      // На деталях нижней навигации нет: деталь → хаб → Главная, затем вкладка.
+      await pressTelegramBackButton(page);
+      await pressTelegramBackButton(page);
       await openTab(page, "Профиль");
       const profileTests = page.getByTestId("profile-tests");
       await expect(profileTests.getByTestId("test-card")).toHaveCount(3);

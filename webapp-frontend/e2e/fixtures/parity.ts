@@ -38,7 +38,9 @@ export const COMBOS = WIDTHS.flatMap((width) => THEMES.map((theme) => ({ width, 
 export async function expectScreenHealthy(page: Page, where: string, minChars = 40) {
   const { scrollWidth, innerWidth, contentChars } = await page.evaluate(() => {
     const scroller = document.scrollingElement ?? document.documentElement;
-    const tabbarChars = (document.querySelector(".bottom-tabbar") as HTMLElement | null)?.innerText.length ?? 0;
+    // скрытая на pushed-экранах навигация (display:none) в body.innerText не входит — не вычитаем
+    const tabbar = document.querySelector(".bottom-tabbar") as HTMLElement | null;
+    const tabbarChars = tabbar !== null && getComputedStyle(tabbar).display !== "none" ? tabbar.innerText.length : 0;
     return {
       scrollWidth: scroller.scrollWidth,
       innerWidth: window.innerWidth,

@@ -273,8 +273,11 @@ const FLOWS: Flow[] = [
       await expect(detail).toBeVisible();
       await visit(page, {
         where: "Деталь → Записать", open: () => page.getByTestId("workout-detail-log").click(),
-        dest: [page.getByTestId("journal-log-form")], exit: { tab: "Главная" }, origin: homeMarker(page),
+        // у формы записи нет нижней навигации: «назад» ведёт на деталь (D1), оттуда — на Главную
+        dest: [page.getByTestId("journal-log-form")], exit: "telegram", origin: detail,
       });
+      await pressTelegramBackButton(page);
+      await expect(homeMarker(page)).toBeVisible();
       await page.getByTestId("my-workout-card").filter({ hasText: WORKOUT }).click();
       await visit(page, {
         where: "Деталь → Добавить в план", open: () => byName(page, "Добавить в план").click(),
@@ -636,6 +639,11 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         where: "Журнал → Открыть тренировку", open: () => page.getByTestId("journal-open-workout").click(),
         dest: [page.getByTestId("workout-detail-title")], exit: "telegram", origin: journalMarker(page), // «назад» — в список Журнала, не на Главную
       });
+
+      // «назад» вернул в Журнал с открытой записью (у записи нет нижней навигации) — ещё раз «назад» к списку.
+      if (!(await tabbar(page).isVisible())) {
+        await pressTelegramBackButton(page);
+      }
 
       // Аналитика пересчитана: +1 тренировка.
       await openTab(page, "Аналитика");
