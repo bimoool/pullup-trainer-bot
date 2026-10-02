@@ -1225,7 +1225,24 @@ async def seed_session_recovery(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
+async def seed_background_interval(session: AsyncSession, telegram_id: int) -> None:
+    """#269 «Background timer»: та же свободная Workout, что у session_recovery, но
+    interval 180 с (работа 10 / отдых 20) — достаточно длинный, чтобы сдвигать часы
+    браузера через границы фаз, не доходя до дедлайна блока."""
+    await seed_session_recovery(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    workout = (await session.execute(select(Complex).where(Complex.owner_user_id == user.id))).scalar_one()
+    workout.name = "Интервал фона"
+    item = (await session.execute(select(ComplexItem).where(ComplexItem.complex_id == workout.id))).scalar_one()
+    item.protocol = {
+        "type": "interval", "total_duration_seconds": 180, "work_seconds": 10, "rest_seconds": 20,
+        "starts_with": "work",
+    }
+    await session.flush()
+
+
 SCENARIOS = {
+    "background_interval": seed_background_interval,
     "session_recovery": seed_session_recovery,
     "golden_journey": seed_golden_journey,
     "home_workouts": seed_home_workouts,

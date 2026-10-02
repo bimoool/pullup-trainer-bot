@@ -29,7 +29,7 @@ import {
   type LocalLiveSession,
   type LocalPhaseName,
 } from "./offlineSession";
-import { cancelScheduledPhaseEndSound, schedulePhaseEndSound } from "./phaseAudio";
+import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX, WORKOUT_EFFORT_PROMPT } from "./effortScale";
 import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
@@ -275,8 +275,30 @@ export function SessionLiveScreen({
       cancelScheduledPhaseEndSound();
       return;
     }
-    schedulePhaseEndSound((phaseEndsAtMs - Date.now()) / 1000);
-    return () => cancelScheduledPhaseEndSound();
+    function schedule() {
+      const delay = phaseEndCueDelaySeconds(phaseEndsAtMs as number, Date.now());
+      if (delay === null) {
+        cancelScheduledPhaseEndSound();
+      } else {
+        schedulePhaseEndSound(delay);
+      }
+    }
+    // #269: в фоне звук не играет, а часы AudioContext могут стоять — уходя в фон
+    // снимаем запланированный сигнал, на возврате планируем заново по реальным
+    // часам ТОЛЬКО если фаза ещё не закончилась (истёкшая в фоне — без бипа).
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        schedule();
+      } else {
+        cancelScheduledPhaseEndSound();
+      }
+    }
+    schedule();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      cancelScheduledPhaseEndSound();
+    };
   }, [phaseEndsAtMs]);
 
   // issue #202/#310 (integration review, H1) — useBackButton должен

@@ -106,10 +106,10 @@ any merge into `develop/current`.
 | Skip rest / next set | X7–X8 | «Пропустить отдых» | DONE | — | — | — | builder-execution.spec.ts |
 | Resistance ± kg per set | X5, X10 | not modelled for builder sets (bands in legacy STEP) | DOMAIN-EQUIVALENT | weight per set not stored in v2 | our bands/weighted progression lives in programs | — | — |
 | Auto log review after DONE | X9–X11 | Summary screen | DONE | — | — | — | session-summary-exit.spec.ts |
-| Background / reopen reconciliation | N5 *(unobserved)* | IndexedDB snapshot, /live/active | PARTIAL | countdown/phase contract after background not pinned | timestamp reconciliation, no double transition | #269 | session-recovery.spec.ts |
+| Background / reopen reconciliation | N5 *(unobserved)* | IndexedDB snapshot, /live/active; countdowns = `ends_at − now` from absolute timestamps, recomputed on `visibilitychange`; interval phase/round from the server clock; no auto-transition or duplicate set on return | DONE | — | — | #269 | parity/background-timer.spec.ts «Background timer»; webapp-frontend/tests/backgroundTimer.test.ts |
 | Exactly-once completion, offline | — (ours) | sets:batch, idempotent complete | DONE | — | — | — | session-offline.spec.ts, session-back-button.spec.ts |
-| Audio cues | N6 (settings only) | single beep at phase end | PARTIAL | no settings, replay after background | volume in Settings; no replay | #268, #269 | — |
-| Wake lock / keep awake | X13 *(unobserved)* | NoSleep.js | PARTIAL | not re-acquired on resume | re-acquire on visible | #269 | — |
+| Audio cues | N6 (settings only) | single beep at phase end (volume in Settings); cancelled on hide, re-planned on return only if the phase is still running — a phase that ended while hidden stays silent | DONE | — | — | #268, #269 | parity/background-timer.spec.ts «Background timer» |
+| Wake lock / keep awake | X13 *(unobserved)* | native Screen Wake Lock (NoSleep.js fallback on iOS); re-acquired on `visibilitychange → visible` while the session screen is mounted, released on completion/abandon | DONE | — | — | #269 | parity/background-timer.spec.ts «Background timer» |
 
 ## Logbook (Журнал)
 
@@ -181,11 +181,11 @@ any merge into `develop/current`.
 |---|---|---|---|---|---|---|---|
 | Dark / light | R13, N7 | Telegram theme mapping | DONE (override in #268) | — | — | #268 | mobile-layout.spec.ts |
 | Responsive widths | — | mobile layout 320–390 | DONE | — | — | — | mobile-layout.spec.ts, crimpd-parity Baseline |
-| Background timer | N5 *(unobserved)* | timestamp-based phases | PARTIAL | contract not pinned | reconciliation on resume | #269 | session-recovery.spec.ts |
+| Background timer | N5 *(unobserved)* | timestamp-based phases (rest / get ready / interval), reconciled on resume | DONE | — | — | #269 | parity/background-timer.spec.ts «Background timer»; session-recovery.spec.ts |
 | Notification permission / push for timer | N1–N2 | bot reminders (ours) | PLATFORM-IMPOSSIBLE | a Mini App cannot post native local notifications | Telegram bot messages for reminders | — | — |
-| Live Activities / Dynamic Island / lock-screen controls | N3 (iOS-native) | none | PLATFORM-IMPOSSIBLE | Telegram Mini App is a WebView inside Telegram: no ActivityKit, no lock-screen media session for timers, no background execution | accurate resume (#269) + bot reminders | — | — |
+| Live Activities / Dynamic Island / lock-screen controls | N3 (iOS-native) | none; the screen stays awake via Wake Lock while the session is open | PLATFORM-IMPOSSIBLE | Telegram Mini App is a WebView inside Telegram: no ActivityKit / Dynamic Island, no lock-screen media session or controls for timers, no background execution or audio — the OS suspends JS and audio when Telegram is backgrounded or the screen locks | on return the countdown is recomputed from absolute timestamps (never paused by the OS); interval resumes on the server clock; Wake Lock keeps the screen on while the session is visible; bot reminders cover out-of-app nudges (#269) | — | parity/background-timer.spec.ts «Background timer» |
 | Home-screen widgets | N4 | none | PLATFORM-IMPOSSIBLE | no widget API for Mini Apps | — | — | — |
-| Background audio while app hidden | N6 | beep only while visible | PLATFORM-IMPOSSIBLE | WebView suspends timers/audio when Telegram is backgrounded | no replay of missed cues (#269) | #269 | — |
+| Background audio while app hidden | N6 | beep only while visible | PLATFORM-IMPOSSIBLE | WebView suspends timers/audio when Telegram is backgrounded | missed cues are not replayed on return: the end-of-phase beep of a phase that ended while hidden stays silent (#269) | #269 | parity/background-timer.spec.ts «Background timer» |
 | Health / wearable integrations | N8 (none in Crimpd) | none | DONE (parity: none) | — | — | — | — |
 | Hamburger drawer (Help / Settings / Logout) | G2 | bottom tabs + Telegram menu | DOMAIN-EQUIVALENT | Telegram owns app chrome; no logout | Settings via Profile gear (#268) | #268 | — |
 | PWA-equivalent behaviour | — | Telegram Mini App (PWA planned, product-reference) | PARTIAL | web/PWA build is a later phase | — | — | — |
@@ -194,8 +194,8 @@ any merge into `develop/current`.
 
 | Status | Count |
 |---|---|
-| DONE | 25 |
-| PARTIAL | 20 |
+| DONE | 29 |
+| PARTIAL | 16 |
 | MISSING | 54 |
 | DOMAIN-EQUIVALENT | 14 |
 | PLATFORM-IMPOSSIBLE | 4 |
