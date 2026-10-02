@@ -15,14 +15,15 @@
     "id": 8,
     "limit": 5,
     "max_attempts": 8,
-    "status": "running",
+    "status": "owner-review",
     "approved_by": "bimoool",
     "started_at": "2026-10-02 01:24 UTC",
     "completed": [
       264,
       265,
       266,
-      263
+      263,
+      273
     ],
     "attempts": [
       263,
@@ -31,7 +32,8 @@
       265,
       263,
       266,
-      263
+      263,
+      273
     ],
     "idle_reason": null
   },
