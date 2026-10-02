@@ -118,8 +118,11 @@ async def test_cohort_cascade_gender_age_then_gender_then_all(session):
     # мужчины: 18×8, я=10, 6×12 → below 18, equal 1 из 25 → (18.5)/25 = 74%
     assert body["percentile"] == 70 and body["median"] == "8"  # точный 74 → полоса 70
 
-    # ещё один мужчина 30–39 → ровно 20 в ступени
+    # ещё один мужчина 30–39 → ровно 20 в ступени, но остаток «мужчины − ступень» = 6 → ступень подавлена
     await _cohort(session, pid, [14], Gender.MALE, MID_30S)
+    assert (await _insights(session, me, pid))["cohort"]["level"] == "gender"
+    # +14 мужчин 20–29 → остаток 20: ступень показывается
+    await _cohort(session, pid, [12] * 14, Gender.MALE, MID_20S)
     body = await _insights(session, me, pid)
     assert body["cohort"] == {"level": "gender_age", "label": "Мужчины 30–39 лет", "size_bucket": "20–49"}
     assert body["percentile"] == 90  # точный 93; 20 человек: ниже меня 18 (все по 8), 14 выше → 18.5/20 = 92.5% → 93
@@ -239,11 +242,12 @@ async def test_cohort_aggregation_is_one_sql_regardless_of_user_count(session):
 
     event.listen(sync_engine, "before_cursor_execute", listener)
     try:
-        cohorts = await AssessmentRepository(session).peer_cohorts(pid, Decimal(10), "male", "30_39", NOW.date())
+        cohorts = await AssessmentRepository(session).peer_cohorts(pid, Decimal(10), NOW.date())
     finally:
         event.remove(sync_engine, "before_cursor_execute", listener)
-    assert len(statements) == 1
-    assert [c.level.value for c in cohorts] == ["gender_age", "gender", "all"] and cohorts[0].size == 60
+    assert len(statements) <= 2  # сейчас ровно один (GROUPING SETS)
+    assert {c.level.value for c in cohorts.values()} == {"gender_age", "gender", "all"}
+    assert next(c for c in cohorts.values() if c.level.value == "gender_age").size == 60
 
 
 async def test_percentile_is_a_ten_point_band_sweeping_own_value_cannot_resolve_individuals(session):
@@ -275,9 +279,10 @@ async def test_non_reps_median_and_next_target_use_one_decimal(session):
     assert Decimal(body["next_target"]["value"]) > 10
 
 
-async def test_gender_level_refused_when_age_complement_is_small_falls_to_all(session):
-    """Мужчина без даты рождения: «мужчины» = 25 (30–39) + 10 (20–29) + он сам = 36; подкогорта
-    30–39 (25) показывается своим, остаток 36 − 25 = 11 — раскрылся бы вычитанием. Уровень пропущен."""
+async def test_gender_level_hidden_when_age_remainder_is_small_everyone_still_gets_a_cohort(session):
+    """Мужчина без даты рождения: «мужчины» = 25 (30–39) + 10 (20–29) + он сам = 36; ступень 30–39
+    (25) оставляла бы остаток 11. Подавляется узкая ступень, а не «мужчины»: без даты рождения —
+    «мужчины» (остаток от «все» 25 женщин ≥ 20), мужчина 30–39 тоже видит «мужчин» (ступень скрыта)."""
     pid = await _pid(session)
     await _cohort(session, pid, [5] * 25, Gender.MALE, MID_30S)
     await _cohort(session, pid, [6] * 10, Gender.MALE, MID_20S)
@@ -285,39 +290,99 @@ async def test_gender_level_refused_when_age_complement_is_small_falls_to_all(se
     me = await _make_user(session, Gender.MALE, None)
     await _result(session, me, pid, 9)
     body = await _insights(session, me, pid)
-    assert body["status"] == "ok" and body["cohort"]["level"] == "all"
-    # когда остаток вне 1..19 (ещё 9 мужчин 20–29 → остаток 20), уровень «пол» снова доступен
+    assert body["status"] == "ok" and body["cohort"]["level"] == "gender"
+    viewer = await _make_user(session, Gender.MALE, MID_30S)
+    await _result(session, viewer, pid, 9)
+    assert (await _insights(session, viewer, pid))["cohort"]["level"] == "gender"  # ступень 30–39 подавлена
+    # ещё 9 мужчин 20–29 → остаток 20 → ступень 30–39 снова показывается (26 с viewer'ом)
     await _cohort(session, pid, [6] * 9, Gender.MALE, MID_20S)
-    assert (await _insights(session, me, pid))["cohort"]["level"] == "gender"
+    assert (await _insights(session, viewer, pid))["cohort"]["level"] == "gender_age"
 
 
-async def test_all_level_refused_when_gender_complement_is_small_insufficient(session):
-    """Без пола: «все» = 25 мужчин + он сам; остаток от «мужчин» (25) = 1 → раскрывался бы он сам
-    и любой единичный пользователь вне пола. «Все» пропускается; шире уровней нет — insufficient."""
+async def test_small_minority_does_not_suppress_all_for_everyone(session):
+    """Ревью #284 (B2): 25 мужчин + 8 женщин. Раньше «все» скрывалось для женщин и пользователей без
+    пола. Теперь «все» (33) доступно им; узкие «мужчины»/ступень, чья разность с «все» раскрыла бы
+    8 женщин, подавляются — мужчины тоже получают «все»."""
     pid = await _pid(session)
     await _cohort(session, pid, [5] * 25, Gender.MALE, MID_30S)
+    await _cohort(session, pid, [6] * 7, Gender.FEMALE, MID_30S)
+    woman = await _make_user(session, Gender.FEMALE, MID_30S)
+    await _result(session, woman, pid, 9)
+    nobody = await _make_user(session, None, None)
+    await _result(session, nobody, pid, 9)
+    man = await _make_user(session, Gender.MALE, MID_30S)
+    await _result(session, man, pid, 9)  # теперь мужчин 26, женщин 8: ALL = 35 (с nobody)
+    for user in (woman, nobody, man):
+        body = await _insights(session, user, pid)
+        assert body["status"] == "ok" and body["cohort"]["level"] == "all", body
+
+
+async def test_review_scenario_male_only_protocol_cannot_be_differenced_through_birth_date(session):
+    """Ревью #284 (B1): 35 мужчин (25 в 18–29, 10 в 30–39), женщин нет. «все» ≡ «мужчины»; смена
+    даты рождения не должна давать другой ответ — ступень 18–29 скрыта, все видят одни цифры."""
+    pid = await _pid(session)
+    await _cohort(session, pid, [5] * 24, Gender.MALE, MID_20S)
+    await _cohort(session, pid, [7] * 9, Gender.MALE, MID_30S)
+    old = await _make_user(session, Gender.MALE, MID_30S)
+    young = await _make_user(session, Gender.MALE, MID_20S)
+    for user in (old, young):
+        await _result(session, user, pid, 6)
+    bodies = []
+    for user in (old, young):
+        peer_insights_limiter.reset()
+        bodies.append(await _insights(session, user, pid))
+    assert bodies[0] == bodies[1]
+    assert bodies[0]["cohort"]["level"] == "gender"
+    nobody = await _make_user(session, None, None)  # без пола: «все» — это те же 35 + он сам (остаток 1)
+    await _result(session, nobody, pid, 6)
+    body = await _insights(session, nobody, pid)
+    # остаток «все» − «мужчины» = 1 → «мужчины» скрыты; «все» (36) для него; «мужчины» не отличимы
+    # от «все» по разности, потому что их больше нет
+    assert body["status"] == "ok" and body["cohort"]["level"] == "all"
+    peer_insights_limiter.reset()
+    assert (await _insights(session, old, pid))["cohort"]["level"] == "all"
+
+
+async def test_all_level_with_single_gender_less_than_twenty_is_insufficient_until_enough(session):
+    """Без пола: 19 мужчин + он сам = 20 в «все»; ни одна узкая когорта не показывается (мужчин 19)."""
+    pid = await _pid(session)
+    await _cohort(session, pid, [5] * 19, Gender.MALE, MID_30S)
     me = await _make_user(session, None, None)
     await _result(session, me, pid, 9)
-    body = await _insights(session, me, pid)
-    assert body["status"] == "insufficient"
-    for key in ("percentile", "median", "cohort", "next_target"):
-        assert body[key] is None, key
-    # ещё 20 пользователей без пола → остаток 21, «все» снова показывается
-    await _cohort(session, pid, [4] * 20, None, None)
     assert (await _insights(session, me, pid))["cohort"]["level"] == "all"
+    await _cohort(session, pid, [5], Gender.MALE, MID_30S)  # мужчин 20, «все» 21: остаток 1 → мужчины скрыты
+    body = await _insights(session, me, pid)
+    assert body["cohort"]["level"] == "all"
 
 
-async def test_guard_sizes_come_from_the_same_single_sql(session):
+async def test_peer_cohorts_returns_all_candidates_from_one_grouped_sql(session):
+    from sqlalchemy import event
+
     from app.db.repositories.assessments import AssessmentRepository
+    from app.domain.peer_insights import ALL_COHORT, cell_cohort, gender_cohort
 
     pid = await _pid(session)
     me = await _make_user(session, Gender.MALE, MID_30S)
     await _result(session, me, pid, 10)
     await _cohort(session, pid, [5] * 25, Gender.MALE, MID_20S)
     await _cohort(session, pid, [5] * 3, Gender.FEMALE, MID_20S)
-    cohorts = {c.level.value: c for c in await AssessmentRepository(session).peer_cohorts(pid, Decimal(10), "male", "30_39", NOW.date())}
-    assert cohorts["gender"].parts == (25, 1, 0, 0, 0, 0)  # ступени 18–29 … 70+ среди мужчин
-    assert cohorts["all"].parts == (26, 3) and cohorts["gender_age"].parts == ()
+    await _cohort(session, pid, [5] * 2, None, None)
+    statements: list[str] = []
+    sync_engine = session.bind.sync_engine if session.bind is not None else session.get_bind()
+
+    def listener(conn, cursor, statement, *args):
+        statements.append(statement)
+
+    event.listen(sync_engine, "before_cursor_execute", listener)
+    try:
+        cohorts = await AssessmentRepository(session).peer_cohorts(pid, Decimal(10), NOW.date())
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", listener)
+    assert len(statements) == 1  # ≤ 2 по ТЗ; сейчас ровно один (GROUPING SETS)
+    # меньше 20 в выдачу не попадает (30–39 мужчин: 1, женщины: 3); без пола — только в «все»
+    assert set(cohorts) == {ALL_COHORT, gender_cohort("male"), cell_cohort("male", "18_29")}
+    assert cohorts[ALL_COHORT].size == 31 and cohorts[gender_cohort("male")].size == 26
+    assert cohorts[cell_cohort("male", "18_29")].size == 25 and cohorts[cell_cohort("male", "18_29")].below == 25
 
 
 async def test_peer_insights_endpoint_is_rate_limited_per_user_with_friendly_429(session):
