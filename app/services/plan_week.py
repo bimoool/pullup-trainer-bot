@@ -142,23 +142,28 @@ class PlanWeekService:
         return week
 
     async def copy_manual_items(self, *, source: PlanWeek, target: PlanWeek) -> tuple[int, int]:
-        """Копирует ручные PlanItem недели source в target, пропуская
-        дубликаты (тот же exercise/complex/день). Программные строки не
-        копируются. Возвращает (скопировано, пропущено).
+        """Копирует ручные PlanItem недели source в target. Источник переносится без потерь:
+        одинаковые (exercise, complex, день) строки внутри source — отдельные строки со своим
+        count. Идемпотентность повторного копирования — по мультимножеству: сколько строк с
+        таким ключом уже есть в target, столько строк источника пропускается как дубли.
+        Программные строки не копируются. Возвращает (скопировано, пропущено).
 
         Два конкурентных вызова на один план сериализуются локом строки плана
         (иначе оба прочитают пустую target и продублируют строки); второй
         увидит строки, закоммиченные первым, и пропустит их как дубликаты."""
         await self._plans.lock_plan(source.training_plan_id)
         existing = await self._plans.list_manual_plan_items_for_week(target.id)
-        seen = {(item.exercise_id, item.complex_id, item.day_of_week) for item in existing}
+        remaining: dict[tuple, int] = {}
+        for item in existing:
+            key = (item.exercise_id, item.complex_id, item.day_of_week)
+            remaining[key] = remaining.get(key, 0) + 1
         copied = skipped = 0
         for item in await self._plans.list_manual_plan_items_for_week(source.id):
             key = (item.exercise_id, item.complex_id, item.day_of_week)
-            if key in seen:
+            if remaining.get(key, 0) > 0:
+                remaining[key] -= 1
                 skipped += 1
                 continue
-            seen.add(key)
             self._session.add(PlanItem(
                 training_plan_id=item.training_plan_id, exercise_id=item.exercise_id, complex_id=item.complex_id,
                 count_per_week=item.count_per_week, day_of_week=item.day_of_week, week_phase=item.week_phase,
