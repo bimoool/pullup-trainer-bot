@@ -8,6 +8,9 @@ import { BandItemsScreen } from "./BandItemsScreen";
 import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsList } from "./TestsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
+import { useDisplayPrefs } from "./displayPrefs";
+import { SettingsScreen } from "./SettingsScreen";
+import { formatHeight, formatWeight } from "./units";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
 
@@ -189,6 +192,9 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   // Форма правки личных данных (issue #125) — тот же приём swap'а, что и
   // showAchievements выше.
   const [showEditProfile, setShowEditProfile] = useState(false);
+  // Экран «Настройки» (#268) — тот же приём swap'а.
+  const [showSettings, setShowSettings] = useState(false);
+  const prefs = useDisplayPrefs();
   // Список личных резин (issue #148) — тот же приём swap'а.
   const [showBandItems, setShowBandItems] = useState(false);
   // Деталь теста (#260) — тот же приём swap'а; список карточек — TestsList в карточке «Тесты».
@@ -281,6 +287,18 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     );
   }
 
+  if (showSettings) {
+    return (
+      <SettingsScreen
+        initDataRaw={initDataRaw}
+        profile={profile}
+        onSaved={(updated) => setState({ phase: "ready", profile: updated })}
+        onBack={() => setShowSettings(false)}
+        onOpenSubscription={onOpenSubscription}
+      />
+    );
+  }
+
   if (showBandItems) {
     return <BandItemsScreen initDataRaw={initDataRaw} onBack={() => setShowBandItems(false)} />;
   }
@@ -295,7 +313,18 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
 
   return (
     <div>
-      <p className="plan-title">Профиль</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p className="plan-title">Профиль</p>
+        <button
+          type="button"
+          className="search-chip"
+          aria-label="Настройки"
+          data-testid="profile-settings"
+          onClick={() => setShowSettings(true)}
+        >
+          ⚙️
+        </button>
+      </div>
 
       <div className="profile-card">
         <p>
@@ -309,8 +338,8 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
 
       <div className="profile-card">
         <p className="section-title">Личные данные</p>
-        <p>{`Вес: ${profile.weight_kg ?? "не указано"} кг`}</p>
-        <p>{`Рост: ${profile.height_cm ?? "не указано"} см`}</p>
+        <p data-testid="profile-weight">{`Вес: ${formatWeight(profile.weight_kg, prefs.weight_unit)}`}</p>
+        <p data-testid="profile-height">{`Рост: ${formatHeight(profile.height_cm, prefs.height_unit)}`}</p>
         <p>{`Пол: ${profile.gender_label ?? "не указано"}`}</p>
         <p>{`Возраст: ${profile.age ?? "не указано"}`}</p>
         <p>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</p>

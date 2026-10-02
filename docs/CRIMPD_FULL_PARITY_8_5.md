@@ -155,15 +155,15 @@ any merge into `develop/current`.
 | Assessments (primary / additional, last result, sparkline) | R4–R5 | «Тесты» card on Профиль (3 seeded protocols, last result, mini-trend ≥2) | DONE | no primary/additional split | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
 | Test detail: chart, history | R6, R8 | description, SVG trend, history (newest first), record / edit / delete own results | DONE | — | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
 | Peer Insights | R7 | leaderboard (legacy data) | MISSING | — | percentile vs cohort, ≥20 users or honest «мало данных» | #276 | — |
-| Units (kg/lb, cm/in) | R11 | hard-coded metric | MISSING | — | display units | #268 | — |
-| Timezone | R11 | ProfileEditForm timezone | DONE | — | — | — | — |
-| Theme Light / Dark / Auto | R13 | follows Telegram only | PARTIAL | no override | «Как в Telegram / Светлая / Тёмная» | #268 | mobile-layout.spec.ts (both themes) |
-| Timer settings (volume, vibrations) | R14 | API exists, UI hidden | PARTIAL | unreachable | Settings «Таймер» | #268 | — |
-| Subscription management | R10, R17 | SubscriptionScreen | DONE | — | (in Settings too) | #268 | — |
-| Data export (Download Logbook) | R15 | Export card in Analytics (Settings entry point left to #268) | PARTIAL | not in Settings | Settings → CSV | #268 | parity/export.spec.ts «Export» |
+| Units (kg/lb, cm/in) | R11 | Settings «Единицы» (`/api/profile/prefs`); Профиль + форма правки показывают/вводят в выбранных единицах, хранение метрическое | PARTIAL | weights inside workout logging / journal / analytics still kg | display units everywhere | #268 | parity/settings.spec.ts «Settings»; tests/test_web/test_display_prefs.py; tests/units.test.ts |
+| Timezone | R11 | ProfileEditForm + Settings timezone | DONE | — | — | #268 | parity/settings.spec.ts «Settings» |
+| Theme Light / Dark / Auto | R13 | Settings «Оформление» → override of AppRoot + CSS palette, stored server-side | DONE | — | — | #268 | parity/settings.spec.ts «Settings» (theme override, 320 light / 390 dark); tests/test_web/test_display_prefs.py |
+| Timer settings (volume, vibrations) | R14 | Settings «Таймер»: volume slider (`/api/timer/preferences`) | PARTIAL | vibrations not implemented | — | #268 | parity/settings.spec.ts (screen section) |
+| Subscription management | R10, R17 | SubscriptionScreen + status/link/оферта in Settings | DONE | — | — | #268 | parity/settings.spec.ts «Settings» |
+| Data export (Download Logbook) | R15 | Export card in Analytics + Settings «Данные → Скачать историю» | DONE | — | — | #268 | parity/export.spec.ts «Export»; parity/settings.spec.ts «Settings» |
 | Delete account | R16 *(not tapped)* | none | MISSING | irreversible data operation | **needs owner decision** (retention, legal) — not in campaign | — (owner) | — |
 | Change password | R10 | Telegram auth | DOMAIN-EQUIVALENT | no passwords (Telegram identity) | — | — | — |
-| Settings screen with Cancel / Save | R9 | scattered forms | MISSING | — | Settings screen | #268 | — |
+| Settings screen with Cancel / Save | R9 | Профиль ⚙️ → «Настройки», draft until «Сохранить», «Отмена» discards | DONE | — | — | #268 | parity/settings.spec.ts «Settings» (cancel discards) |
 
 ## Content discovery
 

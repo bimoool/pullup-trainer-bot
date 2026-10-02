@@ -99,6 +99,8 @@ from app.web.schemas import (
     BandItemUpdateRequest,
     CycleVolumeResponse,
     DashboardResponse,
+    DisplayPreferencesResponse,
+    DisplayPreferencesUpdateRequest,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
     ElectiveSubmitResponse,
@@ -2103,6 +2105,46 @@ async def update_timer_preferences(
         value = body.duration_seconds
     updated = await UserRepository(session).update_timer_preference(user.id, field=field, value=value)
     return _resolve_timer_preferences(updated)
+
+
+# --- Настройки отображения: единицы и тема (issue #268) --------------------------------
+
+
+def _resolve_display_preferences(user) -> DisplayPreferencesResponse:
+    return DisplayPreferencesResponse(
+        weight_unit=user.weight_unit or "kg",
+        height_unit=user.height_unit or "cm",
+        theme=user.theme_pref or "auto",
+    )
+
+
+@router.get("/profile/prefs", response_model=DisplayPreferencesResponse)
+async def get_display_preferences(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DisplayPreferencesResponse:
+    """Единицы веса/роста и тема с дефолтами (kg/cm/auto). Хранение веса/роста
+    остаётся метрическим — единицы влияют только на показ и ввод."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    return _resolve_display_preferences(user)
+
+
+@router.put("/profile/prefs", response_model=DisplayPreferencesResponse)
+async def update_display_preferences(
+    body: DisplayPreferencesUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DisplayPreferencesResponse:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    updated = await users.update_display_preferences(
+        user.id, weight_unit=body.weight_unit, height_unit=body.height_unit, theme=body.theme,
+    )
+    return _resolve_display_preferences(updated)
 
 
 # Текст для NULL leaderboard_display_name — форматирование, не доменное

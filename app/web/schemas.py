@@ -1048,3 +1048,19 @@ class ElectiveSubmitResponse(BaseModel):
     status: str
     result_text: str | None = None
     equipment_label: str | None = None
+
+
+class DisplayPreferencesResponse(BaseModel):
+    """GET/PUT /api/profile/prefs (issue #268) — единицы и тема, уже с дефолтами."""
+
+    weight_unit: Literal["kg", "lb"]
+    height_unit: Literal["cm", "in"]
+    theme: Literal["auto", "light", "dark"]
+
+
+class DisplayPreferencesUpdateRequest(BaseModel):
+    """Частичное обновление: None — не менять."""
+
+    weight_unit: Literal["kg", "lb"] | None = None
+    height_unit: Literal["cm", "in"] | None = None
+    theme: Literal["auto", "light", "dark"] | None = None

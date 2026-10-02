@@ -1,7 +1,6 @@
 import { useState } from "react";
 
-import { createExportLink } from "./apiV2";
-import { type ExportWebApp, startDownload } from "./exportDownload";
+import { downloadHistoryCsv } from "./exportAction";
 import { ProgressScreen } from "./ProgressScreen";
 import { TrainingAnalytics } from "./TrainingAnalytics";
 
@@ -22,9 +21,7 @@ function ExportCard({ initDataRaw }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const { url } = await createExportLink(initDataRaw);
-      const webApp = (window as unknown as { Telegram?: { WebApp?: ExportWebApp } }).Telegram?.WebApp;
-      startDownload(url, { webApp, origin: window.location.origin, open: (target) => window.open(target, "_blank") });
+      await downloadHistoryCsv(initDataRaw);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось подготовить файл");
     } finally {
