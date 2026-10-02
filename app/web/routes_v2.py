@@ -56,6 +56,7 @@ from app.domain.program_schedule import (
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.live_session import (
+    ActiveSessionConflictError,
     CompleteResult,
     LiveSessionService,
     awaiting_block_start,
@@ -1047,6 +1048,9 @@ async def _resolve_session_titles(
             titles[detail.id] = workout_title_by_complex_id.get(complex_backed.complex_id)
         elif source_items and source_items[0].exercise_id is not None:
             titles[detail.id] = exercise_name_by_id.get(source_items[0].exercise_id)
+        elif detail.source == SessionSource.FREEFORM and detail.workout_snapshot is not None:
+            # «Начать» с Workout Detail: без PlanItem, заголовок — из замороженного снимка.
+            titles[detail.id] = detail.workout_snapshot.get("title")
         else:
             titles[detail.id] = None
     return titles
@@ -1437,11 +1441,19 @@ async def start_live_session(
     try:
         result = await LiveSessionService(session).start_session(
             user_id=user.id, client_session_id=body.client_session_id, plan_item_ids=body.plan_item_ids,
+            workout_id=body.workout_id,
         )
+    except ActiveSessionConflictError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {"code": "active_session_exists", "active_session_id": exc.active_session_id},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if result is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Workout not found" if body.workout_id is not None else "PlanItem not found",
+        )
     titles = await _resolve_session_titles(session, [result.session], user.id)
     return _live_session_response(result.session, title=titles.get(result.session.id))
 

@@ -8,7 +8,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.web.schemas_v2 import (
     IntervalConfigResponse,
@@ -26,7 +26,16 @@ class LiveSessionStartRequest(BaseModel):
     повтор с тем же UUID возвращает уже созданную сессию, не плодит вторую."""
 
     client_session_id: UUID
-    plan_item_ids: list[int]
+    plan_item_ids: list[int] = Field(default_factory=list)
+    # «Начать» на Workout Detail: свободная сессия из снимка своей тренировки,
+    # взаимоисключающе с plan_item_ids.
+    workout_id: int | None = None
+
+    @model_validator(mode="after")
+    def _workout_xor_plan_items(self) -> "LiveSessionStartRequest":
+        if self.workout_id is not None and self.plan_item_ids:
+            raise ValueError("workout_id и plan_item_ids взаимоисключающи")
+        return self
 
 
 # --- POST /sessions/live/{id}/phase/next -------------------------------------------------

@@ -78,6 +78,15 @@ class LiveSessionResult:
     session: SessionDetail
 
 
+class ActiveSessionConflictError(Exception):
+    """Старт тренировки по workout_id при уже идущей другой живой сессии
+    (одна активная сессия на пользователя): роут -> 409 с id активной."""
+
+    def __init__(self, active_session_id: int) -> None:
+        super().__init__("Active live session already exists")
+        self.active_session_id = active_session_id
+
+
 # progression_skipped_reason повторного complete уже завершённой сессии:
 # прогрессия была применена (или пропущена) первым завершением, не этим.
 ALREADY_COMPLETED_REASON = "already_completed"
@@ -168,12 +177,21 @@ class LiveSessionService:
 
     async def start_session(
         self, *, user_id: int, client_session_id: uuid.UUID, plan_item_ids: list[int],
+        workout_id: int | None = None,
     ) -> LiveSessionResult | None:
         """ValueError — недопустимая комбинация plan items (Builder Workout
-        вперемешку с обычными строками в одной сессии): роут -> 422."""
+        вперемешку с обычными строками в одной сессии): роут -> 422.
+
+        workout_id — «Начать» на Workout Detail: свободная (source=freeform)
+        сессия из замороженного снимка тренировки, без PlanItem."""
         existing = await self._sessions.get_by_client_session_id(user_id, client_session_id)
         if existing is not None:
             return await self._build_result(existing.id, user_id)
+
+        if workout_id is not None:
+            return await self._start_workout_session(
+                user_id=user_id, client_session_id=client_session_id, workout_id=workout_id,
+            )
 
         plan = await self._plans.get_for_user(user_id)
         if plan is None:
@@ -210,6 +228,35 @@ class LiveSessionService:
             performed_at=datetime.now(UTC), plan_item_ids=plan_item_ids,
             blocks=resolved_blocks, targets_by_block=resolved_targets, phase_ends_at=phase_ends_at,
             workout_snapshot=workout_snapshot,
+        )
+        return await self._build_result(training_session.id, user_id)
+
+    async def _start_workout_session(
+        self, *, user_id: int, client_session_id: uuid.UUID, workout_id: int,
+    ) -> LiveSessionResult | None:
+        """None — тренировка не видна пользователю (PROJECT_SPEC §5) -> 404.
+        Прогрессию курса и счётчики плана такая сессия не трогает (source=
+        FREEFORM, SessionPlanItem не создаётся)."""
+        if await self._programs.get_visible_workout_for_user(workout_id, user_id) is None:
+            return None
+        active = await self._sessions.get_active_for_user(user_id)
+        if active is not None:
+            raise ActiveSessionConflictError(active.id)
+
+        blocks, targets, snapshot = await self._resolve_complex_blocks(workout_id)
+        if not blocks:
+            raise ValueError("В тренировке нет упражнений")
+        block_protocols = [item.protocol for item in snapshot.items] if snapshot is not None else [None] * len(blocks)
+        block_plans = [
+            BlockPlan(sets_count=len(block_targets), rest_seconds=rest_seconds_for_protocol(protocol))
+            for block_targets, protocol in zip(targets, block_protocols, strict=True)
+        ]
+        phase_state = initial_phase(block_plans)
+        training_session = await self._sessions.create_live_session(
+            user_id=user_id, client_session_id=client_session_id, source=SessionSource.FREEFORM,
+            performed_at=datetime.now(UTC), plan_item_ids=[], blocks=blocks, targets_by_block=targets,
+            phase_ends_at=_phase_ends_at_from_offset(phase_state.ends_at_offset_seconds),
+            workout_snapshot=snapshot.model_dump(mode="json") if snapshot is not None else None,
         )
         return await self._build_result(training_session.id, user_id)
 
@@ -670,6 +717,9 @@ class LiveSessionService:
         skipped_reason: str | None = None
         if abandoned:
             skipped_reason = "abandoned"
+        elif detail.source != SessionSource.PLAN:
+            # «Начать» с Workout Detail (freeform): прогрессию курса не трогает.
+            skipped_reason = "not_plan_session"
         else:
             inclusion = await self._find_step_inclusion_for_session(detail, user_id)
             if inclusion is None:
