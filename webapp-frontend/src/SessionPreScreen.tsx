@@ -145,7 +145,7 @@ export function SessionPreScreen({
   // issue #202: Telegram BackButton — переиспользует существующий onGoToWorkout
   // (тот же хендлер, что у кнопок "Перейти в обычную Тренировку" в blocked/
   // needs_assessment/no_course фазах — не создаёт вторую логику выхода)
-  useBackButton(onGoToWorkout, [onGoToWorkout]);
+  useBackButton(onGoToWorkout, [onGoToWorkout], true, false);
 
   useEffect(() => {
     let cancelled = false;

@@ -59,7 +59,25 @@ const sdkAdapter: BackButtonAdapter = {
 
 const stack = createBackButtonStack(sdkAdapter);
 
-export function useBackButton(onClickHandler: () => void, _deps: React.DependencyList = [], enabled = true) {
+// Нижняя навигация скрыта на всех «pushed»-экранах (деталь, форма, поиск …) — как в эталоне; «назад»
+// остаётся в шапке экрана и в Telegram BackButton. Счётчик, а не флаг: вложенные экраны не мешают друг другу.
+let navHiddenCount = 0;
+function setNavHidden(delta: number) {
+  navHiddenCount = Math.max(0, navHiddenCount + delta);
+  if (typeof document !== "undefined") {
+    document.documentElement.classList.toggle("vp-nav-hidden", navHiddenCount > 0);
+  }
+}
+
+/** @param hideNav false для оверлеев-шторок (ActionSheet, JournalEntrySheet): навигация под ними остаётся. */
+export function useBackButton(onClickHandler: () => void, _deps: React.DependencyList = [], enabled = true, hideNav = true) {
+  useEffect(() => {
+    if (!enabled || !hideNav) {
+      return;
+    }
+    setNavHidden(1);
+    return () => setNavHidden(-1);
+  }, [enabled, hideNav]);
   const handlerRef = useRef(onClickHandler);
   useEffect(() => {
     handlerRef.current = onClickHandler;

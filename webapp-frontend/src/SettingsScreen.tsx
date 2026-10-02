@@ -1,7 +1,8 @@
-import { Button, Input, Section, Select } from "@telegram-apps/telegram-ui";
+import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { Icon } from "./Icon";
+import { BackChevron } from "./BackChevron";
+import { Icon, type IconName } from "./Icon";
 import {
   fetchTimerPreferences,
   fetchTimezoneOptions,
@@ -71,6 +72,17 @@ function Choice<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/** Строка группы настроек: иконка-бейдж слева, подпись, значение справа (нативный input/select). Без tgui-рамок. */
+function Row({ icon, label, children }: { icon: IconName; label: string; children: React.ReactNode }) {
+  return (
+    <label className="settings-row">
+      <span className="settings-row-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
+      <span className="settings-row-label">{label}</span>
+      <span className="settings-row-control">{children}</span>
+    </label>
   );
 }
 
@@ -198,45 +210,40 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
 
   return (
     <div data-testid="settings-screen" className="settings-screen">
-      <p className="plan-title">Настройки</p>
+      <div className="vs-screen-head">
+        <BackChevron onClick={onBack} />
+        <h1 className="plan-title">Настройки</h1>
+      </div>
 
-      <p className="section-title">Профиль</p>
-      <Section className="block-section">
-        <Input
-          header={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
-          type="text"
-          inputMode="decimal"
-          aria-label="Вес"
-          value={weightText}
-          onChange={(e) => setWeightText(sanitizeDecimalInput(e.target.value))}
-        />
-        <Input
-          header={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
-          type="text"
-          inputMode="decimal"
-          aria-label="Рост"
-          value={heightText}
-          onChange={(e) => setHeightText(sanitizeDecimalInput(e.target.value))}
-        />
-        <Select header="Пол" aria-label="Пол" value={gender} onChange={(e) => setGender(e.target.value)}>
-          <option value="">Не указан</option>
-          {GENDER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-        <Input
-          header="Дата рождения"
-          type="date"
-          aria-label="Дата рождения"
-          value={birthDate}
-          onChange={(e) => setBirthDate(e.target.value)}
-        />
-      </Section>
+      <p className="section-title settings-group-title">Профиль</p>
+      <div className="profile-card settings-group settings-rows" data-testid="settings-profile-group">
+        <Row icon="weight" label={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}>
+          <input
+            type="text" inputMode="decimal" aria-label="Вес" value={weightText}
+            onChange={(e) => setWeightText(sanitizeDecimalInput(e.target.value))}
+          />
+        </Row>
+        <Row icon="height" label={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}>
+          <input
+            type="text" inputMode="decimal" aria-label="Рост" value={heightText}
+            onChange={(e) => setHeightText(sanitizeDecimalInput(e.target.value))}
+          />
+        </Row>
+        <Row icon="person" label="Пол">
+          <select aria-label="Пол" value={gender} onChange={(e) => setGender(e.target.value)}>
+            <option value="">Не указан</option>
+            {GENDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </Row>
+        <Row icon="calendar" label="Дата рождения">
+          <input type="date" aria-label="Дата рождения" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+        </Row>
+      </div>
 
-      <div className="profile-card">
-        <p className="section-title">Единицы</p>
+      <p className="section-title settings-group-title">Единицы</p>
+      <div className="profile-card settings-group">
         <p className="hint">Вес</p>
         <Choice label="Единицы веса" testId="settings-weight-unit" options={WEIGHT_UNITS} value={weightUnit} onChange={switchWeightUnit} />
         <p className="hint">Рост</p>
@@ -244,19 +251,20 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         <p className="hint">Хранятся в кг и см — меняется только показ и ввод.</p>
       </div>
 
-      <Section className="block-section">
-        <Select header="Часовой пояс" aria-label="Часовой пояс" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-          <option value="">Не указан</option>
-          {timezoneOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-      </Section>
+      <p className="section-title settings-group-title">Регион</p>
+      <div className="profile-card settings-group settings-rows">
+        <Row icon="clock" label="Часовой пояс">
+          <select aria-label="Часовой пояс" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+            <option value="">Не указан</option>
+            {timezoneOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </Row>
+      </div>
 
-      <div className="profile-card">
-        <p className="section-title">Оформление</p>
+      <p className="section-title settings-group-title">Оформление</p>
+      <div className="profile-card settings-group">
         <Choice
           label="Оформление"
           testId="settings-theme"
@@ -266,8 +274,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         />
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Таймер</p>
+      <p className="section-title settings-group-title">Таймер</p>
+      <div className="profile-card settings-group">
         {volume === null ? (
           <p className="hint">Загружаю…</p>
         ) : (
@@ -299,29 +307,30 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         <p className="hint">Настройка этого устройства: срабатывает, пока экран тренировки открыт.</p>
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Подписка</p>
+      <p className="section-title settings-group-title">Подписка</p>
+      <div className="profile-card settings-group settings-rows">
         <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
-        <Button className="vs-row-button" mode="outline" size="m" stretched onClick={onOpenSubscription}>
-          <Icon name="star" size={18} className="vp-icon-lead" />Подробнее о подписке
-        </Button>
-        <Button
-          className="vs-row-button"
-          mode="outline"
-          size="m"
-          stretched
-          data-testid="settings-oferta"
+        <button type="button" className="settings-link-row" onClick={onOpenSubscription}>
+          <span className="settings-row-icon" aria-hidden="true"><Icon name="star" size={18} /></span>
+          <span className="settings-row-label">Подробнее о подписке</span>
+          <Icon name="chevronRight" size={18} className="settings-row-chevron" />
+        </button>
+        <button
+          type="button" className="settings-link-row" data-testid="settings-oferta"
           onClick={() => openExternalLink(new URL(OFERTA_URL, window.location.origin).toString())}
         >
-          <Icon name="file" size={18} className="vp-icon-lead" />Открыть текст оферты
-        </Button>
+          <span className="settings-row-icon" aria-hidden="true"><Icon name="file" size={18} /></span>
+          <span className="settings-row-label">Открыть текст оферты</span>
+          <Icon name="chevronRight" size={18} className="settings-row-chevron" />
+        </button>
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Данные</p>
-        <Button className="vs-row-button" mode="outline" size="m" stretched data-testid="settings-export" onClick={() => void handleExport()}>
-          <Icon name="download" size={18} className="vp-icon-lead" />Скачать историю
-        </Button>
+      <p className="section-title settings-group-title">Данные</p>
+      <div className="profile-card settings-group settings-rows">
+        <button type="button" className="settings-link-row" data-testid="settings-export" onClick={() => void handleExport()}>
+          <span className="settings-row-icon" aria-hidden="true"><Icon name="download" size={18} /></span>
+          <span className="settings-row-label">Скачать историю</span>
+        </button>
         {exportError && <p className="error-banner" role="alert">{exportError}</p>}
       </div>
 

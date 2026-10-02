@@ -72,7 +72,12 @@
 }
 
 /* тёмная: фон страницы = основной фон, карточки светлее */
+:root[data-vp-scheme="light"] {
+  color-scheme: light; /* нативные select/date/скроллбары — по теме Telegram, не ОС */
+}
+
 :root[data-vp-scheme="dark"] {
+  color-scheme: dark;
   --vp-page-bg: var(--tg-bg-color);
   --vp-card-bg: var(--tg-secondary-bg-color);
   --vp-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
@@ -339,6 +344,10 @@ html {
 .home-group-header .section-title {
   margin: 0;
   min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .home-group-badge {

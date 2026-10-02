@@ -273,8 +273,11 @@ const FLOWS: Flow[] = [
       await expect(detail).toBeVisible();
       await visit(page, {
         where: "Деталь → Записать", open: () => page.getByTestId("workout-detail-log").click(),
-        dest: [page.getByTestId("journal-log-form")], exit: { tab: "Главная" }, origin: homeMarker(page),
+        // у формы записи нет нижней навигации: «назад» ведёт на деталь (D1), оттуда — на Главную
+        dest: [page.getByTestId("journal-log-form")], exit: "telegram", origin: detail,
       });
+      await pressTelegramBackButton(page);
+      await expect(homeMarker(page)).toBeVisible();
       await page.getByTestId("my-workout-card").filter({ hasText: WORKOUT }).click();
       await visit(page, {
         where: "Деталь → Добавить в план", open: () => byName(page, "Добавить в план").click(),
@@ -469,7 +472,7 @@ const FLOWS: Flow[] = [
       const screens: [string, RegExp, Locator, Locator][] = [
         ["Изменить профиль", /Изменить$/, page.getByText("Изменить профиль", { exact: true }), byName(page, "Назад")],
         ["Подписка", /^Подписка/, page.getByText("Статус", { exact: true }), byName(page, "← Профиль")],
-        ["Ачивки", /Ачивок/, page.getByText("Ачивки", { exact: true }), byName(page, "← Назад")],
+        ["Ачивки", /Ачив(ок|ки|ка)/, page.getByText("Ачивки", { exact: true }), byName(page, "← Назад")],
         ["Как выбрать резину", /Как выбрать резину/, page.getByText("Тренироваться можно где угодно", { exact: false }), byName(page, "← Назад")],
         ["Мои резины", /Переименовать или удалить/, page.getByText("Мои резины", { exact: true }), byName(page, "← Назад")],
       ];
@@ -636,6 +639,16 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         where: "Журнал → Открыть тренировку", open: () => page.getByTestId("journal-open-workout").click(),
         dest: [page.getByTestId("workout-detail-title")], exit: "telegram", origin: journalMarker(page), // «назад» — в список Журнала, не на Главную
       });
+
+      // «назад» вернул в Журнал с открытой записью (у записи нет нижней навигации) — ещё раз «назад» к списку.
+      // (запись восстанавливается асинхронно: даём ей смонтироваться, потом выходим, пока навигации нет)
+      for (let i = 0; i < 3; i++) {
+        await page.waitForTimeout(700);
+        if (await tabbar(page).isVisible()) {
+          break;
+        }
+        await pressTelegramBackButton(page);
+      }
 
       // Аналитика пересчитана: +1 тренировка.
       await openTab(page, "Аналитика");

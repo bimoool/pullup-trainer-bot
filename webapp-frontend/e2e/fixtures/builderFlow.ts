@@ -4,6 +4,13 @@ import { expect, type Page } from "@playwright/test";
  * карточки "Планов", пройти подходы блока. */
 
 export async function startWorkout(page: Page, title: string) {
+  // на деталях (курс/тренировка) нижней навигации нет — сначала «назад» на вкладку
+  const tabbar = page.locator(".bottom-tabbar");
+  // дождаться первого рендера: либо навигация, либо «назад» (иначе isVisible() читает ещё пустую страницу)
+  await expect(tabbar.or(page.getByRole("button", { name: /Назад/ }).first()).first()).toBeVisible();
+  if (!(await tabbar.isVisible())) {
+    await page.getByRole("button", { name: /Назад/ }).first().click();
+  }
   await page.getByRole("button", { name: "Планы" }).click();
   const group = page.locator(".plan-week-day-group").filter({ has: page.getByText(title, { exact: false }) })
     .filter({ hasText: new RegExp(`^${title}`) });

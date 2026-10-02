@@ -63,7 +63,7 @@ for (const width of WIDTHS) {
       expect(apiFailures).toEqual([]);
     });
 
-    test("сводка: категории и подкатегории, нули для каталога, TOTAL; 3 мес меняет значения", async ({ page }, testInfo) => {
+    test("сводка: категории и подкатегории, нули для каталога, «Итого»; 3 мес меняет значения", async ({ page }, testInfo) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, base + testInfo.retry, { theme });
       await openTab(page, "Аналитика");
 
@@ -85,13 +85,13 @@ for (const width of WIDTHS) {
         ["horizontal", "0.5", "10"], ["vertical", "1", "40"],
       ]);
       const total = page.getByTestId("summary-total");
-      expect(await cells(total)).toEqual(["TOTAL", "3", "90"]);
+      expect(await cells(total)).toEqual(["Итого", "3", "90"]);
       // «Другая активность» — последняя категория.
       await expect(page.getByTestId("summary-category").last()).toHaveAttribute("data-category", "Другая активность");
       await expectNoHorizontalOverflow(page, "Аналитика: сводка");
 
       await page.getByRole("tab", { name: "3 мес" }).click();
-      await expect.poll(async () => cells(total)).toEqual(["TOTAL", "4", "150"]);
+      await expect.poll(async () => cells(total)).toEqual(["Итого", "4", "150"]);
       expect(await cells(row(page, "e2e_dist_core"))).toEqual(["e2e_dist_core", "1.5", "70"]);
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

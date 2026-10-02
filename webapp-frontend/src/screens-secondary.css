@@ -874,9 +874,13 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  margin: 0 0 var(--vp-sp-2);
 }
 .collection-hero .plan-title {
-  margin: var(--vp-sp-1) 0;
+  margin: 0 0 var(--vp-sp-2);
+}
+.collection-hero [data-testid="collection-count"] {
+  margin: 0 0 var(--vp-sp-2);
 }
 .app-shell .collection-item-list .block-section {
   margin: 0;
@@ -1012,4 +1016,173 @@
 .app-shell .vs-cover-collection + .collection-hero {
   position: relative;
   margin-top: calc(-1 * var(--vp-sp-6));
+}
+
+/* ---------- Лист-форма (FormSheet): «Добавить в план» / «Перенести» ---------- */
+.vp-form-sheet {
+  max-height: 88vh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--vp-sp-4) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+.vp-form-sheet-grab {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto var(--vp-sp-3);
+  border-radius: 2px;
+  background: var(--vp-divider);
+}
+.vp-form-sheet .plan-title {
+  margin-top: 0;
+}
+/* «Свободный пул» — те же боковые поля, что у сетки дней; кнопка не прилипает к краям секции */
+.vp-form-sheet .week-day-picker {
+  margin-left: 0;
+  margin-right: 0;
+}
+.vp-form-sheet .week-day-picker + button {
+  width: 100%;
+  margin: 0 0 var(--vp-sp-4);
+}
+
+/* ---------- шапка вторичного экрана: круглая «назад» + заголовок (Тесты) ---------- */
+.vs-screen-head {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  margin: var(--vp-sp-1) 0 var(--vp-sp-3);
+}
+.vs-screen-head .plan-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* ---------- Настройки: группы «подпись над карточкой» (tgui-подобно) ---------- */
+.settings-screen .settings-group-title {
+  margin: var(--vp-sp-5) var(--vp-sp-4) var(--vp-sp-2);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tg-subtitle-text-color);
+}
+.settings-screen .settings-group {
+  margin-top: 0;
+  margin-bottom: var(--vp-sp-2);
+}
+
+/* ---------- Тесты: карточка с бейджем слева и шевроном справа ---------- */
+.test-card-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+.test-card .test-card-text {
+  flex: 1 1 auto;
+}
+.test-card-chevron {
+  flex: 0 0 auto;
+  color: var(--tg-hint-color);
+}
+
+/* ---------- Настройки: строки группы (иконка-бейдж · подпись · значение) с разделителями ---------- */
+.settings-screen .settings-rows {
+  padding: 0;
+  overflow: hidden;
+}
+.settings-screen .settings-rows > p:not(.hint) {
+  margin: 0;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-bottom: 1px solid var(--vp-divider);
+}
+.settings-row,
+.settings-link-row {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: var(--vp-sp-2) var(--vp-sp-4);
+  border: 0;
+  background: none;
+  color: var(--tg-text-color);
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  text-align: left;
+  cursor: pointer;
+}
+.settings-row + .settings-row,
+.settings-link-row + .settings-link-row {
+  border-top: 1px solid var(--vp-divider);
+  /* разделитель начинается от подписи (inset), как в Telegram */
+  background-image: none;
+}
+.settings-row-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+.settings-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-row-control {
+  flex: 0 1 50%;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.settings-row-control :is(input, select) {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--tg-subtitle-text-color);
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  text-align: right;
+  text-align-last: right;
+  text-overflow: ellipsis;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.settings-row-control input[type="date"] {
+  text-align: right;
+}
+.settings-row-control :is(input, select):focus-visible {
+  color: var(--tg-text-color);
+  outline: 2px solid var(--vp-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.settings-row-chevron {
+  flex: 0 0 auto;
+  color: var(--tg-hint-color);
+}
+.settings-screen .settings-rows .settings-link-row:last-child,
+.settings-screen .settings-group > .settings-link-row:only-child {
+  min-height: 52px;
+}
+@media (max-width: 360px) {
+  .test-card-badge { width: 32px; height: 32px; }
+  .test-card .test-card-text { overflow-wrap: break-word; }
+  .test-card-spark { width: 44px; height: 18px; margin-right: 0; }
 }

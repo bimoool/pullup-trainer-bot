@@ -4,6 +4,7 @@ import { useState } from "react";
 import { movePlanItem, type PlanWeekResponseV2 } from "./apiV2";
 import { DayPicker } from "./DayPicker";
 import { weekRangeLabel } from "./planWeekNav";
+import { FormSheet } from "./FormSheet";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -56,7 +57,7 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
   }
 
   return (
-    <div>
+    <FormSheet title="Перенести" onClose={onBack}>
       <p className="plan-title">Перенести</p>
       <p className="block-subtitle">{title}</p>
 
@@ -90,6 +91,6 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
       >
         {submitting ? <Spinner size="s" /> : "Сохранить"}
       </Button>
-    </div>
+    </FormSheet>
   );
 }

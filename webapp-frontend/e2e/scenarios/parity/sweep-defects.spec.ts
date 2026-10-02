@@ -109,8 +109,8 @@ for (const width of WIDTHS) {
       await expect(page.getByText("Личные данные")).toBeVisible();
 
       await expect(page.getByText("Тренировок пока не было.")).toHaveCount(0);
-      await expect(page.getByText("Последняя тренировка: 2 дн. назад.")).toBeVisible();
-      await expect(page.locator(".stat-tile").filter({ hasText: "Тренировок" })).toContainText("2");
+      await expect(page.getByText("Последняя тренировка: 2 дня назад.")).toBeVisible();
+      await expect(page.locator(".stat-tile").filter({ hasText: /Тренировк/u })).toContainText("2");
       await expectNoHorizontalOverflow(page, "Профиль");
 
       expect(noWakeLock(consoleErrors)).toEqual([]);

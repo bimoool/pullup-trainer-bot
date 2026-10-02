@@ -104,7 +104,7 @@ html.vp-nav-hidden {
   --cat: var(--vp-cat-0);
   position: relative;
   box-sizing: border-box;
-  height: 150px;
+  height: clamp(200px, 30vh, 260px);
   margin: calc(-1 * var(--vp-sp-2)) calc(-1 * var(--vp-sp-4)) 0;
   border-radius: 0 0 24px 24px;
   color: #fff;

@@ -9,6 +9,7 @@ import {
   bestValue, chartPoints, formatIsoDate, formatValue, NOT_IN_PROGRESSION_NOTE, pathFor, validateResultForm,
 } from "./assessmentsFormat";
 import { PeerInsightsCard } from "./PeerInsightsCard";
+import { BackChevron } from "./BackChevron";
 import { useBackButton } from "./useBackButton";
 import { sanitizeDecimalInput } from "./decimalInput";
 
@@ -143,7 +144,10 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
 
   return (
     <div data-testid="test-detail">
-      <p className="plan-title" data-testid="test-detail-title">{protocol.name}</p>
+      <div className="vs-screen-head">
+        <BackChevron onClick={onBack} />
+        <h1 className="plan-title" data-testid="test-detail-title">{protocol.name}</h1>
+      </div>
       {protocol.description && <p className="hint" data-testid="test-detail-description">{protocol.description}</p>}
       <p className="hint" data-testid="test-detail-note">{NOT_IN_PROGRESSION_NOTE}</p>
 

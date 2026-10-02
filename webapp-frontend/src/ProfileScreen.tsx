@@ -1,3 +1,4 @@
+import { plural } from "./plural.ts";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
@@ -384,7 +385,7 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
       <div className="stat-grid">
         <div className="stat-tile">
           <div className="stat-value">{profile.workouts_count}</div>
-          <div className="stat-label">Тренировок</div>
+          <div className="stat-label">{plural(profile.workouts_count ?? 0, "Тренировка", "Тренировки", "Тренировок")}</div>
         </div>
         {/* Issue #66 (уточнение): счётчик выглядел некликабельным — теперь
             это настоящая <button> (тап/клавиатура), не div с обработчиком,
@@ -392,11 +393,11 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
             в index.css), а не только число. */}
         <button type="button" className="stat-tile stat-tile-clickable" onClick={() => setShowAchievements(true)}>
           <div className="stat-value">{profile.achievements_count}</div>
-          <div className="stat-label">Ачивок ›</div>
+          <div className="stat-label">{plural(profile.achievements_count ?? 0, "Ачивка", "Ачивки", "Ачивок")} ›</div>
         </button>
         <div className="stat-tile">
           <div className="stat-value">{profile.coins_balance}</div>
-          <div className="stat-label">Монет</div>
+          <div className="stat-label">{plural(profile.coins_balance ?? 0, "Монета", "Монеты", "Монет")}</div>
         </div>
       </div>
 
@@ -405,7 +406,7 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
           ? "Тренировок пока не было."
           : profile.days_since_last_workout === 0
             ? "Последняя тренировка — сегодня."
-            : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
+            : `Последняя тренировка: ${profile.days_since_last_workout} ${plural(profile.days_since_last_workout, "день", "дня", "дней")} назад.`}
       </p>
 
       <ProfileGroup
