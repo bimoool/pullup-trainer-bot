@@ -640,6 +640,11 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         dest: [page.getByTestId("workout-detail-title")], exit: "telegram", origin: journalMarker(page), // «назад» — в список Журнала, не на Главную
       });
 
+      // «назад» вернул в Журнал с открытой записью (у записи нет нижней навигации) — ещё раз «назад» к списку.
+      if (!(await tabbar(page).isVisible())) {
+        await pressTelegramBackButton(page);
+      }
+
       // Аналитика пересчитана: +1 тренировка.
       await openTab(page, "Аналитика");
       await expect.poll(() => workoutsStat(page)).toBe(before + 1);
