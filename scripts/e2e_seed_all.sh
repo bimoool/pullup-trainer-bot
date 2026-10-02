@@ -167,3 +167,6 @@ for id in 998811 998812; do seed ready "$id"; done
 # #286 B «Планы: строки дня и «⋯»-шиты» (parity/visual-plans.spec.ts): 991001 (320 light) / 991002 (390 dark) — строки с «⋯»,
 # 991003 / 991004 — мутация «Убрать из плана» (320 / 390), каждый + retry (id+10).
 for id in 991001 991002 991003 991004 991011 991012 991013 991014; do seed builder_workouts "$id"; done
+# «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
+# на тест id + retry (≤ +3); session_recovery.
+for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done
