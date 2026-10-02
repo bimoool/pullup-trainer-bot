@@ -45,6 +45,8 @@ class AnalyticsSession:
     performed_at: datetime  # aware
     blocks: list[AnalyticsBlock]
     completed_at: datetime | None = None  # aware; NULL у старых сессий
+    # Свободная активность (#263): заявленная длительность, источник минут вместо completed_at
+    duration_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -275,6 +277,8 @@ class MetricsSeries:
 def session_duration_seconds(session: AnalyticsSession) -> int | None:
     """completed_at - performed_at только если оба есть и результат в
     [1 мин, 6 ч]; иначе None (сессия — тренировка, но не минуты)."""
+    if session.duration_seconds is not None:
+        return session.duration_seconds
     if session.completed_at is None:
         return None
     seconds = (session.completed_at - session.performed_at).total_seconds()

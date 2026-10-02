@@ -28,6 +28,7 @@ from app.db.models_program import Complex, PlanItem, ProgramInclusion, SessionSt
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import SessionDetail, TrainingSessionRepository
+from app.domain.multi_program import SessionSource
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.workout_snapshot import WorkoutSnapshot
 from app.services.session_log import _match_step_blocks, _session_block_input_from_detail
@@ -108,6 +109,13 @@ class SessionDeletionService:
             return DeleteVerdict(False, REASON_ACTIVE)
         if any(item.program_inclusion_id is not None for item in linked):
             return DeleteVerdict(False, REASON_PROGRAM)
+        # Свободная активность (#263): без блоков и без связи с программой по
+        # построению — прогрессии не касается, доказуемо безопасна.
+        if (
+            detail.source == SessionSource.FREEFORM and detail.activity_type is not None
+            and not detail.blocks and not linked
+        ):
+            return _ALLOWED
 
         # Builder-природа: снимок (замороженное определение) либо, для сессий
         # до снимков, complex-backed связь на пользовательский Workout.

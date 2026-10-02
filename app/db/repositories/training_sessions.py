@@ -142,6 +142,8 @@ class SessionDetail:
     current_set_number: int = 1
     phase_index: int = 0
     workout_snapshot: dict | None = None
+    activity_type: str | None = None
+    duration_seconds: int | None = None
     blocks: list[SessionBlockDetail] = field(default_factory=list)
 
 
@@ -158,12 +160,14 @@ class TrainingSessionRepository:
     async def create_session(
         self, *, user_id: int, source: SessionSource, performed_at: datetime,
         effort: Decimal | None, comment: str | None, blocks: list[SessionBlockInput],
-        completed_at: datetime | None = None,
+        completed_at: datetime | None = None, activity_type: str | None = None,
+        duration_seconds: int | None = None,
     ) -> TrainingSession:
         training_session = TrainingSession(
             user_id=user_id, source=source, status=SessionStatus.COMPLETED,
             performed_at=performed_at, effort=effort, comment=comment,
             completed_at=completed_at if completed_at is not None else datetime.now(UTC),
+            activity_type=activity_type, duration_seconds=duration_seconds,
         )
         self._session.add(training_session)
         await self._session.flush()
@@ -564,6 +568,7 @@ class TrainingSessionRepository:
                     current_block_index=session_row.current_block_index,
                     current_set_number=session_row.current_set_number, phase_index=session_row.phase_index,
                     workout_snapshot=session_row.workout_snapshot,
+                    activity_type=session_row.activity_type, duration_seconds=session_row.duration_seconds,
                     blocks=block_details,
                 ),
             )

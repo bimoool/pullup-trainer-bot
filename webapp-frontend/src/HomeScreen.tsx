@@ -20,6 +20,8 @@ type Props = {
   /** После «Добавить в план» из карточки Workout — переход на вкладку «Планы»
    * (тот же результат, что у добавления из «Планов»). */
   onOpenPlans: () => void;
+  /** «+» → «Записать в журнал»: открыть Журнал со шторкой записи (#263). */
+  onOpenJournalLog: () => void;
 };
 
 type WorkoutsState =
@@ -51,7 +53,7 @@ type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { p
  * "В плане", переход в Program Detail. Полная сводка (статус готовности,
  * кнопка "Начать тренировку") на "Планах" (DashboardScreen.tsx).
  */
-export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
+export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog }: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
   // Program Detail (issue #192) — тот же приём "swap внутри вкладки", что
@@ -305,6 +307,12 @@ export function HomeScreen({ initDataRaw, onOpenPlans }: Props) {
               onClick={() => { setSheetOpen(false); onOpenPlans(); }}
             >
               Тренировка на сегодня
+            </button>
+            <button
+              type="button" className="home-sheet-action" data-testid="home-sheet-log"
+              onClick={() => { setSheetOpen(false); onOpenJournalLog(); }}
+            >
+              Записать в журнал
             </button>
             <button type="button" className="home-sheet-action home-sheet-cancel" onClick={() => setSheetOpen(false)}>
               Отмена

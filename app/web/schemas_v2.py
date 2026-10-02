@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.domain.activity_types import ACTIVITY_TYPES, MAX_ACTIVITY_SECONDS, MIN_ACTIVITY_SECONDS
+
 # --- Каталог (read-only на этой волне) ---------------------------------------------
 
 
@@ -322,6 +324,36 @@ class SessionCreateRequest(BaseModel):
     program_inclusion_id: int | None = None
     effort: Decimal | None = None
     comment: str | None = None
+    # Свободная активность (#263): source=freeform + activity_type + duration_seconds,
+    # blocks пуст. Остальные поля игнорируются для обычных источников.
+    activity_type: str | None = None
+    duration_seconds: int | None = None
+
+    @model_validator(mode="after")
+    def _journal_log_rules(self) -> "SessionCreateRequest":
+        # Шкала 1–5 — только у записей Журнала; остальные источники сохраняют прежний контракт.
+        is_journal_entry = self.source == "backdated" or self.activity_type is not None
+        if is_journal_entry and self.effort is not None and not 1 <= self.effort <= 5:
+            raise ValueError("effort должен быть от 1 до 5")
+        if self.source == "freeform" and self.activity_type is not None:
+            if self.activity_type not in ACTIVITY_TYPES:
+                raise ValueError("неизвестный activity_type")
+            if self.duration_seconds is None or not (
+                MIN_ACTIVITY_SECONDS <= self.duration_seconds <= MAX_ACTIVITY_SECONDS
+            ):
+                raise ValueError("duration_seconds должен быть от 1 минуты до 12 часов")
+            if self.blocks:
+                raise ValueError("у свободной активности нет блоков")
+            if self.program_inclusion_id is not None:
+                raise ValueError("свободная активность не привязывается к программе")
+        elif self.activity_type is not None or self.duration_seconds is not None:
+            raise ValueError("activity_type/duration_seconds — только для source=freeform активности")
+        if self.source == "backdated":
+            if not self.blocks:
+                raise ValueError("blocks не может быть пустым")
+            if self.program_inclusion_id is not None:
+                raise ValueError("записанная задним числом тренировка не меняет прогрессию программы")
+        return self
 
 
 class SetLogResponse(BaseModel):
@@ -397,6 +429,9 @@ class SessionResponse(BaseModel):
     # выдуманное имя.
     title: str | None
     blocks: list[SessionBlockResponse]
+    # #263 — свободная активность (source=freeform); None у остальных сессий.
+    activity_type: str | None = None
+    duration_seconds: int | None = None
     # R2 — сервер решает, можно ли безопасно удалить (Builder-сессия без
     # связи с прогрессией); фронт показывает "Удалить" ТОЛЬКО при true, без
     # своих эвристик. Определяется app.services.session_deletion.

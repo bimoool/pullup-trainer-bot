@@ -1189,6 +1189,17 @@ html {
 .home-sheet { width: 100%; box-sizing: border-box; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-radius: 16px 16px 0 0; background-color: var(--tg-bg-color); }
 .home-sheet-action { display: block; width: 100%; padding: 14px 8px; border: 0; background: none; font-size: 16px; text-align: center; color: var(--tg-text-color); }
 .home-sheet-cancel { color: var(--tg-subtitle-text-color); }
+/* Запись в Журнал (#263): кнопка «+ Записать», формы тренировки/активности. */
+.journal-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.journal-title-row .plan-title { flex: 1 1 auto; min-width: 0; }
+.journal-log-button { flex: 0 0 auto; padding: 8px 14px; border: 0; border-radius: 16px; font-size: 14px; color: var(--tg-button-text-color); background-color: var(--tg-button-color); }
+.log-form { min-width: 0; }
+.log-field { margin-bottom: 14px; min-width: 0; }
+.log-label { display: block; margin: 0 0 6px; font-size: 14px; color: var(--tg-subtitle-text-color); overflow-wrap: anywhere; }
+.log-input { display: block; width: 100%; box-sizing: border-box; min-height: 40px; padding: 8px 12px; border: 1px solid var(--tg-hint-color, rgba(127, 127, 127, 0.5)); border-radius: 10px; font-size: 16px; color: var(--tg-text-color); background-color: var(--tg-secondary-bg-color, transparent); }
+.log-effort { display: flex; flex-wrap: wrap; gap: 8px; }
+.log-sets { display: flex; flex-wrap: wrap; gap: 8px; }
+.log-set-input { width: 72px; text-align: center; }
 .search-screen { min-width: 0; }
 .search-header { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; margin: 0 -16px 8px; padding: 8px 16px; background-color: var(--tg-bg-color); }
 .search-input { flex: 1 1 auto; min-width: 0; height: 40px; box-sizing: border-box; padding: 0 16px; border: 0; border-radius: 20px; font-size: 16px; color: var(--tg-text-color); background-color: var(--tg-secondary-bg-color, rgba(127, 127, 127, 0.15)); }

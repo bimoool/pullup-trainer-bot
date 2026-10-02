@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { effortWithWord } from "./effortScale";
 import { describeJournalBlock, formatSessionDateTime } from "./journalFormat";
+import { formatDurationHm } from "./journalLog";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
 
@@ -30,6 +31,10 @@ export function JournalSessionCard({
     >
       <p className="history-date">{formatSessionDateTime(session.performed_at)}</p>
       <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
+      {session.duration_seconds != null && (
+        <p data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</p>
+      )}
+      {session.source === "backdated" && <p className="hint">Записана задним числом</p>}
       {session.blocks.map((block) => {
         const view = describeJournalBlock(block);
         return (
@@ -133,6 +138,9 @@ export function JournalV2Detail({
       </Button>
       <p className="plan-title">{session.title ?? "Тренировка"}</p>
       <p className="history-date">{formatSessionDateTime(session.performed_at)}</p>
+      {session.duration_seconds != null && (
+        <p className="block-subtitle" data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</p>
+      )}
 
       {session.blocks.map((block) => {
         const view = describeJournalBlock(block);

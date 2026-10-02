@@ -7,6 +7,8 @@
  * allowlist в tests/test_web/test_v2_not_wired_to_ui.py.
  */
 
+import type { SessionCreatePayload } from "./journalLog";
+
 /**
  * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
  * FastAPI возвращает `{"detail": "message"}` — берём detail, если это строка.
@@ -605,6 +607,9 @@ export interface SessionResponseV2 {
    * (легаси POST /sessions в обход live-flow, или до Checkpoint 4A). */
   title: string | null;
   blocks: SessionBlockResponseV2[];
+  /** #263 — свободная активность (source=freeform): тип и длительность; иначе null. */
+  activity_type?: string | null;
+  duration_seconds?: number | null;
   /** R2 — серверное решение "можно ли безопасно удалить"; фронт показывает
    * "Удалить" только при true и не строит своих эвристик. */
   can_delete: boolean;
@@ -680,6 +685,12 @@ export async function fetchJournalDays(initDataRaw: string, month: string): Prom
 
 /** 404 — чужая/несуществующая, 409 — небезопасно удалять (текст причины
  * человекочитаемый, приходит в Error.message). */
+/** #263 — запись тренировки задним числом / свободной активности. 422 — невалидные
+ * данные (будущая дата, длительность), 404 — чужое упражнение. */
+export async function createSession(initDataRaw: string, payload: SessionCreatePayload): Promise<SessionResponseV2> {
+  return apiV2Post<SessionCreatePayload, SessionResponseV2>("/api/v2/sessions", initDataRaw, payload);
+}
+
 export async function deleteSession(initDataRaw: string, sessionId: number): Promise<void> {
   return apiV2Delete(`/api/v2/sessions/${sessionId}`, initDataRaw);
 }
