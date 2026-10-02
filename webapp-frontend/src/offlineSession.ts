@@ -317,6 +317,37 @@ export function extraSetBlockIndex(local: LocalLiveSession): number | null {
   return index;
 }
 
+/** #292: подход плана, уже записанный на сервере (не «ещё подход»). Нужен, чтобы «назад» и последующее
+ * «Готово» перезаписали ТУ ЖЕ строку (set_index), а не создали дубль. */
+export function recordedPlanSet(
+  local: LocalLiveSession, blockIndex: number, setNumber: number,
+): { setIndex: number; value: string; effort: string | null; note: string | null } | null {
+  const log = local.server.blocks[blockIndex]?.set_logs.find((entry) => !entry.is_extra && entry.set_number === setNumber);
+  if (log === undefined || log.set_index === undefined || log.set_index === null) {
+    return null;
+  }
+  const value = Number(log.value);
+  return {
+    setIndex: log.set_index,
+    value: Number.isFinite(value) ? String(value) : log.value,
+    effort: log.effort === null ? null : String(Number(log.effort)),
+    note: log.note,
+  };
+}
+
+/** #292: шаг «Предыдущий подход» безопасен только онлайн и при пустой очереди — иначе back пришлось бы
+ * переупорядочивать с pendingPhaseAdvances (счётчик, не лог). Первый подход блока (get_ready/go) — граница. */
+export function canGoBackLocal(local: LocalLiveSession, online: boolean, syncing: boolean): boolean {
+  const { phaseName, setNumber } = local.localPhase;
+  if (!online || syncing || hasPendingWork(local)) {
+    return false;
+  }
+  if (phaseName === "rest" || phaseName === "done") {
+    return true;
+  }
+  return (phaseName === "get_ready" || phaseName === "go") && setNumber > 1;
+}
+
 export function hasPendingWork(local: LocalLiveSession): boolean {
   return local.pendingSets.length > 0 || local.pendingPhaseAdvances > 0 || local.completeRequested !== null;
 }

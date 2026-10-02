@@ -19,6 +19,7 @@ import { SearchScreen, type SearchState } from "./SearchScreen";
 import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsScreen } from "./TestsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
+import { useModalSheet } from "./useModalSheet";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import { formatExerciseCount, formatExerciseNames, formatFirstProtocol } from "./workoutCardFormat";
 
@@ -63,6 +64,26 @@ type CatalogState =
   | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number> };
 
 type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
+
+/** «+»-шторка Главной: модальный диалог (#290) — фокус внутрь, Tab-ловушка, Escape/BackButton, возврат фокуса. */
+function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
+  onClose: () => void; onCreate: () => void; onToday: () => void; onLog: () => void;
+}) {
+  const dialogRef = useModalSheet(onClose);
+  return (
+    <div className="home-sheet-backdrop" data-testid="home-sheet-backdrop" onClick={onClose}>
+      <div
+        ref={dialogRef} className="home-sheet" role="dialog" aria-modal="true" aria-label="Быстрые действия"
+        tabIndex={-1} data-testid="home-sheet" onClick={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="home-sheet-action" onClick={onCreate}>Создать тренировку</button>
+        <button type="button" className="home-sheet-action" onClick={onToday}>Тренировка на сегодня</button>
+        <button type="button" className="home-sheet-action" data-testid="home-sheet-log" onClick={onLog}>Записать в журнал</button>
+        <button type="button" className="home-sheet-action home-sheet-cancel" onClick={onClose}>Отмена</button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Стартовый экран Mini App — каталог программ (issue #205, Checkpoint 5B;
@@ -381,31 +402,12 @@ export function HomeScreen({
         </button>
       </div>
       {sheetOpen && (
-        <div className="home-sheet-backdrop" data-testid="home-sheet-backdrop" onClick={() => setSheetOpen(false)}>
-          <div className="home-sheet" role="dialog" aria-label="Быстрые действия" onClick={(event) => event.stopPropagation()}>
-            <button
-              type="button" className="home-sheet-action"
-              onClick={() => { setSheetOpen(false); setWorkoutView({ kind: "create" }); }}
-            >
-              Создать тренировку
-            </button>
-            <button
-              type="button" className="home-sheet-action"
-              onClick={() => { setSheetOpen(false); onOpenPlans(); }}
-            >
-              Тренировка на сегодня
-            </button>
-            <button
-              type="button" className="home-sheet-action" data-testid="home-sheet-log"
-              onClick={() => { setSheetOpen(false); onOpenJournalLog(); }}
-            >
-              Записать в журнал
-            </button>
-            <button type="button" className="home-sheet-action home-sheet-cancel" onClick={() => setSheetOpen(false)}>
-              Отмена
-            </button>
-          </div>
-        </div>
+        <HomeQuickSheet
+          onClose={() => setSheetOpen(false)}
+          onCreate={() => { setSheetOpen(false); setWorkoutView({ kind: "create" }); }}
+          onToday={() => { setSheetOpen(false); onOpenPlans(); }}
+          onLog={() => { setSheetOpen(false); onOpenJournalLog(); }}
+        />
       )}
 
       {/* Заголовок экрана остаётся для скринридеров/тестов, визуально его заменяет строка поиска (как в эталоне). */}

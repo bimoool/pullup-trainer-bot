@@ -166,3 +166,29 @@ def next_phase(
         phase_name=SessionPhaseName.GET_READY, block_index=current.block_index, set_number=current.set_number + 1,
         ends_at_offset_seconds=GET_READY_SECONDS,
     )
+
+
+def previous_phase(current: PhaseState) -> PhaseState | None:
+    """#292 «Предыдущий подход» — чистый шаг назад по подходам ВНУТРИ блока
+    (SetLog не затрагивается, домен про логи не знает):
+
+      - rest(n) -> go(n): переоткрыть только что сделанный подход;
+      - get_ready(n>1) / go(n>1) -> go(n-1): переоткрыть предыдущий;
+      - done -> go(последний подход) того же блока;
+      - первый подход блока (get_ready/go с n==1) -> None: границу блока
+        назад не переходим (блок мог быть уже зачтён, старт блока — явное
+        действие), вызывающий отдаёт 409.
+
+    go без таймера — ends_at_offset_seconds=None."""
+    name = current.phase_name
+    if name == SessionPhaseName.REST or name == SessionPhaseName.DONE:
+        return PhaseState(
+            phase_name=SessionPhaseName.GO, block_index=current.block_index,
+            set_number=current.set_number, ends_at_offset_seconds=None,
+        )
+    if current.set_number <= 1:
+        return None
+    return PhaseState(
+        phase_name=SessionPhaseName.GO, block_index=current.block_index,
+        set_number=current.set_number - 1, ends_at_offset_seconds=None,
+    )

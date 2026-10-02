@@ -153,3 +153,34 @@
 .app-shell .leaderboard-save-button {
   background: var(--vp-accent-solid);
 }
+
+/* ---------- #290 follow-up (a11y2): цели касания, мелкие тексты ---------- */
+/* Главная: «Все ›» — тихая кнопка, но хит-область ≥ 44px по высоте (визуал прежний). */
+.home-group-header .home-group-all {
+  min-height: 44px;
+  min-width: 44px;
+}
+/* Деталь тренировки: назад и «сердце» на обложке 44×44. */
+.wd-hero-back,
+.wd-hero-fav .favorite-heart {
+  width: 44px;
+  height: 44px;
+}
+/* «Добавить в план» / «Перенести»: дни по 4 в ряд (каждый ≥ 44px и на 320), 7 в ряд — только на широких. */
+.app-shell .week-day-picker {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (min-width: 440px) {
+  .app-shell .week-day-picker {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+/* Аналитика: выбор метрики и «Показать все» 44px. */
+.analytics-metric-select select,
+.analytics-show-all {
+  min-height: 44px;
+}
+/* «Свободный пул» в листе-форме — цель касания ≥ 44px. */
+.week-pool-button {
+  min-height: 44px;
+}

@@ -49,6 +49,17 @@ class LiveSessionPhaseNextRequest(BaseModel):
     expected_phase_index: int
 
 
+# --- POST /sessions/live/{id}/phase/back -------------------------------------------------
+
+
+class LiveSessionPhaseBackRequest(BaseModel):
+    """#292: expected_phase_index — фаза, которую клиент считает текущей.
+    Не совпал — 409 (в отличие от phase/next: «назад» не должен молча
+    применяться к состоянию, которого клиент не видел)."""
+
+    expected_phase_index: int
+
+
 # --- POST /sessions/live/{id}/blocks/start | /blocks/finish -------------------------------
 
 
@@ -121,12 +132,19 @@ class LiveSetTargetResponse(BaseModel):
     unit: str
 
 
+class LiveSetLogResponse(SetLogResponse):
+    """#292: SetLogResponse + set_index — ключ, под которым клиент
+    перезаписывает переоткрытый («назад») подход, не создавая новую строку."""
+
+    set_index: int | None = None
+
+
 class LiveSessionBlockResponse(BaseModel):
     order_index: int
     exercise_id: int | None
     complex_id: int | None
     targets: list[LiveSetTargetResponse]
-    set_logs: list[SetLogResponse]
+    set_logs: list["LiveSetLogResponse"]
     # R1: идентичность блока берётся из ЗАМОРОЖЕННОГО снимка (позиционно), не
     # из изменяемого ComplexItem. None у legacy/STEP-блоков (без снимка).
     protocol_type: str | None = None
