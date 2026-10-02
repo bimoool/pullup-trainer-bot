@@ -2591,27 +2591,37 @@ SELECT → «строки нет» → INSERT, второй запрос пад�
 - Тесты: `tests/test_web/test_v2_elective_journal.py` (4 из 6 падают без фикса),
   E2E `scenarios/parity/owner-optional-workout.spec.ts` (320/390, светлая/тёмная), сид `owner_optional_workout`.
 
-## Журнал показывал перенесённые backfill-ом тренировки дважды (#282)
+## Журнал показывал перенесённые backfill-ом тренировки дважды (#282, исправлено в #284)
 
 - **Симптом/корень.** Backfill (#163) копирует каждую legacy `Workout` в `TrainingSession` (тот же
   `performed_at`), но legacy-строки остаются источником `GET /api/history`; Журнал рисует и v2-карточки, и
   legacy-карточки → у мигрированного пользователя каждая старая тренировка видна дважды (и дважды считалась
   в `GET /api/v2/journal/days`). Между записями нет FK/legacy-id — связать можно только по данным.
-- **Решение (display-only, без данных и миграций).** Сопоставление по точному `performed_at` + `source`
-  с отпечатком backfill-сессии (см. PROJECT_SPEC §3 «Журнал v2»). Отпечаток нужен, чтобы живая сессия Mini App
-  с совпавшим моментом не скрывала реальную legacy-запись: у backfill нет `client_session_id`, снимка,
-  `SessionPlanItem`, а блок — системный `pull_ups/block_a`. Таблица legacy→`SessionSource` одна
-  (`resolve_legacy_session_source`), её же вызывает backfill — разойтись не могут.
-- **Ловушки.** (1) Флаг `exclude_migrated` у `/api/history` задаёт только Журнал: другие потребители
-  (если появятся) видят полную legacy-историю. (2) Скрытие применяется ДО пагинации/`has_more`, но «самая
-  свежая запись» (носитель `target_a/b`) определяется по полной истории — иначе цель переезжала бы на старую
-  карточку. (3) Если backfill изменит упражнения блока A (`category`/`subcategory`) — обновить отпечаток
-  `TrainingSessionRepository.backfilled_session_keys`; тест использует реальные функции backfill, а не
-  копию их логики. (4) Редактирование `performed_at` одной из двух копий разрывает пару — запись снова
-  видна дважды (осознанно: лучше дубль, чем потеря).
-- Тесты: `tests/test_web/test_journal_dedupe.py` (near-miss: другой момент, другой source, чужая сессия,
-  живая сессия на тот же момент; без фикса падают 4 теста + ослабление отпечатка валит живую сессию),
-  E2E `scenarios/parity/journal-dedupe.spec.ts` (320/390), сид `journal_dedupe` (999601/999611, + retry).
+- **Что пошло не так в #282.** Скрывалась LEGACY-карточка, но она — единственное представление с
+  «Изменить»/«Удалить» (PATCH/DELETE `/api/history/{id}`, `HistoryEditForm`); у backfill-копии нет ни снимка,
+  ни plan-ссылок, удаление/правка недоказаны (`SessionDeletionService`). Правка legacy после миграции
+  сохраняет `performed_at`, так что отредактированная строка оставалась скрыта, а устаревшая v2-копия — видна.
+  Утверждение «действия есть у видимой v2-копии» было ложным.
+- **Решение #284 (display-only, без данных и миграций).** Направление обратное: старая схема — источник
+  правды для перенесённой истории (docstring backfill), поэтому скрываются backfill-СЕССИИ по отпечатку
+  `TrainingSessionRepository._backfilled_fingerprint` (см. PROJECT_SPEC §3 «Журнал v2»), а все legacy-карточки
+  показываются. Никакого сопоставления с legacy-записью: правило не зависит от того, жива ли парная запись,
+  поэтому удаление legacy не воскрешает копию, а правка legacy сразу видна. Фильтр — SQL-условие в
+  `list_for_user`/`completed_performed_at`/`latest_completed_performed_at` (`exclude_backfilled=True`; его
+  передают `GET /api/v2/sessions?exclude_backfilled=true` — только Журнал — и `GET /api/v2/journal/days`),
+  поэтому пагинация и `has_more` считаются после скрытия. Модуль `app.domain.journal_dedupe` теперь содержит
+  только `resolve_legacy_session_source` (таблица legacy→`SessionSource` для backfill); сопоставитель,
+  `app.services.journal_dedupe`, `backfilled_session_keys`/`legacy_workout_keys` и `exclude_migrated` удалены.
+- **Ловушки.** (1) Отпечаток не должен шире захватывать живые сессии: у Mini App/Builder есть
+  `client_session_id`/снимок/`SessionPlanItem`, у запись «активность» — `activity_type`, у электива —
+  `source=elective`; любое ослабление условия прячет реальные записи (тесты на near-miss). (2) Если backfill
+  изменит упражнения блока A (`category`/`subcategory`) — обновить отпечаток; тест создаёт копии настоящими
+  функциями backfill. (3) Backfill-копия остаётся в БД и учитывается другими потребителями v2-списка (см.
+  отчёт #284: аналитика, экспорт, профиль, Workout Detail) — они не менялись. (4) Удаление legacy-записи не
+  удаляет её v2-копию (скрыта навсегда по отпечатку, но живёт в аналитике).
+- Тесты: `tests/test_web/test_journal_dedupe.py` (на коде #282 падают 9 из 11), E2E
+  `scenarios/parity/journal-dedupe.spec.ts` (320/390: каждая тренировка один раз, у карточек «✏️»/«🗑», правка
+  и удаление), сид `journal_dedupe` (999601/999611, + retry).
 
 ## Обновление этого файла
 

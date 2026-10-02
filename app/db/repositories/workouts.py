@@ -19,7 +19,6 @@ from app.domain.constants import (
     EquipmentType,
     VolumeGrowthReason,
 )
-from app.domain.journal_dedupe import LegacyWorkoutKey, resolve_legacy_session_source
 from app.domain.progression import (
     TransitionOutcome,
     check_transition_outcome,
@@ -292,24 +291,6 @@ class WorkoutRepository:
             ),
         )
         return list(result.scalars().all())
-
-    async def legacy_workout_keys(self, user_id: int) -> list[LegacyWorkoutKey]:
-        """(id, performed_at, ожидаемый source v2-копии) всех завершённых legacy-тренировок —
-        вход display-дедупликации Журнала (#282), без загрузки блоков."""
-        result = await self._session.execute(
-            select(
-                Workout.id, Workout.performed_at, Workout.participates_in_cascade, Workout.is_free_entry,
-            ).where(Workout.user_id == user_id, Workout.status == WorkoutStatus.COMPLETED),
-        )
-        return [
-            LegacyWorkoutKey(
-                workout_id=workout_id, performed_at=performed_at,
-                source=resolve_legacy_session_source(
-                    participates_in_cascade=participates_in_cascade, is_free_entry=is_free_entry,
-                ),
-            )
-            for workout_id, performed_at, participates_in_cascade, is_free_entry in result.all()
-        ]
 
     async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
         result = await self._session.execute(

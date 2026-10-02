@@ -1451,7 +1451,7 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
 
 
 async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
-    """#282 — дубли в Журнале у мигрированного пользователя.
+    """#282/#284 — дубли в Журнале у мигрированного пользователя (скрыты backfill-копии, legacy — с действиями).
 
     Пользователь «до миграции» имеет три legacy Workout (две каскадные + одна, внесённая задним
     числом); backfill (scripts/backfill_multi_program.py, #163) переносит их в TrainingSession теми

@@ -117,5 +117,5 @@ for id in 997401 997402 997403 997404 997411 997412 997413 997414; do seed golde
 for id in 999401 999402 999411 999412; do seed collections "$id"; done
 # Owner P0 (#279) «Факультатив — 3 минуты подтягиваний»: 999801 (320 px light) / 999811 (390 px dark), каждый + retry (id+1).
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
-# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
+# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); правка и удаление legacy-записей (#284).
 for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done
