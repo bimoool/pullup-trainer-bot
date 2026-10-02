@@ -182,3 +182,7 @@ for id in 996141 996142 996151 996152 996161 996162 996171 996172; do seed journ
 # «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
 # на тест id + retry (≤ +3); session_recovery.
 for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done
+# Wave 13b review (#293, parity/wave13-review.spec.ts): 99330x/99333x — WD-старт при завершении в очереди (session_recovery,
+# мутирует), 99331x/99332x — Журнал → «Открыть тренировку» → «Начать» → назад (journal_return, только чтение); id + retry.
+for id in 993301 993302 993331 993332; do seed session_recovery "$id"; done
+for id in 993311 993312 993321 993322; do seed journal_return "$id"; done
