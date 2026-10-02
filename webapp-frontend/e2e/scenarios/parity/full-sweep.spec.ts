@@ -273,8 +273,11 @@ const FLOWS: Flow[] = [
       await expect(detail).toBeVisible();
       await visit(page, {
         where: "Деталь → Записать", open: () => page.getByTestId("workout-detail-log").click(),
-        dest: [page.getByTestId("journal-log-form")], exit: { tab: "Главная" }, origin: homeMarker(page),
+        // у формы записи нет нижней навигации: «назад» ведёт на деталь (D1), оттуда — на Главную
+        dest: [page.getByTestId("journal-log-form")], exit: "telegram", origin: detail,
       });
+      await pressTelegramBackButton(page);
+      await expect(homeMarker(page)).toBeVisible();
       await page.getByTestId("my-workout-card").filter({ hasText: WORKOUT }).click();
       await visit(page, {
         where: "Деталь → Добавить в план", open: () => byName(page, "Добавить в план").click(),
