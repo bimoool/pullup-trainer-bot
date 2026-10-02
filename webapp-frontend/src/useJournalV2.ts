@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchJournalDays, fetchSessionsPage, type JournalDaysResponse, type SessionResponseV2 } from "./apiV2";
 import { currentMonthIn, DEFAULT_JOURNAL_TZ, monthRange, shiftMonth } from "./journalCalendarModel";
+import { mergeMorePage } from "./journalPaging";
 
 export const JOURNAL_PAGE_SIZE = 25;
 
@@ -20,7 +21,8 @@ type State =
  *  - сбой догрузки не стирает уже загруженные карточки (отдельная ошибка);
  *  - offset следующей страницы = число уже загруженных карточек, поэтому
  *    удаление карточки (removeById) не сдвигает выдачу;
- *  - устаревший ответ (быстрое переключение месяца) отбрасывается.
+ *  - устаревший ответ (быстрое переключение месяца) отбрасывается; то же для «Показать ещё»
+ *    (эпоха списка, journalPaging.mergeMorePage).
  *
  * Стартовый месяц: текущий в поясе пользователя; если он пуст, а тренировки
  * есть — месяц самой свежей (иначе новичок с вчерашней тренировкой 1-го числа
@@ -38,6 +40,8 @@ export function useJournalV2(initDataRaw: string, restore?: { month: string; day
   // Перезагрузка списка после записи (#263): новая запись должна появиться без перехода по месяцам.
   const [reloadKey, setReloadKey] = useState(0);
   const inFlight = useRef(false);
+  // Эпоха списка: растёт при каждой перезагрузке (месяц/день/reload); ответ «Показать ещё» старой эпохи отбрасывается.
+  const listEpoch = useRef(0);
   const itemsRef = useRef<SessionResponseV2[]>([]);
   const daysCache = useRef(new Map<string, JournalDaysResponse>());
 
@@ -119,6 +123,9 @@ export function useJournalV2(initDataRaw: string, restore?: { month: string; day
     }
     let cancelled = false;
     const range = day !== null ? { from: day, to: day } : monthRange(month);
+    listEpoch.current += 1;
+    inFlight.current = false;
+    setLoadingMore(false);
     setState({ phase: "loading" });
     setMoreError(null);
     fetchSessionsPage(initDataRaw, JOURNAL_PAGE_SIZE, 0, "completed", range)
@@ -145,18 +152,25 @@ export function useJournalV2(initDataRaw: string, restore?: { month: string; day
     inFlight.current = true;
     setLoadingMore(true);
     setMoreError(null);
+    const startedEpoch = listEpoch.current;
     const range = day !== null ? { from: day, to: day } : monthRange(month);
     try {
       const page = await fetchSessionsPage(initDataRaw, JOURNAL_PAGE_SIZE, itemsRef.current.length, "completed", range);
-      const known = new Set(itemsRef.current.map((item) => item.id));
-      const merged = [...itemsRef.current, ...page.sessions.filter((item) => !known.has(item.id))];
+      const merged = mergeMorePage(itemsRef.current, page.sessions, startedEpoch, listEpoch.current);
+      if (merged === null) {
+        return; // список уже перезагружен для другого диапазона — старая страница не нужна
+      }
       itemsRef.current = merged;
       setState({ phase: "ready", items: merged, hasMore: page.has_more });
     } catch (error) {
-      setMoreError(error instanceof Error ? error.message : String(error));
+      if (startedEpoch === listEpoch.current) {
+        setMoreError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      inFlight.current = false;
-      setLoadingMore(false);
+      if (startedEpoch === listEpoch.current) {
+        inFlight.current = false;
+        setLoadingMore(false);
+      }
     }
   }, [initDataRaw, month, day]);
 
