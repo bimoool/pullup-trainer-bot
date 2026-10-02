@@ -195,3 +195,6 @@ for id in 998821 998822 998823 998824 998825 998826 998827 998828; do seed sessi
 for id in 993301 993302 993331 993332; do seed session_recovery "$id"; done
 for id in 993311 993312 993321 993322; do seed journal_return "$id"; done
 for id in 993341 993342 993351 993352; do seed session_recovery "$id"; done
+# R-4 follow-up (#293 N2/N3, parity/r4-followup.spec.ts): 99360x/99361x — завершение в очереди + медленный /complete
+# (session_recovery, мутирует), 99362x/99363x — пред-экран «Начать» офлайн (session_recovery, мутирует); id + retry.
+for id in 993601 993602 993611 993612 993621 993622 993631 993632; do seed session_recovery "$id"; done

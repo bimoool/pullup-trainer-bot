@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from pydantic import TypeAdapter
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -178,6 +179,10 @@ def _phase_ends_at_from_offset(offset_seconds: int | None) -> datetime | None:
     return datetime.now(UTC) + timedelta(seconds=offset_seconds)
 
 
+# Пространство advisory-локов старта живой сессии (первый int4 ключа pg_advisory_xact_lock(int, int)).
+_START_LOCK_NAMESPACE = 0x4C53
+
+
 class LiveSessionService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -196,6 +201,14 @@ class LiveSessionService:
         uq_training_sessions_client_session_id. Вставка идёт под SAVEPOINT — при конфликте
         возвращается сессия победителя (а не 500). Конфликт при отсутствии СВОЕЙ сессии с этим UUID
         (UUID занят другим пользователем) — ValueError -> 422, без раскрытия чужой сессии."""
+        # N1 (#293): два устройства с РАЗНЫМИ client_session_id оба проходят проверку «активной нет».
+        # Сериализуем старты пользователя advisory-локом до проверки (транзакционный — снимается на
+        # commit/rollback, миграции/уникального индекса не требует). Конкурент ждёт, затем видит
+        # STARTED-сессию победителя и получает 409; повтор с тем же client_session_id — existing.
+        await self._session.execute(
+            text("SELECT pg_advisory_xact_lock(:ns, :uid)"),
+            {"ns": _START_LOCK_NAMESPACE, "uid": user_id},
+        )
         try:
             async with self._session.begin_nested():
                 return await self._start_session(
