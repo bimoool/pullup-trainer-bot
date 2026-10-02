@@ -110,3 +110,5 @@ for id in 999301 999302 999311 999312; do seed analytics_distribution "$id"; don
 for id in 999401 999402 999411 999412; do seed collections "$id"; done
 # Owner P0 (#279) «Факультатив — 3 минуты подтягиваний»: 999801 (320 px light) / 999811 (390 px dark), каждый + retry (id+1).
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
+# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
+for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done
