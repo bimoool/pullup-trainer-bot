@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from app.db.models_program import (
     SetTarget,
     TrainingSession,
 )
+from app.domain.constants import ExerciseType
 from app.domain.live_session import DEFAULT_UNIT_BY_METRIC_TYPE
 from app.domain.multi_program import MetricType, SessionSource
 
@@ -618,6 +619,37 @@ class TrainingSessionRepository:
             ),
         )
         return list(result.scalars().all())
+
+    async def backfilled_session_keys(self, user_id: int) -> list[tuple[datetime, SessionSource]]:
+        """(performed_at, source) завершённых сессий, созданных backfill-ом legacy Workout (#163) —
+        для display-дедупликации Журнала (#282, app.domain.journal_dedupe).
+
+        Отпечаток backfill-сессии (то, чем она отличается от сессий живого потока Mini App, даже при
+        случайно совпавшем performed_at): source plan/freeform/backdated (не elective), нет
+        client_session_id (его ставит только живой старт), нет workout_snapshot, нет activity_type,
+        нет SessionPlanItem (backfill не привязывает PlanItem), а первый блок — системное упражнение
+        блока A подтягиваний (category=pull_ups, subcategory=block_a — seed_catalog backfill-а;
+        блок A есть у каждой перенесённой записи, в том числе свободной)."""
+        block_a_first = exists().where(
+            SessionBlock.session_id == TrainingSession.id, SessionBlock.order_index == 0,
+            SessionBlock.exercise_id == Exercise.id,
+            Exercise.category == ExerciseType.PULL_UPS.value, Exercise.subcategory == "block_a",
+            Exercise.source_type == "system", Exercise.owner_user_id.is_(None),
+        )
+        has_plan_items = exists().where(SessionPlanItem.session_id == TrainingSession.id)
+        result = await self._session.execute(
+            select(TrainingSession.performed_at, TrainingSession.source).where(
+                TrainingSession.user_id == user_id,
+                TrainingSession.status == SessionStatus.COMPLETED,
+                TrainingSession.source.in_((SessionSource.PLAN, SessionSource.FREEFORM, SessionSource.BACKDATED)),
+                TrainingSession.client_session_id.is_(None),
+                TrainingSession.workout_snapshot.is_(None),
+                TrainingSession.activity_type.is_(None),
+                ~has_plan_items,
+                block_a_first,
+            ),
+        )
+        return [(performed_at, source) for performed_at, source in result.all()]
 
     async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
         result = await self._session.execute(

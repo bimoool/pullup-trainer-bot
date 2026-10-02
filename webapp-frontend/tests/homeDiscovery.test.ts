@@ -41,3 +41,28 @@ test("searchContent: фильтр категории скрывает трени
   assert.equal(res.workouts.length, 0);
   assert.deepEqual(res.exercises.map((e) => e.id), [2]);
 });
+
+const assessments = [
+  { id: 1, name: "Максимум подтягиваний", description: "Сколько раз за один подход", metric_type: "reps", unit: "повт.", last_result: null, results_count: 0, trend: [] },
+  { id: 2, name: "Вис на перекладине", description: null, metric_type: "time", unit: "сек", last_result: null, results_count: 0, trend: [] },
+];
+
+test("searchContent: тесты — отдельная группа, ищутся по названию и описанию (#281, D6)", () => {
+  const data = { programs, workouts, exercises, assessments };
+  const all = searchContent(data, "", null);
+  assert.deepEqual(all.tests.map((t) => t.id), [1, 2]);
+  assert.equal(all.total, 4 + 1 + 2 + 2);
+  assert.deepEqual(searchContent(data, "ВИС", null).tests.map((t) => t.id), [2]);
+  assert.deepEqual(searchContent(data, "один подход", null).tests.map((t) => t.id), [1]);
+  // без assessments (сбой загрузки) группа пуста, остальной поиск работает
+  assert.equal(searchContent({ programs, workouts, exercises }, "", null).tests.length, 0);
+});
+
+test("searchContent: чип «Тесты» оставляет только тесты; категория/избранное тесты скрывают", () => {
+  const data = { programs, workouts, exercises, assessments };
+  const only = searchContent(data, "", null, null, true);
+  assert.equal(only.programs.length + only.workouts.length + only.exercises.length, 0);
+  assert.equal(only.total, 2);
+  assert.equal(searchContent(data, "", "strength").tests.length, 0);
+  assert.equal(searchContent(data, "", null, []).tests.length, 0);
+});

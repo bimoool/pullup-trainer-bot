@@ -16,6 +16,8 @@ type Props = {
   logRequest?: number;
   /** С какой тренировкой открыть форму записи (Workout Detail «Записать»). */
   logWorkoutId?: number | null;
+  /** «Открыть тренировку» из записи Журнала (#281) — Workout Detail на вкладке «Главная». */
+  onOpenWorkout?: (workoutId: number) => void;
 };
 
 const PAGE_SIZE = 20;
@@ -33,7 +35,7 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null }: Props) {
+export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null, onOpenWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // «+ Записать» (#263): шторка выбора и затем одна из двух форм.
   const [logSheetOpen, setLogSheetOpen] = useState(logRequest > 0 && logWorkoutId === null);
@@ -173,6 +175,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         session={detailSession}
         timeZone={journal.timezone}
         onBack={() => setDetailSessionId(null)}
+        onOpenWorkout={onOpenWorkout}
         onDeleted={(sessionId) => {
           journal.removeById(sessionId);
           setDetailSessionId(null);

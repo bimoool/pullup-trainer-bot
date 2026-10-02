@@ -9,9 +9,10 @@ import { AddToPlanScreen } from "./AddToPlanScreen";
 import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
-import { groupProgramsByCategory } from "./homeDiscovery";
+import { groupProgramsByCategory, OTHER_CATEGORY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
+import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsScreen } from "./TestsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
@@ -28,6 +29,10 @@ type Props = {
   onStartWorkout: (workoutId: number, workoutTitle: string) => void;
   /** «Записать» на Workout Detail — Журнал с формой записи, заполненной этой тренировкой. */
   onLogWorkout: (workoutId: number) => void;
+  /** Открыть сразу Workout Detail этой тренировки (из Журнала, #281); «назад» возвращает в Журнал. */
+  initialWorkoutId?: number | null;
+  onInitialWorkoutShown?: () => void;
+  onExitInitialWorkout?: () => void;
 };
 
 type WorkoutsState =
@@ -59,7 +64,10 @@ type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { p
  * "В плане", переход в Program Detail. Полная сводка (статус готовности,
  * кнопка "Начать тренировку") на "Планах" (DashboardScreen.tsx).
  */
-export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStartWorkout, onLogWorkout }: Props) {
+export function HomeScreen({
+  initDataRaw, onOpenPlans, onOpenJournalLog, onStartWorkout, onLogWorkout,
+  initialWorkoutId = null, onInitialWorkoutShown, onExitInitialWorkout,
+}: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
   // Program Detail (issue #192) — тот же приём "swap внутри вкладки", что
@@ -68,7 +76,17 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
   const [selectedProgramId, setSelectedProgramId] = useState<number | null>(null);
   // «Мои тренировки» грузятся отдельно от каталога: их сбой не ломает Программы.
   const [workouts, setWorkouts] = useState<WorkoutsState>({ phase: "loading" });
-  const [workoutView, setWorkoutView] = useState<WorkoutView>({ kind: "closed" });
+  const [workoutView, setWorkoutView] = useState<WorkoutView>(
+    initialWorkoutId !== null ? { kind: "detail", workoutId: initialWorkoutId } : { kind: "closed" },
+  );
+  // Пришли из Журнала: первое закрытие Workout Detail возвращает туда, а не на Главную.
+  const exitToJournal = useRef(initialWorkoutId !== null);
+  useEffect(() => {
+    if (initialWorkoutId !== null) {
+      onInitialWorkoutShown?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при монтировании.
+  }, []);
   const [workoutsReloadKey, setWorkoutsReloadKey] = useState(0);
   // Избранное (issue #272): null — ещё не загружено/не удалось (ряд тогда скрыт).
   const [favorites, setFavorites] = useState<FavoriteV2[] | null>(null);
@@ -76,7 +94,9 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
   // Поиск (issue #254) и «+»-шторка. Поиск остаётся «открытым» под Program Detail /
   // редактором, чтобы «назад» оттуда возвращал в результаты, а не на Главную.
   const [searching, setSearching] = useState(false);
-  const [searchState, setSearchState] = useState<SearchState>({ query: "", category: null, favoritesOnly: false });
+  const [searchState, setSearchState] = useState<SearchState>({ query: "", category: null, favoritesOnly: false, testsOnly: false });
+  // Тест, открытый из результатов поиска (#281, D6): «назад» возвращает в поиск.
+  const [searchTestId, setSearchTestId] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   // Хаб «Тесты» (#260) — локальный swap внутри вкладки, как Program/Workout Detail.
   const [showTests, setShowTests] = useState(false);
@@ -91,9 +111,10 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
     }
   }, [searching]);
 
-  function openSearch() {
+  // category — «Все ›» у ряда категории (#281, H4): поиск, уже отфильтрованный по ней.
+  function openSearch(category: string | null = null) {
     savedScrollY.current = window.scrollY;
-    setSearchState({ query: "", category: null, favoritesOnly: false });
+    setSearchState({ query: "", category, favoritesOnly: false, testsOnly: false });
     setSearching(true);
   }
 
@@ -133,6 +154,11 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
   }, [initDataRaw, favoritesReloadKey]);
 
   function closeWorkoutView() {
+    if (exitToJournal.current) {
+      exitToJournal.current = false;
+      onExitInitialWorkout?.();
+      return;
+    }
     setWorkoutView({ kind: "closed" });
     setWorkoutsReloadKey((key) => key + 1);
     setFavoritesReloadKey((key) => key + 1);
@@ -288,6 +314,10 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
     return <TestsScreen initDataRaw={initDataRaw} onBack={() => setShowTests(false)} />;
   }
 
+  if (searching && searchTestId !== null) {
+    return <TestDetailScreen initDataRaw={initDataRaw} protocolId={searchTestId} onBack={() => setSearchTestId(null)} />;
+  }
+
   if (searching) {
     return (
       <SearchScreen
@@ -297,6 +327,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
         onClose={() => setSearching(false)}
         onOpenProgram={setSelectedProgramId}
         onOpenWorkout={(workoutId) => setWorkoutView({ kind: "detail", workoutId })}
+        onOpenTest={setSearchTestId}
         onOpenExercise={(exerciseId, exerciseName) => setWorkoutView({ kind: "add-exercise", exerciseId, exerciseName })}
       />
     );
@@ -305,7 +336,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
   return (
     <div>
       <div className="home-sticky-header" data-testid="home-header">
-        <button type="button" className="home-search-pill" data-testid="home-search-pill" onClick={openSearch}>
+        <button type="button" className="home-search-pill" data-testid="home-search-pill" onClick={() => openSearch()}>
           Что потренируем сегодня?
         </button>
         <button
@@ -398,7 +429,14 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
       )}
       {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row) => (
         <div key={row.category} data-testid="program-category">
-          <p className="section-title" data-testid="program-category-title">{row.category}</p>
+          <div className="home-section-header">
+            <p className="section-title" data-testid="program-category-title">{row.category}</p>
+            {row.category !== OTHER_CATEGORY && (
+              <Button size="s" mode="plain" data-testid="program-category-all" onClick={() => openSearch(row.category)}>
+                Все ›
+              </Button>
+            )}
+          </div>
           <div className="home-program-row" data-testid="program-row">
             {row.programs.map((program) => {
               const included = catalog.includedProgramIds.has(program.id);

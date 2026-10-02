@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  fetchExercises, fetchPrograms, listFavorites, listWorkouts,
-  type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
+  fetchExercises, fetchPrograms, listAssessments, listFavorites, listWorkouts,
+  type AssessmentProtocolV2, type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
+import { formatLastResult } from "./assessmentsFormat";
 import { collectCategories, searchContent } from "./homeDiscovery";
 import { useBackButton } from "./useBackButton";
 
-export type SearchState = { query: string; category: string | null; favoritesOnly: boolean };
+export type SearchState = { query: string; category: string | null; favoritesOnly: boolean; testsOnly: boolean };
 
 type Props = {
   initDataRaw: string;
@@ -17,10 +18,13 @@ type Props = {
   onOpenProgram: (programId: number) => void;
   onOpenWorkout: (workoutId: number) => void;
   onOpenExercise: (exerciseId: number, name: string) => void;
+  /** Результат-тест → детали теста (#281, D6). */
+  onOpenTest: (protocolId: number) => void;
 };
 
 type Data = {
   programs: ProgramResponseV2[]; workouts: WorkoutResponseV2[]; exercises: ExerciseResponseV2[]; favorites: FavoriteV2[];
+  assessments: AssessmentProtocolV2[];
 };
 type LoadState = { phase: "loading" } | { phase: "error"; message: string } | { phase: "ready"; data: Data };
 
@@ -30,7 +34,7 @@ type LoadState = { phase: "loading" } | { phase: "error"; message: string } | { 
  * категорий строятся из `category` загруженных данных (без хардкода).
  */
 export function SearchScreen({
-  initDataRaw, state, onStateChange, onClose, onOpenProgram, onOpenWorkout, onOpenExercise,
+  initDataRaw, state, onStateChange, onClose, onOpenProgram, onOpenWorkout, onOpenExercise, onOpenTest,
 }: Props) {
   const [load, setLoad] = useState<LoadState>({ phase: "loading" });
   const inputRef = useRef<HTMLInputElement>(null);
@@ -45,10 +49,12 @@ export function SearchScreen({
     let cancelled = false;
     Promise.all([
       fetchPrograms(initDataRaw), listWorkouts(initDataRaw), fetchExercises(initDataRaw), listFavorites(initDataRaw),
+      // Тесты — необязательная группа: их сбой не ломает остальной поиск.
+      listAssessments(initDataRaw).catch((): AssessmentProtocolV2[] => []),
     ])
-      .then(([programs, workouts, exercises, favorites]) => {
+      .then(([programs, workouts, exercises, favorites, assessments]) => {
         if (!cancelled) {
-          setLoad({ phase: "ready", data: { programs, workouts, exercises, favorites } });
+          setLoad({ phase: "ready", data: { programs, workouts, exercises, favorites, assessments } });
         }
       })
       .catch((error) => {
@@ -67,8 +73,8 @@ export function SearchScreen({
     [data],
   );
   const results = useMemo(
-    () => (data ? searchContent(data, state.query, state.category, state.favoritesOnly ? data.favorites : null) : null),
-    [data, state.query, state.category, state.favoritesOnly],
+    () => (data ? searchContent(data, state.query, state.category, state.favoritesOnly ? data.favorites : null, state.testsOnly) : null),
+    [data, state.query, state.category, state.favoritesOnly, state.testsOnly],
   );
 
   return (
@@ -97,6 +103,15 @@ export function SearchScreen({
           >
             Избранное
           </button>
+          <button
+            type="button"
+            className={state.testsOnly ? "search-chip search-chip-active" : "search-chip"}
+            data-testid="search-chip-tests"
+            aria-pressed={state.testsOnly}
+            onClick={() => onStateChange({ ...state, testsOnly: !state.testsOnly })}
+          >
+            Тесты
+          </button>
           {categories.map((category) => (
             <button
               key={category}
@@ -121,8 +136,25 @@ export function SearchScreen({
 
       {results && (
         <>
+          {state.category !== null && <p className="section-title" data-testid="search-category-title">{state.category}</p>}
           <p className="hint" data-testid="search-count">Найдено: {results.total}</p>
           {results.total === 0 && <p className="screen-message" data-testid="search-empty">Ничего не найдено</p>}
+
+          {results.tests.length > 0 && (
+            <>
+              <p className="section-title">Тесты</p>
+              <ul className="search-list">
+                {results.tests.map((test) => (
+                  <li key={`t${test.id}`}>
+                    <button type="button" className="search-result" data-testid="search-result-test" onClick={() => onOpenTest(test.id)}>
+                      <span className="home-workout-title">{test.name}</span>
+                      <span className="home-workout-meta">{formatLastResult(test.last_result)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           {results.programs.length > 0 && (
             <>

@@ -115,7 +115,14 @@ for retry in 0 100; do
     seed sweep_populated $((id + retry))
   done
 done
+# Residual gaps (#281): 9973xx — Журнал → «Открыть тренировку» (workout_detail), Главная «Все ›» + тесты в поиске
+# (home_discovery, только чтение), 9974xx — вибрация конца фазы (golden_journey, отдых 2 с); каждый + retry (id+1).
+for id in 997301 997302 997311 997312; do seed workout_detail "$id"; done
+for id in 997321 997322 997331 997332; do seed home_discovery "$id"; done
+for id in 997401 997402 997403 997404 997411 997412 997413 997414; do seed golden_journey "$id"; done
 # Collections (#271): 999401/999402 (320 px light, + retry), 999411/999412 (390 px dark, + retry); read-only.
 for id in 999401 999402 999411 999412; do seed collections "$id"; done
 # Owner P0 (#279) «Факультатив — 3 минуты подтягиваний»: 999801 (320 px light) / 999811 (390 px dark), каждый + retry (id+1).
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
+# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
+for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done

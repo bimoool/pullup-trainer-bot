@@ -29,6 +29,7 @@ import {
   type LocalLiveSession,
   type LocalPhaseName,
 } from "./offlineSession";
+import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX, WORKOUT_EFFORT_PROMPT } from "./effortScale";
 import { useBackButton } from "./useBackButton";
@@ -275,12 +276,31 @@ export function SessionLiveScreen({
       cancelScheduledPhaseEndSound();
       return;
     }
+    // Вибрация конца фазы (#281): в отличие от звука на часах AudioContext, таймер JS — но
+    // только пока экран виден (в фоне снимается вместе со звуком; истёкшая в фоне фаза — без сигнала).
+    let vibrationTimer: ReturnType<typeof setTimeout> | null = null;
+    function cancelVibration() {
+      if (vibrationTimer !== null) {
+        clearTimeout(vibrationTimer);
+        vibrationTimer = null;
+      }
+    }
     function schedule() {
+      cancelVibration();
       const delay = phaseEndCueDelaySeconds(phaseEndsAtMs as number, Date.now());
       if (delay === null) {
         cancelScheduledPhaseEndSound();
       } else {
         schedulePhaseEndSound(delay);
+        const vibrateIn = vibrationDelayMs(phaseEndsAtMs as number, Date.now());
+        if (vibrateIn !== null) {
+          vibrationTimer = setTimeout(() => {
+            vibrationTimer = null;
+            if (document.visibilityState === "visible") {
+              vibratePhaseEnd();
+            }
+          }, vibrateIn);
+        }
       }
     }
     // #269: в фоне звук не играет, а часы AudioContext могут стоять — уходя в фон
@@ -291,6 +311,7 @@ export function SessionLiveScreen({
         schedule();
       } else {
         cancelScheduledPhaseEndSound();
+        cancelVibration();
       }
     }
     schedule();
@@ -298,6 +319,7 @@ export function SessionLiveScreen({
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       cancelScheduledPhaseEndSound();
+      cancelVibration();
     };
   }, [phaseEndsAtMs]);
 

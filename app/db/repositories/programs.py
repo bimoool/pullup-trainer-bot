@@ -62,6 +62,20 @@ class ProgramRepository:
         result = await self._session.execute(select(Exercise).where(Exercise.id.in_(exercise_ids)))
         return list(result.scalars().all())
 
+    async def list_own_workout_ids(self, complex_ids: list[int], user_id: int) -> set[int]:
+        """Из complex_ids — только живые (не архивные) user-Workout этого владельца
+        (#281: «Открыть тренировку» из Журнала ведёт в Workout Detail только туда,
+        где он реально откроется)."""
+        if not complex_ids:
+            return set()
+        result = await self._session.execute(
+            select(Complex.id).where(
+                Complex.id.in_(complex_ids), Complex.source_type == "user",
+                Complex.owner_user_id == user_id, Complex.archived_at.is_(None),
+            ),
+        )
+        return set(result.scalars().all())
+
     async def list_complexes_by_ids(self, complex_ids: list[int]) -> list[Complex]:
         """Phase B1 gate fix (issue #215) — batch-версия get_complex для
         резолва Workout title (Complex.name) в Журнале/списке сессий, тот
