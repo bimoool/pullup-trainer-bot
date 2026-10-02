@@ -1093,6 +1093,75 @@ async def seed_tests_hub(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+# --- Peer Insights (#276) ------------------------------------------------------------------
+# Синтетическая популяция живёт в ОТДЕЛЬНЫХ id-диапазонах (только e2e-БД): женщины 8_100_001..,
+# мужчины 8_200_001... Они пересоздаются при каждом сиде зрителя, так что число и значения всегда
+# одни и те же. Все — 30–39 лет (середина ступени), результат — только «Подтягивания с весом, кг».
+_PEER_POPULATION_VALUES = [v for v in range(1, 26) if v != 10]  # 24 значения; зритель — 10 кг
+_PEER_WEIGHTED_PROTOCOL = "Подтягивания с весом, кг"
+_PEER_FEMALE_BASE = 8_100_000
+_PEER_MALE_BASE = 8_200_000
+
+
+def _peer_birth_date() -> date:
+    return date(datetime.now(UTC).year - 35, 1, 15)
+
+
+async def _peer_protocol_id(session: AsyncSession, name: str) -> int:
+    return (await session.execute(select(AssessmentProtocol.id).where(AssessmentProtocol.name == name))).scalar_one()
+
+
+async def _seed_peer_viewer(session: AsyncSession, telegram_id: int, gender: Gender, base: int) -> None:
+    """Зритель (гендер + 35 лет, 10 кг) + 24 синтетических пользователя той же когорты (значения
+    1..25 кг кроме 10): когорта = 25 человек, процентиль 38, медиана 13, следующий порог — p50 = 13 кг."""
+    users = UserRepository(session)
+    for offset in range(1, len(_PEER_POPULATION_VALUES) + 1):
+        stale = await users.get_by_telegram_id(base + offset)
+        if stale is not None:
+            await _purge_user(session, stale.id)
+    viewer = await _onboard(session, telegram_id)
+    viewer.gender, viewer.birth_date = gender, _peer_birth_date()
+    protocol_id = await _peer_protocol_id(session, _PEER_WEIGHTED_PROTOCOL)
+    now = datetime.now(UTC)
+    session.add(AssessmentResult(
+        user_id=viewer.id, protocol_id=protocol_id, performed_at=now - timedelta(days=3), value=10, unit="кг",
+    ))
+    for offset, value in enumerate(_PEER_POPULATION_VALUES, start=1):
+        peer = await users.create(telegram_id=base + offset, username=f"peer{base + offset}")
+        peer.gender, peer.birth_date = gender, _peer_birth_date()
+        session.add(AssessmentResult(
+            user_id=peer.id, protocol_id=protocol_id, performed_at=now - timedelta(days=2), value=value, unit="кг",
+        ))
+    await session.flush()
+
+
+async def seed_peer_cohort_female(session: AsyncSession, telegram_id: int) -> None:
+    await _seed_peer_viewer(session, telegram_id, Gender.FEMALE, _PEER_FEMALE_BASE)
+
+
+async def seed_peer_cohort_male(session: AsyncSession, telegram_id: int) -> None:
+    await _seed_peer_viewer(session, telegram_id, Gender.MALE, _PEER_MALE_BASE)
+
+
+async def seed_peer_insufficient(session: AsyncSession, telegram_id: int) -> None:
+    """Зритель с одним результатом «Максимум подтягиваний» (12): в e2e-БД нет ни одной когорты на 20
+    человек по этому протоколу -> «Пока мало данных для сравнения»."""
+    viewer = await _onboard(session, telegram_id)
+    viewer.gender, viewer.birth_date = Gender.MALE, _peer_birth_date()
+    session.add(AssessmentResult(
+        user_id=viewer.id, protocol_id=await _peer_protocol_id(session, "Максимум подтягиваний"),
+        performed_at=datetime.now(UTC) - timedelta(days=4), value=12, unit="повт.",
+    ))
+    await session.flush()
+
+
+async def seed_peer_empty(session: AsyncSession, telegram_id: int) -> None:
+    """Онбордящийся зритель без результатов тестов (состояние «нет результата», затем запись)."""
+    viewer = await _onboard(session, telegram_id)
+    viewer.gender, viewer.birth_date = Gender.FEMALE, _peer_birth_date()
+    await session.flush()
+
+
 async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     """G3 — Главная/«Мои тренировки»: у пользователя две своих Workout (одна
     с длинным русским названием и тремя упражнениями, одна пустая) и
@@ -1306,6 +1375,10 @@ SCENARIOS = {
     "analytics_v2": seed_analytics_v2,
     "analytics_metric": seed_analytics_metric,
     "tests_hub": seed_tests_hub,
+    "peer_cohort_female": seed_peer_cohort_female,
+    "peer_cohort_male": seed_peer_cohort_male,
+    "peer_insufficient": seed_peer_insufficient,
+    "peer_empty": seed_peer_empty,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
     "journal_edit": seed_journal_edit,

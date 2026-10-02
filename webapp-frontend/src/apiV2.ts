@@ -8,6 +8,7 @@
  */
 
 import type { SessionCreatePayload } from "./journalLog";
+import type { PeerInsights } from "./peerInsightsFormat";
 
 /**
  * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
@@ -952,6 +953,11 @@ export async function getAssessment(
   initDataRaw: string, protocolId: number,
 ): Promise<{ protocol: AssessmentProtocolV2; results: AssessmentResultV2[] }> {
   return apiV2Get(`/api/v2/assessments/${protocolId}/results`, initDataRaw);
+}
+
+/** «Сравнение с похожими» (#276): только анонимные агрегаты. */
+export async function getPeerInsights(initDataRaw: string, protocolId: number): Promise<PeerInsights> {
+  return apiV2Get(`/api/v2/assessments/${protocolId}/peer-insights`, initDataRaw);
 }
 
 export interface AssessmentResultInput {
