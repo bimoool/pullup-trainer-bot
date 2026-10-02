@@ -33,6 +33,8 @@ export function useJournalV2(initDataRaw: string) {
   const [state, setState] = useState<State>({ phase: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
+  // Перезагрузка списка после записи (#263): новая запись должна появиться без перехода по месяцам.
+  const [reloadKey, setReloadKey] = useState(0);
   const inFlight = useRef(false);
   const itemsRef = useRef<SessionResponseV2[]>([]);
   const daysCache = useRef(new Map<string, JournalDaysResponse>());
@@ -122,7 +124,7 @@ export function useJournalV2(initDataRaw: string) {
     return () => {
       cancelled = true;
     };
-  }, [initDataRaw, month, day]);
+  }, [initDataRaw, month, day, reloadKey]);
 
   const loadMore = useCallback(async () => {
     if (inFlight.current || month === null) {
@@ -160,7 +162,20 @@ export function useJournalV2(initDataRaw: string) {
       .catch(() => undefined);
   }, [initDataRaw, month]);
 
-  const removeById = useCallback((sessionId: number) => {
+  /** Записали новую сессию: перегрузить список и точки календаря (месяц записи). */
+  const reloadAfterLog = useCallback((date: string) => {
+    daysCache.current.clear();
+    setDay(null);
+    const logMonth = date.slice(0, 7);
+    if (logMonth !== month) {
+      setMonthState(logMonth);
+    } else {
+      setReloadKey((value) => value + 1);
+      refreshDays();
+    }
+  }, [month, refreshDays]);
+
+  const removeById =useCallback((sessionId: number) => {
     itemsRef.current = itemsRef.current.filter((item) => item.id !== sessionId);
     setState((current) =>
       current.phase === "ready" ? { ...current, items: itemsRef.current } : current);
@@ -182,7 +197,7 @@ export function useJournalV2(initDataRaw: string) {
   }, []);
 
   return {
-    state, loadingMore, moreError, loadMore, removeById, refreshDays,
+    state, loadingMore, moreError, loadMore, removeById, refreshDays, reloadAfterLog,
     month, day, shift, toggleDay,
     timezone: daysInfo?.timezone ?? DEFAULT_JOURNAL_TZ,
     dayCounts: new Map((daysInfo?.month === month ? daysInfo.days : []).map((entry) => [entry.date, entry.count])),

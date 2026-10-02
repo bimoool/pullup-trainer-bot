@@ -113,6 +113,8 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [tab, setTab] = useState<Tab>("home");
+  // «+» на Главной → «Записать в журнал» (#263): счётчик запросов, 0 — шторку не открывать.
+  const [journalLogRequest, setJournalLogRequest] = useState(0);
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -305,7 +307,13 @@ export function App() {
           onComplete={() => void refetchHello(state.initDataRaw)}
         />
       )}
-      {isOnboarded && tab === "home" && <HomeScreen initDataRaw={state.initDataRaw} onOpenPlans={() => setTab("plans")} />}
+      {isOnboarded && tab === "home" && (
+        <HomeScreen
+          initDataRaw={state.initDataRaw}
+          onOpenPlans={() => setTab("plans")}
+          onOpenJournalLog={() => { setJournalLogRequest((value) => value + 1); setTab("journal"); }}
+        />
+      )}
       {isOnboarded && tab === "plans" && (
         <DashboardScreen
           initDataRaw={state.initDataRaw}
@@ -320,7 +328,7 @@ export function App() {
           onOpenWarmup={() => setTab("warmup")}
         />
       )}
-      {isOnboarded && tab === "journal" && <HistoryScreen initDataRaw={state.initDataRaw} />}
+      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} />}
       {isOnboarded && tab === "analytics" && <AnalyticsScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "profile" && (
         <ProfileScreen

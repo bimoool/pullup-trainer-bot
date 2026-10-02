@@ -62,3 +62,5 @@ seed golden_journey 980001
 seed golden_journey 980002
 seed golden_journey 980011
 seed golden_journey 980012
+# Journal log (#263): 985001/985002 (320px, + retry), 985011/985012 (390px), Главная → «+»: id+5(+retry).
+for id in 985001 985002 985006 985007 985011 985012 985016 985017; do seed golden_journey "$id"; done

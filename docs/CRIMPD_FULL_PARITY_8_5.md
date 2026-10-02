@@ -32,11 +32,11 @@ any merge into `develop/current`.
 | Featured playlists carousel | H5; HO 4 | none | MISSING | no collections model | «Подборки» row from curated collections | #271 | — |
 | «Create Custom Workouts» banner | H6 | «Создать» button on Главная | DONE | — | — | — | home-discovery.spec.ts |
 | My Workouts grid | H7 | «Мои тренировки» list | DONE | — | — | — | home-discovery.spec.ts, crimpd-parity Baseline |
-| «Log Cross-Training» banner / entry | H8 | unreachable FreeWorkoutScreen | MISSING | no reachable free activity logging | Journal «+ Записать» → «Другую активность», also in «+» sheet | #263 | — |
+| «Log Cross-Training» banner / entry | H8 | Журнал «+ Записать» → «Другую активность»; «+» sheet на Главной → «Записать в журнал» | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
 | Favorite Workouts row | H9 | «Избранное» row on Главная (workouts + programs; hint only if never favorited) | DONE | — | — | #272 | crimpd-parity.spec.ts «Favorites»; tests/test_web/test_v2_favorites.py |
 | «Start Open Climbing Session» banner | H10; J9 | — | DOMAIN-EQUIVALENT | climbing-specific | free activity logging + Start from Workout Detail cover it | #263, #273 | — |
 | Assessment Tests carousel | H11 | «Тесты» row on Главная → hub (cards: last result, trend) | DONE | — | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
-| «+» sheet (session / log / create / cancel) | H12; d/plus_sheet; FI F2 | «+» sheet in Home header | PARTIAL | log entries (#263) | sheet with working actions only; log entries added by #263 | #254, #263 | crimpd-parity.spec.ts «Home» (create / today / cancel) |
+| «+» sheet (session / log / create / cancel) | H12; d/plus_sheet; FI F2 | «+» sheet in Home header: create / today / «Записать в журнал» / cancel | DONE | — | — | #254, #263 | crimpd-parity.spec.ts «Home» (create / today / cancel), «Journal log» (Главная → «+» → шторка записи) |
 | No plan/streak widget on Home | H14 | Home has no week widget | DONE | — | (our skill once planned a week widget; Crimpd has none — Plans tab owns the week) | — | crimpd-parity Baseline |
 
 ## Workout Detail
@@ -47,7 +47,7 @@ any merge into `develop/current`.
 | Duration / equipment / description | W7, W10 | «≈ N мин» only when every item is time_sets/interval, otherwise no estimate | DONE | equipment: DOMAIN (not modelled) | estimate from stored protocol only, never a guess | #255 | crimpd-parity.spec.ts «Workout Detail», workoutDetailFormat.test.ts |
 | Exercise rows with sets·reps·rest | W8 | detail + editor rows (shared formatters) | DONE | — | — | #255 | crimpd-parity.spec.ts «Workout Detail», builder-ux.spec.ts |
 | Start Workout | W3, W9; X1 | start only from Plans card | MISSING | no ad-hoc start | «Начать» → freeform live session | #273 | — |
-| Log Workout | W3, W6 | unreachable BackdateForm | MISSING | — | «Записать» → backdated log | #263, #273 | — |
+| Log Workout | W3, W6 | Журнал «+ Записать» → «Тренировку из моих» (source=backdated) | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
 | Favorite (instant toggle) | W3–W4 | ♡/♥ on Workout Detail and Program Detail, optimistic, reverted on error | DONE | — | — | #272 | crimpd-parity.spec.ts «Favorites» (toggle, reload, error revert) |
 | Add to Plan (2-step sheet: new / existing plan) | W5; d/add_to_plan_sheet; FI F8 | AddToPlanScreen (day picker), round button on detail | DOMAIN-EQUIVALENT | — | one active plan → add to plan + day directly (no «new plan» step) | #255 (entry on detail) | plans-add-exercise.spec.ts, crimpd-parity.spec.ts «Workout Detail» |
 | Logged Workouts history (range, load previous) | W11 | Workout Detail «История» (`GET /api/v2/workouts/{id}/sessions`; no range / load-more yet) | DONE | — | — | #255 | test_v2_workout_sessions.py, crimpd-parity.spec.ts «Workout Detail» |
@@ -121,9 +121,9 @@ any merge into `develop/current`.
 | Edit Log | J5, J7 *(form unobserved)* | admin-only editor | MISSING | — | safe edit (predicate) | #262 | — |
 | Clone Log | J5, J7 *(form unobserved)* | none | MISSING | — | clone as backdated | #262 | — |
 | Delete Log with confirm | J6; LED | safe delete (`can_delete`, 404/409) | DONE | — | — | — | journal-v2.spec.ts, golden-journey.spec.ts |
-| Backdated logging | W6 | unreachable BackdateForm | MISSING | — | «+ Записать» → own workout | #263 | — |
+| Backdated logging | W6 | «Тренировку из моих»: своя Workout, дата ≤ сегодня, подходы, усилие, заметка; без побочных эффектов прогрессии | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
 | Notes | J4–J5 | set notes + session comment shown | PARTIAL | session note not enterable | review step | #257 | journal-v2.spec.ts |
-| Cross-training / free activity | J8 | unreachable FreeWorkoutScreen | MISSING | — | free activity (type, duration, effort, note) | #263 | — |
+| Cross-training / free activity | J8 | «Другую активность»: тип из 8, длительность ч:мм (1 мин–12 ч), усилие 1–5, заметка; карточка с типом/длительностью; минуты Analytics из `duration_seconds` | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
 | History per workout | W11 | none | MISSING | — | Workout Detail «История» | #255 | — |
 
 ## Analytics

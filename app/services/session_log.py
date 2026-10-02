@@ -227,7 +227,8 @@ class TrainingSessionLogService:
     async def record_session(
         self, *, user_id: int, source: SessionSource, performed_at: datetime,
         effort: Decimal | None, comment: str | None, blocks: list[SessionBlockInput],
-        program_inclusion_id: int | None,
+        program_inclusion_id: int | None, completed_at: datetime | None = None,
+        activity_type: str | None = None, duration_seconds: int | None = None,
     ) -> tuple[RecordSessionResult | None, bool]:
         """Второй элемент кортежа — True, если program_inclusion_id передан,
         но не найден/не принадлежит пользователю (вызывающий код превращает
@@ -241,7 +242,8 @@ class TrainingSessionLogService:
 
         training_session = await self._sessions.create_session(
             user_id=user_id, source=source, performed_at=performed_at,
-            effort=effort, comment=comment, blocks=blocks,
+            effort=effort, comment=comment, blocks=blocks, completed_at=completed_at,
+            activity_type=activity_type, duration_seconds=duration_seconds,
         )
         session_detail = await self._sessions.get_for_user(training_session.id, user_id)
 

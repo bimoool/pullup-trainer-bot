@@ -39,6 +39,7 @@ def to_analytics_session(detail: SessionDetail) -> AnalyticsSession:
     return AnalyticsSession(
         performed_at=detail.performed_at,
         completed_at=detail.completed_at,
+        duration_seconds=detail.duration_seconds,
         blocks=[
             AnalyticsBlock(
                 exercise_id=block.exercise_id,

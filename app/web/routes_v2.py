@@ -6,7 +6,7 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -37,6 +37,7 @@ from app.db.repositories.training_sessions import (
 )
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.domain.activity_types import activity_label
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.journal_calendar import (
     local_day_counts,
@@ -214,7 +215,8 @@ def _session_response(
     return SessionResponse(
         id=detail.id, source=detail.source.value, status=detail.status.value,
         performed_at=detail.performed_at, effort=str(detail.effort) if detail.effort is not None else None,
-        comment=detail.comment, title=title, can_delete=can_delete,
+        comment=detail.comment, title=activity_label(detail.activity_type) or title, can_delete=can_delete,
+        activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
         blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
         progression_result=progression, progression_skipped_reason=skipped_reason,
     )
@@ -1111,10 +1113,31 @@ async def create_session(
     session: AsyncSession = Depends(get_session),
 ) -> SessionResponse:
     user = await _require_user(session, init_data)
+    # #263: Журнал пишет прошедшие события — будущая дата отклоняется (небольшой
+    # допуск на расхождение часов клиента и сервера).
+    is_journal_entry = body.source == "backdated" or body.activity_type is not None
+    if is_journal_entry and body.performed_at > datetime.now(UTC) + timedelta(minutes=5):
+        raise HTTPException(422, "Дата не может быть в будущем")
+    # Владение: упражнения — системные или свои, тренировки — видимые пользователю
+    # (чужое/несуществующее = 404, как во всех публичных эндпоинтах).
+    program_repo = ProgramRepository(session)
+    for block in body.blocks:
+        if block.exercise_id is not None and await program_repo.get_visible_exercise_for_user(
+            block.exercise_id, user.id,
+        ) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+        if block.complex_id is not None and await program_repo.get_visible_workout_for_user(
+            block.complex_id, user.id,
+        ) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    # Запись задним числом/свободная активность завершена в момент performed_at:
+    # длительность не выводится из «сейчас» (иначе минуты Analytics были бы вымышлены).
+    completed_at = body.performed_at if is_journal_entry else None
     result, inclusion_not_found = await TrainingSessionLogService(session).record_session(
         user_id=user.id, source=SessionSource(body.source), performed_at=body.performed_at,
         effort=body.effort, comment=body.comment, blocks=[_block_input(b) for b in body.blocks],
-        program_inclusion_id=body.program_inclusion_id,
+        program_inclusion_id=body.program_inclusion_id, completed_at=completed_at,
+        activity_type=body.activity_type, duration_seconds=body.duration_seconds,
     )
     if inclusion_not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ProgramInclusion not found")
@@ -1133,6 +1156,9 @@ async def create_session(
                 equipment_changed=result.progression_result.block_b.equipment_changed,
             ),
         )
+    # Коммит до ответа: Журнал перечитывает список сразу после записи (#263), а коммит
+    # зависимости get_session выполняется уже после отправки ответа.
+    await session.commit()
     return _session_response(
         result.session, progression=progression, skipped_reason=result.progression_skipped_reason,
     )

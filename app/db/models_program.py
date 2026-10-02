@@ -25,6 +25,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     SmallInteger,
     String,
@@ -408,6 +409,10 @@ class TrainingSession(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     effort: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Свободная активность (#263, source=freeform): тип из app.domain.activity_types
+    # и длительность; NULL у всех остальных сессий.
+    activity_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # --- Живая (server-driven) сессия (issue #165, продолжение волны 3) ---

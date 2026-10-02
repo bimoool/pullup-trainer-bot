@@ -7,9 +7,14 @@ import { JournalCalendar } from "./JournalCalendar";
 import { localDateKey, monthRange } from "./journalCalendar";
 import { JournalSessionCard, JournalV2Detail, JournalV2Footer } from "./JournalV2";
 import { JournalTimeline } from "./JournalTimeline";
+import { BackdatedWorkoutForm, FreeActivityForm, LogActivitySheet, type LogKind } from "./LogActivitySheet";
 import { useJournalV2 } from "./useJournalV2";
 
-type Props = { initDataRaw: string };
+type Props = {
+  initDataRaw: string;
+  /** Меняется, когда Главная просит открыть шторку «Записать» (#263). */
+  logRequest?: number;
+};
 
 const PAGE_SIZE = 20;
 
@@ -26,8 +31,11 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-export function HistoryScreen({ initDataRaw }: Props) {
+export function HistoryScreen({ initDataRaw, logRequest = 0 }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  // «+ Записать» (#263): шторка выбора и затем одна из двух форм.
+  const [logSheetOpen, setLogSheetOpen] = useState(logRequest > 0);
+  const [logForm, setLogForm] = useState<LogKind | null>(null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -123,6 +131,20 @@ export function HistoryScreen({ initDataRaw }: Props) {
     }
   }
 
+  if (logForm !== null) {
+    const FormComponent = logForm === "workout" ? BackdatedWorkoutForm : FreeActivityForm;
+    return (
+      <FormComponent
+        initDataRaw={initDataRaw}
+        onBack={() => setLogForm(null)}
+        onSaved={(date) => {
+          setLogForm(null);
+          journal.reloadAfterLog(date);
+        }}
+      />
+    );
+  }
+
   if (editingWorkoutId !== null) {
     return (
       <HistoryEditForm
@@ -212,7 +234,18 @@ export function HistoryScreen({ initDataRaw }: Props) {
     <div>
       {/* Заголовок переименован в "Журнал" вслед за вкладкой нижнего меню
           (issue #183, волна 5b) — само содержимое экрана не менялось. */}
-      <p className="plan-title">Журнал</p>
+      <div className="journal-title-row">
+        <p className="plan-title">Журнал</p>
+        <button type="button" className="journal-log-button" data-testid="journal-log-button" onClick={() => setLogSheetOpen(true)}>
+          + Записать
+        </button>
+      </div>
+      {logSheetOpen && (
+        <LogActivitySheet
+          onClose={() => setLogSheetOpen(false)}
+          onPick={(kind) => { setLogSheetOpen(false); setLogForm(kind); }}
+        />
+      )}
       {journal.month !== null && (
         <JournalCalendar
           month={journal.month}
