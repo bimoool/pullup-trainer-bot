@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { backButtonAction, nextTrapIndex } from "../src/liveDialog.ts";
-import { FIELD_BLUR_GRACE_MS, isTextEntryTarget } from "../src/liveFieldFocus.ts";
+import { canReleaseFieldFocus, FIELD_BLUR_GRACE_MS, isTextEntryTarget } from "../src/liveFieldFocus.ts";
 import { isDarkBackground, readTelegramColorScheme } from "../src/theme.ts";
 
 test("isTextEntryTarget: поля, открывающие клавиатуру", () => {
@@ -20,6 +20,15 @@ test("isTextEntryTarget: кнопки, чекбоксы и не-поля — н�
   assert.equal(isTextEntryTarget({ tagName: "DIV" }), false);
   assert.equal(isTextEntryTarget(null), false);
   assert.equal(isTextEntryTarget(undefined), false);
+});
+
+test("canReleaseFieldFocus (#287 MED 3): пока поле в фокусе (iOS не blur-ит по тапу кнопки) — не снимаем", () => {
+  assert.equal(canReleaseFieldFocus({ holding: false, activeElement: { tagName: "INPUT", type: "text" } }), false);
+  assert.equal(canReleaseFieldFocus({ holding: false, activeElement: { tagName: "TEXTAREA" } }), false);
+  assert.equal(canReleaseFieldFocus({ holding: true, activeElement: { tagName: "BUTTON" } }), false);
+  assert.equal(canReleaseFieldFocus({ holding: false, activeElement: { tagName: "BUTTON" } }), true);
+  assert.equal(canReleaseFieldFocus({ holding: false, activeElement: { tagName: "BODY" } }), true);
+  assert.equal(canReleaseFieldFocus({ holding: false, activeElement: null }), true);
 });
 
 test("FIELD_BLUR_GRACE_MS: достаточно для тапа по кнопке транспорта", () => {

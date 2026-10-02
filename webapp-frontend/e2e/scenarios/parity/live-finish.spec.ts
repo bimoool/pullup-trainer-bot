@@ -184,6 +184,42 @@ for (const width of WIDTHS) {
       expect(apiFailures).toEqual([]);
     });
 
+    test("MED 3: фокус остаётся в поле (iOS: тап по кнопке без blur) — транспорт не прилипает под клавиатуру", async ({ page }, testInfo) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, userFor(3, testInfo.retry), { theme });
+      await startLive(page);
+      await clickAndSync(page, "Готов", "/phase/next");
+      const input = page.getByLabel(VALUE_FIELD);
+      const screen = page.locator(".live-screen");
+      const transport = page.locator(".live-transport");
+      await input.focus();
+      await expect(screen).toHaveAttribute("data-field-focus", "true");
+
+      // Safari не фокусирует кнопки по тапу: pointerdown/pointerup на неактивном «Готово» без blur
+      // поля — клавиатура остаётся, транспорт должен оставаться «отлипшим».
+      await page.getByRole("button", { name: "Готово", exact: true }).evaluate((button) => {
+        for (const type of ["pointerdown", "pointerup"]) {
+          button.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: "touch" }));
+        }
+      });
+      // Скролл-драг, начатый на транспорте (pointercancel вместо pointerup), — то же самое.
+      await transport.evaluate((bar) => {
+        bar.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }));
+        bar.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerType: "touch" }));
+      });
+      await page.waitForTimeout(1_000); // > FIELD_BLUR_GRACE_MS × 2: и таймер, и опрос успели бы снять
+      await expect(input).toBeFocused();
+      await expect(screen).toHaveAttribute("data-field-focus", "true");
+      await expect(transport).toHaveCSS("position", "static");
+
+      // Поле действительно потеряло фокус — транспорт возвращается к низу окна.
+      await input.blur();
+      await expect(screen).not.toHaveAttribute("data-field-focus", "true");
+      await expect(transport).toHaveCSS("position", "sticky");
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
     test("HIGH 2: interstitial между блоками с завершением в очереди — без «Начать», завершение уходит", async ({ page, context }, testInfo) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, builder + testInfo.retry, { theme });
       const blockStarts: string[] = [];

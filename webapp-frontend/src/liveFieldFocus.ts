@@ -31,6 +31,18 @@ export function isTextEntryTarget(target: FocusTargetShape): boolean {
   return false;
 }
 
+/**
+ * #287 MED 3: снимать «отлипшее» состояние можно, только когда текстовое поле действительно не в
+ * фокусе. На iOS тап по кнопке («Пауза», «+ Ещё подход», неактивное «Готово») и скролл-драг не
+ * blur-ят поле — клавиатура остаётся, и транспорт не должен прилипать под неё.
+ */
+export function canReleaseFieldFocus(state: { holding: boolean; activeElement: FocusTargetShape }): boolean {
+  return !state.holding && !isTextEntryTarget(state.activeElement);
+}
+
+const activeElementNow = (): FocusTargetShape =>
+  typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
+
 /** true, пока в документе сфокусировано текстовое поле (с задержкой снятия, см. FIELD_BLUR_GRACE_MS). */
 export function useLiveFieldFocus(): boolean {
   const [focused, setFocused] = useState(false);
@@ -47,7 +59,7 @@ export function useLiveFieldFocus(): boolean {
       cancel();
       timer = setTimeout(() => {
         timer = null;
-        if (!holding.current) {
+        if (canReleaseFieldFocus({ holding: holding.current, activeElement: activeElementNow() })) {
           setFocused(false);
         }
       }, delay);
@@ -69,7 +81,7 @@ export function useLiveFieldFocus(): boolean {
       const toTransport = next?.closest?.(".live-transport") != null;
       if (next !== null && !toTransport && !isTextEntryTarget(next)) {
         cancel();
-        if (!holding.current) {
+        if (canReleaseFieldFocus({ holding: holding.current, activeElement: next })) {
           setFocused(false);
         }
         return;
@@ -110,7 +122,7 @@ export function useLiveFieldFocus(): boolean {
       return;
     }
     const poll = setInterval(() => {
-      if (!holding.current && !isTextEntryTarget(document.activeElement as HTMLElement | null)) {
+      if (canReleaseFieldFocus({ holding: holding.current, activeElement: activeElementNow() })) {
         setFocused(false);
       }
     }, FIELD_BLUR_GRACE_MS);
