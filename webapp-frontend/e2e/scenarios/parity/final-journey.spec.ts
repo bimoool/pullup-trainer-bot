@@ -87,6 +87,24 @@ async function backBoth(page: Page, where: string, inApp: Locator | null, origin
   }
 }
 
+/** Аналитика → «Программа» (график + «Лидерборд») → обратно на «Тренировки»: подраздел достижим и не пуст. */
+async function programAnalytics(page: Page, tag: string) {
+  await openTab(page, "Аналитика");
+  const switcher = (name: string) => page.getByRole("tab", { name, exact: true }).or(page.getByRole("button", { name, exact: true })).first();
+  await switcher("Программа").click();
+  await step(page, tag, "Аналитика → Программа: график", async () => {
+    await expect(page.getByText("Загружаю прогресс…")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Лидерборд/ })).toBeVisible();
+  });
+  await page.getByRole("button", { name: /Лидерборд/ }).click();
+  await step(page, tag, "Аналитика → Программа: лидерборд", async () => {
+    await expect(page.getByRole("button", { name: /График/ })).toBeVisible();
+    await expect(page.getByText("Загружаю", { exact: false })).toHaveCount(0);
+  }, 20);
+  await switcher("Тренировки").click();
+  await expect(page.getByText("Тренировок за 30 дней", { exact: true })).toBeVisible();
+}
+
 COMBOS.forEach(({ width, theme }, comboIndex) => {
   const tag = `${width}-${theme}`;
 
@@ -126,6 +144,8 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
           await expect(TAB_MARKER[label](page).first()).toBeVisible();
         });
       }
+
+      await programAnalytics(page, t);
 
       await step(page, t, "04 Планы пустые: есть путь к курсам", async () => {
         await openTab(page, "Планы");
@@ -222,6 +242,18 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         await expectReachable(page, page.getByTestId("workout-detail-start"), "Деталь: «Начать»");
         await expectReachable(page, page.getByTestId("workout-detail-log"), "Деталь: «Записать»");
       });
+      // «Назад» с предэкрана ведёт на Workout Detail, откуда нажали «Начать» (раньше — на Главную).
+      await page.getByTestId("workout-detail-start").click();
+      await expect(byName(page, "Начать")).toBeVisible();
+      await pressTelegramBackButton(page);
+      await expect(page.getByTestId("workout-detail-title")).toHaveText(WORKOUT);
+      await page.getByTestId("workout-detail-start").click();
+      await expect(byName(page, "Начать")).toBeVisible();
+      await page.getByRole("button", { name: /Назад/ }).first().click();
+      await expect(page.getByTestId("workout-detail-title")).toHaveText(WORKOUT);
+      await pressTelegramBackButton(page); // с детали — на Главную
+      await expect(page.getByTestId("home-tests-row")).toBeVisible();
+      await page.getByTestId("my-workout-card").filter({ hasText: WORKOUT }).click();
       await page.getByTestId("workout-detail-start").click();
       await step(page, t, "05 Предэкран", async () => {
         await expect(byName(page, "Начать")).toBeVisible();
@@ -232,6 +264,11 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         await expect(page.getByText(/Подход 1\/2 · Цель: 8 повт\./)).toBeVisible();
         await expectReachable(page, byName(page, "Готов"), "Live: «Готов»");
       });
+      // Telegram BackButton в Live спрашивает подтверждение; «Отмена» оставляет в сессии (не молчаливый выход).
+      const confirmation = new Promise<string>((resolve) => page.once("dialog", (dialog) => { resolve(dialog.message()); void dialog.dismiss(); }));
+      await pressTelegramBackButton(page);
+      expect(await confirmation).toContain("Закончить сессию?");
+      await expect(page.getByText(/Подход 1\/2 · Цель: 8 повт\./)).toBeVisible();
       await playSets(page, ["8", "7"]);
       await expectReachable(page, byName(page, "Завершить"), "Live: «Завершить»");
       await shot(page, t, "07 Live после подходов");
@@ -257,6 +294,7 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         await openTab(page, "Аналитика");
         await expect.poll(() => workoutsStat(page)).toBe(before + 1);
       });
+      await programAnalytics(page, t);
       await step(page, t, "11b Главная после тренировки: карточка и «Подборки» на месте", async () => {
         await openTab(page, "Главная");
         await expect(page.getByTestId("my-workout-card").filter({ hasText: WORKOUT })).toBeVisible();

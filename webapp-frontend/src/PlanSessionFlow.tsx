@@ -32,6 +32,8 @@ type Props = {
   /** «Начать» на Workout Detail — свободная сессия своей тренировки (без PlanItem). */
   workoutId?: number;
   onClose: () => void;
+  /** «Назад» с предэкрана (до старта): по умолчанию как onClose; App возвращает на Workout Detail (#277). */
+  onCancel?: () => void;
 };
 
 type SubScreen =
@@ -48,7 +50,7 @@ type SubScreen =
  * остаться dev/admin-стендом, эта же машина состояний — только
  * pre -> live -> summary, без лишнего.
  */
-export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initialSession, workoutId, onClose }: Props) {
+export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initialSession, workoutId, onClose, onCancel }: Props) {
   const [screen, setScreen] = useState<SubScreen>(
     initialSession !== null ? { kind: "live", session: initialSession } : { kind: "pre" },
   );
@@ -89,7 +91,7 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
         title={title}
         workoutId={workoutId}
         onStarted={(session) => setScreen({ kind: "live", session })}
-        onGoToWorkout={onClose}
+        onGoToWorkout={onCancel ?? onClose}
       />
     );
   }

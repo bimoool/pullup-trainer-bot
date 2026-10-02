@@ -129,6 +129,8 @@ export function App() {
   const [logOrigin, setLogOrigin] = useState<{ tab: "home" | "plans"; workoutId: number } | null>(null);
   // Из «Записать» вернулись на Workout Detail: его «назад» ведёт на саму вкладку, не в Журнал.
   const [homeWorkoutFromLog, setHomeWorkoutFromLog] = useState(false);
+  // Откуда нажали «Начать» на Workout Detail (#277): «Назад» с предэкрана возвращает на деталь, не на вкладку.
+  const [startOrigin, setStartOrigin] = useState<{ tab: "home" | "plans"; workoutId: number } | null>(null);
   const [plansWorkoutId, setPlansWorkoutId] = useState<number | null>(null);
   // Откуда ушли в «Открыть тренировку»: Back возвращает в тот же месяц Журнала с той же записью.
   const [journalRestore, setJournalRestore] = useState<JournalRestore | null>(null);
@@ -347,6 +349,17 @@ export function App() {
     );
   }
 
+  // Workout Detail нужной вкладки открывается заново; его «назад» ведёт на саму вкладку (не в Журнал).
+  const reopenWorkoutDetail = (origin: { tab: "home" | "plans"; workoutId: number }) => {
+    if (origin.tab === "home") {
+      setHomeWorkoutFromLog(true);
+      setHomeWorkoutId(origin.workoutId);
+    } else {
+      setPlansWorkoutId(origin.workoutId);
+    }
+    setTab(origin.tab);
+  };
+
   if (v2Session !== null) {
     return (
       <div className="app-shell">
@@ -357,14 +370,25 @@ export function App() {
           manual={"manual" in v2Session ? v2Session.manual : false}
           title={"title" in v2Session ? v2Session.title : (v2Session.resumedSession.title ?? "")}
           initialSession={"resumedSession" in v2Session ? v2Session.resumedSession : null}
-          onClose={() => setV2Session(null)}
+          onClose={() => { setV2Session(null); setStartOrigin(null); }}
+          onCancel={() => {
+            setV2Session(null);
+            const origin = startOrigin;
+            setStartOrigin(null);
+            if (origin !== null) {
+              reopenWorkoutDetail(origin);
+            }
+          }}
         />
       </div>
     );
   }
 
   const isOnboarded = state.data.onboarding_step === "done";
-  const startWorkout = (workoutId: number, title: string) => setV2Session({ workoutId, title });
+  const startWorkout = (workoutId: number, title: string) => {
+    setStartOrigin(tab === "home" || tab === "plans" ? { tab, workoutId } : null);
+    setV2Session({ workoutId, title });
+  };
   const logWorkout = (workoutId: number) => {
     setLogOrigin(tab === "home" || tab === "plans" ? { tab, workoutId } : null);
     setJournalRestore(null);
@@ -377,14 +401,8 @@ export function App() {
     if (logOrigin === null) {
       return;
     }
-    if (logOrigin.tab === "home") {
-      setHomeWorkoutFromLog(true);
-      setHomeWorkoutId(logOrigin.workoutId);
-    } else {
-      setPlansWorkoutId(logOrigin.workoutId);
-    }
+    reopenWorkoutDetail(logOrigin);
     setLogOrigin(null);
-    setTab(logOrigin.tab);
   };
 
   // Экспериментальная вкладка новой схемы видна только тестировщикам
