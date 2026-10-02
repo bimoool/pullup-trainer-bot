@@ -75,3 +75,10 @@ export async function captureDownloads(page: Page): Promise<{ read: () => Promis
   });
   return { read: () => page.evaluate(() => (window as unknown as { __captured: CapturedDownloads }).__captured) };
 }
+
+/** Аналитика: метрика — выпадающий список (нативный select) в единой шапке, #286. */
+export const metricSelect = (page: Page) => page.getByRole("combobox", { name: "Метрика" });
+export async function selectMetric(page: Page, label: "Тренировки" | "Минуты") {
+  await metricSelect(page).selectOption({ label });
+  await expect(metricSelect(page).locator("option:checked")).toHaveText(label);
+}

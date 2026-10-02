@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { expectNoHorizontalOverflow, openTab, selectMetric, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 
 // Crimpd parity — Journal log (#263). Moved out of crimpd-parity.spec.ts into its own file
@@ -106,7 +106,7 @@ for (const width of WIDTHS) {
       const card = page.getByTestId("analytics-metrics");
       const total = page.getByTestId("analytics-metric-total");
       await expect(total).toContainText("Всего тренировок: 2");
-      await card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name: "Минуты" }).click();
+      await selectMetric(page, "Минуты");
       await expect(total).toContainText("Всего минут: 1 ч 15 мин");
       await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
 

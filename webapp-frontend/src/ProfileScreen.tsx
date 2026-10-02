@@ -17,7 +17,9 @@ import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsList } from "./TestsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
 import { useDisplayPrefs } from "./displayPrefs";
-import { ProfileGroup, ProfileRow } from "./ProfileRows";
+import { Icon } from "./Icon";
+import { avatarInitial, identitySubtitle, telegramFirstName } from "./profileIdentity";
+import { ProfileGroup, ProfileMetric, ProfileRow } from "./ProfileRows";
 import { SettingsScreen } from "./SettingsScreen";
 import { formatHeight, formatWeight } from "./units";
 
@@ -40,10 +42,21 @@ const GTO_REASON_TEXT: Record<string, string> = {
 
 const GTO_RANK_LABEL: Record<string, string> = {
   none: "Без разряда",
-  bronze: "🥉 Бронза",
-  silver: "🥈 Серебро",
-  gold: "🥇 Золото",
+  bronze: "Бронза",
+  silver: "Серебро",
+  gold: "Золото",
 };
+
+/** Строка разряда: контурная медаль (цвет по разряду, #286 C3) вместо эмодзи + название. */
+function RankLine({ rank, label, trophy = false }: { rank: string | null; label: string; trophy?: boolean }) {
+  const showIcon = rank !== null && rank !== "none";
+  return (
+    <p className="profile-rank">
+      {showIcon && <Icon name={trophy ? "trophy" : "medal"} size={18} className={`profile-rank-icon profile-rank-${rank}`} />}
+      <span>{label}</span>
+    </p>
+  );
+}
 
 /** Карточка "Разряд ГТО" (issue #71) — отдельный раздел от списка ачивок
  * выше (AchievementsScreen): это текущий статус, не разовая веха, поэтому
@@ -86,7 +99,7 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
       <p className="section-title">Разряд ГТО (подтягивание)</p>
       <p>{summaryText}</p>
       <p>{`Ступень ${gto.step_number} · возраст ${gto.age} · лучший результат ${gto.best_max_reps} за подход`}</p>
-      <p>{rankLabel}</p>
+      <RankLine rank={gto.rank} label={rankLabel} />
       <p>{`Бронза от ${gto.bronze_threshold}, серебро от ${gto.silver_threshold}, золото от ${gto.gold_threshold}.`}</p>
       {gto.next_rank && gto.reps_to_next_rank !== null && (
         <p>{`До разряда "${GTO_RANK_LABEL[gto.next_rank] ?? gto.next_rank}" не хватает ${gto.reps_to_next_rank} повторений.`}</p>
@@ -111,7 +124,7 @@ const WSF_RANK_LABEL: Record<string, string> = {
   kms: "КМС",
   ms: "МС",
   msmk: "МСМК",
-  elite: "🏆 Элита",
+  elite: "Элита",
 };
 
 function weightCategoryLabel(category: string): string {
@@ -168,7 +181,7 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
       <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
       <p>{summaryText}</p>
       <p>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps} повторений на ${stepKg} кг`}</p>
-      <p>{rankLabel}</p>
+      <RankLine rank={wsf.rank} label={rankLabel} trophy={wsf.rank === "elite"} />
       {weightCaveat && <p>{weightCaveat}</p>}
       {bonusPct !== null && <p>{`Учтён возрастной коэффициент +${bonusPct}%.`}</p>}
       {wsf.next_rank && wsf.reps_to_next_rank !== null && (
@@ -279,6 +292,9 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   }
 
   const { profile } = state;
+  const firstName = telegramFirstName(initDataRaw);
+  const initial = avatarInitial(firstName);
+  const subtitle = identitySubtitle(profile.gender_label, profile.age);
   if (!profile.is_onboarded) {
     return <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>;
   }
@@ -340,8 +356,16 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p className="plan-title">Профиль</p>
+      <div className="profile-identity" data-testid="profile-identity">
+        <div className="profile-avatar" aria-hidden="true">
+          {initial !== "" ? initial : <Icon name="person" size={26} />}
+        </div>
+        <div className="profile-identity-text">
+          <h1 className="profile-name" data-testid="profile-name">{firstName !== "" ? firstName : "Профиль"}</h1>
+          <p className="hint profile-identity-meta" data-testid="profile-identity-meta">
+            {subtitle !== "" ? subtitle : "Пол и возраст не указаны"}
+          </p>
+        </div>
         <button
           type="button"
           className="search-chip"
@@ -349,7 +373,7 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
           data-testid="profile-settings"
           onClick={() => setShowSettings(true)}
         >
-          ⚙️
+          <Icon name="settings" size={22} />
         </button>
       </div>
 
@@ -380,17 +404,21 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
             : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
       </p>
 
-      <ProfileGroup title="Личные данные">
-        <ProfileRow
-          icon="weight" label="Вес" value={formatWeight(profile.weight_kg, prefs.weight_unit)}
-          ariaLabel="История веса" testId="profile-weight" onClick={() => setBodyMetric("weight_kg")}
-        />
-        <ProfileRow
-          icon="height" label="Рост" value={formatHeight(profile.height_cm, prefs.height_unit)}
-          ariaLabel="История роста" testId="profile-height" onClick={() => setBodyMetric("height_cm")}
-        />
-        <ProfileRow icon="person" label="Пол" value={profile.gender_label ?? "не указано"} />
-        <ProfileRow icon="calendar" label="Возраст" value={String(profile.age ?? "не указано")} />
+      <ProfileGroup
+        title="Личные данные"
+        lead={(
+          <div className="profile-metrics">
+            <ProfileMetric
+              label="Вес" value={formatWeight(profile.weight_kg, prefs.weight_unit)}
+              ariaLabel="История веса" testId="profile-weight" onClick={() => setBodyMetric("weight_kg")}
+            />
+            <ProfileMetric
+              label="Рост" value={formatHeight(profile.height_cm, prefs.height_unit)}
+              ariaLabel="История роста" testId="profile-height" onClick={() => setBodyMetric("height_cm")}
+            />
+          </div>
+        )}
+      >
         <ProfileRow icon="clock" label="Часовой пояс" value={profile.timezone_label ?? "не указано"} stacked />
         <ProfileRow icon="edit" label="Изменить" onClick={() => setShowEditProfile(true)} />
       </ProfileGroup>

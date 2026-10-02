@@ -351,6 +351,174 @@
   background: var(--vp-accent-soft);
 }
 
+/* ---------- SVG-иконки вместо эмодзи (#286 C3, Icon.tsx) ---------- */
+.vp-icon {
+  flex: none;
+}
+
+/* иконка в начале текста кнопки/заголовка */
+.vp-icon-lead {
+  margin-right: 6px;
+  vertical-align: -0.2em;
+}
+
+.vp-icon-done { color: var(--vp-cat-3); }
+.vp-icon-pending { color: var(--tg-hint-color); }
+
+/* ---------- Профиль (#286 C2): шапка-идентичность, крупные вес/рост, тесты с бейджем ---------- */
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  margin: var(--vp-sp-2) 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.profile-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--vp-accent);
+  color: var(--tg-button-text-color, #fff);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.profile-identity-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.profile-name {
+  margin: 0;
+  overflow: hidden;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-identity-meta {
+  margin: 2px 0 0;
+}
+
+.app-shell .profile-identity [data-testid="profile-settings"] {
+  background: var(--vp-page-bg);
+  box-shadow: none;
+}
+
+.profile-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-2);
+}
+
+.profile-metric {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 76px;
+  padding: var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-4);
+  border: 0;
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font: inherit;
+  color: var(--tg-text-color);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-metric:active {
+  background: var(--vp-accent-soft);
+}
+
+/* DOM: подпись → значение (textContent «Вес: 75 кг»); визуально значение над подписью */
+.profile-metric-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-metric-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tg-hint-color);
+}
+
+.profile-metric-value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-metric-number {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 800;
+  color: var(--vp-accent);
+}
+
+.profile-metric-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-subtitle-text-color);
+}
+
+.profile-metric-empty {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tg-hint-color);
+}
+
+/* «Тесты»: бейдж-иконка слева от названия (разметка TestsList не меняется) */
+.profile-group .history-list > .test-card::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  background: var(--vp-accent);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><defs><mask id='m'><rect width='24' height='24' fill='white'/><g transform='translate(3.6 3.6) scale(.7)' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 4.5h12v15H6z'/><path d='M9 9h6M9 12.5h6M9 16h3'/></g></mask></defs><circle cx='12' cy='12' r='12' mask='url(%23m)'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><defs><mask id='m'><rect width='24' height='24' fill='white'/><g transform='translate(3.6 3.6) scale(.7)' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 4.5h12v15H6z'/><path d='M9 9h6M9 12.5h6M9 16h3'/></g></mask></defs><circle cx='12' cy='12' r='12' mask='url(%23m)'/></svg>") center / contain no-repeat;
+}
+
+/* разряды ГТО / WSF: медаль цветом разряда */
+.profile-rank {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  font-weight: 700;
+}
+
+.profile-rank-icon { color: var(--tg-hint-color); }
+.profile-rank-bronze { color: #b0703c; }
+.profile-rank-silver { color: #8a96a3; }
+.profile-rank-gold,
+.profile-rank-elite { color: #e0a526; }
+.profile-rank-i { color: #e0a526; }
+.profile-rank-kms,
+.profile-rank-ms,
+.profile-rank-msmk { color: var(--vp-accent); }
+
 /* ---------- Аналитика: подчёркнутые табы + сегмент метрики ---------- */
 .workout-mode-buttons.vp-tabs {
   gap: 0;
@@ -414,6 +582,175 @@
   height: 10px;
   margin-right: 6px;
   vertical-align: baseline;
+}
+
+/* ---------- Аналитика (#286 C1): одна шапка, KPI-строка, карточки «по типам» → «по неделям» → сводка ---------- */
+.analytics-header-strip {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  margin: 0 0 var(--vp-sp-3);
+  border-bottom: 1px solid var(--vp-divider);
+}
+
+.analytics-metric-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.analytics-metric-select select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 22px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tg-text-color);
+  text-overflow: ellipsis;
+}
+
+.analytics-metric-select-caret {
+  position: absolute;
+  right: 2px;
+  color: var(--tg-hint-color);
+  pointer-events: none;
+}
+
+.workout-mode-buttons.vp-tabs.analytics-range-tabs {
+  flex: 0 0 auto;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.analytics-range-tabs .leaderboard-tab {
+  flex: 0 0 auto;
+  padding: 8px 6px;
+  font-size: 14px;
+}
+
+/* два KPI — одна компактная строка-карточка с разделителем */
+.analytics-activity-cards {
+  display: flex;
+  gap: 0;
+  margin: 0 0 var(--vp-sp-3);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+
+.analytics-activity-cards .analytics-stat {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  padding: var(--vp-sp-3);
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.analytics-activity-cards .analytics-stat + .analytics-stat {
+  border-left: 1px solid var(--vp-divider);
+}
+
+.analytics-activity-cards .analytics-stat-value,
+.analytics-activity-cards .analytics-stat-label {
+  margin: 0;
+}
+
+.analytics-activity-cards .analytics-stat-value {
+  flex: none;
+  color: var(--vp-accent);
+}
+
+.analytics-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-2);
+}
+
+.analytics-card-title-row .section-title {
+  margin: 0;
+}
+
+.analytics-info-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tg-hint-color);
+}
+
+.analytics-donut-total {
+  font-size: 15px;
+  font-weight: 800;
+  fill: var(--tg-text-color);
+}
+
+.analytics-donut-caption {
+  font-size: 9px;
+  fill: var(--tg-hint-color);
+}
+
+.analytics-legend-swatch {
+  border-radius: 50%;
+}
+
+/* длинные названия — многоточие, а не разрыв посреди слова */
+.analytics-legend-name {
+  overflow: hidden;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.analytics-legend-value {
+  white-space: nowrap;
+}
+
+.analytics-summary-table th:first-child {
+  width: 40%;
+  overflow: hidden;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.analytics-summary-table thead th {
+  padding-inline: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+.analytics-show-all {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin-top: var(--vp-sp-2);
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.analytics-footnote {
+  margin: 0 var(--vp-sp-1) var(--vp-sp-4);
 }
 
 /* ---------- Планы: карточки курсов цветом программы, чипы дней ---------- */

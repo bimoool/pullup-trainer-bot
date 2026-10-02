@@ -18,7 +18,7 @@ test("Analytics v2: активность, панели протоколов, р�
   // По умолчанию — "Тренировки"; Программа не показана.
   const sections = page.getByRole("tablist", { name: "Раздел аналитики" });
   await expect(sections.getByRole("tab", { name: "Тренировки", selected: true })).toBeVisible();
-  await expect(page.getByText("📈 График")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "График", exact: true })).toHaveCount(0);
 
   // 30 дней: ровно 4 сессии в 4 разных локальных днях.
   const activity = page.locator(".analytics-activity-cards");
@@ -63,7 +63,7 @@ test("Analytics v2: активность, панели протоколов, р�
 
   // Программа остаётся доступной.
   await page.getByRole("tab", { name: "Программа" }).click();
-  await expect(page.getByRole("button", { name: "📈 График" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "График", exact: true })).toBeVisible();
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
 });
@@ -83,7 +83,7 @@ test("Analytics v2: ошибка не блокирует «Программу»;
 
   await expect(page.getByText(/Не удалось загрузить аналитику тренировок/)).toBeVisible();
   await page.getByRole("tab", { name: "Программа" }).click();
-  await expect(page.getByRole("button", { name: "📈 График" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "График", exact: true })).toBeVisible();
 
   await page.getByRole("tablist", { name: "Раздел аналитики" }).getByRole("tab", { name: "Тренировки" }).click();
   await expect(page.locator(".analytics-activity-cards")).toBeVisible(); // повторная загрузка прошла

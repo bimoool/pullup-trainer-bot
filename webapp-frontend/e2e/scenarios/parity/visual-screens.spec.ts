@@ -59,7 +59,7 @@ for (const width of WIDTHS) {
         await expect(page.getByTestId("profile-weight")).toHaveText("Вес: 75 кг");
         expect(await page.locator(".profile-group").count(), "группы").toBeGreaterThanOrEqual(3);
         const links = page.locator(".profile-row-link");
-        expect(await links.count()).toBeGreaterThanOrEqual(5);
+        expect(await links.count()).toBeGreaterThanOrEqual(4);
         for (const link of await links.all()) {
           await expect(link.locator(".profile-row-icon svg")).toHaveCount(1);
           await expect(link.locator(".profile-row-chevron")).toHaveCount(1);
@@ -71,7 +71,7 @@ for (const width of WIDTHS) {
         expect(apiFailures).toEqual([]);
       });
 
-      test("Аналитика: табы с подчёркиванием, метрика в шапке, цвета легенды = цвета групп Главной", async ({ page }) => {
+      test("Аналитика: единая шапка (метрика-список + табы с подчёркиванием), цвета легенды из палитры --vp-cat-*", async ({ page }) => {
         const { consoleErrors, apiFailures } = await open(page, USERS.analytics, theme, "Аналитика");
         const card = page.getByTestId("analytics-metrics");
         await expect(card).toBeVisible();
@@ -85,24 +85,26 @@ for (const width of WIDTHS) {
         expect(underline.width).toBeGreaterThanOrEqual(2);
         expect(underline.color).not.toBe("rgba(0, 0, 0, 0)");
         expect(underline.radius).toBe("0px");
-        // метрика — в шапке карточки, над периодом
-        const header = card.locator(".analytics-metric-header");
-        await expect(header.getByRole("tablist", { name: "Метрика" }).getByRole("tab")).toHaveText(["Тренировки", "Минуты"]);
+        // метрика — выпадающий список в той же шапке, что и период
+        const header = card.getByTestId("analytics-header");
+        await expect(header.getByRole("combobox", { name: "Метрика" }).locator("option")).toHaveText(["Тренировки", "Минуты"]);
         await expect(page.getByRole("tablist", { name: "Раздел аналитики" }).getByRole("tab", { selected: true }))
           .toHaveText("Тренировки");
 
-        // первая категория легенды окрашена цветом первой группы Главной (--vp-cat-0)
+        // цвет легенды — один из --vp-cat-0..5 (цвет категории по имени, #286)
         const swatch = page.getByTestId("analytics-legend-item").first().locator(".analytics-legend-swatch");
         await expect(swatch).toBeVisible();
         const colors = await page.evaluate(() => {
           const probe = document.createElement("div");
-          probe.style.background = "var(--vp-cat-0)";
-          document.body.appendChild(probe);
-          const home = getComputedStyle(probe).backgroundColor;
+          const palette = [0, 1, 2, 3, 4, 5].map((i) => {
+            probe.style.background = `var(--vp-cat-${i})`;
+            document.body.appendChild(probe);
+            return getComputedStyle(probe).backgroundColor;
+          });
           probe.remove();
-          return { home, swatch: getComputedStyle(document.querySelector(".analytics-legend-swatch")!).backgroundColor };
+          return { palette, swatch: getComputedStyle(document.querySelector(".analytics-legend-swatch")!).backgroundColor };
         });
-        expect(colors.swatch).toBe(colors.home);
+        expect(colors.palette).toContain(colors.swatch);
         await expect(page.locator(".analytics-summary-swatch").first()).toBeVisible();
         await expectNoHorizontalOverflow(page, "Аналитика");
         expect(consoleErrors).toEqual([]);

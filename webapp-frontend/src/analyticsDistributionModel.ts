@@ -3,16 +3,14 @@
 
 import type { AnalyticsDistributionV2 } from "./apiV2";
 import type { MetricKey } from "./analyticsMetric";
+import { CATEGORY_PALETTE_SIZE, categoryColorVar } from "./homeDiscovery.ts";
 
-/** Категориальная палитра проекта = цвета групп каталога на Главной (`--vp-cat-0..5` в shell.css, #280):
- * категория i в легенде аналитики имеет тот же цвет, что i-й ряд-группа Главной; 7-й — запасной. */
-export const CATEGORY_COLORS = ["#2f80ed", "#e5484d", "#f08c1a", "#2fa56a", "#8e5bd1", "#1f3a68", "#4a9fb3"] as const;
+const EPSILON = 0.005;
+
 /** Нейтральный цвет служебной категории «Другая активность» / «Без категории». */
 export const NEUTRAL_COLOR = "#8a8f98";
 export const OTHER_ACTIVITY = "Другая активность";
 export const UNCATEGORIZED = "Без категории";
-
-const EPSILON = 0.005;
 
 export interface DonutSegment {
   key: string;
@@ -29,17 +27,40 @@ export function isServiceCategory(name: string): boolean {
   return name === OTHER_ACTIVITY || name === UNCATEGORIZED;
 }
 
-/** Цвет по порядку категории в ответе; служебные — нейтральные. Порядок стабилен
- * между метриками (берётся из исходного списка), не из отфильтрованного. */
-export function categoryColors(dist: AnalyticsDistributionV2): Map<string, string> {
+/** Цвет категории — по ИМЕНИ (`categoryColorVar` из homeDiscovery, #286), а не по позиции в ответе:
+ * Аналитика сортирует категории по числу тренировок, Главная — по порядку программ, поэтому
+ * позиционное совпадение давало разные цвета одной категории. `homeOrder` — порядок рядов Главной
+ * (`homeCategoryOrder(programs)`); служебные категории — нейтральные. Значения — `var(--vp-cat-N)`. */
+export function categoryColors(dist: AnalyticsDistributionV2, homeOrder: string[] = []): Map<string, string> {
   const colors = new Map<string, string>();
-  let index = 0;
+  const taken = new Set<string>();
+  const known = dist.categories.filter((c) => !isServiceCategory(c.name) && homeOrder.includes(c.name.trim()));
+  for (const category of known) {
+    const color = categoryColorVar(category.name, homeOrder);
+    colors.set(category.name, color);
+    if (category.workouts >= EPSILON || category.minutes >= EPSILON) {
+      taken.add(color);
+    }
+  }
+  // Категории вне Главной: цвет — хеш имени, при совпадении внутри одного графика сдвиг к свободному
+  // (в порядке имён, поэтому результат не зависит от сортировки ответа).
+  // Сдвиг только для категорий с данными (в легенде), нулевые категории каталога — чистый хеш.
+  const rest = dist.categories.filter((c) => !isServiceCategory(c.name) && !colors.has(c.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const { name, workouts, minutes } of rest) {
+    let color = categoryColorVar(name, homeOrder);
+    if (workouts >= EPSILON || minutes >= EPSILON) {
+      const start = Number(color.match(/(\d+)\)$/)?.[1] ?? 0);
+      for (let step = 1; taken.has(color) && step < CATEGORY_PALETTE_SIZE; step += 1) {
+        color = `var(--vp-cat-${(start + step) % CATEGORY_PALETTE_SIZE})`;
+      }
+      taken.add(color);
+    }
+    colors.set(name, color);
+  }
   for (const category of dist.categories) {
     if (isServiceCategory(category.name)) {
       colors.set(category.name, NEUTRAL_COLOR);
-    } else {
-      colors.set(category.name, CATEGORY_COLORS[index % CATEGORY_COLORS.length]);
-      index += 1;
     }
   }
   return colors;
@@ -52,9 +73,9 @@ function valueOf(item: { workouts: number; minutes: number }, metric: MetricKey)
 /** Кольца: внутреннее — категории, внешнее — подкатегории (остаток категории без
  * подкатегории — сегмент того же цвета, бледнее). Нулевые значения не рисуются. */
 export function donutRings(
-  dist: AnalyticsDistributionV2, metric: MetricKey,
+  dist: AnalyticsDistributionV2, metric: MetricKey, homeOrder: string[] = [],
 ): { inner: DonutSegment[]; outer: DonutSegment[]; total: number } {
-  const colors = categoryColors(dist);
+  const colors = categoryColors(dist, homeOrder);
   const total = dist.categories.reduce((sum, c) => sum + valueOf(c, metric), 0);
   const inner: DonutSegment[] = [];
   const outer: DonutSegment[] = [];

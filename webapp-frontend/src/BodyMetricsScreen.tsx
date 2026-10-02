@@ -15,6 +15,7 @@ import { useDisplayPrefs } from "./displayPrefs";
 import { convertHeightText, convertWeightText, formatHeight, formatWeight, unitToCm, unitToKg } from "./units";
 import { useBackButton } from "./useBackButton";
 import { sanitizeDecimalInput } from "./decimalInput";
+import { Icon } from "./Icon";
 
 type Props = {
   initDataRaw: string;
@@ -181,7 +182,7 @@ export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Pr
 
       {editor === null ? (
         <Button mode="filled" size="m" stretched data-testid="body-metrics-add" onClick={() => openEditor({ mode: "add" })}>
-          ➕ Добавить замер
+          <Icon name="plus" size={18} className="vp-icon-lead" />Добавить замер
         </Button>
       ) : (
         <div className="profile-card" data-testid="body-metrics-form">

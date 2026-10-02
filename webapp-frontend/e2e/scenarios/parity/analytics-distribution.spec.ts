@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { expectNoHorizontalOverflow, openTab, selectMetric, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 
 // Crimpd parity — Analytics distribution (#274): Аналитика → «По типам» (SVG-кольцо + легенда) и «Сводка».
@@ -38,13 +38,25 @@ for (const width of WIDTHS) {
       await expect(page.getByTestId("analytics-donut")).toBeVisible();
       await expect(page.getByTestId("donut-inner-segment")).toHaveCount(3);
       await expect(page.getByTestId("donut-outer-segment")).toHaveCount(4);
-      // Цвета легенды берутся из палитры проекта: первая категория — цвет первой группы Главной.
-      const swatch = await legend.first().locator(".analytics-legend-swatch").evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(swatch).toBe("rgb(47, 128, 237)"); // = --vp-cat-0 (цвет первой группы Главной, #280)
+      // Цвета легенды — из палитры проекта `--vp-cat-*` (цвет категории по имени, #286) и различимы между собой.
+      const swatches = await legend.locator(".analytics-legend-swatch").evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
+      const palette = await page.evaluate(() => [0, 1, 2, 3, 4, 5].map((i) => {
+        const probe = document.createElement("div");
+        probe.style.background = `var(--vp-cat-${i})`;
+        document.body.appendChild(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      }));
+      const [pull, core, other] = swatches; // порядок легенды: pull, core, «Другая активность» (нейтральный)
+      expect(palette).toContain(pull);
+      expect(palette).toContain(core);
+      expect(new Set(swatches).size, "три разных цвета").toBe(3);
+      expect(palette).not.toContain(other);
       await expectNoHorizontalOverflow(page, "Аналитика: распределение");
 
       // Метрика «Минуты» перерисовывает кольцо: pull 50, core 10, другая 30.
-      await page.getByRole("tab", { name: "Минуты" }).click();
+      await selectMetric(page, "Минуты");
       await expect(legend.filter({ hasText: "e2e_dist_pull" })).toContainText("50 мин");
       await expect(legend.filter({ hasText: "Другая активность" })).toContainText("30 мин");
       expect(noWakeLock(consoleErrors)).toEqual([]);
@@ -61,7 +73,12 @@ for (const width of WIDTHS) {
       await expect(summary.locator("thead")).toContainText("Минуты");
       expect(await cells(row(page, "e2e_dist_pull"))).toEqual(["e2e_dist_pull", "1.5", "50"]);
       expect(await cells(row(page, "e2e_dist_core"))).toEqual(["e2e_dist_core", "0.5", "10"]);
-      expect(await cells(row(page, "e2e_dist_legs"))).toEqual(["e2e_dist_legs", "0", "0"]); // нули для каталога
+      // нулевые строки каталога скрыты по умолчанию и раскрываются кнопкой «Показать все»
+      await expect(row(page, "e2e_dist_legs")).toHaveCount(0);
+      await page.getByTestId("summary-show-all").click();
+      expect(await cells(row(page, "e2e_dist_legs"))).toEqual(["e2e_dist_legs", "0", "0"]);
+      await page.getByTestId("summary-show-all").click();
+      await expect(row(page, "e2e_dist_legs")).toHaveCount(0);
       expect(await cells(row(page, "Другая активность"))).toEqual(["Другая активность", "1", "30"]);
       const subs = page.locator('[data-testid="summary-subcategory"][data-category="e2e_dist_pull"]');
       expect(await subs.evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll("th, td")].map((c) => c.textContent?.trim())))).toEqual([

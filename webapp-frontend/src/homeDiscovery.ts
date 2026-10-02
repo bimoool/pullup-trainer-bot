@@ -32,11 +32,36 @@ export function groupProgramsByCategory(programs: ProgramResponseV2[]): ProgramR
   ];
 }
 
-/** Цвет программы = цвет её группы-ряда на Главной (`--vp-cat-{rowIndex % 6}`, #280); null — программа не найдена. */
+/** Число цветов категориальной палитры `--vp-cat-0..5` (shell.css). */
+export const CATEGORY_PALETTE_SIZE = 6;
+
+/** Порядок категорий на Главной: ряды групп (`groupProgramsByCategory`), «Другое» последним. */
+export function homeCategoryOrder(programs: ProgramResponseV2[]): string[] {
+  return groupProgramsByCategory(programs).map((row) => row.category);
+}
+
+/** Стабильный индекс палитры по имени (djb2) — для категорий, которых нет в рядах Главной. */
+function hashIndex(name: string): number {
+  let hash = 5381;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 33 + name.charCodeAt(i)) >>> 0;
+  }
+  return hash % CATEGORY_PALETTE_SIZE;
+}
+
+/** Цвет категории — функция ИМЕНИ (#286): та же категория красится одинаково на Главной, в Планах
+ * и в Аналитике, независимо от порядка сортировки. Категория из рядов Главной получает
+ * `--vp-cat-{индекс ряда % 6}`; остальные — стабильный хеш имени. */
+export function categoryColorVar(name: string, homeOrder: string[]): string {
+  const key = normalizedCategory(name);
+  const index = homeOrder.indexOf(key);
+  return `var(--vp-cat-${index >= 0 ? index % CATEGORY_PALETTE_SIZE : hashIndex(key)})`;
+}
+
+/** Цвет программы = цвет её категории (см. `categoryColorVar`); null — программа не найдена. */
 export function programCategoryColorVar(programs: ProgramResponseV2[], programId: number): string | null {
-  const rows = groupProgramsByCategory(programs);
-  const index = rows.findIndex((row) => row.programs.some((program) => program.id === programId));
-  return index < 0 ? null : `var(--vp-cat-${index % 6})`;
+  const program = programs.find((item) => item.id === programId);
+  return program === undefined ? null : categoryColorVar(normalizedCategory(program.category), homeCategoryOrder(programs));
 }
 
 /** Категории, реально присутствующие в загруженных программах и упражнениях. */
