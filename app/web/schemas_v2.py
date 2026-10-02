@@ -497,7 +497,8 @@ class SessionListResponse(BaseModel):
 
 
 class PlanItemCreateRequest(BaseModel):
-    count_per_week: int
+    # 1..14: не больше двух раз в день на 7 дней; SmallInteger в БД, 0/отрицательные бессмысленны.
+    count_per_week: int = Field(ge=1, le=14)
     exercise_id: int | None = None
     complex_id: int | None = None
     # Checkpoint 3B (issue #197) требовал "невалидный day_of_week
