@@ -6,6 +6,7 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
+import json
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
@@ -188,6 +189,22 @@ def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
     )
 
 
+def _set_log_note(source: SessionSource, note: str | None) -> str | None:
+    """SetLog.note факультатива — упакованный backfill-ом JSON (формат/снаряд/подходы, #163),
+    не пользовательский текст: в API уходит читаемая строка «Подходы: 4 · 3 · 2» (или None),
+    сырой JSON наружу не отдаётся (#279)."""
+    if source != SessionSource.ELECTIVE or note is None:
+        return note
+    try:
+        payload = json.loads(note)
+    except ValueError:
+        return None
+    sequence = payload.get("reps_sequence") if isinstance(payload, dict) else None
+    if not isinstance(sequence, list) or not sequence or not all(isinstance(n, int) for n in sequence):
+        return None
+    return "Подходы: " + " · ".join(str(n) for n in sequence)
+
+
 def _session_response(
     detail: SessionDetail, *, progression: SessionProgressionResponse | None, skipped_reason: str | None,
     title: str | None = None, exercise_names: dict[int, str] | None = None, can_delete: bool = False,
@@ -222,8 +239,8 @@ def _session_response(
                 SetLogResponse(
                     set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                     value=str(log.value), unit=log.unit,
-                    effort=str(log.effort) if log.effort is not None else None, note=log.note,
-                    is_extra=log.is_extra,
+                    effort=str(log.effort) if log.effort is not None else None,
+                    note=_set_log_note(detail.source, log.note), is_extra=log.is_extra,
                 )
                 for log in block.set_logs
             ],
