@@ -114,7 +114,8 @@ export function JournalV2EditForm({
                   value={set.effort}
                   onChange={(value) => patchSet(set.blockIndex, set.setNumber, { effort: value })}
                 />
-                <input
+                {/* Факультатив (#279): note — упакованные backfill-ом данные, не пользовательский текст. */}
+                {session.source !== "elective" && <input
                   className="journal-edit-input"
                   type="text"
                   maxLength={SET_NOTE_MAX}
@@ -122,7 +123,7 @@ export function JournalV2EditForm({
                   aria-label={`Подход ${set.setNumber}: заметка`}
                   value={set.note}
                   onChange={(e) => patchSet(set.blockIndex, set.setNumber, { note: e.target.value })}
-                />
+                />}
               </div>
             ))}
           </Section>
