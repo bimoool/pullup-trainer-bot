@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import {
   fetchDashboardStatus,
   fetchPlan,
+  fetchActiveLiveSession,
   startLiveSession,
+  startWorkoutLiveSession,
   type DashboardBlockResponse,
   type LiveSessionResponse,
   type ProgramInclusionResponseV2,
@@ -41,6 +43,10 @@ type Props = {
    * карточка на "Планах" ("Планка"/"Отжимания"), не пересчитывается
    * заново через Exercise Library здесь. */
   title?: string;
+  /** «Начать» на Workout Detail: свободная сессия из своей тренировки без
+   * PlanItem. Курс/readiness не применимы; если уже идёт другая живая
+   * сессия — предлагаем продолжить её (одна активная сессия на пользователя). */
+  workoutId?: number;
 };
 
 /**
@@ -106,9 +112,11 @@ function planItemIdsForInclusion(plan: TrainingPlanResponseV2, inclusion: Progra
 }
 
 export function SessionPreScreen({
-  initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds, manual, title,
+  initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds, manual, title, workoutId,
 }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
+  // Активная сессия, мешающая старту по workoutId: предлагаем её продолжить.
+  const [activeConflict, setActiveConflict] = useState<LiveSessionResponse | null>(null);
 
   // issue #202: Telegram BackButton — переиспользует существующий onGoToWorkout
   // (тот же хендлер, что у кнопок "Перейти в обычную Тренировку" в blocked/
@@ -118,6 +126,23 @@ export function SessionPreScreen({
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      if (workoutId !== undefined) {
+        try {
+          const active = await fetchActiveLiveSession(initDataRaw);
+          if (cancelled) {
+            return;
+          }
+          if (active !== null) {
+            setActiveConflict(active);
+          }
+          setState({ phase: "ready_manual", title: title ?? "Тренировка", planItemIds: [] });
+        } catch (error) {
+          if (!cancelled) {
+            setState({ phase: "error", message: error instanceof Error ? error.message : String(error), title });
+          }
+        }
+        return;
+      }
       // Manual-ветка (issue #188, Checkpoint 4B) — ни findActiveInclusion,
       // ни fetchDashboardStatus здесь не вызываются вообще: у manual
       // PlanItem нет ProgramInclusion, читать по нему readiness
@@ -181,11 +206,15 @@ export function SessionPreScreen({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- explicitPlanItemIds/title стабильны на время жизни экрана (новый маунт на новый Start), пересчитывать по ним не нужно
-  }, [initDataRaw, manual]);
+  }, [initDataRaw, manual, workoutId]);
 
   async function handleStart(planItemIds: number[], currentTitle?: string) {
     setState({ phase: "starting", planItemIds, title: currentTitle });
     try {
+      if (workoutId !== undefined) {
+        onStarted(await startWorkoutLiveSession(initDataRaw, crypto.randomUUID(), workoutId));
+        return;
+      }
       if (planItemIds.length === 0) {
         setState({ phase: "error", message: "Не удалось найти строки плана для сегодняшней сессии.", title: currentTitle });
         return;
@@ -259,6 +288,23 @@ export function SessionPreScreen({
     ?? (state.phase === "starting" ? state.planItemIds : []);
   const programName = step?.programName ?? generic?.programName ?? manualReady?.title ?? null;
   const displayTitle = programName ?? title ?? (state.phase === "starting" ? state.title : undefined) ?? "Сессия";
+
+  if (activeConflict !== null && !isStarting) {
+    return (
+      <div data-testid="active-session-conflict">
+        <p className="plan-title">{displayTitle}</p>
+        <p className="screen-message">
+          Уже идёт другая тренировка{activeConflict.title ? ` — «${activeConflict.title}»` : ""}. Сначала продолжи или заверши её.
+        </p>
+        <Button className="action-button" size="l" stretched onClick={() => onStarted(activeConflict)}>
+          Продолжить текущую
+        </Button>
+        <Button className="action-button" size="l" stretched mode="plain" onClick={onGoToWorkout}>
+          Назад
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div>

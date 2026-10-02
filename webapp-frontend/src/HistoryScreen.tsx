@@ -14,6 +14,8 @@ type Props = {
   initDataRaw: string;
   /** Меняется, когда Главная просит открыть шторку «Записать» (#263). */
   logRequest?: number;
+  /** С какой тренировкой открыть форму записи (Workout Detail «Записать»). */
+  logWorkoutId?: number | null;
 };
 
 const PAGE_SIZE = 20;
@@ -31,11 +33,12 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-export function HistoryScreen({ initDataRaw, logRequest = 0 }: Props) {
+export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // «+ Записать» (#263): шторка выбора и затем одна из двух форм.
-  const [logSheetOpen, setLogSheetOpen] = useState(logRequest > 0);
-  const [logForm, setLogForm] = useState<LogKind | null>(null);
+  const [logSheetOpen, setLogSheetOpen] = useState(logRequest > 0 && logWorkoutId === null);
+  // Записать с Workout Detail — сразу форма «Тренировка из моих» с выбранной тренировкой.
+  const [logForm, setLogForm] = useState<LogKind | null>(logWorkoutId !== null ? "workout" : null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -135,6 +138,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0 }: Props) {
     const FormComponent = logForm === "workout" ? BackdatedWorkoutForm : FreeActivityForm;
     return (
       <FormComponent
+        {...(logForm === "workout" && logWorkoutId !== null ? { initialWorkoutId: logWorkoutId } : {})}
         initDataRaw={initDataRaw}
         onBack={() => setLogForm(null)}
         onSaved={(date) => {

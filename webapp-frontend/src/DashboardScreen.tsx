@@ -132,6 +132,9 @@ type Props = {
    * group.title, что уже показывает карточка, не пересчитывается заново
    * через Exercise Library на следующем экране. */
   onStartSession: (planItemIds: number[], options: { manual: boolean; title: string }) => void;
+  /** Workout Detail «Начать» / «Записать» (свободная сессия и запись задним числом). */
+  onStartWorkout: (workoutId: number, workoutTitle: string) => void;
+  onLogWorkout: (workoutId: number) => void;
 };
 
 type ScreenState =
@@ -210,7 +213,7 @@ type PickerState =
  * где WorkoutScreen (тот же STATUS_MESSAGES) объясняет причину и предлагает
  * то, что реально доступно (факультатив/бэкдейт/бот) — Dashboard не
  * дублирует эту логику, только не начинает с неё. */
-export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
+export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, onLogWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Подключённые курсы + реальные PlanWeek (Capability A issue #188, недели
   // — issue #193) — минимальный видимый результат "Добавить в план" (10.2:
@@ -468,6 +471,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
         onEdit={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId })}
         onAddToPlan={(workoutId, workoutTitle) =>
           setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "detail" })}
+        onStart={onStartWorkout}
+        onLog={onLogWorkout}
       />
     );
   }

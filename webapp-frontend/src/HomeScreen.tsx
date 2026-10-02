@@ -22,6 +22,10 @@ type Props = {
   onOpenPlans: () => void;
   /** «+» → «Записать в журнал»: открыть Журнал со шторкой записи (#263). */
   onOpenJournalLog: () => void;
+  /** «Начать» на Workout Detail — живая сессия своей тренировки вне плана. */
+  onStartWorkout: (workoutId: number, workoutTitle: string) => void;
+  /** «Записать» на Workout Detail — Журнал с формой записи, заполненной этой тренировкой. */
+  onLogWorkout: (workoutId: number) => void;
 };
 
 type WorkoutsState =
@@ -53,7 +57,7 @@ type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { p
  * "В плане", переход в Program Detail. Полная сводка (статус готовности,
  * кнопка "Начать тренировку") на "Планах" (DashboardScreen.tsx).
  */
-export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog }: Props) {
+export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStartWorkout, onLogWorkout }: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
   // Program Detail (issue #192) — тот же приём "swap внутри вкладки", что
@@ -202,6 +206,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog }: Props
         onBack={closeWorkoutView}
         onEdit={(workoutId) => setWorkoutView({ kind: "edit", workoutId })}
         onAddToPlan={(workoutId, workoutTitle) => setWorkoutView({ kind: "add-to-plan", workoutId, workoutTitle })}
+        onStart={onStartWorkout}
+        onLog={onLogWorkout}
       />
     );
   }

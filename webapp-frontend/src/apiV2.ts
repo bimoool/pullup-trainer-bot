@@ -484,6 +484,18 @@ export async function startLiveSession(
   });
 }
 
+/** «Начать» на Workout Detail: свободная сессия из снимка своей тренировки (без PlanItem). */
+export async function startWorkoutLiveSession(
+  initDataRaw: string,
+  clientSessionId: string,
+  workoutId: number,
+): Promise<LiveSessionResponse> {
+  return apiV2Post("/api/v2/sessions/live", initDataRaw, {
+    client_session_id: clientSessionId,
+    workout_id: workoutId,
+  });
+}
+
 export async function fetchActiveLiveSession(initDataRaw: string): Promise<LiveSessionResponse | null> {
   const response = await apiV2Get<{ session: LiveSessionResponse | null }>(
     "/api/v2/sessions/live/active", initDataRaw,

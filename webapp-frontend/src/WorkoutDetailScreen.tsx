@@ -17,6 +17,10 @@ type Props = {
   onBack: () => void;
   onEdit: (workoutId: number) => void;
   onAddToPlan: (workoutId: number, workoutTitle: string) => void;
+  /** «Начать»: живая сессия этой тренировки вне плана. */
+  onStart?: (workoutId: number, workoutTitle: string) => void;
+  /** «Записать»: форма записи задним числом с этой тренировкой. */
+  onLog?: (workoutId: number) => void;
 };
 
 type DetailState =
@@ -40,7 +44,7 @@ function formatSessionDate(iso: string): string {
  * упражнения, «Добавить в план» / «Редактировать» и история выполнений. Это не
  * редактор: правки — только через существующий WorkoutEditorScreen.
  */
-export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, onAddToPlan }: Props) {
+export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, onAddToPlan, onStart, onLog }: Props) {
   const [detail, setDetail] = useState<DetailState>({ phase: "loading" });
   const [history, setHistory] = useState<HistoryState>({ phase: "loading" });
 
@@ -82,6 +86,29 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
         {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}
         {estimate ? ` · ${estimate}` : ""}
       </p>
+
+      {(onStart || onLog) && (
+        <div className="workout-detail-actions">
+          {onStart && (
+            <button
+              type="button" className="workout-detail-action" data-testid="workout-detail-start"
+              disabled={items.length === 0} onClick={() => onStart(workout.id, workout.title)}
+            >
+              <span className="workout-detail-action-icon" aria-hidden="true">▶</span>
+              <span className="workout-detail-action-label">Начать</span>
+            </button>
+          )}
+          {onLog && (
+            <button
+              type="button" className="workout-detail-action" data-testid="workout-detail-log"
+              onClick={() => onLog(workout.id)}
+            >
+              <span className="workout-detail-action-icon" aria-hidden="true">✓</span>
+              <span className="workout-detail-action-label">Записать</span>
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="workout-detail-actions">
         <button
