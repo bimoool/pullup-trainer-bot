@@ -1091,3 +1091,9 @@
   flex: 0 0 auto;
   color: var(--tg-hint-color);
 }
+
+@media (max-width: 360px) {
+  .test-card-badge { width: 32px; height: 32px; }
+  .test-card .test-card-text { overflow-wrap: break-word; }
+  .test-card-spark { width: 44px; height: 18px; margin-right: 0; }
+}
