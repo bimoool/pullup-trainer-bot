@@ -1,7 +1,7 @@
 """training_sessions.activity_type / duration_seconds (свободная активность, #263)
 
 Revision ID: b8c9d0e1f2a3
-Revises: a1b2c3d4e5f7
+Revises: b4e7c2a9d1f3
 Create Date: 2026-10-02 00:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b8c9d0e1f2a3'
-down_revision: str | None = 'a1b2c3d4e5f7'
+down_revision: str | None = 'b4e7c2a9d1f3'  # re-parented after #264 (set_logs.is_extra) to keep one head
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

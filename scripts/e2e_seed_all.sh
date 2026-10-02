@@ -66,3 +66,16 @@ seed golden_journey 980011
 seed golden_journey 980012
 # Journal log (#263): 985001/985002 (320px, + retry), 985011/985012 (390px), Главная → «+»: id+5(+retry).
 for id in 985001 985002 985006 985007 985011 985012 985016 985017; do seed golden_journey "$id"; done
+seed golden_journey 980021
+seed golden_journey 980022
+seed golden_journey 980031
+seed golden_journey 980032
+# #265 «Live logging panel»: длинный отдых (session_recovery, 60 с) и короткий (golden_journey, 2 с).
+seed session_recovery 980041
+seed session_recovery 980042
+seed session_recovery 980051
+seed session_recovery 980052
+seed golden_journey 980061
+seed golden_journey 980062
+seed golden_journey 980071
+seed golden_journey 980072

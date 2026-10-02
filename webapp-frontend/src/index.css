@@ -855,6 +855,10 @@ html {
   color: #0a84ff;
 }
 
+/* #265 — «Приготовься» в последние 10 с отдыха; компактная панель записи подхода. */
+.get-ready-cue { margin: 8px 0 0; font-size: 18px; font-weight: 800; color: #f57c00; }
+.live-log-panel .action-button { margin-top: 8px; }
+
 /* issue #203 — safe-area для нижнего Tabbar из @telegram-apps/telegram-ui:
    padding-bottom поднимает содержимое Tabbar выше home indicator на iPhone.
    Tabbar сам fixed-позиционирован библиотекой (bottom: 0), этот padding

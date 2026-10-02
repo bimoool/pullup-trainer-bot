@@ -542,6 +542,8 @@ class SetLog(Base):
         BigInteger, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=True, index=True,
     )
     set_index: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # issue #264: «+ Ещё подход» — подход сверх плана; прогрессия его игнорирует.
+    is_extra: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     __table_args__ = (
         UniqueConstraint("session_id", "set_index", name="uq_set_logs_session_set_index"),

@@ -117,6 +117,8 @@ export interface QueuedSet {
   value: string;
   effort?: string | null;
   note?: string | null;
+  /** #264 — подход сверх плана: не цель, фазу не двигает, прогрессией игнорируется. */
+  isExtra?: boolean;
 }
 
 /** Черновик активной живой сessии в IndexedDB — ровно одна запись (та же
@@ -140,6 +142,59 @@ export interface LocalLiveSession {
   pendingSets: QueuedSet[];
   pendingPhaseAdvances: number;
   completeRequested: { abandoned: boolean; effort?: string | null; comment?: string | null } | null;
+  /** #264 — пауза get_ready/rest: сколько мс отсчёта осталось на момент паузы.
+   * Только клиентское состояние (сервер таймер не ведёт — ends_at лишь
+   * подсказка отображения), живёт в этом снимке и переживает reload/фон. */
+  pausedRemainingMs?: number | null;
+  /** #264 — конец фазы после «Продолжить» (ISO): перекрывает server ends_at. */
+  endsAtOverride?: string | null;
+  /** #265 — подход, только что записанный «Готово»: на отдыхе его можно
+   * поправить (значение/оценка/заметка). Правка уходит тем же set_index —
+   * сервер перезаписывает строку, дубля нет. Очищается при выходе из отдыха. */
+  lastLogged?: QueuedSet | null;
+}
+
+/** #265 — отдых от стольки секунд достаточно длинный, чтобы панель записи
+ * подхода раскрывалась сама; короче — свёрнута, раскрывается вручную. */
+export const REST_PANEL_EXPAND_MIN_SECONDS = 20;
+/** #265 — в последние стольки секунд отдыха показывается «Приготовься». */
+export const GET_READY_CUE_SECONDS = 10;
+
+export function restPanelExpandedByDefault(restSeconds: number | null | undefined): boolean {
+  return (restSeconds ?? DEFAULT_REST_SECONDS) >= REST_PANEL_EXPAND_MIN_SECONDS;
+}
+
+/** Сигнал «Приготовься» — только на отдыхе и только в его последние 10 с. */
+export function isGetReadyCueActive(phaseName: LocalPhaseName, remainingSeconds: number | null): boolean {
+  return phaseName === "rest" && remainingSeconds !== null && remainingSeconds <= GET_READY_CUE_SECONDS;
+}
+
+export interface LastSetEdit {
+  value: string;
+  effort: string | null;
+  note: string | null;
+}
+
+/** Правка только что записанного подхода: заменяет его запись в очереди
+ * (или ставит ту же запись заново, если она уже ушла на сервер — тот же
+ * set_index перезапишет строку). Пустое значение или отсутствие подхода —
+ * без изменений; совпадающие значения — тоже (лишней синхронизации нет). */
+export function editLastLoggedSet(local: LocalLiveSession, edit: LastSetEdit): LocalLiveSession {
+  const last = local.lastLogged;
+  const value = edit.value.trim();
+  const note = edit.note?.trim() || null;
+  if (!last || value === "") {
+    return local;
+  }
+  if (last.value === value && (last.effort ?? null) === edit.effort && (last.note ?? null) === note) {
+    return local;
+  }
+  const patched: QueuedSet = { ...last, value, effort: edit.effort, note };
+  return {
+    ...local,
+    lastLogged: patched,
+    pendingSets: [...local.pendingSets.filter((entry) => entry.setIndex !== patched.setIndex), patched],
+  };
 }
 
 export async function loadLocalSession(): Promise<LocalLiveSession | null> {
@@ -203,6 +258,12 @@ export function initialLocalSession(clientSessionId: string, server: LiveSession
  * не от "сейчас": после возврата из фона/перезагрузки остаток считается как
  * `endsAt - Date.now()`, а не начинается заново. */
 export function localPhaseEndsAtMs(local: LocalLiveSession): number | null {
+  if (isLocalPaused(local)) {
+    return null;
+  }
+  if (local.endsAtOverride) {
+    return new Date(local.endsAtOverride).getTime();
+  }
   if (local.pendingPhaseAdvances === 0 && local.server.phase.ends_at !== null) {
     return new Date(local.server.phase.ends_at).getTime();
   }
@@ -210,6 +271,55 @@ export function localPhaseEndsAtMs(local: LocalLiveSession): number | null {
     local.localPhase.phaseName, local.server.blocks[local.localPhase.blockIndex]?.rest_seconds,
   );
   return duration !== null ? new Date(local.localPhaseEnteredAt).getTime() + duration * 1000 : null;
+}
+
+export function isLocalPaused(local: LocalLiveSession): boolean {
+  return local.pausedRemainingMs !== null && local.pausedRemainingMs !== undefined;
+}
+
+/** Паузу можно поставить только на обратный отсчёт (приготовься/отдых). Фаза
+ * «пошёл» — работа пользователя без таймера, interval-блоки живут на
+ * серверных часах и сюда (SessionLiveScreen) не попадают вовсе. */
+export function canPauseLocal(local: LocalLiveSession): boolean {
+  const name = local.localPhase.phaseName;
+  return (name === "get_ready" || name === "rest") && !isLocalPaused(local);
+}
+
+/** Замораживает отсчёт: остаток считается от того же источника, что и
+ * таймер на экране (localPhaseEndsAtMs). */
+export function pauseLocalSession(local: LocalLiveSession, nowMs: number): LocalLiveSession {
+  if (!canPauseLocal(local)) {
+    return local;
+  }
+  const endsAt = localPhaseEndsAtMs(local);
+  const remaining = endsAt === null ? 0 : Math.max(0, endsAt - nowMs);
+  return { ...local, pausedRemainingMs: remaining, endsAtOverride: null };
+}
+
+export function resumeLocalSession(local: LocalLiveSession, nowMs: number): LocalLiveSession {
+  if (!isLocalPaused(local)) {
+    return local;
+  }
+  return {
+    ...local, pausedRemainingMs: null, endsAtOverride: new Date(nowMs + (local.pausedRemainingMs ?? 0)).toISOString(),
+  };
+}
+
+/** Снимает паузу/override при смене фазы (переход, запись подхода). */
+export function clearPauseState(local: LocalLiveSession): LocalLiveSession {
+  return { ...local, pausedRemainingMs: null, endsAtOverride: null };
+}
+
+/** Блок, к которому относится «+ Ещё подход»: последний завершённый
+ * (done — текущий, between — предыдущий). null — предлагать нечего. */
+export function extraSetBlockIndex(local: LocalLiveSession): number | null {
+  const { phaseName, blockIndex } = local.localPhase;
+  const index = phaseName === "between" ? blockIndex - 1 : phaseName === "done" ? blockIndex : -1;
+  const block = local.server.blocks[index];
+  if (block === undefined || block.exercise_id === null || block.protocol_type === "interval") {
+    return null;
+  }
+  return index;
 }
 
 export function hasPendingWork(local: LocalLiveSession): boolean {
@@ -229,9 +339,27 @@ export function rebaseLocalSession(
   server: LiveSessionResponse,
 ): LocalLiveSession {
   const fresh = initialLocalSession(current.clientSessionId, server);
-  const newerSets = current.pendingSets.filter((entry) => entry.setIndex >= flushed.nextSetIndex);
+  // #265: правка уже отправленного подхода — запись со старым set_index, но
+  // иным содержимым, чем в флаше; её тоже нельзя потерять.
+  const flushedByIndex = new Map(flushed.pendingSets.map((entry) => [entry.setIndex, JSON.stringify(entry)]));
+  const newerSets = current.pendingSets.filter(
+    (entry) => entry.setIndex >= flushed.nextSetIndex || flushedByIndex.get(entry.setIndex) !== JSON.stringify(entry),
+  );
   const newerAdvances = Math.max(0, current.pendingPhaseAdvances - flushed.pendingPhaseAdvances);
-  const rebased = { ...fresh, completeRequested: current.completeRequested };
+  // #264: пауза/override — клиентские; сервер побеждает по ИДЕНТИЧНОСТИ фазы:
+  // фаза та же (номер перехода и позиция) — пауза переносится, иначе сброшена.
+  const samePhase =
+    fresh.server.phase_index === current.server.phase_index
+    && fresh.localPhase.phaseName === current.localPhase.phaseName
+    && fresh.localPhase.blockIndex === current.localPhase.blockIndex
+    && fresh.localPhase.setNumber === current.localPhase.setNumber;
+  const rebased = {
+    ...fresh,
+    completeRequested: current.completeRequested,
+    pausedRemainingMs: samePhase ? current.pausedRemainingMs ?? null : null,
+    endsAtOverride: samePhase ? current.endsAtOverride ?? null : null,
+    lastLogged: current.lastLogged ?? null,
+  };
   if (newerSets.length === 0 && newerAdvances === 0) {
     return rebased;
   }
@@ -275,6 +403,7 @@ export async function flushLocalSession(
         value: entry.value,
         effort: entry.effort ?? null,
         note: entry.note ?? null,
+        ...(entry.isExtra ? { is_extra: true } : {}),
       })),
     );
   }

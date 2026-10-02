@@ -16,8 +16,10 @@ ours, not copied.
 to our domain on purpose, reason given) · PLATFORM-IMPOSSIBLE (Telegram Mini App / web cannot do it).
 A row becomes DONE only with automated evidence (`crimpd-parity.spec.ts` block or named spec).
 
-**Tester.** `webapp-frontend/e2e/scenarios/crimpd-parity.spec.ts` — focused growing suite; every
-parity issue adds its block; the worker's deterministic gate runs the full Playwright suite before
+**Tester.** Parity suite = `webapp-frontend/e2e/scenarios/crimpd-parity.spec.ts` (baseline + the
+first task blocks) + one file per later task in `webapp-frontend/e2e/scenarios/parity/` (helpers:
+`e2e/fixtures/parity.ts`; serial `parity` Playwright project — appending to one shared file made
+stale branches conflict). The worker's deterministic gate runs the full Playwright suite before
 any merge into `develop/current`.
 
 ## Home
@@ -97,10 +99,10 @@ any merge into `develop/current`.
 | Logging during session (per set) | X5 | «Внести подход» value + note | DONE | — | — | — | builder-execution.spec.ts |
 | Per-set effort «How hard was this set?» with words | X5, X12 | chips «1»…«5» + words (Очень легко…Предел) | DONE | — | — | #257 | crimpd-parity.spec.ts «Live effort»; tests/effortScale.test.ts |
 | Workout effort + additional notes at end | X10 | review step on finish → /complete effort+comment, shown in Journal | DONE | — | — | #257 | crimpd-parity.spec.ts «Live effort»; tests/test_web/test_v2_live_session_review.py |
-| Logging panel follows timer (collapsed work / expanded rest) | SKILL rule 3; Crimpd shows manual toggle X5–X6 *(auto rule unobserved)* | static section | MISSING | — | auto collapse/expand | #265 | — |
-| GET READY in final 10 s *(unobserved in Crimpd; owner target)* | X13 | 5 s get-ready at block start only | PARTIAL | no cue before next set | «Приготовься» last 10 s of rest | #265 | — |
-| Add Set beyond prescribed | X10 | none | MISSING | — | «+ Ещё подход» | #264 | — |
-| Pause / resume | X7 | none | MISSING | — | pause rest/get-ready (interval: not offered if unsafe) | #264 | — |
+| Logging panel follows timer (collapsed work / expanded rest) | SKILL rule 3; Crimpd shows manual toggle X5–X6 *(auto rule unobserved)* | work: value + «Готово» (effort/note via toggle); rest ≥ 20 s: auto-expanded edit of the just-logged set (same `set_index`); short rest: collapsed + «Изменить» | DONE | — | — | #265 | crimpd-parity.spec.ts «Live logging panel»; webapp-frontend/tests/liveLoggingPanel.test.ts |
+| GET READY in final 10 s *(unobserved in Crimpd; owner target)* | X13 | «Приготовься · N» under the rest timer in the last 10 s; existing end-of-phase beep | DONE | — | — | #265 | crimpd-parity.spec.ts «Live logging panel»; webapp-frontend/tests/liveLoggingPanel.test.ts |
+| Add Set beyond prescribed | X10 | «+ Ещё подход» after the last planned set → `sets:batch` `is_extra` | DONE | — | — | #264 | crimpd-parity.spec.ts «Live extra set & pause»; tests/test_web/test_v2_live_session_extra_set.py |
+| Pause / resume | X7 | «Пауза»/«Продолжить» on get-ready/rest, kept in local snapshot (interval: not offered) | DONE | — | — | #264 | crimpd-parity.spec.ts «Live extra set & pause»; webapp-frontend/tests/livePauseExtra.test.ts |
 | Skip rest / next set | X7–X8 | «Пропустить отдых» | DONE | — | — | — | builder-execution.spec.ts |
 | Resistance ± kg per set | X5, X10 | not modelled for builder sets (bands in legacy STEP) | DOMAIN-EQUIVALENT | weight per set not stored in v2 | our bands/weighted progression lives in programs | — | — |
 | Auto log review after DONE | X9–X11 | Summary screen | DONE | — | — | — | session-summary-exit.spec.ts |

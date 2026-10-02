@@ -362,6 +362,7 @@ export interface SetLogResponseV2 {
   unit: string;
   effort: string | null;
   note: string | null;
+  is_extra?: boolean;
 }
 
 export interface LiveSetTargetResponse {
@@ -465,6 +466,8 @@ export interface LiveSetBatchEntry {
   /** R1 — блок, для которого записан подход (одно упражнение может
    * встречаться в тренировке несколько раз). */
   block_index?: number | null;
+  /** #264 — подход сверх плана («+ Ещё подход»). */
+  is_extra?: boolean;
 }
 
 export async function startLiveSession(

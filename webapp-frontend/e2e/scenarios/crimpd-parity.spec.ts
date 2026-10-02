@@ -460,6 +460,9 @@ for (const width of WIDTHS) {
 
       // Подход 1: вопрос и подписанные чипы 1–5.
       await clickAndSync(page, "Готов", "/phase/next");
+      // #265: во время работы панель свёрнута — оценка и заметка раскрываются вручную.
+      await expect(page.getByText("Насколько тяжело было?")).toHaveCount(0);
+      await page.getByTestId("log-panel-toggle").click();
       await expect(page.getByText("Насколько тяжело было?")).toBeVisible();
       const chips = page.getByTestId("set-effort").getByRole("button");
       await expect(chips).toHaveCount(5);
@@ -948,121 +951,193 @@ for (const width of WIDTHS) {
   });
 }
 
-// --- Journal log (#263): «+ Записать» — тренировка задним числом и свободная активность ----------
-// Seed: scripts/e2e_seed.py golden_journey — своя Workout «Золотая тренировка» (reps 2 x 8), пустой
-// Журнал. Тест пишет сессии, поэтому по пользователю на ширину/тему и на retry (id + retry);
-// второй тест (Главная → «+») берёт id + 5 + retry.
-const LOG_USERS = { 320: { id: 985_001, theme: "light" }, 390: { id: 985_011, theme: "dark" } } as const;
+// --- Live extra set & pause (#264): «+ Ещё подход» после плана, пауза отсчёта ----------------
+// Seed: golden_journey (reps 2 x 8) — своя пара пользователей на ширину/тему и на retry.
+const PAUSE_USERS = { 320: { id: 980_021, theme: "light" }, 390: { id: 980_031, theme: "dark" } } as const;
 
-function localDateOffset(offsetDays: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+for (const width of WIDTHS) {
+  const { id, theme } = PAUSE_USERS[width as 320 | 390];
+  test.describe(`Live extra set & pause @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 760 } });
+    test.setTimeout(120_000);
+
+    test("пауза замораживает отдых и переживает reload; «+ Ещё подход» после плана уходит как is_extra", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry, { theme });
+      const batchBodies: { sets: { is_extra?: boolean; value: string }[] }[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().includes("/sets:batch")) {
+          batchBodies.push(request.postDataJSON());
+        }
+      });
+
+      await page.getByTestId("my-workout-card").filter({ hasText: EFFORT_TITLE }).click();
+      await page.getByRole("button", { name: "Добавить в план" }).click();
+      await page.getByRole("button", { name: "Свободный пул" }).click();
+      await page.getByRole("button", { name: "Добавить", exact: true }).click();
+      const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
+      await group.getByRole("button", { name: "Начать", exact: true }).click();
+      await page.getByRole("button", { name: "Начать", exact: true }).click();
+      await expect(page.getByText("Живая тренировка")).toBeVisible();
+
+      // Пауза не предлагается в фазе «Пошёл»; «+ Ещё подход» — пока план не выполнен.
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByText("Пошёл")).toBeVisible();
+      await expect(page.getByTestId("pause-toggle")).toHaveCount(0);
+      await expect(page.getByTestId("extra-set-button")).toHaveCount(0);
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await clickAndSync(page, "Готово", "/sets:batch");
+
+      // Отдых: пауза → таймер стоит, «Продолжить»; reload — пауза сохранена.
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      const timer = page.locator(".timer-duration-label");
+      await page.getByTestId("pause-toggle").click();
+      await expect(page.getByTestId("pause-toggle")).toHaveText("Продолжить");
+      const frozen = await timer.innerText();
+      await page.waitForTimeout(2300);
+      expect(await timer.innerText()).toBe(frozen);
+      await expectNoHorizontalOverflow(page, "Live: пауза");
+
+      await page.reload();
+      await expect(page.getByText("Живая тренировка")).toBeVisible();
+      await expect(page.getByTestId("pause-toggle")).toHaveText("Продолжить");
+      expect(await timer.innerText()).toBe(frozen);
+
+      // Продолжить — отсчёт идёт дальше с остатка.
+      await page.getByTestId("pause-toggle").click();
+      await expect(page.getByTestId("pause-toggle")).toHaveText("Пауза");
+      await expect.poll(async () => timer.innerText(), { timeout: 5000 }).not.toBe(frozen);
+
+      // Второй (последний плановый) подход, затем «+ Ещё подход».
+      await clickAndSync(page, "Пропустить отдых", "/phase/next");
+      await clickAndSync(page, "Готов", "/phase/next");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("7");
+      await clickAndSync(page, "Готово", "/sets:batch");
+      await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
+      await expect(page.getByTestId("pause-toggle")).toHaveCount(0);
+
+      await page.getByTestId("extra-set-button").click();
+      await expect(page.getByTestId("extra-set-form")).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Live: форма ещё подхода");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("5");
+      await clickAndSync(page, "Записать", "/sets:batch");
+      await expect(page.getByTestId("extra-count")).toContainText("1");
+      expect(batchBodies.flatMap((b) => b.sets).filter((s) => s.is_extra)).toEqual([
+        expect.objectContaining({ value: "5", is_extra: true }),
+      ]);
+      expect(batchBodies.flatMap((b) => b.sets).filter((s) => !s.is_extra)).toHaveLength(2);
+
+      await page.getByRole("button", { name: "Завершить", exact: true }).click();
+      await clickAndSync(page, "Сохранить и завершить", "/complete");
+      await expect(page.getByText("Тренировка завершена")).toBeVisible();
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
+}
+
+// --- Live logging panel (#265): панель записи следует за таймером, «Приготовься» в конце отдыха --
+// Seeds: session_recovery (reps 3 x 8, отдых 60 с — панель раскрывается сама) и golden_journey
+// (reps 2 x 8, отдых 2 с — весь отдых в последних 10 с, панель свёрнута). Реальные часы: отдых
+// 60 с не ждём — «Приготовься» проверяем на коротком отдыхе, раскрытие — сразу после подхода.
+const PANEL_USERS = {
+  320: { long: 980_041, short: 980_061, theme: "light" },
+  390: { long: 980_051, short: 980_071, theme: "dark" },
+} as const;
+
+async function startFromFreePool(page: Page, title: string) {
+  await page.getByTestId("my-workout-card").filter({ hasText: title }).click();
+  await page.getByRole("button", { name: "Добавить в план" }).click();
+  await page.getByRole("button", { name: "Свободный пул" }).click();
+  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${title}`) });
+  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
 }
 
 for (const width of WIDTHS) {
-  const { id, theme } = LOG_USERS[width as 320 | 390];
-  test.describe(`Journal log @${width}px ${theme}`, () => {
-    test.use({ viewport: { width, height: 800 } });
-    test.setTimeout(90_000);
+  const { long, short, theme } = PANEL_USERS[width as 320 | 390];
+  test.describe(`Live logging panel @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 760 } });
+    test.setTimeout(120_000);
 
-    test("шторка → свободная активность и тренировка из моих появляются в Журнале и Аналитике", async ({ page }, testInfo) => {
-      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry, { theme });
-      await openTab(page, "Журнал");
-      const yesterday = localDateOffset(-1);
-      const tomorrow = localDateOffset(1);
-      const cards = page.locator(".history-card-clickable");
+    test("работа — свёрнута; длинный отдых — раскрыта, правка того же подхода без дубля", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, long + testInfo.retry, { theme });
+      const batchSets: { set_index: number; value: string; effort: string | null; note: string | null }[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().includes("/sets:batch")) {
+          batchSets.push(...request.postDataJSON().sets);
+        }
+      });
+      await startFromFreePool(page, "Тренировка восстановления");
 
-      // Шторка из Журнала: два пути.
-      await page.getByTestId("journal-log-button").click();
-      await expect(page.getByTestId("journal-log-sheet")).toBeVisible();
-      await expect(page.getByTestId("log-option-workout")).toHaveText("Тренировку из моих");
-      await expect(page.getByTestId("log-option-activity")).toHaveText("Другую активность");
-      await expectNoHorizontalOverflow(page, "Журнал: шторка «Записать»");
+      // Работа: одна строка записи + «Готово» под рукой, оценка/заметка скрыты.
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByText("Пошёл")).toBeVisible();
+      const panel = page.getByTestId("log-panel");
+      await expect(panel).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("set-effort")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Готово", exact: true })).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Live: панель свёрнута");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await clickAndSync(page, "Готово", "/sets:batch");
 
-      // Другая активность: валидация (длительность, будущая дата), затем сохранение.
-      await page.getByTestId("log-option-activity").click();
-      await expect(page.getByTestId("log-activity-type").locator("option")).toHaveText([
-        "Бег", "Велосипед", "Плавание", "Ходьба/хайкинг", "Йога/растяжка", "Силовая в зале", "Единоборства", "Другое",
-      ]);
-      await expectNoHorizontalOverflow(page, "Журнал: форма активности");
-      await page.getByTestId("log-duration").fill("0:00");
-      await page.getByTestId("log-save").click();
-      await expect(page.getByTestId("log-error")).toContainText("Длительность");
-      await page.getByTestId("log-duration").fill("13:00");
-      await page.getByTestId("log-save").click();
-      await expect(page.getByTestId("log-error")).toContainText("Длительность");
-      await page.getByTestId("log-date").evaluate((element, value) => {
-        const input = element as HTMLInputElement;
-        input.removeAttribute("max");
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-        setter.call(input, value);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      }, tomorrow);
-      await page.getByTestId("log-duration").fill("1:15");
-      await page.getByTestId("log-save").click();
-      await expect(page.getByTestId("log-error")).toContainText("в будущем");
-      await page.getByTestId("log-date").fill(yesterday);
-      await page.getByTestId("log-activity-type").selectOption("swimming");
-      await page.getByTestId("log-effort-3").click();
-      await page.getByTestId("log-note").fill("бассейн");
-      await page.getByTestId("log-save").click();
+      // Отдых 60 с (≥ 20): панель раскрылась сама, «Приготовься» ещё рано.
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      await expect(panel).toHaveAttribute("data-state", "expanded");
+      await expect(page.getByTestId("get-ready-cue")).toHaveCount(0);
+      await expect(page.getByTestId("set-effort").getByRole("button")).toHaveCount(5);
+      await expectNoHorizontalOverflow(page, "Live: панель раскрыта на отдыхе");
 
-      // Карточка: тип и длительность; календарь показывает день с точкой.
-      const activityCard = cards.filter({ hasText: "Плавание" });
-      await expect(activityCard).toHaveCount(1);
-      await expect(activityCard.getByTestId("journal-activity-duration")).toHaveText("Длительность: 1:15");
-      await expectNoHorizontalOverflow(page, "Журнал: карточка активности");
-      await page.locator(".journal-month-label").click();
-      await expect(page.locator(`[data-date="${yesterday}"][data-has-training="true"]`)).toBeVisible();
+      // Правка того же подхода: значение, усилие и заметка уходят тем же set_index.
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("9");
+      await page.getByTestId("set-effort").getByRole("button").nth(2).click();
+      await page.getByLabel("Заметка", { exact: true }).fill("после отдыха");
+      await clickAndSync(page, "Сохранить подход", "/sets:batch");
+      expect(batchSets).toHaveLength(2);
+      expect(batchSets[1].set_index).toBe(batchSets[0].set_index);
+      expect(batchSets[1]).toMatchObject({ value: "9", effort: "3", note: "после отдыха" });
 
-      // Тренировка из моих: выбор, значения подходов, усилие.
-      await page.getByTestId("journal-log-button").click();
-      await page.getByTestId("log-option-workout").click();
-      await page.getByTestId("log-save").click();
-      await expect(page.getByTestId("log-error")).toContainText("подход");
-      await page.getByTestId("log-workout-select").selectOption({ label: "Золотая тренировка" });
-      await expect(page.getByTestId("log-exercise")).toHaveCount(1);
-      await page.getByTestId("log-date").fill(yesterday);
-      const setInputs = page.locator('[data-testid^="log-set-"]');
-      await expect(setInputs).toHaveCount(2);
-      await setInputs.nth(0).fill("8");
-      await setInputs.nth(1).fill("7");
-      await page.getByTestId("log-effort-4").click();
-      await page.getByTestId("log-note").fill("без таймера");
-      await expectNoHorizontalOverflow(page, "Журнал: форма тренировки");
-      await page.getByTestId("log-save").click();
-
-      const backdatedCard = cards.filter({ hasText: "Записана задним числом" });
-      await expect(backdatedCard).toHaveCount(1);
-      await expect(backdatedCard).toContainText("8 · 7");
-      await expect(cards).toHaveCount(2);
-      await backdatedCard.click();
-      await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
-      await expect(page.getByTestId("journal-workout-comment")).toContainText("без таймера");
-      await page.getByRole("button", { name: "← Назад" }).click();
-
-      // Аналитика: обе записи — тренировки, минуты считаются только по свободной активности.
-      await openTab(page, "Аналитика");
-      const card = page.getByTestId("analytics-metrics");
-      const total = page.getByTestId("analytics-metric-total");
-      await expect(total).toContainText("Всего тренировок: 2");
-      await card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name: "Минуты" }).click();
-      await expect(total).toContainText("Всего минут: 1 ч 15 мин");
-      await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
+      // Следующий подход: форма заново пустая; правка не плодит второй подход.
+      await clickAndSync(page, "Пропустить отдых", "/phase/next");
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(panel).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByLabel(/Результат|Секунды|Повторений/)).toHaveValue("");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("7");
+      await clickAndSync(page, "Готово", "/sets:batch");
+      expect(new Set(batchSets.map((entry) => entry.set_index)).size).toBe(2);
 
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });
 
-    test("«+» на Главной ведёт в Журнал со шторкой записи", async ({ page }, testInfo) => {
-      const { consoleErrors, apiFailures } = await openAppAs(page, id + 5 + testInfo.retry, { theme });
-      await page.getByTestId("home-plus").click();
-      await page.getByTestId("home-sheet-log").click();
-      await expect(page.getByTestId("journal-log-sheet")).toBeVisible();
-      await expectNoHorizontalOverflow(page, "Журнал: шторка с Главной");
-      await page.getByTestId("log-option-activity").click();
-      await expect(page.getByTestId("journal-log-form")).toBeVisible();
+    test("короткий отдых: «Приготовься» с обратным отсчётом, панель свёрнута, раскрывается вручную", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, short + testInfo.retry, { theme });
+      await startFromFreePool(page, EFFORT_TITLE);
+
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByTestId("get-ready-cue")).toHaveCount(0); // «Приготовься» — только на отдыхе
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await clickAndSync(page, "Готово", "/sets:batch");
+
+      // Отдых 2 с — целиком в последних 10 с: подпись и число секунд видны, панель свёрнута.
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      await expect(page.getByTestId("get-ready-cue")).toContainText("Приготовься");
+      await expect(page.getByTestId("get-ready-countdown")).toHaveText(/^[0-2]$/);
+      await expect(page.getByTestId("log-panel")).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("log-panel-summary")).toContainText("8");
+      await expectNoHorizontalOverflow(page, "Live: Приготовься");
+
+      // Вручную: раскрыть, поправить, сохранить — тот же подход.
+      await page.getByTestId("log-panel-toggle").click();
+      await expect(page.getByTestId("log-panel")).toHaveAttribute("data-state", "expanded");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("10");
+      await clickAndSync(page, "Сохранить подход", "/sets:batch");
+
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });
