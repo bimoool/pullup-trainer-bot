@@ -81,7 +81,6 @@ from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
-from app.services.journal_dedupe import list_backfilled_duplicates
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -1104,7 +1103,6 @@ async def get_history(
     limit: int = Query(default=20, ge=1, le=100),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    exclude_migrated: bool = Query(default=False),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> HistoryResponse:
@@ -1121,21 +1119,16 @@ async def get_history(
     развилка без выигрыша при типичном объёме истории одного пользователя.
     Новейшие тренировки — первыми (естественный порядок для ленты).
 
-    exclude_migrated (#282) — только для Журнала, который отдельно показывает v2-сессии: legacy-
-    записи, уже перенесённые backfill-ом (#163) в v2 TrainingSession, скрываются (display-only,
-    правило — app.domain.journal_dedupe), иначе перенесённая тренировка видна дважды. Без флага —
-    прежнее поведение (все legacy-записи)."""
+    Журнал (#284) показывает ВСЕ legacy-карточки: старая схема — источник правды для перенесённой
+    backfill-ом истории, а карточка — единственное представление с «Изменить»/«Удалить». Дубли
+    убирает Журнал v2 (GET /api/v2/sessions?exclude_backfilled=true), не этот эндпоинт. Параметр
+    exclude_migrated (#282) удалён; неизвестные query-параметры FastAPI игнорирует, поэтому старые
+    клиенты с `&exclude_migrated=true` продолжают работать и получают все записи."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return HistoryResponse(items=[], has_more=False)
 
     history = await WorkoutRepository(session).list_for_user(user.id)
-    # Самая свежая запись во всей legacy-истории (цель следующей тренировки показывается только на
-    # ней) определяется ДО скрытия дублей: скрытая v2-копия цели не теряет — её несёт план.
-    latest_workout_id = history[-1].id if history else None
-    if exclude_migrated:
-        hidden_ids = {key.workout_id for key in await list_backfilled_duplicates(session, user.id)}
-        history = [w for w in history if w.id not in hidden_ids]
     # date_from/date_to (#256, Журнал по месяцам) — включительно, по той же дате,
     # что показывает карточка (performed_at.date()).
     if date_from is not None:
@@ -1149,7 +1142,7 @@ async def get_history(
     for workout in page:
         block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
         block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
-        is_latest = workout.id == latest_workout_id
+        is_latest = workout is newest_first[0]
         items.append(
             HistoryEntryResponse(
                 workout_id=workout.id,
