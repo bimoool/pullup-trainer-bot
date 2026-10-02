@@ -51,6 +51,7 @@ export function CollectionScreen({ initDataRaw, collectionId, onBack, onOpenProg
     <div data-testid="collection-screen">
       <div className="vs-cover vs-cover-collection" data-testid="collection-cover">
         <BackChevron onClick={onBack} />
+        <span className="vs-cover-label">Подборка</span>
       </div>
       {state.phase === "loading" && <p className="screen-message">Загружаю подборку…</p>}
       {state.phase === "error" && (
