@@ -10,7 +10,7 @@ import { pressTelegramBackButton, type TelegramTheme } from "../../fixtures/tele
 // открытия, повтор виден всегда (онлайн, флаш не идёт), Back уводит с экрана, потерянный ответ
 // complete (сессия уже завершена, переход из очереди → 404) считается успехом.
 // HIGH 2: на interstitial между блоками с завершением в очереди нет «Начать».
-// Seeds (scripts/e2e_seed_all.sh): session_recovery 9979{01,11}+0..7 — «Тренировка восстановления»
+// Seeds (scripts/e2e_seed_all.sh): session_recovery 9979{01,11}+0..9 — «Тренировка восстановления»
 // (reps 3 x 8, отдых 60 с), на тест id + 2*индекс + retry; builder_workouts 9979{51,61} (+retry) — «Дубли»
 // (reps 2 x 8 → time → max, ручные переходы).
 const TITLE = "Тренировка восстановления";
@@ -179,6 +179,46 @@ for (const width of WIDTHS) {
       await complete;
       await expect(page.getByText("Тренировка завершена")).toBeVisible();
       expect(completes).toHaveLength(2); // потерянный + повтор; прогрессия сервером применена один раз
+
+      expect(appErrors(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("HIGH 1: ушли с неотправленным завершением и начали тренировку снова — старое завершение досылается до замены снимка", async ({ page }, testInfo) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, userFor(4, testInfo.retry), { theme, allowedApiStatuses: [500] });
+      const started = page.waitForResponse((r) => r.url().endsWith("/api/v2/sessions/live") && r.request().method() === "POST");
+      await startLive(page);
+      const firstId = ((await (await started).json()) as { id: number }).id;
+      const completes = trackCompletes(page);
+
+      // Онлайн, но complete временно падает: статус «повтор», с экрана уходим кнопкой «Выйти».
+      let failing = true;
+      await page.route("**/api/v2/sessions/live/*/complete", async (route) => {
+        if (failing) {
+          await route.fulfill({ status: 500, body: "boom" });
+        } else {
+          await route.continue();
+        }
+      });
+      await page.getByRole("button", { name: "Завершить", exact: true }).click();
+      await page.getByTestId("workout-review").getByRole("button", { name: "Сохранить и завершить" }).click();
+      await expect(page.getByTestId("finish-pending")).toHaveAttribute("data-state", "retry");
+      await page.getByTestId("finish-leave").click();
+      await expect(page.locator(".bottom-tabbar")).toBeVisible();
+      failing = false;
+
+      // Та же тренировка из «Планов» снова: новая сессия; её экран сначала досылает старое завершение.
+      const drained = page.waitForResponse((r) => r.url().includes(`/sessions/live/${firstId}/complete`) && r.status() === 200);
+      const restarted = page.waitForResponse((r) => r.url().endsWith("/api/v2/sessions/live") && r.request().method() === "POST");
+      await page.locator(".bottom-tabbar").getByRole("button", { name: "Планы" }).click();
+      const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
+      await group.getByRole("button", { name: "Начать", exact: true }).first().click();
+      await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
+      const secondId = ((await (await restarted).json()) as { id: number }).id;
+      expect(secondId).not.toBe(firstId);
+      await drained;
+      await expect(page.getByRole("heading", { name: "Приготовься", exact: true, level: 2 })).toBeVisible();
+      expect(completes.length).toBeGreaterThanOrEqual(2); // упавший + дослан
 
       expect(appErrors(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

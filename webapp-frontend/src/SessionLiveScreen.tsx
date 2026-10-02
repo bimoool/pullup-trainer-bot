@@ -73,6 +73,8 @@ type Props = {
 };
 
 const LOG_FORM_ID = "live-log-form";
+/** #287: сколько ждать досылки чужого завершения из очереди перед показом своей сессии. */
+const ORPHAN_DRAIN_TIMEOUT_MS = 5_000;
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
   get_ready: "Приготовься",
@@ -153,8 +155,12 @@ export function SessionLiveScreen({
       let existing = await loadLocalSession();
       // #287: в IndexedDB — завершение ДРУГОЙ сессии, оставленное в очереди при уходе с экрана.
       // Этот экран заменит снимок своим — сначала пробуем дослать то (best effort, см. drainQueuedFinish).
+      // Не дольше ORPHAN_DRAIN_TIMEOUT_MS: зависший запрос не должен держать экран на «Загружаю…».
       if (existing !== null && existing.serverSessionId !== initialSession.id && existing.completeRequested !== null) {
-        await drainQueuedFinish(initDataRaw);
+        await Promise.race([
+          drainQueuedFinish(initDataRaw),
+          new Promise((resolve) => setTimeout(resolve, ORPHAN_DRAIN_TIMEOUT_MS)),
+        ]);
         existing = await loadLocalSession();
       }
       // Старый локальный снимок переиспользуется только если он не отстаёт
