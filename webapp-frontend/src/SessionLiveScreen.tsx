@@ -34,7 +34,10 @@ import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEnd
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
+import { dismissKeyboard } from "./telegramPlatform";
+import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -366,6 +369,8 @@ export function SessionLiveScreen({
   }, [formBlockIndex, formSetNumber, formPhaseName]);
 
   useBackButton(handleFinish, [local]);
+  // Живая сессия: свайп/«Закрыть» в Telegram спрашивает подтверждение (Bot API 6.2+, #224).
+  useClosingConfirmation();
 
   if (local === null) {
     return <p className="screen-message">Загружаю тренировку…</p>;
@@ -442,6 +447,7 @@ export function SessionLiveScreen({
 
   // #264: «+ Ещё подход» — запись сверх плана в завершённый блок; фазу не двигает.
   function logExtraSet() {
+    dismissKeyboard();
     void guardedAction(async () => {
       const index = local === null ? null : extraSetBlockIndex(local);
       const extraBlock = index === null ? null : local?.server.blocks[index] ?? null;
@@ -468,6 +474,7 @@ export function SessionLiveScreen({
   }
 
   function logSet() {
+    dismissKeyboard();
     void guardedAction(async () => {
       if (local === null || block === null || block.exercise_id === null || value.trim() === "") {
         return;
@@ -606,8 +613,8 @@ export function SessionLiveScreen({
     <label className="live-field">
       <span className="live-field-label">{label}</span>
       <input
-        className="live-field-input live-value-input" aria-label={label} type="number" inputMode="decimal"
-        enterKeyHint="done" value={current} onChange={(e) => onChange(e.target.value)}
+        className="live-field-input live-value-input" aria-label={label} type="text" inputMode="decimal" enterKeyHint="done" autoComplete="off"
+        value={current} onChange={(e) => onChange(sanitizeDecimalInput(e.target.value))}
       />
     </label>
   );

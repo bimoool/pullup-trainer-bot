@@ -49,7 +49,7 @@ export function AnalyticsScreen({ initDataRaw }: Props) {
   return (
     <div>
       <p className="plan-title">Аналитика</p>
-      <div className="workout-mode-buttons" role="tablist" aria-label="Раздел аналитики">
+      <div className="workout-mode-buttons vp-tabs" role="tablist" aria-label="Раздел аналитики">
         {MODES.map((option) => (
           <button
             key={option.key}

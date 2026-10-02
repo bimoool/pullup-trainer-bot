@@ -3,7 +3,8 @@ import { useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { effortWithWord } from "./effortScale";
-import { describeJournalBlock, formatSessionDateTime } from "./journalFormat";
+import { describeJournalBlock, formatSessionDateTime, formatSessionTime } from "./journalFormat";
+import { JOURNAL_KIND_LABELS, journalKind } from "./journalKind";
 import { formatDurationHm } from "./journalLog";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
@@ -16,9 +17,11 @@ export function JournalSessionCard({
   session: SessionResponseV2;
   onOpen: (sessionId: number) => void;
 }) {
+  const kind = journalKind(session);
   return (
     <div
-      className="history-card history-card-clickable"
+      className="history-card history-card-clickable journal-card"
+      data-kind={kind}
       role="button"
       tabIndex={0}
       onClick={() => onOpen(session.id)}
@@ -29,21 +32,29 @@ export function JournalSessionCard({
         }
       }}
     >
-      <p className="history-date">{formatSessionDateTime(session.performed_at)}</p>
-      <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
-      {session.duration_seconds != null && (
-        <p data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</p>
-      )}
-      {session.source === "backdated" && <p className="hint">Записана задним числом</p>}
-      {session.blocks.map((block) => {
-        const view = describeJournalBlock(block);
-        return (
-          <div key={block.order_index} className="journal-block">
-            {view.header !== null && <p className="journal-block-header">{view.header}</p>}
-            <p>{view.fact}</p>
-          </div>
-        );
-      })}
+      <span className="journal-card-marker" aria-hidden="true" data-testid="journal-kind-marker" />
+      <div className="journal-card-body">
+        {/* Компактная карточка: строка 1 — название + время, строка 2 — тип/длительность/блоки. */}
+        <p className="journal-card-title">
+          <span className="journal-card-name">{session.title ?? "Тренировка"}</span>
+          <span className="journal-card-time">{formatSessionTime(session.performed_at)}</span>
+        </p>
+        <p className="journal-card-meta">
+          {kind !== "plan" && <span className="journal-kind-label">{JOURNAL_KIND_LABELS[kind]}</span>}
+          {session.duration_seconds != null && (
+            <span data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</span>
+          )}
+          {session.blocks.map((block) => {
+            const view = describeJournalBlock(block);
+            return (
+              <span key={block.order_index} className="journal-block">
+                {view.header !== null && <span className="journal-block-header">{view.header}</span>}
+                <span className="journal-block-fact">{view.fact}</span>
+              </span>
+            );
+          })}
+        </p>
+      </div>
     </div>
   );
 }

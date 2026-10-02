@@ -1140,6 +1140,9 @@ async def get_history(
         return HistoryResponse(items=[], has_more=False)
 
     history = await WorkoutRepository(session).list_for_user(user.id)
+    # «Следующая цель» (#285 L2) — только у самой свежей тренировки ВСЕЙ истории: id берётся до
+    # фильтра по датам, иначе у новейшей карточки каждого месяца она показывалась бы как «текущая».
+    latest_workout_id = history[-1].id if history else None
     # date_from/date_to (#256, Журнал по месяцам) — включительно, по той же дате,
     # что показывает карточка (performed_at.date()).
     if date_from is not None:
@@ -1153,7 +1156,7 @@ async def get_history(
     for workout in page:
         block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
         block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
-        is_latest = workout is newest_first[0]
+        is_latest = workout.id == latest_workout_id
         items.append(
             HistoryEntryResponse(
                 workout_id=workout.id,

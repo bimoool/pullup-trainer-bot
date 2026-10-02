@@ -164,12 +164,15 @@ def _program_response(program: Program, strategy_type_value: str | None) -> Prog
     )
 
 
-def _program_inclusion_response(inclusion: ProgramInclusion, today: date) -> ProgramInclusionResponse:
-    """today — дата пользователя (_plan_today): current_week считается в его поясе, как недели плана."""
+def _program_inclusion_response(inclusion: ProgramInclusion, user) -> ProgramInclusionResponse:
+    """current_week считается в поясе пользователя, как недели плана (#285 L1): и «сегодня»
+    (_plan_today), и дата старта курса — локальные (started_at хранится в UTC, `.date()` без
+    перевода дал бы другой день около полуночи)."""
     total_weeks = duration_weeks((inclusion.snapshot or {}).get("config"))
+    started_on = inclusion.started_at.astimezone(resolve_timezone(user.timezone)).date()
     return ProgramInclusionResponse(
         duration_weeks=total_weeks,
-        current_week=course_week_number(inclusion.started_at.date(), today, total_weeks),
+        current_week=course_week_number(started_on, _plan_today(user), total_weeks),
         id=inclusion.id, program_id=inclusion.program_id,
         program_name=inclusion.snapshot.get("program_name", ""),
         is_active=inclusion.is_active, started_at=inclusion.started_at, expires_at=inclusion.expires_at,
@@ -855,7 +858,7 @@ async def get_plan(
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
-            program_inclusions=[_program_inclusion_response(inclusion, _plan_today(user)) for inclusion in inclusions],
+            program_inclusions=[_program_inclusion_response(inclusion, user) for inclusion in inclusions],
             plan_items=[
                 _plan_item_response(
                     item, complex_name_by_id, complex_source_type_by_id, done_by_item.get(item.id, 0),
@@ -891,7 +894,7 @@ async def create_program_inclusion(
     await PlanWeekService(session).ensure_current_plan_week(
         training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
-    return _program_inclusion_response(inclusion, _plan_today(user))
+    return _program_inclusion_response(inclusion, user)
 
 
 @router_v2.post("/program-inclusions/{inclusion_id}/deactivate", response_model=ProgramInclusionResponse)
@@ -912,7 +915,7 @@ async def deactivate_program_inclusion(
         if inclusion.expires_at is None:
             inclusion.expires_at = datetime.now(UTC)
         await session.commit()
-    return _program_inclusion_response(inclusion, _plan_today(user))
+    return _program_inclusion_response(inclusion, user)
 
 
 # --- Строки недельной матрицы -----------------------------------------------------------
@@ -1398,10 +1401,19 @@ async def create_session(
     # (чужое/несуществующее = 404, как во всех публичных эндпоинтах).
     program_repo = ProgramRepository(session)
     for block in body.blocks:
-        if block.exercise_id is not None and await program_repo.get_visible_exercise_for_user(
-            block.exercise_id, user.id,
-        ) is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+        if block.exercise_id is not None:
+            if await program_repo.get_visible_exercise_for_user(block.exercise_id, user.id) is None:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
+            # #285: внутренняя STEP-роль (block_a/block_b) — не для записей Журнала/свободных/элективных:
+            # такая сессия совпала бы с отпечатком backfill-копии (_backfilled_fingerprint) и пропала из
+            # Журнала. STEP-блоки допустимы только у сессии программы (program_inclusion_id) — по ним
+            # считается прогрессия; публичный клиент их так не шлёт.
+            if body.program_inclusion_id is None and await program_repo.get_publicly_attachable_exercise_for_user(
+                block.exercise_id, user.id,
+            ) is None:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY, "Внутреннее упражнение программы нельзя записать вне программы",
+                )
         if block.complex_id is not None and await program_repo.get_visible_workout_for_user(
             block.complex_id, user.id,
         ) is None:

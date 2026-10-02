@@ -11,6 +11,8 @@ import {
 import { useDisplayPrefs } from "./displayPrefs";
 import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
+import { useBackButton } from "./useBackButton";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -41,6 +43,8 @@ const GENDER_OPTIONS: { value: "male" | "female"; label: string }[] = [
  * форме такое поведение не годится.
  */
 export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
   // Единицы (#268): поля показываются/вводятся в выбранных единицах, на сервер уходит метрика.
   const { weight_unit: weightUnit, height_unit: heightUnit } = useDisplayPrefs();
   const [weightKg, setWeightKg] = useState(convertWeightText(profile.weight_kg ?? "", "kg", weightUnit));
@@ -123,26 +127,23 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
       <Section className="block-section">
         <Input
           header={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.1"
           aria-label={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
           value={weightKg}
           onChange={(e) => {
-            setWeightKg(e.target.value);
+            setWeightKg(sanitizeDecimalInput(e.target.value));
             setJustSaved(false);
           }}
         />
         <Input
           header={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
           aria-label={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
           value={heightCm}
           onChange={(e) => {
-            setHeightCm(e.target.value);
+            setHeightCm(sanitizeDecimalInput(e.target.value));
             setJustSaved(false);
           }}
         />

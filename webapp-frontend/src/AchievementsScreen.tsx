@@ -1,6 +1,7 @@
 import { Button } from "@telegram-apps/telegram-ui";
 
 import type { AchievementItem } from "./api";
+import { useBackButton } from "./useBackButton";
 
 type Props = { achievements: AchievementItem[]; onBack: () => void };
 
@@ -17,6 +18,8 @@ function formatDate(isoDate: string): string {
  * загружены вместе с профилем (GET /api/profile, app.domain.achievements.
  * ACHIEVEMENT_LABELS на бэкенде) — отдельного запроса здесь нет. */
 export function AchievementsScreen({ achievements, onBack }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
   return (
     <div>
       <p className="plan-title">Ачивки</p>

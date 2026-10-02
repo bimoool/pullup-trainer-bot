@@ -66,6 +66,7 @@ export function DistributionDonut({ dist, metric }: { dist: AnalyticsDistributio
 
 /** «Сводка»: категории (+ подкатегории), колонки Тренировки / Минуты, строка ВСЕГО; нули — для категорий каталога. */
 export function DistributionTable({ dist }: { dist: AnalyticsDistributionV2 }) {
+  const colors = categoryColors(dist);
   return (
     <div data-testid="analytics-summary">
       <p className="section-title">Сводка</p>
@@ -75,7 +76,7 @@ export function DistributionTable({ dist }: { dist: AnalyticsDistributionV2 }) {
         </thead>
         <tbody>
           {dist.categories.map((category) => (
-            <SummaryRows key={category.name} category={category} />
+            <SummaryRows key={category.name} category={category} color={colors.get(category.name)} />
           ))}
           <tr className="analytics-summary-total" data-testid="summary-total">
             <th scope="row">TOTAL</th>
@@ -88,11 +89,14 @@ export function DistributionTable({ dist }: { dist: AnalyticsDistributionV2 }) {
   );
 }
 
-function SummaryRows({ category }: { category: AnalyticsDistributionV2["categories"][number] }) {
+function SummaryRows({ category, color }: { category: AnalyticsDistributionV2["categories"][number]; color?: string }) {
   return (
     <>
       <tr data-testid="summary-category" data-category={category.name}>
-        <th scope="row">{category.name}</th>
+        <th scope="row">
+          {color !== undefined && <span className="analytics-legend-swatch analytics-summary-swatch" style={{ background: color }} aria-hidden="true" />}
+          {category.name}
+        </th>
         <td>{formatShare(category.workouts)}</td>
         <td>{formatTableMinutes(category.minutes)}</td>
       </tr>

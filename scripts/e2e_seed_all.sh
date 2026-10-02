@@ -108,6 +108,16 @@ for id in 999121 999122 999131 999132; do seed background_interval "$id"; done
 for id in 999201 999202 999203 999204 999211 999212 999213 999214; do seed body_metrics "$id"; done
 # Analytics distribution (#274): 999301/999311 (320/390 px, только чтение), каждый + retry (id+1).
 for id in 999301 999302 999311 999312; do seed analytics_distribution "$id"; done
+# Full sweep (#277): пустые (RO) 999901-999904 = 320 light / 320 dark / 390 light / 390 dark; наполненные RO — 999911-999914;
+# мутирующие потоки — наполненные: 99992x (тренировка → журнал → аналитика → экспорт), 99993x (тесты),
+# 99994x (настройки/единицы), 99995x (планы: будущая неделя/копирование/перенос); те же 4 комбинации (x1-x4);
+# retry — +10000 (1009901…). Диапазон 9999xx зарезервирован под sweep (занят: 9995xx #280, 9996xx #282, 9997xx #284/#277-defects).
+for retry in 0 10000; do
+  for id in 999901 999902 999903 999904; do seed sweep_empty $((id + retry)); done
+  for id in 999911 999912 999913 999914 999921 999922 999923 999924 999931 999932 999933 999934 999941 999942 999943 999944 999951 999952 999953 999954; do
+    seed sweep_populated $((id + retry))
+  done
+done
 # Visual shell (#280): 9995xx — только чтение (320/390 × light/dark), каждый + retry (id+1).
 for id in 999501 999502 999511 999512 999521 999522 999531 999532; do seed home_discovery "$id"; done
 # Residual gaps (#281): 9973xx — Журнал → «Открыть тренировку» (workout_detail), Главная «Все ›» + тесты в поиске
@@ -131,3 +141,7 @@ seed builder_workouts 997692
 for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
 # #285 A «Live UX»: 9978xx — 320/390 × light/dark, на тест id + 2*индекс + retry (≤ +9); session_recovery.
 for base in 997801 997811 997821 997831; do for off in 0 1 2 3 4 5 6 7 8 9; do seed session_recovery $((base + off)); done; done
+# #224 «Платформа Telegram» (tg-platform.spec.ts): 998801 BackButton, 998803 closing confirmation (live), 998805 safe-area/theme,
+# каждый + retry (id+1); 998811 — десятичный ввод «12,5» (ready: вес/рост профиля есть).
+for id in 998801 998802 998803 998804 998805 998806; do seed session_recovery "$id"; done
+for id in 998811 998812; do seed ready "$id"; done

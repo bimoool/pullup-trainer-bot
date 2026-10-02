@@ -114,3 +114,26 @@ async def test_course_current_week_uses_user_timezone_like_plan_weeks(session, u
 
     assert await current_week("Europe/Moscow") == 2  # у пользователя уже понедельник 5 октября
     assert await current_week("UTC") == 1  # у UTC-пользователя ещё воскресенье 4 октября
+
+
+async def test_course_current_week_converts_started_at_to_user_timezone(session, user, clock):
+    """#285 L1: started_at = понедельник 01:00 Москвы (воскресенье 22:00 UTC) — дата старта курса
+    локальная, иначе `.date()` в UTC даёт воскресенье и current_week уходит на неделю вперёд."""
+    from app.db.models_program import ProgramInclusion
+    from tests.test_web.test_v2_plan_overview import _program
+
+    clock(datetime(2026, 10, 11, 12, 0, tzinfo=UTC))  # воскресенье 11 октября, полдень
+    program = await _program(session, config={"duration_weeks": 4})
+    user.timezone = "Europe/Moscow"
+    await session.commit()
+    created = await v2_post(session, TG, "/api/v2/program-inclusions", {"program_id": program.id})
+    assert created.status_code == 200
+    row = await session.get(ProgramInclusion, created.json()["id"])
+    row.started_at = datetime(2026, 10, 4, 22, 0, tzinfo=UTC)  # = пн 5 октября 01:00 в Москве
+    await session.commit()
+
+    plan_json = (await v2_get(session, TG, "/api/v2/plan")).json()["plan"]
+    inclusion = next(i for i in plan_json["program_inclusions"] if i["id"] == row.id)
+    # Локально старт — понедельник 5.10, сегодня — воскресенье 11.10: 6 дней — ещё первая неделя
+    # (по UTC-дате старта, 4.10, было бы 7 дней — вторая).
+    assert inclusion["current_week"] == 1
