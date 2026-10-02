@@ -46,6 +46,14 @@
   --vp-cat-5: #1f3a68;
 }
 
+/* tgui берёт акцент из --tg-theme-*; вне Telegram (themeParams пустые) подставляем наш акцент,
+   чтобы кнопки tgui и наши элементы были одного синего. Реальные themeParams перекрывают inline. */
+:root {
+  --tg-theme-button-color: var(--tg-button-color);
+  --tg-theme-button-text-color: var(--tg-button-text-color);
+  --tg-theme-link-color: var(--tg-link-color);
+}
+
 /* тёмная: фон страницы = основной фон, карточки светлее */
 :root[data-vp-scheme="dark"] {
   --vp-page-bg: var(--tg-bg-color);
@@ -816,4 +824,146 @@ html {
 .stat-tile .stat-label {
   font-size: 11px;
   overflow-wrap: anywhere;
+}
+
+/* вложенные карточки (строки тестов в «Тесты» и т.п.) — плоские, на цвете страницы */
+.profile-card .profile-card,
+.profile-card .test-card,
+.profile-card .history-card {
+  background: var(--vp-page-bg);
+  box-shadow: none;
+  border-radius: var(--vp-radius-inner);
+  margin-bottom: var(--vp-sp-2);
+}
+
+/* шестерёнка настроек — круглая кнопка в шапке, как круглые кнопки эталона */
+.app-shell [data-testid="profile-settings"] {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+/* ---------- карточки каталога: крупные цветные «обложки» вместо фото (медиа в модели нет) ---------- */
+.home-program-row .home-program-card {
+  min-height: 132px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 12% 120%, rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cat, var(--vp-cat-0)) 88%, #000), color-mix(in srgb, var(--cat, var(--vp-cat-0)) 62%, #0b1220));
+  box-shadow: var(--vp-shadow);
+}
+
+.home-program-row .home-program-card::after {
+  height: 6px;
+  background: color-mix(in srgb, var(--cat, var(--vp-cat-0)) 55%, #fff);
+}
+
+.home-program-row .home-program-card .program-card-button {
+  color: inherit;
+  padding-bottom: 22px;
+}
+
+.home-program-row .home-card-title {
+  color: #fff;
+  font-size: 17px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.home-program-row .home-card-meta {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.home-program-row .home-card-status {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 3px 10px;
+  border-radius: var(--vp-radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: #14305a;
+  font-size: 12px;
+}
+
+[data-testid="favorites-hint"] {
+  padding: var(--vp-sp-1) 0 var(--vp-sp-2);
+  text-align: left;
+  font-size: var(--vp-fs-meta);
+}
+
+/* ---------- Поиск: результаты — карточки, строка поиска — белая пилюля ---------- */
+.search-header {
+  margin-bottom: var(--vp-sp-1);
+}
+
+.search-input {
+  height: 44px;
+  background-color: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.search-chip {
+  border-color: transparent;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-weight: 600;
+}
+
+.search-chip-active {
+  border-color: transparent;
+}
+
+.search-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vp-sp-2);
+}
+
+.search-result {
+  gap: 3px;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-size: var(--vp-fs-card);
+}
+
+/* ---------- Подборки (#271): ряд в языке горизонтальных карточек; светлая карточка с цветной полосой ---------- */
+[data-testid="collections-row"] .home-program-card {
+  --cat: var(--vp-cat-4);
+  min-height: 124px;
+  color: var(--tg-text-color);
+  background: var(--vp-card-bg);
+}
+
+[data-testid="collections-row"] .home-program-card::after {
+  background: var(--cat);
+}
+
+.collection-card-button {
+  background: none;
+  border-radius: 0;
+  padding: var(--vp-sp-4) var(--vp-sp-4) 22px;
+  color: inherit;
+}
+
+.collection-card-button .block-subtitle {
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.collection-card-button .collection-author {
+  color: var(--tg-subtitle-text-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.collection-text {
+  font-size: var(--vp-fs-meta);
 }

@@ -116,5 +116,22 @@ for (const width of WIDTHS) {
       await shot(page, width, name);
       await shot(page, width, `${name}_vp`, false);
     }
+
+    // Поиск, Program Detail и хаб «Тесты» с Главной (#280).
+    await page.goto("about:blank");
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.getByTestId("home-search-pill").click();
+    await page.waitForTimeout(600);
+    await shot(page, width, "36_search_vp", false);
+    await page.goto("about:blank");
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.locator(".program-card-button").first().click();
+    await page.waitForTimeout(600);
+    await shot(page, width, "37_program_detail_vp", false);
+    await page.goto("about:blank");
+    await openAppAs(page, 940_001, { theme: THEME });
+    await page.getByTestId("home-tests-row").click();
+    await page.waitForTimeout(800);
+    await shot(page, width, "38_tests_hub_vp", false);
   });
 }
