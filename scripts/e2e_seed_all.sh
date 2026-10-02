@@ -139,3 +139,7 @@ for id in 997601 997602 997611 997612 997621 997622 997631 997632 997691; do see
 seed builder_workouts 997692
 # #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
 for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
+# #224 «Платформа Telegram» (tg-platform.spec.ts): 998801 BackButton, 998803 closing confirmation (live), 998805 safe-area/theme,
+# каждый + retry (id+1); 998811 — десятичный ввод «12,5» (ready: вес/рост профиля есть).
+for id in 998801 998802 998803 998804 998805 998806; do seed session_recovery "$id"; done
+for id in 998811 998812; do seed ready "$id"; done

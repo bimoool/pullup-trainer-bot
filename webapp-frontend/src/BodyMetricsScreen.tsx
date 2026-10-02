@@ -13,6 +13,8 @@ import {
 import { formatMeasuredDate, latestDelta, measuredAtFromDate, toDateInput, trendPoints } from "./bodyMetrics";
 import { useDisplayPrefs } from "./displayPrefs";
 import { convertHeightText, convertWeightText, formatHeight, formatWeight, unitToCm, unitToKg } from "./units";
+import { useBackButton } from "./useBackButton";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -31,6 +33,8 @@ const TITLE: Record<BodyMetricKind, string> = { weight_kg: "Вес", height_cm: 
 /** История веса/роста (#270): SVG-тренд, список замеров, «Добавить замер», правка и удаление с подтверждением.
  * Последний замер зеркалится бэкендом в User.weight_kg/height_cm (GTO/WSF/лидерборд читают их). */
 export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
   const prefs = useDisplayPrefs();
   const [history, setHistory] = useState<BodyMetricHistory | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -184,14 +188,12 @@ export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Pr
           <p className="section-title">{editor.mode === "add" ? "Новый замер" : "Правка замера"}</p>
           <Input
             header={`${TITLE[metric]}, ${unitLabel}`}
-            type="number"
+            type="text"
             inputMode="decimal"
-            min={0}
-            step="0.1"
             aria-label={`${TITLE[metric]} замера`}
             data-testid="body-metrics-value"
             value={valueText}
-            onChange={(e) => setValueText(e.target.value)}
+            onChange={(e) => setValueText(sanitizeDecimalInput(e.target.value))}
           />
           <Input
             header="Дата"

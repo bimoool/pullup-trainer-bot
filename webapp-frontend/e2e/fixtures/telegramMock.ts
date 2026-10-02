@@ -75,18 +75,53 @@ export async function isTelegramBackButtonVisible(page: Page): Promise<boolean> 
   return page.evaluate(() => (window as unknown as { __tgBackButtonVisible?: boolean }).__tgBackButtonVisible === true);
 }
 
+export type MockInsets = { top: number; bottom: number; left: number; right: number };
+
+/**
+ * Опции мока (все необязательные, аддитивно): backButton — см. выше; version — версия Bot API
+ * (по умолчанию "7.0", как раньше); safeAreaInset / contentSafeAreaInset — Bot API 8.0 (отдаются только
+ * при version >= 8.0, как у реального клиента) (#224 «Платформа Telegram»).
+ */
+export type TelegramMockOptions = {
+  backButton?: boolean;
+  version?: string;
+  safeAreaInset?: MockInsets;
+  contentSafeAreaInset?: MockInsets;
+};
+
+/** Журнал вызовов методов WebApp: "ready", "expand", "disableVerticalSwipes", "setHeaderColor:#fff"… */
+export async function telegramCalls(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __tgCalls?: string[] }).__tgCalls ?? []);
+}
+
+/** Включено ли сейчас «подтверждение закрытия» (enable/disableClosingConfirmation). */
+export async function isTelegramClosingConfirmationOn(page: Page): Promise<boolean> {
+  return page.evaluate(() => (window as unknown as { __tgClosingConfirmation?: boolean }).__tgClosingConfirmation === true);
+}
+
+/** Доставить событие клиента подписчикам WebApp.onEvent (themeChanged, safeAreaChanged…). */
+export async function emitTelegramEvent(page: Page, event: string): Promise<void> {
+  await page.evaluate((name) => {
+    const handlers = (window as unknown as { __tgHandlers?: Record<string, Array<() => void>> }).__tgHandlers ?? {};
+    for (const handler of handlers[name] ?? []) {
+      handler();
+    }
+  }, event);
+}
+
 export async function mockTelegramWebApp(
   page: Page,
   initDataRaw: string,
   theme: TelegramTheme = "light",
-  options: { backButton?: boolean } = {},
+  options: TelegramMockOptions = {},
 ): Promise<void> {
+  const version = options.version ?? "7.0";
   if (options.backButton) {
-    await page.addInitScript(() => {
+    await page.addInitScript((tgVersion) => {
       const params = new URLSearchParams({
         tgWebAppPlatform: "tdesktop",
         tgWebAppThemeParams: "{}",
-        tgWebAppVersion: "7.0",
+        tgWebAppVersion: tgVersion,
       });
       sessionStorage.setItem("tapps/launchParams", JSON.stringify(params.toString()));
       (window as unknown as { TelegramWebviewProxy: unknown }).TelegramWebviewProxy = {
@@ -97,27 +132,65 @@ export async function mockTelegramWebApp(
           }
         },
       };
-    });
+    }, version);
   }
   await page.route("https://telegram.org/js/telegram-web-app.js", (route) =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
   );
-  await page.addInitScript(({ raw, colorScheme, themeParams }) => {
+  await page.addInitScript(({ raw, colorScheme, themeParams, tgVersion, safeArea, contentSafeArea }) => {
+    const w = window as unknown as {
+      __tgCalls: string[];
+      __tgClosingConfirmation: boolean;
+      __tgHandlers: Record<string, Array<() => void>>;
+    };
+    w.__tgCalls = [];
+    w.__tgClosingConfirmation = false;
+    w.__tgHandlers = {};
+    const log = (entry: string) => w.__tgCalls.push(entry);
+    const compare = (a: string, b: string) => {
+      const x = a.split(".").map(Number);
+      const y = b.split(".").map(Number);
+      for (let index = 0; index < Math.max(x.length, y.length); index += 1) {
+        const diff = (x[index] ?? 0) - (y[index] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return 0;
+    };
+    const supports8 = compare(tgVersion, "8.0") >= 0;
     (window as unknown as { Telegram: unknown }).Telegram = {
       WebApp: {
         initData: raw,
         initDataUnsafe: {},
-        version: "7.0",
+        version: tgVersion,
         platform: "tdesktop",
         colorScheme,
         themeParams,
-        ready: () => {},
-        expand: () => {},
-        close: () => {},
-        setHeaderColor: () => {},
-        setBackgroundColor: () => {},
-        onEvent: () => {},
-        offEvent: () => {},
+        ...(supports8 && safeArea ? { safeAreaInset: safeArea } : {}),
+        ...(supports8 && contentSafeArea ? { contentSafeAreaInset: contentSafeArea } : {}),
+        isVersionAtLeast: (required: string) => compare(tgVersion, required) >= 0,
+        ready: () => void log("ready"),
+        expand: () => void log("expand"),
+        close: () => void log("close"),
+        setHeaderColor: (color: string) => void log(`setHeaderColor:${color}`),
+        setBackgroundColor: (color: string) => void log(`setBackgroundColor:${color}`),
+        setBottomBarColor: (color: string) => void log(`setBottomBarColor:${color}`),
+        disableVerticalSwipes: () => void log("disableVerticalSwipes"),
+        enableClosingConfirmation: () => {
+          w.__tgClosingConfirmation = true;
+          log("enableClosingConfirmation");
+        },
+        disableClosingConfirmation: () => {
+          w.__tgClosingConfirmation = false;
+          log("disableClosingConfirmation");
+        },
+        openLink: (url: string) => void log(`openLink:${url}`),
+        openTelegramLink: (url: string) => void log(`openTelegramLink:${url}`),
+        onEvent: (event: string, handler: () => void) => {
+          (w.__tgHandlers[event] ??= []).push(handler);
+        },
+        offEvent: (event: string, handler: () => void) => {
+          w.__tgHandlers[event] = (w.__tgHandlers[event] ?? []).filter((item) => item !== handler);
+        },
         HapticFeedback: {
           impactOccurred: () => {},
           notificationOccurred: () => {},
@@ -125,5 +198,12 @@ export async function mockTelegramWebApp(
         },
       },
     };
-  }, { raw: initDataRaw, colorScheme: theme, themeParams: THEME_PARAMS[theme] });
+  }, {
+    raw: initDataRaw,
+    colorScheme: theme,
+    themeParams: THEME_PARAMS[theme],
+    tgVersion: version,
+    safeArea: options.safeAreaInset ?? null,
+    contentSafeArea: options.contentSafeAreaInset ?? null,
+  });
 }

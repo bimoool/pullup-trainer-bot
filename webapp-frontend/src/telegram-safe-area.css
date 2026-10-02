@@ -1,0 +1,62 @@
+/*
+ * Платформа Telegram (#224): безопасные зоны и высота окна. Грузится ПОСЛЕ shell.css и live.css
+ * (main.tsx) и переопределяет ТОЛЬКО отступы, зависящие от выреза/интерфейса Telegram — вёрстка и
+ * токены shell.css/live.css не меняются.
+ *
+ * Источники (все 0 вне полноэкранного режима и на клиентах без Bot API 8.0):
+ *   env(safe-area-inset-*)               — вырез/home indicator, отдаёт WebView;
+ *   --tg-safe-area-inset-*               — то же железо по версии Telegram (WebApp.safeAreaInset);
+ *   --tg-content-safe-area-inset-*       — область интерфейса Telegram (шапка в полноэкранном режиме).
+ * Итог стороны = max(env, safe) + content — та же формула, что effectiveInsetPx() в telegramPlatform.ts.
+ * Переменные --tg-* выставляет telegram-web-app.js и дублирует initTelegramPlatform().
+ * 100vh/100dvh в live.css оставлены как есть: цепочка 100vh → 100dvh корректна для WKWebView.
+ */
+:root {
+  --vp-safe-top: calc(max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px)) + var(--tg-content-safe-area-inset-top, 0px));
+  --vp-safe-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px)) + var(--tg-content-safe-area-inset-bottom, 0px));
+  --vp-safe-left: max(env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px));
+  --vp-safe-right: max(env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px));
+}
+
+/* верх: контент начинается под шапкой Telegram / вырезом (в обычном режиме --vp-safe-top = 0);
+   липкие шапки прилипают под ней, а не под её перекрытием */
+.app-shell {
+  padding-top: calc(var(--vp-sp-2) + var(--vp-safe-top));
+}
+.home-sticky-header,
+.search-header {
+  top: var(--vp-safe-top);
+}
+
+/* низ: контент, нижняя навигация и шторки выше home indicator */
+.app-shell-with-nav {
+  padding-bottom: calc(var(--vp-nav-h) + 20px + var(--vp-safe-bottom));
+}
+html {
+  scroll-padding-bottom: calc(var(--vp-nav-h) + 20px + var(--vp-safe-bottom));
+}
+.bottom-tabbar {
+  padding-bottom: var(--vp-safe-bottom);
+}
+.app-shell-with-nav .live-transport {
+  bottom: calc(var(--vp-nav-h) + var(--vp-safe-bottom));
+}
+.live-transport {
+  padding-bottom: calc(var(--vp-sp-3) + var(--vp-safe-bottom));
+}
+.live-sheet {
+  padding-bottom: calc(var(--vp-sp-4) + var(--vp-safe-bottom));
+}
+.home-sheet {
+  padding-bottom: calc(12px + var(--vp-safe-bottom));
+}
+
+/* iOS (WKWebView): поля с шрифтом < 16px при фокусе увеличивают страницу, и она «залипает» в
+   увеличенном виде. На десктопе/Android правило не действует. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}

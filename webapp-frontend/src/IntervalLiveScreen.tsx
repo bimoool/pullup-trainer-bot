@@ -8,6 +8,7 @@ import {
 } from "./apiV2";
 import { computeClockOffsetMs, computeIntervalState, type IntervalPhase } from "./intervalTiming";
 import { useBackButton } from "./useBackButton";
+import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
 type Props = {
@@ -135,6 +136,7 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase]);
 
+  useClosingConfirmation(); // #224: закрытие Mini App посреди интервальной тренировки — с подтверждением
   useBackButton(() => {
     if (window.confirm("Закончить тренировку раньше времени? Прогресс будет зачтён по факту.")) {
       if (!completionRequestedRef.current) {

@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { collectConsoleErrors, collectUnexpectedApiFailures } from "./assertions";
 import { buildInitData, getTestBotToken } from "./initData";
-import { mockTelegramWebApp, type TelegramTheme } from "./telegramMock";
+import { mockTelegramWebApp, type TelegramMockOptions, type TelegramTheme } from "./telegramMock";
 
 /**
  * Общий вход в приложение для сценариев — подписывает initData на
@@ -17,13 +17,13 @@ import { mockTelegramWebApp, type TelegramTheme } from "./telegramMock";
 export async function openAppAs(
   page: Page,
   telegramId: number,
-  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean } = {},
+  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean; telegram?: Omit<TelegramMockOptions, "backButton"> } = {},
 ): Promise<{ consoleErrors: string[]; apiFailures: string[] }> {
   const consoleErrors = collectConsoleErrors(page);
   const apiFailures = collectUnexpectedApiFailures(page, options.allowedApiStatuses ?? []);
 
   const initDataRaw = buildInitData({ id: telegramId, firstName: options.firstName ?? "E2E" }, getTestBotToken());
-  await mockTelegramWebApp(page, initDataRaw, options.theme, { backButton: options.backButton });
+  await mockTelegramWebApp(page, initDataRaw, options.theme, { ...options.telegram, backButton: options.backButton });
   await page.goto("/");
 
   return { consoleErrors, apiFailures };

@@ -10,6 +10,7 @@ import {
   type WorkoutSubmitResponse,
 } from "./api";
 import { AnomalyLines, SetInputGrid, parseSetValue, parseSetValues, replaceAt } from "./WorkoutScreen";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -95,13 +96,11 @@ export function EquipmentTypeFields({
         <Input
           header="Вес (кг)"
           after="кг"
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.5"
           aria-label={`Блок ${letter}, вес`}
           value={choice.value}
-          onChange={(e) => onValueChange(e.target.value)}
+          onChange={(e) => onValueChange(sanitizeDecimalInput(e.target.value))}
         />
       )}
 

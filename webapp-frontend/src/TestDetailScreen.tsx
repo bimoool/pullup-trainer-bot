@@ -10,6 +10,7 @@ import {
 } from "./assessmentsFormat";
 import { PeerInsightsCard } from "./PeerInsightsCard";
 import { useBackButton } from "./useBackButton";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = { initDataRaw: string; protocolId: number; onBack: () => void };
 
@@ -164,7 +165,7 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
         <label className="field-label" htmlFor="test-value">{`Результат, ${protocol.unit}`}</label>
         <input
           id="test-value" type="text" inputMode="decimal" className="set-input" value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => setValue(sanitizeDecimalInput(e.target.value))}
         />
         <label className="field-label" htmlFor="test-note">Заметка (необязательно)</label>
         <input
