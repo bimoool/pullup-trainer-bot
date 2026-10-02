@@ -95,3 +95,5 @@ for id in 999121 999122 999131 999132; do seed background_interval "$id"; done
 for id in 999201 999202 999203 999204 999211 999212 999213 999214; do seed body_metrics "$id"; done
 # Analytics distribution (#274): 999301/999311 (320/390 px, только чтение), каждый + retry (id+1).
 for id in 999301 999302 999311 999312; do seed analytics_distribution "$id"; done
+# Collections (#271): 999401/999402 (320 px light, + retry), 999411/999412 (390 px dark, + retry); read-only.
+for id in 999401 999402 999411 999412; do seed collections "$id"; done
