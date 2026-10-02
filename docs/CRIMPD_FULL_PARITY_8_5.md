@@ -118,8 +118,8 @@ any merge into `develop/current`.
 | Log card stats (intensity, completion, TUT, duration, workload) | J4 | v2 cards: plan vs fact, effort, comment | DOMAIN-EQUIVALENT | TUT/workload not stored | our per-protocol results; duration after #259 | #259 | journal-v2.spec.ts |
 | Log detail sheet (session + exercise details) | J5; d/logbook_ref_sheet | JournalV2Detail | DONE | — | — | — | journal-v2.spec.ts |
 | View Workout from log | J5 | none | MISSING | — | link to Workout Detail | #255 | — |
-| Edit Log | J5, J7 *(form unobserved)* | admin-only editor | MISSING | — | safe edit (predicate) | #262 | — |
-| Clone Log | J5, J7 *(form unobserved)* | none | MISSING | — | clone as backdated | #262 | — |
+| Edit Log | J5, J7 *(form unobserved)* | «✏️ Изменить» in Journal detail (sets value/effort/note, workout effort/comment, date ≤ today) via `PATCH /sessions/{id}`; only when `can_edit` (delete predicate), else hidden / 409 | DONE | program-backed/STEP sessions not editable (owner decision) | — | #262 | crimpd-parity.spec.ts «Journal edit/clone»; tests/test_web/test_v2_session_edit_clone.py; webapp-frontend/tests/journalEdit.test.ts |
+| Clone Log | J5, J7 *(form unobserved)* | «⧉ Повторить (клонировать)» with date picker (default today) via `POST /sessions/{id}/clone`, `source=backdated`, no progression | DONE | same predicate as edit | — | #262 | crimpd-parity.spec.ts «Journal edit/clone»; tests/test_web/test_v2_session_edit_clone.py |
 | Delete Log with confirm | J6; LED | safe delete (`can_delete`, 404/409) | DONE | — | — | — | journal-v2.spec.ts, golden-journey.spec.ts |
 | Backdated logging | W6 | «Тренировку из моих»: своя Workout, дата ≤ сегодня, подходы, усилие, заметка; без побочных эффектов прогрессии | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
 | Notes | J4–J5 | set notes + session comment shown | PARTIAL | session note not enterable | review step | #257 | journal-v2.spec.ts |

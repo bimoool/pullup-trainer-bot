@@ -59,6 +59,7 @@ from app.services.plan_week import PlanWeekService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_deletion import SessionDeletionService
+from app.services.session_editing import EditOutcome, EditStatus, SessionEditingService, SetEdit
 from app.services.session_log import TrainingSessionLogService
 from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
@@ -120,6 +121,8 @@ from app.web.schemas_v2_session import (
     PlanItemDeltaResponse,
     ProgressionPreviewRequest,
     ProgressionPreviewResponse,
+    SessionCloneRequest,
+    SessionEditRequest,
 )
 
 router_v2 = APIRouter(prefix="/api/v2")
@@ -216,7 +219,7 @@ def _session_response(
         id=detail.id, source=detail.source.value, status=detail.status.value,
         performed_at=detail.performed_at, effort=str(detail.effort) if detail.effort is not None else None,
         comment=detail.comment, title=activity_label(detail.activity_type) or title, can_delete=can_delete,
-        activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
+        can_edit=can_delete, activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
         blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
         progression_result=progression, progression_skipped_reason=skipped_reason,
     )
@@ -1091,6 +1094,68 @@ async def delete_session(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     if not verdict.can_delete:
         raise HTTPException(status.HTTP_409_CONFLICT, verdict.reason)
+
+
+def _raise_for_edit_failure(outcome: EditOutcome) -> None:
+    if outcome.status == EditStatus.NOT_FOUND:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    if outcome.status == EditStatus.DENIED:
+        raise HTTPException(status.HTTP_409_CONFLICT, outcome.detail)
+    if outcome.status == EditStatus.INVALID:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, outcome.detail)
+
+
+async def _single_session_response(session: AsyncSession, session_id: int, user_id: int) -> SessionResponse:
+    detail = await TrainingSessionRepository(session).get_for_user(session_id, user_id)
+    titles = await _resolve_session_titles(session, [detail], user_id)
+    names = await _catalog_exercise_names(session, [detail])
+    verdict = (await SessionDeletionService(session).evaluate([detail], user_id))[detail.id]
+    return _session_response(
+        detail, progression=None, skipped_reason=None, title=titles.get(detail.id),
+        exercise_names=names, can_delete=verdict.can_delete,
+    )
+
+
+@router_v2.patch("/sessions/{session_id}", response_model=SessionResponse)
+async def edit_session(
+    session_id: int,
+    body: SessionEditRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> SessionResponse:
+    """#262 — правка завершённой Builder-сессии (значения/усилие/заметки
+    подходов, усилие и комментарий тренировки, дата). Предикат безопасности —
+    тот же, что у удаления: чужая — 404, небезопасная (курс/STEP/недоказанная)
+    — 409 с причиной. Прогрессия не пересчитывается."""
+    user = await _require_user(session, init_data)
+    fields = body.model_fields_set
+    outcome = await SessionEditingService(session).edit(
+        session_id, user.id, resolve_timezone(user.timezone),
+        performed_on=body.performed_on,
+        effort=(body.effort,) if "effort" in fields else None,
+        comment=(body.comment,) if "comment" in fields else None,
+        sets=[SetEdit(s.block_index, s.set_number, s.value, s.effort, s.note) for s in body.sets],
+        now=datetime.now(UTC),
+    )
+    _raise_for_edit_failure(outcome)
+    return await _single_session_response(session, session_id, user.id)
+
+
+@router_v2.post("/sessions/{session_id}/clone", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+async def clone_session(
+    session_id: int,
+    body: SessionCloneRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> SessionResponse:
+    """#262 — «Повторить»: новая завершённая сессия (source=backdated) с теми же
+    блоками/целями/фактом. Те же 404/409, что у правки; без прогрессии."""
+    user = await _require_user(session, init_data)
+    outcome = await SessionEditingService(session).clone(
+        session_id, user.id, resolve_timezone(user.timezone), performed_on=body.performed_on, now=datetime.now(UTC),
+    )
+    _raise_for_edit_failure(outcome)
+    return await _single_session_response(session, outcome.session_id, user.id)
 
 
 def _block_input(block: SessionBlockInputSchema) -> SessionBlockInput:

@@ -955,6 +955,94 @@ for (const width of WIDTHS) {
       await card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name: "Минуты" }).click();
       await expect(total).toContainText("Всего минут: 1 ч 15 мин");
       await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
+// --- Journal edit/clone (#262): «Изменить» и «Повторить (клонировать)» в деталях записи ------
+// Seed: scripts/e2e_seed.py journal_edit 997201/997202 (по пользователю на ширину; сценарий
+// меняет данные). Две сегодняшние записи (МСК): Builder «Моя силовая» со снимком (can_edit) и
+// историческая без снимка («Тренировка» — править/клонировать нельзя, кнопок нет).
+const JOURNAL_EDIT_USERS: Record<number, number> = { 320: 997_201, 390: 997_202 };
+
+function mskDay(offsetDays: number): string {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
+  const [y, m, d] = today.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + offsetDays)).toISOString().slice(0, 10);
+}
+
+for (const width of WIDTHS) {
+  test.describe(`Journal edit/clone @${width}px`, () => {
+    test.use({ viewport: { width, height: 760 } });
+
+    test("кнопки только у безопасной записи; правка значений/усилия/заметок/даты; клон на сегодня", async ({ page }) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, JOURNAL_EDIT_USERS[width], { backButton: true });
+      await openTab(page, "Журнал");
+      const cards = page.locator(".history-card-clickable");
+      await expect(cards).toHaveCount(2);
+      const mine = cards.filter({ hasText: "Моя силовая" });
+      const historical = cards.filter({ hasText: "Тренировка" }).filter({ hasNotText: "Моя силовая" });
+
+      // Историческая запись без снимка: сервер не доказал безопасность — ни «Изменить», ни «Повторить».
+      await historical.click();
+      await expect(page.getByRole("button", { name: /Изменить/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Повторить/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Удалить/ })).toHaveCount(0);
+      await pressTelegramBackButton(page);
+
+      // Builder-запись: рядом с «Удалить» появились обе кнопки.
+      await mine.click();
+      await expect(page.getByRole("button", { name: /Изменить/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Повторить \(клонировать\)/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Удалить/ })).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Журнал: детали с кнопками");
+
+      // Форма правки: текущие значения подставлены; будущая дата отклоняется на клиенте.
+      await page.getByRole("button", { name: /Изменить/ }).click();
+      const form = page.getByTestId("journal-edit-form");
+      await expect(form).toBeVisible();
+      await expect(form.getByLabel("Подход 1: значение")).toHaveValue("8");
+      await expect(form.getByLabel("Подход 2: значение")).toHaveValue("7");
+      await expect(form.getByLabel("Подход 2: заметка")).toHaveValue("Последние тяжело");
+      await expectNoHorizontalOverflow(page, "Журнал: форма правки");
+
+      await form.getByLabel("Дата тренировки").fill(mskDay(1));
+      await form.getByRole("button", { name: "Сохранить" }).click();
+      await expect(form.getByRole("alert")).toContainText("в будущем");
+
+      const yesterday = mskDay(-1);
+      await form.getByLabel("Дата тренировки").fill(yesterday);
+      await form.getByLabel("Подход 1: значение").fill("12");
+      await form.getByLabel("Подход 1: усилие").selectOption({ label: "5 Предел" });
+      await form.getByLabel("Подход 1: заметка").fill("рывком");
+      await form.getByLabel("Усилие тренировки").selectOption({ label: "4 Тяжело" });
+      await form.getByLabel("Комментарий к тренировке").fill("Изменено в журнале");
+      await form.getByRole("button", { name: "Сохранить" }).click();
+
+      // Возврат в Журнал; запись переехала на вчера — при необходимости идём в её месяц.
+      await expect(page.getByTestId("journal-edit-form")).toHaveCount(0);
+      const todayMonth = mskDay(0).slice(0, 7);
+      if (yesterday.slice(0, 7) !== todayMonth) {
+        await page.getByRole("button", { name: "Предыдущий месяц" }).click();
+      }
+      await expect(mine).toHaveCount(1);
+      await mine.click();
+      await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
+      await expect(page.getByTestId("journal-workout-comment")).toContainText("Изменено в журнале");
+      await expect(page.getByText("Подход 1 · усилие 5 Предел · рывком")).toBeVisible();
+      await expect(page.getByText(/Факт: 12/)).toBeVisible();
+
+      // Клон: дата по умолчанию — сегодня; создаётся вторая «Моя силовая» с теми же результатами.
+      await page.getByRole("button", { name: /Повторить \(клонировать\)/ }).click();
+      const cloneForm = page.getByTestId("journal-clone-form");
+      await expect(cloneForm.getByLabel("Дата новой записи")).toHaveValue(mskDay(0));
+      await expectNoHorizontalOverflow(page, "Журнал: форма клона");
+      await cloneForm.getByRole("button", { name: "Создать копию" }).click();
+      await expect(page.getByTestId("journal-clone-form")).toHaveCount(0);
+      await expect(page.locator(".journal-month-label")).toBeVisible();
+      if (yesterday.slice(0, 7) !== todayMonth) {
+        await expect(page.locator(".journal-month-label")).toContainText(/\d{4}/);
+      }
+      await expect(cards.filter({ hasText: "Моя силовая" })).toHaveCount(
+        yesterday.slice(0, 7) !== todayMonth ? 1 : 2,
+      );
+      await expectNoHorizontalOverflow(page, "Журнал: после клона");
 
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

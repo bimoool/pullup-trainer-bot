@@ -607,6 +607,8 @@ export interface SessionResponseV2 {
   /** R2 — серверное решение "можно ли безопасно удалить"; фронт показывает
    * "Удалить" только при true и не строит своих эвристик. */
   can_delete: boolean;
+  /** #262 — тот же серверный предикат: «Изменить»/«Повторить» только при true. */
+  can_edit: boolean;
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
 }
@@ -685,6 +687,29 @@ export async function createSession(initDataRaw: string, payload: SessionCreateP
 
 export async function deleteSession(initDataRaw: string, sessionId: number): Promise<void> {
   return apiV2Delete(`/api/v2/sessions/${sessionId}`, initDataRaw);
+}
+
+/** PATCH /sessions/{id} (#262): незаданные поля не меняются; effort/comment = null
+ * очищают; performed_on — локальный день (не в будущем). 404 — чужая, 409 — не
+ * проходит предикат безопасности (причина в Error.message), 422 — валидация. */
+export interface SessionEditRequestV2 {
+  performed_on?: string;
+  effort?: string | null;
+  comment?: string | null;
+  sets: { block_index: number; set_number: number; value: string; effort: string | null; note: string | null }[];
+}
+
+export async function editSession(
+  initDataRaw: string, sessionId: number, body: SessionEditRequestV2,
+): Promise<SessionResponseV2> {
+  return apiV2Patch(`/api/v2/sessions/${sessionId}`, initDataRaw, body);
+}
+
+/** POST /sessions/{id}/clone (#262): новая завершённая сессия; performed_on по умолчанию — сегодня. */
+export async function cloneSession(
+  initDataRaw: string, sessionId: number, performedOn?: string,
+): Promise<SessionResponseV2> {
+  return apiV2Post(`/api/v2/sessions/${sessionId}/clone`, initDataRaw, performedOn ? { performed_on: performedOn } : {});
 }
 
 // --- Каталог программ (Capability A, issue #188) — GET /programs список,

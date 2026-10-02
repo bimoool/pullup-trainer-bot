@@ -413,6 +413,9 @@ class SessionResponse(BaseModel):
     # связи с прогрессией); фронт показывает "Удалить" ТОЛЬКО при true, без
     # своих эвристик. Определяется app.services.session_deletion.
     can_delete: bool = False
+    # #262 — тот же предикат безопасности: можно ли править/клонировать
+    # (Журнал показывает «Изменить»/«Повторить» только при true).
+    can_edit: bool = False
     # None, если пересчёт прогрессии не применялся к этой сессии — вместе с
     # progression_skipped_reason объясняет ПОЧЕМУ (не молчаливое отсутствие,
     # см. CLAUDE.md о явных пробелах): "no_program_inclusion"/

@@ -25,6 +25,8 @@ seed builder_workouts 910001
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002
+seed journal_edit 997201
+seed journal_edit 997202
 seed analytics_v2 910003
 seed analytics_metric 995001
 seed analytics_metric 995002

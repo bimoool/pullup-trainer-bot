@@ -182,6 +182,18 @@ export function useJournalV2(initDataRaw: string) {
     refreshDays();
   }, [refreshDays]);
 
+  /** После правки/клона (#262): заново загрузить список и точки календаря;
+   * jumpToMonth ("YYYY-MM") — перейти к месяцу новой записи. */
+  const reload = useCallback((jumpToMonth?: string) => {
+    refreshDays();
+    if (jumpToMonth !== undefined && jumpToMonth !== month) {
+      setDay(null);
+      setMonthState(jumpToMonth);
+    } else {
+      setReloadKey((key) => key + 1);
+    }
+  }, [refreshDays, month]);
+
   const setMonth = useCallback((next: string) => {
     setDay(null);
     setMonthState(next);
@@ -197,7 +209,7 @@ export function useJournalV2(initDataRaw: string) {
   }, []);
 
   return {
-    state, loadingMore, moreError, loadMore, removeById, refreshDays, reloadAfterLog,
+    state, loadingMore, moreError, loadMore, removeById, refreshDays, reloadAfterLog, reload,
     month, day, shift, toggleDay,
     timezone: daysInfo?.timezone ?? DEFAULT_JOURNAL_TZ,
     dayCounts: new Map((daysInfo?.month === month ? daysInfo.days : []).map((entry) => [entry.date, entry.count])),

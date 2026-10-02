@@ -685,3 +685,90 @@ class TrainingSessionRepository:
             ),
         )
         return await self._load_details(list(sessions_result.scalars().all()))
+
+    async def update_session_fields(
+        self, session_id: int, *, performed_at: datetime | None = None,
+        effort: tuple[Decimal | None] | None = None, comment: tuple[str | None] | None = None,
+    ) -> None:
+        """Правка завершённой сессии (#262). effort/comment — однокортежи, чтобы
+        отличить "не менять" (None) от "очистить" ((None,)). Блоки/подходы не
+        трогаются."""
+        training_session = await self._session.get(TrainingSession, session_id)
+        if performed_at is not None:
+            training_session.performed_at = performed_at
+            if training_session.completed_at is not None and training_session.completed_at < performed_at:
+                training_session.completed_at = performed_at
+        if effort is not None:
+            training_session.effort = effort[0]
+        if comment is not None:
+            training_session.comment = comment[0]
+        training_session.updated_at = datetime.now(UTC)
+        await self._session.flush()
+
+    async def update_set_log(
+        self, block_id: int, set_number: int, *, value: Decimal, effort: Decimal | None, note: str | None,
+    ) -> bool:
+        """Меняет value/effort/note существующего подхода на месте (set_target_id
+        и set_index сохраняются). False — такого подхода нет."""
+        result = await self._session.execute(
+            select(SetLog).where(SetLog.session_block_id == block_id, SetLog.set_number == set_number),
+        )
+        set_log = result.scalar_one_or_none()
+        if set_log is None:
+            return False
+        set_log.value = value
+        set_log.effort = effort
+        set_log.note = note
+        await self._session.flush()
+        return True
+
+    async def clone_session(self, source_id: int, *, user_id: int, performed_at: datetime) -> TrainingSession:
+        """Копия завершённой сессии (#262): новая COMPLETED-сессия source=BACKDATED
+        с теми же блоками/целями/фактом/снимком/связями с PlanItem. Никакой
+        прогрессии: ни пересчёта, ни связи с инклюзией. completed_at =
+        performed_at — у копии нет "длительности"."""
+        original = await self._session.get(TrainingSession, source_id)
+        clone = TrainingSession(
+            user_id=user_id, source=SessionSource.BACKDATED, status=SessionStatus.COMPLETED,
+            performed_at=performed_at, completed_at=performed_at,
+            effort=original.effort, comment=original.comment, workout_snapshot=original.workout_snapshot,
+        )
+        self._session.add(clone)
+        await self._session.flush()
+
+        blocks = (await self._session.execute(
+            select(SessionBlock).where(SessionBlock.session_id == source_id).order_by(SessionBlock.order_index),
+        )).scalars().all()
+        for block in blocks:
+            new_block = SessionBlock(
+                session_id=clone.id, order_index=block.order_index, exercise_id=block.exercise_id,
+                complex_id=block.complex_id, result=block.result, started_at=block.started_at,
+            )
+            self._session.add(new_block)
+            await self._session.flush()
+            target_map: dict[int, int] = {}
+            targets = (await self._session.execute(
+                select(SetTarget).where(SetTarget.session_block_id == block.id).order_by(SetTarget.set_number),
+            )).scalars().all()
+            for target in targets:
+                new_target = SetTarget(
+                    session_block_id=new_block.id, set_number=target.set_number, is_max_set=target.is_max_set,
+                    metric_type=target.metric_type, value=target.value, unit=target.unit,
+                )
+                self._session.add(new_target)
+                await self._session.flush()
+                target_map[target.id] = new_target.id
+            logs = (await self._session.execute(
+                select(SetLog).where(SetLog.session_block_id == block.id).order_by(SetLog.set_number),
+            )).scalars().all()
+            for log in logs:
+                self._session.add(SetLog(
+                    session_block_id=new_block.id, set_target_id=target_map.get(log.set_target_id),
+                    set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type,
+                    value=log.value, unit=log.unit, effort=log.effort, note=log.note,
+                    session_id=clone.id if log.set_index is not None else None, set_index=log.set_index,
+                ))
+        plan_item_ids = (await self.list_plan_item_ids_by_session([source_id])).get(source_id, [])
+        await self._create_session_plan_items(clone.id, plan_item_ids)
+        await self._session.flush()
+        return clone
