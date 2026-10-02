@@ -145,10 +145,19 @@ export function HistoryScreen({ initDataRaw }: Props) {
       <JournalV2Detail
         initDataRaw={initDataRaw}
         session={detailSession}
+        timeZone={journal.timezone}
         onBack={() => setDetailSessionId(null)}
         onDeleted={(sessionId) => {
           journal.removeById(sessionId);
           setDetailSessionId(null);
+        }}
+        onEdited={() => {
+          setDetailSessionId(null);
+          journal.reload();
+        }}
+        onCloned={(date) => {
+          setDetailSessionId(null);
+          journal.reload(date.slice(0, 7));
         }}
       />
     );

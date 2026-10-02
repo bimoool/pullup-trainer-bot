@@ -86,6 +86,7 @@ from app.db.models_program import (
     SessionPlanItem,
     SessionStatus,
     SetLog,
+    SetTarget,
     TrainingPlan,
     TrainingSession,
 )
@@ -875,6 +876,70 @@ async def seed_journal_calendar(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
+async def seed_journal_edit(session: AsyncSession, telegram_id: int) -> None:
+    """#262 — правка/клон из Журнала (пояс Europe/Moscow). Две завершённые сессии
+    сегодня: Builder «Моя силовая» со снимком (can_edit; 2 подхода — второй с
+    усилием и заметкой, усилие тренировки 3, комментарий) — 5 минут назад, и
+    историческая без снимка («Тренировка», can_edit=false) — 10 минут назад."""
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Europe/Moscow"
+    pull = Exercise(
+        name="Подтягивания", metric_type=MetricType.REPS, category="e2e_journal_edit",
+        source_type="user", owner_user_id=user.id,
+    )
+    session.add(pull)
+    workout = Complex(name="Моя силовая", source_type="user", owner_user_id=user.id)
+    session.add(workout)
+    await session.flush()
+    protocol = {"type": "reps_sets", "rest_seconds": 60, "prescription": {"source": "static", "sets": 2, "reps": 8}}
+    session.add(ComplexItem(complex_id=workout.id, exercise_id=pull.id, order_index=0, sets=2, protocol=protocol))
+    now = datetime.now(UTC)
+    training = TrainingSession(
+        user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED,
+        performed_at=now - timedelta(minutes=5), completed_at=now - timedelta(minutes=1),
+        effort=Decimal(3), comment="Было нормально",
+        workout_snapshot={
+            "workout_id": workout.id, "title": "Моя силовая",
+            "items": [{
+                "exercise_id": pull.id, "exercise_name": pull.name, "order": 0,
+                # снимок хранит РАЗРЕШЁННЫЙ протокол (по подходам), не определение
+                "protocol": {"type": "reps_sets", "sets": [{"target_reps": 8}, {"target_reps": 8}], "rest_seconds": 60},
+            }],
+        },
+    )
+    session.add(training)
+    plan = TrainingPlan(user_id=user.id)
+    session.add(plan)
+    await session.flush()
+    plan_item = PlanItem(
+        training_plan_id=plan.id, exercise_id=pull.id, complex_id=workout.id, count_per_week=1, day_of_week=1,
+    )
+    session.add(plan_item)
+    await session.flush()
+    session.add(SessionPlanItem(session_id=training.id, plan_item_id=plan_item.id))  # заголовок «Моя силовая»
+    block = SessionBlock(session_id=training.id, order_index=0, exercise_id=pull.id)
+    session.add(block)
+    await session.flush()
+    session.add(SetTarget(
+        session_block_id=block.id, set_number=1, metric_type=MetricType.REPS, value=Decimal(8), unit="reps",
+    ))
+    session.add(SetLog(
+        session_block_id=block.id, set_number=1, metric_type=MetricType.REPS, value=Decimal(8), unit="reps",
+    ))
+    session.add(SetLog(
+        session_block_id=block.id, set_number=2, metric_type=MetricType.REPS, value=Decimal(7), unit="reps",
+        effort=Decimal(4), note="Последние тяжело",
+    ))
+    await TrainingSessionRepository(session).create_session(
+        user_id=user.id, source=SessionSource.PLAN, performed_at=now - timedelta(minutes=10), effort=None,
+        comment=None, completed_at=now - timedelta(minutes=9),
+        blocks=[SessionBlockInput(exercise_id=pull.id, sets=[
+            SetLogInput(set_number=1, metric_type=MetricType.REPS, value=Decimal(5), unit="reps"),
+        ])],
+    )
+    await session.flush()
+
+
 async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     """REBUILD-1 (R3) — детерминированные данные для Analytics v2 (часовой
     пояс Pacific/Kiritimati, +14):
@@ -1118,6 +1183,7 @@ SCENARIOS = {
     "tests_hub": seed_tests_hub,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
+    "journal_edit": seed_journal_edit,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,

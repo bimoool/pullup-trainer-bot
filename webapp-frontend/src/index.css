@@ -1247,3 +1247,21 @@ html {
 .test-history-actions { display: flex; gap: 12px; }
 .test-row-button { padding: 6px 0; border: 0; background: none; color: var(--tg-link-color); font: inherit; font-size: 14px; cursor: pointer; }
 [data-testid="test-form"] .set-input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+
+/* Журнал: правка/клон записи (#262) */
+.journal-edit-input,
+.journal-edit-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(127, 127, 127, 0.25);
+  background: var(--tg-bg-color);
+  color: var(--tg-text-color);
+  font-size: 16px;
+}
+.journal-edit-textarea { min-height: 88px; resize: vertical; font-family: inherit; }
+.journal-edit-set { padding: 0 16px; }
