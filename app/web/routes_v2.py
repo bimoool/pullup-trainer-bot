@@ -1023,6 +1023,10 @@ async def create_plan_item(
         week = await plans.get_plan_week_for_user(body.plan_week_id, user.id)
         if week is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanWeek not found")
+        # #289 R-2 / #275 — прошлые недели только для чтения; то же окно, что у move/copy.
+        current_number = plan_week_number(plan.created_at.date(), _plan_today(user))
+        if not is_plannable_week_number(week.week_number, current_number):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
 
     try:
         item = await plans.create_plan_item(

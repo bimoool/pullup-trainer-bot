@@ -173,3 +173,6 @@ for retry in 0 10000; do
   for id in 996901 996902 996903 996904; do seed sweep_empty $((id + retry)); done
   for id in 996911 996912 996913 996914; do seed sweep_populated $((id + retry)); done
 done
+# «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
+# на тест id + retry (≤ +3); session_recovery.
+for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done
