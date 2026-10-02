@@ -194,7 +194,7 @@ for (const width of WIDTHS) {
         }
         await expect(page.getByTestId("profile-settings").locator("svg")).toHaveCount(1);
         await expect(page.getByRole("button", { name: "Настройки" })).toHaveCount(1);
-        for (const name of [/^Подписка/, /^Изменить/, /^Справка/, /^Мои резины/, /^Ачивок/]) {
+        for (const name of [/^Подписка/, /^Изменить/, /^Справка/, /^Мои резины/, /Ачивок/]) {
           await expect(page.getByRole("button", { name })).toHaveCount(1);
         }
         await expectNoHorizontalOverflow(page, "Профиль: идентичность и метрики");
