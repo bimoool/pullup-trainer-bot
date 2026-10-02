@@ -39,7 +39,7 @@ import { useBackButton } from "./useBackButton";
 import { dismissKeyboard } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
-import { sanitizeDecimalInput } from "./decimalInput";
+import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -457,7 +457,7 @@ export function SessionLiveScreen({
 
   function saveRestEdit() {
     void guardedAction(async () => {
-      if (local === null) {
+      if (local === null || !isCompleteDecimal(value)) {
         return;
       }
       await commitLocal(withRestEdit(local));
@@ -502,7 +502,7 @@ export function SessionLiveScreen({
       if (local === null || index === null || extraBlock === null || extraBlock.exercise_id === null) {
         return;
       }
-      if (extraValue.trim() === "") {
+      if (!isCompleteDecimal(extraValue)) {
         return;
       }
       await commitLocal({
@@ -524,7 +524,7 @@ export function SessionLiveScreen({
   function logSet() {
     dismissKeyboard();
     void guardedAction(async () => {
-      if (local === null || block === null || block.exercise_id === null || value.trim() === "") {
+      if (local === null || block === null || block.exercise_id === null || !isCompleteDecimal(value)) {
         return;
       }
       const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
@@ -830,10 +830,10 @@ export function SessionLiveScreen({
           {logPanelOpen ? (
             <>
               <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
-              <form onSubmit={(event) => { event.preventDefault(); if (value.trim() !== "") { saveRestEdit(); } }}>
+              <form onSubmit={(event) => { event.preventDefault(); if (isCompleteDecimal(value)) { saveRestEdit(); } }}>
                 {renderValueField(value, setValue, inputLabel.label)}
                 {renderEffortAndNote()}
-                <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={value.trim() === ""}>
+                <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(value)}>
                   Сохранить подход
                 </Button>
               </form>
@@ -866,7 +866,7 @@ export function SessionLiveScreen({
           <h3 className="live-panel-title">Ещё подход</h3>
           <form data-testid="extra-set-form" onSubmit={(event) => { event.preventDefault(); logExtraSet(); }}>
             {renderValueField(extraValue, setExtraValue, extraLabel.label)}
-            <Button className="live-save" size="l" stretched type="submit" disabled={extraValue.trim() === ""}>
+            <Button className="live-save" size="l" stretched type="submit" disabled={!isCompleteDecimal(extraValue)}>
               Записать
             </Button>
             <Button className="live-save" size="l" stretched mode="outline" type="button" onClick={() => setExtraOpen(false)}>
@@ -887,7 +887,7 @@ export function SessionLiveScreen({
             </Button>
           )}
           {phaseName === "go" && block !== null && (
-            <Button className="live-primary" size="l" stretched type="submit" form={LOG_FORM_ID} disabled={value.trim() === ""}>
+            <Button className="live-primary" size="l" stretched type="submit" form={LOG_FORM_ID} disabled={!isCompleteDecimal(value)}>
               Готово
             </Button>
           )}
