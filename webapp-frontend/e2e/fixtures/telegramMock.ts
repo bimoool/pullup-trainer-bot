@@ -183,8 +183,6 @@ export async function mockTelegramWebApp(
           w.__tgClosingConfirmation = false;
           log("disableClosingConfirmation");
         },
-        openLink: (url: string) => void log(`openLink:${url}`),
-        openTelegramLink: (url: string) => void log(`openTelegramLink:${url}`),
         onEvent: (event: string, handler: () => void) => {
           (w.__tgHandlers[event] ??= []).push(handler);
         },
