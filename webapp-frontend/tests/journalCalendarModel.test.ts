@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   buildMonthGrid, currentMonthIn, dayLabel, groupByWeekAndDay, localDateKey, monthLabel, monthRange,
   shiftMonth, weekLabel, weekStartOf,
-} from "../src/journalCalendar.ts";
+} from "../src/journalCalendarModel.ts";
 
 test("shiftMonth: через границу года в обе стороны", () => {
   assert.equal(shiftMonth("2026-12", 1), "2027-01");

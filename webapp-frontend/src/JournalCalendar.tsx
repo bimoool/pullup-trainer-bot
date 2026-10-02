@@ -1,4 +1,4 @@
-import { buildMonthGrid, monthLabel, WEEKDAY_HEADERS } from "./journalCalendar";
+import { buildMonthGrid, monthLabel, WEEKDAY_HEADERS } from "./journalCalendarModel";
 
 /** Месяц-бар «‹ Октябрь 2026 ›» и раскрывающийся календарь (#256): Пн-первая
  * сетка, точка у дня с хотя бы одной завершённой тренировкой, тап по дню

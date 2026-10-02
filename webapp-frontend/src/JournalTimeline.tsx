@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { dayLabel, groupByWeekAndDay, weekLabel } from "./journalCalendar";
+import { dayLabel, groupByWeekAndDay, weekLabel } from "./journalCalendarModel";
 
 /** Лента Журнала (#256): полоса недели (Пн–Вс) → заголовок дня → карточки.
  * Карточки (v2 и legacy) приходят готовыми — таймлайн ничего о них не знает. */

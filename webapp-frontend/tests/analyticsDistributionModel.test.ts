@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   CATEGORY_COLORS, NEUTRAL_COLOR, categoryColors, donutRings, formatPercent, formatShare, ringArcPath,
-} from "../src/analyticsDistribution.ts";
+} from "../src/analyticsDistributionModel.ts";
 import type { AnalyticsDistributionV2 } from "../src/apiV2.ts";
 
 const dist: AnalyticsDistributionV2 = {
