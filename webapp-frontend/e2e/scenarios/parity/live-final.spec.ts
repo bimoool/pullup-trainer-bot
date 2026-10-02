@@ -102,6 +102,10 @@ for (const width of WIDTHS) {
         await clickAndSync(page, "Готов", "/phase/next");
         await expect(page.getByTestId("log-panel-summary")).toHaveCount(0);
         await expect(page.getByLabel(RESULT)).toHaveValue("");
+        // Значение, совпадающее с только что правленным, не должно затираться отложенным сбросом формы.
+        await page.getByLabel(RESULT).fill("10");
+        await page.waitForTimeout(700);
+        await expect(page.getByLabel(RESULT)).toHaveValue("10");
         await page.getByLabel(RESULT).fill("7");
         await clickAndSync(page, "Готово", "/sets:batch");
         for (const reps of ["6"]) {

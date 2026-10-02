@@ -399,7 +399,7 @@ export function SessionLiveScreen({
   const formTarget = local?.server.blocks[formBlockIndex]?.targets[formSetNumber - 1] ?? null;
   useEffect(() => {
     // #265: на отдыхе форма — правка только что записанного подхода.
-    const last = formPhaseName === "rest" || formPhaseName === "get_ready" ? localRef.current?.lastLogged ?? null : null;
+    const last = formPhaseName === "rest" ? localRef.current?.lastLogged ?? null : null;
     if (last) {
       setValue(last.value);
       setEffort(last.effort ?? null);
@@ -506,7 +506,11 @@ export function SessionLiveScreen({
   /** #265: правка подхода с отдыха, ещё не сохранённая кнопкой, не теряется
    * при выходе с отдыха/завершении. */
   function withRestEdit(current: LocalLiveSession): LocalLiveSession {
-    return current.localPhase.phaseName === "rest" || current.localPhase.phaseName === "get_ready"
+    // На «Приготовься» форма — правка предыдущего подхода только после явного «Изменить» (panelOpen):
+    // иначе поля формы не относятся к lastLogged и не должны его перезаписывать.
+    const editing = current.localPhase.phaseName === "rest"
+      || (current.localPhase.phaseName === "get_ready" && panelOpen === true);
+    return editing
       ? editLastLoggedSet(current, { value, effort, note })
       : current;
   }
@@ -701,6 +705,20 @@ export function SessionLiveScreen({
   const targetForSet = block?.targets[local.localPhase.setNumber - 1] ?? null;
   const isMaxBlock = block?.protocol_type === "max_effort";
   const inputLabel = resultInputLabel(block?.protocol_type ?? null, targetForSet);
+  // Сводка прошлого подхода: на отдыхе — поля формы (они и есть правка), на «Приготовься» — сама запись.
+  const summaryFromRecord = phaseName === "get_ready" && local.lastLogged != null;
+  const summaryValue = summaryFromRecord ? local.lastLogged?.value ?? "" : value;
+  const summaryEffort = summaryFromRecord ? local.lastLogged?.effort ?? null : effort;
+  const summaryNote = summaryFromRecord ? local.lastLogged?.note ?? "" : note;
+  function startEditPrevious() {
+    const last = local?.lastLogged;
+    if (phaseName === "get_ready" && last) {
+      setValue(last.value);
+      setEffort(last.effort ?? null);
+      setNote(last.note ?? "");
+    }
+    setPanelOpen(true);
+  }
   const editLabel = resultInputLabel(block?.protocol_type ?? null, block?.targets[editSetNumber - 1] ?? null);
   // Имя блока — из замороженного снимка тренировки, если он есть, иначе из
   // библиотеки (legacy/STEP). null — имени нет, label не показываем.
@@ -924,12 +942,12 @@ export function SessionLiveScreen({
           ) : (
             <div className="live-summary-row">
               <p className="live-summary-line" data-testid="log-panel-summary">
-                {formatLoggedSetSummary(editSetNumber, value, editLabel.label)}
-                {effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
+                {formatLoggedSetSummary(editSetNumber, summaryValue, editLabel.label)}
+                {summaryEffort !== null ? ` · оценка ${summaryEffort}` : ""}{summaryNote.trim() !== "" ? ` · ${summaryNote.trim()}` : ""}
               </p>
               <button
                 type="button" className="live-link-button live-edit-button" data-testid="log-panel-toggle"
-                aria-expanded={false} aria-label="Изменить" onClick={() => setPanelOpen(true)}
+                aria-expanded={false} aria-label="Изменить" onClick={startEditPrevious}
               >
                 <span aria-hidden="true">✎</span> Изменить
               </button>
