@@ -10,9 +10,7 @@ import { openAppAs } from "../fixtures/setup";
 // слипается с группой.
 const TELEGRAM_ID = 900_014;
 
-// Stale: UI/продукт изменились после Waves 5-6 (не регресс) — карантин до
-// переписывания селекторов под текущий UI (pre-G3 stabilization).
-test.fixme("«Планы»: два PlanItem одной инклюзии с одинаковым day_of_week — ОДНА карточка, не две", async ({ page }) => {
+test("«Планы»: два PlanItem одной инклюзии с одинаковым day_of_week — ОДНА карточка, не две", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   const planResponsePromise = page.waitForResponse(
@@ -34,16 +32,18 @@ test.fixme("«Планы»: два PlanItem одной инклюзии с од�
   expect(grouped).toHaveLength(2);
   expect(new Set(grouped.map((item) => item.day_of_week))).toEqual(new Set([null]));
 
-  // Главная проверка — ровно ОДНА карточка "Подтягивания (E2E group)" в
-  // свободном пуле, не "Блок A" и "Блок Б" отдельными строками.
+  // Главная проверка — ровно ОДНА строка "Подтягивания (E2E group)" в недельном
+  // списке (свободный пул), не "Блок A" и "Блок Б" отдельными строками. Название
+  // курса ещё раз встречается в карточке «Текущий план» (#286 B) — это не строка недели.
+  const weekRow = (name: string) => page.getByTestId("plans-row").filter({ hasText: name });
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Подтягивания (E2E group)")).toHaveCount(1);
+  await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(1);
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
 
   // Ручной PlanItem — своя отдельная карточка, не слился ни с группой, ни
   // потерялся.
-  await expect(page.getByText("Растяжка")).toBeVisible();
+  await expect(weekRow("Растяжка")).toHaveCount(1);
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);
@@ -52,6 +52,7 @@ test.fixme("«Планы»: два PlanItem одной инклюзии с од�
   // из кэша навигации).
   await page.reload();
   await page.getByRole("button", { name: "Планы" }).click();
-  await expect(page.getByText("Подтягивания (E2E group)")).toHaveCount(1);
-  await expect(page.getByText("Растяжка")).toBeVisible();
+  await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(1);
+  await expect(weekRow("Растяжка")).toHaveCount(1);
+  await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
 });

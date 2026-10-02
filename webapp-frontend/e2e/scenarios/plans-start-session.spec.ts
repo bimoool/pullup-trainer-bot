@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py plan_week_start_session 900016 — реальная STEP-
@@ -8,27 +9,25 @@ import { openAppAs } from "../fixtures/setup";
 // "ready" гарантирован). НЕ admin-only — вкладка "Планы" видна всем.
 const TELEGRAM_ID = 900_016;
 
-// Stale: UI/продукт изменились после Waves 5-6 (не регресс) — карантин до
-// переписывания селекторов под текущий UI (pre-G3 stabilization).
-test.fixme("«Планы» → Подтягивания → Начать → live session → Complete, без admin/lab", async ({ page }) => {
+test("«Планы» → Подтягивания → Начать → live session → Complete, без admin/lab", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Подтягивания", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toBeVisible();
 
   // Обычный пользователь не видит admin-вкладку — подтверждаем прямо в
   // тесте, чтобы Golden Journey нельзя было случайно пройти через lab.
   await expect(page.getByRole("button", { name: "Dashboard" })).toHaveCount(0);
 
   // --- UI PROOF: старт именно с карточки PlanWeek ---
-  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
   await page.waitForTimeout(800);
 
   // --- STEP readiness не обойдена: видны реальные цели по блокам, не
   // просто голая кнопка "Начать" без пред-экрана ---
-  await expect(page.getByText(/Блок A.*цель/)).toBeVisible();
-  await expect(page.getByText(/Блок Б.*цель/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Цель 1: 10 повторений" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Цель 2: 3 повторений" })).toBeVisible();
 
   const startResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/api/v2/sessions/live") && response.status() === 200,
@@ -66,5 +65,5 @@ test.fixme("«Планы» → Подтягивания → Начать → liv
   console.log("session id (persisted across reload):", sessionId);
 
   expect(apiFailures).toEqual([]);
-  expect(consoleErrors).toEqual([]);
+  expect(noWakeLock(consoleErrors)).toEqual([]);
 });
