@@ -16,8 +16,10 @@ ours, not copied.
 to our domain on purpose, reason given) · PLATFORM-IMPOSSIBLE (Telegram Mini App / web cannot do it).
 A row becomes DONE only with automated evidence (`crimpd-parity.spec.ts` block or named spec).
 
-**Tester.** `webapp-frontend/e2e/scenarios/crimpd-parity.spec.ts` — focused growing suite; every
-parity issue adds its block; the worker's deterministic gate runs the full Playwright suite before
+**Tester.** Parity suite = `webapp-frontend/e2e/scenarios/crimpd-parity.spec.ts` (baseline + the
+first task blocks) + one file per later task in `webapp-frontend/e2e/scenarios/parity/` (helpers:
+`e2e/fixtures/parity.ts`; serial `parity` Playwright project — appending to one shared file made
+stale branches conflict). The worker's deterministic gate runs the full Playwright suite before
 any merge into `develop/current`.
 
 ## Home
