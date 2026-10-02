@@ -35,7 +35,14 @@ const SKIPPED_REASON_LABELS: Record<string, string> = {
   no_program_inclusion: "Прогрессия не пересчитана — нет активного курса со ступенчатой стратегией для этих упражнений.",
   blocks_do_not_match_step_roles: "Прогрессия не пересчитана — выполненные блоки не совпали с ролями блок A/Б курса.",
   already_completed: "Тренировка уже была завершена — прогрессия учтена при первом завершении.",
+  // «Начать» с Workout Detail: прогрессию курса не трогает — это норма, не причина для баннера.
+  not_plan_session: "",
 };
+
+/** Понятный текст причины; внутренний код пользователю не показываем (неизвестный код — без баннера). */
+function skippedReasonLabel(reason: string | null | undefined): string {
+  return reason ? (SKIPPED_REASON_LABELS[reason] ?? "") : "";
+}
 
 /**
  * Итог сессии (issue #185, раздел 10.9 docs/plan-and-specs.md). "Монеты"/
@@ -175,10 +182,8 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
           })()}
         </section>
       )}
-      {result.progression_skipped_reason && (
-        <p className="gap-banner">
-          {SKIPPED_REASON_LABELS[result.progression_skipped_reason] ?? result.progression_skipped_reason}
-        </p>
+      {skippedReasonLabel(result.progression_skipped_reason) && (
+        <p className="gap-banner">{skippedReasonLabel(result.progression_skipped_reason)}</p>
       )}
 
       <div className="live-transport">
