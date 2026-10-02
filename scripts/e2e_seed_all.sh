@@ -167,3 +167,7 @@ for id in 998811 998812; do seed ready "$id"; done
 # #286 B «Планы: строки дня и «⋯»-шиты» (parity/visual-plans.spec.ts): 991001 (320 light) / 991002 (390 dark) — строки с «⋯»,
 # 991003 / 991004 — мутация «Убрать из плана» (320 / 390), каждый + retry (id+10).
 for id in 991001 991002 991003 991004 991011 991012 991013 991014; do seed builder_workouts "$id"; done
+# Visual/a11y review (#290, wave 13): 996101/996111 (320 px light/dark), 996121/996131 (390 px light/dark) — Live Session
+# (session_recovery, мутирует: план → сессия), 99614x/99615x/99616x/99617x — Журнал (journal_edit, только чтение); каждый + retry (id+1).
+for id in 996101 996102 996111 996112 996121 996122 996131 996132; do seed session_recovery "$id"; done
+for id in 996141 996142 996151 996152 996161 996162 996171 996172; do seed journal_edit "$id"; done
