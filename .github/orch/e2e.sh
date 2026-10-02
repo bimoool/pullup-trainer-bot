@@ -55,6 +55,10 @@ echo "== (re)start uvicorn :8001"
 pkill -f "uvicorn app.web.main:app" 2>/dev/null || true
 sleep 1
 nohup uvicorn app.web.main:app --port 8001 > "$LOG_DIR/uvicorn.log" 2>&1 &
+UVICORN_PID=$!
+# No orphan servers: stop exactly the uvicorn this run started, whatever the exit path
+# (pass/fail/Ctrl-C). Kills by PID, never by pattern, so parallel runs on other ports are safe.
+trap 'kill "$UVICORN_PID" 2>/dev/null || true' EXIT INT TERM
 for _ in $(seq 1 30); do
   curl -sf http://127.0.0.1:8001/health >/dev/null && break
   sleep 1

@@ -1,0 +1,10 @@
+[Unit]
+Description=Read-only VPS resource report (disk/RAM/docker/logs)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vps-resource-report.sh
+# Exit 1/2 (WARN/CRIT) mark the unit failed on purpose: visible in `systemctl --failed`/journal.
+# Hardening: the script only reads; give it nothing else.
+ProtectHome=true
+NoNewPrivileges=true

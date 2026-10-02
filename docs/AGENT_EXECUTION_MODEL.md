@@ -58,6 +58,48 @@ Read-only agents may inspect the same canonical commit (SHA) without worktrees.
 
 **Never allow two coding agents to write the same checkout simultaneously.** Enforce this at task assignment time, not during the work.
 
+## Worktree Lifecycle (mandatory)
+
+Every concurrent writer follows four stages. A worktree that skips CLEAN is a resource leak
+(2026-10: 56 worktrees, 27 forgotten uvicorn servers, a shared Postgres out of connections).
+
+1. **CREATE** — `task → branch → worktree`. One task, one branch, one worktree
+   (`git worktree add -b parallel/<task> ../pullup-par-<task> origin/develop/current`).
+   Share the heavy dependencies by symlink (`.venv`, `node_modules`) instead of reinstalling.
+2. **WORK** — `commit → push checkpoint` (see § GitHub / Checkpoint Safety). Pushed = preserved.
+3. **ACCEPT** — review → integrate → tests → push canonical (`develop/current`).
+4. **CLEAN** — as soon as a task is accepted: stop its test server, `git worktree remove <path>`
+   (never `--force`), `git worktree prune`, `git branch -d <branch>` (never `-D`).
+   Use `python scripts/resource_janitor.py local-clean` (dry-run by default, `--apply` to act): it
+   refuses dirty, unpushed, canonical, current, in-use and shared-dependency-host worktrees.
+
+Rules:
+- A navigator **MUST clean completed worker worktrees before creating new ones**. Do not start wave
+  N+1 while wave N's accepted worktrees still exist.
+- At a usage-limit / session handoff the navigator **lists every retained worktree and WHY it
+  remains** (active worker, unpushed work, dependency host, owner decision) in its final comment.
+- Never delete a worktree that is dirty, has unpushed commits, or is used by a running process.
+  Uncertain = keep, and say so.
+- A worktree that hosts the shared `.venv` / `node_modules` of others is cleaned last, after its
+  consumers are gone.
+
+## Test Resource Policy
+
+- **Parallel workers:** *focused* tests only by default — the unit/pytest files touching their change
+  and the Playwright specs for their screen. They do **not** run the full suite.
+- **Navigator / integration tree:** the only place for the full `pytest` + full Playwright gate.
+  One browser stack at the gate, not six independent complete stacks, unless a worker's task
+  technically needs one (state why in the issue comment).
+- **Servers:** every E2E/dev server a run starts must die with the run. `.github/orch/e2e.sh`
+  stops its own uvicorn via an `EXIT` trap (by PID, never `pkill -f`, which would kill other
+  agents' servers). Local runner scripts must do the same. A server on ports 8011–8099 older than
+  2 h with no owner is an orphan; `resource_janitor.py audit` lists it and `local-clean --apply`
+  stops it. Shared test Postgres containers are stopped when the wave ends.
+- Generated output (`playwright-report/`, `test-results/`, captures) stays out of git and is
+  removed by the janitor after 3 days.
+
+See `docs/RESOURCE_LIFECYCLE.md` for thresholds, monitoring and the VPS side.
+
 ## Long-Running Tasks
 
 Prefer **coherent multi-hour implementation blocks** when scope is clear (e.g., "implement Analytics v2" as one continuous session, not broken into five tiny prompts).
