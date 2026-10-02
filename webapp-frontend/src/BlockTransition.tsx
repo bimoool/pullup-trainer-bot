@@ -21,13 +21,13 @@ type Props = {
 export function BlockTransition({ block, name, starting, error, onStart }: Props) {
   const plan = describeBlockPlan(block.protocol_type, block.targets, block.interval_config);
   return (
-    <div className="phase-panel phase-card-done">
+    <div className="phase-panel phase-card-done live-transition">
       <h2 className="phase-panel-label">Готово ✓</h2>
-      <p className="block-subtitle">Следующее упражнение</p>
+      <p className="live-transition-eyebrow">Следующее упражнение</p>
       {name !== null && <p className="live-exercise">{name}</p>}
       <p className="live-target">{plan}</p>
       {error && <p className="gap-banner">Не удалось начать: {error}. Попробуйте ещё раз.</p>}
-      <Button className="action-button" size="l" stretched disabled={starting} onClick={onStart}>
+      <Button className="action-button live-primary" size="l" stretched disabled={starting} onClick={onStart}>
         Начать
       </Button>
     </div>

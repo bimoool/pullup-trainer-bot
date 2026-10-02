@@ -1,0 +1,565 @@
+/*
+ * Live Session (#280, поток «Live Session»): полноэкранный плеер тренировки в языке эталона
+ * (exec_* — огромный таймер, подпись состояния, счётчик подходов, транспорт с одним главным
+ * действием внизу). Грузится ПОСЛЕ shell.css и использует его токены --vp-*; поведение и
+ * контрактные классы/testid (phase-panel-label <h2>, timer-duration-label, log-panel, set-effort,
+ * pause-toggle, extra-set-button, workout-review…) не меняются.
+ * Области: SessionLiveScreen, IntervalLiveScreen, BlockTransition, SessionSummaryScreen.
+ */
+.live-screen {
+  /* цвета фаз: get_ready — оранжевый, go — зелёный, rest — синий; в тёмной теме светлее */
+  --live-get_ready: #c76500;
+  --live-go: #1b8a4b;
+  --live-rest: #1a64d6;
+  --live-primary-h: 58px;
+  --live-timer-size: clamp(76px, 25vw, 112px);
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 8px);
+  min-height: calc(100dvh - 8px);
+  margin: 0;
+}
+:root[data-vp-scheme="dark"] .live-screen {
+  --live-get_ready: #ffb44d;
+  --live-go: #4fd88b;
+  --live-rest: #6cb0ff;
+}
+
+/* транспорт прижат к низу экрана и остаётся под рукой при прокрутке панели записи */
+.app-shell:has(.live-screen) {
+  padding-bottom: 0;
+}
+
+/* ---------- шапка ---------- */
+.live-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+  margin: var(--vp-sp-1) 0 var(--vp-sp-3);
+}
+.live-header-text {
+  min-width: 0;
+}
+.live-eyebrow {
+  margin: 0;
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+.live-workout-title {
+  margin: 2px 0 0;
+  font-size: var(--vp-fs-section);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.live-plan {
+  margin: 4px 0 0;
+  font-size: var(--vp-fs-meta);
+  color: var(--tg-hint-color);
+}
+.live-finish {
+  flex: none;
+  min-height: 40px;
+  padding: 0 var(--vp-sp-4);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-text-color);
+  background: var(--vp-card-bg);
+  border: 1px solid var(--vp-divider);
+  border-radius: var(--vp-radius-pill);
+  cursor: pointer;
+}
+
+/* ---------- карточка упражнения ---------- */
+.live-screen .live-now {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-4);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.live-screen .live-exercise {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.live-screen .live-target {
+  margin: 6px 0 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+  color: var(--tg-hint-color);
+}
+.live-pips {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--vp-sp-3);
+}
+.live-pip {
+  flex: 1 1 0;
+  max-width: 44px;
+  height: 6px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-divider);
+}
+.live-pip-done {
+  background: color-mix(in srgb, var(--vp-accent) 45%, var(--vp-divider));
+}
+.live-pip-current {
+  background: var(--vp-accent);
+}
+
+/* ---------- панель таймера (state label + огромные цифры) ---------- */
+.live-screen .phase-panel {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-4) var(--vp-sp-3) var(--vp-sp-5);
+  border: 0;
+  border-radius: 24px;
+  text-align: center;
+  box-shadow: none;
+}
+.live-screen .phase-card-get_ready,
+.live-screen .phase-card-go,
+.live-screen .phase-card-rest {
+  border: 0;
+}
+.live-screen .phase-card-get_ready {
+  background: color-mix(in srgb, var(--live-get_ready) 13%, var(--vp-card-bg));
+}
+.live-screen .phase-card-go {
+  background: color-mix(in srgb, var(--live-go) 13%, var(--vp-card-bg));
+}
+.live-screen .phase-card-rest {
+  background: color-mix(in srgb, var(--live-rest) 13%, var(--vp-card-bg));
+}
+.live-screen .phase-panel-label {
+  display: inline-block;
+  margin: 0;
+  padding: 5px 14px;
+  font-size: var(--vp-fs-meta);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tg-text-color);
+  background: color-mix(in srgb, var(--tg-hint-color) 14%, transparent);
+  border-radius: var(--vp-radius-pill);
+}
+.live-screen .phase-card-get_ready .phase-panel-label {
+  color: var(--live-get_ready);
+  background: color-mix(in srgb, var(--live-get_ready) 16%, transparent);
+}
+.live-screen .phase-card-go .phase-panel-label {
+  color: var(--live-go);
+  background: color-mix(in srgb, var(--live-go) 16%, transparent);
+}
+.live-screen .phase-card-rest .phase-panel-label {
+  color: var(--live-rest);
+  background: color-mix(in srgb, var(--live-rest) 16%, transparent);
+}
+.live-screen .phase-panel .timer-duration-label {
+  min-width: 0;
+  margin: var(--vp-sp-2) 0 0;
+  font-size: var(--live-timer-size);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.live-screen .phase-timer-get_ready { color: var(--live-get_ready); }
+.live-screen .phase-timer-go { color: var(--live-go); }
+.live-screen .phase-timer-rest { color: var(--live-rest); }
+.live-screen[data-paused="true"] .phase-panel .timer-duration-label {
+  opacity: 0.55;
+}
+.live-hero-target {
+  margin: var(--vp-sp-2) 0 0;
+  font-size: clamp(52px, 17vw, 80px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+.live-screen .get-ready-cue {
+  margin: var(--vp-sp-2) 0 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  color: var(--live-get_ready);
+}
+.live-done-note {
+  margin: var(--vp-sp-3) 0 0;
+  font-size: var(--vp-fs-body);
+  color: var(--tg-hint-color);
+}
+
+/* ---------- панели (запись подхода, ещё подход) ---------- */
+.live-panel {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.live-panel-title {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+.live-field {
+  display: grid;
+  gap: 4px;
+}
+.live-field-label {
+  font-size: var(--vp-fs-meta);
+  color: var(--tg-hint-color);
+}
+.live-field-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: var(--tg-text-color);
+  background: var(--vp-page-bg);
+  border: 1.5px solid transparent;
+  border-radius: var(--vp-radius-inner);
+  outline: none;
+}
+.live-field-input:focus {
+  border-color: var(--vp-accent);
+}
+.live-value-input {
+  height: 56px;
+  font-size: 28px;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.live-note-input {
+  height: 44px;
+  padding: 0 var(--vp-sp-3);
+  font-size: var(--vp-fs-card);
+}
+.live-note-textarea {
+  padding: var(--vp-sp-3);
+  font-size: var(--vp-fs-card);
+  resize: none;
+}
+.live-hint {
+  margin: 6px 0 0;
+  font-size: var(--vp-fs-meta);
+  color: var(--tg-hint-color);
+}
+.live-summary-line {
+  margin: 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+}
+.live-link-button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 0;
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+  color: var(--vp-accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.live-extra-count {
+  margin: 0 0 var(--vp-sp-2);
+  text-align: center;
+  font-size: var(--vp-fs-meta);
+  color: var(--tg-hint-color);
+}
+.live-screen .live-save {
+  margin-top: var(--vp-sp-3);
+  min-height: 48px;
+  border-radius: var(--vp-radius-inner);
+}
+
+/* оценка усилия: одна строка из пяти сегментов (цифра + слово) */
+.live-effort {
+  margin-top: var(--vp-sp-3);
+  padding-top: var(--vp-sp-3);
+  border-top: 1px solid var(--vp-divider);
+}
+.live-effort-prompt {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+}
+.live-chips {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 var(--vp-sp-3);
+}
+.live-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 6px 2px;
+  font: inherit;
+  color: var(--tg-text-color);
+  background: transparent;
+  border: 1.5px solid var(--vp-divider);
+  border-radius: var(--vp-radius-inner);
+  cursor: pointer;
+}
+.live-chip .effort-num {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+.live-chip .effort-word {
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--tg-hint-color);
+  overflow-wrap: anywhere;
+}
+.live-chip-active {
+  color: var(--tg-button-text-color);
+  background: var(--vp-accent);
+  border-color: var(--vp-accent);
+}
+.live-chip-active .effort-word {
+  color: inherit;
+}
+
+/* ---------- транспорт: одно главное действие + вторичные ---------- */
+.live-transport {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: auto calc(var(--vp-sp-4) * -1) 0;
+  padding: var(--vp-sp-3) var(--vp-sp-4) calc(var(--vp-sp-3) + env(safe-area-inset-bottom, 0px));
+  background: var(--vp-card-bg);
+  border-top: 1px solid var(--vp-divider);
+  box-shadow: 0 -6px 20px rgba(16, 24, 40, 0.06);
+}
+:root[data-vp-scheme="dark"] .live-transport {
+  box-shadow: none;
+}
+.live-screen .live-primary {
+  min-height: var(--live-primary-h);
+  border-radius: 18px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.live-screen .live-primary * {
+  font-size: inherit;
+  font-weight: inherit;
+}
+.live-secondary-row {
+  display: flex;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-2);
+}
+.live-screen .live-secondary {
+  min-height: 46px;
+  border-radius: var(--vp-radius-inner);
+}
+
+/* ---------- review-шаг: нижняя шторка ---------- */
+.live-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+.live-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+.live-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: var(--vp-sp-2) var(--vp-sp-4) calc(var(--vp-sp-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--vp-card-bg);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+}
+.live-sheet-handle {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto var(--vp-sp-3);
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-divider);
+}
+.live-sheet-title {
+  margin: 0;
+  font-size: var(--vp-fs-section);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.live-sheet .live-hint {
+  margin: 4px 0 var(--vp-sp-3);
+}
+.live-sheet .live-note-field {
+  margin-bottom: var(--vp-sp-3);
+}
+.live-sheet-back {
+  margin-top: var(--vp-sp-2);
+}
+
+/* ---------- переход между блоками ---------- */
+.live-screen .phase-card-done.live-transition {
+  padding: var(--vp-sp-4);
+  text-align: left;
+  background: var(--vp-card-bg);
+  border: 0;
+  box-shadow: var(--vp-shadow);
+}
+.live-transition .phase-panel-label {
+  color: var(--live-go);
+  background: color-mix(in srgb, var(--live-go) 16%, transparent);
+}
+.live-transition-eyebrow {
+  margin: var(--vp-sp-4) 0 var(--vp-sp-1);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tg-hint-color);
+}
+.live-screen .live-transition .action-button {
+  margin-top: var(--vp-sp-4);
+}
+
+/* ---------- итог тренировки ---------- */
+.live-summary-screen {
+  padding-top: var(--vp-sp-2);
+}
+.live-hero-done {
+  margin-bottom: var(--vp-sp-3);
+  padding: var(--vp-sp-6) var(--vp-sp-4) var(--vp-sp-4);
+  text-align: center;
+  background: color-mix(in srgb, var(--live-go) 12%, var(--vp-card-bg));
+  border-radius: 24px;
+}
+.live-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  color: #fff;
+  background: var(--live-go);
+  border-radius: 50%;
+}
+.live-done-title {
+  margin: var(--vp-sp-3) 0 0;
+  font-size: var(--vp-fs-title);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.live-hero-done .live-workout-title {
+  margin-top: var(--vp-sp-1);
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+  color: var(--tg-hint-color);
+}
+.live-stats {
+  display: flex;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-4);
+}
+.live-stat {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--vp-sp-3) var(--vp-sp-2);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-inner);
+}
+.live-stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.live-stat-label {
+  font-size: var(--vp-fs-meta);
+  color: var(--tg-hint-color);
+}
+.live-card {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.live-card-title {
+  margin: 0 0 var(--vp-sp-1);
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.live-row {
+  margin: 0;
+  padding: var(--vp-sp-2) 0;
+  font-size: var(--vp-fs-body);
+  color: var(--tg-text-color);
+  border-top: 1px solid var(--vp-divider);
+}
+.live-row-best {
+  font-weight: 700;
+}
+.live-card-goal {
+  background: color-mix(in srgb, var(--vp-accent) 9%, var(--vp-card-bg));
+}
+.live-summary-screen .gap-banner {
+  margin: 0 0 var(--vp-sp-3);
+}
+.live-summary-screen .live-transport {
+  margin-top: auto;
+}
+.live-summary-screen {
+  gap: 0;
+}
+.live-summary-screen > .live-card:last-of-type,
+.live-summary-screen > .gap-banner:last-of-type {
+  margin-bottom: var(--vp-sp-4);
+}
+
+/* узкие экраны (320): компактнее панели и подписи усилия, чтобы «Средне» не рвалось */
+@media (max-width: 360px) {
+  .live-panel {
+    padding-right: var(--vp-sp-3);
+    padding-left: var(--vp-sp-3);
+  }
+  .live-chips {
+    gap: 4px;
+  }
+  .live-chip {
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+  .live-chip .effort-word {
+    font-size: 10px;
+    overflow-wrap: normal;
+  }
+}
