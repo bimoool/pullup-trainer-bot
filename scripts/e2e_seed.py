@@ -684,6 +684,59 @@ async def seed_plan_week_stepper(session: AsyncSession, telegram_id: int) -> Non
     await session.flush()
 
 
+async def seed_plans_overview(session: AsyncSession, telegram_id: int) -> None:
+    """issue #266 — обзор плана. Глобальные программы (find-or-create по имени):
+    «Обзор: курс» (config.duration_weeks=8, вторник + свободный пул + пик),
+    «Обзор: на удаление» (1 строка), «Обзор: прошлый» (подключён и уже убран) и
+    «Обзор: превью» (не в плане, есть строки) / «Обзор: без расписания» (строк нет).
+    Пользователю подключены первые три (прошлый — завершён вчера)."""
+    user = await _onboard(session, telegram_id)
+    await seed_exercise_library(session)
+
+    async def exercise(name: str) -> Exercise:
+        return (await session.execute(
+            select(Exercise).where(Exercise.name == name, Exercise.owner_user_id.is_(None)),
+        )).scalar_one()
+
+    plank, pushups = await exercise("Планка"), await exercise("Отжимания")
+
+    async def program(name: str, config: dict, items: list[tuple[Exercise, WeekPhase, int | None, int]]) -> Program:
+        existing = (await session.execute(select(Program).where(Program.name == name))).scalars().first()
+        if existing is not None:
+            return existing
+        created = Program(
+            name=name, goal=f"цель: {name}", structure_type=ProgramStructureType.RECURRING,
+            category="e2e_plans_overview", config=config,
+        )
+        session.add(created)
+        await session.flush()
+        for ex, phase, day, count in items:
+            session.add(ProgramItem(
+                program_id=created.id, week_phase=phase, exercise_id=ex.id, count_per_week=count, day_of_week=day,
+            ))
+        await session.flush()
+        return created
+
+    course = await program("Обзор: курс", {"duration_weeks": 8}, [
+        (pushups, WeekPhase.BASE, 1, 2), (plank, WeekPhase.BASE, None, 3), (plank, WeekPhase.PEAK, 4, 1),
+    ])
+    removable = await program("Обзор: на удаление", {}, [(plank, WeekPhase.BASE, None, 1)])
+    past = await program("Обзор: прошлый", {}, [(pushups, WeekPhase.BASE, None, 1)])
+    await program("Обзор: превью", {"duration_weeks": 4}, [
+        (pushups, WeekPhase.BASE, 0, 2), (plank, WeekPhase.BASE, 3, 1), (plank, WeekPhase.PEAK, None, 2),
+    ])
+    await program("Обзор: без расписания", {}, [])
+
+    service = ProgramInclusionService(session)
+    for target in (course, removable):
+        await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id))
+    ended = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=past.id))
+    ended.is_active = False
+    ended.started_at = datetime.now(UTC) - timedelta(days=40)
+    ended.expires_at = datetime.now(UTC) - timedelta(days=1)
+    await session.flush()
+
+
 async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None:
     """Checkpoint 4C (issue #188) — один пользователь для полного combined
     Journal acceptance: одна legacy Workout запись (тот же рецепт, что
@@ -1198,6 +1251,7 @@ SCENARIOS = {
     "plan_week_manual_session": seed_plan_week_manual_session,
     "journal_combined": seed_journal_combined,
     "plan_week_stepper": seed_plan_week_stepper,
+    "plans_overview": seed_plans_overview,
 }
 
 

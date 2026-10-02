@@ -273,6 +273,17 @@ jobs:
             printf 'tests_ok=0\nsummary=no commits — nothing to verify\nforbidden=\n' >> "$GITHUB_OUTPUT"; exit 0
           fi
           git reset -q --hard && git clean -fdq   # verify committed work only (orch-out/ is ignored, kept)
+          # Verify what will actually land: the branch merged with the CURRENT base (a resumed or
+          # retried branch can be stale — e.g. two Alembic heads that each pass alone). Clean merge
+          # → test the merged tree (the merge step later merges this same local branch). Conflict →
+          # test the branch as-is; the merge step then reports the conflict as before.
+          git fetch -q origin "$BASE"
+          if git merge -q --no-edit "origin/$BASE" -m "orch: merge $BASE into ${{ steps.branch.outputs.name }} for verification" >/dev/null 2>&1; then
+            echo "verifying branch merged with current origin/$BASE"
+          else
+            git merge --abort 2>/dev/null || true
+            echo "::warning::branch conflicts with current $BASE — verifying branch as-is"
+          fi
           git diff --name-only "$BASE_SHA...HEAD" > /tmp/orch/changed.txt
           git diff "$BASE_SHA...HEAD" -- alembic/ > /tmp/orch/migrations.diff || true
           python - <<'PY' > /tmp/orch/forbidden.txt
@@ -283,6 +294,8 @@ jobs:
           PY
           OK=1; SUMMARY=""
           if ruff check app/ tests/ scripts/; then SUMMARY="ruff ok"; else OK=0; SUMMARY="ruff FAILED"; fi
+          HEADS=$(alembic heads 2>/dev/null | grep -c '(head)' || true)
+          if [ "$HEADS" != "1" ]; then OK=0; SUMMARY="$SUMMARY; alembic FAILED ($HEADS heads — re-parent the new migration onto the current head)"; { echo "### Alembic heads"; echo '```'; alembic heads 2>&1 || true; echo '```'; } > /tmp/orch/alembic.md; fi
           if pytest -q --maxfail=20 -p no:cacheprovider > /tmp/orch/pytest.txt 2>&1; then SUMMARY="$SUMMARY; pytest $(tail -1 /tmp/orch/pytest.txt)"; else OK=0; SUMMARY="$SUMMARY; pytest FAILED: $(tail -1 /tmp/orch/pytest.txt)"; fi
           if grep -q '^webapp-frontend/' /tmp/orch/changed.txt; then
             if (cd webapp-frontend && npm run build && npm run test:unit) > /tmp/orch/fe.txt 2>&1; then SUMMARY="$SUMMARY; frontend ok"; else OK=0; SUMMARY="$SUMMARY; frontend FAILED"; fi
@@ -290,6 +303,7 @@ jobs:
             SUMMARY="$SUMMARY; frontend n/a"
           fi
           : > /tmp/orch/evidence.md
+          cat /tmp/orch/alembic.md >> /tmp/orch/evidence.md 2>/dev/null || true
           [ "$OK" = 1 ] || { echo "### pytest (tail)"; echo '```'; tail -n 40 /tmp/orch/pytest.txt || true; echo '```'; } >> /tmp/orch/evidence.md
           # Real Mini App E2E — same paths as e2e.yml. Runner taken from the BASE commit (a worker
           # cannot alter it); fresh DB; full suite. Red E2E ⇒ not merged, whatever the agent said.

@@ -188,6 +188,28 @@ class ProgramInclusionResponse(BaseModel):
     expires_at: datetime | None
     snapshot: dict
     progression_state: dict
+    # issue #266 — только для курса с явно заданной длиной (config.duration_weeks).
+    duration_weeks: int | None = None
+    current_week: int | None = None
+
+
+class ProgramScheduleItemResponse(BaseModel):
+    week_phase: str
+    day_of_week: int | None
+    count_per_week: int
+    title: str
+    count_label: str
+    target_label: str | None
+
+
+class ProgramScheduleResponse(BaseModel):
+    """Превью структуры программы из реальных ProgramItem/config (issue #266).
+    items пуст — превью нет, UI показывает только описание."""
+
+    program_id: int
+    duration_weeks: int | None
+    phases: list[str]
+    items: list[ProgramScheduleItemResponse]
 
 
 class PlanItemResponse(BaseModel):

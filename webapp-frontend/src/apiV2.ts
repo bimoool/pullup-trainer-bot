@@ -296,6 +296,9 @@ export interface ProgramInclusionResponseV2 {
     string, unknown
   >;
   progression_state: Record<string, unknown>;
+  /** issue #266 — только для курса с явно заданной длиной. */
+  duration_weeks?: number | null;
+  current_week?: number | null;
 }
 
 export interface PlanItemResponseV2 {
@@ -738,6 +741,34 @@ export async function createProgramInclusion(
   initDataRaw: string, programId: number,
 ): Promise<ProgramInclusionResponseV2> {
   return apiV2Post("/api/v2/program-inclusions", initDataRaw, { program_id: programId });
+}
+
+/** issue #266 — «Убрать курс из плана»: is_active=false, история остаётся. */
+export async function deactivateProgramInclusion(
+  initDataRaw: string, inclusionId: number,
+): Promise<ProgramInclusionResponseV2> {
+  return apiV2Post(`/api/v2/program-inclusions/${inclusionId}/deactivate`, initDataRaw, {});
+}
+
+/** issue #266 — превью структуры программы (зеркало ProgramScheduleResponse). */
+export interface ProgramScheduleItemV2 {
+  week_phase: string;
+  day_of_week: number | null;
+  count_per_week: number;
+  title: string;
+  count_label: string;
+  target_label: string | null;
+}
+
+export interface ProgramScheduleV2 {
+  program_id: number;
+  duration_weeks: number | null;
+  phases: string[];
+  items: ProgramScheduleItemV2[];
+}
+
+export async function fetchProgramSchedule(initDataRaw: string, programId: number): Promise<ProgramScheduleV2> {
+  return apiV2Get(`/api/v2/programs/${programId}/schedule`, initDataRaw);
 }
 
 // --- POST /plan-items — создание manual PlanItem (issue #197, Checkpoint 3B) ---
