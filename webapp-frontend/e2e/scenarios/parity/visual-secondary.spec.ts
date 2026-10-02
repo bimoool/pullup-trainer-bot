@@ -39,7 +39,8 @@ async function snap(page: Page, width: number, theme: TelegramTheme, name: strin
 async function filledButtons(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const probe = document.createElement("div");
-    probe.style.background = "var(--tg-button-color)";
+    // #290: заливка главного CTA — затемнённый акцент (белый текст ≥ AA)
+    probe.style.background = "var(--vp-accent-solid, var(--tg-button-color))";
     document.body.appendChild(probe);
     const accent = getComputedStyle(probe).backgroundColor;
     probe.remove();
