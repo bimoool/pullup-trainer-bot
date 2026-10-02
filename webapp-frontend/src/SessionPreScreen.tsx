@@ -23,6 +23,16 @@ import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
 /** Потолок ожидания досылки старого завершения перед стартом (R-4): зависший запрос не должен вешать «Начать». */
 const DRAIN_BEFORE_START_TIMEOUT_MS = 5_000;
 
+/** R-4 (#289): завершение прошлой сессии, оставленное в очереди, должно дойти до сервера ДО старта новой
+ * (и до проверки «уже идёт другая») — иначе старая ещё STARTED: сервер ответит 409, а экран предложит
+ * «продолжить» уже завершённую тренировку. Best effort (офлайн/отказ — очередь не трогаем), с потолком. */
+function drainBeforeStart(initDataRaw: string): Promise<unknown> {
+  return Promise.race([
+    drainQueuedFinish(initDataRaw).catch(() => false),
+    new Promise((resolve) => setTimeout(resolve, DRAIN_BEFORE_START_TIMEOUT_MS)),
+  ]);
+}
+
 type Props = {
   initDataRaw: string;
   onStarted: (session: LiveSessionResponse) => void;
@@ -152,6 +162,10 @@ export function SessionPreScreen({
     async function load() {
       if (workoutId !== undefined) {
         try {
+          await drainBeforeStart(initDataRaw);
+          if (cancelled) {
+            return;
+          }
           const active = await fetchActiveLiveSession(initDataRaw);
           if (cancelled) {
             return;
@@ -270,13 +284,7 @@ export function SessionPreScreen({
   async function handleStart(planItemIds: number[], currentTitle?: string) {
     setState({ phase: "starting", planItemIds, title: currentTitle });
     try {
-      // R-4 (#289): завершение прошлой сессии, оставленное в очереди, должно дойти до сервера ДО старта
-      // новой — иначе старая ещё STARTED и сервер ответит 409. Best effort (офлайн/отказ — старт идёт
-      // как раньше; очередь не трогаем), не дольше DRAIN_BEFORE_START_TIMEOUT_MS.
-      await Promise.race([
-        drainQueuedFinish(initDataRaw).catch(() => false),
-        new Promise((resolve) => setTimeout(resolve, DRAIN_BEFORE_START_TIMEOUT_MS)),
-      ]);
+      await drainBeforeStart(initDataRaw);
       if (workoutId !== undefined) {
         onStarted(await startWorkoutLiveSession(initDataRaw, crypto.randomUUID(), workoutId));
         return;
