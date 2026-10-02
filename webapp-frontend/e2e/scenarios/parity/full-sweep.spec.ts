@@ -469,7 +469,7 @@ const FLOWS: Flow[] = [
       await openTab(page, "Профиль");
       const screens: [string, RegExp, Locator, Locator][] = [
         ["Изменить профиль", /Изменить$/, page.getByText("Изменить профиль", { exact: true }), byName(page, "Назад")],
-        ["Подписка", /Подробнее о подписке/, page.getByText("Статус", { exact: true }), byName(page, "← Профиль")],
+        ["Подписка", /^Подписка/, page.getByText("Статус", { exact: true }), byName(page, "← Профиль")],
         ["Ачивки", /Ачивок/, page.getByText("Ачивки", { exact: true }), byName(page, "← Назад")],
         ["Как выбрать резину", /Как выбрать резину/, page.getByText("Тренироваться можно где угодно", { exact: false }), byName(page, "← Назад")],
         ["Мои резины", /Переименовать или удалить/, page.getByText("Мои резины", { exact: true }), byName(page, "← Назад")],
