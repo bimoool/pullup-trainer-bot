@@ -145,7 +145,7 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, o
         void completeLiveSession(initDataRaw, initialSession.id, true).then(onCompleted);
       }
     }
-  }, [initialSession.id]);
+  }, [initialSession.id], true, false);
 
   if (interval === null) {
     // Недостижимо при корректном вызове (PlanSessionFlow проверяет перед

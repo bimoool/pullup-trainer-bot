@@ -472,7 +472,7 @@ export function SessionLiveScreen({
     }
   }
 
-  useBackButton(handleBack, [local, reviewOpen]);
+  useBackButton(handleBack, [local, reviewOpen], true, false); // live-поток без нижней навигации
   // Живая сессия: свайп/«Закрыть» в Telegram спрашивает подтверждение (Bot API 6.2+, #224).
   useClosingConfirmation();
 
