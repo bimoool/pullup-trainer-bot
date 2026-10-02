@@ -279,7 +279,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
   const timelineEntries = [
     ...v2Items.map((session) => ({
       date: localDateKey(session.performed_at, journal.timezone),
-      node: <JournalSessionCard key={`v2-${session.id}`} session={session} onOpen={openSheet} />,
+      node: <JournalSessionCard key={`v2-${session.id}`} session={session} timeZone={journal.timezone} onOpen={openSheet} />,
     })),
     ...legacyItems.map((entry) => ({ date: entry.performed_at, node: legacyCard(entry) })),
   ];
@@ -304,6 +304,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         <JournalEntrySheet
           initDataRaw={initDataRaw}
           session={sheetSession}
+          timeZone={journal.timezone}
           canOpenWorkout={onOpenWorkout !== undefined && journal.month !== null}
           returnFocusTo={sheetReturnFocus.current}
           onClose={() => setSheetSessionId(null)}

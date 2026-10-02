@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
-import { formatSessionTime } from "./journalFormat";
+import { formatSessionTime } from "./journalTime";
 import {
   JOURNAL_DELETE_CONFIRM, JOURNAL_SHEET_LABELS, journalSheetActions, type JournalSheetAction,
 } from "./journalSheet";
@@ -17,10 +17,11 @@ const FOCUSABLE = "button:not([disabled])";
  * на карточку; ошибка удаления остаётся в шторке (тупика нет).
  */
 export function JournalEntrySheet({
-  initDataRaw, session, canOpenWorkout, returnFocusTo, onClose, onOpen, onEdit, onClone, onOpenWorkout, onDeleted,
+  initDataRaw, session, timeZone, canOpenWorkout, returnFocusTo, onClose, onOpen, onEdit, onClone, onOpenWorkout, onDeleted,
 }: {
   initDataRaw: string;
   session: SessionResponseV2;
+  timeZone: string;
   canOpenWorkout: boolean;
   /** Карточка, с которой открыли шторку — туда возвращается фокус. */
   returnFocusTo: HTMLElement | null;
@@ -118,7 +119,7 @@ export function JournalEntrySheet({
       >
         <p className="journal-sheet-title">
           <span className="journal-sheet-name">{title}</span>
-          <span className="journal-sheet-time">{formatSessionTime(session.performed_at)}</span>
+          <span className="journal-sheet-time">{formatSessionTime(session.performed_at, timeZone)}</span>
         </p>
         {deleteError !== null && <p className="gap-banner" data-testid="journal-sheet-error">{deleteError}</p>}
         {actions.map((action) => (

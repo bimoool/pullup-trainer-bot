@@ -109,17 +109,26 @@
   font-size: var(--vp-fs-card);
 }
 
-/* заголовки группировки: неделя — тихая подпись, день — жирная дата + линия */
+/* заголовки группировки: неделя — серая полоса на всю ширину, день — жирная дата с акцентным числом + линия */
 .journal-week-header {
-  margin: var(--vp-sp-5) 0 0;
-  padding: 0;
-  background: none;
+  margin: var(--vp-sp-5) -16px 0;
+  padding: 6px 16px;
+  background: color-mix(in srgb, var(--tg-hint-color) 14%, transparent);
   border-radius: 0;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--tg-hint-color);
+  color: var(--tg-subtitle-text-color);
 }
+
+.journal-day-num { color: var(--vp-accent); }
+
+/* усилие на карточке: цвет по шкале 1–5 (effortScale) */
+.journal-effort { font-weight: 700; color: var(--tg-subtitle-text-color); }
+.journal-effort[data-effort="1"], .journal-effort[data-effort="2"] { color: #2e9e5b; }
+.journal-effort[data-effort="3"] { color: #c98a00; }
+.journal-effort[data-effort="4"] { color: #e0701a; }
+.journal-effort[data-effort="5"] { color: var(--tg-destructive-text-color); }
 
 .journal-day-header {
   display: flex;
@@ -137,11 +146,11 @@
   background: var(--vp-divider);
 }
 
-/* календарь: месяц-бар на белых поверхностях, выбранный день — круг акцента */
+/* календарь: месяц-бар — простые шевроны и подпись без белых плашек */
 .journal-month-arrow,
 .journal-month-label {
-  background: var(--vp-card-bg);
-  box-shadow: var(--vp-shadow);
+  background: transparent;
+  box-shadow: none;
   border-radius: var(--vp-radius-pill);
 }
 
@@ -520,3 +529,21 @@
 .journal-sheet .home-sheet-action:focus-visible { outline: 2px solid var(--tg-button-color, #3390ec); outline-offset: -2px; border-radius: 10px; }
 .journal-sheet .home-sheet-action:disabled { opacity: 0.5; }
 .journal-sheet .journal-sheet-danger { color: var(--tg-destructive-text-color); }
+
+/* деталь записи: круглая кнопка «назад», отступы строк внутри секции */
+.journal-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  color: var(--vp-accent);
+  cursor: pointer;
+}
+.journal-back-button:focus-visible { outline: 2px solid var(--vp-accent); outline-offset: 2px; }
+.block-section .journal-detail-line { padding: 0 var(--vp-sp-4); }
