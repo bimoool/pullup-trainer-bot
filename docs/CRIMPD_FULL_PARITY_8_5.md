@@ -237,3 +237,32 @@ QA: #277 Full parity sweep (last).
 Dependent issues stay `status:backlog` and are promoted to `status:ready` when their
 dependencies are done. Owner decisions outside the campaign: account deletion; exercise/program
 media content (#3).
+
+## Final sweep — wave 13 (#277 closure checklist)
+
+Base: `develop/current` @650e82d. Captures: `docs/captures/wave13/` (index: `docs/captures/wave13/INDEX.md`; 15 screens × 320/390 × light/dark, spec `scenarios/ux-capture.spec.ts` with `UX_CAPTURE=1`, 4/4 green per combination). Spec run on this base: `parity/{live-finish,live-set-nav,live-conflict,r4-followup,collections,full-sweep,visual-final,visual-live}.spec.ts` + `session-offline.spec.ts` — 97 passed, 4 failed (see FAIL-1).
+
+| # | Criterion | Result | Evidence (capture · spec) |
+|---|---|---|---|
+| 1 | Home follows reference information hierarchy | PASS | `light-390/home.png`, `collections-row.png` · `home-discovery.spec.ts`, `visual-home-detail.spec.ts`, `visual-final.spec.ts` (search pill, «+», Подборки, категории, «Мои тренировки»; no hero photo — gap C) |
+| 2 | Workout Detail reference anatomy/actions | PASS (gap: Description) | `light-390/workout-detail.png` · `visual-home-detail.spec.ts`, `workout-detail-start-log.spec.ts` (Начать/Записать/В избранное/Добавить в план/Изменить, Упражнения, История; no Overview video, no Description field) |
+| 3 | Plans coherent | PASS | `plans.png` · `plans-overview/plans-current-week/plans-schedule/visual-plans.spec.ts` |
+| 4 | Journal usable, editable, compact | PASS | `journal.png` · `journal-sheet/journal-log/journal-return/journal-dedupe.spec.ts` (sheet: view/edit/clone/delete, log) |
+| 5 | Analytics reference structure | PASS | `analytics.png` · `analytics-distribution.spec.ts`, `visual-analytics-profile.spec.ts` (metric/range, by type, by week, summary) |
+| 6 | Profile/Settings coherent | PASS | `profile.png`, `settings.png` · `settings.spec.ts`, `visual-settings-tests.spec.ts` |
+| 7 | Live Session: no dead ends, no offline data loss | PASS | `live-1-pre … live-5-summary.png` · `live-finish.spec.ts`, `session-offline.spec.ts`, `live-set-nav.spec.ts`, `live-conflict.spec.ts`, `r4-followup.spec.ts` (all green), `visual-live.spec.ts` |
+| 8 | Collections and Tests reachable from normal navigation | PASS | `collections-row.png`, `collection-detail.png`, `tests.png` · `collections.spec.ts`, `full-sweep.spec.ts` FLOWS (Главная → Тесты/Подборки, Профиль → Тесты) |
+| 9 | 320/390 light/dark clean (no overflow) | PASS | all 60 images; no visible overflow · `expectNoHorizontalOverflow` in `full-sweep/visual-*.spec.ts` (97 green) |
+
+**FAIL-1 (environment/tz, not a regression of the checklist items):** `full-sweep.spec.ts` «тесты: запись → тренд → Профиль» fails ×4 when the machine's local date is ahead of Europe/Moscow (local UTC+5 at 00:00–02:00): the Tests form defaults «Дата» to the browser-local date and the server rejects it with «Дата не может быть в будущем» (validation in the profile tz). Passes 4/4 with `TZ=Europe/Moscow`. Real minor product defect for users whose phone tz is ahead of their profile tz around midnight (default date should be derived in the profile tz or clamped); recorded, not fixed here.
+
+Capture caveat: at 320×640 Live «работа» the page may be scrolled a few px by the focused input (title partially cut in `*-320/live-2-work.png`); not an overflow.
+
+### Remaining documented gaps (not blocking #277 unless owner decides otherwise)
+
+* Exercise/workout media: hero photo, overview video, exercise video (class C — no content).
+* #279 elective workout — owner decision (no storage/cascade semantics invented).
+* #292 «Вперёд/пропустить подход» — owner decision (progression impact); «Предыдущий подход» is done.
+* Account deletion — owner (retention/legal).
+* Workout description field — missing in model/UI (Detail shows no description).
+* Units in legacy weighted STEP/WSF/Leaderboard; PWA-equivalent (see Totals).
