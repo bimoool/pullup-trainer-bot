@@ -343,6 +343,8 @@ export interface TrainingPlanResponseV2 {
   program_inclusions: ProgramInclusionResponseV2[];
   plan_items: PlanItemResponseV2[];
   plan_weeks: PlanWeekResponseV2[];
+  /** Текущая неделя в часовом поясе пользователя (не «последняя в списке»). */
+  current_week_id?: number | null;
 }
 
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {

@@ -260,6 +260,9 @@ class TrainingPlanResponse(BaseModel):
     program_inclusions: list[ProgramInclusionResponse]
     plan_items: list[PlanItemResponse]
     plan_weeks: list[PlanWeekResponse]
+    # Текущая календарная неделя (в часовом поясе пользователя), не «последняя
+    # в списке»: после #275 в списке есть будущие недели.
+    current_week_id: int | None = None
 
 
 class PlanResponse(BaseModel):

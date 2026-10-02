@@ -95,6 +95,8 @@ seed plans_overview 990202
 # #275 «Plans schedule»: 990301 (320 light) / 990302 (390 dark) — мутирующий сценарий.
 seed plan_week_manual_session 990301
 seed plan_week_manual_session 990302
+# #283 «Plans current week»: 990401/990411 (320 light / 390 dark, + retry) — мутирующий сценарий.
+for id in 990401 990402 990411 990412; do seed golden_journey "$id"; done
 # #273 «Workout Detail start/log»: 998001/998011 (+ retry), «Записать»: id+5(+retry).
 for id in 998001 998002 998006 998007 998011 998012 998016 998017; do seed golden_journey "$id"; done
 # Settings (#268): 999001/999011 (единицы), +2 (тема), +4 (отмена), каждый + retry (id+1).
