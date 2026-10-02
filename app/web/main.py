@@ -8,6 +8,7 @@ from app.web.routes_v2 import router_v2
 from app.web.routes_v2_analytics import router_v2_analytics
 from app.web.routes_v2_assessments import router_v2_assessments
 from app.web.routes_v2_dashboard import router_v2_dashboard
+from app.web.routes_v2_export import router_v2_export
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
 # тот же процесс FastAPI отдаёт и /api/*, и статику одним origin'ом, без
@@ -29,6 +30,8 @@ app.include_router(router_v2_dashboard)
 app.include_router(router_v2_analytics)
 # CRIMPD #260 — хаб «Тесты»: протоколы и свои замеры (вне каскада прогрессии).
 app.include_router(router_v2_assessments)
+# CRIMPD #267 — экспорт истории в CSV.
+app.include_router(router_v2_export)
 
 
 @app.get("/health")

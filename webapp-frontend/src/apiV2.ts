@@ -898,6 +898,11 @@ export async function fetchTrainingAnalytics(
   return apiV2Get<TrainingAnalyticsV2>(`/api/v2/analytics/training${query}`, initDataRaw);
 }
 
+/** Короткоживущая подписанная ссылка на CSV-экспорт истории (#267): для downloadFile/открытия без заголовков. */
+export async function createExportLink(initDataRaw: string): Promise<{ url: string; expires_in: number }> {
+  return apiV2Post<Record<string, never>, { url: string; expires_in: number }>("/api/v2/export/link", initDataRaw, {});
+}
+
 // --- Тесты (Assessment Tests, #260): протоколы и свои замеры, вне прогрессии ---------------
 
 export interface AssessmentResultV2 {

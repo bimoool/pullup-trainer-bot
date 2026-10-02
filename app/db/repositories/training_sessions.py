@@ -637,6 +637,13 @@ class TrainingSessionRepository:
         )
         return await self._load_details(list(result.scalars().all()))
 
+    async def exercise_names(self, exercise_ids: set[int]) -> dict[int, str]:
+        """Названия упражнений по id (фолбэк экспорта для сессий без снимка)."""
+        if not exercise_ids:
+            return {}
+        result = await self._session.execute(select(Exercise.id, Exercise.name).where(Exercise.id.in_(exercise_ids)))
+        return {row.id: row.name for row in result.all()}
+
     async def list_completed_for_workout(self, user_id: int, workout_id: int) -> list[SessionDetail]:
         """Завершённые сессии пользователя, чей замороженный workout_snapshot
         ссылается на этот Workout (workout_snapshot.workout_id). Новые первыми."""

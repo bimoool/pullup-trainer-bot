@@ -141,7 +141,7 @@ any merge into `develop/current`.
 | Multi-month summary table | A6 | none | MISSING | — | summary table + TOTAL | #274 | — |
 | Exercise trends / personal bests | (ours beyond Crimpd) | per-exercise panels, PB markers | DONE | — | — | — | analytics-v2.spec.ts |
 | Info (i) definitions | A1 | ⓘ sheet with both metric definitions | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric» |
-| Export CSV | A7 | none | MISSING | — | CSV download | #267 | — |
+| Export CSV | A7 | Analytics card «Экспорт данных — CSV» → signed link → downloadFile/open | DONE | — | CSV download | #267 | parity/export.spec.ts «Export»; tests/test_web/test_v2_export.py; tests/exportDownload.test.ts |
 | Live recompute on log add/delete | A8 | computed per request | DONE | — | — | — | golden-journey.spec.ts |
 
 ## Profile / Settings
@@ -160,7 +160,7 @@ any merge into `develop/current`.
 | Theme Light / Dark / Auto | R13 | follows Telegram only | PARTIAL | no override | «Как в Telegram / Светлая / Тёмная» | #268 | mobile-layout.spec.ts (both themes) |
 | Timer settings (volume, vibrations) | R14 | API exists, UI hidden | PARTIAL | unreachable | Settings «Таймер» | #268 | — |
 | Subscription management | R10, R17 | SubscriptionScreen | DONE | — | (in Settings too) | #268 | — |
-| Data export (Download Logbook) | R15 | none | MISSING | — | Settings → CSV | #267, #268 | — |
+| Data export (Download Logbook) | R15 | Export card in Analytics (Settings entry point left to #268) | PARTIAL | not in Settings | Settings → CSV | #268 | parity/export.spec.ts «Export» |
 | Delete account | R16 *(not tapped)* | none | MISSING | irreversible data operation | **needs owner decision** (retention, legal) — not in campaign | — (owner) | — |
 | Change password | R10 | Telegram auth | DOMAIN-EQUIVALENT | no passwords (Telegram identity) | — | — | — |
 | Settings screen with Cancel / Save | R9 | scattered forms | MISSING | — | Settings screen | #268 | — |
