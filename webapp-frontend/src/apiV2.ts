@@ -72,7 +72,7 @@ async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
   });
   if (!response.ok) {
     const message = await extractErrorMessage("GET", path, response);
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
   return (await response.json()) as T;
 }
@@ -343,6 +343,8 @@ export interface TrainingPlanResponseV2 {
   program_inclusions: ProgramInclusionResponseV2[];
   plan_items: PlanItemResponseV2[];
   plan_weeks: PlanWeekResponseV2[];
+  /** Текущая неделя в часовом поясе пользователя (не «последняя в списке»). */
+  current_week_id?: number | null;
 }
 
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {
@@ -675,14 +677,15 @@ export interface SessionsPage {
 }
 
 /** Страница Журнала v2 — тот же GET /sessions (limit/offset), has_more
- * считает сервер. */
+ * считает сервер. exclude_backfilled (#284): сессии, созданные backfill-ом legacy-истории, не
+ * показываются — перенесённую тренировку Журнал показывает legacy-карточкой (с «Изменить»/«Удалить»). */
 export async function fetchSessionsPage(
   initDataRaw: string, limit: number, offset: number, status: "started" | "completed",
   range?: { from: string; to: string },
 ): Promise<SessionsPage> {
   const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
   return apiV2Get<SessionsPage>(
-    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}${dates}`, initDataRaw,
+    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}${dates}&exclude_backfilled=true`, initDataRaw,
   );
 }
 

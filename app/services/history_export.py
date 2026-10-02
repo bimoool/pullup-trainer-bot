@@ -1,6 +1,6 @@
 """Экспорт истории тренировок в CSV (Crimpd "Export Log Data"). Только данные
-вызывающего пользователя: завершённые v2-сессии (одна строка на подход) и
-legacy-тренировки (колонка source). UTF-8 с BOM — для Excel."""
+вызывающего пользователя: завершённые v2-сессии (одна строка на подход; без
+backfill-копий legacy-тренировок, #284) и legacy-тренировки (колонка source). UTF-8 с BOM — для Excel."""
 
 import csv
 import hashlib
@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repositories.training_sessions import SessionDetail, TrainingSessionRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.domain.electives import format_elective_set_note
+from app.domain.multi_program import SessionSource
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.training_analytics import resolve_timezone
 
@@ -50,9 +52,11 @@ def _v2_rows(detail: SessionDetail, names: dict[int, str], tz) -> list[list[str]
         exercise = item.exercise_name if item is not None else names.get(block.exercise_id or -1, "")
         protocol = item.protocol.type.value if item is not None else ""
         for log in block.set_logs:
+            # у факультатива note — упакованный JSON backfill-а: в CSV — та же читаемая строка, что в Журнале
+            note = format_elective_set_note(log.note, log.value) if detail.source == SessionSource.ELECTIVE else log.note
             rows.append([
                 "v2", date, _text(title), _text(exercise), protocol, str(log.set_number), _num(log.value),
-                log.unit, _num(log.effort), _text(log.note), effort, comment,
+                log.unit, _num(log.effort), _text(note), effort, comment,
             ])
     if not rows:  # свободная активность / сессия без подходов — одна строка
         activity = detail.activity_type or ""
@@ -64,7 +68,8 @@ def _v2_rows(detail: SessionDetail, names: dict[int, str], tz) -> list[list[str]
 async def build_rows(session: AsyncSession, *, user_id: int, timezone: str | None) -> list[list[str]]:
     tz = resolve_timezone(timezone)
     sessions = TrainingSessionRepository(session)
-    details = await sessions.list_all_completed(user_id)
+    # перенесённую backfill-ом историю отдаёт legacy-таблица (#284), v2-копии не дублируем
+    details = await sessions.list_all_completed(user_id, exclude_backfilled=True)
     ids = {b.exercise_id for d in details for b in d.blocks if b.exercise_id is not None}
     names = await sessions.exercise_names(ids)
     rows: list[list[str]] = []

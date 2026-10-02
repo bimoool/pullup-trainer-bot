@@ -24,7 +24,7 @@ import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
-  canAdvanceWeek, currentWeekIndex, groupCounter, isEditableWeek, localToday, stepWeek, weekProgress, weekRangeLabel,
+  canAdvanceWeek, groupCounter, isEditableWeek, localToday, resolveCurrentWeekIndex, stepWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -137,6 +137,11 @@ type Props = {
   /** Workout Detail «Начать» / «Записать» (свободная сессия и запись задним числом). */
   onStartWorkout: (workoutId: number, workoutTitle: string) => void;
   onLogWorkout: (workoutId: number) => void;
+  /** Вернулись из «Записать» (#277): открыть сразу Workout Detail этой тренировки. */
+  initialWorkoutId?: number | null;
+  onInitialWorkoutShown?: () => void;
+  /** «Выбрать курс» в пустом плане (#277, D3) — на Главную, где каталог программ. */
+  onOpenHome?: () => void;
 };
 
 type ScreenState =
@@ -162,9 +167,11 @@ type PlanState = {
   inclusions: ProgramInclusionResponseV2[];
   items: PlanItemResponseV2[];
   weeks: PlanWeekResponseV2[];
+  /** current_week_id с сервера (часовой пояс пользователя). */
+  currentWeekId: number | null;
 };
 
-const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null };
 
 /** issue #266 — inclusions содержит и неактивные (вкладка «Завершённые»);
  * строки убранных курсов в недельный вид не попадают (история в БД остаётся). */
@@ -179,6 +186,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
       (item) => item.program_inclusion_id === null || !inactiveIds.has(item.program_inclusion_id),
     ),
     weeks: data.plan_weeks,
+    currentWeekId: data.current_week_id ?? null,
   };
 }
 
@@ -215,7 +223,7 @@ type PickerState =
  * где WorkoutScreen (тот же STATUS_MESSAGES) объясняет причину и предлагает
  * то, что реально доступно (факультатив/бэкдейт/бот) — Dashboard не
  * дублирует эту логику, только не начинает с неё. */
-export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, onLogWorkout }: Props) {
+export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, onLogWorkout, initialWorkoutId = null, onInitialWorkoutShown, onOpenHome }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Подключённые курсы + реальные PlanWeek (Capability A issue #188, недели
   // — issue #193) — минимальный видимый результат "Добавить в план" (10.2:
@@ -243,7 +251,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // Phase C4a (issue #188) — «Мои тренировки», локальный swap-state внутри
   // Планов, тот же принцип, что HomeScreen.tsx уже использует для
   // ProgramDetailScreen (selectedProgramId), не отдельный App.tsx Tab.
-  const [myWorkoutsView, setMyWorkoutsView] = useState<MyWorkoutsView>({ kind: "closed" });
+  const [myWorkoutsView, setMyWorkoutsView] = useState<MyWorkoutsView>(
+    initialWorkoutId !== null ? { kind: "detail", workoutId: initialWorkoutId } : { kind: "closed" },
+  );
+  useEffect(() => {
+    if (initialWorkoutId !== null) {
+      onInitialWorkoutShown?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при монтировании.
+  }, []);
   // Phase D3 (issue #188) — inline "Убрать из плана?" confirm на карточке,
   // тот же паттерн, что WorkoutEditorScreen.tsx уже использует для
   // удаления item'а (deleteConfirmItemId).
@@ -474,7 +490,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         planItemId={myWorkoutsView.planItemId}
         title={myWorkoutsView.title}
         currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
-        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, currentWeekIndex(plan.weeks, localToday())))}
+        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday())))}
         currentWeekId={myWorkoutsView.planWeekId}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onSuccess={() => {
@@ -549,7 +565,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // issue #258 — одна неделя за раз. Список — по возрастанию week_number;
   // текущая = последняя начавшаяся (ensure_current_plan_week не создаёт недели
   // наперёд, но будущие недели допустимы — тогда › пойдёт дальше текущей).
-  const currentIndex = plan.weeks.length > 0 ? currentWeekIndex(plan.weeks, localToday()) : 0;
+  const currentIndex = plan.weeks.length > 0 ? resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday()) : 0;
   const currentWeekId = plan.weeks.length > 0 ? plan.weeks[currentIndex].id : null;
   const selectedIndexRaw = plan.weeks.findIndex((week) => week.id === selectedWeekId);
   const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;
@@ -572,12 +588,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       {/* Phase C4a (issue #188) — entry point, не ломает существующую
           навигацию/карточки плана ниже, просто дополнительная кнопка
           сверху экрана. */}
-      <Button
-        className="action-button" size="m"
-        onClick={() => setMyWorkoutsView({ kind: "list" })}
-      >
-        Мои тренировки
-      </Button>
+      <div className="screen-title-row">
+        <p className="plan-title">Планы</p>
+        <Button
+          className="action-button" size="s" mode="bezeled"
+          onClick={() => setMyWorkoutsView({ kind: "list" })}
+        >
+          Мои тренировки
+        </Button>
+      </div>
       <div className="workout-mode-buttons" role="tablist" aria-label="Обзор плана">
         {([["now", "Сейчас"], ["completed", "Завершённые"]] as const).map(([key, label]) => (
           <button
@@ -608,9 +627,16 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         <div className="profile-card" data-testid="plans-now-card">
           <p className="block-subtitle">Текущий план</p>
           {activeInclusions.length === 0 && (
-            <p className="block-subtitle" data-testid="plans-now-empty">
-              Курсов в плане нет. Добавьте курс на Главной.
-            </p>
+            <>
+              <p className="block-subtitle" data-testid="plans-now-empty">
+                Курсов в плане нет. Добавьте курс на Главной.
+              </p>
+              {onOpenHome !== undefined && (
+                <Button size="s" mode="outline" data-testid="plans-now-open-home" onClick={onOpenHome}>
+                  Выбрать курс на Главной
+                </Button>
+              )}
+            </>
           )}
           {activeInclusions.map((inclusion) => {
             const currentItems = plan.items.filter(

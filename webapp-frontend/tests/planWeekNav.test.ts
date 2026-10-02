@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  canAdvanceWeek, currentWeekIndex, groupCounter, isEditableWeek, localToday, stepWeek, weekProgress, weekRangeLabel,
+  canAdvanceWeek, currentWeekIndex, groupCounter, isEditableWeek, localToday, resolveCurrentWeekId,
+  resolveCurrentWeekIndex, stepWeek, weekProgress, weekRangeLabel,
 } from "../src/planWeekNav.ts";
 
 test("weekRangeLabel: через границу месяца и года", () => {
@@ -54,4 +55,22 @@ test("isEditableWeek: прошлые недели только для чтени
   assert.equal(isEditableWeek(0, 1), false);
   assert.equal(isEditableWeek(1, 1), true);
   assert.equal(isEditableWeek(3, 1), true);
+});
+
+test("resolveCurrentWeekIndex/Id: current_week_id сервера важнее «последней недели»", () => {
+  const weeks = [
+    { id: 1, start_date: "2026-09-28" },
+    { id: 2, start_date: "2026-10-05" },
+    { id: 3, start_date: "2026-10-12" },
+  ];
+  // сервер: текущая — id 1 (часовой пояс пользователя); локальная дата устройства уже «в будущем»
+  assert.equal(resolveCurrentWeekIndex(weeks, 1, "2026-10-06"), 0);
+  assert.equal(resolveCurrentWeekId(weeks, 1, "2026-10-06"), 1);
+  // будущие недели в конце списка текущими не считаются
+  assert.equal(resolveCurrentWeekId(weeks, 2, "2026-10-06"), 2);
+  // нет поля (старый ответ) или неизвестный id → фолбэк по локальной дате
+  assert.equal(resolveCurrentWeekId(weeks, undefined, "2026-10-06"), 2);
+  assert.equal(resolveCurrentWeekId(weeks, null, "2026-10-06"), 2);
+  assert.equal(resolveCurrentWeekId(weeks, 99, "2026-10-06"), 2);
+  assert.equal(resolveCurrentWeekId([], 5, "2026-10-06"), null);
 });

@@ -8,7 +8,7 @@ import { openAppAs } from "../../fixtures/setup";
 // Сиды (scripts/e2e_seed.py, только e2e-БД):
 //  * peer_cohort_female 994001 / peer_cohort_male 994002 — зритель (35 лет, 10 кг) + 24 синтетических
 //    пользователя той же когорты в id-диапазонах 8_100_001.. / 8_200_001.. (значения 1..25 кг кроме 10):
-//    когорта 25 человек -> процентиль 38, медиана 13 кг, следующий ориентир p50 = 13 кг.
+//    когорта 25 человек -> точный процентиль 38, наружу полоса 30 («~30%»), медиана 13 кг, ориентир p50 = 13 кг.
 //  * peer_insufficient 994011/994012 — один результат «Максимум подтягиваний», когорт на 20 нет.
 //  * peer_empty 994021/994022 (320) и 994031/994032 (390) — без результатов; тест пишет результат (+retry).
 // 320 px — светлая тема, 390 px — тёмная.
@@ -45,7 +45,7 @@ for (const width of WIDTHS) {
       const card = page.getByTestId("peer-insights");
       await expect(page.getByTestId("peer-insights-title")).toHaveText("Сравнение с похожими");
       await expect(card.getByTestId("peer-insights-cohort")).toHaveText(`${viewer.label} · 20–49 человек`);
-      await expect(card.getByTestId("peer-insights-percentile")).toHaveText("Лучше, чем у 38% похожих");
+      await expect(card.getByTestId("peer-insights-percentile")).toHaveText("Лучше, чем у ~30% похожих");
       await expect(card.getByTestId("peer-insights-median")).toHaveText("Медиана: 13 кг");
       await expect(card.getByTestId("peer-insights-next")).toHaveText("Следующий ориентир: 13 кг — лучше, чем у 50% похожих");
       await expect(card.getByTestId("peer-insights-bar-fill")).toHaveCSS("width", /\d/);
@@ -62,6 +62,20 @@ for (const width of WIDTHS) {
       expect(Object.values(body).some((value) => Array.isArray(value))).toBe(false);
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
+    });
+
+    test("лимит запросов (429): дружелюбный текст вместо чисел", async ({ page }) => {
+      await page.route("**/peer-insights", (route) =>
+        route.fulfill({
+          status: 429, contentType: "application/json",
+          body: JSON.stringify({ detail: "Слишком много запросов сравнения. Попробуйте чуть позже." }),
+        }),
+      );
+      await openAppAs(page, COHORT_VIEWER[width as 320 | 390].id, { theme, allowedApiStatuses: [429] });
+      await openTest(page, WEIGHTED);
+      const card = page.getByTestId("peer-insights");
+      await expect(card.getByTestId("peer-insights-error")).toHaveText("Слишком много запросов сравнения. Попробуйте чуть позже.");
+      await expect(card.getByTestId("peer-insights-percentile")).toHaveCount(0);
     });
 
     test("мало данных: точный текст вместо чисел", async ({ page }) => {

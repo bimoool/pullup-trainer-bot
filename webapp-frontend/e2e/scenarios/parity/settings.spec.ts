@@ -9,7 +9,8 @@ import { openAppAs } from "../../fixtures/setup";
 // 999001/999011 (единицы), +2 (тема), +4 (отмена). Вес 75 кг, рост 180 см (_QUESTIONNAIRE_DEFAULTS).
 const BASE = { 320: 999_001, 390: 999_011 } as const;
 const THEMES = { 320: "light", 390: "dark" } as const;
-const LIGHT_BG = "rgb(255, 255, 255)";
+// #280: светлая страница серая (--vp-page-bg = secondary_bg #f2f2f7), карточки белые.
+const LIGHT_BG = "rgb(242, 242, 247)";
 const DARK_BG = "rgb(23, 33, 43)";
 
 const bodyBg = (page: Page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

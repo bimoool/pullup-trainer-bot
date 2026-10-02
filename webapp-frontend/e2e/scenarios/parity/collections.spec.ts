@@ -49,6 +49,51 @@ for (const width of WIDTHS) {
       expect(consoleErrors).toEqual([]);
     });
 
+    test("программа из подборки, пока каталог грузится: «Загружаю программу…», «Назад» работает, затем открывается Program Detail (#283)", async ({ page }) => {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/api/v2/programs", async (route) => {
+        await gate;
+        await route.continue();
+      });
+      const { consoleErrors, apiFailures } = await openAppAs(page, user.id, { theme: user.theme });
+
+      await page.getByTestId("collection-card").filter({ hasText: "E2E: подборка" }).click();
+      await expect(page.getByTestId("collection-item")).toHaveCount(3);
+      await page.getByTestId("collection-item").nth(0).click();
+      await expect(page.getByTestId("program-pending-loading")).toHaveText("Загружаю программу…");
+      await expectNoHorizontalOverflow(page, "Подборка: программа, каталог грузится");
+
+      // «Назад» из ожидания возвращает в подборку, не в тупик.
+      await page.getByRole("button", { name: "← Назад" }).click();
+      await expect(page.getByTestId("collection-screen")).toBeVisible();
+      await page.getByTestId("collection-item").nth(0).click();
+      await expect(page.getByTestId("program-pending-loading")).toBeVisible();
+
+      release();
+      await expect(page.getByTestId("program-detail-title")).toHaveText("Подборка: сила");
+      await page.getByRole("button", { name: "← Назад" }).click();
+      await expect(page.getByTestId("collection-screen")).toBeVisible();
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("программа из подборки, каталог не загрузился: понятная ошибка и «Назад» в подборку (#283)", async ({ page }) => {
+      await page.route("**/api/v2/programs", (route) =>
+        route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "catalog down" }) }),
+      );
+      await openAppAs(page, user.id, { theme: user.theme, allowedApiStatuses: [500] });
+
+      await page.getByTestId("collection-card").filter({ hasText: "E2E: подборка" }).click();
+      await page.getByTestId("collection-item").nth(0).click();
+      await expect(page.getByTestId("program-pending-error")).toContainText("Не удалось загрузить программу");
+      await expectNoHorizontalOverflow(page, "Подборка: программа, каталог упал");
+      await page.getByRole("button", { name: "← Назад" }).click();
+      await expect(page.getByTestId("collection-screen")).toBeVisible();
+    });
+
     test("экран подборки: шапка и список; программа и упражнение открывают свои экраны, «Назад» не ведёт в тупик", async ({ page }) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, user.id, { theme: user.theme, backButton: true });
 

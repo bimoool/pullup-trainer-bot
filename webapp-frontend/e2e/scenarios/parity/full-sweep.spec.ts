@@ -28,7 +28,7 @@ const MODES: readonly Mode[] = ["empty", "populated"];
 
 // Базы telegram_id: +индекс комбинации (320 light / 320 dark / 390 light / 390 dark), +10 000 на retry.
 const BASE = {
-  empty: 999_501, populated: 999_511, workout: 999_521, tests: 999_531, settings: 999_541, plans: 999_551,
+  empty: 999_901, populated: 999_911, workout: 999_921, tests: 999_931, settings: 999_941, plans: 999_951,
 } as const;
 const uid = (base: number, comboIndex: number, retry: number) => base + comboIndex + retry * 10_000;
 
@@ -498,9 +498,10 @@ const FLOWS: Flow[] = [
   },
 ];
 
-// --- Известные дефекты (ожидаемо падают, пока не исправлены; test.fail() сообщит, когда починят) --
+// --- Регрессии дефектов, найденных свипом (исправлены; полные сценарии — parity/sweep-defects.spec.ts) --
+// D2 (Профиль учитывал только legacy-историю) — только в sweep-defects.spec.ts: ему нужен пользователь без legacy.
 
-const KNOWN_DEFECTS: { id: string; modes: readonly Mode[]; title: string; run: (ctx: Ctx) => Promise<void> }[] = [
+const FIXED_DEFECTS: { id: string; modes: readonly Mode[]; title: string; run: (ctx: Ctx) => Promise<void> }[] = [
   {
     id: "D1", modes: ["populated"],
     title: "Деталь тренировки → «Записать» → «← Назад» возвращает на деталь, а не в Журнал",
@@ -513,17 +514,8 @@ const KNOWN_DEFECTS: { id: string; modes: readonly Mode[]; title: string; run: (
     },
   },
   {
-    id: "D2", modes: ["populated"],
-    title: "Профиль учитывает завершённые тренировки Журнала (сейчас — только legacy-историю: «Тренировок пока не было.»)",
-    run: async ({ page }) => {
-      await openTab(page, "Профиль");
-      await expect(profileMarker(page)).toBeVisible();
-      await expect(page.getByText("Тренировок пока не было.")).toHaveCount(0);
-    },
-  },
-  {
     id: "D3", modes: ["empty"],
-    title: "Планы без курсов: подсказка «Добавьте курс на Главной» — с кнопкой-переходом (сейчас — просто текст)",
+    title: "Планы без курсов: подсказка «Добавьте курс на Главной» — с кнопкой-переходом",
     run: async ({ page }) => {
       await openTab(page, "Планы");
       await expect(page.getByTestId("plans-now-empty")).toBeVisible();
@@ -564,9 +556,8 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       });
 
       {
-        for (const defect of KNOWN_DEFECTS.filter((candidate) => candidate.modes.includes(mode))) {
-          test(`известный дефект ${defect.id}: ${defect.title}`, async ({ page }, testInfo) => {
-            test.fail(true, "см. комментарий #277: дефект ещё не исправлен — снять test.fail после исправления");
+        for (const defect of FIXED_DEFECTS.filter((candidate) => candidate.modes.includes(mode))) {
+          test(`регрессия ${defect.id}: ${defect.title}`, async ({ page }, testInfo) => {
             await openAppAs(page, uid(BASE[mode], comboIndex, testInfo.retry), { theme, backButton: true });
             await defect.run({ page, mode });
           });

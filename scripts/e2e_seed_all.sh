@@ -95,6 +95,8 @@ seed plans_overview 990202
 # #275 «Plans schedule»: 990301 (320 light) / 990302 (390 dark) — мутирующий сценарий.
 seed plan_week_manual_session 990301
 seed plan_week_manual_session 990302
+# #283 «Plans current week»: 990401/990411 (320 light / 390 dark, + retry) — мутирующий сценарий.
+for id in 990401 990402 990411 990412; do seed golden_journey "$id"; done
 # #273 «Workout Detail start/log»: 998001/998011 (+ retry), «Записать»: id+5(+retry).
 for id in 998001 998002 998006 998007 998011 998012 998016 998017; do seed golden_journey "$id"; done
 # Settings (#268): 999001/999011 (единицы), +2 (тема), +4 (отмена), каждый + retry (id+1).
@@ -106,16 +108,18 @@ for id in 999121 999122 999131 999132; do seed background_interval "$id"; done
 for id in 999201 999202 999203 999204 999211 999212 999213 999214; do seed body_metrics "$id"; done
 # Analytics distribution (#274): 999301/999311 (320/390 px, только чтение), каждый + retry (id+1).
 for id in 999301 999302 999311 999312; do seed analytics_distribution "$id"; done
-# Full sweep (#277): пустые (RO) 999501-999504 = 320 light / 320 dark / 390 light / 390 dark; наполненные RO — 999511-999514;
-# мутирующие потоки — наполненные: 99952x (тренировка → журнал → аналитика → экспорт), 99953x (тесты),
-# 99954x (настройки/единицы), 99955x (планы: будущая неделя/копирование/перенос); те же 4 комбинации (x1-x4);
-# retry — +10000 (1009501…). Не пересекается с #282 (9996xx) и #271 (9994xx).
+# Full sweep (#277): пустые (RO) 999901-999904 = 320 light / 320 dark / 390 light / 390 dark; наполненные RO — 999911-999914;
+# мутирующие потоки — наполненные: 99992x (тренировка → журнал → аналитика → экспорт), 99993x (тесты),
+# 99994x (настройки/единицы), 99995x (планы: будущая неделя/копирование/перенос); те же 4 комбинации (x1-x4);
+# retry — +10000 (1009901…). Диапазон 9999xx зарезервирован под sweep (занят: 9995xx #280, 9996xx #282, 9997xx #284/#277-defects).
 for retry in 0 10000; do
-  for id in 999501 999502 999503 999504; do seed sweep_empty $((id + retry)); done
-  for id in 999511 999512 999513 999514 999521 999522 999523 999524 999531 999532 999533 999534 999541 999542 999543 999544 999551 999552 999553 999554; do
+  for id in 999901 999902 999903 999904; do seed sweep_empty $((id + retry)); done
+  for id in 999911 999912 999913 999914 999921 999922 999923 999924 999931 999932 999933 999934 999941 999942 999943 999944 999951 999952 999953 999954; do
     seed sweep_populated $((id + retry))
   done
 done
+# Visual shell (#280): 9995xx — только чтение (320/390 × light/dark), каждый + retry (id+1).
+for id in 999501 999502 999511 999512 999521 999522 999531 999532; do seed home_discovery "$id"; done
 # Residual gaps (#281): 9973xx — Журнал → «Открыть тренировку» (workout_detail), Главная «Все ›» + тесты в поиске
 # (home_discovery, только чтение), 9974xx — вибрация конца фазы (golden_journey, отдых 2 с); каждый + retry (id+1).
 for id in 997301 997302 997311 997312; do seed workout_detail "$id"; done
@@ -125,5 +129,13 @@ for id in 997401 997402 997403 997404 997411 997412 997413 997414; do seed golde
 for id in 999401 999402 999411 999412; do seed collections "$id"; done
 # Owner P0 (#279) «Факультатив — 3 минуты подтягиваний»: 999801 (320 px light) / 999811 (390 px dark), каждый + retry (id+1).
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
-# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
+# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); правка и удаление legacy-записей (#284).
 for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done
+# #277 «Sweep defects» (D1-D3): 997501 (320 px light) / 997521 (390 px dark); тесты берут id + 2*индекс + retry.
+for base in 997501 997521; do for off in 0 1 2 3 4 5 6 7 8 9; do seed sweep_defects $((base + off)); done; done
+# Visual live session (#280, Live Session stream): 9976xx — 320/390 × light/dark, каждый + retry (id+1);
+# 997691/997692 — только для снимков (ux-capture), не для тестов.
+for id in 997601 997602 997611 997612 997621 997622 997631 997632 997691; do seed session_recovery "$id"; done
+seed builder_workouts 997692
+# #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
+for id in 999701 999702 999711 999712; do seed journal_return "$id"; done

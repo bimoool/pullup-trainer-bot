@@ -6,9 +6,8 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
-import json
-from collections import Counter
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -41,6 +40,7 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.activity_types import activity_label
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
+from app.domain.electives import format_elective_set_note
 from app.domain.journal_calendar import (
     local_day_counts,
     local_range_bounds_utc,
@@ -64,7 +64,6 @@ from app.domain.program_schedule import (
 )
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
-from app.services.journal_dedupe import list_backfilled_duplicates
 from app.services.live_session import (
     ActiveSessionConflictError,
     CompleteResult,
@@ -165,11 +164,12 @@ def _program_response(program: Program, strategy_type_value: str | None) -> Prog
     )
 
 
-def _program_inclusion_response(inclusion: ProgramInclusion) -> ProgramInclusionResponse:
+def _program_inclusion_response(inclusion: ProgramInclusion, today: date) -> ProgramInclusionResponse:
+    """today — дата пользователя (_plan_today): current_week считается в его поясе, как недели плана."""
     total_weeks = duration_weeks((inclusion.snapshot or {}).get("config"))
     return ProgramInclusionResponse(
         duration_weeks=total_weeks,
-        current_week=course_week_number(inclusion.started_at.date(), datetime.now(UTC).date(), total_weeks),
+        current_week=course_week_number(inclusion.started_at.date(), today, total_weeks),
         id=inclusion.id, program_id=inclusion.program_id,
         program_name=inclusion.snapshot.get("program_name", ""),
         is_active=inclusion.is_active, started_at=inclusion.started_at, expires_at=inclusion.expires_at,
@@ -200,20 +200,14 @@ def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
     )
 
 
-def _set_log_note(source: SessionSource, note: str | None) -> str | None:
-    """SetLog.note факультатива — упакованный backfill-ом JSON (формат/снаряд/подходы, #163),
-    не пользовательский текст: в API уходит читаемая строка «Подходы: 4 · 3 · 2» (или None),
-    сырой JSON наружу не отдаётся (#279)."""
+def _set_log_note(source: SessionSource, note: str | None, value: Decimal | None = None) -> str | None:
+    """SetLog.note факультатива — упакованный backfill-ом JSON, не пользовательский текст: в API
+    уходит читаемая строка «Подходы: 4 · 3 · 2» (или None), сырой JSON наружу не отдаётся (#279);
+    разбивка скрыта, если значение подхода правили и оно ≠ сумме (#283) — см.
+    `app.domain.electives.format_elective_set_note` (общий с CSV-экспортом)."""
     if source != SessionSource.ELECTIVE or note is None:
         return note
-    try:
-        payload = json.loads(note)
-    except ValueError:
-        return None
-    sequence = payload.get("reps_sequence") if isinstance(payload, dict) else None
-    if not isinstance(sequence, list) or not sequence or not all(isinstance(n, int) for n in sequence):
-        return None
-    return "Подходы: " + " · ".join(str(n) for n in sequence)
+    return format_elective_set_note(note, value)
 
 
 def _session_response(
@@ -252,7 +246,7 @@ def _session_response(
                     set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                     value=str(log.value), unit=log.unit,
                     effort=str(log.effort) if log.effort is not None else None,
-                    note=_set_log_note(detail.source, log.note), is_extra=log.is_extra,
+                    note=_set_log_note(detail.source, log.note, log.value), is_extra=log.is_extra,
                 )
                 for log in block.set_logs
             ],
@@ -802,6 +796,18 @@ async def duplicate_workout(
 # --- План ------------------------------------------------------------------------------
 
 
+def _utcnow() -> datetime:
+    """Единая точка «сейчас» для недельной арифметики плана (подменяется в тестах)."""
+    return datetime.now(UTC)
+
+
+def _plan_today(user) -> date:
+    """Сегодняшняя дата в часовом поясе пользователя: по ней считается вся
+    недельная арифметика плана (текущая неделя, окно «текущая .. +4»), как и
+    на клиенте; в UTC у UTC+N около полуночи понедельника неделя не совпадала."""
+    return _utcnow().astimezone(resolve_timezone(user.timezone)).date()
+
+
 @router_v2.get("/plan", response_model=PlanResponse)
 async def get_plan(
     init_data: InitData = Depends(get_validated_init_data),
@@ -818,8 +824,8 @@ async def get_plan(
     # действия пользователя — "пользователь не может открыть Планы и
     # остаться на прошлой неделе" (Поправка 4). Тонкий вызов, вся логика —
     # в PlanWeekService, идемпотентно на каждый GET.
-    await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=plan.id, today=datetime.now(UTC).date(),
+    current_week = await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=_plan_today(user),
     )
 
     inclusions = await plans.list_inclusions(plan.id)
@@ -849,7 +855,7 @@ async def get_plan(
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
-            program_inclusions=[_program_inclusion_response(inclusion) for inclusion in inclusions],
+            program_inclusions=[_program_inclusion_response(inclusion, _plan_today(user)) for inclusion in inclusions],
             plan_items=[
                 _plan_item_response(
                     item, complex_name_by_id, complex_source_type_by_id, done_by_item.get(item.id, 0),
@@ -857,6 +863,7 @@ async def get_plan(
                 for item in plan_items
             ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
+            current_week_id=current_week.id,
         ),
     )
 
@@ -882,9 +889,9 @@ async def create_program_inclusion(
     # логика материализации в PlanWeekService, не здесь (раздел 4 preflight:
     # "не помещать бизнес-логику materialization непосредственно в route").
     await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=inclusion.training_plan_id, today=datetime.now(UTC).date(),
+        training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
-    return _program_inclusion_response(inclusion)
+    return _program_inclusion_response(inclusion, _plan_today(user))
 
 
 @router_v2.post("/program-inclusions/{inclusion_id}/deactivate", response_model=ProgramInclusionResponse)
@@ -905,7 +912,7 @@ async def deactivate_program_inclusion(
         if inclusion.expires_at is None:
             inclusion.expires_at = datetime.now(UTC)
         await session.commit()
-    return _program_inclusion_response(inclusion)
+    return _program_inclusion_response(inclusion, _plan_today(user))
 
 
 # --- Строки недельной матрицы -----------------------------------------------------------
@@ -922,7 +929,7 @@ async def create_plan_week(
     user = await _require_user(session, init_data)
     plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
     week = await PlanWeekService(session).ensure_plannable_week(
-        training_plan_id=plan.id, week_number=body.week_number, today=datetime.now(UTC).date(),
+        training_plan_id=plan.id, week_number=body.week_number, today=_plan_today(user),
     )
     if week is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
@@ -947,7 +954,7 @@ async def copy_plan_week_to_next(
     service = PlanWeekService(session)
     target = await service.ensure_plannable_week(
         training_plan_id=source.training_plan_id, week_number=source.week_number + 1,
-        today=datetime.now(UTC).date(),
+        today=_plan_today(user),
     )
     if target is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
@@ -1046,7 +1053,7 @@ async def move_plan_item(
         current = await plans.get_plan_item_for_user(plan_item_id, user.id)
         if plan is None or target is None or current is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
-        current_number = plan_week_number(plan.created_at.date(), datetime.now(UTC).date())
+        current_number = plan_week_number(plan.created_at.date(), _plan_today(user))
         source = (
             await plans.get_plan_week_for_user(current.plan_week_id, user.id) if current.plan_week_id else None
         )
@@ -1170,6 +1177,7 @@ async def list_sessions(
     status_filter: Literal["started", "completed"] | None = Query(default=None, alias="status"),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    exclude_backfilled: bool = Query(default=False),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> SessionListResponse:
@@ -1178,7 +1186,13 @@ async def list_sessions(
     SessionJournalScreen.tsx его не передают, их поведение не меняется.
 
     date_from/date_to (#256) — включительно, ЛОКАЛЬНЫЕ дни пользователя (его
-    часовой пояс, как в Analytics v2); Журнал грузит месяц за запрос."""
+    часовой пояс, как в Analytics v2); Журнал грузит месяц за запрос.
+
+    exclude_backfilled (#284) — только для Журнала: скрыть v2-сессии, созданные backfill-ом legacy
+    Workout (#163; отпечаток — TrainingSessionRepository._backfilled_fingerprint). Старая схема —
+    источник правды для перенесённой истории, её карточки показаны отдельно (GET /api/history) и
+    только у них есть «Изменить»/«Удалить». Электив (#279, source=elective) и живые/Builder-сессии
+    не скрываются. has_more считается после скрытия. Без флага — прежний ответ."""
     user = await _require_user(session, init_data)
     performed_from = performed_to = None
     if date_from is not None or date_to is not None:
@@ -1206,7 +1220,7 @@ async def list_sessions(
     # limit+1 — только чтобы честно ответить has_more без отдельного запроса.
     fetched = await TrainingSessionRepository(session).list_for_user(
         user.id, limit=limit + 1, offset=offset, status=status_value,
-        performed_from=performed_from, performed_to=performed_to,
+        performed_from=performed_from, performed_to=performed_to, exclude_backfilled=exclude_backfilled,
     )
     has_more = len(fetched) > limit
     details = fetched[:limit]
@@ -1249,22 +1263,17 @@ async def journal_days(
     workouts_repo = WorkoutRepository(session)
 
     start, end = local_range_bounds_utc(first_day, last_day, tz)
-    counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end), tz)
+    # v2-сессии, созданные backfill-ом (#284), не считаются: их показывает legacy-карточка ниже —
+    # те же правила, что у списка Журнала (GET /sessions?exclude_backfilled=true).
+    counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end, exclude_backfilled=True), tz)
     legacy_start, legacy_end = local_range_bounds_utc(first_day, last_day, UTC)
-    legacy_moments = await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end)
-    # legacy-записи, уже перенесённые backfill-ом в v2-сессии (#282), посчитаны выше как сессии
-    migrated = Counter(key.performed_at for key in await list_backfilled_duplicates(session, user.id))
-    legacy_moments_shown = []
-    for moment in legacy_moments:
-        if migrated[moment] > 0:
-            migrated[moment] -= 1
-        else:
-            legacy_moments_shown.append(moment)
-    for day, count in local_day_counts(legacy_moments_shown, UTC).items():
+    for day, count in local_day_counts(
+        await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end), UTC,
+    ).items():
         counts[day] = counts.get(day, 0) + count
 
     latest_days: list[date] = []
-    latest_session = await sessions_repo.latest_completed_performed_at(user.id)
+    latest_session = await sessions_repo.latest_completed_performed_at(user.id, exclude_backfilled=True)
     if latest_session is not None:
         latest_days.append(latest_session.astimezone(tz).date())
     latest_workout = await workouts_repo.latest_completed_performed_at(user.id)
