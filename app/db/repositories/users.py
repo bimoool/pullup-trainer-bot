@@ -4,7 +4,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Gender, SubscriptionStatus, User
+from app.db.models import BodyMetric, Gender, SubscriptionStatus, User
+from app.db.repositories.body_metrics import BodyMetricRepository
 
 
 class UserRepository:
@@ -47,9 +48,16 @@ class UserRepository:
         timezone: str | None = None,
     ) -> User:
         user = await self._session.get_one(User, user_id)
+        # Запись веса/роста дописывает замер в историю (issue #270); если
+        # значение не изменилось — не плодим дубль (форма шлёт все поля).
+        history = BodyMetricRepository(self._session)
         if weight_kg is not None:
+            if user.weight_kg != weight_kg:
+                await history.add(user_id, BodyMetric.WEIGHT_KG, weight_kg)
             user.weight_kg = weight_kg
         if height_cm is not None:
+            if user.height_cm != height_cm:
+                await history.add(user_id, BodyMetric.HEIGHT_CM, Decimal(height_cm))
             user.height_cm = height_cm
         if gender is not None:
             user.gender = gender

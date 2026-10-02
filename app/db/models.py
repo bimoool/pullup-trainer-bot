@@ -628,3 +628,27 @@ class WorkoutDraft(Base):
     block_b_actual_band_item_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class BodyMetric(StrEnum):
+    WEIGHT_KG = "weight_kg"
+    HEIGHT_CM = "height_cm"
+
+
+class UserBodyMetric(Base):
+    """История замеров тела (issue #270): вес/рост с датой. Последний замер
+    каждой метрики (по measured_at, затем id) зеркалится в User.weight_kg/
+    height_cm — их читают GTO/WSF/лидерборд, поэтому они остаются источником
+    «текущего значения». metric хранится строкой (BodyMetric.value), value —
+    Numeric (рост целый, но колонка общая)."""
+
+    __tablename__ = "user_body_metrics"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    metric: Mapped[str] = mapped_column(String, nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

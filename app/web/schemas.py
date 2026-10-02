@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -1064,3 +1064,65 @@ class DisplayPreferencesUpdateRequest(BaseModel):
     weight_unit: Literal["kg", "lb"] | None = None
     height_unit: Literal["cm", "in"] | None = None
     theme: Literal["auto", "light", "dark"] | None = None
+
+
+# --- История веса/роста (issue #270) -----------------------------------------------
+
+_BODY_METRIC_LIMITS: dict[str, tuple[Decimal, Decimal]] = {
+    "weight_kg": (Decimal(20), Decimal(500)),
+    "height_cm": (Decimal(50), Decimal(300)),
+}
+# Допуск на часовой пояс клиента: «сегодня» у пользователя может быть впереди UTC.
+_BODY_METRIC_FUTURE_SLACK = timedelta(days=1)
+
+
+def _validate_measured_at(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    if value > datetime.now(UTC) + _BODY_METRIC_FUTURE_SLACK:
+        raise ValueError("measured_at не может быть в будущем")
+    return value
+
+
+class BodyMetricCreateRequest(BaseModel):
+    metric: Literal["weight_kg", "height_cm"]
+    value: Decimal
+    measured_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "BodyMetricCreateRequest":
+        low, high = _BODY_METRIC_LIMITS[self.metric]
+        if not low <= self.value <= high:
+            raise ValueError(f"value вне диапазона {low}..{high}")
+        if self.metric == "height_cm" and self.value != self.value.to_integral_value():
+            raise ValueError("рост — целое число сантиметров")
+        self.measured_at = _validate_measured_at(self.measured_at)
+        return self
+
+
+class BodyMetricUpdateRequest(BaseModel):
+    """None = «не менять»; диапазон значения проверяется в роуте (метрику знает запись)."""
+
+    value: Decimal | None = None
+    measured_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "BodyMetricUpdateRequest":
+        self.measured_at = _validate_measured_at(self.measured_at)
+        return self
+
+
+class BodyMetricEntry(BaseModel):
+    id: int
+    value: Decimal
+    measured_at: datetime
+
+
+class BodyMetricHistoryResponse(BaseModel):
+    """items — новые сверху; current — то, что зеркалится в User (последний замер)."""
+
+    metric: Literal["weight_kg", "height_cm"]
+    items: list[BodyMetricEntry]
+    current: Decimal | None = None

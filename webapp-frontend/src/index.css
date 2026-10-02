@@ -414,6 +414,25 @@ html {
   font-size: 15px;
 }
 
+.profile-link-row {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+
+.profile-link-row::after {
+  content: "›";
+  color: var(--tg-subtitle-text-color);
+}
+
+.body-metrics-trend {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  color: var(--tg-button-color, #2481cc);
+}
+
 .profile-card p:last-child {
   margin-bottom: 0;
 }

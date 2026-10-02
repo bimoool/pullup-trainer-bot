@@ -71,7 +71,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import Base, async_session_factory
-from app.db.models import Gender, User
+from app.db.models import BodyMetric, Gender, User
 from app.db.models_program import (
     AssessmentProtocol,
     AssessmentResult,
@@ -90,6 +90,7 @@ from app.db.models_program import (
     TrainingPlan,
     TrainingSession,
 )
+from app.db.repositories.body_metrics import BodyMetricRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -1241,7 +1242,18 @@ async def seed_background_interval(session: AsyncSession, telegram_id: int) -> N
     await session.flush()
 
 
+async def seed_body_metrics(session: AsyncSession, telegram_id: int) -> None:
+    """#270 «Body metrics»: онбординг (вес 75 кг / рост 180 см = текущая запись истории «сейчас»)
+    + два задним числом замера веса: 78 кг (30 дней назад) и 76.5 кг (14 дней назад)."""
+    user = await _onboard(session, telegram_id)
+    history = BodyMetricRepository(session)
+    now = datetime.now(UTC)
+    await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal(78), now - timedelta(days=30))
+    await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal("76.5"), now - timedelta(days=14))
+
+
 SCENARIOS = {
+    "body_metrics": seed_body_metrics,
     "background_interval": seed_background_interval,
     "session_recovery": seed_session_recovery,
     "golden_journey": seed_golden_journey,
