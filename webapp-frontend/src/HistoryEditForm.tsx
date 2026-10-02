@@ -17,6 +17,7 @@ import {
   parseSetValues,
   replaceAt,
 } from "./WorkoutScreen";
+import { useBackButton } from "./useBackButton";
 
 type Props = {
   initDataRaw: string;
@@ -84,6 +85,8 @@ function isTotalFormatB(detail: HistoryEditDetail): boolean {
  * записать точный вес") доступна, смена резины — только через бота.
  */
 export function HistoryEditForm({ initDataRaw, workoutId, onDone, onCancel }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onCancel, [onCancel]);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");

@@ -2,6 +2,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchWarmup } from "./api";
+import { useBackButton } from "./useBackButton";
 
 type Props = { initDataRaw: string; onBack: () => void };
 
@@ -15,6 +16,8 @@ type ScreenState = { phase: "loading" } | { phase: "error"; message: string } | 
  * валидное значение Tab в App.tsx, назад ведёт на тот раздел, откуда
  * открыли). */
 export function WarmupScreen({ initDataRaw, onBack }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
 
   useEffect(() => {

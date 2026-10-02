@@ -7,6 +7,7 @@ import { describeJournalBlock } from "./journalFormat";
 import {
   buildEditPayload, initialDraft, isDateAllowed, SET_NOTE_MAX, todayKey, type EditDraft, type SetDraft,
 } from "./journalEdit";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 const UNIT_LABELS: Record<string, string> = { reps: "повт.", s: "сек", kg: "кг", deg: "°", m: "м" };
 
@@ -102,12 +103,11 @@ export function JournalV2EditForm({
                 <span className="field-label">Подход {set.setNumber}, {UNIT_LABELS[set.unit] ?? set.unit}</span>
                 <input
                   className="journal-edit-input"
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  min={0}
                   aria-label={`Подход ${set.setNumber}: значение`}
                   value={set.value}
-                  onChange={(e) => patchSet(set.blockIndex, set.setNumber, { value: e.target.value })}
+                  onChange={(e) => patchSet(set.blockIndex, set.setNumber, { value: sanitizeDecimalInput(e.target.value) })}
                 />
                 <EffortSelect
                   label={`Подход ${set.setNumber}: усилие`}

@@ -9,10 +9,13 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { OfflineQueryProvider } from "./OfflineQueryProvider";
 import { getDisplayPrefs, subscribeDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
 import { PALETTES, resolveAppearance, THEME_VARS, type ThemePref } from "./theme";
+import { bootTelegram } from "./telegramBoot";
 import "./index.css";
 import "./shell.css";
 import "./live.css";
 import "./screens.css";
+// safe-area overrides must load last (they override shell/live/screens paddings)
+import "./telegram-safe-area.css";
 
 // issue #34: window.Telegram.WebApp — тот же мост, что App.tsx уже использует
 // как надёжный запасной источник initData (issue #23) — читаем напрямую, не
@@ -46,6 +49,12 @@ const THEME_PARAM_TO_CSS_VAR: Record<string, string> = {
   section_bg_color: "--tg-section-bg-color",
   subtitle_text_color: "--tg-subtitle-text-color",
   destructive_text_color: "--tg-destructive-text-color",
+  // Bot API 6.10+/7.x: новые ключи themeParams (пока без потребителей в CSS, но доступны токенами).
+  header_bg_color: "--tg-header-bg-color",
+  bottom_bar_bg_color: "--tg-bottom-bar-bg-color",
+  accent_text_color: "--tg-accent-text-color",
+  section_header_text_color: "--tg-section-header-text-color",
+  section_separator_color: "--tg-section-separator-color",
 };
 
 const THEME_PARAM_TO_TGUI_CSS_VAR: Record<string, string> = {
@@ -59,6 +68,11 @@ const THEME_PARAM_TO_TGUI_CSS_VAR: Record<string, string> = {
   section_bg_color: "--tg-theme-section-bg-color",
   subtitle_text_color: "--tg-theme-subtitle-text-color",
   destructive_text_color: "--tg-theme-destructive-text-color",
+  header_bg_color: "--tg-theme-header-bg-color",
+  bottom_bar_bg_color: "--tg-theme-bottom-bar-bg-color",
+  accent_text_color: "--tg-theme-accent-text-color",
+  section_header_text_color: "--tg-theme-section-header-text-color",
+  section_separator_color: "--tg-theme-section-separator-color",
 };
 
 function applyTelegramTheme() {
@@ -144,6 +158,9 @@ try {
 } catch (error) {
   console.error("Telegram SDK init() failed", error);
 }
+
+// #224: ready/expand/запрет свайпа вниз/safe area + цвета хрома Telegram (src/telegramBoot.ts).
+bootTelegram();
 
 const rootElement = document.getElementById("root")!;
 

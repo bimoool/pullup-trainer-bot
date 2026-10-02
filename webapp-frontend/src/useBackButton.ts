@@ -5,70 +5,69 @@ import {
   onBackButtonClick,
   offBackButtonClick,
 } from "@telegram-apps/sdk";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+
+import { createBackButtonStack, type BackButtonAdapter } from "./backButtonStack";
 
 /**
- * Hook для интеграции Telegram BackButton (issue #202).
+ * Hook для интеграции Telegram BackButton (issue #202, #249, переработан в #224).
  *
- * Управляет lifecycle кнопки "назад" Telegram:
- * - показывает при монтировании компонента
- * - подписывается на клик
- * - скрывает и отписывается при размонтировании
+ * Управляет «назад» Telegram через общий стек (backButtonStack.ts):
+ *  - кнопка видна, пока смонтирован хотя бы один экран с этим хуком (на корневых вкладках — скрыта);
+ *  - клик получает ТОЛЬКО верхний (последний смонтированный) экран — никакой двойной навигации;
+ *  - подписка на SDK одна на всё приложение, при пустом стеке снимается и кнопка прячется.
  *
- * Переиспользует существующие navigation-хендлеры экранов (onBack, onClose,
- * onGoToWorkout и т.п.), не создаёт вторую state machine — обработчик
- * передаётся извне, hook только управляет видимостью и подпиской.
+ * Обработчик читается в момент клика из ref, поэтому всегда актуален; `deps` оставлен для
+ * совместимости вызовов и больше не перезапускает подписку (иначе перерисованный родитель
+ * «перепрыгивал» бы выше дочернего экрана в стеке).
  *
- * SDK API (v2.11.3): onClick() возвращает cleanup-функцию, но также
- * предоставляет offClick() для ручной отписки — используем оба подхода
- * для надёжности.
+ * SDK v2: вне Telegram-клиента функции недоступны (isAvailable() == false) — graceful no-op
+ * (тот же принцип, что у initData в App.tsx, issue #23/#28). mountBackButton() нужен до
+ * show/hide (isAvailable() у show истинно только после mount, issue #249). unmount() не вызываем —
+ * только при полном удалении Mini App.
  *
- * @param onClickHandler - обработчик клика по кнопке "назад"
- * @param deps - массив зависимостей для useEffect (тот же смысл, что у
- * обычного useEffect — если обработчик меняется при смене пропсов, передай
- * эти пропсы в deps, чтобы подписка обновилась)
+ * @param onClickHandler обработчик клика «назад»
+ * @param _deps не используется (см. выше)
+ * @param enabled false — экран временно не претендует на кнопку (например, корневой шаг мастера)
  */
-export function useBackButton(onClickHandler: () => void, deps: React.DependencyList = []) {
-  useEffect(() => {
-    // Проверяем доступность API — вне Telegram-клиента функции могут быть
-    // unavailable (тот же принцип graceful degradation, что у initData
-    // в App.tsx — см. issue #23/#28). SDK v2.11.3 оборачивает методы в
-    // SafeWrapped с методом .isAvailable().
-    if (!mountBackButton.isAvailable?.()) {
-      return;
-    }
-
-    // mount() + show() — показать кнопку (backButton по умолчанию скрыт).
-    // showBackButton.isAvailable() истинно только ПОСЛЕ mount() (SDK требует
-    // смонтированный компонент), поэтому проверяем его после монтирования —
-    // иначе кнопка вообще никогда не показывалась (issue #249).
-    mountBackButton();
-    if (!showBackButton.isAvailable?.()) {
-      return;
-    }
-    showBackButton();
-
-    // Подписка на событие клика — onClick() возвращает cleanup-функцию
-    const removeListener = onBackButtonClick.isAvailable?.() ? onBackButtonClick(onClickHandler) : undefined;
-
-    // Cleanup: отписка + скрытие при размонтировании компонента
-    return () => {
-      // Используем и возвращённый removeListener, и явный offBackButtonClick
-      // для надёжности — SDK предоставляет оба способа
-      if (removeListener) {
-        removeListener();
-      }
-      if (offBackButtonClick.isAvailable?.()) {
-        offBackButtonClick(onClickHandler);
-      }
-      if (hideBackButton.isAvailable?.()) {
+const sdkAdapter: BackButtonAdapter = {
+  available: () => Boolean(mountBackButton.isAvailable?.()),
+  setVisible: (visible) => {
+    try {
+      mountBackButton();
+      if (visible) {
+        if (showBackButton.isAvailable?.()) {
+          showBackButton();
+        }
+      } else if (hideBackButton.isAvailable?.()) {
         hideBackButton();
       }
-      // unmount() не вызываем — по документации SDK это должно происходить
-      // только при полном удалении Mini App, не при переключении экранов
+    } catch (error) {
+      console.error("BackButton toggle failed", error);
+    }
+  },
+  subscribe: (listener) => {
+    const remove = onBackButtonClick.isAvailable?.() ? onBackButtonClick(listener) : undefined;
+    return () => {
+      remove?.();
+      if (offBackButtonClick.isAvailable?.()) {
+        offBackButtonClick(listener);
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps передаются
-    // явно вызывающим кодом, не автовыводятся из onClickHandler (который сам
-    // может быть стабильным useCallback, не требующим перезапуска эффекта)
-  }, deps);
+  },
+};
+
+const stack = createBackButtonStack(sdkAdapter);
+
+export function useBackButton(onClickHandler: () => void, _deps: React.DependencyList = [], enabled = true) {
+  const handlerRef = useRef(onClickHandler);
+  useEffect(() => {
+    handlerRef.current = onClickHandler;
+  });
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    return stack.push(() => handlerRef.current);
+  }, [enabled]);
 }

@@ -56,7 +56,7 @@ for (const width of WIDTHS) {
 
       // Добавить замер (сегодня) — становится текущим.
       await page.getByTestId("body-metrics-add").click();
-      await page.getByRole("spinbutton", { name: "Вес замера" }).fill("74.2");
+      await page.getByRole("textbox", { name: "Вес замера" }).fill("74.2");
       await page.getByTestId("body-metrics-save").click();
       await expect(page.getByTestId("body-metrics-current")).toHaveText("Сейчас: 74.2 кг");
       await expect(page.getByTestId("body-metrics-row")).toHaveCount(4);
@@ -65,8 +65,8 @@ for (const width of WIDTHS) {
 
       // Изменить последний замер.
       await page.getByTestId("body-metrics-edit").first().click();
-      await expect(page.getByRole("spinbutton", { name: "Вес замера" })).toHaveValue("74.2");
-      await page.getByRole("spinbutton", { name: "Вес замера" }).fill("74");
+      await expect(page.getByRole("textbox", { name: "Вес замера" })).toHaveValue("74.2");
+      await page.getByRole("textbox", { name: "Вес замера" }).fill("74");
       await page.getByTestId("body-metrics-save").click();
       await expect(page.getByTestId("body-metrics-current")).toHaveText("Сейчас: 74 кг");
 

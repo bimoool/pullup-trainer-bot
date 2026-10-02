@@ -9,6 +9,7 @@ import {
   type SessionResponseV2,
   type SetLogInputV2,
 } from "./apiV2";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -123,10 +124,10 @@ export function SessionEditScreen({ initDataRaw, session, inclusion, onDone }: P
               key={set.key}
               header={label}
               aria-label={label}
-              type="number"
+              type="text"
               inputMode="decimal"
               value={set.value}
-              onChange={(e) => updateValue(sets, setList, set.key, e.target.value)}
+              onChange={(e) => updateValue(sets, setList, set.key, sanitizeDecimalInput(e.target.value))}
             />
           );
         })}
