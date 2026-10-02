@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getPeerInsights } from "./apiV2";
 import {
   formatPeerCohort, formatPeerMedian, formatPeerNext, formatPeerPercentile, peerBarWidth, PEER_INSUFFICIENT_TEXT,
-  PEER_NO_RESULT_TEXT, PEER_TITLE, peerView, type PeerInsights,
+  PEER_NO_RESULT_TEXT, PEER_RATE_LIMITED_TEXT, PEER_TITLE, peerView, type PeerInsights,
 } from "./peerInsightsFormat";
 
 type Props = {
@@ -14,7 +14,7 @@ type Props = {
   integerOnly: boolean;
 };
 
-type State = { phase: "loading" } | { phase: "error" } | { phase: "ready"; data: PeerInsights };
+type State = { phase: "loading" } | { phase: "error"; rateLimited: boolean } | { phase: "ready"; data: PeerInsights };
 
 /** «Сравнение с похожими» на детали теста: последний результат против когорты (пол + возраст),
  * только анонимные агрегаты с сервера. Меньше 20 человек — честный текст вместо чисел. */
@@ -25,7 +25,12 @@ export function PeerInsightsCard({ initDataRaw, protocolId, refreshKey, integerO
     let cancelled = false;
     getPeerInsights(initDataRaw, protocolId)
       .then((data) => !cancelled && setState({ phase: "ready", data }))
-      .catch(() => !cancelled && setState({ phase: "error" }));
+      .catch((error: unknown) => {
+        const rateLimited = (error as { status?: number } | null)?.status === 429;
+        if (!cancelled) {
+          setState({ phase: "error", rateLimited });
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -35,7 +40,11 @@ export function PeerInsightsCard({ initDataRaw, protocolId, refreshKey, integerO
     <div className="profile-card" data-testid="peer-insights">
       <p className="section-title" data-testid="peer-insights-title">{PEER_TITLE}</p>
       {state.phase === "loading" && <p className="hint" data-testid="peer-insights-loading">Загрузка…</p>}
-      {state.phase === "error" && <p className="hint" data-testid="peer-insights-error">Не удалось загрузить сравнение.</p>}
+      {state.phase === "error" && (
+        <p className="hint" data-testid="peer-insights-error">
+          {state.rateLimited ? PEER_RATE_LIMITED_TEXT : "Не удалось загрузить сравнение."}
+        </p>
+      )}
       {state.phase === "ready" && <PeerBody data={state.data} integerOnly={integerOnly} />}
     </div>
   );

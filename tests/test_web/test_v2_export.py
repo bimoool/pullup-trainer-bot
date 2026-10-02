@@ -157,3 +157,24 @@ async def test_link_expired_or_garbage_and_missing_credentials_rejected(session:
     assert (await _get_raw(session, f"{PATH}?token=garbage")).status_code == 401
     assert (await _get_raw(session, PATH)).status_code == 401
     assert (await _get_raw(session, PATH, {"X-Telegram-Init-Data": "bogus"})).status_code == 401
+
+
+async def test_elective_note_is_readable_not_raw_json_and_hidden_after_value_edit(session: AsyncSession):
+    """#283: CSV факультатива — та же читаемая строка, что в Журнале; не сырой упакованный JSON;
+    после правки значения (≠ сумме подходов) разбивки нет."""
+    from sqlalchemy import select
+
+    from tests.test_web.test_v2_elective_journal import _backfilled_elective
+
+    user = await _user(session, 970077)
+    _, session_id = await _backfilled_elective(session, user)
+    rows = _parse(await v2_get(session, telegram_id=user.telegram_id, path=PATH))
+    elective_row = dict(zip(HEADER, rows[1], strict=True))
+    assert elective_row["note"] == "Подходы: 4 · 3 · 2" and "{" not in elective_row["note"]
+    assert "reps_sequence" not in "".join(",".join(r) for r in rows) and "equipment" not in "".join(",".join(r) for r in rows)
+
+    log = await session.scalar(select(SetLog).join(SessionBlock).where(SessionBlock.session_id == session_id))
+    log.value = Decimal(10)
+    await session.flush()
+    rows = _parse(await v2_get(session, telegram_id=user.telegram_id, path=PATH))
+    assert dict(zip(HEADER, rows[1], strict=True))["note"] == ""

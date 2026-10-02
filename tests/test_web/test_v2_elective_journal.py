@@ -111,10 +111,25 @@ async def test_edit_elective_changes_value_effort_comment_date_and_keeps_packed_
     assert body["effort"] == "4.0" and body["comment"] == "поправил"
     assert body["blocks"][0]["set_logs"][0]["value"] == "10.00"
     assert body["blocks"][0]["set_logs"][0]["effort"] == "3.0"
-    assert body["blocks"][0]["set_logs"][0]["note"] == "Подходы: 4 · 3 · 2"  # заметка из запроса проигнорирована
+    # значение поправили (10 ≠ 4+3+2): разбивка скрыта, чтобы не противоречить «Факт: 10» (#283);
+    # заметка из запроса проигнорирована
+    assert body["blocks"][0]["set_logs"][0]["note"] is None
     assert body["can_delete"] is True
     await session.refresh(log)
     assert log.note == packed_before  # упакованный backfill-ом JSON не затёрт правкой
+
+
+async def test_edit_back_to_the_sum_shows_the_breakdown_again(session: AsyncSession):
+    user = await _user(session, 962799)
+    _, session_id = await _backfilled_elective(session, user)
+    patch = {"sets": [{"block_index": 0, "set_number": 1, "value": "10"}]}
+    assert (await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{session_id}", patch)).status_code == 200
+    [card] = await _listed(session, user)
+    assert card["blocks"][0]["set_logs"][0]["note"] is None
+    patch["sets"][0]["value"] = "9"
+    assert (await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{session_id}", patch)).status_code == 200
+    [card] = await _listed(session, user)
+    assert card["blocks"][0]["set_logs"][0]["note"] == "Подходы: 4 · 3 · 2"
 
 
 async def test_clone_of_elective_is_denied(session: AsyncSession):

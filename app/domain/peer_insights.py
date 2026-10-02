@@ -10,11 +10,23 @@
 Нет пола — уровни 1–2 пропускаются; нет даты рождения или младше 18 — пропускается уровень 1.
 Когорта меньше MIN_COHORT_SIZE (20) не показывается вообще: никаких синтетических чисел —
 статус «insufficient». Сам пользователь входит в когорту (его последний результат — одна из строк).
-Результат — только агрегаты; чужие id и значения сюда не попадают."""
+Результат — только агрегаты; чужие id и значения сюда не попадают.
+
+Защита от реконструкции чужих значений (ревью #283): пользователь сам задаёт своё значение и
+свою когорту (пол/дата рождения), поэтому
+  * процентиль отдаётся только 10-пунктовой полосой (`percentile_band`, floor) — не точное «below»;
+  * медиана и пороги округляются до точности отображения протокола (`round_for_display`);
+  * защита от «вычитания» (differencing guard, `is_differencing_safe`): общий уровень (`gender`,
+    `all`) не показывается, если какая-то его подкогорта, которую пользователь может выбрать
+    сменой даты рождения/пола (≥ MIN_COHORT_SIZE человек), оставляет в остатке «уровень минус
+    подкогорта» от 1 до MIN_COHORT_SIZE-1 человек: сравнив два ответа, можно было бы вычислить
+    агрегаты этой малой группы. Такой уровень пропускается — берётся следующий, более широкий,
+    или «insufficient»;
+  * частоту запросов ограничивает `app.web.rate_limit` (в роуте)."""
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from app.domain.leaderboard import AGE_BUCKETS
@@ -48,6 +60,10 @@ class CohortStats:
     quantiles: tuple[Decimal, ...]
     below: int  # результатов строго ниже значения пользователя
     equal: int  # результатов, равных значению пользователя (включая его самого)
+    # Размеры непересекающихся подкогорт этого уровня, которые пользователь может выбрать сам
+    # (gender → по возрастным ступеням того же пола; all → по полам); для gender_age пусто.
+    # Нужны только защите от «вычитания» (`is_differencing_safe`), наружу не выходят.
+    parts: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -63,7 +79,7 @@ class PeerInsight:
     level: CohortLevel | None = None
     label: str | None = None
     size_bucket: str | None = None
-    percentile: int | None = None
+    percentile: int | None = None  # 10-пунктовая полоса (floor), не точный процентиль
     median: Decimal | None = None
     next_target: NextTarget | None = None
 
@@ -78,12 +94,40 @@ def percentile_rank(below: int, equal: int, size: int) -> int:
     return max(1, min(99, rounded))
 
 
-def next_target(value: Decimal, quantiles: tuple[Decimal, ...]) -> NextTarget | None:
-    """Ближайший порог из NEXT_TARGET_PERCENTILES, строго выше значения пользователя; None —
-    пользователь уже выше всех порогов (или порог совпал бы с текущим значением)."""
+PERCENTILE_BAND = 10
+
+
+def percentile_band(percentile: int) -> int:
+    """Грубая полоса процентиля: floor до 10 пунктов (0, 10, …, 90). Честно: реальный процентиль
+    лежит в [band, band + 10); точное значение наружу не отдаётся (иначе по нему восстанавливается
+    число результатов ниже заданного — см. docstring модуля)."""
+    return max(0, min(100 - PERCENTILE_BAND, percentile // PERCENTILE_BAND * PERCENTILE_BAND))
+
+
+def round_for_display(value: Decimal, integer_only: bool, *, up: bool = False) -> Decimal:
+    """Округление агрегата до точности отображения протокола: повторения — целые, остальные
+    метрики — один знак. `up=True` — вверх (для «следующего ориентира»: он остаётся строго выше
+    результата пользователя)."""
+    step = Decimal(1) if integer_only else Decimal("0.1")
+    return value.quantize(step, rounding=ROUND_CEILING if up else ROUND_HALF_UP)
+
+
+def is_differencing_safe(stats: CohortStats) -> bool:
+    """False, если «уровень минус подкогорта» для какой-то показываемой (≥ MIN_COHORT_SIZE)
+    подкогорты даёт 1..MIN_COHORT_SIZE-1 человек — такую малую группу можно было бы раскрыть,
+    сравнив ответы разных когорт одного и того же пользователя."""
+    return not any(
+        part >= MIN_COHORT_SIZE and 0 < stats.size - part < MIN_COHORT_SIZE for part in stats.parts
+    )
+
+
+def next_target(value: Decimal, quantiles: tuple[Decimal, ...], integer_only: bool = False) -> NextTarget | None:
+    """Ближайший порог из NEXT_TARGET_PERCENTILES, строго выше значения пользователя (сравнение
+    до округления), затем округлённый вверх до точности протокола — так он остаётся выше
+    результата; None — пользователь уже выше всех порогов."""
     for percentile, threshold in zip(NEXT_TARGET_PERCENTILES, quantiles, strict=True):
         if threshold > value:
-            return NextTarget(percentile=percentile, value=threshold)
+            return NextTarget(percentile=percentile, value=round_for_display(threshold, integer_only, up=True))
     return None
 
 
@@ -113,21 +157,23 @@ def cohort_label(level: CohortLevel, gender: str | None, bucket: str | None) -> 
 
 def build_insight(
     own_value: Decimal | None, cohorts: list[CohortStats], gender: str | None, bucket: str | None,
+    integer_only: bool = False,
 ) -> PeerInsight:
-    """`cohorts` — кандидаты от самой узкой к самой широкой; берётся первая с size >= MIN_COHORT_SIZE."""
+    """`cohorts` — кандидаты от самой узкой к самой широкой; берётся первая с size >= MIN_COHORT_SIZE,
+    проходящая защиту от «вычитания» (`is_differencing_safe`)."""
     if own_value is None:
         return PeerInsight(status=PeerStatus.NO_RESULT)
     for stats in cohorts:
-        if stats.size >= MIN_COHORT_SIZE:
+        if stats.size >= MIN_COHORT_SIZE and is_differencing_safe(stats):
             return PeerInsight(
                 status=PeerStatus.OK,
                 own_value=own_value,
                 level=stats.level,
                 label=cohort_label(stats.level, gender, bucket),
                 size_bucket=size_bucket(stats.size),
-                percentile=percentile_rank(stats.below, stats.equal, stats.size),
-                median=stats.median,
-                next_target=next_target(own_value, stats.quantiles),
+                percentile=percentile_band(percentile_rank(stats.below, stats.equal, stats.size)),
+                median=round_for_display(stats.median, integer_only),
+                next_target=next_target(own_value, stats.quantiles, integer_only),
             )
     return PeerInsight(status=PeerStatus.INSUFFICIENT, own_value=own_value)
 

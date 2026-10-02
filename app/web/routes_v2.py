@@ -6,9 +6,9 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
-import json
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -41,6 +41,7 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.activity_types import activity_label
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
+from app.domain.electives import format_elective_set_note
 from app.domain.journal_calendar import (
     local_day_counts,
     local_range_bounds_utc,
@@ -200,20 +201,14 @@ def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
     )
 
 
-def _set_log_note(source: SessionSource, note: str | None) -> str | None:
-    """SetLog.note факультатива — упакованный backfill-ом JSON (формат/снаряд/подходы, #163),
-    не пользовательский текст: в API уходит читаемая строка «Подходы: 4 · 3 · 2» (или None),
-    сырой JSON наружу не отдаётся (#279)."""
+def _set_log_note(source: SessionSource, note: str | None, value: Decimal | None = None) -> str | None:
+    """SetLog.note факультатива — упакованный backfill-ом JSON, не пользовательский текст: в API
+    уходит читаемая строка «Подходы: 4 · 3 · 2» (или None), сырой JSON наружу не отдаётся (#279);
+    разбивка скрыта, если значение подхода правили и оно ≠ сумме (#283) — см.
+    `app.domain.electives.format_elective_set_note` (общий с CSV-экспортом)."""
     if source != SessionSource.ELECTIVE or note is None:
         return note
-    try:
-        payload = json.loads(note)
-    except ValueError:
-        return None
-    sequence = payload.get("reps_sequence") if isinstance(payload, dict) else None
-    if not isinstance(sequence, list) or not sequence or not all(isinstance(n, int) for n in sequence):
-        return None
-    return "Подходы: " + " · ".join(str(n) for n in sequence)
+    return format_elective_set_note(note, value)
 
 
 def _session_response(
@@ -252,7 +247,7 @@ def _session_response(
                     set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                     value=str(log.value), unit=log.unit,
                     effort=str(log.effort) if log.effort is not None else None,
-                    note=_set_log_note(detail.source, log.note), is_extra=log.is_extra,
+                    note=_set_log_note(detail.source, log.note, log.value), is_extra=log.is_extra,
                 )
                 for log in block.set_logs
             ],

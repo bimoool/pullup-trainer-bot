@@ -72,7 +72,7 @@ async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
   });
   if (!response.ok) {
     const message = await extractErrorMessage("GET", path, response);
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
   return (await response.json()) as T;
 }

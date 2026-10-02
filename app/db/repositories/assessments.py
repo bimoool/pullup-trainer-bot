@@ -5,6 +5,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import AssessmentProtocol, AssessmentResult
+from app.domain.leaderboard import AGE_BUCKETS
 from app.domain.peer_insights import (
     NEXT_TARGET_PERCENTILES,
     CohortLevel,
@@ -72,12 +73,29 @@ class AssessmentRepository:
         CASE по age(). Уровень без пола (или без ступени) в выдачу не попадает."""
         after, upto = birth_date_range(bucket, today) if bucket is not None else (None, None)
         quantile_levels = [0.5, *(p / 100 for p in NEXT_TARGET_PERCENTILES)]
-        agg = (
-            "count(*) AS n, "
-            "percentile_cont(CAST(:levels AS float8[])) WITHIN GROUP (ORDER BY value) AS q, "
-            "count(*) FILTER (WHERE value < :own) AS below, count(*) FILTER (WHERE value = :own) AS equal "
-            "FROM latest"
-        )
+
+        def agg(parts: str) -> str:
+            return (
+                "count(*) AS n, "
+                "percentile_cont(CAST(:levels AS float8[])) WITHIN GROUP (ORDER BY value) AS q, "
+                "count(*) FILTER (WHERE value < :own) AS below, count(*) FILTER (WHERE value = :own) AS equal, "
+                f"{parts} AS parts FROM latest"
+            )
+
+        # Для защиты от «вычитания» (differencing guard): размеры подкогорт, которые пользователь
+        # может выбрать сам — у уровня «пол» это возрастные ступени этого пола, у «все» — полы.
+        # Считаются в том же запросе (FILTER), отдельных обращений к БД нет.
+        params: dict[str, object] = {}
+        bucket_counts: list[str] = []
+        for i, name in enumerate(AGE_BUCKETS):
+            b_after, b_upto = birth_date_range(name, today)
+            params[f"b{i}_after"], params[f"b{i}_upto"] = b_after, b_upto
+            bucket_counts.append(
+                f"count(*) FILTER (WHERE birth_date <= CAST(:b{i}_upto AS date) "
+                f"AND (CAST(:b{i}_after AS date) IS NULL OR birth_date > CAST(:b{i}_after AS date)))"
+            )
+        gender_parts = f"ARRAY[{', '.join(bucket_counts)}]"
+        all_parts = "ARRAY[count(*) FILTER (WHERE gender = 'male'), count(*) FILTER (WHERE gender = 'female')]"
         sql = f"""
             WITH latest AS (
                 SELECT DISTINCT ON (r.user_id)
@@ -87,22 +105,22 @@ class AssessmentRepository:
                 WHERE r.protocol_id = :protocol_id
                 ORDER BY r.user_id, r.performed_at DESC, r.id DESC
             )
-            SELECT 'gender_age' AS level, {agg}
+            SELECT 'gender_age' AS level, {agg('CAST(ARRAY[] AS bigint[])')}
               WHERE CAST(:gender AS text) IS NOT NULL AND CAST(:upto AS date) IS NOT NULL
                 AND gender = CAST(:gender AS text)
                 AND birth_date <= CAST(:upto AS date)
                 AND (CAST(:after AS date) IS NULL OR birth_date > CAST(:after AS date))
             UNION ALL
-            SELECT 'gender' AS level, {agg}
+            SELECT 'gender' AS level, {agg(gender_parts)}
               WHERE CAST(:gender AS text) IS NOT NULL AND gender = CAST(:gender AS text)
             UNION ALL
-            SELECT 'all' AS level, {agg}
+            SELECT 'all' AS level, {agg(all_parts)}
         """
         result = await self._session.execute(
             text(sql),
             {
                 "protocol_id": protocol_id, "own": float(own_value), "levels": quantile_levels,
-                "gender": gender, "after": after, "upto": upto,
+                "gender": gender, "after": after, "upto": upto, **params,
             },
         )
         stats: list[CohortStats] = []
@@ -112,6 +130,6 @@ class AssessmentRepository:
             median, *quantiles = (Decimal(str(round(x, 2))) for x in row.q)
             stats.append(CohortStats(
                 level=CohortLevel(row.level), size=row.n, median=median, quantiles=tuple(quantiles),
-                below=row.below, equal=row.equal,
+                below=row.below, equal=row.equal, parts=tuple(row.parts or ()),
             ))
         return stats
