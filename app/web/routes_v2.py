@@ -6,8 +6,9 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
-import json
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -40,6 +41,7 @@ from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.activity_types import activity_label
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
+from app.domain.electives import format_elective_set_note
 from app.domain.journal_calendar import (
     local_day_counts,
     local_range_bounds_utc,
@@ -63,6 +65,7 @@ from app.domain.program_schedule import (
 )
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.journal_dedupe import list_backfilled_duplicates
 from app.services.live_session import (
     ActiveSessionConflictError,
     CompleteResult,
@@ -198,20 +201,14 @@ def _plan_week_response(week: PlanWeek) -> PlanWeekResponse:
     )
 
 
-def _set_log_note(source: SessionSource, note: str | None) -> str | None:
-    """SetLog.note факультатива — упакованный backfill-ом JSON (формат/снаряд/подходы, #163),
-    не пользовательский текст: в API уходит читаемая строка «Подходы: 4 · 3 · 2» (или None),
-    сырой JSON наружу не отдаётся (#279)."""
+def _set_log_note(source: SessionSource, note: str | None, value: Decimal | None = None) -> str | None:
+    """SetLog.note факультатива — упакованный backfill-ом JSON, не пользовательский текст: в API
+    уходит читаемая строка «Подходы: 4 · 3 · 2» (или None), сырой JSON наружу не отдаётся (#279);
+    разбивка скрыта, если значение подхода правили и оно ≠ сумме (#283) — см.
+    `app.domain.electives.format_elective_set_note` (общий с CSV-экспортом)."""
     if source != SessionSource.ELECTIVE or note is None:
         return note
-    try:
-        payload = json.loads(note)
-    except ValueError:
-        return None
-    sequence = payload.get("reps_sequence") if isinstance(payload, dict) else None
-    if not isinstance(sequence, list) or not sequence or not all(isinstance(n, int) for n in sequence):
-        return None
-    return "Подходы: " + " · ".join(str(n) for n in sequence)
+    return format_elective_set_note(note, value)
 
 
 def _session_response(
@@ -250,7 +247,7 @@ def _session_response(
                     set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                     value=str(log.value), unit=log.unit,
                     effort=str(log.effort) if log.effort is not None else None,
-                    note=_set_log_note(detail.source, log.note), is_extra=log.is_extra,
+                    note=_set_log_note(detail.source, log.note, log.value), is_extra=log.is_extra,
                 )
                 for log in block.set_logs
             ],
@@ -800,6 +797,18 @@ async def duplicate_workout(
 # --- План ------------------------------------------------------------------------------
 
 
+def _utcnow() -> datetime:
+    """Единая точка «сейчас» для недельной арифметики плана (подменяется в тестах)."""
+    return datetime.now(UTC)
+
+
+def _plan_today(user) -> date:
+    """Сегодняшняя дата в часовом поясе пользователя: по ней считается вся
+    недельная арифметика плана (текущая неделя, окно «текущая .. +4»), как и
+    на клиенте; в UTC у UTC+N около полуночи понедельника неделя не совпадала."""
+    return _utcnow().astimezone(resolve_timezone(user.timezone)).date()
+
+
 @router_v2.get("/plan", response_model=PlanResponse)
 async def get_plan(
     init_data: InitData = Depends(get_validated_init_data),
@@ -816,8 +825,8 @@ async def get_plan(
     # действия пользователя — "пользователь не может открыть Планы и
     # остаться на прошлой неделе" (Поправка 4). Тонкий вызов, вся логика —
     # в PlanWeekService, идемпотентно на каждый GET.
-    await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=plan.id, today=datetime.now(UTC).date(),
+    current_week = await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=_plan_today(user),
     )
 
     inclusions = await plans.list_inclusions(plan.id)
@@ -855,6 +864,7 @@ async def get_plan(
                 for item in plan_items
             ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
+            current_week_id=current_week.id,
         ),
     )
 
@@ -880,7 +890,7 @@ async def create_program_inclusion(
     # логика материализации в PlanWeekService, не здесь (раздел 4 preflight:
     # "не помещать бизнес-логику materialization непосредственно в route").
     await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=inclusion.training_plan_id, today=datetime.now(UTC).date(),
+        training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
     return _program_inclusion_response(inclusion)
 
@@ -920,7 +930,7 @@ async def create_plan_week(
     user = await _require_user(session, init_data)
     plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
     week = await PlanWeekService(session).ensure_plannable_week(
-        training_plan_id=plan.id, week_number=body.week_number, today=datetime.now(UTC).date(),
+        training_plan_id=plan.id, week_number=body.week_number, today=_plan_today(user),
     )
     if week is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
@@ -945,7 +955,7 @@ async def copy_plan_week_to_next(
     service = PlanWeekService(session)
     target = await service.ensure_plannable_week(
         training_plan_id=source.training_plan_id, week_number=source.week_number + 1,
-        today=datetime.now(UTC).date(),
+        today=_plan_today(user),
     )
     if target is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
@@ -1044,7 +1054,7 @@ async def move_plan_item(
         current = await plans.get_plan_item_for_user(plan_item_id, user.id)
         if plan is None or target is None or current is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
-        current_number = plan_week_number(plan.created_at.date(), datetime.now(UTC).date())
+        current_number = plan_week_number(plan.created_at.date(), _plan_today(user))
         source = (
             await plans.get_plan_week_for_user(current.plan_week_id, user.id) if current.plan_week_id else None
         )
@@ -1249,9 +1259,16 @@ async def journal_days(
     start, end = local_range_bounds_utc(first_day, last_day, tz)
     counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end), tz)
     legacy_start, legacy_end = local_range_bounds_utc(first_day, last_day, UTC)
-    for day, count in local_day_counts(
-        await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end), UTC,
-    ).items():
+    legacy_moments = await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end)
+    # legacy-записи, уже перенесённые backfill-ом в v2-сессии (#282), посчитаны выше как сессии
+    migrated = Counter(key.performed_at for key in await list_backfilled_duplicates(session, user.id))
+    legacy_moments_shown = []
+    for moment in legacy_moments:
+        if migrated[moment] > 0:
+            migrated[moment] -= 1
+        else:
+            legacy_moments_shown.append(moment)
+    for day, count in local_day_counts(legacy_moments_shown, UTC).items():
         counts[day] = counts.get(day, 0) + count
 
     latest_days: list[date] = []

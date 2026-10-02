@@ -439,7 +439,9 @@ export async function fetchHistory(
   initDataRaw: string, offset: number, limit = 20, range?: { from: string; to: string },
 ): Promise<HistoryPage> {
   const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
-  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}${dates}`, initDataRaw);
+  // exclude_migrated (#282): Журнал показывает v2-сессии отдельно — legacy-записи, уже перенесённые
+  // backfill-ом в v2, второй раз не нужны (иначе перенесённая тренировка видна дважды).
+  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}${dates}&exclude_migrated=true`, initDataRaw);
 }
 
 export async function fetchProgress(initDataRaw: string, metric: ProgressMetric): Promise<ProgressData> {

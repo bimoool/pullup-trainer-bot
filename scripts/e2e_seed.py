@@ -1450,7 +1450,66 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
     await session.flush()
 
 
+async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
+    """#282 — дубли в Журнале у мигрированного пользователя.
+
+    Пользователь «до миграции» имеет три legacy Workout (две каскадные + одна, внесённая задним
+    числом); backfill (scripts/backfill_multi_program.py, #163) переносит их в TrainingSession теми
+    же функциями, что и в проде (`_create_training_session_for_workout` + `_get_or_create_exercise`);
+    ПОСЛЕ миграции пишется ещё одна legacy-тренировка (бот/legacy-эндпоинты не пишут в v2) — она
+    существует только в legacy и обязана остаться видна. Время — минуты назад, чтобы всё лежало в
+    текущем месяце. Объёмы (макс. блока A) различаются: 11/12/13 — перенесённые, 14 — после миграции.
+    Не backfill_all(): он обошёл бы всех онбордившихся пользователей общей БД."""
+    from scripts.backfill_multi_program import (
+        _EXERCISE_BLOCK_A_NAME,
+        _EXERCISE_BLOCK_B_NAME,
+        _create_training_session_for_workout,
+        _get_or_create_exercise,
+    )
+
+    user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
+    now = datetime.now(UTC)
+    onboarding = OnboardingService(session)
+    _baseline, workout_set, _user = await onboarding.record_baseline_and_start(
+        user_id=user.id, performed_at=now - timedelta(hours=2), reps=10,
+    )
+    await onboarding.complete_questionnaire_and_start_trial(user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS)
+    repo = WorkoutRepository(session)
+
+    async def legacy(minutes_ago: int, max_a: int, *, backdated: bool = False):
+        kwargs = {
+            "user_id": user.id, "workout_set_id": workout_set.id,
+            "performed_at": now - timedelta(minutes=minutes_ago),
+            "block_a_reps": BlockLog(working_reps=(10, 10, 10), max_reps=max_a),
+            "block_b_reps": BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+            "block_a_equipment_type": EquipmentType.BAND, "block_a_equipment_value": BAND_VALUE,
+            "block_b_equipment_type": EquipmentType.BAND, "block_b_equipment_value": BAND_VALUE,
+        }
+        if backdated:
+            return await repo.record_backdated_workout(**kwargs)
+        return await repo.record_workout(**kwargs)
+
+    await legacy(90, 11)
+    await legacy(80, 12)
+    await legacy(70, 13, backdated=True)
+    await session.flush()
+
+    # --- «миграция»: ровно то, что backfill делает для этого пользователя ---
+    exercise_a = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_A_NAME, subcategory="block_a")
+    exercise_b = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_B_NAME, subcategory="block_b")
+    for workout in await repo.list_for_user(user.id):
+        await _create_training_session_for_workout(
+            session, workout, exercise_a_id=exercise_a.id, exercise_b_id=exercise_b.id,
+        )
+    await session.flush()
+
+    # --- после миграции: только legacy ---
+    await legacy(20, 14)
+    await session.flush()
+
+
 SCENARIOS = {
+    "journal_dedupe": seed_journal_dedupe,
     "collections": seed_collections_scenario,
     "owner_optional_workout": seed_owner_optional_workout,
     "analytics_distribution": seed_analytics_distribution,

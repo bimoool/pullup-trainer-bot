@@ -2591,6 +2591,28 @@ SELECT → «строки нет» → INSERT, второй запрос пад�
 - Тесты: `tests/test_web/test_v2_elective_journal.py` (4 из 6 падают без фикса),
   E2E `scenarios/parity/owner-optional-workout.spec.ts` (320/390, светлая/тёмная), сид `owner_optional_workout`.
 
+## Журнал показывал перенесённые backfill-ом тренировки дважды (#282)
+
+- **Симптом/корень.** Backfill (#163) копирует каждую legacy `Workout` в `TrainingSession` (тот же
+  `performed_at`), но legacy-строки остаются источником `GET /api/history`; Журнал рисует и v2-карточки, и
+  legacy-карточки → у мигрированного пользователя каждая старая тренировка видна дважды (и дважды считалась
+  в `GET /api/v2/journal/days`). Между записями нет FK/legacy-id — связать можно только по данным.
+- **Решение (display-only, без данных и миграций).** Сопоставление по точному `performed_at` + `source`
+  с отпечатком backfill-сессии (см. PROJECT_SPEC §3 «Журнал v2»). Отпечаток нужен, чтобы живая сессия Mini App
+  с совпавшим моментом не скрывала реальную legacy-запись: у backfill нет `client_session_id`, снимка,
+  `SessionPlanItem`, а блок — системный `pull_ups/block_a`. Таблица legacy→`SessionSource` одна
+  (`resolve_legacy_session_source`), её же вызывает backfill — разойтись не могут.
+- **Ловушки.** (1) Флаг `exclude_migrated` у `/api/history` задаёт только Журнал: другие потребители
+  (если появятся) видят полную legacy-историю. (2) Скрытие применяется ДО пагинации/`has_more`, но «самая
+  свежая запись» (носитель `target_a/b`) определяется по полной истории — иначе цель переезжала бы на старую
+  карточку. (3) Если backfill изменит упражнения блока A (`category`/`subcategory`) — обновить отпечаток
+  `TrainingSessionRepository.backfilled_session_keys`; тест использует реальные функции backfill, а не
+  копию их логики. (4) Редактирование `performed_at` одной из двух копий разрывает пару — запись снова
+  видна дважды (осознанно: лучше дубль, чем потеря).
+- Тесты: `tests/test_web/test_journal_dedupe.py` (near-miss: другой момент, другой source, чужая сессия,
+  живая сессия на тот же момент; без фикса падают 4 теста + ослабление отпечатка валит живую сессию),
+  E2E `scenarios/parity/journal-dedupe.spec.ts` (320/390), сид `journal_dedupe` (999601/999611, + retry).
+
 ## Обновление этого файла
 
 Держать живым: после значимой новой фичи или явно установленного нового

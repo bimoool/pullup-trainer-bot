@@ -95,6 +95,8 @@ seed plans_overview 990202
 # #275 «Plans schedule»: 990301 (320 light) / 990302 (390 dark) — мутирующий сценарий.
 seed plan_week_manual_session 990301
 seed plan_week_manual_session 990302
+# #283 «Plans current week»: 990401/990411 (320 light / 390 dark, + retry) — мутирующий сценарий.
+for id in 990401 990402 990411 990412; do seed golden_journey "$id"; done
 # #273 «Workout Detail start/log»: 998001/998011 (+ retry), «Записать»: id+5(+retry).
 for id in 998001 998002 998006 998007 998011 998012 998016 998017; do seed golden_journey "$id"; done
 # Settings (#268): 999001/999011 (единицы), +2 (тема), +4 (отмена), каждый + retry (id+1).
@@ -117,3 +119,5 @@ for id in 997401 997402 997403 997404 997411 997412 997413 997414; do seed golde
 for id in 999401 999402 999411 999412; do seed collections "$id"; done
 # Owner P0 (#279) «Факультатив — 3 минуты подтягиваний»: 999801 (320 px light) / 999811 (390 px dark), каждый + retry (id+1).
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
+# #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
+for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done

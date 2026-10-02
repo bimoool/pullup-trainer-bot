@@ -3,6 +3,7 @@
 baseline онбординга (см. докстринг AssessmentProtocol): здесь только своя история и тренд.
 Протоколы — общий справочник; результаты — только свои, чужой id = 404."""
 
+import math
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
@@ -20,6 +21,7 @@ from app.domain.peer_insights import MIN_COHORT_SIZE, build_insight
 from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
+from app.web.rate_limit import TokenBucketLimiter
 from app.web.schemas_v2_assessments import (
     AssessmentDetailResponse,
     AssessmentProtocolResponse,
@@ -35,6 +37,11 @@ from app.web.schemas_v2_assessments import (
 router_v2_assessments = APIRouter(prefix="/api/v2/assessments")
 
 TREND_POINTS = 12
+# Peer Insights: запас 20 запросов, дальше ~1 в 5 секунд на пользователя (ревью #283) — обычному
+# просмотру тестов хватает с запасом, перебор значений/когорт упирается в 429.
+PEER_RATE_CAPACITY = 20
+PEER_RATE_REFILL_PER_SECOND = 0.2
+peer_insights_limiter = TokenBucketLimiter(PEER_RATE_CAPACITY, PEER_RATE_REFILL_PER_SECOND)
 _UNITS = {
     MetricType.REPS: "повт.",
     MetricType.TIME: "сек",
@@ -132,10 +139,18 @@ async def get_peer_insights(
     session: AsyncSession = Depends(get_session),
 ) -> PeerInsightsResponse:
     """«Сравнение с похожими» (#276): последний результат пользователя против когорты (пол +
-    возрастная ступень → пол → все), только агрегаты. Нет результата — status=no_result, когорта
+    возрастная ступень → пол → все), только агрегаты; процентиль — 10-пунктовая полоса, медиана и
+    ориентир округлены до точности протокола, уровень с «вычитаемой» малой группой пропускается,
+    на пользователя действует лимит запросов (429). Нет результата — status=no_result, когорта
     меньше 20 — insufficient. Чужие результаты не читаются: свой — по user.id, остальные только
     внутри одного агрегирующего SQL (`AssessmentRepository.peer_cohorts`)."""
     user = await _current_user(init_data, session)
+    retry_after = peer_insights_limiter.acquire(user.id)
+    if retry_after > 0:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много запросов сравнения. Попробуйте чуть позже.",
+            headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
+        )
     repo = AssessmentRepository(session)
     protocol = await repo.get_protocol(protocol_id)
     if protocol is None:
@@ -146,7 +161,7 @@ async def get_peer_insights(
     gender = user.gender.value if user.gender is not None else None
     bucket = age_bucket(user.birth_date, today)
     cohorts = [] if own_value is None else await repo.peer_cohorts(protocol_id, own_value, gender, bucket, today)
-    insight = build_insight(own_value, cohorts, gender, bucket)
+    insight = build_insight(own_value, cohorts, gender, bucket, integer_only=protocol.metric_type == MetricType.REPS)
     cohort = None
     if insight.level is not None and insight.label is not None and insight.size_bucket is not None:
         cohort = PeerCohortResponse(level=insight.level.value, label=insight.label, size_bucket=insight.size_bucket)

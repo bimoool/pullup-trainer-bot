@@ -52,6 +52,12 @@ class PlanWeekService:
             )
 
         inclusions = await self._plans.list_inclusions(training_plan_id)
+        if any(inclusion.is_active for inclusion in inclusions):
+            # Материализация «проверить — вставить»: две конкурентные
+            # транзакции (две вкладки, GET + POST) не должны оба вставить строки
+            # недели. Лок плана до конца транзакции; перепроверки ниже читают
+            # уже закоммиченное победителем (READ COMMITTED).
+            await self._plans.lock_plan(training_plan_id)
         for inclusion in inclusions:
             if not inclusion.is_active:
                 continue
@@ -138,7 +144,12 @@ class PlanWeekService:
     async def copy_manual_items(self, *, source: PlanWeek, target: PlanWeek) -> tuple[int, int]:
         """Копирует ручные PlanItem недели source в target, пропуская
         дубликаты (тот же exercise/complex/день). Программные строки не
-        копируются. Возвращает (скопировано, пропущено)."""
+        копируются. Возвращает (скопировано, пропущено).
+
+        Два конкурентных вызова на один план сериализуются локом строки плана
+        (иначе оба прочитают пустую target и продублируют строки); второй
+        увидит строки, закоммиченные первым, и пропустит их как дубликаты."""
+        await self._plans.lock_plan(source.training_plan_id)
         existing = await self._plans.list_manual_plan_items_for_week(target.id)
         seen = {(item.exercise_id, item.complex_id, item.day_of_week) for item in existing}
         copied = skipped = 0

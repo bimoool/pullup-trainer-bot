@@ -24,7 +24,7 @@ import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
-  canAdvanceWeek, currentWeekIndex, groupCounter, isEditableWeek, localToday, stepWeek, weekProgress, weekRangeLabel,
+  canAdvanceWeek, groupCounter, isEditableWeek, localToday, resolveCurrentWeekIndex, stepWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -162,9 +162,11 @@ type PlanState = {
   inclusions: ProgramInclusionResponseV2[];
   items: PlanItemResponseV2[];
   weeks: PlanWeekResponseV2[];
+  /** current_week_id с сервера (часовой пояс пользователя). */
+  currentWeekId: number | null;
 };
 
-const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null };
 
 /** issue #266 — inclusions содержит и неактивные (вкладка «Завершённые»);
  * строки убранных курсов в недельный вид не попадают (история в БД остаётся). */
@@ -179,6 +181,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
       (item) => item.program_inclusion_id === null || !inactiveIds.has(item.program_inclusion_id),
     ),
     weeks: data.plan_weeks,
+    currentWeekId: data.current_week_id ?? null,
   };
 }
 
@@ -474,7 +477,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         planItemId={myWorkoutsView.planItemId}
         title={myWorkoutsView.title}
         currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
-        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, currentWeekIndex(plan.weeks, localToday())))}
+        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday())))}
         currentWeekId={myWorkoutsView.planWeekId}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onSuccess={() => {
@@ -549,7 +552,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // issue #258 — одна неделя за раз. Список — по возрастанию week_number;
   // текущая = последняя начавшаяся (ensure_current_plan_week не создаёт недели
   // наперёд, но будущие недели допустимы — тогда › пойдёт дальше текущей).
-  const currentIndex = plan.weeks.length > 0 ? currentWeekIndex(plan.weeks, localToday()) : 0;
+  const currentIndex = plan.weeks.length > 0 ? resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday()) : 0;
   const currentWeekId = plan.weeks.length > 0 ? plan.weeks[currentIndex].id : null;
   const selectedIndexRaw = plan.weeks.findIndex((week) => week.id === selectedWeekId);
   const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;

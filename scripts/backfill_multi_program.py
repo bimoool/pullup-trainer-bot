@@ -113,6 +113,7 @@ from app.domain.constants import (
     ExerciseType,
 )
 from app.domain.electives import ElectiveType
+from app.domain.journal_dedupe import resolve_legacy_session_source
 from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource, WeekPhase
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
@@ -294,12 +295,12 @@ async def seed_catalog(session: AsyncSession) -> SeedCatalog:
 def _resolve_session_source(workout: Workout) -> SessionSource:
     """Та самая таблица соответствий, ради которой SessionSource в волне 1
     завела FREEFORM/BACKDATED (issue #160) — прямое отражение
-    participates_in_cascade/is_free_entry старой схемы."""
-    if workout.participates_in_cascade:
-        return SessionSource.PLAN
-    if workout.is_free_entry:
-        return SessionSource.FREEFORM
-    return SessionSource.BACKDATED
+    participates_in_cascade/is_free_entry старой схемы. Таблица живёт в
+    app.domain.journal_dedupe: ровно по ней Журнал (#282) скрывает legacy-дубли
+    перенесённых записей, расхождения быть не может."""
+    return resolve_legacy_session_source(
+        participates_in_cascade=workout.participates_in_cascade, is_free_entry=workout.is_free_entry,
+    )
 
 
 async def _add_session_block_with_logs(

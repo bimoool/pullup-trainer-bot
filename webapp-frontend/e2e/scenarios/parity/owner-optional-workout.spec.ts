@@ -62,7 +62,8 @@ for (const width of WIDTHS) {
       await expect(page.getByText(/Факт: 10/)).toBeVisible();
       await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
       await expect(page.getByTestId("journal-workout-comment")).toContainText("Поправил в журнале");
-      await expect(page.getByText("Подходы: 4 · 3 · 2")).toBeVisible(); // упакованные данные не затёрты правкой
+      // значение поправили (10 ≠ 4+3+2) — разбивка не показывается, иначе она противоречит «Факт: 10» (#283)
+      await expect(page.getByText("Подходы: 4 · 3 · 2")).toHaveCount(0);
 
       // 4) Удалить: запись исчезает из Журнала, соседний факультатив остаётся.
       const deleteResponse = page.waitForResponse((r) => r.request().method() === "DELETE" && r.url().includes("/api/v2/sessions/"));

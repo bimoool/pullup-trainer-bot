@@ -35,6 +35,16 @@ class TrainingPlanRepository:
     async def get_by_id(self, training_plan_id: int) -> TrainingPlan | None:
         return await self._session.get(TrainingPlan, training_plan_id)
 
+    async def lock_plan(self, training_plan_id: int) -> TrainingPlan | None:
+        """SELECT ... FOR NO KEY UPDATE строки плана: сериализует конкурентные
+        операции над одним планом (копирование недели, материализация программных
+        PlanItem) до конца транзакции. NO KEY UPDATE, а не FOR UPDATE — не блокирует
+        вставки дочерних строк (FK берёт FOR KEY SHARE)."""
+        result = await self._session.execute(
+            select(TrainingPlan).where(TrainingPlan.id == training_plan_id).with_for_update(key_share=True),
+        )
+        return result.scalar_one_or_none()
+
     async def get_or_create_for_user(self, user_id: int) -> TrainingPlan:
         plan = await self.get_for_user(user_id)
         if plan is not None:

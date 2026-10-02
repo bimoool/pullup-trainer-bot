@@ -72,7 +72,7 @@ async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
   });
   if (!response.ok) {
     const message = await extractErrorMessage("GET", path, response);
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: response.status });
   }
   return (await response.json()) as T;
 }
@@ -343,6 +343,8 @@ export interface TrainingPlanResponseV2 {
   program_inclusions: ProgramInclusionResponseV2[];
   plan_items: PlanItemResponseV2[];
   plan_weeks: PlanWeekResponseV2[];
+  /** Текущая неделя в часовом поясе пользователя (не «последняя в списке»). */
+  current_week_id?: number | null;
 }
 
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {
