@@ -165,3 +165,9 @@ for id in 998811 998812; do seed ready "$id"; done
 # #286 B «Планы: строки дня и «⋯»-шиты» (parity/visual-plans.spec.ts): 991001 (320 light) / 991002 (390 dark) — строки с «⋯»,
 # 991003 / 991004 — мутация «Убрать из плана» (320 / 390), каждый + retry (id+10).
 for id in 991001 991002 991003 991004 991011 991012 991013 991014; do seed builder_workouts "$id"; done
+# Final journey (#277): 9969xx — 996901-04 пустые (RO), 996911-14 наполненные (мутируют: тренировка завершается), 4 комбинации
+# (320 light / 320 dark / 390 light / 390 dark); retry — +10000.
+for retry in 0 10000; do
+  for id in 996901 996902 996903 996904; do seed sweep_empty $((id + retry)); done
+  for id in 996911 996912 996913 996914; do seed sweep_populated $((id + retry)); done
+done
