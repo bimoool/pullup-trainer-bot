@@ -12,12 +12,14 @@ function walk(dir: string): string[] {
   );
 }
 
-test("no two files under src/ differ only by letter case", () => {
+// Module specifiers omit the extension, so `Foo.tsx` and `foo.ts` collide too: compare
+// lower-cased paths without the .ts/.tsx extension.
+test("no two modules under src/ differ only by letter case", () => {
   const root = fileURLToPath(new URL("../src", import.meta.url));
   const seen = new Map<string, string>();
   const clashes: string[] = [];
-  for (const file of walk(root)) {
-    const key = file.toLowerCase();
+  for (const file of walk(root).filter((f) => /\.tsx?$/.test(f))) {
+    const key = file.replace(/\.tsx?$/, "").toLowerCase();
     const prev = seen.get(key);
     if (prev) clashes.push(`${prev} <-> ${file}`);
     else seen.set(key, file);
