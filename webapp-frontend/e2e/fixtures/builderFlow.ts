@@ -5,7 +5,10 @@ import { expect, type Page } from "@playwright/test";
 
 export async function startWorkout(page: Page, title: string) {
   // на деталях (курс/тренировка) нижней навигации нет — сначала «назад» на вкладку
-  if (!(await page.locator(".bottom-tabbar").isVisible())) {
+  const tabbar = page.locator(".bottom-tabbar");
+  // дождаться первого рендера: либо навигация, либо «назад» (иначе isVisible() читает ещё пустую страницу)
+  await expect(tabbar.or(page.getByRole("button", { name: /Назад/ }).first())).toBeVisible();
+  if (!(await tabbar.isVisible())) {
     await page.getByRole("button", { name: /Назад/ }).first().click();
   }
   await page.getByRole("button", { name: "Планы" }).click();
