@@ -33,11 +33,11 @@ for (const width of WIDTHS) {
 
       // Каждая тренировка ровно один раз (макс. блока A различает записи).
       for (const max of [11, 12, 13]) {
-        await expect(v2Cards.filter({ hasText: new RegExp(`(^|\\D)${max}(\\D|$)`) })).toHaveCount(1);
-        await expect(legacyCards.filter({ hasText: new RegExp(`(^|\\D)${max}(\\D|$)`) })).toHaveCount(0);
+        await expect(v2Cards.filter({ has: page.getByText(`10 · 10 · 10 · ${max}`, { exact: true }) })).toHaveCount(1);
+        await expect(legacyCards.filter({ hasText: `максимум ${max}` })).toHaveCount(0);
       }
-      await expect(legacyCards.filter({ hasText: /(^|\D)14(\D|$)/ })).toHaveCount(1);
-      await expect(v2Cards.filter({ hasText: /(^|\D)14(\D|$)/ })).toHaveCount(0);
+      await expect(legacyCards.filter({ hasText: "максимум 14" })).toHaveCount(1);
+      await expect(v2Cards.filter({ has: page.getByText("10 · 10 · 10 · 14", { exact: true }) })).toHaveCount(0);
 
       // У видимой legacy-карточки действия на месте и относятся к ней же.
       await expect(legacyCards.getByRole("button", { name: /Изменить/ })).toBeVisible();
