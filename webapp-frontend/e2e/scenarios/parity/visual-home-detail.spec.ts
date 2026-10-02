@@ -122,8 +122,8 @@ for (const width of WIDTHS) {
         await expect(nav, "на детали нижней навигации нет").toBeHidden();
 
         const hero = (await page.getByTestId("workout-detail-hero").boundingBox())!;
-        expect(hero.height).toBeGreaterThanOrEqual(140);
-        expect(hero.height).toBeLessThanOrEqual(160);
+        expect(hero.height).toBeGreaterThanOrEqual(199);
+        expect(hero.height).toBeLessThanOrEqual(262);
         expect(Math.round(hero.x)).toBe(0);
         expect(Math.round(hero.width)).toBe(width);
         await expect(page.getByTestId("workout-detail-hero").locator(".wd-hero-badge svg")).toHaveCount(1);

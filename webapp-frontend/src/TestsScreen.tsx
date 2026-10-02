@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 
 import { listAssessments, type AssessmentProtocolV2 } from "./apiV2";
 import { chartPoints, formatLastResult, pathFor } from "./assessmentsFormat";
+import { BackChevron } from "./BackChevron";
+import { Icon } from "./Icon";
 import { TestDetailScreen } from "./TestDetailScreen";
 import { useBackButton } from "./useBackButton";
 
@@ -58,11 +60,13 @@ export function TestsList({ initDataRaw, onOpen }: Props) {
           key={protocol.id} type="button" className="history-card history-card-clickable test-card"
           data-testid="test-card" onClick={() => onOpen(protocol)}
         >
+          <span className="test-card-badge" aria-hidden="true"><Icon name="test" size={20} /></span>
           <span className="test-card-text">
             <span className="test-card-name" data-testid="test-card-name">{protocol.name}</span>
             <span className="hint" data-testid="test-card-last">{formatLastResult(protocol.last_result)}</span>
           </span>
           {protocol.trend.length >= 2 && <Sparkline values={protocol.trend.map(Number)} />}
+          <Icon name="chevronRight" size={18} className="test-card-chevron" />
         </button>
       ))}
     </div>
@@ -82,7 +86,10 @@ export function TestsScreen({ initDataRaw, onBack }: ScreenProps) {
   }
   return (
     <div data-testid="tests-screen">
-      <p className="plan-title">Тесты</p>
+      <div className="vs-screen-head">
+        <BackChevron onClick={onBack} />
+        <h1 className="plan-title">Тесты</h1>
+      </div>
       <TestsList initDataRaw={initDataRaw} onOpen={setSelected} />
     </div>
   );

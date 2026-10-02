@@ -200,7 +200,7 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
     <div data-testid="settings-screen" className="settings-screen">
       <p className="plan-title">Настройки</p>
 
-      <p className="section-title">Профиль</p>
+      <p className="section-title settings-group-title">Профиль</p>
       <Section className="block-section">
         <Input
           header={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
@@ -235,8 +235,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         />
       </Section>
 
-      <div className="profile-card">
-        <p className="section-title">Единицы</p>
+      <p className="section-title settings-group-title">Единицы</p>
+      <div className="profile-card settings-group">
         <p className="hint">Вес</p>
         <Choice label="Единицы веса" testId="settings-weight-unit" options={WEIGHT_UNITS} value={weightUnit} onChange={switchWeightUnit} />
         <p className="hint">Рост</p>
@@ -255,8 +255,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         </Select>
       </Section>
 
-      <div className="profile-card">
-        <p className="section-title">Оформление</p>
+      <p className="section-title settings-group-title">Оформление</p>
+      <div className="profile-card settings-group">
         <Choice
           label="Оформление"
           testId="settings-theme"
@@ -266,8 +266,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         />
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Таймер</p>
+      <p className="section-title settings-group-title">Таймер</p>
+      <div className="profile-card settings-group">
         {volume === null ? (
           <p className="hint">Загружаю…</p>
         ) : (
@@ -299,8 +299,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         <p className="hint">Настройка этого устройства: срабатывает, пока экран тренировки открыт.</p>
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Подписка</p>
+      <p className="section-title settings-group-title">Подписка</p>
+      <div className="profile-card settings-group">
         <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
         <Button className="vs-row-button" mode="outline" size="m" stretched onClick={onOpenSubscription}>
           <Icon name="star" size={18} className="vp-icon-lead" />Подробнее о подписке
@@ -317,8 +317,8 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
         </Button>
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Данные</p>
+      <p className="section-title settings-group-title">Данные</p>
+      <div className="profile-card settings-group">
         <Button className="vs-row-button" mode="outline" size="m" stretched data-testid="settings-export" onClick={() => void handleExport()}>
           <Icon name="download" size={18} className="vp-icon-lead" />Скачать историю
         </Button>
