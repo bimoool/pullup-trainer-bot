@@ -72,11 +72,11 @@ body {
 }
 
 .app-shell-with-nav {
-  padding-bottom: calc(var(--vp-nav-h) + 28px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--vp-nav-h) + 20px + env(safe-area-inset-bottom, 0px));
 }
 
 html {
-  scroll-padding-bottom: calc(var(--vp-nav-h) + 28px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(var(--vp-nav-h) + 20px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Приветствие больше не занимает строку над заголовком (в эталоне его нет), но остаётся для
@@ -98,7 +98,7 @@ html {
   margin: var(--vp-sp-2) 0 var(--vp-sp-4);
   font-size: var(--vp-fs-title);
   font-weight: 800;
-  line-height: 1.15;
+  line-height: 32px; /* целые пиксели: дробные позиции дают сдвиги в проверках прокрутки */
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
@@ -591,6 +591,7 @@ html {
 
 .workout-detail .favorite-title-row .plan-title {
   font-size: 24px;
+  line-height: 28px;
 }
 
 /* 320 px: четыре колонки не вмещают «Редактировать» — действия 2×2, иконка слева */
@@ -804,4 +805,15 @@ html {
 [data-testid="plan-week-progress"] {
   margin: 0 0 var(--vp-sp-2);
   text-align: center;
+}
+
+.stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-3);
+}
+
+.stat-tile .stat-label {
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
