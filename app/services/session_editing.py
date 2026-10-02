@@ -13,7 +13,10 @@ from enum import StrEnum
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repositories.training_sessions import SessionDetail, TrainingSessionRepository
+from app.domain.multi_program import SessionSource
 from app.services.session_deletion import SessionDeletionService
+
+REASON_ELECTIVE_NO_CLONE = "Факультатив нельзя повторить копией — запись вне плана записывается один раз."
 
 
 class EditStatus(StrEnum):
@@ -93,8 +96,15 @@ class SessionEditingService:
             seen.add(key)
 
         for edit in sets:
+            note = edit.note
+            if detail.source == SessionSource.ELECTIVE:
+                # SetLog.note факультатива — упакованный backfill-ом JSON (формат/снаряд/подходы),
+                # а не пользовательская заметка: правка значения/усилия его не затирает (#279).
+                note = next(
+                    (log.note for log in blocks[edit.block_index].set_logs if log.set_number == edit.set_number), None,
+                )
             await self._sessions.update_set_log(
-                blocks[edit.block_index].id, edit.set_number, value=edit.value, effort=edit.effort, note=edit.note,
+                blocks[edit.block_index].id, edit.set_number, value=edit.value, effort=edit.effort, note=note,
             )
         await self._sessions.update_session_fields(
             session_id, performed_at=performed_at, effort=effort, comment=comment,
@@ -107,6 +117,8 @@ class SessionEditingService:
         detail, failure = await self._locked_safe(session_id, user_id)
         if failure is not None:
             return failure
+        if detail.source == SessionSource.ELECTIVE:
+            return EditOutcome(EditStatus.DENIED, REASON_ELECTIVE_NO_CLONE)
         today = now.astimezone(tz).date()
         day = performed_on or today
         time_of_day = now.astimezone(tz).time() if day == today else time(12, 0)

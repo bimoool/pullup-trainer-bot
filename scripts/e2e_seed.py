@@ -1412,8 +1412,47 @@ async def seed_collections_scenario(session: AsyncSession, telegram_id: int) -> 
     await session.flush()
 
 
+async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -> None:
+    """#279 (P0 владельца) — «Факультатив — 3 минуты подтягиваний» в Журнале v2.
+
+    Это НЕ PlanItem и не пользовательская Builder-тренировка: backfill волны 2
+    (scripts/backfill_multi_program.py, #163) переносит legacy ElectiveWorkout в
+    TrainingSession(source=elective) с блоком на системное Exercise «Факультатив — …»
+    (subcategory elective_<тип>), без замороженного снимка и без SessionPlanItem; формат/
+    снаряд упакованы JSON-ом в SetLog.note. Сид воспроизводит это ТЕМИ ЖЕ функциями backfill:
+    два факультатива — «3 минуты подтягиваний» (30 минут назад, 3 интервала по 4+3+2) и
+    «на максимум» (90 минут назад, 4 подхода)."""
+    from app.db.models import ElectiveWorkout
+    from app.domain.electives import ElectiveType
+    from scripts.backfill_multi_program import (
+        _ELECTIVE_EXERCISE_NAMES,
+        _create_training_session_for_elective,
+        _get_or_create_exercise,
+    )
+
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Europe/Moscow"
+    now = datetime.now(UTC)
+    for elective_type, at, sequence in (
+        (ElectiveType.THREE_MINUTES, now - timedelta(minutes=30), [4, 3, 2]),
+        (ElectiveType.MAX_REPS_LADDER, now - timedelta(minutes=90), [12, 10, 8, 6]),
+    ):
+        elective = ElectiveWorkout(
+            user_id=user.id, elective_type=elective_type, performed_at=at, reps_sequence=sequence,
+            total_reps=sum(sequence), equipment_type=EquipmentType.BAND, equipment_value=BAND_VALUE,
+        )
+        session.add(elective)
+        await session.flush()
+        exercise = await _get_or_create_exercise(
+            session, name=_ELECTIVE_EXERCISE_NAMES[elective_type], subcategory=f"elective_{elective_type.value}",
+        )
+        await _create_training_session_for_elective(session, elective, exercise_id=exercise.id)
+    await session.flush()
+
+
 SCENARIOS = {
     "collections": seed_collections_scenario,
+    "owner_optional_workout": seed_owner_optional_workout,
     "analytics_distribution": seed_analytics_distribution,
     "body_metrics": seed_body_metrics,
     "background_interval": seed_background_interval,
