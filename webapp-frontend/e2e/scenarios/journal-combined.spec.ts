@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py journal_combined 900018 — один пользователь: legacy
@@ -8,25 +9,40 @@ import { openAppAs } from "../fixtures/setup";
 // ещё не начата — Golden Journey проходит их вживую. НЕ admin-only.
 const TELEGRAM_ID = 900_018;
 
-// Stale: UI/продукт изменились после Waves 5-6 (не регресс) — карантин до
-// переписывания селекторов под текущий UI (pre-G3 stabilization).
-test.fixme("Планы → Подтягивания/Планка → Complete → Журнал показывает обе + legacy не пропала", async ({ page }) => {
+test("Планы → Подтягивания/Планка → Complete → Журнал показывает обе + legacy не пропала", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
+  // Фаза подхода меняется асинхронно (отдых → «Приготовься» → «Пошёл» → поле): ждём, пока
+  // появится любой из управляющих элементов, а не проверяем count() мгновенно (гонка).
   async function logSet(value: string) {
-    if (await page.getByRole("button", { name: "Пропустить отдых", exact: true }).count() > 0) {
-      await page.getByRole("button", { name: "Пропустить отдых", exact: true }).click();
+    const field = page.getByLabel(/Результат|Секунды|Повторений/);
+    const ready = page.getByRole("button", { name: "Готов", exact: true });
+    const skipRest = page.getByRole("button", { name: "Пропустить отдых", exact: true });
+    await expect(field.or(ready).or(skipRest).first()).toBeVisible();
+    if (await skipRest.isVisible()) {
+      await skipRest.click();
+      await expect(field.or(ready).first()).toBeVisible();
     }
-    if (await page.getByRole("button", { name: "Готов", exact: true }).count() > 0) {
-      await page.getByRole("button", { name: "Готов", exact: true }).click();
-      await page.waitForSelector("text=Пошёл", { timeout: 8000 });
+    if (await ready.isVisible()) {
+      await ready.click();
     }
-    await page.getByLabel("Результат").fill(value);
+    await field.fill(value);
     const setResponsePromise = page.waitForResponse(
       (response) => response.url().includes("sets:batch") && response.status() === 200,
     );
     await page.getByRole("button", { name: "Готово", exact: true }).click();
     await setResponsePromise;
+  }
+
+  // Журнал показывает месяц (#263): legacy-запись «10 дней назад» живёт в предыдущем месяце
+  // (или в текущем, если «сегодня» ≥ 11-е число) — листаем назад, пока она не найдётся.
+  async function expectLegacyInPreviousMonth() {
+    const legacy = page.locator('.history-card[data-kind="legacy"]');
+    await expect(page.getByText("Загружаю историю…")).toHaveCount(0);
+    if (await legacy.count() === 0) {
+      await page.getByRole("button", { name: "Предыдущий месяц" }).click();
+    }
+    await expect(legacy.getByText("Объём", { exact: false })).toBeVisible();
   }
 
   await page.getByRole("button", { name: "Планы" }).click();
@@ -83,7 +99,7 @@ test.fixme("Планы → Подтягивания/Планка → Complete �
   await expect(page.getByText("Планка", { exact: true })).toBeVisible();
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Объём", { exact: false })).toBeVisible(); // legacy запись не пропала
+  await expectLegacyInPreviousMonth(); // legacy запись не пропала
 
   // --- Reload: всё то же самое из backend ---
   await page.reload({ waitUntil: "networkidle" });
@@ -94,8 +110,8 @@ test.fixme("Планы → Подтягивания/Планка → Complete �
   await reloadJournalPromise;
   await expect(page.getByText("Подтягивания", { exact: true })).toBeVisible();
   await expect(page.getByText("Планка", { exact: true })).toBeVisible();
-  await expect(page.getByText("Объём", { exact: false })).toBeVisible();
+  await expectLegacyInPreviousMonth();
 
   expect(apiFailures).toEqual([]);
-  expect(consoleErrors).toEqual([]);
+  expect(noWakeLock(consoleErrors)).toEqual([]);
 });
