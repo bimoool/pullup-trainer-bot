@@ -186,3 +186,4 @@ for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_
 # мутирует), 99331x/99332x — Журнал → «Открыть тренировку» → «Начать» → назад (journal_return, только чтение); id + retry.
 for id in 993301 993302 993331 993332; do seed session_recovery "$id"; done
 for id in 993311 993312 993321 993322; do seed journal_return "$id"; done
+for id in 993341 993342 993351 993352; do seed session_recovery "$id"; done

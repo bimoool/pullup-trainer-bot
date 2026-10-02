@@ -7,10 +7,10 @@ import { pressTelegramBackButton, type TelegramTheme } from "../../fixtures/tele
 
 // Wave 13b review (#293): регрессии навигации/R-4, найденные независимым ревью 43de3b4..6a76084.
 // Seeds (scripts/e2e_seed_all.sh): session_recovery 99330{1,2}/99333{1,2} (мутирует), journal_return
-// 99331{1,2}/99332{1,2} (только чтение); id + retry.
-const USERS: Record<number, { drain: number; journal: number; theme: TelegramTheme }> = {
-  320: { drain: 993_301, journal: 993_311, theme: "light" },
-  390: { drain: 993_331, journal: 993_321, theme: "dark" },
+// 99331{1,2}/99332{1,2} (только чтение), session_recovery 99334{1,2}/99335{1,2} (запись падает — только чтение); id + retry.
+const USERS: Record<number, { drain: number; journal: number; sheet: number; theme: TelegramTheme }> = {
+  320: { drain: 993_301, journal: 993_311, sheet: 993_341, theme: "light" },
+  390: { drain: 993_331, journal: 993_321, sheet: 993_351, theme: "dark" },
 };
 const TITLE = "Тренировка восстановления";
 
@@ -22,7 +22,7 @@ async function expectNavVisible(page: Page) {
 }
 
 for (const width of WIDTHS) {
-  const { drain, journal, theme } = USERS[width as 320 | 390];
+  const { drain, journal, sheet, theme } = USERS[width as 320 | 390];
   test.describe(`Wave 13b review @${width}px ${theme}`, () => {
     test.use({ viewport: { width, height: width === 320 ? 640 : 844 } });
     test.setTimeout(120_000);
@@ -101,6 +101,35 @@ for (const width of WIDTHS) {
       expect(second.status()).toBe(200);
       expect(((await second.json()) as { id: number }).id).not.toBe(firstId);
       await expect(page.getByRole("heading", { name: "Приготовься", exact: true, level: 2 })).toBeVisible();
+
+      expect(appErrors(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("«Добавить в план»: пока запрос в полёте, тап по фону не закрывает лист — ошибка не теряется", async ({ page }, testInfo) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, sheet + testInfo.retry, { theme, backButton: true, allowedApiStatuses: [500] });
+      await page.getByTestId("my-workout-card").filter({ hasText: TITLE }).click();
+      await page.getByRole("button", { name: "Добавить в план" }).click();
+      const formSheet = page.getByTestId("form-sheet");
+      await expect(formSheet).toBeVisible();
+      await page.getByRole("button", { name: "Свободный пул" }).click();
+
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      await page.route("**/api/v2/plan-items", async (route) => {
+        await gate;
+        await route.fulfill({ status: 500, body: "boom" });
+      });
+      await page.getByRole("button", { name: "Добавить", exact: true }).click();
+      await page.getByTestId("form-sheet-backdrop").click({ position: { x: 5, y: 5 } });
+      await pressTelegramBackButton(page);
+      await expect(formSheet).toBeVisible();
+      release();
+      await expect(formSheet).toContainText("Не удалось добавить");
+
+      // После ответа лист снова закрывается фоном как обычно.
+      await page.getByTestId("form-sheet-backdrop").click({ position: { x: 5, y: 5 } });
+      await expect(page.getByTestId("workout-detail")).toBeVisible();
 
       expect(appErrors(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
