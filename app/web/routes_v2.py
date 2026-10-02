@@ -7,6 +7,7 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 (CLAUDE.md)."""
 
 import json
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
@@ -63,6 +64,7 @@ from app.domain.program_schedule import (
 )
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.journal_dedupe import list_backfilled_duplicates
 from app.services.live_session import (
     ActiveSessionConflictError,
     CompleteResult,
@@ -1249,9 +1251,16 @@ async def journal_days(
     start, end = local_range_bounds_utc(first_day, last_day, tz)
     counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end), tz)
     legacy_start, legacy_end = local_range_bounds_utc(first_day, last_day, UTC)
-    for day, count in local_day_counts(
-        await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end), UTC,
-    ).items():
+    legacy_moments = await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end)
+    # legacy-записи, уже перенесённые backfill-ом в v2-сессии (#282), посчитаны выше как сессии
+    migrated = Counter(key.performed_at for key in await list_backfilled_duplicates(session, user.id))
+    legacy_moments_shown = []
+    for moment in legacy_moments:
+        if migrated[moment] > 0:
+            migrated[moment] -= 1
+        else:
+            legacy_moments_shown.append(moment)
+    for day, count in local_day_counts(legacy_moments_shown, UTC).items():
         counts[day] = counts.get(day, 0) + count
 
     latest_days: list[date] = []
