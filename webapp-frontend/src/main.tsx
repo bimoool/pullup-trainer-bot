@@ -14,6 +14,7 @@ import "./index.css";
 import "./shell.css";
 import "./live.css";
 import "./screens.css";
+import "./home-detail.css";
 // safe-area overrides must load last (they override shell/live/screens paddings)
 import "./telegram-safe-area.css";
 

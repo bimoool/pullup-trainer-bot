@@ -1,11 +1,12 @@
 import { Button } from "@telegram-apps/telegram-ui";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listWorkouts,
   type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { AddToPlanScreen } from "./AddToPlanScreen";
+import { CategoryGlyph } from "./CategoryGlyph";
 import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
@@ -168,10 +169,7 @@ export function HomeScreen({
     setFavoritesReloadKey((key) => key + 1);
   }
 
-  // Promo-баннеры: после 1-й группы каталога — «план дня», после 2-й — «внести активность» (при <2 групп — внизу), внизу — «свой комплекс».
-  function promoAfter(rowIndex: number): PromoKind | null {
-        return rowIndex === 0 ? "plan" : rowIndex === 1 ? "log" : null;
-  }
+  // Promo-баннеры (#280): сборка — после «Подборок», запись — после «Мои тренировки», план дня — после «Избранного».
   function runPromo(kind: PromoKind) {
     if (kind === "plan") {
       onOpenPlans();
@@ -408,70 +406,26 @@ export function HomeScreen({
         </div>
       )}
 
-      <p className="plan-title">Главная</p>
+      {/* Заголовок экрана остаётся для скринридеров/тестов, визуально его заменяет строка поиска (как в эталоне). */}
+      <h1 className="plan-title home-title-sr">Главная</h1>
 
-      {favorites !== null && (() => {
-        const mode = favoritesRowMode(favorites.length, readFavoritesSeen());
-        if (mode === "hidden") {
-          return null;
-        }
-        return (
-          <div data-testid="favorites-row">
-            <div className="home-group-header">
-              <span className="home-group-badge home-group-badge-heart" aria-hidden="true">♥</span>
-              <p className="section-title">Избранное</p>
-            </div>
-            {mode === "hint" ? (
-              <p className="screen-message" data-testid="favorites-hint">Нажмите ♡ на тренировке, чтобы добавить</p>
-            ) : (
-              <div className="home-program-row">
-                {favorites.map((favorite) => (
-                  <div key={`${favorite.target_type}-${favorite.target_id}`} className="home-program-card" style={{ ["--cat" as string]: "var(--vp-cat-1)" }}>
-                    <button
-                      type="button"
-                      className="program-card-button"
-                      data-testid="favorite-card"
-                      onClick={() => (favorite.target_type === "workout"
-                        ? setWorkoutView({ kind: "detail", workoutId: favorite.target_id })
-                        : setSelectedProgramId(favorite.target_id))}
-                    >
-                      <p className="home-card-title">{favorite.title}</p>
-                      {favorite.subtitle && <p className="home-card-meta">{favorite.subtitle}</p>}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      <CollectionsRow initDataRaw={initDataRaw} onOpen={setCollectionId} />
-
-      <button type="button" className="home-tests-row" data-testid="home-tests-row" onClick={() => setShowTests(true)}>
-        <span className="home-tests-row-title">Тесты</span>
-        <span className="hint">Максимум, вис, вес — результаты и динамика ›</span>
-      </button>
-
-      {/* Capability A (issue #188) — минимальный каталог: одна карточка на
-          seed-программу, без категорий/поиска/уровней (это остаток волны 6).
-          Issue #192 — карточка сама больше не выполняет действие, тап ведёт
-          на отдельный Program Detail (ProgramDetailScreen.tsx), туда же
-          переехала кнопка "Добавить в план"/"В плане ✓"; здесь остаётся
-          только статус — краткий текст, не кнопка. */}
+      {/* Порядок секций как в эталоне: категории → подборки → баннер → мои тренировки → баннер →
+          избранное (скрыто, пока пусто) → баннер → тесты. Баннеры: сборка / запись / план дня. */}
       {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
       {catalog.phase === "error" && <p className="screen-message">Не удалось загрузить каталог: {catalog.message}</p>}
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
         <p className="screen-message">Каталог курсов появится здесь позже.</p>
       )}
       {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row, rowIndex) => (
-        <Fragment key={row.category}>
         <div
+          key={row.category}
           data-testid="program-category" className="home-group"
           style={{ ["--cat" as string]: `var(--vp-cat-${rowIndex % 6})` }}
         >
           <div className="home-group-header">
-            <span className="home-group-badge" aria-hidden="true" />
+            <span className="home-group-badge" aria-hidden="true">
+              <CategoryGlyph category={row.category} index={rowIndex} size={18} />
+            </span>
             <p className="section-title" data-testid="program-category-title">{row.category}</p>
             {row.category !== OTHER_CATEGORY && (
               <Button
@@ -501,11 +455,11 @@ export function HomeScreen({
             })}
           </div>
         </div>
-        {promoAfter(rowIndex) !== null && (
-          <HomePromo kind={promoAfter(rowIndex)!} onClick={() => runPromo(promoAfter(rowIndex)!)} />
-        )}
-        </Fragment>
       ))}
+
+      <CollectionsRow initDataRaw={initDataRaw} onOpen={setCollectionId} />
+
+      {workouts.phase === "ready" && <HomePromo kind="create" onClick={() => runPromo("create")} />}
 
       <div className="home-section-header">
         <p className="section-title">Мои тренировки</p>
@@ -558,10 +512,57 @@ export function HomeScreen({
           })}
         </ul>
       )}
-      {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).length < 2 && (
-        <HomePromo kind="log" onClick={() => runPromo("log")} />
-      )}
-      {workouts.phase === "ready" && <HomePromo kind="create" onClick={() => runPromo("create")} />}
+      <HomePromo kind="log" onClick={() => runPromo("log")} />
+
+      {favorites !== null && (() => {
+        const mode = favoritesRowMode(favorites.length, readFavoritesSeen());
+        if (mode === "hidden") {
+          return null;
+        }
+        if (mode === "hint") {
+          // Пустого ряда с крупным заголовком нет (как в эталоне): только тихая подсказка.
+          return <p className="home-favorites-hint" data-testid="favorites-hint">Нажмите ♡ на тренировке, чтобы добавить</p>;
+        }
+        return (
+          <div data-testid="favorites-row">
+            <div className="home-group-header">
+              <span className="home-group-badge home-group-badge-heart" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" focusable="false">
+                  <path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.7c0 5.6-7.5 10.2-7.5 10.2z" />
+                </svg>
+              </span>
+              <p className="section-title">Избранное</p>
+            </div>
+            <div className="home-program-row">
+              {favorites.map((favorite) => (
+                <div key={`${favorite.target_type}-${favorite.target_id}`} className="home-program-card" style={{ ["--cat" as string]: "var(--vp-cat-1)" }}>
+                  <button
+                    type="button"
+                    className="program-card-button"
+                    data-testid="favorite-card"
+                    onClick={() => (favorite.target_type === "workout"
+                      ? setWorkoutView({ kind: "detail", workoutId: favorite.target_id })
+                      : setSelectedProgramId(favorite.target_id))}
+                  >
+                    <p className="home-card-title">{favorite.title}</p>
+                    {favorite.subtitle && <p className="home-card-meta">{favorite.subtitle}</p>}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      <HomePromo kind="plan" onClick={() => runPromo("plan")} />
+
+      <button type="button" className="home-tests-row" data-testid="home-tests-row" onClick={() => setShowTests(true)}>
+        <span className="home-tests-row-badge" aria-hidden="true">
+          <CategoryGlyph glyph="target" size={20} />
+        </span>
+        <span className="home-tests-row-title">Тесты</span>
+        <span className="hint">Максимум, вис, вес — результаты и динамика ›</span>
+      </button>
     </div>
   );
 }
