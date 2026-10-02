@@ -54,7 +54,6 @@ for (const width of WIDTHS) {
         expect(card.radius).toBeGreaterThanOrEqual(12);
 
         // Единственное главное действие: «Начать» в закреплённом транспорте внизу окна, без прокрутки.
-        await expect(page.getByRole("button")).toHaveCount(await page.getByRole("button").count());
         const start = page.getByRole("button", { name: "Начать", exact: true });
         await expect(start).toHaveCount(1);
         const box = (await start.boundingBox())!;
