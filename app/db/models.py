@@ -131,6 +131,12 @@ class User(Base):
     # на чтении. 0 — валидное значение ("выключить звук"), отличное от NULL —
     # резолвинг дефолта обязан проверять `is not None`, а не truthiness.
     sound_volume_percent: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # Настройки отображения (issue #268): единицы веса/роста и тема. NULL —
+    # "не настраивал" (дефолт kg/cm/auto резолвится на чтении); хранение веса
+    # и роста остаётся метрическим, единицы — только показ/ввод.
+    weight_unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    height_unit: Mapped[str | None] = mapped_column(String, nullable=True)
+    theme_pref: Mapped[str | None] = mapped_column(String, nullable=True)
     # Лидерборд (issue #67) — NULL значит "анонимно", единственное и
     # дефолтное состояние, пока пользователь явно не задал имя. Явный отказ
     # ("быть анонимным" после того, как имя уже было задано) — это то же

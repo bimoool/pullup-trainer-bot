@@ -92,6 +92,22 @@ class UserRepository:
         await self._session.flush()
         return user
 
+    async def update_display_preferences(
+        self, user_id: int, *, weight_unit: str | None = None, height_unit: str | None = None,
+        theme: str | None = None,
+    ) -> User:
+        """Единицы/тема Mini App (issue #268); None — не менять поле
+        (валидация значений — схема в app/web/schemas.py)."""
+        user = await self._session.get_one(User, user_id)
+        if weight_unit is not None:
+            user.weight_unit = weight_unit
+        if height_unit is not None:
+            user.height_unit = height_unit
+        if theme is not None:
+            user.theme_pref = theme
+        await self._session.flush()
+        return user
+
     async def set_training_reminder(self, user_id: int, *, enabled: bool, hour: int | None) -> User:
         """Тумблер + локальный час уведомления "сегодня по плану тренировка"
         (issue #100) — оба поля пишутся вместе, не по отдельности как

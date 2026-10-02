@@ -7,6 +7,8 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { OfflineQueryProvider } from "./OfflineQueryProvider";
+import { getDisplayPrefs, subscribeDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
+import { PALETTES, resolveAppearance, THEME_VARS, type ThemePref } from "./theme";
 import "./index.css";
 
 // issue #34: window.Telegram.WebApp — тот же мост, что App.tsx уже использует
@@ -74,7 +76,26 @@ function applyTelegramTheme() {
     }
   }
 }
-applyTelegramTheme();
+
+// Тема-override (#268): «Светлая»/«Тёмная» перекрывают палитру Telegram теми же CSS-переменными,
+// «Как в Telegram» снимает перекрытие и заново применяет themeParams клиента.
+function applyThemePref(pref: ThemePref) {
+  const root = document.documentElement.style;
+  for (const name of THEME_VARS) {
+    root.removeProperty(`--tg-${name}`);
+    root.removeProperty(`--tg-theme-${name}`);
+  }
+  if (pref === "auto") {
+    applyTelegramTheme();
+    return;
+  }
+  for (const name of THEME_VARS) {
+    root.setProperty(`--tg-${name}`, PALETTES[pref][name]);
+    root.setProperty(`--tg-theme-${name}`, PALETTES[pref][name]);
+  }
+}
+applyThemePref(getDisplayPrefs().theme);
+subscribeDisplayPrefs(() => applyThemePref(getDisplayPrefs().theme));
 
 // Официальное поле Telegram ('light'/'dark') — надёжнее, чем автоопределение
 // кита по prefers-color-scheme (см. getInitialAppearance в самом ките):
@@ -84,6 +105,11 @@ applyTelegramTheme();
 const telegramColorScheme = (
   window as unknown as { Telegram?: { WebApp?: { colorScheme?: "light" | "dark" } } }
 ).Telegram?.WebApp?.colorScheme;
+
+function ThemedRoot({ children }: { children: React.ReactNode }) {
+  const { theme } = useDisplayPrefs();
+  return <AppRoot appearance={resolveAppearance(theme, telegramColorScheme)}>{children}</AppRoot>;
+}
 
 try {
   // Issue #24: на мобильном Telegram init() (внутри себя дёргает
@@ -104,11 +130,11 @@ try {
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <AppRoot appearance={telegramColorScheme}>
+        <ThemedRoot>
           <OfflineQueryProvider>
             <App />
           </OfflineQueryProvider>
-        </AppRoot>
+        </ThemedRoot>
       </ErrorBoundary>
     </React.StrictMode>,
   );

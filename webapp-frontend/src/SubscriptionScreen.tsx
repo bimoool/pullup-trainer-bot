@@ -11,7 +11,7 @@ type ScreenState =
   | { phase: "error"; message: string }
   | { phase: "ready"; subscription: SubscriptionResponse };
 
-const OFERTA_URL = "/api/oferta.pdf";
+export const OFERTA_URL = "/api/oferta.pdf";
 
 /** Открывает ссылку вне Mini App (issue #53, волна 2; переиспользуется для
  * оферты — issue #57, п.2) — двойной фолбэк, тот же приём, что уже
@@ -23,7 +23,7 @@ const OFERTA_URL = "/api/oferta.pdf";
  * существуют. Mini App не закрывается ни в одном из путей — для оплаты
  * подтверждение приходит отдельным воркером sync_robokassa_payments, для
  * оферты закрывать вовсе не нужно (просто открывает PDF в браузере). */
-function openExternalLink(url: string) {
+export function openExternalLink(url: string) {
   try {
     if (openLink.isAvailable()) {
       openLink(url);

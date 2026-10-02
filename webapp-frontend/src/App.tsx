@@ -2,7 +2,8 @@ import { retrieveLaunchParams } from "@telegram-apps/sdk";
 import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
-import { fetchHello, type HelloResponse } from "./api";
+import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
+import { setDisplayPrefs } from "./displayPrefs";
 import { fetchActiveLiveSession, type LiveSessionResponse } from "./apiV2";
 import { DashboardScreen } from "./DashboardScreen";
 import { PlanSessionFlow } from "./PlanSessionFlow";
@@ -260,6 +261,26 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- запуск ровно
     // один раз на переход в "ready", не на каждое изменение initDataRaw.
+  }, [state.status]);
+
+  // Единицы и тема (#268) — серверные настройки подтягиваются один раз после
+  // готовности; до ответа действуют кеш из localStorage / дефолты. Сбой молча.
+  useEffect(() => {
+    if (state.status !== "ready" || state.data.onboarding_step === "not_registered") {
+      return;
+    }
+    let cancelled = false;
+    fetchDisplayPreferences(state.initDataRaw)
+      .then((prefs) => {
+        if (!cancelled) {
+          setDisplayPrefs(prefs);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- один раз на переход в "ready".
   }, [state.status]);
 
   if (state.status === "loading") {

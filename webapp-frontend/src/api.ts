@@ -1076,3 +1076,34 @@ export async function updateLeaderboardDisplayName(
   }
   return (await response.json()) as { display_name: string | null };
 }
+
+/** GET/PUT /api/profile/prefs (#268) — единицы и тема (с дефолтами kg/cm/auto).
+ * Хранение веса/роста остаётся метрическим, единицы влияют только на показ/ввод. */
+export type WeightUnit = "kg" | "lb";
+export type HeightUnit = "cm" | "in";
+export type ThemePref = "auto" | "light" | "dark";
+
+export interface DisplayPreferences {
+  weight_unit: WeightUnit;
+  height_unit: HeightUnit;
+  theme: ThemePref;
+}
+
+export async function fetchDisplayPreferences(initDataRaw: string): Promise<DisplayPreferences> {
+  return apiGet<DisplayPreferences>("/api/profile/prefs", initDataRaw);
+}
+
+export async function updateDisplayPreferences(
+  initDataRaw: string,
+  body: Partial<DisplayPreferences>,
+): Promise<DisplayPreferences> {
+  const response = await fetch("/api/profile/prefs", {
+    method: "PUT",
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage("PUT", "/api/profile/prefs", response));
+  }
+  return (await response.json()) as DisplayPreferences;
+}

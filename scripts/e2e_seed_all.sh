@@ -86,3 +86,5 @@ seed plans_overview 990201
 seed plans_overview 990202
 # #273 «Workout Detail start/log»: 998001/998011 (+ retry), «Записать»: id+5(+retry).
 for id in 998001 998002 998006 998007 998011 998012 998016 998017; do seed golden_journey "$id"; done
+# Settings (#268): 999001/999011 (единицы), +2 (тема), +4 (отмена), каждый + retry (id+1).
+for id in 999001 999002 999003 999004 999005 999006 999011 999012 999013 999014 999015 999016; do seed ready "$id"; done

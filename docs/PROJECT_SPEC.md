@@ -267,6 +267,22 @@ UI: в деталях записи рядом с «Удалить» — «✏️
   Нет/просрочен/подделан токен → 401.
 - **Клиент:** внутри Telegram — `Telegram.WebApp.downloadFile` с этой ссылкой, иначе `window.open`.
 
+### Настройки (#268)
+
+- Профиль → ⚙️ открывает «Настройки»: Профиль (вес, рост, пол, дата рождения), Единицы (вес кг | фунты,
+  рост см | дюймы), Часовой пояс, Оформление (Как в Telegram | Светлая | Тёмная), Таймер (громкость,
+  `/api/timer/preferences`), Подписка (статус → SubscriptionScreen, оферта), Данные («Скачать историю» —
+  CSV из #267).
+- **Save/Cancel:** правки — черновик; на сервер и в приложение попадают только по «Сохранить»
+  (`PUT /api/profile`, `PUT /api/profile/prefs`, при изменении — `PUT /api/timer/preferences`); «Отмена» отбрасывает всё.
+- `GET/PUT /api/profile/prefs` — `weight_unit` (`kg`|`lb`), `height_unit` (`cm`|`in`), `theme`
+  (`auto`|`light`|`dark`); nullable-колонки `users.weight_unit/height_unit/theme_pref`, NULL = дефолт
+  (kg/cm/auto). PUT — частичный, неизвестное значение → 422, нет пользователя → 404.
+- **Хранение метрическое** (`weight_kg`, `height_cm`): единицы влияют только на показ и ввод. Применено в
+  Профиле и форме правки; вес в логировании тренировок/журнале/аналитике пока всегда кг (известный пробел).
+- Тема-override перекрывает AppRoot `appearance` и CSS-палитру Telegram; «Как в Telegram» снимает override.
+  Значение кешируется в localStorage только для первого кадра, источник правды — сервер.
+
 ### Тесты (Assessment Tests, #260)
 
 Хаб «Тесты» поверх `AssessmentProtocol` / `AssessmentResult`.
