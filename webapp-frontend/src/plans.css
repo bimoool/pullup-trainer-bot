@@ -51,7 +51,7 @@
   height: 8px;
   margin-top: var(--vp-sp-2);
   border-radius: var(--vp-radius-pill);
-  background: color-mix(in srgb, var(--cat, var(--vp-accent)) 16%, var(--vp-card-bg));
+  background: color-mix(in srgb, var(--cat, var(--vp-accent)) 26%, transparent);
   overflow: hidden;
 }
 

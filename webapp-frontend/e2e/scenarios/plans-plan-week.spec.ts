@@ -53,9 +53,12 @@ test("«Планы»: видна текущая неделя плана, эле�
   await expect(page.getByTestId("plan-week-stepper")).toContainText("База");
   await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя");
   await expect(page.getByText("Вторник")).toBeVisible();
-  await expect(page.getByText("Расписание недели (E2E) · 0/1")).toBeVisible();
+  // #286 B: название и чип «0/1» — отдельные элементы одной строки.
+  const weekRow = (counter: string) => page.getByTestId("plans-row")
+    .filter({ has: page.getByTestId("plan-item-counter").filter({ hasText: new RegExp(`^${counter}$`) }) });
+  await expect(weekRow("0/1")).toContainText("Расписание недели (E2E)");
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Расписание недели (E2E) · 0/3")).toBeVisible();
+  await expect(weekRow("0/3")).toContainText("Расписание недели (E2E)");
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);
