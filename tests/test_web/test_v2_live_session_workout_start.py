@@ -135,3 +135,41 @@ async def test_completed_workout_session_skips_progression_and_shows_in_history(
     assert done.json()["progression_skipped_reason"] == "not_plan_session"
     history = await v2_get(session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout.id}/sessions")
     assert [row["id"] for row in history.json()["sessions"]] == [session_id]
+
+
+# --- R-4 (#289): plan-путь старта тоже уважает «одна активная сессия» -------------------------------
+
+async def _plan_item_ids(session: AsyncSession, user: User) -> list[int]:
+    from tests.test_web.test_v2_live_session import _setup_step_session
+
+    _inclusion, _roles, plan_item_ids = await _setup_step_session(session, user)
+    return [plan_item_ids["block_a"], plan_item_ids["block_b"]]
+
+
+async def test_plan_start_conflicts_with_active_session_but_same_client_id_is_idempotent(session: AsyncSession):
+    user = await _user(session, 930011)
+    workout = await _workout(session, user)
+    active = await _start(session, user, {"client_session_id": str(uuid.uuid4()), "workout_id": workout.id})
+    plan_item_ids = await _plan_item_ids(session, user)
+
+    blocked = await _start(session, user, {"client_session_id": str(uuid.uuid4()), "plan_item_ids": plan_item_ids})
+
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == {"code": "active_session_exists", "active_session_id": active.json()["id"]}
+    started = await session.scalar(select(func.count()).select_from(TrainingSession).where(TrainingSession.user_id == user.id))
+    assert started == 1
+
+
+async def test_plan_start_retry_with_same_client_id_returns_existing_session(session: AsyncSession):
+    user = await _user(session, 930012)
+    plan_item_ids = await _plan_item_ids(session, user)
+    payload = {"client_session_id": str(uuid.uuid4()), "plan_item_ids": plan_item_ids}
+
+    first = await _start(session, user, payload)
+    retry = await _start(session, user, payload)  # сессия уже STARTED, но тот же id — не 409
+    other = await _start(session, user, {"client_session_id": str(uuid.uuid4()), "plan_item_ids": plan_item_ids})
+
+    assert first.status_code == retry.status_code == 200
+    assert first.json()["id"] == retry.json()["id"]
+    assert other.status_code == 409
+    assert other.json()["detail"]["active_session_id"] == first.json()["id"]

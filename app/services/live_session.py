@@ -218,6 +218,11 @@ class LiveSessionService:
         plan = await self._plans.get_for_user(user_id)
         if plan is None:
             return None
+        # R-4 (#289): как у workout-пути — одна активная сессия на пользователя. Повтор с тем же
+        # client_session_id уже вернулся выше (existing), сюда доходит только НОВЫЙ id.
+        active = await self._sessions.get_active_for_user(user_id)
+        if active is not None:
+            raise ActiveSessionConflictError(active.id)
 
         resolved_blocks: list[SessionBlockInput] = []
         resolved_targets: list[list[SetTargetInput]] = []
