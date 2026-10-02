@@ -399,7 +399,7 @@ export function SessionLiveScreen({
   const formTarget = local?.server.blocks[formBlockIndex]?.targets[formSetNumber - 1] ?? null;
   useEffect(() => {
     // #265: на отдыхе форма — правка только что записанного подхода.
-    const last = formPhaseName === "rest" ? localRef.current?.lastLogged ?? null : null;
+    const last = formPhaseName === "rest" || formPhaseName === "get_ready" ? localRef.current?.lastLogged ?? null : null;
     if (last) {
       setValue(last.value);
       setEffort(last.effort ?? null);
@@ -506,7 +506,7 @@ export function SessionLiveScreen({
   /** #265: правка подхода с отдыха, ещё не сохранённая кнопкой, не теряется
    * при выходе с отдыха/завершении. */
   function withRestEdit(current: LocalLiveSession): LocalLiveSession {
-    return current.localPhase.phaseName === "rest"
+    return current.localPhase.phaseName === "rest" || current.localPhase.phaseName === "get_ready"
       ? editLastLoggedSet(current, { value, effort, note })
       : current;
   }
@@ -527,9 +527,12 @@ export function SessionLiveScreen({
       }
       const edited = withRestEdit(local);
       const newPhase = nextLocalPhase(edited.localPhase, counts, hasManualTransitions(edited.server));
+      // Финал-1: с отдыха в «Приготовься» следующего подхода предыдущий подход остаётся доступен для
+      // правки (тот же set_index перезапишет строку, данные не теряются); дальше — сбрасывается.
+      const keepPrevious = edited.localPhase.phaseName === "rest" && newPhase.phaseName === "get_ready";
       await commitLocal({
         ...clearPauseState(edited),
-        lastLogged: null,
+        lastLogged: keepPrevious ? edited.lastLogged ?? null : null,
         localPhase: newPhase,
         localPhaseEnteredAt: new Date().toISOString(),
         pendingPhaseAdvances: edited.pendingPhaseAdvances + 1,
@@ -682,7 +685,9 @@ export function SessionLiveScreen({
     ? Math.max(0, (local.pausedRemainingMs ?? 0) / 1000)
     : phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
   const cueActive = isGetReadyCueActive(phaseName, remaining);
-  const restEditable = phaseName === "rest" && local.lastLogged != null;
+  const restEditable = (phaseName === "rest" || phaseName === "get_ready") && local.lastLogged != null;
+  // На «Приготовься» правится предыдущий подход (setNumber уже указывает на следующий).
+  const editSetNumber = phaseName === "get_ready" ? Math.max(1, local.localPhase.setNumber - 1) : local.localPhase.setNumber;
   // #286: после записи подхода панель на отдыхе свёрнута до одной строки-сводки («Подход 1: 8 повт.»,
   // «Изменить» раскрывает) — раскрытая под таймером она уходила под липкий транспорт.
   const logPanelOpen = panelOpen ?? false;
@@ -696,6 +701,7 @@ export function SessionLiveScreen({
   const targetForSet = block?.targets[local.localPhase.setNumber - 1] ?? null;
   const isMaxBlock = block?.protocol_type === "max_effort";
   const inputLabel = resultInputLabel(block?.protocol_type ?? null, targetForSet);
+  const editLabel = resultInputLabel(block?.protocol_type ?? null, block?.targets[editSetNumber - 1] ?? null);
   // Имя блока — из замороженного снимка тренировки, если он есть, иначе из
   // библиотеки (legacy/STEP). null — имени нет, label не показываем.
   const blockName = (candidate: typeof block): string | null => {
@@ -900,9 +906,9 @@ export function SessionLiveScreen({
         >
           {logPanelOpen ? (
             <>
-              <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
+              <h3 className="live-panel-title">{`Подход ${editSetNumber}: результат`}</h3>
               <form onSubmit={(event) => { event.preventDefault(); if (isCompleteDecimal(value)) { saveRestEdit(); } }}>
-                {renderValueField(value, setValue, inputLabel.label)}
+                {renderValueField(value, setValue, editLabel.label)}
                 {renderEffortAndNote()}
                 <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(value)}>
                   Сохранить подход
@@ -918,7 +924,7 @@ export function SessionLiveScreen({
           ) : (
             <div className="live-summary-row">
               <p className="live-summary-line" data-testid="log-panel-summary">
-                {formatLoggedSetSummary(local.localPhase.setNumber, value, inputLabel.label)}
+                {formatLoggedSetSummary(editSetNumber, value, editLabel.label)}
                 {effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
               </p>
               <button
