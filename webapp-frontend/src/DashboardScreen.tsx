@@ -921,21 +921,31 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           <h2 id="plans-today-title" className="plans-today-title">Сегодня</h2>
           {todayGroups.map((group) => {
             const counter = groupCounter(group.items);
+            const todayDone = counter.planned > 0 && counter.done >= counter.planned;
             return (
-              <div key={group.key} className="plans-row-main" data-testid="plans-today-row" style={groupTint(group)}>
+              <div key={group.key} className="plans-row-main" data-testid="plans-today-row" data-done={todayDone} style={groupTint(group)}>
                 <span className="plans-row-bar" aria-hidden="true" />
                 <div className="plans-row-text">
                   <span className="plans-row-title">{group.title}</span>
-                  <span className="plans-row-chip" data-done={counter.done >= counter.planned}>
-                    {`${counter.done}/${counter.planned}`}
+                  <span className="plans-row-chip" data-done={todayDone}>
+                    {todayDone && <span aria-hidden="true">{"✓ "}</span>}{`${counter.done}/${counter.planned}`}
                   </span>
                 </div>
-                <button
-                  type="button" className="plans-start" aria-label={`Начать: ${group.title}`}
-                  disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
-                >
-                  {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
-                </button>
+                {todayDone ? (
+                  <button
+                    type="button" className="plans-start plans-start-again" aria-label={`Повторить: ${group.title}`}
+                    disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
+                  >
+                    {startingGroupKey === group.key ? "Начинаю…" : "Ещё раз"}
+                  </button>
+                ) : (
+                  <button
+                    type="button" className="plans-start" aria-label={`Начать: ${group.title}`}
+                    disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
+                  >
+                    {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
+                  </button>
+                )}
               </div>
             );
           })}
@@ -984,24 +994,34 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               const counter = groupCounter(group.items);
               // #288 — имя для скринридера: название + день (одинаковые названия в разные дни различимы).
               const rowDay = group.items[0]?.day_of_week ?? null;
+              const rowDone = counter.planned > 0 && counter.done >= counter.planned;
               const rowLabel = `${group.title}, ${rowDay === null ? "без дня" : (DAY_NAMES[rowDay] ?? `день ${rowDay}`).toLowerCase()}`;
               return (
-                <div key={group.key} className="plan-week-day-group plans-row" data-testid="plans-row" style={groupTint(group)}>
+                <div key={group.key} className="plan-week-day-group plans-row" data-testid="plans-row" data-done={rowDone} style={groupTint(group)}>
                   <div className="plans-row-main">
                     <span className="plans-row-bar" aria-hidden="true" />
                     <div className="plans-row-text">
                       <span className="plans-row-title">{group.title}</span>
-                      <span className="plans-row-chip" data-done={counter.done >= counter.planned} data-testid="plan-item-counter">
-                        {`${counter.done}/${counter.planned}`}
+                      <span className="plans-row-chip" data-done={rowDone} data-testid="plan-item-counter">
+                        {rowDone && <span aria-hidden="true">{"✓ "}</span>}{`${counter.done}/${counter.planned}`}
                       </span>
                     </div>
                     {isCurrent && (
-                      <button
-                        type="button" className="plans-start" aria-label={`Начать: ${rowLabel}`}
-                        disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
-                      >
-                        {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
-                      </button>
+                      rowDone ? (
+                        <button
+                          type="button" className="plans-start plans-start-again" aria-label={`Повторить: ${rowLabel}`}
+                          data-testid="plans-row-again" disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
+                        >
+                          {startingGroupKey === group.key ? "Начинаю…" : "Ещё раз"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button" className="plans-start" aria-label={`Начать: ${rowLabel}`}
+                          disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
+                        >
+                          {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
+                        </button>
+                      )
                     )}
                     {isEditable && mutableItem !== null && !isRemoveConfirming && (
                       <MoreButton

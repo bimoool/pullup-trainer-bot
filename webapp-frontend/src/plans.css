@@ -181,6 +181,13 @@
 
   .plans-row-title {
     max-width: 100%;
+    /* до 2 строк вместо «Силовая трен…» (#277) */
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
   }
 
   .plans-start {
@@ -311,4 +318,20 @@
 
 .plans-sheet-cancel {
   color: var(--tg-subtitle-text-color);
+}
+
+/* Выполненная строка дня (1/1): «Готово» — чип с галочкой, название приглушено, повтор — вторичная кнопка. */
+.plans-row[data-done="true"] .plans-row-title,
+.plans-row-main[data-done="true"] .plans-row-title {
+  color: var(--vp-hint);
+}
+.plans-row[data-done="true"] .plans-row-bar,
+.plans-row-main[data-done="true"] .plans-row-bar {
+  opacity: 0.45;
+}
+.plans-start.plans-start-again {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--vp-divider);
+  color: var(--vp-hint);
+  font-weight: 600;
 }

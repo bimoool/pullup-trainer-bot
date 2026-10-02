@@ -1,6 +1,7 @@
 import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useRef, useState } from "react";
 
+import { BackChevron } from "./BackChevron";
 import { cloneSession, editSession, type SessionResponseV2 } from "./apiV2";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { describeJournalBlock, journalEntryTitle } from "./journalFormat";
@@ -77,6 +78,7 @@ export function JournalV2EditForm({
 
   return (
     <div data-testid="journal-edit-form">
+      <BackChevron onClick={saving ? () => undefined : onCancel} testId="journal-edit-back" />
       <p className="plan-title">Изменить тренировку</p>
       <p className="block-subtitle">{journalEntryTitle(session)}</p>
 
@@ -195,6 +197,7 @@ export function JournalV2CloneForm({
 
   return (
     <div data-testid="journal-clone-form">
+      <BackChevron onClick={saving ? () => undefined : onCancel} testId="journal-clone-back" />
       <p className="plan-title">Повторить тренировку</p>
       <p className="block-subtitle">{journalEntryTitle(session)}</p>
       <p className="hint">Будет создана новая завершённая запись с теми же упражнениями и результатами.</p>

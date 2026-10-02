@@ -182,3 +182,6 @@ for id in 996141 996142 996151 996152 996161 996162 996171 996172; do seed journ
 # «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
 # на тест id + retry (≤ +3); session_recovery.
 for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done
+# Journal/plans polish (#277, spec parity/journal-plans-polish): 320 light 998301 / 320 dark 998311 / 390 light 998321 /
+# 390 dark 998331, на тест id + retry (≤ +2); тесты только читают (правка отменяется).
+for base in 998301 998311 998321 998331; do for off in 0 1 2; do seed journal_plans_polish $((base + off)); done; done

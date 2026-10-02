@@ -1027,6 +1027,44 @@ async def seed_journal_edit(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_journal_plans_polish(session: AsyncSession, telegram_id: int) -> None:
+    """#277 journal/plans polish — как journal_edit, но тренировка плана с длинным названием (title + снимок),
+    плюс запись задним числом (самый длинный бейдж) и «Активность»; строка дня плана уже выполнена (1/1)."""
+    await seed_journal_edit(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    long_title = "Силовая тренировка верхней части тела с подтягиваниями и отжиманиями"
+    workout = (await session.execute(
+        select(Complex).where(Complex.owner_user_id == user.id, Complex.name == "Моя силовая"),
+    )).scalar_one()
+    workout.name = long_title
+    for training in (await session.execute(
+        select(TrainingSession).where(TrainingSession.user_id == user.id, TrainingSession.workout_snapshot.is_not(None)),
+    )).scalars():
+        training.workout_snapshot = {**training.workout_snapshot, "title": long_title}
+    pull = (await session.execute(
+        select(Exercise).where(Exercise.owner_user_id == user.id, Exercise.name == "Подтягивания"),
+    )).scalar_one()
+    # Строка плана — в текущей неделе: сегодняшняя сессия уже выполнила её (1/1).
+    plan = (await session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user.id))).scalar_one()
+    today = datetime.now(UTC).date()
+    current_number = plan_week_number(plan.created_at.date(), today)
+    week = await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=current_number,
+        start_date=plan_week_start_date(plan.created_at.date(), current_number), phase=WeekPhase.BASE,
+    )
+    plan_item = (await session.execute(select(PlanItem).where(PlanItem.training_plan_id == plan.id))).scalar_one()
+    plan_item.plan_week_id = week.id
+    now = datetime.now(UTC)
+    await TrainingSessionRepository(session).create_session(
+        user_id=user.id, source=SessionSource.BACKDATED, performed_at=now - timedelta(minutes=20), effort=None,
+        comment=None, completed_at=now - timedelta(minutes=19),
+        blocks=[SessionBlockInput(exercise_id=pull.id, sets=[
+            SetLogInput(set_number=1, metric_type=MetricType.REPS, value=Decimal(6), unit="reps"),
+        ])],
+    )
+    await session.flush()
+
+
 async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     """REBUILD-1 (R3) — детерминированные данные для Analytics v2 (часовой
     пояс Pacific/Kiritimati, +14):
@@ -1685,6 +1723,7 @@ SCENARIOS = {
     "journal_calendar": seed_journal_calendar,
     "journal_return": seed_journal_return,
     "journal_edit": seed_journal_edit,
+    "journal_plans_polish": seed_journal_plans_polish,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
