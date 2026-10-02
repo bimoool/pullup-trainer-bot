@@ -166,11 +166,12 @@ def _program_response(program: Program, strategy_type_value: str | None) -> Prog
     )
 
 
-def _program_inclusion_response(inclusion: ProgramInclusion) -> ProgramInclusionResponse:
+def _program_inclusion_response(inclusion: ProgramInclusion, today: date) -> ProgramInclusionResponse:
+    """today — дата пользователя (_plan_today): current_week считается в его поясе, как недели плана."""
     total_weeks = duration_weeks((inclusion.snapshot or {}).get("config"))
     return ProgramInclusionResponse(
         duration_weeks=total_weeks,
-        current_week=course_week_number(inclusion.started_at.date(), datetime.now(UTC).date(), total_weeks),
+        current_week=course_week_number(inclusion.started_at.date(), today, total_weeks),
         id=inclusion.id, program_id=inclusion.program_id,
         program_name=inclusion.snapshot.get("program_name", ""),
         is_active=inclusion.is_active, started_at=inclusion.started_at, expires_at=inclusion.expires_at,
@@ -856,7 +857,7 @@ async def get_plan(
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
-            program_inclusions=[_program_inclusion_response(inclusion) for inclusion in inclusions],
+            program_inclusions=[_program_inclusion_response(inclusion, _plan_today(user)) for inclusion in inclusions],
             plan_items=[
                 _plan_item_response(
                     item, complex_name_by_id, complex_source_type_by_id, done_by_item.get(item.id, 0),
@@ -892,7 +893,7 @@ async def create_program_inclusion(
     await PlanWeekService(session).ensure_current_plan_week(
         training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
-    return _program_inclusion_response(inclusion)
+    return _program_inclusion_response(inclusion, _plan_today(user))
 
 
 @router_v2.post("/program-inclusions/{inclusion_id}/deactivate", response_model=ProgramInclusionResponse)
@@ -913,7 +914,7 @@ async def deactivate_program_inclusion(
         if inclusion.expires_at is None:
             inclusion.expires_at = datetime.now(UTC)
         await session.commit()
-    return _program_inclusion_response(inclusion)
+    return _program_inclusion_response(inclusion, _plan_today(user))
 
 
 # --- Строки недельной матрицы -----------------------------------------------------------
