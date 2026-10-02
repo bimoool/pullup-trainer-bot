@@ -35,7 +35,7 @@ export function DayPicker({ selectedDay, onSelect }: Props) {
         ))}
       </div>
       <Button
-        size="s" stretched
+        size="s" stretched className="week-pool-button"
         mode={selectedDay === "free_pool" ? "filled" : "outline"}
         onClick={() => onSelect("free_pool")}
       >

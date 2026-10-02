@@ -474,7 +474,7 @@ export function BlockForm({
   return (
     <Section
       className="block-section"
-      header={isHeavy ? `Блок ${letter} — тяжёлая тренировка 🏋️` : `Блок ${letter} — цель ${target}`}
+      header={isHeavy ? <>Блок {letter} — тяжёлая тренировка <Icon name="weightlift" size={16} /></> : `Блок ${letter} — цель ${target}`}
     >
       <div className="block-header">
         <div className="block-badge">{letter}</div>

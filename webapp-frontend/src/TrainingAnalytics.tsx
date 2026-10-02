@@ -22,6 +22,7 @@ import {
 import { formatDuration, formatLongDuration, formatNumber } from "./blockFormat";
 import { DistributionDonut, DistributionTable } from "./AnalyticsDistribution";
 import { homeCategoryOrder } from "./homeDiscovery";
+import { useModalSheet } from "./useModalSheet";
 import { Icon } from "./Icon";
 
 type Props = { initDataRaw: string };
@@ -77,7 +78,8 @@ function WeeksChart({ weeks, metric }: { weeks: AnalyticsMetricWeekV2[]; metric:
   const slot = (width - left * 2) / weeks.length;
   const barWidth = Math.min(slot * 0.62, 28);
   const labelStep = Math.ceil(weeks.length / 6);
-  const showValues = weeks.length <= VALUE_LABELS_MAX_WEEKS;
+  // подписи значений крупнее 11px: показываем, только если помещаются в слот столбца (#290)
+  const showValues = weeks.length <= VALUE_LABELS_MAX_WEEKS && slot >= String(max).length * 8.5 + 2;
   const summary = weeks.map((week) => `${formatWeekLabel(week.week_start)}: ${valueOf(week)}`).join(", ");
   const noun = metric === "minutes" ? "Минут" : "Тренировок";
   return (
@@ -97,12 +99,12 @@ function WeeksChart({ weeks, metric }: { weeks: AnalyticsMetricWeekV2[]; metric:
               fill={SERIES_COLOR} opacity={value === 0 ? 0.15 : 1}
             />
             {showValues && value > 0 && (
-              <text x={x + barWidth / 2} y={height - bottom - barHeight - 3} fontSize="9" textAnchor="middle" fill="currentColor">
+              <text x={x + barWidth / 2} y={height - bottom - barHeight - 3} fontSize="14" textAnchor="middle" fill="currentColor">
                 {value}
               </text>
             )}
             {index % labelStep === 0 && (
-              <text x={x + barWidth / 2} y={height - 7} fontSize="9" textAnchor="middle" fill="currentColor" opacity="0.7">
+              <text x={x + barWidth / 2} y={height - 7} fontSize="14" textAnchor="middle" fill="currentColor" opacity="0.7">
                 {formatWeekLabel(week.week_start)}
               </text>
             )}
@@ -114,9 +116,12 @@ function WeeksChart({ weeks, metric }: { weeks: AnalyticsMetricWeekV2[]; metric:
 }
 
 function MetricInfoSheet({ onClose }: { onClose: () => void }) {
+  const dialogRef = useModalSheet(onClose);
   return (
     <div className="home-sheet-backdrop" onClick={onClose}>
-      <div className="home-sheet" role="dialog" aria-label="Что значат метрики" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={dialogRef} className="home-sheet" role="dialog" aria-modal="true" aria-label="Что значат метрики" tabIndex={-1}
+        data-testid="analytics-info-sheet" onClick={(event) => event.stopPropagation()}>
         <p className="section-title">Что значат метрики</p>
         <p className="hint"><b>Тренировки</b> — сколько завершённых тренировок в неделю, включая те, где время не записано.</p>
         <p className="hint">
@@ -243,7 +248,7 @@ function TrendChart({ points, ariaLabel }: { points: ChartPoint[]; ariaLabel: st
   }
   const width = 320;
   const height = 150;
-  const left = 30;
+  const left = 46;
   const right = 10;
   const top = 12;
   const bottom = 22;
@@ -256,14 +261,14 @@ function TrendChart({ points, ariaLabel }: { points: ChartPoint[]; ariaLabel: st
   const path = points.map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(point.y).toFixed(1)}`).join(" ");
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="analytics-trend-chart" role="img" aria-label={ariaLabel}>
-      <text x={left - 4} y={y(max) + 3} fontSize="9" textAnchor="end" fill="currentColor" opacity="0.7">{formatNumber(Math.round(max * 10) / 10)}</text>
-      <text x={left - 4} y={y(min) + 3} fontSize="9" textAnchor="end" fill="currentColor" opacity="0.7">{formatNumber(Math.round(min * 10) / 10)}</text>
+      <text x={left - 4} y={y(max) + 3} fontSize="14" textAnchor="end" fill="currentColor" opacity="0.7">{formatNumber(Math.round(max * 10) / 10)}</text>
+      <text x={left - 4} y={y(min) + 3} fontSize="14" textAnchor="end" fill="currentColor" opacity="0.7">{formatNumber(Math.round(min * 10) / 10)}</text>
       <path d={path} fill="none" stroke={SERIES_COLOR} strokeWidth="2" strokeLinejoin="round" />
       {points.map((point, index) => (
         <circle key={`${point.at}-${index}`} cx={x(index)} cy={y(point.y)} r={point.pb ? 4.5 : 2.5} fill={point.pb ? PB_COLOR : SERIES_COLOR} />
       ))}
-      <text x={left} y={height - 6} fontSize="9" fill="currentColor" opacity="0.7">{formatShortDate(points[0].at)}</text>
-      <text x={width - right} y={height - 6} fontSize="9" textAnchor="end" fill="currentColor" opacity="0.7">
+      <text x={left} y={height - 6} fontSize="14" fill="currentColor" opacity="0.7">{formatShortDate(points[0].at)}</text>
+      <text x={width - right} y={height - 6} fontSize="14" textAnchor="end" fill="currentColor" opacity="0.7">
         {formatShortDate(points[points.length - 1].at)}
       </text>
     </svg>

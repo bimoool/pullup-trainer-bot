@@ -793,9 +793,9 @@ html {
   min-height: 132px;
   color: #fff;
   background:
-    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0) 38%),
-    radial-gradient(circle at 12% 120%, rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0) 45%),
-    linear-gradient(135deg, color-mix(in srgb, var(--cat, var(--vp-cat-0)) 88%, #000), color-mix(in srgb, var(--cat, var(--vp-cat-0)) 62%, #0b1220));
+    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.12) 0, rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 12% 120%, rgba(255, 255, 255, 0.08) 0, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cat, var(--vp-cat-0)) 50%, #000), color-mix(in srgb, var(--cat, var(--vp-cat-0)) 40%, #0b1220));
   box-shadow: var(--vp-shadow);
 }
 
@@ -816,7 +816,7 @@ html {
 }
 
 .home-program-row .home-card-meta {
-  color: rgba(255, 255, 255, 0.86);
+  color: rgba(255, 255, 255, 0.94);
 }
 
 .home-program-row .home-card-status {

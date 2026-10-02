@@ -188,3 +188,5 @@ for base in 998301 998311 998321 998331; do for off in 0 1 2; do seed journal_pl
 # «Live set nav» (#292, parity/live-set-nav.spec.ts): 9929xx — «Предыдущий подход», 320/390 × light/dark,
 # на тест id + 2*индекс + retry (≤ +7); session_recovery.
 for base in 992901 992911 992921 992931; do for off in 0 1 2 3 4 5 6 7; do seed session_recovery $((base + off)); done; done
+# A11y follow-up (#290, a11y2): Live-панель оценки на 320/390 × light/dark — 998821/998823/998825/998827, каждый + retry (id+1); session_recovery (мутирует).
+for id in 998821 998822 998823 998824 998825 998826 998827 998828; do seed session_recovery "$id"; done
