@@ -26,8 +26,12 @@
 }
 
 /* транспорт прижат к низу экрана и остаётся под рукой при прокрутке панели записи */
-.app-shell:has(.live-screen) {
+.app-shell:not(.app-shell-with-nav):has(.live-screen) {
   padding-bottom: 0;
+}
+/* экспериментальная вкладка (SessionV2Lab) показывает live внутри вкладок — транспорт над навигацией */
+.app-shell-with-nav .live-transport {
+  bottom: calc(var(--vp-nav-h) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ---------- шапка ---------- */
