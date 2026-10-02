@@ -61,24 +61,24 @@ any merge into `develop/current`.
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
 | Create / edit workout | C1, C9–C10 | WorkoutEditorScreen | DONE | — | — | — | builder-ux.spec.ts, home-discovery.spec.ts |
-| Delete workout | C11 | no route/UI | MISSING | — | confirm, keep history | #261 | — |
+| Delete workout | C11 | editor: «Удалить тренировку» (inline confirmation, soft-archive; history/Journal preserved) | DONE | — | — | #261 | crimpd-parity.spec.ts «Workout delete/duplicate»; tests/test_web/test_v2_workout_delete_duplicate.py |
 | Exercise search + «Create Exercise: <query>» | C3–C4 | ExercisePickerScreen | DONE | — | — | — | builder-ux.spec.ts |
 | Exercise edit / delete in workout | C12 | edit, delete, move ↑↓ | DONE | — | — | — | builder-ux.spec.ts |
 | Sets/reps steppers, rest, rep timer, notes | C5–C6 | ProtocolForm (4 protocols, steppers, mm:ss) | DOMAIN-EQUIVALENT | per-rep timer / tempo not modelled | our protocols reps/time/max/interval; per-set targets one static value (UX_REFERENCE_AUDIT data-model facts) | — | builder-execution.spec.ts |
 | Precise durations (mm:ss) | C5 | time rows mm:ss | DONE | — | — | — | builder-ux.spec.ts |
 | Wizard: type → category → sub-focus | C2, C7–C8 | single form | DOMAIN-EQUIVALENT | user workouts have no category field | category derived from exercises; wizard steps not needed | — | — |
 | Total time in header | C5 | preview per item + whole-workout estimate on detail | DONE | — | — | #255 | crimpd-parity.spec.ts «Workout Detail», workoutDetailFormat.test.ts |
-| Duplicate workout | (not in Crimpd builder; Clone Log/Plan exist) | none | MISSING | — | «Дублировать» | #261 | — |
+| Duplicate workout | (not in Crimpd builder; Clone Log/Plan exist) | editor «Дублировать» («… (копия)») | DONE | — | — | #261 | crimpd-parity.spec.ts «Workout delete/duplicate»; tests/test_web/test_v2_workout_delete_duplicate.py |
 
 ## Training Plans
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
 | In Progress / Upcoming / Completed tabs | P2–P5; N1 | «Сейчас \| Завершённые» tabs: current-plan card (week of fixed-length courses, «N из M» this week) + week view; completed = removed programs with date range | DONE | — | — | #266 | parity/plans-overview.spec.ts «Plans overview»; tests/test_web/test_v2_plan_overview.py; plansOverview.test.ts |
-| Plan card «Week n of N», progress | P3 | none | MISSING | — | «Сейчас» card with week + progress | #266, #258 | — |
+| Plan card «Week n of N», progress | P3 | Планы → «Сейчас»: card per active course, «Неделя N из M» (only for fixed-length courses, never invented) + «На этой неделе: N из M» | DONE | — | — | #266, #258 | parity/plans-overview.spec.ts «Plans overview»; plansOverview.test.ts; test_v2_plan_overview.py |
 | Create blank plan (name, duration, start, goal) | P8 | one plan auto-exists | DOMAIN-EQUIVALENT | one active plan by design (architecture §1; Crimpd also allows one active) | plan exists; programs are added | — | plans-plan-week.spec.ts |
 | Skill Templates grid | P6 | «Курсы» on Главная; programs of the plan on the «Сейчас» card | DONE | — | — | #266 | parity/plans-overview.spec.ts «Plans overview» |
-| Template detail: level, hours/week, week schedule, phases | P7; d/plan_template_schedule | ProgramDetailScreen: schedule from ProgramItem (phase chips, per-day/pool rows, STEP start targets); description only when no items | PARTIAL | no level / hours per week (not in program data, not invented) | level selector only if present in program config | #266 | parity/plans-overview.spec.ts «Plans overview»; test_v2_plan_overview.py |
+| Template detail: level, hours/week, week schedule, phases | P7; d/plan_template_schedule | ProgramDetailScreen: schedule from ProgramItem (phase chips, per-day/pool rows, STEP start targets); description only when no items | DONE | level / hours per week: DOMAIN — not in program data, not invented (schedule + phases are done) | level selector only if present in program config | #266 | parity/plans-overview.spec.ts «Plans overview»; test_v2_plan_overview.py |
 | Add template/workout to plan | P7, W5 | program-inclusions, plan-items | DONE | — | — | — | golden-journey.spec.ts, plans-add-exercise.spec.ts |
 | Week stepper with phase chip and dates | P9 | one-week view with ‹ Неделя N · даты › + phase chip | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», planWeekNav.test.ts |
 | Per-row done counters «0/1», week progress | P3, P9–P10 | `done_count` in GET /api/v2/plan (derived, no column); «N из M» header | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», tests/test_web/test_v2_plan_done_counts.py |
@@ -124,9 +124,9 @@ any merge into `develop/current`.
 | Clone Log | J5, J7 *(form unobserved)* | «⧉ Повторить (клонировать)» with date picker (default today) via `POST /sessions/{id}/clone`, `source=backdated`, no progression | DONE | same predicate as edit | — | #262 | crimpd-parity.spec.ts «Journal edit/clone»; tests/test_web/test_v2_session_edit_clone.py |
 | Delete Log with confirm | J6; LED | safe delete (`can_delete`, 404/409) | DONE | — | — | — | journal-v2.spec.ts, golden-journey.spec.ts |
 | Backdated logging | W6 | «Тренировку из моих»: своя Workout, дата ≤ сегодня, подходы, усилие, заметка; без побочных эффектов прогрессии | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
-| Notes | J4–J5 | set notes + session comment shown | PARTIAL | session note not enterable | review step | #257 | journal-v2.spec.ts |
+| Notes | J4–J5 | session note entered on the live review step («Заметка к тренировке» → /complete comment), shown in Journal detail, editable via «Изменить»; set notes inline | DONE | — | — | #257, #262 | crimpd-parity.spec.ts «Live effort» (note → Journal), «Journal edit/clone»; parity/journal-log.spec.ts; tests/test_web/test_v2_live_session_review.py |
 | Cross-training / free activity | J8 | «Другую активность»: тип из 8, длительность ч:мм (1 мин–12 ч), усилие 1–5, заметка; карточка с типом/длительностью; минуты Analytics из `duration_seconds` | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
-| History per workout | W11 | none | MISSING | — | Workout Detail «История» | #255 | — |
+| History per workout | W11 | Workout Detail «История» (`GET /api/v2/workouts/{id}/sessions`) | DONE | no range / load-more yet | — | #255 | crimpd-parity.spec.ts «Workout Detail» (history rows / empty); test_v2_workout_sessions.py |
 
 ## Analytics
 
@@ -150,7 +150,7 @@ any merge into `develop/current`.
 |---|---|---|---|---|---|---|---|
 | Current attributes (name, age, gender, height, weight) | R1–R2, R11 | ProfileScreen + ProfileEditForm | DONE | — | — | — | crimpd-parity Baseline |
 | Attribute history | R2 *(target screens unobserved)* | Профиль → «Вес»/«Рост» → `BodyMetricsScreen`: SVG-тренд, список, добавить/изменить/удалить (подтверждение); таблица `user_body_metrics`, последний замер зеркалится в `User.weight_kg/height_cm` | DONE | body fat и др. метрики — вне объёма; единственный замер удалить нельзя | — | #270 | parity/body-metrics.spec.ts «Body metrics»; tests/test_web/test_body_metrics.py; tests/bodyMetrics.test.ts |
-| Edit / delete historical metrics | — | none | MISSING | — | edit/delete entries | #270 | — |
+| Edit / delete historical metrics | — | `BodyMetricsScreen`: add / edit / delete entries (confirmation) | DONE | single remaining entry cannot be deleted | — | #270 | parity/body-metrics.spec.ts «Body metrics»; tests/test_web/test_body_metrics.py |
 | Grade chart (boulder/route) | R3 | GTO / WSF cards | DOMAIN-EQUIVALENT | no climbing grades | our norms (GTO/WSF) | — | — |
 | Assessments (primary / additional, last result, sparkline) | R4–R5 | «Тесты» card on Профиль (3 seeded protocols, last result, mini-trend ≥2) | DONE | no primary/additional split | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
 | Test detail: chart, history | R6, R8 | description, SVG trend, history (newest first), record / edit / delete own results | DONE | — | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
@@ -170,8 +170,8 @@ any merge into `develop/current`.
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
 | Curated playlists (creator, description, workouts) | D1; d/playlist_detail | none | MISSING | — | curated collections (author «Турникмэн», no social links) | #271 | — |
-| Category collections (sub-focus cards) | D3 | programs not grouped | MISSING | — | category rows | #254 | — |
-| Templates (levels, phases) | D4 | Programs (structure types) | PARTIAL | no preview | schedule preview | #266 | — |
+| Category collections (sub-focus cards) | D3 | Home program rows grouped by `Program.category` («Другое» last) | DONE | sub-focus cards: DOMAIN — programs have no sub-focus field | category rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
+| Templates (levels, phases) | D4 | Programs (structure types) + Program Detail schedule preview (phase chips, day rows) | DONE | levels: DOMAIN — not in program data | schedule preview | #266 | parity/plans-overview.spec.ts «Plans overview» |
 | Progressions (lettered / % variants) | D5 | programs + auto-progression (ours) | DOMAIN-EQUIVALENT | our progression model | — | — | session-progression-edit.spec.ts |
 | Tests discoverable from Home + search filter | D6 | none | MISSING | — | Tests row + search | #260, #254 | — |
 
