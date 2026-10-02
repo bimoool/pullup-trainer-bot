@@ -185,3 +185,8 @@ for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_
 # Journal/plans polish (#277, spec parity/journal-plans-polish): 320 light 998301 / 320 dark 998311 / 390 light 998321 /
 # 390 dark 998331, на тест id + retry (≤ +2); тесты только читают (правка отменяется).
 for base in 998301 998311 998321 998331; do for off in 0 1 2; do seed journal_plans_polish $((base + off)); done; done
+# Wave 13b review (#293, parity/wave13-review.spec.ts): 99330x/99333x — WD-старт при завершении в очереди (session_recovery,
+# мутирует), 99331x/99332x — Журнал → «Открыть тренировку» → «Начать» → назад (journal_return, только чтение); id + retry.
+for id in 993301 993302 993331 993332; do seed session_recovery "$id"; done
+for id in 993311 993312 993321 993322; do seed journal_return "$id"; done
+for id in 993341 993342 993351 993352; do seed session_recovery "$id"; done
