@@ -8,6 +8,7 @@ import {
   type ProfileUpdateRequest,
   type TimezoneOption,
 } from "./api";
+import { invalidateProfileTimeZone } from "./useProfileToday";
 import { useDisplayPrefs } from "./displayPrefs";
 import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
@@ -111,6 +112,7 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
     setSaving(true);
     try {
       const updated = await updateProfile(initDataRaw, body);
+      invalidateProfileTimeZone();
       setJustSaved(true);
       onSaved(updated);
     } catch (err) {

@@ -13,10 +13,10 @@ import { openAppAs } from "../../fixtures/setup";
 // второй тест (Главная → «+») берёт id + 5 + retry.
 const LOG_USERS = { 320: { id: 985_001, theme: "light" }, 390: { id: 985_011, theme: "dark" } } as const;
 
+// День пользователя (профиль Москва, как и на сервере), а не устройства: #294 — иначе у часов устройства впереди
+// профиля около полуночи «вчера/завтра» сдвигаются относительно серверной проверки «не в будущем».
 function localDateOffset(offsetDays: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(Date.now() + offsetDays * 86_400_000));
 }
 
 for (const width of WIDTHS) {

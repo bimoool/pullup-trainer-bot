@@ -85,6 +85,7 @@ from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
+from app.services.training_analytics import resolve_timezone
 from app.services.workout_deletion import delete_cascade_workout, delete_noncascade_workout
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 from app.web.auth import get_validated_init_data
@@ -1829,7 +1830,10 @@ async def submit_backdated_workout(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid date") from None
 
     now = datetime.now(UTC)
-    if performed_date > now.date():
+    # #294: «сегодня» — в часовом поясе профиля (как у клиента и у остальных v2-проверок), а не в UTC.
+    backdate_user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    local_today = now.astimezone(resolve_timezone(backdate_user.timezone if backdate_user else None)).date()
+    if performed_date > local_today:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Date cannot be in the future")
 
     context = await _resolve_backdate_context(session, init_data.user.id, now=now)

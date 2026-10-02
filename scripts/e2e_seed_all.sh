@@ -30,6 +30,8 @@ seed journal_edit 997202
 seed analytics_v2 910003
 seed analytics_metric 995001
 seed analytics_metric 995002
+# tz-date-defaults (#294): профиль Москва, часы устройства в другом поясе
+for id in 984001 984002 984011 984012; do seed tests_hub "$id"; done
 seed tests_hub 996001
 seed tests_hub 996002
 seed tests_hub 996011

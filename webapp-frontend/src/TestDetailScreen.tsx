@@ -11,6 +11,7 @@ import {
 import { PeerInsightsCard } from "./PeerInsightsCard";
 import { BackChevron } from "./BackChevron";
 import { useBackButton } from "./useBackButton";
+import { useProfileToday } from "./useProfileToday";
 import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = { initDataRaw: string; protocolId: number; onBack: () => void };
@@ -23,12 +24,6 @@ type DetailState =
 const CHART_W = 320;
 const CHART_H = 150;
 const SERIES_COLOR = "#2a78d6";
-
-function todayIsoDate(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
 
 function TrendChart({ results, unit, name }: { results: AssessmentResultV2[]; unit: string; name: string }) {
   if (results.length < 2) {
@@ -59,7 +54,9 @@ function TrendChart({ results, unit, name }: { results: AssessmentResultV2[]; un
 export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
   const [state, setState] = useState<DetailState>({ phase: "loading" });
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [performedOn, setPerformedOn] = useState(todayIsoDate());
+  const { today } = useProfileToday(initDataRaw);
+  const [pickedOn, setPerformedOn] = useState<string | null>(null);
+  const performedOn = pickedOn ?? today;
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -89,7 +86,7 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
 
   function resetForm() {
     setEditingId(null);
-    setPerformedOn(todayIsoDate());
+    setPerformedOn(null);
     setValue("");
     setNote("");
     setFormError(null);
@@ -104,7 +101,7 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
   }
 
   async function submit() {
-    const checked = validateResultForm({ performedOn, value, note }, todayIsoDate(), protocol.metric_type === "reps");
+    const checked = validateResultForm({ performedOn, value, note }, today, protocol.metric_type === "reps");
     if (!checked.ok) {
       setFormError(checked.error);
       return;
@@ -165,7 +162,7 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
         <p className="section-title">{editingId === null ? "Записать результат" : "Изменить результат"}</p>
         <label className="field-label" htmlFor="test-date">Дата</label>
         <input
-          id="test-date" type="date" className="set-input" max={todayIsoDate()} value={performedOn}
+          id="test-date" type="date" className="set-input" max={today} value={performedOn}
           onChange={(e) => setPerformedOn(e.target.value)}
         />
         <label className="field-label" htmlFor="test-value">{`Результат, ${protocol.unit}`}</label>

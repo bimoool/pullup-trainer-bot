@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { createSession, getWorkout, listWorkouts, type WorkoutResponseV2 } from "./apiV2";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX, WORKOUT_EFFORT_PROMPT } from "./effortScale";
 import {
-  ACTIVITY_TYPE_OPTIONS, buildActivityPayload, buildBackdatedPayload, dateError, durationError, localToday,
+  ACTIVITY_TYPE_OPTIONS, buildActivityPayload, buildBackdatedPayload, dateError, durationError,
   metricForProtocol, setCountForProtocol, type SessionCreatePayload,
 } from "./journalLog";
 import { useBackButton } from "./useBackButton";
+import { useProfileToday } from "./useProfileToday";
 
 export type LogKind = "workout" | "activity";
 
@@ -174,8 +175,9 @@ export function FreeActivityForm({
   onBack: () => void;
   onSaved: (date: string) => void;
 }) {
-  const today = localToday();
-  const [date, setDate] = useState(today);
+  const { timeZone, today } = useProfileToday(initDataRaw);
+  const [pickedDate, setDate] = useState<string | null>(null);
+  const date = pickedDate ?? today;
   const [activityType, setActivityType] = useState(ACTIVITY_TYPE_OPTIONS[0].value);
   const [duration, setDuration] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
@@ -185,7 +187,7 @@ export function FreeActivityForm({
 
   function save() {
     const problem = dateError(date, today) ?? durationError(duration);
-    const payload = problem === null ? buildActivityPayload(date, activityType, duration, effort, note) : null;
+    const payload = problem === null ? buildActivityPayload(date, activityType, duration, effort, note, new Date(), timeZone) : null;
     if (problem !== null || payload === null) {
       setError(problem ?? "Проверь данные");
       return;
@@ -230,12 +232,13 @@ export function BackdatedWorkoutForm({
   onBack: () => void;
   onSaved: (date: string) => void;
 }) {
-  const today = localToday();
+  const { timeZone, today } = useProfileToday(initDataRaw);
   const [workouts, setWorkouts] = useState<WorkoutResponseV2[] | null>(null);
   const [workoutId, setWorkoutId] = useState<number | null>(initialWorkoutId);
   const [workout, setWorkout] = useState<WorkoutResponseV2 | null>(null);
   const [values, setValues] = useState<Record<number, string[]>>({});
-  const [date, setDate] = useState(today);
+  const [pickedDate, setDate] = useState<string | null>(null);
+  const date = pickedDate ?? today;
   const [effort, setEffort] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -302,7 +305,7 @@ export function BackdatedWorkoutForm({
     const payload = buildBackdatedPayload(
       date,
       items.map((item) => ({ exerciseId: item.exercise_id, protocol: item.protocol, values: values[item.id] ?? [] })),
-      effort, note,
+      effort, note, new Date(), timeZone,
     );
     if (payload === null) {
       setError("Введи хотя бы один подход");

@@ -1,6 +1,8 @@
 /** Чистые помощники записи в Журнал (CRIMPD #263): свободная активность и
  * тренировка задним числом. Без React/сети — покрыты tests/journalLog.test.ts. */
 
+import { noonInTimeZoneIso, todayInTimeZone } from "./todayInTimeZone.ts";
+
 export const ACTIVITY_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "running", label: "Бег" },
   { value: "cycling", label: "Велосипед" },
@@ -60,14 +62,13 @@ export function localToday(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** performed_at для выбранного дня: сегодня — «сейчас» (не уйдёт в будущее), прошлый
- * день — локальный полдень (стабильно попадает в этот же день в любом поясе ±12 ч). */
-export function performedAtFor(date: string, now: Date = new Date()): string {
-  if (date === localToday(now)) {
+/** performed_at для выбранного дня: сегодня (в поясе профиля, #294) — «сейчас» (не уйдёт в будущее), прошлый
+ * день — полдень в поясе профиля (стабильно попадает в этот же день в любом поясе ±12 ч). */
+export function performedAtFor(date: string, now: Date = new Date(), timeZone?: string): string {
+  if (date === todayInTimeZone(timeZone, now)) {
     return now.toISOString();
   }
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year, month - 1, day, 12, 0, 0).toISOString();
+  return noonInTimeZoneIso(date, timeZone);
 }
 
 /** Сколько полей подхода показать для упражнения по протоколу тренировки. */
@@ -120,7 +121,7 @@ function cleanComment(comment: string): string | null {
 /** Тело запроса записи сессии для «Тренировку из моих». Упражнения без введённых
  * подходов не попадают в запись; null — нечего записывать. */
 export function buildBackdatedPayload(
-  date: string, exercises: BackdatedExerciseInput[], effort: string | null, comment: string, now: Date = new Date(),
+  date: string, exercises: BackdatedExerciseInput[], effort: string | null, comment: string, now: Date = new Date(), timeZone?: string,
 ): SessionCreatePayload | null {
   const blocks = exercises.flatMap((exercise) => {
     const metric = metricForProtocol(exercise.protocol);
@@ -133,20 +134,20 @@ export function buildBackdatedPayload(
   if (blocks.length === 0) {
     return null;
   }
-  return { source: "backdated", performed_at: performedAtFor(date, now), effort, comment: cleanComment(comment), blocks };
+  return { source: "backdated", performed_at: performedAtFor(date, now, timeZone), effort, comment: cleanComment(comment), blocks };
 }
 
 /** Тело запроса записи сессии для «Другую активность». */
 export function buildActivityPayload(
   date: string, activityType: string, durationText: string, effort: string | null, comment: string,
-  now: Date = new Date(),
+  now: Date = new Date(), timeZone?: string,
 ): SessionCreatePayload | null {
   const seconds = parseDurationHm(durationText);
   if (seconds === null) {
     return null;
   }
   return {
-    source: "freeform", performed_at: performedAtFor(date, now), effort, comment: cleanComment(comment),
+    source: "freeform", performed_at: performedAtFor(date, now, timeZone), effort, comment: cleanComment(comment),
     blocks: [], activity_type: activityType, duration_seconds: seconds,
   };
 }

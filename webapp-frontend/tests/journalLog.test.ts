@@ -85,3 +85,9 @@ test("buildActivityPayload", () => {
   assert.equal(payload.comment, null);
   assert.equal(buildActivityPayload("2026-09-30", "running", "bad", null, "", now), null);
 });
+
+test("performedAtFor: сегодня определяется в поясе профиля, а не устройства (#294)", () => {
+  const now = new Date("2026-10-04T19:30:00Z"); // 22:30 Москва 04.10; в UTC+5 уже 05.10
+  assert.equal(performedAtFor("2026-10-04", now, "Europe/Moscow"), now.toISOString());
+  assert.equal(performedAtFor("2026-10-03", now, "Europe/Moscow"), "2026-10-03T09:00:00.000Z");
+});

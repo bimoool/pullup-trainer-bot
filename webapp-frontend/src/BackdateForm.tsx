@@ -1,5 +1,6 @@
 import { Button, Input, Section, Select } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
+import { useProfileToday } from "./useProfileToday";
 
 import {
   fetchBackdatePlan,
@@ -49,13 +50,6 @@ export const EQUIPMENT_TYPE_LABELS: { value: string; label: string }[] = [
   { value: "weight", label: "Отягощение" },
   { value: "australian", label: "Австралийские" },
 ];
-
-function todayIsoDate(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-}
 
 export type EquipmentChoice = { type: string; value: string; bandItemId: string };
 
@@ -136,7 +130,9 @@ export function EquipmentTypeFields({
  */
 export function BackdateForm({ initDataRaw, onDone, onCancel }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
-  const [performedAt, setPerformedAt] = useState(todayIsoDate());
+  const { today } = useProfileToday(initDataRaw);
+  const [pickedAt, setPerformedAt] = useState<string | null>(null);
+  const performedAt = pickedAt ?? today;
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
   const [blockBWorking, setBlockBWorking] = useState<string[]>([]);
@@ -314,7 +310,7 @@ export function BackdateForm({ initDataRaw, onDone, onCancel }: Props) {
       <Input
         header="Дата"
         type="date"
-        max={todayIsoDate()}
+        max={today}
         aria-label="Дата тренировки"
         value={performedAt}
         onChange={(e) => setPerformedAt(e.target.value)}

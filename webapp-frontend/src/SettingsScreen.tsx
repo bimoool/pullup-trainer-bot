@@ -16,6 +16,7 @@ import {
   type TimezoneOption,
   type WeightUnit,
 } from "./api";
+import { invalidateProfileTimeZone } from "./useProfileToday";
 import { setDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
 import { downloadHistoryCsv } from "./exportAction";
 import { OFERTA_URL, openExternalLink } from "./SubscriptionScreen";
@@ -180,6 +181,7 @@ export function SettingsScreen({ initDataRaw, profile, onSaved, onBack, onOpenSu
     setSaving(true);
     try {
       const updated = await updateProfile(initDataRaw, body);
+      invalidateProfileTimeZone();
       const prefs = await updateDisplayPreferences(initDataRaw, {
         weight_unit: weightUnit,
         height_unit: heightUnit,
