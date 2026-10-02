@@ -5,10 +5,12 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 
 from app.db.models import Gender, User
 from app.db.models_program import AssessmentProtocol, AssessmentResult
+from app.web.routes_v2_assessments import PEER_RATE_CAPACITY, peer_insights_limiter
 from tests.test_web._v2_client import v2_get
 
 BASE = "/api/v2/assessments"
@@ -19,6 +21,13 @@ MID_20S = date(NOW.year - 24, 1, 15)
 MID_60S = date(NOW.year - 64, 1, 15)
 CHILD = date(NOW.year - 12, 1, 15)
 _next_tid = [10_000]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_limiter():
+    peer_insights_limiter.reset()
+    yield
+    peer_insights_limiter.reset()
 
 
 async def _pid(session, name: str = "Максимум подтягиваний") -> int:
@@ -75,9 +84,9 @@ async def test_threshold_19_insufficient_20_enough_with_exact_maths(session):
     # значения: 1..19 (15 — мой) и 30 → 20 человек
     assert body["status"] == "ok"
     # ниже 15: 1..14 = 14; равных: 1 (я); N=20 → (14 + 0.5)/20 = 72.5% → 73
-    assert body["percentile"] == 73
+    assert body["percentile"] == 70  # точный 73 → полоса 70 («~70 %»)
     # отсортировано: 1..14,15,16..19,30 → медиана между 10-м и 11-м = (10 + 11)/2
-    assert body["median"] == "10.5"
+    assert body["median"] == "11"  # повторения — целые: 10.5 → 11
     assert body["cohort"] == {"level": "all", "label": "Все пользователи", "size_bucket": "20–49"}
     assert body["own_value"] == "15" and body["unit"] == "повт."
     # следующая цель — ближайший порог выше 15 (p75 ≈ 15.25): значение больше моего
@@ -107,34 +116,39 @@ async def test_cohort_cascade_gender_age_then_gender_then_all(session):
     body = await _insights(session, me, pid)
     assert body["status"] == "ok" and body["cohort"]["label"] == "Мужчины" and body["cohort"]["level"] == "gender"
     # мужчины: 18×8, я=10, 6×12 → below 18, equal 1 из 25 → (18.5)/25 = 74%
-    assert body["percentile"] == 74 and body["median"] == "8"
+    assert body["percentile"] == 70 and body["median"] == "8"  # точный 74 → полоса 70
 
     # ещё один мужчина 30–39 → ровно 20 в ступени
     await _cohort(session, pid, [14], Gender.MALE, MID_30S)
     body = await _insights(session, me, pid)
     assert body["cohort"] == {"level": "gender_age", "label": "Мужчины 30–39 лет", "size_bucket": "20–49"}
-    assert body["percentile"] == 93  # 20 человек: ниже меня 18 (все по 8), 14 выше → 18.5/20 = 92.5% → 93
+    assert body["percentile"] == 90  # точный 93; 20 человек: ниже меня 18 (все по 8), 14 выше → 18.5/20 = 92.5% → 93
     assert body["median"] == "8"
 
 
 async def test_cascade_falls_back_to_all_users_when_gender_is_small(session):
     pid = await _pid(session)
     me = await _make_user(session, Gender.FEMALE, MID_60S)
-    await _result(session, me, pid, 5)
+    await _result(session, me, pid, 8)
     await _cohort(session, pid, [3, 4, 6, 7, 8], Gender.FEMALE, MID_60S)
-    await _cohort(session, pid, [9] * 20, Gender.MALE, MID_30S)
+    await _cohort(session, pid, [9] * 14, Gender.MALE, MID_30S)
+    await _cohort(session, pid, [9] * 10, None, None)
     body = await _insights(session, me, pid)
     assert body["cohort"]["label"] == "Все пользователи"
-    assert body["percentile"] == 10  # 26 человек, ниже меня 2 (3, 4), равных 1 → 2.5/26 = 9.6% → 10
+    # 30 человек, ниже меня 4 (3, 4, 6, 7), равных 2 → 5/30 = 16.7% → 17 → полоса 10
+    assert body["percentile"] == 10
     assert body["cohort"]["size_bucket"] == "20–49"
 
 
 async def test_users_without_gender_or_birth_date_or_minors_skip_levels(session):
     pid = await _pid(session)
+    # по 20 мужчин в двух ступенях и 20 без пола: остатки вычитания ≥ 20, защита не мешает
+    await _cohort(session, pid, [5] * 20, Gender.MALE, MID_30S)
+    await _cohort(session, pid, [5] * 20, Gender.MALE, MID_20S)
+    await _cohort(session, pid, [6] * 20, None, None)
     # без пола: даже при дате рождения сравнивается со всеми
     anon = await _make_user(session, None, MID_30S)
     await _result(session, anon, pid, 9)
-    await _cohort(session, pid, [5] * 20, Gender.MALE, MID_30S)
     assert (await _insights(session, anon, pid))["cohort"]["label"] == "Все пользователи"
     # пол есть, даты рождения нет → ступени нет, сравнивается с полом
     no_birth = await _make_user(session, Gender.MALE, None)
@@ -205,7 +219,7 @@ async def test_next_target_none_when_best_in_cohort(session):
     await _result(session, me, pid, 50)
     await _cohort(session, pid, range(1, 25), None, None)
     body = await _insights(session, me, pid)
-    assert body["percentile"] == 98  # 25 человек, ниже меня 24 → 24.5/25 = 98%
+    assert body["percentile"] == 90  # 25 человек, ниже меня 24 → 98% → полоса 90
     assert body["next_target"] is None
 
 
@@ -230,3 +244,90 @@ async def test_cohort_aggregation_is_one_sql_regardless_of_user_count(session):
         event.remove(sync_engine, "before_cursor_execute", listener)
     assert len(statements) == 1
     assert [c.level.value for c in cohorts] == ["gender_age", "gender", "all"] and cohorts[0].size == 60
+
+
+async def test_percentile_is_a_ten_point_band_sweeping_own_value_cannot_resolve_individuals(session):
+    """Развёртка: пользователь ставит своё значение 1..30 против одной и той же когорты (30 чужих
+    значений 1..30). Ответов с точным процентилем было бы ~30 разных (по 1 % на человека), с
+    полосами — не больше 10 значений, кратных 10."""
+    pid = await _pid(session)
+    me = await _make_user(session, None, None)
+    await _cohort(session, pid, range(1, 31), None, None)
+    seen = set()
+    for value in range(1, 31):
+        peer_insights_limiter.reset()
+        await _result(session, me, pid, value, days_ago=0)
+        body = await _insights(session, me, pid)
+        seen.add(body["percentile"])
+        assert body["percentile"] % 10 == 0 and 0 <= body["percentile"] <= 90
+    assert len(seen) <= 10
+
+
+async def test_non_reps_median_and_next_target_use_one_decimal(session):
+    pid = await _pid(session, "Подтягивания с весом, кг")
+    me = await _make_user(session, None, None)
+    await _result(session, me, pid, 10)
+    values = ["5.25", "5.5", "6.25", "7.75", "8.5", "9.25", "11.25", "12.75", "14.5", "15.25"] * 2
+    await _cohort(session, pid, values, None, None)
+    body = await _insights(session, me, pid)
+    for number in (body["median"], body["next_target"]["value"]):
+        assert len(number.partition(".")[2]) <= 1, number
+    assert Decimal(body["next_target"]["value"]) > 10
+
+
+async def test_gender_level_refused_when_age_complement_is_small_falls_to_all(session):
+    """Мужчина без даты рождения: «мужчины» = 25 (30–39) + 10 (20–29) + он сам = 36; подкогорта
+    30–39 (25) показывается своим, остаток 36 − 25 = 11 — раскрылся бы вычитанием. Уровень пропущен."""
+    pid = await _pid(session)
+    await _cohort(session, pid, [5] * 25, Gender.MALE, MID_30S)
+    await _cohort(session, pid, [6] * 10, Gender.MALE, MID_20S)
+    await _cohort(session, pid, [7] * 25, Gender.FEMALE, MID_30S)
+    me = await _make_user(session, Gender.MALE, None)
+    await _result(session, me, pid, 9)
+    body = await _insights(session, me, pid)
+    assert body["status"] == "ok" and body["cohort"]["level"] == "all"
+    # когда остаток вне 1..19 (ещё 9 мужчин 20–29 → остаток 20), уровень «пол» снова доступен
+    await _cohort(session, pid, [6] * 9, Gender.MALE, MID_20S)
+    assert (await _insights(session, me, pid))["cohort"]["level"] == "gender"
+
+
+async def test_all_level_refused_when_gender_complement_is_small_insufficient(session):
+    """Без пола: «все» = 25 мужчин + он сам; остаток от «мужчин» (25) = 1 → раскрывался бы он сам
+    и любой единичный пользователь вне пола. «Все» пропускается; шире уровней нет — insufficient."""
+    pid = await _pid(session)
+    await _cohort(session, pid, [5] * 25, Gender.MALE, MID_30S)
+    me = await _make_user(session, None, None)
+    await _result(session, me, pid, 9)
+    body = await _insights(session, me, pid)
+    assert body["status"] == "insufficient"
+    for key in ("percentile", "median", "cohort", "next_target"):
+        assert body[key] is None, key
+    # ещё 20 пользователей без пола → остаток 21, «все» снова показывается
+    await _cohort(session, pid, [4] * 20, None, None)
+    assert (await _insights(session, me, pid))["cohort"]["level"] == "all"
+
+
+async def test_guard_sizes_come_from_the_same_single_sql(session):
+    from app.db.repositories.assessments import AssessmentRepository
+
+    pid = await _pid(session)
+    me = await _make_user(session, Gender.MALE, MID_30S)
+    await _result(session, me, pid, 10)
+    await _cohort(session, pid, [5] * 25, Gender.MALE, MID_20S)
+    await _cohort(session, pid, [5] * 3, Gender.FEMALE, MID_20S)
+    cohorts = {c.level.value: c for c in await AssessmentRepository(session).peer_cohorts(pid, Decimal(10), "male", "30_39", NOW.date())}
+    assert cohorts["gender"].parts == (25, 1, 0, 0, 0, 0)  # ступени 18–29 … 70+ среди мужчин
+    assert cohorts["all"].parts == (26, 3) and cohorts["gender_age"].parts == ()
+
+
+async def test_peer_insights_endpoint_is_rate_limited_per_user_with_friendly_429(session):
+    pid = await _pid(session)
+    me = await _make_user(session, None, None)
+    other = await _make_user(session, None, None)
+    for _ in range(PEER_RATE_CAPACITY):
+        assert (await v2_get(session, me.telegram_id, f"{BASE}/{pid}/peer-insights")).status_code == 200
+    blocked = await v2_get(session, me.telegram_id, f"{BASE}/{pid}/peer-insights")
+    assert blocked.status_code == 429
+    assert "Слишком много" in blocked.json()["detail"] and int(blocked.headers["retry-after"]) >= 1
+    # лимит per-user: другой пользователь не затронут
+    assert (await v2_get(session, other.telegram_id, f"{BASE}/{pid}/peer-insights")).status_code == 200
