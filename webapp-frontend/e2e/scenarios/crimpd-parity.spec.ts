@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../fixtures/builderFlow";
+import { openJournalEntry } from "../fixtures/parity";
 import { openAppAs } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
@@ -504,7 +505,7 @@ for (const width of WIDTHS) {
 
       // Журнал: оценка тренировки со словом, заметка, усилие подхода.
       await openTab(page, "Журнал");
-      await page.locator(".history-card").filter({ hasText: EFFORT_TITLE }).click();
+      await openJournalEntry(page, page.locator(".history-card").filter({ hasText: EFFORT_TITLE }));
       await expect(page.getByTestId("journal-workout-effort")).toContainText("5 Предел");
       await expect(page.getByTestId("journal-workout-comment")).toContainText("Хорошо потянул, локоть тянет");
       await expect(page.getByText(/усилие 4 Тяжело/)).toBeVisible();
@@ -881,14 +882,20 @@ for (const width of WIDTHS) {
       const historical = cards.filter({ hasText: "Тренировка" }).filter({ hasNotText: "Моя силовая" });
 
       // Историческая запись без снимка: сервер не доказал безопасность — ни «Изменить», ни «Повторить».
+      // Шторка (#280) честно показывает то же: только «Открыть» (и «Отмена»), без правки/клона/удаления.
       await historical.click();
+      await expect(page.getByTestId("journal-entry-sheet")).toBeVisible();
+      await expect(page.getByTestId("journal-sheet-edit")).toHaveCount(0);
+      await expect(page.getByTestId("journal-sheet-clone")).toHaveCount(0);
+      await expect(page.getByTestId("journal-sheet-delete")).toHaveCount(0);
+      await page.getByTestId("journal-sheet-open").click();
       await expect(page.getByRole("button", { name: /Изменить/ })).toHaveCount(0);
       await expect(page.getByRole("button", { name: /Повторить/ })).toHaveCount(0);
       await expect(page.getByRole("button", { name: /Удалить/ })).toHaveCount(0);
       await pressTelegramBackButton(page);
 
       // Builder-запись: рядом с «Удалить» появились обе кнопки.
-      await mine.click();
+      await openJournalEntry(page, mine);
       await expect(page.getByRole("button", { name: /Изменить/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Повторить \(клонировать\)/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Удалить/ })).toBeVisible();
@@ -923,14 +930,17 @@ for (const width of WIDTHS) {
         await page.getByRole("button", { name: "Предыдущий месяц" }).click();
       }
       await expect(mine).toHaveCount(1);
-      await mine.click();
+      await openJournalEntry(page, mine);
       await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
       await expect(page.getByTestId("journal-workout-comment")).toContainText("Изменено в журнале");
       await expect(page.getByText("Подход 1 · усилие 5 Предел · рывком")).toBeVisible();
       await expect(page.getByText(/Факт: 12/)).toBeVisible();
 
       // Клон: дата по умолчанию — сегодня; создаётся вторая «Моя силовая» с теми же результатами.
-      await page.getByRole("button", { name: /Повторить \(клонировать\)/ }).click();
+      // Кнопка деталей «Повторить (клонировать)» остаётся; сам клон — из шторки записи (#280).
+      await expect(page.getByRole("button", { name: /Повторить \(клонировать\)/ })).toBeVisible();
+      await pressTelegramBackButton(page);
+      await openJournalEntry(page, mine, "clone");
       const cloneForm = page.getByTestId("journal-clone-form");
       await expect(cloneForm.getByLabel("Дата новой записи")).toHaveValue(mskDay(0));
       await expectNoHorizontalOverflow(page, "Журнал: форма клона");

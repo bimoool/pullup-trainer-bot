@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets, startWorkout } from "../fixtures/builderFlow";
+import { openJournalEntry } from "../fixtures/parity";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py journal_v2 910002 — Builder Workout (как builder_workouts)
@@ -78,7 +79,7 @@ test("Journal v2: карточки всех протоколов, детали, 
 
   // --- Детали: из уже загруженного объекта (запросов нет), Back сохраняет состояние ---
   const requestsBeforeDetail = sessionRequests;
-  await mixed.click();
+  await openJournalEntry(page, mixed);
   await expect(page.getByText("Подходы с повторениями")).toBeVisible();
   await expect(page.getByText("План: 8 · 8")).toBeVisible();
   await expect(page.getByText("Факт: 8 · 7")).toBeVisible();
@@ -93,7 +94,11 @@ test("Journal v2: карточки всех протоколов, детали, 
   expect(sessionRequests).toBe(requestsBeforeDetail);
 
   // --- Историческая сессия без снимка: удалить нельзя (решает бэкенд) ---
+  // Шторка (#280) не предлагает «Удалить» тем же флагом can_delete, что и деталь.
   await page.locator(".history-card-clickable").last().click();
+  await expect(page.getByTestId("journal-entry-sheet")).toBeVisible();
+  await expect(page.getByTestId("journal-sheet-delete")).toHaveCount(0);
+  await page.getByTestId("journal-sheet-open").click();
   await expect(page.getByRole("button", { name: /Удалить/ })).toHaveCount(0);
   await page.getByRole("button", { name: "← Назад" }).click();
 
@@ -119,7 +124,7 @@ test("Journal v2: карточки всех протоколов, детали, 
       deleteRequests.push(request.url());
     }
   });
-  await timeCard.click();
+  await openJournalEntry(page, timeCard);
   await page.getByRole("button", { name: /Удалить/ }).dblclick();
   await expect(page.locator(".history-card-clickable")).toHaveCount(31);
   await expect(page.locator(".history-card").filter({ hasText: "Только time" })).toHaveCount(0);

@@ -6,6 +6,7 @@ import { effortWithWord } from "./effortScale";
 import { describeJournalBlock, formatSessionDateTime, formatSessionTime } from "./journalFormat";
 import { JOURNAL_KIND_LABELS, journalKind } from "./journalKind";
 import { formatDurationHm } from "./journalLog";
+import { JOURNAL_DELETE_CONFIRM } from "./journalSheet";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
 
@@ -15,7 +16,8 @@ export function JournalSessionCard({
   session, onOpen,
 }: {
   session: SessionResponseV2;
-  onOpen: (sessionId: number) => void;
+  /** Тап/Enter по карточке (#280: открывает шторку действий; element — куда вернуть фокус). */
+  onOpen: (sessionId: number, element: HTMLElement) => void;
 }) {
   const kind = journalKind(session);
   return (
@@ -24,11 +26,13 @@ export function JournalSessionCard({
       data-kind={kind}
       role="button"
       tabIndex={0}
-      onClick={() => onOpen(session.id)}
+      data-testid="journal-card"
+      aria-haspopup="dialog"
+      onClick={(event) => onOpen(session.id, event.currentTarget)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onOpen(session.id);
+          onOpen(session.id, event.currentTarget);
         }
       }}
     >
@@ -86,7 +90,7 @@ export function JournalV2Footer({
  * нет. Telegram BackButton и видимая кнопка "← Назад" вызывают один и тот
  * же onBack (единая навигация экрана, не вторая система). */
 export function JournalV2Detail({
-  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned, onOpenWorkout,
+  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned, onOpenWorkout, initialMode = "view",
 }: {
   initDataRaw: string;
   session: SessionResponseV2;
@@ -99,19 +103,22 @@ export function JournalV2Detail({
   onCloned: (date: string) => void;
   /** «Открыть тренировку» (#281) — Workout Detail тренировки, из которой выполнена запись. */
   onOpenWorkout?: (workoutId: number) => void;
+  /** Шторка записи (#280) открывает сразу форму «Изменить»/«Повторить»; отмена тогда ведёт обратно в Журнал. */
+  initialMode?: "view" | "edit" | "clone";
 }) {
-  const [mode, setMode] = useState<"view" | "edit" | "clone">("view");
+  const [mode, setMode] = useState<"view" | "edit" | "clone">(initialMode);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteInFlight = useRef(false);
 
-  useBackButton(mode === "view" ? onBack : () => setMode("view"), [mode, onBack]);
+  const leaveForm = initialMode === "view" ? () => setMode("view") : onBack;
+  useBackButton(mode === "view" ? onBack : leaveForm, [mode, onBack]);
 
   async function handleDelete() {
     if (deleteInFlight.current) {
       return; // двойной клик
     }
-    if (!window.confirm("Удалить эту тренировку? Отменить это будет нельзя.")) {
+    if (!window.confirm(JOURNAL_DELETE_CONFIRM)) {
       return;
     }
     deleteInFlight.current = true;
@@ -131,7 +138,7 @@ export function JournalV2Detail({
     return (
       <JournalV2EditForm
         initDataRaw={initDataRaw} session={session} timeZone={timeZone}
-        onCancel={() => setMode("view")} onSaved={onEdited}
+        onCancel={leaveForm} onSaved={onEdited}
       />
     );
   }
@@ -139,7 +146,7 @@ export function JournalV2Detail({
     return (
       <JournalV2CloneForm
         initDataRaw={initDataRaw} session={session} timeZone={timeZone}
-        onCancel={() => setMode("view")} onCloned={onCloned}
+        onCancel={leaveForm} onCloned={onCloned}
       />
     );
   }

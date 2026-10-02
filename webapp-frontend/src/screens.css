@@ -502,3 +502,21 @@
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* ---------- шторка записи Журнала (#280) ---------- */
+.journal-sheet { max-width: 480px; margin: 0 auto; }
+.journal-sheet-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 4px 8px 10px;
+  border-bottom: 1px solid var(--vp-divider);
+}
+.journal-sheet-name { font-weight: 600; font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+.journal-sheet-time { flex: none; font-size: 13px; color: var(--tg-subtitle-text-color); }
+.journal-sheet .home-sheet-action { min-height: 44px; }
+.journal-sheet .home-sheet-action:focus-visible { outline: 2px solid var(--tg-button-color, #3390ec); outline-offset: -2px; border-radius: 10px; }
+.journal-sheet .home-sheet-action:disabled { opacity: 0.5; }
+.journal-sheet .journal-sheet-danger { color: var(--tg-destructive-text-color); }
