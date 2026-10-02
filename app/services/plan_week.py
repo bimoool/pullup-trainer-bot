@@ -2,12 +2,13 @@ from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanWeek
+from app.db.models_program import PlanItem, PlanWeek
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.domain.multi_program import (
     ProgramStructureType,
     WeekPhase,
+    is_plannable_week_number,
     plan_week_number,
     plan_week_start_date,
 )
@@ -110,3 +111,48 @@ class PlanWeekService:
             )
 
         return week
+
+    async def ensure_plannable_week(self, *, training_plan_id: int, week_number: int, today: date) -> PlanWeek | None:
+        """issue #275 — get-or-create PlanWeek для планирования вперёд.
+        None — неделя вне окна «текущая .. +4» (прошлая/слишком далёкая).
+        Недостающие промежуточные недели создаются тоже, чтобы список недель
+        оставался непрерывным. Программные PlanItem сюда НЕ материализуются —
+        их по-прежнему создаёт только ensure_current_plan_week."""
+        plan = await self._plans.get_by_id(training_plan_id)
+        if plan is None:
+            raise ValueError(f"training plan {training_plan_id} not found")
+        created = plan.created_at.date()
+        current_number = plan_week_number(created, today)
+        if not is_plannable_week_number(week_number, current_number):
+            return None
+        week = None
+        for number in range(current_number, week_number + 1):
+            week = await self._plans.get_plan_week(training_plan_id=training_plan_id, week_number=number)
+            if week is None:
+                week = await self._plans.create_plan_week(
+                    training_plan_id=training_plan_id, week_number=number,
+                    start_date=plan_week_start_date(created, number), phase=WeekPhase.BASE,
+                )
+        return week
+
+    async def copy_manual_items(self, *, source: PlanWeek, target: PlanWeek) -> tuple[int, int]:
+        """Копирует ручные PlanItem недели source в target, пропуская
+        дубликаты (тот же exercise/complex/день). Программные строки не
+        копируются. Возвращает (скопировано, пропущено)."""
+        existing = await self._plans.list_manual_plan_items_for_week(target.id)
+        seen = {(item.exercise_id, item.complex_id, item.day_of_week) for item in existing}
+        copied = skipped = 0
+        for item in await self._plans.list_manual_plan_items_for_week(source.id):
+            key = (item.exercise_id, item.complex_id, item.day_of_week)
+            if key in seen:
+                skipped += 1
+                continue
+            seen.add(key)
+            self._session.add(PlanItem(
+                training_plan_id=item.training_plan_id, exercise_id=item.exercise_id, complex_id=item.complex_id,
+                count_per_week=item.count_per_week, day_of_week=item.day_of_week, week_phase=item.week_phase,
+                program_inclusion_id=None, plan_week_id=target.id,
+            ))
+            copied += 1
+        await self._session.flush()
+        return copied, skipped

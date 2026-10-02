@@ -31,7 +31,7 @@ any merge into `develop/current`.
 | Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | category + «Избранное» chips on Search | PARTIAL | equipment: DOMAIN — exercises have no equipment field | category chips (#254, done), favorites chip (#272, done) | #254, #272 | crimpd-parity.spec.ts «Home» (category chips), «Favorites» (chip) |
 | Category rows (horizontal carousels, «N Workouts») | H2–H4, H13; HO 3 | program rows grouped by category («Другое» for none) | DONE | — | programs grouped by `Program.category` rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
 | Category screen (info, Featured / All) | H4; d/category_all_tab | none | MISSING | — | category row → filtered search (Featured tab: DOMAIN — no editorial flag yet; collections cover curation) | #254, #271 | — |
-| Featured playlists carousel | H5; HO 4 | none | MISSING | no collections model | «Подборки» row from curated collections | #271 | — |
+| Featured playlists carousel | H5; HO 4 | CollectionsRow.tsx on Главная; `GET /api/v2/collections` | DONE | — | «Подборки» row from curated collections (card: author, title, count, description; hidden when none) | #271 | parity/collections.spec.ts «Collections» (320/390, light/dark); tests/test_web/test_v2_collections.py; tests/collectionsFormat.test.ts |
 | «Create Custom Workouts» banner | H6 | «Создать» button on Главная | DONE | — | — | — | home-discovery.spec.ts |
 | My Workouts grid | H7 | «Мои тренировки» list | DONE | — | — | — | home-discovery.spec.ts, crimpd-parity Baseline |
 | «Log Cross-Training» banner / entry | H8 | Журнал «+ Записать» → «Другую активность»; «+» sheet на Главной → «Записать в журнал» | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
@@ -82,10 +82,10 @@ any merge into `develop/current`.
 | Add template/workout to plan | P7, W5 | program-inclusions, plan-items | DONE | — | — | — | golden-journey.spec.ts, plans-add-exercise.spec.ts |
 | Week stepper with phase chip and dates | P9 | one-week view with ‹ Неделя N · даты › + phase chip | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», planWeekNav.test.ts |
 | Per-row done counters «0/1», week progress | P3, P9–P10 | `done_count` in GET /api/v2/plan (derived, no column); «N из M» header | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», tests/test_web/test_v2_plan_done_counts.py |
-| Schedule future weeks | P9 «Schedule» (unobserved beyond label) | current week only | MISSING | — | up to 4 weeks ahead | #275 | — |
-| Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items) | PARTIAL | no move across weeks | move across weeks | #275 | plans-plan-week.spec.ts |
+| Schedule future weeks | P9 «Schedule» (unobserved beyond label) | › creates up to 4 future weeks (`POST /plan/weeks`); add / move / remove manual items there; program items stay program-logic only | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py; planWeekNav.test.ts |
+| Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items): day + week picker (`PATCH /plan-items` `plan_week_id`) | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py |
 | Completed / skipped state | P10 | counters «сделано/план»; past weeks read-only, unfinished stays as is | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week» |
-| Clone plan incl. schedule | P11 (menu label only) | none | MISSING | — | copy week schedule → next week (one-plan model) | #275 | — |
+| Clone plan incl. schedule | P11 (menu label only) | «Скопировать неделю → на следующую» (confirmation; manual items only, duplicates skipped; `POST /plan/weeks/{id}/copy-to-next`) | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py |
 | Edit plan / change start date / delete plan | P11 | «Убрать курс из плана» (confirmation, is_active=false, history kept → «Завершённые») | DOMAIN-EQUIVALENT | single open-ended plan; start-date change out of scope | — | #266 | parity/plans-overview.spec.ts «Plans overview»; test_v2_plan_overview.py |
 | Crimpd+ upsell on plans | P1 | our subscription (Robokassa) elsewhere | DOMAIN-EQUIVALENT | our own paywall model | — | — | — |
 
@@ -154,7 +154,7 @@ any merge into `develop/current`.
 | Grade chart (boulder/route) | R3 | GTO / WSF cards | DOMAIN-EQUIVALENT | no climbing grades | our norms (GTO/WSF) | — | — |
 | Assessments (primary / additional, last result, sparkline) | R4–R5 | «Тесты» card on Профиль (3 seeded protocols, last result, mini-trend ≥2) | DONE | no primary/additional split | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
 | Test detail: chart, history | R6, R8 | description, SVG trend, history (newest first), record / edit / delete own results | DONE | — | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |
-| Peer Insights | R7 | leaderboard (legacy data) | MISSING | — | percentile vs cohort, ≥20 users or honest «мало данных» | #276 | — |
+| Peer Insights | R7 | Деталь теста → «Сравнение с похожими»: подпись когорты (пол + возрастная ступень → пол → все), процентиль последнего результата, медиана, следующий ориентир; `GET /api/v2/assessments/{id}/peer-insights`, один агрегирующий SQL; когорта < 20 → «Пока мало данных для сравнения (нужно ≥20 человек)» | DONE | нет TTL-кэша (стоимость ограничена одним SQL); нет сравнения по % веса тела | — | #276 | parity/peer-insights.spec.ts «Peer insights»; tests/test_web/test_v2_peer_insights.py; tests/test_peer_insights.py; webapp-frontend/tests/peerInsightsFormat.test.ts |
 | Units (kg/lb, cm/in) | R11 | Settings «Единицы» (`/api/profile/prefs`); Профиль + форма правки показывают/вводят в выбранных единицах, хранение метрическое | PARTIAL | weights inside workout logging / journal / analytics still kg | display units everywhere | #268 | parity/settings.spec.ts «Settings»; tests/test_web/test_display_prefs.py; tests/units.test.ts |
 | Timezone | R11 | ProfileEditForm + Settings timezone | DONE | — | — | #268 | parity/settings.spec.ts «Settings» |
 | Theme Light / Dark / Auto | R13 | Settings «Оформление» → override of AppRoot + CSS palette, stored server-side | DONE | — | — | #268 | parity/settings.spec.ts «Settings» (theme override, 320 light / 390 dark); tests/test_web/test_display_prefs.py |
@@ -169,7 +169,7 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Curated playlists (creator, description, workouts) | D1; d/playlist_detail | none | MISSING | — | curated collections (author «Турникмэн», no social links) | #271 | — |
+| Curated playlists (creator, description, workouts) | D1; d/playlist_detail | CollectionScreen.tsx; `GET /api/v2/collections/{id}` | DONE | items are programs and system exercises (no public system-workout catalog exists, PROJECT_SPEC §5) | curated collections (author «Турникмэн», no social links) | #271 | parity/collections.spec.ts «Collections»; tests/test_web/test_v2_collections.py (visibility, 404); tests/test_scripts/test_seed_collections.py |
 | Category collections (sub-focus cards) | D3 | programs not grouped | MISSING | — | category rows | #254 | — |
 | Templates (levels, phases) | D4 | Programs (structure types) | PARTIAL | no preview | schedule preview | #266 | — |
 | Progressions (lettered / % variants) | D5 | programs + auto-progression (ours) | DOMAIN-EQUIVALENT | our progression model | — | — | session-progression-edit.spec.ts |

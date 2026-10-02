@@ -47,6 +47,23 @@ export function stepWeek(index: number, delta: -1 | 1, weekCount: number): numbe
   return Math.min(Math.max(index + delta, 0), Math.max(weekCount - 1, 0));
 }
 
+/** issue #275 — на сколько недель вперёд можно планировать (как на бэкенде). */
+export const MAX_FUTURE_WEEKS = 4;
+
+/** › доступна, если следующая неделя уже есть, либо её можно создать
+ * (последняя существующая ещё не дальше текущей на MAX_FUTURE_WEEKS). */
+export function canAdvanceWeek(index: number, weekCount: number, currentIndex: number): boolean {
+  if (index < weekCount - 1) {
+    return true;
+  }
+  return index - currentIndex < MAX_FUTURE_WEEKS;
+}
+
+/** Редактировать (добавлять/переносить) можно текущую и будущие недели. */
+export function isEditableWeek(index: number, currentIndex: number): boolean {
+  return index >= currentIndex;
+}
+
 /** Локальная дата YYYY-MM-DD устройства. */
 export function localToday(now: Date = new Date()): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");

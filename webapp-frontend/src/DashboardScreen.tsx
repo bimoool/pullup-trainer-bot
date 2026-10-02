@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
 import {
+  copyPlanWeekToNext,
   createPlanItem,
+  createPlanWeek,
   type ExerciseResponseV2,
   fetchExercises,
   fetchPlan,
@@ -22,7 +24,7 @@ import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
-  currentWeekIndex, groupCounter, localToday, stepWeek, weekProgress, weekRangeLabel,
+  canAdvanceWeek, currentWeekIndex, groupCounter, isEditableWeek, localToday, stepWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -189,7 +191,7 @@ type MyWorkoutsView =
   | { kind: "detail"; workoutId: number }
   | { kind: "edit"; workoutId: number }
   | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" | "detail" }
-  | { kind: "move-plan-item"; planItemId: number; title: string; currentDayOfWeek: number | null };
+  | { kind: "move-plan-item"; planItemId: number; title: string; currentDayOfWeek: number | null; planWeekId: number | null };
 
 type ExercisesState =
   | { phase: "loading" }
@@ -255,6 +257,44 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const [removeInclusionConfirmId, setRemoveInclusionConfirmId] = useState<number | null>(null);
   const [removingInclusionId, setRemovingInclusionId] = useState<number | null>(null);
   const [inclusionError, setInclusionError] = useState<string | null>(null);
+
+  // issue #275 — планирование вперёд: › за последней неделей создаёт следующую;
+  // «Скопировать неделю» — с подтверждением.
+  const [weekBusy, setWeekBusy] = useState(false);
+  const [weekError, setWeekError] = useState<string | null>(null);
+  const [copyConfirm, setCopyConfirm] = useState(false);
+  const [copyResult, setCopyResult] = useState<string | null>(null);
+
+  async function handleAdvanceWeek(lastWeek: PlanWeekResponseV2) {
+    setWeekBusy(true);
+    setWeekError(null);
+    try {
+      const created = await createPlanWeek(initDataRaw, lastWeek.week_number + 1);
+      await reloadPlan();
+      setSelectedWeekId(created.id);
+    } catch (error) {
+      setWeekError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWeekBusy(false);
+    }
+  }
+
+  async function handleCopyWeek(weekId: number) {
+    setWeekBusy(true);
+    setWeekError(null);
+    setCopyResult(null);
+    try {
+      const result = await copyPlanWeekToNext(initDataRaw, weekId);
+      setCopyConfirm(false);
+      await reloadPlan();
+      setSelectedWeekId(result.target_week.id);
+      setCopyResult(`Скопировано: ${result.copied}, пропущено дублей: ${result.skipped}`);
+    } catch (error) {
+      setWeekError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWeekBusy(false);
+    }
+  }
 
   function reloadPlan() {
     return fetchPlan(initDataRaw).then((data) => {
@@ -434,6 +474,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         planItemId={myWorkoutsView.planItemId}
         title={myWorkoutsView.title}
         currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
+        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, currentWeekIndex(plan.weeks, localToday())))}
+        currentWeekId={myWorkoutsView.planWeekId}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onSuccess={() => {
           setMyWorkoutsView({ kind: "closed" });
@@ -624,6 +666,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         <>
           {visibleWeeks.map((week) => {
             const isCurrent = week.id === currentWeekId;
+            const isEditable = isEditableWeek(selectedIndex, currentIndex);
             const weekItems = plan.items.filter((item) => item.plan_week_id === week.id);
             const freePool = weekItems.filter((item) => item.day_of_week === null);
             const byDay = new Map<number, PlanItemResponseV2[]>();
@@ -686,13 +729,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                       {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
                     </button>
                   )}
-                  {isCurrent && mutableItem !== null && !isRemoveConfirming && (
+                  {isEditable && mutableItem !== null && !isRemoveConfirming && (
                     <>
                       <Button
                         size="s" mode="outline"
                         onClick={() => setMyWorkoutsView({
                           kind: "move-plan-item", planItemId: mutableItem.id,
                           title: group.title, currentDayOfWeek: mutableItem.day_of_week,
+                          planWeekId: mutableItem.plan_week_id,
                         })}
                       >
                         Перенести
@@ -710,7 +754,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                       )}
                     </>
                   )}
-                  {isCurrent && mutableItem !== null && isRemoveConfirming && (
+                  {isEditable && mutableItem !== null && isRemoveConfirming && (
                     <>
                       <p className="block-subtitle">Убрать «{group.title}» из плана?</p>
                       {removeError && <p className="gap-banner">{removeError}</p>}
@@ -738,7 +782,11 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   <button
                     type="button" aria-label="Предыдущая неделя" className="plan-week-step"
                     disabled={selectedIndex === 0}
-                    onClick={() => setSelectedWeekId(plan.weeks[stepWeek(selectedIndex, -1, plan.weeks.length)].id)}
+                    onClick={() => {
+                      setCopyConfirm(false);
+                      setCopyResult(null);
+                      setSelectedWeekId(plan.weeks[stepWeek(selectedIndex, -1, plan.weeks.length)].id);
+                    }}
                   >
                     ‹
                   </button>
@@ -750,8 +798,16 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   </div>
                   <button
                     type="button" aria-label="Следующая неделя" className="plan-week-step"
-                    disabled={selectedIndex >= plan.weeks.length - 1}
-                    onClick={() => setSelectedWeekId(plan.weeks[stepWeek(selectedIndex, 1, plan.weeks.length)].id)}
+                    disabled={weekBusy || !canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex)}
+                    onClick={() => {
+                      setCopyConfirm(false);
+                      setCopyResult(null);
+                      if (selectedIndex >= plan.weeks.length - 1) {
+                        void handleAdvanceWeek(week);
+                      } else {
+                        setSelectedWeekId(plan.weeks[stepWeek(selectedIndex, 1, plan.weeks.length)].id);
+                      }
+                    }}
                   >
                     ›
                   </button>
@@ -778,7 +834,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     {groupPlanItems(freePool, plan.inclusions, libraryExercises).map(renderGroupRow)}
                   </div>
                 )}
-                {isCurrent && (
+                {isEditable && (
                   <div className="plan-week-day-group">
                     <button
                       type="button"
@@ -789,6 +845,33 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     </button>
                   </div>
                 )}
+                {isEditable && canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex) && (
+                  <div className="plan-week-day-group" data-testid="plan-week-copy">
+                    {!copyConfirm ? (
+                      <button
+                        type="button" className="program-card-button plan-add-exercise-button"
+                        disabled={weekBusy}
+                        onClick={() => { setCopyConfirm(true); setCopyResult(null); }}
+                      >
+                        Скопировать неделю → на следующую
+                      </button>
+                    ) : (
+                      <>
+                        <p className="block-subtitle">
+                          Скопировать свои тренировки и упражнения этой недели в следующую? Дубли пропустим.
+                        </p>
+                        <Button size="s" mode="outline" disabled={weekBusy} onClick={() => void handleCopyWeek(week.id)}>
+                          {weekBusy ? "Копирую…" : "Скопировать"}
+                        </Button>
+                        <Button size="s" mode="outline" disabled={weekBusy} onClick={() => setCopyConfirm(false)}>
+                          Отмена
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {copyResult && <p className="block-subtitle" data-testid="plan-week-copy-result">{copyResult}</p>}
+                {weekError && <p className="gap-banner">{weekError}</p>}
               </Section>
             );
           })}
