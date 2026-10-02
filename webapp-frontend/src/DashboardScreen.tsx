@@ -1,5 +1,5 @@
 import { Button, Section } from "@telegram-apps/telegram-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
 import {
@@ -29,7 +29,7 @@ import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
-  todayDayIndex, weekProgress, weekRangeLabel,
+  todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -174,9 +174,14 @@ type PlanState = {
   weeks: PlanWeekResponseV2[];
   /** current_week_id с сервера (часовой пояс пользователя). */
   currentWeekId: number | null;
+  /** plan.today с сервера (YYYY-MM-DD, часовой пояс пользователя); null — старый ответ, тогда localToday(). */
+  today: string | null;
 };
 
-const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null };
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null, today: null };
+
+/** #288 — план старше этого (мс) перечитывается при возврате в приложение: «Сегодня» не залипает на вчера. */
+const PLAN_STALE_MS = 60_000;
 
 /** issue #266 — inclusions содержит и неактивные (вкладка «Завершённые»);
  * строки убранных курсов в недельный вид не попадают (история в БД остаётся). */
@@ -192,6 +197,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
     ),
     weeks: data.plan_weeks,
     currentWeekId: data.current_week_id ?? null,
+    today: data.today ?? null,
   };
 }
 
@@ -331,10 +337,16 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     }
   }
 
+  // #288 — когда и при какой локальной дате план загружен: по этому решаем, не устарело ли «Сегодня».
+  const planLoadedRef = useRef({ at: Date.now(), localDate: localToday() });
+
+  function applyPlan(data: TrainingPlanResponseV2 | null) {
+    planLoadedRef.current = { at: Date.now(), localDate: localToday() };
+    setPlan(toPlanState(data));
+  }
+
   function reloadPlan() {
-    return fetchPlan(initDataRaw).then((data) => {
-      setPlan(toPlanState(data));
-    });
+    return fetchPlan(initDataRaw).then(applyPlan);
   }
 
   // Phase D3 (issue #188) — «Убрать из плана». Confirm/Cancel — inline на
@@ -417,7 +429,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     fetchPlan(initDataRaw)
       .then((data) => {
         if (!cancelled) {
-          setPlan(toPlanState(data));
+          applyPlan(data);
         }
       })
       .catch(() => {
@@ -426,6 +438,42 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyPlan стабилен по смыслу (только setPlan и ref).
+  }, [initDataRaw]);
+
+  // #288 — приложение может быть открыто всю ночь или вернуться из фона на следующий день: «Сегодня»
+  // считается от plan.today (дата пользователя на сервере), поэтому при смене даты или устаревшем плане
+  // перечитываем план (тихо). Дата устройства может отличаться от даты пользователя, поэтому ещё и по возрасту.
+  useEffect(() => {
+    let cancelled = false;
+    let midnightTimer: ReturnType<typeof setTimeout> | undefined;
+    function refreshIfStale() {
+      const loaded = planLoadedRef.current;
+      if (Date.now() - loaded.at > PLAN_STALE_MS || localToday() !== loaded.localDate) {
+        fetchPlan(initDataRaw).then((data) => !cancelled && applyPlan(data)).catch(() => undefined);
+      }
+    }
+    function scheduleMidnight() {
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      midnightTimer = setTimeout(() => {
+        refreshIfStale();
+        scheduleMidnight();
+      }, Math.max(next.getTime() - now.getTime(), 1000));
+    }
+    function onVisibility() {
+      if (document.visibilityState === "visible") {
+        refreshIfStale();
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    scheduleMidnight();
+    return () => {
+      cancelled = true;
+      clearTimeout(midnightTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyPlan/refresh работают через ref и setPlan.
   }, [initDataRaw]);
 
   useEffect(() => {
@@ -519,7 +567,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         planItemId={myWorkoutsView.planItemId}
         title={myWorkoutsView.title}
         currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
-        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday())))}
+        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, plan.today ?? localToday())))}
         currentWeekId={myWorkoutsView.planWeekId}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onSuccess={() => {
@@ -594,7 +642,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // issue #258 — одна неделя за раз. Список — по возрастанию week_number;
   // текущая = последняя начавшаяся (ensure_current_plan_week не создаёт недели
   // наперёд, но будущие недели допустимы — тогда › пойдёт дальше текущей).
-  const currentIndex = plan.weeks.length > 0 ? resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday()) : 0;
+  const currentIndex = plan.weeks.length > 0 ? resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, plan.today ?? localToday()) : 0;
   const currentWeekId = plan.weeks.length > 0 ? plan.weeks[currentIndex].id : null;
   const selectedIndexRaw = plan.weeks.findIndex((week) => week.id === selectedWeekId);
   const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;
@@ -637,10 +685,12 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const canCopyWeek = plan.weeks.length > 0
     && isEditableWeek(selectedIndex, currentIndex) && canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex);
   // «Сегодня» — группы текущей недели на сегодняшний день недели.
-  const todayGroups = currentWeek === null || selectedIndex !== currentIndex
+  // День недели — от plan.today сервера (дата пользователя), не от часов устройства (#288); вне недели — нет блока.
+  const todayIndex = currentWeek === null ? null : todayDayIndexInWeek(currentWeek.start_date, plan.today ?? localToday());
+  const todayGroups = currentWeek === null || todayIndex === null || selectedIndex !== currentIndex
     ? []
     : groupPlanItems(
-      plan.items.filter((item) => item.plan_week_id === currentWeek.id && item.day_of_week === todayDayIndex()),
+      plan.items.filter((item) => item.plan_week_id === currentWeek.id && item.day_of_week === todayIndex),
       plan.inclusions, libraryExercises,
     );
 

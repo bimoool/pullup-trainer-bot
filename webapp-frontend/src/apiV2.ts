@@ -350,6 +350,8 @@ export interface TrainingPlanResponseV2 {
   plan_weeks: PlanWeekResponseV2[];
   /** Текущая неделя в часовом поясе пользователя (не «последняя в списке»). */
   current_week_id?: number | null;
+  /** «Сегодня» (YYYY-MM-DD) в часовом поясе пользователя (#288) — день недели «Сегодня» считается по нему. */
+  today?: string | null;
 }
 
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {

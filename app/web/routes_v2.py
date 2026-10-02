@@ -827,8 +827,9 @@ async def get_plan(
     # действия пользователя — "пользователь не может открыть Планы и
     # остаться на прошлой неделе" (Поправка 4). Тонкий вызов, вся логика —
     # в PlanWeekService, идемпотентно на каждый GET.
+    plan_today = _plan_today(user)
     current_week = await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=plan.id, today=_plan_today(user),
+        training_plan_id=plan.id, today=plan_today,
     )
 
     inclusions = await plans.list_inclusions(plan.id)
@@ -867,6 +868,7 @@ async def get_plan(
             ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
             current_week_id=current_week.id,
+            today=plan_today,
         ),
     )
 

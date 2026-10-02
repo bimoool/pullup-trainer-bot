@@ -137,3 +137,26 @@ async def test_course_current_week_converts_started_at_to_user_timezone(session,
     # Локально старт — понедельник 5.10, сегодня — воскресенье 11.10: 6 дней — ещё первая неделя
     # (по UTC-дате старта, 4.10, было бы 7 дней — вторая).
     assert inclusion["current_week"] == 1
+
+
+async def test_plan_today_is_user_local_date_near_midnight(session, user, clock):
+    """#288 HIGH 1: `today` в ответе — дата в поясе пользователя (то же, что считает неделю)."""
+    clock(SUNDAY_NIGHT_UTC)  # вс 22:30 UTC = пн 01:30 в Москве
+    await _plan(session, user, tz="Europe/Moscow")
+    plan_json = (await v2_get(session, TG, "/api/v2/plan")).json()["plan"]
+    assert plan_json["today"] == MONDAY.isoformat()
+    assert _week(plan_json, plan_json["current_week_id"])["start_date"] == plan_json["today"]  # день 0
+
+    user.timezone = "UTC"
+    await session.commit()
+    plan_json = (await v2_get(session, TG, "/api/v2/plan")).json()["plan"]
+    assert plan_json["today"] == (MONDAY - timedelta(days=1)).isoformat()  # у UTC-пользователя ещё воскресенье
+    start = date.fromisoformat(_week(plan_json, plan_json["current_week_id"])["start_date"])
+    assert (date.fromisoformat(plan_json["today"]) - start).days == 6
+
+
+async def test_plan_today_falls_back_to_project_timezone_without_user_tz(session, user, clock):
+    clock(datetime(2026, 10, 7, 12, 0, tzinfo=UTC))
+    await _plan(session, user, tz=None)
+    plan_json = (await v2_get(session, TG, "/api/v2/plan")).json()["plan"]
+    assert plan_json["today"] == "2026-10-07"

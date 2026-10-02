@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { pickPlanAction, pickRowAction } from "../../fixtures/plans";
+import { overridePlanToday, pickPlanAction, pickRowAction, watchServerPlanToday } from "../../fixtures/plans";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
@@ -46,6 +46,7 @@ for (const width of WIDTHS) {
     test.use({ viewport: { width, height: 760 } });
 
     test("строка дня: одна кнопка + «⋯», название в одну строку, шаблон полосы/чипа; блок «Сегодня»", async ({ page }) => {
+      const server = watchServerPlanToday(page);
       const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme });
       await openTab(page, "Планы");
       await expect(page.getByTestId("plan-week-label")).toBeVisible();
@@ -81,7 +82,8 @@ for (const width of WIDTHS) {
       }
 
       // «Сегодня»: блок с сегодняшней тренировкой и «Начать» (воскресенье — пустой день, блока нет).
-      const todayIndex = (new Date().getDay() + 6) % 7;
+      // День — по plan.today сервера (дата пользователя), не по часам машины (#288).
+      const todayIndex = await server.weekdayIndex();
       if (todayIndex <= 5) {
         const today = page.getByTestId("plans-today");
         await expect(today).toBeVisible();
@@ -107,6 +109,54 @@ for (const width of WIDTHS) {
 
       await expectNoHorizontalOverflow(page, "Планы: строки дня");
       await shot(page, width, rows.theme, "plans_rows");
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("«Сегодня» идёт от plan.today сервера, а не от часов устройства; вне недели — блока нет; пересчёт при возврате в приложение (#288)", async ({ page }) => {
+      const server = watchServerPlanToday(page);
+      let override: string | null = null;
+      await overridePlanToday(page, () => override);
+      // Возраст плана считаем по Date.now: сдвигаем его, не трогая часы страницы целиком.
+      await page.addInitScript(() => {
+        const real = Date.now.bind(Date);
+        (window as unknown as { __skew: number }).__skew = 0;
+        Date.now = () => real() + (window as unknown as { __skew: number }).__skew;
+      });
+      const day = (iso: string, offset: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+      const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme });
+      await openTab(page, "Планы");
+      await expect(page.getByTestId("plan-week-label")).toBeVisible();
+      const realToday = await server.today();
+      const weekday = await server.weekdayIndex();
+      const monday = day(realToday, -weekday);
+      const reload = async () => {
+        await page.evaluate(() => { (window as unknown as { __skew: number }).__skew += 120_000; });
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      };
+
+      // сервер говорит «среда» (индекс 2), чего бы ни показывали часы машины
+      override = day(monday, 2);
+      await reload();
+      const today = page.getByTestId("plans-today");
+      await expect(today.getByRole("button", { name: `Начать: ${WORKOUT_BY_DAY[2]}` })).toBeVisible();
+      await expect(today.getByTestId("plans-today-row")).toHaveCount(1);
+
+      // «Вчера ночью приложение осталось открытым»: сервер уже в следующей неделе — блока «Сегодня» нет
+      override = day(monday, 7);
+      await reload();
+      await expect(today).toHaveCount(0);
+
+      // и обратно на воскресенье (индекс 6): день без тренировок — блока нет
+      override = day(monday, 6);
+      await reload();
+      await expect(today).toHaveCount(0);
+
+      // понедельник (0): первая тренировка недели
+      override = day(monday, 0);
+      await reload();
+      await expect(today.getByRole("button", { name: `Начать: ${WORKOUT_BY_DAY[0]}` })).toBeVisible();
+
       expect(consoleErrors).toEqual([]);
       expect(apiFailures).toEqual([]);
     });
