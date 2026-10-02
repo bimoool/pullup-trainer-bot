@@ -26,9 +26,11 @@ type State =
  * есть — месяц самой свежей (иначе новичок с вчерашней тренировкой 1-го числа
  * увидел бы пустой экран).
  */
-export function useJournalV2(initDataRaw: string) {
+export function useJournalV2(initDataRaw: string, restore?: { month: string; day: string | null } | null) {
+  // restore — возврат из «Открыть тренировку»: тот же месяц/день, без выбора стартового месяца.
+  const restoreRef = useRef(restore ?? null);
   const [month, setMonthState] = useState<string | null>(null);
-  const [day, setDay] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(restoreRef.current?.day ?? null);
   const [daysInfo, setDaysInfo] = useState<JournalDaysResponse | null>(null);
   const [state, setState] = useState<State>({ phase: "loading" });
   const [loadingMore, setLoadingMore] = useState(false);
@@ -45,6 +47,16 @@ export function useJournalV2(initDataRaw: string) {
     daysCache.current.clear();
     async function bootstrap() {
       try {
+        const restored = restoreRef.current;
+        if (restored !== null) {
+          const info = await fetchJournalDays(initDataRaw, restored.month);
+          if (!cancelled) {
+            daysCache.current.set(info.month, info);
+            setDaysInfo(info);
+            setMonthState(restored.month);
+          }
+          return;
+        }
         const guess = currentMonthIn(DEFAULT_JOURNAL_TZ);
         let info = await fetchJournalDays(initDataRaw, guess);
         const actual = currentMonthIn(info.timezone);

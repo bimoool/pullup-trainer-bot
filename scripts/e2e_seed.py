@@ -931,6 +931,26 @@ async def seed_journal_calendar(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
+async def seed_journal_return(session: AsyncSession, telegram_id: int) -> None:
+    """#284 C — Back из «Открыть тренировку» возвращает в тот же месяц Журнала с той же записью.
+    Как journal_calendar (прошлый месяц: 10-го, дважды 15-го, 20-го; плюс сессия сегодня), но
+    сессии прошлого месяца привязаны к своей тренировке «Возвратная тренировка» (снимок с workout_id)."""
+    await seed_journal_calendar(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    pull = (await session.execute(select(Exercise).where(Exercise.owner_user_id == user.id))).scalars().one()
+    workout = Complex(name="Возвратная тренировка", source_type="user", owner_user_id=user.id)
+    session.add(workout)
+    await session.flush()
+    protocol = {"type": "reps_sets", "rest_seconds": 60, "prescription": {"source": "static", "sets": 1, "reps": 8}}
+    session.add(ComplexItem(complex_id=workout.id, exercise_id=pull.id, order_index=0, sets=1, protocol=protocol))
+    sessions = (await session.execute(
+        select(TrainingSession).where(TrainingSession.user_id == user.id).order_by(TrainingSession.performed_at),
+    )).scalars().all()
+    for training in sessions[:-1]:  # все, кроме сегодняшней
+        training.workout_snapshot = {"workout_id": workout.id, "title": workout.name, "items": []}
+    await session.flush()
+
+
 async def seed_journal_edit(session: AsyncSession, telegram_id: int) -> None:
     """#262 — правка/клон из Журнала (пояс Europe/Moscow). Две завершённые сессии
     сегодня: Builder «Моя силовая» со снимком (can_edit; 2 подхода — второй с
@@ -1529,6 +1549,7 @@ SCENARIOS = {
     "peer_empty": seed_peer_empty,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
+    "journal_return": seed_journal_return,
     "journal_edit": seed_journal_edit,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,

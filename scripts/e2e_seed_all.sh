@@ -119,3 +119,5 @@ for id in 999401 999402 999411 999412; do seed collections "$id"; done
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
 # #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
 for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done
+# #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
+for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
