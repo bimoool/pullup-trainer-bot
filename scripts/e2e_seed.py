@@ -485,10 +485,21 @@ async def seed_plan_week_grouping(session: AsyncSession, telegram_id: int) -> No
 
     plan = await TrainingPlanRepository(session).get_for_user(user.id)
     if plan is not None:
+        # Ручной PlanItem, как его создаёт picker, всегда принадлежит PlanWeek: без plan_week_id
+        # «Планы» не показывают его в недельном списке. Неделя — та же, что материализует GET /plan.
+        today = datetime.now(UTC).date()
+        week_number = plan_week_number(plan.created_at.date(), today)
+        plans_repo = TrainingPlanRepository(session)
+        week = await plans_repo.get_plan_week(training_plan_id=plan.id, week_number=week_number)
+        if week is None:
+            week = await plans_repo.create_plan_week(
+                training_plan_id=plan.id, week_number=week_number,
+                start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
+            )
         session.add(
             PlanItem(
                 training_plan_id=plan.id, exercise_id=manual_exercise.id,
-                count_per_week=2, day_of_week=None, program_inclusion_id=None,
+                count_per_week=2, day_of_week=None, program_inclusion_id=None, plan_week_id=week.id,
             ),
         )
         await session.flush()
