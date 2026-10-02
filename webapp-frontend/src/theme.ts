@@ -58,3 +58,20 @@ export function isThemePref(value: unknown): value is ThemePref {
 export function resolveAppearance(pref: ThemePref, telegramScheme: "light" | "dark" | undefined): "light" | "dark" | undefined {
   return pref === "auto" ? telegramScheme : pref;
 }
+
+/** Схема, о которой сообщает Telegram (`WebApp.colorScheme`); всё остальное — undefined. */
+export function readTelegramColorScheme(webApp: { colorScheme?: unknown } | null | undefined): "light" | "dark" | undefined {
+  const scheme = webApp?.colorScheme;
+  return scheme === "light" || scheme === "dark" ? scheme : undefined;
+}
+
+/** Тёмная ли поверхность по значению `--tg-bg-color` (#rrggbb): яркость < 0.5. Не #rrggbb → светлая. */
+export function isDarkBackground(raw: string): boolean {
+  const match = /^#([0-9a-f]{6})$/i.exec(raw.trim());
+  if (!match) {
+    return false;
+  }
+  const n = parseInt(match[1], 16);
+  const luminance = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return luminance < 0.5;
+}

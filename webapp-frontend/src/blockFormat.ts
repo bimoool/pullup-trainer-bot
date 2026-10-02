@@ -101,6 +101,23 @@ export function describeBlockPlan(
   return values.map((value) => (unit === "s" ? formatSecondsShort(value) : formatNumber(value))).join(" · ");
 }
 
+/** Сводка записанного подхода одной строкой («Подход 1: 8 повт.») для свёрнутой панели на отдыхе.
+ * label — подпись поля из resultInputLabel: «Секунды» → m:ss, «Повторений» → «N повт.». */
+export function formatLoggedSetSummary(setNumber: number, value: string, label: string): string {
+  const raw = value.trim();
+  const numeric = Number(raw);
+  if (raw === "" || !Number.isFinite(numeric)) {
+    return `Подход ${setNumber}: ${raw}`;
+  }
+  if (label === "Секунды") {
+    return `Подход ${setNumber}: ${formatDuration(numeric)}`;
+  }
+  if (label === "Повторений") {
+    return `Подход ${setNumber}: ${formatNumber(numeric)} повт.`;
+  }
+  return `Подход ${setNumber}: ${formatNumber(numeric)}`;
+}
+
 /** Подпись поля результата в живой сессии и подсказка с целью подхода.
  * «Результат» — только запасной вариант для неизвестной единицы; у max-блока
  * цели-подсказки нет (не выдумываем). */

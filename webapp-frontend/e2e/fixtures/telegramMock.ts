@@ -109,6 +109,22 @@ export async function emitTelegramEvent(page: Page, event: string): Promise<void
   }, event);
 }
 
+/**
+ * Смена темы клиента Telegram на лету (#285 L3): обновляет WebApp.colorScheme/themeParams и
+ * доставляет `themeChanged` подписчикам, как это делает настоящий клиент.
+ */
+export async function emitTelegramThemeChange(page: Page, theme: TelegramTheme): Promise<void> {
+  await page.evaluate(
+    ({ colorScheme, themeParams }) => {
+      const webApp = (window as unknown as { Telegram: { WebApp: { colorScheme: string; themeParams: Record<string, string> } } }).Telegram.WebApp;
+      webApp.colorScheme = colorScheme;
+      webApp.themeParams = themeParams;
+    },
+    { colorScheme: theme, themeParams: THEME_PARAMS[theme] },
+  );
+  await emitTelegramEvent(page, "themeChanged");
+}
+
 export async function mockTelegramWebApp(
   page: Page,
   initDataRaw: string,
