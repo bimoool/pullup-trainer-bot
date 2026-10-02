@@ -1,7 +1,8 @@
-import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchCollection, type CollectionDetailV2 } from "./apiV2";
+import { BackChevron } from "./BackChevron";
 import { collectionItemKindLabel, formatCollectionCount } from "./collectionsFormat";
 import { useBackButton } from "./useBackButton";
 
@@ -48,9 +49,9 @@ export function CollectionScreen({ initDataRaw, collectionId, onBack, onOpenProg
 
   return (
     <div data-testid="collection-screen">
-      <Button className="vs-back" mode="outline" size="s" onClick={onBack}>
-        ← Назад
-      </Button>
+      <div className="vs-cover vs-cover-collection" data-testid="collection-cover">
+        <BackChevron onClick={onBack} />
+      </div>
       {state.phase === "loading" && <p className="screen-message">Загружаю подборку…</p>}
       {state.phase === "error" && (
         <p className="screen-message" data-testid="collection-error">Подборка недоступна: {state.message}</p>

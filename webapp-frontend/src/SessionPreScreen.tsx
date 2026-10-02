@@ -2,6 +2,7 @@ import { Button, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
+  getWorkout,
   fetchDashboardStatus,
   fetchPlan,
   fetchActiveLiveSession,
@@ -12,7 +13,11 @@ import {
   type ProgramInclusionResponseV2,
   type TrainingPlanResponseV2,
 } from "./apiV2";
+import { BackChevron } from "./BackChevron";
+import { summarizeProtocol } from "./protocolConfig";
 import { useBackButton } from "./useBackButton";
+import { formatExerciseCount } from "./workoutCardFormat";
+import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
 
 type Props = {
   initDataRaw: string;
@@ -109,6 +114,9 @@ function PreHeader({ title, eyebrow = "Готовы к старту" }: { title:
   );
 }
 
+/** Сводка перед стартом (#280): состав тренировки — упражнения с «подходы × повторы» и оценка длительности. */
+type PreSummary = { meta: string; rows: { id: number; name: string; line: string }[] };
+
 function findActiveInclusion(plan: TrainingPlanResponseV2 | null): ProgramInclusionResponseV2 | null {
   if (plan === null) {
     return null;
@@ -127,6 +135,8 @@ export function SessionPreScreen({
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Активная сессия, мешающая старту по workoutId: предлагаем её продолжить.
   const [activeConflict, setActiveConflict] = useState<LiveSessionResponse | null>(null);
+  // Сводка — необязательная подсказка: любой сбой молча оставляет экран без неё.
+  const [summary, setSummary] = useState<PreSummary | null>(null);
 
   // issue #202: Telegram BackButton — переиспользует существующий onGoToWorkout
   // (тот же хендлер, что у кнопок "Перейти в обычную Тренировку" в blocked/
@@ -216,6 +226,41 @@ export function SessionPreScreen({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- explicitPlanItemIds/title стабильны на время жизни экрана (новый маунт на новый Start), пересчитывать по ним не нужно
+  }, [initDataRaw, manual, workoutId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSummary() {
+      try {
+        let complexId: number | null = null;
+        if (workoutId !== undefined) {
+          complexId = workoutId;
+        } else if (manual && explicitPlanItemIds !== undefined && explicitPlanItemIds.length > 0) {
+          const plan = await fetchPlan(initDataRaw);
+          complexId = plan?.plan_items.find((item) => explicitPlanItemIds.includes(item.id) && item.complex_id !== null)?.complex_id ?? null;
+        }
+        if (complexId === null) {
+          return;
+        }
+        const workout = await getWorkout(initDataRaw, complexId);
+        const items = [...(workout.items ?? [])].sort((a, b) => a.order_index - b.order_index);
+        if (cancelled || items.length === 0) {
+          return;
+        }
+        const estimate = formatEstimate(estimateWorkoutSeconds(items));
+        setSummary({
+          meta: `${formatExerciseCount(items.length)}${estimate ? ` · ${estimate}` : ""}`,
+          rows: items.map((item) => ({ id: item.id, name: item.exercise_name, line: summarizeProtocol(item.protocol).lines[0] })),
+        });
+      } catch {
+        // без сводки экран остаётся рабочим
+      }
+    }
+    void loadSummary();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- те же стабильные пропсы, что и у загрузки готовности выше
   }, [initDataRaw, manual, workoutId]);
 
   async function handleStart(planItemIds: number[], currentTitle?: string) {
@@ -326,10 +371,21 @@ export function SessionPreScreen({
 
   return (
     <div className="pre-screen" data-testid="session-pre">
-      <Button className="vs-back" mode="outline" size="s" data-testid="session-pre-back" onClick={onGoToWorkout}>
-        ← Назад
-      </Button>
+      <BackChevron testId="session-pre-back" onClick={onGoToWorkout} />
       <PreHeader title={displayTitle} />
+      {summary !== null && (
+        <>
+          <p className="pre-meta" data-testid="session-pre-meta">{summary.meta}</p>
+          <ul className="pre-exercises vs-rows" data-testid="session-pre-items">
+            {summary.rows.map((row) => (
+              <li key={row.id} className="pre-exercise">
+                <span className="pre-exercise-name">{row.name}</span>
+                <span className="pre-exercise-line">{row.line}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {step && (
         <>
           <BlockTargetCard index={1} block={step.blockA} />

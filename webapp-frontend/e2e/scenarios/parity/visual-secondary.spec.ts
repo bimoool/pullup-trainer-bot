@@ -123,6 +123,10 @@ for (const width of WIDTHS) {
         await expect(page.locator(".plan-title", { hasText: "Смешанная" })).toBeVisible();
         await snap(page, width, theme, "03_session_pre");
         await verify(page, "Пред-экран сессии", { primary: "Начать", width });
+        // сводка перед стартом: состав и «подходы × повторы», главное действие и «назад» на экране
+        await expect(page.getByTestId("session-pre-items").locator("li")).toHaveCount(3);
+        await expect(page.getByTestId("session-pre-meta")).toContainText("3 упражнения");
+        await snap(page, width, theme, "03b_session_pre_summary");
         // видимый выход без Telegram BackButton: «← Назад» уходит с пред-экрана (тот же onClose, что у BackButton)
         const back = page.getByRole("button", { name: "← Назад" });
         await expect(back).toBeVisible();
@@ -160,6 +164,14 @@ for (const width of WIDTHS) {
         await page.getByRole("button", { name: "Пн", exact: true }).click();
         await snap(page, width, theme, "08_add_to_plan");
         await verify(page, "Добавить в план", { primary: "Добавить", width });
+
+        // пред-экран из Планов (manual-путь): та же сводка
+        await fresh(page, U.builder, theme);
+        await openTab(page, "Планы");
+        const group = page.locator(".plan-week-day-group").filter({ hasText: /^Смешанная/ });
+        await group.getByRole("button", { name: "Начать", exact: true }).click();
+        await expect(page.getByTestId("session-pre-items").locator("li")).toHaveCount(3);
+        await verify(page, "Пред-экран сессии из Планов", { primary: "Начать", width });
 
         // «Перенести» из Планов
         await fresh(page, U.builder, theme);
@@ -225,6 +237,10 @@ for (const width of WIDTHS) {
         const { consoleErrors, apiFailures } = await openAppAs(page, U.home, { theme });
         await page.locator(".program-card-button").first().click();
         await expect(page.getByTestId("program-detail-title")).toBeVisible();
+        await expect(page.getByTestId("program-cover")).toBeVisible();
+        const chevron = (await page.getByRole("button", { name: "← Назад" }).boundingBox())!;
+        expect(Math.round(chevron.width), "круглая «назад» 40 px").toBe(40);
+        expect(Math.round(chevron.height)).toBe(40);
         await snap(page, width, theme, "16_program_detail");
         await verify(page, "Program Detail", { primary: "Добавить в план", width });
 
@@ -238,6 +254,7 @@ for (const width of WIDTHS) {
         await fresh(page, U.collections, theme);
         await page.getByTestId("collection-card").first().click();
         await expect(page.getByTestId("collection-item").first()).toBeVisible();
+        await expect(page.getByTestId("collection-cover")).toBeVisible();
         await snap(page, width, theme, "18_collection");
         await verify(page, "Подборка", { primary: null, width });
 

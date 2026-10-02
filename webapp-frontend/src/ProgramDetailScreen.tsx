@@ -3,6 +3,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchProgramSchedule, type ProgramResponseV2, type ProgramScheduleV2 } from "./apiV2";
+import { BackChevron } from "./BackChevron";
 import { FavoriteHeart } from "./FavoriteHeart";
 import { DAY_NAMES_RU, groupScheduleByPhase, PHASE_LABELS_RU } from "./plansOverview";
 import { useBackButton } from "./useBackButton";
@@ -45,6 +46,16 @@ const STRUCTURE_TYPE_LABELS: Record<string, string> = {
  * остаются в HomeScreen, чтобы возврат назад сразу показывал актуальный
  * статус без повторного запроса.
  */
+/** Стабильный индекс цвета категории (0–5) — та же палитра `--vp-cat-*`, что у групп на Главной. */
+function categoryIndex(category: string | null | undefined): number {
+  const text = category ?? "";
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 6;
+  }
+  return hash;
+}
+
 export function ProgramDetailScreen({ initDataRaw, program, included, adding, addError, onAdd, onBack }: Props) {
   const structureLabel = STRUCTURE_TYPE_LABELS[program.structure_type] ?? program.structure_type;
 
@@ -70,9 +81,10 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
 
   return (
     <div>
-      <Button className="vs-back" mode="outline" size="s" onClick={onBack}>
-        ← Назад
-      </Button>
+      <div className="vs-cover" style={{ ["--cat" as string]: `var(--vp-cat-${categoryIndex(program.category)})` }} data-testid="program-cover">
+        <BackChevron onClick={onBack} />
+        {program.category && <span className="vs-cover-label">{program.category}</span>}
+      </div>
       <div className="favorite-title-row">
         <p className="plan-title" data-testid="program-detail-title">{program.name}</p>
         <FavoriteHeart initDataRaw={initDataRaw} targetType="program" targetId={program.id} />

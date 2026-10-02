@@ -35,7 +35,7 @@
   font-weight: inherit;
 }
 .app-shell button.vs-primary:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 .app-shell button.vs-secondary {
@@ -184,9 +184,36 @@
   min-height: calc(100vh - 8px - var(--vp-nav-h) - 20px - var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
   min-height: calc(100dvh - 8px - var(--vp-nav-h) - 20px - var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
-.pre-screen > .vs-back {
+.pre-screen > .vs-back-round {
   align-self: flex-start;
   margin: var(--vp-sp-1) 0 0;
+}
+.pre-meta {
+  margin: calc(-1 * var(--vp-sp-2)) 0 var(--vp-sp-3);
+  font-size: var(--vp-fs-body);
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--tg-subtitle-text-color);
+}
+.app-shell .pre-exercises {
+  margin-bottom: var(--vp-sp-3);
+}
+.pre-exercise {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+}
+.pre-exercise-name {
+  font-size: var(--vp-fs-card);
+  line-height: 20px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.pre-exercise-line {
+  font-size: var(--vp-fs-meta);
+  line-height: 18px;
+  color: var(--tg-subtitle-text-color);
 }
 .pre-header {
   margin: var(--vp-sp-3) 0 var(--vp-sp-4);
@@ -899,4 +926,65 @@
 }
 [data-testid="search-count"] {
   margin: var(--vp-sp-1) 0 0;
+}
+
+/* ---------- обложка Program Detail / подборки + круглая «назад» ---------- */
+.vs-back-round {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--vp-card-bg);
+  color: var(--tg-text-color);
+  box-shadow: var(--vp-shadow);
+  cursor: pointer;
+}
+.vs-back-round:active {
+  transform: scale(0.94);
+}
+.vs-cover {
+  --cat: var(--vp-cat-0);
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  min-height: 112px;
+  margin: calc(-1 * var(--vp-sp-2)) calc(-1 * var(--vp-sp-4)) var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0 0 24px 24px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 12% 120%, rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cat) 88%, #000), color-mix(in srgb, var(--cat) 62%, #0b1220));
+}
+.vs-cover-collection {
+  --cat: var(--vp-cat-4);
+  min-height: 96px;
+}
+.vs-cover .vs-back-round {
+  background: rgba(255, 255, 255, 0.92);
+  color: #14305a;
+  box-shadow: none;
+}
+.vs-cover-label {
+  position: absolute;
+  left: var(--vp-sp-4);
+  bottom: var(--vp-sp-3);
+  max-width: calc(100% - 2 * var(--vp-sp-4));
+  font-size: var(--vp-fs-meta);
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.9);
+  overflow-wrap: anywhere;
+}
+.app-shell .vs-cover-collection + .collection-hero {
+  position: relative;
+  margin-top: calc(-1 * var(--vp-sp-6));
 }
