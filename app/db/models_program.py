@@ -567,3 +567,43 @@ class UserFavorite(Base):
     target_type: Mapped[str] = mapped_column(String(20), nullable=False)
     target_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class Collection(Base):
+    """Редакционная подборка («Подборки» на Главной, issue #271): набор программ /
+    системных упражнений под общим названием. Управляется только сидом / админ-скриптом
+    (scripts/seed_collections.py) — пользовательских подборок нет. slug — стабильный
+    ключ идемпотентного сида. Показывается только is_published и только с ≥1 видимым
+    элементом (видимость элементов — CollectionRepository)."""
+
+    __tablename__ = "collections"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_label: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="Турникмэн", server_default="Турникмэн",
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CollectionItem(Base):
+    """Элемент подборки — ровно одно из program_id / exercise_id (проверяется
+    репозиторием, не CHECK — как ProgramItem). position — порядок в подборке."""
+
+    __tablename__ = "collection_items"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    collection_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("collections.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    program_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("programs.id", ondelete="CASCADE"), nullable=True,
+    )
+    exercise_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

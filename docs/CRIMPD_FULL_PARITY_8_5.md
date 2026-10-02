@@ -28,10 +28,10 @@ any merge into `develop/current`.
 |---|---|---|---|---|---|---|---|
 | Sticky header with search pill + «+» | H1, G4; HO 2; RM §0 | HomeScreen.tsx sticky header (search pill + «+») | DONE | — | sticky «Что потренируем сегодня?» + «+» | #254 | crimpd-parity.spec.ts «Home» |
 | Search screen: live filter, «FOUND N», clear | S1, S4; RM §3; FI F4 | SearchScreen.tsx (client-side) | DONE | — | search over programs, own workouts, exercises | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
-| Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | category + «Избранное» chips on Search | PARTIAL | equipment: DOMAIN — exercises have no equipment field | category chips (#254, done), favorites chip (#272, done) | #254, #272 | crimpd-parity.spec.ts «Home» (category chips), «Favorites» (chip) |
+| Search filters: category / equipment / favorites / home-only / tests-only | S2–S3; d/search_filter_all | Search chips: «Избранное», «Тесты» (only assessment tests), one chip per real category | DONE | equipment, home-only: DOMAIN — exercises/programs have no equipment or home field (not invented) | category chips (#254), favorites chip (#272), tests chip (#281) | #254, #272, #281 | crimpd-parity.spec.ts «Home» (category chips), «Favorites» (chip); parity/residual-gaps.spec.ts «Residual gaps» (tests chip); tests/homeDiscovery.test.ts |
 | Category rows (horizontal carousels, «N Workouts») | H2–H4, H13; HO 3 | program rows grouped by category («Другое» for none) | DONE | — | programs grouped by `Program.category` rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
-| Category screen (info, Featured / All) | H4; d/category_all_tab | none | MISSING | — | category row → filtered search (Featured tab: DOMAIN — no editorial flag yet; collections cover curation) | #254, #271 | — |
-| Featured playlists carousel | H5; HO 4 | none | MISSING | no collections model | «Подборки» row from curated collections | #271 | — |
+| Category screen (info, Featured / All) | H4; d/category_all_tab | Home category row «Все ›» → Search pre-filtered by that category (title line, chip active, programs + exercises of the category; «Другое» has no button) | DONE | Featured tab: DOMAIN — no editorial flag; curated «Подборки» row (#271) covers featured content | category row → filtered search | #254, #271, #281 | parity/residual-gaps.spec.ts «Residual gaps»; tests/homeDiscovery.test.ts |
+| Featured playlists carousel | H5; HO 4 | CollectionsRow.tsx on Главная; `GET /api/v2/collections` | DONE | — | «Подборки» row from curated collections (card: author, title, count, description; hidden when none) | #271 | parity/collections.spec.ts «Collections» (320/390, light/dark); tests/test_web/test_v2_collections.py; tests/collectionsFormat.test.ts |
 | «Create Custom Workouts» banner | H6 | «Создать» button on Главная | DONE | — | — | — | home-discovery.spec.ts |
 | My Workouts grid | H7 | «Мои тренировки» list | DONE | — | — | — | home-discovery.spec.ts, crimpd-parity Baseline |
 | «Log Cross-Training» banner / entry | H8 | Журнал «+ Записать» → «Другую активность»; «+» sheet на Главной → «Записать в журнал» | DONE | — | — | #263 | crimpd-parity.spec.ts «Journal log»; tests/test_web/test_v2_journal_log.py; tests/journalLog.test.ts |
@@ -82,10 +82,10 @@ any merge into `develop/current`.
 | Add template/workout to plan | P7, W5 | program-inclusions, plan-items | DONE | — | — | — | golden-journey.spec.ts, plans-add-exercise.spec.ts |
 | Week stepper with phase chip and dates | P9 | one-week view with ‹ Неделя N · даты › + phase chip | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», planWeekNav.test.ts |
 | Per-row done counters «0/1», week progress | P3, P9–P10 | `done_count` in GET /api/v2/plan (derived, no column); «N из M» header | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», tests/test_web/test_v2_plan_done_counts.py |
-| Schedule future weeks | P9 «Schedule» (unobserved beyond label) | current week only | MISSING | — | up to 4 weeks ahead | #275 | — |
-| Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items) | PARTIAL | no move across weeks | move across weeks | #275 | plans-plan-week.spec.ts |
+| Schedule future weeks | P9 «Schedule» (unobserved beyond label) | › creates up to 4 future weeks (`POST /plan/weeks`); add / move / remove manual items there; program items stay program-logic only | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py; planWeekNav.test.ts |
+| Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items): day + week picker (`PATCH /plan-items` `plan_week_id`) | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py |
 | Completed / skipped state | P10 | counters «сделано/план»; past weeks read-only, unfinished stays as is | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week» |
-| Clone plan incl. schedule | P11 (menu label only) | none | MISSING | — | copy week schedule → next week (one-plan model) | #275 | — |
+| Clone plan incl. schedule | P11 (menu label only) | «Скопировать неделю → на следующую» (confirmation; manual items only, duplicates skipped; `POST /plan/weeks/{id}/copy-to-next`) | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py |
 | Edit plan / change start date / delete plan | P11 | «Убрать курс из плана» (confirmation, is_active=false, history kept → «Завершённые») | DOMAIN-EQUIVALENT | single open-ended plan; start-date change out of scope | — | #266 | parity/plans-overview.spec.ts «Plans overview»; test_v2_plan_overview.py |
 | Crimpd+ upsell on plans | P1 | our subscription (Robokassa) elsewhere | DOMAIN-EQUIVALENT | our own paywall model | — | — | — |
 
@@ -119,7 +119,7 @@ any merge into `develop/current`.
 | Week / day grouping, infinite scroll | J3 | JournalTimeline: week bands + day headers, per-month «Показать ещё» paging | DONE | — | week bands + day headers | #256 | crimpd-parity.spec.ts «Journal calendar»; journal-v2.spec.ts (paging) |
 | Log card stats (intensity, completion, TUT, duration, workload) | J4 | v2 cards: plan vs fact, effort, comment | DOMAIN-EQUIVALENT | TUT/workload not stored | our per-protocol results; duration after #259 | #259 | journal-v2.spec.ts |
 | Log detail sheet (session + exercise details) | J5; d/logbook_ref_sheet | JournalV2Detail | DONE | — | — | — | journal-v2.spec.ts |
-| View Workout from log | J5 | none | MISSING | — | link to Workout Detail | #255 | — |
+| View Workout from log | J5 | Journal detail «Открыть тренировку» → Workout Detail (tab Главная; Telegram Back returns to Journal) when `SessionResponse.workout_id` is set (own, non-archived workout from the frozen snapshot; deleted/foreign/none → no button) | DONE | — | link to Workout Detail | #255, #281 | parity/residual-gaps.spec.ts «Residual gaps»; tests/test_web/test_v2_session_workout_link.py |
 | Edit Log | J5, J7 *(form unobserved)* | «✏️ Изменить» in Journal detail (sets value/effort/note, workout effort/comment, date ≤ today) via `PATCH /sessions/{id}`; only when `can_edit` (delete predicate), else hidden / 409 | DONE | program-backed/STEP sessions not editable (owner decision) | — | #262 | crimpd-parity.spec.ts «Journal edit/clone»; tests/test_web/test_v2_session_edit_clone.py; webapp-frontend/tests/journalEdit.test.ts |
 | Clone Log | J5, J7 *(form unobserved)* | «⧉ Повторить (клонировать)» with date picker (default today) via `POST /sessions/{id}/clone`, `source=backdated`, no progression | DONE | same predicate as edit | — | #262 | crimpd-parity.spec.ts «Journal edit/clone»; tests/test_web/test_v2_session_edit_clone.py |
 | Delete Log with confirm | J6; LED | safe delete (`can_delete`, 404/409) | DONE | — | — | — | journal-v2.spec.ts, golden-journey.spec.ts |
@@ -158,7 +158,7 @@ any merge into `develop/current`.
 | Units (kg/lb, cm/in) | R11 | Settings «Единицы» (`/api/profile/prefs`); Профиль + форма правки показывают/вводят в выбранных единицах, хранение метрическое | PARTIAL | weights inside workout logging / journal / analytics still kg | display units everywhere | #268 | parity/settings.spec.ts «Settings»; tests/test_web/test_display_prefs.py; tests/units.test.ts |
 | Timezone | R11 | ProfileEditForm + Settings timezone | DONE | — | — | #268 | parity/settings.spec.ts «Settings» |
 | Theme Light / Dark / Auto | R13 | Settings «Оформление» → override of AppRoot + CSS palette, stored server-side | DONE | — | — | #268 | parity/settings.spec.ts «Settings» (theme override, 320 light / 390 dark); tests/test_web/test_display_prefs.py |
-| Timer settings (volume, vibrations) | R14 | Settings «Таймер»: volume slider (`/api/timer/preferences`) | PARTIAL | vibrations not implemented | — | #268 | parity/settings.spec.ts (screen section) |
+| Timer settings (volume, vibrations) | R14 | Settings «Таймер»: volume slider (`/api/timer/preferences`) + «Вибрация в конце фазы» (per-device, localStorage, default on; Telegram `HapticFeedback.notificationOccurred('success')`, fallback `navigator.vibrate`) at live-session phase end and legacy timer end; nothing for a phase that ended while hidden | DONE | vibration is per device, not a server pref (device-bound capability; avoids a migration) | — | #268, #281 | parity/settings.spec.ts (screen section); parity/residual-gaps.spec.ts «Residual gaps»; webapp-frontend/tests/vibration.test.ts |
 | Subscription management | R10, R17 | SubscriptionScreen + status/link/оферта in Settings | DONE | — | — | #268 | parity/settings.spec.ts «Settings» |
 | Data export (Download Logbook) | R15 | Export card in Analytics + Settings «Данные → Скачать историю» | DONE | — | — | #268 | parity/export.spec.ts «Export»; parity/settings.spec.ts «Settings» |
 | Delete account | R16 *(not tapped)* | none | MISSING | irreversible data operation | **needs owner decision** (retention, legal) — not in campaign | — (owner) | — |
@@ -169,11 +169,11 @@ any merge into `develop/current`.
 
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
-| Curated playlists (creator, description, workouts) | D1; d/playlist_detail | none | MISSING | — | curated collections (author «Турникмэн», no social links) | #271 | — |
+| Curated playlists (creator, description, workouts) | D1; d/playlist_detail | CollectionScreen.tsx; `GET /api/v2/collections/{id}` | DONE | items are programs and system exercises (no public system-workout catalog exists, PROJECT_SPEC §5) | curated collections (author «Турникмэн», no social links) | #271 | parity/collections.spec.ts «Collections»; tests/test_web/test_v2_collections.py (visibility, 404); tests/test_scripts/test_seed_collections.py |
 | Category collections (sub-focus cards) | D3 | Home program rows grouped by `Program.category` («Другое» last) | DONE | sub-focus cards: DOMAIN — programs have no sub-focus field | category rows | #254 | crimpd-parity.spec.ts «Home»; tests/homeDiscovery.test.ts |
 | Templates (levels, phases) | D4 | Programs (structure types) + Program Detail schedule preview (phase chips, day rows) | DONE | levels: DOMAIN — not in program data | schedule preview | #266 | parity/plans-overview.spec.ts «Plans overview» |
 | Progressions (lettered / % variants) | D5 | programs + auto-progression (ours) | DOMAIN-EQUIVALENT | our progression model | — | — | session-progression-edit.spec.ts |
-| Tests discoverable from Home + search filter | D6 | none | MISSING | — | Tests row + search | #260, #254 | — |
+| Tests discoverable from Home + search filter | D6 | Home «Тесты» row → hub (#260); Search: tests group (by name/description) + «Тесты» chip → test detail, Back returns to Search | DONE | — | Tests row + search | #260, #254, #281 | crimpd-parity.spec.ts «Tests»; parity/residual-gaps.spec.ts «Residual gaps»; tests/homeDiscovery.test.ts |
 
 ## Platform
 
@@ -190,16 +190,20 @@ any merge into `develop/current`.
 | Hamburger drawer (Help / Settings / Logout) | G2 | bottom tabs + Telegram menu | DOMAIN-EQUIVALENT | Telegram owns app chrome; no logout | Settings via Profile gear (#268) | #268 | — |
 | PWA-equivalent behaviour | — | Telegram Mini App (PWA planned, product-reference) | PARTIAL | web/PWA build is a later phase | — | — | — |
 
-## Totals (2026-10-02)
+## Totals (2026-10-02, after #281 reconciliation)
 
 | Status | Count |
 |---|---|
-| DONE | 29 |
-| PARTIAL | 16 |
-| MISSING | 54 |
+| DONE | 96 |
+| PARTIAL | 2 |
+| MISSING | 2 |
 | DOMAIN-EQUIVALENT | 14 |
 | PLATFORM-IMPOSSIBLE | 4 |
-| **Total capabilities** | **117** |
+| **Total capabilities** | **118** |
+
+Remaining non-DONE rows, all owner-blocked: MISSING — hero photo / overview video (media content, #3), delete account
+(retention/legal); PARTIAL — units in legacy weighted STEP/WSF/Leaderboard (kg-defined norms; needs a product
+decision), PWA-equivalent (later phase).
 
 (Counted by the `Status` column above; a row with "DONE (override in …)" counts as DONE.)
 

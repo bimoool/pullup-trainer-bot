@@ -271,6 +271,18 @@ class PlanResponse(BaseModel):
     plan: TrainingPlanResponse | None
 
 
+class PlanWeekCreateRequest(BaseModel):
+    """issue #275 — создать (идемпотентно) неделю плана вперёд."""
+
+    week_number: int
+
+
+class PlanWeekCopyResponse(BaseModel):
+    target_week: PlanWeekResponse
+    copied: int
+    skipped: int
+
+
 class PlanItemListResponse(BaseModel):
     items: list[PlanItemResponse]
 
@@ -506,3 +518,5 @@ class PlanItemMoveRequest(BaseModel):
     трактуется как "свободный пул"."""
 
     day_of_week: int | None = Field(ge=0, le=6)
+    # issue #275 — перенос в другую неделю (None = неделя не меняется).
+    plan_week_id: int | None = None

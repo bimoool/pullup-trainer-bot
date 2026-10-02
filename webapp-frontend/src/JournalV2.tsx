@@ -180,9 +180,11 @@ export function JournalV2Detail({
           <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("edit")}>
             ✏️ Изменить
           </Button>
-          <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("clone")}>
-            ⧉ Повторить (клонировать)
-          </Button>
+          {session.source !== "elective" && (
+            <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("clone")}>
+              ⧉ Повторить (клонировать)
+            </Button>
+          )}
         </>
       )}
       {session.can_delete && (

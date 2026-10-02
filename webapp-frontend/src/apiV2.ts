@@ -809,11 +809,28 @@ export async function createPlanItem(
  * на backend-стороне (PlanItemMoveRequest без default), явная передача
  * null здесь так же обязательна, не опускается. */
 export async function movePlanItem(
-  initDataRaw: string, planItemId: number, dayOfWeek: number | null,
+  initDataRaw: string, planItemId: number, dayOfWeek: number | null, planWeekId?: number,
 ): Promise<PlanItemResponseV2> {
-  return apiV2Patch<{ day_of_week: number | null }, PlanItemResponseV2>(
-    `/api/v2/plan-items/${planItemId}`, initDataRaw, { day_of_week: dayOfWeek },
+  return apiV2Patch<{ day_of_week: number | null; plan_week_id?: number }, PlanItemResponseV2>(
+    `/api/v2/plan-items/${planItemId}`, initDataRaw,
+    planWeekId === undefined ? { day_of_week: dayOfWeek } : { day_of_week: dayOfWeek, plan_week_id: planWeekId },
   );
+}
+
+/** issue #275 — идемпотентно создаёт неделю плана вперёд (текущая .. +4). */
+export async function createPlanWeek(initDataRaw: string, weekNumber: number): Promise<PlanWeekResponseV2> {
+  return apiV2Post("/api/v2/plan/weeks", initDataRaw, { week_number: weekNumber });
+}
+
+export interface PlanWeekCopyResultV2 {
+  target_week: PlanWeekResponseV2;
+  copied: number;
+  skipped: number;
+}
+
+/** issue #275 — копирует ручные строки недели в следующую (дубликаты пропускаются). */
+export async function copyPlanWeekToNext(initDataRaw: string, planWeekId: number): Promise<PlanWeekCopyResultV2> {
+  return apiV2Post(`/api/v2/plan/weeks/${planWeekId}/copy-to-next`, initDataRaw, {});
 }
 
 /** Phase D3 (issue #188) — под уже существующий D2 DELETE /plan-items/{id}. */
@@ -986,4 +1003,35 @@ export async function updateAssessmentResult(
 
 export async function deleteAssessmentResult(initDataRaw: string, resultId: number): Promise<void> {
   return apiV2Delete(`/api/v2/assessments/results/${resultId}`, initDataRaw);
+}
+
+/** Редакционные подборки (CRIMPD #271): витрина на Главной и экран подборки. */
+export interface CollectionSummaryV2 {
+  id: number;
+  title: string;
+  description: string | null;
+  author: string;
+  items_count: number;
+  programs_count: number;
+  exercises_count: number;
+}
+
+export interface CollectionItemV2 {
+  item_type: "program" | "exercise";
+  target_id: number;
+  title: string;
+  subtitle: string | null;
+}
+
+export interface CollectionDetailV2 extends CollectionSummaryV2 {
+  items: CollectionItemV2[];
+}
+
+export async function fetchCollections(initDataRaw: string): Promise<CollectionSummaryV2[]> {
+  const response = await apiV2Get<{ collections: CollectionSummaryV2[] }>("/api/v2/collections", initDataRaw);
+  return response.collections;
+}
+
+export async function fetchCollection(initDataRaw: string, collectionId: number): Promise<CollectionDetailV2> {
+  return apiV2Get<CollectionDetailV2>(`/api/v2/collections/${collectionId}`, initDataRaw);
 }
