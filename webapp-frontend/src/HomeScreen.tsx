@@ -11,6 +11,7 @@ import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { groupProgramsByCategory } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
+import { ProgramPendingScreen } from "./ProgramPendingScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
 import { TestsScreen } from "./TestsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
@@ -253,6 +254,16 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
     );
   }
 
+  // Программу открыли, а каталог грузится/упал — не молчим (#283); «Назад» работает.
+  if (selectedProgramId !== null && catalog.phase !== "ready") {
+    return (
+      <ProgramPendingScreen
+        phase={catalog.phase} message={catalog.phase === "error" ? catalog.message : undefined}
+        onBack={closeProgramDetail}
+      />
+    );
+  }
+
   if (selectedProgramId !== null && catalog.phase === "ready") {
     const program = catalog.programs.find((p) => p.id === selectedProgramId);
     if (program) {
@@ -270,6 +281,7 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
         />
       );
     }
+    return <ProgramPendingScreen phase="missing" onBack={closeProgramDetail} />;
   }
 
   if (collectionId !== null) {
