@@ -140,7 +140,8 @@ async def get_peer_insights(
 ) -> PeerInsightsResponse:
     """«Сравнение с похожими» (#276): последний результат пользователя против когорты (пол +
     возрастная ступень → пол → все), только агрегаты; процентиль — 10-пунктовая полоса, медиана и
-    ориентир округлены до точности протокола, уровень с «вычитаемой» малой группой пропускается,
+    ориентир округлены до точности протокола, узкие когорты, чья разность с более широкой раскрыла
+    бы малую группу (1–19 человек), подавляются для всех (#284: `shown_cohorts`),
     на пользователя действует лимит запросов (429). Нет результата — status=no_result, когорта
     меньше 20 — insufficient. Чужие результаты не читаются: свой — по user.id, остальные только
     внутри одного агрегирующего SQL (`AssessmentRepository.peer_cohorts`)."""
@@ -160,7 +161,7 @@ async def get_peer_insights(
     today = _local_date(user, datetime.now(UTC))
     gender = user.gender.value if user.gender is not None else None
     bucket = age_bucket(user.birth_date, today)
-    cohorts = [] if own_value is None else await repo.peer_cohorts(protocol_id, own_value, gender, bucket, today)
+    cohorts = {} if own_value is None else await repo.peer_cohorts(protocol_id, own_value, today)
     insight = build_insight(own_value, cohorts, gender, bucket, integer_only=protocol.metric_type == MetricType.REPS)
     cohort = None
     if insight.level is not None and insight.label is not None and insight.size_bucket is not None:

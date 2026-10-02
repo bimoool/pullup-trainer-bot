@@ -7,10 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models_program import AssessmentProtocol, AssessmentResult
 from app.domain.leaderboard import AGE_BUCKETS
 from app.domain.peer_insights import (
+    ALL_COHORT,
+    MIN_COHORT_SIZE,
     NEXT_TARGET_PERCENTILES,
-    CohortLevel,
+    CohortKey,
     CohortStats,
     birth_date_range,
+    cell_cohort,
+    gender_cohort,
 )
 
 
@@ -62,74 +66,71 @@ class AssessmentRepository:
         )
         return deleted.first() is not None
 
-    async def peer_cohorts(
-        self, protocol_id: int, own_value: Decimal, gender: str | None, bucket: str | None, today: date,
-    ) -> list[CohortStats]:
-        """Агрегаты когорт для Peer Insights (#276) ОДНИМ запросом, от узкой к широкой:
-        пол+ступень → пол → все. База — последний результат каждого пользователя по протоколу
-        (DISTINCT ON); дальше только count/percentile_cont — ни id, ни значений других пользователей
-        наружу не выходит, и в Python нет цикла по пользователям. Ступень задаётся диапазоном дат
-        рождения (`app.domain.peer_insights.birth_date_range`, «сегодня» — параметр), без второго
-        CASE по age(). Уровень без пола (или без ступени) в выдачу не попадает."""
-        after, upto = birth_date_range(bucket, today) if bucket is not None else (None, None)
+    async def peer_cohorts(self, protocol_id: int, own_value: Decimal, today: date) -> dict[CohortKey, CohortStats]:
+        """Агрегаты ВСЕХ когорт-кандидатов Peer Insights (#276, #284) ОДНИМ запросом:
+        ALL, пол, пол × возрастная ступень (GROUPING SETS), только с размером >= MIN_COHORT_SIZE
+        (меньшие никогда не показываются, а остатки считаются по размерам показываемых). Выбор
+        когорты пользователя и комплементарное подавление узких — в домене
+        (`app.domain.peer_insights.shown_cohorts` / `build_insight`), зритель в SQL не участвует:
+        набор когорт зависит только от данных. База — последний результат каждого пользователя по
+        протоколу (DISTINCT ON); наружу — только count/percentile_cont, ни id, ни значений других
+        пользователей, цикла по пользователям в Python нет; строк в ответе не больше ~1+3+3·6.
+        Ступень задаётся диапазоном дат рождения (`birth_date_range`, «сегодня» — параметр);
+        пользователи без пола / даты рождения / младше 18 попадают только в «остаток» родителя —
+        строки с NULL-полом или NULL-ступенью отбрасываются как невыбираемые."""
         quantile_levels = [0.5, *(p / 100 for p in NEXT_TARGET_PERCENTILES)]
-
-        def agg(parts: str) -> str:
-            return (
-                "count(*) AS n, "
-                "percentile_cont(CAST(:levels AS float8[])) WITHIN GROUP (ORDER BY value) AS q, "
-                "count(*) FILTER (WHERE value < :own) AS below, count(*) FILTER (WHERE value = :own) AS equal, "
-                f"{parts} AS parts FROM latest"
-            )
-
-        # Для защиты от «вычитания» (differencing guard): размеры подкогорт, которые пользователь
-        # может выбрать сам — у уровня «пол» это возрастные ступени этого пола, у «все» — полы.
-        # Считаются в том же запросе (FILTER), отдельных обращений к БД нет.
         params: dict[str, object] = {}
-        bucket_counts: list[str] = []
+        bucket_cases: list[str] = []
         for i, name in enumerate(AGE_BUCKETS):
             b_after, b_upto = birth_date_range(name, today)
-            params[f"b{i}_after"], params[f"b{i}_upto"] = b_after, b_upto
-            bucket_counts.append(
-                f"count(*) FILTER (WHERE birth_date <= CAST(:b{i}_upto AS date) "
-                f"AND (CAST(:b{i}_after AS date) IS NULL OR birth_date > CAST(:b{i}_after AS date)))"
+            params[f"b{i}_after"], params[f"b{i}_upto"], params[f"b{i}_name"] = b_after, b_upto, name
+            bucket_cases.append(
+                f"WHEN u.birth_date <= CAST(:b{i}_upto AS date) "
+                f"AND (CAST(:b{i}_after AS date) IS NULL OR u.birth_date > CAST(:b{i}_after AS date)) "
+                f"THEN CAST(:b{i}_name AS text)"
             )
-        gender_parts = f"ARRAY[{', '.join(bucket_counts)}]"
-        all_parts = "ARRAY[count(*) FILTER (WHERE gender = 'male'), count(*) FILTER (WHERE gender = 'female')]"
+        bucket_case = f"CASE {' '.join(bucket_cases)} END"
         sql = f"""
             WITH latest AS (
                 SELECT DISTINCT ON (r.user_id)
-                    CAST(r.value AS float8) AS value, CAST(u.gender AS text) AS gender, u.birth_date
+                    CAST(r.value AS float8) AS value, CAST(u.gender AS text) AS gender, {bucket_case} AS bucket
                 FROM assessment_results r
                 JOIN users u ON u.id = r.user_id
                 WHERE r.protocol_id = :protocol_id
                 ORDER BY r.user_id, r.performed_at DESC, r.id DESC
             )
-            SELECT 'gender_age' AS level, {agg('CAST(ARRAY[] AS bigint[])')}
-              WHERE CAST(:gender AS text) IS NOT NULL AND CAST(:upto AS date) IS NOT NULL
-                AND gender = CAST(:gender AS text)
-                AND birth_date <= CAST(:upto AS date)
-                AND (CAST(:after AS date) IS NULL OR birth_date > CAST(:after AS date))
-            UNION ALL
-            SELECT 'gender' AS level, {agg(gender_parts)}
-              WHERE CAST(:gender AS text) IS NOT NULL AND gender = CAST(:gender AS text)
-            UNION ALL
-            SELECT 'all' AS level, {agg(all_parts)}
+            SELECT
+                GROUPING(gender, bucket) AS gset, gender, bucket,
+                count(*) AS n,
+                percentile_cont(CAST(:levels AS float8[])) WITHIN GROUP (ORDER BY value) AS q,
+                count(*) FILTER (WHERE value < :own) AS below,
+                count(*) FILTER (WHERE value = :own) AS equal
+            FROM latest
+            GROUP BY GROUPING SETS ((), (gender), (gender, bucket))
+            HAVING count(*) >= :min_size
         """
         result = await self._session.execute(
             text(sql),
             {
                 "protocol_id": protocol_id, "own": float(own_value), "levels": quantile_levels,
-                "gender": gender, "after": after, "upto": upto, **params,
+                "min_size": MIN_COHORT_SIZE, **params,
             },
         )
-        stats: list[CohortStats] = []
+        stats: dict[CohortKey, CohortStats] = {}
         for row in result.all():
-            if row.n == 0 or row.q is None:
+            # GROUPING(gender, bucket): 3 — итог (ALL), 1 — по полу, 0 — пол × ступень
+            if row.gset == 3:
+                key = ALL_COHORT
+            elif row.gset == 1 and row.gender is not None:
+                key = gender_cohort(row.gender)
+            elif row.gset == 0 and row.gender is not None and row.bucket is not None:
+                key = cell_cohort(row.gender, row.bucket)
+            else:
+                continue  # без пола / без ступени — невыбираемый остаток
+            if row.q is None:
                 continue
             median, *quantiles = (Decimal(str(round(x, 2))) for x in row.q)
-            stats.append(CohortStats(
-                level=CohortLevel(row.level), size=row.n, median=median, quantiles=tuple(quantiles),
-                below=row.below, equal=row.equal, parts=tuple(row.parts or ()),
-            ))
+            stats[key] = CohortStats(
+                key=key, size=row.n, median=median, quantiles=tuple(quantiles), below=row.below, equal=row.equal,
+            )
         return stats

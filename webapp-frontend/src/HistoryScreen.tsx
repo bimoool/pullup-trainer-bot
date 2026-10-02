@@ -16,9 +16,16 @@ type Props = {
   logRequest?: number;
   /** С какой тренировкой открыть форму записи (Workout Detail «Записать»). */
   logWorkoutId?: number | null;
+  /** «← Назад» из формы, открытой с Workout Detail: вернуться на деталь (#277, D1). */
+  onLogBack?: () => void;
   /** «Открыть тренировку» из записи Журнала (#281) — Workout Detail на вкладке «Главная». */
-  onOpenWorkout?: (workoutId: number) => void;
+  onOpenWorkout?: (workoutId: number, restore: JournalRestore) => void;
+  /** Вернуться на тот же месяц/день и открыть ту же запись (Back из «Открыть тренировку»). */
+  restore?: JournalRestore | null;
 };
+
+/** Где пользователь был в Журнале: месяц, выбранный день и открытая запись. */
+export type JournalRestore = { month: string; day: string | null; sessionId: number | null };
 
 const PAGE_SIZE = 20;
 
@@ -35,12 +42,14 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null, onOpenWorkout }: Props) {
+export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null, onLogBack, onOpenWorkout, restore = null }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // «+ Записать» (#263): шторка выбора и затем одна из двух форм.
   const [logSheetOpen, setLogSheetOpen] = useState(logRequest > 0 && logWorkoutId === null);
   // Записать с Workout Detail — сразу форма «Тренировка из моих» с выбранной тренировкой.
   const [logForm, setLogForm] = useState<LogKind | null>(logWorkoutId !== null ? "workout" : null);
+  // Форма открыта с Workout Detail (только пока не сохранили): «← Назад» ведёт обратно на деталь.
+  const [logFromDetail, setLogFromDetail] = useState(logWorkoutId !== null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -49,8 +58,8 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
   // (загруженные страницы) живёт здесь, выше экрана деталей: возврат из
   // деталей сохраняет уже загруженный Журнал. Сбой этой секции не роняет
   // legacy-историю ниже.
-  const journal = useJournalV2(initDataRaw);
-  const [detailSessionId, setDetailSessionId] = useState<number | null>(null);
+  const journal = useJournalV2(initDataRaw, restore);
+  const [detailSessionId, setDetailSessionId] = useState<number | null>(restore?.sessionId ?? null);
   const [calendarExpanded, setCalendarExpanded] = useState(false);
 
   // Legacy-история грузится за тот же месяц/день, что и v2 (#256): диапазон
@@ -140,10 +149,17 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
     const FormComponent = logForm === "workout" ? BackdatedWorkoutForm : FreeActivityForm;
     return (
       <FormComponent
-        {...(logForm === "workout" && logWorkoutId !== null ? { initialWorkoutId: logWorkoutId } : {})}
+        {...(logForm === "workout" && logWorkoutId !== null && logFromDetail ? { initialWorkoutId: logWorkoutId } : {})}
         initDataRaw={initDataRaw}
-        onBack={() => setLogForm(null)}
+        onBack={() => {
+          if (logFromDetail && onLogBack !== undefined) {
+            onLogBack();
+            return;
+          }
+          setLogForm(null);
+        }}
         onSaved={(date) => {
+          setLogFromDetail(false);
           setLogForm(null);
           journal.reloadAfterLog(date);
         }}
@@ -175,7 +191,9 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         session={detailSession}
         timeZone={journal.timezone}
         onBack={() => setDetailSessionId(null)}
-        onOpenWorkout={onOpenWorkout}
+        onOpenWorkout={onOpenWorkout && journal.month !== null
+          ? (workoutId) => onOpenWorkout(workoutId, { month: journal.month as string, day: journal.day, sessionId: detailSession.id })
+          : undefined}
         onDeleted={(sessionId) => {
           journal.removeById(sessionId);
           setDetailSessionId(null);

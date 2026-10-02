@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { collectCategories, groupProgramsByCategory, searchContent } from "../src/homeDiscovery.ts";
+import { collectCategories, groupProgramsByCategory, searchContent, toggleSearchFilter } from "../src/homeDiscovery.ts";
 
 const program = (id: number, name: string, category: string | null) => ({
   id, name, goal: `цель ${name}`, structure_type: "recurring", category, progression_strategy_type: null,
@@ -65,4 +65,25 @@ test("searchContent: чип «Тесты» оставляет только те�
   assert.equal(only.total, 2);
   assert.equal(searchContent(data, "", "strength").tests.length, 0);
   assert.equal(searchContent(data, "", null, []).tests.length, 0);
+});
+
+test("toggleSearchFilter: «Тесты» взаимоисключающе с «Избранным» и категорией (#284 C3)", () => {
+  const base = { query: "", category: null as string | null, favoritesOnly: false, testsOnly: false };
+  // «Тесты» сбрасывает избранное и категорию
+  const withBoth = { ...base, category: "strength", favoritesOnly: true };
+  assert.deepEqual(toggleSearchFilter(withBoth, { kind: "tests" }), { ...base, testsOnly: true });
+  // избранное и категория сбрасывают «Тесты»
+  const tests = { ...base, testsOnly: true };
+  assert.deepEqual(toggleSearchFilter(tests, { kind: "favorites" }), { ...base, favoritesOnly: true });
+  assert.deepEqual(toggleSearchFilter(tests, { kind: "category", category: "mobility" }), { ...base, category: "mobility" });
+  // повторное нажатие снимает чип; «Избранное» + категория по-прежнему сочетаются
+  assert.deepEqual(toggleSearchFilter(tests, { kind: "tests" }), base);
+  const fav = toggleSearchFilter(base, { kind: "favorites" });
+  assert.deepEqual(toggleSearchFilter(fav, { kind: "category", category: "strength" }), { ...base, favoritesOnly: true, category: "strength" });
+  assert.equal(toggleSearchFilter(withBoth, { kind: "category", category: "strength" }).category, null);
+  // состояние, недостижимое через чипы, больше не получается: «Тесты» + категория
+  const data = { programs, workouts, exercises, assessments };
+  const state = toggleSearchFilter(toggleSearchFilter(base, { kind: "category", category: "strength" }), { kind: "tests" });
+  const res = searchContent(data, "", state.category, state.favoritesOnly ? [] : null, state.testsOnly);
+  assert.deepEqual(res.tests.map((t) => t.id), [1, 2]);
 });

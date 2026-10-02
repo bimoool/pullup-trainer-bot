@@ -931,6 +931,26 @@ async def seed_journal_calendar(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
 
+async def seed_journal_return(session: AsyncSession, telegram_id: int) -> None:
+    """#284 C — Back из «Открыть тренировку» возвращает в тот же месяц Журнала с той же записью.
+    Как journal_calendar (прошлый месяц: 10-го, дважды 15-го, 20-го; плюс сессия сегодня), но
+    сессии прошлого месяца привязаны к своей тренировке «Возвратная тренировка» (снимок с workout_id)."""
+    await seed_journal_calendar(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    pull = (await session.execute(select(Exercise).where(Exercise.owner_user_id == user.id))).scalars().one()
+    workout = Complex(name="Возвратная тренировка", source_type="user", owner_user_id=user.id)
+    session.add(workout)
+    await session.flush()
+    protocol = {"type": "reps_sets", "rest_seconds": 60, "prescription": {"source": "static", "sets": 1, "reps": 8}}
+    session.add(ComplexItem(complex_id=workout.id, exercise_id=pull.id, order_index=0, sets=1, protocol=protocol))
+    sessions = (await session.execute(
+        select(TrainingSession).where(TrainingSession.user_id == user.id).order_by(TrainingSession.performed_at),
+    )).scalars().all()
+    for training in sessions[:-1]:  # все, кроме сегодняшней
+        training.workout_snapshot = {"workout_id": workout.id, "title": workout.name, "items": []}
+    await session.flush()
+
+
 async def seed_journal_edit(session: AsyncSession, telegram_id: int) -> None:
     """#262 — правка/клон из Журнала (пояс Europe/Moscow). Две завершённые сессии
     сегодня: Builder «Моя силовая» со снимком (can_edit; 2 подхода — второй с
@@ -1279,6 +1299,30 @@ async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_sweep_defects(session: AsyncSession, telegram_id: int) -> None:
+    """#277 «Sweep defects»: golden_journey (своя Workout «Золотая тренировка», план без курсов — D3,
+    Журнал пуст — D1) + две завершённые v2-сессии (2 и 5 дней назад) и НИ ОДНОЙ legacy-тренировки (D2:
+    Профиль должен учесть Журнал v2, а не показать «Тренировок пока не было.»)."""
+    await seed_golden_journey(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    exercise = (await session.execute(
+        select(Exercise).where(Exercise.owner_user_id == user.id, Exercise.name == "Подтягивания"),
+    )).scalar_one()
+    repo = TrainingSessionRepository(session)
+    now = datetime.now(UTC)
+    for days_ago in (2, 5):
+        at = now - timedelta(days=days_ago)
+        await repo.create_session(
+            user_id=user.id, source=SessionSource.BACKDATED, performed_at=at, effort=None, comment=None,
+            completed_at=at,
+            blocks=[SessionBlockInput(exercise_id=exercise.id, sets=[
+                SetLogInput(set_number=n, metric_type=MetricType.REPS, value=Decimal(value), unit="reps")
+                for n, value in enumerate((8, 7), start=1)
+            ])],
+        )
+    await session.flush()
+
+
 async def seed_session_recovery(session: AsyncSession, telegram_id: int) -> None:
     """Восстановление активной сессии (issue #246): одна своя Workout, reps
     3 x 8 с отдыхом 60 с — достаточно длинный, чтобы фон/перезагрузка
@@ -1451,7 +1495,7 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
 
 
 async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
-    """#282 — дубли в Журнале у мигрированного пользователя.
+    """#282/#284 — дубли в Журнале у мигрированного пользователя (скрыты backfill-копии, legacy — с действиями).
 
     Пользователь «до миграции» имеет три legacy Workout (две каскадные + одна, внесённая задним
     числом); backfill (scripts/backfill_multi_program.py, #163) переносит их в TrainingSession теми
@@ -1509,6 +1553,7 @@ async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
 
 
 SCENARIOS = {
+    "sweep_defects": seed_sweep_defects,
     "journal_dedupe": seed_journal_dedupe,
     "collections": seed_collections_scenario,
     "owner_optional_workout": seed_owner_optional_workout,
@@ -1529,6 +1574,7 @@ SCENARIOS = {
     "peer_empty": seed_peer_empty,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
+    "journal_return": seed_journal_return,
     "journal_edit": seed_journal_edit,
     "builder_workouts": seed_builder_workouts,
     "not_onboarded": seed_not_onboarded,
