@@ -532,6 +532,8 @@ UI: в деталях записи рядом с «Удалить» — «✏️
   старые клиенты — ключи темы).
 - **Безопасные зоны**: отступы = max(env(safe-area), `safeAreaInset`) + `contentSafeAreaInset`
   (Bot API 8.0, полноэкранный режим) для оболочки, нижней навигации, транспорта живой тренировки и шторок.
+  Пред-экран сессии открыт без нижней навигации — «Начать» у низа окна над safe area, как транспорт
+  Live Session (#287).
 - **События клиента — два пути (#287)**: `init()` @telegram-apps/sdk подменяет
   `Telegram.WebView.receiveEvent`, поэтому на нативных iOS/Android `WebApp.onEvent` (мост
   telegram-web-app.js) молчит, а `WebApp.themeParams`/`safeAreaInset` не обновляются. Тема и
