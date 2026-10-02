@@ -77,3 +77,8 @@ seed golden_journey 980061
 seed golden_journey 980062
 seed golden_journey 980071
 seed golden_journey 980072
+# #266 «Plans overview»: 9901xx — только чтение (320/390), 9902xx — мутирующий сценарий «Убрать курс из плана».
+seed plans_overview 990101
+seed plans_overview 990102
+seed plans_overview 990201
+seed plans_overview 990202

@@ -45,6 +45,13 @@ from app.domain.journal_calendar import (
     parse_month,
 )
 from app.domain.multi_program import MetricType, SessionSource, WeekPhase, count_done_per_plan_item
+from app.domain.program_schedule import (
+    block_role_title,
+    block_target_label,
+    count_per_week_label,
+    course_week_number,
+    duration_weeks,
+)
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.live_session import (
@@ -82,6 +89,8 @@ from app.web.schemas_v2 import (
     ProgramInclusionResponse,
     ProgramListResponse,
     ProgramResponse,
+    ProgramScheduleItemResponse,
+    ProgramScheduleResponse,
     SessionBlockInputSchema,
     SessionBlockResponse,
     SessionCreateRequest,
@@ -143,7 +152,10 @@ def _program_response(program: Program, strategy_type_value: str | None) -> Prog
 
 
 def _program_inclusion_response(inclusion: ProgramInclusion) -> ProgramInclusionResponse:
+    total_weeks = duration_weeks((inclusion.snapshot or {}).get("config"))
     return ProgramInclusionResponse(
+        duration_weeks=total_weeks,
+        current_week=course_week_number(inclusion.started_at.date(), datetime.now(UTC).date(), total_weeks),
         id=inclusion.id, program_id=inclusion.program_id,
         program_name=inclusion.snapshot.get("program_name", ""),
         is_active=inclusion.is_active, started_at=inclusion.started_at, expires_at=inclusion.expires_at,
@@ -255,6 +267,53 @@ async def list_programs(
         strategy_type_value = strategy_profile.strategy_type.value if strategy_profile is not None else None
         responses.append(_program_response(program, strategy_type_value))
     return ProgramListResponse(programs=responses)
+
+
+@router_v2.get("/programs/{program_id}/schedule", response_model=ProgramScheduleResponse)
+async def get_program_schedule(
+    program_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProgramScheduleResponse:
+    """Превью структуры программы до добавления в план (issue #266). Каталог виден
+    всем; только реальные ProgramItem/config — у программы без строк items пуст."""
+    await _require_user(session, init_data)
+    programs = ProgramRepository(session)
+    program = await programs.get_by_id(program_id)
+    if program is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
+    program_items = await programs.list_program_items(program.id)
+    exercises = {
+        ex.id: ex for ex in await programs.list_exercises_by_ids(
+            sorted({i.exercise_id for i in program_items if i.exercise_id is not None}),
+        )
+    }
+    complexes = {
+        c.id: c for c in await programs.list_complexes_by_ids(
+            sorted({i.complex_id for i in program_items if i.complex_id is not None}),
+        )
+    }
+    items: list[ProgramScheduleItemResponse] = []
+    for item in sorted(program_items, key=lambda i: (i.week_phase.value, i.day_of_week is None, i.day_of_week or 0, i.id)):
+        exercise = exercises.get(item.exercise_id) if item.exercise_id is not None else None
+        complex_ = complexes.get(item.complex_id) if item.complex_id is not None else None
+        subcategory = exercise.subcategory if exercise is not None else None
+        if complex_ is not None and complex_.owner_user_id is None:
+            title = complex_.name
+        elif exercise is not None:
+            title = block_role_title(subcategory) or exercise.name
+        else:
+            continue  # ни упражнения, ни публичного комплекса — нечего показать
+        items.append(ProgramScheduleItemResponse(
+            week_phase=item.week_phase.value, day_of_week=item.day_of_week,
+            count_per_week=item.count_per_week, title=title,
+            count_label=count_per_week_label(item.count_per_week),
+            target_label=block_target_label(program.config, subcategory),
+        ))
+    phases = list(dict.fromkeys(i.week_phase for i in items))
+    return ProgramScheduleResponse(
+        program_id=program.id, duration_weeks=duration_weeks(program.config), phases=phases, items=items,
+    )
 
 
 # --- Избранное (issue #272) -------------------------------------------------------------
@@ -778,6 +837,27 @@ async def create_program_inclusion(
     await PlanWeekService(session).ensure_current_plan_week(
         training_plan_id=inclusion.training_plan_id, today=datetime.now(UTC).date(),
     )
+    return _program_inclusion_response(inclusion)
+
+
+@router_v2.post("/program-inclusions/{inclusion_id}/deactivate", response_model=ProgramInclusionResponse)
+async def deactivate_program_inclusion(
+    inclusion_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> ProgramInclusionResponse:
+    """«Убрать курс из плана» (issue #266): is_active=false, строки истории
+    (PlanItem/сессии/снимок) не удаляются; expires_at фиксирует дату окончания.
+    Идемпотентно. Чужой/несуществующий id — 404."""
+    user = await _require_user(session, init_data)
+    inclusion = await TrainingPlanRepository(session).get_inclusion_for_user(inclusion_id, user.id)
+    if inclusion is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Program inclusion not found")
+    if inclusion.is_active:
+        inclusion.is_active = False
+        if inclusion.expires_at is None:
+            inclusion.expires_at = datetime.now(UTC)
+        await session.commit()
     return _program_inclusion_response(inclusion)
 
 

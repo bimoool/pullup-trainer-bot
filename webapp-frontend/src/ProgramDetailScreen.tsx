@@ -1,7 +1,10 @@
 import { Button } from "@telegram-apps/telegram-ui";
 
-import type { ProgramResponseV2 } from "./apiV2";
+import { useEffect, useState } from "react";
+
+import { fetchProgramSchedule, type ProgramResponseV2, type ProgramScheduleV2 } from "./apiV2";
 import { FavoriteHeart } from "./FavoriteHeart";
+import { DAY_NAMES_RU, groupScheduleByPhase, PHASE_LABELS_RU } from "./plansOverview";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -45,6 +48,22 @@ const STRUCTURE_TYPE_LABELS: Record<string, string> = {
 export function ProgramDetailScreen({ initDataRaw, program, included, adding, addError, onAdd, onBack }: Props) {
   const structureLabel = STRUCTURE_TYPE_LABELS[program.structure_type] ?? program.structure_type;
 
+  // issue #266: превью структуры из реальных ProgramItem; сбой/пусто — только описание.
+  const [schedule, setSchedule] = useState<ProgramScheduleV2 | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchProgramSchedule(initDataRaw, program.id)
+      .then((data) => {
+        if (!cancelled) {
+          setSchedule(data);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw, program.id]);
+
   // issue #202: Telegram BackButton — переиспользует существующий onBack
   // (тот же хендлер, что у "← Назад" ниже), не создаёт вторую логику
   useBackButton(onBack, [onBack]);
@@ -63,6 +82,30 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
         <p>{program.goal}</p>
         <p className="hint">{structureLabel}</p>
       </div>
+
+      {schedule !== null && schedule.items.length > 0 && (
+        <div className="profile-card" data-testid="program-schedule">
+          <p className="block-subtitle">
+            {schedule.duration_weeks ? `Расписание · ${schedule.duration_weeks} нед.` : "Расписание недели"}
+          </p>
+          {groupScheduleByPhase(schedule.items).map(([phase, rows]) => (
+            <div key={phase} className="plan-week-day-group" data-testid="program-schedule-phase">
+              <span className="plan-week-chip" data-testid="program-schedule-phase-chip">
+                {PHASE_LABELS_RU[phase] ?? phase}
+              </span>
+              {rows.map((row, index) => (
+                <p key={index} className="plan-item-row" data-testid="program-schedule-row">
+                  {row.day_of_week !== null ? `${DAY_NAMES_RU[row.day_of_week] ?? `День ${row.day_of_week}`} · ` : ""}
+                  {row.title}
+                  {" — "}
+                  {row.count_label}
+                  {row.target_label ? ` (${row.target_label})` : ""}
+                </p>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
 
       <Button
         className="action-button"
