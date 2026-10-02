@@ -14,10 +14,14 @@ import {
   type TrainingPlanResponseV2,
 } from "./apiV2";
 import { BackChevron } from "./BackChevron";
+import { drainQueuedFinish } from "./offlineSession";
 import { summarizeProtocol } from "./protocolConfig";
 import { useBackButton } from "./useBackButton";
 import { formatExerciseCount } from "./workoutCardFormat";
 import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
+
+/** Потолок ожидания досылки старого завершения перед стартом (R-4): зависший запрос не должен вешать «Начать». */
+const DRAIN_BEFORE_START_TIMEOUT_MS = 5_000;
 
 type Props = {
   initDataRaw: string;
@@ -266,6 +270,13 @@ export function SessionPreScreen({
   async function handleStart(planItemIds: number[], currentTitle?: string) {
     setState({ phase: "starting", planItemIds, title: currentTitle });
     try {
+      // R-4 (#289): завершение прошлой сессии, оставленное в очереди, должно дойти до сервера ДО старта
+      // новой — иначе старая ещё STARTED и сервер ответит 409. Best effort (офлайн/отказ — старт идёт
+      // как раньше; очередь не трогаем), не дольше DRAIN_BEFORE_START_TIMEOUT_MS.
+      await Promise.race([
+        drainQueuedFinish(initDataRaw).catch(() => false),
+        new Promise((resolve) => setTimeout(resolve, DRAIN_BEFORE_START_TIMEOUT_MS)),
+      ]);
       if (workoutId !== undefined) {
         onStarted(await startWorkoutLiveSession(initDataRaw, crypto.randomUUID(), workoutId));
         return;
@@ -278,6 +289,20 @@ export function SessionPreScreen({
       const session = await startLiveSession(initDataRaw, clientSessionId, planItemIds);
       onStarted(session);
     } catch (error) {
+      // 409 active_session_exists: на сервере уже идёт другая тренировка — тот же экран конфликта,
+      // что и при заранее известной активной (продолжить текущую).
+      if ((error as { status?: number }).status === 409) {
+        try {
+          const active = await fetchActiveLiveSession(initDataRaw);
+          if (active !== null) {
+            setActiveConflict(active);
+            setState({ phase: "ready_manual", title: currentTitle ?? "Тренировка", planItemIds });
+            return;
+          }
+        } catch {
+          // не смогли узнать активную — показываем исходную ошибку ниже
+        }
+      }
       setState({ phase: "error", message: error instanceof Error ? error.message : String(error), title: currentTitle });
     }
   }
