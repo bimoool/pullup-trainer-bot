@@ -546,7 +546,8 @@ for (const width of WIDTHS) {
       await expect(counters).toHaveText(["1/2", "0/1"]);
       await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(2);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Перенести" })).toHaveCount(2);
+      // #286 B: «Перенести»/«Убрать из плана» — в листе «⋯»; на строке — одна «⋯» вместо четырёх пилюль.
+      await expect(page.getByTestId("plans-row-more")).toHaveCount(2);
       await expectNoHorizontalOverflow(page, "Plans week: текущая");
       const currentLabel = await label.textContent();
 
@@ -557,7 +558,7 @@ for (const width of WIDTHS) {
       await expect(counters).toHaveText(["1/1"]);
       await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Перенести" })).toHaveCount(0);
+      await expect(page.getByTestId("plans-row-more")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Убрать из плана" })).toHaveCount(0);
       await expect(next).toBeEnabled();
       await expectNoHorizontalOverflow(page, "Plans week: прошлая");
