@@ -7,15 +7,15 @@ import type { TelegramTheme } from "../../fixtures/telegramMock";
 // CRIMPD VISUAL (#280): контракт общей мобильной оболочки — нижняя навигация из 5 вкладок
 // с активным состоянием, заголовок экрана и заголовки секций на каждой вкладке, sticky-поиск
 // на Главной, отсутствие горизонтального overflow, различимые поверхности «страница/карточка».
-// Seed: scripts/e2e_seed.py home_discovery — 9994xx, только чтение; по пользователю на
+// Seed: scripts/e2e_seed.py home_discovery — 9995xx, только чтение; по пользователю на
 // ширину × тему и + retry.
 const TABS = ["Главная", "Планы", "Журнал", "Аналитика", "Профиль"] as const;
 const SCREEN_TITLES: Record<(typeof TABS)[number], string> = {
   "Главная": "Главная", "Планы": "Планы", "Журнал": "Журнал", "Аналитика": "Аналитика", "Профиль": "Профиль",
 };
 const USERS: Record<number, Record<TelegramTheme, number>> = {
-  320: { light: 999_401, dark: 999_411 },
-  390: { light: 999_421, dark: 999_431 },
+  320: { light: 999_501, dark: 999_511 },
+  390: { light: 999_521, dark: 999_531 },
 };
 
 async function surfaceColors(page: Page) {
