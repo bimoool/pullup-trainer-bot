@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { pressTelegramBackButton } from "../../fixtures/telegramMock";
 
@@ -31,7 +31,7 @@ for (const width of WIDTHS) {
       await expect(cards).toHaveCount(4);
 
       // Две записи 15-го различаются подходами — открываем вторую в ленте и запоминаем её деталь.
-      await cards.nth(1).click();
+      await openJournalEntry(page, cards.nth(1));
       const open = page.getByTestId("journal-open-workout");
       await expect(open).toBeVisible();
       const detailText = await page.locator("body").innerText();

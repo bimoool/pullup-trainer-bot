@@ -146,6 +146,12 @@ seed ready 997706
 seed tests_hub 997707
 # #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
 for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
+# #280 «Journal entry sheet»: 998101 (320 px light) / 998111 (390 px dark) — закрытие шторки и форма из неё (только чтение);
+# 998161/998171 — действия по типам (builder + историческая + активность, создаваемая тестом через API); 998121/998131 — удаление;
+# 998141/998151 — факультатив. Каждый + retry (id+1).
+for id in 998101 998102 998111 998112 998161 998162 998171 998172; do seed journal_edit "$id"; done
+for id in 998121 998122 998131 998132; do seed journal_edit "$id"; done
+for id in 998141 998142 998151 998152; do seed owner_optional_workout "$id"; done
 # #224 «Платформа Telegram» (tg-platform.spec.ts): 998801 BackButton, 998803 closing confirmation (live), 998805 safe-area/theme,
 # каждый + retry (id+1); 998811 — десятичный ввод «12,5» (ready: вес/рост профиля есть).
 for id in 998801 998802 998803 998804 998805 998806; do seed session_recovery "$id"; done

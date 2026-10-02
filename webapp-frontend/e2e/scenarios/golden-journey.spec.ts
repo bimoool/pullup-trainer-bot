@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../fixtures/builderFlow";
+import { openJournalEntry } from "../fixtures/parity";
 import { openAppAs } from "../fixtures/setup";
 
 // Golden Journey (issue #221) — сквозной путь вернувшегося пользователя по
@@ -63,7 +64,7 @@ test("Golden Journey: Главная → в план → тренировка �
   await page.getByRole("button", { name: "Журнал" }).click();
   const entry = page.locator(".history-card").filter({ hasText: TITLE });
   await expect(entry.getByText("8 · 7", { exact: true })).toBeVisible();
-  await entry.click();
+  await openJournalEntry(page, entry);
   await expect(page.getByText("Факт: 8 · 7")).toBeVisible();
   await page.getByRole("button", { name: /Удалить/ }).click();
   await expect(page.locator(".history-card").filter({ hasText: TITLE })).toHaveCount(0);

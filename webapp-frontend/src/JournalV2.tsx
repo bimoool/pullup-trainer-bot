@@ -3,19 +3,24 @@ import { useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { effortWithWord } from "./effortScale";
-import { describeJournalBlock, formatSessionDateTime, formatSessionTime } from "./journalFormat";
+import { describeJournalBlock } from "./journalFormat";
+import { formatSessionDateTime, formatSessionTime } from "./journalTime";
 import { JOURNAL_KIND_LABELS, journalKind } from "./journalKind";
 import { formatDurationHm } from "./journalLog";
+import { JOURNAL_DELETE_CONFIRM } from "./journalSheet";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
 
 /** Карточка завершённой TrainingSession (Журнал v2). Каждый блок сессии
  * рендерится независимо — ни один блок не определяет вид всей карточки. */
 export function JournalSessionCard({
-  session, onOpen,
+  session, timeZone, onOpen,
 }: {
   session: SessionResponseV2;
-  onOpen: (sessionId: number) => void;
+  /** Часовой пояс журнала (профиль) — тот же, что у заголовков дней. */
+  timeZone: string;
+  /** Тап/Enter по карточке (#280: открывает шторку действий; element — куда вернуть фокус). */
+  onOpen: (sessionId: number, element: HTMLElement) => void;
 }) {
   const kind = journalKind(session);
   return (
@@ -24,11 +29,13 @@ export function JournalSessionCard({
       data-kind={kind}
       role="button"
       tabIndex={0}
-      onClick={() => onOpen(session.id)}
+      data-testid="journal-card"
+      aria-haspopup="dialog"
+      onClick={(event) => onOpen(session.id, event.currentTarget)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onOpen(session.id);
+          onOpen(session.id, event.currentTarget);
         }
       }}
     >
@@ -37,12 +44,17 @@ export function JournalSessionCard({
         {/* Компактная карточка: строка 1 — название + время, строка 2 — тип/длительность/блоки. */}
         <p className="journal-card-title">
           <span className="journal-card-name">{session.title ?? "Тренировка"}</span>
-          <span className="journal-card-time">{formatSessionTime(session.performed_at)}</span>
+          <span className="journal-card-time">{formatSessionTime(session.performed_at, timeZone)}</span>
         </p>
         <p className="journal-card-meta">
           {kind !== "plan" && <span className="journal-kind-label">{JOURNAL_KIND_LABELS[kind]}</span>}
           {session.duration_seconds != null && (
             <span data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</span>
+          )}
+          {session.effort !== null && (
+            <span className="journal-effort" data-effort={String(Number(session.effort))} data-testid="journal-card-effort">
+              Усилие {Number(session.effort)}
+            </span>
           )}
           {session.blocks.map((block) => {
             const view = describeJournalBlock(block);
@@ -86,7 +98,7 @@ export function JournalV2Footer({
  * нет. Telegram BackButton и видимая кнопка "← Назад" вызывают один и тот
  * же onBack (единая навигация экрана, не вторая система). */
 export function JournalV2Detail({
-  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned, onOpenWorkout,
+  initDataRaw, session, timeZone, onBack, onDeleted, onEdited, onCloned, onOpenWorkout, initialMode = "view",
 }: {
   initDataRaw: string;
   session: SessionResponseV2;
@@ -99,19 +111,22 @@ export function JournalV2Detail({
   onCloned: (date: string) => void;
   /** «Открыть тренировку» (#281) — Workout Detail тренировки, из которой выполнена запись. */
   onOpenWorkout?: (workoutId: number) => void;
+  /** Шторка записи (#280) открывает сразу форму «Изменить»/«Повторить»; отмена тогда ведёт обратно в Журнал. */
+  initialMode?: "view" | "edit" | "clone";
 }) {
-  const [mode, setMode] = useState<"view" | "edit" | "clone">("view");
+  const [mode, setMode] = useState<"view" | "edit" | "clone">(initialMode);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteInFlight = useRef(false);
 
-  useBackButton(mode === "view" ? onBack : () => setMode("view"), [mode, onBack]);
+  const leaveForm = initialMode === "view" ? () => setMode("view") : onBack;
+  useBackButton(mode === "view" ? onBack : leaveForm, [mode, onBack]);
 
   async function handleDelete() {
     if (deleteInFlight.current) {
       return; // двойной клик
     }
-    if (!window.confirm("Удалить эту тренировку? Отменить это будет нельзя.")) {
+    if (!window.confirm(JOURNAL_DELETE_CONFIRM)) {
       return;
     }
     deleteInFlight.current = true;
@@ -131,7 +146,7 @@ export function JournalV2Detail({
     return (
       <JournalV2EditForm
         initDataRaw={initDataRaw} session={session} timeZone={timeZone}
-        onCancel={() => setMode("view")} onSaved={onEdited}
+        onCancel={leaveForm} onSaved={onEdited}
       />
     );
   }
@@ -139,18 +154,21 @@ export function JournalV2Detail({
     return (
       <JournalV2CloneForm
         initDataRaw={initDataRaw} session={session} timeZone={timeZone}
-        onCancel={() => setMode("view")} onCloned={onCloned}
+        onCancel={leaveForm} onCloned={onCloned}
       />
     );
   }
 
   return (
     <div>
-      <Button className="action-button" size="m" mode="outline" onClick={onBack}>
-        ← Назад
-      </Button>
+      {/* Круглая кнопка-шеврон; имя для скринридеров/тестов — «← Назад», тот же onBack, что у Telegram BackButton. */}
+      <button type="button" className="journal-back-button" aria-label="← Назад" onClick={onBack}>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M15 5l-7 7 7 7" />
+        </svg>
+      </button>
       <p className="plan-title">{session.title ?? "Тренировка"}</p>
-      <p className="history-date">{formatSessionDateTime(session.performed_at)}</p>
+      <p className="history-date">{formatSessionDateTime(session.performed_at, timeZone)}</p>
       {session.duration_seconds != null && (
         <p className="block-subtitle" data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</p>
       )}
@@ -159,11 +177,11 @@ export function JournalV2Detail({
         const view = describeJournalBlock(block);
         return (
           <Section key={block.order_index} className="block-section" header={view.header ?? "Упражнение"}>
-            {view.protocolLabel !== null && <p className="block-subtitle">{view.protocolLabel}</p>}
-            {view.plan !== null && <p>План: {view.plan}</p>}
-            <p>Факт: {view.fact}</p>
+            {view.protocolLabel !== null && <p className="block-subtitle journal-detail-line">{view.protocolLabel}</p>}
+            {view.plan !== null && <p className="journal-detail-line">План: {view.plan}</p>}
+            <p className="journal-detail-line">Факт: {view.fact}</p>
             {block.set_logs.filter((log) => log.effort !== null || log.note).map((log) => (
-              <p key={log.set_number} className="hint">
+              <p key={log.set_number} className="hint journal-detail-line">
                 Подход {log.set_number}
                 {log.effort !== null && ` · усилие ${effortWithWord(log.effort)}`}
                 {log.note && ` · ${log.note}`}

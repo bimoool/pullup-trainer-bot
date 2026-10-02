@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
 import {
-  captureDownloads, COMBOS, expectScreenHealthy, openTab,
+  captureDownloads, COMBOS, expectScreenHealthy, openJournalEntry, openTab,
 } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
@@ -391,7 +391,7 @@ const FLOWS: Flow[] = [
     run: async ({ page }) => {
       await openTab(page, "Журнал");
       await visit(page, {
-        where: "Журнал → факультатив", open: () => page.getByText(ELECTIVE).first().click(),
+        where: "Журнал → факультатив", open: () => openJournalEntry(page, page.getByText(ELECTIVE).first()),
         dest: [byName(page, /Изменить/, false), byName(page, /Удалить/, false)], exit: { button: byName(page, "← Назад") },
         origin: journalMarker(page),
       });
@@ -628,7 +628,7 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       await expectScreenHealthy(page, "Журнал после тренировки");
 
       // #281: из записи Журнала — «Открыть тренировку» → деталь; назад — в Журнал.
-      await page.getByText(WORKOUT, { exact: true }).first().click();
+      await openJournalEntry(page, page.getByText(WORKOUT, { exact: true }).first());
       await visit(page, {
         where: "Журнал → Открыть тренировку", open: () => page.getByTestId("journal-open-workout").click(),
         dest: [page.getByTestId("workout-detail-title")], exit: "telegram", origin: journalMarker(page), // «назад» — в список Журнала, не на Главную

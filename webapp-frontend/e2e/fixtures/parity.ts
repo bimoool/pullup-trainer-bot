@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 // Shared helpers for the Crimpd parity suite (docs/CRIMPD_FULL_PARITY_8_5.md).
 // Each parity task adds its OWN file `scenarios/parity/<area>.spec.ts` (run serially by the
@@ -74,4 +74,16 @@ export async function captureDownloads(page: Page): Promise<{ read: () => Promis
     };
   });
   return { read: () => page.evaluate(() => (window as unknown as { __captured: CapturedDownloads }).__captured) };
+}
+
+/**
+ * Журнал v2 (#280): тап по карточке открывает шторку действий; этот хелпер тапает карточку и выбирает
+ * действие шторки (по умолчанию «Открыть» — прежний экран деталей).
+ */
+export async function openJournalEntry(
+  page: Page, card: Locator, action: "open" | "edit" | "clone" | "workout" | "delete" = "open",
+) {
+  await card.click();
+  await expect(page.getByTestId("journal-entry-sheet")).toBeVisible();
+  await page.getByTestId(`journal-sheet-${action}`).click();
 }

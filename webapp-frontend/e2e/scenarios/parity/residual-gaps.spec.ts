@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { pressTelegramBackButton } from "../../fixtures/telegramMock";
 
@@ -49,7 +49,7 @@ for (const width of WIDTHS) {
       await openTab(page, "Журнал");
       const card = page.locator(".history-card").first();
       await expect(card).toBeVisible();
-      await card.click();
+      await openJournalEntry(page, card);
       const open = page.getByTestId("journal-open-workout");
       await expect(open).toHaveText("Открыть тренировку");
       await expectNoHorizontalOverflow(page, "Журнал: запись с «Открыть тренировку»");

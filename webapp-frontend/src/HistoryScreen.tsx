@@ -1,10 +1,11 @@
 import { Button } from "@telegram-apps/telegram-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { deleteHistoryWorkout, fetchHistory, type HistoryEntry } from "./api";
 import { HistoryEditForm } from "./HistoryEditForm";
 import { JournalCalendar } from "./JournalCalendar";
 import { localDateKey, monthRange } from "./journalCalendarModel";
+import { JournalEntrySheet } from "./JournalEntrySheet";
 import { JournalSessionCard, JournalV2Detail, JournalV2Footer } from "./JournalV2";
 import { JournalTimeline } from "./JournalTimeline";
 import { BackdatedWorkoutForm, FreeActivityForm, LogActivitySheet, type LogKind } from "./LogActivitySheet";
@@ -60,6 +61,10 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
   // legacy-историю ниже.
   const journal = useJournalV2(initDataRaw, restore);
   const [detailSessionId, setDetailSessionId] = useState<number | null>(restore?.sessionId ?? null);
+  // Шторка записи (#280): тап по карточке v2; из неё — деталь (view) или сразу форма (edit/clone).
+  const [sheetSessionId, setSheetSessionId] = useState<number | null>(null);
+  const sheetReturnFocus = useRef<HTMLElement | null>(null);
+  const [detailMode, setDetailMode] = useState<"view" | "edit" | "clone">("view");
   const [calendarExpanded, setCalendarExpanded] = useState(false);
 
   // Legacy-история грузится за тот же месяц/день, что и v2 (#256): диапазон
@@ -190,6 +195,7 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         initDataRaw={initDataRaw}
         session={detailSession}
         timeZone={journal.timezone}
+        initialMode={detailMode}
         onBack={() => setDetailSessionId(null)}
         onOpenWorkout={onOpenWorkout && journal.month !== null
           ? (workoutId) => onOpenWorkout(workoutId, { month: journal.month as string, day: journal.day, sessionId: detailSession.id })
@@ -208,6 +214,17 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         }}
       />
     );
+  }
+
+  function openDetail(sessionId: number, mode: "view" | "edit" | "clone") {
+    setSheetSessionId(null);
+    setDetailMode(mode);
+    setDetailSessionId(sessionId);
+  }
+
+  function openSheet(sessionId: number, element: HTMLElement) {
+    sheetReturnFocus.current = element;
+    setSheetSessionId(sessionId);
   }
 
   function legacyCard(entry: HistoryEntry) {
@@ -253,13 +270,16 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
     );
   }
 
+  const sheetSession = sheetSessionId !== null && journal.state.phase === "ready"
+    ? journal.state.items.find((item) => item.id === sheetSessionId) ?? null
+    : null;
   const v2Items = journal.state.phase === "ready" ? journal.state.items : [];
   const legacyItems = state.phase === "ready" ? state.items : [];
   const loading = journal.month === null ? journal.state.phase !== "error" : journal.state.phase === "loading" || state.phase === "loading";
   const timelineEntries = [
     ...v2Items.map((session) => ({
       date: localDateKey(session.performed_at, journal.timezone),
-      node: <JournalSessionCard key={`v2-${session.id}`} session={session} onOpen={setDetailSessionId} />,
+      node: <JournalSessionCard key={`v2-${session.id}`} session={session} timeZone={journal.timezone} onOpen={openSheet} />,
     })),
     ...legacyItems.map((entry) => ({ date: entry.performed_at, node: legacyCard(entry) })),
   ];
@@ -278,6 +298,28 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
         <LogActivitySheet
           onClose={() => setLogSheetOpen(false)}
           onPick={(kind) => { setLogSheetOpen(false); setLogForm(kind); }}
+        />
+      )}
+      {sheetSession !== null && (
+        <JournalEntrySheet
+          initDataRaw={initDataRaw}
+          session={sheetSession}
+          timeZone={journal.timezone}
+          canOpenWorkout={onOpenWorkout !== undefined && journal.month !== null}
+          returnFocusTo={sheetReturnFocus.current}
+          onClose={() => setSheetSessionId(null)}
+          onOpen={() => openDetail(sheetSession.id, "view")}
+          onEdit={() => openDetail(sheetSession.id, "edit")}
+          onClone={() => openDetail(sheetSession.id, "clone")}
+          onOpenWorkout={() => {
+            if (onOpenWorkout !== undefined && journal.month !== null && sheetSession.workout_id != null) {
+              onOpenWorkout(sheetSession.workout_id, { month: journal.month, day: journal.day, sessionId: sheetSession.id });
+            }
+          }}
+          onDeleted={(sessionId) => {
+            journal.removeById(sessionId);
+            setSheetSessionId(null);
+          }}
         />
       )}
       {journal.month !== null && (

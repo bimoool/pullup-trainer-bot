@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { pressTelegramBackButton } from "../../fixtures/telegramMock";
 
@@ -34,7 +34,7 @@ for (const width of WIDTHS) {
 
       // 2) Открыть: сервер доказал безопасность → «Изменить» и «Удалить» есть; «Повторить» для
       // факультатива не предлагается; сырой упакованный JSON не показывается.
-      await elective.click();
+      await openJournalEntry(page, elective);
       await expect(page.getByRole("button", { name: /Изменить/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Удалить/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Повторить/ })).toHaveCount(0);
@@ -58,7 +58,7 @@ for (const width of WIDTHS) {
       await expect(page.getByTestId("journal-edit-form")).toHaveCount(0);
 
       await expect(cards).toHaveCount(2);
-      await elective.click();
+      await openJournalEntry(page, elective);
       await expect(page.getByText(/Факт: 10/)).toBeVisible();
       await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
       await expect(page.getByTestId("journal-workout-comment")).toContainText("Поправил в журнале");
@@ -75,7 +75,7 @@ for (const width of WIDTHS) {
       await expectNoHorizontalOverflow(page, "Журнал: после удаления факультатива");
 
       // Оставшаяся запись по-прежнему открывается (и возврат работает).
-      await cards.first().click();
+      await openJournalEntry(page, cards.first());
       await expect(page.getByRole("button", { name: /Удалить/ })).toBeVisible();
       await pressTelegramBackButton(page);
       await expect(cards).toHaveCount(1);

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 
 // Crimpd parity — Journal log (#263). Moved out of crimpd-parity.spec.ts into its own file
@@ -96,7 +96,7 @@ for (const width of WIDTHS) {
       await expect(backdatedCard).toHaveCount(1);
       await expect(backdatedCard).toContainText("8 · 7");
       await expect(cards).toHaveCount(2);
-      await backdatedCard.click();
+      await openJournalEntry(page, backdatedCard);
       await expect(page.getByTestId("journal-workout-effort")).toContainText("4 Тяжело");
       await expect(page.getByTestId("journal-workout-comment")).toContainText("без таймера");
       await page.getByRole("button", { name: "← Назад" }).click();
