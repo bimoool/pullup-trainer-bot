@@ -6,8 +6,14 @@ import { BlockTransition } from "./BlockTransition";
 import { describeBlockPlan, formatDuration, formatNumber, formatTarget, resultInputLabel } from "./blockFormat";
 import {
   blockSetCounts,
+  canPauseLocal,
   clearLocalSession,
+  clearPauseState,
+  extraSetBlockIndex,
   flushLocalSession,
+  isLocalPaused,
+  pauseLocalSession,
+  resumeLocalSession,
   hasManualTransitions,
   hasPendingWork,
   initialLocalSession,
@@ -83,6 +89,9 @@ export function SessionLiveScreen({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
+  // #264: форма «+ Ещё подход» (локальный ввод; сам подход живёт в pendingSets).
+  const [extraOpen, setExtraOpen] = useState(false);
+  const [extraValue, setExtraValue] = useState("");
   const [startingBlock, setStartingBlock] = useState(false);
   const [startBlockError, setStartBlockError] = useState<string | null>(null);
   // Двойной тап (issue #187, баг 2): быстрый повторный клик по "Готов"/
@@ -287,6 +296,8 @@ export function SessionLiveScreen({
     );
     setEffort(null);
     setNote("");
+    setExtraOpen(false);
+    setExtraValue("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formBlockIndex, formSetNumber, formPhaseName]);
 
@@ -326,11 +337,50 @@ export function SessionLiveScreen({
       }
       const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
       await commitLocal({
-        ...local,
+        ...clearPauseState(local),
         localPhase: newPhase,
         localPhaseEnteredAt: new Date().toISOString(),
         pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
       });
+    });
+  }
+
+  // #264: пауза/продолжить — чисто локальные, сразу в снимок (переживают reload).
+  function togglePause() {
+    void guardedAction(async () => {
+      if (local === null) {
+        return;
+      }
+      const nowMs = Date.now();
+      await commitLocal(isLocalPaused(local) ? resumeLocalSession(local, nowMs) : pauseLocalSession(local, nowMs));
+      setNow(nowMs);
+    });
+  }
+
+  // #264: «+ Ещё подход» — запись сверх плана в завершённый блок; фазу не двигает.
+  function logExtraSet() {
+    void guardedAction(async () => {
+      const index = local === null ? null : extraSetBlockIndex(local);
+      const extraBlock = index === null ? null : local?.server.blocks[index] ?? null;
+      if (local === null || index === null || extraBlock === null || extraBlock.exercise_id === null) {
+        return;
+      }
+      if (extraValue.trim() === "") {
+        return;
+      }
+      await commitLocal({
+        ...local,
+        pendingSets: [
+          ...local.pendingSets,
+          {
+            setIndex: local.nextSetIndex, blockIndex: index, exerciseId: extraBlock.exercise_id,
+            value: extraValue.trim(), effort: null, note: null, isExtra: true,
+          },
+        ],
+        nextSetIndex: local.nextSetIndex + 1,
+      });
+      setExtraValue("");
+      setExtraOpen(false);
     });
   }
 
@@ -341,7 +391,7 @@ export function SessionLiveScreen({
       }
       const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
       await commitLocal({
-        ...local,
+        ...clearPauseState(local),
         pendingSets: [
           ...local.pendingSets,
           {
@@ -428,7 +478,16 @@ export function SessionLiveScreen({
   }
 
   const phaseName = local.localPhase.phaseName;
-  const remaining = phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
+  const paused = isLocalPaused(local);
+  const remaining = paused
+    ? Math.max(0, (local.pausedRemainingMs ?? 0) / 1000)
+    : phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
+  const extraIndex = extraSetBlockIndex(local);
+  const extraBlock = extraIndex === null ? null : local.server.blocks[extraIndex];
+  const extraCount = extraIndex === null ? 0
+    : local.pendingSets.filter((entry) => entry.isExtra && entry.blockIndex === extraIndex).length
+      + (extraBlock?.set_logs.filter((log) => log.is_extra).length ?? 0);
+  const extraLabel = resultInputLabel(extraBlock?.protocol_type ?? null, null);
   const targetsCount = block?.targets.length ?? 0;
   const targetForSet = block?.targets[local.localPhase.setNumber - 1] ?? null;
   const isMaxBlock = block?.protocol_type === "max_effort";
@@ -495,6 +554,15 @@ export function SessionLiveScreen({
         </Button>
       )}
 
+      {(canPauseLocal(local) || paused) && (
+        <Button
+          className="action-button" size="l" stretched mode="outline" data-testid="pause-toggle"
+          onClick={togglePause}
+        >
+          {paused ? "Продолжить" : "Пауза"}
+        </Button>
+      )}
+
       {phaseName === "go" && block !== null && (
         <Section className="block-section" header="Внести подход">
           {/* aria-label дублирует header намеренно — telegram-ui's Input
@@ -543,6 +611,35 @@ export function SessionLiveScreen({
 
       {phaseName === "done" && (
         <p className="screen-message">Все подходы плана выполнены — можно завершить сессию.</p>
+      )}
+
+      {extraIndex !== null && (
+        extraOpen ? (
+          <Section className="block-section" header="Ещё подход">
+            <div data-testid="extra-set-form">
+              <Input
+                header={extraLabel.label} aria-label={extraLabel.label} type="number" inputMode="decimal"
+                value={extraValue} onChange={(e) => setExtraValue(e.target.value)}
+              />
+              <Button className="action-button" size="l" stretched disabled={extraValue.trim() === ""} onClick={logExtraSet}>
+                Записать
+              </Button>
+              <Button className="action-button" size="l" stretched mode="outline" onClick={() => setExtraOpen(false)}>
+                Отмена
+              </Button>
+            </div>
+          </Section>
+        ) : (
+          <>
+            {extraCount > 0 && <p className="block-subtitle" data-testid="extra-count">Дополнительных подходов: {extraCount}</p>}
+            <Button
+              className="action-button" size="l" stretched mode="outline" data-testid="extra-set-button"
+              onClick={() => setExtraOpen(true)}
+            >
+              + Ещё подход
+            </Button>
+          </>
+        )
       )}
 
       {reviewOpen ? (

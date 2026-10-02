@@ -70,6 +70,7 @@ def _session_block_input_from_detail(block: SessionBlockDetail) -> SessionBlockI
                 is_max_set=log.is_max_set, effort=log.effort, note=log.note,
             )
             for log in block.set_logs
+            if not log.is_extra  # issue #264: подходы сверх плана не участвуют в прогрессии
         ],
     )
 

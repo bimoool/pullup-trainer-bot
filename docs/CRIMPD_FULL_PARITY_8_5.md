@@ -99,8 +99,8 @@ any merge into `develop/current`.
 | Workout effort + additional notes at end | X10 | review step on finish → /complete effort+comment, shown in Journal | DONE | — | — | #257 | crimpd-parity.spec.ts «Live effort»; tests/test_web/test_v2_live_session_review.py |
 | Logging panel follows timer (collapsed work / expanded rest) | SKILL rule 3; Crimpd shows manual toggle X5–X6 *(auto rule unobserved)* | static section | MISSING | — | auto collapse/expand | #265 | — |
 | GET READY in final 10 s *(unobserved in Crimpd; owner target)* | X13 | 5 s get-ready at block start only | PARTIAL | no cue before next set | «Приготовься» last 10 s of rest | #265 | — |
-| Add Set beyond prescribed | X10 | none | MISSING | — | «+ Ещё подход» | #264 | — |
-| Pause / resume | X7 | none | MISSING | — | pause rest/get-ready (interval: not offered if unsafe) | #264 | — |
+| Add Set beyond prescribed | X10 | «+ Ещё подход» after the last planned set → `sets:batch` `is_extra` | DONE | — | — | #264 | crimpd-parity.spec.ts «Live extra set & pause»; tests/test_web/test_v2_live_session_extra_set.py |
+| Pause / resume | X7 | «Пауза»/«Продолжить» on get-ready/rest, kept in local snapshot (interval: not offered) | DONE | — | — | #264 | crimpd-parity.spec.ts «Live extra set & pause»; webapp-frontend/tests/livePauseExtra.test.ts |
 | Skip rest / next set | X7–X8 | «Пропустить отдых» | DONE | — | — | — | builder-execution.spec.ts |
 | Resistance ± kg per set | X5, X10 | not modelled for builder sets (bands in legacy STEP) | DOMAIN-EQUIVALENT | weight per set not stored in v2 | our bands/weighted progression lives in programs | — | — |
 | Auto log review after DONE | X9–X11 | Summary screen | DONE | — | — | — | session-summary-exit.spec.ts |

@@ -71,6 +71,8 @@ class LiveSetBatchEntry(BaseModel):
     # R1: блок, для которого записан подход (дубли упражнения в тренировке);
     # None — старый клиент, берётся текущий блок сессии.
     block_index: int | None = None
+    # issue #264: подход сверх плана («+ Ещё подход»); не цель, не в прогрессии.
+    is_extra: bool = False
 
 
 class LiveSetBatchRequest(BaseModel):

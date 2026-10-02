@@ -71,6 +71,8 @@ class BatchSetLogInput:
     # после перехода сервера к следующему блоку. None — старый клиент:
     # берётся текущий блок сессии.
     block_index: int | None = None
+    # issue #264: подход сверх плана («+ Ещё подход»).
+    is_extra: bool = False
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,7 @@ class SessionSetLogDetail:
     unit: str
     effort: Decimal | None
     note: str | None
+    is_extra: bool = False
 
 
 @dataclass(frozen=True)
@@ -364,13 +367,14 @@ class TrainingSessionRepository:
                 existing.note = entry.note
                 existing.metric_type = metric_type
                 existing.unit = unit
+                existing.is_extra = entry.is_extra
                 continue
 
             count_by_block_id[block.id] = count_by_block_id.get(block.id, 0) + 1
             insert_stmt = pg_insert(SetLog).values(
                 session_block_id=block.id, session_id=session_id, set_index=entry.set_index,
                 set_number=count_by_block_id[block.id], is_max_set=False, metric_type=metric_type,
-                value=entry.value, unit=unit, effort=entry.effort, note=entry.note,
+                value=entry.value, unit=unit, effort=entry.effort, note=entry.note, is_extra=entry.is_extra,
             )
             await self._session.execute(
                 insert_stmt.on_conflict_do_update(
@@ -378,7 +382,7 @@ class TrainingSessionRepository:
                     set_={
                         "value": insert_stmt.excluded.value, "effort": insert_stmt.excluded.effort,
                         "note": insert_stmt.excluded.note, "metric_type": insert_stmt.excluded.metric_type,
-                        "unit": insert_stmt.excluded.unit,
+                        "unit": insert_stmt.excluded.unit, "is_extra": insert_stmt.excluded.is_extra,
                     },
                 ),
             )
@@ -536,6 +540,7 @@ class TrainingSessionRepository:
                         SessionSetLogDetail(
                             set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type,
                             value=log.value, unit=log.unit, effort=log.effort, note=log.note,
+                            is_extra=log.is_extra,
                         )
                         for log in set_logs_by_block[block.id]
                     ],

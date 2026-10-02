@@ -310,6 +310,7 @@ class SetLogResponse(BaseModel):
     unit: str
     effort: str | None
     note: str | None
+    is_extra: bool = False
 
 
 class SessionSetTargetResponse(BaseModel):
