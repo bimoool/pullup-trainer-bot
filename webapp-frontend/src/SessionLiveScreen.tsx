@@ -32,6 +32,7 @@ import {
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
+import { backButtonAction, FOCUSABLE_SELECTOR, nextTrapIndex } from "./liveDialog";
 import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
 import { dismissKeyboard } from "./telegramPlatform";
@@ -102,6 +103,7 @@ export function SessionLiveScreen({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
+  const sheetRef = useRef<HTMLElement | null>(null);
   // #264: форма «+ Ещё подход» (локальный ввод; сам подход живёт в pendingSets).
   const [extraOpen, setExtraOpen] = useState(false);
   const [extraValue, setExtraValue] = useState("");
@@ -368,7 +370,52 @@ export function SessionLiveScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formBlockIndex, formSetNumber, formPhaseName]);
 
-  useBackButton(handleFinish, [local]);
+  // M3 (#285): review-шторка — модальный диалог. Фокус уходит в шторку при открытии, Escape её
+  // закрывает (введённые оценка/заметка остаются в состоянии), при закрытии фокус возвращается
+  // на кнопку «Завершить» (у неё data-review-opener; кнопки на время шторки размонтируются, поэтому
+  // ищем по атрибуту, а не по сохранённому узлу) либо на статус «завершение в очереди».
+  useEffect(() => {
+    if (!reviewOpen) {
+      return;
+    }
+    sheetRef.current?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setReviewOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.querySelector<HTMLElement>("[data-review-opener], [data-finish-status]")?.focus();
+    };
+  }, [reviewOpen]);
+
+  function trapSheetTab(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Tab") {
+      return;
+    }
+    const nodes = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    const next = nextTrapIndex(nodes.length, nodes.indexOf(document.activeElement as HTMLElement), event.shiftKey);
+    event.preventDefault();
+    if (next !== null) {
+      nodes[next].focus();
+    }
+  }
+
+  // Telegram BackButton: с открытой review-шторкой только закрывает её (docs/PROJECT_SPEC.md §12),
+  // иначе прежнее поведение — confirm и завершение без review.
+  function handleBack() {
+    const action = backButtonAction({ reviewOpen, finishing: localRef.current?.completeRequested != null });
+    if (action === "close-review") {
+      setReviewOpen(false);
+    } else if (action === "confirm-finish") {
+      handleFinish();
+    }
+  }
+
+  useBackButton(handleBack, [local, reviewOpen]);
   // Живая сессия: свайп/«Закрыть» в Telegram спрашивает подтверждение (Bot API 6.2+, #224).
   useClosingConfirmation();
 
@@ -528,6 +575,9 @@ export function SessionLiveScreen({
         ...withRestEdit(current),
         completeRequested: { abandoned: false, ...reviewPayload(reviewEffort, reviewComment) },
       });
+      // M2 (#285): завершение уже зафиксировано локально — шторка закрывается, а статус «завершение
+      // в очереди» (finishing ниже) показывает, что тап сработал, даже если сети нет.
+      setReviewOpen(false);
     });
   }
 
@@ -626,7 +676,9 @@ export function SessionLiveScreen({
   const heroTarget = phaseName === "go" && remaining === null && targetForSet !== null ? formatTarget(targetForSet) : null;
   // «Завершить»: в шапке, пока идёт тренировка; когда план выполнен — главное действие транспорта.
   const finishIsPrimary = phaseName === "done";
-  const showTransport = !reviewOpen && !extraOpen && phaseName !== "between";
+  // M2: завершение поставлено в очередь (ждёт сети/ответа сервера) — управление тренировкой скрыто.
+  const finishing = local.completeRequested !== null;
+  const showTransport = !reviewOpen && !extraOpen && phaseName !== "between" && !finishing;
   const canPause = canPauseLocal(local) || paused;
 
   return (
@@ -639,13 +691,29 @@ export function SessionLiveScreen({
           <p className="live-eyebrow">Живая тренировка</p>
           {title && <p className="live-workout-title">{title}</p>}
         </div>
-        {!reviewOpen && !finishIsPrimary && (
-          <button type="button" className="live-finish" onClick={() => setReviewOpen(true)}>Завершить</button>
+        {!reviewOpen && !finishIsPrimary && !finishing && (
+          <button type="button" className="live-finish" data-review-opener onClick={() => setReviewOpen(true)}>
+            Завершить
+          </button>
         )}
       </header>
       {!isOnline && <p className="gap-banner">Нет сети — подходы сохраняются локально и уйдут батчем при подключении.</p>}
       {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
       {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
+      {finishing && (
+        <div className="gap-banner live-finish-status" data-testid="finish-pending" data-finish-status role="status" tabIndex={-1}>
+          <p>
+            {isOnline
+              ? "Завершаю тренировку…"
+              : "Тренировка завершена: результат сохранён на устройстве и отправится, когда появится сеть."}
+          </p>
+          {isOnline && syncError !== null && (
+            <button type="button" className="live-link-button" data-testid="finish-retry" onClick={() => void syncLocal()}>
+              Отправить ещё раз
+            </button>
+          )}
+        </div>
+      )}
 
       {phaseName !== "between" && block !== null && phaseName !== "done" && (() => {
         // name=null значит "имени действительно нет" (internal STEP-роль,
@@ -702,7 +770,7 @@ export function SessionLiveScreen({
       </div>
       )}
 
-      {phaseName === "go" && block !== null && (
+      {phaseName === "go" && block !== null && !finishing && (
         <section
           className="live-panel live-log-panel"
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
@@ -728,7 +796,7 @@ export function SessionLiveScreen({
         </section>
       )}
 
-      {restEditable && (
+      {restEditable && !finishing && (
         <section
           className="live-panel live-log-panel"
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
@@ -792,7 +860,7 @@ export function SessionLiveScreen({
             </Button>
           )}
           {finishIsPrimary && (
-            <Button className="live-primary" size="l" stretched onClick={() => setReviewOpen(true)}>
+            <Button className="live-primary" size="l" stretched data-review-opener onClick={() => setReviewOpen(true)}>
               Завершить
             </Button>
           )}
@@ -822,7 +890,10 @@ export function SessionLiveScreen({
       {reviewOpen && (
         <div className="live-sheet-layer">
           <div className="live-sheet-backdrop" onClick={() => setReviewOpen(false)} aria-hidden="true" />
-          <section className="live-sheet" role="dialog" aria-modal="true" aria-label="Итог тренировки" data-testid="workout-review">
+          <section
+            ref={sheetRef} tabIndex={-1} onKeyDown={trapSheetTab}
+            className="live-sheet" role="dialog" aria-modal="true" aria-label="Итог тренировки" data-testid="workout-review"
+          >
             <div className="live-sheet-handle" aria-hidden="true" />
             <h3 className="live-sheet-title">Как прошла тренировка?</h3>
             <p className="live-hint">Что сделано — зачтено, остальное останется в плане.</p>

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { backButtonAction, nextTrapIndex } from "../src/liveDialog.ts";
 import { FIELD_BLUR_GRACE_MS, isTextEntryTarget } from "../src/liveFieldFocus.ts";
 
 test("isTextEntryTarget: поля, открывающие клавиатуру", () => {
@@ -103,3 +104,26 @@ for (const { name, hint, text, surfaces } of [
     }
   });
 }
+
+// ---------- M3: BackButton и диалог (liveDialog.ts) ----------
+
+test("backButtonAction: с открытой шторкой Back её закрывает, завершения без review нет", () => {
+  assert.equal(backButtonAction({ reviewOpen: true, finishing: false }), "close-review");
+  assert.equal(backButtonAction({ reviewOpen: true, finishing: true }), "close-review");
+});
+
+test("backButtonAction: без шторки — прежнее поведение (confirm), при завершении в очереди — игнор", () => {
+  assert.equal(backButtonAction({ reviewOpen: false, finishing: false }), "confirm-finish");
+  assert.equal(backButtonAction({ reviewOpen: false, finishing: true }), "ignore");
+});
+
+test("nextTrapIndex: Tab циклично, Shift+Tab назад, фокус на самом диалоге/вне — к краю", () => {
+  assert.equal(nextTrapIndex(0, -1, false), null);
+  assert.equal(nextTrapIndex(4, 0, false), 1);
+  assert.equal(nextTrapIndex(4, 3, false), 0);
+  assert.equal(nextTrapIndex(4, 0, true), 3);
+  assert.equal(nextTrapIndex(4, 2, true), 1);
+  assert.equal(nextTrapIndex(4, -1, false), 0);
+  assert.equal(nextTrapIndex(4, -1, true), 3);
+  assert.equal(nextTrapIndex(1, 0, false), 0);
+});

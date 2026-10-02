@@ -3,10 +3,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
-import type { TelegramTheme } from "../../fixtures/telegramMock";
+import { pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
 
 // Live Session UX fixes (#285 A): M1 — экранная клавиатура vs липкий транспорт и Enter в поле
-// записи подхода. Клавиатура = уменьшение высоты окна (как в Telegram WebView, см.
+// записи подхода; M2 — офлайн-завершение закрывает шторку и показывает статус; M3 — BackButton с
+// открытой шторкой её закрывает (оценка/заметка остаются), Escape, фокус. Клавиатура = уменьшение высоты окна (как в Telegram WebView, см.
 // keyboard-viewport.spec.ts). Seed: session_recovery — Workout «Тренировка восстановления»,
 // reps 3 x 8, отдых 60 с; 9978xx — по пользователю на ширину × тему, на тест id + 2*индекс + retry.
 const TITLE = "Тренировка восстановления";
@@ -123,6 +124,126 @@ for (const width of WIDTHS) {
         await page.waitForTimeout(400);
         expect(batches).toHaveLength(1);
         await expect(page.getByRole("heading", { name: "Пошёл", exact: true, level: 2 })).toBeVisible();
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
+      test("M2: офлайн «Сохранить и завершить» закрывает шторку и показывает статус завершения", async ({ page, context }, testInfo) => {
+        const { consoleErrors, apiFailures } = await openAppAs(page, userFor(1, testInfo.retry), { theme });
+        await startLive(page);
+        const completes: string[] = [];
+        page.on("request", (request) => {
+          if (request.method() === "POST" && request.url().includes("/complete")) {
+            completes.push(request.url());
+          }
+        });
+
+        await page.getByRole("button", { name: "Завершить", exact: true }).click();
+        const review = page.getByTestId("workout-review");
+        await expect(review).toBeVisible();
+        await review.getByTestId("workout-effort").getByRole("button").nth(1).click();
+        await review.getByRole("textbox", { name: "Заметка к тренировке" }).fill("без сети");
+
+        await context.setOffline(true);
+        await review.getByRole("button", { name: "Сохранить и завершить" }).click();
+
+        // Шторка закрыта, статус и офлайн-баннер видны и не перекрыты; завершение не отправлено.
+        await expect(review).toHaveCount(0);
+        const status = page.getByTestId("finish-pending");
+        await expect(status).toBeVisible();
+        await expect(status).toContainText("отправится, когда появится сеть");
+        await expectVisibleUncovered(page, status, "статус завершения");
+        await expect(page.getByText(/Нет сети/).first()).toBeVisible();
+        await expect(page.getByRole("button", { name: "Завершить", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Готов", exact: true })).toHaveCount(0);
+        await expectNoHorizontalOverflow(page, "Live: завершение в очереди");
+        expect(completes).toEqual([]);
+
+        // Сеть вернулась — очередь уходит, оценка и заметка с ней.
+        const complete = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+        await context.setOffline(false);
+        await complete;
+        await expect(page.getByText("Тренировка завершена")).toBeVisible();
+        expect(completes).toHaveLength(1);
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
+      test("M3: Back и Escape закрывают шторку, оценка и заметка остаются, фокус в диалоге и возвращается", async ({ page }, testInfo) => {
+        const dialogs: string[] = [];
+        page.on("dialog", (dialog) => {
+          dialogs.push(dialog.message());
+          void dialog.dismiss();
+        });
+        const completeBodies: string[] = [];
+        page.on("request", (request) => {
+          if (request.method() === "POST" && request.url().includes("/complete")) {
+            completeBodies.push(request.postData() ?? "");
+          }
+        });
+        const { consoleErrors, apiFailures } = await openAppAs(page, userFor(2, testInfo.retry), { theme, backButton: true });
+        await startLive(page);
+        const review = page.getByTestId("workout-review");
+        const opener = page.getByRole("button", { name: "Завершить", exact: true });
+        const chips = review.getByTestId("workout-effort").getByRole("button");
+        const comment = review.getByRole("textbox", { name: "Заметка к тренировке" });
+
+        // Открытие: фокус внутри шторки.
+        await opener.click();
+        await expect(review).toBeVisible();
+        await expect(review).toBeFocused();
+        await chips.nth(3).click();
+        await comment.fill("тяжело, но ок");
+
+        // Focus trap: Tab/Shift+Tab не выводят фокус из шторки.
+        const focusables = await review.evaluate((el) => el.querySelectorAll("button, textarea, input, [tabindex]:not([tabindex='-1'])").length);
+        for (let i = 0; i < focusables + 2; i += 1) {
+          await page.keyboard.press("Tab");
+          expect(await review.evaluate((el) => el.contains(document.activeElement)), `Tab #${i + 1} вышел из шторки`).toBe(true);
+        }
+        for (let i = 0; i < focusables + 2; i += 1) {
+          await page.keyboard.press("Shift+Tab");
+          expect(await review.evaluate((el) => el.contains(document.activeElement)), `Shift+Tab #${i + 1} вышел из шторки`).toBe(true);
+        }
+
+        // Escape закрывает, фокус возвращается на «Завершить», ввод сохранён.
+        await page.keyboard.press("Escape");
+        await expect(review).toHaveCount(0);
+        await expect(opener).toBeFocused();
+        await opener.click();
+        await expect(chips.nth(3)).toHaveAttribute("aria-pressed", "true");
+        await expect(comment).toHaveValue("тяжело, но ок");
+
+        // Telegram BackButton с открытой шторкой: только закрывает её, без confirm и завершения.
+        await pressTelegramBackButton(page);
+        await expect(review).toHaveCount(0);
+        await expect(page.getByRole("heading", { name: "Приготовься", exact: true, level: 2 })).toBeVisible();
+        expect(dialogs).toEqual([]);
+        await page.waitForTimeout(300);
+        expect(completeBodies).toEqual([]);
+        await expect(opener).toBeFocused();
+        await opener.click();
+        await expect(chips.nth(3)).toHaveAttribute("aria-pressed", "true");
+        await expect(comment).toHaveValue("тяжело, но ок");
+
+        // Тап по подложке тоже закрывает; Back без шторки по-прежнему даёт confirm (без review).
+        await page.locator(".live-sheet-backdrop").click({ position: { x: 5, y: 5 } });
+        await expect(review).toHaveCount(0);
+        await pressTelegramBackButton(page);
+        await expect.poll(() => dialogs.length).toBe(1);
+        expect(dialogs[0]).toContain("Закончить сессию?");
+        expect(completeBodies).toEqual([]);
+
+        // Завершение из шторки отправляет введённые оценку и заметку.
+        await opener.click();
+        const complete = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+        await review.getByRole("button", { name: "Сохранить и завершить" }).click();
+        await complete;
+        expect(completeBodies).toHaveLength(1);
+        expect(JSON.parse(completeBodies[0])).toMatchObject({ effort: "4", comment: "тяжело, но ок" });
+        await expect(page.getByText("Тренировка завершена")).toBeVisible();
 
         expect(noWakeLock(consoleErrors)).toEqual([]);
         expect(apiFailures).toEqual([]);
