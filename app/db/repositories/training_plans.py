@@ -205,7 +205,9 @@ class TrainingPlanRepository:
         await self._session.flush()
         return item
 
-    async def update_mutable_plan_item_day(self, plan_item_id: int, user_id: int, day_of_week: int | None) -> PlanItem | None:
+    async def update_mutable_plan_item_day(
+        self, plan_item_id: int, user_id: int, day_of_week: int | None, *, plan_week_id: int | None = None,
+    ) -> PlanItem | None:
         """Phase D2 (issue #188) — Move. Ownership через уже существующий
         get_plan_item_for_user (не дублируем join-логику). STEP/program-
         backed (program_inclusion_id IS NOT NULL) — архитектурное решение
@@ -218,8 +220,22 @@ class TrainingPlanRepository:
         if item is None or item.program_inclusion_id is not None:
             return None
         item.day_of_week = day_of_week
+        if plan_week_id is not None:
+            # issue #275 — перенос между неделями; ownership/окно недели
+            # проверяет route до вызова.
+            item.plan_week_id = plan_week_id
         await self._session.flush()
         return item
+
+    async def list_manual_plan_items_for_week(self, plan_week_id: int) -> list[PlanItem]:
+        """Ручные (program_inclusion_id IS NULL) PlanItem недели — для
+        копирования недели (issue #275)."""
+        result = await self._session.execute(
+            select(PlanItem)
+            .where(PlanItem.plan_week_id == plan_week_id, PlanItem.program_inclusion_id.is_(None))
+            .order_by(PlanItem.id),
+        )
+        return list(result.scalars().all())
 
     async def delete_mutable_plan_item(self, plan_item_id: int, user_id: int) -> bool:
         """Phase D2 (issue #188) — Remove. Тот же mutability guard, что
