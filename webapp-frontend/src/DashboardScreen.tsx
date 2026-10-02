@@ -11,7 +11,10 @@ import {
   type PlanWeekResponseV2,
   type ProgramInclusionResponseV2,
   removePlanItem,
+  deactivateProgramInclusion,
+  type TrainingPlanResponseV2,
 } from "./apiV2";
+import { completedInclusions, inclusionDateRange, inclusionWeekLabel } from "./plansOverview";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { AddToPlanScreen } from "./AddToPlanScreen";
 import { MovePlanItemScreen } from "./MovePlanItemScreen";
@@ -158,6 +161,22 @@ type PlanState = {
 
 const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [] };
 
+/** issue #266 — inclusions содержит и неактивные (вкладка «Завершённые»);
+ * строки убранных курсов в недельный вид не попадают (история в БД остаётся). */
+function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
+  if (data === null) {
+    return EMPTY_PLAN;
+  }
+  const inactiveIds = new Set(data.program_inclusions.filter((i) => !i.is_active).map((i) => i.id));
+  return {
+    inclusions: data.program_inclusions,
+    items: data.plan_items.filter(
+      (item) => item.program_inclusion_id === null || !inactiveIds.has(item.program_inclusion_id),
+    ),
+    weeks: data.plan_weeks,
+  };
+}
+
 // Phase C4a/C5a/D3 (issue #188) — «Мои тренировки» + Plans card actions
 // swap-state.
 type MyWorkoutsView =
@@ -228,18 +247,15 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   const [removeError, setRemoveError] = useState<string | null>(null);
   // issue #258 — выбранная неделя (id PlanWeek); null = текущая.
   const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
+  // issue #266 — «Сейчас | Завершённые» и «Убрать курс из плана» (inline-подтверждение).
+  const [overviewTab, setOverviewTab] = useState<"now" | "completed">("now");
+  const [removeInclusionConfirmId, setRemoveInclusionConfirmId] = useState<number | null>(null);
+  const [removingInclusionId, setRemovingInclusionId] = useState<number | null>(null);
+  const [inclusionError, setInclusionError] = useState<string | null>(null);
 
   function reloadPlan() {
     return fetchPlan(initDataRaw).then((data) => {
-      setPlan(
-        data === null
-          ? EMPTY_PLAN
-          : {
-              inclusions: data.program_inclusions.filter((i) => i.is_active),
-              items: data.plan_items,
-              weeks: data.plan_weeks,
-            },
-      );
+      setPlan(toPlanState(data));
     });
   }
 
@@ -256,6 +272,20 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
       setRemoveError(error instanceof Error ? error.message : String(error));
     } finally {
       setRemovingPlanItemId(null);
+    }
+  }
+
+  async function handleRemoveInclusion(inclusionId: number) {
+    setRemovingInclusionId(inclusionId);
+    setInclusionError(null);
+    try {
+      await deactivateProgramInclusion(initDataRaw, inclusionId);
+      setRemoveInclusionConfirmId(null);
+      await reloadPlan();
+    } catch (error) {
+      setInclusionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRemovingInclusionId(null);
     }
   }
 
@@ -309,15 +339,7 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
     fetchPlan(initDataRaw)
       .then((data) => {
         if (!cancelled) {
-          setPlan(
-            data === null
-              ? EMPTY_PLAN
-              : {
-                  inclusions: data.program_inclusions.filter((i) => i.is_active),
-                  items: data.plan_items,
-                  weeks: data.plan_weeks,
-                },
-          );
+          setPlan(toPlanState(data));
         }
       })
       .catch(() => {
@@ -486,6 +508,8 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
   const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;
   const visibleWeeks = plan.weeks.length > 0 ? [plan.weeks[selectedIndex]] : [];
   const libraryExercises = exercisesState.phase === "ready" ? exercisesState.exercises : [];
+  const activeInclusions = plan.inclusions.filter((i) => i.is_active);
+  const finishedInclusions = completedInclusions(plan.inclusions);
 
   let statusText: string;
   if (isReady && dashboard.is_first_workout) {
@@ -507,7 +531,88 @@ export function DashboardScreen({ initDataRaw, onStartSession }: Props) {
       >
         Мои тренировки
       </Button>
-      {visibleWeeks.length > 0 && (
+      <div className="workout-mode-buttons" role="tablist" aria-label="Обзор плана">
+        {([["now", "Сейчас"], ["completed", "Завершённые"]] as const).map(([key, label]) => (
+          <button
+            key={key} type="button" role="tab" aria-selected={overviewTab === key}
+            className={overviewTab === key ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
+            onClick={() => setOverviewTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {overviewTab === "completed" && (
+        <div className="profile-card" data-testid="plans-completed">
+          {finishedInclusions.length === 0 && (
+            <p className="block-subtitle" data-testid="plans-completed-empty">
+              Завершённых курсов пока нет. Убранные из плана курсы появятся здесь.
+            </p>
+          )}
+          {finishedInclusions.map((inclusion) => (
+            <div key={inclusion.id} className="plan-week-day-group" data-testid="plans-completed-row">
+              <p className="plan-item-row">{inclusion.program_name}</p>
+              <p className="block-subtitle">{inclusionDateRange(inclusion)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {overviewTab === "now" && (
+        <div className="profile-card" data-testid="plans-now-card">
+          <p className="block-subtitle">Текущий план</p>
+          {activeInclusions.length === 0 && (
+            <p className="block-subtitle" data-testid="plans-now-empty">
+              Курсов в плане нет. Добавьте курс на Главной.
+            </p>
+          )}
+          {activeInclusions.map((inclusion) => {
+            const currentItems = plan.items.filter(
+              (item) => item.program_inclusion_id === inclusion.id && item.plan_week_id === currentWeekId,
+            );
+            const progress = weekProgress(
+              groupPlanItems(currentItems, plan.inclusions, libraryExercises).map((group) => group.items),
+            );
+            const weekLabel = inclusionWeekLabel(inclusion);
+            const confirming = removeInclusionConfirmId === inclusion.id;
+            const removing = removingInclusionId === inclusion.id;
+            return (
+              <div key={inclusion.id} className="plan-week-day-group" data-testid="plans-now-inclusion">
+                <p className="plan-item-row">{inclusion.program_name}</p>
+                <p className="block-subtitle">
+                  {weekLabel ? `${weekLabel} · ` : ""}
+                  <span data-testid="plans-now-progress">{`На этой неделе: ${progress.done} из ${progress.total}`}</span>
+                </p>
+                {!confirming && (
+                  <Button size="s" mode="outline" onClick={() => setRemoveInclusionConfirmId(inclusion.id)}>
+                    Убрать курс из плана
+                  </Button>
+                )}
+                {confirming && (
+                  <>
+                    <p className="block-subtitle">
+                      Убрать курс «{inclusion.program_name}» из плана? История сохранится.
+                    </p>
+                    {inclusionError && <p className="gap-banner">{inclusionError}</p>}
+                    <Button
+                      size="s" mode="outline" disabled={removing}
+                      onClick={() => void handleRemoveInclusion(inclusion.id)}
+                    >
+                      {removing ? "Убираю…" : "Убрать"}
+                    </Button>
+                    <Button
+                      size="s" mode="outline" disabled={removing}
+                      onClick={() => { setRemoveInclusionConfirmId(null); setInclusionError(null); }}
+                    >
+                      Отмена
+                    </Button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {overviewTab === "now" && visibleWeeks.length > 0 && (
         <>
           {visibleWeeks.map((week) => {
             const isCurrent = week.id === currentWeekId;

@@ -12,7 +12,8 @@ test("«Планы»: добавить Планку в Среду и Отжим�
 
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByText("Подтягивания")).toBeVisible();
+  // #266: имя курса есть и в карточке плана, и в строке недели — проверяем строку недели.
+  await expect(page.getByText(/^Подтягивания · \d+\/\d+$/)).toBeVisible();
 
   // --- Добавить "Планка" в Среду ---
   await page.getByRole("button", { name: "+ Добавить упражнение" }).click();
