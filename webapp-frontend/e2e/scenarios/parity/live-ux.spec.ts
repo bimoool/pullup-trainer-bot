@@ -3,11 +3,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
-import { pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
+import { emitTelegramThemeChange, pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
 
 // Live Session UX fixes (#285 A): M1 — экранная клавиатура vs липкий транспорт и Enter в поле
 // записи подхода; M2 — офлайн-завершение закрывает шторку и показывает статус; M3 — BackButton с
-// открытой шторкой её закрывает (оценка/заметка остаются), Escape, фокус. Клавиатура = уменьшение высоты окна (как в Telegram WebView, см.
+// открытой шторкой её закрывает (оценка/заметка остаются), Escape, фокус; L3 — themeChanged. Клавиатура = уменьшение высоты окна (как в Telegram WebView, см.
 // keyboard-viewport.spec.ts). Seed: session_recovery — Workout «Тренировка восстановления»,
 // reps 3 x 8, отдых 60 с; 9978xx — по пользователю на ширину × тему, на тест id + 2*индекс + retry.
 const TITLE = "Тренировка восстановления";
@@ -249,6 +249,32 @@ for (const width of WIDTHS) {
         expect(apiFailures).toEqual([]);
       });
 
+      test("L3: themeChanged Telegram перекрашивает приложение (переменные, схема, appearance tgui)", async ({ page }, testInfo) => {
+        const { consoleErrors, apiFailures } = await openAppAs(page, userFor(3, testInfo.retry), { theme });
+        await expect(page.getByTestId("my-workout-card").first()).toBeVisible();
+        const root = page.locator("html");
+        const appRootClass = () => page.locator("#root > div").first().getAttribute("class");
+        const bg = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--tg-bg-color").trim());
+
+        const other: TelegramTheme = theme === "light" ? "dark" : "light";
+        await expect(root).toHaveAttribute("data-vp-scheme", theme);
+        const initialBg = await bg();
+        const initialClass = await appRootClass();
+
+        await emitTelegramThemeChange(page, other);
+        await expect(root).toHaveAttribute("data-vp-scheme", other);
+        expect(await bg()).not.toBe(initialBg);
+        expect(await appRootClass()).not.toBe(initialClass);
+        await expectNoHorizontalOverflow(page, `после themeChanged → ${other}`);
+
+        await emitTelegramThemeChange(page, theme);
+        await expect(root).toHaveAttribute("data-vp-scheme", theme);
+        expect(await bg()).toBe(initialBg);
+        expect(await appRootClass()).toBe(initialClass);
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
     });
   }
 }

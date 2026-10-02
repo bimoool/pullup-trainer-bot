@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import { backButtonAction, nextTrapIndex } from "../src/liveDialog.ts";
 import { FIELD_BLUR_GRACE_MS, isTextEntryTarget } from "../src/liveFieldFocus.ts";
+import { isDarkBackground, readTelegramColorScheme } from "../src/theme.ts";
 
 test("isTextEntryTarget: поля, открывающие клавиатуру", () => {
   assert.equal(isTextEntryTarget({ tagName: "INPUT", type: "number" }), true);
@@ -104,6 +105,25 @@ for (const { name, hint, text, surfaces } of [
     }
   });
 }
+
+// ---------- L3: тема Telegram (theme.ts) ----------
+
+test("readTelegramColorScheme: только light/dark, остальное — undefined", () => {
+  assert.equal(readTelegramColorScheme({ colorScheme: "dark" }), "dark");
+  assert.equal(readTelegramColorScheme({ colorScheme: "light" }), "light");
+  assert.equal(readTelegramColorScheme({ colorScheme: "sepia" }), undefined);
+  assert.equal(readTelegramColorScheme({}), undefined);
+  assert.equal(readTelegramColorScheme(undefined), undefined);
+});
+
+test("isDarkBackground: яркость bg решает схему (#rrggbb), мусор — светлая", () => {
+  assert.equal(isDarkBackground("#17212b"), true);
+  assert.equal(isDarkBackground(" #000000 "), true);
+  assert.equal(isDarkBackground("#ffffff"), false);
+  assert.equal(isDarkBackground("#f2f2f7"), false);
+  assert.equal(isDarkBackground(""), false);
+  assert.equal(isDarkBackground("rgb(0,0,0)"), false);
+});
 
 // ---------- M3: BackButton и диалог (liveDialog.ts) ----------
 
