@@ -652,3 +652,90 @@ html:has(.live-screen) {
     overflow-wrap: normal;
   }
 }
+
+/* ---------- пред-экран сессии (SessionPreScreen): тот же язык, что у плеера ---------- */
+.pre-screen .pre-header {
+  margin: var(--vp-sp-2) 0 var(--vp-sp-3);
+}
+.pre-screen .pre-header .plan-title {
+  font-size: var(--vp-fs-section);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.pre-screen .pre-eyebrow {
+  color: var(--vp-hint);
+}
+.pre-screen .pre-meta {
+  display: inline-block;
+  margin: 0 0 var(--vp-sp-3);
+  padding: 4px 12px;
+  font-size: var(--vp-fs-meta);
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--vp-accent-ink);
+  background: color-mix(in srgb, var(--vp-accent) 14%, transparent);
+  border-radius: var(--vp-radius-pill);
+}
+/* упражнения — карточки с номером и целью, как карточка «сейчас» в плеере */
+.app-shell .pre-screen .pre-exercises {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vp-sp-2);
+  margin: 0 0 var(--vp-sp-3);
+  padding: 0;
+  list-style: none;
+  counter-reset: pre-ex;
+  background: none;
+  box-shadow: none;
+}
+.app-shell .pre-screen .pre-exercises > li + li {
+  border-top: 0;
+}
+.pre-screen .pre-exercise {
+  position: relative;
+  counter-increment: pre-ex;
+  padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-3) 56px;
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.pre-screen .pre-exercise::before {
+  content: counter(pre-ex);
+  position: absolute;
+  left: var(--vp-sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: var(--vp-fs-meta);
+  font-weight: 800;
+  color: var(--vp-accent-ink);
+  background: color-mix(in srgb, var(--vp-accent) 14%, transparent);
+  border-radius: var(--vp-radius-pill);
+}
+.pre-screen .pre-exercise-line {
+  color: var(--vp-hint);
+  font-weight: 600;
+}
+.pre-screen .block-section {
+  margin-bottom: var(--vp-sp-2);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+/* sticky-транспорт: та же плашка, что у плеера; кнопка «Начать» — единственное главное действие */
+.pre-screen .pre-transport {
+  background: var(--vp-card-bg);
+  border-top: 1px solid var(--vp-divider);
+  box-shadow: 0 -6px 20px rgba(16, 24, 40, 0.06);
+}
+:root[data-vp-scheme="dark"] .pre-screen .pre-transport {
+  box-shadow: none;
+}
+.pre-screen .pre-transport button + button {
+  margin-top: var(--vp-sp-2);
+}
