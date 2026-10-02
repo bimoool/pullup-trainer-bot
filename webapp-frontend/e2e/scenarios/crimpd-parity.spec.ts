@@ -947,3 +947,89 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+// --- Live extra set & pause (#264): «+ Ещё подход» после плана, пауза отсчёта ----------------
+// Seed: golden_journey (reps 2 x 8) — своя пара пользователей на ширину/тему и на retry.
+const PAUSE_USERS = { 320: { id: 980_021, theme: "light" }, 390: { id: 980_031, theme: "dark" } } as const;
+
+for (const width of WIDTHS) {
+  const { id, theme } = PAUSE_USERS[width as 320 | 390];
+  test.describe(`Live extra set & pause @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 760 } });
+    test.setTimeout(120_000);
+
+    test("пауза замораживает отдых и переживает reload; «+ Ещё подход» после плана уходит как is_extra", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, id + testInfo.retry, { theme });
+      const batchBodies: { sets: { is_extra?: boolean; value: string }[] }[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().includes("/sets:batch")) {
+          batchBodies.push(request.postDataJSON());
+        }
+      });
+
+      await page.getByTestId("my-workout-card").filter({ hasText: EFFORT_TITLE }).click();
+      await page.getByRole("button", { name: "Добавить в план" }).click();
+      await page.getByRole("button", { name: "Свободный пул" }).click();
+      await page.getByRole("button", { name: "Добавить", exact: true }).click();
+      const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
+      await group.getByRole("button", { name: "Начать", exact: true }).click();
+      await page.getByRole("button", { name: "Начать", exact: true }).click();
+      await expect(page.getByText("Живая тренировка")).toBeVisible();
+
+      // Пауза не предлагается в фазе «Пошёл»; «+ Ещё подход» — пока план не выполнен.
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByText("Пошёл")).toBeVisible();
+      await expect(page.getByTestId("pause-toggle")).toHaveCount(0);
+      await expect(page.getByTestId("extra-set-button")).toHaveCount(0);
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await clickAndSync(page, "Готово", "/sets:batch");
+
+      // Отдых: пауза → таймер стоит, «Продолжить»; reload — пауза сохранена.
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      const timer = page.locator(".timer-duration-label");
+      await page.getByTestId("pause-toggle").click();
+      await expect(page.getByTestId("pause-toggle")).toHaveText("Продолжить");
+      const frozen = await timer.innerText();
+      await page.waitForTimeout(2300);
+      expect(await timer.innerText()).toBe(frozen);
+      await expectNoHorizontalOverflow(page, "Live: пауза");
+
+      await page.reload();
+      await expect(page.getByText("Живая тренировка")).toBeVisible();
+      await expect(page.getByTestId("pause-toggle")).toHaveText("Продолжить");
+      expect(await timer.innerText()).toBe(frozen);
+
+      // Продолжить — отсчёт идёт дальше с остатка.
+      await page.getByTestId("pause-toggle").click();
+      await expect(page.getByTestId("pause-toggle")).toHaveText("Пауза");
+      await expect.poll(async () => timer.innerText(), { timeout: 5000 }).not.toBe(frozen);
+
+      // Второй (последний плановый) подход, затем «+ Ещё подход».
+      await clickAndSync(page, "Пропустить отдых", "/phase/next");
+      await clickAndSync(page, "Готов", "/phase/next");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("7");
+      await clickAndSync(page, "Готово", "/sets:batch");
+      await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
+      await expect(page.getByTestId("pause-toggle")).toHaveCount(0);
+
+      await page.getByTestId("extra-set-button").click();
+      await expect(page.getByTestId("extra-set-form")).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Live: форма ещё подхода");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("5");
+      await clickAndSync(page, "Записать", "/sets:batch");
+      await expect(page.getByTestId("extra-count")).toContainText("1");
+      expect(batchBodies.flatMap((b) => b.sets).filter((s) => s.is_extra)).toEqual([
+        expect.objectContaining({ value: "5", is_extra: true }),
+      ]);
+      expect(batchBodies.flatMap((b) => b.sets).filter((s) => !s.is_extra)).toHaveLength(2);
+
+      await page.getByRole("button", { name: "Завершить", exact: true }).click();
+      await clickAndSync(page, "Сохранить и завершить", "/complete");
+      await expect(page.getByText("Тренировка завершена")).toBeVisible();
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
+}

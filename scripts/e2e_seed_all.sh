@@ -64,3 +64,7 @@ seed golden_journey 980001
 seed golden_journey 980002
 seed golden_journey 980011
 seed golden_journey 980012
+seed golden_journey 980021
+seed golden_journey 980022
+seed golden_journey 980031
+seed golden_journey 980032

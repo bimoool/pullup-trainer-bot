@@ -209,6 +209,7 @@ def _session_response(
                     set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                     value=str(log.value), unit=log.unit,
                     effort=str(log.effort) if log.effort is not None else None, note=log.note,
+                    is_extra=log.is_extra,
                 )
                 for log in block.set_logs
             ],
@@ -1281,6 +1282,7 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                         set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                         value=str(log.value), unit=log.unit,
                         effort=str(log.effort) if log.effort is not None else None, note=log.note,
+                        is_extra=log.is_extra,
                     )
                     for log in block.set_logs
                 ],
@@ -1420,6 +1422,7 @@ async def batch_live_session_sets(
         BatchSetLogInput(
             set_index=entry.set_index, exercise_id=entry.exercise_id, value=entry.value,
             effort=entry.effort, note=entry.note, block_index=entry.block_index,
+            is_extra=entry.is_extra,
         )
         for entry in body.sets
     ]
