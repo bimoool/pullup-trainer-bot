@@ -34,6 +34,14 @@ seed tests_hub 996001
 seed tests_hub 996002
 seed tests_hub 996011
 seed tests_hub 996012
+seed peer_cohort_female 994001
+seed peer_cohort_male 994002
+seed peer_insufficient 994011
+seed peer_insufficient 994012
+seed peer_empty 994021
+seed peer_empty 994022
+seed peer_empty 994031
+seed peer_empty 994032
 seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003
