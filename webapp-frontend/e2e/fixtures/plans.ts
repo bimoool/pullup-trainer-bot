@@ -4,7 +4,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 // специ сначала открывают лист, потом выбирают пункт (смысл проверок не меняется).
 
 export type RowAction = "Перенести" | "Редактировать тренировку" | "Убрать из плана";
-export type PlanAction = "Скопировать неделю → на следующую" | "Убрать курс из плана";
+export type PlanAction = "Скопировать неделю" | "Убрать курс из плана";
 
 /** Открыть лист «⋯» строки (первой, либо строки с заданным названием) и нажать пункт. */
 export async function pickRowAction(page: Page, action: RowAction, title?: string | RegExp): Promise<void> {
@@ -15,11 +15,20 @@ export async function pickRowAction(page: Page, action: RowAction, title?: strin
   await page.getByTestId("plans-row-sheet").getByRole("button", { name: action, exact: true }).click();
 }
 
-/** Открыть лист «⋯» плана (внутри scope — карточки курса, иначе первый на экране) и нажать пункт. */
+/** Открыть лист «⋯» и нажать пункт (#288): «Скопировать неделю N → N+1» — в листе плана («Текущий план», «⋯» в шапке
+ * карточки), «Убрать курс из плана» — в листе курса (внутри scope — карточки курса, иначе первой на экране). */
 export async function pickPlanAction(page: Page, action: PlanAction, scope?: Locator): Promise<void> {
+  if (action === "Скопировать неделю") {
+    await page.getByTestId("plans-card-more").click();
+    await page.getByTestId("plans-plan-sheet").getByRole("button", { name: /^Скопировать неделю \d+ → \d+$/ }).click();
+    return;
+  }
   await (scope ?? page).getByTestId("plans-plan-more").first().click();
   await page.getByTestId("plans-plan-sheet").getByRole("button", { name: action, exact: true }).click();
 }
+
+/** Кнопка «Начать» строки/блока «Сегодня» — её имя «Начать: <название>[, день]» (#288); на предэкране — просто «Начать». */
+export const PLAN_START = /^Начать: /;
 
 /** Лист закрыт (ни строки, ни плана). */
 export async function expectNoPlansSheet(page: Page): Promise<void> {
@@ -48,19 +57,31 @@ export function watchServerPlanToday(page: Page): { today: () => Promise<string>
   return { today: () => first, weekdayIndex: async () => weekdayOf(await first) };
 }
 
+/** Подменить ответ GET /api/v2/plan (`mutate` правит JSON). Ошибки позднего запроса (страница уже закрыта) глотаем —
+ * иначе обработчик, пойманный на разборке теста, роняет прогон «вне теста». */
+export async function mutatePlanResponse(page: Page, mutate: (body: any) => void): Promise<void> {
+  await page.route(/\/api\/v2\/plan(\?|$)/, async (route) => {
+    try {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const body = await response.json();
+      mutate(body);
+      await route.fulfill({ response, json: body });
+    } catch {
+      // страница/контекст закрыты — ответ уже не нужен
+    }
+  });
+}
+
 /** Подменить `today` в ответах GET /api/v2/plan (null — не трогать), чтобы проверить «Сегодня» независимо от часов устройства. */
 export async function overridePlanToday(page: Page, today: () => string | null): Promise<void> {
-  await page.route(/\/api\/v2\/plan(\?|$)/, async (route) => {
-    if (route.request().method() !== "GET") {
-      await route.continue();
-      return;
-    }
-    const response = await route.fetch();
-    const body = await response.json();
+  await mutatePlanResponse(page, (body) => {
     const forced = today();
     if (body?.plan && forced !== null) {
       body.plan.today = forced;
     }
-    await route.fulfill({ response, json: body });
   });
 }

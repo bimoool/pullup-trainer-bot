@@ -44,6 +44,20 @@
   --vp-cat-3: #2fa56a;
   --vp-cat-4: #8e5bd1;
   --vp-cat-5: #1f3a68;
+  /* #288: цвет ТЕКСТА в категорийной тонировке (чип, подпись) — «чернила»: цвет категории,
+     подмешанный к цвету текста темы. Сами --vp-cat-* остаются для полос/заливок. WCAG AA ≥ 4.5
+     на чипе (16 % категории на карточке) проверяет tests/plansContrast.test.ts. */
+  --vp-cat-0-ink: color-mix(in srgb, var(--vp-cat-0) 55%, var(--tg-text-color));
+  --vp-cat-1-ink: color-mix(in srgb, var(--vp-cat-1) 55%, var(--tg-text-color));
+  --vp-cat-2-ink: color-mix(in srgb, var(--vp-cat-2) 55%, var(--tg-text-color));
+  --vp-cat-3-ink: color-mix(in srgb, var(--vp-cat-3) 55%, var(--tg-text-color));
+  --vp-cat-4-ink: color-mix(in srgb, var(--vp-cat-4) 55%, var(--tg-text-color));
+  --vp-cat-5-ink: color-mix(in srgb, var(--vp-cat-5) 55%, var(--tg-text-color));
+  /* #288: деструктивное действие — собственный семантический цвет (не цвет категории «красная»):
+     ≥ 4.5 на карточке и странице обеих тем. */
+  --vp-danger: #c62828;
+  /* акцент (синий) как цвет текста на своей тонировке («Начать», чип ручной строки) */
+  --vp-accent-ink: color-mix(in srgb, var(--vp-accent) 65%, var(--tg-text-color));
 }
 
 /* tgui берёт акцент из --tg-theme-*; вне Telegram (themeParams пустые) подставляем наш акцент,
@@ -60,6 +74,21 @@
   --vp-card-bg: var(--tg-secondary-bg-color);
   --vp-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
   --vp-divider: color-mix(in srgb, var(--tg-hint-color) 28%, transparent);
+  /* #288: на тёмной карточке тёмно-синяя --vp-cat-5 (≈1.5:1) и прочие цвета категорий — светлее. */
+  --vp-cat-0: #5b9dff;
+  --vp-cat-1: #ff7a7f;
+  --vp-cat-2: #f5a04a;
+  --vp-cat-3: #3fbf80;
+  --vp-cat-4: #b08af0;
+  --vp-cat-5: #8fb0e8;
+  --vp-cat-0-ink: color-mix(in srgb, var(--vp-cat-0) 60%, var(--tg-text-color));
+  --vp-cat-1-ink: color-mix(in srgb, var(--vp-cat-1) 60%, var(--tg-text-color));
+  --vp-cat-2-ink: color-mix(in srgb, var(--vp-cat-2) 60%, var(--tg-text-color));
+  --vp-cat-3-ink: color-mix(in srgb, var(--vp-cat-3) 60%, var(--tg-text-color));
+  --vp-cat-4-ink: color-mix(in srgb, var(--vp-cat-4) 60%, var(--tg-text-color));
+  --vp-cat-5-ink: color-mix(in srgb, var(--vp-cat-5) 60%, var(--tg-text-color));
+  --vp-danger: #ff6b6b;
+  --vp-accent-ink: color-mix(in srgb, var(--vp-accent) 60%, var(--tg-text-color));
 }
 
 html,

@@ -455,7 +455,7 @@ for (const width of WIDTHS) {
       await page.getByRole("button", { name: "Свободный пул" }).click();
       await page.getByRole("button", { name: "Добавить", exact: true }).click();
       const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
-      await group.getByRole("button", { name: "Начать", exact: true }).click();
+      await group.getByRole("button", { name: /^Начать: / }).click();
       await page.getByRole("button", { name: "Начать", exact: true }).click();
       await expect(page.getByText("Живая тренировка")).toBeVisible();
 
@@ -545,7 +545,7 @@ for (const width of WIDTHS) {
       await expect(prev).toBeEnabled();
       await expect(progress).toContainText("Текущая неделя · 1 из 3");
       await expect(counters).toHaveText(["1/2", "0/1"]);
-      await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(2);
+      await expect(page.getByTestId("plans-row").getByRole("button", { name: /^Начать: / })).toHaveCount(2); // строки недели, не блок «Сегодня»
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
       // #286 B: «Перенести»/«Убрать из плана» — в листе «⋯»; на строке — одна «⋯» вместо четырёх пилюль.
       await expect(page.getByTestId("plans-row-more")).toHaveCount(2);
@@ -557,7 +557,7 @@ for (const width of WIDTHS) {
       await expect(label).not.toHaveText(currentLabel ?? "");
       await expect(progress).toHaveText("1 из 1");
       await expect(counters).toHaveText(["1/1"]);
-      await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Начать: / })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toHaveCount(0);
       await expect(page.getByTestId("plans-row-more")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Убрать из плана" })).toHaveCount(0);
@@ -986,7 +986,7 @@ for (const width of WIDTHS) {
       await page.getByRole("button", { name: "Свободный пул" }).click();
       await page.getByRole("button", { name: "Добавить", exact: true }).click();
       const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
-      await group.getByRole("button", { name: "Начать", exact: true }).click();
+      await group.getByRole("button", { name: /^Начать: / }).click();
       await page.getByRole("button", { name: "Начать", exact: true }).click();
       await expect(page.getByText("Живая тренировка")).toBeVisible();
 
@@ -1062,7 +1062,7 @@ async function startFromFreePool(page: Page, title: string) {
   await page.getByRole("button", { name: "Свободный пул" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${title}`) });
-  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await group.getByRole("button", { name: /^Начать: / }).click();
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   await expect(page.getByText("Живая тренировка")).toBeVisible();
 }

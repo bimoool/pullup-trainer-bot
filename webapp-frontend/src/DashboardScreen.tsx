@@ -18,7 +18,7 @@ import {
   deactivateProgramInclusion,
   type TrainingPlanResponseV2,
 } from "./apiV2";
-import { programCategoryColorVar } from "./homeDiscovery";
+import { categoryInkVar, programCategoryColorVar } from "./homeDiscovery";
 import { completedInclusions, inclusionDateRange, inclusionWeekLabel } from "./plansOverview";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { ActionSheet, MoreButton, PlanProgressBar, type SheetAction } from "./ActionSheet";
@@ -305,6 +305,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const [copyResult, setCopyResult] = useState<string | null>(null);
   // #286 B — нижние листы «⋯»: действия строки дня и плана (курса). Смонтирован = открыт.
   const [sheet, setSheet] = useState<PlansSheetState | null>(null);
+  // #288 — «⋯», с которой открыли лист (туда вернётся фокус; на iOS тап не фокусирует кнопку),
+  // и ключ «⋯», которой нужно вернуть фокус после подтверждения/«Отмены» (пока подтверждение — «⋯» скрыта).
+  const [sheetOpener, setSheetOpener] = useState<HTMLElement | null>(null);
+  const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
+  const copyConfirmRef = useRef<HTMLDivElement>(null);
+  function openSheet(next: PlansSheetState, opener: HTMLElement) {
+    setSheetOpener(opener);
+    setSheet(next);
+  }
 
   async function handleAdvanceWeek(lastWeek: PlanWeekResponseV2) {
     setWeekBusy(true);
@@ -475,6 +484,31 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- applyPlan/refresh работают через ref и setPlan.
   }, [initDataRaw]);
+
+  // #288 — после выбора пункта листа, открывающего подтверждение, «⋯» скрыта (или лист закрыт): фокус —
+  // на первую кнопку подтверждения (иначе он теряется; на iOS тап по пункту фокус не ставит вообще).
+  useEffect(() => {
+    if (removeConfirmPlanItemId !== null || removeInclusionConfirmId !== null) {
+      document.querySelector<HTMLElement>(".plans-confirm [data-confirm-first]")?.focus();
+    }
+  }, [removeConfirmPlanItemId, removeInclusionConfirmId]);
+
+  // #288 — подтверждение копирования рисуется под списком недели, часто ниже экрана: показываем и фокусируем «Скопировать».
+  useEffect(() => {
+    const confirmBlock = copyConfirmRef.current;
+    if (copyConfirm && confirmBlock !== null) {
+      confirmBlock.scrollIntoView({ block: "center" });
+      confirmBlock.querySelector<HTMLElement>("[data-confirm-first]")?.focus({ preventScroll: true });
+    }
+  }, [copyConfirm]);
+
+  // «Отмена» подтверждения возвращает фокус на «⋯» (она снова в DOM к этому эффекту).
+  useEffect(() => {
+    if (pendingFocusKey !== null) {
+      document.querySelector<HTMLElement>(`[data-focus-key="${pendingFocusKey}"]`)?.focus();
+      setPendingFocusKey(null);
+    }
+  }, [pendingFocusKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -650,7 +684,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const libraryExercises = exercisesState.phase === "ready" ? exercisesState.exercises : [];
   const courseTint = (programId: number) => {
     const color = programCategoryColorVar(catalogPrograms, programId);
-    return color === null ? undefined : ({ ["--cat" as string]: color });
+    return color === null ? undefined : ({ ["--cat" as string]: color, ["--cat-ink" as string]: categoryInkVar(color) });
   };
   const activeInclusions = plan.inclusions.filter((i) => i.is_active);
   const finishedInclusions = completedInclusions(plan.inclusions);
@@ -719,14 +753,22 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         key: "remove", label: "Убрать из плана", danger: true, testId: "plans-sheet-remove",
         onSelect: () => { setRemoveError(null); setRemoveConfirmPlanItemId(sheet.planItemId); },
       });
-      return <ActionSheet title={sheet.title} actions={actions} onClose={() => setSheet(null)} testId="plans-row-sheet" />;
+      return (
+        <ActionSheet
+          title={sheet.title} actions={actions} onClose={() => setSheet(null)} testId="plans-row-sheet"
+          returnFocusTo={sheetOpener}
+        />
+      );
     }
+    // #288 — копирование недели относится к плану, а не к курсу: лист плана («Текущий план») — только оно,
+    // лист курса — только «Убрать курс из плана».
     const inclusion = sheet.inclusionId === null ? undefined : activeInclusions.find((i) => i.id === sheet.inclusionId);
     const actions: SheetAction[] = [];
-    if (canCopyWeek) {
+    if (inclusion === undefined && canCopyWeek) {
+      const weekNumber = plan.weeks[selectedIndex].week_number;
       actions.push({
-        key: "copy", label: "Скопировать неделю → на следующую", disabled: weekBusy, testId: "plans-sheet-copy",
-        onSelect: () => { setCopyConfirm(true); setCopyResult(null); },
+        key: "copy", label: `Скопировать неделю ${weekNumber} → ${weekNumber + 1}`, disabled: weekBusy,
+        testId: "plans-sheet-copy", onSelect: () => { setCopyConfirm(true); setCopyResult(null); },
       });
     }
     if (inclusion !== undefined) {
@@ -738,7 +780,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     return (
       <ActionSheet
         title={inclusion?.program_name ?? "Текущий план"} actions={actions} onClose={() => setSheet(null)}
-        testId="plans-plan-sheet"
+        testId="plans-plan-sheet" returnFocusTo={sheetOpener}
       />
     );
   }
@@ -790,8 +832,11 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         <div className="profile-card" data-testid="plans-now-card">
           <div className="plans-card-head">
             <p className="block-subtitle">Текущий план</p>
-            {activeInclusions.length === 0 && canCopyWeek && (
-              <MoreButton label="Действия плана" testId="plans-plan-more" onClick={() => setSheet({ kind: "plan", inclusionId: null })} />
+            {canCopyWeek && (
+              <MoreButton
+                label="Действия: Текущий план" testId="plans-card-more" focusKey="plan"
+                onClick={(opener) => openSheet({ kind: "plan", inclusionId: null }, opener)}
+              />
             )}
           </div>
           {activeInclusions.length === 0 && (
@@ -831,8 +876,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   </div>
                   {!confirming && (
                     <MoreButton
-                      label="Действия плана" testId="plans-plan-more"
-                      onClick={() => setSheet({ kind: "plan", inclusionId: inclusion.id })}
+                      label={`Действия: ${inclusion.program_name}`} testId="plans-plan-more" focusKey={`course-${inclusion.id}`}
+                      onClick={(opener) => openSheet({ kind: "plan", inclusionId: inclusion.id }, opener)}
                     />
                   )}
                 </div>
@@ -848,14 +893,18 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     {inclusionError && <p className="gap-banner">{inclusionError}</p>}
                     <div className="plans-confirm-actions">
                       <Button
-                        size="s" mode="outline" disabled={removing}
+                        size="s" mode="outline" disabled={removing} data-confirm-first="true"
                         onClick={() => void handleRemoveInclusion(inclusion.id)}
                       >
                         {removing ? "Убираю…" : "Убрать"}
                       </Button>
                       <Button
                         size="s" mode="outline" disabled={removing}
-                        onClick={() => { setRemoveInclusionConfirmId(null); setInclusionError(null); }}
+                        onClick={() => {
+                          setRemoveInclusionConfirmId(null);
+                          setInclusionError(null);
+                          setPendingFocusKey(`course-${inclusion.id}`);
+                        }}
                       >
                         Отмена
                       </Button>
@@ -868,8 +917,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         </div>
       )}
       {overviewTab === "now" && todayGroups.length > 0 && (
-        <section className="profile-card plans-today" data-testid="plans-today" aria-label="Сегодня">
-          <p className="plans-today-title">Сегодня</p>
+        <section className="profile-card plans-today" data-testid="plans-today" aria-labelledby="plans-today-title">
+          <h2 id="plans-today-title" className="plans-today-title">Сегодня</h2>
           {todayGroups.map((group) => {
             const counter = groupCounter(group.items);
             return (
@@ -933,6 +982,9 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               const canEditWorkout = mutableItem !== null
                 && mutableItem.complex_id !== null && mutableItem.complex_source_type === "user";
               const counter = groupCounter(group.items);
+              // #288 — имя для скринридера: название + день (одинаковые названия в разные дни различимы).
+              const rowDay = group.items[0]?.day_of_week ?? null;
+              const rowLabel = `${group.title}, ${rowDay === null ? "без дня" : (DAY_NAMES[rowDay] ?? `день ${rowDay}`).toLowerCase()}`;
               return (
                 <div key={group.key} className="plan-week-day-group plans-row" data-testid="plans-row" style={groupTint(group)}>
                   <div className="plans-row-main">
@@ -945,20 +997,20 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     </div>
                     {isCurrent && (
                       <button
-                        type="button" className="plans-start" disabled={startingGroupKey !== null}
-                        onClick={() => startGroup(group)}
+                        type="button" className="plans-start" aria-label={`Начать: ${rowLabel}`}
+                        disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
                       >
                         {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
                       </button>
                     )}
                     {isEditable && mutableItem !== null && !isRemoveConfirming && (
                       <MoreButton
-                        label={`Действия: ${group.title}`} testId="plans-row-more"
-                        onClick={() => setSheet({
+                        label={`Действия: ${rowLabel}`} testId="plans-row-more" focusKey={`row-${mutableItem.id}`}
+                        onClick={(opener) => openSheet({
                           kind: "row", planItemId: mutableItem.id, title: group.title,
                           dayOfWeek: mutableItem.day_of_week, planWeekId: mutableItem.plan_week_id,
                           editWorkoutId: canEditWorkout ? mutableItem.complex_id : null,
-                        })}
+                        }, opener)}
                       />
                     )}
                   </div>
@@ -968,12 +1020,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                       {removeError && <p className="gap-banner">{removeError}</p>}
                       <div className="plans-confirm-actions">
                         <Button
-                          size="s" mode="outline" disabled={isRemoving}
+                          size="s" mode="outline" disabled={isRemoving} data-confirm-first="true"
                           onClick={() => void handleRemovePlanItem(mutableItem.id)}
                         >
                           {isRemoving ? "Убираю…" : "Убрать"}
                         </Button>
-                        <Button size="s" mode="outline" disabled={isRemoving} onClick={() => setRemoveConfirmPlanItemId(null)}>
+                        <Button
+                          size="s" mode="outline" disabled={isRemoving}
+                          onClick={() => { setRemoveConfirmPlanItemId(null); setPendingFocusKey(`row-${mutableItem.id}`); }}
+                        >
                           Отмена
                         </Button>
                       </div>
@@ -1061,21 +1116,27 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   </div>
                 )}
                 {copyConfirm && isEditable && canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex) && (
-                  <div className="plan-week-day-group" data-testid="plan-week-copy">
+                  <div ref={copyConfirmRef} className="plan-week-day-group" data-testid="plan-week-copy">
                     <p className="block-subtitle">
                       Скопировать свои тренировки и упражнения этой недели в следующую? Дубли пропустим.
                     </p>
                     <div className="plans-confirm-actions">
-                      <Button size="s" mode="outline" disabled={weekBusy} onClick={() => void handleCopyWeek(week.id)}>
+                      <Button
+                        size="s" mode="outline" disabled={weekBusy} data-confirm-first="true"
+                        onClick={() => void handleCopyWeek(week.id)}
+                      >
                         {weekBusy ? "Копирую…" : "Скопировать"}
                       </Button>
-                      <Button size="s" mode="outline" disabled={weekBusy} onClick={() => setCopyConfirm(false)}>
+                      <Button
+                        size="s" mode="outline" disabled={weekBusy}
+                        onClick={() => { setCopyConfirm(false); setPendingFocusKey("plan"); }}
+                      >
                         Отмена
                       </Button>
                     </div>
                   </div>
                 )}
-                {copyResult && <p className="block-subtitle" data-testid="plan-week-copy-result">{copyResult}</p>}
+                {copyResult && <p className="block-subtitle" role="status" data-testid="plan-week-copy-result">{copyResult}</p>}
                 {weekError && <p className="gap-banner">{weekError}</p>}
               </Section>
             );

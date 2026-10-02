@@ -43,7 +43,7 @@ test("Golden Journey: Главная → в план → тренировка �
   await expect(group).toBeVisible(); // приземлились на «Планах»
 
   // --- Старт → reps (2 подхода) → Summary ---
-  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await group.getByRole("button", { name: /^Начать: / }).click();
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
   await expect(page.getByText("Живая тренировка")).toBeVisible();
   await expect(page.getByText(/Подход 1\/2 · Цель: 8 повт\./)).toBeVisible();

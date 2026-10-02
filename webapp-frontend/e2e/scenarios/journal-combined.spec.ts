@@ -33,7 +33,7 @@ test.fixme("Планы → Подтягивания/Планка → Complete �
 
   // --- Подтягивания: оба блока в одной Session ---
   await page.locator(".plan-week-day-group", { hasText: "Подтягивания" })
-    .getByRole("button", { name: "Начать", exact: true }).click();
+    .getByRole("button", { name: /^Начать: / }).click();
   const pullupsStartPromise = page.waitForResponse(
     (response) => response.url().includes("/api/v2/sessions/live") && response.status() === 200,
   );
@@ -56,7 +56,7 @@ test.fixme("Планы → Подтягивания/Планка → Complete �
   // --- Планка ---
   await page.getByRole("button", { name: "Планы" }).click();
   await page.locator(".plan-week-day-group", { hasText: "Планка" })
-    .getByRole("button", { name: "Начать", exact: true }).click();
+    .getByRole("button", { name: /^Начать: / }).click();
   await expect(page.getByText("Планка")).toBeVisible();
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   await logSet("30");

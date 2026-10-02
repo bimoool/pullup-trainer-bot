@@ -344,7 +344,7 @@ const FLOWS: Flow[] = [
         dest: [page.getByText("День", { exact: true }), byName(page, "Свободный пул")], exit: { tab: "Планы" }, origin: plansMarker(page),
       });
       await visit(page, {
-        where: "Планы → Начать", open: () => byName(page, "Начать").first().click(),
+        where: "Планы → Начать", open: () => byName(page, /^Начать: /).first().click(),
         dest: [byName(page, "Начать")], exit: "telegram", origin: plansMarker(page), minChars: 15, // предэкран: название + «Начать»
       });
     },
@@ -726,10 +726,10 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       const next = page.getByRole("button", { name: "Следующая неделя" });
       const prev = page.getByRole("button", { name: "Предыдущая неделя" });
       const copyConfirmation = page.getByText(/Скопировать свои тренировки и упражнения/);
-      const copyAction = "Скопировать неделю → на следующую" as const;
+      const copyAction = "Скопировать неделю" as const;
 
       await expect(label).toContainText(/Неделя \d+ · \d{1,2} \S+ – \d{1,2} \S+/);
-      await expect(page.getByRole("button", { name: "Начать", exact: true })).not.toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Начать: / })).not.toHaveCount(0);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
       await expectScreenHealthy(page, "Планы: текущая неделя");
       const current = await label.innerText();
@@ -738,7 +738,7 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       await prev.click();
       await expect(label).not.toHaveText(current);
       await expect(page.getByTestId("plan-item-counter")).toHaveText(["1/1"]);
-      await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Начать: / })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toHaveCount(0);
       await expectScreenHealthy(page, "Планы: прошлая неделя");
       await next.click();

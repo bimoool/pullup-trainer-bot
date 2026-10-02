@@ -21,7 +21,7 @@ test.fixme("«Планы» → manual «Планка»/«Отжимания» �
   await expect(weekTitle("Отжимания")).toBeVisible();
 
   // --- Планка: Start без всякого ProgramInclusion/STEP readiness ---
-  const startButtons = page.getByRole("button", { name: "Начать", exact: true });
+  const startButtons = page.getByRole("button", { name: /^Начать: / });
   await startButtons.first().click();
   await page.waitForTimeout(800);
 

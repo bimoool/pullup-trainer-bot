@@ -25,7 +25,7 @@ for (const width of WIDTHS) {
       const prev = page.getByRole("button", { name: "Предыдущая неделя" });
       // #286 B: «Скопировать неделю» — пункт листа «⋯» плана; подтверждение остаётся на карточке недели.
       const copyConfirmation = page.getByText(/Скопировать свои тренировки и упражнения/);
-      const copyAction = "Скопировать неделю → на следующую" as const;
+      const copyAction = "Скопировать неделю" as const;
       const currentLabel = (await label.textContent()) ?? "";
       await expect(counters).toHaveCount(2);
 

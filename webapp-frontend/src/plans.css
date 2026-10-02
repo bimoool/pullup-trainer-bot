@@ -113,6 +113,7 @@
 /* ---------- строка дня ---------- */
 .plan-week-day-group.plans-row {
   --tint: var(--cat, var(--vp-accent));
+  --tint-ink: var(--cat-ink, var(--vp-accent-ink));
   padding: var(--vp-sp-2) 0;
 }
 
@@ -124,6 +125,7 @@
 
 .plans-row-main {
   --tint: var(--cat, var(--vp-accent));
+  --tint-ink: var(--cat-ink, var(--vp-accent-ink));
   display: flex;
   align-items: center;
   gap: var(--vp-sp-2);
@@ -163,7 +165,7 @@
   padding: 2px 8px;
   border-radius: var(--vp-radius-pill);
   background: color-mix(in srgb, var(--tint) 16%, transparent);
-  color: var(--tint);
+  color: var(--tint-ink); /* #288: текст — «чернила» категории (AA), полоса остаётся чистым цветом */
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -193,7 +195,7 @@
 
 .plans-row-chip[data-done="true"] {
   background: color-mix(in srgb, var(--vp-cat-3) 18%, transparent);
-  color: var(--vp-cat-3);
+  color: var(--vp-cat-3-ink);
 }
 
 .plans-start {
@@ -203,7 +205,7 @@
   border: 0;
   border-radius: var(--vp-radius-pill);
   background: var(--vp-accent-soft);
-  color: var(--vp-accent);
+  color: var(--vp-accent-ink);
   font: inherit;
   font-size: 14px;
   font-weight: 700;
@@ -304,7 +306,7 @@
 }
 
 .plans-sheet-danger {
-  color: var(--vp-cat-1);
+  color: var(--vp-danger); /* #288: семантический цвет, не цвет категории «красная» */
 }
 
 .plans-sheet-cancel {

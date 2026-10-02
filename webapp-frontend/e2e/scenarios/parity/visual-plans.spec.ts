@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { overridePlanToday, pickPlanAction, pickRowAction, watchServerPlanToday } from "../../fixtures/plans";
+import { mutatePlanResponse, overridePlanToday, PLAN_START, pickPlanAction, pickRowAction, watchServerPlanToday } from "../../fixtures/plans";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
@@ -32,7 +32,29 @@ const OVERVIEW_USERS = { 320: { id: 990_101, theme: "light" }, 390: { id: 990_10
 const PROGRESS_USERS = { 320: { id: 990_001, theme: "light" }, 390: { id: 990_002, theme: "dark" } } as const;
 // builder_workouts: тренировка на день недели (0 = пн … 5 = сб); сегодня — одна из них, кроме воскресенья.
 const WORKOUT_BY_DAY = ["Только reps", "Только time", "Только max", "Только interval", "Смешанная", "Дубли"];
-const DANGER_RGB = "rgb(229, 72, 77)"; // --vp-cat-1
+// #288: деструктивное действие — семантический --vp-danger (не цвет категории «красная»): светлая #c62828, тёмная #ff6b6b.
+const DANGER_RGB = { light: "rgb(198, 40, 40)", dark: "rgb(255, 107, 107)" } as const;
+
+/** Контраст WCAG цветов из getComputedStyle (rgb()/rgba()/color(srgb …)). */
+type Rgba = [number, number, number, number];
+function parseColor(value: string): Rgba {
+  const numbers = (value.match(/-?\d*\.?\d+(?:e-?\d+)?/g) ?? []).map(Number);
+  if (value.startsWith("color(")) {
+    return [numbers[0] * 255, numbers[1] * 255, numbers[2] * 255, numbers[3] ?? 1];
+  }
+  return [numbers[0], numbers[1], numbers[2], numbers[3] ?? 1];
+}
+const over = ([r, g, b, a]: Rgba, [br, bg, bb]: Rgba): Rgba => [r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a), 1];
+const luminance = ([r, g, b]: Rgba) => {
+  const lin = (c: number) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
+/** layers — фоны от внешнего к внутреннему (внешний непрозрачен); fg красится поверх итога. */
+function contrast(fg: string, layers: string[]): number {
+  const back = layers.map(parseColor).reduce((acc, layer) => over(layer, acc));
+  const [hi, lo] = [luminance(over(parseColor(fg), back)), luminance(back)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
 
 const visibleButtons = (row: Locator) => row.locator("button:visible");
 
@@ -63,7 +85,14 @@ for (const width of WIDTHS) {
         // «Начать» + «⋯»: не больше двух кнопок, из них ровно одна — «⋯».
         await expect(visibleButtons(row)).toHaveCount(2);
         await expect(row.getByTestId("plans-row-more")).toHaveCount(1);
-        await expect(row.getByRole("button", { name: "Начать", exact: true })).toHaveCount(1);
+        // имя «Начать: <название>, <день>» — одинаковые названия в разные дни различимы (#288)
+        await expect(row.getByRole("button", { name: PLAN_START })).toHaveCount(1);
+        await expect(row.getByRole("button", { name: PLAN_START })).toHaveAccessibleName(
+          new RegExp(`^Начать: ${WORKOUT_BY_DAY[index]}, (понедельник|вторник|среда|четверг|пятница|суббота)$`),
+        );
+        await expect(row.getByTestId("plans-row-more")).toHaveAccessibleName(
+          new RegExp(`^Действия: ${WORKOUT_BY_DAY[index]}, `),
+        );
         await expect(row.getByRole("button", { name: "Перенести" })).toHaveCount(0);
         await expect(row.getByRole("button", { name: "Убрать из плана" })).toHaveCount(0);
         await expect(row.getByRole("button", { name: "Редактировать тренировку" })).toHaveCount(0);
@@ -161,6 +190,92 @@ for (const width of WIDTHS) {
       expect(apiFailures).toEqual([]);
     });
 
+    test("Escape закрывает лист, даже когда фокус вне него; фокус возвращается на «⋯» (#288)", async ({ page }) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme });
+      await openTab(page, "Планы");
+      const more = page.getByTestId("plans-row-more").first();
+      const sheet = page.getByTestId("plans-row-sheet");
+      await more.click();
+      await expect(sheet).toBeVisible();
+      // фокус ушёл из листа (на iOS/после тапа по фону он вообще не внутри): Escape всё равно закрывает
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      expect(await page.evaluate(() => document.activeElement?.closest("[role=dialog]") ?? null)).toBeNull();
+      await page.keyboard.press("Escape");
+      await expect(sheet).toHaveCount(0);
+      await expect(more).toBeFocused();
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("степпер недели: двузначный номер «Неделя 12 · 28 сен – 4 окт» в одну строку, без overflow (#288, check 9)", async ({ page }) => {
+      await mutatePlanResponse(page, (body) => {
+        for (const week of body.plan?.plan_weeks ?? []) {
+          week.week_number = 12;
+          week.start_date = "2026-09-28";
+          week.phase = "rest";
+        }
+      });
+      const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme });
+      await openTab(page, "Планы");
+      const label = page.getByTestId("plan-week-label");
+      await expect(label).toHaveText("Неделя 12 · 28 сен – 4 окт");
+      expect(await label.evaluate((el) => el.getBoundingClientRect().height), "название недели в одну строку").toBeLessThan(24);
+      const stepper = await page.getByTestId("plan-week-stepper").evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return { right: box.right, width: window.innerWidth, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+      });
+      expect(stepper.right).toBeLessThanOrEqual(stepper.width);
+      expect(stepper.scrollWidth).toBeLessThanOrEqual(stepper.clientWidth);
+      await expectNoHorizontalOverflow(page, "Планы: двузначная неделя");
+      await shot(page, width, rows.theme, "plans_week12");
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("пустой план: полоса прогресса без aria-valuemax=0, «Сегодня» — секция с заголовком (#288)", async ({ page }) => {
+      await mutatePlanResponse(page, (body) => {
+        if (body.plan) {
+          body.plan.plan_items = [];
+        }
+      });
+      const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme });
+      await openTab(page, "Планы");
+      const bar = page.getByTestId("plan-week-progressbar");
+      await expect(bar).toBeVisible();
+      await expect(bar).toHaveAttribute("aria-valuemin", "0");
+      await expect(bar).toHaveAttribute("aria-valuemax", "100");
+      await expect(bar).toHaveAttribute("aria-valuenow", "0");
+      await expect(bar).toHaveAttribute("aria-valuetext", "Ничего не запланировано");
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("«Сегодня»: секция именуется заголовком, у одинаковых названий в разные дни — разные имена кнопок (#288)", async ({ page }) => {
+      await mutatePlanResponse(page, (body) => {
+        const items = body.plan?.plan_items ?? [];
+        // у второй строки то же название, другой день
+        if (items.length >= 2) {
+          items[1] = { ...items[0], id: items[0].id + 100_000, day_of_week: (items[0].day_of_week + 1) % 7 };
+        }
+      });
+      const server = watchServerPlanToday(page);
+      const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme });
+      await openTab(page, "Планы");
+      await expect(page.getByTestId("plan-week-label")).toBeVisible();
+      const names = await page.getByTestId("plans-row").getByRole("button", { name: PLAN_START }).evaluateAll(
+        (buttons) => buttons.map((b) => b.getAttribute("aria-label")),
+      );
+      expect(new Set(names).size, `имена кнопок «Начать» уникальны: ${names.join(" | ")}`).toBe(names.length);
+      const todayIndex = await server.weekdayIndex();
+      if (todayIndex <= 5) {
+        const today = page.getByTestId("plans-today");
+        await expect(today).toHaveAccessibleName("Сегодня");
+        await expect(page.getByRole("heading", { name: "Сегодня" })).toBeVisible();
+      }
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
     test("лист «⋯» строки: пункты, «Убрать» красным; Escape, фон, «Отмена» и Telegram BackButton закрывают; фокус возвращается", async ({ page }) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, rows.id, { theme: rows.theme, backButton: true });
       await openTab(page, "Планы");
@@ -174,7 +289,7 @@ for (const width of WIDTHS) {
       await expect(sheet).toHaveAccessibleName("Только reps");
       await expect(sheet.getByRole("button")).toHaveText(["Перенести", "Редактировать тренировку", "Убрать из плана", "Отмена"]);
       const danger = await sheet.getByRole("button", { name: "Убрать из плана" }).evaluate((el) => getComputedStyle(el).color);
-      expect(danger).toBe(DANGER_RGB);
+      expect(danger).toBe(DANGER_RGB[rows.theme]);
       await expectNoHorizontalOverflow(page, "Планы: лист строки");
       await shot(page, width, rows.theme, "plans_row_sheet");
       // фокус ушёл в лист
@@ -234,8 +349,11 @@ for (const width of WIDTHS) {
 
       await pickRowAction(page, "Убрать из плана", "Дубли");
       await expect(page.getByText("Убрать «Дубли» из плана?")).toBeVisible();
+      // фокус не теряется: «⋯» скрыта подтверждением, фокус — на первой кнопке подтверждения (#288)
+      await expect(page.getByRole("button", { name: "Убрать", exact: true })).toBeFocused();
       await expectNoHorizontalOverflow(page, "Планы: подтверждение удаления");
       await page.getByRole("button", { name: "Отмена" }).click();
+      await expect(dayRows.filter({ hasText: "Дубли" }).getByTestId("plans-row-more")).toBeFocused();
       await expect(dayRows).toHaveCount(6);
       await expect(page.getByText("Убрать «Дубли» из плана?")).toHaveCount(0);
 
@@ -260,31 +378,45 @@ for (const width of WIDTHS) {
       await expect(course).toContainText("Неделя 1 из 8");
       const bar = course.getByTestId("plans-now-progressbar");
       await expect(bar).toHaveAttribute("role", "progressbar");
+      // aria — в процентах 0..100 (valuemax=0 при пустом плане некорректен), «x из y» — в valuetext (#288)
       await expect(bar).toHaveAttribute("aria-valuenow", "0");
-      await expect(bar).toHaveAttribute("aria-valuemax", "6");
+      await expect(bar).toHaveAttribute("aria-valuemax", "100");
+      await expect(bar).toHaveAttribute("aria-valuetext", "0 из 6");
       const weekBar = page.getByTestId("plan-week-progressbar");
-      await expect(weekBar).toHaveAttribute("aria-valuemax", "7");
+      await expect(weekBar).toHaveAttribute("aria-valuemax", "100");
+      await expect(weekBar).toHaveAttribute("aria-valuetext", "0 из 7");
       // В карточке курса больше нет текстовых кнопок-пилюль «Убрать курс из плана».
       await expect(course.getByRole("button", { name: "Убрать курс из плана" })).toHaveCount(0);
-      await expect(course.getByTestId("plans-plan-more")).toHaveAccessibleName("Действия плана");
+      await expect(course.getByTestId("plans-plan-more")).toHaveAccessibleName("Действия: Обзор: курс");
+      await expect(page.getByTestId("plans-card-more")).toHaveAccessibleName("Действия: Текущий план");
       await expectNoHorizontalOverflow(page, "Планы: карточка плана");
       await shot(page, width, overview.theme, "plans_overview");
 
+      // лист курса — только «Убрать курс из плана»; копирование недели — лист плана «Текущий план» (#288)
       const sheet = page.getByTestId("plans-plan-sheet");
       await course.getByTestId("plans-plan-more").click();
       await expect(sheet).toBeVisible();
       await expect(sheet).toHaveAccessibleName("Обзор: курс");
-      await expect(sheet.getByRole("button")).toHaveText(["Скопировать неделю → на следующую", "Убрать курс из плана", "Отмена"]);
+      await expect(sheet.getByRole("button")).toHaveText(["Убрать курс из плана", "Отмена"]);
       const danger = await sheet.getByRole("button", { name: "Убрать курс из плана" }).evaluate((el) => getComputedStyle(el).color);
-      expect(danger).toBe(DANGER_RGB);
+      expect(danger).toBe(DANGER_RGB[overview.theme]);
       await shot(page, width, overview.theme, "plans_plan_sheet");
       await pressTelegramBackButton(page);
       await expect(sheet).toHaveCount(0);
       await page.getByRole("tab", { name: "Сейчас" }).waitFor();
 
+      await page.getByTestId("plans-card-more").click();
+      await expect(sheet).toHaveAccessibleName("Текущий план");
+      await expect(sheet.getByRole("button")).toHaveText(["Скопировать неделю 1 → 2", "Отмена"]);
+      await pressTelegramBackButton(page);
+      await expect(sheet).toHaveCount(0);
+
       // «Скопировать неделю» сохраняет подтверждение (в карточке недели); «Отмена» ничего не копирует.
-      await pickPlanAction(page, "Скопировать неделю → на следующую", course);
+      await pickPlanAction(page, "Скопировать неделю", course);
       await expect(page.getByText(/Скопировать свои тренировки и упражнения/)).toBeVisible();
+      // подтверждение под списком недели не остаётся ниже экрана: прокручено в видимую область, фокус на «Скопировать» (#288)
+      await expect(page.getByTestId("plan-week-copy")).toBeInViewport({ ratio: 1 });
+      await expect(page.getByRole("button", { name: "Скопировать", exact: true })).toBeFocused();
       await page.getByRole("button", { name: "Отмена" }).click();
       await expect(page.getByText(/Скопировать свои тренировки и упражнения/)).toHaveCount(0);
       await expect(page.getByTestId("plan-week-copy-result")).toHaveCount(0);
@@ -300,13 +432,35 @@ for (const width of WIDTHS) {
       expect(apiFailures).toEqual([]);
     });
 
+    test("контраст: чипы категорий, «Начать» и «Убрать» ≥ 4.5 (#288)", async ({ page }) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, overview.id, { theme: overview.theme });
+      await openTab(page, "Планы");
+      await expect(page.getByTestId("plans-now-inclusion").first()).toBeVisible();
+      const samples = await page.locator(".plans-row-chip, .plans-start").evaluateAll((elements) => elements.map((el) => {
+        const layers: string[] = [];
+        for (let node: Element | null = el; node !== null; node = node.parentElement) {
+          layers.unshift(getComputedStyle(node).backgroundColor);
+        }
+        return { text: (el.textContent ?? "").trim(), color: getComputedStyle(el).color, layers };
+      }));
+      expect(samples.length).toBeGreaterThan(0);
+      for (const sample of samples) {
+        // слои: самый внешний непрозрачный (body/html) — основа; прозрачные пропускаем в расчёте
+        const layers = sample.layers.filter((layer) => parseColor(layer)[3] > 0);
+        expect(contrast(sample.color, layers), `«${sample.text}» ${sample.color} на ${layers.join(" / ")}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(consoleErrors).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
     test("полоса прогресса недели отражает «N из M» (1 из 3 → 33%)", async ({ page }) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, progressUser.id, { theme: progressUser.theme });
       await openTab(page, "Планы");
       await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя · 1 из 3");
       const bar = page.getByTestId("plan-week-progressbar");
-      await expect(bar).toHaveAttribute("aria-valuenow", "1");
-      await expect(bar).toHaveAttribute("aria-valuemax", "3");
+      await expect(bar).toHaveAttribute("aria-valuenow", "33");
+      await expect(bar).toHaveAttribute("aria-valuemax", "100");
+      await expect(bar).toHaveAttribute("aria-valuetext", "1 из 3");
       await expect(bar).toHaveAttribute("data-percent", "33");
       const widths = await bar.evaluate((el) => ({
         track: el.getBoundingClientRect().width, fill: (el.firstElementChild as HTMLElement).getBoundingClientRect().width,
@@ -317,6 +471,7 @@ for (const width of WIDTHS) {
       // прошлая неделя: строки без «⋯» и «Начать» (read-only), полоса 100%
       await page.getByRole("button", { name: "Предыдущая неделя" }).click();
       await expect(page.getByTestId("plan-week-progressbar")).toHaveAttribute("data-percent", "100");
+      await expect(page.getByTestId("plan-week-progressbar")).toHaveAttribute("aria-valuenow", "100");
       await expect(page.getByTestId("plans-row-more")).toHaveCount(0);
       await expect(page.getByTestId("plans-today")).toHaveCount(0);
 
