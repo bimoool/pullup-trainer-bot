@@ -26,11 +26,11 @@ import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixt
 type Mode = "empty" | "populated";
 const MODES: readonly Mode[] = ["empty", "populated"];
 
-// Базы telegram_id: +индекс комбинации (320 light / 320 dark / 390 light / 390 dark), +100 на retry.
+// Базы telegram_id: +индекс комбинации (320 light / 320 dark / 390 light / 390 dark), +10 000 на retry.
 const BASE = {
-  empty: 999_601, populated: 999_611, workout: 999_621, tests: 999_631, settings: 999_641, plans: 999_651,
+  empty: 999_501, populated: 999_511, workout: 999_521, tests: 999_531, settings: 999_541, plans: 999_551,
 } as const;
-const uid = (base: number, comboIndex: number, retry: number) => base + comboIndex + retry * 100;
+const uid = (base: number, comboIndex: number, retry: number) => base + comboIndex + retry * 10_000;
 
 const WORKOUT = "Свип: тренировка";
 const COURSE = "Свип: курс";
@@ -196,6 +196,42 @@ const FLOWS: Flow[] = [
             dest: [page.getByTestId("test-detail-title"), page.getByTestId("test-form")], exit: "telegram",
             origin: page.getByTestId("test-card").first(),
           });
+        },
+      });
+    },
+  },
+  {
+    // #281: у ряда категории с названием есть «Все ›» → поиск по категории (категория e2e_sweep — сид sweep_populated).
+    id: "Главная: «Все ›» у ряда категории → поиск по категории → закрыть", modes: MODES,
+    run: async ({ page }) => {
+      const row = page.getByTestId("program-category").filter({ hasText: "e2e_sweep" });
+      await visit(page, {
+        where: "Главная → «Все ›»", open: () => row.getByTestId("program-category-all").click(),
+        dest: [page.getByTestId("search-screen"), page.getByTestId("search-category-title")],
+        exit: { button: byName(page, "Закрыть") }, origin: homeMarker(page),
+        inside: async () => {
+          await expect(page.getByTestId("search-result-program").first()).toContainText(COURSE);
+          await byName(page, "Сбросить").click();
+          await expect(page.getByTestId("search-category-title")).toHaveCount(0);
+        },
+      });
+    },
+  },
+  {
+    // #281: тесты ищутся и открываются из поиска; возврат — в тот же поиск с активным чипом.
+    id: "Поиск: чип «Тесты» → деталь теста → назад в поиск", modes: MODES,
+    run: async ({ page }) => {
+      await visit(page, {
+        where: "Поиск → Тесты", open: () => page.getByTestId("home-search-pill").click(),
+        dest: [page.getByTestId("search-chip-tests")], exit: { button: byName(page, "Закрыть") }, origin: homeMarker(page),
+        inside: async () => {
+          await page.getByTestId("search-chip-tests").click();
+          expect(await page.getByTestId("search-result-test").count()).toBeGreaterThanOrEqual(3);
+          await visit(page, {
+            where: "Поиск → деталь теста", open: () => page.getByTestId("search-result-test").first().click(),
+            dest: [page.getByTestId("test-detail-title")], exit: "telegram", origin: page.getByTestId("search-chip-tests"),
+          });
+          await expect(page.getByTestId("search-chip-tests")).toHaveAttribute("aria-pressed", "true");
         },
       });
     },
@@ -560,7 +596,7 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
 
     test("тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт", async ({ page }, testInfo) => {
       const downloads = await captureDownloads(page);
-      const { consoleErrors, apiFailures } = await openAppAs(page, uid(BASE.workout, comboIndex, testInfo.retry), { theme });
+      const { consoleErrors, apiFailures } = await openAppAs(page, uid(BASE.workout, comboIndex, testInfo.retry), { theme, backButton: true });
 
       await openTab(page, "Аналитика");
       const before = await workoutsStat(page);
@@ -595,6 +631,13 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       await expect(page.getByText(WORKOUT, { exact: true }).first()).toBeVisible();
       await expect(page.getByText("8 · 7", { exact: true }).first()).toBeVisible();
       await expectScreenHealthy(page, "Журнал после тренировки");
+
+      // #281: из записи Журнала — «Открыть тренировку» → деталь; назад — в Журнал.
+      await page.getByText(WORKOUT, { exact: true }).first().click();
+      await visit(page, {
+        where: "Журнал → Открыть тренировку", open: () => page.getByTestId("journal-open-workout").click(),
+        dest: [page.getByTestId("workout-detail-title")], exit: "telegram", origin: journalMarker(page), // «назад» — в список Журнала, не на Главную
+      });
 
       // Аналитика пересчитана: +1 тренировка.
       await openTab(page, "Аналитика");
