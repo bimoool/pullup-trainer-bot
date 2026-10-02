@@ -641,8 +641,9 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       });
 
       // «назад» вернул в Журнал с открытой записью (у записи нет нижней навигации) — ещё раз «назад» к списку.
-      if (!(await tabbar(page).isVisible())) {
+      for (let i = 0; i < 3 && !(await tabbar(page).isVisible()); i++) {
         await pressTelegramBackButton(page);
+        await page.waitForTimeout(300);
       }
 
       // Аналитика пересчитана: +1 тренировка.

@@ -5,6 +5,7 @@ import { expect, type Page } from "@playwright/test";
 
 export async function startWorkout(page: Page, title: string) {
   // на деталях (курс/тренировка) нижней навигации нет — сначала «назад» на вкладку
+  await page.locator(".bottom-tabbar, [aria-label*='Назад']").first().waitFor();
   if (!(await page.locator(".bottom-tabbar").isVisible())) {
     await page.getByRole("button", { name: /Назад/ }).first().click();
   }
