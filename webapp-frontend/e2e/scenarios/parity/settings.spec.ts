@@ -6,8 +6,8 @@ import { openAppAs } from "../../fixtures/setup";
 
 // Crimpd parity — Settings (#268): Профиль → ⚙️ «Настройки» (единицы, тема, таймер, подписка, данные).
 // Тесты мутируют настройки, поэтому у каждого свой посеянный `ready`-пользователь (+retry):
-// 996001/996011 (единицы), +2 (тема), +4 (отмена). Вес 75 кг, рост 180 см (_QUESTIONNAIRE_DEFAULTS).
-const BASE = { 320: 996_001, 390: 996_011 } as const;
+// 999001/999011 (единицы), +2 (тема), +4 (отмена). Вес 75 кг, рост 180 см (_QUESTIONNAIRE_DEFAULTS).
+const BASE = { 320: 999_001, 390: 999_011 } as const;
 const THEMES = { 320: "light", 390: "dark" } as const;
 const LIGHT_BG = "rgb(255, 255, 255)";
 const DARK_BG = "rgb(23, 33, 43)";
