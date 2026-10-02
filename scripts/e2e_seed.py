@@ -89,6 +89,7 @@ from app.db.models_program import (
     SetTarget,
     TrainingPlan,
     TrainingSession,
+    UserFavorite,
 )
 from app.db.repositories.body_metrics import BodyMetricRepository
 from app.db.repositories.collections import CollectionRepository
@@ -1408,6 +1409,96 @@ async def seed_body_metrics(session: AsyncSession, telegram_id: int) -> None:
     await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal("76.5"), now - timedelta(days=14))
 
 
+async def seed_sweep_empty(session: AsyncSession, telegram_id: int) -> None:
+    """#277 «Full sweep» — пустой пользователь: онбординг пройден, ни тренировок, ни плана, ни
+    истории, ни замеров (каталог программ глобальный и приходит из миграций)."""
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Europe/Moscow"
+    await session.flush()
+
+
+async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
+    """#277 «Full sweep» — наполненный пользователь (МСК):
+      * план: прошлая и текущая недели (plan_week_stepper: «Планка» 1/2, «Отжимания» 0/1, прошлая 1/1)
+        + подключённый курс «Свип: курс» (вторник + свободный пул);
+      * своя Workout «Свип: тренировка» (reps 2 x 8, отдых 2 с) в избранном;
+      * Журнал/Аналитика: сессии 2 и 4 дня назад («Подтягивания», с подходами и временем), 9 дней
+        назад (с подходами), «Бег» 30 мин 3 дня назад и 50 дней назад (виден в «3 мес»);
+      * Тесты: «Вис на перекладине» 30 → 40 сек (НЕ «Максимум подтягиваний» / «…с весом»: по ним e2e-БД держит
+        точные когорты Peer Insights #276 — десятки наших пользователей их бы сломали); Профиль: вес 78 → 76.5 кг (история);
+      * два факультатива (#279) в Журнале: 30 и 90 минут назад."""
+    await seed_plan_week_stepper(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    user.timezone = "Europe/Moscow"
+    now = datetime.now(UTC)
+
+    pull = Exercise(
+        name="Подтягивания", metric_type=MetricType.REPS, category="e2e_sweep",
+        source_type="user", owner_user_id=user.id,
+    )
+    session.add(pull)
+    await session.flush()
+    workout = Complex(name="Свип: тренировка", source_type="user", owner_user_id=user.id)
+    session.add(workout)
+    await session.flush()
+    protocol = {"type": "reps_sets", "rest_seconds": 2, "prescription": {"source": "static", "sets": 2, "reps": 8}}
+    session.add(ComplexItem(complex_id=workout.id, exercise_id=pull.id, order_index=0, sets=0, protocol=protocol))
+    session.add(UserFavorite(user_id=user.id, target_type="workout", target_id=workout.id))
+    await session.flush()
+
+    program = (await session.execute(select(Program).where(Program.name == "Свип: курс"))).scalars().first()
+    if program is None:
+        plank = (await session.execute(
+            select(Exercise).where(Exercise.name == "Планка", Exercise.owner_user_id.is_(None)),
+        )).scalar_one()
+        program = Program(
+            name="Свип: курс", goal="цель: свип", structure_type=ProgramStructureType.RECURRING,
+            category="e2e_sweep", config={"duration_weeks": 8},
+        )
+        session.add(program)
+        await session.flush()
+        session.add_all([
+            ProgramItem(program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=plank.id, count_per_week=1, day_of_week=1),
+            ProgramItem(program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=plank.id, count_per_week=2, day_of_week=None),
+        ])
+        await session.flush()
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+
+    repo = TrainingSessionRepository(session)
+    for days_ago, reps in ((2, (8, 7)), (4, (9, 8)), (9, (10, 9))):
+        at = now - timedelta(days=days_ago)
+        await repo.create_session(
+            user_id=user.id, source=SessionSource.PLAN, performed_at=at, effort=None, comment=None,
+            completed_at=at + timedelta(minutes=30),
+            blocks=[SessionBlockInput(exercise_id=pull.id, sets=[
+                SetLogInput(set_number=n, metric_type=MetricType.REPS, value=Decimal(value), unit="reps")
+                for n, value in enumerate(reps, start=1)
+            ])],
+        )
+    for days_ago in (3, 50):
+        at = now - timedelta(days=days_ago)
+        session.add(TrainingSession(
+            user_id=user.id, source=SessionSource.FREEFORM, status=SessionStatus.COMPLETED, performed_at=at,
+            activity_type="running", duration_seconds=30 * 60,
+        ))
+
+    protocol_row = (await session.execute(
+        select(AssessmentProtocol).where(AssessmentProtocol.name == "Вис на перекладине, сек"),
+    )).scalar_one()
+    for days_ago, value in ((20, 30), (5, 40)):
+        session.add(AssessmentResult(
+            user_id=user.id, protocol_id=protocol_row.id, performed_at=now - timedelta(days=days_ago),
+            value=value, unit="сек",
+        ))
+    history = BodyMetricRepository(session)
+    await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal(78), now - timedelta(days=30))
+    await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal("76.5"), now - timedelta(days=14))
+    await _seed_backfilled_electives(session, user)  # #279: два факультатива в Журнале (30 и 90 минут назад)
+    await session.flush()
+
+
 async def seed_collections_scenario(session: AsyncSession, telegram_id: int) -> None:
     """#271 «Collections»: онбордившийся пользователь + глобальные (find-or-create) две
     программы «Подборка: …», system-упражнение «Подборка: упражнение», приватное user-упражнение
@@ -1466,6 +1557,13 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
     снаряд упакованы JSON-ом в SetLog.note. Сид воспроизводит это ТЕМИ ЖЕ функциями backfill:
     два факультатива — «3 минуты подтягиваний» (30 минут назад, 3 интервала по 4+3+2) и
     «на максимум» (90 минут назад, 4 подхода)."""
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Europe/Moscow"
+    await _seed_backfilled_electives(session, user)
+
+
+async def _seed_backfilled_electives(session: AsyncSession, user: User) -> None:
+    """Два факультатива пользователя (см. seed_owner_optional_workout) — общий помощник и для «Full sweep» (#277)."""
     from app.db.models import ElectiveWorkout
     from app.domain.electives import ElectiveType
     from scripts.backfill_multi_program import (
@@ -1474,8 +1572,6 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
         _get_or_create_exercise,
     )
 
-    user = await _onboard(session, telegram_id)
-    user.timezone = "Europe/Moscow"
     now = datetime.now(UTC)
     for elective_type, at, sequence in (
         (ElectiveType.THREE_MINUTES, now - timedelta(minutes=30), [4, 3, 2]),
@@ -1553,6 +1649,8 @@ async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
 
 
 SCENARIOS = {
+    "sweep_empty": seed_sweep_empty,
+    "sweep_populated": seed_sweep_populated,
     "sweep_defects": seed_sweep_defects,
     "journal_dedupe": seed_journal_dedupe,
     "collections": seed_collections_scenario,
