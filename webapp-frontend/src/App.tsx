@@ -115,6 +115,9 @@ function describeInitDataFailure(retrieveError: string | undefined, telegramWebA
   return parts.join(" | ");
 }
 
+/** Workout Detail, с которого ушли в «Начать»/«Записать»: куда вернуть «назад». */
+type WorkoutOrigin = { tab: "home" | "plans"; workoutId: number; fromJournal?: boolean };
+
 export function App() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [tab, setTab] = useState<Tab>("home");
@@ -130,7 +133,7 @@ export function App() {
   // Из «Записать» вернулись на Workout Detail: его «назад» ведёт на саму вкладку, не в Журнал.
   const [homeWorkoutFromLog, setHomeWorkoutFromLog] = useState(false);
   // Откуда нажали «Начать» на Workout Detail (#277): «Назад» с предэкрана возвращает на деталь, не на вкладку.
-  const [startOrigin, setStartOrigin] = useState<{ tab: "home" | "plans"; workoutId: number } | null>(null);
+  const [startOrigin, setStartOrigin] = useState<WorkoutOrigin | null>(null);
   const [plansWorkoutId, setPlansWorkoutId] = useState<number | null>(null);
   // Откуда ушли в «Открыть тренировку»: Back возвращает в тот же месяц Журнала с той же записью.
   const [journalRestore, setJournalRestore] = useState<JournalRestore | null>(null);
@@ -350,9 +353,10 @@ export function App() {
   }
 
   // Workout Detail нужной вкладки открывается заново; его «назад» ведёт на саму вкладку (не в Журнал).
-  const reopenWorkoutDetail = (origin: { tab: "home" | "plans"; workoutId: number }) => {
+  // fromJournal (#293): деталь Главной была открыта из Журнала — её «назад» по-прежнему ведёт туда.
+  const reopenWorkoutDetail = (origin: WorkoutOrigin) => {
     if (origin.tab === "home") {
-      setHomeWorkoutFromLog(true);
+      setHomeWorkoutFromLog(!origin.fromJournal);
       setHomeWorkoutId(origin.workoutId);
     } else {
       setPlansWorkoutId(origin.workoutId);
@@ -385,8 +389,8 @@ export function App() {
   }
 
   const isOnboarded = state.data.onboarding_step === "done";
-  const startWorkout = (workoutId: number, title: string) => {
-    setStartOrigin(tab === "home" || tab === "plans" ? { tab, workoutId } : null);
+  const startWorkout = (workoutId: number, title: string, fromJournal = false) => {
+    setStartOrigin(tab === "home" || tab === "plans" ? { tab, workoutId, fromJournal } : null);
     setV2Session({ workoutId, title });
   };
   const logWorkout = (workoutId: number) => {

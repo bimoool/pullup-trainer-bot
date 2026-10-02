@@ -31,7 +31,8 @@ type Props = {
   /** «+» → «Записать в журнал»: открыть Журнал со шторкой записи (#263). */
   onOpenJournalLog: () => void;
   /** «Начать» на Workout Detail — живая сессия своей тренировки вне плана. */
-  onStartWorkout: (workoutId: number, workoutTitle: string) => void;
+  /** fromJournal — деталь открыта из Журнала: после «назад» с пред-экрана её «назад» снова ведёт в Журнал. */
+  onStartWorkout: (workoutId: number, workoutTitle: string, fromJournal: boolean) => void;
   /** «Записать» на Workout Detail — Журнал с формой записи, заполненной этой тренировкой. */
   onLogWorkout: (workoutId: number) => void;
   /** Открыть сразу Workout Detail этой тренировки (из Журнала, #281); «назад» возвращает в Журнал. */
@@ -274,7 +275,7 @@ export function HomeScreen({
         onBack={closeWorkoutView}
         onEdit={(workoutId) => setWorkoutView({ kind: "edit", workoutId })}
         onAddToPlan={(workoutId, workoutTitle) => setWorkoutView({ kind: "add-to-plan", workoutId, workoutTitle })}
-        onStart={onStartWorkout}
+        onStart={(workoutId, workoutTitle) => onStartWorkout(workoutId, workoutTitle, exitToJournal.current)}
         onLog={onLogWorkout}
       />
     );

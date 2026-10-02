@@ -36,7 +36,13 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  useBackButton(onBack, [onBack]);
+  // #293: пока «Сохранить» в полёте, фон/BackButton лист не закрывают (ошибка переноса не теряется).
+  const close = () => {
+    if (!submitting) {
+      onBack();
+    }
+  };
+  useBackButton(close, [onBack]);
 
   async function handleSubmit() {
     if (selectedDay === null || submitting) {
@@ -57,7 +63,7 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
   }
 
   return (
-    <FormSheet title="Перенести" onClose={onBack}>
+    <FormSheet title="Перенести" onClose={close}>
       <p className="plan-title">Перенести</p>
       <p className="block-subtitle">{title}</p>
 

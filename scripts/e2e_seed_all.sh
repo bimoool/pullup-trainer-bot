@@ -190,3 +190,8 @@ for base in 998301 998311 998321 998331; do for off in 0 1 2; do seed journal_pl
 for base in 992901 992911 992921 992931; do for off in 0 1 2 3 4 5 6 7; do seed session_recovery $((base + off)); done; done
 # A11y follow-up (#290, a11y2): Live-панель оценки на 320/390 × light/dark — 998821/998823/998825/998827, каждый + retry (id+1); session_recovery (мутирует).
 for id in 998821 998822 998823 998824 998825 998826 998827 998828; do seed session_recovery "$id"; done
+# Wave 13b review (#293, parity/wave13-review.spec.ts): 99330x/99333x — WD-старт при завершении в очереди (session_recovery,
+# мутирует), 99331x/99332x — Журнал → «Открыть тренировку» → «Начать» → назад (journal_return, только чтение); id + retry.
+for id in 993301 993302 993331 993332; do seed session_recovery "$id"; done
+for id in 993311 993312 993321 993322; do seed journal_return "$id"; done
+for id in 993341 993342 993351 993352; do seed session_recovery "$id"; done
