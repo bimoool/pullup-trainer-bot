@@ -120,3 +120,30 @@
   width: 44px;
   height: 44px;
 }
+
+/* Сама шторка получает программный фокус (скринридер объявляет диалог) — без собственного кольца. */
+.home-sheet:focus,
+.home-sheet:focus-visible {
+  outline: none;
+}
+
+/* Поиск: чипы фильтров и «Закрыть» — цель касания ≥ 44px; активный чип — чернила акцента. */
+.app-shell .search-chip {
+  min-height: 44px;
+}
+.app-shell .search-chip-active {
+  color: var(--vp-accent-ink);
+}
+.search-close {
+  min-height: 44px;
+  padding: 0 var(--vp-sp-2);
+}
+
+/* Журнал: «назад» из деталей записи 44px; «Удалить» — семантический красный (--vp-danger, AA в обеих темах). */
+.journal-back-button {
+  width: 44px;
+  height: 44px;
+}
+.journal-sheet .journal-sheet-danger {
+  color: var(--vp-danger);
+}
