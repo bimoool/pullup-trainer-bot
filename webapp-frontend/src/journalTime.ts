@@ -20,3 +20,10 @@ export function formatSessionTime(isoDateTime: string, timeZone?: string): strin
   const p = zonedParts(isoDateTime, timeZone);
   return `${p.hour}:${p.minute}`;
 }
+
+/** "03.09.2026" — дата момента в поясе журнала (профиль), не устройства: запись после полуночи по поясу профиля
+ * не должна уезжать на соседний день. */
+export function formatSessionDate(isoDateTime: string, timeZone?: string): string {
+  const p = zonedParts(isoDateTime, timeZone);
+  return `${p.day}.${p.month}.${p.year}`;
+}

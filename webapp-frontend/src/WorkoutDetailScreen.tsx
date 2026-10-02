@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import {
   getWorkout, listWorkoutSessions, type WorkoutResponseV2, type WorkoutSessionSummaryV2,
 } from "./apiV2";
+import { fetchProfile } from "./api";
 import { CategoryGlyph } from "./CategoryGlyph";
 import { FavoriteHeart } from "./FavoriteHeart";
+import { formatSessionDate } from "./journalTime";
 import { formatExerciseCount } from "./workoutCardFormat";
 import {
   estimateWorkoutSeconds, formatEstimate, formatItemSummary, formatSetsDone,
@@ -50,20 +52,16 @@ function ClockIcon() {
   );
 }
 
-function formatSessionDate(iso: string): string {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}`;
-}
-
 /**
  * Workout Detail (issue #255) — read-only карточка своей тренировки: сводка,
- * упражнения, «Добавить в план» / «Редактировать» и история выполнений. Это не
+ * упражнения, «Добавить в план» / «Изменить» и история выполнений. Это не
  * редактор: правки — только через существующий WorkoutEditorScreen.
  */
 export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, onAddToPlan, onStart, onLog }: Props) {
   const [detail, setDetail] = useState<DetailState>({ phase: "loading" });
   const [history, setHistory] = useState<HistoryState>({ phase: "loading" });
+  // Пояс профиля — как у Журнала (даты записей не зависят от пояса устройства); не загрузился — пояс устройства.
+  const [timeZone, setTimeZone] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,8 +69,16 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
     getWorkout(initDataRaw, workoutId)
       .then((workout) => !cancelled && setDetail({ phase: "ready", workout }))
       .catch((error) => !cancelled && setDetail({ phase: "error", message: message(error) }));
-    listWorkoutSessions(initDataRaw, workoutId)
-      .then((sessions) => !cancelled && setHistory({ phase: "ready", sessions }))
+    Promise.all([
+      listWorkoutSessions(initDataRaw, workoutId),
+      fetchProfile(initDataRaw).then((profile) => profile.timezone ?? undefined).catch(() => undefined),
+    ])
+      .then(([sessions, zone]) => {
+        if (!cancelled) {
+          setTimeZone(zone);
+          setHistory({ phase: "ready", sessions });
+        }
+      })
       .catch((error) => !cancelled && setHistory({ phase: "error", message: message(error) }));
     return () => {
       cancelled = true;
@@ -162,8 +168,8 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           </span>
           <span className="workout-detail-action-label">Добавить в план</span>
         </button>
-        {/* Видимая подпись короткая (в 4 колонки на 320 «Редактировать» не помещается), имя для AT и тестов — полное. */}
-        <button type="button" className="workout-detail-action" aria-label="Редактировать" onClick={() => onEdit(workout.id)}>
+        {/* Доступное имя = видимая подпись (WCAG 2.5.3). */}
+        <button type="button" className="workout-detail-action" onClick={() => onEdit(workout.id)}>
           <span className="workout-detail-action-icon" aria-hidden="true">
             <ActionIcon path="M4.5 19.5l1-4L16 5l3 3-10.5 10.5zM14 7l3 3" />
           </span>
@@ -195,7 +201,7 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
         <ul className="home-workout-list" data-testid="workout-detail-history">
           {history.sessions.map((session) => (
             <li key={session.id} className="workout-detail-item" data-testid="workout-detail-history-row">
-              <span className="home-workout-title">{formatSessionDate(session.performed_at)}</span>
+              <span className="home-workout-title">{formatSessionDate(session.performed_at, timeZone)}</span>
               <span className="home-workout-meta">
                 {formatExerciseCount(session.exercises_count)} · {formatSetsDone(session.sets_done)}
               </span>

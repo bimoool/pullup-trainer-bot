@@ -164,7 +164,7 @@ for (const width of WIDTHS) {
         }
         const wrapperBg = await page.locator(".workout-detail-actions").evaluate((el) => getComputedStyle(el).backgroundColor);
         expect(wrapperBg, "действия не в карточке").toBe("rgba(0, 0, 0, 0)");
-        await expect(page.getByRole("button", { name: "Редактировать" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Изменить", exact: true })).toBeVisible();
         await expectNoHorizontalOverflow(page, "Workout Detail hero");
 
         // «назад» из шапки возвращает на Главную, где навигация снова видна; вкладки работают

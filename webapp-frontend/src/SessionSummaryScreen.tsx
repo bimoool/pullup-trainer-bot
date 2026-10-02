@@ -121,6 +121,7 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
             <h3 className="live-card-title">
               <Icon name={isComplete ? "checkCircle" : "circle"} size={18} className={isComplete ? "vp-icon-lead vp-icon-done" : "vp-icon-lead vp-icon-pending"} />
               {header}
+              <span className="vp-sr-only">{header === "" ? "" : ", "}{isComplete ? "выполнено" : "не выполнено"}</span>
             </h3>
             {intervalResult !== null ? (
               <>

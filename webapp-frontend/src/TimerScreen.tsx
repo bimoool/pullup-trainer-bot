@@ -271,11 +271,11 @@ export function TimerScreen({
       </Button>
 
       <div className="timer-adjust-row">
-        <Button mode="outline" size="s" onClick={() => adjustVolume(-VOLUME_STEP_PERCENT)}>
+        <Button mode="outline" size="s" aria-label="Тише" onClick={() => adjustVolume(-VOLUME_STEP_PERCENT)}>
           <Icon name="volumeDown" size={18} className="vp-icon-lead" />−
         </Button>
         <span className="timer-duration-label"><Icon name="volumeUp" size={18} className="vp-icon-lead" />Громкость: {volume}%</span>
-        <Button mode="outline" size="s" onClick={() => adjustVolume(VOLUME_STEP_PERCENT)}>
+        <Button mode="outline" size="s" aria-label="Громче" onClick={() => adjustVolume(VOLUME_STEP_PERCENT)}>
           <Icon name="volumeUp" size={18} className="vp-icon-lead" />+
         </Button>
       </div>

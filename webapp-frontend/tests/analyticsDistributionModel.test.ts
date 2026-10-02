@@ -45,6 +45,25 @@ test("categoryColors: категория вне Главной — стабил�
   assert.match(first ?? "", /^var\(--vp-cat-[0-5]\)$/);
 });
 
+test("categoryColors: категории Главной с индексом ≥ 6 не совпадают по цвету с ранними (сдвиг к свободному)", () => {
+  const order = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]; // Ж (6) и З (7) по модулю палитры = А и Б
+  const big: AnalyticsDistributionV2 = {
+    categories: order.map((name) => ({ name, workouts: 1, minutes: 10, subcategories: [] })),
+    total_workouts: 8, total_minutes: 80,
+  };
+  const colors = categoryColors(big, order);
+  const used = order.map((name) => colors.get(name));
+  assert.equal(new Set(used).size, 6, "палитра из 6 цветов используется полностью");
+  // ранние категории сохраняют свой цвет, как на Главной
+  for (const name of order.slice(0, 6)) {
+    assert.equal(colors.get(name), categoryColorVar(name, order));
+  }
+  // при ≤ 6 категориях с данными все цвета различны
+  const six: AnalyticsDistributionV2 = { ...big, categories: big.categories.slice(0, 5).concat(big.categories[6]) };
+  const sixColors = categoryColors(six, order);
+  assert.equal(new Set(six.categories.map((c) => sixColors.get(c.name))).size, 6);
+});
+
 test("donutRings: внутреннее кольцо — категории без нулей, доли в сумме 1", () => {
   const { inner, outer, total } = donutRings(dist, "workouts");
   assert.equal(total, 3);

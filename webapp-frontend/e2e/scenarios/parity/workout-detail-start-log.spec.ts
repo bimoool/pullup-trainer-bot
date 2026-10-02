@@ -74,7 +74,9 @@ for (const width of WIDTHS) {
 
       const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
       await expect(card).toHaveCount(1);
-      await expect(card).toContainText("8 · 6");
+      // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
+      await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
 
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

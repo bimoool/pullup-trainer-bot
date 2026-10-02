@@ -136,7 +136,7 @@ for (const width of WIDTHS) {
 
         await fresh(page, U.builder, theme);
         await page.getByTestId("my-workout-card").filter({ hasText: "Смешанная" }).click();
-        await page.getByRole("button", { name: "Редактировать" }).click();
+        await page.getByRole("button", { name: "Изменить", exact: true }).click();
         await expect(page.getByText("Редактировать тренировку")).toBeVisible();
         await expect(page.getByTestId("workout-item").first()).toBeVisible();
         await snap(page, width, theme, "04_builder_editor");

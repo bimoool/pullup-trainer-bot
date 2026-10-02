@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
+import { journalEntryTitle } from "./journalFormat";
 import { formatSessionTime } from "./journalTime";
 import {
   JOURNAL_DELETE_CONFIRM, JOURNAL_SHEET_LABELS, journalSheetActions, type JournalSheetAction,
@@ -46,9 +47,17 @@ export function JournalEntrySheet({
 
   useBackButton(() => closeRef.current(), []);
 
+  // Во время удаления кнопки disabled → браузер роняет фокус на body; возвращаем его на шторку.
+  useEffect(() => {
+    if (deleting && !dialogRef.current?.contains(document.activeElement)) {
+      dialogRef.current?.focus();
+    }
+  }, [deleting]);
+
   useEffect(() => {
     const dialog = dialogRef.current;
-    dialog?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    // Сначала сама шторка, а не первое действие: зажатый Enter/Space (открыл карточку) не нажмёт «Открыть» сразу.
+    dialog?.focus();
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -61,11 +70,17 @@ export function JournalEntrySheet({
       // Фокус не выходит за шторку (aria-modal).
       const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
       if (items.length === 0) {
+        // Все кнопки заблокированы (идёт удаление): фокус остаётся на шторке, а не уходит на страницу под ней.
+        event.preventDefault();
+        dialog.focus();
         return;
       }
       const first = items[0];
       const last = items[items.length - 1];
-      if (!dialog.contains(document.activeElement)) {
+      if (document.activeElement === dialog) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (!dialog.contains(document.activeElement)) {
         event.preventDefault();
         first.focus();
       } else if (event.shiftKey && document.activeElement === first) {
@@ -109,12 +124,12 @@ export function JournalEntrySheet({
     open: onOpen, edit: onEdit, clone: onClone, workout: onOpenWorkout, delete: () => void handleDelete(),
   };
   const actions = journalSheetActions(session, { canOpenWorkout });
-  const title = session.title ?? "Тренировка";
+  const title = journalEntryTitle(session);
 
   return (
     <div className="home-sheet-backdrop" data-testid="journal-entry-sheet-backdrop" onClick={() => closeRef.current()}>
       <div
-        ref={dialogRef} className="home-sheet journal-sheet" role="dialog" aria-modal="true" aria-label={title}
+        ref={dialogRef} className="home-sheet journal-sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}
         data-testid="journal-entry-sheet" onClick={(event) => event.stopPropagation()}
       >
         <p className="journal-sheet-title">

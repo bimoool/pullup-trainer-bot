@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 
 import { cloneSession, editSession, type SessionResponseV2 } from "./apiV2";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
-import { describeJournalBlock } from "./journalFormat";
+import { describeJournalBlock, journalEntryTitle } from "./journalFormat";
 import {
   buildEditPayload, initialDraft, isDateAllowed, SET_NOTE_MAX, todayKey, type EditDraft, type SetDraft,
 } from "./journalEdit";
@@ -78,7 +78,7 @@ export function JournalV2EditForm({
   return (
     <div data-testid="journal-edit-form">
       <p className="plan-title">Изменить тренировку</p>
-      <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
+      <p className="block-subtitle">{journalEntryTitle(session)}</p>
 
       <span className="field-label">Дата</span>
       <input
@@ -196,7 +196,7 @@ export function JournalV2CloneForm({
   return (
     <div data-testid="journal-clone-form">
       <p className="plan-title">Повторить тренировку</p>
-      <p className="block-subtitle">{session.title ?? "Тренировка"}</p>
+      <p className="block-subtitle">{journalEntryTitle(session)}</p>
       <p className="hint">Будет создана новая завершённая запись с теми же упражнениями и результатами.</p>
       <span className="field-label">Дата</span>
       <input

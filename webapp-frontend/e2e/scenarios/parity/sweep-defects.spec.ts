@@ -94,7 +94,9 @@ for (const width of WIDTHS) {
       // После сохранения — Журнал с новой записью (не деталь).
       const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
       await expect(card).toHaveCount(1);
-      await expect(card).toContainText("8 · 6");
+      // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
+      await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
       await expect(page.getByTestId("workout-detail")).toHaveCount(0);
 
       expect(noWakeLock(consoleErrors)).toEqual([]);

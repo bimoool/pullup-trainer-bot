@@ -38,7 +38,7 @@ test("создание: пустое название блокирует шаг,
 test("reps: явные подписи, −/+ и ввод, превью = то, что сохранится и открывается снова", async ({ page }) => {
   const { apiFailures } = await openAppAs(page, USER);
   await page.getByTestId("my-workout-card").filter({ hasText: "UX проверка" }).click();
-  await page.getByRole("button", { name: "Редактировать" }).click();
+  await page.getByRole("button", { name: "Изменить", exact: true }).click();
   await page.getByRole("button", { name: "+ Добавить упражнение" }).click();
   await page.locator(".ux-pick").first().click();
 
@@ -83,7 +83,7 @@ test("reps: явные подписи, −/+ и ввод, превью = то, �
 test("time, max, interval: свои подписи, превью, сохранение", async ({ page }) => {
   const { apiFailures } = await openAppAs(page, USER);
   await page.getByTestId("my-workout-card").filter({ hasText: "UX проверка" }).click();
-  await page.getByRole("button", { name: "Редактировать" }).click();
+  await page.getByRole("button", { name: "Изменить", exact: true }).click();
   const fields = page.getByTestId("protocol-fields");
   const preview = page.getByTestId("protocol-preview");
 

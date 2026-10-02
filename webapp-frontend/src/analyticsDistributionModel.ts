@@ -34,20 +34,10 @@ export function isServiceCategory(name: string): boolean {
 export function categoryColors(dist: AnalyticsDistributionV2, homeOrder: string[] = []): Map<string, string> {
   const colors = new Map<string, string>();
   const taken = new Set<string>();
-  const known = dist.categories.filter((c) => !isServiceCategory(c.name) && homeOrder.includes(c.name.trim()));
-  for (const category of known) {
-    const color = categoryColorVar(category.name, homeOrder);
-    colors.set(category.name, color);
-    if (category.workouts >= EPSILON || category.minutes >= EPSILON) {
-      taken.add(color);
-    }
-  }
-  // Категории вне Главной: цвет — хеш имени, при совпадении внутри одного графика сдвиг к свободному
-  // (в порядке имён, поэтому результат не зависит от сортировки ответа).
-  // Сдвиг только для категорий с данными (в легенде), нулевые категории каталога — чистый хеш.
-  const rest = dist.categories.filter((c) => !isServiceCategory(c.name) && !colors.has(c.name))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  for (const { name, workouts, minutes } of rest) {
+  // Цвет по имени; при совпадении внутри одного графика — сдвиг к свободному (только категории с данными,
+  // т.е. из легенды; нулевые категории каталога — чистый цвет по имени). Это относится и к категориям Главной:
+  // индекс ряда ≥ 6 по модулю палитры совпадает с индексом ряда − 6. Порядок обхода не зависит от сортировки ответа.
+  const assign = ({ name, workouts, minutes }: { name: string; workouts: number; minutes: number }) => {
     let color = categoryColorVar(name, homeOrder);
     if (workouts >= EPSILON || minutes >= EPSILON) {
       const start = Number(color.match(/(\d+)\)$/)?.[1] ?? 0);
@@ -57,7 +47,12 @@ export function categoryColors(dist: AnalyticsDistributionV2, homeOrder: string[
       taken.add(color);
     }
     colors.set(name, color);
-  }
+  };
+  const named = dist.categories.filter((c) => !isServiceCategory(c.name));
+  const homeIndex = (name: string) => homeOrder.indexOf(name.trim());
+  // сначала категории Главной (в порядке рядов — те, что ближе к началу, сохраняют «свой» цвет), затем остальные по имени
+  named.filter((c) => homeIndex(c.name) >= 0).sort((x, y) => homeIndex(x.name) - homeIndex(y.name)).forEach(assign);
+  named.filter((c) => homeIndex(c.name) < 0).sort((x, y) => x.name.localeCompare(y.name)).forEach(assign);
   for (const category of dist.categories) {
     if (isServiceCategory(category.name)) {
       colors.set(category.name, NEUTRAL_COLOR);

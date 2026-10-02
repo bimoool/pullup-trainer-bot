@@ -64,10 +64,10 @@ for (const width of [320, 390]) {
 test("Главная: открыть Мою тренировку, создать новую, навигация цела", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, CREATE_ID, { backButton: true });
 
-  // Открыть существующую → деталь (#255) → «Редактировать» → редактор → «Сохранить» → деталь → назад на Главную.
+  // Открыть существующую → деталь (#255) → «Изменить» → редактор → «Сохранить» → деталь → назад на Главную.
   await page.getByTestId("my-workout-card").filter({ hasText: "Очень длинная" }).click();
   await expect(page.getByTestId("workout-detail")).toBeVisible();
-  await page.getByRole("button", { name: "Редактировать" }).click();
+  await page.getByRole("button", { name: "Изменить", exact: true }).click();
   await expect(page.getByText("Редактировать тренировку")).toBeVisible();
   await expect(page.getByText("Подтягивания", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Сохранить" }).click();

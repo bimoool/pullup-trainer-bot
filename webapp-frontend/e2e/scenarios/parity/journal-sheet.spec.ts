@@ -128,7 +128,9 @@ for (const width of WIDTHS) {
       for (const [name, close] of closers) {
         await card.click();
         await expect(sheet, name).toBeVisible();
-        // Фокус ушёл в шторку (первое действие), Tab его не выпускает.
+        // Фокус ушёл в саму шторку (не на первое действие — зажатый Enter не нажмёт «Открыть»), Tab его не выпускает.
+        await expect(sheet, name).toBeFocused();
+        await page.keyboard.press("Tab");
         await expect(page.getByTestId("journal-sheet-open"), name).toBeFocused();
         for (let step = 0; step < 8; step++) {
           await page.keyboard.press("Tab");
@@ -150,6 +152,10 @@ for (const width of WIDTHS) {
       await card.focus();
       await page.keyboard.press("Enter");
       await expect(sheet).toBeVisible();
+      await expect(sheet).toBeFocused();
+      await page.keyboard.press("Enter"); // повторный/зажатый Enter по шторке ничего не активирует
+      await expect(sheet).toBeVisible();
+      await page.keyboard.press("Tab");
       await page.keyboard.press("Enter");
       await expect(page.getByRole("button", { name: /Удалить/ })).toBeVisible();
       await pressTelegramBackButton(page);
@@ -220,8 +226,18 @@ for (const width of WIDTHS) {
 
       // Подтверждено (двойной клик — один DELETE): запись исчезла, шторки нет, соседняя запись цела.
       page.on("dialog", (dialog) => void dialog.accept());
+      await page.route("**/api/v2/sessions/*", async (route) => {
+        if (route.request().method() === "DELETE") {
+          await new Promise((resolve) => setTimeout(resolve, 700)); // окно, в котором кнопки заблокированы
+        }
+        await route.continue();
+      });
       const deleted = page.waitForResponse((r) => r.request().method() === "DELETE" && r.url().includes("/api/v2/sessions/"));
       await page.getByTestId("journal-sheet-delete").dblclick();
+      // Пока идёт удаление, фокус не падает на страницу под шторкой, Tab его не выпускает (aria-modal).
+      await expect(page.getByTestId("journal-entry-sheet")).toBeFocused();
+      await page.keyboard.press("Tab");
+      await expect(page.getByTestId("journal-entry-sheet")).toBeFocused();
       expect((await deleted).status()).toBe(204);
       await expect(page.getByTestId("journal-entry-sheet")).toHaveCount(0);
       await expect(cards).toHaveCount(1);
