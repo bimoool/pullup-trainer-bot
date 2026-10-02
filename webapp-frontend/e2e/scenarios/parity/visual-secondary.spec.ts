@@ -15,10 +15,10 @@ import type { TelegramTheme } from "../../fixtures/telegramMock";
 // Seed: scripts/e2e_seed_all.sh «Visual secondary» — 9977xx, только чтение; все ширины × темы
 // делят пользователей (parity-проект идёт последовательно).
 //   997701 builder_workouts · 997702 home_discovery · 997703 collections · 997704 body_metrics
-//   997705 peer_cohort_female · 997706 ready · 997707 tests_hub
+//   994001 peer_cohort_female (общий, только чтение; свой сид менял бы медиану когорты в peer-insights) · 997706 ready · 997707 tests_hub
 // Снимки: UX_CAPTURE=1 UX_LABEL=before|after UX_CAPTURE_DIR=/tmp/ux-vis3 (тогда проверки «мягкие»).
 const U = {
-  builder: 997_701, home: 997_702, collections: 997_703, body: 997_704, peer: 997_705, settings: 997_706, tests: 997_707,
+  builder: 997_701, home: 997_702, collections: 997_703, body: 997_704, peer: 994_001, settings: 997_706, tests: 997_707,
 } as const;
 const THEMES: TelegramTheme[] = ["light", "dark"];
 const CAPTURE = !!process.env.UX_CAPTURE;

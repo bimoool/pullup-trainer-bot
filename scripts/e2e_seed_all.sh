@@ -132,7 +132,6 @@ seed builder_workouts 997701
 seed home_discovery 997702
 seed collections 997703
 seed body_metrics 997704
-seed peer_cohort_female 997705
 seed ready 997706
 seed tests_hub 997707
 # #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
