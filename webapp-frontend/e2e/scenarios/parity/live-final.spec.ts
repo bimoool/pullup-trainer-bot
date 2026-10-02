@@ -84,6 +84,8 @@ for (const width of WIDTHS) {
         await page.getByRole("button", { name: "Изменить" }).click();
         await page.getByLabel(RESULT).fill("9");
         await page.getByRole("button", { name: "Сохранить подход" }).click();
+        await page.getByRole("button", { name: "Свернуть" }).click();
+        await expect(page.getByTestId("log-panel-summary")).toContainText("Подход 1: 9 повт.");
         await clickAndSync(page, "Пропустить отдых", "/phase/next");
         await expect(page.getByRole("heading", { name: "Приготовься", exact: true, level: 2 })).toBeVisible();
         await expect(page.getByTestId("log-panel-summary")).toContainText("Подход 1: 9 повт.");
@@ -92,6 +94,7 @@ for (const width of WIDTHS) {
         await expect(page.getByText("Подход 1: результат")).toBeVisible();
         await page.getByLabel(RESULT).fill("10");
         await page.getByRole("button", { name: "Сохранить подход" }).click();
+        await page.getByRole("button", { name: "Свернуть" }).click();
         await expect(page.getByTestId("log-panel-summary")).toContainText("Подход 1: 10 повт.");
         await expectNoHorizontalOverflow(page, "Live: правка на «Приготовься»");
 
