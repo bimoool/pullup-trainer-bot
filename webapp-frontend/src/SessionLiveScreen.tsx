@@ -36,7 +36,7 @@ import { useBackButton } from "./useBackButton";
 import { dismissKeyboard } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
-import { sanitizeDecimalInput } from "./decimalInput";
+import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -404,7 +404,7 @@ export function SessionLiveScreen({
 
   function saveRestEdit() {
     void guardedAction(async () => {
-      if (local === null) {
+      if (local === null || !isCompleteDecimal(value)) {
         return;
       }
       await commitLocal(withRestEdit(local));
@@ -449,7 +449,7 @@ export function SessionLiveScreen({
       if (local === null || index === null || extraBlock === null || extraBlock.exercise_id === null) {
         return;
       }
-      if (extraValue.trim() === "") {
+      if (!isCompleteDecimal(extraValue)) {
         return;
       }
       await commitLocal({
@@ -471,7 +471,7 @@ export function SessionLiveScreen({
   function logSet() {
     dismissKeyboard();
     void guardedAction(async () => {
-      if (local === null || block === null || block.exercise_id === null || value.trim() === "") {
+      if (local === null || block === null || block.exercise_id === null || !isCompleteDecimal(value)) {
         return;
       }
       const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
@@ -726,7 +726,7 @@ export function SessionLiveScreen({
             <>
               {renderValueField(value, setValue, inputLabel.label)}
               {renderEffortAndNote()}
-              <Button className="live-save" size="l" stretched mode="bezeled" disabled={value.trim() === ""} onClick={saveRestEdit}>
+              <Button className="live-save" size="l" stretched mode="bezeled" disabled={!isCompleteDecimal(value)} onClick={saveRestEdit}>
                 Сохранить подход
               </Button>
             </>
@@ -749,7 +749,7 @@ export function SessionLiveScreen({
           <h3 className="live-panel-title">Ещё подход</h3>
           <div data-testid="extra-set-form">
             {renderValueField(extraValue, setExtraValue, extraLabel.label)}
-            <Button className="live-save" size="l" stretched disabled={extraValue.trim() === ""} onClick={logExtraSet}>
+            <Button className="live-save" size="l" stretched disabled={!isCompleteDecimal(extraValue)} onClick={logExtraSet}>
               Записать
             </Button>
             <Button className="live-save" size="l" stretched mode="outline" onClick={() => setExtraOpen(false)}>
@@ -770,7 +770,7 @@ export function SessionLiveScreen({
             </Button>
           )}
           {phaseName === "go" && block !== null && (
-            <Button className="live-primary" size="l" stretched disabled={value.trim() === ""} onClick={logSet}>
+            <Button className="live-primary" size="l" stretched disabled={!isCompleteDecimal(value)} onClick={logSet}>
               Готово
             </Button>
           )}

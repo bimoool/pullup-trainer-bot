@@ -18,5 +18,18 @@ test("лишние разделители и символы отбрасываю
 
 test("промежуточный ввод сохраняется: «12,» → «12.»", () => {
   assert.equal(sanitizeDecimalInput("12,"), "12.");
-  assert.equal(sanitizeDecimalInput(","), ".");
+  assert.equal(sanitizeDecimalInput(","), "0.");
+});
+
+test("одиночный разделитель не становится числом: «,» → «0.», isCompleteDecimal отсекает пустое", async () => {
+  const { isCompleteDecimal, sanitizeDecimalInput } = await import("../src/decimalInput.ts");
+  assert.equal(sanitizeDecimalInput(","), "0.");
+  assert.equal(sanitizeDecimalInput(",5"), "0.5");
+  assert.equal(isCompleteDecimal("."), false);
+  assert.equal(isCompleteDecimal(""), false);
+  assert.equal(isCompleteDecimal("  "), false);
+  assert.equal(isCompleteDecimal("12"), true);
+  assert.equal(isCompleteDecimal("12.5"), true);
+  assert.equal(isCompleteDecimal("12."), true);
+  assert.equal(isCompleteDecimal("0.5"), true);
 });
