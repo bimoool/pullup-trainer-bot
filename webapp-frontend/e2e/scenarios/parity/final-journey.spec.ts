@@ -313,6 +313,25 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       await pressTelegramBackButton(page); // назад с предэкрана — в Планы, не на Главную
       await expect(page.getByText("Текущий план", { exact: true })).toBeVisible();
 
+      // Плановая тренировка проходит целиком, и Планы / Журнал сразу показывают результат (данные свежие).
+      const pushups = page.locator('[data-testid="plans-row"]').filter({ hasText: "Отжимания" });
+      await expect(pushups.getByTestId("plan-item-counter")).toHaveText("0/1");
+      await page.getByRole("button", { name: /^Начать: Отжимания/ }).first().click();
+      await byName(page, "Начать").click();
+      await expect(page.getByText("Живая тренировка")).toBeVisible();
+      await shot(page, t, "12c плановая сессия");
+      await playSets(page, ["12"]);
+      await byName(page, "Завершить").click();
+      await clickAndSync(page, "Сохранить и завершить", "/complete");
+      await expect(page.getByText("Тренировка завершена")).toBeVisible();
+      await shot(page, t, "12d итог плановой");
+      await byName(page, "Закрыть").click();
+      await openTab(page, "Планы");
+      await expect(pushups.getByTestId("plan-item-counter")).toHaveText("1/1");
+      await shot(page, t, "12e планы после плановой");
+      await openTab(page, "Журнал");
+      await expect(page.locator(".journal-card").filter({ hasText: "Отжимания" }).first()).toBeVisible();
+
       await step(page, t, "13 Тесты: запись результата виден в списке", async () => {
         await openTab(page, "Главная");
         await page.getByTestId("home-tests-row").click();
