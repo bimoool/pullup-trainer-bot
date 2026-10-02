@@ -879,9 +879,27 @@ export interface AnalyticsMetricsV2 {
   without_duration: number;
 }
 
+export interface AnalyticsDistributionSubV2 {
+  name: string;
+  workouts: number;
+  minutes: number;
+}
+
+export interface AnalyticsDistributionCategoryV2 extends AnalyticsDistributionSubV2 {
+  subcategories: AnalyticsDistributionSubV2[];
+}
+
+/** Распределение диапазона по категориям (#274); значения дробные — смешанная сессия делится по долям блоков. */
+export interface AnalyticsDistributionV2 {
+  categories: AnalyticsDistributionCategoryV2[];
+  total_workouts: number;
+  total_minutes: number;
+}
+
 export interface TrainingAnalyticsV2 {
   timezone: string;
   metrics: AnalyticsMetricsV2;
+  distribution: AnalyticsDistributionV2;
   activity: {
     sessions_last_30_days: number;
     active_days_last_30_days: number;

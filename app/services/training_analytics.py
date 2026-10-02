@@ -13,8 +13,10 @@ from app.domain.training_analytics import (
     AnalyticsBlock,
     AnalyticsSession,
     AnalyticsSetLog,
+    Distribution,
     MetricsSeries,
     TrainingAnalytics,
+    compute_distribution,
     compute_metrics_series,
     compute_training_analytics,
 )
@@ -34,12 +36,16 @@ def resolve_timezone(name: str | None) -> ZoneInfo:
     return ZoneInfo("UTC")
 
 
-def to_analytics_session(detail: SessionDetail) -> AnalyticsSession:
+def to_analytics_session(
+    detail: SessionDetail, categories: dict[int, tuple[str, str | None]] | None = None,
+) -> AnalyticsSession:
+    categories = categories or {}
     items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
     return AnalyticsSession(
         performed_at=detail.performed_at,
         completed_at=detail.completed_at,
         duration_seconds=detail.duration_seconds,
+        activity_type=detail.activity_type,
         blocks=[
             AnalyticsBlock(
                 exercise_id=block.exercise_id,
@@ -47,6 +53,8 @@ def to_analytics_session(detail: SessionDetail) -> AnalyticsSession:
                 protocol_type=item.protocol.type.value if item is not None else None,
                 set_logs=[AnalyticsSetLog(value=log.value, unit=log.unit) for log in block.set_logs],
                 result=block.result,
+                category=categories.get(block.exercise_id, (None, None))[0] if block.exercise_id else None,
+                subcategory=categories.get(block.exercise_id, (None, None))[1] if block.exercise_id else None,
             )
             for block, item in zip(detail.blocks, items, strict=True)
         ],
@@ -59,9 +67,17 @@ class TrainingAnalyticsService:
 
     async def build(
         self, *, user_id: int, timezone: str | None, now: datetime, date_from: date, date_to: date,
-    ) -> tuple[TrainingAnalytics, MetricsSeries, ZoneInfo]:
+    ) -> tuple[TrainingAnalytics, MetricsSeries, Distribution, ZoneInfo]:
         tz = resolve_timezone(timezone)
         details = await self._sessions.list_all_completed(user_id)
-        sessions = [to_analytics_session(d) for d in details]
+        exercise_ids = {b.exercise_id for d in details for b in d.blocks if b.exercise_id is not None}
+        categories = await self._sessions.exercise_categories(exercise_ids)
+        sessions = [to_analytics_session(d, categories) for d in details]
         analytics = compute_training_analytics(sessions, now, tz)
-        return analytics, compute_metrics_series(sessions, date_from, date_to, now, tz), tz
+        library = await self._sessions.library_categories(user_id)
+        return (
+            analytics,
+            compute_metrics_series(sessions, date_from, date_to, now, tz),
+            compute_distribution(sessions, library, date_from, date_to, now, tz),
+            tz,
+        )

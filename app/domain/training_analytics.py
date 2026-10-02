@@ -38,6 +38,9 @@ class AnalyticsBlock:
     protocol_type: str | None  # reps_sets | time_sets | max_effort | interval | None
     set_logs: list[AnalyticsSetLog] = field(default_factory=list)
     result: dict | None = None  # interval result
+    # Категория упражнения каталога (#274); None — нет упражнения/legacy
+    category: str | None = None
+    subcategory: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,7 @@ class AnalyticsSession:
     completed_at: datetime | None = None  # aware; NULL у старых сессий
     # Свободная активность (#263): заявленная длительность, источник минут вместо completed_at
     duration_seconds: int | None = None
+    activity_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -323,4 +327,95 @@ def compute_metrics_series(
     return MetricsSeries(
         date_from=date_from, date_to=date_to, weeks=weeks, total_workouts=total_workouts,
         total_minutes=total_seconds // 60, without_duration=without,
+    )
+
+
+# --- Распределение по категориям (CRIMPD #274) -------------------------------------
+
+OTHER_ACTIVITY_CATEGORY = "Другая активность"
+UNCATEGORIZED = "Без категории"
+
+
+@dataclass(frozen=True)
+class DistributionSub:
+    name: str
+    workouts: float
+    minutes: float
+
+
+@dataclass(frozen=True)
+class DistributionCategory:
+    name: str
+    workouts: float
+    minutes: float
+    subcategories: list[DistributionSub]
+
+
+@dataclass(frozen=True)
+class Distribution:
+    categories: list[DistributionCategory]
+    total_workouts: float
+    total_minutes: float
+
+
+def _session_shares(session: AnalyticsSession) -> dict[tuple[str, str | None], float]:
+    """Доли сессии по (категория, подкатегория); сумма долей = 1. Свободная
+    активность — целиком «Другая активность». Смешанная сессия делится
+    пропорционально числу блоков (каждый блок — равная доля); блок без
+    категории (legacy/STEP) идёт в «Без категории»."""
+    if session.activity_type is not None:
+        return {(OTHER_ACTIVITY_CATEGORY, None): 1.0}
+    if not session.blocks:
+        return {(UNCATEGORIZED, None): 1.0}
+    share = 1.0 / len(session.blocks)
+    shares: dict[tuple[str, str | None], float] = {}
+    for block in session.blocks:
+        key = (block.category, block.subcategory) if block.category else (UNCATEGORIZED, None)
+        shares[key] = shares.get(key, 0.0) + share
+    return shares
+
+
+def compute_distribution(
+    sessions: list[AnalyticsSession], library: list[tuple[str, str | None]],
+    date_from: date, date_to: date, now: datetime, tz: ZoneInfo,
+) -> Distribution:
+    """Тренировки и минуты по категориям за [date_from, date_to] (локальные
+    дни; сессии из будущего исключены). library — (category, subcategory)
+    каталога: их строки присутствуют и с нулями. Сессия без валидной
+    длительности даёт долю тренировки, но не минут. Итого по тренировкам =
+    число тренировок диапазона (доли одной сессии в сумме дают 1)."""
+    cells: dict[tuple[str, str | None], list[float]] = {}
+    for category, subcategory in library:
+        cells.setdefault((category, subcategory), [0.0, 0.0])
+    for session in _completed_past(sessions, now):
+        if not date_from <= session.performed_at.astimezone(tz).date() <= date_to:
+            continue
+        seconds = session_duration_seconds(session)
+        minutes = 0.0 if seconds is None else seconds / 60
+        for key, share in _session_shares(session).items():
+            cell = cells.setdefault(key, [0.0, 0.0])
+            cell[0] += share
+            cell[1] += share * minutes
+
+    by_category: dict[str, list[tuple[str | None, list[float]]]] = {}
+    for (category, subcategory), values in cells.items():
+        by_category.setdefault(category, []).append((subcategory, values))
+
+    categories: list[DistributionCategory] = []
+    for category, items in by_category.items():
+        subs = [
+            DistributionSub(name=sub, workouts=round(v[0], 2), minutes=round(v[1], 1))
+            for sub, v in sorted(((s, v) for s, v in items if s is not None), key=lambda x: x[0].lower())
+        ]
+        categories.append(DistributionCategory(
+            name=category, workouts=round(sum(v[0] for _, v in items), 2),
+            minutes=round(sum(v[1] for _, v in items), 1), subcategories=subs,
+        ))
+    # Крупные сверху; при равенстве — по имени. Служебные категории — в конце.
+    tail = {OTHER_ACTIVITY_CATEGORY: 1, UNCATEGORIZED: 2}
+    categories.sort(key=lambda c: (tail.get(c.name, 0), -c.workouts, c.name.lower()))
+    return Distribution(
+        categories=categories,
+        total_workouts=round(sum(c[0] for c in cells.values()), 2),
+        total_minutes=round(sum(c[1] for c in cells.values()), 1),
     )

@@ -19,6 +19,7 @@ import {
   type RangeKey,
 } from "./analyticsMetric";
 import { formatDuration, formatLongDuration, formatNumber } from "./blockFormat";
+import { DistributionDonut, DistributionTable } from "./AnalyticsDistribution";
 
 type Props = { initDataRaw: string };
 
@@ -192,6 +193,11 @@ function MetricsCard({ data, metric, rangeKey, draft, onMetric, onRange, onDraft
       {metric === "minutes" && metrics.without_duration > 0 && (
         <p className="hint" data-testid="analytics-no-duration">без данных о времени: {metrics.without_duration}</p>
       )}
+      <DistributionDonut dist={data.distribution} metric={metric} />
+      <DistributionTable dist={data.distribution} />
+      <p className="hint">
+        Смешанная тренировка делится между категориями поровну по блокам; минуты — по длительности тренировки.
+      </p>
       {infoOpen && <MetricInfoSheet onClose={() => setInfoOpen(false)} />}
     </div>
   );
