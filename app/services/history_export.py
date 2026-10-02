@@ -1,6 +1,6 @@
 """Экспорт истории тренировок в CSV (Crimpd "Export Log Data"). Только данные
-вызывающего пользователя: завершённые v2-сессии (одна строка на подход) и
-legacy-тренировки (колонка source). UTF-8 с BOM — для Excel."""
+вызывающего пользователя: завершённые v2-сессии (одна строка на подход; без
+backfill-копий legacy-тренировок, #284) и legacy-тренировки (колонка source). UTF-8 с BOM — для Excel."""
 
 import csv
 import hashlib
@@ -68,7 +68,8 @@ def _v2_rows(detail: SessionDetail, names: dict[int, str], tz) -> list[list[str]
 async def build_rows(session: AsyncSession, *, user_id: int, timezone: str | None) -> list[list[str]]:
     tz = resolve_timezone(timezone)
     sessions = TrainingSessionRepository(session)
-    details = await sessions.list_all_completed(user_id)
+    # перенесённую backfill-ом историю отдаёт legacy-таблица (#284), v2-копии не дублируем
+    details = await sessions.list_all_completed(user_id, exclude_backfilled=True)
     ids = {b.exercise_id for d in details for b in d.blocks if b.exercise_id is not None}
     names = await sessions.exercise_names(ids)
     rows: list[list[str]] = []
