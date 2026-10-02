@@ -35,6 +35,9 @@
   --vp-page-bg: var(--tg-secondary-bg-color);
   --vp-card-bg: var(--tg-section-bg-color);
   --vp-divider: color-mix(in srgb, var(--tg-hint-color) 24%, transparent);
+  /* мелкие подписи (10-13px): «сырой» hint Telegram даёт 2.5-3.6:1 на карточке/странице; подмешиваем
+     текстовый цвет, чтобы пройти WCAG AA 4.5:1 в обеих темах (светлая #999→≈#636363, тёмная ≈#a5b1be) */
+  --vp-hint: color-mix(in srgb, var(--tg-hint-color) 60%, var(--tg-text-color));
   --vp-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 6px rgba(16, 24, 40, 0.04);
   --vp-nav-h: 58px;
   /* цвета групп каталога (кодируют категорию, как цветные группы эталона) */

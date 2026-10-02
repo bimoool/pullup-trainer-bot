@@ -169,6 +169,12 @@
   box-shadow: var(--vp-shadow);
   overflow: hidden;
 }
+/* #287 LOW 7: overflow: hidden карточки обрезал внешнее кольцо фокуса строк — рисуем его внутрь. */
+.app-shell :is(.vs-rows, [data-testid="tests-list"], [data-testid="test-history"], .search-list, .collection-item-list)
+  :is(button, a[href], [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--vp-accent);
+  outline-offset: -2px;
+}
 .app-shell .vs-rows > * + *,
 .app-shell [data-testid="tests-list"] > * + *,
 .app-shell [data-testid="test-history"] > * + *,
@@ -178,9 +184,19 @@
 }
 
 /* ---------- пред-экран сессии ---------- */
+/* #287 LOW 5: пред-экран открыт полноэкранным потоком без нижней навигации (PlanSessionFlow) —
+   «Начать» у самого низа окна (как транспорт Live Session), а не на высоте навигации над пустотой. */
 .pre-screen {
   display: flex;
   flex-direction: column;
+  min-height: calc(100vh - var(--vp-sp-2) - var(--vp-safe-top, 0px));
+  min-height: calc(100dvh - var(--vp-sp-2) - var(--vp-safe-top, 0px));
+}
+.app-shell:not(.app-shell-with-nav):has(.pre-screen) {
+  padding-bottom: 0;
+}
+/* лаба (SessionV2Lab) показывает пред-экран внутри вкладок — над навигацией */
+.app-shell-with-nav .pre-screen {
   min-height: calc(100vh - 8px - var(--vp-nav-h) - 20px - var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
   min-height: calc(100dvh - 8px - var(--vp-nav-h) - 20px - var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
@@ -239,14 +255,19 @@
   font-size: var(--vp-fs-body);
   color: var(--tg-subtitle-text-color);
 }
-/* главное действие — внизу экрана над навигацией, как транспорт Live Session */
+/* главное действие — внизу экрана, как транспорт Live Session: фон доходит до края окна, кнопка — над
+   home indicator (safe area в нижнем отступе) */
 .pre-transport {
   position: sticky;
-  bottom: calc(var(--vp-nav-h) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+  bottom: 0;
   z-index: 5;
   margin: auto calc(var(--vp-sp-4) * -1) 0;
-  padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-4);
+  padding: var(--vp-sp-3) var(--vp-sp-4) calc(var(--vp-sp-4) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
   background: linear-gradient(to bottom, transparent, var(--vp-page-bg) 14px);
+}
+.app-shell-with-nav .pre-transport {
+  bottom: calc(var(--vp-nav-h) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-bottom: var(--vp-sp-4);
 }
 .pre-transport button.vs-primary {
   margin-top: 0;
@@ -949,6 +970,9 @@
 }
 .vs-cover {
   --cat: var(--vp-cat-0);
+  /* #287 LOW 6: затемнение низа обложки под подписью категории — белый текст ≥ 4.5:1 на любой
+     категории (самая светлая — оранжевая); юнит-тест tests/coverContrast.test.ts считает по этому токену. */
+  --vs-cover-scrim: rgba(0, 0, 0, 0.38);
   position: relative;
   display: flex;
   align-items: flex-start;
@@ -958,6 +982,7 @@
   border-radius: 0 0 24px 24px;
   color: #fff;
   background:
+    linear-gradient(to top, var(--vs-cover-scrim) 0, var(--vs-cover-scrim) 48px, rgba(0, 0, 0, 0) 84px),
     radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0) 38%),
     radial-gradient(circle at 12% 120%, rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0) 45%),
     linear-gradient(135deg, color-mix(in srgb, var(--cat) 88%, #000), color-mix(in srgb, var(--cat) 62%, #0b1220));
@@ -981,7 +1006,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.9);
+  color: #ffffff;
   overflow-wrap: anywhere;
 }
 .app-shell .vs-cover-collection + .collection-hero {

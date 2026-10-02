@@ -109,6 +109,64 @@ export async function emitTelegramEvent(page: Page, event: string): Promise<void
   }, event);
 }
 
+/**
+ * Смена темы клиента Telegram на лету (#285 L3): обновляет WebApp.colorScheme/themeParams и
+ * доставляет `themeChanged` подписчикам, как это делает настоящий клиент.
+ */
+export async function emitTelegramThemeChange(page: Page, theme: TelegramTheme): Promise<void> {
+  await page.evaluate(
+    ({ colorScheme, themeParams }) => {
+      const webApp = (window as unknown as { Telegram: { WebApp: { colorScheme: string; themeParams: Record<string, string> } } }).Telegram.WebApp;
+      webApp.colorScheme = colorScheme;
+      webApp.themeParams = themeParams;
+    },
+    { colorScheme: theme, themeParams: THEME_PARAMS[theme] },
+  );
+  await emitTelegramEvent(page, "themeChanged");
+}
+
+/**
+ * Событие клиента по пути нативных iOS/Android (#287 MED 4). Там init() @telegram-apps/sdk заменяет
+ * window.Telegram.WebView.receiveEvent своим, и событие уходит только в шину SDK — window "message"
+ * с source = window.parent (ровно это делает подменённый receiveEvent); мост telegram-web-app.js
+ * его не видит: WebApp.onEvent-подписчики НЕ вызываются, поля WebApp (themeParams, safeAreaInset…)
+ * НЕ обновляются. Если SDK успел подменить receiveEvent (init() прошёл) — зовём его, иначе
+ * доставляем то же сообщение напрямую.
+ */
+export async function emitNativeTelegramEvent(page: Page, eventType: string, eventData: unknown): Promise<void> {
+  await page.evaluate(({ type, data }) => {
+    const receive = (window as unknown as { Telegram?: { WebView?: { receiveEvent?: (t: string, d: unknown) => void } } })
+      .Telegram?.WebView?.receiveEvent;
+    if (typeof receive === "function") {
+      receive(type, data);
+      return;
+    }
+    window.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ eventType: type, eventData: data }), source: window.parent }));
+  }, { type: eventType, data: eventData });
+}
+
+// Полные themeParams для нативного пути: схему приложение выводит из bg_color (как telegram-web-app.js).
+const NATIVE_THEME_PARAMS: Record<TelegramTheme, Record<string, string>> = {
+  light: {
+    bg_color: "#ffffff",
+    text_color: "#000000",
+    hint_color: "#707579",
+    link_color: "#2481cc",
+    button_color: "#2481cc",
+    button_text_color: "#ffffff",
+    secondary_bg_color: "#efeff4",
+    section_bg_color: "#ffffff",
+    subtitle_text_color: "#707579",
+    destructive_text_color: "#e53935",
+  },
+  dark: THEME_PARAMS.dark,
+};
+
+/** Смена темы на нативном клиенте (#287 MED 4): `theme_changed` только по шине SDK, WebApp не меняется. */
+export async function emitNativeTelegramThemeChange(page: Page, theme: TelegramTheme): Promise<void> {
+  await emitNativeTelegramEvent(page, "theme_changed", { theme_params: NATIVE_THEME_PARAMS[theme] });
+}
+
 export async function mockTelegramWebApp(
   page: Page,
   initDataRaw: string,

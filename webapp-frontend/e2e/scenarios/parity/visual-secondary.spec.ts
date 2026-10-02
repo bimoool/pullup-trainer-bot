@@ -233,6 +233,41 @@ for (const width of WIDTHS) {
         expect(apiFailures).toEqual([]);
       });
 
+      test("#287 LOW 5/7: «Начать» пред-экрана у низа окна (над safe area), кольцо фокуса в списке не обрезано", async ({ page }) => {
+        // LOW 5: пред-экран без нижней навигации — транспорт у самого низа окна, кнопка над home indicator.
+        const { consoleErrors, apiFailures } = await openAppAs(page, U.builder, {
+          theme, telegram: { version: "8.0", safeAreaInset: { top: 0, bottom: 34, left: 0, right: 0 } },
+        });
+        await page.getByTestId("my-workout-card").filter({ hasText: "Смешанная" }).click();
+        await page.getByRole("button", { name: "Начать", exact: true }).click();
+        await expect(page.getByTestId("session-pre")).toBeVisible();
+        const vh = page.viewportSize()!.height;
+        const transport = (await page.locator(".pre-transport").boundingBox())!;
+        expect(Math.round(transport.y + transport.height), "транспорт пред-экрана прижат к низу окна").toBe(vh);
+        const start = (await page.getByRole("button", { name: "Начать", exact: true }).boundingBox())!;
+        const gap = vh - (start.y + start.height);
+        expect(gap, "«Начать» над safe area (16 + 34), а не на высоте отсутствующей навигации").toBeGreaterThanOrEqual(34);
+        expect(gap).toBeLessThanOrEqual(16 + 34 + 2);
+        expect(await page.evaluate(() => getComputedStyle(document.querySelector(".app-shell")!).paddingBottom)).toBe("0px");
+        await expectNoHorizontalOverflow(page, "Пред-экран: safe area");
+
+        // LOW 7: строка сгруппированного списка (overflow: hidden) с фокусом с клавиатуры — кольцо внутрь.
+        await fresh(page, U.tests, theme);
+        await page.getByTestId("home-tests-row").click();
+        const card = page.getByTestId("test-card").first();
+        await expect(card).toBeVisible();
+        await page.keyboard.press("Shift"); // клавиатурная модальность → :focus-visible
+        await card.focus();
+        const ring = await card.evaluate((el) => {
+          const style = getComputedStyle(el);
+          return { visible: el.matches(":focus-visible"), style: style.outlineStyle, width: style.outlineWidth, offset: style.outlineOffset };
+        });
+        expect(ring).toEqual({ visible: true, style: "solid", width: "2px", offset: "-2px" });
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
       test("Program Detail, подборка, поиск", async ({ page }) => {
         const { consoleErrors, apiFailures } = await openAppAs(page, U.home, { theme });
         await page.locator(".program-card-button").first().click();

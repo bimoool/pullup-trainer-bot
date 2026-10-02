@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  editLastLoggedSet, initialLocalSession, isGetReadyCueActive, rebaseLocalSession, restPanelExpandedByDefault,
+  editLastLoggedSet, initialLocalSession, isGetReadyCueActive, rebaseLocalSession,
   type LocalLiveSession, type QueuedSet,
 } from "../src/offlineSession.ts";
 import type { LiveSessionResponse } from "../src/apiV2.ts";
+import { formatLoggedSetSummary } from "../src/blockFormat.ts";
 
 function server(): LiveSessionResponse {
   return {
@@ -23,12 +24,13 @@ function restLocal(pending: QueuedSet[]): LocalLiveSession {
   return { ...initialLocalSession("c7", server()), nextSetIndex: 1, pendingSets: pending, lastLogged: LOGGED };
 }
 
-test("rest panel expands by default only for rest of 20 s or more", () => {
-  assert.equal(restPanelExpandedByDefault(19), false);
-  assert.equal(restPanelExpandedByDefault(20), true);
-  assert.equal(restPanelExpandedByDefault(60), true);
-  assert.equal(restPanelExpandedByDefault(2), false);
-  assert.equal(restPanelExpandedByDefault(null), true); // default rest is 90 s
+test("logged-set summary: one line «Подход N: …» with unit by input label (#286)", () => {
+  assert.equal(formatLoggedSetSummary(1, "8", "Повторений"), "Подход 1: 8 повт.");
+  assert.equal(formatLoggedSetSummary(2, "8.00", "Повторений"), "Подход 2: 8 повт.");
+  assert.equal(formatLoggedSetSummary(1, "75", "Секунды"), "Подход 1: 1:15");
+  assert.equal(formatLoggedSetSummary(3, "12", "Результат"), "Подход 3: 12");
+  assert.equal(formatLoggedSetSummary(1, "", "Повторений"), "Подход 1: ");
+  assert.equal(formatLoggedSetSummary(1, "abc", "Повторений"), "Подход 1: abc");
 });
 
 test("get-ready cue shows only during the last 10 s of rest", () => {

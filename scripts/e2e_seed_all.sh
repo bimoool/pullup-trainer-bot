@@ -152,6 +152,12 @@ for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
 for id in 998101 998102 998111 998112 998161 998162 998171 998172; do seed journal_edit "$id"; done
 for id in 998121 998122 998131 998132; do seed journal_edit "$id"; done
 for id in 998141 998142 998151 998152; do seed owner_optional_workout "$id"; done
+# #285 A «Live UX»: 9978xx — 320/390 × light/dark, на тест id + 2*индекс + retry (≤ +9); session_recovery.
+for base in 997801 997811 997821 997831; do for off in 0 1 2 3 4 5 6 7 8 9; do seed session_recovery $((base + off)); done; done
+# #287 «Live finish-pending» (parity/live-finish.spec.ts): 9979x1 — 320 light / 390 dark, session_recovery, на тест
+# id + 2*индекс + retry (≤ +9); 9979{51,61} (+retry) — builder_workouts («Дубли», interstitial между блоками).
+for base in 997901 997911; do for off in 0 1 2 3 4 5 6 7 8 9; do seed session_recovery $((base + off)); done; done
+for id in 997951 997952 997961 997962; do seed builder_workouts "$id"; done
 # #224 «Платформа Telegram» (tg-platform.spec.ts): 998801 BackButton, 998803 closing confirmation (live), 998805 safe-area/theme,
 # каждый + retry (id+1); 998811 — десятичный ввод «12,5» (ready: вес/рост профиля есть).
 for id in 998801 998802 998803 998804 998805 998806; do seed session_recovery "$id"; done

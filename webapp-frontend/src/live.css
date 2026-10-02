@@ -11,6 +11,12 @@
   --live-get_ready: #c76500;
   --live-go: #1b8a4b;
   --live-rest: #1a64d6;
+  /* WCAG AA (#285): акценты выше — для крупных цифр таймера (≥3:1) и заливок; мелкий текст на
+     карточке с плашкой-подписью (16 % акцента) читается в «чернильных» вариантах ≥4.5:1. */
+  --live-get_ready-ink: #8a4400;
+  --live-go-ink: #115f36;
+  --live-rest-ink: #1250a6;
+  --live-check-fg: #fff; /* галочка на заливке --live-go: ≥3:1 */
   --live-primary-h: 58px;
   --live-timer-size: clamp(76px, 25vw, 112px);
   display: flex;
@@ -23,6 +29,10 @@
   --live-get_ready: #ffb44d;
   --live-go: #4fd88b;
   --live-rest: #6cb0ff;
+  --live-get_ready-ink: #ffc77a;
+  --live-go-ink: #8ff0b9;
+  --live-rest-ink: #a6d0ff;
+  --live-check-fg: #0b2a1a;
 }
 
 /* транспорт прижат к низу экрана и остаётся под рукой при прокрутке панели записи */
@@ -51,7 +61,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-workout-title {
   margin: 2px 0 0;
@@ -64,7 +74,7 @@
 .live-plan {
   margin: 4px 0 0;
   font-size: var(--vp-fs-meta);
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-finish {
   flex: none;
@@ -95,10 +105,42 @@
   letter-spacing: -0.01em;
 }
 .live-screen .live-target {
-  margin: 6px 0 0;
-  font-size: var(--vp-fs-card);
+  margin: var(--vp-sp-2) 0 0;
+  font-size: var(--vp-fs-meta);
   font-weight: 600;
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
+}
+/* #286: крупный счётчик «1 / 3 ПОДХОД · 8 ПОВТ» (как exec_set2 эталона) */
+.live-counter {
+  display: flex;
+  justify-content: space-around;
+  gap: var(--vp-sp-3);
+  margin-top: var(--vp-sp-3);
+}
+.live-counter-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.live-counter-num {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.live-counter-total {
+  font-weight: 700;
+  color: var(--vp-hint);
+}
+.live-counter-label {
+  margin-top: 4px;
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vp-hint);
 }
 .live-pips {
   display: flex;
@@ -133,14 +175,13 @@
 .live-screen .phase-card-rest {
   border: 0;
 }
-.live-screen .phase-card-get_ready {
-  background: color-mix(in srgb, var(--live-get_ready) 13%, var(--vp-card-bg));
-}
-.live-screen .phase-card-go {
-  background: color-mix(in srgb, var(--live-go) 13%, var(--vp-card-bg));
-}
+/* #286: нейтральная поверхность под таймером (как у остальных карточек); состояние несёт
+   цветная плашка-подпись и цвет цифр, а не заливка всей панели */
+.live-screen .phase-card-get_ready,
+.live-screen .phase-card-go,
 .live-screen .phase-card-rest {
-  background: color-mix(in srgb, var(--live-rest) 13%, var(--vp-card-bg));
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
 }
 .live-screen .phase-panel-label {
   display: inline-block;
@@ -155,15 +196,15 @@
   border-radius: var(--vp-radius-pill);
 }
 .live-screen .phase-card-get_ready .phase-panel-label {
-  color: var(--live-get_ready);
+  color: var(--live-get_ready-ink);
   background: color-mix(in srgb, var(--live-get_ready) 16%, transparent);
 }
 .live-screen .phase-card-go .phase-panel-label {
-  color: var(--live-go);
+  color: var(--live-go-ink);
   background: color-mix(in srgb, var(--live-go) 16%, transparent);
 }
 .live-screen .phase-card-rest .phase-panel-label {
-  color: var(--live-rest);
+  color: var(--live-rest-ink);
   background: color-mix(in srgb, var(--live-rest) 16%, transparent);
 }
 .live-screen .phase-panel .timer-duration-label {
@@ -192,12 +233,12 @@
   margin: var(--vp-sp-2) 0 0;
   font-size: var(--vp-fs-card);
   font-weight: 700;
-  color: var(--live-get_ready);
+  color: var(--live-get_ready-ink);
 }
 .live-done-note {
   margin: var(--vp-sp-3) 0 0;
   font-size: var(--vp-fs-body);
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 
 /* ---------- панели (запись подхода, ещё подход) ---------- */
@@ -214,7 +255,7 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-field {
   display: grid;
@@ -222,7 +263,7 @@
 }
 .live-field-label {
   font-size: var(--vp-fs-meta);
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-field-input {
   box-sizing: border-box;
@@ -258,12 +299,33 @@
 .live-hint {
   margin: 6px 0 0;
   font-size: var(--vp-fs-meta);
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-summary-line {
   margin: 0;
   font-size: var(--vp-fs-card);
   font-weight: 600;
+}
+.live-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+}
+.live-summary-row .live-summary-line {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.live-summary-row .live-edit-button {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0 var(--vp-sp-2);
+  white-space: nowrap;
+}
+.live-log-collapsed {
+  padding-top: var(--vp-sp-1);
+  padding-bottom: var(--vp-sp-1);
 }
 .live-link-button {
   display: block;
@@ -283,7 +345,7 @@
   margin: 0 0 var(--vp-sp-2);
   text-align: center;
   font-size: var(--vp-fs-meta);
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-screen .live-save {
   margin-top: var(--vp-sp-3);
@@ -333,7 +395,7 @@
   font-size: 11px;
   line-height: 1.1;
   text-align: center;
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
   overflow-wrap: anywhere;
 }
 .live-chip-active {
@@ -359,11 +421,34 @@
 :root[data-vp-scheme="dark"] .live-transport {
   box-shadow: none;
 }
+/* M1 (#285): экранная клавиатура. Пока в Live-экране сфокусировано поле ввода (data-field-focus
+   ставит useLiveFieldFocus), транспорт не липнет к низу окна — иначе он перекрывает сфокусированное
+   поле (Android) или уезжает под клавиатуру (iOS). Он встаёт обычным блоком под полем и
+   прокручивается вместе с контентом; «Готово» достижимо прокруткой или Enter в поле. */
+.live-screen[data-field-focus="true"] .live-transport {
+  position: static;
+  box-shadow: none;
+}
+/* браузер при фокусе поля прокручивает его только до scroll-padding-bottom (shell.css — высота
+   нижней навигации ≈78px); на Live-экране навигации нет, зато под полем лежит транспорт
+   (≈137px + safe-area): оставляем место, чтобы поле и «Готово» были видны вместе. */
+html:has(.live-screen) {
+  scroll-padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+}
 .live-screen .live-primary {
   min-height: var(--live-primary-h);
   border-radius: 18px;
   font-size: 18px;
   font-weight: 700;
+}
+/* #286: «Готово» без значения — не белое на бледно-голубом, а читаемый приглушённый вид (≥4.5:1) */
+.live-screen .live-primary:disabled,
+.live-screen .live-primary[disabled],
+.live-screen .live-primary[aria-disabled="true"] {
+  opacity: 1;
+  color: var(--vp-hint);
+  background: color-mix(in srgb, var(--vp-accent) 14%, var(--vp-card-bg));
+  box-shadow: none;
 }
 .live-screen .live-primary * {
   font-size: inherit;
@@ -436,7 +521,7 @@
   box-shadow: var(--vp-shadow);
 }
 .live-transition .phase-panel-label {
-  color: var(--live-go);
+  color: var(--live-go-ink);
   background: color-mix(in srgb, var(--live-go) 16%, transparent);
 }
 .live-transition-eyebrow {
@@ -445,7 +530,7 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-screen .live-transition .action-button {
   margin-top: var(--vp-sp-4);
@@ -468,7 +553,7 @@
   justify-content: center;
   width: 56px;
   height: 56px;
-  color: #fff;
+  color: var(--live-check-fg);
   background: var(--live-go);
   border-radius: 50%;
 }
@@ -483,7 +568,7 @@
   margin-top: var(--vp-sp-1);
   font-size: var(--vp-fs-card);
   font-weight: 600;
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-stats {
   display: flex;
@@ -507,7 +592,7 @@
 }
 .live-stat-label {
   font-size: var(--vp-fs-meta);
-  color: var(--tg-hint-color);
+  color: var(--vp-hint);
 }
 .live-card {
   margin: 0 0 var(--vp-sp-3);

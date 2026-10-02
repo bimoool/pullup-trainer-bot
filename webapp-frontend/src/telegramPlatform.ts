@@ -112,6 +112,17 @@ export function insetCssVars(safe: Insets, content: Insets): Record<string, stri
   return vars;
 }
 
+/**
+ * Полезная нагрузка safe_area_changed / content_safe_area_changed из шины SDK (#287 MED 4):
+ * { top, bottom, left, right } в px. Не объект — null (событие игнорируется).
+ */
+export function insetsFromEvent(payload: unknown): Insets | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  return normalizeInsets(payload as Partial<Insets>);
+}
+
 // ---------- счётчик владельцев флага (подтверждение закрытия) ----------
 
 export type ToggleAdapter = { enable: () => void; disable: () => void };
@@ -172,16 +183,9 @@ export function acquireClosingConfirmation(): () => void {
 
 // ---------- запуск ----------
 
-function applyInsets(webApp: WebAppApi): void {
-  if (typeof document === "undefined" || !isVersionAtLeast(webApp, MIN_VERSION.safeArea)) {
-    return;
-  }
-  const vars = insetCssVars(normalizeInsets(webApp.safeAreaInset), normalizeInsets(webApp.contentSafeAreaInset));
-  const root = document.documentElement.style;
-  for (const [name, value] of Object.entries(vars)) {
-    root.setProperty(name, value);
-  }
-}
+/** Подписка на событие шины SDK (telegramSdkEvents.ts) — передаётся снаружи, чтобы этот модуль
+ * оставался без импортов SDK (юнит-тесты). Обработчик получает сырую полезную нагрузку. */
+export type EventSubscribe = (event: string, handler: (payload: unknown) => void) => () => void;
 
 /**
  * Один раз при старте (main.tsx, после init() SDK): ready → expand → запрет свайпа вниз → отступы.
@@ -192,7 +196,7 @@ function applyInsets(webApp: WebAppApi): void {
  *  - safeAreaInset/contentSafeAreaInset (8.0+): CSS-переменные для полноэкранного режима.
  * Возвращает отписку от событий (для тестов).
  */
-export function initTelegramPlatform(): () => void {
+export function initTelegramPlatform(subscribe?: EventSubscribe): () => void {
   const webApp = getWebApp();
   if (!webApp) {
     return () => {};
@@ -206,16 +210,68 @@ export function initTelegramPlatform(): () => void {
   } catch (error) {
     console.error("Telegram platform init failed", error);
   }
-  const refresh = () => applyInsets(webApp);
-  refresh();
+  // Отступы (8.0+). Два пути доставки событий (#287 MED 4): мост telegram-web-app.js (safeAreaChanged…,
+  // сам обновляет WebApp.safeAreaInset — iframe-клиенты, e2e-мок) и шина SDK (safe_area_changed… с
+  // инсетами в полезной нагрузке — нативные iOS/Android: init() SDK перехватил receiveEvent, мост
+  // молчит и WebApp.safeAreaInset не обновляется). Последние значения храним здесь; CSS-переменные
+  // пишутся только при изменении — событие, пришедшее обоими путями, применяется один раз.
+  let safe = normalizeInsets(webApp.safeAreaInset);
+  let content = normalizeInsets(webApp.contentSafeAreaInset);
+  let applied: string | null = null;
+  const apply = () => {
+    if (typeof document === "undefined" || !isVersionAtLeast(webApp, MIN_VERSION.safeArea)) {
+      return;
+    }
+    const vars = insetCssVars(safe, content);
+    const signature = JSON.stringify(vars);
+    if (signature === applied) {
+      return;
+    }
+    applied = signature;
+    const root = document.documentElement.style;
+    for (const [name, value] of Object.entries(vars)) {
+      root.setProperty(name, value);
+    }
+  };
+  apply();
+  const fromBridge = () => {
+    safe = normalizeInsets(webApp.safeAreaInset);
+    content = normalizeInsets(webApp.contentSafeAreaInset);
+    apply();
+  };
   const events = ["safeAreaChanged", "contentSafeAreaChanged", "fullscreenChanged"];
   for (const event of events) {
-    webApp.onEvent?.(event, refresh);
+    webApp.onEvent?.(event, fromBridge);
   }
+  const unsubscribe = subscribe
+    ? [
+      subscribe("safe_area_changed", (payload) => {
+        const next = insetsFromEvent(payload);
+        if (next !== null) {
+          safe = next;
+          apply();
+        }
+      }),
+      subscribe("content_safe_area_changed", (payload) => {
+        const next = insetsFromEvent(payload);
+        if (next !== null) {
+          content = next;
+          apply();
+        }
+      }),
+      // Вход/выход из полноэкранного режима: новые инсеты клиент присылает своими событиями выше;
+      // здесь только переприменяем последние известные (на случай, если CSS-переменные сбросили).
+      subscribe("fullscreen_changed", () => {
+        applied = null;
+        apply();
+      }),
+    ]
+    : [];
   return () => {
     for (const event of events) {
-      webApp.offEvent?.(event, refresh);
+      webApp.offEvent?.(event, fromBridge);
     }
+    unsubscribe.forEach((off) => off());
   };
 }
 

@@ -3,9 +3,11 @@
 import { subscribeDisplayPrefs } from "./displayPrefs";
 import { applyTelegramChrome } from "./telegramChrome";
 import { initTelegramPlatform } from "./telegramPlatform";
+import { subscribeSdkEvent } from "./telegramSdkEvents";
 
 export function bootTelegram(): void {
-  initTelegramPlatform();
+  // Шина SDK — путь событий клиента на нативных iOS/Android (#287 MED 4, telegramSdkEvents.ts).
+  initTelegramPlatform(subscribeSdkEvent);
   applyTelegramChrome();
   // Смена настройки темы Mini App («Как в Telegram»/«Светлая»/«Тёмная») меняет наши поверхности —
   // шапка/фон/нижняя панель Telegram должны следовать. Подписка регистрируется ПОСЛЕ подписки

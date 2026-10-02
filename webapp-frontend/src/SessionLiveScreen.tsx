@@ -3,12 +3,16 @@ import { useEffect, useRef, useState } from "react";
 
 import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
 import { BlockTransition } from "./BlockTransition";
-import { describeBlockPlan, formatDuration, formatNumber, formatTarget, resultInputLabel } from "./blockFormat";
+import {
+  describeBlockPlan, formatDuration, formatLoggedSetSummary, formatNumber, formatTarget, resultInputLabel,
+} from "./blockFormat";
 import {
   blockSetCounts,
   canPauseLocal,
   clearLocalSession,
   clearPauseState,
+  completeIfFinishedElsewhere,
+  drainQueuedFinish,
   editLastLoggedSet,
   extraSetBlockIndex,
   flushLocalSession,
@@ -24,7 +28,6 @@ import {
   localPhaseEndsAtMs,
   nextLocalPhase,
   rebaseLocalSession,
-  restPanelExpandedByDefault,
   saveLocalSession,
   type LocalLiveSession,
   type LocalPhaseName,
@@ -32,6 +35,9 @@ import {
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
+import { backButtonAction, FOCUSABLE_SELECTOR, nextTrapIndex } from "./liveDialog";
+import { canStartNextBlock, classifySyncError, finishStatus, type SyncFailure } from "./liveFinish";
+import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
 import { dismissKeyboard } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
@@ -60,7 +66,15 @@ type Props = {
    * потока подходов (явный старт следующего блока): PlanSessionFlow по нему
    * решает, какой экран нужен блоку (обычный/interval). */
   onSessionUpdate?: (session: LiveSessionResponse) => void;
+  /** #287: уйти с экрана, пока завершение в очереди (Back/«Выйти»). Данные остаются в IndexedDB и
+   * досылаются при следующем открытии (App → fetchActiveLiveSession → этот экран → флаш на mount).
+   * Не передан (лаба) — Back при завершении в очереди игнорируется, как раньше. */
+  onLeave?: () => void;
 };
+
+const LOG_FORM_ID = "live-log-form";
+/** #287: сколько ждать досылки чужого завершения из очереди перед показом своей сессии. */
+const ORPHAN_DRAIN_TIMEOUT_MS = 5_000;
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
   get_ready: "Приготовься",
@@ -82,12 +96,14 @@ const PHASE_LABELS: Record<LocalPhaseName, string> = {
  * локальное состояние серверным, а не мержит вручную").
  */
 export function SessionLiveScreen({
-  initDataRaw, initialSession, onCompleted, resolveExerciseName, title, onSessionUpdate,
+  initDataRaw, initialSession, onCompleted, resolveExerciseName, title, onSessionUpdate, onLeave,
 }: Props) {
   const [local, setLocalState] = useState<LocalLiveSession | null>(null);
   const localRef = useRef<LocalLiveSession | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncFailure, setSyncFailure] = useState<SyncFailure | null>(null);
+  // Зеркало syncInFlight для рендера (#287): кнопка повтора видна, когда флаша в полёте нет.
+  const [syncing, setSyncing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [value, setValue] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
@@ -99,6 +115,7 @@ export function SessionLiveScreen({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
+  const sheetRef = useRef<HTMLElement | null>(null);
   // #264: форма «+ Ещё подход» (локальный ввод; сам подход живёт в pendingSets).
   const [extraOpen, setExtraOpen] = useState(false);
   const [extraValue, setExtraValue] = useState("");
@@ -111,6 +128,8 @@ export function SessionLiveScreen({
   // ниже есть ранний `return` (local === null), хуки после него нарушают
   // правило "одинаковый порядок хуков на каждый рендер" (было поймано
   // самим React: "Minified React error #310" при первой попытке).
+  // M1 (#285): пока сфокусировано поле ввода, липкий транспорт «отлипает» (live.css).
+  const fieldFocused = useLiveFieldFocus();
   const actionInFlight = useRef(false);
   // Single-flight синхронизации (fix/concurrent-set-batch): событие "online"
   // и тап "Завершить" в окне реконнекта раньше запускали ДВА параллельных
@@ -133,7 +152,17 @@ export function SessionLiveScreen({
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      const existing = await loadLocalSession();
+      let existing = await loadLocalSession();
+      // #287: в IndexedDB — завершение ДРУГОЙ сессии, оставленное в очереди при уходе с экрана.
+      // Этот экран заменит снимок своим — сначала пробуем дослать то (best effort, см. drainQueuedFinish).
+      // Не дольше ORPHAN_DRAIN_TIMEOUT_MS: зависший запрос не должен держать экран на «Загружаю…».
+      if (existing !== null && existing.serverSessionId !== initialSession.id && existing.completeRequested !== null) {
+        await Promise.race([
+          drainQueuedFinish(initDataRaw),
+          new Promise((resolve) => setTimeout(resolve, ORPHAN_DRAIN_TIMEOUT_MS)),
+        ]);
+        existing = await loadLocalSession();
+      }
       // Старый локальный снимок переиспользуется только если он не отстаёт
       // от сервера (см. isLocalSessionReusable) — иначе состояние прошлого
       // блока протекло бы в следующий.
@@ -143,6 +172,12 @@ export function SessionLiveScreen({
           : initialLocalSession(initialSession.client_session_id, initialSession);
       if (!cancelled) {
         setLocal(next);
+        // #287: неотправленное после reload/повторного открытия (подходы, переходы, завершение в
+        // очереди) уходит сразу, а не ждёт события `online` (его не будет — сеть уже есть) или
+        // следующего действия (при завершении в очереди действий нет вовсе).
+        if (hasPendingWork(next)) {
+          void syncLocal();
+        }
       }
     }
     void init();
@@ -203,8 +238,10 @@ export function SessionLiveScreen({
     }
     // .finally — всегда асинхронно (микротаска), т.е. ПОСЛЕ присваивания
     // ниже, даже если цикл вышел сразу (офлайн/нечего слать).
+    setSyncing(true);
     const run = runSyncLoop().finally(() => {
       syncInFlight.current = null;
+      setSyncing(false);
       if (resyncRequested.current && !completedRef.current) {
         // Запрос пришёл уже после последней проверки цикла — не теряем его.
         resyncRequested.current = false;
@@ -233,12 +270,29 @@ export function SessionLiveScreen({
         const fresh = rebaseLocalSession(snapshot, localRef.current ?? snapshot, result as LiveSessionResponse);
         setLocal(fresh);
         await saveLocalSession(fresh);
-        setSyncError(null);
+        setSyncFailure(null);
         if (hasPendingWork(fresh)) {
           resyncRequested.current = true;
         }
       } catch (error) {
-        setSyncError(error instanceof Error ? error.message : String(error));
+        const failure = classifySyncError(error);
+        if (snapshot.completeRequested !== null && failure.status === 404) {
+          // #287: 404 на флаше завершения — возможно, сессия уже завершена на сервере (ответ
+          // прошлого complete потерялся). Тогда это успех, иначе — настоящий отказ.
+          try {
+            const finished = await completeIfFinishedElsewhere(initDataRaw, snapshot, failure);
+            if (finished !== null) {
+              completedRef.current = true;
+              await clearLocalSession();
+              onCompleted(finished);
+              return;
+            }
+          } catch (probeError) {
+            setSyncFailure(classifySyncError(probeError));
+            return;
+          }
+        }
+        setSyncFailure(failure);
         return;
       }
     } while (resyncRequested.current);
@@ -363,7 +417,62 @@ export function SessionLiveScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formBlockIndex, formSetNumber, formPhaseName]);
 
-  useBackButton(handleFinish, [local]);
+  // M3 (#285): review-шторка — модальный диалог. Фокус уходит в шторку при открытии, Escape её
+  // закрывает (введённые оценка/заметка остаются в состоянии), при закрытии фокус возвращается
+  // на кнопку «Завершить» (у неё data-review-opener; кнопки на время шторки размонтируются, поэтому
+  // ищем по атрибуту, а не по сохранённому узлу) либо на статус «завершение в очереди».
+  useEffect(() => {
+    if (!reviewOpen) {
+      return;
+    }
+    sheetRef.current?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setReviewOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.querySelector<HTMLElement>("[data-review-opener], [data-finish-status]")?.focus();
+    };
+  }, [reviewOpen]);
+
+  function trapSheetTab(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Tab") {
+      return;
+    }
+    const nodes = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    const next = nextTrapIndex(nodes.length, nodes.indexOf(document.activeElement as HTMLElement), event.shiftKey);
+    event.preventDefault();
+    if (next !== null) {
+      nodes[next].focus();
+    }
+  }
+
+  // Telegram BackButton: с открытой review-шторкой только закрывает её (docs/PROJECT_SPEC.md §12),
+  // иначе прежнее поведение — confirm и завершение без review.
+  // #287: при завершении в очереди Back уводит с экрана (onLeave) — данные в IndexedDB, не тупик.
+  // Пока запрос в полёте — игнор: повторный Back после «Закончить?» иначе уводил бы с экрана за миг
+  // до Summary (кнопка «Выйти» в статусе остаётся явным выходом и в этот момент).
+  function handleBack() {
+    const action = backButtonAction({
+      reviewOpen,
+      finishing: localRef.current?.completeRequested != null,
+      // actionInFlight: завершение фиксируется в IndexedDB, флаш стартует сразу следом — без зазора.
+      canLeave: onLeave !== undefined && !actionInFlight.current && syncInFlight.current === null,
+    });
+    if (action === "close-review") {
+      setReviewOpen(false);
+    } else if (action === "confirm-finish") {
+      handleFinish();
+    } else if (action === "leave") {
+      onLeave?.();
+    }
+  }
+
+  useBackButton(handleBack, [local, reviewOpen]);
   // Живая сессия: свайп/«Закрыть» в Telegram спрашивает подтверждение (Bot API 6.2+, #224).
   useClosingConfirmation();
 
@@ -523,6 +632,9 @@ export function SessionLiveScreen({
         ...withRestEdit(current),
         completeRequested: { abandoned: false, ...reviewPayload(reviewEffort, reviewComment) },
       });
+      // M2 (#285): завершение уже зафиксировано локально — шторка закрывается, а статус «завершение
+      // в очереди» (finishing ниже) показывает, что тап сработал, даже если сети нет.
+      setReviewOpen(false);
     });
   }
 
@@ -532,7 +644,8 @@ export function SessionLiveScreen({
   // кнопка остаётся, можно повторить.
   function startNextBlock() {
     void guardedAction(async () => {
-      if (local === null) {
+      // #287 HIGH 2: завершение в очереди — старт блока сбросил бы снимок вместе с ним и оценкой.
+      if (local === null || !canStartNextBlock(localRef.current ?? local)) {
         return;
       }
       setStartingBlock(true);
@@ -542,6 +655,9 @@ export function SessionLiveScreen({
         // после возврата сети слал бы второй параллельный флаш.
         await syncLocal();
         const synced = localRef.current ?? local;
+        if (!canStartNextBlock(synced)) {
+          return;
+        }
         if (synced.pendingSets.length > 0 || synced.pendingPhaseAdvances > 0) {
           throw new Error(navigator.onLine ? "Не удалось отправить подходы, попробуйте ещё раз" : "Нет сети");
         }
@@ -550,7 +666,7 @@ export function SessionLiveScreen({
         const fresh = initialLocalSession(synced.clientSessionId, started);
         await saveLocalSession(fresh);
         setLocal(fresh);
-        setSyncError(null);
+        setSyncFailure(null);
         onSessionUpdate?.(started);
       } catch (error) {
         setStartBlockError(error instanceof Error ? error.message : String(error));
@@ -567,7 +683,9 @@ export function SessionLiveScreen({
     : phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
   const cueActive = isGetReadyCueActive(phaseName, remaining);
   const restEditable = phaseName === "rest" && local.lastLogged != null;
-  const logPanelOpen = panelOpen ?? (restEditable && restPanelExpandedByDefault(block?.rest_seconds));
+  // #286: после записи подхода панель на отдыхе свёрнута до одной строки-сводки («Подход 1: 8 повт.»,
+  // «Изменить» раскрывает) — раскрытая под таймером она уходила под липкий транспорт.
+  const logPanelOpen = panelOpen ?? false;
   const extraIndex = extraSetBlockIndex(local);
   const extraBlock = extraIndex === null ? null : local.server.blocks[extraIndex];
   const extraCount = extraIndex === null ? 0
@@ -621,23 +739,55 @@ export function SessionLiveScreen({
   const heroTarget = phaseName === "go" && remaining === null && targetForSet !== null ? formatTarget(targetForSet) : null;
   // «Завершить»: в шапке, пока идёт тренировка; когда план выполнен — главное действие транспорта.
   const finishIsPrimary = phaseName === "done";
-  const showTransport = !reviewOpen && !extraOpen && phaseName !== "between";
+  // M2: завершение поставлено в очередь (ждёт сети/ответа сервера) — управление тренировкой скрыто.
+  const finishing = local.completeRequested !== null;
+  // #287: статус завершения — без тупиков (liveFinish.ts): офлайн ждёт сеть, онлайн без запроса в
+  // полёте всегда даёт «Отправить ещё раз», Back/«Выйти» уводят с экрана.
+  const finish = finishStatus({ finishing, online: isOnline, syncing, failure: syncFailure });
+  const showTransport = !reviewOpen && !extraOpen && phaseName !== "between" && !finishing;
   const canPause = canPauseLocal(local) || paused;
 
   return (
-    <div className="live-screen" data-phase={phaseName} data-paused={paused ? "true" : undefined}>
+    <div
+      className="live-screen" data-phase={phaseName} data-paused={paused ? "true" : undefined}
+      data-field-focus={fieldFocused ? "true" : undefined}
+    >
       <header className="live-header">
         <div className="live-header-text">
           <p className="live-eyebrow">Живая тренировка</p>
           {title && <p className="live-workout-title">{title}</p>}
         </div>
-        {!reviewOpen && !finishIsPrimary && (
-          <button type="button" className="live-finish" onClick={() => setReviewOpen(true)}>Завершить</button>
+        {!reviewOpen && !finishIsPrimary && !finishing && (
+          <button type="button" className="live-finish" data-review-opener onClick={() => setReviewOpen(true)}>
+            Завершить
+          </button>
         )}
       </header>
       {!isOnline && <p className="gap-banner">Нет сети — подходы сохраняются локально и уйдут батчем при подключении.</p>}
-      {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
-      {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
+      {/* Пока завершение в очереди, о досылке говорит только статус ниже (действий нет — «повторю
+          при следующем действии» было бы неправдой, #287 LOW 8). */}
+      {!finishing && isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
+      {!finishing && syncFailure && (
+        <p className="gap-banner">Не удалось синхронизировать: {syncFailure.message}. Повторю при следующем действии.</p>
+      )}
+      {finishing && (
+        <div
+          className="gap-banner live-finish-status" data-testid="finish-pending" data-finish-status data-state={finish}
+          role="status" tabIndex={-1}
+        >
+          <p>{finishStatusText(finish, syncFailure)}</p>
+          {(finish === "retry" || finish === "rejected") && (
+            <button type="button" className="live-link-button" data-testid="finish-retry" onClick={() => void syncLocal()}>
+              Отправить ещё раз
+            </button>
+          )}
+          {onLeave !== undefined && (
+            <button type="button" className="live-link-button" data-testid="finish-leave" onClick={onLeave}>
+              Выйти
+            </button>
+          )}
+        </div>
+      )}
 
       {phaseName !== "between" && block !== null && phaseName !== "done" && (() => {
         // name=null значит "имени действительно нет" (internal STEP-роль,
@@ -646,9 +796,32 @@ export function SessionLiveScreen({
         // серый текст, налезавший на рамку карточки фазы).
         const name = blockName(block);
         const planText = targetForSet !== null ? formatTarget(targetForSet) : null;
+        // Вторая цифра счётчика — цель подхода, где она есть (повторения / время); у max-блока нет.
+        const counterTarget =
+          !isMaxBlock && targetForSet !== null && Number(targetForSet.value) > 0
+            ? targetForSet.unit === "reps"
+              ? { value: formatNumber(targetForSet.value), label: "Повт" }
+              : targetForSet.unit === "s"
+                ? { value: formatDuration(Number(targetForSet.value)), label: "Время" }
+                : null
+            : null;
         return (
           <div className="live-now" data-testid="live-now">
             {name !== null && <p className="live-exercise">{name}</p>}
+            <div className="live-counter" data-testid="live-counter" aria-hidden="true">
+              <div className="live-counter-cell">
+                <span className="live-counter-num">
+                  {local.localPhase.setNumber}<span className="live-counter-total"> / {targetsCount}</span>
+                </span>
+                <span className="live-counter-label">{isMaxBlock ? "Попытка" : "Подход"}</span>
+              </div>
+              {counterTarget !== null && (
+                <div className="live-counter-cell">
+                  <span className="live-counter-num">{counterTarget.value}</span>
+                  <span className="live-counter-label">{counterTarget.label}</span>
+                </div>
+              )}
+            </div>
             <p className="live-target">
               {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
               {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
@@ -671,7 +844,7 @@ export function SessionLiveScreen({
           </div>
         );
       })()}
-      {phaseName === "between" && block !== null ? (
+      {phaseName === "between" && block !== null && !finishing ? (
         <BlockTransition
           block={block} name={blockName(block)} starting={startingBlock} error={startBlockError}
           onStart={startNextBlock}
@@ -694,7 +867,7 @@ export function SessionLiveScreen({
       </div>
       )}
 
-      {phaseName === "go" && block !== null && (
+      {phaseName === "go" && block !== null && !finishing && (
         <section
           className="live-panel live-log-panel"
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
@@ -702,11 +875,15 @@ export function SessionLiveScreen({
           <h3 className="live-panel-title">Внести подход</h3>
           {/* aria-label дублирует подпись намеренно: accessible name инпута —
               именно aria-label, как и в WorkoutScreen.tsx/BackdateForm.tsx. */}
-          {renderValueField(value, setValue, inputLabel.label)}
-          {inputLabel.hint !== null && (
-            <p className="live-hint" data-testid="result-hint">{inputLabel.hint}</p>
-          )}
-          {logPanelOpen && renderEffortAndNote()}
+          {/* Enter/«Go» в поле = тот же защищённый обработчик, что у «Готово» (кнопка транспорта
+              привязана к форме атрибутом form — implicit submission работает и с заметкой). */}
+          <form id={LOG_FORM_ID} onSubmit={(event) => { event.preventDefault(); logSet(); }}>
+            {renderValueField(value, setValue, inputLabel.label)}
+            {inputLabel.hint !== null && (
+              <p className="live-hint" data-testid="result-hint">{inputLabel.hint}</p>
+            )}
+            {logPanelOpen && renderEffortAndNote()}
+          </form>
           <button
             type="button" className="live-link-button" data-testid="log-panel-toggle"
             aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
@@ -716,46 +893,57 @@ export function SessionLiveScreen({
         </section>
       )}
 
-      {restEditable && (
+      {restEditable && !finishing && (
         <section
-          className="live-panel live-log-panel"
+          className={logPanelOpen ? "live-panel live-log-panel" : "live-panel live-log-panel live-log-collapsed"}
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
         >
-          <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
           {logPanelOpen ? (
             <>
-              {renderValueField(value, setValue, inputLabel.label)}
-              {renderEffortAndNote()}
-              <Button className="live-save" size="l" stretched mode="bezeled" disabled={!isCompleteDecimal(value)} onClick={saveRestEdit}>
-                Сохранить подход
-              </Button>
+              <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
+              <form onSubmit={(event) => { event.preventDefault(); if (isCompleteDecimal(value)) { saveRestEdit(); } }}>
+                {renderValueField(value, setValue, inputLabel.label)}
+                {renderEffortAndNote()}
+                <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(value)}>
+                  Сохранить подход
+                </Button>
+              </form>
+              <button
+                type="button" className="live-link-button" data-testid="log-panel-toggle"
+                aria-expanded={true} onClick={() => setPanelOpen(false)}
+              >
+                Свернуть
+              </button>
             </>
           ) : (
-            <p className="live-summary-line" data-testid="log-panel-summary">
-              {value}{effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
-            </p>
+            <div className="live-summary-row">
+              <p className="live-summary-line" data-testid="log-panel-summary">
+                {formatLoggedSetSummary(local.localPhase.setNumber, value, inputLabel.label)}
+                {effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
+              </p>
+              <button
+                type="button" className="live-link-button live-edit-button" data-testid="log-panel-toggle"
+                aria-expanded={false} aria-label="Изменить" onClick={() => setPanelOpen(true)}
+              >
+                <span aria-hidden="true">✎</span> Изменить
+              </button>
+            </div>
           )}
-          <button
-            type="button" className="live-link-button" data-testid="log-panel-toggle"
-            aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
-          >
-            {logPanelOpen ? "Свернуть" : "Изменить"}
-          </button>
         </section>
       )}
 
-      {extraIndex !== null && extraOpen && (
+      {extraIndex !== null && extraOpen && !finishing && (
         <section className="live-panel">
           <h3 className="live-panel-title">Ещё подход</h3>
-          <div data-testid="extra-set-form">
+          <form data-testid="extra-set-form" onSubmit={(event) => { event.preventDefault(); logExtraSet(); }}>
             {renderValueField(extraValue, setExtraValue, extraLabel.label)}
-            <Button className="live-save" size="l" stretched disabled={!isCompleteDecimal(extraValue)} onClick={logExtraSet}>
+            <Button className="live-save" size="l" stretched type="submit" disabled={!isCompleteDecimal(extraValue)}>
               Записать
             </Button>
-            <Button className="live-save" size="l" stretched mode="outline" onClick={() => setExtraOpen(false)}>
+            <Button className="live-save" size="l" stretched mode="outline" type="button" onClick={() => setExtraOpen(false)}>
               Отмена
             </Button>
-          </div>
+          </form>
         </section>
       )}
       {extraIndex !== null && !extraOpen && extraCount > 0 && (
@@ -770,7 +958,7 @@ export function SessionLiveScreen({
             </Button>
           )}
           {phaseName === "go" && block !== null && (
-            <Button className="live-primary" size="l" stretched disabled={!isCompleteDecimal(value)} onClick={logSet}>
+            <Button className="live-primary" size="l" stretched type="submit" form={LOG_FORM_ID} disabled={!isCompleteDecimal(value)}>
               Готово
             </Button>
           )}
@@ -780,7 +968,7 @@ export function SessionLiveScreen({
             </Button>
           )}
           {finishIsPrimary && (
-            <Button className="live-primary" size="l" stretched onClick={() => setReviewOpen(true)}>
+            <Button className="live-primary" size="l" stretched data-review-opener onClick={() => setReviewOpen(true)}>
               Завершить
             </Button>
           )}
@@ -810,7 +998,10 @@ export function SessionLiveScreen({
       {reviewOpen && (
         <div className="live-sheet-layer">
           <div className="live-sheet-backdrop" onClick={() => setReviewOpen(false)} aria-hidden="true" />
-          <section className="live-sheet" role="dialog" aria-modal="true" aria-label="Итог тренировки" data-testid="workout-review">
+          <section
+            ref={sheetRef} tabIndex={-1} onKeyDown={trapSheetTab}
+            className="live-sheet" role="dialog" aria-modal="true" aria-label="Итог тренировки" data-testid="workout-review"
+          >
             <div className="live-sheet-handle" aria-hidden="true" />
             <h3 className="live-sheet-title">Как прошла тренировка?</h3>
             <p className="live-hint">Что сделано — зачтено, остальное останется в плане.</p>
@@ -837,6 +1028,25 @@ export function SessionLiveScreen({
       )}
     </div>
   );
+}
+
+/** Текст статуса «завершение в очереди» (#287). Везде, кроме «отправляю», сказано, что результат
+ * сохранён на устройстве: ничего не удаляется, даже если сервер завершение отверг. */
+function finishStatusText(status: ReturnType<typeof finishStatus>, failure: SyncFailure | null): string {
+  switch (status) {
+    case "offline":
+      return "Тренировка завершена: результат сохранён на устройстве и отправится, когда появится сеть.";
+    case "sending":
+      return "Завершаю тренировку…";
+    case "rejected":
+      return failure?.kind === "auth"
+        ? `${failure.message} Результат сохранён на устройстве и отправится после повторного открытия.`
+        : `Сервер не принял завершение: ${failure?.message ?? "ошибка"}. Результат сохранён на этом устройстве.`;
+    default:
+      return failure !== null
+        ? `Не удалось отправить завершение: ${failure.message}. Результат сохранён на устройстве.`
+        : "Завершение ещё не отправлено. Результат сохранён на устройстве.";
+  }
 }
 
 /** Шкала усилия 1–5: цифра + слово, одна строка из пяти сегментов (подход и тренировка). */

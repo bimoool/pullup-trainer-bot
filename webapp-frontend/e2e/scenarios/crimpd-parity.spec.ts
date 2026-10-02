@@ -1047,7 +1047,7 @@ for (const width of WIDTHS) {
 }
 
 // --- Live logging panel (#265): панель записи следует за таймером, «Приготовься» в конце отдыха --
-// Seeds: session_recovery (reps 3 x 8, отдых 60 с — панель раскрывается сама) и golden_journey
+// Seeds: session_recovery (reps 3 x 8, отдых 60 с — панель свёрнута до сводки, #286) и golden_journey
 // (reps 2 x 8, отдых 2 с — весь отдых в последних 10 с, панель свёрнута). Реальные часы: отдых
 // 60 с не ждём — «Приготовься» проверяем на коротком отдыхе, раскрытие — сразу после подхода.
 const PANEL_USERS = {
@@ -1094,10 +1094,15 @@ for (const width of WIDTHS) {
       await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
       await clickAndSync(page, "Готово", "/sets:batch");
 
-      // Отдых 60 с (≥ 20): панель раскрылась сама, «Приготовься» ещё рано.
+      // Отдых 60 с: панель записанного подхода свёрнута до сводки (#286: раскрытая уходила под
+      // липкий транспорт), «Изменить» раскрывает; «Приготовься» ещё рано.
       await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
-      await expect(panel).toHaveAttribute("data-state", "expanded");
+      await expect(panel).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("log-panel-summary")).toContainText("Подход 1: 8 повт.");
+      await expect(page.getByTestId("set-effort")).toHaveCount(0);
       await expect(page.getByTestId("get-ready-cue")).toHaveCount(0);
+      await page.getByTestId("log-panel-toggle").click();
+      await expect(panel).toHaveAttribute("data-state", "expanded");
       await expect(page.getByTestId("set-effort").getByRole("button")).toHaveCount(5);
       await expectNoHorizontalOverflow(page, "Live: панель раскрыта на отдыхе");
 

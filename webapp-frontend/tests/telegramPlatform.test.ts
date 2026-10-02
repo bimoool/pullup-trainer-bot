@@ -3,7 +3,7 @@ import { afterEach, test } from "node:test";
 
 import {
   MIN_VERSION, acquireClosingConfirmation, compareVersions, createOwnerToggle, dismissKeyboard, effectiveInsetPx,
-  initTelegramPlatform, insetCssVars, isVersionAtLeast, normalizeInsets,
+  initTelegramPlatform, insetCssVars, insetsFromEvent, isVersionAtLeast, normalizeInsets,
 } from "../src/telegramPlatform.ts";
 
 type G = { window?: unknown; document?: unknown };
@@ -130,6 +130,57 @@ test("initTelegramPlatform: отступы 8.0+ → CSS-переменные и 
   g.window = { Telegram: { WebApp: { ...webApp, version: "7.10" } } };
   initTelegramPlatform();
   assert.equal(style.size, 0);
+});
+
+test("insetsFromEvent: полезная нагрузка safe_area_changed шины SDK", () => {
+  assert.deepEqual(insetsFromEvent({ top: 59, bottom: 34, left: 0, right: 0 }), { top: 59, bottom: 34, left: 0, right: 0 });
+  assert.deepEqual(insetsFromEvent({ top: -1 }), { top: 0, bottom: 0, left: 0, right: 0 });
+  assert.equal(insetsFromEvent(null), null);
+  assert.equal(insetsFromEvent("x"), null);
+  assert.equal(insetsFromEvent([1, 2]), null);
+});
+
+test("initTelegramPlatform (#287 MED 4): нативный путь — инсеты из шины SDK при молчащем мосте; оба пути — одна запись", () => {
+  const writes: string[] = [];
+  const style = new Map<string, string>();
+  g.document = { documentElement: { style: { setProperty: (k: string, v: string) => { writes.push(k); style.set(k, v); } } } };
+  const bridge: Record<string, () => void> = {};
+  const sdk: Record<string, (payload: unknown) => void> = {};
+  const unsubscribed: string[] = [];
+  const webApp = {
+    version: "8.0",
+    safeAreaInset: { top: 59, bottom: 34, left: 0, right: 0 },
+    contentSafeAreaInset: { top: 44, bottom: 0, left: 0, right: 0 },
+    onEvent: (name: string, handler: () => void) => { bridge[name] = handler; },
+    offEvent: () => {},
+  };
+  g.window = { Telegram: { WebApp: webApp } };
+  const stop = initTelegramPlatform((event, handler) => {
+    sdk[event] = handler;
+    return () => void unsubscribed.push(event);
+  });
+  assert.deepEqual(Object.keys(sdk).sort(), ["content_safe_area_changed", "fullscreen_changed", "safe_area_changed"]);
+
+  // Нативный клиент: WebApp.safeAreaInset НЕ обновлён (мост молчит), инсеты — только в событии SDK.
+  sdk.safe_area_changed({ top: 0, bottom: 0, left: 0, right: 0 });
+  sdk.content_safe_area_changed({ top: 0, bottom: 0, left: 0, right: 0 });
+  assert.equal(style.get("--tg-safe-area-inset-top"), "0px");
+  assert.equal(style.get("--tg-safe-area-inset-bottom"), "0px");
+  assert.equal(style.get("--tg-content-safe-area-inset-top"), "0px");
+
+  // iframe-клиент: то же событие пришло и мостом (WebApp обновлён) — повторной записи нет.
+  webApp.safeAreaInset = { top: 0, bottom: 0, left: 0, right: 0 };
+  webApp.contentSafeAreaInset = { top: 0, bottom: 0, left: 0, right: 0 };
+  writes.length = 0;
+  bridge.safeAreaChanged();
+  sdk.safe_area_changed({ top: 0, bottom: 0, left: 0, right: 0 });
+  assert.deepEqual(writes, []);
+  // мусорная нагрузка игнорируется
+  sdk.safe_area_changed(null);
+  assert.equal(style.get("--tg-safe-area-inset-top"), "0px");
+
+  stop();
+  assert.deepEqual(unsubscribed.sort(), ["content_safe_area_changed", "fullscreen_changed", "safe_area_changed"]);
 });
 
 test("dismissKeyboard: снимает фокус только с полей ввода", () => {

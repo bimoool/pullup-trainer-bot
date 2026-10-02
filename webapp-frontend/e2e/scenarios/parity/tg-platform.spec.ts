@@ -4,7 +4,8 @@ import { noWakeLock, playSets } from "../../fixtures/builderFlow";
 import { openTab } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import {
-  emitTelegramEvent, isTelegramBackButtonVisible, isTelegramClosingConfirmationOn, pressTelegramBackButton, telegramCalls,
+  emitNativeTelegramEvent, emitNativeTelegramThemeChange, emitTelegramEvent, isTelegramBackButtonVisible,
+  isTelegramClosingConfirmationOn, pressTelegramBackButton, telegramCalls,
 } from "../../fixtures/telegramMock";
 
 // Платформа Telegram (#224): то, что десктопный Chromium без мока не видит. Мок — fixtures/telegramMock.ts
@@ -151,6 +152,60 @@ test.describe("Платформа Telegram", () => {
     await emitTelegramEvent(page, "contentSafeAreaChanged");
     await expect.poll(() => px(".bottom-tabbar", "padding-bottom")).toBe(0);
     expect(await px(".app-shell", "padding-top")).toBe(8);
+    expect(apiFailures).toEqual([]);
+  });
+
+  test("нативный клиент (#287): theme_changed только по шине SDK перекрашивает приложение, мост WebApp не нужен", async ({ page }, testInfo) => {
+    // backButton: launch params есть → init() SDK проходит и подменяет Telegram.WebView.receiveEvent, как на iOS/Android.
+    const { consoleErrors, apiFailures } = await openAppAs(page, 998_805 + testInfo.retry, { theme: "light", backButton: true });
+    await expect(page.locator(".bottom-tabbar")).toBeVisible();
+    expect(await page.evaluate(() => typeof (window as unknown as { Telegram: { WebView?: { receiveEvent?: unknown } } }).Telegram.WebView?.receiveEvent)).toBe("function");
+    const root = page.locator("html");
+    const appRootClass = () => page.locator("#root > div").first().getAttribute("class");
+    const bg = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--tg-bg-color").trim());
+    await expect(root).toHaveAttribute("data-vp-scheme", "light");
+    const lightClass = await appRootClass();
+
+    await emitNativeTelegramThemeChange(page, "dark");
+    await expect(root).toHaveAttribute("data-vp-scheme", "dark");
+    expect(await bg()).toBe("#17212b");
+    expect(await appRootClass()).not.toBe(lightClass);
+    // Мост не участвовал: WebApp.themeParams/colorScheme остались прежними, как на нативном клиенте.
+    expect(await page.evaluate(() => (window as unknown as { Telegram: { WebApp: { colorScheme: string } } }).Telegram.WebApp.colorScheme)).toBe("light");
+    // Хром Telegram следует за темой (тёмная оболочка: страница = bg).
+    await expect.poll(async () => (await telegramCalls(page)).includes("setBackgroundColor:#17212b")).toBe(true);
+
+    await emitNativeTelegramThemeChange(page, "light");
+    await expect(root).toHaveAttribute("data-vp-scheme", "light");
+    expect(await bg()).toBe("#ffffff");
+    expect(await appRootClass()).toBe(lightClass);
+    expect(consoleErrors).toEqual([]);
+    expect(apiFailures).toEqual([]);
+  });
+
+  test("нативный клиент (#287): safe_area_changed / content_safe_area_changed по шине SDK обновляют отступы", async ({ page }, testInfo) => {
+    const { apiFailures } = await openAppAs(page, 998_806 + testInfo.retry, {
+      theme: "dark",
+      telegram: {
+        version: "8.0",
+        safeAreaInset: { top: 59, bottom: 34, left: 0, right: 0 },
+        contentSafeAreaInset: { top: 44, bottom: 0, left: 0, right: 0 },
+      },
+    });
+    await expect(page.locator(".bottom-tabbar")).toBeVisible();
+    const px = (selector: string, property: string) =>
+      page.evaluate(([sel, prop]) => parseFloat(getComputedStyle(document.querySelector(sel) as Element).getPropertyValue(prop)), [selector, property]);
+    expect(await px(".bottom-tabbar", "padding-bottom")).toBe(34);
+    expect(await px(".app-shell", "padding-top")).toBe(8 + 59 + 44);
+
+    // Выход из полноэкранного режима на iOS: инсеты приходят только в полезной нагрузке событий SDK,
+    // WebApp.safeAreaInset остаётся старым.
+    await emitNativeTelegramEvent(page, "fullscreen_changed", { is_fullscreen: false });
+    await emitNativeTelegramEvent(page, "safe_area_changed", { top: 20, bottom: 0, left: 0, right: 0 });
+    await emitNativeTelegramEvent(page, "content_safe_area_changed", { top: 0, bottom: 0, left: 0, right: 0 });
+    await expect.poll(() => px(".bottom-tabbar", "padding-bottom")).toBe(0);
+    expect(await px(".app-shell", "padding-top")).toBe(8 + 20);
+    expect(await page.evaluate(() => (window as unknown as { Telegram: { WebApp: { safeAreaInset: { top: number } } } }).Telegram.WebApp.safeAreaInset.top)).toBe(59);
     expect(apiFailures).toEqual([]);
   });
 
