@@ -1,0 +1,122 @@
+/*
+ * Сквозная доступность (#290, wave 13): контраст мелкого текста, цели касания ≥ 44px.
+ * Грузится ПОСЛЕДНИМ среди экранных стилей (перед telegram-safe-area.css) и только поднимает
+ * минимумы — внешний вид и разметка экранов не меняются.
+ */
+
+/* Сырой hint Telegram (#999 / #708499) даёт 2.5–3.6:1 на странице и карточке. В оболочке и в навигации
+   подмешиваем цвет текста (--vp-hint, см. shell.css) — все подписи/меты проходят AA 4.5:1. */
+.app-shell,
+.bottom-tabbar {
+  --tg-hint-color: var(--vp-hint);
+  --tg-subtitle-text-color: var(--vp-hint);
+}
+
+/* Акцент как цвет ТЕКСТА на странице/карточке: «чернила» акцента (≥ 4.5:1), заливки остаются --vp-accent. */
+.app-shell {
+  --tg-link-color: var(--vp-accent-ink);
+}
+.vp-tabs .leaderboard-tab-active,
+.bottom-tabbar-item-active,
+.journal-day-num,
+.journal-title-row .journal-log-button,
+.journal-month-arrow,
+.plan-week-step:not(:disabled) {
+  color: var(--vp-accent-ink);
+}
+
+/* Подписи нижней навигации: 11px и на узких экранах (раньше 10px). */
+@media (max-width: 360px) {
+  .bottom-tabbar .bottom-tabbar-item > span {
+    font-size: 11px;
+    letter-spacing: -0.03em;
+  }
+}
+
+/* Цели касания ≥ 44px у основных управляющих элементов, на которых хит-область была 32–40. */
+.leaderboard-tab,
+.vp-tabs .leaderboard-tab,
+.plans-tabs.vp-tabs .leaderboard-tab,
+.journal-log-button,
+.plan-week-day-group .plan-add-exercise-button,
+.plans-more,
+.analytics-info-button {
+  min-height: 44px;
+}
+.plans-more,
+.analytics-info-button {
+  min-width: 44px;
+}
+.plans-more {
+  width: 44px;
+  height: 44px;
+}
+.vp-segment .leaderboard-tab {
+  min-height: 40px; /* внутри сегмента с отступом 3px: внешний контейнер ≥ 44px */
+}
+
+/* tgui берёт цвет «plain/bezeled» кнопок и ссылок из --tgui--link_color / --tgui--plain_foreground
+   (сырой синий Telegram 3.7–4.1:1 на странице/карточке) — подставляем «чернила» акцента. */
+.app-shell {
+  --tgui--link_color: var(--vp-accent-ink);
+  --tgui--plain_foreground: var(--vp-accent-ink);
+}
+
+/* Бейдж типа записи Журнала: цвет метки на 14% подложке ≥ 4.5:1 (чернила = тип + цвет текста темы). */
+.journal-kind-label {
+  color: color-mix(in srgb, var(--kind) 55%, var(--tg-text-color));
+}
+
+/* Кнопки tgui size="s" (36px) и шаги недели Планов — цель касания ≥ 44px. */
+.app-shell .action-button,
+.app-shell [data-testid="plans-now-open-home"],
+.app-shell .plans-week-card .plan-week-step {
+  min-height: 44px;
+}
+.app-shell .plans-week-card .plan-week-step {
+  min-width: 44px;
+}
+
+/* Текстовые кнопки-акценты (bezeled tgui, «+ Добавить упражнение», «Показать все») — чернила акцента. */
+.app-shell .action-button,
+.app-shell .action-button h6,
+.app-shell .plan-add-exercise-button,
+.app-shell .analytics-show-all {
+  color: var(--vp-accent-ink);
+}
+
+/* Главная кнопка (filled tgui): белый на сыром синем Telegram — 4.1:1 (светлая) / 3.7:1 (тёмная).
+   Затемняем заливку на 22%: ≥ 5:1 в обеих темах, оттенок остаётся акцентом темы. */
+.app-shell {
+  --tgui--button_color: var(--vp-accent-solid);
+}
+:root {
+  --vp-accent-solid: color-mix(in srgb, var(--tg-button-color) 78%, #000);
+  /* светлая: акцент целиком темнее (и заливка, и текст); тёмная: акцент остаётся светлым для
+     текста/значков, а заливки используют --vp-accent-solid */
+  --vp-accent: var(--vp-accent-solid);
+}
+:root[data-vp-scheme="dark"] {
+  --vp-accent: var(--tg-button-color);
+  --vp-accent-ink: color-mix(in srgb, var(--vp-accent) 45%, var(--tg-text-color));
+}
+:root[data-vp-scheme="dark"] .app-shell :is(button.vs-primary, .vs-primary-solid) {
+  background: var(--vp-accent-solid);
+}
+
+/* Акцентные тексты на карточке: чернила вместо сырого --vp-accent. */
+.live-link-button,
+.plan-week-current .plan-week-day-group > .block-subtitle,
+.plan-week-past .plan-week-day-group > .block-subtitle {
+  color: var(--vp-accent-ink);
+}
+
+/* Цели касания: «Завершить» в шапке Live, «Начать» в строке дня, круглая «назад». */
+.live-finish,
+.plans-start {
+  min-height: 44px;
+}
+.vs-back-round {
+  width: 44px;
+  height: 44px;
+}
