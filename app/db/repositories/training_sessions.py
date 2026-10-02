@@ -667,14 +667,16 @@ class TrainingSessionRepository:
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
-    async def list_all_completed(self, user_id: int) -> list[SessionDetail]:
+    async def list_all_completed(self, user_id: int, *, exclude_backfilled: bool = False) -> list[SessionDetail]:
         """ВСЕ завершённые сессии пользователя (для аналитики) — не зависит от
-        пагинации Журнала. Порядок — по performed_at по возрастанию."""
-        result = await self._session.execute(
-            select(TrainingSession)
-            .where(TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED)
-            .order_by(TrainingSession.performed_at),
+        пагинации Журнала. Порядок — по performed_at по возрастанию. exclude_backfilled (#284) —
+        как в list_for_user (CSV-экспорт: перенесённую историю отдаёт legacy-таблица)."""
+        query = select(TrainingSession).where(
+            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
         )
+        if exclude_backfilled:
+            query = query.where(~self._backfilled_fingerprint())
+        result = await self._session.execute(query.order_by(TrainingSession.performed_at))
         return await self._load_details(list(result.scalars().all()))
 
     async def exercise_names(self, exercise_ids: set[int]) -> dict[int, str]:
