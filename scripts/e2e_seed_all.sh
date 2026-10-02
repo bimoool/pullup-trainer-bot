@@ -34,6 +34,14 @@ seed tests_hub 996001
 seed tests_hub 996002
 seed tests_hub 996011
 seed tests_hub 996012
+seed peer_cohort_female 994001
+seed peer_cohort_male 994002
+seed peer_insufficient 994011
+seed peer_insufficient 994012
+seed peer_empty 994021
+seed peer_empty 994022
+seed peer_empty 994031
+seed peer_empty 994032
 seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003
@@ -84,6 +92,9 @@ seed plans_overview 990101
 seed plans_overview 990102
 seed plans_overview 990201
 seed plans_overview 990202
+# #275 «Plans schedule»: 990301 (320 light) / 990302 (390 dark) — мутирующий сценарий.
+seed plan_week_manual_session 990301
+seed plan_week_manual_session 990302
 # #273 «Workout Detail start/log»: 998001/998011 (+ retry), «Записать»: id+5(+retry).
 for id in 998001 998002 998006 998007 998011 998012 998016 998017; do seed golden_journey "$id"; done
 # Settings (#268): 999001/999011 (единицы), +2 (тема), +4 (отмена), каждый + retry (id+1).
@@ -104,3 +115,7 @@ for retry in 0 100; do
     seed sweep_populated $((id + retry))
   done
 done
+# Collections (#271): 999401/999402 (320 px light, + retry), 999411/999412 (390 px dark, + retry); read-only.
+for id in 999401 999402 999411 999412; do seed collections "$id"; done
+# Owner P0 (#279) «Факультатив — 3 минуты подтягиваний»: 999801 (320 px light) / 999811 (390 px dark), каждый + retry (id+1).
+for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done

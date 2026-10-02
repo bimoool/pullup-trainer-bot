@@ -1381,3 +1381,16 @@ html {
 }
 .journal-edit-textarea { min-height: 88px; resize: vertical; font-family: inherit; }
 .journal-edit-set { padding: 0 16px; }
+
+/* Подборки (CRIMPD #271): ряд на Главной и экран подборки — только новые классы,
+   ряд/карточка переиспользуют .home-program-row / .home-program-card; кнопка — свой класс, чтобы
+   E2E-селекторы `.program-card-button` (каталог программ) не цеплялись за подборки. */
+.collection-author, .collection-card-button .hint, .collection-card-button .block-subtitle { margin: 0 0 2px; }
+.collection-card-button .block-subtitle { color: var(--tg-text-color); font-weight: 600; font-size: 16px; }
+.collection-text { margin: 4px 0 0; text-align: left; color: var(--tg-subtitle-text-color); font-size: 14px; line-height: 1.4; }
+.collection-card-description { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.collection-hero { margin-top: 12px; overflow-wrap: anywhere; }
+.collection-hero .plan-title { margin: 2px 0; }
+.collection-item-list { list-style: none; margin: 0; padding: 0; }
+.collection-card-button { display: block; width: 100%; box-sizing: border-box; background: var(--tg-secondary-bg-color); border: none; border-radius: 16px; padding: 12px 16px; margin: 0; font: inherit; text-align: left; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.collection-card-button:active { opacity: 0.7; }

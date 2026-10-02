@@ -28,6 +28,7 @@ TABLES = (
     # plan_items/plan_weeks (дети training_plans), program_items (ребёнок
     # programs) чистятся каскадом сами, отдельно перечислять не нужно.
     "training_plans", "training_sessions", "programs", "exercises", "progression_strategy_profiles",
+    "collections",  # подборки (#271): миграция сидит одну; collection_items — каскадом
     "users",
 )
 

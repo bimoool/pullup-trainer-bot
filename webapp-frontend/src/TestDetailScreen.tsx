@@ -8,6 +8,7 @@ import {
 import {
   bestValue, chartPoints, formatIsoDate, formatValue, NOT_IN_PROGRESSION_NOTE, pathFor, validateResultForm,
 } from "./assessmentsFormat";
+import { PeerInsightsCard } from "./PeerInsightsCard";
 import { useBackButton } from "./useBackButton";
 
 type Props = { initDataRaw: string; protocolId: number; onBack: () => void };
@@ -147,6 +148,11 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
 
       <p className="section-title">Динамика</p>
       <TrendChart results={results} unit={protocol.unit} name={protocol.name} />
+
+      <PeerInsightsCard
+        initDataRaw={initDataRaw} protocolId={protocol.id} integerOnly={protocol.metric_type === "reps"}
+        refreshKey={`${results[0]?.id ?? 0}:${results[0]?.value ?? ""}:${results[0]?.performed_on ?? ""}`}
+      />
 
       <div className="profile-card" data-testid="test-form">
         <p className="section-title">{editingId === null ? "Записать результат" : "Изменить результат"}</p>

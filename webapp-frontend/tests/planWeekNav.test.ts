@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  currentWeekIndex, groupCounter, localToday, stepWeek, weekProgress, weekRangeLabel,
+  canAdvanceWeek, currentWeekIndex, groupCounter, isEditableWeek, localToday, stepWeek, weekProgress, weekRangeLabel,
 } from "../src/planWeekNav.ts";
 
 test("weekRangeLabel: через границу месяца и года", () => {
@@ -40,4 +40,18 @@ test("groupCounter / weekProgress: перевыполнение не завыш�
   ]);
   assert.deepEqual(progress, { done: 2, total: 3 });
   assert.deepEqual(weekProgress([]), { done: 0, total: 0 });
+});
+
+test("canAdvanceWeek: до MAX_FUTURE_WEEKS недель вперёд от текущей", () => {
+  assert.equal(canAdvanceWeek(0, 1, 0), true);
+  assert.equal(canAdvanceWeek(3, 4, 0), true);
+  assert.equal(canAdvanceWeek(4, 5, 0), false);
+  assert.equal(canAdvanceWeek(1, 3, 1), true);
+  assert.equal(canAdvanceWeek(5, 6, 1), false);
+});
+
+test("isEditableWeek: прошлые недели только для чтения", () => {
+  assert.equal(isEditableWeek(0, 1), false);
+  assert.equal(isEditableWeek(1, 1), true);
+  assert.equal(isEditableWeek(3, 1), true);
 });

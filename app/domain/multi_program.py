@@ -84,6 +84,15 @@ def plan_week_start_date(plan_created_at: date, week_number: int) -> date:
     return origin_monday + timedelta(weeks=week_number - 1)
 
 
+MAX_FUTURE_PLAN_WEEKS = 4  # issue #275: планировать можно не дальше 4 недель вперёд
+
+
+def is_plannable_week_number(week_number: int, current_week_number: int) -> bool:
+    """Неделя доступна для планирования: текущая или одна из
+    MAX_FUTURE_PLAN_WEEKS следующих. Прошлые недели — только чтение."""
+    return current_week_number <= week_number <= current_week_number + MAX_FUTURE_PLAN_WEEKS
+
+
 def count_done_per_plan_item(
     week_start_by_item: dict[int, date], performed_dates: list[tuple[int, date]],
 ) -> dict[int, int]:

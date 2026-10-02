@@ -6,6 +6,8 @@ import {
   type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { AddToPlanScreen } from "./AddToPlanScreen";
+import { CollectionScreen } from "./CollectionScreen";
+import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { groupProgramsByCategory } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
@@ -78,6 +80,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
   const [sheetOpen, setSheetOpen] = useState(false);
   // Хаб «Тесты» (#260) — локальный swap внутри вкладки, как Program/Workout Detail.
   const [showTests, setShowTests] = useState(false);
+  // Подборка (#271): открытая подборка остаётся «под» Program Detail / «Добавить в план».
+  const [collectionId, setCollectionId] = useState<number | null>(null);
   const savedScrollY = useRef<number | null>(null);
 
   useLayoutEffect(() => {
@@ -268,6 +272,18 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
     }
   }
 
+  if (collectionId !== null) {
+    return (
+      <CollectionScreen
+        initDataRaw={initDataRaw}
+        collectionId={collectionId}
+        onBack={() => setCollectionId(null)}
+        onOpenProgram={setSelectedProgramId}
+        onOpenExercise={(exerciseId, exerciseName) => setWorkoutView({ kind: "add-exercise", exerciseId, exerciseName })}
+      />
+    );
+  }
+
   if (showTests) {
     return <TestsScreen initDataRaw={initDataRaw} onBack={() => setShowTests(false)} />;
   }
@@ -361,6 +377,8 @@ export function HomeScreen({ initDataRaw, onOpenPlans, onOpenJournalLog, onStart
           </div>
         );
       })()}
+
+      <CollectionsRow initDataRaw={initDataRaw} onOpen={setCollectionId} />
 
       <button type="button" className="home-tests-row" data-testid="home-tests-row" onClick={() => setShowTests(true)}>
         <span className="home-tests-row-title">Тесты</span>

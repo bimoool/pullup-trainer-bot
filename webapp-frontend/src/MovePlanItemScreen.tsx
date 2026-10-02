@@ -1,8 +1,9 @@
 import { Button, Spinner } from "@telegram-apps/telegram-ui";
 import { useState } from "react";
 
-import { movePlanItem } from "./apiV2";
+import { movePlanItem, type PlanWeekResponseV2 } from "./apiV2";
 import { DayPicker } from "./DayPicker";
+import { weekRangeLabel } from "./planWeekNav";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -12,6 +13,9 @@ type Props = {
   /** Текущий день PlanItem — предзаполняется в DayPicker (issue #188,
    * раздел 6 — "текущий day preselected"). null = свободный пул. */
   currentDayOfWeek: number | null;
+  /** issue #275 — недели, доступные для переноса (текущая и будущие), и неделя item'а. */
+  weeks: PlanWeekResponseV2[];
+  currentWeekId: number | null;
   onBack: () => void;
   onSuccess: () => void;
 };
@@ -23,7 +27,8 @@ type Props = {
  * plan_week_id не меняется в этой волне — PlanItem остаётся в той же
  * current PlanWeek (по заданию).
  */
-export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayOfWeek, onBack, onSuccess }: Props) {
+export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayOfWeek, weeks, currentWeekId, onBack, onSuccess }: Props) {
+  const [targetWeekId, setTargetWeekId] = useState<number | null>(currentWeekId);
   const [selectedDay, setSelectedDay] = useState<number | "free_pool" | null>(
     currentDayOfWeek === null ? "free_pool" : currentDayOfWeek,
   );
@@ -39,7 +44,10 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await movePlanItem(initDataRaw, planItemId, selectedDay === "free_pool" ? null : selectedDay);
+      await movePlanItem(
+        initDataRaw, planItemId, selectedDay === "free_pool" ? null : selectedDay,
+        targetWeekId !== null && targetWeekId !== currentWeekId ? targetWeekId : undefined,
+      );
       onSuccess();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
@@ -51,6 +59,25 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
     <div>
       <p className="plan-title">Перенести</p>
       <p className="block-subtitle">{title}</p>
+
+      {weeks.length > 1 && (
+        <div className="plan-week-day-group" data-testid="move-week-picker">
+          <p className="block-subtitle">Неделя</p>
+          {weeks.map((week) => (
+            <button
+              key={week.id} type="button"
+              className={
+                week.id === targetWeekId
+                  ? "program-card-button plan-exercise-option plan-exercise-option-selected"
+                  : "program-card-button plan-exercise-option"
+              }
+              onClick={() => setTargetWeekId(week.id)}
+            >
+              {`Неделя ${week.week_number} · ${weekRangeLabel(week.start_date)}`}
+            </button>
+          ))}
+        </div>
+      )}
 
       <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
 

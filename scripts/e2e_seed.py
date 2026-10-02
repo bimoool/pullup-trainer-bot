@@ -92,6 +92,7 @@ from app.db.models_program import (
     UserFavorite,
 )
 from app.db.repositories.body_metrics import BodyMetricRepository
+from app.db.repositories.collections import CollectionRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -1094,6 +1095,75 @@ async def seed_tests_hub(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+# --- Peer Insights (#276) ------------------------------------------------------------------
+# Синтетическая популяция живёт в ОТДЕЛЬНЫХ id-диапазонах (только e2e-БД): женщины 8_100_001..,
+# мужчины 8_200_001... Они пересоздаются при каждом сиде зрителя, так что число и значения всегда
+# одни и те же. Все — 30–39 лет (середина ступени), результат — только «Подтягивания с весом, кг».
+_PEER_POPULATION_VALUES = [v for v in range(1, 26) if v != 10]  # 24 значения; зритель — 10 кг
+_PEER_WEIGHTED_PROTOCOL = "Подтягивания с весом, кг"
+_PEER_FEMALE_BASE = 8_100_000
+_PEER_MALE_BASE = 8_200_000
+
+
+def _peer_birth_date() -> date:
+    return date(datetime.now(UTC).year - 35, 1, 15)
+
+
+async def _peer_protocol_id(session: AsyncSession, name: str) -> int:
+    return (await session.execute(select(AssessmentProtocol.id).where(AssessmentProtocol.name == name))).scalar_one()
+
+
+async def _seed_peer_viewer(session: AsyncSession, telegram_id: int, gender: Gender, base: int) -> None:
+    """Зритель (гендер + 35 лет, 10 кг) + 24 синтетических пользователя той же когорты (значения
+    1..25 кг кроме 10): когорта = 25 человек, процентиль 38, медиана 13, следующий порог — p50 = 13 кг."""
+    users = UserRepository(session)
+    for offset in range(1, len(_PEER_POPULATION_VALUES) + 1):
+        stale = await users.get_by_telegram_id(base + offset)
+        if stale is not None:
+            await _purge_user(session, stale.id)
+    viewer = await _onboard(session, telegram_id)
+    viewer.gender, viewer.birth_date = gender, _peer_birth_date()
+    protocol_id = await _peer_protocol_id(session, _PEER_WEIGHTED_PROTOCOL)
+    now = datetime.now(UTC)
+    session.add(AssessmentResult(
+        user_id=viewer.id, protocol_id=protocol_id, performed_at=now - timedelta(days=3), value=10, unit="кг",
+    ))
+    for offset, value in enumerate(_PEER_POPULATION_VALUES, start=1):
+        peer = await users.create(telegram_id=base + offset, username=f"peer{base + offset}")
+        peer.gender, peer.birth_date = gender, _peer_birth_date()
+        session.add(AssessmentResult(
+            user_id=peer.id, protocol_id=protocol_id, performed_at=now - timedelta(days=2), value=value, unit="кг",
+        ))
+    await session.flush()
+
+
+async def seed_peer_cohort_female(session: AsyncSession, telegram_id: int) -> None:
+    await _seed_peer_viewer(session, telegram_id, Gender.FEMALE, _PEER_FEMALE_BASE)
+
+
+async def seed_peer_cohort_male(session: AsyncSession, telegram_id: int) -> None:
+    await _seed_peer_viewer(session, telegram_id, Gender.MALE, _PEER_MALE_BASE)
+
+
+async def seed_peer_insufficient(session: AsyncSession, telegram_id: int) -> None:
+    """Зритель с одним результатом «Максимум подтягиваний» (12): в e2e-БД нет ни одной когорты на 20
+    человек по этому протоколу -> «Пока мало данных для сравнения»."""
+    viewer = await _onboard(session, telegram_id)
+    viewer.gender, viewer.birth_date = Gender.MALE, _peer_birth_date()
+    session.add(AssessmentResult(
+        user_id=viewer.id, protocol_id=await _peer_protocol_id(session, "Максимум подтягиваний"),
+        performed_at=datetime.now(UTC) - timedelta(days=4), value=12, unit="повт.",
+    ))
+    await session.flush()
+
+
+async def seed_peer_empty(session: AsyncSession, telegram_id: int) -> None:
+    """Онбордящийся зритель без результатов тестов (состояние «нет результата», затем запись)."""
+    viewer = await _onboard(session, telegram_id)
+    viewer.gender, viewer.birth_date = Gender.FEMALE, _peer_birth_date()
+    await session.flush()
+
+
 async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     """G3 — Главная/«Мои тренировки»: у пользователя две своих Workout (одна
     с длинным русским названием и тремя упражнениями, одна пустая) и
@@ -1382,9 +1452,97 @@ async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_collections_scenario(session: AsyncSession, telegram_id: int) -> None:
+    """#271 «Collections»: онбордившийся пользователь + глобальные (find-or-create) две
+    программы «Подборка: …», system-упражнение «Подборка: упражнение», приватное user-упражнение
+    и две подборки: опубликованная «E2E: подборка» (2 программы + system- и приватное упражнение —
+    приватное не должно показываться) и неопубликованный черновик (на Главной не виден)."""
+    user = await _onboard(session, telegram_id)
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    program_ids: list[int] = []
+    for name, category in (("Подборка: сила", "e2e_collection_strength"), ("Подборка: гибкость", "e2e_collection_mobility")):
+        program = (await session.execute(select(Program).where(Program.name == name))).scalars().first()
+        if program is None:
+            program = Program(
+                name=name, goal=f"цель {name}", structure_type=ProgramStructureType.RECURRING,
+                category=category, progression_strategy_id=profile.id,
+                config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
+            )
+            session.add(program)
+            await session.flush()
+        program_ids.append(program.id)
+    system_exercise = (await session.execute(
+        select(Exercise).where(Exercise.name == "Подборка: упражнение", Exercise.source_type == "system"),
+    )).scalars().first()
+    if system_exercise is None:
+        system_exercise = Exercise(
+            name="Подборка: упражнение", metric_type=MetricType.REPS, category="e2e_collection", source_type="system",
+        )
+        session.add(system_exercise)
+    private_exercise = Exercise(
+        name="Подборка: приватное", metric_type=MetricType.REPS, category="e2e_collection",
+        source_type="user", owner_user_id=user.id,
+    )
+    session.add(private_exercise)
+    await session.flush()
+    repo = CollectionRepository(session)
+    await repo.upsert_collection(
+        slug="e2e-collection", title="E2E: подборка", sort_order=-100,
+        description="Подборка для E2E: две программы и упражнение, приватное содержимое скрыто.",
+        program_ids=program_ids, exercise_ids=[system_exercise.id, private_exercise.id],
+    )
+    await repo.upsert_collection(
+        slug="e2e-draft", title="E2E: черновик", description="Не опубликовано", sort_order=-99,
+        is_published=False, program_ids=program_ids,
+    )
+    await session.flush()
+
+
+async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -> None:
+    """#279 (P0 владельца) — «Факультатив — 3 минуты подтягиваний» в Журнале v2.
+
+    Это НЕ PlanItem и не пользовательская Builder-тренировка: backfill волны 2
+    (scripts/backfill_multi_program.py, #163) переносит legacy ElectiveWorkout в
+    TrainingSession(source=elective) с блоком на системное Exercise «Факультатив — …»
+    (subcategory elective_<тип>), без замороженного снимка и без SessionPlanItem; формат/
+    снаряд упакованы JSON-ом в SetLog.note. Сид воспроизводит это ТЕМИ ЖЕ функциями backfill:
+    два факультатива — «3 минуты подтягиваний» (30 минут назад, 3 интервала по 4+3+2) и
+    «на максимум» (90 минут назад, 4 подхода)."""
+    from app.db.models import ElectiveWorkout
+    from app.domain.electives import ElectiveType
+    from scripts.backfill_multi_program import (
+        _ELECTIVE_EXERCISE_NAMES,
+        _create_training_session_for_elective,
+        _get_or_create_exercise,
+    )
+
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Europe/Moscow"
+    now = datetime.now(UTC)
+    for elective_type, at, sequence in (
+        (ElectiveType.THREE_MINUTES, now - timedelta(minutes=30), [4, 3, 2]),
+        (ElectiveType.MAX_REPS_LADDER, now - timedelta(minutes=90), [12, 10, 8, 6]),
+    ):
+        elective = ElectiveWorkout(
+            user_id=user.id, elective_type=elective_type, performed_at=at, reps_sequence=sequence,
+            total_reps=sum(sequence), equipment_type=EquipmentType.BAND, equipment_value=BAND_VALUE,
+        )
+        session.add(elective)
+        await session.flush()
+        exercise = await _get_or_create_exercise(
+            session, name=_ELECTIVE_EXERCISE_NAMES[elective_type], subcategory=f"elective_{elective_type.value}",
+        )
+        await _create_training_session_for_elective(session, elective, exercise_id=exercise.id)
+    await session.flush()
+
+
 SCENARIOS = {
     "sweep_empty": seed_sweep_empty,
     "sweep_populated": seed_sweep_populated,
+    "collections": seed_collections_scenario,
+    "owner_optional_workout": seed_owner_optional_workout,
     "analytics_distribution": seed_analytics_distribution,
     "body_metrics": seed_body_metrics,
     "background_interval": seed_background_interval,
@@ -1396,6 +1554,10 @@ SCENARIOS = {
     "analytics_v2": seed_analytics_v2,
     "analytics_metric": seed_analytics_metric,
     "tests_hub": seed_tests_hub,
+    "peer_cohort_female": seed_peer_cohort_female,
+    "peer_cohort_male": seed_peer_cohort_male,
+    "peer_insufficient": seed_peer_insufficient,
+    "peer_empty": seed_peer_empty,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
     "journal_edit": seed_journal_edit,

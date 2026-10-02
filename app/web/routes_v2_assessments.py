@@ -14,7 +14,9 @@ from app.db.models import User
 from app.db.models_program import AssessmentProtocol, AssessmentResult
 from app.db.repositories.assessments import AssessmentRepository
 from app.db.repositories.users import UserRepository
+from app.domain.leaderboard import age_bucket
 from app.domain.multi_program import MetricType
+from app.domain.peer_insights import MIN_COHORT_SIZE, build_insight
 from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -25,6 +27,9 @@ from app.web.schemas_v2_assessments import (
     AssessmentResultResponse,
     AssessmentResultUpdate,
     AssessmentsListResponse,
+    PeerCohortResponse,
+    PeerInsightsResponse,
+    PeerNextTargetResponse,
 )
 
 router_v2_assessments = APIRouter(prefix="/api/v2/assessments")
@@ -118,6 +123,41 @@ async def get_assessment(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found")
     rows = await repo.list_results_for_user(user.id, protocol_id)
     return AssessmentDetailResponse(protocol=_protocol(user, protocol, rows), results=[_result(user, r) for r in rows])
+
+
+@router_v2_assessments.get("/{protocol_id}/peer-insights", response_model=PeerInsightsResponse)
+async def get_peer_insights(
+    protocol_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> PeerInsightsResponse:
+    """«Сравнение с похожими» (#276): последний результат пользователя против когорты (пол +
+    возрастная ступень → пол → все), только агрегаты. Нет результата — status=no_result, когорта
+    меньше 20 — insufficient. Чужие результаты не читаются: свой — по user.id, остальные только
+    внутри одного агрегирующего SQL (`AssessmentRepository.peer_cohorts`)."""
+    user = await _current_user(init_data, session)
+    repo = AssessmentRepository(session)
+    protocol = await repo.get_protocol(protocol_id)
+    if protocol is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assessment not found")
+    own = await repo.list_results_for_user(user.id, protocol_id)
+    own_value = own[0].value if own else None
+    today = _local_date(user, datetime.now(UTC))
+    gender = user.gender.value if user.gender is not None else None
+    bucket = age_bucket(user.birth_date, today)
+    cohorts = [] if own_value is None else await repo.peer_cohorts(protocol_id, own_value, gender, bucket, today)
+    insight = build_insight(own_value, cohorts, gender, bucket)
+    cohort = None
+    if insight.level is not None and insight.label is not None and insight.size_bucket is not None:
+        cohort = PeerCohortResponse(level=insight.level.value, label=insight.label, size_bucket=insight.size_bucket)
+    target = insight.next_target
+    return PeerInsightsResponse(
+        status=insight.status.value, min_cohort_size=MIN_COHORT_SIZE, unit=_unit(protocol),
+        own_value=None if insight.own_value is None else _dec(insight.own_value),
+        cohort=cohort, percentile=insight.percentile,
+        median=None if insight.median is None else _dec(insight.median),
+        next_target=None if target is None else PeerNextTargetResponse(percentile=target.percentile, value=_dec(target.value)),
+    )
 
 
 @router_v2_assessments.post(
