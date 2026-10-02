@@ -75,7 +75,14 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
     };
   }, [initDataRaw]);
 
-  useBackButton(onBack, [onBack]);
+  // #293: пока «Добавить» в полёте, тап по фону/BackButton лист не закрывает — иначе ошибка запроса
+  // не видна (пользователь уверен, что добавил), а успех потом внезапно уводит на «Планы».
+  const close = () => {
+    if (!submitting) {
+      onBack();
+    }
+  };
+  useBackButton(close, [onBack]);
 
   async function handleSubmit() {
     if (loadState.phase !== "ready" || selectedDay === null || submitting) {
@@ -97,15 +104,20 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
     }
   }
 
+  // Загрузка/ошибка — в том же листе: нижней навигации нет, фон закрывает и здесь (не тупик).
   if (loadState.phase === "loading") {
-    return <Spinner size="m" />;
+    return <FormSheet title="Добавить в план" onClose={close}><Spinner size="m" /></FormSheet>;
   }
   if (loadState.phase === "error") {
-    return <p className="gap-banner">Не удалось загрузить: {loadState.message}</p>;
+    return (
+      <FormSheet title="Добавить в план" onClose={close}>
+        <p className="gap-banner">Не удалось загрузить: {loadState.message}</p>
+      </FormSheet>
+    );
   }
 
   return (
-    <FormSheet title="Добавить в план" onClose={onBack}>
+    <FormSheet title="Добавить в план" onClose={close}>
       <p className="plan-title">Добавить в план</p>
       <p className="block-subtitle">{workoutTitle}</p>
 
