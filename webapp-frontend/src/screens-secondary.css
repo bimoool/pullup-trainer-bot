@@ -181,8 +181,8 @@
 .pre-screen {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 8px - var(--vp-nav-h) - 20px - env(safe-area-inset-bottom, 0px));
-  min-height: calc(100dvh - 8px - var(--vp-nav-h) - 20px - env(safe-area-inset-bottom, 0px));
+  min-height: calc(100vh - 8px - var(--vp-nav-h) - 20px - var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+  min-height: calc(100dvh - 8px - var(--vp-nav-h) - 20px - var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
 .pre-screen > .vs-back {
   align-self: flex-start;
@@ -215,7 +215,7 @@
 /* главное действие — внизу экрана над навигацией, как транспорт Live Session */
 .pre-transport {
   position: sticky;
-  bottom: calc(var(--vp-nav-h) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--vp-nav-h) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
   z-index: 5;
   margin: auto calc(var(--vp-sp-4) * -1) 0;
   padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-4);
