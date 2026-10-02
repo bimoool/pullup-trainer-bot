@@ -2,9 +2,18 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
-import { fetchGtoStatus, fetchProfile, fetchWsfStatus, type GtoStatus, type ProfileResponse, type WsfStatus } from "./api";
+import {
+  fetchGtoStatus,
+  fetchProfile,
+  fetchWsfStatus,
+  type BodyMetricKind,
+  type GtoStatus,
+  type ProfileResponse,
+  type WsfStatus,
+} from "./api";
 import { NOT_IN_PROGRESSION_NOTE } from "./assessmentsFormat";
 import { BandItemsScreen } from "./BandItemsScreen";
+import { BodyMetricsScreen } from "./BodyMetricsScreen";
 import { TestDetailScreen } from "./TestDetailScreen";
 import { TestsList } from "./TestsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
@@ -195,6 +204,8 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   // Экран «Настройки» (#268) — тот же приём swap'а.
   const [showSettings, setShowSettings] = useState(false);
   const prefs = useDisplayPrefs();
+  // История веса/роста (#270) — тот же приём swap'а.
+  const [bodyMetric, setBodyMetric] = useState<BodyMetricKind | null>(null);
   // Список личных резин (issue #148) — тот же приём swap'а.
   const [showBandItems, setShowBandItems] = useState(false);
   // Деталь теста (#260) — тот же приём swap'а; список карточек — TestsList в карточке «Тесты».
@@ -299,6 +310,22 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     );
   }
 
+  if (bodyMetric !== null) {
+    return (
+      <BodyMetricsScreen
+        initDataRaw={initDataRaw}
+        metric={bodyMetric}
+        onChanged={() => {
+          // Зеркало User.weight_kg/height_cm изменилось на бэкенде — перечитываем профиль тихо.
+          fetchProfile(initDataRaw)
+            .then((updated) => setState({ phase: "ready", profile: updated }))
+            .catch(() => undefined);
+        }}
+        onBack={() => setBodyMetric(null)}
+      />
+    );
+  }
+
   if (showBandItems) {
     return <BandItemsScreen initDataRaw={initDataRaw} onBack={() => setShowBandItems(false)} />;
   }
@@ -338,8 +365,24 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
 
       <div className="profile-card">
         <p className="section-title">Личные данные</p>
-        <p data-testid="profile-weight">{`Вес: ${formatWeight(profile.weight_kg, prefs.weight_unit)}`}</p>
-        <p data-testid="profile-height">{`Рост: ${formatHeight(profile.height_cm, prefs.height_unit)}`}</p>
+        <p
+          className="profile-link-row"
+          role="button"
+          tabIndex={0}
+          aria-label="История веса"
+          data-testid="profile-weight"
+          onClick={() => setBodyMetric("weight_kg")}
+          onKeyDown={(e) => e.key === "Enter" && setBodyMetric("weight_kg")}
+        >{`Вес: ${formatWeight(profile.weight_kg, prefs.weight_unit)}`}</p>
+        <p
+          className="profile-link-row"
+          role="button"
+          tabIndex={0}
+          aria-label="История роста"
+          data-testid="profile-height"
+          onClick={() => setBodyMetric("height_cm")}
+          onKeyDown={(e) => e.key === "Enter" && setBodyMetric("height_cm")}
+        >{`Рост: ${formatHeight(profile.height_cm, prefs.height_unit)}`}</p>
         <p>{`Пол: ${profile.gender_label ?? "не указано"}`}</p>
         <p>{`Возраст: ${profile.age ?? "не указано"}`}</p>
         <p>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</p>

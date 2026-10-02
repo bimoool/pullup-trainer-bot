@@ -1107,3 +1107,58 @@ export async function updateDisplayPreferences(
   }
   return (await response.json()) as DisplayPreferences;
 }
+
+/** /api/profile/body-metrics (#270) — история веса/роста; все методы отдают список метрики целиком. */
+export type BodyMetricKind = "weight_kg" | "height_cm";
+
+export interface BodyMetricEntry {
+  id: number;
+  value: string;
+  measured_at: string;
+}
+
+export interface BodyMetricHistory {
+  metric: BodyMetricKind;
+  items: BodyMetricEntry[];
+  current: string | null;
+}
+
+async function bodyMetricsRequest(
+  initDataRaw: string,
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: object,
+): Promise<BodyMetricHistory> {
+  const response = await fetch(path, {
+    method,
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(method, path, response));
+  }
+  return (await response.json()) as BodyMetricHistory;
+}
+
+export async function fetchBodyMetrics(initDataRaw: string, metric: BodyMetricKind): Promise<BodyMetricHistory> {
+  return apiGet<BodyMetricHistory>(`/api/profile/body-metrics?metric=${metric}`, initDataRaw);
+}
+
+export async function addBodyMetric(
+  initDataRaw: string,
+  body: { metric: BodyMetricKind; value: string; measured_at?: string },
+): Promise<BodyMetricHistory> {
+  return bodyMetricsRequest(initDataRaw, "POST", "/api/profile/body-metrics", body);
+}
+
+export async function updateBodyMetric(
+  initDataRaw: string,
+  entryId: number,
+  body: { value?: string; measured_at?: string },
+): Promise<BodyMetricHistory> {
+  return bodyMetricsRequest(initDataRaw, "PATCH", `/api/profile/body-metrics/${entryId}`, body);
+}
+
+export async function deleteBodyMetric(initDataRaw: string, entryId: number): Promise<BodyMetricHistory> {
+  return bodyMetricsRequest(initDataRaw, "DELETE", `/api/profile/body-metrics/${entryId}`);
+}

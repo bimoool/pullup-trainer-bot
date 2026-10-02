@@ -91,3 +91,5 @@ for id in 999001 999002 999003 999004 999005 999006 999011 999012 999013 999014 
 # Background timer (#269): отдых 60 с (session_recovery) и interval 180 с; каждый + retry (id+1).
 for id in 999101 999102 999111 999112; do seed session_recovery "$id"; done
 for id in 999121 999122 999131 999132; do seed background_interval "$id"; done
+# Body metrics (#270): 999201/999211 (экран+тренд), +2 (правка/удаление), каждый + retry (id+1).
+for id in 999201 999202 999203 999204 999211 999212 999213 999214; do seed body_metrics "$id"; done

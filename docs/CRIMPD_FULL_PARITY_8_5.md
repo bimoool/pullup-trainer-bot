@@ -149,7 +149,7 @@ any merge into `develop/current`.
 | Crimpd feature | Reference evidence | Our current screen/API | Status | Missing behavior | Target behavior | GitHub issue | Automated test evidence |
 |---|---|---|---|---|---|---|---|
 | Current attributes (name, age, gender, height, weight) | R1–R2, R11 | ProfileScreen + ProfileEditForm | DONE | — | — | — | crimpd-parity Baseline |
-| Attribute history | R2 *(target screens unobserved)* | single values | MISSING | — | weight/height history with trend | #270 | — |
+| Attribute history | R2 *(target screens unobserved)* | Профиль → «Вес»/«Рост» → `BodyMetricsScreen`: SVG-тренд, список, добавить/изменить/удалить (подтверждение); таблица `user_body_metrics`, последний замер зеркалится в `User.weight_kg/height_cm` | DONE | body fat и др. метрики — вне объёма; единственный замер удалить нельзя | — | #270 | parity/body-metrics.spec.ts «Body metrics»; tests/test_web/test_body_metrics.py; tests/bodyMetrics.test.ts |
 | Edit / delete historical metrics | — | none | MISSING | — | edit/delete entries | #270 | — |
 | Grade chart (boulder/route) | R3 | GTO / WSF cards | DOMAIN-EQUIVALENT | no climbing grades | our norms (GTO/WSF) | — | — |
 | Assessments (primary / additional, last result, sparkline) | R4–R5 | «Тесты» card on Профиль (3 seeded protocols, last result, mini-trend ≥2) | DONE | no primary/additional split | — | #260 | crimpd-parity.spec.ts «Tests»; tests/test_web/test_v2_assessments.py; tests/assessmentsFormat.test.ts |

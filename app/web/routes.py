@@ -22,10 +22,11 @@ from app.bot.handlers.subscription import _robokassa_available
 from app.bot.handlers.workout_edit import _is_editable
 from app.bot.timezones import TIMEZONE_DISPLAY_LABELS, format_timezone_label
 from app.config import settings
-from app.db.models import ActiveTimerType, BlockType, Gender, SubscriptionStatus
+from app.db.models import ActiveTimerType, BlockType, BodyMetric, Gender, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.body_metrics import BodyMetricRepository, LastBodyMetricError
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.leaderboard import LeaderboardRepository
@@ -97,6 +98,10 @@ from app.web.schemas import (
     BandItemInfo,
     BandItemListResponse,
     BandItemUpdateRequest,
+    BodyMetricCreateRequest,
+    BodyMetricEntry,
+    BodyMetricHistoryResponse,
+    BodyMetricUpdateRequest,
     CycleVolumeResponse,
     DashboardResponse,
     DisplayPreferencesResponse,
@@ -2145,6 +2150,91 @@ async def update_display_preferences(
         user.id, weight_unit=body.weight_unit, height_unit=body.height_unit, theme=body.theme,
     )
     return _resolve_display_preferences(updated)
+
+
+async def _body_metric_history(
+    history: BodyMetricRepository, user_id: int, metric: BodyMetric,
+) -> BodyMetricHistoryResponse:
+    entries = await history.list_for_user(user_id, metric)
+    return BodyMetricHistoryResponse(
+        metric=metric.value,
+        items=[BodyMetricEntry(id=e.id, value=e.value, measured_at=e.measured_at) for e in entries],
+        current=entries[0].value if entries else None,
+    )
+
+
+async def _current_user_id(init_data: InitData, session: AsyncSession) -> int:
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    return user.id
+
+
+@router.get("/profile/body-metrics", response_model=BodyMetricHistoryResponse)
+async def get_body_metrics(
+    metric: Literal["weight_kg", "height_cm"] = Query(...),
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    """История веса/роста (issue #270), новые сверху. Только свои замеры."""
+    user_id = await _current_user_id(init_data, session)
+    return await _body_metric_history(BodyMetricRepository(session), user_id, BodyMetric(metric))
+
+
+@router.post("/profile/body-metrics", response_model=BodyMetricHistoryResponse, status_code=status.HTTP_201_CREATED)
+async def add_body_metric(
+    body: BodyMetricCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    """«Добавить замер»: последний замер зеркалится в User.weight_kg/height_cm."""
+    user_id = await _current_user_id(init_data, session)
+    history = BodyMetricRepository(session)
+    await history.add(user_id, BodyMetric(body.metric), body.value, body.measured_at)
+    return await _body_metric_history(history, user_id, BodyMetric(body.metric))
+
+
+@router.patch("/profile/body-metrics/{entry_id}", response_model=BodyMetricHistoryResponse)
+async def update_body_metric(
+    entry_id: int,
+    body: BodyMetricUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    user_id = await _current_user_id(init_data, session)
+    history = BodyMetricRepository(session)
+    entry = await history.get_owned(user_id, entry_id)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Body metric not found")
+    metric = BodyMetric(entry.metric)
+    if body.value is not None:
+        try:
+            BodyMetricCreateRequest(metric=metric.value, value=body.value)
+        except ValueError as error:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Некорректное значение замера") from error
+    await history.update(entry, value=body.value, measured_at=body.measured_at)
+    return await _body_metric_history(history, user_id, metric)
+
+
+@router.delete("/profile/body-metrics/{entry_id}", response_model=BodyMetricHistoryResponse)
+async def delete_body_metric(
+    entry_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    """Удаление замера; если он был последним — User откатывается к предыдущему.
+    Единственный замер удалить нельзя (409): GTO/WSF/лидерборд читают User.weight_kg."""
+    user_id = await _current_user_id(init_data, session)
+    history = BodyMetricRepository(session)
+    entry = await history.get_owned(user_id, entry_id)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Body metric not found")
+    metric = BodyMetric(entry.metric)
+    try:
+        await history.delete(entry)
+    except LastBodyMetricError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Нельзя удалить единственный замер") from error
+    return await _body_metric_history(history, user_id, metric)
 
 
 # Текст для NULL leaderboard_display_name — форматирование, не доменное
