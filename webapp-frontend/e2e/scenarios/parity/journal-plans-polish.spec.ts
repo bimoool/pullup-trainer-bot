@@ -5,7 +5,7 @@ import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/pari
 import { openAppAs } from "../../fixtures/setup";
 
 // #277 (Journal/Plans leftovers): 1) карточка Журнала на 320 не режет бейдж типа и деградирует по названию (2 строки);
-// 2) выполненная строка дня Планов (1/1) показывает «✓ 1/1» и вторичное «Повторить», а не главное «Начать: …»;
+// 2) выполненная строка дня Планов (1/1) показывает «✓ 1/1» (галочка — CSS, текст счётчика «1/1») и вторичное «Повторить», а не главное «Начать: …»;
 // 3) форма «Изменить» запись Журнала имеет круглую «← Назад», равную «Отмене» (ничего не пишет).
 // Seed: scripts/e2e_seed.py journal_plans_polish — длинное название тренировки плана, запись задним числом,
 // план-строка «Подтягивания» уже выполнена. Тесты только читают; пользователь на ширину/тему и retry.
@@ -83,7 +83,8 @@ for (const width of WIDTHS) {
         const done = page.locator('[data-testid="plans-row"][data-done="true"]');
         await expect(done).toHaveCount(1);
         await shot(page, `plans-${width}-${theme}`);
-        await expect(done.getByTestId("plan-item-counter")).toHaveText(/✓ 1\/1/);
+        await expect(done.getByTestId("plan-item-counter")).toHaveText("1/1");
+        expect(await done.getByTestId("plan-item-counter").evaluate((el) => getComputedStyle(el, "::before").content)).toContain("✓");
         await expect(done.getByRole("button", { name: /^Начать: / })).toHaveCount(0);
         const again = done.getByRole("button", { name: /^Повторить: / });
         await expect(again).toHaveCount(1);

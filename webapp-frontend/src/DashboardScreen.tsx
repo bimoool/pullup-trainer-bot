@@ -928,7 +928,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                 <div className="plans-row-text">
                   <span className="plans-row-title">{group.title}</span>
                   <span className="plans-row-chip" data-done={todayDone}>
-                    {todayDone && <span aria-hidden="true">{"✓ "}</span>}{`${counter.done}/${counter.planned}`}
+                    {`${counter.done}/${counter.planned}`}
                   </span>
                 </div>
                 {todayDone ? (
@@ -1003,7 +1003,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     <div className="plans-row-text">
                       <span className="plans-row-title">{group.title}</span>
                       <span className="plans-row-chip" data-done={rowDone} data-testid="plan-item-counter">
-                        {rowDone && <span aria-hidden="true">{"✓ "}</span>}{`${counter.done}/${counter.planned}`}
+                        {`${counter.done}/${counter.planned}`}
                       </span>
                     </div>
                     {isCurrent && (

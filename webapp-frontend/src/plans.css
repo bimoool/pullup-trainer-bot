@@ -335,3 +335,6 @@
   color: var(--vp-hint);
   font-weight: 600;
 }
+.plans-row-chip[data-done="true"]::before {
+  content: "✓\00a0";
+}
