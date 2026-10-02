@@ -3,19 +3,23 @@
  * как циклично ходит Tab внутри модального диалога.
  */
 
-export type BackAction = "close-review" | "ignore" | "confirm-finish";
+export type BackAction = "close-review" | "ignore" | "confirm-finish" | "leave";
 
 /**
- * BackButton на живой тренировке (docs/PROJECT_SPEC.md §12): при открытой review-шторке он только
+ * BackButton на живой тренировке (docs/PROJECT_SPEC.md §2 п.12): при открытой review-шторке он только
  * закрывает её — введённые оценка и заметка остаются, завершения без review нет. Когда завершение
- * уже поставлено в очередь (ждёт сети) — нажатие игнорируется. Иначе прежнее поведение: confirm
- * «Закончить сессию?» и завершение без review.
+ * уже поставлено в очередь (ждёт сети/ответа сервера), Back уводит с экрана (#287): результат лежит
+ * в IndexedDB и досылается позже; если уйти нельзя (canLeave=false: лаба без выхода или запрос
+ * завершения прямо сейчас в полёте — Summary вот-вот откроется) — нажатие игнорируется. Иначе прежнее поведение: confirm «Закончить сессию?» и завершение без review.
  */
-export function backButtonAction(state: { reviewOpen: boolean; finishing: boolean }): BackAction {
+export function backButtonAction(state: { reviewOpen: boolean; finishing: boolean; canLeave?: boolean }): BackAction {
   if (state.reviewOpen) {
     return "close-review";
   }
-  return state.finishing ? "ignore" : "confirm-finish";
+  if (state.finishing) {
+    return state.canLeave ? "leave" : "ignore";
+  }
+  return "confirm-finish";
 }
 
 /** Следующий индекс фокуса при Tab (backwards = Shift+Tab) среди `count` фокусируемых в диалоге.

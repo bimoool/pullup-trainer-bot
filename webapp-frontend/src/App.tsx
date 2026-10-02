@@ -5,6 +5,7 @@ import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
 import { setDisplayPrefs } from "./displayPrefs";
 import { fetchActiveLiveSession, type LiveSessionResponse } from "./apiV2";
 import { DashboardScreen } from "./DashboardScreen";
+import { drainQueuedFinish } from "./offlineSession";
 import { PlanSessionFlow } from "./PlanSessionFlow";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen, type JournalRestore } from "./HistoryScreen";
@@ -287,6 +288,21 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- запуск ровно
     // один раз на переход в "ready", не на каждое изменение initDataRaw.
   }, [state.status]);
+
+  // #287: с Live-экрана ушли (Back/«Выйти»), пока завершение тренировки ждало сети, — оно лежит в
+  // IndexedDB. Вернулась сеть, а экран тренировки не открыт — досылаем отсюда (иначе только при
+  // следующем открытии). Пока экран открыт, досылкой владеет он сам (без двойного флаша).
+  const liveFlowOpen = v2Session !== null;
+  useEffect(() => {
+    if (state.status !== "ready" || liveFlowOpen) {
+      return;
+    }
+    const initDataRaw = state.initDataRaw;
+    const handleOnline = () => void drainQueuedFinish(initDataRaw);
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initDataRaw неизменен после "ready".
+  }, [state.status, liveFlowOpen]);
 
   // Единицы и тема (#268) — серверные настройки подтягиваются один раз после
   // готовности; до ответа действуют кеш из localStorage / дефолты. Сбой молча.

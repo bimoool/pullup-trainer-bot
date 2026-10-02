@@ -11,6 +11,8 @@ import {
   canPauseLocal,
   clearLocalSession,
   clearPauseState,
+  completeIfFinishedElsewhere,
+  drainQueuedFinish,
   editLastLoggedSet,
   extraSetBlockIndex,
   flushLocalSession,
@@ -34,6 +36,7 @@ import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { backButtonAction, FOCUSABLE_SELECTOR, nextTrapIndex } from "./liveDialog";
+import { canStartNextBlock, classifySyncError, finishStatus, type SyncFailure } from "./liveFinish";
 import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
 import { dismissKeyboard } from "./telegramPlatform";
@@ -63,6 +66,10 @@ type Props = {
    * потока подходов (явный старт следующего блока): PlanSessionFlow по нему
    * решает, какой экран нужен блоку (обычный/interval). */
   onSessionUpdate?: (session: LiveSessionResponse) => void;
+  /** #287: уйти с экрана, пока завершение в очереди (Back/«Выйти»). Данные остаются в IndexedDB и
+   * досылаются при следующем открытии (App → fetchActiveLiveSession → этот экран → флаш на mount).
+   * Не передан (лаба) — Back при завершении в очереди игнорируется, как раньше. */
+  onLeave?: () => void;
 };
 
 const LOG_FORM_ID = "live-log-form";
@@ -87,12 +94,14 @@ const PHASE_LABELS: Record<LocalPhaseName, string> = {
  * локальное состояние серверным, а не мержит вручную").
  */
 export function SessionLiveScreen({
-  initDataRaw, initialSession, onCompleted, resolveExerciseName, title, onSessionUpdate,
+  initDataRaw, initialSession, onCompleted, resolveExerciseName, title, onSessionUpdate, onLeave,
 }: Props) {
   const [local, setLocalState] = useState<LocalLiveSession | null>(null);
   const localRef = useRef<LocalLiveSession | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncFailure, setSyncFailure] = useState<SyncFailure | null>(null);
+  // Зеркало syncInFlight для рендера (#287): кнопка повтора видна, когда флаша в полёте нет.
+  const [syncing, setSyncing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [value, setValue] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
@@ -141,7 +150,13 @@ export function SessionLiveScreen({
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      const existing = await loadLocalSession();
+      let existing = await loadLocalSession();
+      // #287: в IndexedDB — завершение ДРУГОЙ сессии, оставленное в очереди при уходе с экрана.
+      // Этот экран заменит снимок своим — сначала пробуем дослать то (best effort, см. drainQueuedFinish).
+      if (existing !== null && existing.serverSessionId !== initialSession.id && existing.completeRequested !== null) {
+        await drainQueuedFinish(initDataRaw);
+        existing = await loadLocalSession();
+      }
       // Старый локальный снимок переиспользуется только если он не отстаёт
       // от сервера (см. isLocalSessionReusable) — иначе состояние прошлого
       // блока протекло бы в следующий.
@@ -151,6 +166,12 @@ export function SessionLiveScreen({
           : initialLocalSession(initialSession.client_session_id, initialSession);
       if (!cancelled) {
         setLocal(next);
+        // #287: неотправленное после reload/повторного открытия (подходы, переходы, завершение в
+        // очереди) уходит сразу, а не ждёт события `online` (его не будет — сеть уже есть) или
+        // следующего действия (при завершении в очереди действий нет вовсе).
+        if (hasPendingWork(next)) {
+          void syncLocal();
+        }
       }
     }
     void init();
@@ -211,8 +232,10 @@ export function SessionLiveScreen({
     }
     // .finally — всегда асинхронно (микротаска), т.е. ПОСЛЕ присваивания
     // ниже, даже если цикл вышел сразу (офлайн/нечего слать).
+    setSyncing(true);
     const run = runSyncLoop().finally(() => {
       syncInFlight.current = null;
+      setSyncing(false);
       if (resyncRequested.current && !completedRef.current) {
         // Запрос пришёл уже после последней проверки цикла — не теряем его.
         resyncRequested.current = false;
@@ -241,12 +264,29 @@ export function SessionLiveScreen({
         const fresh = rebaseLocalSession(snapshot, localRef.current ?? snapshot, result as LiveSessionResponse);
         setLocal(fresh);
         await saveLocalSession(fresh);
-        setSyncError(null);
+        setSyncFailure(null);
         if (hasPendingWork(fresh)) {
           resyncRequested.current = true;
         }
       } catch (error) {
-        setSyncError(error instanceof Error ? error.message : String(error));
+        const failure = classifySyncError(error);
+        if (snapshot.completeRequested !== null && failure.status === 404) {
+          // #287: 404 на флаше завершения — возможно, сессия уже завершена на сервере (ответ
+          // прошлого complete потерялся). Тогда это успех, иначе — настоящий отказ.
+          try {
+            const finished = await completeIfFinishedElsewhere(initDataRaw, snapshot, failure);
+            if (finished !== null) {
+              completedRef.current = true;
+              await clearLocalSession();
+              onCompleted(finished);
+              return;
+            }
+          } catch (probeError) {
+            setSyncFailure(classifySyncError(probeError));
+            return;
+          }
+        }
+        setSyncFailure(failure);
         return;
       }
     } while (resyncRequested.current);
@@ -407,12 +447,22 @@ export function SessionLiveScreen({
 
   // Telegram BackButton: с открытой review-шторкой только закрывает её (docs/PROJECT_SPEC.md §12),
   // иначе прежнее поведение — confirm и завершение без review.
+  // #287: при завершении в очереди Back уводит с экрана (onLeave) — данные в IndexedDB, не тупик.
+  // Пока запрос в полёте — игнор: повторный Back после «Закончить?» иначе уводил бы с экрана за миг
+  // до Summary (кнопка «Выйти» в статусе остаётся явным выходом и в этот момент).
   function handleBack() {
-    const action = backButtonAction({ reviewOpen, finishing: localRef.current?.completeRequested != null });
+    const action = backButtonAction({
+      reviewOpen,
+      finishing: localRef.current?.completeRequested != null,
+      // actionInFlight: завершение фиксируется в IndexedDB, флаш стартует сразу следом — без зазора.
+      canLeave: onLeave !== undefined && !actionInFlight.current && syncInFlight.current === null,
+    });
     if (action === "close-review") {
       setReviewOpen(false);
     } else if (action === "confirm-finish") {
       handleFinish();
+    } else if (action === "leave") {
+      onLeave?.();
     }
   }
 
@@ -588,7 +638,8 @@ export function SessionLiveScreen({
   // кнопка остаётся, можно повторить.
   function startNextBlock() {
     void guardedAction(async () => {
-      if (local === null) {
+      // #287 HIGH 2: завершение в очереди — старт блока сбросил бы снимок вместе с ним и оценкой.
+      if (local === null || !canStartNextBlock(localRef.current ?? local)) {
         return;
       }
       setStartingBlock(true);
@@ -598,6 +649,9 @@ export function SessionLiveScreen({
         // после возврата сети слал бы второй параллельный флаш.
         await syncLocal();
         const synced = localRef.current ?? local;
+        if (!canStartNextBlock(synced)) {
+          return;
+        }
         if (synced.pendingSets.length > 0 || synced.pendingPhaseAdvances > 0) {
           throw new Error(navigator.onLine ? "Не удалось отправить подходы, попробуйте ещё раз" : "Нет сети");
         }
@@ -606,7 +660,7 @@ export function SessionLiveScreen({
         const fresh = initialLocalSession(synced.clientSessionId, started);
         await saveLocalSession(fresh);
         setLocal(fresh);
-        setSyncError(null);
+        setSyncFailure(null);
         onSessionUpdate?.(started);
       } catch (error) {
         setStartBlockError(error instanceof Error ? error.message : String(error));
@@ -681,6 +735,9 @@ export function SessionLiveScreen({
   const finishIsPrimary = phaseName === "done";
   // M2: завершение поставлено в очередь (ждёт сети/ответа сервера) — управление тренировкой скрыто.
   const finishing = local.completeRequested !== null;
+  // #287: статус завершения — без тупиков (liveFinish.ts): офлайн ждёт сеть, онлайн без запроса в
+  // полёте всегда даёт «Отправить ещё раз», Back/«Выйти» уводят с экрана.
+  const finish = finishStatus({ finishing, online: isOnline, syncing, failure: syncFailure });
   const showTransport = !reviewOpen && !extraOpen && phaseName !== "between" && !finishing;
   const canPause = canPauseLocal(local) || paused;
 
@@ -701,18 +758,26 @@ export function SessionLiveScreen({
         )}
       </header>
       {!isOnline && <p className="gap-banner">Нет сети — подходы сохраняются локально и уйдут батчем при подключении.</p>}
-      {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
-      {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
+      {/* Пока завершение в очереди, о досылке говорит только статус ниже (действий нет — «повторю
+          при следующем действии» было бы неправдой, #287 LOW 8). */}
+      {!finishing && isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
+      {!finishing && syncFailure && (
+        <p className="gap-banner">Не удалось синхронизировать: {syncFailure.message}. Повторю при следующем действии.</p>
+      )}
       {finishing && (
-        <div className="gap-banner live-finish-status" data-testid="finish-pending" data-finish-status role="status" tabIndex={-1}>
-          <p>
-            {isOnline
-              ? "Завершаю тренировку…"
-              : "Тренировка завершена: результат сохранён на устройстве и отправится, когда появится сеть."}
-          </p>
-          {isOnline && syncError !== null && (
+        <div
+          className="gap-banner live-finish-status" data-testid="finish-pending" data-finish-status data-state={finish}
+          role="status" tabIndex={-1}
+        >
+          <p>{finishStatusText(finish, syncFailure)}</p>
+          {(finish === "retry" || finish === "rejected") && (
             <button type="button" className="live-link-button" data-testid="finish-retry" onClick={() => void syncLocal()}>
               Отправить ещё раз
+            </button>
+          )}
+          {onLeave !== undefined && (
+            <button type="button" className="live-link-button" data-testid="finish-leave" onClick={onLeave}>
+              Выйти
             </button>
           )}
         </div>
@@ -773,7 +838,7 @@ export function SessionLiveScreen({
           </div>
         );
       })()}
-      {phaseName === "between" && block !== null ? (
+      {phaseName === "between" && block !== null && !finishing ? (
         <BlockTransition
           block={block} name={blockName(block)} starting={startingBlock} error={startBlockError}
           onStart={startNextBlock}
@@ -861,7 +926,7 @@ export function SessionLiveScreen({
         </section>
       )}
 
-      {extraIndex !== null && extraOpen && (
+      {extraIndex !== null && extraOpen && !finishing && (
         <section className="live-panel">
           <h3 className="live-panel-title">Ещё подход</h3>
           <form data-testid="extra-set-form" onSubmit={(event) => { event.preventDefault(); logExtraSet(); }}>
@@ -957,6 +1022,25 @@ export function SessionLiveScreen({
       )}
     </div>
   );
+}
+
+/** Текст статуса «завершение в очереди» (#287). Везде, кроме «отправляю», сказано, что результат
+ * сохранён на устройстве: ничего не удаляется, даже если сервер завершение отверг. */
+function finishStatusText(status: ReturnType<typeof finishStatus>, failure: SyncFailure | null): string {
+  switch (status) {
+    case "offline":
+      return "Тренировка завершена: результат сохранён на устройстве и отправится, когда появится сеть.";
+    case "sending":
+      return "Завершаю тренировку…";
+    case "rejected":
+      return failure?.kind === "auth"
+        ? `${failure.message} Результат сохранён на устройстве и отправится после повторного открытия.`
+        : `Сервер не принял завершение: ${failure?.message ?? "ошибка"}. Результат сохранён на этом устройстве.`;
+    default:
+      return failure !== null
+        ? `Не удалось отправить завершение: ${failure.message}. Результат сохранён на устройстве.`
+        : "Завершение ещё не отправлено. Результат сохранён на устройстве.";
+  }
 }
 
 /** Шкала усилия 1–5: цифра + слово, одна строка из пяти сегментов (подход и тренировка). */

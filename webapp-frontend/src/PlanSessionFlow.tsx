@@ -130,6 +130,10 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
         onSessionUpdate={onSessionUpdate}
         resolveExerciseName={resolveExerciseName}
         title={title}
+        // #287: при завершении в очереди Back/«Выйти» уводят к вкладкам; очередь остаётся в
+        // IndexedDB, при следующем открытии App возобновит сессию (fetchActiveLiveSession) и
+        // SessionLiveScreen дошлёт завершение на mount.
+        onLeave={onClose}
       />
     );
   }

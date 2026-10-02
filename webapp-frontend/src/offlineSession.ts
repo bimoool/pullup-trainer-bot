@@ -25,9 +25,11 @@ import {
   advanceLiveSessionPhase,
   batchLiveSessionSets,
   completeLiveSession,
+  fetchActiveLiveSession,
   type LiveSessionCompleteResponse,
   type LiveSessionResponse,
 } from "./apiV2.ts";
+import { classifySyncError, isFinishedElsewhere, type SyncFailure } from "./liveFinish.ts";
 
 const STORE_KEY = "pullup:v2:live-session";
 
@@ -409,4 +411,62 @@ export async function flushLocalSession(
   }
 
   return server;
+}
+
+/**
+ * #287: флаш завершения упал с 404. Если сервер уже не держит эту сессию активной (она завершена —
+ * например, прошлый `complete` дошёл, а ответ потерялся, и теперь переход фазы из очереди получает
+ * 404), повторный идемпотентный `complete` возвращает её итог (сервер: уже завершённая — 200 с
+ * текущим состоянием, прогрессия не повторяется; пустые оценка/заметка дозаполняются). null —
+ * сессия всё ещё активна: это настоящий отказ, локальную очередь не трогаем.
+ */
+export async function completeIfFinishedElsewhere(
+  initDataRaw: string,
+  local: LocalLiveSession,
+  failure: SyncFailure,
+): Promise<LiveSessionCompleteResponse | null> {
+  if (local.completeRequested === null || failure.status !== 404) {
+    return null;
+  }
+  const active = await fetchActiveLiveSession(initDataRaw);
+  if (!isFinishedElsewhere(failure, active?.id ?? null, local.serverSessionId)) {
+    return null;
+  }
+  return completeLiveSession(initDataRaw, local.serverSessionId, local.completeRequested.abandoned, {
+    effort: local.completeRequested.effort ?? null,
+    comment: local.completeRequested.comment ?? null,
+  });
+}
+
+/**
+ * #287: завершение, оставленное в очереди при уходе с Live-экрана (Back/«Выйти»), досылается и без
+ * него — App зовёт это по событию `online`, пока экран тренировки не открыт; Live-экран — перед тем,
+ * как заменить снимок ДРУГОЙ сессии своим. Флаш тот же (flushLocalSession), 404 при уже не активной
+ * сессии — успех (completeIfFinishedElsewhere). Снимок очищается, только если за время досылки его
+ * не заменили. true — досылать нечего или дослано; false — осталось в очереди (нет сети/отказ).
+ */
+export async function drainQueuedFinish(initDataRaw: string): Promise<boolean> {
+  const queued = await loadLocalSession();
+  if (queued === null || queued.completeRequested === null) {
+    return true;
+  }
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return false;
+  }
+  try {
+    await flushLocalSession(initDataRaw, queued);
+  } catch (error) {
+    try {
+      if ((await completeIfFinishedElsewhere(initDataRaw, queued, classifySyncError(error))) === null) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  const current = await loadLocalSession();
+  if (current !== null && current.clientSessionId === queued.clientSessionId && current.serverSessionId === queued.serverSessionId) {
+    await clearLocalSession();
+  }
+  return true;
 }

@@ -90,7 +90,8 @@ async function apiV2Post<TBody, TResult>(path: string, initDataRaw: string, body
   });
   if (!response.ok) {
     const message = await extractErrorMessage("POST", path, response);
-    throw new Error(message);
+    // status — классификация ошибок досылки живой сессии (liveFinish.ts, #287).
+    throw Object.assign(new Error(message), { status: response.status });
   }
   return (await response.json()) as TResult;
 }
