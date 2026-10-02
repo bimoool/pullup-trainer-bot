@@ -33,6 +33,8 @@ type Props = {
   /** Открыть сразу Workout Detail этой тренировки (из Журнала, #281); «назад» возвращает в Журнал. */
   initialWorkoutId?: number | null;
   onInitialWorkoutShown?: () => void;
+  /** false — деталь открыта возвратом из «Записать» (#277): «назад» остаётся на Главной, не в Журнал. */
+  initialWorkoutFromJournal?: boolean;
   onExitInitialWorkout?: () => void;
 };
 
@@ -67,7 +69,7 @@ type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { p
  */
 export function HomeScreen({
   initDataRaw, onOpenPlans, onOpenJournalLog, onStartWorkout, onLogWorkout,
-  initialWorkoutId = null, onInitialWorkoutShown, onExitInitialWorkout,
+  initialWorkoutId = null, onInitialWorkoutShown, initialWorkoutFromJournal = true, onExitInitialWorkout,
 }: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
   const [addState, setAddState] = useState<AddState>({ phase: "idle" });
@@ -81,7 +83,7 @@ export function HomeScreen({
     initialWorkoutId !== null ? { kind: "detail", workoutId: initialWorkoutId } : { kind: "closed" },
   );
   // Пришли из Журнала: первое закрытие Workout Detail возвращает туда, а не на Главную.
-  const exitToJournal = useRef(initialWorkoutId !== null);
+  const exitToJournal = useRef(initialWorkoutId !== null && initialWorkoutFromJournal);
   useEffect(() => {
     if (initialWorkoutId !== null) {
       onInitialWorkoutShown?.();

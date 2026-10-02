@@ -627,6 +627,17 @@ class TrainingSessionRepository:
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
+    async def count_completed(self, user_id: int, *, exclude_backfilled: bool = False) -> int:
+        """Число завершённых сессий пользователя (сводка Профиля, #277). exclude_backfilled (#284) —
+        без копий, созданных backfill-ом (их историю считает legacy Workout)."""
+        query = select(func.count()).select_from(TrainingSession).where(
+            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
+        )
+        if exclude_backfilled:
+            query = query.where(~self._backfilled_fingerprint())
+        result = await self._session.execute(query)
+        return int(result.scalar_one())
+
     @staticmethod
     def _backfilled_fingerprint() -> ColumnElement[bool]:
         """Отпечаток v2-сессии, созданной backfill-ом legacy Workout (#163/#284): то, чем она отличается

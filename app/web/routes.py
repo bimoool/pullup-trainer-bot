@@ -30,6 +30,7 @@ from app.db.repositories.body_metrics import BodyMetricRepository, LastBodyMetri
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.leaderboard import LeaderboardRepository
+from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
@@ -451,9 +452,19 @@ async def get_profile(
         return ProfileResponse(is_onboarded=False)
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
+    # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2). Legacy
+    # Workout — источник правды для перенесённой истории (#284), поэтому v2-копии backfill-а (отпечаток
+    # TrainingSessionRepository._backfilled_fingerprint) не считаются — иначе мигрированный пользователь
+    # посчитан дважды. Display-only: готовность/прогрессия по-прежнему по legacy.
     history = await WorkoutRepository(session).list_for_user(user.id)
+    sessions_repo = TrainingSessionRepository(session)
+    workouts_count = len(history) + await sessions_repo.count_completed(user.id, exclude_backfilled=True)
+    last_moments = [record.performed_at for record in history]
+    latest_session = await sessions_repo.latest_completed_performed_at(user.id, exclude_backfilled=True)
+    if latest_session is not None:
+        last_moments.append(latest_session)
     days_since_last_workout = (
-        (datetime.now(UTC).date() - history[-1].performed_at.date()).days if history else None
+        (datetime.now(UTC).date() - max(last_moments).date()).days if last_moments else None
     )
 
     # Список ачивок с датами (issue #66, п.1) — тот же ACHIEVEMENT_LABELS,
@@ -477,7 +488,7 @@ async def get_profile(
         coins_balance=user.coins_balance,
         achievements_count=len(achievements),
         achievements=achievement_items,
-        workouts_count=len(history),
+        workouts_count=workouts_count,
         days_since_last_workout=days_since_last_workout,
         weight_kg=user.weight_kg,
         height_cm=user.height_cm,

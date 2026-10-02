@@ -120,6 +120,12 @@ export function App() {
   const [journalLogWorkoutId, setJournalLogWorkoutId] = useState<number | null>(null);
   // «Открыть тренировку» из Журнала (#281): Главная открывается сразу на Workout Detail.
   const [homeWorkoutId, setHomeWorkoutId] = useState<number | null>(null);
+  // Откуда открыли «Записать» (#277, D1): «← Назад» из формы возвращает на Workout Detail
+  // той вкладки («Главная» / «Планы»), а не в Журнал. После сохранения остаёмся в Журнале.
+  const [logOrigin, setLogOrigin] = useState<{ tab: "home" | "plans"; workoutId: number } | null>(null);
+  // Из «Записать» вернулись на Workout Detail: его «назад» ведёт на саму вкладку, не в Журнал.
+  const [homeWorkoutFromLog, setHomeWorkoutFromLog] = useState(false);
+  const [plansWorkoutId, setPlansWorkoutId] = useState<number | null>(null);
   // Откуда ушли в «Открыть тренировку»: Back возвращает в тот же месяц Журнала с той же записью.
   const [journalRestore, setJournalRestore] = useState<JournalRestore | null>(null);
   // Живая тренировка (issue #59) держит несохранённый ввод только во
@@ -329,10 +335,25 @@ export function App() {
   const isOnboarded = state.data.onboarding_step === "done";
   const startWorkout = (workoutId: number, title: string) => setV2Session({ workoutId, title });
   const logWorkout = (workoutId: number) => {
+    setLogOrigin(tab === "home" || tab === "plans" ? { tab, workoutId } : null);
     setJournalRestore(null);
     setJournalLogWorkoutId(workoutId);
     setJournalLogRequest((value) => value + 1);
     setTab("journal");
+  };
+
+  const backFromLogToWorkout = () => {
+    if (logOrigin === null) {
+      return;
+    }
+    if (logOrigin.tab === "home") {
+      setHomeWorkoutFromLog(true);
+      setHomeWorkoutId(logOrigin.workoutId);
+    } else {
+      setPlansWorkoutId(logOrigin.workoutId);
+    }
+    setLogOrigin(null);
+    setTab(logOrigin.tab);
   };
 
   // Экспериментальная вкладка новой схемы видна только тестировщикам
@@ -361,7 +382,8 @@ export function App() {
           onStartWorkout={startWorkout}
           onLogWorkout={logWorkout}
           initialWorkoutId={homeWorkoutId}
-          onInitialWorkoutShown={() => setHomeWorkoutId(null)}
+          onInitialWorkoutShown={() => { setHomeWorkoutId(null); setHomeWorkoutFromLog(false); }}
+          initialWorkoutFromJournal={!homeWorkoutFromLog}
           onExitInitialWorkout={() => setTab("journal")}
         />
       )}
@@ -371,6 +393,9 @@ export function App() {
           onStartSession={(planItemIds, options) => setV2Session({ planItemIds, ...options })}
           onStartWorkout={startWorkout}
           onLogWorkout={logWorkout}
+          initialWorkoutId={plansWorkoutId}
+          onInitialWorkoutShown={() => setPlansWorkoutId(null)}
+          onOpenHome={() => setTab("home")}
         />
       )}
       {isOnboarded && tab === "workout" && (
@@ -381,7 +406,7 @@ export function App() {
           onOpenWarmup={() => setTab("warmup")}
         />
       )}
-      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} restore={journalRestore} onOpenWorkout={(workoutId, restore) => { setJournalRestore(restore); setHomeWorkoutId(workoutId); setTab("home"); }} />}
+      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} restore={journalRestore} onLogBack={logOrigin !== null ? backFromLogToWorkout : undefined} onOpenWorkout={(workoutId, restore) => { setJournalRestore(restore); setHomeWorkoutId(workoutId); setTab("home"); }} />}
       {isOnboarded && tab === "analytics" && <AnalyticsScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "profile" && (
         <ProfileScreen
