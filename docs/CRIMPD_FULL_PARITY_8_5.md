@@ -82,10 +82,10 @@ any merge into `develop/current`.
 | Add template/workout to plan | P7, W5 | program-inclusions, plan-items | DONE | — | — | — | golden-journey.spec.ts, plans-add-exercise.spec.ts |
 | Week stepper with phase chip and dates | P9 | one-week view with ‹ Неделя N · даты › + phase chip | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», planWeekNav.test.ts |
 | Per-row done counters «0/1», week progress | P3, P9–P10 | `done_count` in GET /api/v2/plan (derived, no column); «N из M» header | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week», tests/test_web/test_v2_plan_done_counts.py |
-| Schedule future weeks | P9 «Schedule» (unobserved beyond label) | current week only | MISSING | — | up to 4 weeks ahead | #275 | — |
-| Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items) | PARTIAL | no move across weeks | move across weeks | #275 | plans-plan-week.spec.ts |
+| Schedule future weeks | P9 «Schedule» (unobserved beyond label) | › creates up to 4 future weeks (`POST /plan/weeks`); add / move / remove manual items there; program items stay program-logic only | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py; planWeekNav.test.ts |
+| Flexible rescheduling (move day) | RM §4 | MovePlanItemScreen (manual items): day + week picker (`PATCH /plan-items` `plan_week_id`) | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py |
 | Completed / skipped state | P10 | counters «сделано/план»; past weeks read-only, unfinished stays as is | DONE | — | — | #258 | crimpd-parity.spec.ts «Plans week» |
-| Clone plan incl. schedule | P11 (menu label only) | none | MISSING | — | copy week schedule → next week (one-plan model) | #275 | — |
+| Clone plan incl. schedule | P11 (menu label only) | «Скопировать неделю → на следующую» (confirmation; manual items only, duplicates skipped; `POST /plan/weeks/{id}/copy-to-next`) | DONE | — | — | #275 | parity/plans-schedule.spec.ts «Plans schedule»; tests/test_web/test_v2_plan_schedule.py |
 | Edit plan / change start date / delete plan | P11 | «Убрать курс из плана» (confirmation, is_active=false, history kept → «Завершённые») | DOMAIN-EQUIVALENT | single open-ended plan; start-date change out of scope | — | #266 | parity/plans-overview.spec.ts «Plans overview»; test_v2_plan_overview.py |
 | Crimpd+ upsell on plans | P1 | our subscription (Robokassa) elsewhere | DOMAIN-EQUIVALENT | our own paywall model | — | — | — |
 

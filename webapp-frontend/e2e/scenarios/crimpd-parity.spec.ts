@@ -536,11 +536,11 @@ for (const width of WIDTHS) {
       const prev = page.getByRole("button", { name: "Предыдущая неделя" });
       const next = page.getByRole("button", { name: "Следующая неделя" });
 
-      // По умолчанию — текущая неделя, ровно одна, › остановлен (будущих недель нет).
+      // По умолчанию — текущая неделя, ровно одна; › доступна (#275: создаёт будущую неделю).
       await expect(label).toHaveCount(1);
       await expect(label).toContainText(/Неделя \d+ · \d{1,2} \S+ – \d{1,2} \S+/);
       await expect(page.getByTestId("plan-week-stepper")).toContainText("База");
-      await expect(next).toBeDisabled();
+      await expect(next).toBeEnabled();
       await expect(prev).toBeEnabled();
       await expect(progress).toContainText("Текущая неделя · 1 из 3");
       await expect(counters).toHaveText(["1/2", "0/1"]);
@@ -565,7 +565,7 @@ for (const width of WIDTHS) {
       // › возвращает на текущую.
       await next.click();
       await expect(label).toHaveText(currentLabel ?? "");
-      await expect(next).toBeDisabled();
+      await expect(next).toBeEnabled();
 
       expect(consoleErrors).toEqual([]);
       expect(apiFailures).toEqual([]);

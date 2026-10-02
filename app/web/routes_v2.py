@@ -45,7 +45,14 @@ from app.domain.journal_calendar import (
     month_date_range,
     parse_month,
 )
-from app.domain.multi_program import MetricType, SessionSource, WeekPhase, count_done_per_plan_item
+from app.domain.multi_program import (
+    MetricType,
+    SessionSource,
+    WeekPhase,
+    count_done_per_plan_item,
+    is_plannable_week_number,
+    plan_week_number,
+)
 from app.domain.program_schedule import (
     block_role_title,
     block_target_label,
@@ -86,6 +93,8 @@ from app.web.schemas_v2 import (
     PlanItemMoveRequest,
     PlanItemResponse,
     PlanResponse,
+    PlanWeekCopyResponse,
+    PlanWeekCreateRequest,
     PlanWeekResponse,
     ProgramInclusionCreateRequest,
     ProgramInclusionResponse,
@@ -867,6 +876,51 @@ async def deactivate_program_inclusion(
 # --- Строки недельной матрицы -----------------------------------------------------------
 
 
+@router_v2.post("/plan/weeks", response_model=PlanWeekResponse)
+async def create_plan_week(
+    body: PlanWeekCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> PlanWeekResponse:
+    """issue #275 — идемпотентно создаёт неделю плана вперёд (текущая .. +4).
+    Вне окна — 422. Программные PlanItem сюда не материализуются."""
+    user = await _require_user(session, init_data)
+    plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
+    week = await PlanWeekService(session).ensure_plannable_week(
+        training_plan_id=plan.id, week_number=body.week_number, today=datetime.now(UTC).date(),
+    )
+    if week is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
+    await session.commit()
+    return _plan_week_response(week)
+
+
+@router_v2.post("/plan/weeks/{plan_week_id}/copy-to-next", response_model=PlanWeekCopyResponse)
+async def copy_plan_week_to_next(
+    plan_week_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> PlanWeekCopyResponse:
+    """issue #275 — копирует ручные PlanItem недели в следующую (дубликаты
+    пропускаются, программные строки не копируются). Чужая неделя — 404;
+    следующая неделя вне окна планирования — 422."""
+    user = await _require_user(session, init_data)
+    plans = TrainingPlanRepository(session)
+    source = await plans.get_plan_week_for_user(plan_week_id, user.id)
+    if source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanWeek not found")
+    service = PlanWeekService(session)
+    target = await service.ensure_plannable_week(
+        training_plan_id=source.training_plan_id, week_number=source.week_number + 1,
+        today=datetime.now(UTC).date(),
+    )
+    if target is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
+    copied, skipped = await service.copy_manual_items(source=source, target=target)
+    await session.commit()
+    return PlanWeekCopyResponse(target_week=_plan_week_response(target), copied=copied, skipped=skipped)
+
+
 @router_v2.get("/plan-items", response_model=PlanItemListResponse)
 async def list_plan_items(
     program_inclusion_id: int | None = Query(default=None),
@@ -949,7 +1003,25 @@ async def move_plan_item(
     проекта)."""
     user = await _require_user(session, init_data)
     plans = TrainingPlanRepository(session)
-    item = await plans.update_mutable_plan_item_day(plan_item_id, user.id, body.day_of_week)
+    if body.plan_week_id is not None:
+        # issue #275 — перенос между неделями: целевая неделя своя и в окне
+        # «текущая .. +4»; ручной item из прошлой недели не двигаем.
+        plan = await plans.get_for_user(user.id)
+        target = await plans.get_plan_week_for_user(body.plan_week_id, user.id)
+        current = await plans.get_plan_item_for_user(plan_item_id, user.id)
+        if plan is None or target is None or current is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
+        current_number = plan_week_number(plan.created_at.date(), datetime.now(UTC).date())
+        source = (
+            await plans.get_plan_week_for_user(current.plan_week_id, user.id) if current.plan_week_id else None
+        )
+        if not is_plannable_week_number(target.week_number, current_number) or (
+            source is not None and source.week_number < current_number
+        ):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
+    item = await plans.update_mutable_plan_item_day(
+        plan_item_id, user.id, body.day_of_week, plan_week_id=body.plan_week_id,
+    )
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
     return _plan_item_response(item)
