@@ -1279,6 +1279,30 @@ async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_sweep_defects(session: AsyncSession, telegram_id: int) -> None:
+    """#277 «Sweep defects»: golden_journey (своя Workout «Золотая тренировка», план без курсов — D3,
+    Журнал пуст — D1) + две завершённые v2-сессии (2 и 5 дней назад) и НИ ОДНОЙ legacy-тренировки (D2:
+    Профиль должен учесть Журнал v2, а не показать «Тренировок пока не было.»)."""
+    await seed_golden_journey(session, telegram_id)
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    exercise = (await session.execute(
+        select(Exercise).where(Exercise.owner_user_id == user.id, Exercise.name == "Подтягивания"),
+    )).scalar_one()
+    repo = TrainingSessionRepository(session)
+    now = datetime.now(UTC)
+    for days_ago in (2, 5):
+        at = now - timedelta(days=days_ago)
+        await repo.create_session(
+            user_id=user.id, source=SessionSource.BACKDATED, performed_at=at, effort=None, comment=None,
+            completed_at=at,
+            blocks=[SessionBlockInput(exercise_id=exercise.id, sets=[
+                SetLogInput(set_number=n, metric_type=MetricType.REPS, value=Decimal(value), unit="reps")
+                for n, value in enumerate((8, 7), start=1)
+            ])],
+        )
+    await session.flush()
+
+
 async def seed_session_recovery(session: AsyncSession, telegram_id: int) -> None:
     """Восстановление активной сессии (issue #246): одна своя Workout, reps
     3 x 8 с отдыхом 60 с — достаточно длинный, чтобы фон/перезагрузка
@@ -1509,6 +1533,7 @@ async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
 
 
 SCENARIOS = {
+    "sweep_defects": seed_sweep_defects,
     "journal_dedupe": seed_journal_dedupe,
     "collections": seed_collections_scenario,
     "owner_optional_workout": seed_owner_optional_workout,

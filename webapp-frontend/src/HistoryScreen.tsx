@@ -16,6 +16,8 @@ type Props = {
   logRequest?: number;
   /** С какой тренировкой открыть форму записи (Workout Detail «Записать»). */
   logWorkoutId?: number | null;
+  /** «← Назад» из формы, открытой с Workout Detail: вернуться на деталь (#277, D1). */
+  onLogBack?: () => void;
   /** «Открыть тренировку» из записи Журнала (#281) — Workout Detail на вкладке «Главная». */
   onOpenWorkout?: (workoutId: number) => void;
 };
@@ -35,12 +37,14 @@ function formatDate(isoDate: string): string {
   return `${day}.${month}.${year}`;
 }
 
-export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null, onOpenWorkout }: Props) {
+export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null, onLogBack, onOpenWorkout }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // «+ Записать» (#263): шторка выбора и затем одна из двух форм.
   const [logSheetOpen, setLogSheetOpen] = useState(logRequest > 0 && logWorkoutId === null);
   // Записать с Workout Detail — сразу форма «Тренировка из моих» с выбранной тренировкой.
   const [logForm, setLogForm] = useState<LogKind | null>(logWorkoutId !== null ? "workout" : null);
+  // Форма открыта с Workout Detail (только пока не сохранили): «← Назад» ведёт обратно на деталь.
+  const [logFromDetail, setLogFromDetail] = useState(logWorkoutId !== null);
   const [editingWorkoutId, setEditingWorkoutId] = useState<number | null>(null);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -140,10 +144,17 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
     const FormComponent = logForm === "workout" ? BackdatedWorkoutForm : FreeActivityForm;
     return (
       <FormComponent
-        {...(logForm === "workout" && logWorkoutId !== null ? { initialWorkoutId: logWorkoutId } : {})}
+        {...(logForm === "workout" && logWorkoutId !== null && logFromDetail ? { initialWorkoutId: logWorkoutId } : {})}
         initDataRaw={initDataRaw}
-        onBack={() => setLogForm(null)}
+        onBack={() => {
+          if (logFromDetail && onLogBack !== undefined) {
+            onLogBack();
+            return;
+          }
+          setLogForm(null);
+        }}
         onSaved={(date) => {
+          setLogFromDetail(false);
           setLogForm(null);
           journal.reloadAfterLog(date);
         }}

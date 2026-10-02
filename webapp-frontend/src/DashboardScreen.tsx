@@ -137,6 +137,11 @@ type Props = {
   /** Workout Detail «Начать» / «Записать» (свободная сессия и запись задним числом). */
   onStartWorkout: (workoutId: number, workoutTitle: string) => void;
   onLogWorkout: (workoutId: number) => void;
+  /** Вернулись из «Записать» (#277): открыть сразу Workout Detail этой тренировки. */
+  initialWorkoutId?: number | null;
+  onInitialWorkoutShown?: () => void;
+  /** «Выбрать курс» в пустом плане (#277, D3) — на Главную, где каталог программ. */
+  onOpenHome?: () => void;
 };
 
 type ScreenState =
@@ -215,7 +220,7 @@ type PickerState =
  * где WorkoutScreen (тот же STATUS_MESSAGES) объясняет причину и предлагает
  * то, что реально доступно (факультатив/бэкдейт/бот) — Dashboard не
  * дублирует эту логику, только не начинает с неё. */
-export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, onLogWorkout }: Props) {
+export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, onLogWorkout, initialWorkoutId = null, onInitialWorkoutShown, onOpenHome }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Подключённые курсы + реальные PlanWeek (Capability A issue #188, недели
   // — issue #193) — минимальный видимый результат "Добавить в план" (10.2:
@@ -243,7 +248,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // Phase C4a (issue #188) — «Мои тренировки», локальный swap-state внутри
   // Планов, тот же принцип, что HomeScreen.tsx уже использует для
   // ProgramDetailScreen (selectedProgramId), не отдельный App.tsx Tab.
-  const [myWorkoutsView, setMyWorkoutsView] = useState<MyWorkoutsView>({ kind: "closed" });
+  const [myWorkoutsView, setMyWorkoutsView] = useState<MyWorkoutsView>(
+    initialWorkoutId !== null ? { kind: "detail", workoutId: initialWorkoutId } : { kind: "closed" },
+  );
+  useEffect(() => {
+    if (initialWorkoutId !== null) {
+      onInitialWorkoutShown?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при монтировании.
+  }, []);
   // Phase D3 (issue #188) — inline "Убрать из плана?" confirm на карточке,
   // тот же паттерн, что WorkoutEditorScreen.tsx уже использует для
   // удаления item'а (deleteConfirmItemId).
@@ -608,9 +621,16 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         <div className="profile-card" data-testid="plans-now-card">
           <p className="block-subtitle">Текущий план</p>
           {activeInclusions.length === 0 && (
-            <p className="block-subtitle" data-testid="plans-now-empty">
-              Курсов в плане нет. Добавьте курс на Главной.
-            </p>
+            <>
+              <p className="block-subtitle" data-testid="plans-now-empty">
+                Курсов в плане нет. Добавьте курс на Главной.
+              </p>
+              {onOpenHome !== undefined && (
+                <Button size="s" mode="outline" data-testid="plans-now-open-home" onClick={onOpenHome}>
+                  Выбрать курс на Главной
+                </Button>
+              )}
+            </>
           )}
           {activeInclusions.map((inclusion) => {
             const currentItems = plan.items.filter(
