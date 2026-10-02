@@ -51,3 +51,28 @@ class AssessmentsListResponse(BaseModel):
 class AssessmentDetailResponse(BaseModel):
     protocol: AssessmentProtocolResponse
     results: list[AssessmentResultResponse]  # новые первыми
+
+
+class PeerCohortResponse(BaseModel):
+    level: str  # gender_age | gender | all
+    label: str  # «Мужчины 30–39 лет» / «Женщины» / «Все пользователи»
+    size_bucket: str  # «20–49» / «50–99» / «100+» — грубо, не точное число
+
+
+class PeerNextTargetResponse(BaseModel):
+    percentile: int
+    value: str
+
+
+class PeerInsightsResponse(BaseModel):
+    """Peer Insights (#276): только агрегаты. status: ok | insufficient | no_result; числовые
+    поля заполнены только при ok, чужих id и значений в ответе нет."""
+
+    status: str
+    min_cohort_size: int
+    unit: str
+    own_value: str | None = None
+    cohort: PeerCohortResponse | None = None
+    percentile: int | None = None  # доля когорты, которую обходит ваш результат (1..99)
+    median: str | None = None
+    next_target: PeerNextTargetResponse | None = None
