@@ -1,13 +1,17 @@
 import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
-import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
+import {
+  backLiveSessionPhase, fetchActiveLiveSession, startLiveBlock,
+  type LiveSessionCompleteResponse, type LiveSessionResponse,
+} from "./apiV2";
 import { BlockTransition } from "./BlockTransition";
 import {
   describeBlockPlan, formatDuration, formatLoggedSetSummary, formatNumber, formatTarget, resultInputLabel,
 } from "./blockFormat";
 import {
   blockSetCounts,
+  canGoBackLocal,
   canPauseLocal,
   clearLocalSession,
   clearPauseState,
@@ -28,6 +32,7 @@ import {
   localPhaseEndsAtMs,
   nextLocalPhase,
   rebaseLocalSession,
+  recordedPlanSet,
   saveLocalSession,
   type LocalLiveSession,
   type LocalPhaseName,
@@ -121,6 +126,8 @@ export function SessionLiveScreen({
   const [extraValue, setExtraValue] = useState("");
   const [startingBlock, setStartingBlock] = useState(false);
   const [startBlockError, setStartBlockError] = useState<string | null>(null);
+  // #292: ошибка шага «Предыдущий подход» (сеть/сервер) — кнопка остаётся, можно повторить.
+  const [backError, setBackError] = useState<string | null>(null);
   // Двойной тап (issue #187, баг 2): быстрый повторный клик по "Готов"/
   // "Готово"/"Завершить" реально шлёт второй запрос до перерисовки кнопки —
   // ref, а не state, чтобы не ждать лишнего рендера между кликами. Хук
@@ -399,8 +406,16 @@ export function SessionLiveScreen({
   const formTarget = local?.server.blocks[formBlockIndex]?.targets[formSetNumber - 1] ?? null;
   useEffect(() => {
     // #265: на отдыхе форма — правка только что записанного подхода.
-    const last = formPhaseName === "rest" ? localRef.current?.lastLogged ?? null : null;
-    if (last) {
+    const cur = localRef.current;
+    const last = formPhaseName === "rest" ? cur?.lastLogged ?? null : null;
+    // #292: «назад» переоткрыл подход (go) — форма предзаполнена записанным значением; «Готово»
+    // перезапишет ту же строку (set_index), ничего не теряется.
+    const reopened = formPhaseName === "go" && cur ? recordedPlanSet(cur, formBlockIndex, formSetNumber) : null;
+    if (reopened) {
+      setValue(reopened.value);
+      setEffort(reopened.effort);
+      setNote(reopened.note ?? "");
+    } else if (last) {
       setValue(last.value);
       setEffort(last.effort ?? null);
       setNote(last.note ?? "");
@@ -591,21 +606,67 @@ export function SessionLiveScreen({
         return;
       }
       const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
+      // #292: подход уже записан (после «назад») — тот же set_index перезапишет строку, новый не берём.
+      const recorded = recordedPlanSet(local, local.localPhase.blockIndex, local.localPhase.setNumber);
       const logged = {
-        setIndex: local.nextSetIndex, blockIndex: local.localPhase.blockIndex, exerciseId: block.exercise_id,
-        value: value.trim(), effort, note: note.trim() || null,
+        setIndex: recorded?.setIndex ?? local.nextSetIndex, blockIndex: local.localPhase.blockIndex,
+        exerciseId: block.exercise_id, value: value.trim(), effort, note: note.trim() || null,
       };
       await commitLocal({
         ...clearPauseState(local),
-        pendingSets: [...local.pendingSets, logged],
+        pendingSets: [...local.pendingSets.filter((entry) => entry.setIndex !== logged.setIndex), logged],
         lastLogged: newPhase.phaseName === "rest" ? logged : null,
-        nextSetIndex: local.nextSetIndex + 1,
+        nextSetIndex: recorded ? local.nextSetIndex : local.nextSetIndex + 1,
         localPhase: newPhase,
         localPhaseEnteredAt: new Date().toISOString(),
         pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
       });
       // Форму сбрасывает эффект смены фазы (на отдыхе он подставляет только что
       // записанный подход): сброс здесь, после await, затирал бы его.
+    });
+  }
+
+  // #292 «Предыдущий подход»: только онлайн и при пустой очереди (canGoBackLocal) — сервер двигает фазу
+  // на go предыдущего подхода (SetLog не трогает), ответ целиком заменяет локальный снимок.
+  function goBack() {
+    void guardedAction(async () => {
+      const current = localRef.current ?? local;
+      if (current === null || !canGoBackLocal(current, navigator.onLine, syncInFlight.current !== null)) {
+        return;
+      }
+      setBackError(null);
+      try {
+        // Правка отдыха, ещё не сохранённая кнопкой, не теряется: сначала в очередь, затем досылка.
+        const edited = withRestEdit(current);
+        if (edited !== current) {
+          await commitLocal(edited);
+          await syncLocal();
+        }
+        const base = localRef.current ?? edited;
+        if (hasPendingWork(base)) {
+          throw new Error(navigator.onLine ? "Не удалось отправить подходы, попробуйте ещё раз" : "Нет сети");
+        }
+        let next: LiveSessionResponse | null;
+        try {
+          next = await backLiveSessionPhase(initDataRaw, base.serverSessionId, base.server.phase_index);
+        } catch (error) {
+          if ((error as { status?: number }).status !== 409) {
+            throw error;
+          }
+          // Устаревшая фаза/граница: перечитываем состояние сервера, без потери данных.
+          next = await fetchActiveLiveSession(initDataRaw);
+        }
+        if (next === null) {
+          return;
+        }
+        const fresh = initialLocalSession(base.clientSessionId, next);
+        await saveLocalSession(fresh);
+        setLocal(fresh);
+        setSyncFailure(null);
+        onSessionUpdate?.(next);
+      } catch (error) {
+        setBackError(error instanceof Error ? error.message : String(error));
+      }
     });
   }
 
@@ -770,6 +831,9 @@ export function SessionLiveScreen({
   const finish = finishStatus({ finishing, online: isOnline, syncing, failure: syncFailure });
   const showTransport = !reviewOpen && !extraOpen && phaseName !== "between" && !finishing;
   const canPause = canPauseLocal(local) || paused;
+  // #292: шаг назад показан на всех фазах плеера; недоступен (disabled) офлайн, при очереди и на границе блока.
+  const showSetNav = block !== null || phaseName === "done";
+  const canBack = canGoBackLocal(local, isOnline, syncing);
 
   return (
     <div
@@ -996,8 +1060,19 @@ export function SessionLiveScreen({
               Завершить
             </Button>
           )}
-          {(canPause || extraIndex !== null) && (
+          {(canPause || extraIndex !== null || showSetNav) && (
             <div className="live-secondary-row">
+              {showSetNav && (
+                <Button
+                  className="live-secondary live-set-nav" size="m" mode="bezeled" data-testid="set-prev"
+                  aria-label="Предыдущий подход" disabled={!canBack} onClick={goBack}
+                  title={canBack ? undefined : isOnline ? "Нет предыдущего подхода или идёт синхронизация" : "Нужна сеть"}
+                >
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+                    <path d="M7 5v14M18 6l-8 6 8 6V6z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </Button>
+              )}
               {canPause && (
                 <Button
                   className="live-secondary" size="m" stretched mode="bezeled" data-testid="pause-toggle"
@@ -1017,6 +1092,10 @@ export function SessionLiveScreen({
             </div>
           )}
         </div>
+      )}
+
+      {backError !== null && showTransport && (
+        <p className="live-hint" role="alert" data-testid="set-prev-error">{backError}</p>
       )}
 
       {reviewOpen && (

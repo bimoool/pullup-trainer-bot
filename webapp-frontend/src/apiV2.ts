@@ -377,6 +377,8 @@ export interface SetLogResponseV2 {
   effort: string | null;
   note: string | null;
   is_extra?: boolean;
+  /** #292: ключ перезаписи переоткрытого («назад») подхода живой сессии. */
+  set_index?: number | null;
 }
 
 export interface LiveSetTargetResponse {
@@ -520,6 +522,17 @@ export async function advanceLiveSessionPhase(
   expectedPhaseIndex: number,
 ): Promise<LiveSessionResponse> {
   return apiV2Post(`/api/v2/sessions/live/${sessionId}/phase/next`, initDataRaw, {
+    expected_phase_index: expectedPhaseIndex,
+  });
+}
+
+/** #292 «Предыдущий подход». 409 (error.status) — нет предыдущего подхода / устаревшая фаза / сессия не активна. */
+export async function backLiveSessionPhase(
+  initDataRaw: string,
+  sessionId: number,
+  expectedPhaseIndex: number,
+): Promise<LiveSessionResponse> {
+  return apiV2Post(`/api/v2/sessions/live/${sessionId}/phase/back`, initDataRaw, {
     expected_phase_index: expectedPhaseIndex,
   });
 }
