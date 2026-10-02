@@ -45,7 +45,7 @@ export function JournalEntrySheet({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  useBackButton(() => closeRef.current(), []);
+  useBackButton(() => closeRef.current(), [], true, false);
 
   // Во время удаления кнопки disabled → браузер роняет фокус на body; возвращаем его на шторку.
   useEffect(() => {

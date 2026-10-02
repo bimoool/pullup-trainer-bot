@@ -87,13 +87,6 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
 
   useBackButton(onBack, [onBack]);
 
-  // Как в эталоне, на деталях нижней навигации нет: «назад» — кнопка в шапке и Telegram BackButton.
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add("vp-nav-hidden");
-    return () => root.classList.remove("vp-nav-hidden");
-  }, []);
-
   if (detail.phase === "loading") {
     return <Spinner size="m" />;
   }

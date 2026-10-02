@@ -2,6 +2,7 @@ import { Button, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { listWorkouts, type WorkoutResponseV2 } from "./apiV2";
+import { BackChevron } from "./BackChevron";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -48,7 +49,10 @@ export function MyWorkoutsScreen({ initDataRaw, onBack, onCreateWorkout, onOpenW
 
   return (
     <div>
-      <p className="plan-title">Мои тренировки</p>
+      <div className="vs-screen-head">
+        <BackChevron onClick={onBack} />
+        <p className="plan-title">Мои тренировки</p>
+      </div>
 
       <Button className="action-button" size="l" stretched onClick={onCreateWorkout}>
         Создать тренировку

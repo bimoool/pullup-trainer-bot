@@ -469,7 +469,7 @@ const FLOWS: Flow[] = [
       const screens: [string, RegExp, Locator, Locator][] = [
         ["Изменить профиль", /Изменить$/, page.getByText("Изменить профиль", { exact: true }), byName(page, "Назад")],
         ["Подписка", /^Подписка/, page.getByText("Статус", { exact: true }), byName(page, "← Профиль")],
-        ["Ачивки", /Ачивок/, page.getByText("Ачивки", { exact: true }), byName(page, "← Назад")],
+        ["Ачивки", /Ачив(ок|ки|ка)/, page.getByText("Ачивки", { exact: true }), byName(page, "← Назад")],
         ["Как выбрать резину", /Как выбрать резину/, page.getByText("Тренироваться можно где угодно", { exact: false }), byName(page, "← Назад")],
         ["Мои резины", /Переименовать или удалить/, page.getByText("Мои резины", { exact: true }), byName(page, "← Назад")],
       ];

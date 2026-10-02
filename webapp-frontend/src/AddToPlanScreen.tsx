@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPlanItem, fetchPlan } from "./apiV2";
 import { DayPicker } from "./DayPicker";
 import { localToday, resolveCurrentWeekId } from "./planWeekNav";
+import { FormSheet } from "./FormSheet";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -104,7 +105,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
   }
 
   return (
-    <div>
+    <FormSheet title="Добавить в план" onClose={onBack}>
       <p className="plan-title">Добавить в план</p>
       <p className="block-subtitle">{workoutTitle}</p>
 
@@ -119,6 +120,6 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
       >
         {submitting ? <Spinner size="s" /> : "Добавить"}
       </Button>
-    </div>
+    </FormSheet>
   );
 }

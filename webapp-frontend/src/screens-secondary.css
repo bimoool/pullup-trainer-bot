@@ -874,9 +874,13 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  margin: 0 0 var(--vp-sp-2);
 }
 .collection-hero .plan-title {
-  margin: var(--vp-sp-1) 0;
+  margin: 0 0 var(--vp-sp-2);
+}
+.collection-hero [data-testid="collection-count"] {
+  margin: 0 0 var(--vp-sp-2);
 }
 .app-shell .collection-item-list .block-section {
   margin: 0;
@@ -1176,4 +1180,9 @@
 .settings-screen .settings-rows .settings-link-row:last-child,
 .settings-screen .settings-group > .settings-link-row:only-child {
   min-height: 52px;
+}
+@media (max-width: 360px) {
+  .test-card-badge { width: 32px; height: 32px; }
+  .test-card .test-card-text { overflow-wrap: break-word; }
+  .test-card-spark { width: 44px; height: 18px; margin-right: 0; }
 }

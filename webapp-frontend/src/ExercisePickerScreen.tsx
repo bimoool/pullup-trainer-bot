@@ -2,6 +2,7 @@ import { Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useMemo, useState } from "react";
 
 import { createExercise, type ExerciseResponseV2, fetchExercises } from "./apiV2";
+import { BackChevron } from "./BackChevron";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -73,7 +74,10 @@ export function ExercisePickerScreen({ initDataRaw, onBack, onSelect }: Props) {
 
   return (
     <div className="ux-form">
-      <h2 className="plan-title">Добавить упражнение</h2>
+      <div className="vs-screen-head">
+        <BackChevron onClick={onBack} />
+        <h2 className="plan-title">Добавить упражнение</h2>
+      </div>
       <p className="ux-helper">Выберите упражнение — на следующем шаге настроите подходы и отдых. Нет нужного? Введите название, и появится «Создать своё».</p>
 
       <input

@@ -427,7 +427,7 @@ export function HomeScreen({
             <span className="home-group-badge" aria-hidden="true">
               <CategoryGlyph category={row.category} index={rowIndex} size={18} />
             </span>
-            <p className="section-title" data-testid="program-category-title">{row.category}</p>
+            <p className="section-title" data-testid="program-category-title" title={row.category}>{row.category}</p>
             {row.category !== OTHER_CATEGORY && (
               <Button
                 className="home-group-all" size="s" mode="plain" data-testid="program-category-all"
