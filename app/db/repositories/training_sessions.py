@@ -620,6 +620,15 @@ class TrainingSessionRepository:
         )
         return list(result.scalars().all())
 
+    async def count_completed(self, user_id: int) -> int:
+        """Число завершённых сессий пользователя (сводка Профиля, #277)."""
+        result = await self._session.execute(
+            select(func.count()).select_from(TrainingSession).where(
+                TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
+            ),
+        )
+        return int(result.scalar_one())
+
     async def backfilled_session_keys(self, user_id: int) -> list[tuple[datetime, SessionSource]]:
         """(performed_at, source) завершённых сессий, созданных backfill-ом legacy Workout (#163) —
         для display-дедупликации Журнала (#282, app.domain.journal_dedupe).

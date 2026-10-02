@@ -81,7 +81,7 @@ from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
-from app.services.journal_dedupe import list_backfilled_duplicates
+from app.services.journal_dedupe import journal_workout_summary, list_backfilled_duplicates
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -452,9 +452,11 @@ async def get_profile(
         return ProfileResponse(is_onboarded=False)
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
-    history = await WorkoutRepository(session).list_for_user(user.id)
+    # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2),
+    # без двойного счёта перенесённых backfill-ом.
+    workouts_count, last_performed_at = await journal_workout_summary(session, user.id)
     days_since_last_workout = (
-        (datetime.now(UTC).date() - history[-1].performed_at.date()).days if history else None
+        (datetime.now(UTC).date() - last_performed_at.date()).days if last_performed_at is not None else None
     )
 
     # Список ачивок с датами (issue #66, п.1) — тот же ACHIEVEMENT_LABELS,
@@ -478,7 +480,7 @@ async def get_profile(
         coins_balance=user.coins_balance,
         achievements_count=len(achievements),
         achievements=achievement_items,
-        workouts_count=len(history),
+        workouts_count=workouts_count,
         days_since_last_workout=days_since_last_workout,
         weight_kg=user.weight_kg,
         height_cm=user.height_cm,
