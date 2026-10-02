@@ -1,5 +1,4 @@
 import { retrieveLaunchParams } from "@telegram-apps/sdk";
-import { Tabbar } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
@@ -17,6 +16,7 @@ import { SessionV2Lab } from "./SessionV2Lab";
 import { SubscriptionScreen } from "./SubscriptionScreen";
 import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
+import { NavIcon } from "./NavIcon";
 
 type LoadState =
   | { status: "loading" }
@@ -388,21 +388,24 @@ export function App() {
       )}
 
       {isOnboarded && (
-        // issue #203 (integration review, H1) — library Tabbar рендерит
-        // только content-hashed классы (tgui-<hash>, проверено по факту в
-        // node_modules/@telegram-apps/telegram-ui/dist/components/Layout/
-        // Tabbar/Tabbar.js) — [class*="abbar"] из исходного H1B-фикса не
-        // совпадал ни с чем (буквы "abbar" там физически нет). Tabbar
-        // поддерживает className как реальный, документированный проп
-        // (Tabbar.js: classNames(..., className)) — используем его вместо
-        // угадывания по хэшу библиотеки.
-        <Tabbar className="bottom-tabbar">
-          {navTabs.map(({ key, icon, label }) => (
-            <Tabbar.Item key={key} text={label} selected={tab === key} onClick={() => handleTabClick(key)}>
-              <span className="bottom-nav-icon">{icon}</span>
-            </Tabbar.Item>
+        // Нижняя навигация (#280): собственный <nav> вместо Tabbar из tgui — иконка-контур
+        // + подпись, активная вкладка акцентным цветом, safe-area снизу (shell.css).
+        // Контракт для e2e: контейнер .bottom-tabbar, внутри <button> с подписью-<span>
+        // прямым потомком; aria-current="page" у активной вкладки.
+        <nav className="bottom-tabbar" aria-label="Основная навигация">
+          {navTabs.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              className={tab === key ? "bottom-tabbar-item bottom-tabbar-item-active" : "bottom-tabbar-item"}
+              aria-current={tab === key ? "page" : undefined}
+              onClick={() => handleTabClick(key)}
+            >
+              <NavIcon name={key} active={tab === key} />
+              <span>{label}</span>
+            </button>
           ))}
-        </Tabbar>
+        </nav>
       )}
     </div>
   );

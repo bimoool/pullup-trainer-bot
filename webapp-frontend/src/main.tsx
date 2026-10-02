@@ -10,6 +10,7 @@ import { OfflineQueryProvider } from "./OfflineQueryProvider";
 import { getDisplayPrefs, subscribeDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
 import { PALETTES, resolveAppearance, THEME_VARS, type ThemePref } from "./theme";
 import "./index.css";
+import "./shell.css";
 
 // issue #34: window.Telegram.WebApp — тот же мост, что App.tsx уже использует
 // как надёжный запасной источник initData (issue #23) — читаем напрямую, не
@@ -94,8 +95,26 @@ function applyThemePref(pref: ThemePref) {
     root.setProperty(`--tg-theme-${name}`, PALETTES[pref][name]);
   }
 }
+// Схема для shell.css (#280): тёмная палитра — фон страницы = bg, карточки = secondary;
+// светлая — серый фон страницы, белые карточки. Определяем по яркости bg, а не по имени темы,
+// чтобы работало и с произвольными themeParams клиента.
+function applySchemeAttribute() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--tg-bg-color").trim();
+  const match = /^#([0-9a-f]{6})$/i.exec(raw);
+  let dark = false;
+  if (match) {
+    const n = parseInt(match[1], 16);
+    const luminance = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    dark = luminance < 0.5;
+  }
+  document.documentElement.dataset.vpScheme = dark ? "dark" : "light";
+}
 applyThemePref(getDisplayPrefs().theme);
-subscribeDisplayPrefs(() => applyThemePref(getDisplayPrefs().theme));
+applySchemeAttribute();
+subscribeDisplayPrefs(() => {
+  applyThemePref(getDisplayPrefs().theme);
+  applySchemeAttribute();
+});
 
 // Официальное поле Telegram ('light'/'dark') — надёжнее, чем автоопределение
 // кита по prefers-color-scheme (см. getInitialAppearance в самом ките):

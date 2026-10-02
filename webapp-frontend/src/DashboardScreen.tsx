@@ -530,12 +530,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       {/* Phase C4a (issue #188) — entry point, не ломает существующую
           навигацию/карточки плана ниже, просто дополнительная кнопка
           сверху экрана. */}
-      <Button
-        className="action-button" size="m"
-        onClick={() => setMyWorkoutsView({ kind: "list" })}
-      >
-        Мои тренировки
-      </Button>
+      <div className="screen-title-row">
+        <p className="plan-title">Планы</p>
+        <Button
+          className="action-button" size="s" mode="bezeled"
+          onClick={() => setMyWorkoutsView({ kind: "list" })}
+        >
+          Мои тренировки
+        </Button>
+      </div>
       <div className="workout-mode-buttons" role="tablist" aria-label="Обзор плана">
         {([["now", "Сейчас"], ["completed", "Завершённые"]] as const).map(([key, label]) => (
           <button
