@@ -4,7 +4,9 @@ import { test } from "node:test";
 
 import { backButtonAction, nextTrapIndex } from "../src/liveDialog.ts";
 import { canReleaseFieldFocus, FIELD_BLUR_GRACE_MS, isTextEntryTarget } from "../src/liveFieldFocus.ts";
-import { isDarkBackground, readTelegramColorScheme } from "../src/theme.ts";
+import {
+  colorSchemeFromThemeParams, isDarkBackground, readTelegramColorScheme, themeParamsFromEvent, themeSignature,
+} from "../src/theme.ts";
 
 test("isTextEntryTarget: поля, открывающие клавиатуру", () => {
   assert.equal(isTextEntryTarget({ tagName: "INPUT", type: "number" }), true);
@@ -156,4 +158,31 @@ test("nextTrapIndex: Tab циклично, Shift+Tab назад, фокус на
   assert.equal(nextTrapIndex(4, -1, false), 0);
   assert.equal(nextTrapIndex(4, -1, true), 3);
   assert.equal(nextTrapIndex(1, 0, false), 0);
+});
+
+test("themeParamsFromEvent (#287 MED 4): theme_params из полезной нагрузки theme_changed шины SDK", () => {
+  assert.deepEqual(themeParamsFromEvent({ theme_params: { bg_color: "#17212b", text_color: "#f5f5f5", bad: 1 } }), {
+    bg_color: "#17212b", text_color: "#f5f5f5",
+  });
+  assert.deepEqual(themeParamsFromEvent({ theme_params: {} }), {});
+  assert.equal(themeParamsFromEvent({}), null);
+  assert.equal(themeParamsFromEvent(null), null);
+  assert.equal(themeParamsFromEvent({ theme_params: ["x"] }), null);
+});
+
+test("colorSchemeFromThemeParams: схема по яркости bg_color, без bg_color — undefined", () => {
+  assert.equal(colorSchemeFromThemeParams({ bg_color: "#17212b" }), "dark");
+  assert.equal(colorSchemeFromThemeParams({ bg_color: "#FFFFFF" }), "light");
+  assert.equal(colorSchemeFromThemeParams({ text_color: "#000000" }), undefined);
+  assert.equal(colorSchemeFromThemeParams({ bg_color: "red" }), undefined);
+});
+
+test("themeSignature: одно и то же событие обоими путями — один отпечаток (порядок/регистр не важны)", () => {
+  assert.equal(
+    themeSignature({ bg_color: "#17212B", text_color: "#fff" }, "dark"),
+    themeSignature({ text_color: "#FFF", bg_color: "#17212b" }, "dark"),
+  );
+  assert.notEqual(themeSignature({ bg_color: "#17212b" }, "dark"), themeSignature({ bg_color: "#17212b" }, "light"));
+  assert.notEqual(themeSignature({ bg_color: "#17212b" }, "dark"), themeSignature({ bg_color: "#ffffff" }, "dark"));
+  assert.equal(themeSignature(undefined, undefined), themeSignature({}, undefined));
 });

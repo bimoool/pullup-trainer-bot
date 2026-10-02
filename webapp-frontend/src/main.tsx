@@ -8,7 +8,11 @@ import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { OfflineQueryProvider } from "./OfflineQueryProvider";
 import { getDisplayPrefs, subscribeDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
-import { isDarkBackground, PALETTES, readTelegramColorScheme, resolveAppearance, THEME_VARS, type ThemePref } from "./theme";
+import {
+  colorSchemeFromThemeParams, isDarkBackground, PALETTES, readTelegramColorScheme, resolveAppearance, THEME_VARS,
+  themeParamsFromEvent, themeSignature, type ThemePref,
+} from "./theme";
+import { subscribeSdkEvent } from "./telegramSdkEvents";
 import { bootTelegram } from "./telegramBoot";
 import { applyTelegramChrome } from "./telegramChrome";
 import "./index.css";
@@ -77,9 +81,15 @@ const THEME_PARAM_TO_TGUI_CSS_VAR: Record<string, string> = {
   section_separator_color: "--tg-theme-section-separator-color",
 };
 
+// Актуальные themeParams клиента. Источник — WebApp.themeParams при старте и после themeChanged
+// моста; на нативных клиентах — полезная нагрузка theme_changed из шины SDK (#287 MED 4: там
+// WebApp.themeParams не обновляется вовсе).
+let telegramThemeParams: Record<string, string> | undefined = (
+  window as unknown as { Telegram?: { WebApp?: { themeParams?: Record<string, string> } } }
+).Telegram?.WebApp?.themeParams;
+
 function applyTelegramTheme() {
-  const themeParams = (window as unknown as { Telegram?: { WebApp?: { themeParams?: Record<string, string> } } })
-    .Telegram?.WebApp?.themeParams;
+  const themeParams = telegramThemeParams;
   if (!themeParams) {
     return;
   }
@@ -134,6 +144,7 @@ subscribeDisplayPrefs(() => {
 // prefers-color-scheme, ровно как и раньше.
 type TelegramWebAppBridge = {
   colorScheme?: "light" | "dark";
+  themeParams?: Record<string, string>;
   onEvent?: (event: string, handler: () => void) => void;
 };
 const telegramWebApp = (window as unknown as { Telegram?: { WebApp?: TelegramWebAppBridge } }).Telegram?.WebApp;
@@ -149,18 +160,37 @@ function subscribeTelegramScheme(listener: () => void) {
   telegramSchemeListeners.add(listener);
   return () => void telegramSchemeListeners.delete(listener);
 }
-function handleTelegramThemeChanged() {
-  telegramScheme = readTelegramColorScheme(telegramWebApp);
+// Два пути доставки (#287 MED 4): мост telegram-web-app.js (`themeChanged`, сам обновляет
+// WebApp.themeParams/colorScheme — iframe-клиенты, e2e-мок) и шина SDK (`theme_changed` с
+// theme_params — нативные iOS/Android, где init() SDK перехватил receiveEvent и мост молчит).
+// На iframe-клиентах приходят оба — отпечаток темы применяет её один раз.
+let appliedThemeSignature = themeSignature(telegramThemeParams, telegramScheme);
+function setTelegramTheme(params: Record<string, string>, scheme: "light" | "dark" | undefined) {
+  const signature = themeSignature(params, scheme);
+  if (signature === appliedThemeSignature) {
+    return;
+  }
+  appliedThemeSignature = signature;
+  telegramThemeParams = params;
+  telegramScheme = scheme;
   applyThemePref(getDisplayPrefs().theme);
   applySchemeAttribute();
   applyTelegramChrome();
   telegramSchemeListeners.forEach((listener) => listener());
 }
 try {
-  telegramWebApp?.onEvent?.("themeChanged", handleTelegramThemeChanged);
+  telegramWebApp?.onEvent?.("themeChanged", () =>
+    setTelegramTheme({ ...(telegramWebApp.themeParams ?? {}) }, readTelegramColorScheme(telegramWebApp)),
+  );
 } catch (error) {
   console.error("Telegram themeChanged subscription failed", error);
 }
+subscribeSdkEvent("theme_changed", (payload) => {
+  const params = themeParamsFromEvent(payload);
+  if (params !== null) {
+    setTelegramTheme(params, colorSchemeFromThemeParams(params) ?? telegramScheme);
+  }
+});
 
 function ThemedRoot({ children }: { children: React.ReactNode }) {
   const { theme } = useDisplayPrefs();
