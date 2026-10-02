@@ -1477,13 +1477,14 @@ async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
     repo = WorkoutRepository(session)
 
     async def legacy(minutes_ago: int, max_a: int, *, backdated: bool = False):
-        kwargs = dict(
-            user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(minutes=minutes_ago),
-            block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=max_a),
-            block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
-            block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
-            block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
-        )
+        kwargs = {
+            "user_id": user.id, "workout_set_id": workout_set.id,
+            "performed_at": now - timedelta(minutes=minutes_ago),
+            "block_a_reps": BlockLog(working_reps=(10, 10, 10), max_reps=max_a),
+            "block_b_reps": BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+            "block_a_equipment_type": EquipmentType.BAND, "block_a_equipment_value": BAND_VALUE,
+            "block_b_equipment_type": EquipmentType.BAND, "block_b_equipment_value": BAND_VALUE,
+        }
         if backdated:
             return await repo.record_backdated_workout(**kwargs)
         return await repo.record_workout(**kwargs)
