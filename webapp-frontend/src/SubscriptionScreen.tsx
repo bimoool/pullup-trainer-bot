@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchSubscription, paySubscription, type SubscriptionResponse } from "./api";
 import { openExternalLink } from "./telegramLinks";
 import { useBackButton } from "./useBackButton";
+import { Icon } from "./Icon";
 
 type Props = { initDataRaw: string; onBack: () => void };
 
@@ -101,7 +102,7 @@ export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
         <p>{subscription.status_label ?? "Статус подписки недоступен."}</p>
         {subscription.robokassa_available ? (
           <Button mode="filled" size="m" stretched onClick={() => void handlePay()} loading={paying}>
-            💳 Оплатить {subscription.price_rub} ₽ / {subscription.days} дн.
+            <Icon name="card" size={18} className="vp-icon-lead" />Оплатить {subscription.price_rub} ₽ / {subscription.days} дн.
           </Button>
         ) : (
           <p className="screen-message">Оплата картой временно недоступна.</p>
@@ -114,7 +115,7 @@ export function SubscriptionScreen({ initDataRaw, onBack }: Props) {
           stretched
           onClick={() => openExternalLink(new URL(OFERTA_URL, window.location.origin).toString())}
         >
-          📄 Открыть текст оферты
+          <Icon name="file" size={18} className="vp-icon-lead" />Открыть текст оферты
         </Button>
       </div>
     </div>

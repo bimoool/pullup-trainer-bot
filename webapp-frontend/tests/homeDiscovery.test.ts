@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { collectCategories, groupProgramsByCategory, searchContent, toggleSearchFilter } from "../src/homeDiscovery.ts";
+import {
+  categoryColorVar, collectCategories, groupProgramsByCategory, homeCategoryOrder, programCategoryColorVar,
+  searchContent, toggleSearchFilter,
+} from "../src/homeDiscovery.ts";
 
 const program = (id: number, name: string, category: string | null) => ({
   id, name, goal: `цель ${name}`, structure_type: "recurring", category, progression_strategy_type: null,
@@ -86,4 +89,17 @@ test("toggleSearchFilter: «Тесты» взаимоисключающе с «�
   const state = toggleSearchFilter(toggleSearchFilter(base, { kind: "category", category: "strength" }), { kind: "tests" });
   const res = searchContent(data, "", state.category, state.favoritesOnly ? [] : null, state.testsOnly);
   assert.deepEqual(res.tests.map((t) => t.id), [1, 2]);
+});
+
+test("categoryColorVar: цвет — функция имени, Главная и Планы совпадают с порядком рядов", () => {
+  const order = homeCategoryOrder(programs);
+  assert.deepEqual(order, ["strength", "mobility", "Другое"]);
+  assert.equal(categoryColorVar("strength", order), "var(--vp-cat-0)");
+  assert.equal(categoryColorVar("mobility", order), "var(--vp-cat-1)");
+  assert.equal(programCategoryColorVar(programs, 3), categoryColorVar("mobility", order));
+  assert.equal(programCategoryColorVar(programs, 2), categoryColorVar("Другое", order));
+  assert.equal(programCategoryColorVar(programs, 99), null);
+  // не из рядов Главной: стабильный хеш, не зависит от порядка
+  assert.equal(categoryColorVar("unknown", order), categoryColorVar("unknown", [...order].reverse().concat("x")));
+  assert.match(categoryColorVar("unknown", order), /^var\(--vp-cat-[0-5]\)$/);
 });

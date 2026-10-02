@@ -1,3 +1,5 @@
+import { useState, type ReactNode } from "react";
+
 import type { AnalyticsDistributionV2 } from "./apiV2";
 import type { MetricKey } from "./analyticsMetric";
 import {
@@ -20,14 +22,26 @@ function formatValue(value: number, metric: MetricKey): string {
   return metric === "minutes" ? formatMinutes(Math.round(value)) : formatShare(value);
 }
 
-/** «По типам»: кольцевая диаграмма выбранной метрики/периода + легенда. */
-export function DistributionDonut({ dist, metric }: { dist: AnalyticsDistributionV2; metric: MetricKey }) {
-  const { inner, outer, total } = donutRings(dist, metric);
-  const colors = categoryColors(dist);
+type DonutProps = {
+  dist: AnalyticsDistributionV2;
+  metric: MetricKey;
+  /** Порядок категорий Главной: цвет категории — по имени, как на Главной (#286). */
+  homeOrder?: string[];
+  /** Кнопка справа от заголовка («ⓘ»). */
+  titleAction?: ReactNode;
+};
+
+/** «По типам»: кольцевая диаграмма выбранной метрики/периода + легенда (цвета `--vp-cat-*`). */
+export function DistributionDonut({ dist, metric, homeOrder = [], titleAction }: DonutProps) {
+  const { inner, outer, total } = donutRings(dist, metric, homeOrder);
+  const colors = categoryColors(dist, homeOrder);
   const legend = inner;
   return (
-    <div data-testid="analytics-distribution">
-      <p className="section-title">По типам</p>
+    <div className="profile-card analytics-distribution-card" data-testid="analytics-distribution">
+      <div className="analytics-card-title-row">
+        <p className="section-title">По типам</p>
+        {titleAction}
+      </div>
       {total === 0 ? (
         <p className="hint" data-testid="analytics-distribution-empty">За выбранный период нет данных.</p>
       ) : (
@@ -39,21 +53,23 @@ export function DistributionDonut({ dist, metric }: { dist: AnalyticsDistributio
             {inner.map((seg) => (
               <path
                 key={seg.key} d={ringArcPath(CENTER, CENTER, INNER.from, INNER.to, seg.start, seg.end)}
-                fill={seg.color} data-testid="donut-inner-segment"
+                style={{ fill: seg.color }} data-testid="donut-inner-segment"
               />
             ))}
             {outer.map((seg) => (
               <path
                 key={seg.key} d={ringArcPath(CENTER, CENTER, OUTER.from, OUTER.to, seg.start, seg.end)}
-                fill={seg.color} fillOpacity={seg.opacity} data-testid="donut-outer-segment"
+                style={{ fill: seg.color }} fillOpacity={seg.opacity} data-testid="donut-outer-segment"
               />
             ))}
+            <text x={CENTER} y={CENTER - 2} textAnchor="middle" className="analytics-donut-total">{formatValue(total, metric)}</text>
+            <text x={CENTER} y={CENTER + 12} textAnchor="middle" className="analytics-donut-caption">всего</text>
           </svg>
           <ul className="analytics-legend" data-testid="analytics-legend">
             {legend.map((seg) => (
               <li key={seg.key} data-testid="analytics-legend-item">
                 <span className="analytics-legend-swatch" style={{ background: colors.get(seg.label) }} aria-hidden="true" />
-                <span className="analytics-legend-name">{seg.label}</span>
+                <span className="analytics-legend-name" title={seg.label}>{seg.label}</span>
                 <span className="analytics-legend-value">{formatValue(seg.value, metric)} · {formatPercent(seg.value, total)}</span>
               </li>
             ))}
@@ -64,19 +80,33 @@ export function DistributionDonut({ dist, metric }: { dist: AnalyticsDistributio
   );
 }
 
-/** «Сводка»: категории (+ подкатегории), колонки Тренировки / Минуты, строка ВСЕГО; нули — для категорий каталога. */
-export function DistributionTable({ dist }: { dist: AnalyticsDistributionV2 }) {
-  const colors = categoryColors(dist);
+type Category = AnalyticsDistributionV2["categories"][number];
+
+/** Ненулевая строка: хоть какая-то доля тренировок или минут (округление таблицы — 0.01 / 1). */
+function hasValue(item: { workouts: number; minutes: number }): boolean {
+  return item.workouts >= 0.005 || item.minutes >= 0.5;
+}
+
+/** «Сводка»: по умолчанию только строки с данными, «Показать все» раскрывает нули каталога;
+ * колонки Тренировки / Минуты, строка TOTAL. */
+export function DistributionTable({ dist, homeOrder = [] }: { dist: AnalyticsDistributionV2; homeOrder?: string[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const colors = categoryColors(dist, homeOrder);
+  const visible = showAll ? dist.categories : dist.categories.filter(hasValue);
+  const hiddenCount = dist.categories.reduce(
+    (sum, category) => sum + (hasValue(category) ? 0 : 1) + category.subcategories.filter((sub) => !hasValue(sub)).length,
+    0,
+  );
   return (
-    <div data-testid="analytics-summary">
+    <div className="profile-card analytics-summary-card" data-testid="analytics-summary">
       <p className="section-title">Сводка</p>
       <table className="analytics-summary-table">
         <thead>
           <tr><th scope="col">Тип</th><th scope="col">Тренировки</th><th scope="col">Минуты</th></tr>
         </thead>
         <tbody>
-          {dist.categories.map((category) => (
-            <SummaryRows key={category.name} category={category} color={colors.get(category.name)} />
+          {visible.map((category) => (
+            <SummaryRows key={category.name} category={category} color={colors.get(category.name)} showAll={showAll} />
           ))}
           <tr className="analytics-summary-total" data-testid="summary-total">
             <th scope="row">TOTAL</th>
@@ -85,24 +115,33 @@ export function DistributionTable({ dist }: { dist: AnalyticsDistributionV2 }) {
           </tr>
         </tbody>
       </table>
+      {(hiddenCount > 0 || showAll) && (
+        <button
+          type="button" className="analytics-show-all" data-testid="summary-show-all" aria-expanded={showAll}
+          onClick={() => setShowAll((value) => !value)}
+        >
+          {showAll ? "Скрыть пустые" : `Показать все (+${hiddenCount})`}
+        </button>
+      )}
     </div>
   );
 }
 
-function SummaryRows({ category, color }: { category: AnalyticsDistributionV2["categories"][number]; color?: string }) {
+function SummaryRows({ category, color, showAll }: { category: Category; color?: string; showAll: boolean }) {
+  const subs = showAll ? category.subcategories : category.subcategories.filter(hasValue);
   return (
     <>
       <tr data-testid="summary-category" data-category={category.name}>
-        <th scope="row">
+        <th scope="row" title={category.name}>
           {color !== undefined && <span className="analytics-legend-swatch analytics-summary-swatch" style={{ background: color }} aria-hidden="true" />}
           {category.name}
         </th>
         <td>{formatShare(category.workouts)}</td>
         <td>{formatTableMinutes(category.minutes)}</td>
       </tr>
-      {category.subcategories.map((sub) => (
+      {subs.map((sub) => (
         <tr key={sub.name} className="analytics-summary-sub" data-testid="summary-subcategory" data-category={category.name}>
-          <th scope="row">{sub.name}</th>
+          <th scope="row" title={sub.name}>{sub.name}</th>
           <td>{formatShare(sub.workouts)}</td>
           <td>{formatTableMinutes(sub.minutes)}</td>
         </tr>

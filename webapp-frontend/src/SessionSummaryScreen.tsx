@@ -2,6 +2,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 
 import type { LiveSessionCompleteResponse, SetLogResponseV2 } from "./apiV2";
 import { formatDuration, formatIntervalsCount, formatNumber } from "./blockFormat";
+import { Icon } from "./Icon";
 
 type Props = {
   result: LiveSessionCompleteResponse;
@@ -112,13 +113,15 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
         const intervalResult = isIntervalResult(block.result) ? block.result : null;
         const isMax = block.protocol_type === "max_effort";
         const isComplete = intervalResult !== null || (target > 0 && done >= target);
-        const status = isComplete ? "✅" : "▫️";
         const counter = intervalResult !== null || target === 0 ? "" : ` — ${done}/${target}`;
-        const header = `${status}${name !== null ? ` ${name}` : ""}${counter}`;
+        const header = `${name ?? ""}${counter}`.trim();
         const best = isMax && done > 0 ? Math.max(...block.set_logs.map((log) => Number(log.value))) : null;
         return (
           <section key={block.order_index} className="live-card">
-            <h3 className="live-card-title">{header}</h3>
+            <h3 className="live-card-title">
+              <Icon name={isComplete ? "checkCircle" : "circle"} size={18} className={isComplete ? "vp-icon-lead vp-icon-done" : "vp-icon-lead vp-icon-pending"} />
+              {header}
+            </h3>
             {intervalResult !== null ? (
               <>
                 <p className="live-row">{formatDuration(intervalResult.actual_duration_seconds)} выполнено</p>

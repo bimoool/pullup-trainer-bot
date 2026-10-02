@@ -11,6 +11,7 @@ import {
   setSoundVolumePercent,
 } from "./sound";
 import { vibratePhaseEnd } from "./vibration";
+import { Icon } from "./Icon";
 
 const VOLUME_STEP_PERCENT = 25;
 
@@ -271,11 +272,11 @@ export function TimerScreen({
 
       <div className="timer-adjust-row">
         <Button mode="outline" size="s" onClick={() => adjustVolume(-VOLUME_STEP_PERCENT)}>
-          🔉 −
+          <Icon name="volumeDown" size={18} className="vp-icon-lead" />−
         </Button>
-        <span className="timer-duration-label">🔊 Громкость: {volume}%</span>
+        <span className="timer-duration-label"><Icon name="volumeUp" size={18} className="vp-icon-lead" />Громкость: {volume}%</span>
         <Button mode="outline" size="s" onClick={() => adjustVolume(VOLUME_STEP_PERCENT)}>
-          🔊 +
+          <Icon name="volumeUp" size={18} className="vp-icon-lead" />+
         </Button>
       </div>
 

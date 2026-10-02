@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../fixtures/builderFlow";
-import { openJournalEntry } from "../fixtures/parity";
+import { metricSelect, openJournalEntry, selectMetric } from "../fixtures/parity";
 import { openAppAs } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
@@ -600,12 +600,11 @@ for (const width of WIDTHS) {
       const { consoleErrors, apiFailures } = await openAppAs(page, id, { theme });
       await openTab(page, "Аналитика");
       const card = page.getByTestId("analytics-metrics");
-      const metricTab = (name: string) => card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name });
       const rangeTab = (name: string) => card.getByRole("tablist", { name: "Период" }).getByRole("tab", { name });
       const total = page.getByTestId("analytics-metric-total");
 
       // Значения по умолчанию.
-      await expect(metricTab("Тренировки")).toHaveAttribute("aria-selected", "true");
+      await expect(metricSelect(page).locator("option:checked")).toHaveText("Тренировки");
       await expect(rangeTab("1 мес")).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".analytics-weeks-chart")).toHaveAttribute("data-metric", "workouts");
       await expect(total).toContainText("Всего тренировок: 3");
@@ -615,7 +614,7 @@ for (const width of WIDTHS) {
       await expectNoHorizontalOverflow(page, "Аналитика: 1 мес / Тренировки");
 
       // Минуты: сумма по неделям = 70, тренировка без времени не в минутах, но названа.
-      await metricTab("Минуты").click();
+      await selectMetric(page, "Минуты");
       await expect(page.locator(".analytics-weeks-chart")).toHaveAttribute("data-metric", "minutes");
       expect((await chartValues(page)).reduce((a, b) => a + b, 0)).toBe(70);
       await expect(total).toContainText("Всего минут: 1 ч 10 мин");
@@ -642,7 +641,7 @@ for (const width of WIDTHS) {
       }
       await expect(total).toContainText("Всего минут: 2 ч 10 мин");
       await expect(page.getByTestId("analytics-no-duration")).toHaveText("без данных о времени: 1");
-      await metricTab("Тренировки").click();
+      await selectMetric(page, "Тренировки");
       await expect(total).toContainText("Всего тренировок: 4");
       await expectNoHorizontalOverflow(page, "Аналитика: 3 мес");
 
@@ -660,7 +659,7 @@ for (const width of WIDTHS) {
       await custom.getByLabel("С", { exact: true }).fill(mskDaysAgo(51));
       await apply.click();
       await expect(total).toContainText("Всего тренировок: 1");
-      await metricTab("Минуты").click();
+      await selectMetric(page, "Минуты");
       await expect(total).toContainText("Всего минут: 1 ч");
       await expect(page.getByTestId("analytics-no-duration")).toHaveCount(0); // у этой тренировки время есть
 

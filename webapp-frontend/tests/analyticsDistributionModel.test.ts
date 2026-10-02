@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  CATEGORY_COLORS, NEUTRAL_COLOR, categoryColors, donutRings, formatPercent, formatShare, ringArcPath,
+  NEUTRAL_COLOR, categoryColors, donutRings, formatPercent, formatShare, ringArcPath,
 } from "../src/analyticsDistributionModel.ts";
+import { categoryColorVar } from "../src/homeDiscovery.ts";
 import type { AnalyticsDistributionV2 } from "../src/apiV2.ts";
 
 const dist: AnalyticsDistributionV2 = {
@@ -19,11 +20,29 @@ const dist: AnalyticsDistributionV2 = {
   total_workouts: 3, total_minutes: 90,
 };
 
-test("categoryColors: палитра по порядку, служебная категория нейтральная", () => {
-  const colors = categoryColors(dist);
-  assert.equal(colors.get("Тяга"), CATEGORY_COLORS[0]);
-  assert.equal(colors.get("Ноги"), CATEGORY_COLORS[1]);
+test("categoryColors: цвет по имени (порядок Главной), служебная категория нейтральная", () => {
+  const colors = categoryColors(dist, ["Ноги", "Тяга"]);
+  assert.equal(colors.get("Ноги"), "var(--vp-cat-0)");
+  assert.equal(colors.get("Тяга"), "var(--vp-cat-1)");
   assert.equal(colors.get("Другая активность"), NEUTRAL_COLOR);
+});
+
+test("categoryColors: порядок сортировки ответа не влияет на цвет, как и на Главной", () => {
+  const order = ["Кор", "Тяга", "Ноги"];
+  const reversed: AnalyticsDistributionV2 = { ...dist, categories: [...dist.categories].reverse() };
+  const a = categoryColors(dist, order);
+  const b = categoryColors(reversed, order);
+  for (const name of ["Тяга", "Ноги", "Кор"]) {
+    assert.equal(a.get(name), b.get(name));
+    assert.equal(a.get(name), categoryColorVar(name, order));
+  }
+  assert.equal(a.get("Тяга"), "var(--vp-cat-1)");
+});
+
+test("categoryColors: категория вне Главной — стабильный хеш-цвет из палитры", () => {
+  const first = categoryColors(dist, []).get("Кор");
+  assert.equal(first, categoryColors(dist, ["X"]).get("Кор"));
+  assert.match(first ?? "", /^var\(--vp-cat-[0-5]\)$/);
 });
 
 test("donutRings: внутреннее кольцо — категории без нулей, доли в сумме 1", () => {

@@ -87,3 +87,10 @@ export async function openJournalEntry(
   await expect(page.getByTestId("journal-entry-sheet")).toBeVisible();
   await page.getByTestId(`journal-sheet-${action}`).click();
 }
+
+/** Аналитика: метрика — выпадающий список (нативный select) в единой шапке, #286. */
+export const metricSelect = (page: Page) => page.getByRole("combobox", { name: "Метрика" });
+export async function selectMetric(page: Page, label: "Тренировки" | "Минуты") {
+  await metricSelect(page).selectOption({ label });
+  await expect(metricSelect(page).locator("option:checked")).toHaveText(label);
+}

@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
 import {
-  captureDownloads, COMBOS, expectScreenHealthy, openJournalEntry, openTab,
+  captureDownloads, COMBOS, expectScreenHealthy, openJournalEntry, openTab, selectMetric,
 } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
@@ -404,8 +404,7 @@ const FLOWS: Flow[] = [
       await openTab(page, "Аналитика");
       const card = page.getByTestId("analytics-metrics");
       for (const metric of ["Минуты", "Тренировки"]) {
-        await card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name: metric }).click();
-        await expect(card.getByRole("tablist", { name: "Метрика" }).getByRole("tab", { name: metric })).toHaveAttribute("aria-selected", "true");
+        await selectMetric(page, metric as "Минуты" | "Тренировки");
       }
       for (const range of ["3 мес", "Свой", "1 мес"]) {
         await card.getByRole("tablist", { name: "Период" }).getByRole("tab", { name: range }).click();
@@ -452,7 +451,7 @@ const FLOWS: Flow[] = [
     },
   },
   {
-    id: "Профиль: ⚙️ настройки → отмена", modes: MODES,
+    id: "Профиль: настройки → отмена", modes: MODES,
     run: async ({ page }) => {
       await openTab(page, "Профиль");
       await visit(page, {

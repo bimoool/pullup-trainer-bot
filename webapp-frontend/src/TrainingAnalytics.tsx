@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  fetchPrograms,
   fetchTrainingAnalytics,
   type AnalyticsExerciseV2,
   type AnalyticsPanelV2,
@@ -20,6 +21,8 @@ import {
 } from "./analyticsMetric";
 import { formatDuration, formatLongDuration, formatNumber } from "./blockFormat";
 import { DistributionDonut, DistributionTable } from "./AnalyticsDistribution";
+import { homeCategoryOrder } from "./homeDiscovery";
+import { Icon } from "./Icon";
 
 type Props = { initDataRaw: string };
 
@@ -127,8 +130,7 @@ function MetricInfoSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
-type MetricsCardProps = {
-  data: TrainingAnalyticsV2;
+type HeaderProps = {
   metric: MetricKey;
   rangeKey: RangeKey;
   draft: DateRange;
@@ -138,40 +140,35 @@ type MetricsCardProps = {
   onApply: () => void;
 };
 
-function MetricsCard({ data, metric, rangeKey, draft, onMetric, onRange, onDraft, onApply }: MetricsCardProps) {
-  const [infoOpen, setInfoOpen] = useState(false);
-  const { metrics } = data;
+/** Единая шапка Аналитики (#286 C1): слева выпадающий выбор метрики (нативный select), справа
+ * подчёркнутые табы периода; «Свой» открывает поля дат строкой ниже. */
+function AnalyticsHeader({ metric, rangeKey, draft, onMetric, onRange, onDraft, onApply }: HeaderProps) {
   const draftError = validateCustomRange(draft.from, draft.to);
-  const total = metric === "minutes" ? formatMinutes(metrics.total_minutes) : `${metrics.total_workouts}`;
   return (
-    <div className="profile-card" data-testid="analytics-metrics">
-      {/* Шапка карточки: выбор метрики (сегмент) + «ⓘ»; период — подчёркнутые табы ниже. */}
-      <div className="analytics-metric-header">
-        <div className="workout-mode-buttons vp-segment" role="tablist" aria-label="Метрика">
-          {METRIC_TABS.map((tab) => (
+    <div data-testid="analytics-header">
+      <div className="analytics-header-strip">
+        <label className="analytics-metric-select">
+          <select
+            aria-label="Метрика" value={metric} data-testid="analytics-metric-select"
+            onChange={(event) => onMetric(event.target.value as MetricKey)}
+          >
+            {METRIC_TABS.map((tab) => (
+              <option key={tab.key} value={tab.key}>{tab.label}</option>
+            ))}
+          </select>
+          <Icon name="chevronDown" size={14} strokeWidth={2.4} className="analytics-metric-select-caret" />
+        </label>
+        <div className="workout-mode-buttons vp-tabs analytics-range-tabs" role="tablist" aria-label="Период">
+          {RANGE_TABS.map((tab) => (
             <button
-              key={tab.key} type="button" role="tab" aria-selected={tab.key === metric}
-              className={tab.key === metric ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
-              onClick={() => onMetric(tab.key)}
+              key={tab.key} type="button" role="tab" aria-selected={tab.key === rangeKey}
+              className={tab.key === rangeKey ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
+              onClick={() => onRange(tab.key)}
             >
               {tab.label}
             </button>
           ))}
         </div>
-        <button type="button" className="analytics-info-button" aria-label="Что значат метрики" onClick={() => setInfoOpen(true)}>
-          ⓘ
-        </button>
-      </div>
-      <div className="workout-mode-buttons vp-tabs" role="tablist" aria-label="Период">
-        {RANGE_TABS.map((tab) => (
-          <button
-            key={tab.key} type="button" role="tab" aria-selected={tab.key === rangeKey}
-            className={tab.key === rangeKey ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
-            onClick={() => onRange(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
       </div>
       {rangeKey === "custom" && (
         <div className="analytics-custom-range" data-testid="analytics-custom-range">
@@ -185,18 +182,50 @@ function MetricsCard({ data, metric, rangeKey, draft, onMetric, onRange, onDraft
           {draftError !== null && <p className="hint">{draftError}</p>}
         </div>
       )}
-      <p className="section-title">{metric === "minutes" ? "Минуты по неделям" : "Тренировки по неделям"}</p>
-      <WeeksChart weeks={metrics.weeks} metric={metric} />
-      <p className="hint" data-testid="analytics-metric-total">
-        {metric === "minutes" ? "Всего минут" : "Всего тренировок"}: {total}
-        {" · "}{formatWeekLabel(metrics.date_from)} – {formatWeekLabel(metrics.date_to)}
-      </p>
-      {metric === "minutes" && metrics.without_duration > 0 && (
-        <p className="hint" data-testid="analytics-no-duration">без данных о времени: {metrics.without_duration}</p>
-      )}
-      <DistributionDonut dist={data.distribution} metric={metric} />
-      <DistributionTable dist={data.distribution} />
-      <p className="hint">
+    </div>
+  );
+}
+
+function InfoButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="analytics-info-button" aria-label="Что значат метрики" onClick={onClick}>
+      <Icon name="info" size={20} />
+    </button>
+  );
+}
+
+type MetricsProps = HeaderProps & { data: TrainingAnalyticsV2; homeOrder: string[] };
+
+/** Блоки выбранной метрики: порядок как в эталоне — сначала «по типам» (кольцо + легенда),
+ * затем недельные столбики, затем сводка. */
+function MetricsBlocks({ data, metric, homeOrder, ...header }: MetricsProps) {
+  const [infoOpen, setInfoOpen] = useState(false);
+  const { metrics } = data;
+  const total = metric === "minutes" ? formatMinutes(metrics.total_minutes) : `${metrics.total_workouts}`;
+  return (
+    <div data-testid="analytics-metrics">
+      <AnalyticsHeader metric={metric} {...header} />
+      <div className="analytics-stat-grid analytics-activity-cards" data-testid="analytics-kpi-row">
+        <Stat label="Тренировок за 30 дней" value={String(data.activity.sessions_last_30_days)} />
+        <Stat label="Активных дней за 30 дней" value={String(data.activity.active_days_last_30_days)} />
+      </div>
+      <DistributionDonut
+        dist={data.distribution} metric={metric} homeOrder={homeOrder}
+        titleAction={<InfoButton onClick={() => setInfoOpen(true)} />}
+      />
+      <div className="profile-card analytics-weeks-card" data-testid="analytics-weeks">
+        <p className="section-title">{metric === "minutes" ? "Минуты по неделям" : "Тренировки по неделям"}</p>
+        <WeeksChart weeks={metrics.weeks} metric={metric} />
+        <p className="hint" data-testid="analytics-metric-total">
+          {metric === "minutes" ? "Всего минут" : "Всего тренировок"}: {total}
+          {" · "}{formatWeekLabel(metrics.date_from)} – {formatWeekLabel(metrics.date_to)}
+        </p>
+        {metric === "minutes" && metrics.without_duration > 0 && (
+          <p className="hint" data-testid="analytics-no-duration">без данных о времени: {metrics.without_duration}</p>
+        )}
+      </div>
+      <DistributionTable dist={data.distribution} homeOrder={homeOrder} />
+      <p className="hint analytics-footnote">
         Смешанная тренировка делится между категориями поровну по блокам; минуты — по длительности тренировки.
       </p>
       {infoOpen && <MetricInfoSheet onClose={() => setInfoOpen(false)} />}
@@ -336,6 +365,8 @@ export function TrainingAnalytics({ initDataRaw }: Props) {
   // Применённый диапазон; undefined — серверный дефолт «1 мес» (последние 30 локальных дней).
   const [request, setRequest] = useState<DateRange | undefined>(undefined);
   const [draft, setDraft] = useState<DateRange>({ from: "", to: "" });
+  // Порядок категорий на Главной — цвет категории по имени, одинаковый на Главной и в Аналитике (#286).
+  const [homeOrder, setHomeOrder] = useState<string[]>([]);
   const requestFrom = request?.from;
   const requestTo = request?.to;
 
@@ -361,6 +392,16 @@ export function TrainingAnalytics({ initDataRaw }: Props) {
   }, [initDataRaw, requestFrom, requestTo]);
 
   useEffect(() => load(), [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPrograms(initDataRaw)
+      .then((programs) => !cancelled && setHomeOrder(homeCategoryOrder(programs)))
+      .catch(() => undefined); // без каталога цвета — стабильный хеш имени
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
 
   const todayIso = (): string => {
     const timeZone = state.phase === "ready" ? state.data.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -393,13 +434,8 @@ export function TrainingAnalytics({ initDataRaw }: Props) {
 
   return (
     <div>
-      <div className="analytics-stat-grid analytics-activity-cards">
-        <Stat label="Тренировок за 30 дней" value={String(data.activity.sessions_last_30_days)} />
-        <Stat label="Активных дней за 30 дней" value={String(data.activity.active_days_last_30_days)} />
-      </div>
-
-      <MetricsCard
-        data={data} metric={metric} rangeKey={rangeKey} draft={draft}
+      <MetricsBlocks
+        data={data} homeOrder={homeOrder} metric={metric} rangeKey={rangeKey} draft={draft}
         onMetric={setMetric} onRange={selectRange} onDraft={setDraft}
         onApply={() => setRequest({ ...draft })}
       />
