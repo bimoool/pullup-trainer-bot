@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   getWorkout, listWorkoutSessions, type WorkoutResponseV2, type WorkoutSessionSummaryV2,
 } from "./apiV2";
+import { CategoryGlyph } from "./CategoryGlyph";
 import { FavoriteHeart } from "./FavoriteHeart";
 import { formatExerciseCount } from "./workoutCardFormat";
 import {
@@ -32,6 +33,22 @@ type HistoryState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
   | { phase: "ready"; sessions: WorkoutSessionSummaryV2[] };
+
+function ActionIcon({ path, fill = false }: { path: string; fill?: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill={fill ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+      <path d={path} />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg className="wd-clock" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}
 
 function formatSessionDate(iso: string): string {
   const date = new Date(iso);
@@ -64,11 +81,23 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
 
   useBackButton(onBack, [onBack]);
 
+  // Как в эталоне, на деталях нижней навигации нет: «назад» — кнопка в шапке и Telegram BackButton.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("vp-nav-hidden");
+    return () => root.classList.remove("vp-nav-hidden");
+  }, []);
+
   if (detail.phase === "loading") {
     return <Spinner size="m" />;
   }
   if (detail.phase === "error") {
-    return <p className="gap-banner">Не удалось загрузить: {detail.message}</p>;
+    return (
+      <>
+        <p className="gap-banner">Не удалось загрузить: {detail.message}</p>
+        <button type="button" className="action-button" onClick={onBack}>← Назад</button>
+      </>
+    );
   }
 
   const { workout } = detail;
@@ -77,15 +106,29 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
 
   return (
     <div data-testid="workout-detail" className="workout-detail">
-      <div className="favorite-title-row">
-        <p className="plan-title" data-testid="workout-detail-title">{workout.title}</p>
-        <FavoriteHeart initDataRaw={initDataRaw} targetType="workout" targetId={workout.id} />
+      <div className="wd-hero" data-testid="workout-detail-hero" style={{ ["--cat" as string]: "var(--vp-cat-0)" }}>
+        <button type="button" className="wd-hero-back" aria-label="Назад" data-testid="workout-detail-back" onClick={onBack}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+            <path d="m15 5-7 7 7 7" />
+          </svg>
+        </button>
+        <div className="wd-hero-fav">
+          <FavoriteHeart initDataRaw={initDataRaw} targetType="workout" targetId={workout.id} />
+        </div>
+        <span className="wd-hero-badge" aria-hidden="true">
+          <CategoryGlyph glyph="dumbbell" size={30} />
+        </span>
       </div>
-      <p className="hint" data-testid="workout-detail-subtitle">Своя тренировка</p>
-      <p className="hint" data-testid="workout-detail-meta">
-        {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}
-        {estimate ? ` · ${estimate}` : ""}
-      </p>
+
+      <h1 className="plan-title wd-title" data-testid="workout-detail-title" title={workout.title}>{workout.title}</h1>
+      <div className="wd-meta-row">
+        <p className="hint" data-testid="workout-detail-subtitle">Своя тренировка</p>
+        <p className="hint wd-duration-pill" data-testid="workout-detail-meta">
+          {estimate && <ClockIcon />}
+          {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}
+          {estimate ? ` · ${estimate}` : ""}
+        </p>
+      </div>
 
       <div className="workout-detail-actions">
         {onStart && (
@@ -93,7 +136,9 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
             type="button" className="workout-detail-action workout-detail-action-primary" data-testid="workout-detail-start"
             disabled={items.length === 0} onClick={() => onStart(workout.id, workout.title)}
           >
-            <span className="workout-detail-action-icon" aria-hidden="true">▶</span>
+            <span className="workout-detail-action-icon" aria-hidden="true">
+              <ActionIcon path="M8 5.5v13l10.5-6.5z" fill />
+            </span>
             <span className="workout-detail-action-label">Начать</span>
           </button>
         )}
@@ -102,7 +147,9 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
             type="button" className="workout-detail-action" data-testid="workout-detail-log"
             onClick={() => onLog(workout.id)}
           >
-            <span className="workout-detail-action-icon" aria-hidden="true">✓</span>
+            <span className="workout-detail-action-icon" aria-hidden="true">
+              <ActionIcon path="M9 4.5h6M8 6.5h8a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19V8A1.5 1.5 0 0 1 8 6.5zM9.5 13.5l2 2 3.5-4" />
+            </span>
             <span className="workout-detail-action-label">Записать</span>
           </button>
         )}
@@ -110,12 +157,17 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           type="button" className="workout-detail-action"
           onClick={() => onAddToPlan(workout.id, workout.title)}
         >
-          <span className="workout-detail-action-icon" aria-hidden="true">＋</span>
+          <span className="workout-detail-action-icon" aria-hidden="true">
+            <ActionIcon path="M12 5v14M5 12h14" />
+          </span>
           <span className="workout-detail-action-label">Добавить в план</span>
         </button>
-        <button type="button" className="workout-detail-action" onClick={() => onEdit(workout.id)}>
-          <span className="workout-detail-action-icon" aria-hidden="true">✎</span>
-          <span className="workout-detail-action-label">Редактировать</span>
+        {/* Видимая подпись короткая (в 4 колонки на 320 «Редактировать» не помещается), имя для AT и тестов — полное. */}
+        <button type="button" className="workout-detail-action" aria-label="Редактировать" onClick={() => onEdit(workout.id)}>
+          <span className="workout-detail-action-icon" aria-hidden="true">
+            <ActionIcon path="M4.5 19.5l1-4L16 5l3 3-10.5 10.5zM14 7l3 3" />
+          </span>
+          <span className="workout-detail-action-label">Изменить</span>
         </button>
       </div>
 
