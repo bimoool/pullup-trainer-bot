@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
 import { BlockTransition } from "./BlockTransition";
-import { describeBlockPlan, formatDuration, formatNumber, formatTarget, resultInputLabel } from "./blockFormat";
+import {
+  describeBlockPlan, formatDuration, formatLoggedSetSummary, formatNumber, formatTarget, resultInputLabel,
+} from "./blockFormat";
 import {
   blockSetCounts,
   canPauseLocal,
@@ -24,7 +26,6 @@ import {
   localPhaseEndsAtMs,
   nextLocalPhase,
   rebaseLocalSession,
-  restPanelExpandedByDefault,
   saveLocalSession,
   type LocalLiveSession,
   type LocalPhaseName,
@@ -622,7 +623,9 @@ export function SessionLiveScreen({
     : phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
   const cueActive = isGetReadyCueActive(phaseName, remaining);
   const restEditable = phaseName === "rest" && local.lastLogged != null;
-  const logPanelOpen = panelOpen ?? (restEditable && restPanelExpandedByDefault(block?.rest_seconds));
+  // #286: после записи подхода панель на отдыхе свёрнута до одной строки-сводки («Подход 1: 8 повт.»,
+  // «Изменить» раскрывает) — раскрытая под таймером она уходила под липкий транспорт.
+  const logPanelOpen = panelOpen ?? false;
   const extraIndex = extraSetBlockIndex(local);
   const extraBlock = extraIndex === null ? null : local.server.blocks[extraIndex];
   const extraCount = extraIndex === null ? 0
@@ -722,9 +725,32 @@ export function SessionLiveScreen({
         // серый текст, налезавший на рамку карточки фазы).
         const name = blockName(block);
         const planText = targetForSet !== null ? formatTarget(targetForSet) : null;
+        // Вторая цифра счётчика — цель подхода, где она есть (повторения / время); у max-блока нет.
+        const counterTarget =
+          !isMaxBlock && targetForSet !== null && Number(targetForSet.value) > 0
+            ? targetForSet.unit === "reps"
+              ? { value: formatNumber(targetForSet.value), label: "Повт" }
+              : targetForSet.unit === "s"
+                ? { value: formatDuration(Number(targetForSet.value)), label: "Время" }
+                : null
+            : null;
         return (
           <div className="live-now" data-testid="live-now">
             {name !== null && <p className="live-exercise">{name}</p>}
+            <div className="live-counter" data-testid="live-counter" aria-hidden="true">
+              <div className="live-counter-cell">
+                <span className="live-counter-num">
+                  {local.localPhase.setNumber}<span className="live-counter-total"> / {targetsCount}</span>
+                </span>
+                <span className="live-counter-label">{isMaxBlock ? "Попытка" : "Подход"}</span>
+              </div>
+              {counterTarget !== null && (
+                <div className="live-counter-cell">
+                  <span className="live-counter-num">{counterTarget.value}</span>
+                  <span className="live-counter-label">{counterTarget.label}</span>
+                </div>
+              )}
+            </div>
             <p className="live-target">
               {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
               {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
@@ -798,29 +824,40 @@ export function SessionLiveScreen({
 
       {restEditable && !finishing && (
         <section
-          className="live-panel live-log-panel"
+          className={logPanelOpen ? "live-panel live-log-panel" : "live-panel live-log-panel live-log-collapsed"}
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
         >
-          <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
           {logPanelOpen ? (
-            <form onSubmit={(event) => { event.preventDefault(); if (value.trim() !== "") { saveRestEdit(); } }}>
-              {renderValueField(value, setValue, inputLabel.label)}
-              {renderEffortAndNote()}
-              <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={value.trim() === ""}>
-                Сохранить подход
-              </Button>
-            </form>
+            <>
+              <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
+              <form onSubmit={(event) => { event.preventDefault(); if (value.trim() !== "") { saveRestEdit(); } }}>
+                {renderValueField(value, setValue, inputLabel.label)}
+                {renderEffortAndNote()}
+                <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={value.trim() === ""}>
+                  Сохранить подход
+                </Button>
+              </form>
+              <button
+                type="button" className="live-link-button" data-testid="log-panel-toggle"
+                aria-expanded={true} onClick={() => setPanelOpen(false)}
+              >
+                Свернуть
+              </button>
+            </>
           ) : (
-            <p className="live-summary-line" data-testid="log-panel-summary">
-              {value}{effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
-            </p>
+            <div className="live-summary-row">
+              <p className="live-summary-line" data-testid="log-panel-summary">
+                {formatLoggedSetSummary(local.localPhase.setNumber, value, inputLabel.label)}
+                {effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
+              </p>
+              <button
+                type="button" className="live-link-button live-edit-button" data-testid="log-panel-toggle"
+                aria-expanded={false} aria-label="Изменить" onClick={() => setPanelOpen(true)}
+              >
+                <span aria-hidden="true">✎</span> Изменить
+              </button>
+            </div>
           )}
-          <button
-            type="button" className="live-link-button" data-testid="log-panel-toggle"
-            aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
-          >
-            {logPanelOpen ? "Свернуть" : "Изменить"}
-          </button>
         </section>
       )}
 

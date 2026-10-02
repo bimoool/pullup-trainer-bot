@@ -154,15 +154,8 @@ export interface LocalLiveSession {
   lastLogged?: QueuedSet | null;
 }
 
-/** #265 — отдых от стольки секунд достаточно длинный, чтобы панель записи
- * подхода раскрывалась сама; короче — свёрнута, раскрывается вручную. */
-export const REST_PANEL_EXPAND_MIN_SECONDS = 20;
 /** #265 — в последние стольки секунд отдыха показывается «Приготовься». */
 export const GET_READY_CUE_SECONDS = 10;
-
-export function restPanelExpandedByDefault(restSeconds: number | null | undefined): boolean {
-  return (restSeconds ?? DEFAULT_REST_SECONDS) >= REST_PANEL_EXPAND_MIN_SECONDS;
-}
 
 /** Сигнал «Приготовься» — только на отдыхе и только в его последние 10 с. */
 export function isGetReadyCueActive(phaseName: LocalPhaseName, remainingSeconds: number | null): boolean {

@@ -56,6 +56,43 @@ async function expectVisibleUncovered(page: Page, target: Locator, what: string)
   expect(hit, `${what}: перекрыт другим элементом`).toBe(true);
 }
 
+
+/** Контраст текста и фона элемента (WCAG) в реальной раскраске страницы: цвета нормализует canvas. */
+async function contrastOf(locator: Locator): Promise<number> {
+  return locator.evaluate((el) => {
+    const ctx = document.createElement("canvas").getContext("2d")!;
+    const parse = (css: string): [number, number, number, number] => {
+      ctx.fillStyle = "#000";
+      ctx.fillStyle = css;
+      const v = ctx.fillStyle as string;
+      if (v.startsWith("#")) {
+        const n = parseInt(v.slice(1), 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+      }
+      const rgba = /rgba\(([\d.]+), ([\d.]+), ([\d.]+), ([\d.]+)\)/.exec(v);
+      if (rgba) {
+        return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])];
+      }
+      // Chromium отдаёт color-mix() как color(srgb r g b [/ a]) с долями 0..1.
+      const srgb = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/.exec(v)!;
+      return [Number(srgb[1]) * 255, Number(srgb[2]) * 255, Number(srgb[3]) * 255, srgb[4] === undefined ? 1 : Number(srgb[4])];
+    };
+    let bg: [number, number, number, number] = [255, 255, 255, 1];
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      const c = parse(getComputedStyle(node).backgroundColor);
+      if (c[3] > 0) {
+        bg = c;
+        break;
+      }
+    }
+    const fg = parse(getComputedStyle(el).color);
+    const lin = (x: number) => ((x /= 255) <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4);
+    const lum = (c: number[]) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+    const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+  });
+}
+
 for (const width of WIDTHS) {
   for (const theme of ["light", "dark"] as TelegramTheme[]) {
     test.describe(`Live UX #285 @${width}px ${theme}`, () => {
@@ -244,6 +281,57 @@ for (const width of WIDTHS) {
         expect(completeBodies).toHaveLength(1);
         expect(JSON.parse(completeBodies[0])).toMatchObject({ effort: "4", comment: "тяжело, но ок" });
         await expect(page.getByText("Тренировка завершена")).toBeVisible();
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+
+      test("#286: счётчик подходов, нейтральный таймер, сводка на отдыхе, читаемое неактивное «Готово»", async ({ page }, testInfo) => {
+        const { consoleErrors, apiFailures } = await openAppAs(page, userFor(4, testInfo.retry), { theme });
+        await startLive(page);
+
+        // Крупный счётчик «1 / 3 ПОДХОД» + цель «8 ПОВТ»; строка «Подход 1/3 · Цель…» осталась (контракт).
+        const counter = page.getByTestId("live-counter");
+        await expect(counter).toBeVisible();
+        await expect(counter).toContainText("1 / 3");
+        await expect(counter).toContainText("Подход");
+        await expect(counter).toContainText("8");
+        await expect(counter).toContainText("Повт");
+        const numSize = await counter.locator(".live-counter-num").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+        expect(numSize).toBeGreaterThanOrEqual(36);
+        await expect(page.getByText(/Подход 1\/3 · Цель: 8 повт\./)).toBeVisible();
+        await expectNoHorizontalOverflow(page, "Live: счётчик");
+
+        // Нейтральная поверхность под таймером: тот же фон, что у карточки упражнения; плашка цветная.
+        const panelBg = await page.locator(".phase-panel").evaluate((el) => getComputedStyle(el).backgroundColor);
+        const cardBg = await page.getByTestId("live-now").evaluate((el) => getComputedStyle(el).backgroundColor);
+        expect(panelBg).toBe(cardBg);
+        const pillBg = await page.locator(".phase-panel-label").evaluate((el) => getComputedStyle(el).backgroundColor);
+        expect(pillBg).not.toBe(panelBg);
+
+        // Неактивное «Готово» (поле пустое): контраст ≥ 4.5:1.
+        await clickAndSync(page, "Готов", "/phase/next");
+        const done = page.getByRole("button", { name: "Готово", exact: true });
+        await expect(done).toBeDisabled();
+        expect(await contrastOf(done), "неактивное «Готово»").toBeGreaterThanOrEqual(4.5);
+        await page.getByLabel(VALUE_FIELD).fill("8");
+        await expect(done).toBeEnabled();
+        await clickAndSync(page, "Готово", "/sets:batch");
+
+        // Отдых: панель свёрнута до одной строки, не обрезана липким транспортом.
+        await expect(page.getByRole("heading", { name: "Отдых", exact: true, level: 2 })).toBeVisible();
+        const panel = page.getByTestId("log-panel");
+        await expect(panel).toHaveAttribute("data-state", "collapsed");
+        await expect(page.getByTestId("log-panel-summary")).toContainText("Подход 1: 8 повт.");
+        await expect(page.getByTestId("set-effort")).toHaveCount(0);
+        const panelBox = await boxOf(panel, "панель отдыха");
+        const transportBox = await boxOf(page.locator(".live-transport"), "транспорт");
+        expect(panelBox.y + panelBox.height, "панель под транспортом").toBeLessThanOrEqual(transportBox.y + 1);
+        await expectNoHorizontalOverflow(page, "Live: отдых, сводка");
+        await page.getByTestId("log-panel-toggle").click();
+        await expect(panel).toHaveAttribute("data-state", "expanded");
+        await page.getByTestId("log-panel-toggle").click();
+        await expect(panel).toHaveAttribute("data-state", "collapsed");
 
         expect(noWakeLock(consoleErrors)).toEqual([]);
         expect(apiFailures).toEqual([]);

@@ -72,12 +72,13 @@ for (const scheme of SCHEMES) {
     test(`контраст ${scheme.name}: подпись фазы «${phase}» на тонировке и плашке ≥ 4.5`, () => {
       const accent = rgb(scheme.vars[`--live-${phase}`]);
       const ink = rgb(scheme.vars[`--live-${phase}-ink`]);
-      const tint = mix(accent, rgb(scheme.card), 0.13); // .phase-card-*: 13 % акцента на карточке
-      const pill = mix(accent, tint, 0.16); // .phase-panel-label: плашка 16 %
-      assert.ok(ratio(ink, tint) >= 4.5, `${phase} на тонировке: ${ratio(ink, tint).toFixed(2)}`);
+      const card = rgb(scheme.card); // .phase-card-*: нейтральная карточка (#286)
+      const tint = mix(accent, card, 0.13); // страховка: и на прежней 13 % тонировке
+      const pill = mix(accent, card, 0.16); // .phase-panel-label: плашка 16 % акцента
       assert.ok(ratio(ink, pill) >= 4.5, `${phase} на плашке: ${ratio(ink, pill).toFixed(2)}`);
+      assert.ok(ratio(ink, mix(accent, tint, 0.16)) >= 4.5, `${phase} на плашке поверх тонировки`);
       // и «cue» «Приготовься · N» / метка перехода блока на самой карточке
-      assert.ok(ratio(ink, rgb(scheme.card)) >= 4.5);
+      assert.ok(ratio(ink, card) >= 4.5);
     });
   }
 

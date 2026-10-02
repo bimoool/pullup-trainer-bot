@@ -59,9 +59,22 @@ export function useLiveFieldFocus(): boolean {
       }
     };
     const onFocusOut = (event: FocusEvent) => {
-      if (isTextEntryTarget(event.target as HTMLElement | null)) {
-        releaseLater(FIELD_BLUR_GRACE_MS);
+      if (!isTextEntryTarget(event.target as HTMLElement | null)) {
+        return;
       }
+      // Фокус ушёл на другой элемент вне транспорта (кнопка «Оценка и заметка», другое поле не в счёт —
+      // его focusin отменит таймер) — транспорт возвращается сразу. Если следующего элемента нет
+      // (Safari не фокусирует кнопки при тапе) или это кнопка транспорта — ждём окно grace.
+      const next = event.relatedTarget as HTMLElement | null;
+      const toTransport = next?.closest?.(".live-transport") != null;
+      if (next !== null && !toTransport && !isTextEntryTarget(next)) {
+        cancel();
+        if (!holding.current) {
+          setFocused(false);
+        }
+        return;
+      }
+      releaseLater(FIELD_BLUR_GRACE_MS);
     };
     // Палец на кнопке транспорта: держим «отлипшее» состояние до конца нажатия.
     const onPointerDown = (event: PointerEvent) => {
