@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { openAppAs } from "../fixtures/setup";
 
@@ -6,6 +6,13 @@ import { openAppAs } from "../fixtures/setup";
 // инклюзия «Подтягивания» (2 блока, свободный пул) + засеянная Exercise
 // Library (Планка/Отжимания). НЕ admin-only — вкладка «Планы» видна всем.
 const TELEGRAM_ID = 900_015;
+// #286 B: строка недели = название и чип «сделано/план» отдельными элементами (раньше «Название · 0/1» одним текстом).
+// Блок «Сегодня» повторяет сегодняшние названия — ищем только в недельном списке (plans-row).
+const rowTitle = (page: Page, name: string) =>
+  page.getByTestId("plans-row").locator(".plans-row-title").filter({ hasText: new RegExp(`^${name}$`) });
+const rowCounter = (page: Page, name: string) => page.getByTestId("plans-row")
+  .filter({ has: page.locator(".plans-row-title").filter({ hasText: new RegExp(`^${name}$`) }) })
+  .getByTestId("plan-item-counter");
 
 test("«Планы»: добавить Планку в Среду и Отжимания в Пятницу через picker", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
@@ -13,7 +20,8 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
   // #266: имя курса есть и в карточке плана, и в строке недели — проверяем строку недели.
-  await expect(page.getByText(/^Подтягивания · \d+\/\d+$/)).toBeVisible();
+  await expect(rowTitle(page, "Подтягивания")).toBeVisible();
+  await expect(rowCounter(page, "Подтягивания")).toHaveText(/^\d+\/\d+$/);
 
   // --- Добавить "Планка" в Среду ---
   await page.getByRole("button", { name: "+ Добавить упражнение" }).click();
@@ -30,7 +38,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   // picker закрылся после успешного добавления
   await expect(page.getByRole("heading", { name: "Добавить упражнение" })).toHaveCount(0);
   await expect(page.getByText("Среда")).toBeVisible();
-  await expect(page.getByText(/^Планка · /)).toBeVisible();
+  await expect(rowTitle(page, "Планка")).toBeVisible();
 
   // --- Добавить "Отжимания" в Пятницу ---
   await page.getByRole("button", { name: "+ Добавить упражнение" }).click();
@@ -44,18 +52,18 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await planResponsePromise2;
 
   await expect(page.getByText("Пятница")).toBeVisible();
-  await expect(page.getByText(/^Отжимания · /)).toBeVisible();
+  await expect(rowTitle(page, "Отжимания")).toBeVisible();
 
   // --- Manual-семантика: имена реальные, не "Упражнение #id", не слиплись ---
   await expect(page.getByText(/^Упражнение #/)).toHaveCount(0);
-  await expect(page.getByText(/^Планка · /)).toHaveCount(1);
-  await expect(page.getByText(/^Отжимания · /)).toHaveCount(1);
+  await expect(rowTitle(page, "Планка")).toHaveCount(1);
+  await expect(rowTitle(page, "Отжимания")).toHaveCount(1);
 
   // --- Grouping regression (Checkpoint 2): Block A/Б не появились отдельно ---
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
   // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
-  await expect(page.getByText(/^Подтягивания · \d+\/\d+$/)).toHaveCount(1);
+  await expect(rowTitle(page, "Подтягивания")).toHaveCount(1);
 
   expect(apiFailures).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -76,11 +84,11 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
   // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
-  await expect(page.getByText(/^Подтягивания · \d+\/\d+$/)).toHaveCount(1);
+  await expect(rowTitle(page, "Подтягивания")).toHaveCount(1);
   await expect(page.getByText("Среда")).toBeVisible();
-  await expect(page.getByText(/^Планка · /)).toBeVisible();
+  await expect(rowTitle(page, "Планка")).toBeVisible();
   await expect(page.getByText("Пятница")).toBeVisible();
-  await expect(page.getByText(/^Отжимания · /)).toBeVisible();
+  await expect(rowTitle(page, "Отжимания")).toBeVisible();
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/^Упражнение #/)).toHaveCount(0);

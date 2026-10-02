@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { pickPlanAction } from "../../fixtures/plans";
 import { openAppAs } from "../../fixtures/setup";
 
 // Plans overview (#266). Seed: scripts/e2e_seed.py plans_overview — у пользователя в плане
@@ -91,12 +92,13 @@ for (const width of WIDTHS) {
       await expect(page.getByTestId("plans-now-inclusion").first()).toBeVisible();
       // Повторный прогон (CI retry) видит уже убранный курс — шаги удаления тогда пропускаются.
       if ((await removable.count()) > 0) {
-        await removable.getByRole("button", { name: "Убрать курс из плана" }).click();
+        // #286 B: «Убрать курс из плана» — пункт листа «⋯» карточки курса.
+        await pickPlanAction(page, "Убрать курс из плана", removable);
         await expect(page.getByText("Убрать курс «Обзор: на удаление» из плана?")).toBeVisible();
         await page.getByRole("button", { name: "Отмена" }).click();
         await expect(removable).toHaveCount(1);
 
-        await removable.getByRole("button", { name: "Убрать курс из плана" }).click();
+        await pickPlanAction(page, "Убрать курс из плана", removable);
         await expectNoHorizontalOverflow(page, "Plans overview: подтверждение");
         await page.getByRole("button", { name: "Убрать", exact: true }).click();
         await expect(removable).toHaveCount(0);

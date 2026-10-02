@@ -73,7 +73,7 @@ for (const width of WIDTHS) {
     await page.getByRole("button", { name: "Планы" }).click();
     await shot(page, width, "20_plans");
     const group = page.locator(".plan-week-day-group").filter({ hasText: /^Смешанная|Смешан/ }).first();
-    await group.getByRole("button", { name: "Начать", exact: true }).click();
+    await group.getByRole("button", { name: /^Начать: / }).click();
     await shot(page, width, "21_pre_start");
     await page.getByRole("button", { name: "Начать", exact: true }).click();
     await page.getByText("Живая тренировка").waitFor();

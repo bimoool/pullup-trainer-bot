@@ -74,3 +74,27 @@ test("resolveCurrentWeekIndex/Id: current_week_id сервера важнее «
   assert.equal(resolveCurrentWeekId(weeks, 99, "2026-10-06"), 2);
   assert.equal(resolveCurrentWeekId([], 5, "2026-10-06"), null);
 });
+
+test("progressPercent: доли, зажим, пустой план", async () => {
+  const { progressPercent } = await import("../src/planWeekNav.ts");
+  assert.equal(progressPercent(0, 6), 0);
+  assert.equal(progressPercent(1, 3), 33);
+  assert.equal(progressPercent(2, 3), 67);
+  assert.equal(progressPercent(6, 6), 100);
+  assert.equal(progressPercent(9, 6), 100);
+  assert.equal(progressPercent(0, 0), 0);
+  assert.equal(progressPercent(3, 0), 0);
+  assert.equal(progressPercent(-1, 4), 0);
+});
+
+test("todayDayIndexInWeek: день недели от plan.today сервера, 0..6, вне недели — null (#288)", async () => {
+  const { todayDayIndexInWeek, daysBetween } = await import("../src/planWeekNav.ts");
+  const monday = "2026-10-05";
+  assert.equal(todayDayIndexInWeek(monday, "2026-10-05"), 0); // пн (понедельник около полуночи в поясе пользователя)
+  assert.equal(todayDayIndexInWeek(monday, "2026-10-09"), 4);
+  assert.equal(todayDayIndexInWeek(monday, "2026-10-11"), 6); // вс
+  assert.equal(todayDayIndexInWeek(monday, "2026-10-12"), null); // уже следующая неделя (устаревший ответ)
+  assert.equal(todayDayIndexInWeek(monday, "2026-10-04"), null); // до начала недели
+  assert.equal(todayDayIndexInWeek("2026-10-26", "2026-10-30"), 4); // через перевод часов в Европе
+  assert.equal(daysBetween("2026-12-28", "2027-01-02"), 5); // через границу года
+});

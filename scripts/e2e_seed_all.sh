@@ -162,3 +162,6 @@ for id in 997951 997952 997961 997962; do seed builder_workouts "$id"; done
 # каждый + retry (id+1); 998811 — десятичный ввод «12,5» (ready: вес/рост профиля есть).
 for id in 998801 998802 998803 998804 998805 998806; do seed session_recovery "$id"; done
 for id in 998811 998812; do seed ready "$id"; done
+# #286 B «Планы: строки дня и «⋯»-шиты» (parity/visual-plans.spec.ts): 991001 (320 light) / 991002 (390 dark) — строки с «⋯»,
+# 991003 / 991004 — мутация «Убрать из плана» (320 / 390), каждый + retry (id+10).
+for id in 991001 991002 991003 991004 991011 991012 991013 991014; do seed builder_workouts "$id"; done

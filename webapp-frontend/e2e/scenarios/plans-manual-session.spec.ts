@@ -15,11 +15,13 @@ test.fixme("«Планы» → manual «Планка»/«Отжимания» �
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Среда")).toBeVisible();
   await expect(page.getByText("Пятница")).toBeVisible();
-  await expect(page.getByText("Планка", { exact: true })).toBeVisible();
-  await expect(page.getByText("Отжимания", { exact: true })).toBeVisible();
+  // #286 B: блок «Сегодня» повторяет сегодняшнюю строку — ищем в недельном списке.
+  const weekTitle = (name: string) => page.getByTestId("plans-row").getByText(name, { exact: true });
+  await expect(weekTitle("Планка")).toBeVisible();
+  await expect(weekTitle("Отжимания")).toBeVisible();
 
   // --- Планка: Start без всякого ProgramInclusion/STEP readiness ---
-  const startButtons = page.getByRole("button", { name: "Начать", exact: true });
+  const startButtons = page.getByRole("button", { name: /^Начать: / });
   await startButtons.first().click();
   await page.waitForTimeout(800);
 

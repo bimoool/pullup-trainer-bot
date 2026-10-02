@@ -31,7 +31,7 @@ test("Summary: BackButton не воскрешает сессию, «Закрыт
   await page.getByRole("button", { name: "Свободный пул" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const startGroup = () => page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
-  await startGroup().getByRole("button", { name: "Начать", exact: true }).click();
+  await startGroup().getByRole("button", { name: /^Начать: / }).click();
   const started = page.waitForResponse((r) => r.url().includes("/api/v2/sessions/live") && r.request().method() === "POST");
   await page.getByRole("button", { name: "Начать", exact: true }).click();
   const sessionId = ((await (await started).json()) as { id: number }).id;
@@ -65,7 +65,7 @@ test("Summary: BackButton не воскрешает сессию, «Закрыт
 
   // Повторное открытие — завершённая сессия не оживает как активная.
   if ((await startGroup().count()) > 0) {
-    await startGroup().getByRole("button", { name: "Начать", exact: true }).click();
+    await startGroup().getByRole("button", { name: /^Начать: / }).click();
     await expect(page.getByText("Живая тренировка")).toHaveCount(0);
   }
   await page.reload();

@@ -116,3 +116,24 @@ export function weekProgress(groups: ItemLike[][]): { done: number; total: numbe
   }
   return { done, total };
 }
+
+/** Ширина полосы прогресса, 0–100 (целое): сделано/план, зажато в границы; пустой план — 0. */
+export function progressPercent(done: number, total: number): number {
+  if (!(total > 0) || !(done > 0)) {
+    return 0;
+  }
+  return Math.min(100, Math.round((done / total) * 100));
+}
+
+/** Целых дней от a до b (даты YYYY-MM-DD, без часовых поясов и перевода часов). */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((parseDate(b).getTime() - parseDate(a).getTime()) / 86_400_000);
+}
+
+/** Индекс «сегодня» внутри недели по соглашению PlanItem.day_of_week: 0 = понедельник … 6 = воскресенье.
+ * today — дата пользователя с сервера (plan.today, #288), а не часы устройства; вне недели (today до её
+ * начала или после конца: устаревший ответ, смена суток) — null, и «Сегодня» не рисуется. */
+export function todayDayIndexInWeek(weekStartDate: string, today: string): number | null {
+  const index = daysBetween(weekStartDate, today);
+  return index >= 0 && index <= 6 ? index : null;
+}

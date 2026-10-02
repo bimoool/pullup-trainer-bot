@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
+import { pickPlanAction, pickRowAction } from "../../fixtures/plans";
 import { openAppAs } from "../../fixtures/setup";
 
 // Plans schedule (#275). Seed: scripts/e2e_seed.py plan_week_manual_session — в текущей неделе
@@ -22,7 +23,9 @@ for (const width of WIDTHS) {
       const counters = page.getByTestId("plan-item-counter");
       const next = page.getByRole("button", { name: "Следующая неделя" });
       const prev = page.getByRole("button", { name: "Предыдущая неделя" });
-      const copyButton = page.getByRole("button", { name: "Скопировать неделю → на следующую" });
+      // #286 B: «Скопировать неделю» — пункт листа «⋯» плана; подтверждение остаётся на карточке недели.
+      const copyConfirmation = page.getByText(/Скопировать свои тренировки и упражнения/);
+      const copyAction = "Скопировать неделю" as const;
       const currentLabel = (await label.textContent()) ?? "";
       await expect(counters).toHaveCount(2);
 
@@ -39,11 +42,11 @@ for (const width of WIDTHS) {
       // Копирование текущей недели → следующая: с подтверждением, «Отмена» ничего не делает.
       await prev.click();
       await expect(label).toHaveText(currentLabel);
-      await copyButton.click();
-      await expect(page.getByText(/Скопировать свои тренировки и упражнения/)).toBeVisible();
+      await pickPlanAction(page, copyAction);
+      await expect(copyConfirmation).toBeVisible();
       await page.getByRole("button", { name: "Отмена" }).click();
-      await expect(copyButton).toBeVisible();
-      await copyButton.click();
+      await expect(copyConfirmation).toHaveCount(0);
+      await pickPlanAction(page, copyAction);
       await page.getByRole("button", { name: "Скопировать", exact: true }).click();
       await expect(page.getByTestId("plan-week-copy-result")).toHaveText("Скопировано: 2, пропущено дублей: 0");
       await expect(label).toHaveText(futureLabel);
@@ -52,14 +55,14 @@ for (const width of WIDTHS) {
 
       // Повторное копирование пропускает дубли.
       await prev.click();
-      await copyButton.click();
+      await pickPlanAction(page, copyAction);
       await page.getByRole("button", { name: "Скопировать", exact: true }).click();
       await expect(page.getByTestId("plan-week-copy-result")).toHaveText("Скопировано: 0, пропущено дублей: 2");
       await expect(counters).toHaveCount(2);
 
       // Перенос ручной строки из будущей недели обратно на текущую.
       await expect(label).toHaveText(futureLabel);
-      await page.getByRole("button", { name: "Перенести" }).first().click();
+      await pickRowAction(page, "Перенести");
       const picker = page.getByTestId("move-week-picker");
       await expect(picker).toBeVisible();
       await expectNoHorizontalOverflow(page, "Plans schedule: перенос");

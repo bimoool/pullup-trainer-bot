@@ -60,7 +60,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
         // Текущая неделя — current_week_id с сервера (как в DashboardScreen),
         // НЕ последняя в списке: после #275 там могут быть будущие недели.
         const currentWeekId = plan !== null
-          ? resolveCurrentWeekId(plan.plan_weeks, plan.current_week_id, localToday())
+          ? resolveCurrentWeekId(plan.plan_weeks, plan.current_week_id, plan.today ?? localToday())
           : null;
         setLoadState({ phase: "ready", planWeekId: currentWeekId });
       })

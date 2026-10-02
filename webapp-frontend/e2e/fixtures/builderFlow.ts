@@ -7,7 +7,7 @@ export async function startWorkout(page: Page, title: string) {
   await page.getByRole("button", { name: "Планы" }).click();
   const group = page.locator(".plan-week-day-group").filter({ has: page.getByText(title, { exact: false }) })
     .filter({ hasText: new RegExp(`^${title}`) });
-  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await group.getByRole("button", { name: /^Начать: / }).click();
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
   await expect(page.getByText("Живая тренировка")).toBeVisible();
 }

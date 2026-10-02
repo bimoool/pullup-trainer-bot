@@ -1,5 +1,5 @@
 import { Button, Section } from "@telegram-apps/telegram-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchDashboard, type DashboardResponse } from "./api";
 import {
@@ -18,16 +18,18 @@ import {
   deactivateProgramInclusion,
   type TrainingPlanResponseV2,
 } from "./apiV2";
-import { programCategoryColorVar } from "./homeDiscovery";
+import { categoryInkVar, programCategoryColorVar } from "./homeDiscovery";
 import { completedInclusions, inclusionDateRange, inclusionWeekLabel } from "./plansOverview";
 import { STATUS_MESSAGES } from "./WorkoutScreen";
+import { ActionSheet, MoreButton, PlanProgressBar, type SheetAction } from "./ActionSheet";
 import { AddToPlanScreen } from "./AddToPlanScreen";
 import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
-  canAdvanceWeek, groupCounter, isEditableWeek, localToday, resolveCurrentWeekIndex, stepWeek, weekProgress, weekRangeLabel,
+  canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
+  todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -172,9 +174,14 @@ type PlanState = {
   weeks: PlanWeekResponseV2[];
   /** current_week_id с сервера (часовой пояс пользователя). */
   currentWeekId: number | null;
+  /** plan.today с сервера (YYYY-MM-DD, часовой пояс пользователя); null — старый ответ, тогда localToday(). */
+  today: string | null;
 };
 
-const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null };
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null, today: null };
+
+/** #288 — план старше этого (мс) перечитывается при возврате в приложение: «Сегодня» не залипает на вчера. */
+const PLAN_STALE_MS = 60_000;
 
 /** issue #266 — inclusions содержит и неактивные (вкладка «Завершённые»);
  * строки убранных курсов в недельный вид не попадают (история в БД остаётся). */
@@ -190,6 +197,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
     ),
     weeks: data.plan_weeks,
     currentWeekId: data.current_week_id ?? null,
+    today: data.today ?? null,
   };
 }
 
@@ -203,6 +211,15 @@ type MyWorkoutsView =
   | { kind: "edit"; workoutId: number }
   | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" | "detail" }
   | { kind: "move-plan-item"; planItemId: number; title: string; currentDayOfWeek: number | null; planWeekId: number | null };
+
+/** #286 B — какой лист «⋯» открыт на экране «Планы». */
+type PlansSheetState =
+  | {
+    kind: "row"; planItemId: number; title: string; dayOfWeek: number | null; planWeekId: number | null;
+    /** id пользовательской тренировки — только для «Редактировать тренировку». */
+    editWorkoutId: number | null;
+  }
+  | { kind: "plan"; inclusionId: number | null };
 
 type ExercisesState =
   | { phase: "loading" }
@@ -286,6 +303,17 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const [weekError, setWeekError] = useState<string | null>(null);
   const [copyConfirm, setCopyConfirm] = useState(false);
   const [copyResult, setCopyResult] = useState<string | null>(null);
+  // #286 B — нижние листы «⋯»: действия строки дня и плана (курса). Смонтирован = открыт.
+  const [sheet, setSheet] = useState<PlansSheetState | null>(null);
+  // #288 — «⋯», с которой открыли лист (туда вернётся фокус; на iOS тап не фокусирует кнопку),
+  // и ключ «⋯», которой нужно вернуть фокус после подтверждения/«Отмены» (пока подтверждение — «⋯» скрыта).
+  const [sheetOpener, setSheetOpener] = useState<HTMLElement | null>(null);
+  const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
+  const copyConfirmRef = useRef<HTMLDivElement>(null);
+  function openSheet(next: PlansSheetState, opener: HTMLElement) {
+    setSheetOpener(opener);
+    setSheet(next);
+  }
 
   async function handleAdvanceWeek(lastWeek: PlanWeekResponseV2) {
     setWeekBusy(true);
@@ -318,10 +346,16 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     }
   }
 
+  // #288 — когда и при какой локальной дате план загружен: по этому решаем, не устарело ли «Сегодня».
+  const planLoadedRef = useRef({ at: Date.now(), localDate: localToday() });
+
+  function applyPlan(data: TrainingPlanResponseV2 | null) {
+    planLoadedRef.current = { at: Date.now(), localDate: localToday() };
+    setPlan(toPlanState(data));
+  }
+
   function reloadPlan() {
-    return fetchPlan(initDataRaw).then((data) => {
-      setPlan(toPlanState(data));
-    });
+    return fetchPlan(initDataRaw).then(applyPlan);
   }
 
   // Phase D3 (issue #188) — «Убрать из плана». Confirm/Cancel — inline на
@@ -404,7 +438,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     fetchPlan(initDataRaw)
       .then((data) => {
         if (!cancelled) {
-          setPlan(toPlanState(data));
+          applyPlan(data);
         }
       })
       .catch(() => {
@@ -413,7 +447,68 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyPlan стабилен по смыслу (только setPlan и ref).
   }, [initDataRaw]);
+
+  // #288 — приложение может быть открыто всю ночь или вернуться из фона на следующий день: «Сегодня»
+  // считается от plan.today (дата пользователя на сервере), поэтому при смене даты или устаревшем плане
+  // перечитываем план (тихо). Дата устройства может отличаться от даты пользователя, поэтому ещё и по возрасту.
+  useEffect(() => {
+    let cancelled = false;
+    let midnightTimer: ReturnType<typeof setTimeout> | undefined;
+    function refreshIfStale() {
+      const loaded = planLoadedRef.current;
+      if (Date.now() - loaded.at > PLAN_STALE_MS || localToday() !== loaded.localDate) {
+        fetchPlan(initDataRaw).then((data) => !cancelled && applyPlan(data)).catch(() => undefined);
+      }
+    }
+    function scheduleMidnight() {
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      midnightTimer = setTimeout(() => {
+        refreshIfStale();
+        scheduleMidnight();
+      }, Math.max(next.getTime() - now.getTime(), 1000));
+    }
+    function onVisibility() {
+      if (document.visibilityState === "visible") {
+        refreshIfStale();
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    scheduleMidnight();
+    return () => {
+      cancelled = true;
+      clearTimeout(midnightTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyPlan/refresh работают через ref и setPlan.
+  }, [initDataRaw]);
+
+  // #288 — после выбора пункта листа, открывающего подтверждение, «⋯» скрыта (или лист закрыт): фокус —
+  // на первую кнопку подтверждения (иначе он теряется; на iOS тап по пункту фокус не ставит вообще).
+  useEffect(() => {
+    if (removeConfirmPlanItemId !== null || removeInclusionConfirmId !== null) {
+      document.querySelector<HTMLElement>(".plans-confirm [data-confirm-first]")?.focus();
+    }
+  }, [removeConfirmPlanItemId, removeInclusionConfirmId]);
+
+  // #288 — подтверждение копирования рисуется под списком недели, часто ниже экрана: показываем и фокусируем «Скопировать».
+  useEffect(() => {
+    const confirmBlock = copyConfirmRef.current;
+    if (copyConfirm && confirmBlock !== null) {
+      confirmBlock.scrollIntoView({ block: "center" });
+      confirmBlock.querySelector<HTMLElement>("[data-confirm-first]")?.focus({ preventScroll: true });
+    }
+  }, [copyConfirm]);
+
+  // «Отмена» подтверждения возвращает фокус на «⋯» (она снова в DOM к этому эффекту).
+  useEffect(() => {
+    if (pendingFocusKey !== null) {
+      document.querySelector<HTMLElement>(`[data-focus-key="${pendingFocusKey}"]`)?.focus();
+      setPendingFocusKey(null);
+    }
+  }, [pendingFocusKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -506,7 +601,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         planItemId={myWorkoutsView.planItemId}
         title={myWorkoutsView.title}
         currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
-        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday())))}
+        weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, plan.today ?? localToday())))}
         currentWeekId={myWorkoutsView.planWeekId}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onSuccess={() => {
@@ -581,7 +676,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // issue #258 — одна неделя за раз. Список — по возрастанию week_number;
   // текущая = последняя начавшаяся (ensure_current_plan_week не создаёт недели
   // наперёд, но будущие недели допустимы — тогда › пойдёт дальше текущей).
-  const currentIndex = plan.weeks.length > 0 ? resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, localToday()) : 0;
+  const currentIndex = plan.weeks.length > 0 ? resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, plan.today ?? localToday()) : 0;
   const currentWeekId = plan.weeks.length > 0 ? plan.weeks[currentIndex].id : null;
   const selectedIndexRaw = plan.weeks.findIndex((week) => week.id === selectedWeekId);
   const selectedIndex = selectedIndexRaw >= 0 ? selectedIndexRaw : currentIndex;
@@ -589,7 +684,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const libraryExercises = exercisesState.phase === "ready" ? exercisesState.exercises : [];
   const courseTint = (programId: number) => {
     const color = programCategoryColorVar(catalogPrograms, programId);
-    return color === null ? undefined : ({ ["--cat" as string]: color });
+    return color === null ? undefined : ({ ["--cat" as string]: color, ["--cat-ink" as string]: categoryInkVar(color) });
   };
   const activeInclusions = plan.inclusions.filter((i) => i.is_active);
   const finishedInclusions = completedInclusions(plan.inclusions);
@@ -601,6 +696,93 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     statusText = "Готов к тренировке.";
   } else {
     statusText = STATUS_MESSAGES[dashboard.status] ?? `Статус: ${dashboard.status}`;
+  }
+
+  // «Начать» на группе (строка недели и блок «Сегодня» — один и тот же путь).
+  function startGroup(group: PlanItemGroup) {
+    if (startingGroupKey !== null) {
+      return;
+    }
+    setStartingGroupKey(group.key);
+    onStartSession(
+      group.items.map((item) => item.id),
+      { manual: group.items[0]?.program_inclusion_id === null, title: group.title },
+    );
+  }
+  const groupTint = (group: PlanItemGroup) => {
+    const inclusionId = group.items[0]?.program_inclusion_id ?? null;
+    const inclusion = inclusionId === null ? undefined : plan.inclusions.find((i) => i.id === inclusionId);
+    return inclusion === undefined ? undefined : courseTint(inclusion.program_id);
+  };
+  const currentWeek = plan.weeks.length > 0 ? plan.weeks[currentIndex] : null;
+  // Копировать можно текущую/будущую неделю, если следующая есть или создаётся (как на бэкенде).
+  const canCopyWeek = plan.weeks.length > 0
+    && isEditableWeek(selectedIndex, currentIndex) && canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex);
+  // «Сегодня» — группы текущей недели на сегодняшний день недели.
+  // День недели — от plan.today сервера (дата пользователя), не от часов устройства (#288); вне недели — нет блока.
+  const todayIndex = currentWeek === null ? null : todayDayIndexInWeek(currentWeek.start_date, plan.today ?? localToday());
+  const todayGroups = currentWeek === null || todayIndex === null || selectedIndex !== currentIndex
+    ? []
+    : groupPlanItems(
+      plan.items.filter((item) => item.plan_week_id === currentWeek.id && item.day_of_week === todayIndex),
+      plan.inclusions, libraryExercises,
+    );
+
+  function renderSheet() {
+    if (sheet === null) {
+      return null;
+    }
+    if (sheet.kind === "row") {
+      const actions: SheetAction[] = [
+        {
+          key: "move", label: "Перенести", testId: "plans-sheet-move",
+          onSelect: () => setMyWorkoutsView({
+            kind: "move-plan-item", planItemId: sheet.planItemId, title: sheet.title,
+            currentDayOfWeek: sheet.dayOfWeek, planWeekId: sheet.planWeekId,
+          }),
+        },
+      ];
+      if (sheet.editWorkoutId !== null) {
+        const workoutId = sheet.editWorkoutId;
+        actions.push({
+          key: "edit", label: "Редактировать тренировку", testId: "plans-sheet-edit",
+          onSelect: () => setMyWorkoutsView({ kind: "edit", workoutId }),
+        });
+      }
+      actions.push({
+        key: "remove", label: "Убрать из плана", danger: true, testId: "plans-sheet-remove",
+        onSelect: () => { setRemoveError(null); setRemoveConfirmPlanItemId(sheet.planItemId); },
+      });
+      return (
+        <ActionSheet
+          title={sheet.title} actions={actions} onClose={() => setSheet(null)} testId="plans-row-sheet"
+          returnFocusTo={sheetOpener}
+        />
+      );
+    }
+    // #288 — копирование недели относится к плану, а не к курсу: лист плана («Текущий план») — только оно,
+    // лист курса — только «Убрать курс из плана».
+    const inclusion = sheet.inclusionId === null ? undefined : activeInclusions.find((i) => i.id === sheet.inclusionId);
+    const actions: SheetAction[] = [];
+    if (inclusion === undefined && canCopyWeek) {
+      const weekNumber = plan.weeks[selectedIndex].week_number;
+      actions.push({
+        key: "copy", label: `Скопировать неделю ${weekNumber} → ${weekNumber + 1}`, disabled: weekBusy,
+        testId: "plans-sheet-copy", onSelect: () => { setCopyConfirm(true); setCopyResult(null); },
+      });
+    }
+    if (inclusion !== undefined) {
+      actions.push({
+        key: "remove-course", label: "Убрать курс из плана", danger: true, testId: "plans-sheet-remove-course",
+        onSelect: () => { setInclusionError(null); setRemoveInclusionConfirmId(inclusion.id); },
+      });
+    }
+    return (
+      <ActionSheet
+        title={inclusion?.program_name ?? "Текущий план"} actions={actions} onClose={() => setSheet(null)}
+        testId="plans-plan-sheet" returnFocusTo={sheetOpener}
+      />
+    );
   }
 
   return (
@@ -617,7 +799,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           Мои тренировки
         </Button>
       </div>
-      <div className="workout-mode-buttons" role="tablist" aria-label="Обзор плана">
+      <div className="workout-mode-buttons vp-tabs plans-tabs" role="tablist" aria-label="Обзор плана">
         {([["now", "Сейчас"], ["completed", "Завершённые"]] as const).map(([key, label]) => (
           <button
             key={key} type="button" role="tab" aria-selected={overviewTab === key}
@@ -648,7 +830,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       )}
       {overviewTab === "now" && (
         <div className="profile-card" data-testid="plans-now-card">
-          <p className="block-subtitle">Текущий план</p>
+          <div className="plans-card-head">
+            <p className="block-subtitle">Текущий план</p>
+            {canCopyWeek && (
+              <MoreButton
+                label="Действия: Текущий план" testId="plans-card-more" focusKey="plan"
+                onClick={(opener) => openSheet({ kind: "plan", inclusionId: null }, opener)}
+              />
+            )}
+          </div>
           {activeInclusions.length === 0 && (
             <>
               <p className="block-subtitle" data-testid="plans-now-empty">
@@ -676,40 +866,80 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                 key={inclusion.id} className="plan-week-day-group plans-course" data-testid="plans-now-inclusion"
                 style={courseTint(inclusion.program_id)}
               >
-                <p className="plan-item-row">{inclusion.program_name}</p>
-                <p className="block-subtitle">
-                  {weekLabel ? `${weekLabel} · ` : ""}
-                  <span data-testid="plans-now-progress">{`На этой неделе: ${progress.done} из ${progress.total}`}</span>
-                </p>
-                {!confirming && (
-                  <Button size="s" mode="outline" onClick={() => setRemoveInclusionConfirmId(inclusion.id)}>
-                    Убрать курс из плана
-                  </Button>
-                )}
+                <div className="plans-course-head">
+                  <div className="plans-course-text">
+                    <p className="plan-item-row">{inclusion.program_name}</p>
+                    <p className="block-subtitle">
+                      {weekLabel ? `${weekLabel} · ` : ""}
+                      <span data-testid="plans-now-progress">{`На этой неделе: ${progress.done} из ${progress.total}`}</span>
+                    </p>
+                  </div>
+                  {!confirming && (
+                    <MoreButton
+                      label={`Действия: ${inclusion.program_name}`} testId="plans-plan-more" focusKey={`course-${inclusion.id}`}
+                      onClick={(opener) => openSheet({ kind: "plan", inclusionId: inclusion.id }, opener)}
+                    />
+                  )}
+                </div>
+                <PlanProgressBar
+                  done={progress.done} total={progress.total} percent={progressPercent(progress.done, progress.total)}
+                  label={`Прогресс недели: ${inclusion.program_name}`} testId="plans-now-progressbar"
+                />
                 {confirming && (
-                  <>
+                  <div className="plans-confirm">
                     <p className="block-subtitle">
                       Убрать курс «{inclusion.program_name}» из плана? История сохранится.
                     </p>
                     {inclusionError && <p className="gap-banner">{inclusionError}</p>}
-                    <Button
-                      size="s" mode="outline" disabled={removing}
-                      onClick={() => void handleRemoveInclusion(inclusion.id)}
-                    >
-                      {removing ? "Убираю…" : "Убрать"}
-                    </Button>
-                    <Button
-                      size="s" mode="outline" disabled={removing}
-                      onClick={() => { setRemoveInclusionConfirmId(null); setInclusionError(null); }}
-                    >
-                      Отмена
-                    </Button>
-                  </>
+                    <div className="plans-confirm-actions">
+                      <Button
+                        size="s" mode="outline" disabled={removing} data-confirm-first="true"
+                        onClick={() => void handleRemoveInclusion(inclusion.id)}
+                      >
+                        {removing ? "Убираю…" : "Убрать"}
+                      </Button>
+                      <Button
+                        size="s" mode="outline" disabled={removing}
+                        onClick={() => {
+                          setRemoveInclusionConfirmId(null);
+                          setInclusionError(null);
+                          setPendingFocusKey(`course-${inclusion.id}`);
+                        }}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
+      )}
+      {overviewTab === "now" && todayGroups.length > 0 && (
+        <section className="profile-card plans-today" data-testid="plans-today" aria-labelledby="plans-today-title">
+          <h2 id="plans-today-title" className="plans-today-title">Сегодня</h2>
+          {todayGroups.map((group) => {
+            const counter = groupCounter(group.items);
+            return (
+              <div key={group.key} className="plans-row-main" data-testid="plans-today-row" style={groupTint(group)}>
+                <span className="plans-row-bar" aria-hidden="true" />
+                <div className="plans-row-text">
+                  <span className="plans-row-title">{group.title}</span>
+                  <span className="plans-row-chip" data-done={counter.done >= counter.planned}>
+                    {`${counter.done}/${counter.planned}`}
+                  </span>
+                </div>
+                <button
+                  type="button" className="plans-start" aria-label={`Начать: ${group.title}`}
+                  disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
+                >
+                  {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
+                </button>
+              </div>
+            );
+          })}
+        </section>
       )}
       {overviewTab === "now" && visibleWeeks.length > 0 && (
         <>
@@ -745,78 +975,64 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               // не объединяет manual/user-Workout строки друг с другом,
               // докстринг PlanItem), поэтому group.items[0] — единственный
               // и весь предмет действия, не случайный выбор из нескольких.
+              // #286 B — эти действия теперь в листе «⋯» (одна кнопка на строке).
               const mutableItem = !isProgramBacked ? group.items[0] : null;
               const isRemoveConfirming = mutableItem !== null && removeConfirmPlanItemId === mutableItem.id;
               const isRemoving = mutableItem !== null && removingPlanItemId === mutableItem.id;
               const canEditWorkout = mutableItem !== null
                 && mutableItem.complex_id !== null && mutableItem.complex_source_type === "user";
+              const counter = groupCounter(group.items);
+              // #288 — имя для скринридера: название + день (одинаковые названия в разные дни различимы).
+              const rowDay = group.items[0]?.day_of_week ?? null;
+              const rowLabel = `${group.title}, ${rowDay === null ? "без дня" : (DAY_NAMES[rowDay] ?? `день ${rowDay}`).toLowerCase()}`;
               return (
-                <div key={group.key} className="plan-week-day-group">
-                  <p className="plan-item-row">
-                    {group.title}
-                    {" · "}
-                    <span data-testid="plan-item-counter">
-                      {`${groupCounter(group.items).done}/${groupCounter(group.items).planned}`}
-                    </span>
-                  </p>
-                  {isCurrent && (
-                    <button
-                      type="button"
-                      className="program-card-button plan-add-exercise-button"
-                      disabled={startingGroupKey !== null}
-                      onClick={() => {
-                        if (startingGroupKey !== null) {
-                          return;
-                        }
-                        setStartingGroupKey(group.key);
-                        onStartSession(
-                          group.items.map((item) => item.id),
-                          { manual: !isProgramBacked, title: group.title },
-                        );
-                      }}
-                    >
-                      {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
-                    </button>
-                  )}
-                  {isEditable && mutableItem !== null && !isRemoveConfirming && (
-                    <>
-                      <Button
-                        size="s" mode="outline"
-                        onClick={() => setMyWorkoutsView({
-                          kind: "move-plan-item", planItemId: mutableItem.id,
-                          title: group.title, currentDayOfWeek: mutableItem.day_of_week,
-                          planWeekId: mutableItem.plan_week_id,
-                        })}
+                <div key={group.key} className="plan-week-day-group plans-row" data-testid="plans-row" style={groupTint(group)}>
+                  <div className="plans-row-main">
+                    <span className="plans-row-bar" aria-hidden="true" />
+                    <div className="plans-row-text">
+                      <span className="plans-row-title">{group.title}</span>
+                      <span className="plans-row-chip" data-done={counter.done >= counter.planned} data-testid="plan-item-counter">
+                        {`${counter.done}/${counter.planned}`}
+                      </span>
+                    </div>
+                    {isCurrent && (
+                      <button
+                        type="button" className="plans-start" aria-label={`Начать: ${rowLabel}`}
+                        disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
                       >
-                        Перенести
-                      </Button>
-                      <Button size="s" mode="outline" onClick={() => setRemoveConfirmPlanItemId(mutableItem.id)}>
-                        Убрать из плана
-                      </Button>
-                      {canEditWorkout && (
-                        <Button
-                          size="s" mode="outline"
-                          onClick={() => setMyWorkoutsView({ kind: "edit", workoutId: mutableItem.complex_id! })}
-                        >
-                          Редактировать тренировку
-                        </Button>
-                      )}
-                    </>
-                  )}
+                        {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
+                      </button>
+                    )}
+                    {isEditable && mutableItem !== null && !isRemoveConfirming && (
+                      <MoreButton
+                        label={`Действия: ${rowLabel}`} testId="plans-row-more" focusKey={`row-${mutableItem.id}`}
+                        onClick={(opener) => openSheet({
+                          kind: "row", planItemId: mutableItem.id, title: group.title,
+                          dayOfWeek: mutableItem.day_of_week, planWeekId: mutableItem.plan_week_id,
+                          editWorkoutId: canEditWorkout ? mutableItem.complex_id : null,
+                        }, opener)}
+                      />
+                    )}
+                  </div>
                   {isEditable && mutableItem !== null && isRemoveConfirming && (
-                    <>
+                    <div className="plans-confirm">
                       <p className="block-subtitle">Убрать «{group.title}» из плана?</p>
                       {removeError && <p className="gap-banner">{removeError}</p>}
-                      <Button
-                        size="s" mode="outline" disabled={isRemoving}
-                        onClick={() => void handleRemovePlanItem(mutableItem.id)}
-                      >
-                        {isRemoving ? "Убираю…" : "Убрать"}
-                      </Button>
-                      <Button size="s" mode="outline" disabled={isRemoving} onClick={() => setRemoveConfirmPlanItemId(null)}>
-                        Отмена
-                      </Button>
-                    </>
+                      <div className="plans-confirm-actions">
+                        <Button
+                          size="s" mode="outline" disabled={isRemoving} data-confirm-first="true"
+                          onClick={() => void handleRemovePlanItem(mutableItem.id)}
+                        >
+                          {isRemoving ? "Убираю…" : "Убрать"}
+                        </Button>
+                        <Button
+                          size="s" mode="outline" disabled={isRemoving}
+                          onClick={() => { setRemoveConfirmPlanItemId(null); setPendingFocusKey(`row-${mutableItem.id}`); }}
+                        >
+                          Отмена
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </div>
               );
@@ -825,7 +1041,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
             return (
               <Section
                 key={week.id}
-                className={isCurrent ? "block-section plan-week-current" : "block-section plan-week-past"}
+                className={isCurrent ? "block-section plans-week-card plan-week-current" : "block-section plans-week-card plan-week-past"}
               >
                 <div className="plan-week-stepper" data-testid="plan-week-stepper">
                   <button
@@ -865,6 +1081,11 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   {isCurrent ? "Текущая неделя · " : ""}
                   {`${weekProgressValue.done} из ${weekProgressValue.total}`}
                 </p>
+                <PlanProgressBar
+                  done={weekProgressValue.done} total={weekProgressValue.total}
+                  percent={progressPercent(weekProgressValue.done, weekProgressValue.total)}
+                  label="Прогресс недели" testId="plan-week-progressbar"
+                />
                 {isCurrent && !isReady && (
                   <p className="block-subtitle" style={{ marginBottom: "12px" }}>{statusText}</p>
                 )}
@@ -894,38 +1115,35 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     </button>
                   </div>
                 )}
-                {isEditable && canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex) && (
-                  <div className="plan-week-day-group" data-testid="plan-week-copy">
-                    {!copyConfirm ? (
-                      <button
-                        type="button" className="program-card-button plan-add-exercise-button"
-                        disabled={weekBusy}
-                        onClick={() => { setCopyConfirm(true); setCopyResult(null); }}
+                {copyConfirm && isEditable && canAdvanceWeek(selectedIndex, plan.weeks.length, currentIndex) && (
+                  <div ref={copyConfirmRef} className="plan-week-day-group" data-testid="plan-week-copy">
+                    <p className="block-subtitle">
+                      Скопировать свои тренировки и упражнения этой недели в следующую? Дубли пропустим.
+                    </p>
+                    <div className="plans-confirm-actions">
+                      <Button
+                        size="s" mode="outline" disabled={weekBusy} data-confirm-first="true"
+                        onClick={() => void handleCopyWeek(week.id)}
                       >
-                        Скопировать неделю → на следующую
-                      </button>
-                    ) : (
-                      <>
-                        <p className="block-subtitle">
-                          Скопировать свои тренировки и упражнения этой недели в следующую? Дубли пропустим.
-                        </p>
-                        <Button size="s" mode="outline" disabled={weekBusy} onClick={() => void handleCopyWeek(week.id)}>
-                          {weekBusy ? "Копирую…" : "Скопировать"}
-                        </Button>
-                        <Button size="s" mode="outline" disabled={weekBusy} onClick={() => setCopyConfirm(false)}>
-                          Отмена
-                        </Button>
-                      </>
-                    )}
+                        {weekBusy ? "Копирую…" : "Скопировать"}
+                      </Button>
+                      <Button
+                        size="s" mode="outline" disabled={weekBusy}
+                        onClick={() => { setCopyConfirm(false); setPendingFocusKey("plan"); }}
+                      >
+                        Отмена
+                      </Button>
+                    </div>
                   </div>
                 )}
-                {copyResult && <p className="block-subtitle" data-testid="plan-week-copy-result">{copyResult}</p>}
+                {copyResult && <p className="block-subtitle" role="status" data-testid="plan-week-copy-result">{copyResult}</p>}
                 {weekError && <p className="gap-banner">{weekError}</p>}
               </Section>
             );
           })}
         </>
       )}
+      {renderSheet()}
 
       {picker.phase !== "closed" && (
         <Section className="block-section" header="Добавить упражнение">

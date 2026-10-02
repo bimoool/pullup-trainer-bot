@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
+import { pickRowAction } from "../../fixtures/plans";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import type { TelegramTheme } from "../../fixtures/telegramMock";
@@ -169,14 +170,14 @@ for (const width of WIDTHS) {
         await fresh(page, U.builder, theme);
         await openTab(page, "Планы");
         const group = page.locator(".plan-week-day-group").filter({ hasText: /^Смешанная/ });
-        await group.getByRole("button", { name: "Начать", exact: true }).click();
+        await group.getByRole("button", { name: /^Начать: / }).click();
         await expect(page.getByTestId("session-pre-items").locator("li")).toHaveCount(3);
         await verify(page, "Пред-экран сессии из Планов", { primary: "Начать", width });
 
         // «Перенести» из Планов
         await fresh(page, U.builder, theme);
         await openTab(page, "Планы");
-        await page.getByRole("button", { name: "Перенести" }).first().click();
+        await pickRowAction(page, "Перенести"); // #286 B: «Перенести» — пункт листа «⋯» строки
         await expect(page.locator(".plan-title", { hasText: "Перенести" })).toBeVisible();
         await snap(page, width, theme, "09_move_plan_item");
         await verify(page, "Перенести", { primary: "Сохранить", width });

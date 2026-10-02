@@ -58,6 +58,11 @@ export function categoryColorVar(name: string, homeOrder: string[]): string {
   return `var(--vp-cat-${index >= 0 ? index % CATEGORY_PALETTE_SIZE : hashIndex(key)})`;
 }
 
+/** «Чернила» цвета категории для ТЕКСТА (чип/подпись, #288): `var(--vp-cat-3)` → `var(--vp-cat-3-ink)`. */
+export function categoryInkVar(colorVar: string): string {
+  return colorVar.replace(/\)$/, "-ink)");
+}
+
 /** Цвет программы = цвет её категории (см. `categoryColorVar`); null — программа не найдена. */
 export function programCategoryColorVar(programs: ProgramResponseV2[], programId: number): string | null {
   const program = programs.find((item) => item.id === programId);
