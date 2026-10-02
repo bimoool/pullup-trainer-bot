@@ -1242,6 +1242,48 @@ async def seed_background_interval(session: AsyncSession, telegram_id: int) -> N
     await session.flush()
 
 
+async def seed_analytics_distribution(session: AsyncSession, telegram_id: int) -> None:
+    """#274 «Analytics distribution»: свои упражнения категорий e2e_dist_pull (подкатегории
+    vertical/horizontal), e2e_dist_core, e2e_dist_legs (без тренировок — строка с нулями) и сессии:
+      * 3 дня назад — pull/vertical, 40 мин; 5 дней назад — pull/horizontal + core (50/50), 20 мин;
+      * 6 дней назад — свободная активность «Бег», 30 мин; 50 дней назад — core, 60 мин (виден с 3 мес).
+    1 мес: pull 1.5/50 (vertical 1/40, horizontal 0.5/10), core 0.5/10, legs 0/0, «Другая активность»
+    1/30; итого 3 / 90. 3 мес: core 1.5/70, итого 4 / 150."""
+    user = await _onboard(session, telegram_id)
+
+    def exercise(name: str, category: str, subcategory: str | None = None) -> Exercise:
+        return Exercise(
+            name=name, metric_type=MetricType.REPS, category=category, subcategory=subcategory,
+            source_type="user", owner_user_id=user.id,
+        )
+
+    vertical = exercise("Тяга вертикальная", "e2e_dist_pull", "vertical")
+    horizontal = exercise("Тяга горизонтальная", "e2e_dist_pull", "horizontal")
+    core = exercise("Пресс", "e2e_dist_core")
+    legs = exercise("Приседания", "e2e_dist_legs")
+    session.add_all([vertical, horizontal, core, legs])
+    await session.flush()
+
+    async def add(days_ago: int, minutes: int, exercises: list[Exercise], activity_type: str | None = None) -> None:
+        at = datetime.now(UTC) - timedelta(days=days_ago)
+        training = TrainingSession(
+            user_id=user.id, source=SessionSource.FREEFORM if activity_type else SessionSource.PLAN,
+            status=SessionStatus.COMPLETED, performed_at=at,
+            completed_at=None if activity_type else at + timedelta(minutes=minutes),
+            activity_type=activity_type, duration_seconds=minutes * 60 if activity_type else None,
+        )
+        session.add(training)
+        await session.flush()
+        for index, item in enumerate(exercises):
+            session.add(SessionBlock(session_id=training.id, order_index=index, exercise_id=item.id))
+
+    await add(3, 40, [vertical])
+    await add(5, 20, [horizontal, core])
+    await add(6, 30, [], activity_type="running")
+    await add(50, 60, [core])
+    await session.flush()
+
+
 async def seed_body_metrics(session: AsyncSession, telegram_id: int) -> None:
     """#270 «Body metrics»: онбординг (вес 75 кг / рост 180 см = текущая запись истории «сейчас»)
     + два задним числом замера веса: 78 кг (30 дней назад) и 76.5 кг (14 дней назад)."""
@@ -1253,6 +1295,7 @@ async def seed_body_metrics(session: AsyncSession, telegram_id: int) -> None:
 
 
 SCENARIOS = {
+    "analytics_distribution": seed_analytics_distribution,
     "body_metrics": seed_body_metrics,
     "background_interval": seed_background_interval,
     "session_recovery": seed_session_recovery,

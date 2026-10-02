@@ -16,6 +16,9 @@ from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2_analytics import (
     AnalyticsActivityResponse,
+    AnalyticsDistributionCategoryResponse,
+    AnalyticsDistributionResponse,
+    AnalyticsDistributionSubResponse,
     AnalyticsExerciseResponse,
     AnalyticsMetricsResponse,
     AnalyticsMetricWeekResponse,
@@ -67,7 +70,7 @@ async def get_training_analytics(
     from_day = date_from if date_from is not None else to_day - timedelta(days=29)
     if from_day > to_day or (to_day - from_day).days >= MAX_RANGE_DAYS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid date range")
-    analytics, metrics, tz = await TrainingAnalyticsService(session).build(
+    analytics, metrics, distribution, tz = await TrainingAnalyticsService(session).build(
         user_id=user.id, timezone=user.timezone, now=now, date_from=from_day, date_to=to_day,
     )
 
@@ -89,6 +92,19 @@ async def get_training_analytics(
             ],
             total_workouts=metrics.total_workouts, total_minutes=metrics.total_minutes,
             without_duration=metrics.without_duration,
+        ),
+        distribution=AnalyticsDistributionResponse(
+            categories=[
+                AnalyticsDistributionCategoryResponse(
+                    name=c.name, workouts=c.workouts, minutes=c.minutes,
+                    subcategories=[
+                        AnalyticsDistributionSubResponse(name=s.name, workouts=s.workouts, minutes=s.minutes)
+                        for s in c.subcategories
+                    ],
+                )
+                for c in distribution.categories
+            ],
+            total_workouts=distribution.total_workouts, total_minutes=distribution.total_minutes,
         ),
         activity=AnalyticsActivityResponse(
             sessions_last_30_days=analytics.activity.sessions_last_30_days,

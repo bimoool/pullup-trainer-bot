@@ -644,6 +644,25 @@ class TrainingSessionRepository:
         result = await self._session.execute(select(Exercise.id, Exercise.name).where(Exercise.id.in_(exercise_ids)))
         return {row.id: row.name for row in result.all()}
 
+    async def exercise_categories(self, exercise_ids: set[int]) -> dict[int, tuple[str, str | None]]:
+        """(category, subcategory) упражнений по id — для распределения аналитики (#274)."""
+        if not exercise_ids:
+            return {}
+        result = await self._session.execute(
+            select(Exercise.id, Exercise.category, Exercise.subcategory).where(Exercise.id.in_(exercise_ids)),
+        )
+        return {row.id: (row.category, row.subcategory) for row in result.all()}
+
+    async def library_categories(self, user_id: int) -> list[tuple[str, str | None]]:
+        """Различные (category, subcategory) каталога, видимого пользователю
+        (system + собственные user-упражнения) — нулевые строки таблицы (#274)."""
+        result = await self._session.execute(
+            select(Exercise.category, Exercise.subcategory)
+            .where((Exercise.source_type == "system") | (Exercise.owner_user_id == user_id))
+            .distinct(),
+        )
+        return [(row.category, row.subcategory) for row in result.all()]
+
     async def list_completed_for_workout(self, user_id: int, workout_id: int) -> list[SessionDetail]:
         """Завершённые сессии пользователя, чей замороженный workout_snapshot
         ссылается на этот Workout (workout_snapshot.workout_id). Новые первыми."""

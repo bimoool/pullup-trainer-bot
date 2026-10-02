@@ -137,8 +137,8 @@ any merge into `develop/current`.
 | TUT / Workload | A1–A2 | not stored | DOMAIN-EQUIVALENT | no rep tempo / load-intensity model | per-protocol metrics (reps, work time, PB) instead | — | analytics-v2.spec.ts |
 | Range 1 Mo / 3 Mo / Custom | A3 | tabs 1 мес / 3 мес / Свой (+ «Применить») | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric» |
 | Weekly chart | A5 | weekly SVG bars (Monday-labelled) for metric × range | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric»; analytics-v2.spec.ts |
-| Distribution by type (sunburst) | A4 | none | MISSING | — | SVG donut by category | #274 | — |
-| Multi-month summary table | A6 | none | MISSING | — | summary table + TOTAL | #274 | — |
+| Distribution by type (sunburst) | A4 | SVG donut «По типам» (inner = category, outer = subcategory) for metric × range, legend with project palette; free activities = «Другая активность» | DONE | — | — | #274 | parity/analytics-distribution.spec.ts «Analytics distribution»; tests/test_web/test_v2_analytics_distribution.py; tests/analyticsDistribution.test.ts |
+| Multi-month summary table | A6 | «Сводка»: category + subcategory rows × Тренировки / Минуты, TOTAL; zeros for catalog categories | DONE | — | — | #274 | parity/analytics-distribution.spec.ts «Analytics distribution»; test_v2_analytics_distribution.py |
 | Exercise trends / personal bests | (ours beyond Crimpd) | per-exercise panels, PB markers | DONE | — | — | — | analytics-v2.spec.ts |
 | Info (i) definitions | A1 | ⓘ sheet with both metric definitions | DONE | — | — | #259 | crimpd-parity.spec.ts «Analytics metric» |
 | Export CSV | A7 | Analytics card «Экспорт данных — CSV» → signed link → downloadFile/open | DONE | — | CSV download | #267 | parity/export.spec.ts «Export»; tests/test_web/test_v2_export.py; tests/exportDownload.test.ts |
