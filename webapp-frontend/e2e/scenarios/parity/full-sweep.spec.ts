@@ -27,12 +27,17 @@ type Mode = "empty" | "populated";
 const MODES: readonly Mode[] = ["empty", "populated"];
 
 // Базы telegram_id: +индекс комбинации (320 light / 320 dark / 390 light / 390 dark), +100 на retry.
-const BASE = { empty: 999_601, populated: 999_611, workout: 999_621, tests: 999_631, settings: 999_641 } as const;
+const BASE = {
+  empty: 999_601, populated: 999_611, workout: 999_621, tests: 999_631, settings: 999_641, plans: 999_651,
+} as const;
 const uid = (base: number, comboIndex: number, retry: number) => base + comboIndex + retry * 100;
 
 const WORKOUT = "Свип: тренировка";
 const COURSE = "Свип: курс";
 const HANG = "Вис на перекладине, сек";
+const ELECTIVE = "Факультатив — 3 минуты подтягиваний"; // #279, сидится вместе с наполненным пользователем
+// Завершённых тренировок за 30 дней у наполненного пользователя: 3 «Подтягивания» + «Бег» + 2 плановые + 2 факультатива.
+const POPULATED_WORKOUTS = 8;
 
 const tabbar = (page: Page) => page.locator(".bottom-tabbar");
 const homeMarker = (page: Page) => page.getByTestId("home-tests-row");
@@ -74,14 +79,14 @@ const TABS: {
     label: "Журнал", shell: journalMarker,
     state: {
       empty: (page) => page.getByText("В этом месяце тренировок нет"),
-      populated: (page) => page.getByText("Бег", { exact: true }).first(),
+      populated: (page) => page.getByText(ELECTIVE).first(),
     },
   },
   {
     label: "Аналитика", shell: analyticsMarker,
     state: {
       empty: (page) => page.getByTestId("export-card"),
-      populated: (page) => page.getByTestId("analytics-metric-total").filter({ hasText: "Всего тренировок: 6" }),
+      populated: (page) => page.getByTestId("analytics-metric-total").filter({ hasText: `Всего тренировок: ${POPULATED_WORKOUTS}` }),
     },
   },
   {
@@ -242,6 +247,26 @@ const FLOWS: Flow[] = [
       await expect(homeMarker(page)).toBeVisible();
     },
   },
+  {
+    // #271: глобальная подборка «E2E: подборка» создаётся сидом `collections` (scripts/e2e_seed_all.sh).
+    id: "Главная: «Подборки» → экран подборки → программа / упражнение → назад", modes: MODES,
+    run: async ({ page }) => {
+      const row = page.getByTestId("collections-row");
+      const screen = page.getByTestId("collection-screen");
+      await expect(row).toBeVisible();
+      await visit(page, {
+        where: "Главная → подборка", open: () => row.getByTestId("collection-card").filter({ hasText: "E2E: подборка" }).click(),
+        dest: [screen, page.getByTestId("collection-title"), page.getByTestId("collection-item")],
+        exit: { button: byName(page, "← Назад") }, origin: row,
+        inside: async () => {
+          await visit(page, {
+            where: "Подборка → программа", open: () => page.getByTestId("collection-item").first().click(),
+            dest: [page.getByTestId("program-detail-title")], exit: { button: byName(page, "← Назад") }, origin: screen,
+          });
+        },
+      });
+    },
+  },
   // ---- Планы --------------------------------------------------------------------------------
   {
     id: "Планы: Сейчас / Завершённые", modes: MODES,
@@ -322,12 +347,13 @@ const FLOWS: Flow[] = [
     },
   },
   {
-    id: "Журнал: карточка → деталь → назад", modes: ["populated"],
+    id: "Журнал: карточка (факультатив #279) → деталь с «Изменить» и «Удалить» → назад", modes: ["populated"],
     run: async ({ page }) => {
       await openTab(page, "Журнал");
       await visit(page, {
-        where: "Журнал → карточка", open: () => page.getByText("8 · 7", { exact: true }).first().click(),
-        dest: [page.getByText("Факт: 8 · 7")], exit: { button: byName(page, "← Назад") }, origin: journalMarker(page),
+        where: "Журнал → факультатив", open: () => page.getByText(ELECTIVE).first().click(),
+        dest: [byName(page, /Изменить/, false), byName(page, /Удалить/, false)], exit: { button: byName(page, "← Назад") },
+        origin: journalMarker(page),
       });
     },
   },
@@ -367,6 +393,24 @@ const FLOWS: Flow[] = [
     },
   },
   // ---- Профиль ------------------------------------------------------------------------------
+  {
+    // #276: карточка «Сравнение с похожими» на детали теста — всегда в одном из состояний, без пустого места.
+    id: "Тест → «Сравнение с похожими» (результат / мало данных / нет результата) → назад", modes: MODES,
+    run: async ({ page, mode }) => {
+      await openTab(page, "Профиль");
+      const name = mode === "populated" ? "Максимум подтягиваний" : HANG;
+      await visit(page, {
+        where: "Профиль → тест → сравнение", open: () => page.getByTestId("profile-tests").getByTestId("test-card").filter({ hasText: name }).click(),
+        dest: [page.getByTestId("peer-insights-title")], exit: "telegram", origin: profileMarker(page),
+        inside: async () => {
+          const card = page.getByTestId("peer-insights");
+          await expect(card.getByTestId("peer-insights-loading")).toHaveCount(0);
+          await expect(card.getByTestId("peer-insights-error")).toHaveCount(0);
+          await expect(card.locator('[data-testid^="peer-insights-"]:not([data-testid="peer-insights-title"])').first()).toBeVisible();
+        },
+      });
+    },
+  },
   {
     id: "Профиль: ⚙️ настройки → отмена", modes: MODES,
     run: async ({ page }) => {
@@ -520,7 +564,7 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
 
       await openTab(page, "Аналитика");
       const before = await workoutsStat(page);
-      expect(before).toBe(6);
+      expect(before).toBe(POPULATED_WORKOUTS);
       await openTab(page, "Главная");
 
       // Главная → деталь → «Начать» → предэкран → живая сессия.
@@ -637,29 +681,57 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       expect(apiFailures).toEqual([]);
     });
 
-    test("планы: недели вперёд/назад, счётчики, действия только у текущей", async ({ page }, testInfo) => {
-      const { consoleErrors, apiFailures } = await openAppAs(page, uid(BASE.populated, comboIndex, testInfo.retry), { theme });
+    test("планы: назад к прошлой неделе, вперёд (#275) — будущая неделя, копирование с подтверждением, перенос", async ({ page }, testInfo) => {
+      const { consoleErrors, apiFailures } = await openAppAs(page, uid(BASE.plans, comboIndex, testInfo.retry), { theme, backButton: true });
       await openTab(page, "Планы");
       const label = page.getByTestId("plan-week-label");
       const next = page.getByRole("button", { name: "Следующая неделя" });
       const prev = page.getByRole("button", { name: "Предыдущая неделя" });
+      const copyButton = page.getByRole("button", { name: "Скопировать неделю → на следующую" });
 
       await expect(label).toContainText(/Неделя \d+ · \d{1,2} \S+ – \d{1,2} \S+/);
-      await expect(next).toBeDisabled();
       await expect(page.getByRole("button", { name: "Начать", exact: true })).not.toHaveCount(0);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
       await expectScreenHealthy(page, "Планы: текущая неделя");
       const current = await label.innerText();
 
+      // Прошлая неделя: только чтение (нет «Начать», «+ Добавить упражнение»).
       await prev.click();
       await expect(label).not.toHaveText(current);
       await expect(page.getByTestId("plan-item-counter")).toHaveText(["1/1"]);
       await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toHaveCount(0);
       await expectScreenHealthy(page, "Планы: прошлая неделя");
-
       await next.click();
       await expect(label).toHaveText(current);
+
+      // Будущая неделя: пустая, но редактируемая.
+      await expect(next).toBeEnabled();
+      await next.click();
+      await expect(label).not.toHaveText(current);
+      await expect(page.getByText("На эту неделю пока ничего не запланировано.")).toBeVisible();
+      await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
+      await expectScreenHealthy(page, "Планы: будущая неделя");
+      await prev.click();
+      await expect(label).toHaveText(current);
+
+      // Копирование недели: подтверждение, «Отмена» ничего не делает, «Скопировать» даёт итог.
+      await copyButton.click();
+      await expect(page.getByText(/Скопировать свои тренировки и упражнения/)).toBeVisible();
+      await page.getByRole("button", { name: "Отмена" }).click();
+      await expect(copyButton).toBeVisible();
+      await copyButton.click();
+      await page.getByRole("button", { name: "Скопировать", exact: true }).click();
+      await expect(page.getByTestId("plan-week-copy-result")).toContainText(/Скопировано: \d+, пропущено дублей: \d+/);
+      await expect(label).not.toHaveText(current); // после копирования открыта следующая неделя
+      await expectScreenHealthy(page, "Планы: после копирования");
+
+      // Перенос на другую неделю: выбор недели есть и ведёт назад.
+      await page.getByRole("button", { name: "Перенести" }).first().click();
+      await expect(page.getByTestId("move-week-picker")).toBeVisible();
+      await expectScreenHealthy(page, "Планы: перенос");
+      await pressTelegramBackButton(page);
+      await expect(label).toBeVisible();
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });

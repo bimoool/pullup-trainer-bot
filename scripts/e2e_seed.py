@@ -1380,7 +1380,8 @@ async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
       * своя Workout «Свип: тренировка» (reps 2 x 8, отдых 2 с) в избранном;
       * Журнал/Аналитика: сессии 2 и 4 дня назад («Подтягивания», с подходами и временем), 9 дней
         назад (с подходами), «Бег» 30 мин 3 дня назад и 50 дней назад (виден в «3 мес»);
-      * Тесты: «Максимум подтягиваний» 10 → 12 повт.; Профиль: вес 78 → 76.5 кг (история)."""
+      * Тесты: «Максимум подтягиваний» 10 → 12 повт.; Профиль: вес 78 → 76.5 кг (история);
+      * два факультатива (#279) в Журнале: 30 и 90 минут назад."""
     await seed_plan_week_stepper(session, telegram_id)
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     user.timezone = "Europe/Moscow"
@@ -1449,6 +1450,7 @@ async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
     history = BodyMetricRepository(session)
     await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal(78), now - timedelta(days=30))
     await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal("76.5"), now - timedelta(days=14))
+    await _seed_backfilled_electives(session, user)  # #279: два факультатива в Журнале (30 и 90 минут назад)
     await session.flush()
 
 
@@ -1510,6 +1512,13 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
     снаряд упакованы JSON-ом в SetLog.note. Сид воспроизводит это ТЕМИ ЖЕ функциями backfill:
     два факультатива — «3 минуты подтягиваний» (30 минут назад, 3 интервала по 4+3+2) и
     «на максимум» (90 минут назад, 4 подхода)."""
+    user = await _onboard(session, telegram_id)
+    user.timezone = "Europe/Moscow"
+    await _seed_backfilled_electives(session, user)
+
+
+async def _seed_backfilled_electives(session: AsyncSession, user: User) -> None:
+    """Два факультатива пользователя (см. seed_owner_optional_workout) — общий помощник и для «Full sweep» (#277)."""
     from app.db.models import ElectiveWorkout
     from app.domain.electives import ElectiveType
     from scripts.backfill_multi_program import (
@@ -1518,8 +1527,6 @@ async def seed_owner_optional_workout(session: AsyncSession, telegram_id: int) -
         _get_or_create_exercise,
     )
 
-    user = await _onboard(session, telegram_id)
-    user.timezone = "Europe/Moscow"
     now = datetime.now(UTC)
     for elective_type, at, sequence in (
         (ElectiveType.THREE_MINUTES, now - timedelta(minutes=30), [4, 3, 2]),
