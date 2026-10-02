@@ -98,3 +98,24 @@ export function searchContent(
     total: programs.length + workouts.length + exercises.length + tests.length,
   };
 }
+
+export type SearchFilters = { category: string | null; favoritesOnly: boolean; testsOnly: boolean };
+
+/** Нажатие на чип фильтра поиска (#284 C3). «Тесты» несовместимы с «Избранным» и категориями
+ * (у тестов нет категории и избранного — комбинация всегда давала «Ничего не найдено»):
+ * включение «Тестов» сбрасывает остальные чипы, включение любого другого — «Тесты».
+ * «Избранное» и категория между собой комбинируются. Повторное нажатие снимает чип. */
+export function toggleSearchFilter<T extends SearchFilters>(
+  state: T,
+  chip: { kind: "tests" } | { kind: "favorites" } | { kind: "category"; category: string },
+): T {
+  if (chip.kind === "tests") {
+    return state.testsOnly
+      ? { ...state, testsOnly: false }
+      : { ...state, testsOnly: true, favoritesOnly: false, category: null };
+  }
+  if (chip.kind === "favorites") {
+    return { ...state, favoritesOnly: !state.favoritesOnly, testsOnly: false };
+  }
+  return { ...state, category: chip.category === state.category ? null : chip.category, testsOnly: false };
+}

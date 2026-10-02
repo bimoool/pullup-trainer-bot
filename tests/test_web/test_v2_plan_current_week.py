@@ -91,3 +91,26 @@ async def test_no_timezone_falls_back_to_project_default(session, user, clock):
     response = await v2_get(session, TG, "/api/v2/plan")
     assert response.status_code == 200
     assert response.json()["plan"]["current_week_id"] is not None
+
+
+async def test_course_current_week_uses_user_timezone_like_plan_weeks(session, user, clock):
+    """#284 C4: current_week курса считался по UTC-дате, а недели плана — по дате пользователя."""
+    from app.db.models_program import ProgramInclusion
+    from tests.test_web.test_v2_plan_overview import _program
+
+    clock(SUNDAY_NIGHT_UTC)
+    program = await _program(session, config={"duration_weeks": 4})
+
+    async def current_week(tz: str) -> int:
+        user.timezone = tz
+        await session.commit()
+        created = await v2_post(session, TG, "/api/v2/program-inclusions", {"program_id": program.id})
+        assert created.status_code == 200
+        row = await session.get(ProgramInclusion, created.json()["id"])
+        row.started_at = datetime(2026, 9, 28, 12, 0, tzinfo=UTC)  # ровно 7 дней до понедельника пользователя в Москве
+        await session.commit()
+        plan_json = (await v2_get(session, TG, "/api/v2/plan")).json()["plan"]
+        return next(i for i in plan_json["program_inclusions"] if i["id"] == row.id)["current_week"]
+
+    assert await current_week("Europe/Moscow") == 2  # у пользователя уже понедельник 5 октября
+    assert await current_week("UTC") == 1  # у UTC-пользователя ещё воскресенье 4 октября
