@@ -169,6 +169,16 @@ for id in 998811 998812; do seed ready "$id"; done
 for id in 991001 991002 991003 991004 991011 991012 991013 991014; do seed builder_workouts "$id"; done
 # R-4 (#289) «Live conflict» (parity/live-conflict.spec.ts): 998501 (320 light) / 998511 (390 dark), каждый + retry (id+1); session_recovery.
 for id in 998501 998502 998511 998512; do seed session_recovery "$id"; done
+# Final journey (#277): 9969xx — 996901-04 пустые (RO), 996911-14 наполненные (мутируют: тренировка завершается), 4 комбинации
+# (320 light / 320 dark / 390 light / 390 dark); retry — +10000.
+for retry in 0 10000; do
+  for id in 996901 996902 996903 996904; do seed sweep_empty $((id + retry)); done
+  for id in 996911 996912 996913 996914; do seed sweep_populated $((id + retry)); done
+done
+# Visual/a11y review (#290, wave 13): 996101/996111 (320 px light/dark), 996121/996131 (390 px light/dark) — Live Session
+# (session_recovery, мутирует: план → сессия), 99614x/99615x/99616x/99617x — Журнал (journal_edit, только чтение); каждый + retry (id+1).
+for id in 996101 996102 996111 996112 996121 996122 996131 996132; do seed session_recovery "$id"; done
+for id in 996141 996142 996151 996152 996161 996162 996171 996172; do seed journal_edit "$id"; done
 # «Live final» (parity/live-final.spec.ts): 9965xx — пред-экран и правка предыдущего подхода, 320/390 × light/dark,
 # на тест id + retry (≤ +3); session_recovery.
 for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_recovery $((base + off)); done; done

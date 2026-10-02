@@ -1,5 +1,5 @@
 import { Button } from "@telegram-apps/telegram-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { createSession, getWorkout, listWorkouts, type WorkoutResponseV2 } from "./apiV2";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX, WORKOUT_EFFORT_PROMPT } from "./effortScale";
@@ -18,9 +18,56 @@ export function LogActivitySheet({
   onPick: (kind: LogKind) => void;
   onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useBackButton(() => closeRef.current(), []);
+
+  // #290: как у остальных шторок — фокус внутрь, Escape закрывает, Tab не уходит под шторку,
+  // при закрытии фокус возвращается на кнопку, открывшую шторку.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || dialog === null) {
+        return;
+      }
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
+      if (items.length === 0) {
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!dialog.contains(active) || (event.shiftKey && (active === first || active === dialog))) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (opener !== null && opener.isConnected) {
+        opener.focus();
+      }
+    };
+  }, []);
+
   return (
     <div className="home-sheet-backdrop" data-testid="journal-log-sheet-backdrop" onClick={onClose}>
-      <div className="home-sheet" role="dialog" aria-label="Записать" data-testid="journal-log-sheet" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={dialogRef} className="home-sheet" role="dialog" aria-modal="true" aria-label="Записать" tabIndex={-1}
+        data-testid="journal-log-sheet" onClick={(event) => event.stopPropagation()}
+      >
         <button type="button" className="home-sheet-action" data-testid="log-option-workout" onClick={() => onPick("workout")}>
           Тренировку из моих
         </button>
