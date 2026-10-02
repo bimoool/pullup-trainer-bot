@@ -34,7 +34,11 @@ const uid = (base: number, comboIndex: number, retry: number) => base + comboInd
 
 const WORKOUT = "Свип: тренировка";
 const COURSE = "Свип: курс";
-const HANG = "Вис на перекладине, сек";
+const HANG = "Вис на перекладине, сек"; // у наполненного пользователя: 30 → 40 сек (сид)
+// Запись/правка идёт в «Максимум подтягиваний»: по нему у наполненного пользователя результатов нет. Результаты по
+// «Максимум…»/«…с весом» держат точные когорты Peer Insights (#276), поэтому сид sweep их НЕ пишет, а поток пишет
+// лишь единицы записей (< 20 человек в когорте).
+const PULLUPS = "Максимум подтягиваний";
 const ELECTIVE = "Факультатив — 3 минуты подтягиваний"; // #279, сидится вместе с наполненным пользователем
 // Завершённых тренировок за 30 дней у наполненного пользователя: 3 «Подтягивания» + «Бег» + 2 плановые + 2 факультатива.
 const POPULATED_WORKOUTS = 8;
@@ -93,7 +97,7 @@ const TABS: {
     label: "Профиль", shell: profileMarker,
     state: {
       empty: (page) => page.getByTestId("test-card").filter({ hasText: "Ещё не проходили" }).first(),
-      populated: (page) => page.getByTestId("test-card").filter({ hasText: "12 повт." }),
+      populated: (page) => page.getByTestId("test-card").filter({ hasText: "40 сек" }),
     },
   },
 ];
@@ -432,9 +436,9 @@ const FLOWS: Flow[] = [
   {
     // #276: карточка «Сравнение с похожими» на детали теста — всегда в одном из состояний, без пустого места.
     id: "Тест → «Сравнение с похожими» (результат / мало данных / нет результата) → назад", modes: MODES,
-    run: async ({ page, mode }) => {
+    run: async ({ page }) => {
       await openTab(page, "Профиль");
-      const name = mode === "populated" ? "Максимум подтягиваний" : HANG;
+      const name = HANG; // наполненный: есть результат (процентиль или «мало данных»); пустой: «нет результата»
       await visit(page, {
         where: "Профиль → тест → сравнение", open: () => page.getByTestId("profile-tests").getByTestId("test-card").filter({ hasText: name }).click(),
         dest: [page.getByTestId("peer-insights-title")], exit: "telegram", origin: profileMarker(page),
@@ -667,9 +671,9 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       const rows = page.getByTestId("test-history-row");
 
       await page.getByTestId("home-tests-row").click();
-      await expect(card("Максимум подтягиваний").getByTestId("test-card-trend")).toBeVisible(); // посеяно: 10 → 12
-      await expect(card(HANG).getByTestId("test-card-trend")).toHaveCount(0);
-      await card(HANG).click();
+      await expect(card(HANG).getByTestId("test-card-trend")).toBeVisible(); // посеяно: 30 → 40 сек
+      await expect(card(PULLUPS).getByTestId("test-card-trend")).toHaveCount(0);
+      await card(PULLUPS).click();
       await expect(page.getByTestId("test-history-empty")).toBeVisible();
 
       const form = page.getByTestId("test-form");
@@ -677,29 +681,29 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
         if (date) {
           await form.getByLabel("Дата").fill(date);
         }
-        await form.getByLabel("Результат, сек").fill(value);
+        await form.getByLabel("Результат, повт.").fill(value);
         await form.getByRole("button", { name: "Записать результат" }).click();
       };
       const daysAgo = (days: number) =>
         new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(Date.now() - days * 86_400_000));
-      await record("40");
+      await record("9");
       await expect(rows).toHaveCount(1);
       await expect(page.getByTestId("test-chart-empty")).toBeVisible();
-      await record("45", daysAgo(2));
+      await record("7", daysAgo(2));
       await expect(rows).toHaveCount(2);
       await expect(page.getByTestId("test-chart")).toHaveAttribute("data-points", "2");
       await expectScreenHealthy(page, "Тест: график");
 
       await pressTelegramBackButton(page);
-      await expect(card(HANG).getByTestId("test-card-trend")).toBeVisible(); // тренд после второго замера
-      await expect(card(HANG).getByTestId("test-card-last")).toContainText("40 сек");
+      await expect(card(PULLUPS).getByTestId("test-card-trend")).toBeVisible(); // тренд после второго замера
+      await expect(card(PULLUPS).getByTestId("test-card-last")).toContainText("9 повт.");
       await pressTelegramBackButton(page);
       await expect(homeMarker(page)).toBeVisible();
 
       // Профиль: тот же результат в карточке «Тесты».
       await openTab(page, "Профиль");
-      await expect(page.getByTestId("profile-tests").getByTestId("test-card").filter({ hasText: HANG }))
-        .toContainText("40 сек");
+      await expect(page.getByTestId("profile-tests").getByTestId("test-card").filter({ hasText: PULLUPS }))
+        .toContainText("9 повт.");
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });

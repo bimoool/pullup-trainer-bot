@@ -1380,7 +1380,8 @@ async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
       * своя Workout «Свип: тренировка» (reps 2 x 8, отдых 2 с) в избранном;
       * Журнал/Аналитика: сессии 2 и 4 дня назад («Подтягивания», с подходами и временем), 9 дней
         назад (с подходами), «Бег» 30 мин 3 дня назад и 50 дней назад (виден в «3 мес»);
-      * Тесты: «Максимум подтягиваний» 10 → 12 повт.; Профиль: вес 78 → 76.5 кг (история);
+      * Тесты: «Вис на перекладине» 30 → 40 сек (НЕ «Максимум подтягиваний» / «…с весом»: по ним e2e-БД держит
+        точные когорты Peer Insights #276 — десятки наших пользователей их бы сломали); Профиль: вес 78 → 76.5 кг (история);
       * два факультатива (#279) в Журнале: 30 и 90 минут назад."""
     await seed_plan_week_stepper(session, telegram_id)
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
@@ -1440,12 +1441,12 @@ async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
         ))
 
     protocol_row = (await session.execute(
-        select(AssessmentProtocol).where(AssessmentProtocol.name == "Максимум подтягиваний"),
+        select(AssessmentProtocol).where(AssessmentProtocol.name == "Вис на перекладине, сек"),
     )).scalar_one()
-    for days_ago, value in ((20, 10), (5, 12)):
+    for days_ago, value in ((20, 30), (5, 40)):
         session.add(AssessmentResult(
             user_id=user.id, protocol_id=protocol_row.id, performed_at=now - timedelta(days=days_ago),
-            value=value, unit="повт.",
+            value=value, unit="сек",
         ))
     history = BodyMetricRepository(session)
     await history.add(user.id, BodyMetric.WEIGHT_KG, Decimal(78), now - timedelta(days=30))
