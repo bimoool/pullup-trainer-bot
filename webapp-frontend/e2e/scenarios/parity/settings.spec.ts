@@ -46,8 +46,8 @@ for (const width of WIDTHS) {
 
       await page.getByTestId("settings-weight-unit").getByRole("button", { name: "фунты" }).click();
       await page.getByTestId("settings-height-unit").getByRole("button", { name: "дюймы" }).click();
-      await expect(page.getByRole("spinbutton", { name: "Вес" })).toHaveValue("165.3");
-      await expect(page.getByRole("spinbutton", { name: "Рост" })).toHaveValue("70.9");
+      await expect(page.getByRole("textbox", { name: "Вес" })).toHaveValue("165.3");
+      await expect(page.getByRole("textbox", { name: "Рост" })).toHaveValue("70.9");
       await page.getByTestId("settings-save").click();
 
       await expect(page.getByTestId("profile-weight")).toHaveText("Вес: 165.3 фунт.");
@@ -100,7 +100,7 @@ for (const width of WIDTHS) {
       await openSettings(page);
       await page.getByTestId("settings-weight-unit").getByRole("button", { name: "фунты" }).click();
       await page.getByTestId("settings-theme").getByRole("button", { name: theme === "dark" ? "Светлая" : "Тёмная" }).click();
-      await page.getByRole("spinbutton", { name: "Вес" }).fill("99");
+      await page.getByRole("textbox", { name: "Вес" }).fill("99");
       await page.getByTestId("settings-cancel").click();
 
       await expect(page.getByTestId("profile-weight")).toHaveText("Вес: 75 кг");
@@ -109,7 +109,7 @@ for (const width of WIDTHS) {
       // Повторное открытие — снова сохранённые значения, не черновик.
       await page.getByTestId("profile-settings").click();
       await expect(page.getByTestId("settings-weight-unit").getByRole("button", { name: "кг" })).toHaveAttribute("aria-pressed", "true");
-      await expect(page.getByRole("spinbutton", { name: "Вес" })).toHaveValue("75");
+      await expect(page.getByRole("textbox", { name: "Вес" })).toHaveValue("75");
       await expect(page.getByRole("button", { name: "Как в Telegram" })).toHaveAttribute("aria-pressed", "true");
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

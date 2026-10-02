@@ -2,6 +2,7 @@ import { Button, Input } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { deleteBandItem, fetchBandItems, updateBandItem, type BandItemInfo } from "./api";
+import { useBackButton } from "./useBackButton";
 
 type Props = { initDataRaw: string; onBack: () => void };
 
@@ -25,6 +26,8 @@ type ScreenState =
  * когда наследовать нечего — тем же полем, что уже показывает первую
  * тренировку на резине. */
 export function BandItemsScreen({ initDataRaw, onBack }: Props) {
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [savingId, setSavingId] = useState<number | null>(null);

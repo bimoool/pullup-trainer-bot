@@ -16,6 +16,7 @@ import { ElectiveScreen } from "./ElectiveScreen";
 import { EquipmentPlanScreen } from "./EquipmentPlanScreen";
 import { FreeWorkoutScreen } from "./FreeWorkoutScreen";
 import { LiveWorkoutScreen } from "./LiveWorkoutScreen";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -282,14 +283,12 @@ export function BandItemSelect({
         <Input
           header="Сопротивление, кг"
           after="кг"
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.5"
           placeholder="Не знаю точно — оставь пустым"
           aria-label={`Блок ${letter}, сопротивление резины`}
           value={newResistance}
-          onChange={(e) => setNewResistance(e.target.value)}
+          onChange={(e) => setNewResistance(sanitizeDecimalInput(e.target.value))}
         />
         {createError && <p className="error-banner">{createError}</p>}
         <div className="band-create-actions">
@@ -384,14 +383,12 @@ export function EquipmentCorrectionFields({
         <Input
           header={firstWorkout ? "Вес отягощения, кг" : "Фактический вес (кг), если отличается"}
           after="кг"
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.5"
           placeholder={firstWorkout ? "Например: 5" : equipmentLabel}
           aria-label={`Блок ${letter}, фактический вес`}
           value={actualWeightValue}
-          onChange={(e) => onActualWeightChange(e.target.value)}
+          onChange={(e) => onActualWeightChange(sanitizeDecimalInput(e.target.value))}
         />
       )}
 

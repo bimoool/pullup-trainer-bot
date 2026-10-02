@@ -17,6 +17,9 @@ import { SubscriptionScreen } from "./SubscriptionScreen";
 import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 import { NavIcon } from "./NavIcon";
+import { isSessionExpiredMessage } from "./sessionErrors";
+import { getWebApp } from "./telegramPlatform";
+import { useClosingConfirmation } from "./useClosingConfirmation";
 
 type LoadState =
   | { status: "loading" }
@@ -151,6 +154,10 @@ export function App() {
   // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
   // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
   const [faqReturnTab, setFaqReturnTab] = useState<Tab>("profile");
+
+  // Старая живая тренировка (WorkoutScreen) держит ввод только в состоянии экрана — как и новая
+  // (SessionLiveScreen), просит подтверждение при закрытии приложения (Bot API 6.2+, #224).
+  useClosingConfirmation(liveWorkoutActive);
 
   function openFaq(from: Tab) {
     setFaqReturnTab(from);
@@ -311,7 +318,15 @@ export function App() {
   if (state.status === "error") {
     return (
       <div className="app-shell">
-        <p className="screen-message">Не удалось загрузить: {state.message}</p>
+        <p className="screen-message">
+          {isSessionExpiredMessage(state.message) ? state.message : `Не удалось загрузить: ${state.message}`}
+        </p>
+        {isSessionExpiredMessage(state.message) && (
+          // initData не обновить изнутри открытого Mini App — только закрыть и открыть из бота (#224).
+          <button type="button" className="action-button" data-testid="session-expired-close" onClick={() => getWebApp()?.close?.()}>
+            Закрыть
+          </button>
+        )}
       </div>
     );
   }
