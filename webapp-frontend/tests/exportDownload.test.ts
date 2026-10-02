@@ -29,3 +29,14 @@ test("startDownload: без downloadFile — открывает ссылку", (
   assert.equal(how, "open");
   assert.deepEqual(opened, ["https://app.example/api/v2/export/sessions.csv?token=t"]);
 });
+
+test("downloadFile бросает (клиент < Bot API 8.0 / вне Telegram) → открываем ссылку", () => {
+  const opened: string[] = [];
+  const how = startDownload("/api/v2/export/x.csv", {
+    webApp: { downloadFile: () => { throw new Error("WebAppMethodUnsupported"); } },
+    origin: "https://app.example",
+    open: (url) => opened.push(url),
+  });
+  assert.equal(how, "open");
+  assert.deepEqual(opened, ["https://app.example/api/v2/export/x.csv"]);
+});

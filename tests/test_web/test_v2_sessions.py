@@ -252,3 +252,21 @@ async def test_create_session_rejects_ambiguous_target(session, user: User):
         },
     )
     assert response.status_code == 422
+
+
+async def test_step_role_blocks_need_a_plan_session_not_just_any_inclusion(session, user: User):
+    """#224 review: program_inclusion_id сам по себе не открывает STEP-блоки — backdated/freeform с
+    чужой формой обходили бы отпечаток backfill-копии. Разрешено только source=plan."""
+    program = await _make_step_program(session)
+    inclusion = await _create_inclusion(session, user.telegram_id, program.id)
+    roles = _exercise_ids_by_role(inclusion)
+    for source in ("backdated", "freeform"):
+        response = await v2_post(
+            session, telegram_id=user.telegram_id, path="/api/v2/sessions",
+            payload={
+                "source": source, "performed_at": "2026-01-05T10:00:00Z",
+                "program_inclusion_id": inclusion["id"],
+                "blocks": [_sets_block(roles["block_a"], [11, 11, 11], 12)],
+            },
+        )
+        assert response.status_code == 422, (source, response.text)

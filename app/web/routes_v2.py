@@ -1408,7 +1408,10 @@ async def create_session(
             # такая сессия совпала бы с отпечатком backfill-копии (_backfilled_fingerprint) и пропала из
             # Журнала. STEP-блоки допустимы только у сессии программы (program_inclusion_id) — по ним
             # считается прогрессия; публичный клиент их так не шлёт.
-            if body.program_inclusion_id is None and await program_repo.get_publicly_attachable_exercise_for_user(
+            # Исключение — только сессия плана своей инклюзии (source=plan): любая другая форма с
+            # program_inclusion_id (backdated/freeform/…) обходила бы отпечаток (#224 review).
+            step_blocks_allowed = body.program_inclusion_id is not None and body.source == "plan"
+            if not step_blocks_allowed and await program_repo.get_publicly_attachable_exercise_for_user(
                 block.exercise_id, user.id,
             ) is None:
                 raise HTTPException(

@@ -54,9 +54,8 @@ html {
 /* iOS (WKWebView): поля с шрифтом < 16px при фокусе увеличивают страницу, и она «залипает» в
    увеличенном виде. На десктопе/Android правило не действует. */
 @supports (-webkit-touch-callout: none) {
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  textarea,
-  select {
+  /* :where() — нулевая специфичность: классы крупных полей (.live-value-input 28px и т.п.) выигрывают. */
+  :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select) {
     font-size: max(16px, 1em);
   }
 }
