@@ -797,6 +797,18 @@ async def duplicate_workout(
 # --- План ------------------------------------------------------------------------------
 
 
+def _utcnow() -> datetime:
+    """Единая точка «сейчас» для недельной арифметики плана (подменяется в тестах)."""
+    return datetime.now(UTC)
+
+
+def _plan_today(user) -> date:
+    """Сегодняшняя дата в часовом поясе пользователя: по ней считается вся
+    недельная арифметика плана (текущая неделя, окно «текущая .. +4»), как и
+    на клиенте; в UTC у UTC+N около полуночи понедельника неделя не совпадала."""
+    return _utcnow().astimezone(resolve_timezone(user.timezone)).date()
+
+
 @router_v2.get("/plan", response_model=PlanResponse)
 async def get_plan(
     init_data: InitData = Depends(get_validated_init_data),
@@ -813,8 +825,8 @@ async def get_plan(
     # действия пользователя — "пользователь не может открыть Планы и
     # остаться на прошлой неделе" (Поправка 4). Тонкий вызов, вся логика —
     # в PlanWeekService, идемпотентно на каждый GET.
-    await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=plan.id, today=datetime.now(UTC).date(),
+    current_week = await PlanWeekService(session).ensure_current_plan_week(
+        training_plan_id=plan.id, today=_plan_today(user),
     )
 
     inclusions = await plans.list_inclusions(plan.id)
@@ -852,6 +864,7 @@ async def get_plan(
                 for item in plan_items
             ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
+            current_week_id=current_week.id,
         ),
     )
 
@@ -877,7 +890,7 @@ async def create_program_inclusion(
     # логика материализации в PlanWeekService, не здесь (раздел 4 preflight:
     # "не помещать бизнес-логику materialization непосредственно в route").
     await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=inclusion.training_plan_id, today=datetime.now(UTC).date(),
+        training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
     return _program_inclusion_response(inclusion)
 
@@ -917,7 +930,7 @@ async def create_plan_week(
     user = await _require_user(session, init_data)
     plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
     week = await PlanWeekService(session).ensure_plannable_week(
-        training_plan_id=plan.id, week_number=body.week_number, today=datetime.now(UTC).date(),
+        training_plan_id=plan.id, week_number=body.week_number, today=_plan_today(user),
     )
     if week is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
@@ -942,7 +955,7 @@ async def copy_plan_week_to_next(
     service = PlanWeekService(session)
     target = await service.ensure_plannable_week(
         training_plan_id=source.training_plan_id, week_number=source.week_number + 1,
-        today=datetime.now(UTC).date(),
+        today=_plan_today(user),
     )
     if target is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
@@ -1041,7 +1054,7 @@ async def move_plan_item(
         current = await plans.get_plan_item_for_user(plan_item_id, user.id)
         if plan is None or target is None or current is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
-        current_number = plan_week_number(plan.created_at.date(), datetime.now(UTC).date())
+        current_number = plan_week_number(plan.created_at.date(), _plan_today(user))
         source = (
             await plans.get_plan_week_for_user(current.plan_week_id, user.id) if current.plan_week_id else None
         )
