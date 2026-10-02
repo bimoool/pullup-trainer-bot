@@ -23,6 +23,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from pydantic import TypeAdapter
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import PlanItem, ProgramInclusion, SessionPhase, SessionStatus
@@ -176,6 +177,27 @@ class LiveSessionService:
     # --- Старт -----------------------------------------------------------
 
     async def start_session(
+        self, *, user_id: int, client_session_id: uuid.UUID, plan_item_ids: list[int],
+        workout_id: int | None = None,
+    ) -> LiveSessionResult | None:
+        """Идемпотентный старт: две конкурентные транзакции с одним client_session_id (офлайн-повтор,
+        двойной тап) оба проходят проверку «сессии нет» и вставляют; проигравший упирается в
+        uq_training_sessions_client_session_id. Вставка идёт под SAVEPOINT — при конфликте
+        возвращается сессия победителя (а не 500). Конфликт при отсутствии СВОЕЙ сессии с этим UUID
+        (UUID занят другим пользователем) — ValueError -> 422, без раскрытия чужой сессии."""
+        try:
+            async with self._session.begin_nested():
+                return await self._start_session(
+                    user_id=user_id, client_session_id=client_session_id, plan_item_ids=plan_item_ids,
+                    workout_id=workout_id,
+                )
+        except IntegrityError:
+            existing = await self._sessions.get_by_client_session_id(user_id, client_session_id)
+            if existing is None:
+                raise ValueError("client_session_id уже использован") from None
+            return await self._build_result(existing.id, user_id)
+
+    async def _start_session(
         self, *, user_id: int, client_session_id: uuid.UUID, plan_item_ids: list[int],
         workout_id: int | None = None,
     ) -> LiveSessionResult | None:
