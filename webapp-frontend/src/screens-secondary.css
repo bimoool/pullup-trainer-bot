@@ -1135,13 +1135,10 @@
 .settings-row-label {
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
-}
-.settings-link-row .settings-row-label {
-  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .settings-row-control {
-  flex: 0 1 55%;
+  flex: 0 1 50%;
   min-width: 0;
   display: flex;
   justify-content: flex-end;
@@ -1159,6 +1156,7 @@
   font-size: var(--vp-fs-body);
   text-align: right;
   text-align-last: right;
+  text-overflow: ellipsis;
   -webkit-appearance: none;
   appearance: none;
 }
