@@ -129,3 +129,5 @@ for id in 997601 997602 997611 997612 997621 997622 997631 997632 997691; do see
 seed builder_workouts 997692
 # #284 C «Journal return»: 999701 (320 px light, + retry) / 999711 (390 px dark, + retry); мутаций нет.
 for id in 999701 999702 999711 999712; do seed journal_return "$id"; done
+# #285 A «Live UX»: 9978xx — 320/390 × light/dark, на тест id + 2*индекс + retry (≤ +9); session_recovery.
+for base in 997801 997811 997821 997831; do for off in 0 1 2 3 4 5 6 7 8 9; do seed session_recovery $((base + off)); done; done

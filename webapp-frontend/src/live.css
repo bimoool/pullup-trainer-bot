@@ -359,6 +359,20 @@
 :root[data-vp-scheme="dark"] .live-transport {
   box-shadow: none;
 }
+/* M1 (#285): экранная клавиатура. Пока в Live-экране сфокусировано поле ввода (data-field-focus
+   ставит useLiveFieldFocus), транспорт не липнет к низу окна — иначе он перекрывает сфокусированное
+   поле (Android) или уезжает под клавиатуру (iOS). Он встаёт обычным блоком под полем и
+   прокручивается вместе с контентом; «Готово» достижимо прокруткой или Enter в поле. */
+.live-screen[data-field-focus="true"] .live-transport {
+  position: static;
+  box-shadow: none;
+}
+/* браузер при фокусе поля прокручивает его только до scroll-padding-bottom (shell.css — высота
+   нижней навигации ≈78px); на Live-экране навигации нет, зато под полем лежит транспорт
+   (≈137px + safe-area): оставляем место, чтобы поле и «Готово» были видны вместе. */
+html:has(.live-screen) {
+  scroll-padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+}
 .live-screen .live-primary {
   min-height: var(--live-primary-h);
   border-radius: 18px;

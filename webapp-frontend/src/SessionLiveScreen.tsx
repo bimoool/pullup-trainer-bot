@@ -32,6 +32,7 @@ import {
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
+import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
@@ -58,6 +59,8 @@ type Props = {
    * решает, какой экран нужен блоку (обычный/interval). */
   onSessionUpdate?: (session: LiveSessionResponse) => void;
 };
+
+const LOG_FORM_ID = "live-log-form";
 
 const PHASE_LABELS: Record<LocalPhaseName, string> = {
   get_ready: "Приготовься",
@@ -108,6 +111,8 @@ export function SessionLiveScreen({
   // ниже есть ранний `return` (local === null), хуки после него нарушают
   // правило "одинаковый порядок хуков на каждый рендер" (было поймано
   // самим React: "Minified React error #310" при первой попытке).
+  // M1 (#285): пока сфокусировано поле ввода, липкий транспорт «отлипает» (live.css).
+  const fieldFocused = useLiveFieldFocus();
   const actionInFlight = useRef(false);
   // Single-flight синхронизации (fix/concurrent-set-batch): событие "online"
   // и тап "Завершить" в окне реконнекта раньше запускали ДВА параллельных
@@ -602,7 +607,7 @@ export function SessionLiveScreen({
       <span className="live-field-label">{label}</span>
       <input
         className="live-field-input live-value-input" aria-label={label} type="number" inputMode="decimal"
-        value={current} onChange={(e) => onChange(e.target.value)}
+        enterKeyHint="done" value={current} onChange={(e) => onChange(e.target.value)}
       />
     </label>
   );
@@ -618,7 +623,10 @@ export function SessionLiveScreen({
   const canPause = canPauseLocal(local) || paused;
 
   return (
-    <div className="live-screen" data-phase={phaseName} data-paused={paused ? "true" : undefined}>
+    <div
+      className="live-screen" data-phase={phaseName} data-paused={paused ? "true" : undefined}
+      data-field-focus={fieldFocused ? "true" : undefined}
+    >
       <header className="live-header">
         <div className="live-header-text">
           <p className="live-eyebrow">Живая тренировка</p>
@@ -695,11 +703,15 @@ export function SessionLiveScreen({
           <h3 className="live-panel-title">Внести подход</h3>
           {/* aria-label дублирует подпись намеренно: accessible name инпута —
               именно aria-label, как и в WorkoutScreen.tsx/BackdateForm.tsx. */}
-          {renderValueField(value, setValue, inputLabel.label)}
-          {inputLabel.hint !== null && (
-            <p className="live-hint" data-testid="result-hint">{inputLabel.hint}</p>
-          )}
-          {logPanelOpen && renderEffortAndNote()}
+          {/* Enter/«Go» в поле = тот же защищённый обработчик, что у «Готово» (кнопка транспорта
+              привязана к форме атрибутом form — implicit submission работает и с заметкой). */}
+          <form id={LOG_FORM_ID} onSubmit={(event) => { event.preventDefault(); logSet(); }}>
+            {renderValueField(value, setValue, inputLabel.label)}
+            {inputLabel.hint !== null && (
+              <p className="live-hint" data-testid="result-hint">{inputLabel.hint}</p>
+            )}
+            {logPanelOpen && renderEffortAndNote()}
+          </form>
           <button
             type="button" className="live-link-button" data-testid="log-panel-toggle"
             aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
@@ -716,13 +728,13 @@ export function SessionLiveScreen({
         >
           <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
           {logPanelOpen ? (
-            <>
+            <form onSubmit={(event) => { event.preventDefault(); if (value.trim() !== "") { saveRestEdit(); } }}>
               {renderValueField(value, setValue, inputLabel.label)}
               {renderEffortAndNote()}
-              <Button className="live-save" size="l" stretched mode="bezeled" disabled={value.trim() === ""} onClick={saveRestEdit}>
+              <Button className="live-save" size="l" stretched mode="bezeled" type="submit" disabled={value.trim() === ""}>
                 Сохранить подход
               </Button>
-            </>
+            </form>
           ) : (
             <p className="live-summary-line" data-testid="log-panel-summary">
               {value}{effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
@@ -740,15 +752,15 @@ export function SessionLiveScreen({
       {extraIndex !== null && extraOpen && (
         <section className="live-panel">
           <h3 className="live-panel-title">Ещё подход</h3>
-          <div data-testid="extra-set-form">
+          <form data-testid="extra-set-form" onSubmit={(event) => { event.preventDefault(); logExtraSet(); }}>
             {renderValueField(extraValue, setExtraValue, extraLabel.label)}
-            <Button className="live-save" size="l" stretched disabled={extraValue.trim() === ""} onClick={logExtraSet}>
+            <Button className="live-save" size="l" stretched type="submit" disabled={extraValue.trim() === ""}>
               Записать
             </Button>
-            <Button className="live-save" size="l" stretched mode="outline" onClick={() => setExtraOpen(false)}>
+            <Button className="live-save" size="l" stretched mode="outline" type="button" onClick={() => setExtraOpen(false)}>
               Отмена
             </Button>
-          </div>
+          </form>
         </section>
       )}
       {extraIndex !== null && !extraOpen && extraCount > 0 && (
@@ -763,7 +775,7 @@ export function SessionLiveScreen({
             </Button>
           )}
           {phaseName === "go" && block !== null && (
-            <Button className="live-primary" size="l" stretched disabled={value.trim() === ""} onClick={logSet}>
+            <Button className="live-primary" size="l" stretched type="submit" form={LOG_FORM_ID} disabled={value.trim() === ""}>
               Готово
             </Button>
           )}
