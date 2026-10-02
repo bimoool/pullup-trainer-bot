@@ -739,3 +739,19 @@ html:has(.live-screen) {
 .pre-screen .pre-transport button + button {
   margin-top: var(--vp-sp-2);
 }
+
+/* #292: «Предыдущий подход» — квадратная вторичная кнопка (≥44px) в ряду транспорта */
+.live-screen .live-set-nav {
+  flex: 0 0 48px;
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+}
+.live-screen .live-set-nav[disabled] {
+  opacity: 0.45;
+}
+.live-secondary-row > .live-secondary:not(.live-set-nav) {
+  flex: 1 1 0;
+  min-width: 0;
+}

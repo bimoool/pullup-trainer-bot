@@ -185,3 +185,6 @@ for base in 996501 996511 996521 996531; do for off in 0 1 2 3; do seed session_
 # Journal/plans polish (#277, spec parity/journal-plans-polish): 320 light 998301 / 320 dark 998311 / 390 light 998321 /
 # 390 dark 998331, на тест id + retry (≤ +2); тесты только читают (правка отменяется).
 for base in 998301 998311 998321 998331; do for off in 0 1 2; do seed journal_plans_polish $((base + off)); done; done
+# «Live set nav» (#292, parity/live-set-nav.spec.ts): 9929xx — «Предыдущий подход», 320/390 × light/dark,
+# на тест id + 2*индекс + retry (≤ +7); session_recovery.
+for base in 992901 992911 992921 992931; do for off in 0 1 2 3 4 5 6 7; do seed session_recovery $((base + off)); done; done

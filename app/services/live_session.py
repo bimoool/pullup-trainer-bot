@@ -55,6 +55,7 @@ from app.domain.live_session import (
     SessionPhaseName,
     initial_phase,
     next_phase,
+    previous_phase,
 )
 from app.domain.multi_program import MetricType, SessionSource
 from app.domain.progression_strategy import ProgressionStrategyType
@@ -77,6 +78,16 @@ from app.services.session_log import (
 @dataclass(frozen=True)
 class LiveSessionResult:
     session: SessionDetail
+
+
+class PhaseBackConflictError(Exception):
+    """#292: «назад» невозможно — роут -> 409 с машинным кодом: stale_phase
+    (expected_phase_index не совпал), not_active (сессия не STARTED),
+    no_previous_set (первый подход блока / блок не начат / interval)."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 class ActiveSessionConflictError(Exception):
@@ -486,6 +497,42 @@ class LiveSessionService:
         # (не начат / interval — у него своё server-authoritative время) —
         # НЕ переход, просто отдаём текущее состояние (офлайн-контракт:
         # никогда не 409, никогда откат).
+        return await self._build_result(session_id, user_id)
+
+    # --- Шаг назад на предыдущий подход (#292) --------------------------------
+
+    async def back_phase(
+        self, *, session_id: int, user_id: int, expected_phase_index: int,
+    ) -> LiveSessionResult | None:
+        """None — чужая/несуществующая сессия (404). Никогда не удаляет и не
+        правит SetLog: фаза возвращается на `go` предыдущего подхода, повторное
+        «Готово» клиента перезаписывает ту же строку (set_index). phase_index
+        растёт (+1), не откатывается — старые phase/next из офлайн-очереди с
+        прежним индексом после этого становятся no-op."""
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        if detail is None:
+            return None
+        await self._sessions.lock_session(session_id)
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        if detail.status != SessionStatus.STARTED:
+            raise PhaseBackConflictError("not_active")
+        if expected_phase_index != detail.phase_index:
+            raise PhaseBackConflictError("stale_phase")
+        if not self._is_standard_block_running(detail):
+            raise PhaseBackConflictError("no_previous_set")
+        current = PhaseState(
+            phase_name=_domain_phase(detail.phase_name), block_index=detail.current_block_index,
+            set_number=detail.current_set_number, ends_at_offset_seconds=None,
+        )
+        previous = previous_phase(current)
+        if previous is None:
+            raise PhaseBackConflictError("no_previous_set")
+        await self._sessions.advance_phase(
+            session_id, phase_name=_db_phase(previous.phase_name),
+            phase_ends_at=_phase_ends_at_from_offset(previous.ends_at_offset_seconds),
+            current_block_index=previous.block_index, current_set_number=previous.set_number,
+            phase_index=detail.phase_index + 1,
+        )
         return await self._build_result(session_id, user_id)
 
     # --- Ручной старт блока (R1) ---------------------------------------------

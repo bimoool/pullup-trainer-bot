@@ -86,6 +86,9 @@ class SessionSetLogDetail:
     effort: Decimal | None
     note: str | None
     is_extra: bool = False
+    # #292: ключ идемпотентности живой сессии — клиент перезаписывает ИМ ЖЕ
+    # переоткрытый подход (None у записей не-live пути).
+    set_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -545,7 +548,7 @@ class TrainingSessionRepository:
                         SessionSetLogDetail(
                             set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type,
                             value=log.value, unit=log.unit, effort=log.effort, note=log.note,
-                            is_extra=log.is_extra,
+                            is_extra=log.is_extra, set_index=log.set_index,
                         )
                         for log in set_logs_by_block[block.id]
                     ],
