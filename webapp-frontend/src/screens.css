@@ -1,0 +1,504 @@
+/*
+ * Экраны второго прохода «CRIMPD VISUAL» (#280, tier 2): Журнал, Профиль, Аналитика, Планы, promo-баннеры Главной.
+ * Грузится ПОСЛЕ shell.css; использует его токены --vp-*, не переименовывая их. Разметка/поведение не меняются —
+ * только презентационные классы (journal-card*, profile-row*, vp-tabs/vp-segment, plans-course, home-promo*).
+ * Живая сессия (live.css) сюда не входит.
+ */
+:root {
+  /* типы записей Журнала: цветная метка карточки */
+  --vp-kind-plan: var(--vp-cat-0);
+  --vp-kind-freeform: var(--vp-cat-3);
+  --vp-kind-logged: #17a2b8;
+  --vp-kind-elective: var(--vp-cat-4);
+  --vp-kind-backdated: var(--vp-cat-2);
+  --vp-kind-legacy: var(--tg-hint-color);
+}
+
+/* ---------- Журнал: компактная карточка записи (2 строки) ---------- */
+.history-card.journal-card {
+  position: relative;
+  display: flex;
+  padding: 10px var(--vp-sp-4) 10px 20px;
+  overflow: hidden;
+  --kind: var(--vp-kind-plan);
+}
+
+.journal-card[data-kind="freeform"] { --kind: var(--vp-kind-freeform); }
+.journal-card[data-kind="logged"] { --kind: var(--vp-kind-logged); }
+.journal-card[data-kind="elective"] { --kind: var(--vp-kind-elective); }
+.journal-card[data-kind="backdated"] { --kind: var(--vp-kind-backdated); }
+
+.journal-card-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--kind);
+}
+
+.journal-card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.history-card .journal-card-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  margin: 0 0 2px;
+}
+
+.journal-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+}
+
+.journal-card-time {
+  flex: 0 0 auto;
+  font-size: var(--vp-fs-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--tg-hint-color);
+}
+
+.history-card .journal-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--vp-sp-3);
+  margin: 0;
+  font-size: var(--vp-fs-meta);
+  line-height: 1.35;
+  color: var(--tg-subtitle-text-color);
+}
+
+.journal-kind-label {
+  font-weight: 700;
+  color: var(--kind);
+}
+
+.journal-card .journal-block {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  margin: 0;
+}
+
+.journal-card .journal-block-header {
+  font-weight: 600;
+  color: var(--tg-text-color);
+}
+
+/* старые (legacy) записи без v2-карточки: серая метка и мельче текст */
+.history-card[data-kind="legacy"] {
+  box-shadow: var(--vp-shadow), inset 6px 0 0 var(--vp-kind-legacy);
+  padding-left: 20px;
+}
+
+.history-card[data-kind="legacy"] p {
+  font-size: var(--vp-fs-meta);
+  margin-bottom: 3px;
+}
+
+.history-card[data-kind="legacy"] .history-date {
+  font-size: var(--vp-fs-card);
+}
+
+/* заголовки группировки: неделя — тихая подпись, день — жирная дата + линия */
+.journal-week-header {
+  margin: var(--vp-sp-5) 0 0;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--tg-hint-color);
+}
+
+.journal-day-header {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  margin: var(--vp-sp-2) 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-card);
+  font-weight: 800;
+}
+
+.journal-day-header::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--vp-divider);
+}
+
+/* календарь: месяц-бар на белых поверхностях, выбранный день — круг акцента */
+.journal-month-arrow,
+.journal-month-label {
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  border-radius: var(--vp-radius-pill);
+}
+
+.journal-month-arrow {
+  color: var(--vp-accent);
+}
+
+.journal-calendar-grid {
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  border-radius: var(--vp-radius-card);
+  padding: var(--vp-sp-3) var(--vp-sp-2);
+}
+
+.journal-calendar-weekday {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.journal-calendar-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+}
+
+.journal-calendar-day {
+  width: min(100%, 38px);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+.journal-calendar-today {
+  outline: 0;
+  box-shadow: inset 0 0 0 1.5px var(--vp-accent);
+  font-weight: 700;
+}
+
+.journal-calendar-selected {
+  background: var(--vp-accent);
+  color: var(--tg-button-text-color);
+  box-shadow: none;
+}
+
+.journal-calendar-dot {
+  background: var(--vp-accent);
+  bottom: 3px;
+}
+
+/* ---------- Профиль: grouped list ---------- */
+.profile-section {
+  margin-bottom: var(--vp-sp-5);
+}
+
+.profile-last-workout {
+  margin: 0 0 var(--vp-sp-4);
+  padding: 0 var(--vp-sp-1);
+}
+
+.profile-group-label {
+  margin: 0 0 var(--vp-sp-2) var(--vp-sp-1);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tg-hint-color);
+}
+
+.profile-group {
+  overflow: hidden;
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.profile-group > * + * {
+  border-top: 1px solid var(--vp-divider);
+}
+
+.profile-group-note {
+  margin: var(--vp-sp-2) var(--vp-sp-1) 0;
+}
+
+.profile-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px var(--vp-sp-4);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  color: var(--tg-text-color);
+  text-align: left;
+}
+
+.profile-row-link {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-row-link:active {
+  background: var(--vp-accent-soft);
+}
+
+.profile-row-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+.profile-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+}
+
+.profile-row-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+/* «: » нужен textContent строки («Вес: 75 кг»), визуально скрыт */
+.profile-row-sep {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.profile-row-value {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 14px;
+  color: var(--tg-subtitle-text-color);
+}
+
+/* длинные значения — второй строкой под подписью */
+.profile-row-stacked .profile-row-text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.profile-row-stacked .profile-row-value {
+  flex: none;
+  text-align: left;
+  font-size: var(--vp-fs-meta);
+}
+
+.profile-row-chevron {
+  flex: 0 0 auto;
+  color: var(--tg-hint-color);
+}
+
+/* «Тесты» в группе: карточки-тесты становятся строками */
+.profile-group > .history-list {
+  gap: 0;
+  margin: 0;
+}
+
+.profile-group .history-list > .test-card {
+  gap: var(--vp-sp-3);
+  padding: 10px var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  margin: 0;
+  font-size: var(--vp-fs-body);
+}
+
+.profile-group .history-list > .test-card + .test-card {
+  border-top: 1px solid var(--vp-divider);
+}
+
+.profile-group .history-list > .test-card::after {
+  content: "›";
+  flex: 0 0 auto;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--tg-hint-color);
+}
+
+.profile-group .test-card-text {
+  flex: 1 1 auto;
+}
+
+.profile-group .history-list > .test-card:active {
+  background: var(--vp-accent-soft);
+}
+
+/* ---------- Аналитика: подчёркнутые табы + сегмент метрики ---------- */
+.workout-mode-buttons.vp-tabs {
+  gap: 0;
+  flex-wrap: nowrap;
+  margin: 0 0 var(--vp-sp-4);
+  border-bottom: 1px solid var(--vp-divider);
+}
+
+.vp-tabs .leaderboard-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px var(--vp-sp-2);
+  border: 0;
+  border-bottom: 2.5px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--tg-subtitle-text-color);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: -1px;
+}
+
+.vp-tabs .leaderboard-tab-active {
+  border-bottom-color: var(--vp-accent);
+  background: none;
+  color: var(--vp-accent);
+  font-weight: 700;
+}
+
+.workout-mode-buttons.vp-segment {
+  gap: 0;
+  flex-wrap: nowrap;
+  margin: 0 0 var(--vp-sp-3);
+  padding: 3px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-page-bg);
+}
+
+.vp-segment .leaderboard-tab {
+  min-height: 32px;
+  padding: 5px var(--vp-sp-4);
+  border: 0;
+  font-size: 14px;
+}
+
+.vp-segment .leaderboard-tab-active {
+  border: 0;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  color: var(--tg-text-color);
+}
+
+.analytics-metric-header {
+  align-items: flex-start;
+}
+
+.analytics-summary-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: baseline;
+}
+
+/* ---------- Планы: карточки курсов цветом программы, чипы дней ---------- */
+.plan-week-day-group.plans-course {
+  --tint: var(--cat, var(--tg-hint-color));
+  margin: 0 0 var(--vp-sp-2);
+  padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-3) var(--vp-sp-5);
+  border-top: 0;
+  border-radius: var(--vp-radius-inner);
+  background: color-mix(in srgb, var(--tint) 11%, var(--vp-card-bg));
+  box-shadow: inset 5px 0 0 var(--tint);
+}
+
+.plans-course .plan-item-row {
+  margin-bottom: 2px;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+}
+
+.plan-week-current .plan-week-day-group > .block-subtitle,
+.plan-week-past .plan-week-day-group > .block-subtitle {
+  display: inline-block;
+  margin: 0 0 var(--vp-sp-2);
+  padding: 3px 10px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+/* ---------- Главная: promo-баннеры между секциями ---------- */
+.home-promo {
+  --promo: var(--vp-cat-0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+  box-sizing: border-box;
+  width: 100%;
+  margin: var(--vp-sp-4) 0 var(--vp-sp-1);
+  padding: var(--vp-sp-4);
+  border: 0;
+  border-radius: var(--vp-radius-card);
+  background:
+    radial-gradient(circle at 92% 20%, rgba(255, 255, 255, 0.2) 0, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(135deg, color-mix(in srgb, var(--promo) 90%, #000), color-mix(in srgb, var(--promo) 62%, #0b1220));
+  box-shadow: var(--vp-shadow);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-promo[data-promo="log"] { --promo: var(--vp-cat-3); }
+.home-promo[data-promo="create"] { --promo: var(--vp-cat-4); }
+
+.home-promo:active {
+  filter: brightness(0.94);
+}
+
+.home-promo-text {
+  min-width: 0;
+}
+
+.home-promo-title {
+  display: block;
+  font-size: var(--vp-fs-card);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.home-promo-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--vp-fs-meta);
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.home-promo-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+}

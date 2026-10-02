@@ -38,9 +38,9 @@ for (const width of WIDTHS) {
       await expect(page.getByTestId("analytics-donut")).toBeVisible();
       await expect(page.getByTestId("donut-inner-segment")).toHaveCount(3);
       await expect(page.getByTestId("donut-outer-segment")).toHaveCount(4);
-      // Цвета легенды берутся из палитры проекта: первая категория — синий ряд аналитики.
+      // Цвета легенды берутся из палитры проекта: первая категория — цвет первой группы Главной.
       const swatch = await legend.first().locator(".analytics-legend-swatch").evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(swatch).toBe("rgb(42, 120, 214)");
+      expect(swatch).toBe("rgb(47, 128, 237)"); // = --vp-cat-0 (цвет первой группы Главной, #280)
       await expectNoHorizontalOverflow(page, "Аналитика: распределение");
 
       // Метрика «Минуты» перерисовывает кольцо: pull 50, core 10, другая 30.

@@ -98,3 +98,10 @@ export function formatSessionDateTime(isoDateTime: string): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}, ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+/** "14:05" — локальное время пользователя (дату несёт заголовок дня в ленте Журнала). */
+export function formatSessionTime(isoDateTime: string): string {
+  const date = new Date(isoDateTime);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}

@@ -12,6 +12,7 @@ import { PALETTES, resolveAppearance, THEME_VARS, type ThemePref } from "./theme
 import "./index.css";
 import "./shell.css";
 import "./live.css";
+import "./screens.css";
 
 // issue #34: window.Telegram.WebApp — тот же мост, что App.tsx уже использует
 // как надёжный запасной источник initData (issue #23) — читаем напрямую, не
