@@ -68,6 +68,7 @@ from app.services.live_session import (
     ActiveSessionConflictError,
     CompleteResult,
     LiveSessionService,
+    PhaseBackConflictError,
     awaiting_block_start,
     block_started_at,
     current_interval_timing,
@@ -133,11 +134,13 @@ from app.web.schemas_v2_session import (
     LiveSessionBlockResponse,
     LiveSessionCompleteRequest,
     LiveSessionCompleteResponse,
+    LiveSessionPhaseBackRequest,
     LiveSessionPhaseNextRequest,
     LiveSessionPhaseResponse,
     LiveSessionResponse,
     LiveSessionStartRequest,
     LiveSetBatchRequest,
+    LiveSetLogResponse,
     LiveSetTargetResponse,
     PlanItemDeltaResponse,
     ProgressionPreviewRequest,
@@ -1535,11 +1538,11 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                     for target in block.set_targets
                 ],
                 set_logs=[
-                    SetLogResponse(
+                    LiveSetLogResponse(
                         set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type.value,
                         value=str(log.value), unit=log.unit,
                         effort=str(log.effort) if log.effort is not None else None, note=log.note,
-                        is_extra=log.is_extra,
+                        is_extra=log.is_extra, set_index=log.set_index,
                     )
                     for log in block.set_logs
                 ],
@@ -1633,6 +1636,28 @@ async def advance_live_session_phase(
     result = await LiveSessionService(session).advance_phase(
         session_id=session_id, user_id=user.id, expected_phase_index=body.expected_phase_index,
     )
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    return _live_session_response(result.session)
+
+
+@router_v2.post("/sessions/live/{session_id}/phase/back", response_model=LiveSessionResponse)
+async def back_live_session_phase(
+    session_id: int,
+    body: LiveSessionPhaseBackRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveSessionResponse:
+    """#292 — «Предыдущий подход»: фаза переоткрывает предыдущий подход
+    (SetLog не удаляется). 409 — нет предыдущего подхода / сессия не
+    активна / устаревший expected_phase_index."""
+    user = await _require_user(session, init_data)
+    try:
+        result = await LiveSessionService(session).back_phase(
+            session_id=session_id, user_id=user.id, expected_phase_index=body.expected_phase_index,
+        )
+    except PhaseBackConflictError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, error.code) from error
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     return _live_session_response(result.session)
