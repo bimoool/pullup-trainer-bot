@@ -276,8 +276,8 @@ for (const width of WIDTHS) {
         await expect(page.getByTestId("program-detail-title")).toBeVisible();
         await expect(page.getByTestId("program-cover")).toBeVisible();
         const chevron = (await page.getByRole("button", { name: "← Назад" }).boundingBox())!;
-        expect(Math.round(chevron.width), "круглая «назад» 40 px").toBe(40);
-        expect(Math.round(chevron.height)).toBe(40);
+        expect(Math.round(chevron.width), "круглая «назад» 44 px (цель касания, #290)").toBe(44);
+        expect(Math.round(chevron.height)).toBe(44);
         await snap(page, width, theme, "16_program_detail");
         await verify(page, "Program Detail", { primary: "Добавить в план", width });
 

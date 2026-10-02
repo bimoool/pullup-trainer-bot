@@ -39,6 +39,19 @@ for (const { width, theme, live, journal } of COMBOS) {
       await expect(page.getByTestId("journal-entry-sheet")).toBeVisible();
       await expectA11yClean(page, "Журнал: шторка записи");
 
+      // деталь записи и форма правки — из шторки
+      await page.getByTestId("journal-sheet-open").click();
+      await expect(page.getByRole("button", { name: /Назад/ }).first()).toBeVisible();
+      await expectA11yClean(page, "Журнал: деталь записи");
+      await expectFocusRings(page, "Журнал: деталь записи", 8);
+      await page.getByRole("button", { name: /Назад/ }).first().click();
+      await page.getByTestId("journal-card").first().click();
+      await page.getByTestId("journal-sheet-edit").click();
+      await expect(page.getByText("Изменить тренировку")).toBeVisible();
+      await expectA11yClean(page, "Журнал: правка записи");
+      await expectNoHorizontalOverflow(page, "Журнал: правка записи");
+      await page.getByRole("button", { name: "Отмена", exact: true }).click();
+      await page.getByTestId("journal-card").first().click();
       await page.getByRole("button", { name: "Отмена" }).click();
       const logButton = page.getByTestId("journal-log-button");
       await logButton.focus();
@@ -84,6 +97,16 @@ for (const { width, theme, live, journal } of COMBOS) {
       await expectA11yClean(page, "Планы: неделя со строкой дня");
       await expectFocusRings(page, "Планы", 14);
       await expectNoHorizontalOverflow(page, "Планы");
+
+      // лист «⋯» строки дня: диалог, фокус внутри, Escape возвращает фокус на «⋯»
+      const more = page.getByTestId("plans-row-more").first();
+      await more.click();
+      const planSheet = page.getByRole("dialog");
+      await expect(planSheet).toBeVisible();
+      await expectA11yClean(page, "Планы: лист «⋯»");
+      await page.keyboard.press("Escape");
+      await expect(planSheet).toHaveCount(0);
+      await expect(more).toBeFocused();
 
       const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) }).first();
       await group.getByRole("button", { name: /^Начать: / }).click();

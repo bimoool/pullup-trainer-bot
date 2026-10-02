@@ -147,3 +147,9 @@
 .journal-sheet .journal-sheet-danger {
   color: var(--vp-danger);
 }
+
+/* Заливка главной кнопки Builder («Создать» и т.п.): тот же затемнённый акцент, что у tgui-кнопок. */
+.app-shell .ux-primary,
+.app-shell .leaderboard-save-button {
+  background: var(--vp-accent-solid);
+}
