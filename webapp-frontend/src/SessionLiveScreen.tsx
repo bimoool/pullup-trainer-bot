@@ -9,6 +9,7 @@ import {
   canPauseLocal,
   clearLocalSession,
   clearPauseState,
+  editLastLoggedSet,
   extraSetBlockIndex,
   flushLocalSession,
   isLocalPaused,
@@ -16,12 +17,14 @@ import {
   resumeLocalSession,
   hasManualTransitions,
   hasPendingWork,
+  isGetReadyCueActive,
   initialLocalSession,
   isLocalSessionReusable,
   loadLocalSession,
   localPhaseEndsAtMs,
   nextLocalPhase,
   rebaseLocalSession,
+  restPanelExpandedByDefault,
   saveLocalSession,
   type LocalLiveSession,
   type LocalPhaseName,
@@ -85,6 +88,9 @@ export function SessionLiveScreen({
   const [value, setValue] = useState("");
   const [effort, setEffort] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  // #265: ручное раскрытие/сворачивание панели записи; null — решает фаза
+  // (работа: свёрнута, длинный отдых: раскрыта). Сбрасывается при смене фазы.
+  const [panelOpen, setPanelOpen] = useState<boolean | null>(null);
   // Review-шаг перед завершением: оценка тренировки целиком + заметка.
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
@@ -291,11 +297,20 @@ export function SessionLiveScreen({
   const formPhaseName = local?.localPhase.phaseName ?? null;
   const formTarget = local?.server.blocks[formBlockIndex]?.targets[formSetNumber - 1] ?? null;
   useEffect(() => {
-    setValue(
-      formTarget !== null && formTarget.unit === "s" && Number(formTarget.value) > 0 ? formatNumber(formTarget.value) : "",
-    );
-    setEffort(null);
-    setNote("");
+    // #265: на отдыхе форма — правка только что записанного подхода.
+    const last = formPhaseName === "rest" ? localRef.current?.lastLogged ?? null : null;
+    if (last) {
+      setValue(last.value);
+      setEffort(last.effort ?? null);
+      setNote(last.note ?? "");
+    } else {
+      setValue(
+        formTarget !== null && formTarget.unit === "s" && Number(formTarget.value) > 0 ? formatNumber(formTarget.value) : "",
+      );
+      setEffort(null);
+      setNote("");
+    }
+    setPanelOpen(null);
     setExtraOpen(false);
     setExtraValue("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -330,17 +345,36 @@ export function SessionLiveScreen({
     }
   }
 
+  /** #265: правка подхода с отдыха, ещё не сохранённая кнопкой, не теряется
+   * при выходе с отдыха/завершении. */
+  function withRestEdit(current: LocalLiveSession): LocalLiveSession {
+    return current.localPhase.phaseName === "rest"
+      ? editLastLoggedSet(current, { value, effort, note })
+      : current;
+  }
+
+  function saveRestEdit() {
+    void guardedAction(async () => {
+      if (local === null) {
+        return;
+      }
+      await commitLocal(withRestEdit(local));
+    });
+  }
+
   function advancePhase() {
     void guardedAction(async () => {
       if (local === null) {
         return;
       }
-      const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
+      const edited = withRestEdit(local);
+      const newPhase = nextLocalPhase(edited.localPhase, counts, hasManualTransitions(edited.server));
       await commitLocal({
-        ...clearPauseState(local),
+        ...clearPauseState(edited),
+        lastLogged: null,
         localPhase: newPhase,
         localPhaseEnteredAt: new Date().toISOString(),
-        pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
+        pendingPhaseAdvances: edited.pendingPhaseAdvances + 1,
       });
     });
   }
@@ -390,23 +424,21 @@ export function SessionLiveScreen({
         return;
       }
       const newPhase = nextLocalPhase(local.localPhase, counts, hasManualTransitions(local.server));
+      const logged = {
+        setIndex: local.nextSetIndex, blockIndex: local.localPhase.blockIndex, exerciseId: block.exercise_id,
+        value: value.trim(), effort, note: note.trim() || null,
+      };
       await commitLocal({
         ...clearPauseState(local),
-        pendingSets: [
-          ...local.pendingSets,
-          {
-            setIndex: local.nextSetIndex, blockIndex: local.localPhase.blockIndex, exerciseId: block.exercise_id,
-            value: value.trim(), effort, note: note.trim() || null,
-          },
-        ],
+        pendingSets: [...local.pendingSets, logged],
+        lastLogged: newPhase.phaseName === "rest" ? logged : null,
         nextSetIndex: local.nextSetIndex + 1,
         localPhase: newPhase,
         localPhaseEnteredAt: new Date().toISOString(),
         pendingPhaseAdvances: local.pendingPhaseAdvances + 1,
       });
-      setValue("");
-      setEffort(null);
-      setNote("");
+      // Форму сбрасывает эффект смены фазы (на отдыхе он подставляет только что
+      // записанный подход): сброс здесь, после await, затирал бы его.
     });
   }
 
@@ -424,7 +456,7 @@ export function SessionLiveScreen({
       if (current === null) {
         return;
       }
-      await commitLocal({ ...current, completeRequested: { abandoned: false } });
+      await commitLocal({ ...withRestEdit(current), completeRequested: { abandoned: false } });
     });
   }
 
@@ -437,7 +469,7 @@ export function SessionLiveScreen({
         return;
       }
       await commitLocal({
-        ...current,
+        ...withRestEdit(current),
         completeRequested: { abandoned: false, ...reviewPayload(reviewEffort, reviewComment) },
       });
     });
@@ -482,6 +514,9 @@ export function SessionLiveScreen({
   const remaining = paused
     ? Math.max(0, (local.pausedRemainingMs ?? 0) / 1000)
     : phaseEndsAtMs !== null ? Math.max(0, (phaseEndsAtMs - now) / 1000) : null;
+  const cueActive = isGetReadyCueActive(phaseName, remaining);
+  const restEditable = phaseName === "rest" && local.lastLogged != null;
+  const logPanelOpen = panelOpen ?? (restEditable && restPanelExpandedByDefault(block?.rest_seconds));
   const extraIndex = extraSetBlockIndex(local);
   const extraBlock = extraIndex === null ? null : local.server.blocks[extraIndex];
   const extraCount = extraIndex === null ? 0
@@ -503,6 +538,27 @@ export function SessionLiveScreen({
     }
     return candidate.exercise_id !== null && resolveExerciseName ? resolveExerciseName(candidate.exercise_id) : null;
   };
+
+  const renderEffortAndNote = () => (
+    <>
+      <p className="block-subtitle">{SET_EFFORT_PROMPT}</p>
+      <div className="effort-segment-row effort-labelled" data-testid="set-effort">
+        {EFFORT_SCALE.map((option) => (
+          <Button
+            key={option.value}
+            size="s"
+            mode={effort === option.value ? "filled" : "outline"}
+            aria-pressed={effort === option.value}
+            onClick={() => setEffort(option.value)}
+          >
+            <span className="effort-num">{option.value}</span>
+            <span className="effort-word">{option.label}</span>
+          </Button>
+        ))}
+      </div>
+      <Input header="Заметка" aria-label="Заметка" value={note} onChange={(e) => setNote(e.target.value)} />
+    </>
+  );
 
   return (
     <div>
@@ -545,6 +601,11 @@ export function SessionLiveScreen({
         {remaining !== null && (
           <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatDuration(remaining)}</p>
         )}
+        {cueActive && (
+          <p className="get-ready-cue" data-testid="get-ready-cue">
+            Приготовься · <span data-testid="get-ready-countdown">{Math.ceil(remaining ?? 0)}</span>
+          </p>
+        )}
       </div>
       )}
 
@@ -564,7 +625,10 @@ export function SessionLiveScreen({
       )}
 
       {phaseName === "go" && block !== null && (
-        <Section className="block-section" header="Внести подход">
+        <Section
+          className="block-section live-log-panel" header="Внести подход"
+          data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
+        >
           {/* aria-label дублирует header намеренно — telegram-ui's Input
               рендерит header-подпись СНАРУЖИ своего <label> (см. разбор
               FormInput.js), она не становится accessible name инпута; та же
@@ -581,24 +645,45 @@ export function SessionLiveScreen({
           {inputLabel.hint !== null && (
             <p className="block-subtitle" data-testid="result-hint">{inputLabel.hint}</p>
           )}
-          <p className="block-subtitle">{SET_EFFORT_PROMPT}</p>
-          <div className="effort-segment-row effort-labelled" data-testid="set-effort">
-            {EFFORT_SCALE.map((option) => (
-              <Button
-                key={option.value}
-                size="s"
-                mode={effort === option.value ? "filled" : "outline"}
-                aria-pressed={effort === option.value}
-                onClick={() => setEffort(option.value)}
-              >
-                <span className="effort-num">{option.value}</span>
-                <span className="effort-word">{option.label}</span>
-              </Button>
-            ))}
-          </div>
-          <Input header="Заметка" aria-label="Заметка" value={note} onChange={(e) => setNote(e.target.value)} />
+          {logPanelOpen && renderEffortAndNote()}
           <Button className="action-button" size="l" stretched disabled={value.trim() === ""} onClick={logSet}>
             Готово
+          </Button>
+          <Button
+            className="action-button" size="s" stretched mode="plain" data-testid="log-panel-toggle"
+            aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
+          >
+            {logPanelOpen ? "Свернуть" : "Оценка и заметка"}
+          </Button>
+        </Section>
+      )}
+
+      {restEditable && (
+        <Section
+          className="block-section live-log-panel" header={`Подход ${local.localPhase.setNumber}: результат`}
+          data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
+        >
+          {logPanelOpen ? (
+            <>
+              <Input
+                header={inputLabel.label} aria-label={inputLabel.label} type="number" inputMode="decimal"
+                value={value} onChange={(e) => setValue(e.target.value)}
+              />
+              {renderEffortAndNote()}
+              <Button className="action-button" size="l" stretched disabled={value.trim() === ""} onClick={saveRestEdit}>
+                Сохранить подход
+              </Button>
+            </>
+          ) : (
+            <p className="block-subtitle" data-testid="log-panel-summary">
+              {value}{effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
+            </p>
+          )}
+          <Button
+            className="action-button" size="s" stretched mode="plain" data-testid="log-panel-toggle"
+            aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
+          >
+            {logPanelOpen ? "Свернуть" : "Изменить"}
           </Button>
         </Section>
       )}

@@ -68,3 +68,12 @@ seed golden_journey 980021
 seed golden_journey 980022
 seed golden_journey 980031
 seed golden_journey 980032
+# #265 «Live logging panel»: длинный отдых (session_recovery, 60 с) и короткий (golden_journey, 2 с).
+seed session_recovery 980041
+seed session_recovery 980042
+seed session_recovery 980051
+seed session_recovery 980052
+seed golden_journey 980061
+seed golden_journey 980062
+seed golden_journey 980071
+seed golden_journey 980072

@@ -460,6 +460,9 @@ for (const width of WIDTHS) {
 
       // Подход 1: вопрос и подписанные чипы 1–5.
       await clickAndSync(page, "Готов", "/phase/next");
+      // #265: во время работы панель свёрнута — оценка и заметка раскрываются вручную.
+      await expect(page.getByText("Насколько тяжело было?")).toHaveCount(0);
+      await page.getByTestId("log-panel-toggle").click();
       await expect(page.getByText("Насколько тяжело было?")).toBeVisible();
       const chips = page.getByTestId("set-effort").getByRole("button");
       await expect(chips).toHaveCount(5);
@@ -1027,6 +1030,113 @@ for (const width of WIDTHS) {
       await page.getByRole("button", { name: "Завершить", exact: true }).click();
       await clickAndSync(page, "Сохранить и завершить", "/complete");
       await expect(page.getByText("Тренировка завершена")).toBeVisible();
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+  });
+}
+
+// --- Live logging panel (#265): панель записи следует за таймером, «Приготовься» в конце отдыха --
+// Seeds: session_recovery (reps 3 x 8, отдых 60 с — панель раскрывается сама) и golden_journey
+// (reps 2 x 8, отдых 2 с — весь отдых в последних 10 с, панель свёрнута). Реальные часы: отдых
+// 60 с не ждём — «Приготовься» проверяем на коротком отдыхе, раскрытие — сразу после подхода.
+const PANEL_USERS = {
+  320: { long: 980_041, short: 980_061, theme: "light" },
+  390: { long: 980_051, short: 980_071, theme: "dark" },
+} as const;
+
+async function startFromFreePool(page: Page, title: string) {
+  await page.getByTestId("my-workout-card").filter({ hasText: title }).click();
+  await page.getByRole("button", { name: "Добавить в план" }).click();
+  await page.getByRole("button", { name: "Свободный пул" }).click();
+  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${title}`) });
+  await group.getByRole("button", { name: "Начать", exact: true }).click();
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+}
+
+for (const width of WIDTHS) {
+  const { long, short, theme } = PANEL_USERS[width as 320 | 390];
+  test.describe(`Live logging panel @${width}px ${theme}`, () => {
+    test.use({ viewport: { width, height: 760 } });
+    test.setTimeout(120_000);
+
+    test("работа — свёрнута; длинный отдых — раскрыта, правка того же подхода без дубля", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, long + testInfo.retry, { theme });
+      const batchSets: { set_index: number; value: string; effort: string | null; note: string | null }[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().includes("/sets:batch")) {
+          batchSets.push(...request.postDataJSON().sets);
+        }
+      });
+      await startFromFreePool(page, "Тренировка восстановления");
+
+      // Работа: одна строка записи + «Готово» под рукой, оценка/заметка скрыты.
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByText("Пошёл")).toBeVisible();
+      const panel = page.getByTestId("log-panel");
+      await expect(panel).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("set-effort")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Готово", exact: true })).toBeVisible();
+      await expectNoHorizontalOverflow(page, "Live: панель свёрнута");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await clickAndSync(page, "Готово", "/sets:batch");
+
+      // Отдых 60 с (≥ 20): панель раскрылась сама, «Приготовься» ещё рано.
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      await expect(panel).toHaveAttribute("data-state", "expanded");
+      await expect(page.getByTestId("get-ready-cue")).toHaveCount(0);
+      await expect(page.getByTestId("set-effort").getByRole("button")).toHaveCount(5);
+      await expectNoHorizontalOverflow(page, "Live: панель раскрыта на отдыхе");
+
+      // Правка того же подхода: значение, усилие и заметка уходят тем же set_index.
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("9");
+      await page.getByTestId("set-effort").getByRole("button").nth(2).click();
+      await page.getByLabel("Заметка", { exact: true }).fill("после отдыха");
+      await clickAndSync(page, "Сохранить подход", "/sets:batch");
+      expect(batchSets).toHaveLength(2);
+      expect(batchSets[1].set_index).toBe(batchSets[0].set_index);
+      expect(batchSets[1]).toMatchObject({ value: "9", effort: "3", note: "после отдыха" });
+
+      // Следующий подход: форма заново пустая; правка не плодит второй подход.
+      await clickAndSync(page, "Пропустить отдых", "/phase/next");
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(panel).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByLabel(/Результат|Секунды|Повторений/)).toHaveValue("");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("7");
+      await clickAndSync(page, "Готово", "/sets:batch");
+      expect(new Set(batchSets.map((entry) => entry.set_index)).size).toBe(2);
+
+      expect(noWakeLock(consoleErrors)).toEqual([]);
+      expect(apiFailures).toEqual([]);
+    });
+
+    test("короткий отдых: «Приготовься» с обратным отсчётом, панель свёрнута, раскрывается вручную", async ({ page }, testInfo) => {
+      page.on("dialog", (dialog) => void dialog.accept());
+      const { consoleErrors, apiFailures } = await openAppAs(page, short + testInfo.retry, { theme });
+      await startFromFreePool(page, EFFORT_TITLE);
+
+      await clickAndSync(page, "Готов", "/phase/next");
+      await expect(page.getByTestId("get-ready-cue")).toHaveCount(0); // «Приготовься» — только на отдыхе
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("8");
+      await clickAndSync(page, "Готово", "/sets:batch");
+
+      // Отдых 2 с — целиком в последних 10 с: подпись и число секунд видны, панель свёрнута.
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      await expect(page.getByTestId("get-ready-cue")).toContainText("Приготовься");
+      await expect(page.getByTestId("get-ready-countdown")).toHaveText(/^[0-2]$/);
+      await expect(page.getByTestId("log-panel")).toHaveAttribute("data-state", "collapsed");
+      await expect(page.getByTestId("log-panel-summary")).toContainText("8");
+      await expectNoHorizontalOverflow(page, "Live: Приготовься");
+
+      // Вручную: раскрыть, поправить, сохранить — тот же подход.
+      await page.getByTestId("log-panel-toggle").click();
+      await expect(page.getByTestId("log-panel")).toHaveAttribute("data-state", "expanded");
+      await page.getByLabel(/Результат|Секунды|Повторений/).fill("10");
+      await clickAndSync(page, "Сохранить подход", "/sets:batch");
 
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

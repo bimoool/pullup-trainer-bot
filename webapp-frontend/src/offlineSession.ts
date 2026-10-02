@@ -148,6 +148,53 @@ export interface LocalLiveSession {
   pausedRemainingMs?: number | null;
   /** #264 — конец фазы после «Продолжить» (ISO): перекрывает server ends_at. */
   endsAtOverride?: string | null;
+  /** #265 — подход, только что записанный «Готово»: на отдыхе его можно
+   * поправить (значение/оценка/заметка). Правка уходит тем же set_index —
+   * сервер перезаписывает строку, дубля нет. Очищается при выходе из отдыха. */
+  lastLogged?: QueuedSet | null;
+}
+
+/** #265 — отдых от стольки секунд достаточно длинный, чтобы панель записи
+ * подхода раскрывалась сама; короче — свёрнута, раскрывается вручную. */
+export const REST_PANEL_EXPAND_MIN_SECONDS = 20;
+/** #265 — в последние стольки секунд отдыха показывается «Приготовься». */
+export const GET_READY_CUE_SECONDS = 10;
+
+export function restPanelExpandedByDefault(restSeconds: number | null | undefined): boolean {
+  return (restSeconds ?? DEFAULT_REST_SECONDS) >= REST_PANEL_EXPAND_MIN_SECONDS;
+}
+
+/** Сигнал «Приготовься» — только на отдыхе и только в его последние 10 с. */
+export function isGetReadyCueActive(phaseName: LocalPhaseName, remainingSeconds: number | null): boolean {
+  return phaseName === "rest" && remainingSeconds !== null && remainingSeconds <= GET_READY_CUE_SECONDS;
+}
+
+export interface LastSetEdit {
+  value: string;
+  effort: string | null;
+  note: string | null;
+}
+
+/** Правка только что записанного подхода: заменяет его запись в очереди
+ * (или ставит ту же запись заново, если она уже ушла на сервер — тот же
+ * set_index перезапишет строку). Пустое значение или отсутствие подхода —
+ * без изменений; совпадающие значения — тоже (лишней синхронизации нет). */
+export function editLastLoggedSet(local: LocalLiveSession, edit: LastSetEdit): LocalLiveSession {
+  const last = local.lastLogged;
+  const value = edit.value.trim();
+  const note = edit.note?.trim() || null;
+  if (!last || value === "") {
+    return local;
+  }
+  if (last.value === value && (last.effort ?? null) === edit.effort && (last.note ?? null) === note) {
+    return local;
+  }
+  const patched: QueuedSet = { ...last, value, effort: edit.effort, note };
+  return {
+    ...local,
+    lastLogged: patched,
+    pendingSets: [...local.pendingSets.filter((entry) => entry.setIndex !== patched.setIndex), patched],
+  };
 }
 
 export async function loadLocalSession(): Promise<LocalLiveSession | null> {
@@ -292,7 +339,12 @@ export function rebaseLocalSession(
   server: LiveSessionResponse,
 ): LocalLiveSession {
   const fresh = initialLocalSession(current.clientSessionId, server);
-  const newerSets = current.pendingSets.filter((entry) => entry.setIndex >= flushed.nextSetIndex);
+  // #265: правка уже отправленного подхода — запись со старым set_index, но
+  // иным содержимым, чем в флаше; её тоже нельзя потерять.
+  const flushedByIndex = new Map(flushed.pendingSets.map((entry) => [entry.setIndex, JSON.stringify(entry)]));
+  const newerSets = current.pendingSets.filter(
+    (entry) => entry.setIndex >= flushed.nextSetIndex || flushedByIndex.get(entry.setIndex) !== JSON.stringify(entry),
+  );
   const newerAdvances = Math.max(0, current.pendingPhaseAdvances - flushed.pendingPhaseAdvances);
   // #264: пауза/override — клиентские; сервер побеждает по ИДЕНТИЧНОСТИ фазы:
   // фаза та же (номер перехода и позиция) — пауза переносится, иначе сброшена.
@@ -306,6 +358,7 @@ export function rebaseLocalSession(
     completeRequested: current.completeRequested,
     pausedRemainingMs: samePhase ? current.pausedRemainingMs ?? null : null,
     endsAtOverride: samePhase ? current.endsAtOverride ?? null : null,
+    lastLogged: current.lastLogged ?? null,
   };
   if (newerSets.length === 0 && newerAdvances === 0) {
     return rebased;
