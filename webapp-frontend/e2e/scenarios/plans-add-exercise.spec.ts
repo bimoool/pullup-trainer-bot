@@ -7,7 +7,9 @@ import { openAppAs } from "../fixtures/setup";
 // Library (Планка/Отжимания). НЕ admin-only — вкладка «Планы» видна всем.
 const TELEGRAM_ID = 900_015;
 // #286 B: строка недели = название и чип «сделано/план» отдельными элементами (раньше «Название · 0/1» одним текстом).
-const rowTitle = (page: Page, name: string) => page.locator(".plans-row-title").filter({ hasText: new RegExp(`^${name}$`) });
+// Блок «Сегодня» повторяет сегодняшние названия — ищем только в недельном списке (plans-row).
+const rowTitle = (page: Page, name: string) =>
+  page.getByTestId("plans-row").locator(".plans-row-title").filter({ hasText: new RegExp(`^${name}$`) });
 const rowCounter = (page: Page, name: string) =>
   page.getByTestId("plans-row").filter({ has: rowTitle(page, name) }).getByTestId("plan-item-counter");
 
