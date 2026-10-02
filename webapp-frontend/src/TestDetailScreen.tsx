@@ -146,7 +146,7 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
     <div data-testid="test-detail">
       <div className="vs-screen-head">
         <BackChevron onClick={onBack} />
-        <p className="plan-title" data-testid="test-detail-title">{protocol.name}</p>
+        <h1 className="plan-title" data-testid="test-detail-title">{protocol.name}</h1>
       </div>
       {protocol.description && <p className="hint" data-testid="test-detail-description">{protocol.description}</p>}
       <p className="hint" data-testid="test-detail-note">{NOT_IN_PROGRESSION_NOTE}</p>
