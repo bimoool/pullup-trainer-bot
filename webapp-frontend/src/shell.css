@@ -988,3 +988,39 @@ html {
   height: 22px;
   accent-color: var(--vp-accent);
 }
+
+/* ---------- Аналитика: плитки внутри панелей и нативные кнопки ---------- */
+.profile-card .analytics-stat,
+.analytics-panel .analytics-stat {
+  padding: var(--vp-sp-2) var(--vp-sp-3);
+}
+
+.profile-card .analytics-stat-label,
+.analytics-panel .analytics-stat-label {
+  font-size: 11px;
+  overflow-wrap: break-word;
+  hyphens: manual;
+}
+
+.profile-card .analytics-stat-value,
+.analytics-panel .analytics-stat-value {
+  font-size: 20px;
+}
+
+/* нативный <button class="action-button"> (экспорт и т.п.) — как tonal-пилюля, а не системная кнопка */
+button.action-button {
+  min-height: 40px;
+  padding: 9px 20px;
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.action-button:disabled {
+  opacity: 0.5;
+}
