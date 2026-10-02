@@ -6,9 +6,9 @@ import type { TelegramTheme } from "../../fixtures/telegramMock";
 
 // CRIMPD VISUAL, tier 2 (#280): Журнал (компактная карточка + метка типа), Профиль (grouped list),
 // Аналитика (подчёркнутые табы, цвета легенды), Планы (цвет программы, чипы дней), promo-баннеры Главной.
-// Все сценарии только читают seed (--read-only): 940001 Главная, 910002 Журнал, 900003 Профиль,
+// Все сценарии только читают seed (--read-only): 940001 Главная, 997708 Журнал (свой сид: 910002 мутирует journal-v2.spec.ts), 900003 Профиль,
 // 910003 Аналитика, 900013 Планы.
-const USERS = { home: 940_001, journal: 910_002, profile: 900_003, analytics: 910_003, plans: 900_013 } as const;
+const USERS = { home: 940_001, journal: 997_708, profile: 900_003, analytics: 910_003, plans: 900_013 } as const;
 
 async function open(page: Page, id: number, theme: TelegramTheme, tab?: string) {
   const result = await openAppAs(page, id, { theme });
