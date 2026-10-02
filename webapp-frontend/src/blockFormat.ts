@@ -1,4 +1,5 @@
 import type { IntervalConfigResponse, LiveSetTargetResponse, ProtocolType } from "./apiV2";
+import { plural } from "./plural.ts";
 
 /** Человекочитаемые описания блоков тренировки (R1: interstitial, Live,
  * Summary; тот же модуль переиспользует Журнал). Никаких сырых id/JSON/
@@ -31,20 +32,7 @@ export function formatNumber(value: string | number): string {
   return String(numeric);
 }
 
-export function plural(count: number, one: string, few: string, many: string): string {
-  const mod100 = count % 100;
-  const mod10 = count % 10;
-  if (mod100 >= 11 && mod100 <= 14) {
-    return many;
-  }
-  if (mod10 === 1) {
-    return one;
-  }
-  if (mod10 >= 2 && mod10 <= 4) {
-    return few;
-  }
-  return many;
-}
+export { plural };
 
 export function formatAttempts(count: number): string {
   return `${count} ${plural(count, "попытка", "попытки", "попыток")}`;

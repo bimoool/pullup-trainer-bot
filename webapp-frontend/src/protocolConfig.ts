@@ -1,4 +1,5 @@
 import { formatSecondsAsMinutesSeconds } from "./timeInput.ts";
+import { plural } from "./plural.ts";
 
 /**
  * UX-1 — вся логика Builder-конфигурации протокола без React: человеческие
@@ -61,15 +62,7 @@ export function draftFromProtocol(protocol: ProtocolFormValue | null): ProtocolD
   };
 }
 
-/** Русское склонение: plural(3, "подход", "подхода", "подходов"). */
-export function plural(n: number, one: string, few: string, many: string): string {
-  const mod100 = Math.abs(n) % 100;
-  const mod10 = mod100 % 10;
-  if (mod100 >= 11 && mod100 <= 14) return many;
-  if (mod10 === 1) return one;
-  if (mod10 >= 2 && mod10 <= 4) return few;
-  return many;
-}
+export { plural };
 
 /** Человеческое время: 0:30 → «30 сек», 1:00 → «1:00», 0 → «без отдыха» решает вызывающий. */
 export function humanDuration(seconds: number): string {

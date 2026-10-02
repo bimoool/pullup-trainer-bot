@@ -874,9 +874,13 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  margin: 0 0 var(--vp-sp-2);
 }
 .collection-hero .plan-title {
-  margin: var(--vp-sp-1) 0;
+  margin: 0 0 var(--vp-sp-2);
+}
+.collection-hero [data-testid="collection-count"] {
+  margin: 0 0 var(--vp-sp-2);
 }
 .app-shell .collection-item-list .block-section {
   margin: 0;
@@ -1012,4 +1016,31 @@
 .app-shell .vs-cover-collection + .collection-hero {
   position: relative;
   margin-top: calc(-1 * var(--vp-sp-6));
+}
+
+/* ---------- Лист-форма (FormSheet): «Добавить в план» / «Перенести» ---------- */
+.vp-form-sheet {
+  max-height: 88vh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--vp-sp-4) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+.vp-form-sheet-grab {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto var(--vp-sp-3);
+  border-radius: 2px;
+  background: var(--vp-divider);
+}
+.vp-form-sheet .plan-title {
+  margin-top: 0;
+}
+/* «Свободный пул» — те же боковые поля, что у сетки дней; кнопка не прилипает к краям секции */
+.vp-form-sheet .week-day-picker {
+  margin-left: 0;
+  margin-right: 0;
+}
+.vp-form-sheet .week-day-picker + button {
+  width: 100%;
+  margin: 0 0 var(--vp-sp-4);
 }

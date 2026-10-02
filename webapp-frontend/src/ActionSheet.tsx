@@ -36,7 +36,7 @@ export function ActionSheet({ title, actions, onClose, testId = "plans-sheet", r
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  useBackButton(onClose);
+  useBackButton(onClose, [], true, false);
 
   useEffect(() => {
     const dialog = dialogRef.current;

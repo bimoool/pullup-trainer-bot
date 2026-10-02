@@ -88,15 +88,17 @@ function hasValue(item: { workouts: number; minutes: number }): boolean {
 }
 
 /** «Сводка»: по умолчанию только строки с данными, «Показать все» раскрывает нули каталога;
- * колонки Тренировки / Минуты, строка TOTAL. */
+ * колонки Тренировки / Минуты, строка «Итого». */
 export function DistributionTable({ dist, homeOrder = [] }: { dist: AnalyticsDistributionV2; homeOrder?: string[] }) {
   const [showAll, setShowAll] = useState(false);
   const colors = categoryColors(dist, homeOrder);
   const visible = showAll ? dist.categories : dist.categories.filter(hasValue);
-  const hiddenCount = dist.categories.reduce(
-    (sum, category) => sum + (hasValue(category) ? 0 : 1) + category.subcategories.filter((sub) => !hasValue(sub)).length,
-    0,
-  );
+  // Честный счётчик: сколько строк добавит «Показать все» (все строки минус сейчас видимые).
+  const allRows = dist.categories.reduce((sum, category) => sum + 1 + category.subcategories.length, 0);
+  const shownRows = dist.categories
+    .filter(hasValue)
+    .reduce((sum, category) => sum + 1 + category.subcategories.filter(hasValue).length, 0);
+  const hiddenCount = allRows - shownRows;
   return (
     <div className="profile-card analytics-summary-card" data-testid="analytics-summary">
       <p className="section-title">Сводка</p>
@@ -109,7 +111,7 @@ export function DistributionTable({ dist, homeOrder = [] }: { dist: AnalyticsDis
             <SummaryRows key={category.name} category={category} color={colors.get(category.name)} showAll={showAll} />
           ))}
           <tr className="analytics-summary-total" data-testid="summary-total">
-            <th scope="row">TOTAL</th>
+            <th scope="row">Итого</th>
             <td>{formatShare(dist.total_workouts)}</td>
             <td>{formatTableMinutes(dist.total_minutes)}</td>
           </tr>
