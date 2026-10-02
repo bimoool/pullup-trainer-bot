@@ -1,4 +1,3 @@
-import { Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -153,34 +152,37 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, o
   }
 
   return (
-    <div>
-      <p className="plan-title">Живая тренировка</p>
-      {title && <p className="block-subtitle">{title}</p>}
-      {blockName && <p className="block-subtitle">{blockName} · Интервалы</p>}
+    <div className="live-screen" data-phase={state.phase === "get_ready" ? "get_ready" : state.phase === "work" ? "go" : "rest"}>
+      <header className="live-header">
+        <div className="live-header-text">
+          <p className="live-eyebrow">Живая тренировка</p>
+          {title && <p className="live-workout-title">{title}</p>}
+          {blockName && <p className="live-plan">{blockName} · Интервалы</p>}
+        </div>
+      </header>
       {completeError && (
         <p className="gap-banner">Не удалось завершить: {completeError}. Пробую снова…</p>
       )}
 
       {state.phase === "get_ready" ? (
-        <Section className="block-section phase-card-get_ready" header={PHASE_LABELS.get_ready}>
+        <div className="phase-panel phase-card-get_ready">
+          <h2 className="phase-panel-label">{PHASE_LABELS.get_ready}</h2>
           <p className="timer-duration-label phase-timer-get_ready">
             {Math.max(0, Math.ceil(state.remainingInPhaseSeconds))}
           </p>
-        </Section>
+        </div>
       ) : (
         // WORK визуально = "go" (зелёный, активная фаза), REST = "rest"
         // (синий) — переиспользованы уже существующие, стилизованные
         // классы SessionLiveScreen.tsx (.phase-card-go/.phase-card-rest,
-        // index.css), не изобретены новые unstyled interval-phase-*.
-        <Section
-          className={`block-section phase-card-${state.phase === "work" ? "go" : "rest"}`}
-          header={PHASE_LABELS[state.phase]}
-        >
+        // index.css/live.css), не изобретены новые unstyled interval-phase-*.
+        <div className={`phase-panel phase-card-${state.phase === "work" ? "go" : "rest"}`}>
+          <h2 className="phase-panel-label">{PHASE_LABELS[state.phase]}</h2>
           <p className={`timer-duration-label phase-timer-${state.phase === "work" ? "go" : "rest"}`}>
             {formatSeconds(state.remainingInPhaseSeconds)}
           </p>
-          <p className="block-subtitle">Осталось: {formatSeconds(state.remainingTotalSeconds)}</p>
-        </Section>
+          <p className="live-done-note">Осталось: {formatSeconds(state.remainingTotalSeconds)}</p>
+        </div>
       )}
 
       {completing && <p className="screen-message">Завершаю тренировку…</p>}

@@ -121,3 +121,7 @@ for id in 999401 999402 999411 999412; do seed collections "$id"; done
 for id in 999801 999802 999811 999812; do seed owner_optional_workout "$id"; done
 # #282 «Journal dedupe»: 999601 (320 px light, + retry) / 999611 (390 px dark, + retry); мутаций нет.
 for id in 999601 999602 999611 999612; do seed journal_dedupe "$id"; done
+# Visual live session (#280, Live Session stream): 9976xx — 320/390 × light/dark, каждый + retry (id+1);
+# 997691/997692 — только для снимков (ux-capture), не для тестов.
+for id in 997601 997602 997611 997612 997621 997622 997631 997632 997691; do seed session_recovery "$id"; done
+seed builder_workouts 997692

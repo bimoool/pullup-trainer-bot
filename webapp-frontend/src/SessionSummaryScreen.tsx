@@ -1,4 +1,4 @@
-import { Button, Section } from "@telegram-apps/telegram-ui";
+import { Button } from "@telegram-apps/telegram-ui";
 
 import type { LiveSessionCompleteResponse, SetLogResponseV2 } from "./apiV2";
 import { formatDuration, formatIntervalsCount, formatNumber } from "./blockFormat";
@@ -73,10 +73,31 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
   // позиции, рядом с reps/time/max. Ни один блок не определяет вид всей
   // сессии. Данные — то, что уже пришло в result (идентичность протокола из
   // замороженного снимка), отдельных запросов нет.
+  const totalDone = result.blocks.reduce(
+    (sum, block) => sum + (isIntervalResult(block.result) ? block.result.completed_cycles : block.set_logs.length), 0,
+  );
+  const hasInterval = result.blocks.some((block) => isIntervalResult(block.result));
   return (
-    <div>
-      {title && <p className="plan-title">{title}</p>}
-      <p className="plan-title">Тренировка завершена</p>
+    <div className="live-screen live-summary-screen">
+      <div className="live-hero-done">
+        <span className="live-check" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12.5l4.5 4.5L19 7.5" />
+          </svg>
+        </span>
+        <p className="live-done-title">Тренировка завершена</p>
+        {title && <p className="live-workout-title">{title}</p>}
+        <div className="live-stats">
+          <div className="live-stat">
+            <span className="live-stat-value">{totalDone}</span>
+            <span className="live-stat-label">{hasInterval ? "Подходов и циклов" : "Подходов"}</span>
+          </div>
+          <div className="live-stat">
+            <span className="live-stat-value">{result.blocks.length}</span>
+            <span className="live-stat-label">{result.blocks.length === 1 ? "Упражнение" : "Упражнений"}</span>
+          </div>
+        </div>
+      </div>
 
       {result.blocks.map((block) => {
         // name=null (internal STEP-роль без публичного имени) значит заголовок
@@ -96,41 +117,43 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
         const header = `${status}${name !== null ? ` ${name}` : ""}${counter}`;
         const best = isMax && done > 0 ? Math.max(...block.set_logs.map((log) => Number(log.value))) : null;
         return (
-          <Section key={block.order_index} className="block-section" header={header}>
+          <section key={block.order_index} className="live-card">
+            <h3 className="live-card-title">{header}</h3>
             {intervalResult !== null ? (
               <>
-                <p className="block-subtitle">{formatDuration(intervalResult.actual_duration_seconds)} выполнено</p>
+                <p className="live-row">{formatDuration(intervalResult.actual_duration_seconds)} выполнено</p>
                 {block.interval_config && (
-                  <p className="block-subtitle">
+                  <p className="live-row">
                     {block.interval_config.work_seconds} сек работа / {block.interval_config.rest_seconds} сек отдых
                   </p>
                 )}
-                <p className="block-subtitle">{formatIntervalsCount(intervalResult.completed_cycles)}</p>
+                <p className="live-row">{formatIntervalsCount(intervalResult.completed_cycles)}</p>
               </>
             ) : (
               <>
                 {block.set_logs.map((log) => (
-                  <p key={log.set_number} className="block-subtitle">
+                  <p key={log.set_number} className="live-row">
                     {isMax ? "Попытка" : "Подход"} {log.set_number}: {formatLogValue(log)}
                   </p>
                 ))}
-                {best !== null && <p className="block-subtitle">Лучший результат: {formatNumber(best)}</p>}
-                {done === 0 && <p className="block-subtitle">Не выполнено — осталось в плане.</p>}
+                {best !== null && <p className="live-row live-row-best">Лучший результат: {formatNumber(best)}</p>}
+                {done === 0 && <p className="live-row">Не выполнено — осталось в плане.</p>}
               </>
             )}
-          </Section>
+          </section>
         );
       })}
 
       {result.progression_result && (
-        <Section className="block-section" header="Новая цель">
+        <section className="live-card live-card-goal">
+          <h3 className="live-card-title">Новая цель</h3>
           {result.blocks.length >= 1 && (() => {
             const name = result.blocks[0].exercise_id !== null && resolveExerciseName
               ? resolveExerciseName(result.blocks[0].exercise_id)
               : null;
             const { target_before, target_after } = result.progression_result.block_a;
             return (
-              <p className="block-subtitle">
+              <p className="live-row">
                 {name !== null && `${name}: `}{target_before} → {target_after}
               </p>
             );
@@ -141,12 +164,12 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
               : null;
             const { target_before, target_after } = result.progression_result.block_b;
             return (
-              <p className="block-subtitle">
+              <p className="live-row">
                 {name !== null && `${name}: `}{target_before} → {target_after}
               </p>
             );
           })()}
-        </Section>
+        </section>
       )}
       {result.progression_skipped_reason && (
         <p className="gap-banner">
@@ -154,9 +177,11 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
         </p>
       )}
 
-      <Button className="action-button" size="l" stretched onClick={onClose}>
-        Закрыть
-      </Button>
+      <div className="live-transport">
+        <Button className="live-primary" size="l" stretched onClick={onClose}>
+          Закрыть
+        </Button>
+      </div>
     </div>
   );
 }

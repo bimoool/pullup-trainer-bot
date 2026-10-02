@@ -1,4 +1,4 @@
-import { Button, Input, Section, Textarea } from "@telegram-apps/telegram-ui";
+import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useRef, useState } from "react";
 
 import { startLiveBlock, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
@@ -31,7 +31,7 @@ import {
 } from "./offlineSession";
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
-import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX, WORKOUT_EFFORT_PROMPT } from "./effortScale";
+import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { useBackButton } from "./useBackButton";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 
@@ -584,30 +584,50 @@ export function SessionLiveScreen({
   };
 
   const renderEffortAndNote = () => (
-    <>
-      <p className="block-subtitle">{SET_EFFORT_PROMPT}</p>
-      <div className="effort-segment-row effort-labelled" data-testid="set-effort">
-        {EFFORT_SCALE.map((option) => (
-          <Button
-            key={option.value}
-            size="s"
-            mode={effort === option.value ? "filled" : "outline"}
-            aria-pressed={effort === option.value}
-            onClick={() => setEffort(option.value)}
-          >
-            <span className="effort-num">{option.value}</span>
-            <span className="effort-word">{option.label}</span>
-          </Button>
-        ))}
-      </div>
-      <Input header="Заметка" aria-label="Заметка" value={note} onChange={(e) => setNote(e.target.value)} />
-    </>
+    <div className="live-effort">
+      <p className="live-effort-prompt">{SET_EFFORT_PROMPT}</p>
+      <EffortChips testId="set-effort" value={effort} onPick={setEffort} />
+      <label className="live-field live-note-field">
+        <span className="live-field-label">Заметка</span>
+        <input
+          className="live-field-input live-note-input" type="text" aria-label="Заметка"
+          value={note} onChange={(e) => setNote(e.target.value)}
+        />
+      </label>
+    </div>
   );
 
+  const renderValueField = (current: string, onChange: (next: string) => void, label: string) => (
+    <label className="live-field">
+      <span className="live-field-label">{label}</span>
+      <input
+        className="live-field-input live-value-input" aria-label={label} type="number" inputMode="decimal"
+        value={current} onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+
+  // Прогресс подходов (точки): в работе текущий подход — «идёт», на отдыхе/после
+  // плана текущий уже сделан.
+  const doneSets = phaseName === "rest" || phaseName === "done" ? local.localPhase.setNumber : local.localPhase.setNumber - 1;
+  const showPips = targetsCount > 1 && targetsCount <= 12;
+  const heroTarget = phaseName === "go" && remaining === null && targetForSet !== null ? formatTarget(targetForSet) : null;
+  // «Завершить»: в шапке, пока идёт тренировка; когда план выполнен — главное действие транспорта.
+  const finishIsPrimary = phaseName === "done";
+  const showTransport = !reviewOpen && !extraOpen && phaseName !== "between";
+  const canPause = canPauseLocal(local) || paused;
+
   return (
-    <div>
-      <p className="plan-title">Живая тренировка</p>
-      {title && <p className="block-subtitle">{title}</p>}
+    <div className="live-screen" data-phase={phaseName} data-paused={paused ? "true" : undefined}>
+      <header className="live-header">
+        <div className="live-header-text">
+          <p className="live-eyebrow">Живая тренировка</p>
+          {title && <p className="live-workout-title">{title}</p>}
+        </div>
+        {!reviewOpen && !finishIsPrimary && (
+          <button type="button" className="live-finish" onClick={() => setReviewOpen(true)}>Завершить</button>
+        )}
+      </header>
       {!isOnline && <p className="gap-banner">Нет сети — подходы сохраняются локально и уйдут батчем при подключении.</p>}
       {isOnline && totalPending > 0 && <p className="gap-banner">Не синхронизировано: {totalPending}. Досылаю…</p>}
       {syncError && <p className="gap-banner">Не удалось синхронизировать: {syncError}. Повторю при следующем действии.</p>}
@@ -626,8 +646,18 @@ export function SessionLiveScreen({
               {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
               {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
             </p>
+            {showPips && (
+              <div className="live-pips" aria-hidden="true">
+                {Array.from({ length: targetsCount }, (_, i) => (
+                  <span
+                    key={i}
+                    className={i < doneSets ? "live-pip live-pip-done" : i === doneSets ? "live-pip live-pip-current" : "live-pip"}
+                  />
+                ))}
+              </div>
+            )}
             {phaseName === "get_ready" && (
-              <p className="block-subtitle">
+              <p className="live-plan">
                 {describeBlockPlan(block.protocol_type, block.targets, block.interval_config)}
               </p>
             )}
@@ -645,172 +675,179 @@ export function SessionLiveScreen({
         {remaining !== null && (
           <p className={`timer-duration-label phase-timer-${phaseName}`}>{formatDuration(remaining)}</p>
         )}
+        {heroTarget !== null && <p className="live-hero-target phase-timer-go">{heroTarget}</p>}
         {cueActive && (
           <p className="get-ready-cue" data-testid="get-ready-cue">
             Приготовься · <span data-testid="get-ready-countdown">{Math.ceil(remaining ?? 0)}</span>
           </p>
         )}
+        {phaseName === "done" && (
+          <p className="live-done-note">Все подходы плана выполнены — можно завершить сессию.</p>
+        )}
       </div>
       )}
 
-      {phaseName === "get_ready" && (
-        <Button className="action-button" size="l" stretched onClick={advancePhase}>
-          Готов
-        </Button>
-      )}
-
-      {(canPauseLocal(local) || paused) && (
-        <Button
-          className="action-button" size="l" stretched mode="outline" data-testid="pause-toggle"
-          onClick={togglePause}
-        >
-          {paused ? "Продолжить" : "Пауза"}
-        </Button>
-      )}
-
       {phaseName === "go" && block !== null && (
-        <Section
-          className="block-section live-log-panel" header="Внести подход"
+        <section
+          className="live-panel live-log-panel"
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
         >
-          {/* aria-label дублирует header намеренно — telegram-ui's Input
-              рендерит header-подпись СНАРУЖИ своего <label> (см. разбор
-              FormInput.js), она не становится accessible name инпута; та же
-              причина, по которой WorkoutScreen.tsx/BackdateForm.tsx везде
-              используют явный aria-label, не полагаются на header. */}
-          <Input
-            header={inputLabel.label}
-            aria-label={inputLabel.label}
-            type="number"
-            inputMode="decimal"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
+          <h3 className="live-panel-title">Внести подход</h3>
+          {/* aria-label дублирует подпись намеренно: accessible name инпута —
+              именно aria-label, как и в WorkoutScreen.tsx/BackdateForm.tsx. */}
+          {renderValueField(value, setValue, inputLabel.label)}
           {inputLabel.hint !== null && (
-            <p className="block-subtitle" data-testid="result-hint">{inputLabel.hint}</p>
+            <p className="live-hint" data-testid="result-hint">{inputLabel.hint}</p>
           )}
           {logPanelOpen && renderEffortAndNote()}
-          <Button className="action-button" size="l" stretched disabled={value.trim() === ""} onClick={logSet}>
-            Готово
-          </Button>
-          <Button
-            className="action-button" size="s" stretched mode="plain" data-testid="log-panel-toggle"
+          <button
+            type="button" className="live-link-button" data-testid="log-panel-toggle"
             aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
           >
             {logPanelOpen ? "Свернуть" : "Оценка и заметка"}
-          </Button>
-        </Section>
+          </button>
+        </section>
       )}
 
       {restEditable && (
-        <Section
-          className="block-section live-log-panel" header={`Подход ${local.localPhase.setNumber}: результат`}
+        <section
+          className="live-panel live-log-panel"
           data-testid="log-panel" data-state={logPanelOpen ? "expanded" : "collapsed"}
         >
+          <h3 className="live-panel-title">{`Подход ${local.localPhase.setNumber}: результат`}</h3>
           {logPanelOpen ? (
             <>
-              <Input
-                header={inputLabel.label} aria-label={inputLabel.label} type="number" inputMode="decimal"
-                value={value} onChange={(e) => setValue(e.target.value)}
-              />
+              {renderValueField(value, setValue, inputLabel.label)}
               {renderEffortAndNote()}
-              <Button className="action-button" size="l" stretched disabled={value.trim() === ""} onClick={saveRestEdit}>
+              <Button className="live-save" size="l" stretched mode="bezeled" disabled={value.trim() === ""} onClick={saveRestEdit}>
                 Сохранить подход
               </Button>
             </>
           ) : (
-            <p className="block-subtitle" data-testid="log-panel-summary">
+            <p className="live-summary-line" data-testid="log-panel-summary">
               {value}{effort !== null ? ` · оценка ${effort}` : ""}{note.trim() !== "" ? ` · ${note.trim()}` : ""}
             </p>
           )}
-          <Button
-            className="action-button" size="s" stretched mode="plain" data-testid="log-panel-toggle"
+          <button
+            type="button" className="live-link-button" data-testid="log-panel-toggle"
             aria-expanded={logPanelOpen} onClick={() => setPanelOpen(!logPanelOpen)}
           >
             {logPanelOpen ? "Свернуть" : "Изменить"}
-          </Button>
-        </Section>
+          </button>
+        </section>
       )}
 
-      {phaseName === "rest" && (
-        <Button className="action-button" size="l" stretched onClick={advancePhase}>
-          Пропустить отдых
-        </Button>
-      )}
-
-      {phaseName === "done" && (
-        <p className="screen-message">Все подходы плана выполнены — можно завершить сессию.</p>
-      )}
-
-      {extraIndex !== null && (
-        extraOpen ? (
-          <Section className="block-section" header="Ещё подход">
-            <div data-testid="extra-set-form">
-              <Input
-                header={extraLabel.label} aria-label={extraLabel.label} type="number" inputMode="decimal"
-                value={extraValue} onChange={(e) => setExtraValue(e.target.value)}
-              />
-              <Button className="action-button" size="l" stretched disabled={extraValue.trim() === ""} onClick={logExtraSet}>
-                Записать
-              </Button>
-              <Button className="action-button" size="l" stretched mode="outline" onClick={() => setExtraOpen(false)}>
-                Отмена
-              </Button>
-            </div>
-          </Section>
-        ) : (
-          <>
-            {extraCount > 0 && <p className="block-subtitle" data-testid="extra-count">Дополнительных подходов: {extraCount}</p>}
-            <Button
-              className="action-button" size="l" stretched mode="outline" data-testid="extra-set-button"
-              onClick={() => setExtraOpen(true)}
-            >
-              + Ещё подход
+      {extraIndex !== null && extraOpen && (
+        <section className="live-panel">
+          <h3 className="live-panel-title">Ещё подход</h3>
+          <div data-testid="extra-set-form">
+            {renderValueField(extraValue, setExtraValue, extraLabel.label)}
+            <Button className="live-save" size="l" stretched disabled={extraValue.trim() === ""} onClick={logExtraSet}>
+              Записать
             </Button>
-          </>
-        )
-      )}
-
-      {reviewOpen ? (
-        <Section className="block-section" header="Как прошла тренировка?">
-          <div data-testid="workout-review">
-            <p className="block-subtitle">
-              {WORKOUT_EFFORT_PROMPT} Что сделано — зачтено, остальное останется в плане.
-            </p>
-            <div className="effort-segment-row effort-labelled" data-testid="workout-effort">
-              {EFFORT_SCALE.map((option) => (
-                <Button
-                  key={option.value}
-                  size="s"
-                  mode={reviewEffort === option.value ? "filled" : "outline"}
-                  aria-pressed={reviewEffort === option.value}
-                  onClick={() => setReviewEffort(reviewEffort === option.value ? null : option.value)}
-                >
-                  <span className="effort-num">{option.value}</span>
-                  <span className="effort-word">{option.label}</span>
-                </Button>
-              ))}
-            </div>
-            <Textarea
-              header="Заметка"
-              aria-label="Заметка к тренировке"
-              maxLength={WORKOUT_COMMENT_MAX}
-              value={reviewComment}
-              onChange={(e) => setReviewComment(e.target.value)}
-            />
-            <Button className="action-button" size="l" stretched onClick={submitReview}>
-              Сохранить и завершить
-            </Button>
-            <Button className="action-button" size="l" stretched mode="outline" onClick={() => setReviewOpen(false)}>
-              Назад
+            <Button className="live-save" size="l" stretched mode="outline" onClick={() => setExtraOpen(false)}>
+              Отмена
             </Button>
           </div>
-        </Section>
-      ) : (
-        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setReviewOpen(true)}>
-          Завершить
-        </Button>
+        </section>
       )}
+      {extraIndex !== null && !extraOpen && extraCount > 0 && (
+        <p className="live-extra-count" data-testid="extra-count">Дополнительных подходов: {extraCount}</p>
+      )}
+
+      {showTransport && (
+        <div className="live-transport">
+          {phaseName === "get_ready" && (
+            <Button className="live-primary" size="l" stretched onClick={advancePhase}>
+              Готов
+            </Button>
+          )}
+          {phaseName === "go" && block !== null && (
+            <Button className="live-primary" size="l" stretched disabled={value.trim() === ""} onClick={logSet}>
+              Готово
+            </Button>
+          )}
+          {phaseName === "rest" && (
+            <Button className="live-primary" size="l" stretched onClick={advancePhase}>
+              Пропустить отдых
+            </Button>
+          )}
+          {finishIsPrimary && (
+            <Button className="live-primary" size="l" stretched onClick={() => setReviewOpen(true)}>
+              Завершить
+            </Button>
+          )}
+          {(canPause || extraIndex !== null) && (
+            <div className="live-secondary-row">
+              {canPause && (
+                <Button
+                  className="live-secondary" size="m" stretched mode="bezeled" data-testid="pause-toggle"
+                  onClick={togglePause}
+                >
+                  {paused ? "Продолжить" : "Пауза"}
+                </Button>
+              )}
+              {extraIndex !== null && (
+                <Button
+                  className="live-secondary" size="m" stretched mode="bezeled" data-testid="extra-set-button"
+                  onClick={() => setExtraOpen(true)}
+                >
+                  + Ещё подход
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {reviewOpen && (
+        <div className="live-sheet-layer">
+          <div className="live-sheet-backdrop" onClick={() => setReviewOpen(false)} aria-hidden="true" />
+          <section className="live-sheet" role="dialog" aria-modal="true" aria-label="Итог тренировки" data-testid="workout-review">
+            <div className="live-sheet-handle" aria-hidden="true" />
+            <h3 className="live-sheet-title">Как прошла тренировка?</h3>
+            <p className="live-hint">Что сделано — зачтено, остальное останется в плане.</p>
+            <EffortChips
+              testId="workout-effort" value={reviewEffort}
+              onPick={(next) => setReviewEffort(reviewEffort === next ? null : next)}
+            />
+            <label className="live-field live-note-field">
+              <span className="live-field-label">Заметка</span>
+              <textarea
+                className="live-field-input live-note-textarea" aria-label="Заметка к тренировке" rows={3}
+                maxLength={WORKOUT_COMMENT_MAX} value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+              />
+            </label>
+            <Button className="live-primary" size="l" stretched onClick={submitReview}>
+              Сохранить и завершить
+            </Button>
+            <Button className="live-secondary live-sheet-back" size="m" stretched mode="plain" onClick={() => setReviewOpen(false)}>
+              Назад
+            </Button>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Шкала усилия 1–5: цифра + слово, одна строка из пяти сегментов (подход и тренировка). */
+function EffortChips({ testId, value, onPick }: { testId: string; value: string | null; onPick: (value: string) => void }) {
+  return (
+    <div className="live-chips" data-testid={testId}>
+      {EFFORT_SCALE.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={value === option.value ? "live-chip live-chip-active" : "live-chip"}
+          aria-pressed={value === option.value}
+          onClick={() => onPick(option.value)}
+        >
+          <span className="effort-num">{option.value}</span>
+          <span className="effort-word">{option.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
