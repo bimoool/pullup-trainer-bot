@@ -115,6 +115,8 @@ export function App() {
   const [tab, setTab] = useState<Tab>("home");
   // «+» на Главной → «Записать в журнал» (#263): счётчик запросов, 0 — шторку не открывать.
   const [journalLogRequest, setJournalLogRequest] = useState(0);
+  // «Записать» на Workout Detail: тренировка, которой предзаполняется форма записи.
+  const [journalLogWorkoutId, setJournalLogWorkoutId] = useState<number | null>(null);
   // Живая тренировка (issue #59) держит несохранённый ввод только во
   // фронтенд-состоянии до финальной отправки (LiveWorkoutScreen.tsx) —
   // переключение вкладок размонтировало бы WorkoutScreen вместе с ней и
@@ -130,7 +132,10 @@ export function App() {
   // (SessionPreScreen.onGoToWorkout на отмену, SessionSummaryScreen.onClose
   // после Complete), не через обычные табы/нижнее меню.
   const [v2Session, setV2Session] = useState<
-    { planItemIds: number[]; manual: boolean; title: string } | { resumedSession: LiveSessionResponse } | null
+    | { planItemIds: number[]; manual: boolean; title: string }
+    | { workoutId: number; title: string }
+    | { resumedSession: LiveSessionResponse }
+    | null
   >(null);
   // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
   // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
@@ -278,6 +283,7 @@ export function App() {
         <PlanSessionFlow
           initDataRaw={state.initDataRaw}
           planItemIds={"planItemIds" in v2Session ? v2Session.planItemIds : []}
+          workoutId={"workoutId" in v2Session ? v2Session.workoutId : undefined}
           manual={"manual" in v2Session ? v2Session.manual : false}
           title={"title" in v2Session ? v2Session.title : (v2Session.resumedSession.title ?? "")}
           initialSession={"resumedSession" in v2Session ? v2Session.resumedSession : null}
@@ -288,6 +294,12 @@ export function App() {
   }
 
   const isOnboarded = state.data.onboarding_step === "done";
+  const startWorkout = (workoutId: number, title: string) => setV2Session({ workoutId, title });
+  const logWorkout = (workoutId: number) => {
+    setJournalLogWorkoutId(workoutId);
+    setJournalLogRequest((value) => value + 1);
+    setTab("journal");
+  };
 
   // Экспериментальная вкладка новой схемы видна только тестировщикам
 
@@ -311,13 +323,17 @@ export function App() {
         <HomeScreen
           initDataRaw={state.initDataRaw}
           onOpenPlans={() => setTab("plans")}
-          onOpenJournalLog={() => { setJournalLogRequest((value) => value + 1); setTab("journal"); }}
+          onOpenJournalLog={() => { setJournalLogWorkoutId(null); setJournalLogRequest((value) => value + 1); setTab("journal"); }}
+          onStartWorkout={startWorkout}
+          onLogWorkout={logWorkout}
         />
       )}
       {isOnboarded && tab === "plans" && (
         <DashboardScreen
           initDataRaw={state.initDataRaw}
           onStartSession={(planItemIds, options) => setV2Session({ planItemIds, ...options })}
+          onStartWorkout={startWorkout}
+          onLogWorkout={logWorkout}
         />
       )}
       {isOnboarded && tab === "workout" && (
@@ -328,7 +344,7 @@ export function App() {
           onOpenWarmup={() => setTab("warmup")}
         />
       )}
-      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} />}
+      {isOnboarded && tab === "journal" && <HistoryScreen key={journalLogRequest} initDataRaw={state.initDataRaw} logRequest={journalLogRequest} logWorkoutId={journalLogWorkoutId} />}
       {isOnboarded && tab === "analytics" && <AnalyticsScreen initDataRaw={state.initDataRaw} />}
       {isOnboarded && tab === "profile" && (
         <ProfileScreen

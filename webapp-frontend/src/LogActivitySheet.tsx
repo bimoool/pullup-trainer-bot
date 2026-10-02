@@ -175,15 +175,17 @@ export function FreeActivityForm({
 
 /** «Тренировку из моих»: свой Workout, дата, значения подходов по упражнениям. */
 export function BackdatedWorkoutForm({
-  initDataRaw, onBack, onSaved,
+  initDataRaw, onBack, onSaved, initialWorkoutId = null,
 }: {
   initDataRaw: string;
+  /** Предзаполнение из Workout Detail «Записать». */
+  initialWorkoutId?: number | null;
   onBack: () => void;
   onSaved: (date: string) => void;
 }) {
   const today = localToday();
   const [workouts, setWorkouts] = useState<WorkoutResponseV2[] | null>(null);
-  const [workoutId, setWorkoutId] = useState<number | null>(null);
+  const [workoutId, setWorkoutId] = useState<number | null>(initialWorkoutId);
   const [workout, setWorkout] = useState<WorkoutResponseV2 | null>(null);
   const [values, setValues] = useState<Record<number, string[]>>({});
   const [date, setDate] = useState(today);

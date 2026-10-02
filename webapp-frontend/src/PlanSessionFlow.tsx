@@ -29,6 +29,8 @@ type Props = {
    * повторный клик "Начать" породил бы вторую TrainingSession (свежий
    * client_session_id не совпадёт с исходным). */
   initialSession: LiveSessionResponse | null;
+  /** «Начать» на Workout Detail — свободная сессия своей тренировки (без PlanItem). */
+  workoutId?: number;
   onClose: () => void;
 };
 
@@ -46,7 +48,7 @@ type SubScreen =
  * остаться dev/admin-стендом, эта же машина состояний — только
  * pre -> live -> summary, без лишнего.
  */
-export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initialSession, onClose }: Props) {
+export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initialSession, workoutId, onClose }: Props) {
   const [screen, setScreen] = useState<SubScreen>(
     initialSession !== null ? { kind: "live", session: initialSession } : { kind: "pre" },
   );
@@ -85,6 +87,7 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
         planItemIds={planItemIds}
         manual={manual}
         title={title}
+        workoutId={workoutId}
         onStarted={(session) => setScreen({ kind: "live", session })}
         onGoToWorkout={onClose}
       />
