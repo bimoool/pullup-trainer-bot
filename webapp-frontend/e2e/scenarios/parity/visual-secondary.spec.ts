@@ -133,7 +133,7 @@ for (const width of WIDTHS) {
         await expect(back).toBeVisible();
         await back.click();
         await expect(page.getByTestId("session-pre")).toHaveCount(0);
-        await expect(page.getByTestId("my-workouts")).toBeVisible();
+        await expect(page.getByTestId("workout-detail")).toBeVisible(); // #277: «назад» — на деталь, откуда нажали «Начать»
 
         await fresh(page, U.builder, theme);
         await page.getByTestId("my-workout-card").filter({ hasText: "Смешанная" }).click();
