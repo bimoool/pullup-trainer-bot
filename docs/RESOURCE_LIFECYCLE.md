@@ -67,6 +67,24 @@ widen them for monitoring.** Instead everything runs on the server and reports l
 3. **Deploy-time visibility (optional):** ask the owner to run `vps-resource-report.sh` once after a
    deploy and paste the verdict; no CI change needed.
 
+## Owner one-time VPS action
+
+**OWNER ONE-TIME VPS ACTION REQUIRED.** The forced-command deploy keys cannot install system
+files, so someone with root must run this once (idempotent, backs up the scripts it edits, touches
+no volume/container/image/database). SSH permissions are not widened.
+
+```bash
+sudo bash -c 'set -e; R=/root/pullup-trainer-bot; git -C $R fetch -q origin develop/current; D=$(mktemp -d); git -C $R archive FETCH_HEAD deploy | tar -x -C $D; bash $D/deploy/vps-install.sh'
+```
+
+Server-side scripts that get the hook (named in `.claude/skills/deploy-and-verify`): prod
+`/usr/local/bin/deploy-run.sh` (root, run via `deploy.sh` → sudo), staging
+`/home/deploy/deploy-staging-run.sh` (run via the forced `./deploy-staging.sh <ref>`). The
+installer skips a script it cannot find, and refuses to edit one that uses `exec`, printing why.
+
+After install everything is automatic: a read-only report every 6 h (`/var/lib/resource-report/latest.txt`,
+`systemctl --failed` on WARN/CRIT) and a safe cleanup after every prod and staging deploy.
+
 ### Never, on the VPS
 
 `docker volume prune`, `docker system prune --volumes`, `docker system prune -a`, deleting
