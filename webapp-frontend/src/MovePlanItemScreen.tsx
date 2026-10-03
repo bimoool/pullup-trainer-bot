@@ -1,0 +1,102 @@
+import { Button, Spinner } from "@telegram-apps/telegram-ui";
+import { useState } from "react";
+
+import { movePlanItem, type PlanWeekResponseV2 } from "./apiV2";
+import { DayPicker } from "./DayPicker";
+import { weekRangeLabel } from "./planWeekNav";
+import { FormSheet } from "./FormSheet";
+import { useBackButton } from "./useBackButton";
+
+type Props = {
+  initDataRaw: string;
+  planItemId: number;
+  title: string;
+  /** Текущий день PlanItem — предзаполняется в DayPicker (issue #188,
+   * раздел 6 — "текущий day preselected"). null = свободный пул. */
+  currentDayOfWeek: number | null;
+  /** issue #275 — недели, доступные для переноса (текущая и будущие), и неделя item'а. */
+  weeks: PlanWeekResponseV2[];
+  currentWeekId: number | null;
+  onBack: () => void;
+  onSuccess: () => void;
+};
+
+/**
+ * Phase D3 (issue #188) — «Перенести» на карточке Планов. Тот же
+ * DayPicker, что AddToPlanScreen.tsx уже использует (вынесен в
+ * DayPicker.tsx), под уже существующий D2 API (PATCH /plan-items/{id}).
+ * plan_week_id не меняется в этой волне — PlanItem остаётся в той же
+ * current PlanWeek (по заданию).
+ */
+export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayOfWeek, weeks, currentWeekId, onBack, onSuccess }: Props) {
+  const [targetWeekId, setTargetWeekId] = useState<number | null>(currentWeekId);
+  const [selectedDay, setSelectedDay] = useState<number | "free_pool" | null>(
+    currentDayOfWeek === null ? "free_pool" : currentDayOfWeek,
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // #293: пока «Сохранить» в полёте, фон/BackButton лист не закрывают (ошибка переноса не теряется).
+  const close = () => {
+    if (!submitting) {
+      onBack();
+    }
+  };
+  useBackButton(close, [onBack]);
+
+  async function handleSubmit() {
+    if (selectedDay === null || submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await movePlanItem(
+        initDataRaw, planItemId, selectedDay === "free_pool" ? null : selectedDay,
+        targetWeekId !== null && targetWeekId !== currentWeekId ? targetWeekId : undefined,
+      );
+      onSuccess();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <FormSheet title="Перенести" onClose={close}>
+      <p className="plan-title">Перенести</p>
+      <p className="block-subtitle">{title}</p>
+
+      {weeks.length > 1 && (
+        <div className="plan-week-day-group" data-testid="move-week-picker">
+          <p className="block-subtitle">Неделя</p>
+          {weeks.map((week) => (
+            <button
+              key={week.id} type="button"
+              className={
+                week.id === targetWeekId
+                  ? "program-card-button plan-exercise-option plan-exercise-option-selected"
+                  : "program-card-button plan-exercise-option"
+              }
+              onClick={() => setTargetWeekId(week.id)}
+            >
+              {`Неделя ${week.week_number} · ${weekRangeLabel(week.start_date)}`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
+
+      {submitError && <p className="gap-banner">Не удалось перенести: {submitError}</p>}
+
+      <Button
+        className="action-button vs-primary" size="l" stretched
+        disabled={selectedDay === null || submitting}
+        onClick={() => void handleSubmit()}
+      >
+        {submitting ? <Spinner size="s" /> : "Сохранить"}
+      </Button>
+    </FormSheet>
+  );
+}

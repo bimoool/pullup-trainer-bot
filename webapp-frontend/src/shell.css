@@ -1,0 +1,965 @@
+/*
+ * Визуальная оболочка Mini App (#280, «CRIMPD VISUAL»). Грузится ПОСЛЕ index.css и
+ * переопределяет общие примитивы, чтобы все экраны получили единый язык:
+ * серая страница + белые карточки, шкала отступов и типографики, нижняя навигация
+ * «иконка + подпись», горизонтальные ряды с «выглядывающей» карточкой.
+ *
+ * Принципы:
+ *  - только токены ниже и --tg-* темы Telegram (светлая/тёмная — без отдельных веток по экранам);
+ *  - в .app-shell переопределяем --tg-bg-color / --tg-secondary-bg-color: в наследованных
+ *    правилах index.css «bg» = фон страницы, «secondary» = поверхность карточки — это
+ *    переворачивает светлую тему в «серая страница + белые карточки» без правки каждого правила;
+ *  - поведение и разметка не меняются; контрактные классы/testid остаются.
+ */
+:root {
+  /* шкала отступов */
+  --vp-sp-1: 4px;
+  --vp-sp-2: 8px;
+  --vp-sp-3: 12px;
+  --vp-sp-4: 16px;
+  --vp-sp-5: 20px;
+  --vp-sp-6: 24px;
+  /* шкала типографики: заголовок экрана / заголовок секции / заголовок карточки / текст / мета */
+  --vp-fs-title: 28px;
+  --vp-fs-section: 20px;
+  --vp-fs-card: 16px;
+  --vp-fs-body: 15px;
+  --vp-fs-meta: 13px;
+  /* формы */
+  --vp-radius-card: 16px;
+  --vp-radius-inner: 12px;
+  --vp-radius-pill: 999px;
+  --vp-accent: var(--tg-button-color);
+  --vp-accent-soft: color-mix(in srgb, var(--tg-button-color) 14%, transparent);
+  /* поверхности: светлая — серая страница/белые карточки */
+  --vp-page-bg: var(--tg-secondary-bg-color);
+  --vp-card-bg: var(--tg-section-bg-color);
+  --vp-divider: color-mix(in srgb, var(--tg-hint-color) 24%, transparent);
+  /* мелкие подписи (10-13px): «сырой» hint Telegram даёт 2.5-3.6:1 на карточке/странице; подмешиваем
+     текстовый цвет, чтобы пройти WCAG AA 4.5:1 в обеих темах (светлая #999→≈#636363, тёмная ≈#a5b1be) */
+  --vp-hint: color-mix(in srgb, var(--tg-hint-color) 60%, var(--tg-text-color));
+  --vp-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 6px rgba(16, 24, 40, 0.04);
+  --vp-nav-h: 58px;
+  /* цвета групп каталога (кодируют категорию, как цветные группы эталона) */
+  --vp-cat-0: #2f80ed;
+  --vp-cat-1: #e5484d;
+  --vp-cat-2: #f08c1a;
+  --vp-cat-3: #2fa56a;
+  --vp-cat-4: #8e5bd1;
+  --vp-cat-5: #1f3a68;
+  /* #288: цвет ТЕКСТА в категорийной тонировке (чип, подпись) — «чернила»: цвет категории,
+     подмешанный к цвету текста темы. Сами --vp-cat-* остаются для полос/заливок. WCAG AA ≥ 4.5
+     на чипе (16 % категории на карточке) проверяет tests/plansContrast.test.ts. */
+  --vp-cat-0-ink: color-mix(in srgb, var(--vp-cat-0) 55%, var(--tg-text-color));
+  --vp-cat-1-ink: color-mix(in srgb, var(--vp-cat-1) 55%, var(--tg-text-color));
+  --vp-cat-2-ink: color-mix(in srgb, var(--vp-cat-2) 55%, var(--tg-text-color));
+  --vp-cat-3-ink: color-mix(in srgb, var(--vp-cat-3) 55%, var(--tg-text-color));
+  --vp-cat-4-ink: color-mix(in srgb, var(--vp-cat-4) 55%, var(--tg-text-color));
+  --vp-cat-5-ink: color-mix(in srgb, var(--vp-cat-5) 55%, var(--tg-text-color));
+  /* #288: деструктивное действие — собственный семантический цвет (не цвет категории «красная»):
+     ≥ 4.5 на карточке и странице обеих тем. */
+  --vp-danger: #c62828;
+  /* акцент (синий) как цвет текста на своей тонировке («Начать», чип ручной строки) */
+  --vp-accent-ink: color-mix(in srgb, var(--vp-accent) 65%, var(--tg-text-color));
+}
+
+/* tgui берёт акцент из --tg-theme-*; вне Telegram (themeParams пустые) подставляем наш акцент,
+   чтобы кнопки tgui и наши элементы были одного синего. Реальные themeParams перекрывают inline. */
+:root {
+  --tg-theme-button-color: var(--tg-button-color);
+  --tg-theme-button-text-color: var(--tg-button-text-color);
+  --tg-theme-link-color: var(--tg-link-color);
+}
+
+/* тёмная: фон страницы = основной фон, карточки светлее */
+:root[data-vp-scheme="light"] {
+  color-scheme: light; /* нативные select/date/скроллбары — по теме Telegram, не ОС */
+}
+
+:root[data-vp-scheme="dark"] {
+  color-scheme: dark;
+  --vp-page-bg: var(--tg-bg-color);
+  --vp-card-bg: var(--tg-secondary-bg-color);
+  --vp-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --vp-divider: color-mix(in srgb, var(--tg-hint-color) 28%, transparent);
+  /* #288: на тёмной карточке тёмно-синяя --vp-cat-5 (≈1.5:1) и прочие цвета категорий — светлее. */
+  --vp-cat-0: #5b9dff;
+  --vp-cat-1: #ff7a7f;
+  --vp-cat-2: #f5a04a;
+  --vp-cat-3: #3fbf80;
+  --vp-cat-4: #b08af0;
+  --vp-cat-5: #8fb0e8;
+  --vp-cat-0-ink: color-mix(in srgb, var(--vp-cat-0) 60%, var(--tg-text-color));
+  --vp-cat-1-ink: color-mix(in srgb, var(--vp-cat-1) 60%, var(--tg-text-color));
+  --vp-cat-2-ink: color-mix(in srgb, var(--vp-cat-2) 60%, var(--tg-text-color));
+  --vp-cat-3-ink: color-mix(in srgb, var(--vp-cat-3) 60%, var(--tg-text-color));
+  --vp-cat-4-ink: color-mix(in srgb, var(--vp-cat-4) 60%, var(--tg-text-color));
+  --vp-cat-5-ink: color-mix(in srgb, var(--vp-cat-5) 60%, var(--tg-text-color));
+  --vp-danger: #ff6b6b;
+  --vp-accent-ink: color-mix(in srgb, var(--vp-accent) 60%, var(--tg-text-color));
+}
+
+html,
+body {
+  background-color: var(--vp-page-bg);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.35;
+  overscroll-behavior-y: none;
+}
+
+.app-shell {
+  --tg-bg-color: var(--vp-page-bg);
+  --tg-secondary-bg-color: var(--vp-card-bg);
+  padding: var(--vp-sp-2) var(--vp-sp-4) 40px;
+}
+
+.app-shell-with-nav {
+  padding-bottom: calc(var(--vp-nav-h) + 20px + env(safe-area-inset-bottom, 0px));
+}
+
+html {
+  scroll-padding-bottom: calc(var(--vp-nav-h) + 20px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Приветствие больше не занимает строку над заголовком (в эталоне его нет), но остаётся для
+   скринридеров и тестов. */
+.app-greeting {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- типографика ---------- */
+.plan-title {
+  margin: var(--vp-sp-2) 0 var(--vp-sp-4);
+  font-size: var(--vp-fs-title);
+  font-weight: 800;
+  line-height: 32px; /* целые пиксели: дробные позиции дают сдвиги в проверках прокрутки */
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.section-title {
+  margin: var(--vp-sp-6) 0 var(--vp-sp-3);
+  font-size: var(--vp-fs-section);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+/* внутри карточки «section-title» — заголовок карточки, не секции */
+.profile-card .section-title,
+.block-section .section-title,
+.analytics-panel .section-title,
+.ux-card .section-title {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-card);
+}
+
+.hint,
+.block-subtitle {
+  font-size: var(--vp-fs-meta);
+}
+
+.screen-message {
+  font-size: var(--vp-fs-body);
+}
+
+/* ---------- карточки ---------- */
+.profile-card,
+.history-card,
+.stat-tile,
+.gap-banner,
+.ux-card,
+.analytics-panel {
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+
+.profile-card {
+  padding: var(--vp-sp-4);
+  margin-bottom: var(--vp-sp-3);
+}
+
+.history-card {
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+}
+
+.history-list {
+  gap: var(--vp-sp-2);
+}
+
+.stat-tile {
+  padding: var(--vp-sp-3);
+}
+
+.gap-banner {
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  font-size: var(--vp-fs-meta);
+}
+
+/* tgui <Section>: те же карточки */
+.app-shell .block-section {
+  margin-bottom: var(--vp-sp-3);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  overflow: hidden;
+}
+
+.home-sheet {
+  background-color: var(--vp-card-bg);
+}
+
+/* ---------- нижняя навигация: иконка + подпись ---------- */
+.bottom-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  padding: 0 max(0px, calc((100% - 480px) / 2)) env(safe-area-inset-bottom, 0px);
+  background-color: var(--vp-card-bg);
+  border-top: 1px solid var(--vp-divider);
+}
+
+.bottom-tabbar-item {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--vp-nav-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 2px 5px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--tg-hint-color);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-tabbar .bottom-tabbar-item > span {
+  max-width: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.bottom-tabbar-icon {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.bottom-tabbar-item-active {
+  color: var(--vp-accent);
+}
+
+.bottom-tabbar-item:active .bottom-tabbar-icon {
+  transform: scale(0.92);
+}
+
+@media (max-width: 360px) {
+  .bottom-tabbar .bottom-tabbar-item > span {
+    font-size: 10px;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* ---------- Главная: шапка с поиском, группы, горизонтальные ряды ---------- */
+.home-sticky-header {
+  z-index: 25;
+  margin: 0 calc(-1 * var(--vp-sp-4)) var(--vp-sp-1);
+  padding: var(--vp-sp-2) var(--vp-sp-4);
+  gap: var(--vp-sp-3);
+}
+
+.home-search-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 var(--vp-sp-4);
+  border-radius: var(--vp-radius-pill);
+  background-color: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-size: var(--vp-fs-body);
+  cursor: text;
+}
+
+.home-search-pill > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-search-icon {
+  flex: 0 0 auto;
+  color: var(--tg-hint-color);
+}
+
+/* «+» — вторичный круглый, акцент только на иконке (главный CTA — «Создать тренировку») */
+.home-plus-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  background-color: var(--vp-card-bg);
+  color: var(--vp-accent);
+  box-shadow: var(--vp-shadow);
+}
+
+.home-group {
+  margin-top: var(--vp-sp-2);
+}
+
+.home-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: var(--vp-sp-5) 0 var(--vp-sp-3);
+}
+
+.home-group-header .section-title {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-group-badge {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cat, var(--vp-cat-0));
+}
+
+.home-group-badge::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.home-group-badge-heart {
+  --cat: var(--vp-cat-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.home-group-badge-heart::after {
+  display: none;
+}
+
+.home-program-row {
+  gap: var(--vp-sp-3);
+  margin: 0 calc(-1 * var(--vp-sp-4)) var(--vp-sp-2);
+  padding: 2px var(--vp-sp-4) var(--vp-sp-2);
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.home-program-row::-webkit-scrollbar {
+  display: none;
+}
+
+.home-program-row .home-program-card {
+  position: relative;
+  flex: 0 0 72%;
+  min-width: 0;
+  max-width: 300px;
+  min-height: 112px;
+  display: flex;
+  scroll-snap-align: start;
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+  overflow: hidden;
+}
+
+/* цветная полоса снизу = категория (как у карточек эталона) */
+.home-program-row .home-program-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  background: var(--cat, var(--vp-cat-0));
+}
+
+.home-program-card .program-card-button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--vp-sp-4) var(--vp-sp-4) var(--vp-sp-5);
+}
+
+.home-card-title {
+  margin: 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.home-card-meta {
+  margin: 0;
+  font-size: var(--vp-fs-meta);
+  line-height: 1.35;
+  color: var(--tg-subtitle-text-color);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.home-card-status {
+  margin: auto 0 0;
+  padding-top: var(--vp-sp-1);
+  font-weight: 600;
+  color: var(--vp-accent);
+}
+
+/* «Тесты» — строка-карточка с шевроном */
+.home-tests-row {
+  position: relative;
+  margin: var(--vp-sp-3) 0 0;
+  padding: var(--vp-sp-3) 40px var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.home-tests-row::after {
+  content: "›";
+  position: absolute;
+  right: var(--vp-sp-4);
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 26px;
+  color: var(--tg-hint-color);
+}
+
+.home-tests-row-title {
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+}
+
+/* «Мои тренировки»: заголовок + «Создать», ряд-сетка из 3 строк с прокруткой вбок */
+.home-section-header {
+  margin-top: var(--vp-sp-2);
+}
+
+.home-section-header .section-title {
+  margin: var(--vp-sp-5) 0 var(--vp-sp-3);
+}
+
+.home-section-header + .screen-message {
+  margin: 0;
+  padding: var(--vp-sp-3) 0;
+}
+
+[data-testid="my-workouts"].home-workout-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, auto);
+  grid-auto-columns: 84%;
+  gap: var(--vp-sp-2);
+  margin: 0 calc(-1 * var(--vp-sp-4)) var(--vp-sp-4);
+  padding: 2px var(--vp-sp-4) var(--vp-sp-2);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+[data-testid="my-workouts"].home-workout-list::-webkit-scrollbar {
+  display: none;
+}
+
+[data-testid="my-workouts"] > li {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.home-workout-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--vp-sp-3);
+  align-items: center;
+  min-height: 64px;
+  padding: var(--vp-sp-3);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.home-workout-badge {
+  grid-row: 1 / span 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+.home-workout-title {
+  grid-column: 2;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.home-workout-meta,
+.home-workout-names {
+  grid-column: 2;
+  font-size: var(--vp-fs-meta);
+}
+
+.screen-message {
+  padding: var(--vp-sp-6) var(--vp-sp-4);
+}
+
+.home-tests-row {
+  padding-right: var(--vp-sp-4);
+}
+
+.home-tests-row::after {
+  content: none;
+}
+
+/* ---------- Workout Detail: шапка-hero и действия — в home-detail.css; здесь только группированные списки ---------- */
+/* списки упражнений/истории: одна карточка с разделителями, как группа строк эталона */
+[data-testid="workout-detail-items"].home-workout-list,
+[data-testid="workout-detail-history"].home-workout-list {
+  gap: 0;
+  margin: 0 0 var(--vp-sp-2);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  overflow: hidden;
+}
+
+.workout-detail-item {
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+}
+
+.workout-detail-item + .workout-detail-item {
+  border-top: 1px solid var(--vp-divider);
+}
+
+.workout-detail-item .home-workout-title {
+  font-size: var(--vp-fs-card);
+}
+
+/* ---------- заголовок экрана с действием справа (Планы, Журнал) ---------- */
+.screen-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+}
+
+.screen-title-row .plan-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.screen-title-row .action-button {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.journal-title-row .journal-log-button {
+  padding: 9px 16px;
+  border-radius: var(--vp-radius-pill);
+  font-weight: 600;
+  background-color: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+/* ---------- табы-пилюли (как «Featured | All Workouts» эталона): активный — с контуром ---------- */
+.workout-mode-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-4);
+}
+
+.leaderboard-tab {
+  min-height: 36px;
+  padding: 7px 16px;
+  border: 1.5px solid transparent;
+  border-radius: var(--vp-radius-pill);
+  background: transparent;
+  color: var(--tg-subtitle-text-color);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.leaderboard-tab-active {
+  background: var(--vp-card-bg);
+  border-color: var(--tg-text-color);
+  color: var(--tg-text-color);
+}
+
+/* ---------- Планы ---------- */
+.plan-week-current,
+.plan-week-past {
+  padding: var(--vp-sp-2) var(--vp-sp-4) var(--vp-sp-3);
+}
+
+.app-shell .plan-week-current {
+  border: 0;
+  box-shadow: var(--vp-shadow), 0 0 0 1.5px color-mix(in srgb, var(--vp-accent) 55%, transparent);
+}
+
+.plan-week-stepper-label {
+  font-size: var(--vp-fs-body);
+}
+
+.plan-week-day-group {
+  margin-top: 0;
+  padding: var(--vp-sp-3) 0;
+  border-top: 1px solid var(--vp-divider);
+}
+
+.plan-week-day-group .plan-item-row {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+}
+
+.plan-week-day-group .plan-add-exercise-button {
+  display: inline-block;
+  width: auto;
+  margin: 0 var(--vp-sp-2) var(--vp-sp-1) 0;
+  padding: 8px 18px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.plan-week-day-group .plan-add-exercise-button:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- Аналитика / Профиль ---------- */
+.analytics-stat {
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+}
+
+.profile-card .analytics-stat,
+.analytics-panel .analytics-stat {
+  background: var(--vp-page-bg);
+  box-shadow: none;
+  border-radius: var(--vp-radius-inner);
+}
+
+.analytics-stat-value {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.analytics-stat-label {
+  font-size: var(--vp-fs-meta);
+}
+
+.stat-tile .stat-value {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.test-card,
+.test-row-button {
+  border-radius: var(--vp-radius-inner);
+}
+
+/* tgui <Section> вставляет <hr> между детьми — вместо них свои разделители (.plan-week-day-group и т.п.) */
+.app-shell .block-section hr {
+  display: none;
+}
+
+.plan-week-day-group .plan-week-day-group {
+  padding: 0;
+  border-top: 0;
+}
+
+.plan-week-current .plan-week-day-group > .block-subtitle,
+.plan-week-past .plan-week-day-group > .block-subtitle {
+  margin: 0 0 var(--vp-sp-1);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.app-shell .block-section > div,
+.app-shell .block-section > div > div {
+  background: none;
+  box-shadow: none;
+}
+
+[data-testid="plan-week-progress"] {
+  margin: 0 0 var(--vp-sp-2);
+  text-align: center;
+}
+
+.stat-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-3);
+}
+
+.stat-tile .stat-label {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* вложенные карточки (строки тестов в «Тесты» и т.п.) — плоские, на цвете страницы */
+.profile-card .profile-card,
+.profile-card .test-card,
+.profile-card .history-card {
+  background: var(--vp-page-bg);
+  box-shadow: none;
+  border-radius: var(--vp-radius-inner);
+  margin-bottom: var(--vp-sp-2);
+}
+
+/* шестерёнка настроек — круглая кнопка в шапке, как круглые кнопки эталона */
+.app-shell [data-testid="profile-settings"] {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+/* ---------- карточки каталога: крупные цветные «обложки» вместо фото (медиа в модели нет) ---------- */
+.home-program-row .home-program-card {
+  min-height: 132px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(255, 255, 255, 0.12) 0, rgba(255, 255, 255, 0) 38%),
+    radial-gradient(circle at 12% 120%, rgba(255, 255, 255, 0.08) 0, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cat, var(--vp-cat-0)) 50%, #000), color-mix(in srgb, var(--cat, var(--vp-cat-0)) 40%, #0b1220));
+  box-shadow: var(--vp-shadow);
+}
+
+.home-program-row .home-program-card::after {
+  height: 6px;
+  background: color-mix(in srgb, var(--cat, var(--vp-cat-0)) 55%, #fff);
+}
+
+.home-program-row .home-program-card .program-card-button {
+  color: inherit;
+  padding-bottom: 22px;
+}
+
+.home-program-row .home-card-title {
+  color: #fff;
+  font-size: 17px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.home-program-row .home-card-meta {
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.home-program-row .home-card-status {
+  align-self: flex-start;
+  margin-top: auto;
+  padding: 3px 10px;
+  border-radius: var(--vp-radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  color: #14305a;
+  font-size: 12px;
+}
+
+[data-testid="favorites-hint"] {
+  padding: var(--vp-sp-1) 0 var(--vp-sp-2);
+  text-align: left;
+  font-size: var(--vp-fs-meta);
+}
+
+/* ---------- Поиск: результаты — карточки, строка поиска — белая пилюля ---------- */
+.search-header {
+  margin-bottom: var(--vp-sp-1);
+}
+
+.search-input {
+  height: 44px;
+  background-color: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.search-chip {
+  border-color: transparent;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-weight: 600;
+}
+
+.search-chip-active {
+  border-color: transparent;
+}
+
+.search-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vp-sp-2);
+}
+
+.search-result {
+  gap: 3px;
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-size: var(--vp-fs-card);
+}
+
+/* ---------- Подборки (#271): ряд в языке горизонтальных карточек; светлая карточка с цветной полосой ---------- */
+[data-testid="collections-row"] .home-program-card {
+  --cat: var(--vp-cat-4);
+  min-height: 124px;
+  color: var(--tg-text-color);
+  background: var(--vp-card-bg);
+}
+
+[data-testid="collections-row"] .home-program-card::after {
+  background: var(--cat);
+}
+
+.collection-card-button {
+  background: none;
+  border-radius: 0;
+  padding: var(--vp-sp-4) var(--vp-sp-4) 22px;
+  color: inherit;
+}
+
+.collection-card-button .block-subtitle {
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.collection-card-button .collection-author {
+  color: var(--tg-subtitle-text-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.collection-text {
+  font-size: var(--vp-fs-meta);
+}
+
+/* несколько занятий в один день: аккуратный разделитель между строками */
+.plan-week-day-group .plan-week-day-group + .plan-week-day-group {
+  margin-top: var(--vp-sp-3);
+  padding-top: var(--vp-sp-3);
+  border-top: 1px dashed var(--vp-divider);
+}
+
+/* «Все ›» у группы каталога (#281): тихое действие справа в заголовке, не кнопка-CTA */
+.home-group-header .home-group-all {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--tg-subtitle-text-color);
+  font-weight: 600;
+}
+
+.settings-toggle-row input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--vp-accent);
+}
+
+/* ---------- Аналитика: плитки внутри панелей и нативные кнопки ---------- */
+.profile-card .analytics-stat,
+.analytics-panel .analytics-stat {
+  padding: var(--vp-sp-2) var(--vp-sp-3);
+}
+
+.profile-card .analytics-stat-label,
+.analytics-panel .analytics-stat-label {
+  font-size: 11px;
+  overflow-wrap: break-word;
+  hyphens: manual;
+}
+
+.profile-card .analytics-stat-value,
+.analytics-panel .analytics-stat-value {
+  font-size: 20px;
+}
+
+/* нативный <button class="action-button"> (экспорт и т.п.) — как tonal-пилюля, а не системная кнопка */
+button.action-button {
+  min-height: 40px;
+  padding: 9px 20px;
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.action-button:disabled {
+  opacity: 0.5;
+}

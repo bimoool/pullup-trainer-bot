@@ -1,0 +1,25 @@
+name: Security review
+
+# Официальный AI-аудит Anthropic (claude-code-security-review): смотрит diff
+# каждого PR на уязвимости с пониманием контекста, а не по регуляркам.
+# Заведён после того, как репозиторий стал публичным — цена ошибки выросла.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-security-review@main
+        with:
+          claude-api-key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          comment-pr: true

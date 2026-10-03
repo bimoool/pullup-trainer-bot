@@ -1,0 +1,276 @@
+/*
+ * Tier 4 (#286 A): анатомия Главной и Workout Detail. Грузится после screens.css и до
+ * telegram-safe-area.css. Только презентация: разметка/testid — в HomeScreen / WorkoutDetailScreen.
+ */
+
+/* ---------- Главная ---------- */
+
+/* Заголовок «Главная» — для скринридеров и тестов; визуально экран открывает строка поиска. */
+.home-title-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Баг «ряд начинается вплотную к краю»: scroll-snap-align: start прижимал первую карточку к
+   границе скролл-порта (scrollLeft = 16). scroll-padding возвращает инсет 16px, следующая карточка выглядывает. */
+.home-program-row,
+[data-testid="my-workouts"].home-workout-list {
+  scroll-padding-inline: var(--vp-sp-4);
+}
+
+/* бейдж категории = глиф, не белая точка */
+.home-group-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #fff;
+}
+
+.home-group-badge::after {
+  display: none;
+}
+
+.home-group-badge svg {
+  display: block;
+}
+
+.home-favorites-hint {
+  margin: var(--vp-sp-4) 0 0;
+  font-size: var(--vp-fs-meta);
+  line-height: 1.35;
+  color: var(--tg-hint-color);
+}
+
+/* два баннера подряд (когда «Избранное» скрыто) не слипаются в один блок */
+.home-promo + .home-promo,
+.home-promo + .home-favorites-hint + .home-promo {
+  margin-top: var(--vp-sp-2);
+}
+
+/* «Тесты» — последняя секция: строка-карточка с бейджем-глифом */
+.home-tests-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: var(--vp-sp-3);
+  row-gap: 2px;
+  align-items: center;
+  margin-top: var(--vp-sp-4);
+  padding: var(--vp-sp-3);
+}
+
+.home-tests-row-badge {
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+.home-tests-row-title,
+.home-tests-row > .hint {
+  grid-column: 2;
+  min-width: 0;
+}
+
+/* ---------- Workout Detail ---------- */
+
+/* нижней навигации на деталях нет (как в эталоне): «назад» — кнопка в шапке и Telegram BackButton */
+html.vp-nav-hidden .bottom-tabbar {
+  display: none;
+}
+
+html.vp-nav-hidden .app-shell-with-nav {
+  padding-bottom: calc(var(--vp-sp-6) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+html.vp-nav-hidden {
+  scroll-padding-bottom: calc(var(--vp-sp-6) + var(--vp-safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+.wd-hero {
+  --cat: var(--vp-cat-0);
+  position: relative;
+  box-sizing: border-box;
+  height: clamp(200px, 30vh, 260px);
+  margin: calc(-1 * var(--vp-sp-2)) calc(-1 * var(--vp-sp-4)) 0;
+  border-radius: 0 0 24px 24px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 20%, rgba(255, 255, 255, 0.24) 0, rgba(255, 255, 255, 0) 40%),
+    radial-gradient(circle at 10% 120%, rgba(255, 255, 255, 0.16) 0, rgba(255, 255, 255, 0) 46%),
+    linear-gradient(135deg, color-mix(in srgb, var(--cat) 88%, #000), color-mix(in srgb, var(--cat) 60%, #0b1220));
+  box-shadow: var(--vp-shadow);
+}
+
+.wd-hero-back,
+.wd-hero-fav .favorite-heart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  cursor: pointer;
+}
+
+.wd-hero-back {
+  position: absolute;
+  top: var(--vp-sp-3);
+  left: var(--vp-sp-4);
+  color: var(--tg-text-color);
+}
+
+.wd-hero-fav {
+  position: absolute;
+  top: var(--vp-sp-3);
+  right: var(--vp-sp-4);
+}
+
+.wd-hero-fav .favorite-heart {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.wd-hero-fav .favorite-error {
+  position: absolute;
+  top: calc(100% + var(--vp-sp-1));
+  right: 0;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: var(--vp-radius-inner);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* бейдж категории: полупрозрачный круг с глифом в левом нижнем углу обложки */
+.wd-hero-badge {
+  position: absolute;
+  left: var(--vp-sp-4);
+  bottom: var(--vp-sp-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* название: 22–24px, не больше двух строк */
+.workout-detail .wd-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: var(--vp-sp-4) 0 var(--vp-sp-2);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 28px;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.wd-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--vp-sp-2) var(--vp-sp-3);
+}
+
+.wd-meta-row > .hint {
+  margin: 0;
+  font-size: var(--vp-fs-meta);
+}
+
+.wd-meta-row > .wd-duration-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font-weight: 600;
+  color: var(--tg-subtitle-text-color);
+}
+
+.wd-clock {
+  flex: 0 0 auto;
+}
+
+/* 4 тональных действия подряд вне карточки: круг 44px + подпись до двух строк (и на 320) */
+.workout-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--vp-sp-1);
+  margin: var(--vp-sp-4) 0 var(--vp-sp-1);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.workout-detail-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+}
+
+.workout-detail-action-icon,
+.workout-detail-action-primary .workout-detail-action-icon {
+  width: 44px;
+  height: 44px;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+.workout-detail-action:disabled {
+  opacity: 0.45;
+}
+
+.workout-detail-action-label {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: normal;
+  hyphens: none;
+}
+
+@media (max-width: 360px) {
+  .workout-detail-actions {
+    gap: 2px;
+    margin-inline: calc(-1 * var(--vp-sp-1));
+  }
+
+  .workout-detail-action-label {
+    letter-spacing: -0.02em;
+  }
+}

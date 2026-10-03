@@ -47,6 +47,16 @@ DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
 BOT_TOKEN=e2e-test-token \
 DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
   python scripts/e2e_seed.py ready 900003
+# Волна 5 (issue #185) — сценарии экрана сессии (v2), см. ниже про ADMIN_IDS.
+BOT_TOKEN=e2e-test-token \
+DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
+  python scripts/e2e_seed.py v2_session_ready 900010
+BOT_TOKEN=e2e-test-token \
+DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
+  python scripts/e2e_seed.py v2_session_complex 900011
+BOT_TOKEN=e2e-test-token \
+DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
+  python scripts/e2e_seed.py v2_session_progression_edit 900012
 
 # 6. Прогнать Playwright (BOT_TOKEN тот же самый — им подписывается initData)
 cd webapp-frontend/e2e
@@ -58,6 +68,38 @@ BOT_TOKEN=e2e-test-token npm test
 `not_onboarded` (telegram_id `900001`) ничего не сеет — статус означает
 отсутствие строки `users`, шаг 5 для него не нужен.
 
+## Сценарии экрана сессии (волна 5, issue #185) — нужен ADMIN_IDS
+
+Пред-экран/live/итог/журнал-правка v2 (`SessionV2Lab.tsx`) — вкладка "🧪
+Dashboard" в нижнем меню, видна только `app.config.settings.is_admin`
+(`App.tsx::DASHBOARD_V2_NAV_TAB`) — тот же admin-only испытательный стенд,
+что и `DashboardV2Screen.tsx` с волны 4 (`.claude/skills/multi-program/
+SKILL.md`: старая схема остаётся источником истины до cutover). Локальный
+запуск шага 4 (`uvicorn`) для сценариев `v2_session_*` нужно поднимать с
+`ADMIN_IDS=900010,900011,900012` (или шире) в окружении, иначе кнопка
+"Dashboard" не появится в нижнем меню вообще и сценарии упадут на первом же
+`page.getByRole("button", { name: "Dashboard" })`.
+
+**Известное ограничение этой волны**: `.github/workflows/e2e.yml` не
+обновлён этим PR — агент, готовивший волну, не имеет прав на правку
+`.github/workflows/*`. Чтобы сценарии `v2_session_*` реально гонялись в CI,
+нужно вручную добавить в `e2e.yml`:
+  - `ADMIN_IDS: "900010,900011,900012"` в блок `env:` джобы `e2e`;
+  - в шаг "Seed E2E scenarios" — три вызова `python scripts/e2e_seed.py
+    v2_session_ready 900010` / `v2_session_complex 900011` /
+    `v2_session_progression_edit 900012`, как в шаге 5 выше.
+
+## Мобильная раскладка (issue #244)
+
+`scenarios/mobile-layout.spec.ts` идёт отдельными проектами `mobile-320`, `mobile-375`,
+`mobile-390` (десктопный проект `chromium` его игнорирует). Проверяет пять вкладок нижней
+навигации: подписи видны и не обрезаны, нет горизонтального overflow страницы; в светлой и тёмной
+теме Telegram (`openAppAs(..., { theme })`). Читает посеянного `ready` (900003), ничего не меняет.
+
+```bash
+npx playwright test --project=mobile-320 --project=mobile-375 --project=mobile-390
+```
+
 ## Известное ограничение этого PR
 
 `webapp-frontend/e2e/package.json` добавлен без `package-lock.json` —
@@ -67,3 +109,20 @@ npm был недоступен из песочницы Claude в сессии, 
 локально сгенерирует лок-файл — его стоит закоммитить в этот же каталог
 после первого успешного прогона, по аналогии с тем, как уже сделано для
 `webapp-frontend/package-lock.json`.
+
+## REBUILD-1: Builder / Journal v2 / Analytics v2
+
+Три набора сценариев (каждый — со своим сидом на СВЕЖЕЙ БД; сиды не пересидируют
+существующего пользователя, а `builder-execution`/`journal-v2` меняют данные — перед
+повторным прогоном пересоздайте БД или пользователей):
+
+```bash
+python scripts/e2e_seed.py builder_workouts 910001   # builder-execution.spec.ts
+python scripts/e2e_seed.py journal_v2       910002   # journal-v2.spec.ts (+ 30 исторических сессий)
+python scripts/e2e_seed.py analytics_v2     910003   # analytics-v2.spec.ts (часовой пояс Pacific/Kiritimati)
+npx playwright test builder-execution journal-v2 analytics-v2 --workers=1
+```
+
+Сценарии `builder-execution` и `journal-v2` идут по реальному времени (interval 15 с). Сценарии
+`plans-manual-session`, `plans-start-session`, `journal-combined`, `plans-grouping` устарели
+относительно текущих экранов и падают и на базе `830f205` (см. `docs/ENGINEERING_NOTES.md`).

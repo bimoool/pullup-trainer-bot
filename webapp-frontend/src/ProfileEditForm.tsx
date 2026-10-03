@@ -8,7 +8,12 @@ import {
   type ProfileUpdateRequest,
   type TimezoneOption,
 } from "./api";
+import { invalidateProfileTimeZone } from "./useProfileToday";
+import { useDisplayPrefs } from "./displayPrefs";
+import { convertHeightText, convertWeightText, unitToCm, unitToKg } from "./units";
 import { parseOptionalWeight } from "./WorkoutScreen";
+import { useBackButton } from "./useBackButton";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -39,8 +44,14 @@ const GENDER_OPTIONS: { value: "male" | "female"; label: string }[] = [
  * форме такое поведение не годится.
  */
 export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props) {
-  const [weightKg, setWeightKg] = useState(profile.weight_kg ?? "");
-  const [heightCm, setHeightCm] = useState(profile.height_cm !== null ? String(profile.height_cm) : "");
+  // Telegram BackButton вместо/вместе с «← Назад» (#224): тот же обработчик, что у видимой кнопки.
+  useBackButton(onBack, [onBack]);
+  // Единицы (#268): поля показываются/вводятся в выбранных единицах, на сервер уходит метрика.
+  const { weight_unit: weightUnit, height_unit: heightUnit } = useDisplayPrefs();
+  const [weightKg, setWeightKg] = useState(convertWeightText(profile.weight_kg ?? "", "kg", weightUnit));
+  const [heightCm, setHeightCm] = useState(
+    convertHeightText(profile.height_cm !== null ? String(profile.height_cm) : "", "cm", heightUnit),
+  );
   const [gender, setGender] = useState<string>(profile.gender ?? "");
   const [birthDate, setBirthDate] = useState(profile.birth_date ?? "");
   const [timezone, setTimezone] = useState(profile.timezone ?? "");
@@ -74,7 +85,7 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
       return;
     }
     if (weight.value !== null) {
-      body.weight_kg = weight.value;
+      body.weight_kg = String(unitToKg(Number(weight.value), weightUnit));
     }
 
     const trimmedHeight = heightCm.trim();
@@ -84,7 +95,7 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
         setError("Рост должен быть положительным числом.");
         return;
       }
-      body.height_cm = Math.round(parsedHeight);
+      body.height_cm = unitToCm(parsedHeight, heightUnit);
     }
 
     if (gender !== "") {
@@ -101,6 +112,7 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
     setSaving(true);
     try {
       const updated = await updateProfile(initDataRaw, body);
+      invalidateProfileTimeZone();
       setJustSaved(true);
       onSaved(updated);
     } catch (err) {
@@ -116,27 +128,24 @@ export function ProfileEditForm({ initDataRaw, profile, onSaved, onBack }: Props
 
       <Section className="block-section">
         <Input
-          header="Вес, кг"
-          type="number"
+          header={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.1"
-          aria-label="Вес, кг"
+          aria-label={`Вес, ${weightUnit === "kg" ? "кг" : "фунты"}`}
           value={weightKg}
           onChange={(e) => {
-            setWeightKg(e.target.value);
+            setWeightKg(sanitizeDecimalInput(e.target.value));
             setJustSaved(false);
           }}
         />
         <Input
-          header="Рост, см"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          aria-label="Рост, см"
+          header={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
+          type="text"
+          inputMode="decimal"
+          aria-label={`Рост, ${heightUnit === "cm" ? "см" : "дюймы"}`}
           value={heightCm}
           onChange={(e) => {
-            setHeightCm(e.target.value);
+            setHeightCm(sanitizeDecimalInput(e.target.value));
             setJustSaved(false);
           }}
         />

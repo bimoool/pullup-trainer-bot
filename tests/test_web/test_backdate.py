@@ -197,7 +197,7 @@ async def test_backdate_submit_for_unknown_telegram_id_reports_status_without_wr
 async def test_backdate_submit_rejects_future_date(session):
     user = await _make_returning_user(session, telegram_id=55006, days_ago=5)
     payload = {
-        "performed_at": (datetime.now(UTC).date() + timedelta(days=1)).isoformat(),
+        "performed_at": (datetime.now(UTC).date() + timedelta(days=2)).isoformat(),
         "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
         "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
         "block_a_equipment_type": "bodyweight",
@@ -206,6 +206,36 @@ async def test_backdate_submit_rejects_future_date(session):
     }
     response = await _post_backdate_raw(session, telegram_id=user.telegram_id, payload=payload)
     assert response.status_code == 400
+
+
+async def test_backdate_future_check_uses_profile_timezone_not_utc(session):
+    """#294: «сегодня» — в поясе профиля. UTC+14: местный сегодня (может быть UTC+1) принимается,
+    местное завтра — нет; UTC-12: местное завтра (= UTC-сегодня или позже) отклоняется."""
+    from zoneinfo import ZoneInfo
+
+    user = await _make_returning_user(session, telegram_id=55096, days_ago=5)
+    base = {
+        "block_a_working_reps": [11, 11, 11], "block_a_max_reps": 12,
+        "block_b_working_reps": [4, 4, 4, 4], "block_b_max_reps": 4,
+        "block_a_equipment_type": "bodyweight", "block_b_equipment_type": "bodyweight",
+        "comment": None, "confirm_anomalies": False,
+    }
+    for zone in ("Pacific/Kiritimati", "Etc/GMT+12"):
+        user.timezone = zone
+        await session.flush()
+        local_today = datetime.now(UTC).astimezone(ZoneInfo(zone)).date()
+        tomorrow = await _post_backdate_raw(
+            session, telegram_id=user.telegram_id,
+            payload={**base, "performed_at": (local_today + timedelta(days=1)).isoformat()},
+        )
+        assert tomorrow.status_code == 400
+    user.timezone = "Pacific/Kiritimati"
+    await session.flush()
+    local_today = datetime.now(UTC).astimezone(ZoneInfo("Pacific/Kiritimati")).date()
+    today = await _post_backdate_raw(
+        session, telegram_id=user.telegram_id, payload={**base, "performed_at": local_today.isoformat()},
+    )
+    assert today.status_code == 200
 
 
 async def test_backdate_submit_requires_weight_value_for_weight_type(session):

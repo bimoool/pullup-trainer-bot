@@ -1,3 +1,5 @@
+import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
+
 /** onboarding_step (issue #124, PR 2) — четыре состояния вместо булева
  * is_onboarded (тот приравнивал "есть строка User" к "онбординг пройден",
  * хотя анкета могла быть не завершена): "not_registered" — строки User ещё
@@ -11,6 +13,21 @@ export interface HelloResponse {
   onboarding_step: OnboardingStep;
   readiness_status: string | null;
   days_since_last_workout: number | null;
+  /** Волна 4 многокурсовой платформы (issue #167) — вкладка "Dashboard"
+   * (v2, эксперимент) видна в App.tsx только тестировщикам из ADMIN_IDS. */
+  is_admin: boolean;
+}
+
+/** GET /api/dashboard (issue #175) — стартовый экран, тот же status, что
+ * WorkoutPlanResponse.status (один источник правды о готовности к
+ * тренировке). streak/workouts_count — реально посчитанные цифры, не
+ * выдуманная "недельная норма" (её нет в однокурсовой системе подтягиваний). */
+export interface DashboardResponse {
+  status: string;
+  workouts_count: number;
+  streak: number;
+  days_since_last_workout: number | null;
+  is_first_workout: boolean;
 }
 
 /** POST /api/onboarding/baseline (issue #124, PR 2) — тот же смысл, что
@@ -193,6 +210,32 @@ export interface WorkoutSubmitResponse {
 }
 
 /**
+ * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
+ * FastAPI возвращает `{"detail": "message"}` — берём detail, если это строка.
+ * Для 422 (Pydantic validation) detail — массив объектов, не строка — fallback.
+ */
+async function extractErrorMessage(
+  method: string,
+  path: string,
+  response: Response,
+): Promise<string> {
+  const fallback = `${method} ${path} failed: ${response.status}`;
+  if (response.status === 401) {
+    // initData просрочен/невалиден — понятная подсказка вместо «Invalid Telegram initData» (#224).
+    return SESSION_EXPIRED_MESSAGE;
+  }
+  try {
+    const data = await response.json();
+    if (data && typeof data.detail === "string") {
+      return data.detail;
+    }
+  } catch {
+    // JSON parsing failed or response already consumed — use fallback
+  }
+  return fallback;
+}
+
+/**
  * Один origin с бэкендом (см. app/web/main.py — та же FastAPI-статика),
  * поэтому относительный путь без CORS. initDataRaw — сырая, не
  * распарсенная на клиенте query-string (см. app/web/auth.py: доверять
@@ -203,13 +246,18 @@ async function apiGet<T>(path: string, initDataRaw: string): Promise<T> {
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`GET ${path} failed: ${response.status}`);
+    const message = await extractErrorMessage("GET", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as T;
 }
 
 export async function fetchHello(initDataRaw: string): Promise<HelloResponse> {
   return apiGet<HelloResponse>("/api/hello", initDataRaw);
+}
+
+export async function fetchDashboard(initDataRaw: string): Promise<DashboardResponse> {
+  return apiGet<DashboardResponse>("/api/dashboard", initDataRaw);
 }
 
 export async function fetchWorkoutPlan(initDataRaw: string): Promise<WorkoutPlanResponse> {
@@ -242,7 +290,8 @@ export async function updateProfile(initDataRaw: string, body: ProfileUpdateRequ
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/profile failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/profile", response);
+    throw new Error(message);
   }
   return (await response.json()) as ProfileResponse;
 }
@@ -339,7 +388,9 @@ export async function fetchWsfStatus(initDataRaw: string): Promise<WsfStatus> {
 /** Одна тренировка в списке "История" (issue #50, волна 1) — те же факты,
  * что печатает бот в app.bot.handlers.history.format_history_entry, только
  * структурированные под карточку. target_a/target_b заполнены только у
- * самой свежей записи во всей истории. */
+ * самой свежей записи во всей истории пользователя — независимо от
+ * date_from/date_to и offset/limit (не «последней в выборке»: у старых
+ * месяцев цели нет). */
 export interface HistoryEntry {
   workout_id: number;
   performed_at: string;
@@ -392,8 +443,11 @@ export interface ProgressData {
   points: ProgressPoint[];
 }
 
-export async function fetchHistory(initDataRaw: string, offset: number, limit = 20): Promise<HistoryPage> {
-  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}`, initDataRaw);
+export async function fetchHistory(
+  initDataRaw: string, offset: number, limit = 20, range?: { from: string; to: string },
+): Promise<HistoryPage> {
+  const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
+  return apiGet<HistoryPage>(`/api/history?offset=${offset}&limit=${limit}${dates}`, initDataRaw);
 }
 
 export async function fetchProgress(initDataRaw: string, metric: ProgressMetric): Promise<ProgressData> {
@@ -480,7 +534,8 @@ export async function paySubscription(initDataRaw: string): Promise<PaymentLinkR
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`POST /api/subscription/pay failed: ${response.status}`);
+    const message = await extractErrorMessage("POST", "/api/subscription/pay", response);
+    throw new Error(message);
   }
   return (await response.json()) as PaymentLinkResponse;
 }
@@ -536,7 +591,8 @@ export async function updateBandItem(
   itemId: number,
   body: BandItemUpdateRequest,
 ): Promise<BandItemInfo> {
-  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+  const path = `/api/equipment/band-items/${itemId}`;
+  const response = await fetch(path, {
     method: "PATCH",
     headers: {
       "X-Telegram-Init-Data": initDataRaw,
@@ -545,18 +601,21 @@ export async function updateBandItem(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PATCH /api/equipment/band-items/${itemId} failed: ${response.status}`);
+    const message = await extractErrorMessage("PATCH", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as BandItemInfo;
 }
 
 export async function deleteBandItem(initDataRaw: string, itemId: number): Promise<BandItemInfo> {
-  const response = await fetch(`/api/equipment/band-items/${itemId}`, {
+  const path = `/api/equipment/band-items/${itemId}`;
+  const response = await fetch(path, {
     method: "DELETE",
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/equipment/band-items/${itemId} failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as BandItemInfo;
 }
@@ -571,7 +630,8 @@ async function apiPost<TBody, TResult>(path: string, initDataRaw: string, body: 
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`POST ${path} failed: ${response.status}`);
+    const message = await extractErrorMessage("POST", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as TResult;
 }
@@ -640,7 +700,8 @@ export async function patchHistoryEdit(
   workoutId: number,
   body: HistoryEditRequest,
 ): Promise<WorkoutSubmitResponse> {
-  const response = await fetch(`/api/history/${workoutId}`, {
+  const path = `/api/history/${workoutId}`;
+  const response = await fetch(path, {
     method: "PATCH",
     headers: {
       "X-Telegram-Init-Data": initDataRaw,
@@ -649,7 +710,8 @@ export async function patchHistoryEdit(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PATCH /api/history/${workoutId} failed: ${response.status}`);
+    const message = await extractErrorMessage("PATCH", path, response);
+    throw new Error(message);
   }
   return (await response.json()) as WorkoutSubmitResponse;
 }
@@ -658,12 +720,14 @@ export async function patchHistoryEdit(
  * (решение Кирилла, вариант A: пересчитывает цепочку целей), и бэкдейт/
  * свободные (см. app/web/routes.py::delete_history_workout). */
 export async function deleteHistoryWorkout(initDataRaw: string, workoutId: number): Promise<void> {
-  const response = await fetch(`/api/history/${workoutId}`, {
+  const path = `/api/history/${workoutId}`;
+  const response = await fetch(path, {
     method: "DELETE",
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/history/${workoutId} failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", path, response);
+    throw new Error(message);
   }
 }
 
@@ -786,7 +850,8 @@ export async function saveWorkoutDraft(initDataRaw: string, body: WorkoutDraftRe
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/workout/draft failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/workout/draft", response);
+    throw new Error(message);
   }
   return (await response.json()) as WorkoutDraft;
 }
@@ -797,7 +862,8 @@ export async function deleteWorkoutDraft(initDataRaw: string): Promise<WorkoutDr
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/workout/draft failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", "/api/workout/draft", response);
+    throw new Error(message);
   }
   return (await response.json()) as WorkoutDraft;
 }
@@ -843,7 +909,8 @@ export async function cancelTimer(initDataRaw: string): Promise<TimerStatus> {
     headers: { "X-Telegram-Init-Data": initDataRaw },
   });
   if (!response.ok) {
-    throw new Error(`DELETE /api/timer failed: ${response.status}`);
+    const message = await extractErrorMessage("DELETE", "/api/timer", response);
+    throw new Error(message);
   }
   return (await response.json()) as TimerStatus;
 }
@@ -882,7 +949,8 @@ export async function updateTimerPreferences(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/timer/preferences failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/timer/preferences", response);
+    throw new Error(message);
   }
   return (await response.json()) as TimerPreferences;
 }
@@ -1011,7 +1079,94 @@ export async function updateLeaderboardDisplayName(
     body: JSON.stringify({ display_name: displayName }),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/leaderboard/display-name failed: ${response.status}`);
+    const message = await extractErrorMessage("PUT", "/api/leaderboard/display-name", response);
+    throw new Error(message);
   }
   return (await response.json()) as { display_name: string | null };
+}
+
+/** GET/PUT /api/profile/prefs (#268) — единицы и тема (с дефолтами kg/cm/auto).
+ * Хранение веса/роста остаётся метрическим, единицы влияют только на показ/ввод. */
+export type WeightUnit = "kg" | "lb";
+export type HeightUnit = "cm" | "in";
+export type ThemePref = "auto" | "light" | "dark";
+
+export interface DisplayPreferences {
+  weight_unit: WeightUnit;
+  height_unit: HeightUnit;
+  theme: ThemePref;
+}
+
+export async function fetchDisplayPreferences(initDataRaw: string): Promise<DisplayPreferences> {
+  return apiGet<DisplayPreferences>("/api/profile/prefs", initDataRaw);
+}
+
+export async function updateDisplayPreferences(
+  initDataRaw: string,
+  body: Partial<DisplayPreferences>,
+): Promise<DisplayPreferences> {
+  const response = await fetch("/api/profile/prefs", {
+    method: "PUT",
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage("PUT", "/api/profile/prefs", response));
+  }
+  return (await response.json()) as DisplayPreferences;
+}
+
+/** /api/profile/body-metrics (#270) — история веса/роста; все методы отдают список метрики целиком. */
+export type BodyMetricKind = "weight_kg" | "height_cm";
+
+export interface BodyMetricEntry {
+  id: number;
+  value: string;
+  measured_at: string;
+}
+
+export interface BodyMetricHistory {
+  metric: BodyMetricKind;
+  items: BodyMetricEntry[];
+  current: string | null;
+}
+
+async function bodyMetricsRequest(
+  initDataRaw: string,
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: object,
+): Promise<BodyMetricHistory> {
+  const response = await fetch(path, {
+    method,
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(method, path, response));
+  }
+  return (await response.json()) as BodyMetricHistory;
+}
+
+export async function fetchBodyMetrics(initDataRaw: string, metric: BodyMetricKind): Promise<BodyMetricHistory> {
+  return apiGet<BodyMetricHistory>(`/api/profile/body-metrics?metric=${metric}`, initDataRaw);
+}
+
+export async function addBodyMetric(
+  initDataRaw: string,
+  body: { metric: BodyMetricKind; value: string; measured_at?: string },
+): Promise<BodyMetricHistory> {
+  return bodyMetricsRequest(initDataRaw, "POST", "/api/profile/body-metrics", body);
+}
+
+export async function updateBodyMetric(
+  initDataRaw: string,
+  entryId: number,
+  body: { value?: string; measured_at?: string },
+): Promise<BodyMetricHistory> {
+  return bodyMetricsRequest(initDataRaw, "PATCH", `/api/profile/body-metrics/${entryId}`, body);
+}
+
+export async function deleteBodyMetric(initDataRaw: string, entryId: number): Promise<BodyMetricHistory> {
+  return bodyMetricsRequest(initDataRaw, "DELETE", `/api/profile/body-metrics/${entryId}`);
 }

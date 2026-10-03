@@ -36,3 +36,10 @@ docker compose build app web
 # пока миграцию не применили вручную. Не повторять.
 docker compose run --rm app alembic upgrade head
 docker compose up -d app web
+
+# Безопасная очистка после УСПЕШНОГО деплоя: dangling-образы + старый BuildKit-кэш, без volumes.
+# Любая её ошибка не должна ронять деплой (`|| true`), отсутствие скрипта — тоже не ошибка.
+# См. deploy/post-deploy-cleanup.sh и docs/RESOURCE_LIFECYCLE.md.
+if [ -x /usr/local/bin/post-deploy-cleanup.sh ]; then
+    /usr/local/bin/post-deploy-cleanup.sh || true
+fi

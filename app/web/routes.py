@@ -22,18 +22,20 @@ from app.bot.handlers.subscription import _robokassa_available
 from app.bot.handlers.workout_edit import _is_editable
 from app.bot.timezones import TIMEZONE_DISPLAY_LABELS, format_timezone_label
 from app.config import settings
-from app.db.models import ActiveTimerType, BlockType, Gender, SubscriptionStatus
+from app.db.models import ActiveTimerType, BlockType, BodyMetric, Gender, SubscriptionStatus
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.active_timers import ActiveTimerRepository
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.body_metrics import BodyMetricRepository, LastBodyMetricError
 from app.db.repositories.elective_workouts import ElectiveWorkoutRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
 from app.db.repositories.leaderboard import LeaderboardRepository
+from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_drafts import WorkoutDraftRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import NextBlockState, WorkoutRepository
-from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
+from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode, consecutive_streak_length
 from app.domain.anomalies import AnomalyFlags, detect_anomalies
 from app.domain.constants import (
     DEFAULT_BIG_BREAK_SECONDS,
@@ -83,6 +85,7 @@ from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
+from app.services.training_analytics import resolve_timezone
 from app.services.workout_deletion import delete_cascade_workout, delete_noncascade_workout
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 from app.web.auth import get_validated_init_data
@@ -97,7 +100,14 @@ from app.web.schemas import (
     BandItemInfo,
     BandItemListResponse,
     BandItemUpdateRequest,
+    BodyMetricCreateRequest,
+    BodyMetricEntry,
+    BodyMetricHistoryResponse,
+    BodyMetricUpdateRequest,
     CycleVolumeResponse,
+    DashboardResponse,
+    DisplayPreferencesResponse,
+    DisplayPreferencesUpdateRequest,
     ElectivePlanResponse,
     ElectiveSubmitRequest,
     ElectiveSubmitResponse,
@@ -176,11 +186,13 @@ async def hello(
     обычный путь ниже, как раньше is_onboarded=True."""
     telegram_id = init_data.user.id
     name = init_data.user.first_name
+    is_admin = settings.is_admin(telegram_id)
 
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
         return HelloResponse(
             name=name, onboarding_step="not_registered", readiness_status=None, days_since_last_workout=None,
+            is_admin=is_admin,
         )
 
     if user.onboarding_completed_at is None:
@@ -188,12 +200,14 @@ async def hello(
         step = "questionnaire" if baseline is not None else "baseline"
         return HelloResponse(
             name=name, onboarding_step=step, readiness_status=None, days_since_last_workout=None,
+            is_admin=is_admin,
         )
 
     history = await WorkoutRepository(session).list_for_user(user.id)
     if not history:
         return HelloResponse(
             name=name, onboarding_step="done", readiness_status=None, days_since_last_workout=None,
+            is_admin=is_admin,
         )
 
     readiness = check_training_readiness(history[-1].performed_at.date(), datetime.now(UTC).date())
@@ -201,6 +215,43 @@ async def hello(
         name=name, onboarding_step="done",
         readiness_status=readiness.status.value,
         days_since_last_workout=readiness.days_since_last_workout,
+        is_admin=is_admin,
+    )
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DashboardResponse:
+    """Стартовый экран Mini App (issue #175) — App.tsx открывает этот
+    экран первым вместо WorkoutScreen (см. docs/architecture-multicourse.md
+    §3 "Dashboard", .claude/skills/product-reference/SKILL.md, референс —
+    Crimpd: домашний экран не открытая тренировка).
+
+    status переиспользует ровно _resolve_plan_context, тот же путь, что
+    GET /api/workout/plan — один источник правды о готовности к тренировке,
+    не вторая копия правил. onboarding_incomplete здесь тоже недостижим в
+    норме (App.tsx рендерит OnboardingScreen раньше, см. onboarding_step),
+    защита на сервере — по той же причине, что и в _resolve_plan_context."""
+    telegram_id = init_data.user.id
+    now = datetime.now(UTC)
+    context = await _resolve_plan_context(session, telegram_id, now=now)
+
+    user = await UserRepository(session).get_by_telegram_id(telegram_id)
+    if user is None:
+        return DashboardResponse(status=context.status)
+
+    history = await WorkoutRepository(session).list_for_user(user.id)
+    streak = consecutive_streak_length([record.performed_at.date() for record in history])
+    days_since_last_workout = (now.date() - history[-1].performed_at.date()).days if history else None
+
+    return DashboardResponse(
+        status=context.status,
+        workouts_count=len(history),
+        streak=streak,
+        days_since_last_workout=days_since_last_workout,
+        is_first_workout=context.is_first_workout,
     )
 
 
@@ -402,9 +453,19 @@ async def get_profile(
         return ProfileResponse(is_onboarded=False)
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
+    # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2). Legacy
+    # Workout — источник правды для перенесённой истории (#284), поэтому v2-копии backfill-а (отпечаток
+    # TrainingSessionRepository._backfilled_fingerprint) не считаются — иначе мигрированный пользователь
+    # посчитан дважды. Display-only: готовность/прогрессия по-прежнему по legacy.
     history = await WorkoutRepository(session).list_for_user(user.id)
+    sessions_repo = TrainingSessionRepository(session)
+    workouts_count = len(history) + await sessions_repo.count_completed(user.id, exclude_backfilled=True)
+    last_moments = [record.performed_at for record in history]
+    latest_session = await sessions_repo.latest_completed_performed_at(user.id, exclude_backfilled=True)
+    if latest_session is not None:
+        last_moments.append(latest_session)
     days_since_last_workout = (
-        (datetime.now(UTC).date() - history[-1].performed_at.date()).days if history else None
+        (datetime.now(UTC).date() - max(last_moments).date()).days if last_moments else None
     )
 
     # Список ачивок с датами (issue #66, п.1) — тот же ACHIEVEMENT_LABELS,
@@ -428,7 +489,7 @@ async def get_profile(
         coins_balance=user.coins_balance,
         achievements_count=len(achievements),
         achievements=achievement_items,
-        workouts_count=len(history),
+        workouts_count=workouts_count,
         days_since_last_workout=days_since_last_workout,
         weight_kg=user.weight_kg,
         height_cm=user.height_cm,
@@ -1052,6 +1113,8 @@ async def delete_workout_draft(
 async def get_history(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> HistoryResponse:
@@ -1066,12 +1129,27 @@ async def get_history(
     истории пользователя во всём проекте (профиль/план/аномалии читают его
     же), заводить вторую версию с БД-пагинацией ради одного экрана — лишняя
     развилка без выигрыша при типичном объёме истории одного пользователя.
-    Новейшие тренировки — первыми (естественный порядок для ленты)."""
+    Новейшие тренировки — первыми (естественный порядок для ленты).
+
+    Журнал (#284) показывает ВСЕ legacy-карточки: старая схема — источник правды для перенесённой
+    backfill-ом истории, а карточка — единственное представление с «Изменить»/«Удалить». Дубли
+    убирает Журнал v2 (GET /api/v2/sessions?exclude_backfilled=true), не этот эндпоинт. Параметр
+    exclude_migrated (#282) удалён; неизвестные query-параметры FastAPI игнорирует, поэтому старые
+    клиенты с `&exclude_migrated=true` продолжают работать и получают все записи."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return HistoryResponse(items=[], has_more=False)
 
     history = await WorkoutRepository(session).list_for_user(user.id)
+    # «Следующая цель» (#285 L2) — только у самой свежей тренировки ВСЕЙ истории: id берётся до
+    # фильтра по датам, иначе у новейшей карточки каждого месяца она показывалась бы как «текущая».
+    latest_workout_id = history[-1].id if history else None
+    # date_from/date_to (#256, Журнал по месяцам) — включительно, по той же дате,
+    # что показывает карточка (performed_at.date()).
+    if date_from is not None:
+        history = [w for w in history if w.performed_at.date() >= date_from]
+    if date_to is not None:
+        history = [w for w in history if w.performed_at.date() <= date_to]
     newest_first = list(reversed(history))
     page = newest_first[offset : offset + limit]
 
@@ -1079,7 +1157,7 @@ async def get_history(
     for workout in page:
         block_a = next(b for b in workout.blocks if b.block_type == BlockType.A)
         block_b = next(b for b in workout.blocks if b.block_type == BlockType.B)
-        is_latest = workout is newest_first[0]
+        is_latest = workout.id == latest_workout_id
         items.append(
             HistoryEntryResponse(
                 workout_id=workout.id,
@@ -1752,7 +1830,10 @@ async def submit_backdated_workout(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid date") from None
 
     now = datetime.now(UTC)
-    if performed_date > now.date():
+    # #294: «сегодня» — в часовом поясе профиля (как у клиента и у остальных v2-проверок), а не в UTC.
+    backdate_user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    local_today = now.astimezone(resolve_timezone(backdate_user.timezone if backdate_user else None)).date()
+    if performed_date > local_today:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Date cannot be in the future")
 
     context = await _resolve_backdate_context(session, init_data.user.id, now=now)
@@ -2053,6 +2134,131 @@ async def update_timer_preferences(
         value = body.duration_seconds
     updated = await UserRepository(session).update_timer_preference(user.id, field=field, value=value)
     return _resolve_timer_preferences(updated)
+
+
+# --- Настройки отображения: единицы и тема (issue #268) --------------------------------
+
+
+def _resolve_display_preferences(user) -> DisplayPreferencesResponse:
+    return DisplayPreferencesResponse(
+        weight_unit=user.weight_unit or "kg",
+        height_unit=user.height_unit or "cm",
+        theme=user.theme_pref or "auto",
+    )
+
+
+@router.get("/profile/prefs", response_model=DisplayPreferencesResponse)
+async def get_display_preferences(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DisplayPreferencesResponse:
+    """Единицы веса/роста и тема с дефолтами (kg/cm/auto). Хранение веса/роста
+    остаётся метрическим — единицы влияют только на показ и ввод."""
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    return _resolve_display_preferences(user)
+
+
+@router.put("/profile/prefs", response_model=DisplayPreferencesResponse)
+async def update_display_preferences(
+    body: DisplayPreferencesUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> DisplayPreferencesResponse:
+    users = UserRepository(session)
+    user = await users.get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    updated = await users.update_display_preferences(
+        user.id, weight_unit=body.weight_unit, height_unit=body.height_unit, theme=body.theme,
+    )
+    return _resolve_display_preferences(updated)
+
+
+async def _body_metric_history(
+    history: BodyMetricRepository, user_id: int, metric: BodyMetric,
+) -> BodyMetricHistoryResponse:
+    entries = await history.list_for_user(user_id, metric)
+    return BodyMetricHistoryResponse(
+        metric=metric.value,
+        items=[BodyMetricEntry(id=e.id, value=e.value, measured_at=e.measured_at) for e in entries],
+        current=entries[0].value if entries else None,
+    )
+
+
+async def _current_user_id(init_data: InitData, session: AsyncSession) -> int:
+    user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
+    return user.id
+
+
+@router.get("/profile/body-metrics", response_model=BodyMetricHistoryResponse)
+async def get_body_metrics(
+    metric: Literal["weight_kg", "height_cm"] = Query(...),
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    """История веса/роста (issue #270), новые сверху. Только свои замеры."""
+    user_id = await _current_user_id(init_data, session)
+    return await _body_metric_history(BodyMetricRepository(session), user_id, BodyMetric(metric))
+
+
+@router.post("/profile/body-metrics", response_model=BodyMetricHistoryResponse, status_code=status.HTTP_201_CREATED)
+async def add_body_metric(
+    body: BodyMetricCreateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    """«Добавить замер»: последний замер зеркалится в User.weight_kg/height_cm."""
+    user_id = await _current_user_id(init_data, session)
+    history = BodyMetricRepository(session)
+    await history.add(user_id, BodyMetric(body.metric), body.value, body.measured_at)
+    return await _body_metric_history(history, user_id, BodyMetric(body.metric))
+
+
+@router.patch("/profile/body-metrics/{entry_id}", response_model=BodyMetricHistoryResponse)
+async def update_body_metric(
+    entry_id: int,
+    body: BodyMetricUpdateRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    user_id = await _current_user_id(init_data, session)
+    history = BodyMetricRepository(session)
+    entry = await history.get_owned(user_id, entry_id)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Body metric not found")
+    metric = BodyMetric(entry.metric)
+    if body.value is not None:
+        try:
+            BodyMetricCreateRequest(metric=metric.value, value=body.value)
+        except ValueError as error:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Некорректное значение замера") from error
+    await history.update(entry, value=body.value, measured_at=body.measured_at)
+    return await _body_metric_history(history, user_id, metric)
+
+
+@router.delete("/profile/body-metrics/{entry_id}", response_model=BodyMetricHistoryResponse)
+async def delete_body_metric(
+    entry_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> BodyMetricHistoryResponse:
+    """Удаление замера; если он был последним — User откатывается к предыдущему.
+    Единственный замер удалить нельзя (409): GTO/WSF/лидерборд читают User.weight_kg."""
+    user_id = await _current_user_id(init_data, session)
+    history = BodyMetricRepository(session)
+    entry = await history.get_owned(user_id, entry_id)
+    if entry is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Body metric not found")
+    metric = BodyMetric(entry.metric)
+    try:
+        await history.delete(entry)
+    except LastBodyMetricError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Нельзя удалить единственный замер") from error
+    return await _body_metric_history(history, user_id, metric)
 
 
 # Текст для NULL leaderboard_display_name — форматирование, не доменное

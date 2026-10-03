@@ -1,3 +1,14 @@
+# Ограничение json-file логов (раньше — безлимит, файл рос до заполнения диска). 10m x 3 = макс.
+# 30 МБ на контейнер. Применено к app/web: `docker compose up -d app web` при деплое их и так
+# пересоздаёт. db/redis СПЕЦИАЛЬНО без этого блока: смена конфигурации db заставила бы
+# `up -d app web` пересоздать прод-Postgres как зависимость. Для db/redis — лимит по умолчанию
+# на уровне демона, см. docs/RESOURCE_LIFECYCLE.md («Docker log rotation»).
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16
@@ -41,6 +52,7 @@ services:
   app:
     build: .
     restart: unless-stopped
+    logging: *bounded-logging
     env_file:
       - .env
     volumes:
@@ -74,6 +86,7 @@ services:
       context: .
       dockerfile: Dockerfile.web
     restart: unless-stopped
+    logging: *bounded-logging
     env_file:
       - .env
     ports:

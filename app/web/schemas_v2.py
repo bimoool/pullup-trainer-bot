@@ -1,0 +1,530 @@
+"""Pydantic-схемы для app/web/routes_v2.py (issue #165, волна 3) — новая
+многокурсовая схема (app/db/models_program.py), параллельно app/web/schemas.py
+(старая схема подтягиваний), не расширяет его: поля/формы здесь принципиально
+другие (Exercise/TrainingSession вместо Block/Workout)."""
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.domain.activity_types import ACTIVITY_TYPES, MAX_ACTIVITY_SECONDS, MIN_ACTIVITY_SECONDS
+
+# --- Каталог (read-only на этой волне) ---------------------------------------------
+
+
+class ProgramResponse(BaseModel):
+    id: int
+    name: str
+    goal: str
+    structure_type: str
+    category: str | None
+    progression_strategy_type: str | None
+
+
+class ProgramListResponse(BaseModel):
+    programs: list[ProgramResponse]
+
+
+class ExerciseResponse(BaseModel):
+    """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
+    Только поля, реально существующие в Exercise model (не equipment/
+    difficulty/duration/muscles — этих полей в схеме волны 1 нет)."""
+
+    id: int
+    name: str
+    metric_type: str
+    category: str
+    subcategory: str | None
+
+
+class ExerciseListResponse(BaseModel):
+    exercises: list[ExerciseResponse]
+
+
+class ExerciseCreateRequest(BaseModel):
+    """Phase C1 (issue #188) — минимальный запрос для пользовательского
+    Exercise (Workout Builder foundation). Только name — global uniqueness
+    намеренно не проверяется (пользовательские "Подтягивания" от разных
+    владельцев и от system должны сосуществовать)."""
+
+    name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def _trim_name(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Название не может быть пустым")
+        return trimmed
+
+
+class WorkoutItemResponse(BaseModel):
+    """Phase C3 (issue #188) — один пункт Workout, user-facing поля only
+    (exercise_name уже резолвлено, не сырой internal label)."""
+
+    id: int
+    exercise_id: int
+    exercise_name: str
+    order_index: int
+    protocol: dict
+
+
+class WorkoutResponse(BaseModel):
+    """Phase C2 (issue #188) — минимальный ответ для экрана "Мои
+    тренировки"/detail. title — продуктовый термин (Complex.name в БД, не
+    переименовано в схеме хранения — issue #188 прямо просит не делать
+    искусственный rename поля).
+
+    items — Phase C3, опционально: заполняется только detail-эндпоинтом
+    (GET /workouts/{id}), list/create/patch его не запрашивают (не делать
+    N+1 на списке "Мои тренировки")."""
+
+    id: int
+    title: str
+    source_type: str
+    owner_user_id: int | None
+    items: list[WorkoutItemResponse] | None = None
+
+
+class WorkoutSessionSummaryResponse(BaseModel):
+    """Одна выполненная сессия в истории конкретной тренировки (экран Workout
+    Detail): дата и короткий результат — сколько упражнений и подходов залогировано."""
+
+    id: int
+    performed_at: datetime
+    exercises_count: int
+    sets_done: int
+
+
+class WorkoutSessionsResponse(BaseModel):
+    sessions: list[WorkoutSessionSummaryResponse]
+
+
+class WorkoutListResponse(BaseModel):
+    workouts: list[WorkoutResponse]
+
+
+class FavoriteResponse(BaseModel):
+    """Один элемент Избранного (issue #272); title — имя тренировки/программы."""
+
+    target_type: Literal["workout", "program"]
+    target_id: int
+    title: str
+    subtitle: str | None = None
+
+
+class FavoriteListResponse(BaseModel):
+    favorites: list[FavoriteResponse]
+
+
+class WorkoutCreateRequest(BaseModel):
+    """Global uniqueness намеренно не проверяется — тот же принцип, что
+    ExerciseCreateRequest."""
+
+    title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def _trim_title(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Название не может быть пустым")
+        return trimmed
+
+
+class WorkoutUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+    @field_validator("title")
+    @classmethod
+    def _trim_title(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Название не может быть пустым")
+        return trimmed
+
+
+class WorkoutItemCreateRequest(BaseModel):
+    """Phase C3 (issue #188) — protocol валидируется через
+    app.domain.workout_protocol.UserWorkoutProtocol (без progression-
+    вариантов) на уровне route, не здесь — сырой dict принимается схемой,
+    типизированная валидация происходит отдельным шагом, чтобы дать
+    человекочитаемую ошибку, специфичную для protocol-контракта, не общую
+    pydantic-ошибку на вложенном поле."""
+
+    exercise_id: int
+    protocol: dict
+
+
+class WorkoutItemUpdateRequest(BaseModel):
+    """Оба поля опциональны, но хотя бы одно обязательно — order_index
+    через этот endpoint никогда не меняется (см. move-endpoint отдельно)."""
+
+    exercise_id: int | None = None
+    protocol: dict | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> "WorkoutItemUpdateRequest":
+        if self.exercise_id is None and self.protocol is None:
+            raise ValueError("Нужно указать exercise_id или protocol")
+        return self
+
+
+class WorkoutItemMoveRequest(BaseModel):
+    direction: Literal["up", "down"]
+
+
+# --- План пользователя --------------------------------------------------------------
+
+
+class ProgramInclusionResponse(BaseModel):
+    id: int
+    program_id: int
+    program_name: str
+    is_active: bool
+    started_at: datetime
+    expires_at: datetime | None
+    snapshot: dict
+    progression_state: dict
+    # issue #266 — только для курса с явно заданной длиной (config.duration_weeks).
+    duration_weeks: int | None = None
+    current_week: int | None = None
+
+
+class ProgramScheduleItemResponse(BaseModel):
+    week_phase: str
+    day_of_week: int | None
+    count_per_week: int
+    title: str
+    count_label: str
+    target_label: str | None
+
+
+class ProgramScheduleResponse(BaseModel):
+    """Превью структуры программы из реальных ProgramItem/config (issue #266).
+    items пуст — превью нет, UI показывает только описание."""
+
+    program_id: int
+    duration_weeks: int | None
+    phases: list[str]
+    items: list[ProgramScheduleItemResponse]
+
+
+class PlanItemResponse(BaseModel):
+    id: int
+    exercise_id: int
+    complex_id: int | None
+    count_per_week: int
+    day_of_week: int | None
+    week_phase: str | None
+    program_inclusion_id: int | None
+    plan_week_id: int | None
+    # Phase B2 gate fix (issue #215) — Workout title (Complex.name) для
+    # complex-based PlanItem (interval/будущие Workout-based карточки).
+    # Без этого DashboardScreen.tsx::exerciseLabel не могла показать
+    # реальное название ("3 минуты подтягиваний") — только "Комплекс"
+    # (технический fallback) или, что хуже, имя несвязанного exercise_id.
+    # Опционально, None для call site'ов, не резолвящих его (не всем
+    # нужно на каждый PlanItem-запрос — только листингу на "Планах").
+    complex_name: str | None = None
+    # Phase D2 (issue #188) — "user"|"system"|None (нет complex_id вовсе).
+    # Нужен frontend, чтобы решить, показывать ли "Редактировать
+    # тренировку" на карточке (только для user Workout, не system).
+    # owner_user_id намеренно НЕ отдаётся — user Workout текущего
+    # пользователя уже ownership-safe через сам PlanItem (принадлежит его
+    # TrainingPlan), лишний backend detail фронтенду не нужен.
+    complex_source_type: str | None = None
+    # issue #258 — сколько раз выполнен на своей неделе (завершённые сессии
+    # через SessionPlanItem, дата в часовом поясе пользователя). Не колонка.
+    done_count: int = 0
+
+
+class PlanWeekResponse(BaseModel):
+    """issue #193 — PlanWeek не отдавалась в GET /api/v2/plan вообще, хотя
+    Checkpoint 1/1.1 (issue #188) уже материализует её и проставляет
+    PlanItem.plan_week_id. Без этого поля фронтенд не мог сгруппировать
+    plan_items по РЕАЛЬНОЙ неделе (только по week_phase — общее свойство
+    строки плана, не то же самое, что конкретная календарная неделя)."""
+
+    id: int
+    week_number: int
+    start_date: date
+    phase: str
+
+
+class TrainingPlanResponse(BaseModel):
+    id: int
+    created_at: datetime
+    program_inclusions: list[ProgramInclusionResponse]
+    plan_items: list[PlanItemResponse]
+    plan_weeks: list[PlanWeekResponse]
+    # Текущая календарная неделя (в часовом поясе пользователя), не «последняя
+    # в списке»: после #275 в списке есть будущие недели.
+    current_week_id: int | None = None
+    # «Сегодня» в часовом поясе пользователя (`_plan_today`) — по нему клиент
+    # считает день недели «Сегодня» внутри current_week_id, а не по часам устройства
+    # (#288: другой пояс, понедельник около полуночи, приложение открыто всю ночь).
+    today: date | None = None
+
+
+class PlanResponse(BaseModel):
+    """None, если TrainingPlan для пользователя ещё не создан — GET не
+    создаёт его молча (побочный эффект на чтении), см. план issue #165:
+    план создаётся лениво первым POST /program-inclusions или
+    POST /plan-items."""
+
+    plan: TrainingPlanResponse | None
+
+
+class PlanWeekCreateRequest(BaseModel):
+    """issue #275 — создать (идемпотентно) неделю плана вперёд."""
+
+    week_number: int
+
+
+class PlanWeekCopyResponse(BaseModel):
+    target_week: PlanWeekResponse
+    copied: int
+    skipped: int
+
+
+class PlanItemListResponse(BaseModel):
+    items: list[PlanItemResponse]
+
+
+# --- POST /program-inclusions --------------------------------------------------------
+
+
+class ProgramInclusionCreateRequest(BaseModel):
+    program_id: int
+    # Для STEP-стратегии — стартовые значения цепочки; None значит "с нуля",
+    # как у нового пользователя без замера (config.block_a/b.base_target).
+    # Интеграция с AssessmentResult — вне охвата этой волны (план issue #165,
+    # открытый вопрос, подтверждено Кириллом).
+    initial_target_a: int | None = None
+    initial_target_b: int | None = None
+    initial_volume_a: int = 0
+    initial_volume_b: int = 0
+
+
+# --- Сессии ---------------------------------------------------------------------------
+
+
+class SetLogInputSchema(BaseModel):
+    set_number: int
+    metric_type: Literal["reps", "time", "weight", "angle", "distance"]
+    value: Decimal
+    unit: str
+    is_max_set: bool = False
+    effort: Decimal | None = None
+    note: str | None = None
+
+
+class SessionBlockInputSchema(BaseModel):
+    sets: list[SetLogInputSchema]
+    exercise_id: int | None = None
+    complex_id: int | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "SessionBlockInputSchema":
+        if (self.exercise_id is None) == (self.complex_id is None):
+            raise ValueError("ровно одно из exercise_id/complex_id")
+        if not self.sets:
+            raise ValueError("sets не может быть пустым")
+        return self
+
+
+class SessionCreateRequest(BaseModel):
+    source: Literal["plan", "freeform", "backdated", "elective"]
+    performed_at: datetime
+    blocks: list[SessionBlockInputSchema]
+    program_inclusion_id: int | None = None
+    effort: Decimal | None = None
+    comment: str | None = None
+    # Свободная активность (#263): source=freeform + activity_type + duration_seconds,
+    # blocks пуст. Остальные поля игнорируются для обычных источников.
+    activity_type: str | None = None
+    duration_seconds: int | None = None
+
+    @model_validator(mode="after")
+    def _journal_log_rules(self) -> "SessionCreateRequest":
+        # Шкала 1–5 — только у записей Журнала; остальные источники сохраняют прежний контракт.
+        is_journal_entry = self.source == "backdated" or self.activity_type is not None
+        if is_journal_entry and self.effort is not None and not 1 <= self.effort <= 5:
+            raise ValueError("effort должен быть от 1 до 5")
+        if self.source == "freeform" and self.activity_type is not None:
+            if self.activity_type not in ACTIVITY_TYPES:
+                raise ValueError("неизвестный activity_type")
+            if self.duration_seconds is None or not (
+                MIN_ACTIVITY_SECONDS <= self.duration_seconds <= MAX_ACTIVITY_SECONDS
+            ):
+                raise ValueError("duration_seconds должен быть от 1 минуты до 12 часов")
+            if self.blocks:
+                raise ValueError("у свободной активности нет блоков")
+            if self.program_inclusion_id is not None:
+                raise ValueError("свободная активность не привязывается к программе")
+        elif self.activity_type is not None or self.duration_seconds is not None:
+            raise ValueError("activity_type/duration_seconds — только для source=freeform активности")
+        if self.source == "backdated":
+            if not self.blocks:
+                raise ValueError("blocks не может быть пустым")
+            if self.program_inclusion_id is not None:
+                raise ValueError("записанная задним числом тренировка не меняет прогрессию программы")
+        return self
+
+
+class SetLogResponse(BaseModel):
+    set_number: int
+    is_max_set: bool
+    metric_type: str
+    value: str
+    unit: str
+    effort: str | None
+    note: str | None
+    is_extra: bool = False
+
+
+class SessionSetTargetResponse(BaseModel):
+    set_number: int
+    is_max_set: bool
+    metric_type: str
+    value: str
+    unit: str
+
+
+class IntervalConfigResponse(BaseModel):
+    total_duration_seconds: int
+    work_seconds: int
+    rest_seconds: int
+
+
+class SessionBlockResponse(BaseModel):
+    order_index: int
+    exercise_id: int | None
+    complex_id: int | None
+    set_logs: list[SetLogResponse]
+    # Phase B2 gate fix (issue #215) — тот же result, что LiveSessionBlockResponse,
+    # нужен Журналу для отображения завершённых interval-тренировок.
+    result: dict | None = None
+    # REBUILD-1 (R2) — всё, что нужно Журналу v2 для независимого рендера
+    # КАЖДОГО блока. protocol_type — из ЗАМОРОЖЕННОГО снимка по позиции
+    # (None у STEP/legacy без снимка), не из изменяемого ComplexItem.
+    # exercise_name — из снимка либо из каталога; None, если человекочитаемого
+    # имени нет (внутренние STEP-роли). set_targets без интерпретации: у
+    # max_effort/legacy value=0 — "цели нет", не план.
+    protocol_type: str | None = None
+    exercise_name: str | None = None
+    started_at: datetime | None = None
+    set_targets: list[SessionSetTargetResponse] = []
+    interval_config: IntervalConfigResponse | None = None
+
+
+class BlockProgressionResponse(BaseModel):
+    target_before: int
+    target_after: int
+    equipment_changed: bool
+
+
+class SessionProgressionResponse(BaseModel):
+    block_a: BlockProgressionResponse
+    block_b: BlockProgressionResponse
+
+
+class SessionResponse(BaseModel):
+    id: int
+    source: str
+    status: str
+    performed_at: datetime
+    effort: str | None
+    comment: str | None
+    # Checkpoint 4C (issue #188) — резолвится на бэкенде через
+    # SessionPlanItem -> PlanItem -> ProgramInclusion.program_name
+    # (program-backed) или -> Exercise.name (manual), не пересчитывается на
+    # фронте (раздел 5 задачи — не N+1 на фронте). None — сессия без
+    # SessionPlanItem вообще (создана мимо create_live_session, до
+    # Checkpoint 4A) либо чужого/удалённого PlanItem — честный пробел, не
+    # выдуманное имя.
+    title: str | None
+    blocks: list[SessionBlockResponse]
+    # #263 — свободная активность (source=freeform); None у остальных сессий.
+    activity_type: str | None = None
+    duration_seconds: int | None = None
+    # R2 — сервер решает, можно ли безопасно удалить (Builder-сессия без
+    # связи с прогрессией); фронт показывает "Удалить" ТОЛЬКО при true, без
+    # своих эвристик. Определяется app.services.session_deletion.
+    can_delete: bool = False
+    # #262 — тот же предикат безопасности: можно ли править/клонировать
+    # (Журнал показывает «Изменить»/«Повторить» только при true).
+    can_edit: bool = False
+    # #281 — своя живая тренировка, из которой выполнена сессия (замороженный снимок):
+    # Журнал показывает «Открыть тренировку» только при не-null. None — удалена/чужая/нет.
+    workout_id: int | None = None
+    # None, если пересчёт прогрессии не применялся к этой сессии — вместе с
+    # progression_skipped_reason объясняет ПОЧЕМУ (не молчаливое отсутствие,
+    # см. CLAUDE.md о явных пробелах): "no_program_inclusion"/
+    # "not_step_strategy"/"blocks_do_not_match_step_roles" либо None, если
+    # пересчёт применился.
+    progression_result: SessionProgressionResponse | None
+    progression_skipped_reason: str | None
+
+
+class JournalDayResponse(BaseModel):
+    date: str  # YYYY-MM-DD, локальный день пользователя
+    count: int
+
+
+class JournalDaysResponse(BaseModel):
+    """GET /journal/days (#256): дни месяца с завершёнными тренировками
+    (v2-сессии по дню в часовом поясе пользователя + legacy Workout по
+    показываемой дате). latest_month — месяц самой свежей тренировки вообще
+    (YYYY-MM) или null: клиент прыгает туда, если текущий месяц пуст."""
+
+    month: str
+    timezone: str
+    days: list[JournalDayResponse]
+    latest_month: str | None = None
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionResponse]
+    # R2 — есть ли ещё страницы после этого (limit+1 запрошено на сервере).
+    has_more: bool = False
+
+
+# --- Строки недельной матрицы (ручной ввод) -------------------------------------------
+
+
+class PlanItemCreateRequest(BaseModel):
+    # 1..14: не больше двух раз в день на 7 дней; SmallInteger в БД, 0/отрицательные бессмысленны.
+    count_per_week: int = Field(ge=1, le=14)
+    exercise_id: int | None = None
+    complex_id: int | None = None
+    # Checkpoint 3B (issue #197) требовал "невалидный day_of_week
+    # отклоняется" — Worker B написал тест на это (test_create_plan_item_
+    # with_invalid_day_of_week_is_rejected), но саму валидацию не добавил;
+    # реальный прогон integration review поймал 200 OK на day_of_week=7,
+    # где ожидался 422. Field(ge=0, le=6) — тот же диапазон, что
+    # DashboardScreen.tsx::DAY_NAMES (0=понедельник..6=воскресенье).
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    week_phase: Literal["base", "rest", "peak"] | None = None
+    plan_week_id: int | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "PlanItemCreateRequest":
+        if (self.exercise_id is None) == (self.complex_id is None):
+            raise ValueError("ровно одно из exercise_id/complex_id")
+        return self
+
+
+class PlanItemMoveRequest(BaseModel):
+    """Phase D2 (issue #188) — тот же диапазон/семантика, что
+    PlanItemCreateRequest.day_of_week (Field(ge=0, le=6), None = свободный
+    пул). Обязательное поле (без default) — запрос должен явно указать
+    намерение (конкретный день ИЛИ null), пропущенное поле — 422, не тихо
+    трактуется как "свободный пул"."""
+
+    day_of_week: int | None = Field(ge=0, le=6)
+    # issue #275 — перенос в другую неделю (None = неделя не меняется).
+    plan_week_id: int | None = None

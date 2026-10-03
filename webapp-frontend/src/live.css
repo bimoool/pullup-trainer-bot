@@ -1,0 +1,757 @@
+/*
+ * Live Session (#280, поток «Live Session»): полноэкранный плеер тренировки в языке эталона
+ * (exec_* — огромный таймер, подпись состояния, счётчик подходов, транспорт с одним главным
+ * действием внизу). Грузится ПОСЛЕ shell.css и использует его токены --vp-*; поведение и
+ * контрактные классы/testid (phase-panel-label <h2>, timer-duration-label, log-panel, set-effort,
+ * pause-toggle, extra-set-button, workout-review…) не меняются.
+ * Области: SessionLiveScreen, IntervalLiveScreen, BlockTransition, SessionSummaryScreen.
+ */
+.live-screen {
+  /* цвета фаз: get_ready — оранжевый, go — зелёный, rest — синий; в тёмной теме светлее */
+  --live-get_ready: #c76500;
+  --live-go: #1b8a4b;
+  --live-rest: #1a64d6;
+  /* WCAG AA (#285): акценты выше — для крупных цифр таймера (≥3:1) и заливок; мелкий текст на
+     карточке с плашкой-подписью (16 % акцента) читается в «чернильных» вариантах ≥4.5:1. */
+  --live-get_ready-ink: #8a4400;
+  --live-go-ink: #115f36;
+  --live-rest-ink: #1250a6;
+  --live-check-fg: #fff; /* галочка на заливке --live-go: ≥3:1 */
+  --live-primary-h: 58px;
+  --live-timer-size: clamp(76px, 25vw, 112px);
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 8px);
+  min-height: calc(100dvh - 8px);
+  margin: 0;
+}
+:root[data-vp-scheme="dark"] .live-screen {
+  --live-get_ready: #ffb44d;
+  --live-go: #4fd88b;
+  --live-rest: #6cb0ff;
+  --live-get_ready-ink: #ffc77a;
+  --live-go-ink: #8ff0b9;
+  --live-rest-ink: #a6d0ff;
+  --live-check-fg: #0b2a1a;
+}
+
+/* транспорт прижат к низу экрана и остаётся под рукой при прокрутке панели записи */
+.app-shell:not(.app-shell-with-nav):has(.live-screen) {
+  padding-bottom: 0;
+}
+/* экспериментальная вкладка (SessionV2Lab) показывает live внутри вкладок — транспорт над навигацией */
+.app-shell-with-nav .live-transport {
+  bottom: calc(var(--vp-nav-h) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---------- шапка ---------- */
+.live-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+  margin: var(--vp-sp-1) 0 var(--vp-sp-3);
+}
+.live-header-text {
+  min-width: 0;
+}
+.live-eyebrow {
+  margin: 0;
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vp-hint);
+}
+.live-workout-title {
+  margin: 2px 0 0;
+  font-size: var(--vp-fs-section);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.live-plan {
+  margin: 4px 0 0;
+  font-size: var(--vp-fs-meta);
+  color: var(--vp-hint);
+}
+.live-finish {
+  flex: none;
+  min-height: 40px;
+  padding: 0 var(--vp-sp-4);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-text-color);
+  background: var(--vp-card-bg);
+  border: 1px solid var(--vp-divider);
+  border-radius: var(--vp-radius-pill);
+  cursor: pointer;
+}
+
+/* ---------- карточка упражнения ---------- */
+.live-screen .live-now {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-4);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.live-screen .live-exercise {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.live-screen .live-target {
+  margin: var(--vp-sp-2) 0 0;
+  font-size: var(--vp-fs-meta);
+  font-weight: 600;
+  color: var(--vp-hint);
+}
+/* #286: крупный счётчик «1 / 3 ПОДХОД · 8 ПОВТ» (как exec_set2 эталона) */
+.live-counter {
+  display: flex;
+  justify-content: space-around;
+  gap: var(--vp-sp-3);
+  margin-top: var(--vp-sp-3);
+}
+.live-counter-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.live-counter-num {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.live-counter-total {
+  font-weight: 700;
+  color: var(--vp-hint);
+}
+.live-counter-label {
+  margin-top: 4px;
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vp-hint);
+}
+.live-pips {
+  display: flex;
+  gap: 6px;
+  margin-top: var(--vp-sp-3);
+}
+.live-pip {
+  flex: 1 1 0;
+  max-width: 44px;
+  height: 6px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-divider);
+}
+.live-pip-done {
+  background: color-mix(in srgb, var(--vp-accent) 45%, var(--vp-divider));
+}
+.live-pip-current {
+  background: var(--vp-accent);
+}
+
+/* ---------- панель таймера (state label + огромные цифры) ---------- */
+.live-screen .phase-panel {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-4) var(--vp-sp-3) var(--vp-sp-5);
+  border: 0;
+  border-radius: 24px;
+  text-align: center;
+  box-shadow: none;
+}
+.live-screen .phase-card-get_ready,
+.live-screen .phase-card-go,
+.live-screen .phase-card-rest {
+  border: 0;
+}
+/* #286: нейтральная поверхность под таймером (как у остальных карточек); состояние несёт
+   цветная плашка-подпись и цвет цифр, а не заливка всей панели */
+.live-screen .phase-card-get_ready,
+.live-screen .phase-card-go,
+.live-screen .phase-card-rest {
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+.live-screen .phase-panel-label {
+  display: inline-block;
+  margin: 0;
+  padding: 5px 14px;
+  font-size: var(--vp-fs-meta);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tg-text-color);
+  background: color-mix(in srgb, var(--tg-hint-color) 14%, transparent);
+  border-radius: var(--vp-radius-pill);
+}
+.live-screen .phase-card-get_ready .phase-panel-label {
+  color: var(--live-get_ready-ink);
+  background: color-mix(in srgb, var(--live-get_ready) 16%, transparent);
+}
+.live-screen .phase-card-go .phase-panel-label {
+  color: var(--live-go-ink);
+  background: color-mix(in srgb, var(--live-go) 16%, transparent);
+}
+.live-screen .phase-card-rest .phase-panel-label {
+  color: var(--live-rest-ink);
+  background: color-mix(in srgb, var(--live-rest) 16%, transparent);
+}
+.live-screen .phase-panel .timer-duration-label {
+  min-width: 0;
+  margin: var(--vp-sp-2) 0 0;
+  font-size: var(--live-timer-size);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.live-screen .phase-timer-get_ready { color: var(--live-get_ready); }
+.live-screen .phase-timer-go { color: var(--live-go); }
+.live-screen .phase-timer-rest { color: var(--live-rest); }
+.live-screen[data-paused="true"] .phase-panel .timer-duration-label {
+  opacity: 0.55;
+}
+.live-hero-target {
+  margin: var(--vp-sp-2) 0 0;
+  font-size: clamp(52px, 17vw, 80px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+.live-screen .get-ready-cue {
+  margin: var(--vp-sp-2) 0 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  color: var(--live-get_ready-ink);
+}
+.live-done-note {
+  margin: var(--vp-sp-3) 0 0;
+  font-size: var(--vp-fs-body);
+  color: var(--vp-hint);
+}
+
+/* ---------- панели (запись подхода, ещё подход) ---------- */
+.live-panel {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.live-panel-title {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vp-hint);
+}
+.live-field {
+  display: grid;
+  gap: 4px;
+}
+.live-field-label {
+  font-size: var(--vp-fs-meta);
+  color: var(--vp-hint);
+}
+.live-field-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: var(--tg-text-color);
+  background: var(--vp-page-bg);
+  border: 1.5px solid transparent;
+  border-radius: var(--vp-radius-inner);
+  outline: none;
+}
+.live-field-input:focus {
+  border-color: var(--vp-accent);
+}
+.live-value-input {
+  height: 56px;
+  font-size: 28px;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.live-note-input {
+  height: 44px;
+  padding: 0 var(--vp-sp-3);
+  font-size: var(--vp-fs-card);
+}
+.live-note-textarea {
+  padding: var(--vp-sp-3);
+  font-size: var(--vp-fs-card);
+  resize: none;
+}
+.live-hint {
+  margin: 6px 0 0;
+  font-size: var(--vp-fs-meta);
+  color: var(--vp-hint);
+}
+.live-summary-line {
+  margin: 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+}
+.live-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+}
+.live-summary-row .live-summary-line {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.live-summary-row .live-edit-button {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0 var(--vp-sp-2);
+  white-space: nowrap;
+}
+.live-log-collapsed {
+  padding-top: var(--vp-sp-1);
+  padding-bottom: var(--vp-sp-1);
+}
+.live-link-button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 0;
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+  color: var(--vp-accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.live-extra-count {
+  margin: 0 0 var(--vp-sp-2);
+  text-align: center;
+  font-size: var(--vp-fs-meta);
+  color: var(--vp-hint);
+}
+.live-screen .live-save {
+  margin-top: var(--vp-sp-3);
+  min-height: 48px;
+  border-radius: var(--vp-radius-inner);
+}
+
+/* оценка усилия: одна строка из пяти сегментов (цифра + слово) */
+.live-effort {
+  margin-top: var(--vp-sp-3);
+  padding-top: var(--vp-sp-3);
+  border-top: 1px solid var(--vp-divider);
+}
+.live-effort-prompt {
+  margin: 0 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+}
+.live-chips {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 var(--vp-sp-3);
+}
+.live-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 6px 2px;
+  font: inherit;
+  color: var(--tg-text-color);
+  background: transparent;
+  border: 1.5px solid var(--vp-divider);
+  border-radius: var(--vp-radius-inner);
+  cursor: pointer;
+}
+.live-chip .effort-num {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+.live-chip .effort-word {
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--vp-hint);
+  overflow-wrap: anywhere;
+}
+.live-chip-active {
+  color: var(--tg-button-text-color);
+  background: var(--vp-accent);
+  border-color: var(--vp-accent);
+}
+.live-chip-active .effort-word {
+  color: inherit;
+}
+
+/* ---------- транспорт: одно главное действие + вторичные ---------- */
+.live-transport {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: auto calc(var(--vp-sp-4) * -1) 0;
+  padding: var(--vp-sp-3) var(--vp-sp-4) calc(var(--vp-sp-3) + env(safe-area-inset-bottom, 0px));
+  background: var(--vp-card-bg);
+  border-top: 1px solid var(--vp-divider);
+  box-shadow: 0 -6px 20px rgba(16, 24, 40, 0.06);
+}
+:root[data-vp-scheme="dark"] .live-transport {
+  box-shadow: none;
+}
+/* M1 (#285): экранная клавиатура. Пока в Live-экране сфокусировано поле ввода (data-field-focus
+   ставит useLiveFieldFocus), транспорт не липнет к низу окна — иначе он перекрывает сфокусированное
+   поле (Android) или уезжает под клавиатуру (iOS). Он встаёт обычным блоком под полем и
+   прокручивается вместе с контентом; «Готово» достижимо прокруткой или Enter в поле. */
+.live-screen[data-field-focus="true"] .live-transport {
+  position: static;
+  box-shadow: none;
+}
+/* браузер при фокусе поля прокручивает его только до scroll-padding-bottom (shell.css — высота
+   нижней навигации ≈78px); на Live-экране навигации нет, зато под полем лежит транспорт
+   (≈137px + safe-area): оставляем место, чтобы поле и «Готово» были видны вместе. */
+html:has(.live-screen) {
+  scroll-padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+}
+.live-screen .live-primary {
+  min-height: var(--live-primary-h);
+  border-radius: 18px;
+  font-size: 18px;
+  font-weight: 700;
+}
+/* #286: «Готово» без значения — не белое на бледно-голубом, а читаемый приглушённый вид (≥4.5:1) */
+.live-screen .live-primary:disabled,
+.live-screen .live-primary[disabled],
+.live-screen .live-primary[aria-disabled="true"] {
+  opacity: 1;
+  color: var(--vp-hint);
+  background: color-mix(in srgb, var(--vp-accent) 14%, var(--vp-card-bg));
+  box-shadow: none;
+}
+.live-screen .live-primary * {
+  font-size: inherit;
+  font-weight: inherit;
+}
+.live-secondary-row {
+  display: flex;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-2);
+}
+.live-screen .live-secondary {
+  min-height: 46px;
+  border-radius: var(--vp-radius-inner);
+}
+
+/* ---------- review-шаг: нижняя шторка ---------- */
+.live-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+.live-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+.live-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: var(--vp-sp-2) var(--vp-sp-4) calc(var(--vp-sp-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--vp-card-bg);
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+}
+.live-sheet-handle {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto var(--vp-sp-3);
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-divider);
+}
+.live-sheet-title {
+  margin: 0;
+  font-size: var(--vp-fs-section);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.live-sheet .live-hint {
+  margin: 4px 0 var(--vp-sp-3);
+}
+.live-sheet .live-note-field {
+  margin-bottom: var(--vp-sp-3);
+}
+.live-sheet-back {
+  margin-top: var(--vp-sp-2);
+}
+
+/* ---------- переход между блоками ---------- */
+.live-screen .phase-card-done.live-transition {
+  padding: var(--vp-sp-4);
+  text-align: left;
+  background: var(--vp-card-bg);
+  border: 0;
+  box-shadow: var(--vp-shadow);
+}
+.live-transition .phase-panel-label {
+  color: var(--live-go-ink);
+  background: color-mix(in srgb, var(--live-go) 16%, transparent);
+}
+.live-transition-eyebrow {
+  margin: var(--vp-sp-4) 0 var(--vp-sp-1);
+  font-size: var(--vp-fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vp-hint);
+}
+.live-screen .live-transition .action-button {
+  margin-top: var(--vp-sp-4);
+}
+
+/* ---------- итог тренировки ---------- */
+.live-summary-screen {
+  padding-top: var(--vp-sp-2);
+}
+.live-hero-done {
+  margin-bottom: var(--vp-sp-3);
+  padding: var(--vp-sp-6) var(--vp-sp-4) var(--vp-sp-4);
+  text-align: center;
+  background: color-mix(in srgb, var(--live-go) 12%, var(--vp-card-bg));
+  border-radius: 24px;
+}
+.live-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  color: var(--live-check-fg);
+  background: var(--live-go);
+  border-radius: 50%;
+}
+.live-done-title {
+  margin: var(--vp-sp-3) 0 0;
+  font-size: var(--vp-fs-title);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.live-hero-done .live-workout-title {
+  margin-top: var(--vp-sp-1);
+  font-size: var(--vp-fs-card);
+  font-weight: 600;
+  color: var(--vp-hint);
+}
+.live-stats {
+  display: flex;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-4);
+}
+.live-stat {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--vp-sp-3) var(--vp-sp-2);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-inner);
+}
+.live-stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.live-stat-label {
+  font-size: var(--vp-fs-meta);
+  color: var(--vp-hint);
+}
+.live-card {
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.live-card-title {
+  margin: 0 0 var(--vp-sp-1);
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.live-row {
+  margin: 0;
+  padding: var(--vp-sp-2) 0;
+  font-size: var(--vp-fs-body);
+  color: var(--tg-text-color);
+  border-top: 1px solid var(--vp-divider);
+}
+.live-row-best {
+  font-weight: 700;
+}
+.live-card-goal {
+  background: color-mix(in srgb, var(--vp-accent) 9%, var(--vp-card-bg));
+}
+.live-summary-screen .gap-banner {
+  margin: 0 0 var(--vp-sp-3);
+}
+.live-summary-screen .live-transport {
+  margin-top: auto;
+}
+.live-summary-screen {
+  gap: 0;
+}
+.live-summary-screen > .live-card:last-of-type,
+.live-summary-screen > .gap-banner:last-of-type {
+  margin-bottom: var(--vp-sp-4);
+}
+
+/* узкие экраны (320): компактнее панели и подписи усилия, чтобы «Средне» не рвалось */
+@media (max-width: 360px) {
+  .live-panel {
+    padding-right: var(--vp-sp-3);
+    padding-left: var(--vp-sp-3);
+  }
+  .live-chips {
+    gap: 4px;
+  }
+  .live-chip {
+    padding-right: 1px;
+    padding-left: 1px;
+  }
+  .live-chip .effort-word {
+    font-size: 10px;
+    overflow-wrap: normal;
+  }
+}
+
+/* ---------- пред-экран сессии (SessionPreScreen): тот же язык, что у плеера ---------- */
+.pre-screen .pre-header {
+  margin: var(--vp-sp-2) 0 var(--vp-sp-3);
+}
+.pre-screen .pre-header .plan-title {
+  font-size: var(--vp-fs-section);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.pre-screen .pre-eyebrow {
+  color: var(--vp-hint);
+}
+.pre-screen .pre-meta {
+  display: inline-block;
+  margin: 0 0 var(--vp-sp-3);
+  padding: 4px 12px;
+  font-size: var(--vp-fs-meta);
+  line-height: 18px;
+  font-weight: 700;
+  color: var(--vp-accent-ink);
+  background: color-mix(in srgb, var(--vp-accent) 14%, transparent);
+  border-radius: var(--vp-radius-pill);
+}
+/* упражнения — карточки с номером и целью, как карточка «сейчас» в плеере */
+.app-shell .pre-screen .pre-exercises {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vp-sp-2);
+  margin: 0 0 var(--vp-sp-3);
+  padding: 0;
+  list-style: none;
+  counter-reset: pre-ex;
+  background: none;
+  box-shadow: none;
+}
+.app-shell .pre-screen .pre-exercises > li + li {
+  border-top: 0;
+}
+.pre-screen .pre-exercise {
+  position: relative;
+  counter-increment: pre-ex;
+  padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-3) 56px;
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+.pre-screen .pre-exercise::before {
+  content: counter(pre-ex);
+  position: absolute;
+  left: var(--vp-sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: var(--vp-fs-meta);
+  font-weight: 800;
+  color: var(--vp-accent-ink);
+  background: color-mix(in srgb, var(--vp-accent) 14%, transparent);
+  border-radius: var(--vp-radius-pill);
+}
+.pre-screen .pre-exercise-line {
+  color: var(--vp-hint);
+  font-weight: 600;
+}
+.pre-screen .block-section {
+  margin-bottom: var(--vp-sp-2);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+/* sticky-транспорт: та же плашка, что у плеера; кнопка «Начать» — единственное главное действие */
+.pre-screen .pre-transport {
+  background: var(--vp-card-bg);
+  border-top: 1px solid var(--vp-divider);
+  box-shadow: 0 -6px 20px rgba(16, 24, 40, 0.06);
+}
+:root[data-vp-scheme="dark"] .pre-screen .pre-transport {
+  box-shadow: none;
+}
+.pre-screen .pre-transport button + button {
+  margin-top: var(--vp-sp-2);
+}
+
+/* #292: «Предыдущий подход» — квадратная вторичная кнопка (≥44px) в ряду транспорта */
+.live-screen .live-set-nav {
+  flex: 0 0 48px;
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+}
+.live-screen .live-set-nav[disabled] {
+  opacity: 0.45;
+}
+.live-secondary-row > .live-secondary:not(.live-set-nav) {
+  flex: 1 1 0;
+  min-width: 0;
+}

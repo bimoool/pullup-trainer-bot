@@ -1,12 +1,30 @@
 import { AppRoot } from "@telegram-apps/telegram-ui";
 import "@telegram-apps/telegram-ui/dist/styles.css";
 import { init } from "@telegram-apps/sdk";
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import ReactDOM from "react-dom/client";
 
 import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { OfflineQueryProvider } from "./OfflineQueryProvider";
+import { getDisplayPrefs, subscribeDisplayPrefs, useDisplayPrefs } from "./displayPrefs";
+import {
+  colorSchemeFromThemeParams, isDarkBackground, PALETTES, readTelegramColorScheme, resolveAppearance, THEME_VARS,
+  themeParamsFromEvent, themeSignature, type ThemePref,
+} from "./theme";
+import { subscribeSdkEvent } from "./telegramSdkEvents";
+import { bootTelegram } from "./telegramBoot";
+import { applyTelegramChrome } from "./telegramChrome";
 import "./index.css";
+import "./shell.css";
+import "./live.css";
+import "./screens.css";
+import "./screens-secondary.css";
+import "./home-detail.css";
+import "./plans.css";
+import "./a11y.css";
+// safe-area overrides must load last (they override shell/live/screens paddings)
+import "./telegram-safe-area.css";
 
 // issue #34: window.Telegram.WebApp — тот же мост, что App.tsx уже использует
 // как надёжный запасной источник initData (issue #23) — читаем напрямую, не
@@ -40,6 +58,12 @@ const THEME_PARAM_TO_CSS_VAR: Record<string, string> = {
   section_bg_color: "--tg-section-bg-color",
   subtitle_text_color: "--tg-subtitle-text-color",
   destructive_text_color: "--tg-destructive-text-color",
+  // Bot API 6.10+/7.x: новые ключи themeParams (пока без потребителей в CSS, но доступны токенами).
+  header_bg_color: "--tg-header-bg-color",
+  bottom_bar_bg_color: "--tg-bottom-bar-bg-color",
+  accent_text_color: "--tg-accent-text-color",
+  section_header_text_color: "--tg-section-header-text-color",
+  section_separator_color: "--tg-section-separator-color",
 };
 
 const THEME_PARAM_TO_TGUI_CSS_VAR: Record<string, string> = {
@@ -53,11 +77,22 @@ const THEME_PARAM_TO_TGUI_CSS_VAR: Record<string, string> = {
   section_bg_color: "--tg-theme-section-bg-color",
   subtitle_text_color: "--tg-theme-subtitle-text-color",
   destructive_text_color: "--tg-theme-destructive-text-color",
+  header_bg_color: "--tg-theme-header-bg-color",
+  bottom_bar_bg_color: "--tg-theme-bottom-bar-bg-color",
+  accent_text_color: "--tg-theme-accent-text-color",
+  section_header_text_color: "--tg-theme-section-header-text-color",
+  section_separator_color: "--tg-theme-section-separator-color",
 };
 
+// Актуальные themeParams клиента. Источник — WebApp.themeParams при старте и после themeChanged
+// моста; на нативных клиентах — полезная нагрузка theme_changed из шины SDK (#287 MED 4: там
+// WebApp.themeParams не обновляется вовсе).
+let telegramThemeParams: Record<string, string> | undefined = (
+  window as unknown as { Telegram?: { WebApp?: { themeParams?: Record<string, string> } } }
+).Telegram?.WebApp?.themeParams;
+
 function applyTelegramTheme() {
-  const themeParams = (window as unknown as { Telegram?: { WebApp?: { themeParams?: Record<string, string> } } })
-    .Telegram?.WebApp?.themeParams;
+  const themeParams = telegramThemeParams;
   if (!themeParams) {
     return;
   }
@@ -73,16 +108,98 @@ function applyTelegramTheme() {
     }
   }
 }
-applyTelegramTheme();
+
+// Тема-override (#268): «Светлая»/«Тёмная» перекрывают палитру Telegram теми же CSS-переменными,
+// «Как в Telegram» снимает перекрытие и заново применяет themeParams клиента.
+function applyThemePref(pref: ThemePref) {
+  const root = document.documentElement.style;
+  for (const name of THEME_VARS) {
+    root.removeProperty(`--tg-${name}`);
+    root.removeProperty(`--tg-theme-${name}`);
+  }
+  if (pref === "auto") {
+    applyTelegramTheme();
+    return;
+  }
+  for (const name of THEME_VARS) {
+    root.setProperty(`--tg-${name}`, PALETTES[pref][name]);
+    root.setProperty(`--tg-theme-${name}`, PALETTES[pref][name]);
+  }
+}
+// Схема для shell.css (#280): тёмная палитра — фон страницы = bg, карточки = secondary;
+// светлая — серый фон страницы, белые карточки. Определяем по яркости bg, а не по имени темы,
+// чтобы работало и с произвольными themeParams клиента.
+function applySchemeAttribute() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--tg-bg-color");
+  document.documentElement.dataset.vpScheme = isDarkBackground(raw) ? "dark" : "light";
+}
+applyThemePref(getDisplayPrefs().theme);
+applySchemeAttribute();
+subscribeDisplayPrefs(() => {
+  applyThemePref(getDisplayPrefs().theme);
+  applySchemeAttribute();
+});
 
 // Официальное поле Telegram ('light'/'dark') — надёжнее, чем автоопределение
 // кита по prefers-color-scheme (см. getInitialAppearance в самом ките):
 // тема Telegram-клиента может не совпадать с системной темой ОС. Вне
 // Telegram (обычный браузер) поле отсутствует — AppRoot сам падает на
 // prefers-color-scheme, ровно как и раньше.
-const telegramColorScheme = (
-  window as unknown as { Telegram?: { WebApp?: { colorScheme?: "light" | "dark" } } }
-).Telegram?.WebApp?.colorScheme;
+type TelegramWebAppBridge = {
+  colorScheme?: "light" | "dark";
+  themeParams?: Record<string, string>;
+  onEvent?: (event: string, handler: () => void) => void;
+};
+const telegramWebApp = (window as unknown as { Telegram?: { WebApp?: TelegramWebAppBridge } }).Telegram?.WebApp;
+
+// L3 (#285): тема Telegram меняется на лету (ночной режим, смена темы клиента) — событие
+// `themeChanged`. Тема читалась один раз при старте, и приложение оставалось в старой палитре
+// (на «Как в Telegram»). Переприменяем CSS-переменные из актуальных themeParams, атрибут схемы,
+// цвета хрома Telegram (applyTelegramChrome, #224) и appearance tgui (ThemedRoot подписан на
+// хранилище схемы ниже).
+let telegramScheme = readTelegramColorScheme(telegramWebApp);
+const telegramSchemeListeners = new Set<() => void>();
+function subscribeTelegramScheme(listener: () => void) {
+  telegramSchemeListeners.add(listener);
+  return () => void telegramSchemeListeners.delete(listener);
+}
+// Два пути доставки (#287 MED 4): мост telegram-web-app.js (`themeChanged`, сам обновляет
+// WebApp.themeParams/colorScheme — iframe-клиенты, e2e-мок) и шина SDK (`theme_changed` с
+// theme_params — нативные iOS/Android, где init() SDK перехватил receiveEvent и мост молчит).
+// На iframe-клиентах приходят оба — отпечаток темы применяет её один раз.
+let appliedThemeSignature = themeSignature(telegramThemeParams, telegramScheme);
+function setTelegramTheme(params: Record<string, string>, scheme: "light" | "dark" | undefined) {
+  const signature = themeSignature(params, scheme);
+  if (signature === appliedThemeSignature) {
+    return;
+  }
+  appliedThemeSignature = signature;
+  telegramThemeParams = params;
+  telegramScheme = scheme;
+  applyThemePref(getDisplayPrefs().theme);
+  applySchemeAttribute();
+  applyTelegramChrome();
+  telegramSchemeListeners.forEach((listener) => listener());
+}
+try {
+  telegramWebApp?.onEvent?.("themeChanged", () =>
+    setTelegramTheme({ ...(telegramWebApp.themeParams ?? {}) }, readTelegramColorScheme(telegramWebApp)),
+  );
+} catch (error) {
+  console.error("Telegram themeChanged subscription failed", error);
+}
+subscribeSdkEvent("theme_changed", (payload) => {
+  const params = themeParamsFromEvent(payload);
+  if (params !== null) {
+    setTelegramTheme(params, colorSchemeFromThemeParams(params) ?? telegramScheme);
+  }
+});
+
+function ThemedRoot({ children }: { children: React.ReactNode }) {
+  const { theme } = useDisplayPrefs();
+  const scheme = useSyncExternalStore(subscribeTelegramScheme, () => telegramScheme);
+  return <AppRoot appearance={resolveAppearance(theme, scheme)}>{children}</AppRoot>;
+}
 
 try {
   // Issue #24: на мобильном Telegram init() (внутри себя дёргает
@@ -97,15 +214,20 @@ try {
   console.error("Telegram SDK init() failed", error);
 }
 
+// #224: ready/expand/запрет свайпа вниз/safe area + цвета хрома Telegram (src/telegramBoot.ts).
+bootTelegram();
+
 const rootElement = document.getElementById("root")!;
 
 try {
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <ErrorBoundary>
-        <AppRoot appearance={telegramColorScheme}>
-          <App />
-        </AppRoot>
+        <ThemedRoot>
+          <OfflineQueryProvider>
+            <App />
+          </OfflineQueryProvider>
+        </ThemedRoot>
       </ErrorBoundary>
     </React.StrictMode>,
   );

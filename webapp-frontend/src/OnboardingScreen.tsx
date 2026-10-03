@@ -9,6 +9,7 @@ import {
   type TimezoneOption,
 } from "./api";
 import { parseOptionalWeight } from "./WorkoutScreen";
+import { sanitizeDecimalInput } from "./decimalInput";
 
 type Props = {
   initDataRaw: string;
@@ -281,14 +282,12 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
         {current === "weight" && (
           <Input
             header="Твой вес в кг?"
-            type="number"
+            type="text"
             inputMode="decimal"
-            min={0}
-            step="0.1"
             placeholder="Например: 78"
             aria-label="Вес, кг"
             value={weightKg}
-            onChange={(e) => setWeightKg(e.target.value)}
+            onChange={(e) => setWeightKg(sanitizeDecimalInput(e.target.value))}
           />
         )}
         {current === "height" && (

@@ -1,0 +1,174 @@
+from datetime import date
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models_program import PlanItem, PlanWeek
+from app.db.repositories.programs import ProgramRepository
+from app.db.repositories.training_plans import TrainingPlanRepository
+from app.domain.multi_program import (
+    ProgramStructureType,
+    WeekPhase,
+    is_plannable_week_number,
+    plan_week_number,
+    plan_week_start_date,
+)
+
+
+class PlanWeekService:
+    """Единственный канонический путь материализации Program в PlanWeek/
+    PlanItem (issue #188, checkpoint 1 — read-only-аудит подтвердил: FK
+    plan_items -> plan_weeks не было ни в одной миграции волны 1, PlanWeek
+    существовала мёртвой таблицей). Вызывается и из routes_v2.py (новые
+    пользователи), и из scripts/backfill_multi_program.py (существующие) —
+    один и тот же метод, не две параллельные реализации недели.
+
+    Не меняет ProgressionStrategy/target'ы/снаряд/каскад — те живут в
+    ProgramInclusion.progression_state и ProgressionCascadeService, этот
+    сервис только размещает уже посчитанную работу во времени."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+        self._plans = TrainingPlanRepository(session)
+        self._programs = ProgramRepository(session)
+
+    async def ensure_current_plan_week(self, *, training_plan_id: int, today: date) -> PlanWeek:
+        """Идемпотентно: get-or-create текущая PlanWeek + материализация
+        активных RECURRING ProgramInclusion в неё. Безопасно вызывать
+        многократно (routes_v2.py на каждый GET /plan) и повторно
+        (backfill) — ни разу не создаёт дублей, см. tests/test_services/
+        test_plan_week_service.py."""
+        plan = await self._plans.get_by_id(training_plan_id)
+        if plan is None:
+            raise ValueError(f"training plan {training_plan_id} not found")
+
+        plan_created_date = plan.created_at.date()
+        week_number = plan_week_number(plan_created_date, today)
+
+        week = await self._plans.get_plan_week(training_plan_id=training_plan_id, week_number=week_number)
+        if week is None:
+            week = await self._plans.create_plan_week(
+                training_plan_id=training_plan_id, week_number=week_number,
+                start_date=plan_week_start_date(plan_created_date, week_number), phase=WeekPhase.BASE,
+            )
+
+        inclusions = await self._plans.list_inclusions(training_plan_id)
+        if any(inclusion.is_active for inclusion in inclusions):
+            # Материализация «проверить — вставить»: две конкурентные
+            # транзакции (две вкладки, GET + POST) не должны оба вставить строки
+            # недели. Лок плана до конца транзакции; перепроверки ниже читают
+            # уже закоммиченное победителем (READ COMMITTED).
+            await self._plans.lock_plan(training_plan_id)
+        for inclusion in inclusions:
+            if not inclusion.is_active:
+                continue
+
+            # Checkpoint 1.1 (issue #188) — контрактный баг checkpoint 1:
+            # structure_type и program_items читаются из snapshot, не из
+            # live Program/ProgramItem. program_id используется ТОЛЬКО как
+            # provenance-фолбэк — legacy-снимок до нормализации (см.
+            # scripts/backfill_multi_program.py::normalize_legacy_snapshots)
+            # может не иметь structure_type, тогда и только тогда идём в
+            # живую Program за ним, за program_items — никогда (нет
+            # безопасного фолбэка на "актуальную" структуру курса без
+            # искажения snapshot semantics, поэтому пустой snapshot
+            # ["program_items"] просто не материализуется, до нормализации).
+            snapshot = inclusion.snapshot or {}
+            structure_type_value = snapshot.get("structure_type")
+            if structure_type_value is None:
+                program = await self._programs.get_by_id(inclusion.program_id)
+                structure_type_value = program.structure_type.value if program is not None else None
+            if structure_type_value != ProgramStructureType.RECURRING.value:
+                # FIXED/SINGLE_LESSON не материализуются понедельно этим
+                # сервисом в этом чекпоинте — ни одной такой программы в
+                # каталоге пока нет (read-only-аудит, раздел C), решать
+                # семантику при появлении первой, не заранее.
+                continue
+
+            unweeked = await self._plans.list_unweeked_plan_items(program_inclusion_id=inclusion.id)
+            if unweeked:
+                # Первая материализация этой инклюзии (только что создана
+                # bulk_create_plan_items_from_program_items при POST
+                # /program-inclusions — см. ProgramInclusionService — либо
+                # это старые строки из бэкфилла до checkpoint 1). Дублей не
+                # создаём, привязываем то, что уже есть.
+                await self._plans.attach_plan_items_to_week(plan_items=unweeked, plan_week_id=week.id)
+                continue
+
+            existing_this_week = await self._plans.list_plan_items_for_week(
+                program_inclusion_id=inclusion.id, plan_week_id=week.id,
+            )
+            if existing_this_week:
+                continue  # уже материализовано в эту неделю — идемпотентность
+
+            program_items_snapshot = snapshot.get("program_items")
+            if not program_items_snapshot:
+                continue  # legacy-снимок без program_items — нормализуется отдельно, не здесь
+
+            # Rollover (раздел 7 preflight): предыдущая неделя(и) уже имеют
+            # свои PlanItem, наступила новая — клонируем ИЗ SNAPSHOT заново,
+            # прошлые недели не трогаем. Live Program могла измениться с
+            # момента подключения — это не должно повлиять на уже
+            # подключённого пользователя (snapshot immutability, issue #188
+            # checkpoint 1.1, см. tests/test_services/test_plan_week_service
+            # .py::test_rollover_uses_snapshot_not_live_program).
+            await self._plans.create_plan_items_for_week_from_snapshot(
+                training_plan_id=training_plan_id, program_inclusion_id=inclusion.id,
+                plan_week_id=week.id, program_items_snapshot=program_items_snapshot,
+            )
+
+        return week
+
+    async def ensure_plannable_week(self, *, training_plan_id: int, week_number: int, today: date) -> PlanWeek | None:
+        """issue #275 — get-or-create PlanWeek для планирования вперёд.
+        None — неделя вне окна «текущая .. +4» (прошлая/слишком далёкая).
+        Недостающие промежуточные недели создаются тоже, чтобы список недель
+        оставался непрерывным. Программные PlanItem сюда НЕ материализуются —
+        их по-прежнему создаёт только ensure_current_plan_week."""
+        plan = await self._plans.get_by_id(training_plan_id)
+        if plan is None:
+            raise ValueError(f"training plan {training_plan_id} not found")
+        created = plan.created_at.date()
+        current_number = plan_week_number(created, today)
+        if not is_plannable_week_number(week_number, current_number):
+            return None
+        week = None
+        for number in range(current_number, week_number + 1):
+            week = await self._plans.get_plan_week(training_plan_id=training_plan_id, week_number=number)
+            if week is None:
+                week = await self._plans.create_plan_week(
+                    training_plan_id=training_plan_id, week_number=number,
+                    start_date=plan_week_start_date(created, number), phase=WeekPhase.BASE,
+                )
+        return week
+
+    async def copy_manual_items(self, *, source: PlanWeek, target: PlanWeek) -> tuple[int, int]:
+        """Копирует ручные PlanItem недели source в target. Источник переносится без потерь:
+        одинаковые (exercise, complex, день) строки внутри source — отдельные строки со своим
+        count. Идемпотентность повторного копирования — по мультимножеству: сколько строк с
+        таким ключом уже есть в target, столько строк источника пропускается как дубли.
+        Программные строки не копируются. Возвращает (скопировано, пропущено).
+
+        Два конкурентных вызова на один план сериализуются локом строки плана
+        (иначе оба прочитают пустую target и продублируют строки); второй
+        увидит строки, закоммиченные первым, и пропустит их как дубликаты."""
+        await self._plans.lock_plan(source.training_plan_id)
+        existing = await self._plans.list_manual_plan_items_for_week(target.id)
+        remaining: dict[tuple, int] = {}
+        for item in existing:
+            key = (item.exercise_id, item.complex_id, item.day_of_week)
+            remaining[key] = remaining.get(key, 0) + 1
+        copied = skipped = 0
+        for item in await self._plans.list_manual_plan_items_for_week(source.id):
+            key = (item.exercise_id, item.complex_id, item.day_of_week)
+            if remaining.get(key, 0) > 0:
+                remaining[key] -= 1
+                skipped += 1
+                continue
+            self._session.add(PlanItem(
+                training_plan_id=item.training_plan_id, exercise_id=item.exercise_id, complex_id=item.complex_id,
+                count_per_week=item.count_per_week, day_of_week=item.day_of_week, week_phase=item.week_phase,
+                program_inclusion_id=None, plan_week_id=target.id,
+            ))
+            copied += 1
+        await self._session.flush()
+        return copied, skipped

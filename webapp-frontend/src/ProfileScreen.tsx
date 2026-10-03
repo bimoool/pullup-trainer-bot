@@ -1,10 +1,28 @@
-import { Button } from "@telegram-apps/telegram-ui";
+import { plural } from "./plural.ts";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
-import { fetchGtoStatus, fetchProfile, fetchWsfStatus, type GtoStatus, type ProfileResponse, type WsfStatus } from "./api";
+import {
+  fetchGtoStatus,
+  fetchProfile,
+  fetchWsfStatus,
+  type BodyMetricKind,
+  type GtoStatus,
+  type ProfileResponse,
+  type WsfStatus,
+} from "./api";
+import { NOT_IN_PROGRESSION_NOTE } from "./assessmentsFormat";
 import { BandItemsScreen } from "./BandItemsScreen";
+import { BodyMetricsScreen } from "./BodyMetricsScreen";
+import { TestDetailScreen } from "./TestDetailScreen";
+import { TestsList } from "./TestsScreen";
 import { ProfileEditForm } from "./ProfileEditForm";
+import { useDisplayPrefs } from "./displayPrefs";
+import { Icon } from "./Icon";
+import { avatarInitial, identitySubtitle, telegramFirstName } from "./profileIdentity";
+import { ProfileGroup, ProfileMetric, ProfileRow } from "./ProfileRows";
+import { SettingsScreen } from "./SettingsScreen";
+import { formatHeight, formatWeight } from "./units";
 
 type Props = { initDataRaw: string; onOpenSubscription: () => void; onOpenFaq: () => void };
 
@@ -25,10 +43,21 @@ const GTO_REASON_TEXT: Record<string, string> = {
 
 const GTO_RANK_LABEL: Record<string, string> = {
   none: "Без разряда",
-  bronze: "🥉 Бронза",
-  silver: "🥈 Серебро",
-  gold: "🥇 Золото",
+  bronze: "Бронза",
+  silver: "Серебро",
+  gold: "Золото",
 };
+
+/** Строка разряда: контурная медаль (цвет по разряду, #286 C3) вместо эмодзи + название. */
+function RankLine({ rank, label, trophy = false }: { rank: string | null; label: string; trophy?: boolean }) {
+  const showIcon = rank !== null && rank !== "none";
+  return (
+    <p className="profile-rank">
+      {showIcon && <Icon name={trophy ? "trophy" : "medal"} size={18} className={`profile-rank-icon profile-rank-${rank}`} />}
+      <span>{label}</span>
+    </p>
+  );
+}
 
 /** Карточка "Разряд ГТО" (issue #71) — отдельный раздел от списка ачивок
  * выше (AchievementsScreen): это текущий статус, не разовая веха, поэтому
@@ -71,7 +100,7 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
       <p className="section-title">Разряд ГТО (подтягивание)</p>
       <p>{summaryText}</p>
       <p>{`Ступень ${gto.step_number} · возраст ${gto.age} · лучший результат ${gto.best_max_reps} за подход`}</p>
-      <p>{rankLabel}</p>
+      <RankLine rank={gto.rank} label={rankLabel} />
       <p>{`Бронза от ${gto.bronze_threshold}, серебро от ${gto.silver_threshold}, золото от ${gto.gold_threshold}.`}</p>
       {gto.next_rank && gto.reps_to_next_rank !== null && (
         <p>{`До разряда "${GTO_RANK_LABEL[gto.next_rank] ?? gto.next_rank}" не хватает ${gto.reps_to_next_rank} повторений.`}</p>
@@ -96,7 +125,7 @@ const WSF_RANK_LABEL: Record<string, string> = {
   kms: "КМС",
   ms: "МС",
   msmk: "МСМК",
-  elite: "🏆 Элита",
+  elite: "Элита",
 };
 
 function weightCategoryLabel(category: string): string {
@@ -153,7 +182,7 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
       <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
       <p>{summaryText}</p>
       <p>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps} повторений на ${stepKg} кг`}</p>
-      <p>{rankLabel}</p>
+      <RankLine rank={wsf.rank} label={rankLabel} trophy={wsf.rank === "elite"} />
       {weightCaveat && <p>{weightCaveat}</p>}
       {bonusPct !== null && <p>{`Учтён возрастной коэффициент +${bonusPct}%.`}</p>}
       {wsf.next_rank && wsf.reps_to_next_rank !== null && (
@@ -186,8 +215,15 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   // Форма правки личных данных (issue #125) — тот же приём swap'а, что и
   // showAchievements выше.
   const [showEditProfile, setShowEditProfile] = useState(false);
+  // Экран «Настройки» (#268) — тот же приём swap'а.
+  const [showSettings, setShowSettings] = useState(false);
+  const prefs = useDisplayPrefs();
+  // История веса/роста (#270) — тот же приём swap'а.
+  const [bodyMetric, setBodyMetric] = useState<BodyMetricKind | null>(null);
   // Список личных резин (issue #148) — тот же приём swap'а.
   const [showBandItems, setShowBandItems] = useState(false);
+  // Деталь теста (#260) — тот же приём swap'а; список карточек — TestsList в карточке «Тесты».
+  const [testProtocolId, setTestProtocolId] = useState<number | null>(null);
   // Разряд ГТО (issue #71) — отдельный запрос от /api/profile: своя
   // концепция (не AchievementItem), не критична для остального экрана,
   // поэтому её сбой не должен ронять всю вкладку "Профиль" (гасится
@@ -257,6 +293,9 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
   }
 
   const { profile } = state;
+  const firstName = telegramFirstName(initDataRaw);
+  const initial = avatarInitial(firstName);
+  const subtitle = identitySubtitle(profile.gender_label, profile.age);
   if (!profile.is_onboarded) {
     return <p className="screen-message">Онбординг ещё не пройден. Начни его в боте.</p>;
   }
@@ -276,65 +315,77 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
     );
   }
 
+  if (showSettings) {
+    return (
+      <SettingsScreen
+        initDataRaw={initDataRaw}
+        profile={profile}
+        onSaved={(updated) => setState({ phase: "ready", profile: updated })}
+        onBack={() => setShowSettings(false)}
+        onOpenSubscription={onOpenSubscription}
+      />
+    );
+  }
+
+  if (bodyMetric !== null) {
+    return (
+      <BodyMetricsScreen
+        initDataRaw={initDataRaw}
+        metric={bodyMetric}
+        onChanged={() => {
+          // Зеркало User.weight_kg/height_cm изменилось на бэкенде — перечитываем профиль тихо.
+          fetchProfile(initDataRaw)
+            .then((updated) => setState({ phase: "ready", profile: updated }))
+            .catch(() => undefined);
+        }}
+        onBack={() => setBodyMetric(null)}
+      />
+    );
+  }
+
   if (showBandItems) {
     return <BandItemsScreen initDataRaw={initDataRaw} onBack={() => setShowBandItems(false)} />;
   }
 
+  if (testProtocolId !== null) {
+    return (
+      <TestDetailScreen
+        initDataRaw={initDataRaw} protocolId={testProtocolId} onBack={() => setTestProtocolId(null)}
+      />
+    );
+  }
+
   return (
     <div>
-      <p className="plan-title">Профиль</p>
-
-      <div className="profile-card">
-        <p>
-          {profile.days_since_last_workout === null
-            ? "Тренировок пока не было."
-            : profile.days_since_last_workout === 0
-              ? "Последняя тренировка — сегодня."
-              : `Последняя тренировка: ${profile.days_since_last_workout} дн. назад.`}
-        </p>
+      <div className="profile-title-row">
+        <p className="plan-title">Профиль</p>
+        <button
+          type="button"
+          className="search-chip"
+          aria-label="Настройки"
+          data-testid="profile-settings"
+          onClick={() => setShowSettings(true)}
+        >
+          <Icon name="settings" size={22} />
+        </button>
       </div>
 
-      <div className="profile-card">
-        <p className="section-title">Личные данные</p>
-        <p>{`Вес: ${profile.weight_kg ?? "не указано"} кг`}</p>
-        <p>{`Рост: ${profile.height_cm ?? "не указано"} см`}</p>
-        <p>{`Пол: ${profile.gender_label ?? "не указано"}`}</p>
-        <p>{`Возраст: ${profile.age ?? "не указано"}`}</p>
-        <p>{`Часовой пояс: ${profile.timezone_label ?? "не указано"}`}</p>
-        <Button mode="outline" size="m" stretched onClick={() => setShowEditProfile(true)}>
-          ✏️ Изменить
-        </Button>
+      <div className="profile-identity" data-testid="profile-identity">
+        <div className="profile-avatar" aria-hidden="true">
+          {initial !== "" ? initial : <Icon name="person" size={26} />}
+        </div>
+        <div className="profile-identity-text">
+          <p className="profile-name" data-testid="profile-name">{firstName !== "" ? firstName : "Без имени"}</p>
+          <p className="hint profile-identity-meta" data-testid="profile-identity-meta">
+            {subtitle !== "" ? subtitle : "Пол и возраст не указаны"}
+          </p>
+        </div>
       </div>
-
-      <div className="profile-card">
-        <p className="section-title">Подписка</p>
-        <p>{profile.subscription_status_label ?? "Статус подписки недоступен."}</p>
-        <Button mode="outline" size="m" stretched onClick={onOpenSubscription}>
-          ⭐ Подробнее о подписке
-        </Button>
-      </div>
-
-      <div className="profile-card">
-        <p className="section-title">Справка</p>
-        <Button mode="outline" size="m" stretched onClick={onOpenFaq}>
-          ❓ Как выбрать резину
-        </Button>
-      </div>
-
-      <div className="profile-card">
-        <p className="section-title">Мои резины</p>
-        <Button mode="outline" size="m" stretched onClick={() => setShowBandItems(true)}>
-          🎗️ Переименовать или удалить
-        </Button>
-      </div>
-
-      {gto && <GtoCard gto={gto} />}
-      {wsf && <WsfCard wsf={wsf} />}
 
       <div className="stat-grid">
         <div className="stat-tile">
           <div className="stat-value">{profile.workouts_count}</div>
-          <div className="stat-label">Тренировок</div>
+          <div className="stat-label">{plural(profile.workouts_count ?? 0, "Тренировка", "Тренировки", "Тренировок")}</div>
         </div>
         {/* Issue #66 (уточнение): счётчик выглядел некликабельным — теперь
             это настоящая <button> (тап/клавиатура), не div с обработчиком,
@@ -342,13 +393,59 @@ export function ProfileScreen({ initDataRaw, onOpenSubscription, onOpenFaq }: Pr
             в index.css), а не только число. */}
         <button type="button" className="stat-tile stat-tile-clickable" onClick={() => setShowAchievements(true)}>
           <div className="stat-value">{profile.achievements_count}</div>
-          <div className="stat-label">Ачивок ›</div>
+          <div className="stat-label">{plural(profile.achievements_count ?? 0, "Ачивка", "Ачивки", "Ачивок")} ›</div>
         </button>
         <div className="stat-tile">
           <div className="stat-value">{profile.coins_balance}</div>
-          <div className="stat-label">Монет</div>
+          <div className="stat-label">{plural(profile.coins_balance ?? 0, "Монета", "Монеты", "Монет")}</div>
         </div>
       </div>
+
+      <p className="profile-last-workout hint">
+        {profile.days_since_last_workout === null
+          ? "Тренировок пока не было."
+          : profile.days_since_last_workout === 0
+            ? "Последняя тренировка — сегодня."
+            : `Последняя тренировка: ${profile.days_since_last_workout} ${plural(profile.days_since_last_workout, "день", "дня", "дней")} назад.`}
+      </p>
+
+      <ProfileGroup
+        title="Личные данные"
+        lead={(
+          <div className="profile-metrics">
+            <ProfileMetric
+              label="Вес" value={formatWeight(profile.weight_kg, prefs.weight_unit)}
+              ariaLabel="История веса" testId="profile-weight" onClick={() => setBodyMetric("weight_kg")}
+            />
+            <ProfileMetric
+              label="Рост" value={formatHeight(profile.height_cm, prefs.height_unit)}
+              ariaLabel="История роста" testId="profile-height" onClick={() => setBodyMetric("height_cm")}
+            />
+          </div>
+        )}
+      >
+        <ProfileRow icon="clock" label="Часовой пояс" value={profile.timezone_label ?? "не указано"} stacked />
+        <ProfileRow icon="edit" label="Изменить" onClick={() => setShowEditProfile(true)} />
+      </ProfileGroup>
+
+      <ProfileGroup
+        title="Тесты" testId="profile-tests"
+        note={<p className="hint profile-group-note">{NOT_IN_PROGRESSION_NOTE}</p>}
+      >
+        <TestsList initDataRaw={initDataRaw} onOpen={(protocol) => setTestProtocolId(protocol.id)} />
+      </ProfileGroup>
+
+      <ProfileGroup title="Аккаунт">
+        <ProfileRow
+          icon="star" label="Подписка" value={profile.subscription_status_label ?? "статус недоступен"}
+          onClick={onOpenSubscription} stacked
+        />
+        <ProfileRow icon="help" label="Справка" value="Как выбрать резину" onClick={onOpenFaq} stacked />
+        <ProfileRow icon="band" label="Мои резины" value="Переименовать или удалить" onClick={() => setShowBandItems(true)} stacked />
+      </ProfileGroup>
+
+      {gto && <GtoCard gto={gto} />}
+      {wsf && <WsfCard wsf={wsf} />}
     </div>
   );
 }
