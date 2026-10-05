@@ -1,9 +1,9 @@
 import { test } from "@playwright/test";
-import { authedContext, nav, onboardViaUi, Trace } from "./helpers";
+import { authedContext, uid, nav, onboardViaUi, Trace } from "./helpers";
 
 // J4 plan lifecycle from empty. PROFILE audit_fresh_active (tg 7100014).
 test("J4 plan lifecycle from empty", async ({ browser }, info) => {
-  const ctx = await authedContext(browser, 7100014);
+  const ctx = await authedContext(browser, uid(14));
   const page = await ctx.newPage();
   const T = new Trace("J4", page, info);
   await onboardViaUi(T);

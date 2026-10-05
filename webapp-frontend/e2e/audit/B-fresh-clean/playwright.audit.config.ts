@@ -20,6 +20,6 @@ export default defineConfig({
     actionTimeout: 15_000,
     trace: "on",
     screenshot: "on",
-    launchOptions: { executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" },
+    launchOptions: { executablePath: "/tmp/bfc/chrome-linux/bfcbrowser" },
   },
 });

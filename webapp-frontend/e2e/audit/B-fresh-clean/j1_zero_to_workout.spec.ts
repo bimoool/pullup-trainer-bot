@@ -1,9 +1,9 @@
 import { test } from "@playwright/test";
-import { authedContext, nav, onboardViaUi, Trace } from "./helpers";
+import { authedContext, uid, nav, onboardViaUi, Trace } from "./helpers";
 
 // J1 Zero-to-Workout. PROFILE audit_fresh_active (tg 7100011). S0: pure clean install (alembic head only), new Telegram user.
 test("J1 zero-to-workout: discover a program -> start", async ({ browser }, info) => {
-  const ctx = await authedContext(browser, 7100011);
+  const ctx = await authedContext(browser, uid(11));
   const page = await ctx.newPage();
   const T = new Trace("J1", page, info);
   await onboardViaUi(T);

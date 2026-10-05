@@ -83,3 +83,6 @@ export async function onboardViaUi(T: Trace, reps = "8") {
   await T.check("Home after onboarding (UI onboarding possible)", await p.getByText("Что потренируем сегодня?").isVisible(), "UNFILED");
 }
 export { expect };
+
+/** Telegram id inside this role's 7100001-7100099 range; AUDIT_UID_OFFSET lets a re-run use fresh users on the same DB. */
+export const uid = (n: number) => 7100000 + Number(process.env.AUDIT_UID_OFFSET ?? 0) + n;

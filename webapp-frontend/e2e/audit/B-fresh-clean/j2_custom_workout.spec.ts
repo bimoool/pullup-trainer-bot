@@ -1,9 +1,9 @@
 import { test } from "@playwright/test";
-import { authedContext, nav, onboardViaUi, Trace } from "./helpers";
+import { authedContext, uid, nav, onboardViaUi, Trace } from "./helpers";
 
 // J2 + J3 + J7. PROFILE audit_empty_library (tg 7100012). S0: clean install; new user; no exercises, no workouts, no plan.
 test("J2/J3/J7 custom workout from nothing -> run -> journal -> analytics -> plan", async ({ browser }, info) => {
-  const ctx = await authedContext(browser, 7100012);
+  const ctx = await authedContext(browser, uid(12));
   const page = await ctx.newPage();
   const T = new Trace("J2", page, info);
   await onboardViaUi(T, "10");
@@ -49,7 +49,7 @@ test("J2/J3/J7 custom workout from nothing -> run -> journal -> analytics -> pla
   await T.check("Аналитика: 1 тренировка, 14 повторений", await page.getByText("Всего повторений").isVisible() && await page.getByText("14").first().isVisible(), "UNFILED", "analytics");
 
   // J7: new context, same initData
-  const ctx2 = await authedContext(browser, 7100012);
+  const ctx2 = await authedContext(browser, uid(12));
   const p2 = await ctx2.newPage(); const T2 = new Trace("J2", p2, info);
   await p2.goto("/"); await p2.waitForTimeout(2500); T2.log("REOPEN in new context, same initData");
   await T2.tap("Журнал", nav(p2, "Журнал"));

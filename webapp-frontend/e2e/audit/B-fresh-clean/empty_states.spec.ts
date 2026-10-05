@@ -1,10 +1,10 @@
 import { test } from "@playwright/test";
-import { authedContext, nav, onboardViaUi, Trace } from "./helpers";
+import { authedContext, uid, nav, onboardViaUi, Trace } from "./helpers";
 
 // Empty-state matrix, light + dark pass. PROFILE audit_empty_library (tg 7100016 light, 7100017 dark).
-for (const [theme, id] of [["light", 7100016], ["dark", 7100017]] as const) {
+for (const [theme, id] of [["light", 16], ["dark", 17]] as const) {
   test(`Empty states ${theme}`, async ({ browser }, info) => {
-    const ctx = await authedContext(browser, id, theme);
+    const ctx = await authedContext(browser, uid(id), theme);
     const page = await ctx.newPage();
     const T = new Trace(`EMPTY-${theme}`, page, info);
     await onboardViaUi(T);
