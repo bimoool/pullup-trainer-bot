@@ -14,6 +14,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:8093",
     trace: "on",
+    actionTimeout: 10_000,
     screenshot: "on",
     ...devices["iPhone 13"],
     viewport: { width: 390, height: 844 },

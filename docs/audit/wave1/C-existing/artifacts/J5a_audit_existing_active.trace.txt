@@ -1,0 +1,70 @@
+06:31:51 JOURNEY J5 Journal lifecycle  PROFILE audit_existing_active (tg 7300001)  S0: native v2 session produced via UI in J1 (2 sets of 10)
+06:31:56 VISIBLE Аналитика(before) Тренировок за 30 дней=8 :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 8 | Тренировок за 30 дней | 7 | Активных дней за 30 дней | По типам | 8 | всего | pull_ups | 7 · 88% | Без категории | 1 · 13% | Тренировки по неделям | 31.08 | 
+06:31:58 TAP native plan session entry 'По плану'
+06:31:59 EXPECT action sheet offers Открыть / Изменить / Повторить / Удалить
+06:31:59 ACTUAL ["Открыть","Отмена"]   FAIL F-C-05 (no Изменить/Повторить/Удалить for native plan session)
+06:32:01 VISIBLE native detail :: Привет, Audit! | Подтягивания | 05.10.2026, 09:29 | Упражнение | План: 11 · 11 · 11 · 11 | Факт: 10 · 10 | Упражнение | План: 3 | Факт: Не выполнено | Усилие: 3 Средне
+06:32:01 EXPECT exercise names in detail (Подтягивания — объём / сила)
+06:32:01 ACTUAL Привет, Audit! | Подтягивания | 05.10.2026, 09:29 | Упражнение | План: 11 · 11 · 11 · 11 | Факт: 10 · 10 | Упражнение | План: 3 | Факт: Не выполнено | Усилие: 3 Средне   FAIL F-C-06 (both blocks titled 'Упражнение')
+06:32:01 ACTUAL detail buttons [""]   FAIL F-C-05
+06:32:06 TAP + Записать → Другую активность (backdate 2026-10-02)
+06:32:08 VISIBLE after save :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:31 | Подходы | — | Повторы | — | Усилие | 2 | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | Активность | Плавание | 12:00 | Длительность | 0:40 | Дистанция | — | Усилие | 4 | Главная | Планы | Журнал | Аналитика | Профиль
+06:32:13 EXPECT Плавание 0:40 present after reload
+06:32:13 ACTUAL Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:31 | Подходы | — | Повторы | — | Усилие | 2 | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | Активность | Плавание | 12:00 | Длительность | 0:40 | Дистанция | — | Усилие | 4 | Главная | Планы | Журнал | Аналитика | Профиль   OK
+06:32:14 VISIBLE Аналитика(after backdated add) Тренировок за 30 дней=9 :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 9 | Тренировок за 30 дней | 8 | Активных дней за 30 дней | По типам | 9 | всего | pull_ups | 7 · 78% | Другая активность | 1 · 11% | Без категории | 1 · 11% | Тр
+06:32:14 EXPECT Аналитика count changes after adding an activity (informational)
+06:32:14 ACTUAL before=8 after=9   OK
+06:32:18 VISIBLE edit form :: Привет, Audit! | Изменить тренировку | Плавание | ДАТА | КАК ПРОШЛА ТРЕНИРОВКА? | Без оценки | 1 Очень легко | 2 Легко | 3 Средне | 4 Тяжело | 5 Предел | КОММЕНТАРИЙ | Сохранить | Отмена
+06:32:18 EXPECT edit form allows changing duration (0:40) — observed form has only date/rating/comment
+06:32:18 ACTUAL no duration field in edit form   NOTE F-C-08 duration not editable
+06:32:24 EXPECT Усилие 2 on Плавание after edit+reload
+06:32:24 ACTUAL Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:31 | Подходы | — | Повторы | — | Усилие | 2 | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | Активность | Плавание | 12:00 | Длительность | 0:40 | Дистанция | — | Усилие | 2 | Главная | Планы | Журнал | Аналитика | Профиль   OK
+06:32:26 VISIBLE after Повторить :: Привет, Audit! | Повторить тренировку | Плавание | Будет создана новая завершённая запись с теми же упражнениями и результатами. | ДАТА | Создать копию | Отмена
+06:32:28 VISIBLE after Создать копию :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:32 | Подходы | — | Повторы | — | Усилие | 2 | Записана задним числом | Тренировка | 09:31 | Подходы | — | Повторы | — | Усилие | 2 | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | Активность | Плавание | 12:00 | Длительность | 0:40 | Дистанция | — | Усилие | 2 | Главная | Планы | Журнал | Аналитика | Пр
+06:32:33 EXPECT 2 Плавание entries after clone
+06:32:33 ACTUAL count=1 :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:32 | Подходы | — | Повторы | — | Усилие | 2 | Записана задним числом | Тренировка | 09:31 | Подходы | — | Повторы | — | Усилие | 2 | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | Активность | Плавание | 12:00 | Длительность | 0:40 | Дистанция | — | Усилие | 2 | Главная | Планы | Журнал | Аналитика | Профиль   FAIL F-C-09
+06:32:35 VISIBLE Аналитика(after clone) Тренировок за 30 дней=10 :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 10 | Тренировок за 30 дней | 8 | Активных дней за 30 дней | По типам | 10 | всего | pull_ups | 7 · 70% | Другая активность | 1 · 10% | Без категории | 2 · 20% | 
+06:32:37 DIALOG confirm: Удалить эту тренировку? Отменить это будет нельзя.
+06:32:37 VISIBLE after Удалить tap (native confirm accepted, see DIALOG) :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:32 | Подходы | — | Повторы | — | Усилие | 2 | Записана задним числом
+06:32:45 EXPECT no Плавание after delete+reload
+06:32:45 ACTUAL Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | Записана задним числом | Тренировка | 09:32 | Подходы | — | Повторы | — | Усилие | 2 | Записана задним числом | Тренировка | 09:31 | Подходы | — | Повторы | — | Усилие | 2 | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | Главная | Планы | Журнал | Аналитика | Профиль   OK
+06:32:47 VISIBLE Аналитика(after delete) Тренировок за 30 дней=9 :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 9 | Тренировок за 30 дней | 7 | Активных дней за 30 дней | По типам | 9 | всего | pull_ups | 7 · 78% | Без категории | 2 · 22% | Тренировки по неделям | 31.08 | 
+06:32:47 INFO analytics counts: before=8 afterAdd=9 afterClone=10 afterDelete=9
+
+--- NETWORK (api non-2xx and mutations) ---
+06:32:06 POST /api/v2/sessions -> 200 {"id":32,"source":"freeform","status":"completed","performed_at":"2026-10-02T09:00:00Z","effort":"4.0","comment":null,"title":"Плавание","blocks":[],"activity_type":"swimming","duration_seconds":2400,"can_delete":false,"can_edit":false,"workout_id":null,"progression_result":null,"progression_skipped
+06:32:18 PATCH /api/v2/sessions/32 -> 200 {"id":32,"source":"freeform","status":"completed","performed_at":"2026-10-02T09:00:00Z","effort":"2.0","comment":"audit edit","title":"Плавание","blocks":[],"activity_type":"swimming","duration_seconds":2400,"can_delete":true,"can_edit":true,"workout_id":null,"progression_result":null,"progression_s
+06:32:26 POST /api/v2/sessions/32/clone -> 201 {"id":33,"source":"backdated","status":"completed","performed_at":"2026-10-05T06:32:26.793360Z","effort":"2.0","comment":"audit edit","title":null,"blocks":[],"activity_type":null,"duration_seconds":null,"can_delete":false,"can_edit":false,"workout_id":null,"progression_result":null,"progression_ski
+06:32:37 DELETE /api/v2/sessions/32 -> 204 
+
+--- CONSOLE ERRORS ---
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam

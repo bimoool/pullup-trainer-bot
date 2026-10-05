@@ -1,11 +1,9 @@
-06:03:31 VISIBLE ГОТОВЫ К СТАРТУ | Подтягивания | Цель 1: 11 повторений | 4 рабочих подхода · резина | Цель 2: 3 повторений | 4 рабочих подхода · резина | Начать
-06:03:31 BUTTONS ["","Начать"]
-06:03:34 VISIBLE2 ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 4 | ПОДХОД | 11 | ПОВТ | Подход 1/4 · Цель: 11 повт. | 4×11 | ПРИГОТОВЬСЯ | 0:03 | Готов | Пауза
-06:03:35 BUTTONS2 ["Завершить","Готов","","Пауза"]
-06:03:35 INPUTS []
+06:27:33 V_EDIT Привет, Audit! | Редактирование тренировки от 02.10.2026 | Блок A — цель 11 | A | 3 рабочих подхода · резина | РАБОЧИЕ ПОДХОДЫ | 1 | 2 | 3 | ПОДХОД НА МАКСИМУМ | Блок B — цель 3 | B | 4 рабочих подхода · резина | РАБОЧИЕ ПОДХОДЫ | 1 | 2 | 3 | 4 | ПОДХОД НА МАКСИМУМ | Сохранить | Отмена
+06:27:34 BUTTONS ["Сохранить","Отмена"]
+06:27:34 INPUTS [["INPUT","number","Блок A, подход 1",null,"10"],["INPUT","number","Блок A, подход 2",null,"10"],["INPUT","number","Блок A, подход 3",null,"10"],["INPUT","number","Блок A, подход на максимум",null,"12"],["INPUT","number","Блок B, подход 1",null,"3"],["INPUT","number","Блок B, подход 2",null,"3"],["INPUT","number","Блок B, подход 3",null,"3"],["INPUT","number","Блок B, подход 4",null,"3"],["INPUT","number","Блок B, подход на максимум",null,"3"]]
 
 --- NETWORK (api non-2xx and mutations) ---
-06:03:32 POST /api/v2/sessions/live -> 200 {"id":27,"client_session_id":"cfd6558b-db77-46ca-b338-a75f6da81eb6","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:03:36.984949Z"},"phase_index":0,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+
 
 --- CONSOLE ERRORS ---
 Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?

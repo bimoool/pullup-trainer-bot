@@ -24,6 +24,7 @@ export class Log {
 
 export async function open(page: Page, tg: number, log: Log, opts: { theme?: "light" | "dark" } = {}) {
   page.on("console", (m) => { if (m.type() === "error") log.consoleErr.push(m.text().slice(0, 300)); });
+  page.on("dialog", async (d) => { log.add("DIALOG", `${d.type()}: ${d.message()}`); await d.accept(); });
   page.on("pageerror", (e) => log.consoleErr.push("PAGEERROR " + String(e).slice(0, 300)));
   page.on("response", async (r) => {
     const u = r.url();
@@ -49,4 +50,36 @@ export async function shot(page: Page, log: Log, label: string) {
 
 export async function body(page: Page) {
   return (await page.locator("body").innerText()).replace(/\n+/g, " | ").slice(0, 900);
+}
+
+export async function tab(page: Page, name: string) {
+  await page.locator("nav, [role=tablist], body").getByText(name, { exact: true }).last().click();
+  await page.waitForTimeout(1800);
+}
+
+export async function expectText(page: Page, log: Log, what: string, re: RegExp, flag: string): Promise<boolean> {
+  await page.waitForTimeout(300);
+  const b = await body(page);
+  const ok = re.test(b);
+  log.add("EXPECT", what);
+  log.add("ACTUAL", b.slice(0, 400), ok ? "OK" : `FAIL ${flag}`);
+  return ok;
+}
+
+/** log N sets in the Live screen as a user: Готов -> reps -> Готово (-> skip rest). Returns sets logged. */
+export async function liveSets(page: Page, log: Log, n: number, reps = 10): Promise<number> {
+  let done = 0;
+  for (let i = 0; i < n; i++) {
+    const ready = page.getByRole("button", { name: "Готов", exact: true });
+    try { await ready.click({ timeout: 8000 }); } catch { /* may already be in ПОШЁЛ */ }
+    const field = page.getByLabel("Повторений");
+    try { await field.fill(String(reps), { timeout: 8000 }); } catch { log.add("LIVE", "no reps field on set " + (i + 1) + " :: " + await body(page), "FAIL?"); break; }
+    await page.getByRole("button", { name: "Готово", exact: true }).click();
+    await page.waitForTimeout(800);
+    log.add("LIVE", `set ${i + 1} logged (${reps}) :: ` + (await body(page)).slice(0, 220));
+    done++;
+    const skip = page.getByRole("button", { name: "Пропустить отдых" });
+    if (i < n - 1) { try { await skip.click({ timeout: 4000 }); } catch {} }
+  }
+  return done;
 }

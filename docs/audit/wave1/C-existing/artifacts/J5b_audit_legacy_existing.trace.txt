@@ -1,0 +1,25 @@
+06:32:54 JOURNEY J5b Journal lifecycle on LEGACY (bot-era, backfilled) data  PROFILE audit_legacy_existing (tg 7300002)  S0: 3 legacy workouts + 1 elective converted by backfill; J1 completed 1 native session via UI
+06:32:59 VISIBLE Аналитика(before) Тренировок за 30 дней=5 :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 5 | Тренировок за 30 дней | 5 | Активных дней за 30 дней | По типам | 5 | всего | pull_ups | 5 · 100% | Тренировки по неделям | 31.08 | 07.09
+06:33:01 VISIBLE Журнал current+prev week :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | 02.10.2026 | Объём (резина): 10, 10, 10, максимум 12, следующая цель 11 | Сила (резина): 3, 3, 3, 3, максимум 3, следующая цель 3 | Изменить | Удалить | Главная | Планы | Журнал | Аналитика | Профиль
+06:33:01 EXPECT legacy workout 02.10 listed once (backfill copy not duplicated)
+06:33:01 ACTUAL occurrences of 02.10.2026 = 1   OK
+06:33:01 TAP Изменить on legacy entry; set block A set 1 = 9
+06:33:03 VISIBLE after save :: Привет, Audit! | ✓ | Тренировка обновлена | Блок A: 9, 10, 10, максимум 12 | Блок B: 3, 3, 3, 3, максимум 3 | Готово
+06:33:08 EXPECT Объём (резина): 9, 10, 10 after reload
+06:33:08 ACTUAL Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:29 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Пт, 2 октября | 02.10.2026 | Объём (резина): 9, 10, 10, максимум 12, следующая цель 11 | Сила (резина): 3, 3, 3, 3, максимум 3, следующая цель 3 | Изменить | Удалить | Главная | Планы | Журнал | Аналитика | Профиль   OK
+06:33:10 VISIBLE Аналитика(after edit) Тренировок за 30 дней=5 :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 5 | Тренировок за 30 дней | 5 | Активных дней за 30 дней | По типам | 5 | всего | pull_ups | 5 · 100% | Тренировки по неделям | 31.08 | 07.09
+
+--- NETWORK (api non-2xx and mutations) ---
+06:33:01 PATCH /api/history/15 -> 200 {"status":"ok","target_a":11,"target_b":3,"equipment_a":{"type":"band","value":"15.00","item_id":3,"label":"резина"},"equipment_b":{"type":"band","value":"15.00","item_id":3,"label":"резина"},"result_a":"9, 10, 10, максимум 12","result_b":"3, 3, 3, 3, максимум 3","anomalies_a":null,"anomalies_b":nul
+
+--- CONSOLE ERRORS ---
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
