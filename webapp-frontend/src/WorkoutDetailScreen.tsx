@@ -1,4 +1,4 @@
-import { Spinner } from "@telegram-apps/telegram-ui";
+import { Button, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -24,6 +24,8 @@ type Props = {
   onStart?: (workoutId: number, workoutTitle: string) => void;
   /** «Записать»: форма записи задним числом с этой тренировкой. */
   onLog?: (workoutId: number) => void;
+  /** «Добавить упражнение» на пустой тренировке: сразу в выбор упражнения этой тренировки. */
+  onAddExercise?: (workoutId: number) => void;
 };
 
 type DetailState =
@@ -57,7 +59,7 @@ function ClockIcon() {
  * упражнения, «Добавить в план» / «Изменить» и история выполнений. Это не
  * редактор: правки — только через существующий WorkoutEditorScreen.
  */
-export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, onAddToPlan, onStart, onLog }: Props) {
+export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, onAddToPlan, onStart, onLog, onAddExercise }: Props) {
   const [detail, setDetail] = useState<DetailState>({ phase: "loading" });
   const [history, setHistory] = useState<HistoryState>({ phase: "loading" });
   // Пояс профиля — как у Журнала (даты записей не зависят от пояса устройства); не загрузился — пояс устройства.
@@ -102,6 +104,7 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
   const { workout } = detail;
   const items = [...(workout.items ?? [])].sort((a, b) => a.order_index - b.order_index);
   const estimate = formatEstimate(estimateWorkoutSeconds(items));
+  const isEmpty = items.length === 0;
 
   return (
     <div data-testid="workout-detail" className="workout-detail">
@@ -133,7 +136,8 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
         {onStart && (
           <button
             type="button" className="workout-detail-action workout-detail-action-primary" data-testid="workout-detail-start"
-            disabled={items.length === 0} onClick={() => onStart(workout.id, workout.title)}
+            disabled={isEmpty} aria-describedby={isEmpty ? "workout-detail-empty-reason" : undefined}
+            onClick={() => onStart(workout.id, workout.title)}
           >
             <span className="workout-detail-action-icon" aria-hidden="true">
               <ActionIcon path="M8 5.5v13l10.5-6.5z" fill />
@@ -144,6 +148,7 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
         {onLog && (
           <button
             type="button" className="workout-detail-action" data-testid="workout-detail-log"
+            disabled={isEmpty} aria-describedby={isEmpty ? "workout-detail-empty-reason" : undefined}
             onClick={() => onLog(workout.id)}
           >
             <span className="workout-detail-action-icon" aria-hidden="true">
@@ -153,7 +158,8 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           </button>
         )}
         <button
-          type="button" className="workout-detail-action"
+          type="button" className="workout-detail-action" data-testid="workout-detail-add-to-plan"
+          disabled={isEmpty} aria-describedby={isEmpty ? "workout-detail-empty-reason" : undefined}
           onClick={() => onAddToPlan(workout.id, workout.title)}
         >
           <span className="workout-detail-action-icon" aria-hidden="true">
@@ -170,9 +176,25 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
         </button>
       </div>
 
+      {isEmpty && (
+        <div className="workout-detail-empty" data-testid="workout-detail-empty">
+          <p className="screen-message" id="workout-detail-empty-reason" data-testid="workout-detail-empty-reason">
+            В тренировке нет упражнений, поэтому её нельзя начать, записать или добавить в план. Добавьте хотя бы одно упражнение.
+          </p>
+          {onAddExercise && (
+            <Button
+              className="action-button" size="m" stretched data-testid="workout-detail-add-exercise"
+              onClick={() => onAddExercise(workout.id)}
+            >
+              Добавить упражнение
+            </Button>
+          )}
+        </div>
+      )}
+
       <p className="section-title">Упражнения</p>
       {items.length === 0 ? (
-        <p className="screen-message">В тренировке пока нет упражнений</p>
+        <p className="screen-message">Список упражнений пуст</p>
       ) : (
         <ul className="home-workout-list" data-testid="workout-detail-items">
           {items.map((item) => (

@@ -18,8 +18,9 @@ const PROMOS: Record<PromoKind, { title: string; meta: string; label: string; te
   },
 };
 
-export function HomePromo({ kind, onClick }: { kind: PromoKind; onClick: () => void }) {
-  const promo = PROMOS[kind];
+/** override — другой текст при том же месте и testid (баннер «план дня» у пользователя без плана, #298). */
+export function HomePromo({ kind, onClick, override }: { kind: PromoKind; onClick: () => void; override?: { title: string; meta: string; label: string } }) {
+  const promo = { ...PROMOS[kind], ...override };
   return (
     <button type="button" className="home-promo" data-promo={kind} data-testid={promo.testId} aria-label={promo.label} onClick={onClick}>
       <span className="home-promo-text">

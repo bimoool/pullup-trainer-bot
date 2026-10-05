@@ -61,6 +61,8 @@ export function ExercisePickerScreen({ initDataRaw, onBack, onSelect }: Props) {
   }, [state, query]);
 
   const trimmed = query.trim();
+  // Вся библиотека пуста (чистая установка, своих упражнений ещё нет): вместо поиска — явное создание первого.
+  const libraryEmpty = state.phase === "ready" && state.exercises.length === 0;
   const exactMatch = state.phase === "ready" && state.exercises.some((exercise) => exercise.name.toLowerCase() === trimmed.toLowerCase());
 
   async function createFromQuery(name: string) {
@@ -78,20 +80,52 @@ export function ExercisePickerScreen({ initDataRaw, onBack, onSelect }: Props) {
         <BackChevron onClick={onBack} />
         <h2 className="plan-title">Добавить упражнение</h2>
       </div>
-      <p className="ux-helper">Выберите упражнение — на следующем шаге настроите подходы и отдых. Нет нужного? Введите название, и появится «Создать своё».</p>
-
-      <input
-        className="ux-text-input"
-        type="search"
-        aria-label="Поиск упражнения"
-        placeholder="Поиск упражнения"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
+      {libraryEmpty ? (
+        <div className="ux-empty-library" data-testid="picker-empty-library">
+          <p className="ux-helper" data-testid="picker-empty-library-text">
+            В библиотеке пока нет упражнений. Создайте первое: введите название и нажмите «Создать упражнение» — на следующем шаге настроите подходы и отдых.
+          </p>
+          <form
+            className="ux-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (trimmed !== "") {
+                void createFromQuery(trimmed);
+              }
+            }}
+          >
+            <input
+              className="ux-text-input"
+              type="text"
+              aria-label="Название упражнения"
+              placeholder="Название упражнения, например «Подтягивания»"
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <button type="submit" className="ux-pick ux-pick-create" data-testid="picker-create-first" disabled={trimmed === ""}>
+              <span>Создать упражнение{trimmed !== "" ? ` «${trimmed}»` : ""}</span>
+              <span className="ux-chevron" aria-hidden="true">+</span>
+            </button>
+          </form>
+        </div>
+      ) : (
+        <>
+          <p className="ux-helper">Выберите упражнение — на следующем шаге настроите подходы и отдых. Нет нужного? Введите название, и появится «Создать своё упражнение».</p>
+          <input
+            className="ux-text-input"
+            type="search"
+            aria-label="Поиск упражнения"
+            placeholder="Поиск упражнения"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </>
+      )}
 
       {state.phase === "loading" && <Spinner size="m" />}
       {state.phase === "error" && <p className="gap-banner">Не удалось загрузить: {state.message}</p>}
-      {state.phase === "ready" && (
+      {state.phase === "ready" && !libraryEmpty && (
         <div className="ux-pick-list" role="list">
           {filtered.map((exercise) => (
             <button key={exercise.id} type="button" role="listitem" className="ux-pick" onClick={() => onSelect(exercise)}>
@@ -102,7 +136,7 @@ export function ExercisePickerScreen({ initDataRaw, onBack, onSelect }: Props) {
           {filtered.length === 0 && <p className="ux-helper">Ничего не найдено</p>}
           {trimmed !== "" && !exactMatch && (
             <button type="button" className="ux-pick ux-pick-create" onClick={() => void createFromQuery(trimmed)}>
-              <span>Создать своё: «{trimmed}»</span>
+              <span>Создать своё упражнение: «{trimmed}»</span>
               <span className="ux-chevron" aria-hidden="true">+</span>
             </button>
           )}
