@@ -1,0 +1,28 @@
+06:13:13 OPEN /
+06:13:13 VISIBLE[resumed in input phase] ЖИВАЯ ТРЕНИРОВКА | Планка | Завершить | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ПОШЁЛ | ВНЕСТИ ПОДХОД | Секунды | Оценка и заметка | Готово
+06:13:13 OFFLINE ON
+06:13:13 TAP Готово secs=40 (offline)
+06:13:14 VISIBLE[offline after submit] ЖИВАЯ ТРЕНИРОВКА | Планка | Завершить | Нет сети — подходы сохраняются локально и уйдут батчем при подключении. | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ОТДЫХ | 1:30 | Подход 1: 0:40 |  Изменить | Пропустить отдых | Пауза
+06:13:14 SHOT j8-01-offline-submitted.png
+06:13:17 VISIBLE[offline +2.5s] ЖИВАЯ ТРЕНИРОВКА | Планка | Завершить | Нет сети — подходы сохраняются локально и уйдут батчем при подключении. | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ОТДЫХ | 1:27 | Подход 1: 0:40 |  Изменить | Пропустить отдых | Пауза
+06:13:17 OFFLINE OFF
+06:13:17 NET POST /api/v2/sessions/live/4/phase/next -> 200 
+06:13:17 NET POST /api/v2/sessions/live/4/sets:batch -> 200 
+06:13:23 VISIBLE[online +6s] ЖИВАЯ ТРЕНИРОВКА | Планка | Завершить | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ОТДЫХ | 1:24 | Подход 1: 0:40 |  Изменить | Пропустить отдых | Пауза
+06:13:23 SHOT j8-02-online-synced.png
+06:13:23 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+06:13:23 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+06:13:25 RELOAD
+06:13:25 VISIBLE[after reload] ЖИВАЯ ТРЕНИРОВКА | Планка | Завершить | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ОТДЫХ | 1:23 | Подход 1: 0:40 |  Изменить | Пропустить отдых | Пауза
+06:13:50 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+06:13:50 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+06:13:52 OPEN /
+06:13:52 VISIBLE[resumed] ЖИВАЯ ТРЕНИРОВКА | Планка | Завершить | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ОТДЫХ | 0:56 | Пропустить отдых | Пауза
+06:13:52 TAP Завершить (partial 1/3)
+06:13:53 VISIBLE[finish dialog] ЖИВАЯ ТРЕНИРОВКА | Планка | Планка | 1 / 3 | ПОДХОД | Подход 1/3 | ОТДЫХ | 0:55 | Как прошла тренировка? | Что сделано — зачтено, остальное останется в плане. | 1 | Очень легко | 2 | Легко | 3 | Средне | 4 | Тяжело | 5 | Предел | Заметка | Сохранить и завершить | Назад
+06:13:53 SHOT j8-01-finish-dialog.png
+06:13:53 TAP RPE
+06:13:54 DOUBLE TAP Сохранить и завершить
+06:13:54 NET POST /api/v2/sessions/live/4/complete -> 200 
+06:13:55 VISIBLE[after double tap] Тренировка завершена | Планка | 1 | Подходов | 1 | Упражнение | Планка — 1/3 | , не выполнено | Подход 1: 0:40 | Прогрессия не пересчитана — нет активного курса со ступенчатой стратегией для этих упражнений. | Закрыть
+06:13:55 SHOT j8-02-after-dbl.png

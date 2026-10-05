@@ -1,0 +1,10 @@
+import { Sess, onboard } from "./lib.mjs";
+const s = await new Sess("empty", 7200003).start(); const p = s.page; const tab=n=>p.getByText(n,{exact:true}).last();
+await onboard(s); await s.reload(); await s.shot("E-home"); await s.dump("HOME");
+await s.tap(tab("Планы"),"Планы"); await s.dump("E-PLANS"); await s.shot("E-plans");
+await s.tap(p.getByText("Завершённые",{exact:true}),"Завершённые"); await s.dump("E-PLANS-COMPLETED"); await s.shot("E-plans-completed");
+await s.tap(p.getByRole("button",{name:"Мои тренировки"}),"Мои тренировки (в Планах)"); await s.dump("E-MYWORKOUTS"); await s.shot("E-myworkouts");
+await s.open("/"); await s.tap(tab("Журнал"),"Журнал"); await s.dump("E-JOURNAL"); await s.shot("E-journal");
+await s.tap(tab("Аналитика"),"Аналитика"); await s.dump("E-ANALYTICS"); await s.shot("E-analytics");
+await s.tap(tab("Профиль"),"Профиль"); await s.dump("E-PROFILE"); await s.shot("E-profile");
+await s.end();

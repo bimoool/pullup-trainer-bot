@@ -1,0 +1,11 @@
+import { Sess } from "./lib.mjs";
+const s = await new Sess("j1", 7200001).start();
+await s.open("/"); const p = s.page;
+await s.tap(p.getByRole("button",{name:"Завершить"}).first(),"Завершить");
+await s.tap(p.getByRole("button",{name:/Средне/}),"RPE 3");
+await p.getByLabel("Заметка").fill("audit note").catch(()=>s.ev("no label Заметка"));
+await s.tap(p.getByRole("button",{name:"Сохранить и завершить"}),"Сохранить и завершить");
+await s.dump("summary"); await s.shot("summary");
+s.ev("buttons "+JSON.stringify(await p.getByRole("button").allInnerTexts()));
+await s.reload(); await s.dump("after reload summary");await s.shot("summary-reload");
+await s.end();

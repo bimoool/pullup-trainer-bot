@@ -1,0 +1,13 @@
+import { Sess } from "./lib.mjs"; import { openEditor } from "./lib2.mjs";
+const s = await new Sess("j2", 7200002).start(); const p = s.page;
+await openEditor(s);
+await s.tap(p.getByRole("button",{name:"+ Добавить упражнение"}),"+ Добавить упражнение");
+await p.getByLabel("Поиск упражнения").fill("Австралийские подтягивания"); await s.settle();
+await s.dump("search after create-own (exists in library now?)");
+const row = p.getByText("Австралийские подтягивания").first(); await s.tap(row,"pick existing own exercise");
+await s.dump("protocol");
+await p.getByRole("textbox",{name:"Повторения в подходе"}).fill("8");
+await s.tap(p.getByRole("button",{name:"Добавить",exact:true}),"Добавить"); await s.dump("editor w/ ex"); await s.shot("editor-with-ex");
+await s.tap(p.getByRole("button",{name:"Сохранить"}),"Сохранить"); await s.dump("after save"); await s.shot("after-save");
+await s.reload(); await s.dump("after reload"); 
+await s.end();

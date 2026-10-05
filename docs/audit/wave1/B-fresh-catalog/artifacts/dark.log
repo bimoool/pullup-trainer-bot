@@ -1,0 +1,23 @@
+06:16:34 OPEN /
+06:16:34 TAP Далее
+06:16:35 TAP Да
+06:16:35 NET POST /api/onboarding/baseline -> 200 
+06:16:36 TAP Продолжить
+06:16:37 TAP Далее
+06:16:37 TAP Далее
+06:16:38 TAP Далее
+06:16:39 TAP Далее
+06:16:40 SELECT tz Москва
+06:16:40 TAP Готово
+06:16:40 NET POST /api/onboarding/questionnaire -> 200 
+06:16:43 RELOAD
+06:16:43 SHOT dark-01-home.png
+06:16:43 TAP Планы
+06:16:44 SHOT dark-02-plans-empty.png
+06:16:44 TAP Мои тренировки
+06:16:45 SHOT dark-03-myworkouts-empty.png
+06:16:47 OPEN /
+06:16:47 TAP Журнал
+06:16:48 SHOT dark-04-journal-empty.png
+06:16:48 TAP Аналитика
+06:16:49 SHOT dark-05-analytics-empty.png

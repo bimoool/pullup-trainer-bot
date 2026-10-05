@@ -1,0 +1,11 @@
+import { Sess } from "./lib.mjs"; import { runLive } from "./lib2.mjs";
+const s = await new Sess("j2", 7200002).start(); const p = s.page;
+await s.open("/"); await s.tap(p.getByText("Моя тренировка спины").first(),"open workout");
+await s.tap(p.getByRole("button",{name:"Начать",exact:true}),"Начать");
+const r = await runLive(s); s.ev("RESULT "+r); await s.shot("summary");
+await s.tap(p.getByRole("button",{name:"Закрыть"}),"Закрыть"); await s.dump("after Закрыть"); await s.shot("after-close");
+const tab = n => p.getByText(n,{exact:true}).last();
+await s.tap(tab("Журнал"),"tab Журнал"); await s.dump("Журнал"); 
+await s.tap(tab("Аналитика"),"tab Аналитика"); await s.dump("Аналитика"); await s.shot("analytics");
+await s.reload(); await s.tap(tab("Журнал"),"tab Журнал"); await s.dump("Журнал after reload");
+await s.end();
