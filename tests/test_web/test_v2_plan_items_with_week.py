@@ -4,8 +4,10 @@ ownership-проверка через get_plan_week_for_user."""
 
 from datetime import date
 
+from sqlalchemy import func, select
+
 from app.db.models import User
-from app.db.models_program import Exercise
+from app.db.models_program import Complex, ComplexItem, Exercise, PlanItem
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.domain.multi_program import MetricType, WeekPhase
 from tests.test_web._v2_client import v2_get, v2_post
@@ -128,23 +130,86 @@ async def test_create_plan_item_with_invalid_day_of_week_is_rejected(session, us
     assert response.status_code in (400, 422, 500)
 
 
-async def test_create_plan_item_without_plan_week_id_preserves_old_behavior(session, user: User):
-    """5. plan_week_id не передан → старое поведение сохраняется"""
+async def _make_workout(session, user: User) -> Complex:
+    exercise = await _make_exercise(session)
+    workout = Complex(name="Моя тренировка", source_type="user", owner_user_id=user.id)
+    session.add(workout)
+    await session.flush()
+    session.add(ComplexItem(complex_id=workout.id, exercise_id=exercise.id, order_index=0, sets=3))
+    await session.flush()
+    return workout
+
+
+async def _orphan_manual_count(session) -> int:
+    return (await session.execute(
+        select(func.count()).select_from(PlanItem).where(
+            PlanItem.plan_week_id.is_(None), PlanItem.program_inclusion_id.is_(None),
+        ),
+    )).scalar_one()
+
+
+async def test_first_add_without_plan_week_id_lands_in_current_week(session, user: User):
+    """#297 / FD-02 — у пользователя ещё НЕТ плана, plan_week_id не передан (первое «Добавить в план»):
+    строка привязывается к текущей неделе и видна в GET /plan внутри current_week_id; сирот нет."""
     exercise = await _make_exercise(session)
 
     response = await v2_post(
         session, telegram_id=user.telegram_id, path="/api/v2/plan-items",
-        payload={
-            "exercise_id": exercise.id, "count_per_week": 3, "day_of_week": 2, "week_phase": "base",
-        },
+        payload={"exercise_id": exercise.id, "count_per_week": 3, "day_of_week": 2, "week_phase": "base"},
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["plan_week_id"] is None  # Никакой недели не назначено
+    assert body["plan_week_id"] is not None  # не сирота
     assert body["day_of_week"] == 2
     assert body["week_phase"] == "base"
     assert body["program_inclusion_id"] is None
+
+    plan_data = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")).json()["plan"]
+    assert plan_data["current_week_id"] == body["plan_week_id"]
+    assert [week["id"] for week in plan_data["plan_weeks"]] == [body["plan_week_id"]]
+    rows = [item for item in plan_data["plan_items"] if item["plan_week_id"] == plan_data["current_week_id"]]
+    assert [item["id"] for item in rows] == [body["id"]]
+    assert await _orphan_manual_count(session) == 0  # инвариант: ручной строки без недели не бывает
+
+
+async def test_first_add_of_workout_without_plan_week_id_lands_in_current_week(session, user: User):
+    """#297 — то же для Workout (complex_id), свободный пул (day_of_week=null)."""
+    workout = await _make_workout(session, user)
+
+    response = await v2_post(
+        session, telegram_id=user.telegram_id, path="/api/v2/plan-items",
+        payload={"complex_id": workout.id, "count_per_week": 1, "day_of_week": None},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    plan_data = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")).json()["plan"]
+    assert body["plan_week_id"] == plan_data["current_week_id"]
+    assert [(item["id"], item["complex_id"], item["day_of_week"]) for item in plan_data["plan_items"]] == [
+        (body["id"], workout.id, None),
+    ]
+    assert await _orphan_manual_count(session) == 0
+
+
+async def test_add_without_plan_week_id_to_existing_plan_uses_current_week(session, user: User):
+    """#297 — план и неделя уже есть, plan_week_id не передан: строка — в ТЕКУЩЕЙ неделе, новую неделю не плодим."""
+    exercise = await _make_exercise(session)
+    first = await v2_post(
+        session, telegram_id=user.telegram_id, path="/api/v2/plan-items",
+        payload={"exercise_id": exercise.id, "count_per_week": 1, "day_of_week": 0},
+    )
+    second = await v2_post(
+        session, telegram_id=user.telegram_id, path="/api/v2/plan-items",
+        payload={"exercise_id": exercise.id, "count_per_week": 1, "day_of_week": 4},
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["plan_week_id"] is not None
+    assert first.json()["plan_week_id"] == second.json()["plan_week_id"]
+    plan_data = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")).json()["plan"]
+    assert len(plan_data["plan_weeks"]) == 1
+    assert len(plan_data["plan_items"]) == 2
 
 
 async def test_manual_item_appears_in_get_plan_within_plan_week(session, user: User):
@@ -183,3 +248,23 @@ async def test_manual_item_appears_in_get_plan_within_plan_week(session, user: U
     assert item["plan_week_id"] == week.id
     assert item["program_inclusion_id"] is None
     assert item["day_of_week"] == 5
+
+
+async def test_legacy_orphan_manual_item_becomes_visible_in_get_plan(session, user: User):
+    """#297 — уже существующая «сирота» (ручной PlanItem без недели, создан старым POST) после GET /plan
+    лежит в current_week_id: видна, управляема; ничего не удалено, день сохранён."""
+    exercise = await _make_exercise(session)
+    plans = TrainingPlanRepository(session)
+    plan = await plans.get_or_create_for_user(user.id)
+    orphan = await plans.create_plan_item(
+        training_plan_id=plan.id, exercise_id=exercise.id, complex_id=None, count_per_week=1,
+        day_of_week=2, week_phase=None, program_inclusion_id=None, plan_week_id=None,
+    )
+    await session.commit()
+
+    plan_data = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")).json()["plan"]
+
+    assert [(item["id"], item["plan_week_id"], item["day_of_week"]) for item in plan_data["plan_items"]] == [
+        (orphan.id, plan_data["current_week_id"], 2),
+    ]
+    assert await _orphan_manual_count(session) == 0

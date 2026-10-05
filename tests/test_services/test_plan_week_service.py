@@ -372,12 +372,10 @@ async def test_unweeked_attach_does_not_touch_other_plans_inclusion(session, use
     assert await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan_b.id, week_number=1) is None
 
 
-async def test_manually_added_plan_item_without_inclusion_is_never_attached(session, user: User):
-    """PlanItem, добавленный вручную (program_inclusion_id=NULL — тот же
-    путь, что POST /plan-items с program_inclusion_id=None), должен остаться
-    plan_week_id=NULL после ensure_current_plan_week — Checkpoint 1 явно НЕ
-    трогает ручные строки (раздел 'Do not touch': PATCH PlanItem вне
-    скоупа), только материализует RECURRING-инклюзии."""
+async def test_orphan_manual_plan_item_is_attached_to_current_week(session, user: User):
+    """#297 — «сирота» (ручной PlanItem без недели, остаток старого POST /plan-items без plan_week_id)
+    привязывается к текущей неделе при ensure_current_plan_week; день/count не меняются, программные
+    строки привязываются как раньше, повторный вызов ничего не дублирует."""
     program, program_items = await _make_recurring_program(session)
     plan = await _make_plan_with_inclusion(session, user, program)
     inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
@@ -389,15 +387,36 @@ async def test_manually_added_plan_item_without_inclusion_is_never_attached(sess
         training_plan_id=plan.id, exercise_id=program_items[0].exercise_id, complex_id=None,
         count_per_week=1, day_of_week=3, week_phase=None, program_inclusion_id=None,
     )
+    assert manual_item.plan_week_id is None  # состояние «сироты»
 
-    week = await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=plan.id, today=date(2026, 9, 21),
-    )
+    service = PlanWeekService(session)
+    week = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
+    week_again = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
 
     items = await _plan_items(session, plan.id)
     recurring_items = [item for item in items if item.program_inclusion_id == inclusion.id]
     manual_after = next(item for item in items if item.id == manual_item.id)
 
-    assert all(item.plan_week_id == week.id for item in recurring_items)  # инклюзия привязана
-    assert manual_after.plan_week_id is None  # ручная строка НЕ тронута
+    assert week_again.id == week.id
+    assert all(item.plan_week_id == week.id for item in recurring_items)
+    assert manual_after.plan_week_id == week.id  # сирота привязана, не удалена
+    assert (manual_after.day_of_week, manual_after.count_per_week) == (3, 1)
     assert manual_after.program_inclusion_id is None
+    assert len(items) == len(recurring_items) + 1  # дублей нет
+
+
+async def test_orphan_attach_is_scoped_to_its_own_plan(session, user: User):
+    """#297 — сироты чужого плана этим вызовом не трогаются."""
+    program, program_items = await _make_recurring_program(session)
+    plan_a = await _make_plan_with_inclusion(session, user, program)
+    other = await UserRepository(session).create(telegram_id=1002, username="other")
+    plan_b = await _make_plan_with_inclusion(session, other, program)
+    repo = TrainingPlanRepository(session)
+    orphan_b = await repo.create_plan_item(
+        training_plan_id=plan_b.id, exercise_id=program_items[0].exercise_id, complex_id=None,
+        count_per_week=1, day_of_week=None, week_phase=None, program_inclusion_id=None,
+    )
+
+    await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan_a.id, today=date(2026, 9, 21))
+
+    assert (await session.get(PlanItem, orphan_b.id)).plan_week_id is None

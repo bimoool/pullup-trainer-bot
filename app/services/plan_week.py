@@ -51,6 +51,13 @@ class PlanWeekService:
                 start_date=plan_week_start_date(plan_created_date, week_number), phase=WeekPhase.BASE,
             )
 
+        # #297 — самовосстановление «сирот»: ручные строки без недели (старый
+        # POST /plan-items у пользователя без плана) привязываем к текущей неделе.
+        # Идемпотентно (после первого вызова выборка пуста), ничего не удаляем.
+        orphans = await self._plans.list_orphan_manual_plan_items(training_plan_id=training_plan_id)
+        if orphans:
+            await self._plans.attach_plan_items_to_week(plan_items=orphans, plan_week_id=week.id)
+
         inclusions = await self._plans.list_inclusions(training_plan_id)
         if any(inclusion.is_active for inclusion in inclusions):
             # Материализация «проверить — вставить»: две конкурентные

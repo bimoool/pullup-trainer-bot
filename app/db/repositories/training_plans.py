@@ -377,6 +377,18 @@ class TrainingPlanRepository:
         )
         return list(result.scalars().all())
 
+    async def list_orphan_manual_plan_items(self, *, training_plan_id: int) -> list[PlanItem]:
+        """#297 — ручные строки плана без недели (plan_week_id IS NULL AND
+        program_inclusion_id IS NULL): артефакт старого POST /plan-items у
+        пользователя без плана, фронтенд посылал plan_week_id=null."""
+        result = await self._session.execute(
+            select(PlanItem).where(
+                PlanItem.training_plan_id == training_plan_id,
+                PlanItem.program_inclusion_id.is_(None), PlanItem.plan_week_id.is_(None),
+            ).order_by(PlanItem.id),
+        )
+        return list(result.scalars().all())
+
     async def list_plan_items_for_week(self, *, program_inclusion_id: int, plan_week_id: int) -> list[PlanItem]:
         result = await self._session.execute(
             select(PlanItem).where(
