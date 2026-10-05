@@ -93,7 +93,9 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
     try {
       await createPlanItem(initDataRaw, {
         ...(exerciseId !== undefined ? { exercise_id: exerciseId } : { complex_id: workoutId }),
-        plan_week_id: loadState.planWeekId,
+        // #297: у пользователя без плана недели ещё нет (planWeekId === null) — поле НЕ шлём
+        // (а не null): сервер сам создаёт план и текущую неделю и привяжет строку к ней.
+        ...(loadState.planWeekId !== null ? { plan_week_id: loadState.planWeekId } : {}),
         day_of_week: selectedDay === "free_pool" ? null : selectedDay,
         count_per_week: 1,
       });

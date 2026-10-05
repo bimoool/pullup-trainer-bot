@@ -372,12 +372,10 @@ async def test_unweeked_attach_does_not_touch_other_plans_inclusion(session, use
     assert await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan_b.id, week_number=1) is None
 
 
-async def test_manually_added_plan_item_without_inclusion_is_never_attached(session, user: User):
-    """PlanItem, добавленный вручную (program_inclusion_id=NULL — тот же
-    путь, что POST /plan-items с program_inclusion_id=None), должен остаться
-    plan_week_id=NULL после ensure_current_plan_week — Checkpoint 1 явно НЕ
-    трогает ручные строки (раздел 'Do not touch': PATCH PlanItem вне
-    скоупа), только материализует RECURRING-инклюзии."""
+async def test_orphan_manual_plan_item_is_attached_to_current_week(session, user: User):
+    """#297 — «сирота» (ручной PlanItem без недели, остаток старого POST /plan-items без plan_week_id)
+    привязывается к текущей неделе при ensure_current_plan_week; день/count не меняются, программные
+    строки привязываются как раньше, повторный вызов ничего не дублирует."""
     program, program_items = await _make_recurring_program(session)
     plan = await _make_plan_with_inclusion(session, user, program)
     inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
@@ -389,15 +387,177 @@ async def test_manually_added_plan_item_without_inclusion_is_never_attached(sess
         training_plan_id=plan.id, exercise_id=program_items[0].exercise_id, complex_id=None,
         count_per_week=1, day_of_week=3, week_phase=None, program_inclusion_id=None,
     )
+    assert manual_item.plan_week_id is None  # состояние «сироты»
 
-    week = await PlanWeekService(session).ensure_current_plan_week(
-        training_plan_id=plan.id, today=date(2026, 9, 21),
-    )
+    service = PlanWeekService(session)
+    week = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
+    week_again = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
 
     items = await _plan_items(session, plan.id)
     recurring_items = [item for item in items if item.program_inclusion_id == inclusion.id]
     manual_after = next(item for item in items if item.id == manual_item.id)
 
-    assert all(item.plan_week_id == week.id for item in recurring_items)  # инклюзия привязана
-    assert manual_after.plan_week_id is None  # ручная строка НЕ тронута
+    assert week_again.id == week.id
+    assert all(item.plan_week_id == week.id for item in recurring_items)
+    assert manual_after.plan_week_id == week.id  # сирота привязана, не удалена
+    assert (manual_after.day_of_week, manual_after.count_per_week) == (3, 1)
     assert manual_after.program_inclusion_id is None
+    assert len(items) == len(recurring_items) + 1  # дублей нет
+
+
+async def test_orphan_attach_is_scoped_to_its_own_plan(session, user: User):
+    """#297 — сироты чужого плана этим вызовом не трогаются."""
+    program, program_items = await _make_recurring_program(session)
+    plan_a = await _make_plan_with_inclusion(session, user, program)
+    other = await UserRepository(session).create(telegram_id=1002, username="other")
+    plan_b = await _make_plan_with_inclusion(session, other, program)
+    repo = TrainingPlanRepository(session)
+    orphan_b = await repo.create_plan_item(
+        training_plan_id=plan_b.id, exercise_id=program_items[0].exercise_id, complex_id=None,
+        count_per_week=1, day_of_week=None, week_phase=None, program_inclusion_id=None,
+    )
+
+    await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan_a.id, today=date(2026, 9, 21))
+
+    assert (await session.get(PlanItem, orphan_b.id)).plan_week_id is None
+
+
+# --- #301: недели наперёд продолжающейся программы ---------------------------------------
+
+
+async def _items_of_week(session, week_id: int) -> list[PlanItem]:
+    return list((await session.execute(
+        sa_select(PlanItem).where(PlanItem.plan_week_id == week_id).order_by(PlanItem.id),
+    )).scalars())
+
+
+async def test_plannable_future_weeks_get_course_rows_idempotently(session, user: User):
+    """#301: › на неделю 2/3 создаёт неделю уже с курсом (из снимка), повтор без дублей."""
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    service = PlanWeekService(session)
+    today = date(2026, 9, 21)
+    week1 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+
+    week3 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=3, today=today)
+    assert week3 is not None and week3.week_number == 3
+    week2 = await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan.id, week_number=2)
+
+    assert len(await _items_of_week(session, week1.id)) == 2
+    for week in (week2, week3):
+        rows = await _items_of_week(session, week.id)
+        assert len(rows) == 2 and {r.count_per_week for r in rows} == {3}
+        assert all(r.program_inclusion_id is not None for r in rows)
+
+    await service.ensure_plannable_week(training_plan_id=plan.id, week_number=3, today=today)
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+    assert len(await _plan_items(session, plan.id)) == 6
+
+
+async def test_existing_empty_future_week_is_filled_on_current_week_ensure(session, user: User):
+    """#301: уже существующая пустая будущая неделя (создана до фикса) наполняется при GET /plan."""
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    today = date(2026, 9, 21)
+    service = PlanWeekService(session)
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+    future = await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=2, start_date=date(2026, 9, 28), phase=WeekPhase.BASE,
+    )
+    assert await _items_of_week(session, future.id) == []
+
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+
+    assert len(await _items_of_week(session, future.id)) == 2
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+    assert len(await _items_of_week(session, future.id)) == 2
+
+
+async def test_rollover_after_prematerialisation_creates_no_duplicates(session, user: User):
+    """#301: неделя 2 уже наполнена наперёд; когда она становится текущей — строк не удваивается."""
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    service = PlanWeekService(session)
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
+    week2 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=2, today=date(2026, 9, 21))
+    before = {r.id for r in await _items_of_week(session, week2.id)}
+    assert len(before) == 2
+
+    current = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 29))
+
+    assert current.id == week2.id
+    assert {r.id for r in await _items_of_week(session, week2.id)} == before
+    # неделя 3 (ещё не создана) не появилась сама; всего 2 + 2
+    assert len(await _plan_items(session, plan.id)) == 4
+
+
+async def test_future_weeks_use_snapshot_and_manual_only_plan_stays_empty(session, user: User):
+    """#301: источник — снимок, не live Program; план без курса — будущая неделя пустая."""
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    service = PlanWeekService(session)
+    today = date(2026, 9, 21)
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+    session.add(ProgramItem(
+        program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=program_items[0].exercise_id,
+        count_per_week=9, day_of_week=1,
+    ))
+    await session.flush()
+    week2 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=2, today=today)
+    assert sorted(r.count_per_week for r in await _items_of_week(session, week2.id)) == [3, 3]
+
+    manual_user = await UserRepository(session).create(telegram_id=424242, username="manual")
+    manual_plan = TrainingPlan(user_id=manual_user.id, created_at=_DEFAULT_PLAN_CREATED_AT)
+    session.add(manual_plan)
+    await session.flush()
+    await service.ensure_current_plan_week(training_plan_id=manual_plan.id, today=today)
+    manual_week2 = await service.ensure_plannable_week(training_plan_id=manual_plan.id, week_number=2, today=today)
+    assert await _items_of_week(session, manual_week2.id) == []
+
+
+async def test_inactive_inclusion_is_not_materialised_into_future_weeks(session, user: User):
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    service = PlanWeekService(session)
+    today = date(2026, 9, 21)
+    await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+    inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
+    inclusion.is_active = False
+    await session.flush()
+
+    week2 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=2, today=today)
+
+    assert await _items_of_week(session, week2.id) == []
+
+
+async def test_release_future_weeks_drops_unperformed_future_rows_only(session, user: User):
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    service = PlanWeekService(session)
+    today = date(2026, 9, 21)
+    week1 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
+    week3 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=3, today=today)
+    inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
+
+    removed = await service.release_future_weeks_of_inclusion(inclusion=inclusion, today=today)
+
+    assert removed == 4  # недели 2 и 3 по 2 строки
+    assert len(await _items_of_week(session, week1.id)) == 2  # текущая не тронута
+    assert await _items_of_week(session, week3.id) == []
+
+
+async def test_past_gap_weeks_are_created_empty(session, user: User):
+    """#301: неделя, ни разу не бывшая текущей, не пропадает из списка (степпер не перепрыгивает)."""
+    program, program_items = await _make_recurring_program(session)
+    plan = await _make_plan_with_inclusion(session, user, program, program_items=program_items)
+    service = PlanWeekService(session)
+    week1 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
+
+    week3 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 10, 5))
+
+    numbers = [w.week_number for w in await TrainingPlanRepository(session).list_plan_weeks(plan.id)]
+    assert numbers == [1, 2, 3]
+    gap = await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan.id, week_number=2)
+    assert await _items_of_week(session, gap.id) == []  # прошлое — без строк
+    assert len(await _items_of_week(session, week1.id)) == 2
+    assert len(await _items_of_week(session, week3.id)) == 2

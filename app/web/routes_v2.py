@@ -939,6 +939,11 @@ async def deactivate_program_inclusion(
         inclusion.is_active = False
         if inclusion.expires_at is None:
             inclusion.expires_at = datetime.now(UTC)
+        # #301 — ещё не выполнявшиеся строки курса в будущих неделях снимаются вместе с курсом
+        # (иначе «призраки» убранного курса); текущая/прошлые недели и всё с сессиями — как раньше.
+        await PlanWeekService(session).release_future_weeks_of_inclusion(
+            inclusion=inclusion, today=_plan_today(user),
+        )
         await session.commit()
     return _program_inclusion_response(inclusion, user)
 
@@ -1051,12 +1056,22 @@ async def create_plan_item(
         if not is_plannable_week_number(week.week_number, current_number):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
 
+    # #297 / FD-02 — ручная строка НИКОГДА не остаётся без недели: без plan_week_id
+    # (первое «Добавить в план» у пользователя без плана, старый клиент) берём
+    # текущую неделю плана; PlanWeekService создаёт её идемпотентно.
+    plan_week_id = body.plan_week_id
+    if plan_week_id is None:
+        current_week = await PlanWeekService(session).ensure_current_plan_week(
+            training_plan_id=plan.id, today=_plan_today(user),
+        )
+        plan_week_id = current_week.id
+
     try:
         item = await plans.create_plan_item(
             training_plan_id=plan.id, exercise_id=body.exercise_id, complex_id=body.complex_id,
             count_per_week=body.count_per_week, day_of_week=body.day_of_week,
             week_phase=WeekPhase(body.week_phase) if body.week_phase is not None else None,
-            program_inclusion_id=None, plan_week_id=body.plan_week_id,
+            program_inclusion_id=None, plan_week_id=plan_week_id,
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
