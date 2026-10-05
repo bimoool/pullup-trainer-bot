@@ -2624,6 +2624,28 @@ SELECT → «строки нет» → INSERT, второй запрос пад�
   `scenarios/parity/journal-dedupe.spec.ts` (320/390: каждая тренировка один раз, у карточек «✏️»/«🗑», правка
   и удаление), сид `journal_dedupe` (999601/999611, + retry).
 
+## Первое «Добавить в план» создавало «сироту» без недели (#297, FD-02)
+
+- **Симптом/корень.** У пользователя без плана `GET /plan` отдаёт `plan: null`, `AddToPlanScreen` слал
+  `plan_week_id: null`, `POST /plan-items` создавал `TrainingPlan` и `PlanItem` с `plan_week_id=NULL`; «Планы»
+  показывают только строки недели (`item.plan_week_id === week.id`) → «0 из 0», строка невидима и неуправляема.
+  На втором добавлении план уже был, и неделя резолвилась — это маскировало баг. `e2e_seed` заранее создаёт план
+  и неделю, поэтому golden journey его не видел. Тест `test_create_plan_item_without_plan_week_id_preserves_old_behavior`
+  и `test_manually_added_plan_item_without_inclusion_is_never_attached` закрепляли сломанное поведение
+  как «старое»/«ручные строки не трогаем» (checkpoint 1 был консервативен к ручным строкам).
+- **Решение.** Граница — сервер: `POST /plan-items` без `plan_week_id` берёт `ensure_current_plan_week`;
+  `ensure_current_plan_week` ещё и привязывает существующих сирот плана к текущей неделе (политика — PROJECT_SPEC
+  «Планы», #297). Клиент без плана поле не шлёт. Миграции нет (в `plan_items` есть только `created_at`, а
+  привязка по нему не нужна, см. спеку) — рантайм-самолечение при любом чтении плана.
+- **Ловушки.** (1) Инвариант «ручной строки без недели нет» проверяй SQL-ом, а не по HTTP 200. (2) Самолечение
+  идёт в `ensure_current_plan_week`, который вызывается из `GET /plan` под каждый запрос: выборка сирот — по
+  индексу `training_plan_id`, обычно пустая. (3) Сирота программы (`program_inclusion_id` не NULL, неделя NULL)
+  — другой случай, его привязывает ветка `list_unweeked_plan_items`. (4) Не оставлять пользователя без недели
+  через `null` в новых клиентах: либо `plan_week_id` реальной недели, либо поле опущено.
+- Тесты: `tests/test_web/test_v2_plan_items_with_week.py` (без исправления в `app/` падают 4 из 10 здесь + 1 service-тест),
+  `tests/test_services/test_plan_week_service.py::test_orphan_*`, journey
+  `webapp-frontend/e2e/scenarios/fix-wave1/first-add-to-plan.spec.ts`.
+
 ## Обновление этого файла
 
 Держать живым: после значимой новой фичи или явно установленного нового
