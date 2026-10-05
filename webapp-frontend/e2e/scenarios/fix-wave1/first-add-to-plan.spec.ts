@@ -48,7 +48,7 @@ test("первое «Добавить в план» нового пользов�
   // Нет плана: «Планы» пусты.
   // Создаём тренировку из ничего.
   await page.getByRole("button", { name: "Быстрые действия" }).click();
-  await page.getByRole("button", { name: "Создать тренировку" }).click();
+  await page.getByTestId("home-sheet").getByRole("button", { name: "Создать тренировку" }).click();
   await page.getByPlaceholder("Например, 3 минуты подтягиваний").fill(WORKOUT);
   await page.getByRole("button", { name: "Создать и добавить упражнения" }).click();
   await page.getByRole("button", { name: "+ Добавить упражнение" }).click();
