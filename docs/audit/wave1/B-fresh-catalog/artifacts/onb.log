@@ -1,0 +1,65 @@
+06:01:37 CONSOLE error Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+06:01:39 OPEN /
+06:01:39 VISIBLE[S0] Привет, Audit! | Замер | Замер простой: сделай максимум подтягиваний со своим весом, один подход. Понадобится турник. Если ни одного повторения не получается — это тоже результат, просто напиши 0. | Далее
+06:01:39 SHOT onb-01-start.png
+06:01:46 OPEN /
+06:01:46 VISIBLE[S0] Привет, Audit! | Замер | Замер простой: сделай максимум подтягиваний со своим весом, один подход. Понадобится турник. Если ни одного повторения не получается — это тоже результат, просто напиши 0. | Далее
+06:01:47 VISIBLE[after Далее (no input)] Привет, Audit! | Замер | Замер простой: сделай максимум подтягиваний со своим весом, один подход. Понадобится турник. Если ни одного повторения не получается — это тоже результат, просто напиши 0. | Не разобрал число повторений — пришли просто цифру, например: 8 | Далее
+06:01:47 inputs 1
+06:01:48 SHOT onb-01-a.png
+06:01:54 OPEN /
+06:01:54 SHOT onb-01-reps.png
+06:01:54 TAP Далее
+06:01:55 VISIBLE[step2] Привет, Audit! | Всё верно? | Записал: 8 повторений. Всё верно? | Да | Ввести заново
+06:01:55 SHOT onb-02-step2.png
+06:01:55 buttons: ["Да","Ввести заново"]
+06:02:00 OPEN /
+06:02:00 VISIBLE[after reload mid-onboarding] Привет, Audit! | Замер | Замер простой: сделай максимум подтягиваний со своим весом, один подход. Понадобится турник. Если ни одного повторения не получается — это тоже результат, просто напиши 0. | Далее
+06:02:05 OPEN /
+06:02:05 TAP Далее
+06:02:06 TAP Да
+06:02:06 NET POST /api/onboarding/baseline -> 200 
+06:02:07 VISIBLE[step3] Привет, Audit! | Уровень зафиксирован | Отличный старт, есть от чего расти 💪 Дальше бот сам будет считать цель на каждую тренировку — тебе останется просто выполнять план. | Осталась короткая анкета — 5 коротких вопросов. | Продолжить
+06:02:07 SHOT onb-01-step3.png
+06:02:07 buttons: ["Продолжить"]
+06:02:07 inputs 0
+06:02:27 OPEN /
+06:02:27 VISIBLE[q1] Привет, Audit! | Анкета | Шаг 1 из 5 | Далее
+06:02:27 SHOT onb-01-q1.png
+06:02:27 html:  <div id="root"><div class="tgui-6a12827a138e8827 tgui-56dbb42c1dbd5e2b"><div class="app-shell"><p class="app-greeting">Привет, Audit!</p><div><p class="plan-title">Анкета</p><p class="hint">Шаг 1 из 5</p><section class="tgui-3dfa44f9f78f9a22 tgui-97eca24324122dbc block-section"><div class="tgui-db9be63c4fecf79b"><div class="tgui-4b78bed6e925088e"><div class="tgui-92da7016c7125c02 tgui-7707c5d942b7b9af tgui-7584398855f80ae6"><label class="tgui-0f5050defacbf813 tgui-d9de1f32aee12a15 tgui-9b2ad13855aef059"><input class="tgui-c3e2e598bd70eee6 tgui-080a44e6ac3f4d27 tgui-5b8bdfbd2af10f59 tgui-65c206f0fd891b6b tgui-c4863cd4c893a047" type="text" inputmode="decimal" placeholder="Например: 78" aria-label="Вес, кг" value="" style=""></label></div><hr class="tgui-8af0d10d5540c6cc tgui-a6d406c4dc060899"><hr class="tgui-8af0d10d5540c6cc tgui-a6d406c4dc060899"><hr class="tgui-8af0d10d5540c6cc tgui-a6d406c4dc060899"><hr class="tgui-8af0d10d5540c6cc tgui-a6d406c4dc060899"></div></div></section><button class="tgui-b5d680db78c4cc2e tgui-34eb6f8b96874d40 tgui-117e77cd385a9c8d tgui-8a1ca9efa24f4809 tgui-9cef742a22f195c9 tgui-55e8aa7f5cea2280 tgui-726846958fe7f4a0 action-button" type="button"><span class="tgui-c3e2e598bd70eee6 tgui-080a44e6ac3f4d27 tgui-809f1f8a3f64154d tgui-65c206f0fd891b6b tgui-5f6014c0f063b6de">Далее</span></button></div></div></div></div> 
+06:02:34 OPEN /
+06:02:34 VISIBLE[step0] Привет, Audit! | Анкета | Шаг 1 из 5 | Далее
+06:02:34 inputs ["Вес, кг|text|Например: 78"] buttons ["Далее"] radios 0
+06:02:35 SHOT onb-01-step0.png
+06:02:41 OPEN /
+06:02:41 TAP Далее
+06:02:42 VISIBLE[step1] Привет, Audit! | Анкета | Шаг 2 из 5 | Далее | ← Назад
+06:02:42 SHOT onb-01-step1.png
+06:02:42 inputs ["Рост, см|number|Например: 180"] buttons ["Далее","← Назад"]
+06:02:49 OPEN /
+06:02:49 TAP Далее
+06:02:50 TAP Далее
+06:02:50 VISIBLE[step3] Привет, Audit! | Анкета | Шаг 3 из 5 | Выбери | Мужской | Женский | Далее | ← Назад
+06:02:50 SHOT onb-01-step3.png
+06:02:51 inputs [] buttons ["Далее","← Назад"]
+06:03:12 OPEN /
+06:03:12 TAP Далее
+06:03:13 TAP Далее
+06:03:14 SELECT gender=Мужской
+06:03:14 TAP Далее
+06:03:15 VISIBLE[step4] Привет, Audit! | Анкета | Шаг 4 из 5 | Далее | ← Назад
+06:03:15 SHOT onb-01-step4.png
+06:03:15 inputs ["Дата рождения|date|"]
+06:03:21 OPEN /
+06:03:21 TAP Далее
+06:03:22 TAP Далее
+06:03:23 TAP Далее
+06:03:24 TAP Далее
+06:03:25 VISIBLE[step5] Привет, Audit! | Анкета | Шаг 5 из 5 | Выбери | Калининград (UTC+2) | Москва (UTC+3) | Самара (UTC+4) | Екатеринбург (UTC+5) | Омск (UTC+6) | Красноярск (UTC+7) | Иркутск (UTC+8) | Якутск (UTC+9) | Владивосток (UTC+10) | Магадан (UTC+11) | Камчатка (UTC+12) | Стамбул (UTC+3) | Дубай (UTC+4) | Ташкент (UTC+5) | Бишкек (UTC+6) | Бангкок (UTC+7) | Пекин (UTC+8) | Токио (UTC+9) | Сидней (UTC+11) | Лондон (UTC+0) | Берлин (UTC+1) | Нью-Йорк (UTC-5) | Лос-Анджелес (UTC-8) | Готово | ← Назад
+06:03:25 SHOT onb-01-step5.png
+06:03:25 inputs ["Часовой пояс|select-one|undefined"]
+06:03:25 buttons ["Готово","← Назад"]

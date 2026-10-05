@@ -1,0 +1,12 @@
+import { Sess, onboard } from "./lib.mjs";
+const s = await new Sess("onb", 7200001).start();
+await s.open("/"); const p = s.page;
+await p.getByLabel("Вес, кг").fill("78"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
+await p.getByLabel("Рост, см").fill("180"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
+await p.locator("select").selectOption("male"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
+await p.getByLabel("Дата рождения").fill("1995-05-15"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
+await p.locator("select").selectOption({label:"Москва (UTC+3)"});
+await s.tap(p.getByRole("button",{name:"Готово"}),"Готово");
+await s.dump("after done"); await s.shot("done");
+await s.reload(); await s.dump("reload"); await s.shot("reload");
+await s.end();

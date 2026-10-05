@@ -1,0 +1,27 @@
+import { test } from "@playwright/test";
+import { Log, open, shot, body } from "./lib";
+test("explore start 7300001", async ({ page }) => {
+  const log = new Log("explore");
+  await open(page, 7300001, log);
+  await page.waitForTimeout(2500);
+  await page.getByText("Планы", { exact: true }).first().click();
+  await page.waitForTimeout(2000);
+  await page.getByRole("button", { name: "Начать" }).first().click();
+  await page.waitForTimeout(3000);
+  log.add("VISIBLE", await body(page));
+  await shot(page, log, "afterstart");
+  const btns = await page.getByRole("button").allInnerTexts();
+  log.add("BUTTONS", JSON.stringify(btns));
+  await page.getByRole("button", { name: "Начать" }).last().click();
+  await page.waitForTimeout(3000);
+  log.add("VISIBLE2", await body(page));
+  await shot(page, log, "live");
+  log.add("BUTTONS2", JSON.stringify(await page.getByRole("button").allInnerTexts()));
+  log.add("INPUTS", JSON.stringify(await page.locator("input").evaluateAll(els=>els.map(e=>[e.getAttribute("placeholder"),e.getAttribute("inputmode"),e.getAttribute("aria-label"),(e as HTMLInputElement).value]))));
+  await page.getByRole("button", { name: "Готов" }).click();
+  await page.waitForTimeout(1500);
+  log.add("VISIBLE3", await body(page));
+  log.add("BUTTONS3", JSON.stringify(await page.getByRole("button").allInnerTexts()));
+  await shot(page, log, "live2");
+  log.flush();
+});

@@ -1,0 +1,71 @@
+Traceback (most recent call last):
+  File "/home/user/pullup-trainer-bot/scripts/seed_exercise_library.py", line 69, in <module>
+    asyncio.run(main())
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/scripts/seed_exercise_library.py", line 62, in main
+    result = await seed_exercise_library(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/scripts/seed_exercise_library.py", line 44, in seed_exercise_library
+    plank = await _get_or_create_exercise(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/scripts/seed_exercise_library.py", line 37, in _get_or_create_exercise
+    await session.flush()
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/ext/asyncio/session.py", line 1030, in flush
+    await greenlet_spawn(self.sync_session.flush, objects=objects)
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/util/concurrency.py", line 212, in greenlet_spawn
+    result = context.switch(value)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4536, in flush
+    self._flush(objects)
+  File "<sqlalchemy generated warned() wrapper for sqlalchemy.orm.session.Session._flush>", line 2, in _flush
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4679, in _flush
+    with util.safe_reraise():
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py", line 166, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4640, in _flush
+    flush_context.execute()
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py", line 467, in execute
+    rec.execute(self)
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py", line 643, in execute
+    util.preloaded.orm_persistence._save_obj(
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py", line 75, in _save_obj
+    for table, mapper in base_mapper._sorted_tables.items():
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py", line 1449, in __get__
+    obj.__dict__[self.__name__] = result = self.fget(obj)
+                                           ^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/mapper.py", line 4053, in _sorted_tables
+    sorted_ = sql_util.sort_tables(
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py", line 1818, in sort_tables
+    for (t, fkcs) in sort_tables_and_constraints(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py", line 1890, in sort_tables_and_constraints
+    filtered = filter_fn(fkc)
+               ^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/sql/ddl.py", line 1808, in _skip_fn
+    if fixed_skip_fn(fk):
+       ^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/orm/mapper.py", line 4036, in skip
+    dep = table_to_mapper.get(fk.column.table)
+                              ^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py", line 1337, in __get__
+    obj.__dict__[self.__name__] = result = self.fget(obj)
+                                           ^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py", line 3864, in column
+    return self._resolve_column()
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pullup-trainer-bot/.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py", line 3887, in _resolve_column
+    raise exc.NoReferencedTableError(
+sqlalchemy.exc.NoReferencedTableError: Foreign key associated with column 'exercises.owner_user_id' could not find table 'users' with which to generate a foreign key to target column 'id'
