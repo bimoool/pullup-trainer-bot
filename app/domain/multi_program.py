@@ -37,6 +37,24 @@ class WeekPhase(StrEnum):
     PEAK = "peak"
 
 
+# --- Видимость упражнений в публичной библиотеке (issue #296, D3) -------------------------
+#
+# Часть системных Exercise — не пользовательский контент, а служебные записи: роли STEP-программы
+# (block_a/block_b — «Подтягивания — объём/сила») и факультативы (elective_* — «Факультатив — …»).
+# Они остаются в БД (на них ссылается история и программа), но НЕ показываются в публичной
+# библиотеке, пикере, поиске и подборках. Единственное место, где определена граница.
+
+INTERNAL_ROLE_SUBCATEGORIES: tuple[str, ...] = ("block_a", "block_b")
+ELECTIVE_SUBCATEGORY_PREFIX = "elective_"
+
+
+def is_internal_exercise_subcategory(subcategory: str | None) -> bool:
+    """True — служебное упражнение (роль STEP-программы или факультатив), не для публичной библиотеки."""
+    if subcategory is None:
+        return False
+    return subcategory in INTERNAL_ROLE_SUBCATEGORIES or subcategory.startswith(ELECTIVE_SUBCATEGORY_PREFIX)
+
+
 class SessionSource(StrEnum):
     """Происхождение TrainingSession — тот же смысл, что у
     app.db.models.Workout.is_free_entry/participates_in_cascade в старой

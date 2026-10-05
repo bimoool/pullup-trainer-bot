@@ -1,5 +1,7 @@
 """/api/v2/favorites — Избранное: тренировки и программы (issue #272)."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 
 from app.db.models import User
@@ -65,11 +67,17 @@ async def test_other_users_workout_and_missing_targets_are_404(session, user: Us
     assert (await session.execute(select(UserFavorite))).scalars().all() == []
 
 
-async def test_system_workout_is_not_favoritable(session, user: User):
-    system = Complex(name="Системная", source_type="system")
-    session.add(system)
+async def test_catalogue_system_workout_is_favoritable_but_system_with_owner_is_not(session, user: User):
+    # Готовая тренировка каталога (system, без владельца, #296) — можно; нарушенный инвариант
+    # («system с владельцем») и архивная — нельзя.
+    catalogue = Complex(name="Готовая", source_type="system")
+    weird = Complex(name="Системная с владельцем", source_type="system", owner_user_id=user.id)
+    archived = Complex(name="Архивная", source_type="system", archived_at=datetime.now(UTC))
+    session.add_all([catalogue, weird, archived])
     await session.flush()
-    assert (await v2_put(session, user.telegram_id, f"/api/v2/favorites/workout/{system.id}")).status_code == 404
+    assert (await v2_put(session, user.telegram_id, f"/api/v2/favorites/workout/{catalogue.id}")).status_code == 204
+    assert (await v2_put(session, user.telegram_id, f"/api/v2/favorites/workout/{weird.id}")).status_code == 404
+    assert (await v2_put(session, user.telegram_id, f"/api/v2/favorites/workout/{archived.id}")).status_code == 404
 
 
 async def test_favorites_are_per_user(session, user: User):
