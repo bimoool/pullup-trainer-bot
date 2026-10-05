@@ -76,9 +76,15 @@ export function MyWorkoutsScreen({ initDataRaw, onBack, onCreateWorkout, onOpenW
               >
                 {workout.title}
               </button>
-              <Button size="s" onClick={() => onAddToPlan(workout.id, workout.title)}>
-                Добавить в план
-              </Button>
+              {Array.isArray(workout.items) && workout.items.length === 0 ? (
+                <p className="block-subtitle" data-testid="my-workout-empty-hint">
+                  Нет упражнений — откройте тренировку и добавьте упражнение, чтобы добавить её в план.
+                </p>
+              ) : (
+                <Button size="s" onClick={() => onAddToPlan(workout.id, workout.title)}>
+                  Добавить в план
+                </Button>
+              )}
             </div>
           ))}
         </Section>

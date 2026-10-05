@@ -54,14 +54,14 @@ type WorkoutView =
   | { kind: "closed" }
   | { kind: "create" }
   | { kind: "detail"; workoutId: number }
-  | { kind: "edit"; workoutId: number }
+  | { kind: "edit"; workoutId: number; openPicker?: boolean }
   | { kind: "add-to-plan"; workoutId: number; workoutTitle: string }
   | { kind: "add-exercise"; exerciseId: number; exerciseName: string };
 
 type CatalogState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number> };
+  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number>; hasPlanItems: boolean };
 
 type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
 
@@ -211,8 +211,18 @@ export function HomeScreen({
   }
 
   // Promo-баннеры (#280): сборка — после «Подборок», запись — после «Мои тренировки», план дня — после «Избранного».
+  // Нет ни курса, ни пункта плана: «план дня» вёл бы на пустой экран «Планы» (#298) — ведём к действию.
+  const noPlan = catalog.phase === "ready" && catalog.includedProgramIds.size === 0 && !catalog.hasPlanItems;
+  const hasCourses = catalog.phase === "ready" && catalog.programs.length > 0;
+
   function runPromo(kind: PromoKind) {
-    if (kind === "plan") {
+    if (kind === "plan" && noPlan) {
+      if (hasCourses) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        setWorkoutView({ kind: "create" });
+      }
+    } else if (kind === "plan") {
       onOpenPlans();
     } else if (kind === "log") {
       onOpenJournalLog();
@@ -236,7 +246,7 @@ export function HomeScreen({
         const includedProgramIds = new Set(
           (plan?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id),
         );
-        setCatalog({ phase: "ready", programs, includedProgramIds });
+        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0 });
       })
       .catch((error) => {
         if (!cancelled) {
@@ -295,13 +305,15 @@ export function HomeScreen({
         onAddToPlan={(workoutId, workoutTitle) => setWorkoutView({ kind: "add-to-plan", workoutId, workoutTitle })}
         onStart={(workoutId, workoutTitle) => onStartWorkout(workoutId, workoutTitle, exitToJournal.current)}
         onLog={onLogWorkout}
+        onAddExercise={(workoutId) => setWorkoutView({ kind: "edit", workoutId, openPicker: true })}
       />
     );
   }
   if (workoutView.kind === "edit") {
     return (
       <WorkoutEditorScreen
-        key={`edit-${workoutView.workoutId}`}
+        key={`edit-${workoutView.workoutId}${workoutView.openPicker ? "-picker" : ""}`}
+        startWithPicker={workoutView.openPicker}
         initDataRaw={initDataRaw}
         workoutId={workoutView.workoutId}
         onBack={() => setWorkoutView({ kind: "detail", workoutId: workoutView.workoutId })}
@@ -436,7 +448,7 @@ export function HomeScreen({
       {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
       {catalog.phase === "error" && <p className="screen-message">Не удалось загрузить каталог: {catalog.message}</p>}
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
-        <p className="screen-message">Каталог курсов появится здесь позже.</p>
+        <p className="screen-message" data-testid="catalog-empty">Курсов для подключения пока нет. Пока можно собрать свою тренировку — «Своя программа» ниже.</p>
       )}
       {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row, rowIndex) => (
         <div
@@ -613,7 +625,14 @@ export function HomeScreen({
         );
       })()}
 
-      <HomePromo kind="plan" onClick={() => runPromo("plan")} />
+      <HomePromo
+        kind="plan" onClick={() => runPromo("plan")}
+        override={noPlan ? {
+          title: "План дня пока пуст",
+          meta: hasCourses ? "Выберите курс в каталоге выше" : "Соберите свою тренировку",
+          label: "Баннер: план дня пуст",
+        } : undefined}
+      />
 
       <button type="button" className="home-tests-row" data-testid="home-tests-row" onClick={() => setShowTests(true)}>
         <span className="home-tests-row-badge" aria-hidden="true">

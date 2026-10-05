@@ -222,7 +222,7 @@ type MyWorkoutsView =
   | { kind: "list" }
   | { kind: "create" }
   | { kind: "detail"; workoutId: number }
-  | { kind: "edit"; workoutId: number }
+  | { kind: "edit"; workoutId: number; openPicker?: boolean }
   | { kind: "add-to-plan"; workoutId: number; workoutTitle: string; returnTo: "list" | "edit" | "detail" }
   | { kind: "move-plan-item"; planItemId: number; title: string; currentDayOfWeek: number | null; planWeekId: number | null };
 
@@ -274,6 +274,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // Каталог нужен только чтобы подкрасить карточки курсов цветом категории (как группы Главной, #280);
   // сбой молча — карточки остаются нейтральными.
   const [catalogPrograms, setCatalogPrograms] = useState<ProgramResponseV2[]>([]);
+  // Для пустого «Планы» (#298): есть ли вообще что выбирать. loading — не обещаем ничего, пока не знаем.
+  const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
   // H1, microfix 2 (issue #188) — UI-guard против двойного тапа "Начать":
   // onStartSession синхронно переключает App.tsx на PlanSessionFlow
   // (никакого сетевого запроса на этом уровне, сам запрос — уже внутри
@@ -527,8 +529,13 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   useEffect(() => {
     let cancelled = false;
     fetchPrograms(initDataRaw)
-      .then((programs) => !cancelled && setCatalogPrograms(programs))
-      .catch(() => undefined);
+      .then((programs) => {
+        if (!cancelled) {
+          setCatalogPrograms(programs);
+          setCatalogStatus("ready");
+        }
+      })
+      .catch(() => !cancelled && setCatalogStatus("error"));
     return () => {
       cancelled = true;
     };
@@ -656,13 +663,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           setMyWorkoutsView({ kind: "add-to-plan", workoutId, workoutTitle, returnTo: "detail" })}
         onStart={onStartWorkout}
         onLog={onLogWorkout}
+        onAddExercise={(workoutId) => setMyWorkoutsView({ kind: "edit", workoutId, openPicker: true })}
       />
     );
   }
   if (myWorkoutsView.kind === "edit") {
     return (
       <WorkoutEditorScreen
-        key={`edit-${myWorkoutsView.workoutId}`}
+        key={`edit-${myWorkoutsView.workoutId}${myWorkoutsView.openPicker ? "-picker" : ""}`}
+        startWithPicker={myWorkoutsView.openPicker}
         initDataRaw={initDataRaw}
         workoutId={myWorkoutsView.workoutId}
         onBack={() => setMyWorkoutsView({ kind: "detail", workoutId: myWorkoutsView.workoutId })}
@@ -855,12 +864,27 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           </div>
           {activeInclusions.length === 0 && (
             <>
-              <p className="block-subtitle" data-testid="plans-now-empty">
-                Курсов в плане нет. Добавьте курс на Главной.
-              </p>
-              {onOpenHome !== undefined && (
+              {catalogStatus === "ready" && catalogPrograms.length === 0 ? (
+                <p className="block-subtitle" data-testid="plans-now-empty">
+                  Курсов для подключения пока нет — каталог пуст. Соберите свою тренировку: она появится в плане, когда вы добавите её на день.
+                </p>
+              ) : catalogStatus === "error" ? (
+                <p className="block-subtitle" data-testid="plans-now-empty">
+                  Не удалось загрузить каталог курсов. Попробуйте позже или соберите свою тренировку.
+                </p>
+              ) : (
+                <p className="block-subtitle" data-testid="plans-now-empty">
+                  Курсов в плане нет. Добавьте курс на Главной.
+                </p>
+              )}
+              {catalogStatus === "ready" && catalogPrograms.length > 0 && onOpenHome !== undefined && (
                 <Button size="s" mode="outline" data-testid="plans-now-open-home" onClick={onOpenHome}>
                   Выбрать курс на Главной
+                </Button>
+              )}
+              {catalogStatus !== "loading" && !(catalogStatus === "ready" && catalogPrograms.length > 0) && (
+                <Button size="s" mode="outline" data-testid="plans-now-create-workout" onClick={() => setMyWorkoutsView({ kind: "create" })}>
+                  Создать тренировку
                 </Button>
               )}
             </>

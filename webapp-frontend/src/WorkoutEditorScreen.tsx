@@ -38,6 +38,8 @@ type Props = {
   onDeleted: () => void;
   /** Issue #261 — после «Дублировать»: caller возвращается к списку, копия уже в нём. */
   onDuplicated: (workoutId: number) => void;
+  /** Открыть сразу выбор упражнения (прямой переход «Добавить упражнение» с пустой тренировки). */
+  startWithPicker?: boolean;
 };
 
 export const DELETE_WORKOUT_CONFIRM_TEXT =
@@ -58,7 +60,7 @@ type ItemBuilderView =
  * добавление через Exercise Picker + Protocol Form, редактирование,
  * удаление, move ↑/↓) поверх уже готового C3 API.
  */
-export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, onAddToPlan, onDeleted, onDuplicated }: Props) {
+export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, onAddToPlan, onDeleted, onDuplicated, startWithPicker = false }: Props) {
   const isEditing = workoutId !== null;
 
   const [title, setTitle] = useState("");
@@ -68,7 +70,7 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [itemActionError, setItemActionError] = useState<string | null>(null);
-  const [itemView, setItemView] = useState<ItemBuilderView>({ kind: "editor" });
+  const [itemView, setItemView] = useState<ItemBuilderView>(startWithPicker && isEditing ? { kind: "picker" } : { kind: "editor" });
   const [workoutDeleteConfirm, setWorkoutDeleteConfirm] = useState(false);
   const [workoutBusy, setWorkoutBusy] = useState(false);
   const [workoutActionError, setWorkoutActionError] = useState<string | null>(null);
@@ -329,7 +331,11 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
 
       {isEditing && workoutId !== null && (
         <div className="ux-secondary-row">
-          <button type="button" className="ux-secondary" onClick={() => onAddToPlan(workoutId, title)}>
+          <button
+            type="button" className="ux-secondary" disabled={items.length === 0}
+            title={items.length === 0 ? "Сначала добавьте хотя бы одно упражнение" : undefined}
+            onClick={() => onAddToPlan(workoutId, title)}
+          >
             Добавить в план
           </button>
           <button type="button" className="ux-secondary" disabled={workoutBusy} onClick={() => void handleDuplicateWorkout()}>
