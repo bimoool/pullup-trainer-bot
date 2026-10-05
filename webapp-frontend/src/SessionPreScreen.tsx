@@ -8,11 +8,13 @@ import {
   fetchActiveLiveSession,
   startLiveSession,
   startWorkoutLiveSession,
+  isSubscriptionRequired,
   type DashboardBlockResponse,
   type LiveSessionResponse,
   type ProgramInclusionResponseV2,
   type TrainingPlanResponseV2,
 } from "./apiV2";
+import { fetchSubscription } from "./api";
 import { BackChevron } from "./BackChevron";
 import { drainQueuedFinish, loadLocalSession } from "./offlineSession";
 import { classifyActiveConflict, type ActiveConflictKind } from "./sessionConflict";
@@ -67,6 +69,8 @@ type Props = {
    * PlanItem. Курс/readiness не применимы; если уже идёт другая живая
    * сессия — предлагаем продолжить её (одна активная сессия на пользователя). */
   workoutId?: number;
+  /** #300 / D6: «Открыть подписку» на экране «нужна подписка» (курсовая тренировка без действующей подписки). */
+  onOpenSubscription?: () => void;
 };
 
 /**
@@ -103,6 +107,7 @@ type ScreenState =
   | { phase: "error"; message: string; title?: string; retryStart?: number[] }
   | { phase: "no_course"; title?: string }
   | { phase: "blocked"; title?: string }
+  | { phase: "subscription_required"; title?: string }
   | { phase: "needs_assessment"; title?: string }
   | { phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[] }
   | { phase: "ready_generic"; programName: string; planItemIds: number[] }
@@ -145,7 +150,7 @@ function planItemIdsForInclusion(plan: TrainingPlanResponseV2, inclusion: Progra
 }
 
 export function SessionPreScreen({
-  initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds, manual, title, workoutId,
+  initDataRaw, onStarted, onGoToWorkout, planItemIds: explicitPlanItemIds, manual, title, workoutId, onOpenSubscription,
 }: Props) {
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   // Активная сессия, мешающая старту по workoutId: предлагаем её продолжить.
@@ -216,6 +221,16 @@ export function SessionPreScreen({
       }
 
       try {
+        // #300 / D6: подсказка для UI — курсовая тренировка без подписки сразу ведёт на экран подписки. Истина — 402
+        // от сервера на старте (handleStart); сбой этой проверки ничего не блокирует.
+        const subscription = await fetchSubscription(initDataRaw).catch(() => null);
+        if (cancelled) {
+          return;
+        }
+        if (subscription !== null && subscription.is_onboarded && !subscription.has_access) {
+          setState({ phase: "subscription_required", title });
+          return;
+        }
         const plan = await fetchPlan(initDataRaw);
         const inclusion = findActiveInclusion(plan);
         if (plan === null || inclusion === null) {
@@ -317,6 +332,11 @@ export function SessionPreScreen({
       const session = await startLiveSession(initDataRaw, clientSessionId, planItemIds);
       onStarted(session);
     } catch (error) {
+      // 402 subscription_required: клиент считал, что доступ есть, а сервер — нет (истёк/кэш) — тот же экран подписки.
+      if (isSubscriptionRequired(error)) {
+        setState({ phase: "subscription_required", title: currentTitle });
+        return;
+      }
       // 409 active_session_exists: на сервере уже идёт другая тренировка — тот же экран конфликта,
       // что и при заранее известной активной (продолжить текущую).
       if ((error as { status?: number }).status === 409) {
@@ -361,6 +381,32 @@ export function SessionPreScreen({
           <Button className="action-button vs-primary" size="l" stretched onClick={() => handleRetryError(state.retryStart, state.title)}>
             Повторить
           </Button>
+          <Button className="action-button vs-plain" size="l" stretched mode="plain" onClick={onGoToWorkout}>
+            Назад
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (state.phase === "subscription_required") {
+    const displayTitle = state.title ?? title ?? "Сессия";
+    return (
+      <div className="pre-screen" data-testid="subscription-required">
+        <PreHeader title={displayTitle} eyebrow="Тренировка" />
+        <p className="screen-message">
+          Тренировки по курсу доступны с действующей подпиской — пробный период или оплаченный доступ закончились.
+          План и история сохранены: после продления «Начать» заработает без пересборки. Свои тренировки
+          доступны и без подписки.
+        </p>
+        <p className="screen-message">
+          Оформить подписку можно на экране «Подписка» или в боте — оплата картой или Telegram Stars.
+        </p>
+        <div className="pre-transport">
+          {onOpenSubscription !== undefined && (
+            <Button className="action-button vs-primary" size="l" stretched onClick={onOpenSubscription}>
+              Открыть подписку
+            </Button>
+          )}
           <Button className="action-button vs-plain" size="l" stretched mode="plain" onClick={onGoToWorkout}>
             Назад
           </Button>

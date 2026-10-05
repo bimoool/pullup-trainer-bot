@@ -514,6 +514,8 @@ export interface SubscriptionResponse {
   status: string | null;
   status_label: string | null;
   expires_at: string | null;
+  /** #300: сервер считает от subscription_expires_at — доступны ли курсовые тренировки. */
+  has_access: boolean;
   price_rub: number;
   days: number;
   pricing_text_html: string;

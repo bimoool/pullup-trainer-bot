@@ -4,12 +4,12 @@ PlanItem. Видимость §5 (чужая -> 404), идемпотентнос
 конфликт с уже активной сессией (409), прогрессия/счётчики плана не затронуты."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import User
+from app.db.models import SubscriptionStatus, User
 from app.db.models_program import Complex, ComplexItem, Exercise, SessionPlanItem, TrainingSession
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType
@@ -23,6 +23,10 @@ async def _user(session: AsyncSession, telegram_id: int) -> User:
     users = UserRepository(session)
     user = await users.create(telegram_id=telegram_id, username=f"u{telegram_id}")
     await users.complete_onboarding(user.id, datetime.now(UTC))
+    # действующий триал: старт курсовой строки плана требует подписки (#300)
+    await users.update_subscription_cache(
+        user.id, status=SubscriptionStatus.TRIAL, expires_at=datetime.now(UTC) + timedelta(days=14),
+    )
     return user
 
 

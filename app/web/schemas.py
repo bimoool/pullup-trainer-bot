@@ -605,6 +605,9 @@ class SubscriptionResponse(BaseModel):
     status: str | None = None
     status_label: str | None = None
     expires_at: str | None = None
+    # #300 / D6: серверный ответ «доступны ли курсовые тренировки» (от subscription_expires_at). Подсказка для UI;
+    # истина — 402 subscription_required на старте.
+    has_access: bool = False
     price_rub: int
     days: int
     pricing_text_html: str

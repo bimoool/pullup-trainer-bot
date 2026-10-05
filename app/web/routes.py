@@ -451,6 +451,8 @@ async def get_profile(
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return ProfileResponse(is_onboarded=False)
+    # #300 (FD-11): кэш статуса не переводится в EXPIRED сам — пересчёт от subscription_expires_at перед показом.
+    user = await SubscriptionService(session).refresh_status(user.id, now=datetime.now(UTC))
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
     # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2). Legacy
@@ -1330,7 +1332,11 @@ async def get_subscription(
     status_value = None
     status_label = None
     expires_at = None
+    has_access = False
     if user is not None:
+        # #300 (FD-11): статус для показа и has_access — от subscription_expires_at, не от залипшего кэша.
+        user = await SubscriptionService(session).refresh_status(user.id, now=datetime.now(UTC))
+        has_access = SubscriptionService.is_entitled(user, now=datetime.now(UTC))
         status_value = user.subscription_status.value
         status_label = format_subscription_status(user)
         if user.subscription_status in (SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE):
@@ -1345,6 +1351,7 @@ async def get_subscription(
         status=status_value,
         status_label=status_label,
         expires_at=expires_at,
+        has_access=has_access,
         price_rub=SUBSCRIPTION_PRICE_RUB,
         days=SUBSCRIPTION_DAYS,
         pricing_text_html=texts.PRICING_TEXT,
