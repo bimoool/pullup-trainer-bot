@@ -40,12 +40,15 @@ VPS — 1 vCPU / 1 GB RAM, и на нём живут другие проекты
 - Порты: только `127.0.0.1`, наружу отдаёт nginx/Caddy на хосте. Занятый порт = чужой
   контейнер, проверять `docker ps -a | grep <порт>` до паники.
 
-## Известная заноза
+## Что в образе
 
-`Dockerfile` копирует в образ только `app/`, `pyproject.toml`, `alembic.ini` — **`scripts/` в образ
-не попадает**. Любой разовый скрипт (`backfill_multi_program.py` и т.п.) внутри контейнера
-не запустится без `docker cp`. Если скрипт нужен в проде регулярно — чинить Dockerfile,
-а не обходить копированием.
+`Dockerfile` (образ `app`) копирует `app/`, `scripts/`, `pyproject.toml`, `alembic.ini` (`COPY scripts ./scripts`,
+с 1685a76) — разовые скрипты (`backfill_multi_program.py`, `seed_*.py`) внутри контейнера `app` доступны:
+`docker compose run --rm app python scripts/<x>.py`. Образ `web` (`Dockerfile.web`) копирует только `app/`, без
+`scripts/`. **Деплой не запускает ни один скрипт** (`deploy/deploy-run.sh`: build → `alembic upgrade head` → up),
+поэтому всё, что должно быть на каждой установке, обязано ехать миграцией: системный каталог (программа
+«Подтягивания», библиотека упражнений, готовые тренировки) — data-миграция `a4c8e1f7b2d9`
+(`docs/SYSTEM_CONTENT_CONTRACT.md`, #296). Скрипты — ручные инструменты оператора, не часть деплоя.
 
 ## Смена схемы БД
 
