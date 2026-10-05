@@ -12,7 +12,23 @@ from app.db.models_program import (
     ProgramItem,
     ProgressionStrategyProfile,
 )
-from app.domain.multi_program import MetricType
+from app.domain.multi_program import (
+    ELECTIVE_SUBCATEGORY_PREFIX,
+    INTERNAL_ROLE_SUBCATEGORIES,
+    MetricType,
+    is_internal_exercise_subcategory,
+)
+
+
+def public_exercise_filter():
+    """SQL-предикат «упражнение может быть в публичной библиотеке» (#296, D3): не служебное —
+    не роль STEP-программы (block_a/block_b) и не факультатив (elective_*). subcategory=NULL
+    (обычные библиотечные упражнения) проходит явным IS NULL: NOT IN в SQL сам отбросил бы NULL.
+    Зеркало app.domain.multi_program.is_internal_exercise_subcategory."""
+    return Exercise.subcategory.is_(None) | (
+        Exercise.subcategory.not_in(INTERNAL_ROLE_SUBCATEGORIES)
+        & ~Exercise.subcategory.startswith(ELECTIVE_SUBCATEGORY_PREFIX, autoescape=True)
+    )
 
 
 class ProgramRepository:
@@ -175,6 +191,19 @@ class ProgramRepository:
         )
         return list(result.scalars().all())
 
+    async def list_system_workouts(self) -> list[Complex]:
+        """Каталог готовых тренировок (#296, D2): системные Workout (source_type='system',
+        без владельца, не архивные), видимые всем. Отдельно от list_user_workouts: «Мои
+        тренировки» — только свои, каталог — общий и только для чтения."""
+        result = await self._session.execute(
+            select(Complex)
+            .where(
+                Complex.source_type == "system", Complex.owner_user_id.is_(None), Complex.archived_at.is_(None),
+            )
+            .order_by(Complex.id),
+        )
+        return list(result.scalars().all())
+
     async def list_complex_items_by_complex_ids(self, complex_ids: list[int]) -> dict[int, list[ComplexItem]]:
         """Состав нескольких Workout ОДНИМ запросом (по order_index) — для
         списка "Мои тренировки" без N+1. Workout без items остаётся в словаре
@@ -193,14 +222,40 @@ class ProgramRepository:
 
     async def get_publicly_attachable_exercise_for_user(self, exercise_id: int, user_id: int) -> Exercise | None:
         """G2 (REBUILD-1, R4) — Exercise, который обычный пользователь вправе
-        привязать к своему плану публичным POST /plan-items: видимый ему (system
-        или свой user) И не внутренняя STEP-роль (subcategory block_a/block_b —
-        та же граница, что у публичной библиотеки GET /exercises). None —
-        роут отвечает 404 (не отличая "нет" от "чужое/внутреннее")."""
+        привязать публичным путём: видимый ему (system или свой user) И не внутренняя
+        STEP-роль (subcategory block_a/block_b — та же граница, что у публичной
+        библиотеки GET /exercises). Используется и POST /plan-items, и записью
+        Журнала (POST /sessions); факультативы (elective_*) здесь НЕ отсекаются — у
+        Журнала на них есть собственные правила (#279); для плана см.
+        get_plan_attachable_exercise_for_user. None — роут отвечает 404/422 (не
+        отличая "нет" от "чужое/внутреннее")."""
         exercise = await self.get_visible_exercise_for_user(exercise_id, user_id)
-        if exercise is None or exercise.subcategory in ("block_a", "block_b"):
+        if exercise is None or exercise.subcategory in INTERNAL_ROLE_SUBCATEGORIES:
             return None
         return exercise
+
+    async def get_plan_attachable_exercise_for_user(self, exercise_id: int, user_id: int) -> Exercise | None:
+        """Exercise для публичного POST /plan-items (#296, D3): как
+        get_publicly_attachable_exercise_for_user, но без ЛЮБОГО служебного упражнения —
+        и факультативы (elective_*, «вне плана и прогрессии», app.domain.electives) тоже
+        не привязываются к плану: в публичной библиотеке их нет (public_exercise_filter)."""
+        exercise = await self.get_publicly_attachable_exercise_for_user(exercise_id, user_id)
+        if exercise is None or is_internal_exercise_subcategory(exercise.subcategory):
+            return None
+        return exercise
+
+    async def get_publicly_attachable_workout_for_user(self, complex_id: int, user_id: int) -> Complex | None:
+        """Workout, который обычный пользователь вправе привязать к своему плану публичным
+        POST /plan-items: СВОЙ user Workout или готовая системная тренировка каталога (#296, D2:
+        source_type='system', без владельца, не архивная — те же, что отдаёт GET /workouts/catalog).
+        Чужой приватный, архивный и «system с владельцем» (нарушенный инвариант) — None (роут
+        отвечает 404, не различая «нет» и «чужое»)."""
+        complex_ = await self.get_visible_workout_for_user(complex_id, user_id)
+        if complex_ is None:
+            return None
+        if complex_.source_type == "system" and complex_.owner_user_id is not None:
+            return None
+        return complex_
 
     async def get_visible_workout_for_user(self, complex_id: int, user_id: int) -> Complex | None:
         """Тот же get_X_for_user-паттерн, что уже системно используется в

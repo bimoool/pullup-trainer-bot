@@ -161,13 +161,15 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           </span>
           <span className="workout-detail-action-label">Добавить в план</span>
         </button>
-        {/* Доступное имя = видимая подпись (WCAG 2.5.3). */}
-        <button type="button" className="workout-detail-action" onClick={() => onEdit(workout.id)}>
-          <span className="workout-detail-action-icon" aria-hidden="true">
-            <ActionIcon path="M4.5 19.5l1-4L16 5l3 3-10.5 10.5zM14 7l3 3" />
-          </span>
-          <span className="workout-detail-action-label">Изменить</span>
-        </button>
+        {/* Доступное имя = видимая подпись (WCAG 2.5.3). Готовую (системную) тренировку не правят. */}
+        {workout.source_type === "user" && (
+          <button type="button" className="workout-detail-action" onClick={() => onEdit(workout.id)}>
+            <span className="workout-detail-action-icon" aria-hidden="true">
+              <ActionIcon path="M4.5 19.5l1-4L16 5l3 3-10.5 10.5zM14 7l3 3" />
+            </span>
+            <span className="workout-detail-action-label">Изменить</span>
+          </button>
+        )}
       </div>
 
       <p className="section-title">Упражнения</p>

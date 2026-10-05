@@ -4,9 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import Collection, CollectionItem, Exercise, Program
-
-# Внутренние step-роли программ (subcategory) — не публичные упражнения, как в GET /exercises.
-_INTERNAL_EXERCISE_SUBCATEGORIES = ("block_a", "block_b")
+from app.db.repositories.programs import public_exercise_filter
 
 
 @dataclass(frozen=True)
@@ -67,7 +65,7 @@ class CollectionRepository:
                 select(Exercise).where(
                     Exercise.id.in_(exercise_ids),
                     Exercise.source_type == "system",
-                    Exercise.subcategory.is_(None) | Exercise.subcategory.not_in(_INTERNAL_EXERCISE_SUBCATEGORIES),
+                    public_exercise_filter(),
                 ),
             )).scalars().all()
         } if exercise_ids else {}

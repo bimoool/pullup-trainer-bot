@@ -27,7 +27,7 @@ from app.db.models_program import (
     SessionStatus,
 )
 from app.db.repositories.favorites import FavoriteRepository
-from app.db.repositories.programs import ProgramRepository
+from app.db.repositories.programs import ProgramRepository, public_exercise_filter
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
     BatchSetLogInput,
@@ -367,11 +367,12 @@ async def get_program_schedule(
 
 
 async def _favorite_target_exists(session: AsyncSession, user_id: int, target_type: str, target_id: int) -> bool:
-    """Избранное — только видимое пользователю: свои user-тренировки и программы
-    каталога (у Program нет флага публикации — каталог виден всем). Остальное — нет."""
+    """Избранное — только видимое пользователю: свои user-тренировки, готовые (system)
+    тренировки каталога и программы каталога (у Program нет флага публикации — каталог виден
+    всем). Остальное — нет."""
     programs = ProgramRepository(session)
     if target_type == "workout":
-        return await programs.get_editable_workout_for_user(target_id, user_id) is not None
+        return await programs.get_publicly_attachable_workout_for_user(target_id, user_id) is not None
     if target_type == "program":
         return await programs.get_by_id(target_id) is not None
     return False
@@ -388,13 +389,14 @@ async def list_favorites(
     programs = ProgramRepository(session)
     rows = await FavoriteRepository(session).list_for_user(user.id)
     workouts = {w.id: w for w in await programs.list_user_workouts(user.id)}
+    workouts.update({w.id: w for w in await programs.list_system_workouts()})
     program_by_id = {p.id: p for p in await programs.list_all()}
     favorites: list[FavoriteResponse] = []
     for row in rows:
         if row.target_type == "workout" and row.target_id in workouts:
             favorites.append(FavoriteResponse(
                 target_type="workout", target_id=row.target_id, title=workouts[row.target_id].name,
-                subtitle="Своя тренировка",
+                subtitle="Своя тренировка" if workouts[row.target_id].source_type == "user" else "Готовая тренировка",
             ))
         elif row.target_type == "program" and row.target_id in program_by_id:
             program = program_by_id[row.target_id]
@@ -441,7 +443,8 @@ async def list_exercises(
 ) -> ExerciseListResponse:
     """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
     Не требует admin-доступа (обычный пользователь должен пользоваться
-    библиотекой). Отдаёт только поля, реально существующие в Exercise
+    библиотекой). Служебные упражнения (роли STEP-программы и «Факультатив — …», #296 D3) сюда
+    не попадают — только публичная библиотека. Отдаёт только поля, реально существующие в Exercise
     model — не equipment/difficulty/duration/muscles.
 
     Product-contract gap, найден живым Playwright-прогоном Checkpoint 3
@@ -465,7 +468,7 @@ async def list_exercises(
     user = await _require_user(session, init_data)
     result = await session.execute(
         select(Exercise)
-        .where(Exercise.subcategory.is_(None) | Exercise.subcategory.not_in(["block_a", "block_b"]))
+        .where(public_exercise_filter())
         .where((Exercise.source_type == "system") | (Exercise.owner_user_id == user.id))
         .order_by(Exercise.id),
     )
@@ -550,18 +553,7 @@ async def create_workout(
     return _workout_response(workout)
 
 
-@router_v2.get("/workouts", response_model=WorkoutListResponse)
-async def list_my_workouts(
-    init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
-) -> WorkoutListResponse:
-    """Phase C2 (issue #188) — только user Workout текущего владельца
-    (source_type == user AND owner_user_id == текущий пользователь), для
-    экрана "Мои тренировки" и карточек Главной (items включены). System
-    Workout сюда намеренно не входит — публичного каталога нет."""
-    user = await _require_user(session, init_data)
-    programs = ProgramRepository(session)
-    workouts = await programs.list_user_workouts(user.id)
+async def _workout_list_response(programs: ProgramRepository, session: AsyncSession, workouts: list[Complex]) -> WorkoutListResponse:
     # Состав всех тренировок — двумя запросами на весь список (items и имена
     # упражнений), не по запросу на каждую: карточкам Главной нужны items.
     items_by_workout = await programs.list_complex_items_by_complex_ids([w.id for w in workouts])
@@ -575,6 +567,34 @@ async def list_my_workouts(
             for w in workouts
         ],
     )
+
+
+@router_v2.get("/workouts", response_model=WorkoutListResponse)
+async def list_my_workouts(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutListResponse:
+    """Phase C2 (issue #188) — только user Workout текущего владельца
+    (source_type == user AND owner_user_id == текущий пользователь), для
+    экрана "Мои тренировки" и карточек Главной (items включены). System
+    Workout сюда намеренно не входит — они в GET /workouts/catalog."""
+    user = await _require_user(session, init_data)
+    programs = ProgramRepository(session)
+    return await _workout_list_response(programs, session, await programs.list_user_workouts(user.id))
+
+
+# Объявлен ДО /workouts/{workout_id}: иначе «catalog» разбирался бы как workout_id.
+@router_v2.get("/workouts/catalog", response_model=WorkoutListResponse)
+async def list_system_workouts(
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutListResponse:
+    """Каталог готовых тренировок (issue #296, D2): системные Workout (source_type='system'),
+    видимые любому пользователю, только для чтения. Открыть деталь/«Начать»/«Добавить в план» можно
+    теми же эндпоинтами, что для своих (видимость system — get_visible_workout_for_user)."""
+    await _require_user(session, init_data)
+    programs = ProgramRepository(session)
+    return await _workout_list_response(programs, session, await programs.list_system_workouts())
 
 
 @router_v2.get("/workouts/{workout_id}", response_model=WorkoutResponse)
@@ -1008,16 +1028,16 @@ async def create_plan_item(
     # неразличимы: одинаковый 404.
     #   * exercise_id — system Exercise из публичной библиотеки или СВОЙ
     #     user Exercise; не чужой и не внутренняя STEP-роль;
-    #   * complex_id — только СВОЙ user Workout; system/программные Complex и
-    #     чужие Workout — отказ. Внутренние пути материализации
-    #     (ProgramInclusion/STEP) эту проверку не проходят: они не идут через
-    #     публичный эндпоинт.
+    #   * complex_id — СВОЙ user Workout или готовая системная тренировка каталога
+    #     (source_type='system', без владельца, #296 D2); чужие приватные Workout и
+    #     архивные — отказ. Внутренние пути материализации (ProgramInclusion/STEP)
+    #     эту проверку не проходят: они не идут через публичный эндпоинт.
     if body.exercise_id is not None and (
-        await programs.get_publicly_attachable_exercise_for_user(body.exercise_id, user.id) is None
+        await programs.get_plan_attachable_exercise_for_user(body.exercise_id, user.id) is None
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
     if body.complex_id is not None and (
-        await programs.get_editable_workout_for_user(body.complex_id, user.id) is None
+        await programs.get_publicly_attachable_workout_for_user(body.complex_id, user.id) is None
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
 

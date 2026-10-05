@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  fetchExercises, fetchPrograms, listAssessments, listFavorites, listWorkouts,
+  fetchExercises, fetchPrograms, listAssessments, listFavorites, listSystemWorkouts, listWorkouts,
   type AssessmentProtocolV2, type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { formatLastResult } from "./assessmentsFormat";
@@ -49,12 +49,17 @@ export function SearchScreen({
     let cancelled = false;
     Promise.all([
       fetchPrograms(initDataRaw), listWorkouts(initDataRaw), fetchExercises(initDataRaw), listFavorites(initDataRaw),
+      // Готовые тренировки (#296) — необязательная группа, как тесты: их сбой не ломает поиск.
+      listSystemWorkouts(initDataRaw).catch((): WorkoutResponseV2[] => []),
       // Тесты — необязательная группа: их сбой не ломает остальной поиск.
       listAssessments(initDataRaw).catch((): AssessmentProtocolV2[] => []),
     ])
-      .then(([programs, workouts, exercises, favorites, assessments]) => {
+      .then(([programs, ownWorkouts, exercises, favorites, systemWorkouts, assessments]) => {
         if (!cancelled) {
-          setLoad({ phase: "ready", data: { programs, workouts, exercises, favorites, assessments } });
+          setLoad({
+            phase: "ready",
+            data: { programs, workouts: [...ownWorkouts, ...systemWorkouts], exercises, favorites, assessments },
+          });
         }
       })
       .catch((error) => {

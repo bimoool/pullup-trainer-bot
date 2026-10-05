@@ -36,7 +36,10 @@ async def _post_plan_item(session: AsyncSession, user: User, **payload):
 async def test_public_plan_items_deny_foreign_and_internal_objects_without_side_effects(session: AsyncSession):
     owner, attacker = await _user(session, 960001), await _user(session, 960002)
     private_workout = await _workout(session, owner, "Приватная")
-    system_complex = await _workout(session, None, "Программный комплекс", source_type="system")
+    # «system с владельцем» — нарушенный инвариант (системный Complex без владельца — готовая
+    # тренировка каталога и привязывается, #296); такой не привязывается.
+    weird_owner = await _user(session, 960009)
+    system_complex = await _workout(session, weird_owner, "Системный с владельцем", source_type="system")
     foreign_exercise = Exercise(
         name="Чужое", metric_type=MetricType.REPS, category="user", source_type="user", owner_user_id=owner.id,
     )
@@ -49,7 +52,7 @@ async def test_public_plan_items_deny_foreign_and_internal_objects_without_side_
 
     attempts = [
         {"complex_id": private_workout.id},  # чужой приватный Workout
-        {"complex_id": system_complex.id},  # системный/программный Complex — не публичный
+        {"complex_id": system_complex.id},  # system-Complex с владельцем — не публичный
         {"exercise_id": foreign_exercise.id},  # чужое пользовательское упражнение
         {"exercise_id": step_role.id},  # внутренняя STEP-роль
         {"complex_id": 999_999},

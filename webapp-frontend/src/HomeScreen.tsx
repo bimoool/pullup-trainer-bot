@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Icon } from "./Icon";
 import {
-  createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listWorkouts,
+  createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listSystemWorkouts, listWorkouts,
   type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { AddToPlanScreen } from "./AddToPlanScreen";
@@ -116,6 +116,8 @@ export function HomeScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- только при монтировании.
   }, []);
   const [workoutsReloadKey, setWorkoutsReloadKey] = useState(0);
+  // Готовые (системные) тренировки каталога (#296, D2): необязательная секция — сбой загрузки её просто скрывает.
+  const [systemWorkouts, setSystemWorkouts] = useState<WorkoutResponseV2[]>([]);
   // Избранное (issue #272): null — ещё не загружено/не удалось (ряд тогда скрыт).
   const [favorites, setFavorites] = useState<FavoriteV2[] | null>(null);
   const [favoritesReloadKey, setFavoritesReloadKey] = useState(0);
@@ -163,6 +165,22 @@ export function HomeScreen({
       cancelled = true;
     };
   }, [initDataRaw, workoutsReloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listSystemWorkouts(initDataRaw)
+      .then((list) => {
+        if (!cancelled) {
+          setSystemWorkouts(list);
+        }
+      })
+      .catch(() => {
+        // секция каталога необязательна — без неё Главная работает как раньше
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initDataRaw]);
 
   useEffect(() => {
     let cancelled = false;
@@ -462,6 +480,43 @@ export function HomeScreen({
       ))}
 
       <CollectionsRow initDataRaw={initDataRaw} onOpen={setCollectionId} />
+
+      {systemWorkouts.length > 0 && (
+        <>
+          <div className="home-section-header">
+            <p className="section-title">Готовые тренировки</p>
+          </div>
+          <ul className="home-workout-list" data-testid="system-workouts">
+            {systemWorkouts.map((workout) => {
+              const items = workout.items ?? [];
+              const names = formatExerciseNames(items);
+              const protocol = formatFirstProtocol(items);
+              return (
+                <li key={workout.id}>
+                  <button
+                    type="button"
+                    className="home-workout-card"
+                    data-testid="system-workout-card"
+                    onClick={() => setWorkoutView({ kind: "detail", workoutId: workout.id })}
+                  >
+                    <span className="home-workout-badge" aria-hidden="true">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" focusable="false">
+                        <path d="M3.5 9.5v5M6.5 7v10M17.5 7v10M20.5 9.5v5M6.5 12h11" />
+                      </svg>
+                    </span>
+                    <span className="home-workout-title">{workout.title}</span>
+                    <span className="home-workout-meta">
+                      {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}
+                      {protocol ? ` · ${protocol}` : ""}
+                    </span>
+                    {names && <span className="home-workout-names">{names}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
 
       {workouts.phase === "ready" && <HomePromo kind="create" onClick={() => runPromo("create")} />}
 

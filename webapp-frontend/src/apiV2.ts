@@ -176,6 +176,12 @@ export async function listWorkouts(initDataRaw: string): Promise<WorkoutResponse
   return response.workouts;
 }
 
+/** Каталог готовых (системных) тренировок: общий, только для чтения (#296). */
+export async function listSystemWorkouts(initDataRaw: string): Promise<WorkoutResponseV2[]> {
+  const response = await apiV2Get<{ workouts: WorkoutResponseV2[] }>("/api/v2/workouts/catalog", initDataRaw);
+  return response.workouts;
+}
+
 /** История одной тренировки (Workout Detail): завершённые сессии пользователя,
  * чей замороженный снимок ссылается на этот Workout; новые первыми. */
 export interface WorkoutSessionSummaryV2 {

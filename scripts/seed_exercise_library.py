@@ -3,7 +3,12 @@
 backfill_multi_program.py::seed_catalog).
 
 Production-compatible/idempotent — find-or-create по имени, повторный запуск
-не создаёт дубликаты. Использование:
+не создаёт дубликаты.
+
+С issue #296 системная библиотека (эти два упражнения и подтягивания) ставится data-миграцией
+`a4c8e1f7b2d9` вместе с `alembic upgrade head`: продакшен от этого скрипта НЕ зависит. Тот же
+натуральный ключ (имя + без владельца) — на среде с поставленной миграцией скрипт ничего не
+создаёт. Остаётся ручным инструментом. Использование:
 
     python scripts/seed_exercise_library.py
 """
@@ -12,6 +17,9 @@ import asyncio
 
 from sqlalchemy import select
 
+# Регистрирует таблицу users в metadata: без неё FK exercises.owner_user_id не резолвится и скрипт
+# падает NoReferencedTableError при запуске как `python scripts/<x>.py` (#296, FD-06).
+import app.db.models  # noqa: F401
 from app.db.base import async_session_factory
 from app.db.models_program import Exercise
 from app.domain.multi_program import MetricType

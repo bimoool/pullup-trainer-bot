@@ -1,109 +1,122 @@
-# System content contract (draft, Functional Differential Audit Wave 1, #295)
+# System content contract
 
-Status: **PROPOSAL**. Nothing here is implemented. The proposal comes from Wave 1 finding FD-01 (P0), with FD-06 and FD-07 (see
-`docs/FUNCTIONAL_AUDIT_WAVE_1.md`). It defines the minimum system content that a fresh install and a fresh user need,
-where each piece comes from today, and the delivery options that the owner must choose between.
+Status: **IMPLEMENTED** (issue #296; Functional Differential Audit Wave 1 findings FD-01 P0, FD-06, FD-07 — see
+`docs/FUNCTIONAL_AUDIT_WAVE_1.md`). Owner decisions D1–D5 are final and recorded below. This document is the
+contract for what a fresh install ships, how it ships, and how it is identified.
 
 ## 1. Why this contract exists
 
-The deploy procedure (`deploy/deploy-run.sh:32-38`) runs exactly three steps: `docker compose build app web`, then
-`docker compose run --rm app alembic upgrade head`, then `docker compose up -d app web`. Migrations ship 3 assessment protocols
-and 1 collection with 0 items. They ship **no programs, no exercises and no system workouts**. Verified on
-`pullup_audit_b` (alembic head `9e3f1a4b6c80`): programs=0, exercises=0, complexes=0, program_items=0,
-assessment_protocols=3, collections=1 with 0 collection_items, so the collection is hidden
-(`app/db/repositories/collections.py:87`).
+Before #296, `deploy/deploy-run.sh` ran `docker compose build app web` → `alembic upgrade head` →
+`docker compose up -d app web`, and migrations shipped only 3 assessment protocols and an empty collection. A clean
+install had programs=0, exercises=0, complexes=0: a new user saw «Каталог курсов появится здесь позже.» and the
+primary path (course → plan → Начать) could not start. Content existed only if an operator ran repository scripts by
+hand, and one of them (`seed_exercise_library.py`) crashed standalone. The e2e seeds created programs/exercises
+themselves, so the test suite never noticed.
 
-A fresh user on such an install sees «Каталог курсов появится здесь позже.» (`webapp-frontend/src/HomeScreen.tsx:420-422`), and
-the product's primary path (course → plan → Начать) cannot start. Catalogue content exists only if an operator ran
-repository scripts by hand. The test suite never noticed, because the e2e seeds create programs and library exercises
-themselves (see the false-confidence audit in the main report).
+## 2. Mechanism (D4): idempotent, deterministic Alembic data migration
 
-## 2. Content inventory
+Revision **`a4c8e1f7b2d9`** (`app/db/migrations/versions/a4c8e1f7b2d9_system_content_seed.py`,
+`down_revision = 9e3f1a4b6c80`). Pattern of `f6a7b8c9d0e1` (protocols).
 
-Legend: **clean** = `alembic upgrade head` only (B-fresh-clean). **catalogue** = clean plus `backfill_multi_program.py` plus
-`seed_exercise_library.py` (B-fresh-catalog). Each image column records whether the content is in the image: the `app`
-(bot) image copies `scripts/` (`Dockerfile:11`, commit `1685a76`), and the `web` image (`Dockerfile.web`) copies only `app/`.
-Staging is unreachable from the audit, so every staging cell is **UNKNOWN**; the SQL in §4 settles it.
+- **Additive data only**; schema unchanged; compatible with the previous code.
+- **Find-or-create by a stable natural key** (nothing is updated if found), so environments where
+  `backfill_multi_program.py` / `seed_exercise_library.py` already created rows get **no duplicates**; running the
+  migration twice, `downgrade -1` + `upgrade`, or calling `seed_system_content()` twice is a no-op.
+- **Frozen snapshot, not live constants:** the program config JSON, names, roles and subcategories are literals copied
+  into the migration (value snapshot of `app/domain/constants.py` as of 2026-10-05). A later change of the constants
+  must not retroactively change what this revision writes.
+- **No user-specific rows, ever:** no `TrainingPlan`, `ProgramInclusion`, `PlanWeek`/`PlanItem`, session, subscription
+  or history. `backfill_multi_program.py::backfill_all` (which also enrols every onboarded user) is NOT reused;
+  only the catalogue part of it (`seed_catalog`) has the same shape.
+- **`downgrade` is an intentional no-op:** by downgrade time, plans, course inclusions, frozen session snapshots and
+  user history may reference these rows (`Complex`/`ComplexItem`/`Exercise`/`PlanItem` are never deleted by session
+  operations; constitution V — do not delete history). Rolling the revision back must not destroy data.
+- Production does not depend on manual scripts. `scripts/seed_exercise_library.py`, `seed_collections.py` and
+  `backfill_multi_program.py` remain operator tools (the first now runs standalone, see §6).
 
-| # | Content | EXPECTED IN CLEAN INSTALL? | SOURCE OF CREATION today | MIGRATION? | SEED SCRIPT? | ADMIN-ONLY? (UI to create) | IN DEPLOY IMAGE? | MISSING LOCALLY (clean)? | ON STAGING |
-|---|---|---|---|---|---|---|---|---|---|
-| C1 | Program «Подтягивания» (category `pull_ups`, RECURRING, STEP) + 2 ProgramItems (block A ×3, block B ×3/нед) + ProgressionStrategyProfile STEP | **YES**. This is the product's core value; Home/Планы CTAs assume it (PROJECT_SPEC.md:695-696 «переход на «Главную» с каталогом программ») | `scripts/backfill_multi_program.py::seed_catalog` (`:245-290`). It runs only in a non-dry run, and it also **migrates/enrols every onboarded user without a TrainingPlan** (module docstring §2) | NO | YES (side-effecting backfill, not a pure seed) | NO admin UI or bot command creates programs (no `Program(` outside scripts/tests) | script in `app` image only; not run by deploy | **YES (missing)** | UNKNOWN. Indirect evidence that backfill ran on the owner's environment: #279 / #282 / #284 fixed backfilled elective sessions and backfill duplicates that the owner saw («баг только на develop/staging», `docs/ENGINEERING_NOTES.md:2576-2581`) |
-| C2 | Role exercises «Подтягивания — объём» (`block_a`), «Подтягивания — сила» (`block_b`) | YES (internal, required by C1) | same `seed_catalog` | NO | YES | NO | as C1 | YES | UNKNOWN (as C1) |
-| C3 | Elective exercises «Факультатив — подтягивания на максимум / W / 3 минуты подтягиваний / на объём» (`elective_*`) | YES for migrated history and electives, but **internal**. Today they leak into the public picker/search (FD-07) | same `seed_catalog` | NO | YES | NO | as C1 | YES | UNKNOWN |
-| C4 | Public exercise library: «Планка» (time), «Отжимания» (reps), category «Общая физическая подготовка» | YES (picker must not be empty) | `scripts/seed_exercise_library.py` | NO | YES, but it **crashes as documented** (`NoReferencedTableError exercises.owner_user_id → users`; `:15-16` imports only `models_program`). Works only when `app.db.models` is imported first (FD-06) | NO | in `app` image, not run | YES | UNKNOWN |
-| C5 | **Pull-up library exercises** (e.g. «Подтягивания», «Австралийские подтягивания», negatives, hangs) | **YES (owner decision on the list)**. A fresh custom pull-up workout needs at least one pull-up exercise (B-catalog F-11: search «подтягивания» returns only «Факультатив …») | **nothing**: no script, no migration | NO | NO | NO | — | YES | UNKNOWN (probably absent: no source exists) |
-| C6 | System workouts / complexes (`complexes.source_type='system'`) | **OWNER DECISION**. The reference ships catalogue workouts (GOLDEN_TRACES R-J1 R2/R4: category rows "N Workouts", Workout Detail with Start) | nothing | NO | NO | NO | — | YES (0) | UNKNOWN |
-| C7 | Assessment protocols «Максимум подтягиваний» (reps), «Вис на перекладине, сек» (time), «Подтягивания с весом, кг» (weight) | YES | migration `f6a7b8c9d0e1_assessment_protocols_seed.py` (idempotent `WHERE NOT EXISTS`) | **YES** | — | NO | yes (migrations in `app/`) | **NO (present)** | expected present if staging is at head; verify |
-| C8 | Collection «Начни с подтягиваний» (`start-with-pull-ups`) + items = programs with category `pull_ups` | YES when C1 exists | migration `9e3f1a4b6c80_collections.py` creates the row; it fills items **only if programs already exist at migration time** (`:18-23`, `:64-71`); otherwise `scripts/seed_collections.py` | partly | YES (`seed_collections.py`, not run by any explorer; it imports only `models_program` and repositories, so the same crash class as C4 is INFERRED but untested) | NO | in `app` image, not run | row present, **0 items → hidden** | UNKNOWN |
-| C9 | Collection items for a fresh install where C1 arrives after the migration | YES | `seed_collections.py` only | NO | YES | NO | not run | YES | UNKNOWN |
+## 3. What ships (exact list)
 
-Not system content (created per user, correctly): TrainingPlan, PlanWeek, PlanItem, user Workouts/Exercises, sessions,
-subscriptions, baseline.
+| Content | Natural key | Notes |
+|---|---|---|
+| Strategy profile «Пошаговая прогрессия подтягиваний» (STEP, config `{}`) | `name` | same as `seed_catalog` |
+| Program **«Подтягивания»** (category `pull_ups`, RECURRING, STEP profile, frozen config) | `programs.name` | goal «Рост числа подтягиваний: объём (блок A) + сила (блок Б)»; config = block_a(10/3/20/10), block_b(3/4/7/3), step_pct 0.05, weak_streak 3, set_length 12, min_rest_days 2 |
+| Role exercises «Подтягивания — объём» (`block_a`), «Подтягивания — сила» (`block_b`) + 2 ProgramItems (BASE, ×3/нед, free pool) | exercise `(name, owner IS NULL)`; item `(program_id, exercise_id)` | internal |
+| Elective exercises «Факультатив — подтягивания на максимум / W / 3 минуты подтягиваний / на объём» (`elective_max_reps_ladder` / `_w_ladder` / `_three_minutes` / `_volume_target`) | `(name, owner IS NULL)` | internal; history uses them |
+| **Public library (D1)** — `owner_user_id IS NULL`, `source_type='system'`, no subcategory: «Подтягивания», «Подтягивания с резиной», «Подтягивания с отягощением», «Австралийские подтягивания», «Лопаточные подтягивания» (reps, category «Подтягивания»); «Вис на турнике» (time, «Хват»); «Планка» (time) and «Отжимания» (reps) (category «Общая физическая подготовка») | `(name, owner IS NULL)` | no duplicates of equivalents |
+| **System workouts (D2)** — `Complex(source_type='system', owner NULL)` + 1 `ComplexItem` (exercise «Подтягивания», `sets=0` placeholder as in the Builder, `protocol` = definition JSON) | `(name, source_type='system', owner IS NULL)` | see §4 |
+| Collection item: program «Подтягивания» in `start-with-pull-ups` («Начни с подтягиваний») | `(collection_id, program_id)` | the collection row itself comes from `9e3f1a4b6c80`; the collection is now non-empty, so Home shows it |
+| Assessment protocols (3) | — | unchanged, `f6a7b8c9d0e1` |
 
-## 3. Minimum content for "a fresh user can complete a first workout on every path"
+D5: no second course.
 
-1. **Program path:** ≥1 published program with ≥1 ProgramItem that materialises into the current week (C1, C2).
-2. **Custom path:** a non-empty public library with ≥1 pull-up exercise (C4 plus C5), and internal role/elective exercises
-   hidden from the picker (C3 visibility rule).
-3. **Discovery:** collection C8/C9 non-empty, or no collection row at all. A published but empty row is noise.
-4. **Assessment:** C7 (already satisfied).
-5. Optional, by owner decision: system workouts C6, so that a free workout can start from the catalogue without the builder
-   (the reference's catalogue-first model).
+## 4. System workouts and the protocols chosen (D2)
 
-## 4. Read-only staging verification (owner runs; no writes)
+They are real workouts (open detail → «Начать» builds a frozen snapshot → live session; «Добавить в план»), not fake
+exercise records. The formats are those of the former «Факультатив» types, expressed with the existing protocol v1
+(`docs/adr/WORKOUT_PROTOCOL_V1.md`):
 
-From `/root/pullup-trainer-bot-staging` (staging compose project; adjust the service name if it differs):
+| Workout | Protocol | Why |
+|---|---|---|
+| «Максимум подтягиваний» | `max_effort`, 4 attempts, rest 120 s | the elective was a 4-set max ladder with rest 180/120/60; the protocol carries one rest value, so the middle one |
+| «W-лесенка» | `reps_sets` static, 17 sets × 3 reps, rest 10 s | the W ladder is 5-4-3-2-1-2-3-4-5-4-3-2-1-2-3-4-5 (17 sets, rest 10 s). `reps_sets` takes one reps value per set, so the target is the average (53/17 ≈ 3); the exact ladder is a known limitation (needs a per-set reps protocol — not invented here) |
+| «3 минуты подтягиваний» | `interval` 180 s, 10 s work / 20 s rest, starts with work | exactly the ADR interval example |
+| «Объём ×5» | `reps_sets` static, 5 sets × 8 reps, rest 120 s | «на объём» = 5 sets of 6–10 reps (the midpoint) |
+
+## 5. Visibility rules
+
+- **Public exercise library** (`GET /api/v2/exercises`, picker, search, collections) = system exercises (any
+  `owner`-less, `source_type='system'`) plus the user's own, **excluding internal ones** — `subcategory` in
+  `block_a`/`block_b` (STEP roles) or starting with `elective_` (D3). One definition:
+  `app/domain/multi_program.py::is_internal_exercise_subcategory` and its SQL mirror
+  `app/db/repositories/programs.py::public_exercise_filter`. The boundary is by `subcategory`, not by name (a user's
+  own exercise called «Факультатив …» is not hidden). Internal exercises stay in the DB and in history; the public
+  `POST /plan-items` rejects them (404).
+- **Workout catalogue** (`GET /api/v2/workouts/catalog`): `source_type='system' AND owner_user_id IS NULL AND
+  archived_at IS NULL`, read-only, visible to every user. «Мои тренировки» (`GET /api/v2/workouts`) stays own-only.
+  A system workout can be opened, started, added to a plan and favorited; it cannot be edited or deleted (404).
+- Home shows the programs catalogue (including «Подтягивания»), the «Подборки» row (non-empty) and a «Готовые
+  тренировки» section; search covers programs, own and ready-made workouts, exercises and tests.
+
+## 6. Scripts and e2e
+
+- `python scripts/seed_exercise_library.py` runs in a clean interpreter (it now registers the `users` table; it used to
+  fail with `NoReferencedTableError exercises.owner_user_id → users` on INSERT). Same natural key as the migration, so
+  on a migrated DB it creates nothing. `seed_collections.py` has no such bug (verified).
+- e2e: `scripts/e2e_seed.py` no longer creates a second global «Подтягивания» program; seeds that need it call
+  `seed_catalog`, which finds the shipped rows. The claim «the catalogue comes from migrations» is true exactly for the
+  shipped content in §3; other e2e programs («Свип: курс», «Дискавери: …») are still created by their seeds.
+- The fresh-install journey (`webapp-frontend/e2e/scenarios/fix-wave1/fresh-install-content.spec.ts`) runs against a
+  DB with migrations only (no seeds, new UI-onboarded user).
+
+## 7. Tests
+
+- `tests/test_scripts/test_system_content_migration.py` — deploy-level: scratch DB, `alembic upgrade head` as a
+  subprocess; asserts program, library, workouts, collection item, zero user rows; double upgrade, `downgrade -1` +
+  `upgrade`, double `seed_system_content()`; a DB where `seed_catalog` / `seed_exercise_library` (/ `seed_collections`)
+  ran before the migration gets no duplicates.
+- `tests/test_scripts/test_content_scripts_standalone.py` — content scripts in a clean interpreter, exit 0, idempotent
+  (on an empty library, where the INSERT path that used to crash actually runs).
+- `tests/test_web/test_v2_system_content.py` — public library excludes internal exercises, catalogue endpoint, every
+  system workout opens and starts, add to plan, not editable, favorites.
+- conftest truncates `complexes` too (the migration ships system `Complex` rows that would otherwise survive).
+
+## 8. Read-only staging verification (owner runs; no writes)
+
+From `/root/pullup-trainer-bot-staging` (adjust the service name if it differs). After the deploy that includes
+`a4c8e1f7b2d9` all of the following must be ≥ the numbers in §3:
 ```sql
 -- docker compose exec db psql -U <user> -d <db> -c "<query>"
 SELECT 'programs' k, count(*) FROM programs
 UNION ALL SELECT 'programs_pull_ups', count(*) FROM programs WHERE category = 'pull_ups'
 UNION ALL SELECT 'program_items', count(*) FROM program_items
-UNION ALL SELECT 'exercises_system', count(*) FROM exercises WHERE owner_user_id IS NULL
 UNION ALL SELECT 'exercises_public_library', count(*) FROM exercises WHERE owner_user_id IS NULL AND subcategory IS NULL
-UNION ALL SELECT 'exercises_internal_roles', count(*) FROM exercises WHERE owner_user_id IS NULL AND (subcategory IN ('block_a','block_b') OR subcategory LIKE 'elective_%')
-UNION ALL SELECT 'complexes_system', count(*) FROM complexes WHERE owner_user_id IS NULL
-UNION ALL SELECT 'assessment_protocols', count(*) FROM assessment_protocols
-UNION ALL SELECT 'collections_published', count(*) FROM collections WHERE is_published
+UNION ALL SELECT 'exercises_internal_roles', count(*) FROM exercises WHERE owner_user_id IS NULL AND (subcategory IN ('block_a','block_b') OR subcategory LIKE 'elective\_%')
+UNION ALL SELECT 'complexes_system', count(*) FROM complexes WHERE owner_user_id IS NULL AND source_type = 'system'
 UNION ALL SELECT 'collection_items', count(*) FROM collection_items
-UNION ALL SELECT 'orphan_manual_plan_items (FD-02)', count(*) FROM plan_items WHERE plan_week_id IS NULL AND program_inclusion_id IS NULL
-UNION ALL SELECT 'users_cache_active_but_expired (FD-05/FD-11)', count(*) FROM users
-          WHERE subscription_status::text ILIKE ANY (ARRAY['trial','active']) AND subscription_expires_at < now();
-SELECT name, category, structure_type, created_at FROM programs ORDER BY id;
-SELECT id, name, subcategory, source_type FROM exercises WHERE owner_user_id IS NULL ORDER BY id;
+UNION ALL SELECT 'duplicate_system_exercise_names', count(*) FROM (SELECT name FROM exercises WHERE owner_user_id IS NULL GROUP BY name HAVING count(*) > 1) d
+UNION ALL SELECT 'duplicate_program_names', count(*) FROM (SELECT name FROM programs GROUP BY name HAVING count(*) > 1) d;
 ```
-Interpretation: programs=0 means FD-01 is live on staging (the owner's "no plan" and "cannot start" symptoms follow
-directly). programs≥1 with exercises_public_library=0 means FD-07 / C5 is live (the "custom workout: no exercises"
-symptom). Any orphan_manual_plan_items row means FD-02 is confirmed on staging.
-
-## 5. Delivery mechanism options (propose; do not implement)
-
-All options must respect `.claude/skills/migrations-safe/SKILL.md`: additive only, build → migrate → up order, data
-scripts have a truly dry `--dry-run` and are idempotent. They must also respect constitution V (archive, do not delete)
-and VII (verify on real data after deploy).
-
-| Option | How | Pros | Cons / risks |
-|---|---|---|---|
-| **A. Data migration** (Alembic revision inserting C1–C5/C8 with `WHERE NOT EXISTS` by stable key) | Same pattern as `f6a7b8c9d0e1` (protocols) and `9e3f1a4b6c80` (collections) | Runs automatically in the existing deploy step; every install (prod, staging, CI, local, `pullup_test`) gets identical content; testable with a migrate-from-zero pytest | Content changes need new revisions. Program config/snapshot JSON lives in a migration and must stay frozen (a snapshot, not live constants; follow `_program_config_snapshot`). Must not duplicate rows that the earlier manual backfill created by name; needs a stable natural key (e.g. a new nullable `slug`, an additive column) or a name match. No enrolment of users. |
-| **B. Idempotent startup seed** (app/web startup or a one-shot `seed` service in compose) | A pure `seed_system_content()` extracted from `seed_catalog` plus the library, called on boot | Content lives in Python next to the domain constants; easy to extend | Races between `app` and `web` booting together (needs an advisory lock); hidden write on every start; violates "explicit deploy steps" (constitution VII) unless it is a visible compose step; a failure mode at boot |
-| **C. Run scripts from the image as an explicit deploy step** (`docker compose run --rm app python scripts/seed_system_content.py` after alembic in `deploy-run.sh`) | `scripts/` is already in the `app` image (`Dockerfile:11`) | Smallest change; explicit and visible; dry-run available | Needs a new **pure** seed script: `backfill_multi_program.py` must NOT be reused, because a re-run enrols every onboarded user without a plan into «Подтягивания» and migrates history. `seed_exercise_library.py` must first be fixed (import `app.db.models`). CI/e2e/local need the same step, otherwise the illusion persists. |
-
-Judge's recommendation, for the owner to confirm: **A** for the immutable minimum (C1/C2/C3/C4/C5/C8 items), because it is the only
-option that makes every environment, including `pullup_test`, equal by construction. Use **C** only for content that the owner
-expects to edit often. In every option: add a deploy-level test that migrates an empty DB to head, starts the app with no seeds,
-and asserts `GET /api/v2/programs` ≥1 and the public library ≥ the agreed list. Also remove the program and library creation
-from `scripts/e2e_seed.py` (or assert that it is a no-op), so that e2e runs against the shipped content.
-
-Data cleanup that accompanies the content fix (propose): orphan manual `plan_items` with `plan_week_id IS NULL` (FD-02). Per
-constitution V, attach them to the plan's current week or archive them. Do not `DELETE` them. Count them first with the §4 query.
-
-## 6. Owner decisions required
-
-1. **D1** Which pull-up exercises ship in the public library (names, metric type, category label in Russian, not the
-   `pull_ups` slug). Minimum proposal: «Подтягивания» (reps), «Австралийские подтягивания» (reps), «Негативные подтягивания»
-   (reps), «Вис на перекладине» (time).
-2. **D2** Whether system workouts (C6) ship, and which ones (the reference is catalogue-first).
-3. **D3** Whether «Факультатив — …» exercises stay searchable for new users or become internal only (history keeps them).
-4. **D4** Delivery mechanism A, B or C (§5).
-5. **D5** Whether a second program ships at launch (PROJECT_SPEC/plan-and-specs §16 lists "Второй курс" as an owner input).
-6. **D6** Confirm the subscription default in `docs/plan-and-specs.md` §14 (this governs FD-05; not catalogue, but it decides
-   whether catalogue courses are paid content).
+`duplicate_*` must be 0 on an environment that never ran the scripts twice; on an environment where an operator ran
+them (or e2e seeds ran), duplicates that predate this migration are not touched by it (find-or-create never deletes).
+Per constitution VII, verify on the real environment after the deploy: `GET /api/v2/programs`,
+`GET /api/v2/exercises`, `GET /api/v2/workouts/catalog` each non-empty for a fresh user.

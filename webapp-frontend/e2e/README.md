@@ -126,3 +126,11 @@ npx playwright test builder-execution journal-v2 analytics-v2 --workers=1
 Сценарии `builder-execution` и `journal-v2` идут по реальному времени (interval 15 с). Сценарии
 `plans-manual-session`, `plans-start-session`, `journal-combined`, `plans-grouping` устарели
 относительно текущих экранов и падают и на базе `830f205` (см. `docs/ENGINEERING_NOTES.md`).
+
+## Свежая установка: `scenarios/fix-wave1/fresh-install-content.spec.ts` (#296)
+
+Единственный спек, который НЕ использует `scripts/e2e_seed.py`: каждый тест — новый Telegram-пользователь,
+онбординг через UI, дальше только клики. Проверяет, что поставляемый миграцией контент (программа
+«Подтягивания», библиотека упражнений, готовые тренировки — `docs/SYSTEM_CONTENT_CONTRACT.md`) виден и
+рабочий. Команда запуска против БД «только миграции» — в шапке самого файла. Каталог из миграций — это
+ровно поставляемый контент; остальные e2e-программы по-прежнему создают сиды.
