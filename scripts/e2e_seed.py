@@ -134,6 +134,18 @@ _QUESTIONNAIRE_DEFAULTS = {
 }
 
 
+async def _shipped_pull_ups_program(session: AsyncSession) -> Program:
+    """Глобальная программа «Подтягивания» (с её ролями block_a/block_b и ProgramItem'ами) поставляется
+    data-миграцией a4c8e1f7b2d9 вместе с `alembic upgrade head` (#296) — сид НЕ заводит вторую с тем же
+    именем (иначе Главная показывала бы дубли). `seed_catalog` — find-or-create по имени: на мигрированной
+    БД (CI/e2e) возвращает поставленные строки, на голой (pytest, где conftest чистит каталог) создаёт те
+    же. Пользователей он не трогает (в отличие от backfill_all)."""
+    from scripts.backfill_multi_program import seed_catalog
+
+    catalog = await seed_catalog(session)
+    return await session.get(Program, catalog.program_id)
+
+
 async def seed_not_onboarded(session: AsyncSession, telegram_id: int) -> None:
     """Нарочно пустая функция — "не онбордился" означает отсутствие строки
     users вообще (см. app/web/routes.py::get_hello), не отдельное
@@ -521,29 +533,7 @@ async def seed_plan_week_add_exercise(session: AsyncSession, telegram_id: int) -
     user = await _onboard(session, telegram_id)
     await seed_exercise_library(session)
 
-    program = Program(
-        name="Подтягивания", goal="e2e", structure_type=ProgramStructureType.RECURRING,
-        category="e2e_add_exercise", config={},
-    )
-    session.add(program)
-    await session.flush()
-
-    block_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_add_exercise")
-    block_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_add_exercise")
-    session.add_all([block_a, block_b])
-    await session.flush()
-
-    session.add_all([
-        ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
-            count_per_week=3, day_of_week=None,
-        ),
-        ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
-            count_per_week=3, day_of_week=None,
-        ),
-    ])
-    await session.flush()
+    program = await _shipped_pull_ups_program(session)
 
     await ProgramInclusionService(session).create_inclusion(
         user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
@@ -562,39 +552,7 @@ async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) 
     too_early только если есть last_sessions, у новой инклюзии их нет —
     "ready" гарантирован без манипуляции датами."""
     user = await _onboard(session, telegram_id)
-
-    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
-    session.add(profile)
-    await session.flush()
-
-    program = Program(
-        name="Подтягивания", goal="e2e", structure_type=ProgramStructureType.RECURRING,
-        category="e2e_start_session", progression_strategy_id=profile.id,
-        config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
-    )
-    session.add(program)
-    await session.flush()
-
-    block_a = Exercise(
-        name="Блок A", metric_type=MetricType.REPS, category="e2e_start_session", subcategory="block_a",
-    )
-    block_b = Exercise(
-        name="Блок Б", metric_type=MetricType.REPS, category="e2e_start_session", subcategory="block_b",
-    )
-    session.add_all([block_a, block_b])
-    await session.flush()
-
-    session.add_all([
-        ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
-            count_per_week=3, day_of_week=None,
-        ),
-        ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
-            count_per_week=3, day_of_week=None,
-        ),
-    ])
-    await session.flush()
+    program = await _shipped_pull_ups_program(session)
 
     await ProgramInclusionService(session).create_inclusion(
         user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
@@ -782,31 +740,7 @@ async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None
 
     await seed_exercise_library(session)
 
-    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
-    session.add(profile)
-    await session.flush()
-    program = Program(
-        name="Подтягивания", goal="e2e", structure_type=ProgramStructureType.RECURRING,
-        category="e2e_journal_combined", progression_strategy_id=profile.id,
-        config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
-    )
-    session.add(program)
-    await session.flush()
-    block_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category="e2e_journal_combined", subcategory="block_a")
-    block_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category="e2e_journal_combined", subcategory="block_b")
-    session.add_all([block_a, block_b])
-    await session.flush()
-    session.add_all([
-        ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_a.id,
-            count_per_week=3, day_of_week=None,
-        ),
-        ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=block_b.id,
-            count_per_week=3, day_of_week=None,
-        ),
-    ])
-    await session.flush()
+    program = await _shipped_pull_ups_program(session)
     await ProgramInclusionService(session).create_inclusion(
         user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
     )
@@ -1237,7 +1171,8 @@ async def seed_home_workouts(session: AsyncSession, telegram_id: int) -> None:
     """G3 — Главная/«Мои тренировки»: у пользователя две своих Workout (одна
     с длинным русским названием и тремя упражнениями, одна пустая) и
     чужая Workout другого пользователя, которая на Главной появляться не
-    должна. Каталог Программ приходит из миграций."""
+    должна. Из миграций приходит ТОЛЬКО поставляемый контент (#296): программа «Подтягивания», системная
+    библиотека упражнений и готовые тренировки; прочие программы каталога (если сценарию нужны) заводит сид."""
     user = await _onboard(session, telegram_id)
     foreign_telegram_id = telegram_id + 1_000_000
     foreign_existing = await UserRepository(session).get_by_telegram_id(foreign_telegram_id)
@@ -1460,7 +1395,9 @@ async def seed_body_metrics(session: AsyncSession, telegram_id: int) -> None:
 
 async def seed_sweep_empty(session: AsyncSession, telegram_id: int) -> None:
     """#277 «Full sweep» — пустой пользователь: онбординг пройден, ни тренировок, ни плана, ни
-    истории, ни замеров (каталог программ глобальный и приходит из миграций)."""
+    истории, ни замеров. Каталог — только поставляемый миграцией (#296: программа «Подтягивания», системная
+    библиотека, готовые тренировки); «Свип: курс» и другие e2e-программы заводит сид sweep_populated, у
+    пустого пользователя их НЕТ."""
     user = await _onboard(session, telegram_id)
     user.timezone = "Europe/Moscow"
     await session.flush()
