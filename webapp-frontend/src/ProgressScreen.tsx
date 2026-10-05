@@ -9,6 +9,7 @@ import {
   type ProgressPoint,
 } from "./api";
 import { LeaderboardScreen } from "./LeaderboardScreen";
+import { Icon } from "./Icon";
 
 type Props = { initDataRaw: string };
 
@@ -342,9 +343,9 @@ function AnalyticsSection({ analytics }: { analytics: AnalyticsData }) {
 
 type ProgressSection = "chart" | "leaderboard";
 
-const PROGRESS_SECTIONS: { key: ProgressSection; label: string }[] = [
-  { key: "chart", label: "📈 График" },
-  { key: "leaderboard", label: "🏆 Лидерборд" },
+const PROGRESS_SECTIONS: { key: ProgressSection; label: string; icon: string }[] = [
+  { key: "chart", label: "График", icon: "chart" },
+  { key: "leaderboard", label: "Лидерборд", icon: "trophy" },
 ];
 
 /** Вкладка "Прогресс" (issue #50, волна 2; аналитика — issue #66, п.2;
@@ -422,8 +423,8 @@ export function ProgressScreen({ initDataRaw }: Props) {
 
   return (
     <div>
-      <p className="plan-title">Прогресс</p>
-
+      {/* Заголовок переименован в "Аналитика" вслед за вкладкой нижнего меню
+          (issue #183, волна 5b) — само содержимое экрана не менялось. */}
       <div className="workout-mode-buttons">
         {PROGRESS_SECTIONS.map((option) => (
           <button
@@ -432,7 +433,7 @@ export function ProgressScreen({ initDataRaw }: Props) {
             className={option.key === section ? "leaderboard-tab leaderboard-tab-active" : "leaderboard-tab"}
             onClick={() => setSection(option.key)}
           >
-            {option.label}
+            <Icon name={option.icon} size={16} className="vp-icon-lead" />{option.label}
           </button>
         ))}
       </div>

@@ -1,0 +1,56 @@
+import { test } from "@playwright/test";
+import { Log, open, shot, body, tab, liveSets } from "./lib";
+
+test("J7 persistence across reopen (audit_persist)", async ({ browser }) => {
+  const log = new Log("J7_audit_persist");
+  const tg = 7300009;
+  const ctxOpts = { viewport: { width: 390, height: 844 }, baseURL: "http://127.0.0.1:8093" };
+  let ctx = await browser.newContext(ctxOpts);
+  let page = await ctx.newPage();
+  try {
+    log.add("JOURNEY", "J7 Persistence across reopen  PROFILE audit_persist (tg 7300009, active, legacy history, backfilled)  S0: plan week 1 (0 из 3), no session today");
+    await open(page, tg, log);
+    await page.waitForTimeout(2500);
+    await tab(page, "Планы");
+    const p0 = await body(page);
+    log.add("VISIBLE", "Планы :: " + p0.slice(0, 350));
+    await page.getByRole("button", { name: "Начать" }).first().click(); await page.waitForTimeout(2500);
+    await page.getByRole("button", { name: "Начать" }).last().click(); await page.waitForTimeout(3500);
+    await liveSets(page, log, 1, 10);
+    const mid = await body(page);
+    log.add("VISIBLE", "live mid :: " + mid.slice(0, 250));
+    log.add("CLOSE", "mini app (context closed: localStorage/sessionStorage lost) and reopen");
+    await ctx.close();
+    ctx = await browser.newContext(ctxOpts); page = await ctx.newPage();
+    await open(page, tg, log);
+    await page.waitForTimeout(3500);
+    const re = await body(page);
+    log.add("EXPECT", "Live resumed in rest phase (timer continues) AND the logged set chip 'Подход 1: 10 повт.' + 'Изменить' still visible");
+    log.add("ACTUAL", re.slice(0, 350), /ЖИВАЯ ТРЕНИРОВКА/.test(re) && /ОТДЫХ/.test(re) ? (/Подход 1: 10 повт/.test(re) ? "OK" : "PARTIAL F-C-15 resumed, but logged-set chip/Изменить gone after reopen") : "FAIL F-C-J7a not resumed");
+    await shot(page, log, "j7_01_resumed");
+    await page.getByRole("button", { name: "Пропустить отдых" }).click();
+    await liveSets(page, log, 1, 9);
+    await page.getByRole("button", { name: "Завершить" }).click(); await page.waitForTimeout(1000);
+    await page.getByRole("button", { name: /^3/ }).click();
+    await page.getByRole("button", { name: "Сохранить и завершить" }).click(); await page.waitForTimeout(2500);
+    const sum = await body(page);
+    log.add("VISIBLE", "summary :: " + sum.slice(0, 300));
+    log.add("EXPECT", "summary lists sets 10 and 9");
+    log.add("ACTUAL", sum.slice(0, 300), /Подход 1: 10 повт/.test(sum) && /Подход 2: 9 повт/.test(sum) ? "OK" : "FAIL F-C-J7b set lost across reopen");
+    await ctx.close();
+    ctx = await browser.newContext(ctxOpts); page = await ctx.newPage();
+    await open(page, tg, log);
+    await page.waitForTimeout(3000);
+    await tab(page, "Планы");
+    const p1 = await body(page);
+    log.add("EXPECT", "Планы: 1 из 3, same week 5–11 окт, no live resume");
+    log.add("ACTUAL", p1.slice(0, 350), /1 из 3/.test(p1) && /Неделя 1/.test(p1) ? "OK" : "FAIL F-C-J7c");
+    await tab(page, "Журнал");
+    const j = await body(page);
+    log.add("EXPECT", "Журнал entry today with 2 sets");
+    log.add("ACTUAL", j.slice(0, 300), /Подходы \| 2/.test(j) ? "OK" : "FAIL F-C-J7d");
+    await tab(page, "Аналитика");
+    log.add("VISIBLE", "Аналитика :: " + (await body(page)).slice(0, 260));
+    await shot(page, log, "j7_02_final");
+  } finally { log.flush(); await ctx.close(); }
+});

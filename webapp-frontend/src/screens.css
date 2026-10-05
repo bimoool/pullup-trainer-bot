@@ -1,0 +1,965 @@
+/*
+ * Экраны второго прохода «CRIMPD VISUAL» (#280, tier 2): Журнал, Профиль, Аналитика, Планы, promo-баннеры Главной.
+ * Грузится ПОСЛЕ shell.css; использует его токены --vp-*, не переименовывая их. Разметка/поведение не меняются —
+ * только презентационные классы (journal-card*, profile-row*, vp-tabs/vp-segment, plans-course, home-promo*).
+ * Живая сессия (live.css) сюда не входит.
+ */
+:root {
+  /* типы записей Журнала: цветная метка карточки */
+  --vp-kind-plan: var(--vp-cat-0);
+  --vp-kind-freeform: var(--vp-cat-3);
+  --vp-kind-logged: #17a2b8;
+  --vp-kind-elective: var(--vp-cat-4);
+  --vp-kind-backdated: var(--vp-cat-2);
+  --vp-kind-legacy: var(--tg-hint-color);
+  /* цвета шкалы усилия как ТЕКСТ (≥ 4.5:1 на светлой карточке при 11–13px) */
+  --vp-effort-easy: #1b7a42;
+  --vp-effort-mid: #8a5a00;
+  --vp-effort-hard: #b45309;
+}
+
+:root[data-vp-scheme="dark"] {
+  --vp-effort-easy: #4cc380;
+  --vp-effort-mid: #e0b13a;
+  --vp-effort-hard: #f08a3c;
+}
+
+/* ---------- Журнал: карточка записи — бейдж типа + название/время + сетка из 3 подписанных показателей (#286) ---------- */
+.history-card.journal-card {
+  position: relative;
+  display: flex;
+  padding: 10px var(--vp-sp-4) 10px 20px;
+  overflow: hidden;
+  --kind: var(--vp-kind-plan);
+}
+
+.journal-card[data-kind="freeform"] { --kind: var(--vp-kind-freeform); }
+.journal-card[data-kind="logged"] { --kind: var(--vp-kind-logged); }
+.journal-card[data-kind="elective"] { --kind: var(--vp-kind-elective); }
+.journal-card[data-kind="backdated"] { --kind: var(--vp-kind-backdated); }
+
+.journal-card-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--kind);
+}
+
+.journal-card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.history-card .journal-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  margin: 0 0 8px;
+}
+
+.journal-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+}
+
+.journal-card-time {
+  flex: 0 0 auto;
+  font-size: var(--vp-fs-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--tg-hint-color);
+}
+
+/* бейдж типа записи: цвет метки на мягкой подложке */
+.journal-kind-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--kind);
+  background: color-mix(in srgb, var(--kind) 14%, transparent);
+}
+
+/* сетка показателей: 3 равные колонки, подпись сверху, значение снизу */
+.history-card .journal-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--vp-sp-2);
+  margin: 0;
+}
+
+.journal-stat {
+  min-width: 0;
+}
+
+.journal-stat-label {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--tg-hint-color);
+}
+
+.journal-stat-value {
+  margin: 1px 0 0;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  color: var(--tg-text-color);
+}
+
+/* старые (legacy) записи без v2-карточки: серая метка и мельче текст */
+.history-card[data-kind="legacy"] {
+  box-shadow: var(--vp-shadow), inset 6px 0 0 var(--vp-kind-legacy);
+  padding-left: 20px;
+}
+
+.history-card[data-kind="legacy"] p {
+  font-size: var(--vp-fs-meta);
+  margin-bottom: 3px;
+}
+
+.history-card[data-kind="legacy"] .history-date {
+  font-size: var(--vp-fs-card);
+}
+
+/* заголовки группировки: неделя — серая полоса на всю ширину, день — жирная дата с акцентным числом + линия */
+.journal-week-header {
+  margin: var(--vp-sp-5) -16px 0;
+  padding: 6px 16px;
+  background: color-mix(in srgb, var(--tg-hint-color) 14%, transparent);
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--tg-subtitle-text-color);
+}
+
+.journal-day-num { color: var(--vp-accent); }
+
+/* усилие на карточке: цвет по шкале 1–5 (effortScale) */
+.journal-effort[data-effort="1"], .journal-effort[data-effort="2"] { color: var(--vp-effort-easy); }
+.journal-effort[data-effort="3"] { color: var(--vp-effort-mid); }
+.journal-effort[data-effort="4"] { color: var(--vp-effort-hard); }
+.journal-effort[data-effort="5"] { color: var(--tg-destructive-text-color); }
+
+.journal-day-header {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  margin: var(--vp-sp-2) 0 var(--vp-sp-2);
+  font-size: var(--vp-fs-card);
+  font-weight: 800;
+}
+
+.journal-day-header::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--vp-divider);
+}
+
+/* календарь: месяц-бар — простые шевроны и подпись без белых плашек */
+.journal-month-arrow,
+.journal-month-label {
+  background: transparent;
+  box-shadow: none;
+  border-radius: var(--vp-radius-pill);
+}
+
+.journal-month-arrow {
+  color: var(--vp-accent);
+}
+
+.journal-calendar-grid {
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  border-radius: var(--vp-radius-card);
+  padding: var(--vp-sp-3) var(--vp-sp-2);
+}
+
+.journal-calendar-weekday {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.journal-calendar-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+}
+
+.journal-calendar-day {
+  width: min(100%, 38px);
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+.journal-calendar-today {
+  outline: 0;
+  box-shadow: inset 0 0 0 1.5px var(--vp-accent);
+  font-weight: 700;
+}
+
+.journal-calendar-selected {
+  background: var(--vp-accent);
+  color: var(--tg-button-text-color);
+  box-shadow: none;
+}
+
+.journal-calendar-dot {
+  background: var(--vp-accent);
+  bottom: 3px;
+}
+
+/* ---------- Профиль: grouped list ---------- */
+.profile-section {
+  margin-bottom: var(--vp-sp-5);
+}
+
+.profile-last-workout {
+  margin: 0 0 var(--vp-sp-4);
+  padding: 0 var(--vp-sp-1);
+}
+
+.profile-group-label {
+  margin: 0 0 var(--vp-sp-2) var(--vp-sp-1);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tg-hint-color);
+}
+
+.profile-group {
+  overflow: hidden;
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.profile-group > * + * {
+  border-top: 1px solid var(--vp-divider);
+}
+
+.profile-group-note {
+  margin: var(--vp-sp-2) var(--vp-sp-1) 0;
+}
+
+.profile-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px var(--vp-sp-4);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  color: var(--tg-text-color);
+  text-align: left;
+}
+
+.profile-row-link {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-row-link:active {
+  background: var(--vp-accent-soft);
+}
+
+.profile-row-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+.profile-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+}
+
+.profile-row-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+/* «: » нужен textContent строки («Вес: 75 кг»), визуально скрыт */
+.profile-row-sep {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.profile-row-value {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 14px;
+  color: var(--tg-subtitle-text-color);
+}
+
+/* длинные значения — второй строкой под подписью */
+.profile-row-stacked .profile-row-text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.profile-row-stacked .profile-row-value {
+  flex: none;
+  text-align: left;
+  font-size: var(--vp-fs-meta);
+}
+
+.profile-row-chevron {
+  flex: 0 0 auto;
+  color: var(--tg-hint-color);
+}
+
+/* «Тесты» в группе: карточки-тесты становятся строками */
+.profile-group > .history-list {
+  gap: 0;
+  margin: 0;
+}
+
+.profile-group .history-list > .test-card {
+  gap: var(--vp-sp-3);
+  padding: 10px var(--vp-sp-4);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  margin: 0;
+  font-size: var(--vp-fs-body);
+}
+
+.profile-group .history-list > .test-card + .test-card {
+  border-top: 1px solid var(--vp-divider);
+}
+
+.profile-group .history-list > .test-card::after {
+  content: "›";
+  flex: 0 0 auto;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--tg-hint-color);
+}
+
+.profile-group .test-card-text {
+  flex: 1 1 auto;
+}
+
+.profile-group .history-list > .test-card:active {
+  background: var(--vp-accent-soft);
+}
+
+/* ---------- SVG-иконки вместо эмодзи (#286 C3, Icon.tsx) ---------- */
+.vp-icon {
+  flex: none;
+}
+
+/* иконка в начале текста кнопки/заголовка */
+.vp-icon-lead {
+  margin-right: 6px;
+  vertical-align: -0.2em;
+}
+
+.vp-icon-done { color: var(--vp-cat-3); }
+.vp-icon-pending { color: var(--tg-hint-color); }
+
+/* ---------- Профиль (#286 C2): шапка-идентичность, крупные вес/рост, тесты с бейджем ---------- */
+.profile-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  margin: 0 0 var(--vp-sp-3);
+  padding: var(--vp-sp-3) var(--vp-sp-4);
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+}
+
+.profile-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--vp-accent);
+  color: var(--tg-button-text-color, #fff);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.profile-identity-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.profile-name {
+  margin: 0;
+  overflow: hidden;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-identity-meta {
+  margin: 2px 0 0;
+}
+
+.profile-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-2);
+}
+
+.profile-metric {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 76px;
+  padding: var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-3) var(--vp-sp-4);
+  border: 0;
+  border-radius: var(--vp-radius-card);
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  font: inherit;
+  color: var(--tg-text-color);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-metric:active {
+  background: var(--vp-accent-soft);
+}
+
+/* DOM: подпись → значение (textContent «Вес: 75 кг»); визуально значение над подписью */
+.profile-metric-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-metric-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tg-hint-color);
+}
+
+.profile-metric-value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-metric-number {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 800;
+  color: var(--vp-accent);
+}
+
+.profile-metric-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tg-subtitle-text-color);
+}
+
+.profile-metric-empty {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tg-hint-color);
+}
+
+/* «Тесты»: бейдж-иконка слева от названия (разметка TestsList не меняется) */
+.profile-group .history-list > .test-card::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  background: var(--vp-accent);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><defs><mask id='m'><rect width='24' height='24' fill='white'/><g transform='translate(3.6 3.6) scale(.7)' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 4.5h12v15H6z'/><path d='M9 9h6M9 12.5h6M9 16h3'/></g></mask></defs><circle cx='12' cy='12' r='12' mask='url(%23m)'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><defs><mask id='m'><rect width='24' height='24' fill='white'/><g transform='translate(3.6 3.6) scale(.7)' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 4.5h12v15H6z'/><path d='M9 9h6M9 12.5h6M9 16h3'/></g></mask></defs><circle cx='12' cy='12' r='12' mask='url(%23m)'/></svg>") center / contain no-repeat;
+}
+
+/* разряды ГТО / WSF: медаль цветом разряда */
+.profile-rank {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  font-weight: 700;
+}
+
+.profile-rank-icon { color: var(--tg-hint-color); }
+.profile-rank-bronze { color: #b0703c; }
+.profile-rank-silver { color: #8a96a3; }
+.profile-rank-gold,
+.profile-rank-elite { color: #e0a526; }
+.profile-rank-i { color: #e0a526; }
+.profile-rank-kms,
+.profile-rank-ms,
+.profile-rank-msmk { color: var(--vp-accent); }
+
+/* ---------- Аналитика: подчёркнутые табы + сегмент метрики ---------- */
+.workout-mode-buttons.vp-tabs {
+  gap: 0;
+  flex-wrap: nowrap;
+  margin: 0 0 var(--vp-sp-4);
+  border-bottom: 1px solid var(--vp-divider);
+}
+
+.vp-tabs .leaderboard-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px var(--vp-sp-2);
+  border: 0;
+  border-bottom: 2.5px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--tg-subtitle-text-color);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: -1px;
+}
+
+.vp-tabs .leaderboard-tab-active {
+  border-bottom-color: var(--vp-accent);
+  background: none;
+  color: var(--vp-accent);
+  font-weight: 700;
+}
+
+.workout-mode-buttons.vp-segment {
+  gap: 0;
+  flex-wrap: nowrap;
+  margin: 0 0 var(--vp-sp-3);
+  padding: 3px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-page-bg);
+}
+
+.vp-segment .leaderboard-tab {
+  min-height: 32px;
+  padding: 5px var(--vp-sp-4);
+  border: 0;
+  font-size: 14px;
+}
+
+.vp-segment .leaderboard-tab-active {
+  border: 0;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  color: var(--tg-text-color);
+}
+
+.analytics-metric-header {
+  align-items: flex-start;
+}
+
+.analytics-summary-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: baseline;
+}
+
+/* ---------- Аналитика (#286 C1): одна шапка, KPI-строка, карточки «по типам» → «по неделям» → сводка ---------- */
+.analytics-header-strip {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  margin: 0 0 var(--vp-sp-3);
+  border-bottom: 1px solid var(--vp-divider);
+}
+
+.analytics-metric-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.analytics-metric-select select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 22px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  font-size: 16px; /* iOS: поле ввода < 16px зумит страницу */
+  font-weight: 700;
+  color: var(--tg-text-color);
+  text-overflow: ellipsis;
+}
+
+.analytics-metric-select-caret {
+  position: absolute;
+  right: 2px;
+  color: var(--tg-hint-color);
+  pointer-events: none;
+}
+
+.workout-mode-buttons.vp-tabs.analytics-range-tabs {
+  flex: 0 0 auto;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.analytics-range-tabs .leaderboard-tab {
+  flex: 0 0 auto;
+  padding: 8px 6px;
+  font-size: 14px;
+}
+
+/* два KPI — одна компактная строка-карточка с разделителем */
+.analytics-activity-cards {
+  display: flex;
+  gap: 0;
+  margin: 0 0 var(--vp-sp-3);
+  background: var(--vp-card-bg);
+  border-radius: var(--vp-radius-card);
+  box-shadow: var(--vp-shadow);
+}
+
+.analytics-activity-cards .analytics-stat {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: var(--vp-sp-2);
+  padding: var(--vp-sp-3);
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.analytics-activity-cards .analytics-stat + .analytics-stat {
+  border-left: 1px solid var(--vp-divider);
+}
+
+.analytics-activity-cards .analytics-stat-value,
+.analytics-activity-cards .analytics-stat-label {
+  margin: 0;
+}
+
+.analytics-activity-cards .analytics-stat-value {
+  flex: none;
+  color: var(--vp-accent);
+}
+
+.analytics-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  margin-bottom: var(--vp-sp-2);
+}
+
+.analytics-card-title-row .section-title {
+  margin: 0;
+}
+
+.analytics-info-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tg-hint-color);
+}
+
+.analytics-donut-total {
+  font-size: 15px;
+  font-weight: 800;
+  fill: var(--tg-text-color);
+}
+
+.analytics-donut-caption {
+  font-size: 9px;
+  fill: var(--tg-hint-color);
+}
+
+.analytics-legend-swatch {
+  border-radius: 50%;
+}
+
+/* длинные названия — многоточие, а не разрыв посреди слова */
+.analytics-legend-name {
+  overflow: hidden;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.analytics-legend-value {
+  white-space: nowrap;
+}
+
+.analytics-summary-table th:first-child {
+  width: 40%;
+  overflow: hidden;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.analytics-summary-table thead th {
+  padding-inline: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+
+.analytics-show-all {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  margin-top: var(--vp-sp-2);
+  border: 0;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.analytics-footnote {
+  margin: 0 var(--vp-sp-1) var(--vp-sp-4);
+}
+
+/* ---------- Планы: карточки курсов цветом программы, чипы дней ---------- */
+.plan-week-day-group.plans-course {
+  --tint: var(--cat, var(--tg-hint-color));
+  margin: 0 0 var(--vp-sp-2);
+  padding: var(--vp-sp-3) var(--vp-sp-4) var(--vp-sp-3) var(--vp-sp-5);
+  border-top: 0;
+  border-radius: var(--vp-radius-inner);
+  background: color-mix(in srgb, var(--tint) 11%, var(--vp-card-bg));
+  box-shadow: inset 5px 0 0 var(--tint);
+}
+
+.plans-course .plan-item-row {
+  margin-bottom: 2px;
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+}
+
+.plan-week-current .plan-week-day-group > .block-subtitle,
+.plan-week-past .plan-week-day-group > .block-subtitle {
+  display: inline-block;
+  margin: 0 0 var(--vp-sp-2);
+  padding: 3px 10px;
+  border-radius: var(--vp-radius-pill);
+  background: var(--vp-accent-soft);
+  color: var(--vp-accent);
+}
+
+/* ---------- Главная: promo-баннеры между секциями ---------- */
+.home-promo {
+  --promo: var(--vp-cat-0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-3);
+  box-sizing: border-box;
+  width: 100%;
+  margin: var(--vp-sp-4) 0 var(--vp-sp-1);
+  padding: var(--vp-sp-4);
+  border: 0;
+  border-radius: var(--vp-radius-card);
+  background:
+    radial-gradient(circle at 92% 20%, rgba(255, 255, 255, 0.2) 0, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(135deg, color-mix(in srgb, var(--promo) 90%, #000), color-mix(in srgb, var(--promo) 62%, #0b1220));
+  box-shadow: var(--vp-shadow);
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-promo[data-promo="log"] { --promo: var(--vp-cat-3); }
+.home-promo[data-promo="create"] { --promo: var(--vp-cat-4); }
+
+.home-promo:active {
+  filter: brightness(0.94);
+}
+
+.home-promo-text {
+  min-width: 0;
+}
+
+.home-promo-title {
+  display: block;
+  font-size: var(--vp-fs-card);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.home-promo-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--vp-fs-meta);
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.home-promo-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ---------- шторка записи Журнала (#280) ---------- */
+.journal-sheet { max-width: 480px; margin: 0 auto; }
+.journal-sheet:focus { outline: none; }
+.journal-sheet-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 4px 8px 10px;
+  border-bottom: 1px solid var(--vp-divider);
+}
+.journal-sheet-name { font-weight: 600; font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+.journal-sheet-time { flex: none; font-size: 13px; color: var(--tg-subtitle-text-color); }
+.journal-sheet .home-sheet-action { min-height: 44px; }
+.journal-sheet .home-sheet-action:focus-visible { outline: 2px solid var(--tg-button-color, #3390ec); outline-offset: -2px; border-radius: 10px; }
+.journal-sheet .home-sheet-action:disabled { opacity: 0.5; }
+.journal-sheet .journal-sheet-danger { color: var(--tg-destructive-text-color); }
+
+/* деталь записи: круглая кнопка «назад», отступы строк внутри секции */
+.journal-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--vp-card-bg);
+  box-shadow: var(--vp-shadow);
+  color: var(--vp-accent);
+  cursor: pointer;
+}
+.journal-back-button:focus-visible { outline: 2px solid var(--vp-accent); outline-offset: 2px; }
+.block-section .journal-detail-line { padding: 0 var(--vp-sp-4); }
+
+/* иконка внутри строки текста (шеврон у месяца, сердечко в подсказке) */
+.vp-icon-inline {
+  vertical-align: -0.15em;
+}
+
+/* только для скринридеров: текст есть в дереве доступности, но не виден */
+.vp-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Узкий экран (≤ 400px, #277): строка 1 — бейдж типа + время, строка 2 — название (до 2 строк); бейдж без обрезки. */
+@media (max-width: 400px) {
+  .history-card .journal-card-title {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .journal-kind-label {
+    order: 1;
+    flex: 0 1 auto;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  .journal-card-time {
+    order: 2;
+    margin-left: auto;
+  }
+  .journal-card-name {
+    order: 3;
+    flex: 1 1 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+  }
+}

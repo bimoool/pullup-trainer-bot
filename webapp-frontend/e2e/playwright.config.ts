@@ -11,6 +11,14 @@ import { defineConfig, devices } from "@playwright/test";
  */
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8001";
 
+const MOBILE_SPEC = /mobile-layout\.spec\.ts$/;
+// crimpd-parity.spec.ts (baseline + first blocks) and one file per parity task in scenarios/parity/.
+const PARITY_SPEC = /(crimpd-parity|parity\/[^/]+)\.spec\.ts$/;
+const MOBILE_WIDTHS = [320, 375, 390];
+// Экранная клавиатура в редакторе тренировки (issue #250): только 320 и 390.
+const KEYBOARD_SPEC = /keyboard-viewport\.spec\.ts$/;
+const KEYBOARD_WIDTHS = [320, 390];
+
 export default defineConfig({
   testDir: "./scenarios",
   fullyParallel: true,
@@ -22,5 +30,22 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", testIgnore: [MOBILE_SPEC, KEYBOARD_SPEC, PARITY_SPEC], use: { ...devices["Desktop Chrome"] } },
+    // Crimpd parity suite (docs/CRIMPD_FULL_PARITY_8_5.md): its blocks reuse seeded users across
+    // widths/themes and some mutate state (favorites, logs) — run them in order, not in parallel.
+    { name: "parity", testMatch: PARITY_SPEC, fullyParallel: false, use: { ...devices["Desktop Chrome"] } },
+    // Узкий набор критичных мобильных проверок (issue #244): только
+    // mobile-layout.spec.ts, а не весь десктопный набор на каждой ширине.
+    ...MOBILE_WIDTHS.map((width) => ({
+      name: `mobile-${width}`,
+      testMatch: MOBILE_SPEC,
+      use: { ...devices["Pixel 5"], viewport: { width, height: 740 } },
+    })),
+    ...KEYBOARD_WIDTHS.map((width) => ({
+      name: `keyboard-${width}`,
+      testMatch: KEYBOARD_SPEC,
+      use: { ...devices["Pixel 5"], viewport: { width, height: 740 } },
+    })),
+  ],
 });

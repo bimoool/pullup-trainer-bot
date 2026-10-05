@@ -1,0 +1,49 @@
+06:45:09 JOURNEY J1-existing PROFILE audit_existing_active tg=7300001
+06:45:09 OPEN Home
+06:45:13 EXPECT Home with program card
+06:45:13 ACTUAL Привет, Audit! | Что потренируем сегодня? | Главная | pull_ups | Все › | Подтягивания | Рост числа подтягиваний: объём (блок A) + сила (блок Б) | В плане | Своя программа | Соберите комплекс из упражнений и протоколов | Мои тренировки | Соберите свою тренировку из упражнений и протоколов. | Создать тренировку | Занимались вне приложения? | Добавьте активность в историю | Нажмите  на тренировке, чт   OK
+06:45:13 TAP Планы
+06:45:15 EXPECT >=1 actionable workout current week (button Начать)
+06:45:15 ACTUAL Привет, Audit! | Планы | Мои тренировки | Сейчас | Завершённые | Текущий план | Подтягивания | На этой неделе: 0 из 3 | ‹ | Неделя 1 · 5 окт – 11 окт | База | › | Текущая неделя · 0 из 3 | СВОБОДНЫЙ ПУЛ | Подтягивания | 0/3 | Начать | + Добавить упражнение | Главная | Планы | Журнал | Аналитика | Профиль   OK
+06:45:15 TAP Начать (plan row)
+06:45:18 VISIBLE ГОТОВЫ К СТАРТУ | Подтягивания | Цель 1: 11 повторений | 4 рабочих подхода · резина | Цель 2: 3 повторений | 4 рабочих подхода · резина | Начать
+06:45:22 EXPECT Live screen
+06:45:22 ACTUAL ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 4 | ПОДХОД | 11 | ПОВТ | Подход 1/4 · Цель: 11 повт. | 4×11 | ПРИГОТОВЬСЯ | 0:02 | Готов | Пауза   OK
+06:45:23 LIVE set 1 logged (10) :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 4 | ПОДХОД | 11 | ПОВТ | Подход 1/4 · Цель: 11 повт. | ОТДЫХ | 1:30 | Подход 1: 10 повт. |  Изменить | Пропустить отдых | Пауза
+06:45:24 LIVE set 2 logged (10) :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 2 / 4 | ПОДХОД | 11 | ПОВТ | Подход 2/4 · Цель: 11 повт. | ОТДЫХ | 1:30 | Подход 2: 10 повт. |  Изменить | Пропустить отдых | Пауза
+06:45:24 TAP Завершить
+06:45:28 VISIBLE after finish :: Тренировка завершена | Подтягивания | 2 | Подходов | 2 | Упражнений | — 2/4 | , не выполнено | Подход 1: 10 повт. | Подход 2: 10 повт. | — 0/1 | , не выполнено | Не выполнено — осталось в плане. | Новая цель | 11 → 11 | 3 → 3 | Закрыть
+06:45:28 RELOAD after finish
+06:45:31 VISIBLE Привет, Audit! | Что потренируем сегодня? | Главная | pull_ups | Все › | Подтягивания | Рост числа подтягиваний: объём (блок A) + сила (блок Б) | В плане | Своя программа | Соберите комплекс из упражнений и протоколов | Мои тренировки | Соберите свою тренировку из упражнений и протоколов. | Создать тренировку | Занимались вне приложения? | Добавьте активность в историю | Нажмите  на тренировке, чтобы добавить | Готовы заниматься? | Откройте план дня | Тесты | Максимум, вис, вес — результаты и динамика › | Главная | Планы | Журнал | Аналитика | Профиль
+06:45:34 VISIBLE Журнал :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:45 | Подходы | 2 | Повторы | 20 | Усилие | 3 | Главная | Планы | Журнал | Аналитика | Профиль
+06:45:36 VISIBLE Аналитика :: Привет, Audit! | Аналитика | Тренировки | Программа | Тренировки | Минуты | 1 мес | 3 мес | Свой | 7 | Тренировок за 30 дней | 7 | Активных дней за 30 дней | По типам | 7 | всего | pull_ups | 7 · 100% | Тренировки по неделям | 31.08 | 1 | 07.09 | 2 | 14.09 | 2 | 21.09 | 1 | 28.09 | 1 | 05.10 | Всего тренировок: 7 · 06.09 – 05.10 | Сводка | Тип	Тренировки	Минуты | pull_ups	7	0 | block_a	3.5	0 | block_b	3.5	0 | Итого	7	0 | Показать все (+5) | Смешанная тренировка делится между категориями поровну по блокам; минуты — по длительности тренировки. | Пока нет завершённых тренировок из «Мои тренировки» — показатели по упражнениям появятся после первой. | Экспорт данных — CSV | Вся история тренировок: по строке на подход, открывается в Excel. | Скачать | Главная | Планы | Журнал | Аналитика | Профиль
+06:45:41 VISIBLE Планы after reopen :: Привет, Audit! | Планы | Мои тренировки | Сейчас | Завершённые | Текущий план | Подтягивания | На этой неделе: 1 из 3 | ‹ | Неделя 1 · 5 окт – 11 окт | База | › | Текущая неделя · 1 из 3 | СВОБОДНЫЙ ПУЛ | Подтягивания | 1/3 | Начать | + Добавить упражнение | Главная | Планы | Журнал | Аналитика | Профиль
+06:45:41 INFO sets logged 2
+
+--- NETWORK (api non-2xx and mutations) ---
+06:45:18 POST /api/v2/sessions/live -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:45:23.569794Z"},"phase_index":0,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+06:45:22 POST /api/v2/sessions/live/37/phase/next -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"go","ends_at":null},"phase_index":1,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps","val
+06:45:22 POST /api/v2/sessions/live/37/phase/next -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:46:52.683436Z"},"phase_index":2,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:45:22 POST /api/v2/sessions/live/37/sets:batch -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:46:52.683436Z"},"phase_index":2,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:45:23 POST /api/v2/sessions/live/37/phase/next -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:45:28.542181Z"},"phase_index":3,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+06:45:23 POST /api/v2/sessions/live/37/phase/next -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"go","ends_at":null},"phase_index":4,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps","val
+06:45:23 POST /api/v2/sessions/live/37/phase/next -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:46:53.701565Z"},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:45:23 POST /api/v2/sessions/live/37/sets:batch -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:46:53.701565Z"},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:45:26 POST /api/v2/sessions/live/37/complete -> 200 {"id":37,"client_session_id":"28eeac95-b832-4e98-9467-5e2641fb13d1","status":"completed","phase":{"name":"done","ends_at":null},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps",
+
+--- CONSOLE ERRORS ---
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam

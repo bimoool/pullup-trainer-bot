@@ -71,9 +71,19 @@ input[type="number"] {
 
 /* Задел под навигацию (issue #45, часть 3) — нижние вкладки поверх
    контента, поэтому app-shell-with-nav добавляет запас снизу под высоту
-   .bottom-nav, чтобы последняя карточка экрана не пряталась под ней. */
+   .bottom-nav, чтобы последняя карточка экрана не пряталась под ней.
+
+   issue #203 — safe-area для iPhone: calc включает базовую высоту nav (88px)
+   плюс env(safe-area-inset-bottom) для устройств с home indicator. На обычных
+   устройствах env() возвращает 0px, поведение не меняется. */
 .app-shell-with-nav {
-  padding-bottom: 88px;
+  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+}
+
+/* issue #250 — при экранной клавиатуре окно низкое: поле/кнопка, прокрученные в
+   видимую область (focus, scrollIntoView), не должны оказываться под fixed-Tabbar. */
+html {
+  scroll-padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 }
 
 .bottom-nav-icon {
@@ -121,6 +131,48 @@ input[type="number"] {
   margin-bottom: 16px;
 }
 
+/* Program Detail (issue #192) — вся карточка каталога на Главной кликабельна
+   и ведёт на отдельный экран (не разворачивается на месте) — настоящая
+   <button>, не div с обработчиком, тот же принцип, что stat-tile-clickable
+   в ProfileScreen.tsx. */
+.program-card-button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.program-card-button:active {
+  opacity: 0.7;
+}
+
+/* Checkpoint 3 (issue #188) — picker "+ Добавить упражнение": каждый
+   вариант (Exercise/день) — та же .program-card-button база, с рамкой и
+   отступом, чтобы список кликабельных строк не сливался визуально; выбор
+   подсвечивается акцентной рамкой, тот же токен, что .plan-week-current. */
+.plan-exercise-option {
+  border: 1px solid var(--tg-theme-hint-color, #999);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.plan-exercise-option-selected {
+  border-color: var(--tg-link-color);
+  border-width: 1.5px;
+}
+
+.plan-add-exercise-button {
+  color: var(--tg-link-color);
+  padding: 6px 0;
+}
+
 .block-header {
   display: flex;
   align-items: center;
@@ -146,6 +198,67 @@ input[type="number"] {
   font-size: 13px;
   color: var(--tg-subtitle-text-color);
   margin: 2px 0 0;
+}
+
+/* issue #193 — "Планы" отличает текущую PlanWeek от прошлых недель
+   визуально: акцентная рамка на текущей, приглушение прошлых. */
+.plan-week-current {
+  border: 1.5px solid var(--tg-link-color);
+  border-radius: 12px;
+}
+
+.plan-week-past {
+  opacity: 0.65;
+}
+
+.plan-week-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.plan-week-stepper-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.plan-week-step {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--tg-link-color);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.plan-week-step:disabled {
+  opacity: 0.3;
+}
+
+.plan-week-chip {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--tg-secondary-bg-color, rgba(127, 127, 127, 0.15));
+  color: var(--tg-subtitle-text-color);
+}
+
+.plan-week-day-group {
+  margin-top: 10px;
+}
+
+.plan-item-row {
+  font-size: 14px;
+  margin: 4px 0 0;
 }
 
 .field-label {
@@ -301,6 +414,25 @@ input[type="number"] {
   font-size: 15px;
 }
 
+.profile-link-row {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+
+.profile-link-row::after {
+  content: "›";
+  color: var(--tg-subtitle-text-color);
+}
+
+.body-metrics-trend {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  color: var(--tg-button-color, #2481cc);
+}
+
 .profile-card p:last-child {
   margin-bottom: 0;
 }
@@ -383,6 +515,18 @@ input[type="number"] {
 
 .history-card p:last-child {
   margin-bottom: 0;
+}
+
+.history-card-clickable {
+  cursor: pointer;
+}
+
+.journal-block {
+  margin-top: 6px;
+}
+
+.journal-block-header {
+  font-weight: 600;
 }
 
 .history-date {
@@ -670,3 +814,593 @@ input[type="number"] {
   color: var(--tg-hint-color);
   padding: 2px 0;
 }
+
+/* Слайдер "Как тяжело?" на live-экране сессии (issue #185, раздел 10.8) —
+   пять сегментов эффорта вместо настоящего Slider-компонента кита (тот не
+   даёт дискретных подписанных шагов "из коробки"). */
+.effort-segment-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+/* Подписанные чипы усилия: цифра + слово, влезают в 320 px (перенос по строкам). */
+.effort-labelled {
+  flex-wrap: wrap;
+}
+.effort-labelled > button {
+  flex: 1 1 28%;
+  min-width: 0;
+}
+.effort-labelled .effort-num {
+  font-weight: 700;
+  margin-right: 4px;
+}
+.effort-labelled .effort-word {
+  font-size: 0.85em;
+}
+
+/* Цвет фазы live-таймера (issue #186, раздел 10.8): get_ready — оранжевый
+   "Приготовься", go — зелёный "Пошёл", rest — синий "Отдых". Полупрозрачный
+   фон карточки + сплошной цвет цифр таймера — фаза читается и с расстояния
+   (крупный таймер), и как акцент на самой карточке. */
+.phase-card-get_ready {
+  background: rgba(255, 152, 0, 0.14);
+  border: 1.5px solid rgba(255, 152, 0, 0.4);
+  border-radius: 16px;
+}
+
+.phase-card-go {
+  background: rgba(52, 199, 89, 0.14);
+  border: 1.5px solid rgba(52, 199, 89, 0.4);
+  border-radius: 16px;
+}
+
+.phase-card-rest {
+  background: rgba(10, 132, 255, 0.14);
+  border: 1.5px solid rgba(10, 132, 255, 0.4);
+  border-radius: 16px;
+}
+
+.phase-timer-get_ready {
+  color: #f57c00;
+}
+
+.phase-timer-go {
+  color: #2e8b57;
+}
+
+.phase-timer-rest {
+  color: #0a84ff;
+}
+
+/* #265 — «Приготовься» в последние 10 с отдыха; компактная панель записи подхода. */
+.get-ready-cue { margin: 8px 0 0; font-size: 18px; font-weight: 800; color: #f57c00; }
+.live-log-panel .action-button { margin-top: 8px; }
+
+/* issue #203 — safe-area для нижнего Tabbar из @telegram-apps/telegram-ui:
+   padding-bottom поднимает содержимое Tabbar выше home indicator на iPhone.
+   Tabbar сам fixed-позиционирован библиотекой (bottom: 0), этот padding
+   делает его физически выше на величину safe-area. На обычных устройствах
+   env() = 0px, визуально ничего не меняется.
+
+   Integration review (H1) — исходный селектор [class*="tgui"][class*="abbar"]
+   не совпадал ни с чем: библиотека рендерит только content-hashed классы
+   (tgui-<hash>, без читаемой подстроки "abbar" — проверено по факту в
+   node_modules). Tabbar теперь получает явный className="bottom-tabbar"
+   (App.tsx) — таргетируем его напрямую, не гадаем по хэшу библиотеки. */
+.bottom-tabbar {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* G4: библиотечный фон полупрозрачный (0.95) — текст страницы просвечивал
+     сквозь подписи вкладок. */
+  background-color: var(--tg-bg-color);
+}
+
+/* G4: на 320px подписи вкладок обрезались ("Г…", "П…") — пять вкладок по 64px.
+   Уменьшаем боковые отступы и шрифт, обрезку заменяем на полное слово. */
+.bottom-tabbar button {
+  min-width: 0;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.bottom-tabbar button > span {
+  font-size: 10px;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Linux/Android-шрифты шире macOS: на самых узких экранах ещё чуть меньше. */
+@media (max-width: 360px) {
+  .bottom-tabbar button > span {
+    font-size: 9px;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Phase C4b-2 (issue #188) QA-found blocker — SegmentedControl.Item's
+   встроенный padding (10px 24px) оставляет слишком мало места для
+   русских слов ("Повторения", "Интервалы") на 4-way split в 390px
+   viewport — текст обрезался ("По...", "Инт..."), обнаружено живым QA-
+   скриншотом. Та же стабильная стратегия таргетинга, что уже
+   используется для Tabbar чуть выше: явный className-wrapper
+   (ProtocolForm.tsx), не гадаем по content-hashed классам библиотеки;
+   [role="tab"] — семантический, стабильный ARIA-атрибут, не завязан на
+   версию @telegram-apps/telegram-ui. Сокращён horizontal padding и
+   font-size, разрешён перенос на вторую строку вместо обрезания (полное
+   слово на 2 строках лучше, чем "По..." на одной). */
+.protocol-type-selector button[role="tab"] {
+  padding: 8px 4px;
+  font-size: 0;
+}
+
+.protocol-type-selector button[role="tab"] span:not([aria-hidden]) {
+  font-size: 12px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+/* Phase C5a (issue #188) — минимальная flex-row раскладка для 7 дневных
+   кнопок в Add to Plan (нет существующего переиспользуемого day-picker
+   компонента в проекте — "+ Добавить упражнение" не предлагает выбор дня
+   через отдельный виджет). Не redesign — просто перенос кнопок в ряд с
+   переносом на mobile-ширине. */
+.week-day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+
+/* Analytics v2 (REBUILD-1, R3) — компактно до 320px, без горизонтального скролла. */
+.analytics-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.analytics-activity-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analytics-stat {
+  background: var(--tgui--secondary_bg_color, #f2f2f7);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.analytics-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.analytics-stat-label {
+  font-size: 12px;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+.analytics-weeks-chart,
+.analytics-trend-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--tgui--text_color, #000);
+}
+
+.analytics-metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analytics-info-button {
+  flex: none;
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font-size: 18px;
+  color: var(--tg-subtitle-text-color, inherit);
+}
+
+.analytics-custom-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.analytics-custom-range label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.analytics-custom-range input[type="date"] {
+  min-width: 0;
+  max-width: 140px;
+  font-size: 14px;
+}
+
+.analytics-exercise-picker {
+  flex-wrap: wrap;
+}
+
+.analytics-donut {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  margin: 8px auto;
+}
+
+.analytics-legend {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  font-size: 14px;
+}
+
+.analytics-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  min-width: 0;
+}
+
+.analytics-legend-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.analytics-legend-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.analytics-legend-value {
+  flex: none;
+  color: var(--tg-subtitle-text-color, inherit);
+}
+
+.analytics-summary-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.analytics-summary-table th,
+.analytics-summary-table td {
+  padding: 5px 4px;
+  text-align: right;
+  font-weight: 400;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+.analytics-summary-table th:first-child {
+  width: 46%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.analytics-summary-table thead th {
+  font-size: 12px;
+  color: var(--tg-subtitle-text-color, inherit);
+}
+
+.analytics-summary-table tbody tr:not(.analytics-summary-sub) th {
+  font-weight: 600;
+}
+
+.analytics-summary-sub th {
+  padding-left: 14px;
+  color: var(--tg-subtitle-text-color, inherit);
+}
+
+.analytics-summary-total th,
+.analytics-summary-total td {
+  font-weight: 700;
+  border-bottom: 0;
+}
+
+.analytics-panel {
+  margin-bottom: 12px;
+}
+
+/* G3 — «Мои тренировки» на Главной: компактные карточки, только реальные данные. */
+.home-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.home-workout-list {
+  list-style: none;
+  margin: 8px 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-workout-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 12px;
+  background: var(--tg-secondary-bg-color);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-workout-card:active {
+  opacity: 0.7;
+}
+
+.home-workout-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.home-workout-meta,
+.home-workout-names {
+  font-size: 13px;
+  color: var(--tg-hint-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== UX-1: Builder (тип работы, параметры, превью, список упражнений) =====
+   Общие правила: цели касания ≥ 44 px, подпись слева / значение справа, поля
+   ввода с рамкой (видно, что редактируются), главная кнопка одна и заметная,
+   второстепенное — текстом/контуром. Цвета только из --tg-* переменных. */
+.ux-form { padding-bottom: 8px; }
+.ux-eyebrow { margin: 0; font-size: 13px; color: var(--tg-subtitle-text-color); }
+.ux-exercise-name { margin: 2px 0 16px; font-size: 22px; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
+.ux-section-label { display: block; margin: 20px 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--tg-subtitle-text-color); }
+.ux-helper { margin: 0 0 12px; font-size: 14px; line-height: 1.4; color: var(--tg-subtitle-text-color); }
+.ux-error { margin: 12px 0 0; font-size: 14px; color: var(--tg-destructive-text-color); }
+.ux-field { display: block; }
+.ux-text-input {
+  width: 100%; min-height: 48px; padding: 0 14px; font: inherit; font-size: 16px;
+  color: var(--tg-text-color); background: var(--tg-bg-color);
+  border: 1.5px solid var(--tg-secondary-bg-color); border-radius: 12px; outline: none;
+}
+.ux-text-input:focus { border-color: var(--tg-button-color); }
+
+.ux-kind-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ux-kind {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  min-height: 88px; padding: 12px; font: inherit; color: var(--tg-text-color);
+  background: var(--tg-bg-color); border: 1.5px solid var(--tg-secondary-bg-color); border-radius: 12px;
+}
+.ux-kind-selected { border-color: var(--tg-button-color); background: color-mix(in srgb, var(--tg-button-color) 8%, var(--tg-bg-color)); }
+.ux-kind-title { font-size: 16px; font-weight: 700; }
+.ux-kind-desc { font-size: 12.5px; line-height: 1.3; color: var(--tg-subtitle-text-color); }
+.ux-kind-selected .ux-kind-title { color: var(--tg-button-color); }
+
+.ux-card { background: var(--tg-secondary-bg-color); border-radius: 14px; padding: 4px 12px; }
+.ux-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 12px 0; }
+.ux-row + .ux-row { border-top: 1px solid color-mix(in srgb, var(--tg-hint-color) 25%, transparent); }
+.ux-row-label { display: flex; flex-direction: column; gap: 2px; flex: 1 1 130px; min-width: 0; }
+.ux-row-title { font-size: 15px; font-weight: 600; }
+.ux-row-hint { font-size: 12px; color: var(--tg-subtitle-text-color); }
+.ux-control { display: flex; align-items: center; gap: 6px; }
+.ux-step {
+  width: 44px; height: 44px; flex: none; font: inherit; font-size: 22px; line-height: 1;
+  color: var(--tg-button-color); background: var(--tg-bg-color);
+  border: 1.5px solid var(--tg-button-color); border-radius: 50%;
+}
+.ux-step:disabled { color: var(--tg-hint-color); border-color: var(--tg-hint-color); opacity: 0.5; }
+.ux-input {
+  width: 56px; height: 44px; padding: 0 4px; text-align: center; font: inherit; font-size: 18px; font-weight: 700;
+  color: var(--tg-text-color); background: var(--tg-bg-color);
+  border: 1.5px solid color-mix(in srgb, var(--tg-hint-color) 45%, transparent); border-radius: 10px; outline: none;
+}
+.ux-input-time { width: 72px; }
+.ux-input:focus { border-color: var(--tg-button-color); }
+.ux-unit { flex-basis: 100%; text-align: right; margin-top: -4px; font-size: 11px; color: var(--tg-subtitle-text-color); }
+.ux-row-stack { flex-direction: column; align-items: stretch; }
+.ux-choice { display: flex; gap: 8px; }
+.ux-choice-item {
+  flex: 1; min-height: 44px; font: inherit; font-size: 15px; color: var(--tg-text-color);
+  background: var(--tg-bg-color); border: 1.5px solid transparent; border-radius: 10px;
+}
+.ux-choice-selected { border-color: var(--tg-button-color); color: var(--tg-button-color); font-weight: 700; }
+
+.ux-preview {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 16px; padding: 12px 14px;
+  border-radius: 14px; background: color-mix(in srgb, var(--tg-button-color) 10%, var(--tg-bg-color));
+}
+.ux-preview-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--tg-subtitle-text-color); }
+.ux-preview-main { font-size: 20px; font-weight: 700; }
+.ux-preview-detail { font-size: 14px; color: var(--tg-subtitle-text-color); }
+
+.ux-primary, .ux-secondary, .ux-add-button {
+  display: block; width: 100%; min-height: 50px; margin-top: 16px; font: inherit; font-size: 16px; font-weight: 600; border-radius: 12px;
+}
+.ux-primary { color: var(--tg-button-text-color); background: var(--tg-button-color); border: 0; }
+.ux-primary:disabled { opacity: 0.4; }
+.ux-secondary { color: var(--tg-text-color); background: var(--tg-bg-color); border: 1.5px solid var(--tg-secondary-bg-color); }
+.ux-add-button { color: var(--tg-button-color); background: transparent; border: 1.5px dashed var(--tg-button-color); }
+.ux-link-button { display: block; width: 100%; min-height: 44px; margin-top: 4px; font: inherit; font-size: 15px; color: var(--tg-subtitle-text-color); background: none; border: 0; }
+.ux-link-button.ux-inline { width: auto; margin: 0; padding: 0 10px; font-size: 14px; }
+.ux-destructive { color: var(--tg-destructive-text-color); }
+
+.ux-item-list { display: flex; flex-direction: column; gap: 10px; }
+.ux-item { background: var(--tg-secondary-bg-color); border-radius: 14px; overflow: hidden; }
+.ux-item-main { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 12px 14px 8px; text-align: left; font: inherit; color: var(--tg-text-color); background: none; border: 0; position: relative; }
+.ux-item-name { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; padding-right: 76px; }
+.ux-item-kind { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--tg-button-color); }
+.ux-item-line { font-size: 17px; font-weight: 600; margin-top: 2px; }
+.ux-item-detail { font-size: 13px; color: var(--tg-subtitle-text-color); }
+.ux-item-edit { position: absolute; top: 12px; right: 14px; font-size: 13px; color: var(--tg-button-color); }
+.ux-item-actions { display: flex; align-items: center; gap: 6px; padding: 0 8px 8px 14px; flex-wrap: wrap; }
+.ux-icon-button { width: 44px; height: 44px; font: inherit; font-size: 18px; color: var(--tg-text-color); background: var(--tg-bg-color); border: 0; border-radius: 10px; }
+.ux-icon-button:disabled { opacity: 0.35; }
+.ux-danger-button { min-height: 44px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 600; color: #fff; background: var(--tg-destructive-text-color); border: 0; border-radius: 10px; }
+
+.ux-pick-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.ux-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 52px; padding: 8px 14px; text-align: left; font: inherit; font-size: 16px; color: var(--tg-text-color); background: var(--tg-secondary-bg-color); border: 0; border-radius: 12px; overflow-wrap: anywhere; }
+.ux-pick-create { color: var(--tg-button-color); font-weight: 600; }
+.ux-chevron { color: var(--tg-hint-color); font-size: 20px; }
+.ux-row-stack .ux-row-label { flex: none; }
+
+/* UX-1: активная тренировка — «что сейчас делаю» крупно, над карточкой фазы. */
+.live-now { margin: 4px 0 12px; }
+.live-exercise { margin: 0; font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.live-target { margin: 4px 0 0; font-size: 16px; font-weight: 600; color: var(--tg-subtitle-text-color); }
+
+/* UX-1: программы — горизонтальный ряд с «выглядывающей» следующей карточкой
+   (как карусели референса), чтобы «Мои тренировки» и «Создать» не уезжали вниз. */
+.home-program-row { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px 8px; padding: 0 16px 4px; -webkit-overflow-scrolling: touch; }
+.home-program-row .home-program-card { flex: 0 0 76%; margin-bottom: 0; }
+
+/* Главная: sticky-шапка с поиском и «+», шторка быстрых действий, экран поиска (issue #254) */
+.home-sticky-header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; margin: 0 -16px 8px; padding: 8px 16px; background-color: var(--tg-bg-color); }
+.home-search-pill { flex: 1 1 auto; min-width: 0; height: 40px; padding: 0 16px; border: 0; border-radius: 20px; text-align: left; font-size: 15px; color: var(--tg-subtitle-text-color); background-color: var(--tg-secondary-bg-color, rgba(127, 127, 127, 0.15)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-plus-button { flex: 0 0 40px; width: 40px; height: 40px; border: 0; border-radius: 50%; font-size: 24px; line-height: 1; color: var(--tg-button-text-color); background-color: var(--tg-button-color); }
+.home-sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; background: rgba(0, 0, 0, 0.4); }
+.home-sheet { width: 100%; box-sizing: border-box; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-radius: 16px 16px 0 0; background-color: var(--tg-bg-color); }
+.home-sheet-action { display: block; width: 100%; padding: 14px 8px; border: 0; background: none; font-size: 16px; text-align: center; color: var(--tg-text-color); }
+.home-sheet-cancel { color: var(--tg-subtitle-text-color); }
+/* Запись в Журнал (#263): кнопка «+ Записать», формы тренировки/активности. */
+.journal-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.journal-title-row .plan-title { flex: 1 1 auto; min-width: 0; }
+.journal-log-button { flex: 0 0 auto; padding: 8px 14px; border: 0; border-radius: 16px; font-size: 14px; color: var(--tg-button-text-color); background-color: var(--tg-button-color); }
+.log-form { min-width: 0; }
+.log-field { margin-bottom: 14px; min-width: 0; }
+.log-label { display: block; margin: 0 0 6px; font-size: 14px; color: var(--tg-subtitle-text-color); overflow-wrap: anywhere; }
+.log-input { display: block; width: 100%; box-sizing: border-box; min-height: 40px; padding: 8px 12px; border: 1px solid var(--tg-hint-color, rgba(127, 127, 127, 0.5)); border-radius: 10px; font-size: 16px; color: var(--tg-text-color); background-color: var(--tg-secondary-bg-color, transparent); }
+.log-effort { display: flex; flex-wrap: wrap; gap: 8px; }
+.log-sets { display: flex; flex-wrap: wrap; gap: 8px; }
+.log-set-input { width: 72px; text-align: center; }
+.search-screen { min-width: 0; }
+.search-header { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; margin: 0 -16px 8px; padding: 8px 16px; background-color: var(--tg-bg-color); }
+.search-input { flex: 1 1 auto; min-width: 0; height: 40px; box-sizing: border-box; padding: 0 16px; border: 0; border-radius: 20px; font-size: 16px; color: var(--tg-text-color); background-color: var(--tg-secondary-bg-color, rgba(127, 127, 127, 0.15)); }
+.search-close { flex: 0 0 auto; border: 0; background: none; font-size: 15px; color: var(--tg-link-color, var(--tg-button-color)); }
+.search-chips { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 8px; padding: 0 16px 4px; }
+.search-chip { flex: 0 0 auto; padding: 6px 14px; border: 1px solid var(--tg-hint-color, rgba(127, 127, 127, 0.5)); border-radius: 16px; font-size: 14px; color: var(--tg-text-color); background: none; }
+.search-chip-active { color: var(--tg-button-text-color); border-color: var(--tg-button-color); background-color: var(--tg-button-color); }
+.search-list { list-style: none; margin: 0; padding: 0; }
+.search-result { display: flex; flex-direction: column; gap: 2px; width: 100%; box-sizing: border-box; padding: 10px 0; border: 0; background: none; text-align: left; color: var(--tg-text-color); overflow-wrap: anywhere; }
+
+.phase-panel { margin-bottom: 16px; padding: 14px 16px; border-radius: 16px; text-align: center; }
+.phase-panel-label { margin: 0; font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--tg-subtitle-text-color); }
+.phase-panel .timer-duration-label { margin: 4px 0 0; font-size: 48px; font-weight: 800; }
+.phase-card-done { background: color-mix(in srgb, var(--tg-button-color) 8%, var(--tg-bg-color)); border: 1.5px solid color-mix(in srgb, var(--tg-button-color) 30%, transparent); text-align: left; }
+.phase-card-done .action-button { margin-top: 12px; }
+
+/* Workout Detail (#255): круглые кнопки действий и строки списков. */
+.workout-detail-actions { display: flex; flex-wrap: wrap; gap: 20px; margin: 16px 0; }
+.workout-detail-action { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 96px; padding: 0; border: none; background: none; color: inherit; font: inherit; cursor: pointer; }
+.workout-detail-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.workout-detail-empty { margin: 0 0 12px; }
+.workout-detail-action-icon { display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--tg-button-color); color: var(--tg-button-text-color); font-size: 22px; }
+.workout-detail-action-label { font-size: 13px; text-align: center; overflow-wrap: anywhere; }
+.workout-detail-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 14px; border-radius: 12px; background: var(--tg-secondary-bg-color); }
+
+/* Избранное (#272): сердечко рядом с названием. */
+.favorite-title-row { display: flex; align-items: center; gap: 8px; }
+.favorite-title-row .plan-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.favorite-heart { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: none; background: none; line-height: 1; color: var(--tg-hint-color, rgba(127, 127, 127, 0.9)); cursor: pointer; }
+.favorite-heart-on { color: #e5484d; }
+.favorite-heart:disabled { opacity: 0.5; }
+.favorite-error { color: #e5484d; }
+
+/* Журнал: месяц-бар, календарь, группы неделя/день (#256) */
+.journal-month-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.journal-month-arrow,
+.journal-month-label { border: 0; background: var(--tg-secondary-bg-color); color: var(--tg-text-color); border-radius: 12px; font: inherit; min-height: 44px; cursor: pointer; }
+.journal-month-arrow { min-width: 44px; font-size: 22px; line-height: 1; }
+.journal-month-label { flex: 1; min-width: 0; font-weight: 700; font-size: 16px; }
+.journal-calendar-grid { background: var(--tg-secondary-bg-color); border-radius: 16px; padding: 8px; margin-bottom: 12px; }
+.journal-calendar-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.journal-calendar-weekday { text-align: center; font-size: 12px; color: var(--tg-hint-color); padding: 4px 0; }
+.journal-calendar-cell { min-width: 0; height: 40px; }
+.journal-calendar-day { position: relative; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 10px; background: transparent; color: var(--tg-text-color); font: inherit; font-size: 14px; cursor: pointer; padding: 0; }
+.journal-calendar-today { outline: 1px solid var(--tg-hint-color); }
+.journal-calendar-selected { background: var(--tg-button-color); color: var(--tg-button-text-color); }
+.journal-calendar-dot { position: absolute; bottom: 4px; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--tg-link-color); }
+.journal-calendar-selected .journal-calendar-dot { background: var(--tg-button-text-color); }
+.journal-week-header { margin: 14px 0 6px; padding: 4px 10px; border-radius: 8px; background: var(--tg-secondary-bg-color); color: var(--tg-subtitle-text-color); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+.journal-day-header { margin: 10px 0 6px; font-weight: 700; font-size: 14px; }
+
+/* Тесты (#260) */
+.home-tests-row { display: flex; flex-direction: column; gap: 2px; width: 100%; box-sizing: border-box; margin: 8px 0 12px; padding: 12px 16px; border: 0; border-radius: 16px; background: var(--tg-secondary-bg-color); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.home-tests-row-title { font-weight: 600; font-size: 16px; }
+.test-card { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; box-sizing: border-box; border: 0; color: inherit; font: inherit; text-align: left; }
+.test-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.test-card-name { font-weight: 600; font-size: 15px; }
+.test-card-spark { flex: none; color: var(--tg-link-color); }
+.test-actions { display: flex; gap: 8px; margin-top: 8px; }
+.test-history-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.test-history-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.test-history-actions { display: flex; gap: 12px; }
+.test-row-button { padding: 6px 0; border: 0; background: none; color: var(--tg-link-color); font: inherit; font-size: 14px; cursor: pointer; }
+[data-testid="test-form"] .set-input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+
+/* Журнал: правка/клон записи (#262) */
+.journal-edit-input,
+.journal-edit-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(127, 127, 127, 0.25);
+  background: var(--tg-bg-color);
+  color: var(--tg-text-color);
+  font-size: 16px;
+}
+.journal-edit-textarea { min-height: 88px; resize: vertical; font-family: inherit; }
+.journal-edit-set { padding: 0 16px; }
+
+/* Настройки: строка-переключатель (#281) */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+/* Подборки (CRIMPD #271): ряд на Главной и экран подборки — только новые классы,
+   ряд/карточка переиспользуют .home-program-row / .home-program-card; кнопка — свой класс, чтобы
+   E2E-селекторы `.program-card-button` (каталог программ) не цеплялись за подборки. */
+.collection-author, .collection-card-button .hint, .collection-card-button .block-subtitle { margin: 0 0 2px; }
+.collection-card-button .block-subtitle { color: var(--tg-text-color); font-weight: 600; font-size: 16px; }
+.collection-text { margin: 4px 0 0; text-align: left; color: var(--tg-subtitle-text-color); font-size: 14px; line-height: 1.4; }
+.collection-card-description { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.collection-hero { margin-top: 12px; overflow-wrap: anywhere; }
+.collection-hero .plan-title { margin: 2px 0; }
+.collection-item-list { list-style: none; margin: 0; padding: 0; }
+.collection-card-button { display: block; width: 100%; box-sizing: border-box; background: var(--tg-secondary-bg-color); border: none; border-radius: 16px; padding: 12px 16px; margin: 0; font: inherit; text-align: left; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.collection-card-button:active { opacity: 0.7; }

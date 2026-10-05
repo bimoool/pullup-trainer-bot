@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -20,6 +20,36 @@ class HelloResponse(BaseModel):
     onboarding_step: Literal["not_registered", "baseline", "questionnaire", "done"]
     readiness_status: str | None
     days_since_last_workout: int | None
+    # Волна 4 многокурсовой платформы (issue #167) — переключение на
+    # экспериментальный Dashboard (webapp-frontend/src/DashboardScreen.tsx)
+    # доступно только тестировщикам из ADMIN_IDS, тот же принцип, что
+    # обходы лимитов для тестирования вживую (CLAUDE.md): не query-параметр
+    # (Mini App открывается фиксированной кнопкой, не произвольным URL, см.
+    # issue #30/#141), а поле ответа, которое App.tsx читает один раз при
+    # загрузке.
+    is_admin: bool = False
+
+
+class DashboardResponse(BaseModel):
+    """Стартовый экран Mini App (issue #175) — единый план вместо открытой
+    тренировки (product-reference skill/docs/architecture-multicourse.md:
+    Dashboard, не WorkoutScreen, референс — Crimpd). status — тот же
+    словарь, что WorkoutPlanResponse.status (app/web/routes.py::
+    _resolve_plan_context, общий путь, не вторая копия правил готовности) —
+    "Тренировка" сама решает, показать форму или причину недоступности,
+    Dashboard только не открывает её первым экраном.
+
+    Только честные, реально посчитанные цифры — не выдуманный "план на
+    неделю" (в этой однокурсовой системе подтягиваний нет понятия
+    "недельной нормы тренировок", придумывать её не стали): streak —
+    app.domain.achievements.consecutive_streak_length, та же функция, что
+    считает ачивку TEN_WORKOUTS_STREAK, не своя эвристика."""
+
+    status: str
+    workouts_count: int = 0
+    streak: int = 0
+    days_since_last_workout: int | None = None
+    is_first_workout: bool = False
 
 
 class EquipmentInfo(BaseModel):
@@ -575,6 +605,9 @@ class SubscriptionResponse(BaseModel):
     status: str | None = None
     status_label: str | None = None
     expires_at: str | None = None
+    # #300 / D6: серверный ответ «доступны ли курсовые тренировки» (от subscription_expires_at). Подсказка для UI;
+    # истина — 402 subscription_required на старте.
+    has_access: bool = False
     price_rub: int
     days: int
     pricing_text_html: str
@@ -1018,3 +1051,81 @@ class ElectiveSubmitResponse(BaseModel):
     status: str
     result_text: str | None = None
     equipment_label: str | None = None
+
+
+class DisplayPreferencesResponse(BaseModel):
+    """GET/PUT /api/profile/prefs (issue #268) — единицы и тема, уже с дефолтами."""
+
+    weight_unit: Literal["kg", "lb"]
+    height_unit: Literal["cm", "in"]
+    theme: Literal["auto", "light", "dark"]
+
+
+class DisplayPreferencesUpdateRequest(BaseModel):
+    """Частичное обновление: None — не менять."""
+
+    weight_unit: Literal["kg", "lb"] | None = None
+    height_unit: Literal["cm", "in"] | None = None
+    theme: Literal["auto", "light", "dark"] | None = None
+
+
+# --- История веса/роста (issue #270) -----------------------------------------------
+
+_BODY_METRIC_LIMITS: dict[str, tuple[Decimal, Decimal]] = {
+    "weight_kg": (Decimal(20), Decimal(500)),
+    "height_cm": (Decimal(50), Decimal(300)),
+}
+# Допуск на часовой пояс клиента: «сегодня» у пользователя может быть впереди UTC.
+_BODY_METRIC_FUTURE_SLACK = timedelta(days=1)
+
+
+def _validate_measured_at(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    if value > datetime.now(UTC) + _BODY_METRIC_FUTURE_SLACK:
+        raise ValueError("measured_at не может быть в будущем")
+    return value
+
+
+class BodyMetricCreateRequest(BaseModel):
+    metric: Literal["weight_kg", "height_cm"]
+    value: Decimal
+    measured_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "BodyMetricCreateRequest":
+        low, high = _BODY_METRIC_LIMITS[self.metric]
+        if not low <= self.value <= high:
+            raise ValueError(f"value вне диапазона {low}..{high}")
+        if self.metric == "height_cm" and self.value != self.value.to_integral_value():
+            raise ValueError("рост — целое число сантиметров")
+        self.measured_at = _validate_measured_at(self.measured_at)
+        return self
+
+
+class BodyMetricUpdateRequest(BaseModel):
+    """None = «не менять»; диапазон значения проверяется в роуте (метрику знает запись)."""
+
+    value: Decimal | None = None
+    measured_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "BodyMetricUpdateRequest":
+        self.measured_at = _validate_measured_at(self.measured_at)
+        return self
+
+
+class BodyMetricEntry(BaseModel):
+    id: int
+    value: Decimal
+    measured_at: datetime
+
+
+class BodyMetricHistoryResponse(BaseModel):
+    """items — новые сверху; current — то, что зеркалится в User (последний замер)."""
+
+    metric: Literal["weight_kg", "height_cm"]
+    items: list[BodyMetricEntry]
+    current: Decimal | None = None

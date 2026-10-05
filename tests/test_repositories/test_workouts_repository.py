@@ -328,6 +328,67 @@ async def test_backdated_workout_excluded_from_cascade_but_drives_target_derivat
     assert updated_third_block_a.target_before != updated_backdated_block_a.target_after
 
 
+async def test_preview_edit_workout_matches_what_edit_workout_actually_writes(session, user: User):
+    """Волна 0 многокурсовой платформы (issue #158) — критерий готовности:
+    preview_edit_workout (сухой прогон, ничего не пишет) должен вернуть ТЕ
+    ЖЕ значения, что реально запишет edit_workout с теми же аргументами.
+    Явное сравнение поле за полем на фактическом прогоне обоих путей — не
+    "preview() = apply() в одну строку, значит совпадёт само собой" (issue
+    прямо просит тест, который это доказывает, не логический вывод из
+    кода)."""
+    workout_set_id = await _make_set(session, user)
+    repo = WorkoutRepository(session)
+
+    first = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(1),
+        block_a_reps=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    second = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(2),
+        block_a_reps=BlockLog(working_reps=(12, 12, 12), max_reps=13),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    third = await repo.record_workout(
+        user_id=user.id, workout_set_id=workout_set_id, performed_at=_day(3),
+        block_a_reps=BlockLog(working_reps=(13, 13, 13), max_reps=14),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+    new_block_a = BlockLog(working_reps=(20, 20, 20), max_reps=21)
+    new_block_b = BlockLog(working_reps=(5, 5, 5, 5), max_reps=6)
+
+    preview = await repo.preview_edit_workout(
+        workout_id=first.id, block_a_reps=new_block_a, block_b_reps=new_block_b,
+    )
+    assert len(preview) == 3  # сама отредактированная запись + second + third
+
+    # preview не должен был ничего записать в БД.
+    untouched_first_a = _block(await repo.get_by_id(first.id), "a")
+    assert untouched_first_a.working_reps == [11, 11, 11]
+    assert untouched_first_a.max_reps == 12
+
+    await repo.edit_workout(workout_id=first.id, block_a_reps=new_block_a, block_b_reps=new_block_b)
+    updated_workouts = [await repo.get_by_id(w.id) for w in (first, second, third)]
+
+    for preview_record, updated_workout in zip(preview, updated_workouts, strict=True):
+        block_a, block_b = _block(updated_workout, "a"), _block(updated_workout, "b")
+        assert preview_record.block_a.target_before == block_a.target_before
+        assert preview_record.block_a.target_after == block_a.target_after
+        assert preview_record.block_a.equipment_changed == block_a.equipment_changed
+        assert preview_record.block_a.work_sets_before == block_a.work_sets_before
+        assert preview_record.block_a.work_sets_after == block_a.work_sets_after
+        assert preview_record.block_b.target_before == block_b.target_before
+        assert preview_record.block_b.target_after == block_b.target_after
+        assert preview_record.block_b.equipment_changed == block_b.equipment_changed
+
+
 async def test_edit_workout_raises_for_backdated_workout(session, user: User):
     workout_set_id = await _make_set(session, user)
     repo = WorkoutRepository(session)

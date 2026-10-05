@@ -1,0 +1,10 @@
+import { Sess } from "./lib.mjs";
+const s = await new Sess("j1", 7200001).start();
+await s.open("/"); const p = s.page;
+await s.tap(p.getByRole("button",{name:/Планы/}).or(p.getByText("Планы",{exact:true})).last(),"tab Планы");
+await s.dump("Планы S0"); await s.shot("plans-empty");
+await s.tap(p.getByText("Главная",{exact:true}).last(),"tab Главная");
+await s.tap(p.getByText("Подтягивания",{exact:true}).first(),"card Подтягивания");
+await s.dump("Program detail"); await s.shot("program-detail");
+s.ev("buttons "+JSON.stringify(await p.getByRole("button").allInnerTexts()));
+await s.end();

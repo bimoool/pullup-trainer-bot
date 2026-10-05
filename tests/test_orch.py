@@ -1,0 +1,697 @@
+"""ORCH-1 orchestrator: pure rules + a full planner → worker → planner simulation.
+
+No database, no network: `scripts/orch.py` is stdlib-only, and the simulation drives the real
+command handlers (`cmd_plan`, `cmd_worker_guard`, `cmd_worker_record`) against an in-memory fake
+GitHub, with the orchestration files written to a temp dir.
+"""
+
+import argparse
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+_SPEC = importlib.util.spec_from_file_location(
+    "orch", Path(__file__).resolve().parent.parent / "scripts" / "orch.py"
+)
+orch = importlib.util.module_from_spec(_SPEC)
+sys.modules["orch"] = orch
+_SPEC.loader.exec_module(orch)
+
+GOOD_BODY = """## Goal
+Make the widget show the right total.
+
+## Why
+Users see wrong numbers.
+
+## Acceptance criteria
+- [ ] total equals sum of sets
+- [ ] regression test fails without the fix
+
+## Out of scope
+Deploying to production; merging main.
+
+## Tests
+pytest tests/test_widget.py
+
+## Owner decision required?
+no
+"""
+
+
+def body(goal: str = "Make the widget show the right total.", decision: str = "no") -> str:
+    return GOOD_BODY.replace("Make the widget show the right total.", goal).replace(
+        "required?\nno", f"required?\n{decision}"
+    )
+
+
+def issue(n, labels=(), b=GOOD_BODY, title=None, author="owner", state="OPEN"):
+    return orch.Issue(
+        number=n,
+        title=title or f"task {n}",
+        body=b,
+        labels=set(labels),
+        state=state,
+        author=author,
+        url=f"https://example.test/issues/{n}",
+    )
+
+
+class FakeGh:
+    def __init__(self, issues):
+        self.issues = {i.number: i for i in issues}
+        self.comments: dict[int, list[str]] = {}
+        self.dashboard_body = None
+
+    def list_issues(self):
+        return [orch.Issue(**{**vars(i), "labels": set(i.labels)}) for i in self.issues.values()]
+
+    def get_issue(self, n):
+        i = self.issues[n]
+        return orch.Issue(**{**vars(i), "labels": set(i.labels)})
+
+    def set_status(self, n, status, current):
+        i = self.issues[n]
+        i.labels = (i.labels - set(orch.STATUS_LABELS)) | {status}
+
+    def comment(self, n, text):
+        self.comments.setdefault(n, []).append(text)
+
+    def close(self, n):
+        self.issues[n].state = "CLOSED"
+        self.issues[n].state_reason = "COMPLETED"
+        self.issues[n].closed_at = f"2026-09-29T12:{n % 60:02d}:00Z"
+
+    def set_body(self, n, text):
+        self.dashboard_body = text
+
+    def pr(self, n):
+        return {"state": "OPEN", "isDraft": True, "checks": "green"}
+
+    def last_run(self, workflow):
+        return None
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    """Temp 'checkout' holding the orchestration files; git/network status bits stubbed."""
+    monkeypatch.setattr(orch, "ROOT", tmp_path)
+    state = orch.default_state()
+    state.update(
+        canonical_pr=226, phase="test phase", trusted_authors=["owner"], dashboard_issue=99
+    )
+    (tmp_path / ".github/orch").mkdir(parents=True)
+    (tmp_path / ".github/task").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    orch.save_state(state)
+    orch.write(orch.BRIEF_PATH, orch.render_idle_brief("init"))
+
+    def fake_gather(gh, st, issues=None):
+        return orch.StatusContext(
+            now="2026-09-29 12:00 UTC",
+            state=st,
+            issues=issues if issues is not None else gh.list_issues(),
+            code_sha="c0ffee" * 7,
+            pr=gh.pr(226),
+            brief_text=orch.read(orch.BRIEF_PATH),
+            staging="ok",
+            production="untouched",
+        )
+
+    monkeypatch.setattr(orch, "gather_status", fake_gather)
+    monkeypatch.setattr(orch, "run", lambda cmd, check=True, cwd=None: "b" * 40 + "\n")
+    monkeypatch.setattr(orch, "remote_branch_sha", lambda branch: None)
+    return tmp_path
+
+
+def ns(**kw):
+    base = {"apply": False, "publish": True, "push": False}
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def record_args(n, **kw):
+    base = {
+        "issue": n,
+        "verdict": "done",
+        "result_file": None,
+        "tests_ok": "1",
+        "tests_summary": "ruff ok, pytest ok",
+        "commits_ahead": 2,
+        "forbidden": "",
+        "merged": "1",
+        "sha": "d" * 40,
+        "run_url": "",
+        "evidence_file": "",
+        "publish": True,
+        "push": False,
+    }
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+# --------------------------------------------------------------------------- pure rules
+
+
+def test_template_body_is_ready():
+    tpl = (
+        Path(__file__).resolve().parent.parent / ".github/ISSUE_TEMPLATE/implementation.md"
+    ).read_text()
+    filled = tpl.split("---", 2)[2].replace("- [ ] <!-- checkable, observable -->", "- [ ] x works")
+    assert orch.check_ready(issue(1, b=filled), ["owner"]).ok
+
+
+@pytest.mark.parametrize(
+    ("b", "reason"),
+    [
+        (GOOD_BODY.replace("## Acceptance criteria", "## Notes"), "missing section"),
+        (
+            GOOD_BODY.replace(
+                "- [ ] total equals sum of sets\n- [ ] regression test fails without the fix", "tbd"
+            ),
+            "no checkable",
+        ),
+        (body(decision="yes: which icon set"), "not 'no'"),
+        (body(goal="Deploy to production after merge"), "production deploy"),
+        (body(goal="Verify the timer on a real iPhone"), "real-device"),
+        (body(goal="Drop column users.legacy_score"), "destructive migration"),
+        (body(goal="Rotate the bot secret"), "credentials"),
+        (body(goal="Изменить формулу прогрессии"), "progression"),
+    ],
+)
+def test_not_ready_goes_to_needs_owner(b, reason):
+    r = orch.check_ready(issue(1, b=b), ["owner"])
+    assert not r.ok and r.label == "status:needs-owner" and reason in r.reason
+
+
+def test_out_of_scope_mentions_do_not_trip_stop_conditions():
+    # GOOD_BODY's Out of scope says "Deploying to production; merging main" — must stay ready.
+    assert orch.check_ready(issue(1), ["owner"]).ok
+
+
+def test_untrusted_author_needs_owner_approval():
+    assert not orch.check_ready(issue(1, author="stranger"), ["owner"]).ok
+    assert orch.check_ready(
+        issue(1, author="stranger", labels=["orch:owner-approved"]), ["owner"]
+    ).ok
+
+
+def test_owner_approved_clears_stop_tripwire():
+    i = issue(1, b=body(goal="Check iPhone safe-area CSS in e2e"), labels=["orch:owner-approved"])
+    assert orch.check_ready(i, ["owner"]).ok
+
+
+def test_invariants():
+    v = orch.find_violations(
+        [
+            issue(1, ["status:ready", "status:in-progress"]),
+            issue(2, ["status:in-progress", "status:done"]),
+            issue(3, ["status:done"]),
+            issue(4, ["status:in-progress"], state="CLOSED"),
+        ]
+    )
+    text = "\n".join(v)
+    assert (
+        "#1 has 2" in text
+        and "#2 has 2" in text
+        and "#3 is open" in text
+        and "#4 is closed" in text
+    )
+    assert "more than one open status:in-progress" in text
+
+
+def test_queue_order_priority_then_bug_then_age():
+    issues = [
+        issue(5, ["status:ready", "priority:p2"]),
+        issue(4, ["status:ready", "priority:p1", "type:feature"]),
+        issue(9, ["status:ready", "priority:p1", "type:bug"]),
+        issue(2, ["status:ready"]),
+        issue(3, ["status:ready", "priority:p0"]),
+        issue(1, ["status:ready", "orch:test"]),
+        issue(7, ["status:needs-owner", "priority:p0"]),
+    ]
+    assert [i.number for i in orch.ready_queue(issues, orch.default_state())] == [3, 9, 4, 5, 2]
+    sandbox = {**orch.default_state(), "scope_label": "orch:test"}
+    assert [i.number for i in orch.ready_queue(issues, sandbox)] == [1]
+
+
+def test_final_verdict_gate_never_trusts_agent_alone():
+    assert orch.final_verdict("done", True, 2, [], True)[0] == "done"
+    assert orch.final_verdict("done", False, 2, [], True)[0] == "blocked"
+    assert orch.final_verdict("done", True, 0, [], True)[0] == "blocked"
+    assert orch.final_verdict("done", True, 2, [], False)[0] == "blocked"
+    assert (
+        orch.final_verdict("done", True, 2, [".github/workflows/x.yml"], True)[0] == "needs-owner"
+    )
+    assert orch.final_verdict("needs-owner", True, 2, [], None)[0] == "needs-owner"
+
+
+def test_forbidden_changes():
+    assert orch.forbidden_changes(["app/x.py"], "+ op.add_column('t', c)") == []
+    assert orch.forbidden_changes([".github/orch/state.json", "docs/PROJECT_STATUS.md"], "")
+    assert orch.forbidden_changes(["alembic/versions/x.py"], "+    op.drop_column('users', 'x')")
+
+
+def test_base_guard_never_main():
+    st = orch.default_state()
+    i = issue(1, ["status:in-progress"])
+    brief = "ISSUE: #1\n"
+    st["batch"]["status"] = "running"
+    assert "not an allowed" in orch.worker_guard(i, st, brief, "main")
+    assert orch.worker_guard(i, st, brief, "develop/current") is None
+
+
+def test_parse_result_defaults_to_blocked():
+    assert orch.parse_result("VERDICT: done\nSUMMARY: x")["verdict"] == "done"
+    assert orch.parse_result("I think it's finished")["verdict"] == "blocked"
+
+
+def result_text(verdict="done", **drop):
+    fields = {
+        "VERDICT": verdict,
+        "SUMMARY": "cherry-picked f80c7ff",
+        "ACCEPTANCE": "all met",
+        "TESTS": "pytest 1443 passed",
+        "KNOWN GAPS": "none",
+        "PERMISSION DENIALS": "none",
+    }
+    for k in drop:
+        fields.pop(k.replace("_", " ").upper())
+    return "\n".join(f"{k}: {v}" for k, v in fields.items()) + "\n"
+
+
+@pytest.mark.parametrize("verdict", ["done", "blocked", "needs-owner"])
+def test_result_contract_accepts_every_valid_verdict(verdict):
+    r = orch.parse_result(result_text(verdict))
+    assert r["error"] == "" and r["verdict"] == verdict
+
+
+@pytest.mark.parametrize(
+    "text, why",
+    [
+        ("", "missing"),
+        ("   \n", "missing"),
+        ("I finished the task, all good.", "VERDICT"),
+        (result_text("finished"), "VERDICT"),
+        (result_text("pending"), "VERDICT"),
+        (result_text(summary=1), "SUMMARY"),
+        (result_text(acceptance=1, tests=1), "ACCEPTANCE, TESTS"),
+    ],
+)
+def test_result_contract_rejects_missing_or_malformed(text, why):
+    assert why in (orch.result_contract_error(text) or "")
+    assert orch.parse_result(text)["error"]
+
+
+def record_case(repo, tmp_path, result, **kw):
+    """One in-progress issue, worker finished with green tests + commits; returns (gh, n)."""
+    gh = FakeGh([issue(7, ["status:ready", "priority:p1"])])
+    st = orch.load_state()
+    orch.batch_start(st, by="owner", now="t0")
+    orch.save_state(st)
+    orch.cmd_plan(ns(apply=True), gh)
+    f = None
+    if result is not None:
+        f = tmp_path / "result.md"
+        f.write_text(result)
+    orch.cmd_worker_record(
+        record_args(7, result_file=str(f) if f else str(tmp_path / "nope.md"), **kw), gh
+    )
+    return gh
+
+
+def test_valid_done_result_marks_done(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("done"))
+    assert gh.issues[7].state == "CLOSED" and "status:done" in gh.issues[7].labels
+    assert orch.load_state()["batch"]["completed"] == [7]
+
+
+def test_valid_blocked_and_needs_owner_results_are_recorded(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("blocked"))
+    assert "status:blocked" in gh.issues[7].labels and gh.issues[7].state == "OPEN"
+    assert "worker reported blocked" in gh.comments[7][-1]
+    assert orch.load_state()["batch"]["completed"] == []
+
+
+def test_valid_needs_owner_result_is_recorded(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("needs-owner"))
+    assert "status:needs-owner" in gh.issues[7].labels and gh.issues[7].state == "OPEN"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [None, "", "Successfully implemented the fix!", result_text("done", tests=1)],
+    ids=["missing-file", "empty-file", "prose-only", "missing-field"],
+)
+def test_missing_or_malformed_result_blocks_and_never_marks_done(repo, tmp_path, result):
+    # Claude step "succeeded", branch has commits, verification is green, merge succeeded.
+    gh = record_case(repo, tmp_path, result, tests_ok="1", commits_ahead=1, merged="1")
+    assert gh.issues[7].state == "OPEN"
+    assert "status:blocked" in gh.issues[7].labels and "status:done" not in gh.issues[7].labels
+    comment = gh.comments[7][-1]
+    assert "ORCH CONTRACT FAILURE" in comment and "NOT marked done" in comment
+    assert orch.load_state()["batch"]["completed"] == []
+
+
+def test_successful_claude_output_alone_never_counts_as_done(repo, tmp_path):
+    # No result file at all, forbidden paths touched: still no done, escalated to the owner.
+    gh = record_case(repo, tmp_path, None, forbidden=".github/workflows/x.yml")
+    assert "status:needs-owner" in gh.issues[7].labels and gh.issues[7].state == "OPEN"
+
+
+# --------------------------------------------------------------------------- simulation
+
+
+def test_full_loop_simulation(repo):
+    """ORCH-E dry run: select → in-progress → no duplicate → done → counter → 5/5 stop."""
+    issues = [
+        issue(99, ["orch:dashboard"], title="Project Status"),
+        issue(
+            102, ["status:ready", "priority:p0"], b=body(goal="Check the timer on a real iPhone")
+        ),
+        issue(101, ["status:ready", "priority:p1", "type:bug"]),
+        issue(103, ["status:ready", "priority:p1"], b="just do it"),
+        issue(104, ["status:needs-owner", "priority:p0"]),
+        issue(105, ["status:blocked", "priority:p0"]),
+        *[issue(n, ["status:ready", "priority:p2"]) for n in range(110, 117)],
+    ]
+    gh = FakeGh(issues)
+
+    # 0. No batch approved → planner never starts anything, even with --apply.
+    orch.cmd_plan(ns(apply=True), gh)
+    assert not any("status:in-progress" in i.labels for i in gh.issues.values())
+    assert orch.load_state()["batch"]["status"] == "idle"
+    # …but it did normalize: vague #103 and iPhone #102 are now needs-owner, with a reason.
+    assert gh.issues[102].labels == {"status:needs-owner", "priority:p0"}
+    assert gh.issues[103].labels == {"status:needs-owner", "priority:p1"}
+    assert "real-device" in gh.comments[102][-1]
+
+    # Owner starts batch 1.
+    state = orch.load_state()
+    orch.batch_start(state, by="owner", now="t0")
+    orch.save_state(state)
+
+    completed = []
+    for round_ in range(1, 6):
+        orch.cmd_plan(ns(apply=True), gh)
+        active = [i for i in gh.issues.values() if "status:in-progress" in i.labels]
+        assert len(active) == 1, "exactly one task in progress"
+        n = active[0].number
+        # needs-owner / blocked issues are never selected
+        assert n not in (102, 103, 104, 105)
+        if round_ == 1:
+            assert n == 101  # p1 bug beats p2; p0 #102 was rejected
+        brief = orch.read(orch.BRIEF_PATH)
+        assert f"ISSUE: #{n}" in brief and f"BRANCH: orch/issue-{n}" in brief
+        status = orch.read(orch.STATUS_PATH)
+        assert "## IN PROGRESS" in status and f"#{n}]" in status.split("## READY NEXT")[0]
+        assert gh.dashboard_body and f"#{n}]" in gh.dashboard_body
+
+        # Duplicate planner run: no second worker, nothing relabelled.
+        before = {k: set(v.labels) for k, v in gh.issues.items()}
+        orch.cmd_plan(ns(apply=True), gh)
+        assert {k: set(v.labels) for k, v in gh.issues.items()} == before
+        assert orch.plan(gh.list_issues(), orch.load_state()).action == "active-exists"
+
+        # Worker guard: only the brief's issue may run.
+        assert orch.cmd_worker_guard(argparse.Namespace(issue=n, base="develop/current"), gh) == 0
+        other = next(i for i in gh.issues.values() if "status:ready" in i.labels)
+        assert (
+            orch.cmd_worker_guard(
+                argparse.Namespace(issue=other.number, base="develop/current"), gh
+            )
+            == 1
+        )
+        assert orch.cmd_worker_guard(argparse.Namespace(issue=n, base="main"), gh) == 1
+
+        orch.cmd_worker_record(record_args(n), gh)
+        completed.append(n)
+        assert gh.issues[n].state == "CLOSED" and gh.issues[n].labels & {"status:done"}
+        st = orch.load_state()
+        assert st["batch"]["completed"] == completed
+        assert orch.brief_issue(orch.read(orch.BRIEF_PATH)) is None
+        assert f"{len(completed)}/5" in orch.read(orch.STATUS_PATH)
+
+    # 5/5: batch is in owner review, no sixth task starts although ready issues remain.
+    st = orch.load_state()
+    assert st["batch"]["status"] == "owner-review"
+    remaining_ready = [
+        i.number for i in gh.issues.values() if "status:ready" in i.labels and i.is_open
+    ]
+    assert remaining_ready, "there IS still work — the limit, not an empty queue, stops the loop"
+    orch.cmd_plan(ns(apply=True), gh)
+    assert not any("status:in-progress" in i.labels for i in gh.issues.values())
+    status = orch.read(orch.STATUS_PATH)
+    assert "AUTONOMOUS BATCH 1: 5/5 — STOP — OWNER REVIEW REQUIRED" in status
+    assert orch.batch_can_start(orch.load_state())[0] is False
+    # Recently done shows the five completions.
+    done_part = status.split("## RECENTLY DONE")[1].split("##")[0]
+    assert all(f"#{n}]" in done_part for n in completed)
+    # Owner can start the next batch explicitly.
+    st = orch.load_state()
+    orch.batch_start(st, by="owner", now="t1")
+    assert st["batch"]["id"] == 2 and st["batch"]["completed"] == []
+
+
+def test_failed_worker_does_not_count_and_attempts_cap(repo):
+    gh = FakeGh([issue(n, ["status:ready", "priority:p1"]) for n in range(1, 12)])
+    st = orch.load_state()
+    orch.batch_start(st, by="owner", now="t0")
+    orch.save_state(st)
+    for k in range(8):
+        orch.cmd_plan(ns(apply=True), gh)
+        n = next(i.number for i in gh.issues.values() if "status:in-progress" in i.labels)
+        assert n == k // 2 + 1  # a gate-red task is retried once, then the next one starts
+        orch.cmd_worker_record(record_args(n, tests_ok="0"), gh)  # agent says done, CI red
+        # 1st red gate → auto-retry (ready); 2nd → blocked. The 8th attempt ends the batch.
+        expect = "status:ready" if k % 2 == 0 and k < 7 else "status:blocked"
+        assert gh.issues[n].labels == {expect, "priority:p1"}
+        assert gh.issues[n].state == "OPEN"
+    st = orch.load_state()
+    assert st["batch"]["completed"] == [] and len(st["batch"]["attempts"]) == 8
+    assert st["batch"]["status"] == "owner-review"
+    orch.cmd_plan(ns(apply=True), gh)
+    assert not any("status:in-progress" in i.labels for i in gh.issues.values())
+
+
+def test_status_page_is_short_and_complete(repo):
+    gh = FakeGh(
+        [
+            issue(1, ["status:ready", "priority:p1"]),
+            issue(2, ["status:needs-owner"]),
+            issue(3, ["status:blocked"]),
+            issue(4, ["status:done"], state="CLOSED"),
+        ]
+    )
+    gh.issues[4].closed_at = "2026-09-29T00:00:00Z"
+    text = orch.refresh_status(gh, orch.load_state(), publish=False)
+    for heading in (
+        "# Project Status",
+        "## Canonical",
+        "## Current phase",
+        "## IN PROGRESS",
+        "## READY NEXT",
+        "## BLOCKED",
+        "## NEEDS OWNER",
+        "## RECENTLY DONE",
+        "## AUTONOMOUS BATCH",
+        "## ENVIRONMENTS",
+    ):
+        assert heading in text
+    assert len(text.splitlines()) < 150
+    assert json.loads((repo / orch.STATE_PATH).read_text())["canonical_branch"] == "develop/current"
+
+
+def test_task_branch_sources():
+    i = issue(7, ["status:in-progress"], b="Branch: `infra/x-y`\n\n## Goal\nx")
+    assert orch.task_branch(i) == "infra/x-y"
+    assert orch.task_branch(i, "ISSUE: #7\nBRANCH: orch/issue-7\n") == "orch/issue-7"
+    assert orch.task_branch(issue(8)) == "orch/issue-8"
+
+
+def test_done_result_without_confirmed_merge_is_not_done(repo, tmp_path):
+    # merge step failed/skipped (empty MERGED): the agent's DONE + green tests must not count.
+    gh = record_case(repo, tmp_path, result_text("done"), merged="")
+    assert gh.issues[7].state == "OPEN" and "status:blocked" in gh.issues[7].labels
+    assert "merge into base failed" in gh.comments[7][-1]
+    assert orch.load_state()["batch"]["completed"] == []
+
+
+def _control():
+    spec = importlib.util.spec_from_file_location(
+        "orch_control", Path(__file__).resolve().parents[1] / "scripts" / "orch_control.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["orch_control"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_empty_queue_idles_batch_and_approval_restarts(repo):
+    """#243: none-ready must not leave the batch 'running'; approve restarts planner → worker."""
+    control = _control()
+    state = orch.load_state()
+    assert control.transition(state, "start", 10, False)
+    orch.save_state(state)
+    gh = FakeGh([issue(1, ["status:backlog"])])
+    args = ns(apply=True)
+    orch.cmd_plan(args, gh)
+    assert args.decision.action == "none-ready"
+    state = orch.load_state()
+    assert state["batch"]["status"] == "idle"
+    line = orch.batch_line(state)
+    assert "queue empty" in line and "/orch approve" in line
+    msg = control.idle_message("start", args.decision)
+    assert "no worker was dispatched" in msg and "/orch approve" in msg
+    # Approval starts a fresh batch without a second /orch start.
+    assert control.transition(state, "approve", 11, False)
+    assert state["batch"]["status"] == "running"
+    assert state["batch"]["idle_reason"] is None
+    orch.save_state(state)
+    gh.issues[2] = issue(2, ["status:ready"])
+    args = ns(apply=True)
+    orch.cmd_plan(args, gh)
+    assert args.decision.action == "select"
+    assert "status:in-progress" in gh.issues[2].labels
+
+
+def test_red_gate_retries_once_with_evidence_then_blocks(repo, tmp_path):
+    """Agent done + red deterministic gate (e.g. Playwright E2E) → ready once, then blocked."""
+    ev = tmp_path / "evidence.md"
+    ev.write_text("### Playwright E2E (tail)\n1 failed: mobile-layout.spec.ts")
+    gh = record_case(
+        repo,
+        tmp_path,
+        result_text("done"),
+        tests_ok="0",
+        evidence_file=str(ev),
+        tests_summary="ruff ok; pytest 1 passed; frontend ok; e2e FAILED (1 failed)",
+    )
+    assert gh.issues[7].labels == {"status:ready", "priority:p1"} and gh.issues[7].state == "OPEN"
+    comment = gh.comments[7][-1]
+    assert "AUTO-RETRY (1/2" in comment and "1 failed: mobile-layout.spec.ts" in comment
+    assert "e2e FAILED" in comment
+    st = orch.load_state()
+    assert st["batch"]["completed"] == [] and st["batch"]["attempts"] == [7]
+    # Planner re-selects it; second red gate → blocked for the owner, not an endless loop.
+    orch.cmd_plan(ns(apply=True), gh)
+    assert "status:in-progress" in gh.issues[7].labels
+    orch.cmd_worker_record(
+        record_args(7, result_file=str(tmp_path / "result.md"), tests_ok="0"), gh
+    )
+    assert "status:blocked" in gh.issues[7].labels and "AUTO-RETRY" not in gh.comments[7][-1]
+
+
+@pytest.mark.parametrize("verdict", ["blocked", "needs-owner"])
+def test_agent_blocked_is_never_auto_retried(repo, tmp_path, verdict):
+    gh = record_case(repo, tmp_path, result_text(verdict), tests_ok="0")
+    assert f"status:{verdict}" in gh.issues[7].labels
+
+
+def test_no_commits_or_forbidden_paths_are_never_auto_retried(repo, tmp_path):
+    gh = record_case(repo, tmp_path, result_text("done"), tests_ok="0", commits_ahead=0)
+    assert "status:blocked" in gh.issues[7].labels
+
+
+def test_worker_workflow_runs_real_e2e_in_gate_and_never_asks_agent_to_install():
+    wf = (Path(__file__).resolve().parent.parent / ".github/workflows/orch-worker.yml").read_text()
+    # Toolchain installed by the workflow, before the agent.
+    assert wf.index("npx playwright install --with-deps chromium") < wf.index("name: Claude worker")
+    # Gate: base-commit runner, fresh DB, failure feeds evidence; agent never owns Playwright.
+    assert 'git show "$BASE_SHA:.github/orch/e2e.sh"' in wf and "--fresh" in wf
+    assert "NOT responsible for installing Playwright" in wf
+    assert "--evidence-file /tmp/orch/evidence.md" in wf
+    for path in ("webapp-frontend/", "app/(web|db|domain|services)/", "scripts/e2e_seed"):
+        assert path in wf
+    runner = (Path(__file__).resolve().parent.parent / ".github/orch/e2e.sh").read_text()
+    for step in (
+        "alembic upgrade head",
+        "npm run build",
+        "/health",
+        "e2e_seed_all.sh",
+        "E2E_BASE_URL=http://127.0.0.1:8001 npx playwright test",
+    ):
+        assert step in runner
+
+
+def test_commit_and_push_rederives_state_on_conflict_with_concurrent_writer(tmp_path, monkeypatch):
+    """Owner stop lands on origin while a worker records: the record is re-applied on top."""
+    import subprocess
+
+    def git(cwd, *a):
+        return subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)
+
+    origin, a, b = tmp_path / "origin.git", tmp_path / "a", tmp_path / "b"
+    git(tmp_path, "init", "-q", "--bare", "-b", "develop/current", str(origin))
+    git(tmp_path, "clone", "-q", str(origin), str(a))
+    for c in (a,):
+        git(c, "config", "user.email", "t@t"), git(c, "config", "user.name", "t")
+        git(c, "switch", "-q", "-c", "develop/current")
+    monkeypatch.setattr(orch, "ROOT", a)
+    (a / ".github/orch").mkdir(parents=True)
+    st = orch.default_state()
+    st["batch"].update(status="running", id=4)
+    orch.save_state(st)
+    git(a, "add", "."), git(a, "commit", "-qm", "init"), git(a, "push", "-q", "origin", "HEAD")
+    git(tmp_path, "clone", "-q", "-b", "develop/current", str(origin), str(b))
+    git(b, "config", "user.email", "t@t"), git(b, "config", "user.name", "t")
+    # Concurrent writer (planner applying an owner stop) pushes first.
+    sb = json.loads((b / orch.STATE_PATH).read_text())
+    sb["batch"]["status"] = "stopped"
+    (b / orch.STATE_PATH).write_text(json.dumps(sb, indent=2) + "\n")
+    git(b, "commit", "-qam", "owner stop"), git(b, "push", "-q", "origin", "HEAD")
+    # Worker records on its stale checkout → conflicting state.json.
+    st = orch.load_state()
+    orch.batch_record(st, 249, "blocked")
+    orch.save_state(st)
+
+    def reapply():
+        s2 = orch.load_state()
+        orch.batch_record(s2, 249, "blocked")
+        orch.save_state(s2)
+
+    assert orch.commit_and_push([orch.STATE_PATH], "worker #249", "develop/current", reapply)
+    git(b, "pull", "-q")
+    final = json.loads((b / orch.STATE_PATH).read_text())
+    assert final["batch"]["status"] == "stopped" and final["batch"]["attempts"] == [249]
+
+
+def dep_body(deps: str) -> str:
+    return GOOD_BODY.replace("## Tests", f"## Dependencies\n{deps}\n\n## Tests")
+
+
+def test_promotable_requires_all_dependencies_done_and_owner_approval():
+    approved = ["status:backlog", "priority:p0", "orch:owner-approved"]
+    issues = [
+        issue(1, ["status:done"], state="CLOSED"),
+        issue(2, ["status:in-progress"]),
+        issue(3, ["status:blocked"], state="CLOSED"),
+        issue(10, approved, b=dep_body("#1 — stays backlog until done")),
+        issue(11, approved, b=dep_body("#1, #2")),  # #2 still running
+        issue(12, approved, b=dep_body("#3")),  # closed but not done
+        issue(13, approved, b=dep_body("#999")),  # unknown
+        issue(14, approved, b=dep_body("none")),  # backlog for another reason
+        issue(15, ["status:backlog"], b=dep_body("#1")),  # not owner-approved
+        issue(16, ["status:ready", "orch:owner-approved"], b=dep_body("#1")),
+    ]
+    assert [(i.number, deps) for i, deps in orch.promotable(issues)] == [(10, [1])]
+
+
+def test_planner_promotes_then_selects_dependent_task(repo):
+    gh = FakeGh(
+        [
+            issue(1, ["status:done"], state="CLOSED"),
+            issue(10, ["status:backlog", "priority:p0", "orch:owner-approved"], b=dep_body("#1")),
+            issue(20, ["status:ready", "priority:p1"]),
+        ]
+    )
+    st = orch.load_state()
+    orch.batch_start(st, by="owner", now="t0")
+    orch.save_state(st)
+    orch.cmd_plan(ns(apply=False), gh)
+    assert "status:backlog" in gh.issues[10].labels  # dry run changes nothing
+    orch.cmd_plan(ns(apply=True), gh)
+    assert "status:in-progress" in gh.issues[10].labels  # promoted, then p0 beats p1
+    assert any("promoted" in c for c in gh.comments[10])

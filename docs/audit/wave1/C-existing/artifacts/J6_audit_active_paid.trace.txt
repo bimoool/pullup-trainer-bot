@@ -1,0 +1,38 @@
+06:49:10 JOURNEY J6 Subscription: audit_active_paid must be able to start and complete (tg 7300005)
+06:49:14 VISIBLE Профиль :: Привет, Audit! | Профиль | A | Audit | мужской · 33 года | 5 | Тренировок | 1 | Ачивка › | 50 | Монет | Последняя тренировка: 8 дней назад. | ЛИЧНЫЕ ДАННЫЕ | ВЕС | : | 78 кг | РОСТ | : | 181 см | Часовой пояс | : | Москва (UTC+3) | Изменить | ТЕСТЫ | Максимум подтягиваний | Ещё не проходили | Вис на перекладине, сек | Ещё не проходили | Подтягивания с весом, кг | Ещё не проходили | Результаты тестов не влияют на прогрессию и стартовый замер. | АККАУНТ | Подписка | : | активна (осталось 40 дн., д
+06:49:16 VISIBLE Планы :: Привет, Audit! | Планы | Мои тренировки | Сейчас | Завершённые | Текущий план | Подтягивания | На этой неделе: 0 из 3 | ‹ | Неделя 1 · 5 окт – 11 окт | База | › | Текущая неделя · 0 из 3 | СВОБОДНЫЙ ПУЛ | Подтягивания | 0/3 | Начать | + Добавить упражнение | Главная | Планы | Журнал | Аналитика | Профиль
+06:49:19 VISIBLE pre-screen :: ГОТОВЫ К СТАРТУ | Подтягивания | Цель 1: 8 повторений | 4 рабочих подхода · резина | Цель 2: 3 повторений | 4 рабочих подхода · резина | Начать
+06:49:22 VISIBLE live :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 4 | ПОДХОД | 8 | ПОВТ | Подход 1/4 · Цель: 8 повт. | 4×8 | ПРИГОТОВЬСЯ | 0:02 | Готов | Пауза
+06:49:22 EXPECT pre-screen target == live target
+06:49:22 ACTUAL pre=8 live=8   OK
+06:49:23 LIVE set 1 logged (10) :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 4 | ПОДХОД | 8 | ПОВТ | Подход 1/4 · Цель: 8 повт. | ОТДЫХ | 1:30 | Подход 1: 10 повт. |  Изменить | Пропустить отдых | Пауза
+06:49:24 LIVE set 2 logged (10) :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 2 / 4 | ПОДХОД | 8 | ПОВТ | Подход 2/4 · Цель: 8 повт. | ОТДЫХ | 1:30 | Подход 2: 10 повт. |  Изменить | Пропустить отдых | Пауза
+06:49:28 VISIBLE summary :: Тренировка завершена | Подтягивания | 2 | Подходов | 2 | Упражнений | — 2/4 | , не выполнено | Подход 1: 10 повт. | Подход 2: 10 повт. | — 0/1 | , не выполнено | Не выполнено — осталось в плане. | Новая цель | 8 → 8 | 3 → 3 | Закрыть
+06:49:28 EXPECT training completed (summary 'Тренировка завершена')
+06:49:28 ACTUAL completed   OK
+06:49:33 VISIBLE Журнал(after reload) :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:49 | Подходы | 2 | Повторы | 20 | Усилие | 3 | Главная | Планы | Журнал | Аналитика | Профиль
+06:49:33 EXPECT new session in Журнал after reload
+06:49:33 ACTUAL Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:49 | Подходы | 2 | Повторы | 20 | Усилие | 3 | Главная | Планы | Журнал | Аналит   OK
+
+--- NETWORK (api non-2xx and mutations) ---
+06:49:19 POST /api/v2/sessions/live -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:49:24.320223Z"},"phase_index":0,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+06:49:22 POST /api/v2/sessions/live/43/phase/next -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"go","ends_at":null},"phase_index":1,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps","val
+06:49:23 POST /api/v2/sessions/live/43/phase/next -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:53.009195Z"},"phase_index":2,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:49:23 POST /api/v2/sessions/live/43/sets:batch -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:53.009195Z"},"phase_index":2,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:49:23 POST /api/v2/sessions/live/43/phase/next -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:49:28.863778Z"},"phase_index":3,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+06:49:23 POST /api/v2/sessions/live/43/phase/next -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"go","ends_at":null},"phase_index":4,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps","val
+06:49:24 POST /api/v2/sessions/live/43/phase/next -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:54.009616Z"},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:49:24 POST /api/v2/sessions/live/43/sets:batch -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:54.009616Z"},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:49:25 POST /api/v2/sessions/live/43/complete -> 200 {"id":43,"client_session_id":"f3fd7891-44e3-48f7-9863-1e59b4fc898e","status":"completed","phase":{"name":"done","ends_at":null},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps",
+
+--- CONSOLE ERRORS ---
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam

@@ -13,8 +13,11 @@ import {
 } from "./api";
 import { BackdateForm } from "./BackdateForm";
 import { ElectiveScreen } from "./ElectiveScreen";
+import { EquipmentPlanScreen } from "./EquipmentPlanScreen";
 import { FreeWorkoutScreen } from "./FreeWorkoutScreen";
 import { LiveWorkoutScreen } from "./LiveWorkoutScreen";
+import { sanitizeDecimalInput } from "./decimalInput";
+import { Icon } from "./Icon";
 
 type Props = {
   initDataRaw: string;
@@ -281,14 +284,12 @@ export function BandItemSelect({
         <Input
           header="Сопротивление, кг"
           after="кг"
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.5"
           placeholder="Не знаю точно — оставь пустым"
           aria-label={`Блок ${letter}, сопротивление резины`}
           value={newResistance}
-          onChange={(e) => setNewResistance(e.target.value)}
+          onChange={(e) => setNewResistance(sanitizeDecimalInput(e.target.value))}
         />
         {createError && <p className="error-banner">{createError}</p>}
         <div className="band-create-actions">
@@ -383,14 +384,12 @@ export function EquipmentCorrectionFields({
         <Input
           header={firstWorkout ? "Вес отягощения, кг" : "Фактический вес (кг), если отличается"}
           after="кг"
-          type="number"
+          type="text"
           inputMode="decimal"
-          min={0}
-          step="0.5"
           placeholder={firstWorkout ? "Например: 5" : equipmentLabel}
           aria-label={`Блок ${letter}, фактический вес`}
           value={actualWeightValue}
-          onChange={(e) => onActualWeightChange(e.target.value)}
+          onChange={(e) => onActualWeightChange(sanitizeDecimalInput(e.target.value))}
         />
       )}
 
@@ -475,7 +474,7 @@ export function BlockForm({
   return (
     <Section
       className="block-section"
-      header={isHeavy ? `Блок ${letter} — тяжёлая тренировка 🏋️` : `Блок ${letter} — цель ${target}`}
+      header={isHeavy ? <>Блок {letter} — тяжёлая тренировка <Icon name="weightlift" size={16} /></> : `Блок ${letter} — цель ${target}`}
     >
       <div className="block-header">
         <div className="block-badge">{letter}</div>
@@ -564,6 +563,14 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   // planом, а только после явного нажатия 4-й кнопки "📝 Внести результат
   // тренировки", симметрично остальным трём режимам.
   const [showForm, setShowForm] = useState(false);
+  // Экран выбора/подтверждения стартового снаряда (issue #175) — показан
+  // ровно один раз за это открытие Mini App, до самой формы первой
+  // тренировки (см. рендер ниже, после state.phase === "form"). Не
+  // персистится на бэкенде — тот же принцип, что equipment_plan_announced
+  // в FSM бота (app/bot/handlers/equipment.py::_advance_equipment_queue):
+  // одноразовое объявление плана в рамках одного захода, не факт на всю
+  // жизнь пользователя.
+  const [equipmentPlanAcknowledged, setEquipmentPlanAcknowledged] = useState(false);
   const [state, setState] = useState<ScreenState>({ phase: "loading" });
   const [blockAWorking, setBlockAWorking] = useState<string[]>([]);
   const [blockAMax, setBlockAMax] = useState("");
@@ -777,7 +784,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
             ниже, просто выделена здесь первой, раз статус уже too_early. */}
         {state.status === "too_early" && (
           <Button className="action-button" size="l" stretched onClick={() => setShowElective(true)}>
-            🎯 Сделать факультатив
+            <Icon name="target" size={18} className="vp-icon-lead" />Сделать факультатив
           </Button>
         )}
         <Button className="action-button" size="l" stretched onClick={closeMiniApp}>
@@ -792,7 +799,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
         {!NO_EQUIPMENT_YET_STATUSES.has(state.status) && (
           <>
             <Button className="action-button" size="l" stretched mode="outline" onClick={() => setShowBackdate(true)}>
-              🔁 Внести пропущенную тренировку
+              <Icon name="repeat" size={18} className="vp-icon-lead" />Внести пропущенную тренировку
             </Button>
             <Button
               className="action-button"
@@ -801,7 +808,7 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
               mode="outline"
               onClick={() => setShowFreeWorkout(true)}
             >
-              ➕ Внести свободные подтягивания
+              <Icon name="plus" size={18} className="vp-icon-lead" />Внести свободные подтягивания
             </Button>
           </>
         )}
@@ -867,6 +874,19 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
   }
 
   const { plan } = state;
+
+  // Экран выбора/подтверждения стартового снаряда (issue #175) — до формы
+  // первой тренировки, не мелкой строкой на ней (см. EquipmentPlanScreen.tsx).
+  if (plan.is_first_workout && !equipmentPlanAcknowledged) {
+    return (
+      <EquipmentPlanScreen
+        equipmentA={plan.equipment_a}
+        equipmentB={plan.equipment_b}
+        onContinue={() => setEquipmentPlanAcknowledged(true)}
+      />
+    );
+  }
+
   // Баннеры показываются сразу на экране выбора действия, а не только
   // вместе с формой (issue #108) — это контекст, важный до выбора действия
   // (снижена ли цель блока A из-за перерыва, вырос ли объём блока), а не
@@ -905,27 +925,27 @@ export function WorkoutScreen({ initDataRaw, onLiveActiveChange, onOpenFaq, onOp
               (см. useEffect выше), оставлено на случай возврата назад. */}
           {!plan.is_deload_a && !plan.is_first_workout && (
             <Button mode="outline" size="s" onClick={() => setShowLive(true)}>
-              ⏱ Тренировка в реальном времени
+              <Icon name="timer" size={18} className="vp-icon-lead" />Тренировка в реальном времени
             </Button>
           )}
           {!plan.is_first_workout && (
             <>
               <Button mode="outline" size="s" onClick={() => setShowBackdate(true)}>
-                🔁 Внести пропущенную тренировку
+                <Icon name="repeat" size={18} className="vp-icon-lead" />Внести пропущенную тренировку
               </Button>
               <Button mode="outline" size="s" onClick={() => setShowElective(true)}>
-                🎯 Факультатив
+                <Icon name="target" size={18} className="vp-icon-lead" />Факультатив
               </Button>
               <Button mode="outline" size="s" onClick={() => setShowFreeWorkout(true)}>
-                ➕ Внести свободные подтягивания
+                <Icon name="plus" size={18} className="vp-icon-lead" />Внести свободные подтягивания
               </Button>
             </>
           )}
           <Button mode="outline" size="s" onClick={() => setShowForm(true)}>
-            📝 Внести результат тренировки
+            <Icon name="note" size={18} className="vp-icon-lead" />Внести результат тренировки
           </Button>
           <Button mode="outline" size="s" onClick={onOpenWarmup}>
-            🔥 Показать разминку
+            <Icon name="flame" size={18} className="vp-icon-lead" />Показать разминку
           </Button>
         </div>
       </div>

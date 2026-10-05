@@ -5,7 +5,10 @@ from alembic import context
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.config import settings
-from app.db import models  # noqa: F401 — регистрирует таблицы в Base.metadata для autogenerate
+from app.db import (
+    models,  # noqa: F401 — регистрирует таблицы в Base.metadata для autogenerate
+    models_program,  # noqa: F401 — то же самое для схемы волны 1 (multi-program, issue #160)
+)
 from app.db.base import Base
 
 config = context.config

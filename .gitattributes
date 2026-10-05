@@ -1,0 +1,4 @@
+# Every E2E task appends `seed <scenario> <id>` lines here; stale worker branches otherwise
+# conflict on the shared tail. Lines are independent, so a union merge is always valid.
+# (Parity specs are one file per task under webapp-frontend/e2e/scenarios/parity/ — no shared tail.)
+scripts/e2e_seed_all.sh merge=union

@@ -22,6 +22,16 @@ TABLES = (
     "active_timers", "workout_drafts",
     "blocks_archive_admin_reset", "workouts_archive_admin_reset", "workout_sets_archive_admin_reset",
     "baselines_archive_admin_reset", "equipment_items_archive_admin_reset",
+    # Многокурсовая платформа (волна 1, issue #160) — только "корневые" для
+    # TRUNCATE ... CASCADE таблицы: session_blocks/set_targets/set_logs/
+    # session_plan_items (дети training_sessions), program_inclusions/
+    # plan_items/plan_weeks (дети training_plans), program_items (ребёнок
+    # programs) чистятся каскадом сами, отдельно перечислять не нужно.
+    "training_plans", "training_sessions", "programs", "exercises", "progression_strategy_profiles",
+    # Системные тренировки (Complex) ship с миграцией a4c8e1f7b2d9 (#296) и иначе пережили бы TRUNCATE
+    # exercises (complexes на exercises не ссылается) — тесты, считающие Complex, видели бы чужие строки.
+    "complexes",
+    "collections",  # подборки (#271): миграция сидит одну; collection_items — каскадом
     "users",
 )
 

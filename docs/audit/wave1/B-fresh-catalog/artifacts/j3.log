@@ -1,0 +1,9 @@
+06:10:05 OPEN /
+06:10:05 TAP open Пустая
+06:10:06 TAP Добавить в план
+06:10:07 TAP Свободный пул
+06:10:08 TAP Добавить
+06:10:08 CONSOLE error Failed to load resource: the server responded with a status of 422 (Unprocessable Entity)
+06:10:08 NET POST /api/v2/plan-items -> 422 {"detail":"У выбранной тренировки нет упражнений"}
+06:10:09 VISIBLE[after add empty to plan] Привет, Audit! | Добавить в план | Пустая | ДЕНЬ | Пн | Вт | Ср | Чт | Пт | Сб | Вс | Свободный пул | Не удалось добавить: У выбранной тренировки нет упражнений | Добавить
+06:10:09 SHOT j3-01-empty-in-plan.png

@@ -1,0 +1,11 @@
+import { Sess } from "./lib.mjs";
+const s = await new Sess("j4", 7200001).start(); const p = s.page;
+await s.open("/"); await s.tap(p.getByText("Планы",{exact:true}).last(),"tab Планы");
+await s.tap(p.getByRole("button",{name:"Следующая неделя"}),"next week");
+await s.tap(p.getByRole("button",{name:"Действия: Текущий план"}),"menu plan"); s.ev("buttons "+JSON.stringify(await p.getByRole("button").allInnerTexts()));
+await s.tap(p.getByRole("button",{name:/Скопировать неделю/}),"copy"); await s.tap(p.getByRole("button",{name:"Скопировать",exact:true}),"confirm"); await s.dump("after copy 2->3");
+await s.tap(p.getByRole("button",{name:"Следующая неделя"}),"next"); await s.dump("week 3"); await s.shot("week3");
+await s.reload(); await s.tap(p.getByText("Планы",{exact:true}).last(),"tab Планы");
+await s.tap(p.getByRole("button",{name:"Следующая неделя"}),"next"); await s.tap(p.getByRole("button",{name:"Следующая неделя"}),"next"); await s.dump("week 3 after reload");
+await s.tap(p.getByRole("button",{name:"Предыдущая неделя"}),"prev"); await s.dump("week 2 via prev");
+await s.end();

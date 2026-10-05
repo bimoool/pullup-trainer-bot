@@ -1,0 +1,142 @@
+name: Orch Planner
+
+# ORCH-1 planner (docs/PLANNER_AGENT.md). Deterministic — `scripts/orch.py`, no LLM, never writes
+# product code. Dispatched by the owner (`gh workflow run orch-planner.yml --ref develop/current`)
+# or by orch-worker.yml after a finished task while a batch runs.
+#
+# ORCH-2 issue-comment dispatcher is the only orchestration bridge on main. It dispatches
+# this planner on develop/current; owner-event independently verifies the owner comment.
+# Product code is never merged to main by orchestration. Dispatches made with GITHUB_TOKEN are the one event GitHub lets a
+# workflow trigger (pushes/comments by GITHUB_TOKEN trigger nothing → no accidental loops).
+#
+# Loop guards: batch limit (5 completed / 8 attempts, .github/orch/state.json), one
+# status:in-progress issue at a time (planner no-op otherwise), `depth` hop counter, and one
+# shared concurrency group for every state writer.
+
+on:
+  # Registration only: GitHub dispatches a workflow only if it "knows" it, and it knows files on
+  # main or files that have had a run. This path-filtered push creates a (skipped) run when this
+  # file changes on develop/current or a sandbox branch — so main is never needed.
+  push:
+    branches: [develop/current, "orch-sandbox/**"]
+    paths: [.github/workflows/orch-planner.yml]
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "plan | start-batch | stop-batch | status"
+        type: choice
+        options: [plan, start-batch, stop-batch, status, owner-event]
+        default: plan
+      owner_comment_id:
+        description: "Internal: owner comment id, independently verified through GitHub API"
+        default: ""
+      apply:
+        description: "plan: apply the decision (false = dry run, changes nothing)"
+        type: boolean
+        default: false
+      dispatch_worker:
+        description: "plan+apply: dispatch orch-worker.yml for the selected issue"
+        type: boolean
+        default: false
+      base:
+        description: "canonical branch (develop/current, or orch-sandbox/* for tests)"
+        default: develop/current
+      limit:
+        description: "start-batch: task limit (default 5)"
+        default: "5"
+      depth:
+        description: "hop counter, set by automation"
+        default: "0"
+
+run-name: "orch-planner ${{ inputs.command }}${{ inputs.apply && ' apply' || '' }} on ${{ inputs.base }} (hop ${{ inputs.depth }})"
+
+permissions:
+  contents: write # commit .github/orch, .github/task, docs/PROJECT_STATUS.md to the base branch
+  issues: write # labels, comments, dashboard issue
+  actions: write # dispatch orch-worker.yml
+  pull-requests: read # canonical PR CI state for the status page
+
+concurrency:
+  group: orch-state
+  cancel-in-progress: false
+
+jobs:
+  planner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only the owner may drive orchestration by hand; automation hops come from the worker
+    # (actor stays the dispatching user for GITHUB_TOKEN dispatches: github-actions[bot]).
+    if: github.event_name == 'workflow_dispatch' && (github.actor == github.repository_owner || github.actor == 'github-actions[bot]')
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BASE: ${{ inputs.base }}
+      COMMAND: ${{ inputs.command }}
+      DEPTH: ${{ inputs.depth }}
+      LIMIT: ${{ inputs.limit }}
+      OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
+    steps:
+      - name: Validate inputs (no free text reaches a shell unquoted)
+        run: |
+          if [ "$COMMAND" = owner-event ]; then
+            [[ "$GITHUB_REF" = refs/heads/develop/current ]] || exit 1
+            [[ "$BASE" = develop/current || "$BASE" = orch-sandbox/orch2-ui-proof ]] || exit 1
+          fi
+          [[ "$BASE" =~ ^(develop/current|orch-sandbox/[A-Za-z0-9._-]+)$ ]] || { echo "::error::base '$BASE' not allowed"; exit 1; }
+          [[ "$DEPTH" =~ ^[0-9]{1,2}$ ]] || { echo "::error::bad depth"; exit 1; }
+          [[ "$LIMIT" =~ ^[1-9]$ ]] || { echo "::error::limit must be 1..9"; exit 1; }
+          if [ "$DEPTH" -gt 20 ]; then echo "::error::hop limit reached — refusing (loop guard)"; exit 1; fi
+          if [ "$COMMAND" = start-batch ] && [ "${{ github.actor }}" != "${{ github.repository_owner }}" ]; then
+            echo "::error::only the owner starts a batch"; exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Git identity
+        run: |
+          git config user.name "orch-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Run
+        id: plan
+        run: |
+          case "$COMMAND" in
+            owner-event) python scripts/orch_control.py event --comment-id "$OWNER_COMMENT_ID" --base "$BASE" ;;
+            start-batch) python scripts/orch.py batch start --limit "$LIMIT" --by "${{ github.actor }}" --publish --push ;;
+            stop-batch)  python scripts/orch.py batch stop --publish --push ;;
+            status)      python scripts/orch.py status --publish --push ;;
+            plan)
+              if ! python scripts/orch_control.py pause-check --base "$BASE"; then
+                echo "action=owner-paused" >> "$GITHUB_OUTPUT"; exit 0
+              fi
+              if [ "${{ inputs.apply }}" = "true" ]; then
+                python scripts/orch.py plan --apply --publish --push
+              else
+                python scripts/orch.py plan
+              fi ;;
+          esac
+
+      - name: Dispatch worker
+        if: (inputs.command == 'plan' || inputs.command == 'owner-event') && inputs.apply && inputs.dispatch_worker && steps.plan.outputs.action == 'select' && steps.plan.outputs.issue != ''
+        env:
+          ISSUE: ${{ steps.plan.outputs.issue }}
+        run: |
+          [[ "$ISSUE" =~ ^[0-9]+$ ]] || exit 1
+          gh workflow run orch-worker.yml --ref "$BASE" -f issue="$ISSUE" -f base="$BASE" -f depth="$((DEPTH + 1))"
+          echo "dispatched worker for #$ISSUE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify owner-command failure
+        if: failure() && inputs.command == 'owner-event'
+        run: |
+          gh issue comment 230 --body "Owner command failed; inspect https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. No success is implied by dispatch acknowledgement."
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '```'; python scripts/orch.py batch show | head -1; echo '```'; cat docs/PROJECT_STATUS.md 2>/dev/null || true; } >> "$GITHUB_STEP_SUMMARY"

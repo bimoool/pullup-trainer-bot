@@ -4,7 +4,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Gender, SubscriptionStatus, User
+from app.db.models import BodyMetric, Gender, SubscriptionStatus, User
+from app.db.repositories.body_metrics import BodyMetricRepository
 
 
 class UserRepository:
@@ -47,9 +48,16 @@ class UserRepository:
         timezone: str | None = None,
     ) -> User:
         user = await self._session.get_one(User, user_id)
+        # Запись веса/роста дописывает замер в историю (issue #270); если
+        # значение не изменилось — не плодим дубль (форма шлёт все поля).
+        history = BodyMetricRepository(self._session)
         if weight_kg is not None:
+            if user.weight_kg != weight_kg:
+                await history.add(user_id, BodyMetric.WEIGHT_KG, weight_kg)
             user.weight_kg = weight_kg
         if height_cm is not None:
+            if user.height_cm != height_cm:
+                await history.add(user_id, BodyMetric.HEIGHT_CM, Decimal(height_cm))
             user.height_cm = height_cm
         if gender is not None:
             user.gender = gender
@@ -89,6 +97,22 @@ class UserRepository:
         здесь только запись одного из полей на месте)."""
         user = await self._session.get_one(User, user_id)
         setattr(user, field, value)
+        await self._session.flush()
+        return user
+
+    async def update_display_preferences(
+        self, user_id: int, *, weight_unit: str | None = None, height_unit: str | None = None,
+        theme: str | None = None,
+    ) -> User:
+        """Единицы/тема Mini App (issue #268); None — не менять поле
+        (валидация значений — схема в app/web/schemas.py)."""
+        user = await self._session.get_one(User, user_id)
+        if weight_unit is not None:
+            user.weight_unit = weight_unit
+        if height_unit is not None:
+            user.height_unit = height_unit
+        if theme is not None:
+            user.theme_pref = theme
         await self._session.flush()
         return user
 

@@ -70,7 +70,7 @@ async def test_hello_for_unknown_telegram_id_reports_not_registered(session):
     body = response.json()
     assert body == {
         "name": "Настя", "onboarding_step": "not_registered", "readiness_status": None,
-        "days_since_last_workout": None,
+        "days_since_last_workout": None, "is_admin": False,
     }
 
 
@@ -87,6 +87,7 @@ async def test_hello_for_registered_user_without_baseline_reports_baseline_step(
     body = response.json()
     assert body == {
         "name": "Олег", "onboarding_step": "baseline", "readiness_status": None, "days_since_last_workout": None,
+        "is_admin": False,
     }
 
 
@@ -104,7 +105,7 @@ async def test_hello_for_user_with_baseline_but_no_questionnaire_reports_questio
     body = response.json()
     assert body == {
         "name": "Лена", "onboarding_step": "questionnaire", "readiness_status": None,
-        "days_since_last_workout": None,
+        "days_since_last_workout": None, "is_admin": False,
     }
 
 
@@ -122,6 +123,7 @@ async def test_hello_for_onboarded_user_without_workouts_reports_done(session):
     body = response.json()
     assert body == {
         "name": "Олег", "onboarding_step": "done", "readiness_status": None, "days_since_last_workout": None,
+        "is_admin": False,
     }
 
 

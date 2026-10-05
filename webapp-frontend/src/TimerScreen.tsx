@@ -10,6 +10,8 @@ import {
   playWarningBeep,
   setSoundVolumePercent,
 } from "./sound";
+import { vibratePhaseEnd } from "./vibration";
+import { Icon } from "./Icon";
 
 const VOLUME_STEP_PERCENT = 25;
 
@@ -176,6 +178,7 @@ export function TimerScreen({
     if (remaining === 0) {
       beeped.add(0);
       playTimerBeep();
+      vibratePhaseEnd();
     } else if (remaining === WARNING_MARK_SECONDS) {
       beeped.add(remaining);
       playWarningBeep();
@@ -268,12 +271,12 @@ export function TimerScreen({
       </Button>
 
       <div className="timer-adjust-row">
-        <Button mode="outline" size="s" onClick={() => adjustVolume(-VOLUME_STEP_PERCENT)}>
-          🔉 −
+        <Button mode="outline" size="s" aria-label="Тише" onClick={() => adjustVolume(-VOLUME_STEP_PERCENT)}>
+          <Icon name="volumeDown" size={18} className="vp-icon-lead" />−
         </Button>
-        <span className="timer-duration-label">🔊 Громкость: {volume}%</span>
-        <Button mode="outline" size="s" onClick={() => adjustVolume(VOLUME_STEP_PERCENT)}>
-          🔊 +
+        <span className="timer-duration-label"><Icon name="volumeUp" size={18} className="vp-icon-lead" />Громкость: {volume}%</span>
+        <Button mode="outline" size="s" aria-label="Громче" onClick={() => adjustVolume(VOLUME_STEP_PERCENT)}>
+          <Icon name="volumeUp" size={18} className="vp-icon-lead" />+
         </Button>
       </div>
 
