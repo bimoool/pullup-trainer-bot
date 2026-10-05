@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import User
+from app.db.models import SubscriptionStatus, User
 from app.db.models_program import (
     Complex,
     ComplexItem,
@@ -59,7 +59,10 @@ async def interval_complex(session: AsyncSession) -> Complex:
 
 @pytest.fixture
 async def interval_user(session: AsyncSession) -> User:
-    user = User(telegram_id=999001, username="interval_tester")
+    user = User(
+        telegram_id=999001, username="interval_tester",
+        subscription_status=SubscriptionStatus.TRIAL, subscription_expires_at=datetime.now(UTC) + timedelta(days=14),
+    )
     session.add(user)
     await session.flush()
     return user
@@ -475,7 +478,10 @@ async def test_standard_step_session_unaffected_by_interval_finalizer(session: A
     всех STEP-тестов проекта) — не реализует настройку STEP с нуля."""
     from tests.test_web.test_v2_live_session import _setup_step_session
 
-    user = User(telegram_id=999002, username="step_regression")
+    user = User(
+        telegram_id=999002, username="step_regression",
+        subscription_status=SubscriptionStatus.TRIAL, subscription_expires_at=datetime.now(UTC) + timedelta(days=14),
+    )
     session.add(user)
     await session.flush()
 

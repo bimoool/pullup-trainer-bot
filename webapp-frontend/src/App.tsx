@@ -375,6 +375,7 @@ export function App() {
           title={"title" in v2Session ? v2Session.title : (v2Session.resumedSession.title ?? "")}
           initialSession={"resumedSession" in v2Session ? v2Session.resumedSession : null}
           onClose={() => { setV2Session(null); setStartOrigin(null); }}
+          onOpenSubscription={() => { setV2Session(null); setStartOrigin(null); setTab("subscription"); }}
           onCancel={() => {
             setV2Session(null);
             const origin = startOrigin;

@@ -31,10 +31,28 @@ async function extractErrorMessage(
     if (data && typeof data.detail === "string") {
       return data.detail;
     }
+    if (data && typeof data.detail?.message === "string") {
+      return data.detail.message;
+    }
   } catch {
     // JSON parsing failed or response already consumed — use fallback
   }
   return fallback;
+}
+
+/** #300 / D6: код доменной ошибки из `{"detail": {"code": ...}}` (читается с клона — тело ответа ещё нужно message). */
+async function extractErrorCode(response: Response): Promise<string | null> {
+  try {
+    const data = await response.json();
+    return typeof data?.detail?.code === "string" ? data.detail.code : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 402 subscription_required: курсовую тренировку без действующей подписки сервер не стартует. */
+export function isSubscriptionRequired(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === "subscription_required";
 }
 
 export interface DashboardEquipmentResponse {
@@ -89,9 +107,10 @@ async function apiV2Post<TBody, TResult>(path: string, initDataRaw: string, body
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    const code = await extractErrorCode(response.clone());
     const message = await extractErrorMessage("POST", path, response);
-    // status — классификация ошибок досылки живой сессии (liveFinish.ts, #287).
-    throw Object.assign(new Error(message), { status: response.status });
+    // status — классификация ошибок досылки живой сессии (liveFinish.ts, #287); code — доменная ошибка (#300).
+    throw Object.assign(new Error(message), { status: response.status, code });
   }
   return (await response.json()) as TResult;
 }

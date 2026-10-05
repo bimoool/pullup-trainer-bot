@@ -69,6 +69,7 @@ from app.services.live_session import (
     CompleteResult,
     LiveSessionService,
     PhaseBackConflictError,
+    SubscriptionRequiredError,
     awaiting_block_start,
     block_started_at,
     current_interval_timing,
@@ -79,6 +80,7 @@ from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_deletion import SessionDeletionService
 from app.services.session_editing import EditOutcome, EditStatus, SessionEditingService, SetEdit
 from app.services.session_log import TrainingSessionLogService
+from app.services.subscription import SubscriptionService
 from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -1436,6 +1438,10 @@ async def create_session(
     session: AsyncSession = Depends(get_session),
 ) -> SessionResponse:
     user = await _require_user(session, init_data)
+    if body.source == "plan" and body.program_inclusion_id is not None and not SubscriptionService.is_entitled(
+        user, now=datetime.now(UTC),
+    ):
+        raise _subscription_required()
     # #263: Журнал пишет прошедшие события — будущая дата отклоняется (небольшой
     # допуск на расхождение часов клиента и сервера).
     is_journal_entry = body.source == "backdated" or body.activity_type is not None
@@ -1616,6 +1622,15 @@ def _live_session_complete_response(result: CompleteResult) -> LiveSessionComple
     )
 
 
+def _subscription_required() -> HTTPException:
+    """#300 / D6: курсовая тренировка без действующей подписки — 402 с кодом, который Mini App переводит на экран
+    подписки. Остальные (свободные/свои) пути этим кодом не отвечают."""
+    return HTTPException(
+        status.HTTP_402_PAYMENT_REQUIRED,
+        {"code": "subscription_required", "message": "Для тренировок по курсу нужна действующая подписка."},
+    )
+
+
 @router_v2.post("/sessions/live", response_model=LiveSessionResponse)
 async def start_live_session(
     body: LiveSessionStartRequest,
@@ -1633,6 +1648,8 @@ async def start_live_session(
             status.HTTP_409_CONFLICT,
             {"code": "active_session_exists", "active_session_id": exc.active_session_id},
         ) from exc
+    except SubscriptionRequiredError as exc:
+        raise _subscription_required() from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if result is None:

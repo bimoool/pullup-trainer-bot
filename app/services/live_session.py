@@ -37,6 +37,7 @@ from app.db.repositories.training_sessions import (
     SetTargetInput,
     TrainingSessionRepository,
 )
+from app.db.repositories.users import UserRepository
 from app.domain.block_execution import (
     interval_protocol,
     is_interval_protocol,
@@ -74,6 +75,7 @@ from app.services.session_log import (
     _match_step_blocks,
     _session_block_input_from_detail,
 )
+from app.services.subscription import SubscriptionService
 
 
 @dataclass(frozen=True)
@@ -98,6 +100,14 @@ class ActiveSessionConflictError(Exception):
     def __init__(self, active_session_id: int) -> None:
         super().__init__("Active live session already exists")
         self.active_session_id = active_session_id
+
+
+class SubscriptionRequiredError(Exception):
+    """Старт курсовой (program-backed) тренировки без действующей подписки (#300, PROJECT_SPEC §5, D6):
+    роут -> 402 {"code": "subscription_required"}."""
+
+    def __init__(self) -> None:
+        super().__init__("Subscription required to start a course workout")
 
 
 # progression_skipped_reason повторного complete уже завершённой сессии:
@@ -252,11 +262,13 @@ class LiveSessionService:
         resolved_targets: list[list[SetTargetInput]] = []
         snapshots: list[WorkoutSnapshot | None] = []
         block_protocols: list[ResolvedProtocol | None] = []
+        course_backed = False
         for plan_item_id in plan_item_ids:
             plan_item = await self._plans.get_plan_item_for_user(plan_item_id, user_id)
             if plan_item is None or plan_item.training_plan_id != plan.id:
                 return None
             await self._reject_future_week_course_item(plan_item)
+            course_backed = course_backed or plan_item.program_inclusion_id is not None
             blocks, targets, snapshot = await self._resolve_blocks_for_plan_item(plan_item)
             resolved_blocks.extend(blocks)
             resolved_targets.extend(targets)
@@ -265,6 +277,9 @@ class LiveSessionService:
                 block_protocols.extend(item.protocol for item in snapshot.items)
             else:
                 block_protocols.extend([None] * len(blocks))
+
+        if course_backed:
+            await self._require_subscription(user_id)
 
         workout_snapshot = self._combine_snapshots(snapshots)
 
@@ -294,6 +309,15 @@ class LiveSessionService:
         week = await self._session.get(PlanWeek, plan_item.plan_week_id)
         if week is not None and week.start_date > datetime.now(UTC).date() + timedelta(days=1):
             raise ValueError("Эта неделя ещё не началась — начать тренировку курса можно со своей недели")
+
+    async def _require_subscription(self, user_id: int) -> None:
+        """#300 / D6: курсовая строка плана (program_inclusion_id) стартует только при действующей подписке
+        (trial/active и срок не истёк — считается из subscription_expires_at, кэш статуса не доверяем). Смешанный
+        запрос (курс + свои строки) отклоняется целиком. Свои/ручные строки, Workout (workout_id) и факультатив
+        не гейтятся."""
+        user = await UserRepository(self._session).get_by_id(user_id)
+        if not SubscriptionService.is_entitled(user, now=datetime.now(UTC)):
+            raise SubscriptionRequiredError
 
     async def _start_workout_session(
         self, *, user_id: int, client_session_id: uuid.UUID, workout_id: int,

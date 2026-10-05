@@ -105,6 +105,16 @@ class SubscriptionService:
         user = await self.refresh_status(user_id, now=now)
         return user.subscription_status in _ACTIVE_STATUSES
 
+    @staticmethod
+    def is_entitled(user: User, *, now: datetime) -> bool:
+        """Право на курсовые тренировки, считается из subscription_expires_at на лету (#300), БЕЗ записи кэша и
+        без доверия кэшу статуса: кэш может говорить `trial`/`active` после истечения. Единый ответ для
+        серверных гейтов v2 (старт курсовой сессии); админ-обхода нет — как в legacy has_access (ADMIN_IDS
+        обходят только отдых между тренировками)."""
+        if user.subscription_status not in _ACTIVE_STATUSES:
+            return False
+        return user.subscription_expires_at is None or user.subscription_expires_at > now
+
     async def _effective_start(self, user_id: int, now: datetime) -> datetime:
         user = await self._users.get_by_id(user_id)
         if user.subscription_expires_at is not None and user.subscription_expires_at > now:
