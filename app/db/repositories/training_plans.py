@@ -438,6 +438,27 @@ class TrainingPlanRepository:
             await self._session.flush()
         return items
 
+    async def delete_unperformed_inclusion_items_after_week(
+        self, *, program_inclusion_id: int, after_week_number: int,
+    ) -> int:
+        """#301 — удаляет строки курса в неделях СТРОГО после after_week_number, на которые нет
+        ни одной SessionPlanItem (ни выполненной, ни начатой сессии): ещё не выполнявшиеся
+        плановые слоты будущих недель, не история. Возвращает число удалённых строк."""
+        future_week_ids = select(PlanWeek.id).where(
+            PlanWeek.training_plan_id == select(ProgramInclusion.training_plan_id)
+            .where(ProgramInclusion.id == program_inclusion_id).scalar_subquery(),
+            PlanWeek.week_number > after_week_number,
+        )
+        performed = select(SessionPlanItem.plan_item_id)
+        result = await self._session.execute(
+            delete(PlanItem).where(
+                PlanItem.program_inclusion_id == program_inclusion_id,
+                PlanItem.plan_week_id.in_(future_week_ids),
+                PlanItem.id.not_in(performed),
+            ),
+        )
+        return result.rowcount or 0
+
     async def list_completed_session_times_by_plan_item(
         self, *, user_id: int, plan_item_ids: list[int],
     ) -> list[tuple[int, datetime]]:

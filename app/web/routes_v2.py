@@ -919,6 +919,11 @@ async def deactivate_program_inclusion(
         inclusion.is_active = False
         if inclusion.expires_at is None:
             inclusion.expires_at = datetime.now(UTC)
+        # #301 — ещё не выполнявшиеся строки курса в будущих неделях снимаются вместе с курсом
+        # (иначе «призраки» убранного курса); текущая/прошлые недели и всё с сессиями — как раньше.
+        await PlanWeekService(session).release_future_weeks_of_inclusion(
+            inclusion=inclusion, today=_plan_today(user),
+        )
         await session.commit()
     return _program_inclusion_response(inclusion, user)
 

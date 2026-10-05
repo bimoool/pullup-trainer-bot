@@ -30,7 +30,7 @@ import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
-  todayDayIndexInWeek, weekProgress, weekRangeLabel,
+  todayDayIndexInWeek, weekOpensLabel, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -982,6 +982,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               byDay.set(item.day_of_week, dayItems);
             }
             const days = [...byDay.entries()].sort(([a], [b]) => a - b);
+            // #301 — намеренная REST-неделя без строк говорит об этом явно, а не голым «0 из 0».
+            const isRestWeek = week.phase === "rest" && weekItems.length === 0;
             const weekProgressValue = weekProgress(
               groupPlanItems(weekItems, plan.inclusions, libraryExercises).map((group) => group.items),
             );
@@ -1036,6 +1038,11 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                           {startingGroupKey === group.key ? "Начинаю…" : "Начать"}
                         </button>
                       )
+                    )}
+                    {!isCurrent && isProgramBacked && selectedIndex > currentIndex && (
+                      <span className="plans-row-scheduled block-subtitle" data-testid="plans-row-scheduled">
+                        {weekOpensLabel(week.start_date)}
+                      </span>
                     )}
                     {isEditable && mutableItem !== null && !isRemoveConfirming && (
                       <MoreButton
@@ -1113,7 +1120,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                 </div>
                 <p className="block-subtitle" data-testid="plan-week-progress">
                   {isCurrent ? "Текущая неделя · " : ""}
-                  {`${weekProgressValue.done} из ${weekProgressValue.total}`}
+                  {isRestWeek ? "Неделя отдыха" : `${weekProgressValue.done} из ${weekProgressValue.total}`}
                 </p>
                 <PlanProgressBar
                   done={weekProgressValue.done} total={weekProgressValue.total}
@@ -1124,7 +1131,13 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   <p className="block-subtitle" style={{ marginBottom: "12px" }}>{statusText}</p>
                 )}
                 {weekItems.length === 0 && (
-                  <p className="block-subtitle">На эту неделю пока ничего не запланировано.</p>
+                  <p className="block-subtitle">
+                    {isRestWeek
+                      ? "По плану на этой неделе отдых — тренировок нет."
+                      : isEditable
+                        ? "На эту неделю пока ничего не запланировано."
+                        : "На этой неделе ничего не было запланировано."}
+                  </p>
                 )}
                 {days.map(([day, dayItems]) => (
                   <div key={day} className="plan-week-day-group">

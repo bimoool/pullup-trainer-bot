@@ -128,4 +128,5 @@ async def test_concurrent_copy_to_next_does_not_duplicate_items(session, user: U
         select(func.count()).select_from(PlanItem).join(PlanWeek, PlanItem.plan_week_id == PlanWeek.id)
         .where(PlanWeek.training_plan_id == plan_id, PlanWeek.week_number == 2),
     )
-    assert target_count == 2
+    # #301: 2 скопированные ручные строки + 2 строки курса из снимка (ровно один раз, без дублей при гонке).
+    assert target_count == 4

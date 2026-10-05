@@ -27,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, ProgramInclusion, SessionPhase, SessionStatus
+from app.db.models_program import PlanItem, PlanWeek, ProgramInclusion, SessionPhase, SessionStatus
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -256,6 +256,7 @@ class LiveSessionService:
             plan_item = await self._plans.get_plan_item_for_user(plan_item_id, user_id)
             if plan_item is None or plan_item.training_plan_id != plan.id:
                 return None
+            await self._reject_future_week_course_item(plan_item)
             blocks, targets, snapshot = await self._resolve_blocks_for_plan_item(plan_item)
             resolved_blocks.extend(blocks)
             resolved_targets.extend(targets)
@@ -281,6 +282,18 @@ class LiveSessionService:
             workout_snapshot=workout_snapshot,
         )
         return await self._build_result(training_session.id, user_id)
+
+    async def _reject_future_week_course_item(self, plan_item: PlanItem) -> None:
+        """#301 — строки курса в будущих неделях видны в «Планах», но стартовать их заранее нельзя:
+        цели/прогрессия курса считаются от ТЕКУЩЕГО состояния инклюзии, а счётчик «N из M»
+        привязан к неделе строки — ранняя сессия не засчиталась бы ни туда, ни сюда.
+        ValueError -> 422. Допуск в 1 день на часовой пояс (неделя пользователя может уже
+        начаться при ещё не наступившем UTC-понедельнике)."""
+        if plan_item.program_inclusion_id is None or plan_item.plan_week_id is None:
+            return
+        week = await self._session.get(PlanWeek, plan_item.plan_week_id)
+        if week is not None and week.start_date > datetime.now(UTC).date() + timedelta(days=1):
+            raise ValueError("Эта неделя ещё не началась — начать тренировку курса можно со своей недели")
 
     async def _start_workout_session(
         self, *, user_id: int, client_session_id: uuid.UUID, workout_id: int,

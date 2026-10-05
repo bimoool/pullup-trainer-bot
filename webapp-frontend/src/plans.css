@@ -218,6 +218,14 @@
   font-weight: 700;
 }
 
+/* #301 — строка курса будущей недели: стартовать нельзя, показываем когда откроется. */
+.plans-row-scheduled {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .plans-start:disabled {
   opacity: 0.5;
 }

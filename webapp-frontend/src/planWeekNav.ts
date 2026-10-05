@@ -29,6 +29,11 @@ export function weekRangeLabel(startDate: string): string {
   return `${shortDate(start)} – ${shortDate(end)}`;
 }
 
+/** «Откроется 13 окт» — когда начнётся неделя (старт строк курса будущей недели недоступен заранее). */
+export function weekOpensLabel(startDate: string): string {
+  return `Откроется ${shortDate(parseDate(startDate))}`;
+}
+
 /** Индекс текущей недели в списке по возрастанию start_date: последняя
  * неделя, начавшаяся не позже today; если все в будущем — первая. */
 export function currentWeekIndex(weeks: WeekLike[], today: string): number {
