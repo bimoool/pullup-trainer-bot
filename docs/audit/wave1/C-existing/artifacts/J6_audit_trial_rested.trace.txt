@@ -1,0 +1,38 @@
+06:48:45 JOURNEY J6 Subscription: audit_trial_rested must be able to start and complete (tg 7300007)
+06:48:50 VISIBLE Профиль :: Привет, Audit! | Профиль | A | Audit | мужской · 33 года | 2 | Тренировки | 1 | Ачивка › | 50 | Монет | Последняя тренировка: 4 дня назад. | ЛИЧНЫЕ ДАННЫЕ | ВЕС | : | 78 кг | РОСТ | : | 181 см | Часовой пояс | : | Москва (UTC+3) | Изменить | ТЕСТЫ | Максимум подтягиваний | Ещё не проходили | Вис на перекладине, сек | Ещё не проходили | Подтягивания с весом, кг | Ещё не проходили | Результаты тестов не влияют на прогрессию и стартовый замер. | АККАУНТ | Подписка | : | пробный период (осталось 7 д
+06:48:52 VISIBLE Планы :: Привет, Audit! | Планы | Мои тренировки | Сейчас | Завершённые | Текущий план | Подтягивания | На этой неделе: 0 из 3 | ‹ | Неделя 1 · 5 окт – 11 окт | База | › | Текущая неделя · 0 из 3 | СВОБОДНЫЙ ПУЛ | Подтягивания | 0/3 | Начать | + Добавить упражнение | Главная | Планы | Журнал | Аналитика | Профиль
+06:48:54 VISIBLE pre-screen :: ГОТОВЫ К СТАРТУ | Подтягивания | Цель 1: 11 повторений | 3 рабочих подхода · резина | Цель 2: 3 повторений | 4 рабочих подхода · резина | Начать
+06:48:58 VISIBLE live :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 3 | ПОДХОД | 11 | ПОВТ | Подход 1/3 · Цель: 11 повт. | 3×11 | ПРИГОТОВЬСЯ | 0:02 | Готов | Пауза
+06:48:58 EXPECT pre-screen target == live target
+06:48:58 ACTUAL pre=11 live=11   OK
+06:48:59 LIVE set 1 logged (10) :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 1 / 3 | ПОДХОД | 11 | ПОВТ | Подход 1/3 · Цель: 11 повт. | ОТДЫХ | 1:30 | Подход 1: 10 повт. |  Изменить | Пропустить отдых | Пауза
+06:49:00 LIVE set 2 logged (10) :: ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | 2 / 3 | ПОДХОД | 11 | ПОВТ | Подход 2/3 · Цель: 11 повт. | ОТДЫХ | 1:30 | Подход 2: 10 повт. |  Изменить | Пропустить отдых | Пауза
+06:49:03 VISIBLE summary :: Тренировка завершена | Подтягивания | 2 | Подходов | 2 | Упражнений | — 2/3 | , не выполнено | Подход 1: 10 повт. | Подход 2: 10 повт. | — 0/1 | , не выполнено | Не выполнено — осталось в плане. | Новая цель | 11 → 11 | 3 → 3 | Закрыть
+06:49:03 EXPECT training completed (summary 'Тренировка завершена')
+06:49:03 ACTUAL completed   OK
+06:49:09 VISIBLE Журнал(after reload) :: Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:48 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Чт, 1 октября | 01.10.2026 | Объём (резина): 10, 10, 10, максимум 11, следующая цель 11 | Сила (резина): 3, 3, 3, 
+06:49:09 EXPECT new session in Журнал after reload
+06:49:09 ACTUAL Привет, Audit! | Журнал | + Записать | ‹ | Октябрь 2026  | › | 5–11 ОКТ. | Пн, 5 октября | По плану | Подтягивания | 09:48 | Подходы | 2 | Повторы | 20 | Усилие | 3 | 28 СЕН. – 4 ОКТ. | Чт, 1 октября    OK
+
+--- NETWORK (api non-2xx and mutations) ---
+06:48:54 POST /api/v2/sessions/live -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:48:59.740395Z"},"phase_index":0,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+06:48:58 POST /api/v2/sessions/live/42/phase/next -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"go","ends_at":null},"phase_index":1,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps","val
+06:48:58 POST /api/v2/sessions/live/42/phase/next -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:28.423894Z"},"phase_index":2,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:48:58 POST /api/v2/sessions/live/42/sets:batch -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:28.423894Z"},"phase_index":2,"current_block_index":0,"current_set_number":1,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:48:59 POST /api/v2/sessions/live/42/phase/next -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"get_ready","ends_at":"2026-10-05T06:49:04.298609Z"},"phase_index":3,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_num
+06:48:59 POST /api/v2/sessions/live/42/phase/next -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"go","ends_at":null},"phase_index":4,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps","val
+06:48:59 POST /api/v2/sessions/live/42/phase/next -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:29.456209Z"},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:48:59 POST /api/v2/sessions/live/42/sets:batch -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"started","phase":{"name":"rest","ends_at":"2026-10-05T06:50:29.456209Z"},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":
+06:49:01 POST /api/v2/sessions/live/42/complete -> 200 {"id":42,"client_session_id":"2ca939af-039b-4a6b-9326-36e45af11e82","status":"completed","phase":{"name":"done","ends_at":null},"phase_index":5,"current_block_index":0,"current_set_number":2,"blocks":[{"order_index":0,"exercise_id":1,"complex_id":null,"targets":[{"set_number":1,"metric_type":"reps",
+
+--- CONSOLE ERRORS ---
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam
+Telegram SDK init() failed TypedError: Unable to retrieve launch parameters from any known source. Perhaps, you have opened your app outside Telegram?
+📖 Refer to docs for more information:
+https://docs.telegram-mini-apps.com/packages/telegram-apps-bridge/environment
+Collected errors:
+— "launchParam

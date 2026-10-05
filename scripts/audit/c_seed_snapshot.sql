@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict b1KyZPwYrHWeBX5H0vbwreEcr8EwnfgFvA9qoNY8g3f47sdOdbUVBXDLCPITjPv
+\restrict vK2yGZAdQyYiGX0PjhZzyzAaBdpDRHhVrluIzdPrqKxbjRIn78PtPn9rkSCRRDS
 
 -- Dumped from database version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
 -- Dumped by pg_dump version 16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)
@@ -2258,6 +2258,10 @@ COPY public.achievements (id, user_id, code, unlocked_at, context) FROM stdin;
 4	4	first_baseline	2026-10-05 06:01:39.176013+00	null
 5	5	first_baseline	2026-10-05 06:01:39.176013+00	null
 6	6	first_baseline	2026-10-05 06:01:39.176013+00	null
+7	7	first_baseline	2026-10-05 06:37:29.602122+00	null
+8	8	first_baseline	2026-10-05 06:37:58.489116+00	null
+9	10	first_baseline	2026-10-05 06:41:26.126489+00	null
+10	11	first_baseline	2026-10-05 06:41:26.126489+00	null
 \.
 
 
@@ -2308,6 +2312,10 @@ COPY public.baselines (id, user_id, performed_at, reps, created_at) FROM stdin;
 4	4	2026-10-01 06:01:39.485711+00	10	2026-10-05 06:01:39.176013+00
 5	5	2026-08-16 06:01:39.530589+00	10	2026-10-05 06:01:39.176013+00
 6	6	2026-08-26 06:01:39.613763+00	10	2026-10-05 06:01:39.176013+00
+7	7	2026-09-28 06:37:29.544101+00	10	2026-10-05 06:37:29.602122+00
+8	8	2026-08-21 06:37:58.4283+00	10	2026-10-05 06:37:58.489116+00
+9	10	2026-09-05 06:41:26.064644+00	10	2026-10-05 06:41:26.126489+00
+10	11	2026-09-05 06:41:26.266571+00	10	2026-10-05 06:41:26.126489+00
 \.
 
 
@@ -2382,6 +2390,26 @@ COPY public.blocks (id, workout_id, block_type, working_reps, max_reps, target_b
 48	24	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:01:39.176013+00	band	15.00	f	6	\N	\N	f	\N	\N	f	Резина 15кг
 49	25	a	[10, 10, 10]	12	11	11	f	2026-10-05 06:01:39.176013+00	band	15.00	f	6	3	3	f	\N	\N	f	Резина 15кг
 50	25	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:01:39.176013+00	band	15.00	f	6	\N	\N	f	\N	\N	f	Резина 15кг
+51	26	a	[10, 10, 10]	11	10	11	f	2026-10-05 06:37:29.602122+00	band	15.00	f	7	3	3	f	\N	\N	f	Резина 15кг
+52	26	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:37:29.602122+00	band	15.00	f	7	\N	\N	f	\N	\N	f	Резина 15кг
+53	27	a	[10, 10, 10]	11	11	11	f	2026-10-05 06:37:29.602122+00	band	15.00	f	7	3	3	f	\N	\N	f	Резина 15кг
+54	27	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:37:29.602122+00	band	15.00	f	7	\N	\N	f	\N	\N	f	Резина 15кг
+55	28	a	[10, 10, 10]	11	10	11	f	2026-10-05 06:37:58.489116+00	band	15.00	f	8	3	3	f	\N	\N	f	Резина 15кг
+56	28	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:37:58.489116+00	band	15.00	f	8	\N	\N	f	\N	\N	f	Резина 15кг
+57	29	a	[10, 10, 10]	11	11	11	f	2026-10-05 06:37:58.489116+00	band	15.00	f	8	3	3	f	\N	\N	f	Резина 15кг
+58	29	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:37:58.489116+00	band	15.00	f	8	\N	\N	f	\N	\N	f	Резина 15кг
+59	30	a	[10, 10, 10]	11	10	11	f	2026-10-05 06:41:26.126489+00	band	15.00	f	9	3	3	f	\N	\N	f	Резина 15кг
+60	30	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:41:26.126489+00	band	15.00	f	9	\N	\N	f	\N	\N	f	Резина 15кг
+61	31	a	[10, 10, 10]	11	11	11	f	2026-10-05 06:41:26.126489+00	band	15.00	f	9	3	3	f	\N	\N	f	Резина 15кг
+62	31	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:41:26.126489+00	band	15.00	f	9	\N	\N	f	\N	\N	f	Резина 15кг
+63	32	a	[10, 10, 10]	12	11	11	f	2026-10-05 06:41:26.126489+00	band	15.00	f	9	3	3	f	\N	\N	f	Резина 15кг
+64	32	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:41:26.126489+00	band	15.00	f	9	\N	\N	f	\N	\N	f	Резина 15кг
+65	33	a	[10, 10, 10]	11	10	11	f	2026-10-05 06:41:26.126489+00	band	15.00	f	10	3	3	f	\N	\N	f	Резина 15кг
+66	33	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:41:26.126489+00	band	15.00	f	10	\N	\N	f	\N	\N	f	Резина 15кг
+67	34	a	[10, 10, 10]	11	11	11	f	2026-10-05 06:41:26.126489+00	band	15.00	f	10	3	3	f	\N	\N	f	Резина 15кг
+68	34	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:41:26.126489+00	band	15.00	f	10	\N	\N	f	\N	\N	f	Резина 15кг
+69	35	a	[10, 10, 10]	12	11	11	f	2026-10-05 06:41:26.126489+00	band	15.00	f	10	3	3	f	\N	\N	f	Резина 15кг
+70	35	b	[3, 3, 3, 3]	3	3	3	f	2026-10-05 06:41:26.126489+00	band	15.00	f	10	\N	\N	f	\N	\N	f	Резина 15кг
 \.
 
 
@@ -2412,6 +2440,10 @@ COPY public.coins (id, user_id, amount, reason, related_achievement_id, created_
 4	4	50	achievement_unlocked	4	2026-10-05 06:01:39.176013+00
 5	5	50	achievement_unlocked	5	2026-10-05 06:01:39.176013+00
 6	6	50	achievement_unlocked	6	2026-10-05 06:01:39.176013+00
+7	7	50	achievement_unlocked	7	2026-10-05 06:37:29.602122+00
+8	8	50	achievement_unlocked	8	2026-10-05 06:37:58.489116+00
+9	10	50	achievement_unlocked	9	2026-10-05 06:41:26.126489+00
+10	11	50	achievement_unlocked	10	2026-10-05 06:41:26.126489+00
 \.
 
 
@@ -2468,6 +2500,10 @@ COPY public.equipment_items (id, user_id, name, resistance_kg, "position", creat
 4	4	Резина 15кг	15.00	0	2026-10-05 06:01:39.176013+00
 5	5	Резина 15кг	15.00	0	2026-10-05 06:01:39.176013+00
 6	6	Резина 15кг	15.00	0	2026-10-05 06:01:39.176013+00
+7	7	Резина 15кг	15.00	0	2026-10-05 06:37:29.602122+00
+8	8	Резина 15кг	15.00	0	2026-10-05 06:37:58.489116+00
+9	10	Резина 15кг	15.00	0	2026-10-05 06:41:26.126489+00
+10	11	Резина 15кг	15.00	0	2026-10-05 06:41:26.126489+00
 \.
 
 
@@ -2536,6 +2572,14 @@ COPY public.plan_items (id, training_plan_id, exercise_id, complex_id, count_per
 12	5	2	\N	3	\N	base	5	2026-10-05 06:01:40.698773+00	6
 13	6	1	\N	3	\N	base	6	2026-10-05 06:01:40.741954+00	7
 14	6	2	\N	3	\N	base	6	2026-10-05 06:01:40.741954+00	7
+17	7	1	\N	3	\N	base	7	2026-10-05 06:37:30.658705+00	9
+18	7	2	\N	3	\N	base	7	2026-10-05 06:37:30.658705+00	9
+21	8	1	\N	3	\N	base	8	2026-10-05 06:38:06.626181+00	11
+22	8	2	\N	3	\N	base	8	2026-10-05 06:38:06.626181+00	11
+25	9	1	\N	3	\N	base	9	2026-10-05 06:41:27.378719+00	13
+26	9	2	\N	3	\N	base	9	2026-10-05 06:41:27.378719+00	13
+27	10	1	\N	3	\N	base	10	2026-10-05 06:41:27.469402+00	14
+28	10	2	\N	3	\N	base	10	2026-10-05 06:41:27.469402+00	14
 \.
 
 
@@ -2550,6 +2594,10 @@ COPY public.plan_weeks (id, training_plan_id, week_number, start_date, phase, cr
 5	4	1	2026-10-05	base	2026-10-05 06:01:40.671363+00
 6	5	1	2026-10-05	base	2026-10-05 06:01:40.698773+00
 7	6	1	2026-10-05	base	2026-10-05 06:01:40.741954+00
+9	7	1	2026-10-05	base	2026-10-05 06:37:30.658705+00
+11	8	1	2026-10-05	base	2026-10-05 06:38:06.626181+00
+13	9	1	2026-10-05	base	2026-10-05 06:41:27.378719+00
+14	10	1	2026-10-05	base	2026-10-05 06:41:27.469402+00
 \.
 
 
@@ -2564,6 +2612,10 @@ COPY public.program_inclusions (id, training_plan_id, program_id, snapshot, prog
 4	4	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 11, "volume": 41, "work_sets": 3, "weak_streak": 0, "stall_streak": 1, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 4, "needs_new_equipment": false, "work_sets_growth_reason": null}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 4, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:01:40.370544+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 2}	2026-10-05 06:01:40.671363+00	\N	t	2026-10-05 06:01:40.671363+00	{}
 5	5	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 8, "volume": 43, "work_sets": 4, "weak_streak": 0, "stall_streak": 0, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 5, "needs_new_equipment": false, "work_sets_growth_reason": "stall"}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 5, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:01:40.370544+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 5}	2026-10-05 06:01:40.698773+00	\N	t	2026-10-05 06:01:40.698773+00	{}
 6	6	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 11, "volume": 42, "work_sets": 3, "weak_streak": 0, "stall_streak": 2, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 6, "needs_new_equipment": false, "work_sets_growth_reason": null}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 6, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:01:40.370544+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 3}	2026-10-05 06:01:40.741954+00	\N	t	2026-10-05 06:01:40.741954+00	{}
+7	7	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 11, "volume": 41, "work_sets": 3, "weak_streak": 0, "stall_streak": 1, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 7, "needs_new_equipment": false, "work_sets_growth_reason": null}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 7, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:37:30.470732+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 2}	2026-10-05 06:37:30.658705+00	\N	t	2026-10-05 06:37:30.658705+00	{}
+8	8	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 11, "volume": 41, "work_sets": 3, "weak_streak": 0, "stall_streak": 1, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 8, "needs_new_equipment": false, "work_sets_growth_reason": null}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 8, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:38:06.424075+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 2}	2026-10-05 06:38:06.626181+00	\N	t	2026-10-05 06:38:06.626181+00	{}
+9	9	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 11, "volume": 42, "work_sets": 3, "weak_streak": 0, "stall_streak": 2, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 9, "needs_new_equipment": false, "work_sets_growth_reason": null}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 9, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:41:27.117380+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 3}	2026-10-05 06:41:27.378719+00	\N	t	2026-10-05 06:41:27.378719+00	{}
+10	10	1	{"config": {"block_a": {"work_sets": 3, "base_target": 10, "min_viable_reps": 10, "equipment_change_threshold": 20}, "block_b": {"work_sets": 4, "base_target": 3, "min_viable_reps": 3, "equipment_change_threshold": 7}, "step_pct": 0.05, "set_length": 12, "min_rest_days": 2, "weak_streak_rollback_threshold": 3}, "exercises": [{"name": "Подтягивания — объём", "role": "block_a", "exercise_id": 1, "metric_type": "reps"}, {"name": "Подтягивания — сила", "role": "block_b", "exercise_id": 2, "metric_type": "reps"}], "program_name": "Подтягивания", "program_items": [{"id": 1, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 1, "count_per_week": 3}, {"id": 2, "complex_id": null, "week_phase": "base", "day_of_week": null, "exercise_id": 2, "count_per_week": 3}], "schema_version": 1, "structure_type": "recurring", "progression_strategy_type": "step"}	{"block_a": {"target": 11, "volume": 42, "work_sets": 3, "weak_streak": 0, "stall_streak": 2, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 10, "needs_new_equipment": false, "work_sets_growth_reason": null}, "block_b": {"target": 3, "volume": 15, "weak_streak": 0, "is_heavy_next": false, "equipment_type": "band", "equipment_value": "15.00", "equipment_item_id": 10, "needs_new_equipment": false, "heavy_equipment_value_next": null}, "backfilled_at": "2026-10-05T06:41:27.117380+00:00", "strategy_type": "step", "schema_version": 1, "backfilled_from": "legacy_v1", "workouts_completed_in_set": 3}	2026-10-05 06:41:27.469402+00	\N	t	2026-10-05 06:41:27.469402+00	{}
 \.
 
 
@@ -2651,6 +2703,26 @@ COPY public.session_blocks (id, session_id, order_index, exercise_id, complex_id
 49	25	1	2	\N	2026-10-05 06:01:40.741954+00	\N	\N
 50	26	0	1	\N	2026-10-05 06:01:40.741954+00	\N	\N
 51	26	1	2	\N	2026-10-05 06:01:40.741954+00	\N	\N
+52	27	0	1	\N	2026-10-05 06:37:30.658705+00	\N	\N
+53	27	1	2	\N	2026-10-05 06:37:30.658705+00	\N	\N
+54	28	0	1	\N	2026-10-05 06:37:30.658705+00	\N	\N
+55	28	1	2	\N	2026-10-05 06:37:30.658705+00	\N	\N
+56	29	0	1	\N	2026-10-05 06:38:06.626181+00	\N	\N
+57	29	1	2	\N	2026-10-05 06:38:06.626181+00	\N	\N
+58	30	0	1	\N	2026-10-05 06:38:06.626181+00	\N	\N
+59	30	1	2	\N	2026-10-05 06:38:06.626181+00	\N	\N
+60	31	0	1	\N	2026-10-05 06:41:27.378719+00	\N	\N
+61	31	1	2	\N	2026-10-05 06:41:27.378719+00	\N	\N
+62	32	0	1	\N	2026-10-05 06:41:27.378719+00	\N	\N
+63	32	1	2	\N	2026-10-05 06:41:27.378719+00	\N	\N
+64	33	0	1	\N	2026-10-05 06:41:27.378719+00	\N	\N
+65	33	1	2	\N	2026-10-05 06:41:27.378719+00	\N	\N
+66	34	0	1	\N	2026-10-05 06:41:27.469402+00	\N	\N
+67	34	1	2	\N	2026-10-05 06:41:27.469402+00	\N	\N
+68	35	0	1	\N	2026-10-05 06:41:27.469402+00	\N	\N
+69	35	1	2	\N	2026-10-05 06:41:27.469402+00	\N	\N
+70	36	0	1	\N	2026-10-05 06:41:27.469402+00	\N	\N
+71	36	1	2	\N	2026-10-05 06:41:27.469402+00	\N	\N
 \.
 
 
@@ -2893,6 +2965,96 @@ COPY public.set_logs (id, session_block_id, set_target_id, set_number, is_max_se
 224	51	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:01:40.741954+00	\N	\N	f
 225	51	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:01:40.741954+00	\N	\N	f
 226	51	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:01:40.741954+00	\N	\N	f
+227	52	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+228	52	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+229	52	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+230	52	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+231	53	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+232	53	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+233	53	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+234	53	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+235	53	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+236	54	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+237	54	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+238	54	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+239	54	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+240	55	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+241	55	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+242	55	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+243	55	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+244	55	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	f
+245	56	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+246	56	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+247	56	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+248	56	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+249	57	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+250	57	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+251	57	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+252	57	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+253	57	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+254	58	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+255	58	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+256	58	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+257	58	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+258	59	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+259	59	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+260	59	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+261	59	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+262	59	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	f
+263	60	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+264	60	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+265	60	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+266	60	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+267	61	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+268	61	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+269	61	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+270	61	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+271	61	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+272	62	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+273	62	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+274	62	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+275	62	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+276	63	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+277	63	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+278	63	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+279	63	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+280	63	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+281	64	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+282	64	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+283	64	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+284	64	\N	4	t	reps	12.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+285	65	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+286	65	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+287	65	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+288	65	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+289	65	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	f
+290	66	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+291	66	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+292	66	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+293	66	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+294	67	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+295	67	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+296	67	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+297	67	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+298	67	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+299	68	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+300	68	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+301	68	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+302	68	\N	4	t	reps	11.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+303	69	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+304	69	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+305	69	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+306	69	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+307	69	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+308	70	\N	1	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+309	70	\N	2	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+310	70	\N	3	f	reps	10.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+311	70	\N	4	t	reps	12.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+312	71	\N	1	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+313	71	\N	2	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+314	71	\N	3	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+315	71	\N	4	f	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
+316	71	\N	5	t	reps	3.00	reps	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	f
 \.
 
 
@@ -2926,6 +3088,12 @@ COPY public.subscriptions (id, user_id, status, source, started_at, ends_at, pay
 7	5	trial	trial	2026-08-16 06:01:39.530589+00	2026-08-30 06:01:39.530589+00	\N	2026-10-05 06:01:39.176013+00
 8	5	active	stars	2026-09-15 06:01:39.102288+00	2026-11-14 06:01:39.102288+00	audit-c-stars-5	2026-10-05 06:01:39.176013+00
 9	6	trial	trial	2026-08-26 06:01:39.613763+00	2026-09-09 06:01:39.613763+00	\N	2026-10-05 06:01:39.176013+00
+10	7	trial	trial	2026-09-28 06:37:29.544101+00	2026-10-12 06:37:29.544101+00	\N	2026-10-05 06:37:29.602122+00
+11	8	trial	trial	2026-08-21 06:37:58.4283+00	2026-09-04 06:37:58.4283+00	\N	2026-10-05 06:37:58.489116+00
+12	10	trial	trial	2026-09-05 06:41:26.064644+00	2026-09-19 06:41:26.064644+00	\N	2026-10-05 06:41:26.126489+00
+13	10	active	stars	2026-09-21 06:41:26.064443+00	2026-11-20 06:41:26.064443+00	audit-c-stars-7300009	2026-10-05 06:41:26.126489+00
+14	11	trial	trial	2026-09-05 06:41:26.266571+00	2026-09-19 06:41:26.266571+00	\N	2026-10-05 06:41:26.126489+00
+15	11	active	stars	2026-09-21 06:41:26.064443+00	2026-11-20 06:41:26.064443+00	audit-c-stars-7300010	2026-10-05 06:41:26.126489+00
 \.
 
 
@@ -2940,6 +3108,10 @@ COPY public.training_plans (id, user_id, created_at) FROM stdin;
 4	4	2026-10-05 06:01:40.671363+00
 5	5	2026-10-05 06:01:40.698773+00
 6	6	2026-10-05 06:01:40.741954+00
+7	7	2026-10-05 06:37:30.658705+00
+8	8	2026-10-05 06:38:06.626181+00
+9	10	2026-10-05 06:41:27.378719+00
+10	11	2026-10-05 06:41:27.469402+00
 \.
 
 
@@ -2974,6 +3146,16 @@ COPY public.training_sessions (id, user_id, source, status, performed_at, effort
 24	6	plan	completed	2026-08-30 05:01:39.613763+00	\N	\N	2026-10-05 06:01:40.741954+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
 25	6	plan	completed	2026-09-05 05:01:39.613763+00	\N	\N	2026-10-05 06:01:40.741954+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
 26	6	plan	completed	2026-09-11 05:01:39.613763+00	\N	\N	2026-10-05 06:01:40.741954+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+27	7	plan	completed	2026-09-28 05:37:29.544101+00	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+28	7	plan	completed	2026-10-01 05:37:29.544101+00	\N	\N	2026-10-05 06:37:30.658705+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+29	8	plan	completed	2026-08-26 05:37:58.4283+00	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+30	8	plan	completed	2026-09-02 05:37:58.4283+00	\N	\N	2026-10-05 06:38:06.626181+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+31	10	plan	completed	2026-09-15 05:41:26.064644+00	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+32	10	plan	completed	2026-09-25 05:41:26.064644+00	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+33	10	plan	completed	2026-09-30 05:41:26.064644+00	\N	\N	2026-10-05 06:41:27.378719+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+34	11	plan	completed	2026-09-15 05:41:26.266571+00	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+35	11	plan	completed	2026-09-25 05:41:26.266571+00	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
+36	11	plan	completed	2026-09-30 05:41:26.266571+00	\N	\N	2026-10-05 06:41:27.469402+00	\N	\N	done	\N	0	1	0	\N	\N	\N	\N
 \.
 
 
@@ -2994,6 +3176,14 @@ COPY public.user_body_metrics (id, user_id, metric, value, measured_at, created_
 10	5	height_cm	181.00	2026-10-05 06:01:39.540594+00	2026-10-05 06:01:39.176013+00
 11	6	weight_kg	78.00	2026-10-05 06:01:39.621319+00	2026-10-05 06:01:39.176013+00
 12	6	height_cm	181.00	2026-10-05 06:01:39.623621+00	2026-10-05 06:01:39.176013+00
+13	7	weight_kg	78.00	2026-10-05 06:37:29.653869+00	2026-10-05 06:37:29.602122+00
+14	7	height_cm	181.00	2026-10-05 06:37:29.66408+00	2026-10-05 06:37:29.602122+00
+15	8	weight_kg	78.00	2026-10-05 06:37:58.528388+00	2026-10-05 06:37:58.489116+00
+16	8	height_cm	181.00	2026-10-05 06:37:58.537373+00	2026-10-05 06:37:58.489116+00
+17	10	weight_kg	78.00	2026-10-05 06:41:26.16737+00	2026-10-05 06:41:26.126489+00
+18	10	height_cm	181.00	2026-10-05 06:41:26.175572+00	2026-10-05 06:41:26.126489+00
+19	11	weight_kg	78.00	2026-10-05 06:41:26.273977+00	2026-10-05 06:41:26.126489+00
+20	11	height_cm	181.00	2026-10-05 06:41:26.276173+00	2026-10-05 06:41:26.126489+00
 \.
 
 
@@ -3016,6 +3206,10 @@ COPY public.users (id, telegram_id, username, weight_kg, height_cm, timezone, on
 4	7300004	audit_trial	78.00	181	Europe/Moscow	2026-10-01 06:01:39.485711+00	trial	2026-10-15 06:01:39.485711+00	50	2026-10-05 06:01:39.176013+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
 5	7300005	audit_active_paid	78.00	181	Europe/Moscow	2026-08-16 06:01:39.530589+00	active	2026-11-14 06:01:39.102288+00	50	2026-10-05 06:01:39.176013+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
 6	7300006	audit_expired	78.00	181	Europe/Moscow	2026-08-26 06:01:39.613763+00	trial	2026-09-09 06:01:39.613763+00	50	2026-10-05 06:01:39.176013+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
+7	7300007	audit_trial_rested	78.00	181	Europe/Moscow	2026-09-28 06:37:29.544101+00	trial	2026-10-12 06:37:29.544101+00	50	2026-10-05 06:37:29.602122+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
+8	7300008	audit_expired_b	78.00	181	Europe/Moscow	2026-08-21 06:37:58.4283+00	trial	2026-09-04 06:37:58.4283+00	50	2026-10-05 06:37:58.489116+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
+10	7300009	audit_persist	78.00	181	Europe/Moscow	2026-09-05 06:41:26.064644+00	active	2026-11-20 06:41:26.064443+00	50	2026-10-05 06:41:26.126489+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
+11	7300010	audit_interrupt	78.00	181	Europe/Moscow	2026-09-05 06:41:26.266571+00	active	2026-11-20 06:41:26.064443+00	50	2026-10-05 06:41:26.126489+00	male	1993-04-02	\N	\N	\N	\N	\N	f	\N	\N	\N	\N	\N
 \.
 
 
@@ -3046,6 +3240,10 @@ COPY public.workout_sets (id, user_id, started_from_baseline_id, set_number, wor
 4	4	4	1	2	active	2026-10-05 06:01:39.176013+00	\N
 5	5	5	1	5	active	2026-10-05 06:01:39.176013+00	\N
 6	6	6	1	3	active	2026-10-05 06:01:39.176013+00	\N
+7	7	7	1	2	active	2026-10-05 06:37:29.602122+00	\N
+8	8	8	1	2	active	2026-10-05 06:37:58.489116+00	\N
+9	10	9	1	3	active	2026-10-05 06:41:26.126489+00	\N
+10	11	10	1	3	active	2026-10-05 06:41:26.126489+00	\N
 \.
 
 
@@ -3095,6 +3293,16 @@ COPY public.workouts (id, user_id, workout_set_id, sequence_number, performed_at
 22	5	5	5	2026-09-27 05:01:39.530589+00	completed	\N	2026-10-05 06:01:39.176013+00	\N	t	pull_ups	f
 23	6	6	1	2026-08-30 05:01:39.613763+00	completed	\N	2026-10-05 06:01:39.176013+00	\N	t	pull_ups	f
 24	6	6	2	2026-09-05 05:01:39.613763+00	completed	\N	2026-10-05 06:01:39.176013+00	\N	t	pull_ups	f
+26	7	7	1	2026-09-28 05:37:29.544101+00	completed	\N	2026-10-05 06:37:29.602122+00	\N	t	pull_ups	f
+27	7	7	2	2026-10-01 05:37:29.544101+00	completed	\N	2026-10-05 06:37:29.602122+00	\N	t	pull_ups	f
+28	8	8	1	2026-08-26 05:37:58.4283+00	completed	\N	2026-10-05 06:37:58.489116+00	\N	t	pull_ups	f
+29	8	8	2	2026-09-02 05:37:58.4283+00	completed	\N	2026-10-05 06:37:58.489116+00	\N	t	pull_ups	f
+30	10	9	1	2026-09-15 05:41:26.064644+00	completed	\N	2026-10-05 06:41:26.126489+00	\N	t	pull_ups	f
+31	10	9	2	2026-09-25 05:41:26.064644+00	completed	\N	2026-10-05 06:41:26.126489+00	\N	t	pull_ups	f
+32	10	9	3	2026-09-30 05:41:26.064644+00	completed	\N	2026-10-05 06:41:26.126489+00	\N	t	pull_ups	f
+33	11	10	1	2026-09-15 05:41:26.266571+00	completed	\N	2026-10-05 06:41:26.126489+00	\N	t	pull_ups	f
+34	11	10	2	2026-09-25 05:41:26.266571+00	completed	\N	2026-10-05 06:41:26.126489+00	\N	t	pull_ups	f
+35	11	10	3	2026-09-30 05:41:26.266571+00	completed	\N	2026-10-05 06:41:26.126489+00	\N	t	pull_ups	f
 \.
 
 
@@ -3118,7 +3326,7 @@ COPY public.workouts_archive_v1 (id, user_id, workout_set_id, sequence_number, p
 -- Name: achievements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.achievements_id_seq', 6, true);
+SELECT pg_catalog.setval('public.achievements_id_seq', 10, true);
 
 
 --
@@ -3146,21 +3354,21 @@ SELECT pg_catalog.setval('public.assessment_results_id_seq', 1, false);
 -- Name: baselines_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.baselines_id_seq', 6, true);
+SELECT pg_catalog.setval('public.baselines_id_seq', 10, true);
 
 
 --
 -- Name: blocks_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.blocks_id_seq', 50, true);
+SELECT pg_catalog.setval('public.blocks_id_seq', 70, true);
 
 
 --
 -- Name: coins_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.coins_id_seq', 6, true);
+SELECT pg_catalog.setval('public.coins_id_seq', 10, true);
 
 
 --
@@ -3202,7 +3410,7 @@ SELECT pg_catalog.setval('public.elective_workouts_id_seq', 1, true);
 -- Name: equipment_items_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.equipment_items_id_seq', 6, true);
+SELECT pg_catalog.setval('public.equipment_items_id_seq', 10, true);
 
 
 --
@@ -3237,21 +3445,21 @@ SELECT pg_catalog.setval('public.pending_payments_id_seq', 1, false);
 -- Name: plan_items_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.plan_items_id_seq', 14, true);
+SELECT pg_catalog.setval('public.plan_items_id_seq', 28, true);
 
 
 --
 -- Name: plan_weeks_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.plan_weeks_id_seq', 7, true);
+SELECT pg_catalog.setval('public.plan_weeks_id_seq', 14, true);
 
 
 --
 -- Name: program_inclusions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.program_inclusions_id_seq', 6, true);
+SELECT pg_catalog.setval('public.program_inclusions_id_seq', 10, true);
 
 
 --
@@ -3279,7 +3487,7 @@ SELECT pg_catalog.setval('public.progression_strategy_profiles_id_seq', 1, true)
 -- Name: session_blocks_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.session_blocks_id_seq', 51, true);
+SELECT pg_catalog.setval('public.session_blocks_id_seq', 71, true);
 
 
 --
@@ -3293,7 +3501,7 @@ SELECT pg_catalog.setval('public.session_plan_items_id_seq', 1, false);
 -- Name: set_logs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.set_logs_id_seq', 226, true);
+SELECT pg_catalog.setval('public.set_logs_id_seq', 316, true);
 
 
 --
@@ -3314,28 +3522,28 @@ SELECT pg_catalog.setval('public.sheets_sync_state_id_seq', 1, false);
 -- Name: subscriptions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.subscriptions_id_seq', 9, true);
+SELECT pg_catalog.setval('public.subscriptions_id_seq', 15, true);
 
 
 --
 -- Name: training_plans_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.training_plans_id_seq', 6, true);
+SELECT pg_catalog.setval('public.training_plans_id_seq', 10, true);
 
 
 --
 -- Name: training_sessions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.training_sessions_id_seq', 26, true);
+SELECT pg_catalog.setval('public.training_sessions_id_seq', 36, true);
 
 
 --
 -- Name: user_body_metrics_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.user_body_metrics_id_seq', 12, true);
+SELECT pg_catalog.setval('public.user_body_metrics_id_seq', 20, true);
 
 
 --
@@ -3349,7 +3557,7 @@ SELECT pg_catalog.setval('public.user_favorites_id_seq', 1, false);
 -- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.users_id_seq', 6, true);
+SELECT pg_catalog.setval('public.users_id_seq', 11, true);
 
 
 --
@@ -3370,14 +3578,14 @@ SELECT pg_catalog.setval('public.workout_drafts_id_seq', 1, false);
 -- Name: workout_sets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.workout_sets_id_seq', 6, true);
+SELECT pg_catalog.setval('public.workout_sets_id_seq', 10, true);
 
 
 --
 -- Name: workouts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: pullup
 --
 
-SELECT pg_catalog.setval('public.workouts_id_seq', 25, true);
+SELECT pg_catalog.setval('public.workouts_id_seq', 35, true);
 
 
 --
@@ -4496,5 +4704,5 @@ ALTER TABLE ONLY public.workouts
 -- PostgreSQL database dump complete
 --
 
-\unrestrict b1KyZPwYrHWeBX5H0vbwreEcr8EwnfgFvA9qoNY8g3f47sdOdbUVBXDLCPITjPv
+\unrestrict vK2yGZAdQyYiGX0PjhZzyzAaBdpDRHhVrluIzdPrqKxbjRIn78PtPn9rkSCRRDS
 

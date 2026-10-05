@@ -83,3 +83,32 @@ export async function liveSets(page: Page, log: Log, n: number, reps = 10): Prom
   }
   return done;
 }
+
+/** Plans -> Начать -> pre-screen -> Начать -> Live -> n sets -> Завершить -> rate 3 -> save. Logs ready-vs-live target. */
+export async function trainOnce(page: Page, log: Log, sets = 2): Promise<{ ok: boolean; pre: string; live: string }> {
+  await tab(page, "Планы");
+  const plansBody = await body(page);
+  log.add("VISIBLE", "Планы :: " + plansBody.slice(0, 420));
+  const start = page.getByRole("button", { name: "Начать" });
+  if (!(await start.count())) { log.add("ACTUAL", "no Начать button", "FAIL no-start"); return { ok: false, pre: "", live: "" }; }
+  await start.first().click();
+  await page.waitForTimeout(2500);
+  const pre = await body(page);
+  log.add("VISIBLE", "pre-screen :: " + pre);
+  await page.getByRole("button", { name: "Начать" }).last().click();
+  await page.waitForTimeout(3500);
+  const live = await body(page);
+  log.add("VISIBLE", "live :: " + live.slice(0, 260));
+  const preTarget = pre.match(/Цель 1: (\d+)/)?.[1]; const liveTarget = live.match(/Цель: (\d+)/)?.[1];
+  log.add("EXPECT", "pre-screen target == live target");
+  log.add("ACTUAL", `pre=${preTarget} live=${liveTarget}`, preTarget === liveTarget ? "OK" : "FAIL F-C-03 target mismatch pre-screen vs live");
+  if (!/ЖИВАЯ ТРЕНИРОВКА/.test(live)) return { ok: false, pre, live };
+  await liveSets(page, log, sets, 10);
+  await page.getByRole("button", { name: "Завершить" }).click();
+  await page.waitForTimeout(1000);
+  await page.getByRole("button", { name: /^3/ }).click();
+  await page.getByRole("button", { name: "Сохранить и завершить" }).click();
+  await page.waitForTimeout(2500);
+  log.add("VISIBLE", "summary :: " + (await body(page)).slice(0, 260));
+  return { ok: /Тренировка завершена/.test(await body(page)), pre, live };
+}

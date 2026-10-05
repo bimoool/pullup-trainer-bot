@@ -67,6 +67,19 @@ async def main(phase):
             from scripts.backfill_multi_program import backfill_all
             rep = await backfill_all(s, now=now - timedelta(days=10))
             print(rep.render())
+        elif phase == "extra3":
+            from app.db.models import SubscriptionSource
+            for tg, nm in ((7300009, "audit_persist"), (7300010, "audit_interrupt")):
+                u = await legacy_user(s, tg, nm, onboarded_days_ago=30, workout_days_ago=[20, 10, 5])
+                await sub.extend(u.id, now=now - timedelta(days=14), days=60, source=SubscriptionSource.STARS,
+                                 payment_reference=f"audit-c-stars-{tg}")
+            await s.commit()
+        elif phase in ("extra", "extra2"):
+            # added after the first snapshot: a trial user whose last workout is outside MIN_REST_DAYS
+            if phase == "extra":
+                await legacy_user(s, 7300007, "audit_trial_rested", onboarded_days_ago=7, workout_days_ago=[7, 4])
+            await legacy_user(s, 7300008, "audit_expired_b", onboarded_days_ago=45, workout_days_ago=[40, 33])
+            await s.commit()
         else:
             u1 = await legacy_user(s, 7300001, "audit_existing_active", onboarded_days_ago=30,
                                    workout_days_ago=[25, 21, 17, 13, 9, 5])
