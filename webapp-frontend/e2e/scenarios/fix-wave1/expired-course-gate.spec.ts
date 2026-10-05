@@ -72,7 +72,7 @@ test("Просроченный пользователь: курс за подп�
   await onboard(page);
 
   // --- активный (trial) пользователь добавляет курс (UI) ---
-  await page.getByRole("button", { name: /Подтягивания/ }).first().click();
+  await page.getByRole("button", { name: /^Подтягивания/ }).first().click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
   await expect(page.getByRole("button", { name: "В плане" })).toBeVisible();
   await createOwnWorkout(page);
@@ -145,7 +145,7 @@ test("Клиент считает доступ активным, сервер о
   });
   await openAppAs(page, TG + 1, { allowedApiStatuses: [402] });
   await onboard(page);
-  await page.getByRole("button", { name: /Подтягивания/ }).first().click();
+  await page.getByRole("button", { name: /^Подтягивания/ }).first().click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
   await expect(page.getByRole("button", { name: "В плане" })).toBeVisible();
   harness(`expire ${TG + 1}`); // TEST HARNESS INJECTION
