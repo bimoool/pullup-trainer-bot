@@ -1033,7 +1033,7 @@ async def create_plan_item(
     #     архивные — отказ. Внутренние пути материализации (ProgramInclusion/STEP)
     #     эту проверку не проходят: они не идут через публичный эндпоинт.
     if body.exercise_id is not None and (
-        await programs.get_publicly_attachable_exercise_for_user(body.exercise_id, user.id) is None
+        await programs.get_plan_attachable_exercise_for_user(body.exercise_id, user.id) is None
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
     if body.complex_id is not None and (

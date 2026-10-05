@@ -108,13 +108,13 @@ async def test_internal_exercises_cannot_be_attached_to_plan_but_library_can(ses
     rows = {e.name: e for e in (await session.execute(select(Exercise).where(Exercise.owner_user_id.is_(None)))).scalars()}
 
     for name in ("Факультатив — подтягивания W", "Подтягивания — объём"):
-        assert await repo.get_publicly_attachable_exercise_for_user(rows[name].id, user.id) is None
+        assert await repo.get_plan_attachable_exercise_for_user(rows[name].id, user.id) is None
         response = await v2_post(
             session, telegram_id=user.telegram_id, path="/api/v2/plan-items",
             payload={"exercise_id": rows[name].id, "count_per_week": 1},
         )
         assert response.status_code == 404
-    assert await repo.get_publicly_attachable_exercise_for_user(rows["Подтягивания"].id, user.id) is not None
+    assert await repo.get_plan_attachable_exercise_for_user(rows["Подтягивания"].id, user.id) is not None
 
 
 async def test_catalog_lists_the_four_system_workouts_and_my_workouts_stays_own_only(session: AsyncSession):

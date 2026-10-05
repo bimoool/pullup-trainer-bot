@@ -222,11 +222,24 @@ class ProgramRepository:
 
     async def get_publicly_attachable_exercise_for_user(self, exercise_id: int, user_id: int) -> Exercise | None:
         """G2 (REBUILD-1, R4) — Exercise, который обычный пользователь вправе
-        привязать к своему плану публичным POST /plan-items: видимый ему (system
-        или свой user) И не внутренняя STEP-роль (subcategory block_a/block_b —
-        та же граница, что у публичной библиотеки GET /exercises: роли STEP и факультативы). None —
-        роут отвечает 404 (не отличая "нет" от "чужое/внутреннее")."""
+        привязать публичным путём: видимый ему (system или свой user) И не внутренняя
+        STEP-роль (subcategory block_a/block_b — та же граница, что у публичной
+        библиотеки GET /exercises). Используется и POST /plan-items, и записью
+        Журнала (POST /sessions); факультативы (elective_*) здесь НЕ отсекаются — у
+        Журнала на них есть собственные правила (#279); для плана см.
+        get_plan_attachable_exercise_for_user. None — роут отвечает 404/422 (не
+        отличая "нет" от "чужое/внутреннее")."""
         exercise = await self.get_visible_exercise_for_user(exercise_id, user_id)
+        if exercise is None or exercise.subcategory in INTERNAL_ROLE_SUBCATEGORIES:
+            return None
+        return exercise
+
+    async def get_plan_attachable_exercise_for_user(self, exercise_id: int, user_id: int) -> Exercise | None:
+        """Exercise для публичного POST /plan-items (#296, D3): как
+        get_publicly_attachable_exercise_for_user, но без ЛЮБОГО служебного упражнения —
+        и факультативы (elective_*, «вне плана и прогрессии», app.domain.electives) тоже
+        не привязываются к плану: в публичной библиотеке их нет (public_exercise_filter)."""
+        exercise = await self.get_publicly_attachable_exercise_for_user(exercise_id, user_id)
         if exercise is None or is_internal_exercise_subcategory(exercise.subcategory):
             return None
         return exercise
