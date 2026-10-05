@@ -16,6 +16,9 @@ import { openAppAs } from "../../fixtures/setup";
  *   cd e2e && E2E_BASE_URL=http://127.0.0.1:8101 BOT_TOKEN=audit-token \
  *     npx playwright test scenarios/fix-wave1/fresh-install-content.spec.ts --project=chromium
  *
+ * (Если установленный в системе chromium не совпадает с билдом, который ждёт Playwright, запускайте с
+ * конфигом, где `launchOptions.executablePath` указывает на имеющийся chrome; тесты от этого не зависят.)
+ *
  * Каждый тест — НОВЫЙ Telegram-пользователь, который проходит онбординг через UI (замер → профиль),
  * и дальше действует только кликами по тексту/ролям: ни `request.post`, ни seed под пользователя.
  * Тесты независимы друг от друга и не требуют ничего, кроме поставляемого каталога
