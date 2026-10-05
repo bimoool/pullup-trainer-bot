@@ -172,9 +172,10 @@ for (const width of WIDTHS) {
       test("Главная: promo-баннеры с уникальными именами, без дублей «Создать тренировку»", async ({ page }) => {
         const { consoleErrors, apiFailures } = await open(page, USERS.home, theme);
         await page.getByTestId("my-workouts").waitFor();
-        const names = ["Баннер: открыть план дня", "Баннер: внести активность", "Баннер: собрать свой комплекс"];
+        // «план дня» у пользователя без плана (#298) называется «план дня пуст» — тот же слот и testid.
+        const names: Array<string | RegExp> = [/^Баннер: (открыть план дня|план дня пуст)$/, "Баннер: внести активность", "Баннер: собрать свой комплекс"];
         for (const name of names) {
-          await expect(page.getByRole("button", { name, exact: true })).toHaveCount(1);
+          await expect(page.getByRole("button", { name, exact: typeof name === "string" })).toHaveCount(1);
         }
         // имена кнопок действий остаются уникальными для строгих селекторов
         await expect(page.getByRole("button", { name: "Создать", exact: true })).toHaveCount(1);

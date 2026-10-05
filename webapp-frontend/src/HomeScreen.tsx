@@ -575,7 +575,7 @@ export function HomeScreen({
         override={noPlan ? {
           title: "План дня пока пуст",
           meta: hasCourses ? "Выберите курс в каталоге выше" : "Соберите свою тренировку",
-          label: hasCourses ? "Баннер: выбрать курс" : "Баннер: создать тренировку",
+          label: "Баннер: план дня пуст",
         } : undefined}
       />
 

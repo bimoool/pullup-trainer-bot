@@ -85,7 +85,7 @@ test("новый пользователь: своя тренировка с ну
   await expect(page.getByRole("heading", { name: "Добавить упражнение" })).toBeVisible();
   if (library.exercises.length > 0) {
     // If system exercises exist they are listed in the picker.
-    await expect(page.getByRole("button", { name: new RegExp(library.exercises[0].name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first()).toBeVisible();
+    await expect(page.locator(".ux-pick", { hasText: library.exercises[0].name }).first()).toBeVisible();
   }
   await createExerciseInPicker(page, "Мои подтягивания", library.exercises.length);
   await page.getByRole("button", { name: "Сохранить" }).click();
@@ -166,7 +166,7 @@ test("E1: «Планы» без плана не зацикливается с «
     // Каталог есть: CTA ведёт на Главную, где сразу видны карточки курсов (полезное открытие), цикла нет.
     await page.getByRole("button", { name: "Выбрать курс на Главной" }).click();
     await expect(page.getByTestId("program-category").first()).toBeVisible();
-    await page.getByRole("button", { name: "Баннер: выбрать курс" }).click();
+    await page.getByRole("button", { name: "Баннер: план дня пуст" }).click();
     await expect(page.getByTestId("program-category").first()).toBeInViewport();
   } else {
     // Каталога нет: честное «пока нет» + прямой путь «Создать тренировку» (не «появится позже» навсегда).
@@ -178,7 +178,7 @@ test("E1: «Планы» без плана не зацикливается с «
     // Главная: каталог тоже честно пуст, а баннер «план дня» ведёт не в пустые «Планы», а к созданию.
     await page.reload();
     await expect(page.getByTestId("catalog-empty")).toBeVisible();
-    await page.getByRole("button", { name: "Баннер: создать тренировку" }).click();
+    await page.getByRole("button", { name: "Баннер: план дня пуст" }).click();
     await expect(page.getByPlaceholder("Например, 3 минуты подтягиваний")).toBeVisible();
   }
 });
