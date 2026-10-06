@@ -35,7 +35,7 @@ tests `tests/test_web/test_qa_mint_init_data.py`, `tests/test_web/test_qa_provis
   path and status only, no headers). Test: `test_cli_reads_token_only_from_env_and_never_prints_it`.
 * `signature` (Ed25519) in real initData is not verified by the app; the frontend SDK requires the field, so a
   placeholder is included and covered by the HMAC. This does not weaken validation.
-* QA identities are a reserved id range (`7_000_000_001..099`); the provisioner refuses everything else.
+* QA identities are a reserved id range (`7_000_000_001..099 (5 in use)`); the provisioner refuses everything else.
 * The provisioner refuses unless: `QA_ALLOW_STAGING=1`, `DATABASE_URL` db name contains `staging` (and is not
   `pullup`/`*prod*`/`*test*`), `POSTGRES_DB` agrees, `MINI_APP_URL` host starts with `staging.`, `BOT_TOKEN` set.
   Only QA ids are purged/recreated. Production is never addressed by any file here.
@@ -46,19 +46,20 @@ tests `tests/test_web/test_qa_mint_init_data.py`, `tests/test_web/test_qa_provis
 |---|---|---|
 | `qa_fresh_active` | 7000000001 | onboarded now via `OnboardingService`; ACTIVE sub (SYNTHETIC: `ADMIN_GRANT`, 90 d); no plan, no history |
 | `qa_aged_active` | 7000000002 | onboarded 26 d ago, «Подтягивания» included from day one (`ProgramInclusionService`), plan week 1 materialised by `PlanWeekService` at the then-current date, 2 sessions in week 1 (`TrainingSessionLogService`, STEP progression). **SYNTHETIC:** timestamps back-dated (`users/training_plans/program_inclusions.created_at`), ADMIN_GRANT subscription, sessions written via the log service rather than the live UI. The current week (5) is deliberately **not** materialised: the product creates it on first open, as for the owner who last opened Plans in week 1. `--aged-days`, `--visited-weeks` vary this. |
+| `qa_aged_legacy_snapshot` | 7000000005 | same as `qa_aged_active` (plan 23 d old, week 1 materialised by the real service, weeks 2..current unmaterialised) plus **one synthetic mutation, the only one beyond back-dating**: the inclusion `snapshot` loses its `"program_items"` key, the shape written by the pre-checkpoint-1.1 backfill (`scripts/backfill_multi_program.py::seed_catalog` at commit cd2808f). No PlanItem/PlanWeek is inserted or edited by hand. Current services write `program_items`, so `qa_aged_active` converges; this identity reproduces the owner's «0 из 0» (role C: H2b / H3b). |
 | `qa_expired` | 7000000003 | onboarded 40 d ago, 14-day trial ended, status EXPIRED (real `refresh_status`), course still in plan |
 | `qa_legacy_or_partial` | 7000000004 | legacy `Workout` rows migrated by the real backfill helpers + one legacy-only row + 2 backfilled electives (`e2e_seed.seed_journal_dedupe`) |
 
 Ids cannot collide with `scripts/e2e_seed.py` (900001–997202, 8.1M/8.2M peers, +1M helper) or UI specs (7.4M–7.99M);
 asserted in `test_qa_ids_are_reserved_and_do_not_collide_with_e2e_seed_ids`.
 This mimics, it does not clone, the owner's account: if the owner's real data differs (e.g. paused inclusions, other
-weeks visited), reproduce it with `--visited-weeks N` or extend the provisioner, and compare with `./qa-staging.sh snapshot`.
+weeks visited), reproduce it with `--visited-weeks N` or extend the provisioner, and compare with `./qa-staging.sh snapshot` (per identity: subscription, sessions, plan weeks with item counts, and per inclusion `snapshot_has_program_items` / count).
 
 ## Journeys (`webapp-frontend/e2e-staging/specs`, run in file order; one worker)
 
 | id | identity | what it proves |
 |---|---|---|
-| S-OWNER-01 | qa_aged_active | Plans current week has ≥1 `Начать: …` row that reaches the pre-screen, or explicit rest-week text; FORBIDS «0 из 0» + «На эту неделю пока ничего не запланировано.»; same after reload and fresh launch. Dumps `/api/v2/plan` JSON the UI received. |
+| S-OWNER-01 | qa_aged_active **and** qa_aged_legacy_snapshot (two tests) | Plans current week has ≥1 `Начать: …` row that reaches the pre-screen, or explicit rest-week text; FORBIDS «0 из 0» + «На эту неделю пока ничего не запланировано.»; same after reload and fresh launch. Dumps `/api/v2/plan` JSON the UI received. **Expected today: the `qa_aged_legacy_snapshot` test FAILS ("DEAD END … 0 из 0") on a build without a fix — that failure is the reproduction; locally verified.** |
 | S-FRESH-01 | qa_fresh_active | Home → «Подтягивания» → add → Plans → Start → Live → 3 sets → Complete → Journal → Analytics → reload. UI only. Asserts the identity is really fresh first. |
 | S-CUSTOM-01 | qa_fresh_active | own workout → system exercises visible without typing → nonsense search → create exercise → save → reload → direct start → complete → add to plan → reload → start from Plans |
 | S-FREE-01 | qa_fresh_active | system workout «Максимум подтягиваний» started with no plan → complete → Journal (twice, with reload) |
@@ -134,5 +135,5 @@ or WebKit emulation alone, is not DONE.
 
 Validated in the dev container only against a locally started backend (+built frontend) on a throwaway DB
 `pullup_staging_harness`: unit tests (initData accepted by the app validator; provisioner guard), provisioner run twice
-(idempotent) with snapshot, all four journeys green in Chromium. Not validated: real staging, WebKit (browser not installed
+(idempotent) with snapshot, all four journeys green in Chromium (S-OWNER-01 green for `qa_aged_active`, red for `qa_aged_legacy_snapshot`). Not validated: real staging, WebKit (browser not installed
 in the container), GitHub runner reachability, the SSH wrapper. The local green is not evidence about staging.
