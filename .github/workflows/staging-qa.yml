@@ -1,0 +1,113 @@
+name: Staging QA
+
+# Playwright journeys against the DEPLOYED staging (https://staging.app.bimoool.com), not a local copy.
+# Design, threat model and owner one-time steps: docs/STAGING_QA_HARNESS.md.
+# NOTE: workflow_dispatch appears in the Actions UI / API only once this file exists on the DEFAULT branch.
+# Never triggered by push/PR; never touches production (QA ids 7_000_000_001..4 on the staging bot only).
+
+on:
+  workflow_dispatch:
+    inputs:
+      journeys:
+        description: "Journeys to run: 'all' or a Playwright grep, e.g. 'S-OWNER-01|S-FRESH-01'"
+        required: true
+        default: "all"
+      reprovision:
+        description: "Reset QA identities on the staging server first (needs the server-side qa-staging.sh wrapper)"
+        type: boolean
+        default: true
+      projects:
+        description: "Playwright projects (comma list): iphone-webkit,chromium-mobile"
+        required: true
+        default: "iphone-webkit,chromium-mobile"
+
+permissions:
+  contents: read
+
+env:
+  STAGING_URL: https://staging.app.bimoool.com
+
+jobs:
+  provision:
+    if: ${{ inputs.reprovision }}
+    runs-on: ubuntu-latest
+    steps:
+      # The staging SSH key is bound to a forced command (see deploy-and-verify skill). This only works after the
+      # owner extended the server wrapper with the literal `./qa-staging.sh provision|snapshot` (docs/STAGING_QA_HARNESS.md);
+      # until then the server answers "rejected command" and this job fails loudly — it never runs anything else.
+      - name: Reprovision QA identities (server side, staging container)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.VPS_STAGING_DEPLOY_SSH_KEY }}
+          command_timeout: 10m
+          script: ./qa-staging.sh provision
+      - name: State snapshot of QA identities (read-only)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.VPS_STAGING_DEPLOY_SSH_KEY }}
+          command_timeout: 5m
+          script: ./qa-staging.sh snapshot
+
+  journeys:
+    needs: provision
+    # Run even when provisioning was skipped; do NOT run when it was requested and failed.
+    if: ${{ always() && (needs.provision.result == 'success' || needs.provision.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: webapp-frontend/e2e-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pre-check staging reachability from a GitHub-hosted runner
+        working-directory: .
+        run: |
+          set -u
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 --retry 3 --retry-delay 5 "$STAGING_URL/health" || echo 000)
+          if [ "$code" != "200" ]; then
+            echo "::error title=Staging unreachable::GET $STAGING_URL/health returned HTTP $code from a GitHub-hosted runner. Either staging is down/not deployed, or it is not reachable from GitHub IPs (firewall/nginx allow-list). Run the suite on the server instead: see docs/STAGING_QA_HARNESS.md section 'Running on the server'."
+            exit 1
+          fi
+          echo "staging /health ok"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: webapp-frontend/e2e-staging/package-lock.json
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx tsc --noEmit
+
+      - name: Run journeys against staging
+        env:
+          STAGING_BOT_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
+          STAGING_PROJECT: ${{ inputs.projects }}
+          JOURNEYS: ${{ inputs.journeys }}
+          CI: "true"
+        run: |
+          set -u
+          [ -n "${STAGING_BOT_TOKEN:-}" ] || { echo "::error::secret STAGING_BOT_TOKEN is empty"; exit 1; }
+          echo "::add-mask::$STAGING_BOT_TOKEN"
+          if [ "$JOURNEYS" = "all" ] || [ -z "$JOURNEYS" ]; then
+            npx playwright test
+          else
+            npx playwright test --grep "$JOURNEYS"
+          fi
+
+      - name: Upload report, traces, screenshots, videos
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-qa-${{ github.run_id }}
+          path: |
+            webapp-frontend/e2e-staging/playwright-report/
+            webapp-frontend/e2e-staging/test-results/
+          retention-days: 14
+          if-no-files-found: warn

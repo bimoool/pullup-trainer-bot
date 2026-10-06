@@ -1,0 +1,17 @@
+{
+  "name": "pullup-trainer-webapp-e2e-staging",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Playwright journeys against the DEPLOYED staging (STAGING_URL). See docs/STAGING_QA_HARNESS.md",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "list": "playwright test --list"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.3"
+  }
+}
