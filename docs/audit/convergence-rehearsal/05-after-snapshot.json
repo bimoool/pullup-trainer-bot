@@ -1,0 +1,145 @@
+{
+  "generated_for_today": "2026-10-06",
+  "user": {
+    "id": 1,
+    "onboarded": true,
+    "onboarding_completed_at": "2026-09-13T07:19:31.115395+00:00",
+    "timezone": "Europe/Moscow",
+    "subscription_status": "active",
+    "subscription_expires_at": "2027-01-04T07:19:31.115395+00:00"
+  },
+  "plan": {
+    "id": 1,
+    "created_at": "2026-09-13T07:19:31.115395+00:00"
+  },
+  "inclusions": [
+    {
+      "id": 1,
+      "program_id": 1,
+      "program_name": "Подтягивания",
+      "is_active": true,
+      "started_at": "2026-10-06T07:19:31.452412+00:00",
+      "created_at": "2026-09-13T07:19:31.115395+00:00",
+      "expires_at": null,
+      "snapshot_keys": [
+        "config",
+        "exercises",
+        "program_items",
+        "program_name",
+        "progression_strategy_type",
+        "schema_version",
+        "structure_type"
+      ],
+      "snapshot_structure_type": "recurring",
+      "snapshot_has_program_items_key": true,
+      "snapshot_program_items_count": 2,
+      "live_program_item_count": 2
+    }
+  ],
+  "plan_weeks": [
+    {
+      "id": 1,
+      "week_number": 1,
+      "start_date": "2026-09-07",
+      "phase": "base"
+    },
+    {
+      "id": 3,
+      "week_number": 2,
+      "start_date": "2026-09-14",
+      "phase": "base"
+    },
+    {
+      "id": 4,
+      "week_number": 3,
+      "start_date": "2026-09-21",
+      "phase": "base"
+    },
+    {
+      "id": 5,
+      "week_number": 4,
+      "start_date": "2026-09-28",
+      "phase": "base"
+    },
+    {
+      "id": 2,
+      "week_number": 5,
+      "start_date": "2026-10-05",
+      "phase": "base"
+    }
+  ],
+  "plan_items": [
+    {
+      "id": 1,
+      "plan_week_id": 1,
+      "program_inclusion_id": 1,
+      "exercise_id": 1,
+      "complex_id": null,
+      "count_per_week": 3,
+      "day_of_week": null,
+      "week_phase": "base",
+      "linked_sessions": 0
+    },
+    {
+      "id": 2,
+      "plan_week_id": 1,
+      "program_inclusion_id": 1,
+      "exercise_id": 2,
+      "complex_id": null,
+      "count_per_week": 3,
+      "day_of_week": null,
+      "week_phase": "base",
+      "linked_sessions": 0
+    },
+    {
+      "id": 5,
+      "plan_week_id": 2,
+      "program_inclusion_id": 1,
+      "exercise_id": 1,
+      "complex_id": null,
+      "count_per_week": 3,
+      "day_of_week": null,
+      "week_phase": "base",
+      "linked_sessions": 0
+    },
+    {
+      "id": 6,
+      "plan_week_id": 2,
+      "program_inclusion_id": 1,
+      "exercise_id": 2,
+      "complex_id": null,
+      "count_per_week": 3,
+      "day_of_week": null,
+      "week_phase": "base",
+      "linked_sessions": 0
+    }
+  ],
+  "sessions": {
+    "total": 2,
+    "linked_to_plan_items": 0,
+    "by_status": {
+      "completed": 2
+    }
+  },
+  "current_week_number": 5,
+  "programs_named_like_inclusions": [
+    {
+      "id": 1,
+      "name": "Подтягивания"
+    }
+  ],
+  "legacy": {
+    "legacy_workouts": 0,
+    "legacy_electives": 0
+  },
+  "current_week_start_date": "2026-10-05",
+  "plannable_window": [
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "current_week_plan_item_count": 2,
+  "diagnoses": []
+}

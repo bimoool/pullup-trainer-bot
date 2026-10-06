@@ -2667,6 +2667,30 @@ SELECT → «строки нет» → INSERT, второй запрос пад�
 - Тесты: `tests/test_services/test_plan_week_service.py` (блок #301), `tests/test_web/test_v2_plan_future_weeks.py`
   (без исправления в `app/` падают 10 из 24), journey `webapp-frontend/e2e/scenarios/fix-wave1/later-weeks.spec.ts`.
 
+## «Week 4 · 0 из 0» у старого аккаунта при живом курсе: снимок без program_items (#301, aged-state convergence)
+
+- **Симптом (staging, read-only снимок владельца 2026-10-06).** Активная «Подтягивания», текущая неделя 4 — 0
+  PlanItem; диагнозы `CURRENT_WEEK_EMPTY`, `SNAPSHOT_NO_PROGRAM_ITEMS_KEY`, `LIVE_HAS_ITEMS_SNAPSHOT_DOES_NOT`,
+  `INCLUSION_NOT_IN_CURRENT_WEEK`. Свежий пользователь и e2e — зелёные.
+- **Корень.** Материализация недели идёт ТОЛЬКО из `inclusion.snapshot["program_items"]`; у инклюзий legacy-бэкфилла
+  (до checkpoint 1.1) ключа нет, у подключённых при пустой Program — `[]`. Неделя 1 жила за счёт unweeked-строк,
+  все следующие — тихий `continue`. Починка существовала только как операторский шаг бэкфилла
+  (`normalize_legacy_snapshots`), deploy её не вызывал. Записанное правило «за program_items в live Program не
+  ходить» не различало «пробел в данных» и «исторический факт».
+- **Решение (одобрено владельцем).** Одна каноническая функция `PlanWeekService.converge_inclusion_snapshot` +
+  чистый предикат `domain.multi_program.snapshot_program_items_gap` (MISSING / EMPTY; непустое и нераспознанное —
+  None). Рантайм вызывает её внутри `_materialize_inclusions_into_week`; `normalize_legacy_snapshots` использует тот
+  же предикат; targeted-скрипт `scripts/repair_plan_convergence.py` вызывает тот же `ensure_current_plan_week`.
+  Каждая починка — WARNING `plan_convergence_repair {json}`; неисцелимое — `plan_convergence_gap` (не тихий continue).
+- **Ловушки.** (1) Рантайм чинит при первом открытии «Планов» — чтобы увидеть dry-run на живой учётке, его надо
+  снять ДО того, как кто-то откроет приложение на новом билде. (2) Непустой снимок не переписывать «для
+  актуальности» — это меняло бы курс уже подключённому пользователю. (3) Скрипт после rollback/commit не читает
+  ORM-атрибуты (они expired) — id берутся заранее.
+- Тесты: `tests/test_services/test_aged_state_convergence.py` (без вызова convergence падают 3 из 8),
+  `tests/test_scripts/test_repair_plan_convergence.py`, `tests/test_plan_week.py` (предикат). Репетиция
+  staging-приёмки на копии формы данных — `docs/audit/convergence-rehearsal/` (BEFORE → dry-run → apply → AFTER →
+  S-OWNER-01/02); staging-runbook — `docs/STAGING_CONVERGENCE_RUNBOOK.md`.
+
 ## Просроченный пользователь мог стартовать курс (#300, исправлено)
 
 - Причина: v2 live-путь (`POST /api/v2/sessions/live`) вообще не проверял подписку; гейт `has_access` был только у legacy

@@ -127,3 +127,27 @@ def count_done_per_plan_item(
         if start is not None and start <= local_date < start + timedelta(days=7):
             done[item_id] += 1
     return done
+
+
+class SnapshotProgramItemsGap(StrEnum):
+    """Почему у снимка инклюзии нет структуры курса (owner decision 2026-10-06, #301,
+    aged-state convergence). Ровно два исцеляемых случая:
+      - MISSING — ключа "program_items" нет вообще (снимок legacy-бэкфилла до checkpoint 1.1);
+      - EMPTY — "program_items": [] (курс подключён, когда у Program ещё не было ProgramItem).
+    Непустой список — исторический факт подключения, он не «пробел» и не переписывается никогда."""
+
+    MISSING = "missing_program_items_key"
+    EMPTY = "empty_program_items"
+
+
+def snapshot_program_items_gap(snapshot: dict | None) -> SnapshotProgramItemsGap | None:
+    """Чистое решение «нужно ли (и можно ли) дополнить снимок из live Program».
+    None — снимок не трогать: в нём уже есть непустой список program_items, либо значение
+    не распознано (не список) — такое не чиним молча, а только логируем на вызывающей стороне."""
+    snapshot = snapshot or {}
+    if "program_items" not in snapshot:
+        return SnapshotProgramItemsGap.MISSING
+    value = snapshot["program_items"]
+    if isinstance(value, list) and not value:
+        return SnapshotProgramItemsGap.EMPTY
+    return None

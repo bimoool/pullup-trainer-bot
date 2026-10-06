@@ -1,0 +1,1 @@
+WARNING app.services.plan_week plan_convergence_repair {"event": "plan_convergence_repair", "inclusion_id": 1, "training_plan_id": 1, "program_id": 1, "reason": "missing_program_items_key", "program_items_added": 2, "program_item_ids": [1, 2]}

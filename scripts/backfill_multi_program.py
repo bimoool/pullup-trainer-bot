@@ -114,7 +114,13 @@ from app.domain.constants import (
 )
 from app.domain.electives import ElectiveType
 from app.domain.journal_dedupe import resolve_legacy_session_source
-from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource, WeekPhase
+from app.domain.multi_program import (
+    MetricType,
+    ProgramStructureType,
+    SessionSource,
+    WeekPhase,
+    snapshot_program_items_gap,
+)
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.services.plan_week import PlanWeekService
@@ -621,8 +627,8 @@ async def normalize_legacy_snapshots(session: AsyncSession, *, program_id: int, 
     normalized = 0
     for inclusion in result.scalars().all():
         snapshot = inclusion.snapshot or {}
-        if snapshot.get("program_items"):
-            continue
+        if snapshot_program_items_gap(snapshot) is None:
+            continue  # тот же предикат, что у рантайма (PlanWeekService.converge_inclusion_snapshot, #301)
         inclusion.snapshot = {**snapshot, "program_items": program_items_snap}
         normalized += 1
     if normalized:

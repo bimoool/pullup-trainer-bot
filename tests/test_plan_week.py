@@ -4,7 +4,12 @@
 
 from datetime import date
 
-from app.domain.multi_program import plan_week_number, plan_week_start_date
+from app.domain.multi_program import (
+    SnapshotProgramItemsGap,
+    plan_week_number,
+    plan_week_start_date,
+    snapshot_program_items_gap,
+)
 
 
 def test_same_day_is_week_1():
@@ -41,3 +46,26 @@ def test_week_number_and_start_date_are_inverse():
         start = plan_week_start_date(created, week)
         assert plan_week_number(created, start) == week
         assert plan_week_number(created, start.replace(day=start.day)) == week
+
+
+# --- #301 aged-state convergence: which snapshots may be filled from the live Program ---------------
+
+def test_snapshot_without_program_items_key_is_a_missing_gap():
+    assert snapshot_program_items_gap({"program_name": "Подтягивания"}) is SnapshotProgramItemsGap.MISSING
+
+
+def test_none_snapshot_is_a_missing_gap():
+    assert snapshot_program_items_gap(None) is SnapshotProgramItemsGap.MISSING
+
+
+def test_empty_program_items_list_is_an_empty_gap():
+    assert snapshot_program_items_gap({"program_items": []}) is SnapshotProgramItemsGap.EMPTY
+
+
+def test_non_empty_historical_program_items_are_never_a_gap():
+    assert snapshot_program_items_gap({"program_items": [{"id": 1, "exercise_id": 7}]}) is None
+
+
+def test_unrecognised_program_items_value_is_not_silently_repaired():
+    assert snapshot_program_items_gap({"program_items": None}) is None
+    assert snapshot_program_items_gap({"program_items": "garbage"}) is None

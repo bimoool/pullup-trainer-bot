@@ -1,17 +1,42 @@
+import json
+import logging
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import PlanItem, PlanWeek, ProgramInclusion, TrainingPlan
-from app.db.repositories.programs import ProgramRepository
+from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.domain.multi_program import (
     ProgramStructureType,
+    SnapshotProgramItemsGap,
     WeekPhase,
     is_plannable_week_number,
     plan_week_number,
     plan_week_start_date,
+    snapshot_program_items_gap,
 )
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SnapshotRepair:
+    """Одна выполненная починка снимка (для лога, отчёта repair-скрипта и тестов)."""
+
+    inclusion_id: int
+    training_plan_id: int
+    program_id: int
+    reason: SnapshotProgramItemsGap
+    program_items: list[dict]
+
+
+def _log_convergence(event: str, **fields) -> None:
+    """Громкий структурированный WARNING: исторический пользовательский стейт чинится (или не может
+    быть починен) рантаймом. Одна строка JSON — грепается в docker logs по имени события."""
+    payload = {"event": event, **fields}
+    logger.warning("%s %s", event, json.dumps(payload, ensure_ascii=False, default=str), extra=payload)
 
 
 class PlanWeekService:
@@ -109,16 +134,11 @@ class PlanWeekService:
             if not inclusion.is_active:
                 continue
 
-            # Checkpoint 1.1 (issue #188) — контрактный баг checkpoint 1:
-            # structure_type и program_items читаются из snapshot, не из
-            # live Program/ProgramItem. program_id используется ТОЛЬКО как
-            # provenance-фолбэк — legacy-снимок до нормализации (см.
-            # scripts/backfill_multi_program.py::normalize_legacy_snapshots)
-            # может не иметь structure_type, тогда и только тогда идём в
-            # живую Program за ним, за program_items — никогда (нет
-            # безопасного фолбэка на "актуальную" структуру курса без
-            # искажения snapshot semantics, поэтому пустой snapshot
-            # ["program_items"] просто не материализуется, до нормализации).
+            # Checkpoint 1.1 (issue #188): structure_type и program_items читаются из snapshot,
+            # не из live Program/ProgramItem. Live Program — только фолбэк: за structure_type,
+            # если его нет в legacy-снимке, и за program_items ТОЛЬКО когда их в снимке нет или
+            # список пуст (converge_inclusion_snapshot ниже, #301, решение владельца 2026-10-06).
+            # Непустой список снимка — исторический факт подключения и не переписывается.
             snapshot = inclusion.snapshot or {}
             structure_type_value = snapshot.get("structure_type")
             if structure_type_value is None:
@@ -130,6 +150,12 @@ class PlanWeekService:
                 # каталоге пока нет (read-only-аудит, раздел C), решать
                 # семантику при появлении первой, не заранее.
                 continue
+
+            # Aged-state convergence (#301, решение владельца 2026-10-06): снимок без/с пустым
+            # program_items дополняется из live Program — один раз, персистентно, громко в лог.
+            # Непустой исторический снимок не переписывается никогда (snapshot immutability).
+            await self.converge_inclusion_snapshot(inclusion)
+            snapshot = inclusion.snapshot or {}
 
             if attach_unweeked:
                 unweeked = await self._plans.list_unweeked_plan_items(program_inclusion_id=inclusion.id)
@@ -148,9 +174,16 @@ class PlanWeekService:
             if existing_this_week:
                 continue  # уже материализовано в эту неделю — идемпотентность
 
-            program_items_snapshot = snapshot.get("program_items")
-            if not program_items_snapshot:
-                continue  # legacy-снимок без program_items — нормализуется отдельно, не здесь
+            snapshot_items = snapshot.get("program_items")
+            if not snapshot_items:
+                # После convergence сюда попадает только то, что починить нельзя (у live Program
+                # нет ProgramItem, или значение не список) — не тихий continue, а громкий лог.
+                _log_convergence(
+                    "plan_convergence_gap", inclusion_id=inclusion.id, training_plan_id=plan.id,
+                    program_id=inclusion.program_id, plan_week_id=week.id, week_number=week.week_number,
+                    reason="snapshot_has_no_materializable_program_items",
+                )
+                continue
 
             # Rollover (раздел 7 preflight) и недели наперёд (#301): клонируем ИЗ
             # SNAPSHOT заново, чужие недели не трогаем. Live Program могла измениться с
@@ -160,8 +193,46 @@ class PlanWeekService:
             # .py::test_rollover_uses_snapshot_not_live_program).
             await self._plans.create_plan_items_for_week_from_snapshot(
                 training_plan_id=plan.id, program_inclusion_id=inclusion.id,
-                plan_week_id=week.id, program_items_snapshot=program_items_snapshot,
+                plan_week_id=week.id, program_items_snapshot=snapshot_items,
             )
+
+    async def converge_inclusion_snapshot(self, inclusion: ProgramInclusion) -> SnapshotRepair | None:
+        """ЕДИНСТВЕННАЯ каноническая починка «старого» снимка инклюзии (#301, aged-state convergence;
+        решение владельца 2026-10-06). Вызывается рантаймом (материализация недели на GET /plan и
+        остальных входах) и targeted-скриптом scripts/repair_plan_convergence.py — один код.
+
+        Чинит ТОЛЬКО активную инклюзию, у снимка которой program_items отсутствует или пуст
+        (domain.snapshot_program_items_gap), и ТОЛЬКО если у live Program есть ProgramItem: в снимок
+        дописывается ровно один ключ "program_items" (та же сериализация, что при подключении курса).
+        Не трогает: непустой исторический снимок, остальные ключи снимка, progression_state,
+        started_at, is_active, PlanItem/PlanWeek/сессии, подписку. Идемпотентно: после починки
+        предикат возвращает None. Каждая починка — громкий структурированный WARNING."""
+        if not inclusion.is_active:
+            return None
+        snapshot = inclusion.snapshot or {}
+        reason = snapshot_program_items_gap(snapshot)
+        if reason is None:
+            return None
+        live_items = await self._programs.list_program_items(inclusion.program_id)
+        if not live_items:
+            _log_convergence(
+                "plan_convergence_gap", inclusion_id=inclusion.id, training_plan_id=inclusion.training_plan_id,
+                program_id=inclusion.program_id, reason=f"{reason.value}; live program has no program_items",
+            )
+            return None
+        items = program_items_snapshot(live_items)
+        inclusion.snapshot = {**snapshot, "program_items": items}
+        await self._session.flush()
+        repair = SnapshotRepair(
+            inclusion_id=inclusion.id, training_plan_id=inclusion.training_plan_id,
+            program_id=inclusion.program_id, reason=reason, program_items=items,
+        )
+        _log_convergence(
+            "plan_convergence_repair", inclusion_id=repair.inclusion_id, training_plan_id=repair.training_plan_id,
+            program_id=repair.program_id, reason=reason.value, program_items_added=len(items),
+            program_item_ids=[item["id"] for item in items],
+        )
+        return repair
 
     async def release_future_weeks_of_inclusion(self, *, inclusion: ProgramInclusion, today: date) -> int:
         """#301 — «Убрать курс»: строки этого курса в БУДУЩИХ неделях (после текущей) — это

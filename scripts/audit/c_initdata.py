@@ -1,5 +1,11 @@
 """Test-only: print signed initData for a telegram id (BOT_TOKEN=audit-token)."""
-import hashlib, hmac, json, sys, time, urllib.parse
+import hashlib
+import hmac
+import json
+import sys
+import time
+import urllib.parse
+
 tok = "audit-token"
 user = json.dumps({"id": int(sys.argv[1]), "first_name": "Audit"}, separators=(",", ":"))
 f = {"user": user, "auth_date": str(int(time.time())), "query_id": "AAEAAAAAAAAA"}
