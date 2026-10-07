@@ -32,8 +32,16 @@ from app.domain.constants import EquipmentType
 from app.domain.multi_program import MetricType
 from app.domain.session import BlockLog
 from app.services import qa_fresh_reset
-from app.services.qa_fresh_reset import RESET_STEPS, SYSTEM_COUNTS, run_fresh_reset, schema_drift
+from app.services.qa_fresh_reset import (
+    RESET_STEPS,
+    SYSTEM_COUNTS,
+    SubscriptionRow,
+    entitlement_consistency,
+    run_fresh_reset,
+    schema_drift,
+)
 from app.services.qa_staging_guard import NotStagingError, StagingEnvironment, identify_staging
+from app.services.subscription import SubscriptionService
 from scripts.e2e_seed import seed_sweep_populated
 
 CALLER_TG, OTHER_TG = 7_000_000_101, 7_000_000_102
@@ -283,3 +291,90 @@ async def test_post_condition_failure_rolls_back_every_delete(session, staging, 
     assert await _all_counts(session) == all_before
     assert await _user_row(session, uid) == user_before
     assert (await session.execute(text("SELECT count(*) FROM workouts_archive_admin_reset"))).scalar_one() == 0
+
+
+# --- entitlement: the reset preserves EXACTLY what the product uses for access (users.*, SubscriptionService.entitled) ---
+# Staging observation: the bot pushed «продлена ... до 04.11.2026» to the owner, yet the dry run showed «trial до
+# 2026-10-20». users.* is the only source the product reads for access; its only writers are start_trial (onboarding
+# completion), extend (admin grant / payment / coins) and refresh_status (-> expired). The pair below is reproduced
+# with the real services: a grant to 04.11 followed by a re-onboarding (after a reset) that re-runs start_trial,
+# which overwrites users.* with a new 14-day trial -> 20.10.
+
+TRIAL_1 = datetime(2026, 10, 5, 8, 0, tzinfo=UTC)  # first onboarding: trial until 19.10
+GRANT_AT = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)  # admin grant 16 days on top of the running trial -> 04.11
+REONBOARD_AT = datetime(2026, 10, 6, 8, 0, tzinfo=UTC)  # onboarding again -> start_trial -> trial until 20.10
+DRY_RUN_AT = datetime(2026, 10, 7, 8, 0, tzinfo=UTC)
+
+
+async def _trial_then_grant(session, telegram_id: int) -> int:
+    user = await UserRepository(session).create(telegram_id=telegram_id, username=f"owner{telegram_id}")
+    subscriptions = SubscriptionService(session)
+    await subscriptions.start_trial(user.id, now=TRIAL_1)
+    granted = await subscriptions.grant_by_admin(user.id, now=GRANT_AT, days=16)
+    assert (granted.subscription_status, granted.subscription_expires_at.date().isoformat()) == ("active", "2026-11-04")
+    await session.commit()
+    return user.id
+
+
+async def test_admin_grant_on_top_of_trial_is_the_effective_entitlement_and_is_preserved(session, staging):
+    uid = await _trial_then_grant(session, CALLER_TG)
+    user = await UserRepository(session).get_by_id(uid)
+    assert SubscriptionService.is_entitled(user, now=DRY_RUN_AT)
+    expires_before = user.subscription_expires_at
+
+    dry = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=False, now=DRY_RUN_AT)
+
+    assert dry.ok, dry.guard_failures
+    assert (dry.entitlement_status, dry.entitlement_expires_at.date().isoformat()) == ("active", "2026-11-04")
+    assert dry.entitlement_active is True
+    assert [(r.status, r.source) for r in dry.subscription_history] == [("active", "admin_grant"), ("trial", "trial")]
+
+    applied = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=True, now=DRY_RUN_AT)
+
+    assert applied.applied, applied.guard_failures
+    after = await _user_row(session, uid)
+    assert (after.subscription_status, after.subscription_expires_at) == ("active", expires_before)
+
+
+async def test_reonboarding_after_a_grant_overwrites_it_with_a_trial_and_the_reset_refuses(session, staging):
+    uid = await _trial_then_grant(session, CALLER_TG)
+    # what any onboarding completion does (bot questionnaire / POST /api/onboarding/questionnaire)
+    await SubscriptionService(session).start_trial(uid, now=REONBOARD_AT)
+    await session.commit()
+    user = await UserRepository(session).get_by_id(uid)
+    # the product's effective entitlement is now the trial: the granted days until 04.11 are no longer used anywhere
+    assert (user.subscription_status, user.subscription_expires_at.date().isoformat()) == ("trial", "2026-10-20")
+    assert SubscriptionService.is_entitled(user, now=datetime(2026, 10, 21, tzinfo=UTC)) is False
+    before = await _all_counts(session)
+
+    dry = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=True, now=DRY_RUN_AT)
+
+    assert not dry.applied and not dry.ok
+    assert (dry.entitlement_status, dry.entitlement_expires_at.date().isoformat()) == ("trial", "2026-10-20")
+    superseded = [f for f in dry.guard_failures if "superseded" in f]
+    assert len(superseded) == 1 and "admin_grant" in superseded[0] and "2026-11-04" in superseded[0], dry.guard_failures
+    assert [(r.source, r.ends_at.date().isoformat()) for r in dry.subscription_history] == [
+        ("trial", "2026-10-20"), ("admin_grant", "2026-11-04"), ("trial", "2026-10-19"),
+    ]
+    assert await _all_counts(session) == before
+
+
+async def test_entitlement_cache_not_backed_by_history_refuses(session, staging):
+    uid = await _trial_then_grant(session, CALLER_TG)
+    await session.execute(text("UPDATE users SET subscription_expires_at = :t WHERE id = :uid"),
+                          {"t": datetime(2026, 12, 31, tzinfo=UTC), "uid": uid})
+    await session.commit()
+
+    report = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=True, now=DRY_RUN_AT)
+
+    assert not report.applied
+    assert any("!= latest subscriptions row" in f for f in report.guard_failures), report.guard_failures
+
+
+def test_entitlement_consistency_accepts_the_refresh_status_expired_flip():
+    ends = datetime(2026, 10, 1, tzinfo=UTC)
+    history = [SubscriptionRow(1, "trial", "trial", ends - timedelta(days=14), ends, ends - timedelta(days=14))]
+
+    assert entitlement_consistency("expired", ends, history, DRY_RUN_AT) == []
+    assert entitlement_consistency("trial", ends, history, DRY_RUN_AT) == []
+    assert entitlement_consistency("active", ends, history, DRY_RUN_AT) != []

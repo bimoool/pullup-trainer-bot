@@ -10,6 +10,16 @@ from app.domain.constants import TRIAL_DAYS
 _ACTIVE_STATUSES = (SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE)
 
 
+def entitled(status: SubscriptionStatus | str | None, expires_at: datetime | None, *, now: datetime) -> bool:
+    """THE effective entitlement predicate (#300): users.subscription_status in trial|active AND
+    users.subscription_expires_at not passed. users.* is the canonical source for access — the subscriptions table
+    is history only and is never read for access. One definition for the product gates (is_entitled) and the
+    staging fresh reset's preserve-entitlement check (app/services/qa_fresh_reset.py)."""
+    if status is None or SubscriptionStatus(status) not in _ACTIVE_STATUSES:
+        return False
+    return expires_at is None or expires_at > now
+
+
 class SubscriptionService:
     """Расчёт статуса подписки и поддержание кэша на users.subscription_*.
 
@@ -111,9 +121,7 @@ class SubscriptionService:
         без доверия кэшу статуса: кэш может говорить `trial`/`active` после истечения. Единый ответ для
         серверных гейтов v2 (старт курсовой сессии); админ-обхода нет — как в legacy has_access (ADMIN_IDS
         обходят только отдых между тренировками)."""
-        if user.subscription_status not in _ACTIVE_STATUSES:
-            return False
-        return user.subscription_expires_at is None or user.subscription_expires_at > now
+        return entitled(user.subscription_status, user.subscription_expires_at, now=now)
 
     async def _effective_start(self, user_id: int, now: datetime) -> datetime:
         user = await self._users.get_by_id(user_id)

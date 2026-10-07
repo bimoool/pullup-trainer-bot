@@ -154,7 +154,9 @@ QA-only control in the **staging bot** (`app/services/qa_fresh_reset.py`, handle
   `from_user`. There is no target parameter.
 * **Flow.**
   1. The first tap is a DRY RUN (rolled back). It shows rows to delete by category, the entitlement that is
-     kept, and the guard status.
+     kept (`users.subscription_status/_expires_at` — the source the product's access gates read), whether access
+     is active by the product's own predicate (`SubscriptionService.entitled`), the caller's latest
+     `subscriptions` rows (evidence of where the entitlement came from), and the guard status.
   2. «СБРОСИТЬ МОЙ STAGING-ПРОФИЛЬ» applies the reset.
   3. On success the bot replies `Fresh reset complete — onboarding=false / plans=0 / sessions=0 / coins=0 /
      entitlement=active`. On a guard failure it replies «НЕ выполнен — всё откатилось».
@@ -172,7 +174,12 @@ QA-only control in the **staging bot** (`app/services/qa_fresh_reset.py`, handle
 * **What is kept.** Identity, the entitlement, the `subscriptions` history, `pending_payments`, the system
   catalogue, collections and all other users.
 * **Guards, all in one transaction.** Positively identified staging. Exactly one caller row, locked
-  `FOR UPDATE`. Active entitlement before and after. Schema drift: every ORM table must be classified, the
+  `FOR UPDATE`. Active entitlement before and after. The entitlement must be explained by the `subscriptions`
+  history: users.* equals the latest row (or is its `refresh_status` expired flip), it has history behind it,
+  and no admin grant / payment that is still running ends later than users.* (that happens when onboarding
+  re-ran `start_trial` after a grant: the trial overwrites users.* and the granted days are lost — re-grant
+  first). Schema drift checks the metadata from `app/db/registry.py` (all model modules), not whatever the
+  process happened to import: every ORM table must be classified, the
   live DB has no unknown table, and no NOT NULL user column lacks a default. No surviving row of another user
   or of the system may reference (or CASCADE from) a caller row. Before COMMIT:
   - the caller has 0 rows everywhere, is not onboarded, and has 0 coins;
@@ -180,4 +187,8 @@ QA-only control in the **staging bot** (`app/services/qa_fresh_reset.py`, handle
   - the system catalogue counts and other users' counts are unchanged.
 
   Any failure means ROLLBACK.
-* Tests: `tests/test_services/test_qa_fresh_reset.py`, `tests/test_bot/test_qa_fresh_reset.py`.
+* **After the reset** the fresh-user journey completes onboarding, which runs `start_trial` and REPLACES the
+  preserved entitlement with a new 14-day trial (current product behaviour, not a reset defect). The dry run
+  warns about it.
+* Tests: `tests/test_services/test_qa_fresh_reset.py`, `tests/test_services/test_qa_fresh_reset_runtime_imports.py`
+  (bot import graph in a fresh interpreter), `tests/test_bot/test_qa_fresh_reset.py`.

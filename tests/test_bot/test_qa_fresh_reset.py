@@ -125,3 +125,34 @@ async def test_unexpected_error_is_reported_and_rolled_back(session, bot: Bot, d
 
     assert "НЕ выполнен" in _texts(bot)[-1] and "RuntimeError" in _texts(bot)[-1]
     assert await _caller_counts(session, uid) == before
+
+
+async def test_admin_grant_via_bot_then_dry_run_shows_the_same_effective_entitlement(
+    session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
+):
+    """The staging scenario end to end through the real handlers: trial -> «🎁 Выдать подписку» on oneself -> the push
+    names the new expiry -> /qa_fresh_reset shows THAT expiry as the preserved, effective entitlement."""
+    import re
+    from datetime import UTC, datetime
+
+    from app.services.subscription import SubscriptionService
+
+    monkeypatch.setattr(settings, "admin_ids", str(ADMIN_TG))
+    _on_staging(monkeypatch)
+    user = await UserRepository(session).create(telegram_id=ADMIN_TG, username="owner")
+    await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))
+    await session.commit()
+
+    await dispatcher.feed_update(bot, make_callback_update(telegram_id=ADMIN_TG, data=f"admin_grant_days:{user.id}"), session=session)
+    await dispatcher.feed_update(bot, _command_update(ADMIN_TG, "15"), session=session)
+    await session.commit()  # what DbSessionMiddleware does after the handler
+    push = next(t for t in _texts(bot) if "продлена" in t)
+    day, month, year = re.search(r"до (\d\d)\.(\d\d)\.(\d{4})", push).groups()
+
+    await dispatcher.feed_update(bot, _command_update(ADMIN_TG, "/qa_fresh_reset"), session=session)
+
+    dry = _texts(bot)[-1]
+    assert f"active до {year}-{month}-{day}" in dry, dry
+    assert "Доступ к курсам сейчас (как считает продукт, users.*): есть" in dry
+    assert "active/admin_grant" in dry and "trial/trial" in dry
+    assert "✅ все пройдены" in dry

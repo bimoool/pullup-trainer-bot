@@ -456,9 +456,15 @@ def _format_qa_dry_run(report: ResetReport, staging: StagingEnvironment) -> str:
         texts.QA_FRESH_RESET_GUARDS_OK if report.ok
         else texts.QA_FRESH_RESET_GUARDS_FAILED.format(failures="\n".join(f"• {f}" for f in report.guard_failures))
     )
+    history = "\n".join(
+        f"• #{row.id} {row.status}/{row.source}: {row.started_at:%Y-%m-%d} → {row.ends_at:%Y-%m-%d} "
+        f"(записано {row.created_at:%Y-%m-%d %H:%M} UTC)"
+        for row in report.subscription_history
+    ) or texts.QA_FRESH_RESET_HISTORY_EMPTY
     return texts.QA_FRESH_RESET_DRY_RUN.format(
         db=staging.db_name, host=staging.mini_app_host, rows=rows, total=sum(report.rows_by_table.values()),
-        entitlement=f"{report.entitlement_status} до {expires}", guards=guards,
+        entitlement=f"{report.entitlement_status} до {expires}",
+        access="есть" if report.entitlement_active else "НЕТ", history=history, guards=guards,
     )
 
 

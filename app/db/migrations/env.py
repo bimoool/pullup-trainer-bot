@@ -5,11 +5,10 @@ from alembic import context
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.config import settings
-from app.db import (
-    models,  # noqa: F401 — регистрирует таблицы в Base.metadata для autogenerate
-    models_program,  # noqa: F401 — то же самое для схемы волны 1 (multi-program, issue #160)
-)
-from app.db.base import Base
+
+# Единственная каноническая регистрация всех моделей (app/db/registry.py) — тот же metadata, что видят
+# рантайм-гарды (staging fresh reset), а не отдельный список импортов здесь.
+from app.db.registry import metadata
 
 config = context.config
 
@@ -26,7 +25,7 @@ if config.config_file_name is not None:
     # процесса pytest после первого прогона миграций.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = Base.metadata
+target_metadata = metadata
 
 # Приоритет — URL, явно переданный через Alembic Config (так тесты в
 # tests/conftest.py указывают на pullup_test); если его нет — обычный запуск

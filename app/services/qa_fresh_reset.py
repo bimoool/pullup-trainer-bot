@@ -8,7 +8,9 @@ hand-maintained list of tables. A new table that is not classified makes the res
 
 Fail closed, one transaction:
   before: staging environment (config + live current_database()), exactly one caller row (locked FOR UPDATE),
-          active entitlement, no unclassified table/column, no row of another user or of the system catalogue
+          active entitlement (the SAME predicate the product's access gates use, SubscriptionService.entitled on
+          users.*), the users.* entitlement cache consistent with the subscriptions history (no paid/granted
+          period silently superseded by a later trial), no unclassified table/column, no row of another user or of the system catalogue
           that references a caller-owned row about to be deleted;
   apply:  archive legacy rows into the existing *_archive_admin_reset tables (same rule as the bot's
           «🧪 Полный сброс», app/services/admin_reset.py), delete the caller's rows in FK order, reset every
@@ -25,11 +27,13 @@ from datetime import UTC, datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.base import Base
-from app.db.models import SubscriptionStatus, User
+from app.db.models import SubscriptionSource, SubscriptionStatus, User
+from app.db.registry import metadata
 from app.services.qa_staging_guard import NotStagingError, StagingEnvironment
+from app.services.subscription import entitled
 
-_ACTIVE = {SubscriptionStatus.TRIAL.value, SubscriptionStatus.ACTIVE.value}
+# How many of the caller's latest subscriptions rows the dry run shows as evidence for the entitlement.
+HISTORY_SHOWN = 5
 
 # --- The registry ---------------------------------------------------------------------------------------------------
 # RESET: (table, WHERE selecting the caller's rows, category shown in the dry-run). ORDER = delete order (children
@@ -134,6 +138,16 @@ def _user_column_defaults() -> tuple[dict[str, object], list[str]]:
     return values, problems
 
 
+@dataclass(frozen=True)
+class SubscriptionRow:
+    id: int
+    status: str
+    source: str
+    started_at: datetime
+    ends_at: datetime
+    created_at: datetime
+
+
 @dataclass
 class ResetReport:
     applied: bool
@@ -143,6 +157,10 @@ class ResetReport:
     rows_by_table: dict[str, int] = field(default_factory=dict)
     entitlement_status: str | None = None
     entitlement_expires_at: datetime | None = None
+    # Effective access exactly as the product computes it (SubscriptionService.entitled on users.*).
+    entitlement_active: bool = False
+    # Latest subscriptions rows, newest first: evidence for where users.* came from (source of a grant/trial).
+    subscription_history: list["SubscriptionRow"] = field(default_factory=list)
     post_state: dict[str, object] = field(default_factory=dict)
 
 
@@ -172,7 +190,7 @@ async def _foreign_references(session: AsyncSession, uid: int) -> list[str]:
     row about to be deleted. Derived from the ORM foreign keys — any such row means refuse."""
     where_by_table = {table: where for table, where, _ in RESET_STEPS}
     problems = []
-    for child in Base.metadata.sorted_tables:
+    for child in metadata.sorted_tables:
         for fk in child.foreign_keys:
             parent = fk.column.table.name
             if parent not in where_by_table:
@@ -203,8 +221,58 @@ async def _live_schema_problems(session: AsyncSession) -> list[str]:
     return problems
 
 
-def _entitled(status: str | None, expires_at: datetime | None, now: datetime) -> bool:
-    return status in _ACTIVE and (expires_at is None or expires_at > now)
+def _value(enum_or_str):
+    return enum_or_str.value if hasattr(enum_or_str, "value") else enum_or_str
+
+
+async def _subscription_history(session: AsyncSession, uid: int) -> list[SubscriptionRow]:
+    """Newest first, in the order SubscriptionRepository.get_latest_for_user defines "latest"."""
+    rows = await session.execute(text(
+        "SELECT id, status, source, started_at, ends_at, created_at FROM subscriptions WHERE user_id = :uid "
+        "ORDER BY created_at DESC, id DESC",
+    ), {"uid": uid})
+    return [SubscriptionRow(id, _value(st), _value(src), sa, ea, ca) for id, st, src, sa, ea, ca in rows]
+
+
+def entitlement_consistency(
+    status: str | None, expires_at: datetime | None, history: list[SubscriptionRow], now: datetime,
+) -> list[str]:
+    """Pure. users.subscription_* is the canonical effective entitlement; it is a cache that SubscriptionService
+    keeps equal to the LATEST subscriptions row (start_trial / extend), refresh_status only flips it to expired.
+    The reset preserves users.* verbatim, so it refuses whenever that cache is not explained by the history:
+      * no history at all behind an active entitlement (written around SubscriptionService);
+      * cache != latest row (other than the refresh_status expired flip);
+      * an admin grant / payment that is still running but ends LATER than the cache: it was superseded by a later
+        trial row (onboarding re-ran start_trial, which overwrites users.* unconditionally) — the product then
+        grants access only until the trial's end and the granted days are lost. Preserving that would preserve a
+        silently downgraded entitlement; the owner must re-grant (or decide otherwise) first."""
+    problems = []
+    if not history:
+        if entitled(status, expires_at, now=now):
+            problems.append("entitlement has no subscriptions history behind it (users.* written outside SubscriptionService)")
+        return problems
+    latest = history[0]
+    cache_matches = latest.ends_at == expires_at and (
+        latest.status == status or (status == SubscriptionStatus.EXPIRED.value and latest.ends_at <= now)
+    )
+    if not cache_matches:
+        problems.append(
+            f"entitlement cache users.* ({status} until {expires_at}) != latest subscriptions row "
+            f"#{latest.id} ({latest.status}/{latest.source} until {latest.ends_at})",
+        )
+    for row in history:
+        if (
+            row.source != SubscriptionSource.TRIAL.value
+            and row.ends_at > now
+            and (expires_at is None or row.ends_at > expires_at)
+            and row is not latest
+        ):
+            problems.append(
+                f"{row.source} period #{row.id} until {row.ends_at:%Y-%m-%d} (written {row.created_at:%Y-%m-%d %H:%M} UTC) "
+                f"was superseded by a later {latest.source} row #{latest.id} until {latest.ends_at:%Y-%m-%d}: "
+                "access is effective only until the later row — re-grant before resetting",
+            )
+    return problems
 
 
 async def run_fresh_reset(
@@ -232,12 +300,16 @@ async def run_fresh_reset(
             await session.rollback()
             return report
         uid, status, expires_at = rows[0]
-        status = status.value if hasattr(status, "value") else status
+        status = _value(status)
         report.entitlement_status, report.entitlement_expires_at = status, expires_at
-        if not _entitled(status, expires_at, now):
+        report.entitlement_active = entitled(status, expires_at, now=now)
+        history = await _subscription_history(session, uid)
+        report.subscription_history = history[:HISTORY_SHOWN]
+        if not report.entitlement_active:
             report.guard_failures.append("caller has no active entitlement (grant days first; it is preserved, not created)")
+        report.guard_failures += entitlement_consistency(status, expires_at, history, now)
 
-        report.guard_failures += schema_drift(set(Base.metadata.tables))
+        report.guard_failures += schema_drift(set(metadata.tables))
         report.guard_failures += await _live_schema_problems(session)
         user_defaults, column_problems = _user_column_defaults()
         report.guard_failures += column_problems
@@ -276,14 +348,14 @@ async def run_fresh_reset(
             "FROM users WHERE id = :uid",
         ), params)).one()
         onboarded, coins, status_after, expires_after = user_row
-        status_after = status_after.value if hasattr(status_after, "value") else status_after
+        status_after = _value(status_after)
         plans = await _scalar(session, "SELECT count(*) FROM training_plans WHERE user_id = :uid", params)
         sessions_n = await _scalar(session, "SELECT count(*) FROM training_sessions WHERE user_id = :uid", params)
         if onboarded is not None:
             failures.append("onboarding_completed_at is not NULL")
         if coins != 0:
             failures.append("coins_balance is not 0")
-        if (status_after, expires_after) != (status, expires_at) or not _entitled(status_after, expires_after, now):
+        if (status_after, expires_after) != (status, expires_at) or not entitled(status_after, expires_after, now=now):
             failures.append("entitlement changed or is no longer active")
         if await _system_counts(session) != system_before:
             failures.append("system catalogue counts changed")
