@@ -21,6 +21,9 @@ class ProgramResponse(BaseModel):
     structure_type: str
     category: str | None
     progression_strategy_type: str | None
+    # Правило 2026-10-07 (app/domain/program_access.py): "free" — тренироваться можно без Premium
+    # («Подтягивания»); "premium" — только при действующей подписке.
+    access_level: str = "premium"
 
 
 class ProgramListResponse(BaseModel):
@@ -191,6 +194,8 @@ class ProgramInclusionResponse(BaseModel):
     # issue #266 — только для курса с явно заданной длиной (config.duration_weeks).
     duration_weeks: int | None = None
     current_week: int | None = None
+    # access_level программы инклюзии (живое свойство каталога, не снимок) — подсказка предэкрану старта.
+    access_level: str = "premium"
 
 
 class ProgramScheduleItemResponse(BaseModel):

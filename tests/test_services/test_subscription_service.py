@@ -49,7 +49,7 @@ async def test_refresh_status_does_not_downgrade_before_expiry(session, user: Us
 
 async def test_extend_via_coins_stacks_on_remaining_trial(session, user: User):
     service = SubscriptionService(session)
-    await service.start_trial(user.id, now=NOW)  # ends NOW + 14d
+    await service.start_trial(user.id, now=NOW)  # ends NOW + TRIAL_DAYS
 
     still_in_trial = NOW + timedelta(days=5)
     updated = await service.extend_via_coins(user.id, now=still_in_trial, days=30)

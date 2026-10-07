@@ -142,7 +142,7 @@ async def test_questionnaire_completes_onboarding_and_starts_trial(session):
         session, telegram_id=51102, path="/api/onboarding/questionnaire", payload=_questionnaire_payload(),
     )
     assert response.status_code == 200
-    assert response.json()["trial_days"] == 14
+    assert response.json()["trial_days"] == 7  # решение владельца 2026-10-07
 
     updated = await UserRepository(session).get_by_telegram_id(51102)
     assert updated.onboarding_completed_at is not None

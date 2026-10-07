@@ -40,6 +40,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.domain.multi_program import MetricType, ProgramStructureType, SessionSource, WeekPhase
+from app.domain.program_access import DEFAULT_PROGRAM_ACCESS_LEVEL
 from app.domain.progression_strategy import ProgressionStrategyType
 
 
@@ -259,6 +260,13 @@ class Program(Base):
         BigInteger, ForeignKey("assessment_protocols.id", ondelete="SET NULL"), nullable=True,
     )
     config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    # Продуктовое правило 2026-10-07 (app/domain/program_access.py): нужна ли Premium, чтобы тренироваться по
+    # программе. Не входит в config/снимок инклюзии — это живое свойство каталога, читается на старте. Строка,
+    # не PG-enum: значения — ProgramAccessLevel; всё, кроме 'free', трактуется как premium (fail closed).
+    access_level: Mapped[str] = mapped_column(
+        String(16), nullable=False,
+        default=DEFAULT_PROGRAM_ACCESS_LEVEL.value, server_default=DEFAULT_PROGRAM_ACCESS_LEVEL.value,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

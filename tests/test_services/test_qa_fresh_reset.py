@@ -25,6 +25,7 @@ from app.db.models import (
 from app.db.models_program import Complex, ComplexItem, Exercise, UserFavorite
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
+from app.db.repositories.subscriptions import SubscriptionRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
@@ -297,12 +298,14 @@ async def test_post_condition_failure_rolls_back_every_delete(session, staging, 
 # Staging observation: the bot pushed «продлена ... до 04.11.2026» to the owner, yet the dry run showed «trial до
 # 2026-10-20». users.* is the only source the product reads for access; its only writers are start_trial (onboarding
 # completion), extend (admin grant / payment / coins) and refresh_status (-> expired). The pair below is reproduced
-# with the real services: a grant to 04.11 followed by a re-onboarding (after a reset) that re-runs start_trial,
-# which overwrites users.* with a new 14-day trial -> 20.10.
+# with the real services: a grant to 04.11 followed by a re-onboarding (after a reset). Before the owner decision of
+# 2026-10-07 start_trial overwrote users.* with a new 14-day trial -> 20.10 (reproduced below by writing exactly what
+# it wrote, for the refusal on such history); now start_trial is a minimum guarantee (7 days) and keeps the grant.
 
-TRIAL_1 = datetime(2026, 10, 5, 8, 0, tzinfo=UTC)  # first onboarding: trial until 19.10
-GRANT_AT = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)  # admin grant 16 days on top of the running trial -> 04.11
-REONBOARD_AT = datetime(2026, 10, 6, 8, 0, tzinfo=UTC)  # onboarding again -> start_trial -> trial until 20.10
+TRIAL_1 = datetime(2026, 10, 5, 8, 0, tzinfo=UTC)  # first onboarding: 7-day trial until 12.10
+GRANT_AT = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)  # admin grant 23 days on top of the running trial -> 04.11
+REONBOARD_AT = datetime(2026, 10, 6, 8, 0, tzinfo=UTC)  # onboarding again
+LEGACY_OVERWRITE_UNTIL = datetime(2026, 10, 20, 8, 0, tzinfo=UTC)  # what the old 14-day start_trial wrote at REONBOARD_AT
 DRY_RUN_AT = datetime(2026, 10, 7, 8, 0, tzinfo=UTC)
 
 
@@ -310,7 +313,7 @@ async def _trial_then_grant(session, telegram_id: int) -> int:
     user = await UserRepository(session).create(telegram_id=telegram_id, username=f"owner{telegram_id}")
     subscriptions = SubscriptionService(session)
     await subscriptions.start_trial(user.id, now=TRIAL_1)
-    granted = await subscriptions.grant_by_admin(user.id, now=GRANT_AT, days=16)
+    granted = await subscriptions.grant_by_admin(user.id, now=GRANT_AT, days=23)
     assert (granted.subscription_status, granted.subscription_expires_at.date().isoformat()) == ("active", "2026-11-04")
     await session.commit()
     return user.id
@@ -336,10 +339,33 @@ async def test_admin_grant_on_top_of_trial_is_the_effective_entitlement_and_is_p
     assert (after.subscription_status, after.subscription_expires_at) == ("active", expires_before)
 
 
-async def test_reonboarding_after_a_grant_overwrites_it_with_a_trial_and_the_reset_refuses(session, staging):
+async def test_reonboarding_after_a_grant_keeps_it_and_the_reset_preserves_it(session, staging):
+    """QA 17/18: fresh reset preserves a longer ACTIVE entitlement; the onboarding after it does not downgrade it."""
     uid = await _trial_then_grant(session, CALLER_TG)
+    applied = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=True, now=DRY_RUN_AT)
+    assert applied.applied, applied.guard_failures
+    rows_before = len(await SubscriptionRepository(session).list_for_user(uid))
+
     # what any onboarding completion does (bot questionnaire / POST /api/onboarding/questionnaire)
-    await SubscriptionService(session).start_trial(uid, now=REONBOARD_AT)
+    user = await SubscriptionService(session).start_trial(uid, now=DRY_RUN_AT)
+    await session.commit()
+
+    assert (user.subscription_status, user.subscription_expires_at.date().isoformat()) == ("active", "2026-11-04")
+    assert len(await SubscriptionRepository(session).list_for_user(uid)) == rows_before  # true no-op: no fake row
+    dry = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=False, now=DRY_RUN_AT)
+    assert dry.ok, dry.guard_failures
+
+
+async def test_history_where_an_old_onboarding_overwrote_a_grant_with_a_trial_still_refuses(session, staging):
+    uid = await _trial_then_grant(session, CALLER_TG)
+    # exactly what start_trial wrote before 2026-10-07 (unconditional overwrite with a 14-day trial)
+    await SubscriptionRepository(session).create(
+        user_id=uid, status=SubscriptionStatus.TRIAL, source=SubscriptionSource.TRIAL,
+        started_at=REONBOARD_AT, ends_at=LEGACY_OVERWRITE_UNTIL,
+    )
+    await UserRepository(session).update_subscription_cache(
+        uid, status=SubscriptionStatus.TRIAL, expires_at=LEGACY_OVERWRITE_UNTIL,
+    )
     await session.commit()
     user = await UserRepository(session).get_by_id(uid)
     # the product's effective entitlement is now the trial: the granted days until 04.11 are no longer used anywhere
@@ -354,7 +380,7 @@ async def test_reonboarding_after_a_grant_overwrites_it_with_a_trial_and_the_res
     superseded = [f for f in dry.guard_failures if "superseded" in f]
     assert len(superseded) == 1 and "admin_grant" in superseded[0] and "2026-11-04" in superseded[0], dry.guard_failures
     assert [(r.source, r.ends_at.date().isoformat()) for r in dry.subscription_history] == [
-        ("trial", "2026-10-20"), ("admin_grant", "2026-11-04"), ("trial", "2026-10-19"),
+        ("trial", "2026-10-20"), ("admin_grant", "2026-11-04"), ("trial", "2026-10-12"),
     ]
     assert await _all_counts(session) == before
 
@@ -378,3 +404,24 @@ def test_entitlement_consistency_accepts_the_refresh_status_expired_flip():
     assert entitlement_consistency("expired", ends, history, DRY_RUN_AT) == []
     assert entitlement_consistency("trial", ends, history, DRY_RUN_AT) == []
     assert entitlement_consistency("active", ends, history, DRY_RUN_AT) != []
+
+
+async def test_reset_then_onboarding_of_a_short_trial_or_expired_user_gives_seven_day_trial(session, staging):
+    """QA 19: после fresh reset новый/истёкший доступ при онбординге даёт 7-дневный триал (короткий — доводится до
+    now + 7), а сам сброс истёкшего доступа не создаёт (отказ, доступ сохраняется, а не выдаётся)."""
+    uid = (await UserRepository(session).create(telegram_id=CALLER_TG, username="qa19")).id
+    subscriptions = SubscriptionService(session)
+    await subscriptions.start_trial(uid, now=DRY_RUN_AT - timedelta(days=5))  # 2 days left at DRY_RUN_AT
+    await session.commit()
+
+    applied = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=True, now=DRY_RUN_AT)
+    assert applied.applied, applied.guard_failures
+
+    onboarded = await subscriptions.start_trial(uid, now=DRY_RUN_AT)
+    assert (onboarded.subscription_status, onboarded.subscription_expires_at) == ("trial", DRY_RUN_AT + timedelta(days=7))
+
+    later = DRY_RUN_AT + timedelta(days=30)  # the trial has expired by now
+    refused = await run_fresh_reset(session, telegram_id=CALLER_TG, staging=staging, apply=True, now=later)
+    assert not refused.applied and any("no active entitlement" in f for f in refused.guard_failures)
+    again = await subscriptions.start_trial(uid, now=later)
+    assert (again.subscription_status, again.subscription_expires_at) == ("trial", later + timedelta(days=7))

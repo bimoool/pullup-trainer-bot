@@ -9,6 +9,7 @@ from app.db.models_program import (
     ComplexItem,
     Exercise,
     Program,
+    ProgramInclusion,
     ProgramItem,
     ProgressionStrategyProfile,
 )
@@ -61,6 +62,18 @@ class ProgramRepository:
 
     async def get_by_id(self, program_id: int) -> Program | None:
         return await self._session.get(Program, program_id)
+
+    async def access_levels_for_inclusions(self, inclusion_ids: list[int]) -> dict[int, str]:
+        """inclusion_id -> programs.access_level программы, к которой подключена инклюзия (живое свойство
+        каталога, не снимок). Отсутствующих id в ответе нет — решение о них принимает вызывающий."""
+        if not inclusion_ids:
+            return {}
+        rows = await self._session.execute(
+            select(ProgramInclusion.id, Program.access_level)
+            .join(Program, Program.id == ProgramInclusion.program_id)
+            .where(ProgramInclusion.id.in_(inclusion_ids)),
+        )
+        return {inclusion_id: level for inclusion_id, level in rows.all()}
 
     async def get_exercise(self, exercise_id: int) -> Exercise | None:
         """Read-only — Exercise ещё каталожная сущность на этой волне, не

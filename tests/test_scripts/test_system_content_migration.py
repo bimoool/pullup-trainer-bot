@@ -76,6 +76,15 @@ async def _fetch(dsn: str, sql: str, **params) -> list[sa.Row]:
         await engine.dispose()
 
 
+async def _execute(dsn: str, sql: str) -> None:
+    engine = create_async_engine(dsn)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text(sql))
+    finally:
+        await engine.dispose()
+
+
 def _scalar(dsn: str, sql: str, **params):
     return _run(_fetch(dsn, sql, **params))[0][0]
 
@@ -130,6 +139,8 @@ def _user_rows(dsn: str) -> dict[str, int]:
 def test_empty_db_upgrade_head_ships_program_library_and_workouts(deployed_dsn: str):
     programs = _run(_fetch(deployed_dsn, "SELECT id, name, category, structure_type::text, config FROM programs"))
     assert [(p.name, p.category, p.structure_type) for p in programs] == [("Подтягивания", "pull_ups", "recurring")]
+    # Решение владельца 2026-10-07: «Подтягивания» бесплатна навсегда (c3f7a9e2d5b1), остальное — premium по умолчанию.
+    assert _scalar(deployed_dsn, "SELECT access_level FROM programs WHERE name = 'Подтягивания'") == "free"
 
     # Публичная библиотека (D1): ровно согласованный набор, системные, без владельца, не служебные.
     library = _run(_fetch(
@@ -235,7 +246,8 @@ def test_repeated_upgrade_and_downgrade_upgrade_create_no_duplicates(scratch_dsn
     _alembic(scratch_dsn, "upgrade", "head")  # повторный деплой
     assert _content_counts(scratch_dsn) == first
 
-    _alembic(scratch_dsn, "downgrade", "-1")  # откат ревизии — no-op, каталог остаётся
+    # откат ревизии контента (и всех над ней) — no-op для каталога, каталог остаётся
+    _alembic(scratch_dsn, "downgrade", PRE_CONTENT_REVISION)
     assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == PRE_CONTENT_REVISION
     assert _content_counts(scratch_dsn) == first
     _alembic(scratch_dsn, "upgrade", "head")
@@ -291,13 +303,19 @@ async def _run_catalog_scripts(dsn: str, *, with_collections: bool) -> dict[str,
 def test_migration_does_not_duplicate_what_seed_scripts_already_created(scratch_dsn: str, with_collections: bool):
     _alembic(scratch_dsn, "upgrade", PRE_CONTENT_REVISION)
     assert _scalar(scratch_dsn, "SELECT count(*) FROM programs") == 0  # до ревизии каталога нет
+    # Скрипты — сегодняшний ORM, он знает programs.access_level (c3f7a9e2d5b1, после ревизии каталога). Колонка
+    # добавляется только на время скриптов и снимается, чтобы БД была ровно «старая схема + строки скриптов».
+    _run(_execute(scratch_dsn, "ALTER TABLE programs ADD COLUMN access_level varchar(16) NOT NULL DEFAULT 'premium'"))
     ids = _run(_run_catalog_scripts(scratch_dsn, with_collections=with_collections))
+    _run(_execute(scratch_dsn, "ALTER TABLE programs DROP COLUMN access_level"))
 
     _alembic(scratch_dsn, "upgrade", "head")
 
     # Всё, что уже было, — те же строки (найдены, не пересозданы и не продублированы).
     assert _scalar(scratch_dsn, "SELECT count(*) FROM programs") == 1
     assert _scalar(scratch_dsn, "SELECT id FROM programs") == ids["program"]
+    # Бесплатна навсегда (решение 2026-10-07) и на окружениях, где программу создал скрипт.
+    assert _scalar(scratch_dsn, "SELECT access_level FROM programs") == "free"
     assert _scalar(scratch_dsn, "SELECT count(*) FROM progression_strategy_profiles") == 1
     assert _scalar(scratch_dsn, "SELECT count(*) FROM program_items") == 2
     for key, name in (

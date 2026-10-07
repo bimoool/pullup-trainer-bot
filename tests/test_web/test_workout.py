@@ -147,10 +147,12 @@ async def test_plan_for_unknown_telegram_id_is_not_onboarded(session):
     assert body["status"] == "not_onboarded"
 
 
-async def test_plan_without_subscription_is_no_access(session):
+async def test_plan_without_subscription_is_not_paywalled(session):
+    """Правило 2026-10-07: legacy-каскад = программа «Подтягивания», бесплатна навсегда — без подписки статус
+    определяется дальше по потоку (здесь анкета не пройдена), а не "no_access"."""
     user = await UserRepository(session).create(telegram_id=42002, username="nosub")
     body = await _get_plan(session, telegram_id=user.telegram_id)
-    assert body["status"] == "no_access"
+    assert body["status"] == "onboarding_incomplete"
 
 
 async def test_plan_without_history_and_incomplete_onboarding_is_onboarding_incomplete(session):

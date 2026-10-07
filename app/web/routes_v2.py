@@ -55,6 +55,7 @@ from app.domain.multi_program import (
     is_plannable_week_number,
     plan_week_number,
 )
+from app.domain.program_access import ProgramAccessLevel
 from app.domain.program_schedule import (
     block_role_title,
     block_target_label,
@@ -69,18 +70,17 @@ from app.services.live_session import (
     CompleteResult,
     LiveSessionService,
     PhaseBackConflictError,
-    SubscriptionRequiredError,
     awaiting_block_start,
     block_started_at,
     current_interval_timing,
 )
 from app.services.plan_week import PlanWeekService
+from app.services.program_access import ProgramAccessService, SubscriptionRequiredError
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_deletion import SessionDeletionService
 from app.services.session_editing import EditOutcome, EditStatus, SessionEditingService, SetEdit
 from app.services.session_log import TrainingSessionLogService
-from app.services.subscription import SubscriptionService
 from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -165,11 +165,13 @@ def _program_response(program: Program, strategy_type_value: str | None) -> Prog
     return ProgramResponse(
         id=program.id, name=program.name, goal=program.goal,
         structure_type=program.structure_type.value, category=program.category,
-        progression_strategy_type=strategy_type_value,
+        progression_strategy_type=strategy_type_value, access_level=program.access_level,
     )
 
 
-def _program_inclusion_response(inclusion: ProgramInclusion, user) -> ProgramInclusionResponse:
+def _program_inclusion_response(
+    inclusion: ProgramInclusion, user, access_level: str | None,
+) -> ProgramInclusionResponse:
     """current_week считается в поясе пользователя, как недели плана (#285 L1): и «сегодня»
     (_plan_today), и дата старта курса — локальные (started_at хранится в UTC, `.date()` без
     перевода дал бы другой день около полуночи)."""
@@ -182,7 +184,12 @@ def _program_inclusion_response(inclusion: ProgramInclusion, user) -> ProgramInc
         program_name=inclusion.snapshot.get("program_name", ""),
         is_active=inclusion.is_active, started_at=inclusion.started_at, expires_at=inclusion.expires_at,
         snapshot=inclusion.snapshot, progression_state=inclusion.progression_state,
+        access_level=access_level or ProgramAccessLevel.PREMIUM.value,
     )
+
+
+async def _inclusion_access_levels(session: AsyncSession, inclusions: list[ProgramInclusion]) -> dict[int, str]:
+    return await ProgramRepository(session).access_levels_for_inclusions([inclusion.id for inclusion in inclusions])
 
 
 def _plan_item_response(
@@ -881,10 +888,14 @@ async def get_plan(
     done_by_item = count_done_per_plan_item(
         week_start_by_item, [(item_id, at.astimezone(tz).date()) for item_id, at in performed],
     )
+    access_levels = await _inclusion_access_levels(session, inclusions)
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
-            program_inclusions=[_program_inclusion_response(inclusion, user) for inclusion in inclusions],
+            program_inclusions=[
+                _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id))
+                for inclusion in inclusions
+            ],
             plan_items=[
                 _plan_item_response(
                     item, complex_name_by_id, complex_source_type_by_id, done_by_item.get(item.id, 0),
@@ -921,7 +932,8 @@ async def create_program_inclusion(
     await PlanWeekService(session).ensure_current_plan_week(
         training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
-    return _program_inclusion_response(inclusion, user)
+    access_levels = await _inclusion_access_levels(session, [inclusion])
+    return _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id))
 
 
 @router_v2.post("/program-inclusions/{inclusion_id}/deactivate", response_model=ProgramInclusionResponse)
@@ -947,7 +959,8 @@ async def deactivate_program_inclusion(
             inclusion=inclusion, today=_plan_today(user),
         )
         await session.commit()
-    return _program_inclusion_response(inclusion, user)
+    access_levels = await _inclusion_access_levels(session, [inclusion])
+    return _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id))
 
 
 # --- Строки недельной матрицы -----------------------------------------------------------
@@ -1438,8 +1451,11 @@ async def create_session(
     session: AsyncSession = Depends(get_session),
 ) -> SessionResponse:
     user = await _require_user(session, init_data)
-    if body.source == "plan" and body.program_inclusion_id is not None and not SubscriptionService.is_entitled(
-        user, now=datetime.now(UTC),
+    if (
+        body.source == "plan" and body.program_inclusion_id is not None
+        and not await ProgramAccessService(session).inclusions_training_allowed(
+            user, [body.program_inclusion_id], now=datetime.now(UTC),
+        )
     ):
         raise _subscription_required()
     # #263: Журнал пишет прошедшие события — будущая дата отклоняется (небольшой
@@ -1623,8 +1639,9 @@ def _live_session_complete_response(result: CompleteResult) -> LiveSessionComple
 
 
 def _subscription_required() -> HTTPException:
-    """#300 / D6: курсовая тренировка без действующей подписки — 402 с кодом, который Mini App переводит на экран
-    подписки. Остальные (свободные/свои) пути этим кодом не отвечают."""
+    """#300 / D6: тренировка платной (Premium) программы без действующей подписки — 402 с кодом, который Mini App
+    переводит на экран подписки. Бесплатная программа («Подтягивания», ProgramAccessService) и свободные/свои
+    пути этим кодом не отвечают."""
     return HTTPException(
         status.HTTP_402_PAYMENT_REQUIRED,
         {"code": "subscription_required", "message": "Для тренировок по курсу нужна действующая подписка."},

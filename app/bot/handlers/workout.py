@@ -68,6 +68,7 @@ from app.domain.progression import (
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
+from app.services.program_access import ProgramAccessService
 from app.services.subscription import SubscriptionService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
@@ -243,8 +244,9 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
     now = datetime.now(UTC)
     is_admin = settings.is_admin(callback.from_user.id)
 
-    subscriptions = SubscriptionService(session)
-    if not await subscriptions.has_access(user.id, now=now):
+    # Legacy-каскад = программа «Подтягивания» — бесплатна навсегда (правило 2026-10-07, ProgramAccessService).
+    user = await SubscriptionService(session).refresh_status(user.id, now=now)
+    if not ProgramAccessService.legacy_pullup_cascade_allowed(user, now=now):
         await send_paywall(callback.message, user)
         await callback.answer()
         return

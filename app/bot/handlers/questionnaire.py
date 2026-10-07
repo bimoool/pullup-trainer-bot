@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from aiogram import F, Router
@@ -11,7 +11,7 @@ from app.bot.keyboards import back_cancel_keyboard, bottom_menu_keyboard, gender
 from app.bot.states import OnboardingStates
 from app.bot.timezones import resolve_city_timezone
 from app.config import settings
-from app.db.models import Gender
+from app.db.models import Gender, SubscriptionStatus
 from app.db.repositories.users import UserRepository
 from app.domain.constants import TRIAL_DAYS
 from app.services.onboarding import OnboardingService
@@ -134,18 +134,27 @@ async def handle_timezone(message: Message, state: FSMContext, session: AsyncSes
     user = await users.get_by_telegram_id(message.from_user.id)
 
     onboarding = OnboardingService(session)
-    await onboarding.complete_questionnaire_and_start_trial(
+    now = datetime.now(UTC)
+    user = await onboarding.complete_questionnaire_and_start_trial(
         user_id=user.id,
         weight_kg=Decimal(data["weight_kg"]),
         height_cm=data["height_cm"],
         gender=Gender(data["gender"]),
         birth_date=date.fromisoformat(data["birth_date"]),
         timezone=timezone_name,
-        now=datetime.now(UTC),
+        now=now,
     )
 
     await state.clear()
-    await message.answer(texts.TRIAL_STARTED.format(trial_days=TRIAL_DAYS))
+    # Онбординг — гарантия минимума (SubscriptionService.start_trial): более длинный доступ сохраняется как есть,
+    # «пробный период запущен» — только когда триал действительно выдан/доведён до TRIAL_DAYS сейчас.
+    trial_granted_now = (
+        user.subscription_status == SubscriptionStatus.TRIAL
+        and user.subscription_expires_at == now + timedelta(days=TRIAL_DAYS)
+    )
+    await message.answer(
+        texts.TRIAL_STARTED.format(trial_days=TRIAL_DAYS) if trial_granted_now else texts.ONBOARDING_ACCESS_KEPT,
+    )
     await message.answer(
         texts.WHAT_NEXT, reply_markup=bottom_menu_keyboard(is_admin=settings.is_admin(message.from_user.id)),
     )

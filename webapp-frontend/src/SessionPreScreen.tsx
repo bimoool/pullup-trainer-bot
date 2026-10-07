@@ -15,6 +15,7 @@ import {
   type TrainingPlanResponseV2,
 } from "./apiV2";
 import { fetchSubscription } from "./api";
+import { courseRequiresPremium } from "./programAccess";
 import { BackChevron } from "./BackChevron";
 import { drainQueuedFinish, loadLocalSession } from "./offlineSession";
 import { classifyActiveConflict, type ActiveConflictKind } from "./sessionConflict";
@@ -221,17 +222,23 @@ export function SessionPreScreen({
       }
 
       try {
-        // #300 / D6: подсказка для UI — курсовая тренировка без подписки сразу ведёт на экран подписки. Истина — 402
-        // от сервера на старте (handleStart); сбой этой проверки ничего не блокирует.
-        const subscription = await fetchSubscription(initDataRaw).catch(() => null);
+        // #300 / D6: подсказка для UI — тренировка ПЛАТНОЙ программы без подписки сразу ведёт на экран подписки;
+        // бесплатная программа («Подтягивания», access_level "free") — нет. Истина — 402 от сервера на старте
+        // (handleStart); сбой этой проверки ничего не блокирует.
+        const [subscription, plan] = await Promise.all([
+          fetchSubscription(initDataRaw).catch(() => null),
+          fetchPlan(initDataRaw),
+        ]);
         if (cancelled) {
           return;
         }
-        if (subscription !== null && subscription.is_onboarded && !subscription.has_access) {
+        if (
+          subscription !== null && subscription.is_onboarded && !subscription.has_access
+          && courseRequiresPremium(plan, explicitPlanItemIds)
+        ) {
           setState({ phase: "subscription_required", title });
           return;
         }
-        const plan = await fetchPlan(initDataRaw);
         const inclusion = findActiveInclusion(plan);
         if (plan === null || inclusion === null) {
           if (!cancelled) {

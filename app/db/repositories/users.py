@@ -21,6 +21,13 @@ class UserRepository:
     async def get_by_id(self, user_id: int) -> User | None:
         return await self._session.get(User, user_id)
 
+    async def get_by_id_for_update(self, user_id: int) -> User:
+        """Строка пользователя под FOR UPDATE (и обновлённая из БД) — для read-modify-write кэша подписки."""
+        result = await self._session.execute(
+            select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True),
+        )
+        return result.scalar_one()
+
     async def get_by_telegram_id(self, telegram_id: int) -> User | None:
         result = await self._session.execute(select(User).where(User.telegram_id == telegram_id))
         return result.scalar_one_or_none()

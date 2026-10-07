@@ -34,18 +34,34 @@ class SubscriptionService:
         self._subscriptions = SubscriptionRepository(session)
 
     async def start_trial(self, user_id: int, *, now: datetime) -> User:
-        """Стартует TRIAL_DAYS-дневный пробный период (обычно сразу по
-        завершении онбординга)."""
-        ends_at = now + timedelta(days=TRIAL_DAYS)
+        """Пробный период при завершении онбординга — ГАРАНТИЯ МИНИМУМА, не перезапись (решение владельца
+        2026-10-07). Действующий доступ не сокращается и не понижается; история пишется только при реальном
+        изменении (на no-op строки в subscriptions нет):
+
+          * нет действующего entitlement (новый / истёкший / none) -> TRIAL на TRIAL_DAYS от now;
+          * TRIAL, до конца < TRIAL_DAYS -> срок доводится до now + TRIAL_DAYS (строка-продление триала);
+          * TRIAL, до конца >= TRIAL_DAYS -> no-op;
+          * ACTIVE (оплата / монеты / выдача админом) и не истёк -> no-op: никогда не понижается до TRIAL и
+            не сокращается (даже если до конца меньше TRIAL_DAYS — триал не «доливается» поверх оплаты);
+          * бессрочный (expires_at NULL при trial/active) -> no-op.
+
+        Повторный онбординг поэтому идемпотентен относительно более длинного доступа. Строка users блокируется
+        (FOR UPDATE), чтобы два параллельных завершения анкеты не записали два триала."""
+        user = await self._users.get_by_id_for_update(user_id)
+        status, expires_at = user.subscription_status, user.subscription_expires_at
+        guaranteed_until = now + timedelta(days=TRIAL_DAYS)
+        already_covered = status == SubscriptionStatus.ACTIVE or expires_at is None or expires_at >= guaranteed_until
+        if entitled(status, expires_at, now=now) and already_covered:
+            return user
         await self._subscriptions.create(
             user_id=user_id,
             status=SubscriptionStatus.TRIAL,
             source=SubscriptionSource.TRIAL,
             started_at=now,
-            ends_at=ends_at,
+            ends_at=guaranteed_until,
         )
         return await self._users.update_subscription_cache(
-            user_id, status=SubscriptionStatus.TRIAL, expires_at=ends_at,
+            user_id, status=SubscriptionStatus.TRIAL, expires_at=guaranteed_until,
         )
 
     async def extend(

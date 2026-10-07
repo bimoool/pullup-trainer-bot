@@ -121,6 +121,7 @@ from app.domain.multi_program import (
     WeekPhase,
     snapshot_program_items_gap,
 )
+from app.domain.program_access import ProgramAccessLevel
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.services.plan_week import PlanWeekService
@@ -214,6 +215,8 @@ async def _get_or_create_program(session: AsyncSession, *, progression_strategy_
         category=ExerciseType.PULL_UPS.value,
         progression_strategy_id=progression_strategy_id,
         config=_program_config_snapshot(),
+        # Бесплатна навсегда (решение владельца 2026-10-07) — как миграция c3f7a9e2d5b1 для уже созданной строки.
+        access_level=ProgramAccessLevel.FREE.value,
     )
     session.add(program)
     await session.flush()

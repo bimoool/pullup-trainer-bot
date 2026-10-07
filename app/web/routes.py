@@ -83,6 +83,7 @@ from app.domain.session import BlockAssignment, BlockLog
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
+from app.services.program_access import ProgramAccessService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 from app.services.training_analytics import resolve_timezone
@@ -735,7 +736,10 @@ async def _resolve_plan_context(
     if user is None:
         return _PlanContext(status="not_onboarded")
 
-    if not await SubscriptionService(session).has_access(user.id, now=now):
+    # Legacy-каскад = программа «Подтягивания» — бесплатна навсегда (правило 2026-10-07): решение — единый путь
+    # ProgramAccessService, "no_access" остаётся только на случай, если программу снова сделают платной.
+    user = await SubscriptionService(session).refresh_status(user.id, now=now)
+    if not ProgramAccessService.legacy_pullup_cascade_allowed(user, now=now):
         return _PlanContext(status="no_access")
 
     workouts = WorkoutRepository(session)
@@ -1714,7 +1718,10 @@ async def _resolve_backdate_context(session: AsyncSession, telegram_id: int, *, 
     if user is None:
         return _BackdateContext(status="not_onboarded")
 
-    if not await SubscriptionService(session).has_access(user.id, now=now):
+    # Legacy-каскад = программа «Подтягивания» — бесплатна навсегда (правило 2026-10-07): решение — единый путь
+    # ProgramAccessService, "no_access" остаётся только на случай, если программу снова сделают платной.
+    user = await SubscriptionService(session).refresh_status(user.id, now=now)
+    if not ProgramAccessService.legacy_pullup_cascade_allowed(user, now=now):
         return _BackdateContext(status="no_access")
 
     workouts = WorkoutRepository(session)

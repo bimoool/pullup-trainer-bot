@@ -79,7 +79,7 @@ def test_pricing_text_contains_required_moderation_fields():
     ссылкой на канал — здесь текст только анонсирует, что файл ниже."""
     body = texts.PRICING_TEXT
     assert "990" in body
-    assert "14 дней" in body
+    assert "7 дней" in body
     assert "возврат" in body.lower()
     assert "667354733620" in body  # ИНН
     assert "324665800108241" in body  # ОГРН/ОГРНИП

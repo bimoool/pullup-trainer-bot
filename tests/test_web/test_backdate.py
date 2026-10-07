@@ -109,10 +109,11 @@ async def test_backdate_plan_for_unknown_telegram_id_is_not_onboarded(session):
     assert body["status"] == "not_onboarded"
 
 
-async def test_backdate_plan_without_subscription_is_no_access(session):
+async def test_backdate_plan_without_subscription_is_not_paywalled(session):
+    """Правило 2026-10-07: legacy-каскад = бесплатная программа «Подтягивания» — без подписки не "no_access"."""
     user = await UserRepository(session).create(telegram_id=55002, username="nosub")
     body = await _get_backdate_plan(session, telegram_id=user.telegram_id)
-    assert body["status"] == "no_access"
+    assert body["status"] == "first_workout"
 
 
 async def test_backdate_plan_without_history_is_first_workout(session):

@@ -161,7 +161,9 @@ GAP_ROLLBACK_DAYS: int = 21
 GAP_RETEST_DAYS: int = 35
 ROLLBACK_REPS: int = 2
 ROLLBACK_WEIGHT_PCT: float = 0.10
-TRIAL_DAYS: int = 14
+# Решение владельца 2026-10-07: полный Premium-триал — 7 дней (было 14). Онбординг гарантирует минимум, а не
+# перезаписывает доступ — см. SubscriptionService.start_trial.
+TRIAL_DAYS: int = 7
 
 # Продуктовая константа платной подписки (990₽/мес) — раньше жила в
 # app/services/tribute.py (единственном на тот момент платёжном провайдере),

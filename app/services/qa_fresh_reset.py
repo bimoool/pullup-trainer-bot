@@ -243,7 +243,8 @@ def entitlement_consistency(
       * no history at all behind an active entitlement (written around SubscriptionService);
       * cache != latest row (other than the refresh_status expired flip);
       * an admin grant / payment that is still running but ends LATER than the cache: it was superseded by a later
-        trial row (onboarding re-ran start_trial, which overwrites users.* unconditionally) — the product then
+        trial row (before 2026-10-07 onboarding re-ran start_trial, which then overwrote users.* unconditionally;
+        start_trial is now a minimum guarantee and never supersedes a longer grant, but such history remains) — the product then
         grants access only until the trial's end and the granted days are lost. Preserving that would preserve a
         silently downgraded entitlement; the owner must re-grant (or decide otherwise) first."""
     problems = []

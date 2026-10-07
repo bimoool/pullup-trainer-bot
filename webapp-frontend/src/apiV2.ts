@@ -10,6 +10,7 @@
 import type { SessionCreatePayload } from "./journalLog";
 import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
 import type { PeerInsights } from "./peerInsightsFormat";
+import type { ProgramAccessLevel } from "./programAccess";
 
 /**
  * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
@@ -331,6 +332,8 @@ export interface ProgramInclusionResponseV2 {
   /** issue #266 — только для курса с явно заданной длиной. */
   duration_weeks?: number | null;
   current_week?: number | null;
+  /** Правило 2026-10-07: "free" — программа без Premium («Подтягивания»), "premium" — нужна подписка. */
+  access_level?: ProgramAccessLevel;
 }
 
 export interface PlanItemResponseV2 {
@@ -794,6 +797,7 @@ export interface ProgramResponseV2 {
   structure_type: string;
   category: string | null;
   progression_strategy_type: string | null;
+  access_level?: ProgramAccessLevel;
 }
 
 export async function fetchPrograms(initDataRaw: string): Promise<ProgramResponseV2[]> {
