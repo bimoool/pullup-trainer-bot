@@ -25,6 +25,7 @@ from app.db.models import Gender
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.users import UserRepository
 from app.domain.achievements import ACHIEVEMENT_LABELS, AchievementCode
+from app.services.qa_staging_guard import is_running_staging
 
 # ВАЖНО: подключается в app/bot/handlers/__init__.py сразу после start —
 # нажатие на кнопку нижнего меню обязано перехватывать апдейт независимо от
@@ -108,7 +109,8 @@ async def render_profile(message: Message, session: AsyncSession, telegram_id: i
         achievement_list=achievement_list,
     )
     is_admin = settings.is_admin(telegram_id)
-    await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=profile_keyboard(is_admin=is_admin))
+    keyboard = profile_keyboard(is_admin=is_admin, qa_fresh_reset=is_admin and is_running_staging())
+    await message.answer(f"{texts.PROFILE_HEADER}\n\n{body}", reply_markup=keyboard)
 
 
 @router.message(F.text == BOTTOM_MENU_PROFILE)

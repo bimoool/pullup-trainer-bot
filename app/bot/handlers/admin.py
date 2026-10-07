@@ -21,6 +21,7 @@ from app.bot.keyboards import (
     cancel_keyboard,
     payment_link_keyboard,
     profile_keyboard,
+    qa_fresh_reset_confirm_keyboard,
 )
 from app.bot.middlewares import MediaGroupMiddleware
 from app.bot.states import AdminStates
@@ -32,6 +33,12 @@ from app.domain.constants import ADMIN_TEST_PAYMENT_AMOUNT_RUB, WEEKLY_DIGEST_RE
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
 from app.services.admin_reset import reset_user_progress
 from app.services.gamification import GamificationService
+from app.services.qa_fresh_reset import ResetReport, run_fresh_reset
+from app.services.qa_staging_guard import (
+    NotStagingError,
+    StagingEnvironment,
+    identify_running_staging,
+)
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
 from app.workers.weekly_digest import send_weekly_digest_reminder
@@ -428,6 +435,96 @@ async def handle_admin_reset_confirm(callback: CallbackQuery, state: FSMContext,
 
     await state.clear()
     await callback.message.answer(texts.ADMIN_RESET_DONE, reply_markup=profile_keyboard(is_admin=True))
+
+
+# --- 🧪 Fresh reset (staging) — QA-only (app/services/qa_fresh_reset.py). Только ADMIN_IDS, только на
+# positively-identified staging (fail closed: в проде кнопки нет, а команда/колбэк отвечают «недоступно»),
+# только СВОЙ аккаунт — telegram_id берётся из callback.from_user/message.from_user, параметра нет.
+
+
+def _qa_staging() -> tuple[StagingEnvironment | None, str | None]:
+    try:
+        return identify_running_staging(), None
+    except NotStagingError as exc:
+        return None, str(exc)
+
+
+def _format_qa_dry_run(report: ResetReport, staging: StagingEnvironment) -> str:
+    rows = "\n".join(f"• {category}: {n}" for category, n in report.rows_by_category.items())
+    expires = report.entitlement_expires_at.date().isoformat() if report.entitlement_expires_at else "без срока"
+    guards = (
+        texts.QA_FRESH_RESET_GUARDS_OK if report.ok
+        else texts.QA_FRESH_RESET_GUARDS_FAILED.format(failures="\n".join(f"• {f}" for f in report.guard_failures))
+    )
+    return texts.QA_FRESH_RESET_DRY_RUN.format(
+        db=staging.db_name, host=staging.mini_app_host, rows=rows, total=sum(report.rows_by_table.values()),
+        entitlement=f"{report.entitlement_status} до {expires}", guards=guards,
+    )
+
+
+async def _qa_fresh_reset_dry_run(answer, telegram_id: int, session: AsyncSession) -> None:
+    staging, reason = _qa_staging()
+    if staging is None:
+        await answer(texts.QA_FRESH_RESET_UNAVAILABLE.format(reason=reason))
+        return
+    report = await run_fresh_reset(session, telegram_id=telegram_id, staging=staging, apply=False)
+    await answer(
+        _format_qa_dry_run(report, staging), reply_markup=qa_fresh_reset_confirm_keyboard() if report.ok else None,
+    )
+
+
+@router.message(Command("qa_fresh_reset"))
+async def handle_qa_fresh_reset_command(message: Message, session: AsyncSession) -> None:
+    if not _is_admin(message.from_user.id):
+        await message.answer(texts.ADMIN_ACCESS_DENIED)
+        return
+    await _qa_fresh_reset_dry_run(message.answer, message.from_user.id, session)
+
+
+@router.callback_query(F.data == "qa_fresh_reset_prompt")
+async def handle_qa_fresh_reset_prompt(callback: CallbackQuery, session: AsyncSession) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    await _qa_fresh_reset_dry_run(callback.message.answer, callback.from_user.id, session)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "qa_fresh_reset_cancel")
+async def handle_qa_fresh_reset_cancel(callback: CallbackQuery) -> None:
+    await callback.answer(texts.CANCELLED)
+
+
+@router.callback_query(F.data == "qa_fresh_reset_confirm")
+async def handle_qa_fresh_reset_confirm(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    staging, reason = _qa_staging()
+    if staging is None:
+        await callback.answer(texts.QA_FRESH_RESET_UNAVAILABLE.format(reason=reason), show_alert=True)
+        return
+    await callback.message.edit_reply_markup()
+    try:
+        report = await run_fresh_reset(session, telegram_id=callback.from_user.id, staging=staging, apply=True)
+    except Exception as exc:  # сервис уже сделал ROLLBACK; QA-сессии нужен явный ответ, а не тишина
+        logger.exception("qa_fresh_reset: unexpected error, rolled back")
+        await callback.message.answer(texts.QA_FRESH_RESET_FAILED.format(failures=f"• {type(exc).__name__}"))
+        await callback.answer()
+        return
+    if not report.applied:
+        await callback.message.answer(
+            texts.QA_FRESH_RESET_FAILED.format(failures="\n".join(f"• {f}" for f in report.guard_failures)),
+        )
+        await callback.answer()
+        return
+    await state.clear()
+    post = report.post_state
+    await callback.message.answer(texts.QA_FRESH_RESET_DONE.format(
+        onboarding=str(post["onboarding"]).lower(), plans=post["plans"], sessions=post["sessions"],
+        coins=post["coins"], entitlement=post["entitlement"],
+    ))
+    await callback.answer()
 
 
 # --- Диагностический платёж Robokassa на 1₽ (Часть 11) --------------------------

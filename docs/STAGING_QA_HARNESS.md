@@ -138,3 +138,46 @@ Validated in the dev container only against a locally started backend (+built fr
 `pullup_staging_harness`: unit tests (initData accepted by the app validator; provisioner guard), provisioner run twice
 (idempotent) with snapshot, all four journeys green in Chromium (S-OWNER-01 green for `qa_aged_active`, red for `qa_aged_legacy_snapshot`). Not validated: real staging, WebKit (browser not installed
 in the container), GitHub runner reachability, the SSH wrapper. The local green is not evidence about staging.
+
+
+## 🧪 Fresh reset (staging) — reset your own account from Telegram (no VPS shell)
+
+QA-only control in the **staging bot** (`app/services/qa_fresh_reset.py`, handlers in `app/bot/handlers/admin.py`):
+Профиль → «🧪 Fresh reset (staging)», or the command `/qa_fresh_reset`.
+
+* **Staging only, fail closed.** The single definition of staging is `app/services/qa_staging_guard.py`, shared
+  with `provision_staging_identities.py`. The DB name in `DATABASE_URL` must contain `staging` and must not look
+  like prod or test, `POSTGRES_DB` must agree with it if it is set, and the `MINI_APP_URL` host must be
+  `staging.*`. The live `current_database()` must also equal the configured DB. Production never passes: the
+  button is not rendered, and the command or callback answers «недоступен (<reason>)».
+* **Admin only, own account only.** The caller must be in `ADMIN_IDS`, and the telegram id is taken from
+  `from_user`. There is no target parameter.
+* **Flow.**
+  1. The first tap is a DRY RUN (rolled back). It shows rows to delete by category, the entitlement that is
+     kept, and the guard status.
+  2. «СБРОСИТЬ МОЙ STAGING-ПРОФИЛЬ» applies the reset.
+  3. On success the bot replies `Fresh reset complete — onboarding=false / plans=0 / sessions=0 / coins=0 /
+     entitlement=active`. On a guard failure it replies «НЕ выполнен — всё откатилось».
+* **What is reset.** Every caller-owned row of the tables in `RESET_STEPS`:
+  - v2 sessions and their children
+  - plan, weeks, items, inclusions
+  - own exercises and workouts, favorites
+  - test results, body metrics, drafts, timers
+  - coins, achievements, events
+  - legacy workouts, blocks, sets, baselines, bands, electives (legacy rows are first archived into the
+    existing `*_archive_admin_reset` tables)
+
+  Every `users` column except `id/telegram_id/username/created_at/subscription_status/subscription_expires_at`
+  goes back to its model default, so `onboarding_completed_at = NULL` and `coins_balance = 0`.
+* **What is kept.** Identity, the entitlement, the `subscriptions` history, `pending_payments`, the system
+  catalogue, collections and all other users.
+* **Guards, all in one transaction.** Positively identified staging. Exactly one caller row, locked
+  `FOR UPDATE`. Active entitlement before and after. Schema drift: every ORM table must be classified, the
+  live DB has no unknown table, and no NOT NULL user column lacks a default. No surviving row of another user
+  or of the system may reference (or CASCADE from) a caller row. Before COMMIT:
+  - the caller has 0 rows everywhere, is not onboarded, and has 0 coins;
+  - the entitlement is unchanged;
+  - the system catalogue counts and other users' counts are unchanged.
+
+  Any failure means ROLLBACK.
+* Tests: `tests/test_services/test_qa_fresh_reset.py`, `tests/test_bot/test_qa_fresh_reset.py`.

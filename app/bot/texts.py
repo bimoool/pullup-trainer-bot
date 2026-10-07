@@ -989,3 +989,25 @@ WELCOME_BACK = "С возвращением! Что делаем?"
 CANCELLED = "Отменено. Что делаем?"
 WHAT_NEXT = "Что дальше?"
 NO_ACTIVE_SET_SUPPORT = "Не получилось найти активный сет — загляни в «❓ Помощь» и сообщи о проблеме, разберёмся."
+
+# --- 🧪 Fresh reset (staging) — QA-only, только админ, только свой аккаунт (app/services/qa_fresh_reset.py) ---
+
+QA_FRESH_RESET_BUTTON = "🧪 Fresh reset (staging)"
+QA_FRESH_RESET_CONFIRM_BUTTON = "СБРОСИТЬ МОЙ STAGING-ПРОФИЛЬ"
+QA_FRESH_RESET_UNAVAILABLE = "🧪 Fresh reset недоступен: окружение не опознано как staging ({reason})."
+QA_FRESH_RESET_DRY_RUN = (
+    "🧪 Fresh reset (staging) — DRY RUN, ничего не изменено.\n"
+    "База: {db} · хост: {host}\n\n"
+    "Будет удалено (только твои строки):\n{rows}\n"
+    "Итого строк: {total}\n\n"
+    "Сохраняется: подписка {entitlement}, история подписок и платежей, системный каталог, другие пользователи.\n\n"
+    "Проверки: {guards}"
+)
+QA_FRESH_RESET_GUARDS_OK = "✅ все пройдены"
+QA_FRESH_RESET_GUARDS_FAILED = "❌ сброс невозможен:\n{failures}"
+QA_FRESH_RESET_DONE = (
+    "✅ Fresh reset complete\n"
+    "onboarding={onboarding} / plans={plans} / sessions={sessions} / coins={coins} / entitlement={entitlement}\n\n"
+    "Полностью закрой Mini App и открой заново — аккаунт как у нового пользователя."
+)
+QA_FRESH_RESET_FAILED = "❌ Fresh reset НЕ выполнен — всё откатилось, ничего не изменено.\n{failures}"

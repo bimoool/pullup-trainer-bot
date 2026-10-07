@@ -34,46 +34,32 @@ import os
 import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from urllib.parse import urlparse
 
 STAGING_FLAG = "QA_ALLOW_STAGING"
-PROD_DB_NAMES = {"pullup", "postgres"}
-FORBIDDEN_DB_FRAGMENTS = ("prod", "test")
-PROD_HOSTS = {"app.bimoool.com"}
 
 
 class RefusedError(RuntimeError):
     """Raised when the environment does not look like staging (exit code 3)."""
 
 
-def _db_name(database_url: str) -> str:
-    return urlparse(database_url.replace("+asyncpg", "")).path.lstrip("/")
-
-
 def assert_staging_environment(env: dict[str, str] | os._Environ) -> str:
-    """Return the staging DB name or raise RefusedError. Pure function (unit-tested, no I/O)."""
+    """Return the staging DB name or raise RefusedError. Pure function (unit-tested, no I/O).
+    The staging identification itself is the shared app.services.qa_staging_guard.identify_staging (one
+    definition with the staging bot's QA reset); this script additionally requires the explicit opt-in flag."""
+    from app.services.qa_staging_guard import NotStagingError, identify_staging
+
     if env.get(STAGING_FLAG) != "1":
         raise RefusedError(f"{STAGING_FLAG}=1 must be set explicitly")
-    database_url = env.get("DATABASE_URL", "")
-    if not database_url:
-        raise RefusedError("DATABASE_URL is not set")
-    db_name = _db_name(database_url)
-    if "staging" not in db_name:
-        raise RefusedError(f"database name {db_name!r} does not contain 'staging'")
-    if db_name in PROD_DB_NAMES or any(f in db_name for f in FORBIDDEN_DB_FRAGMENTS):
-        raise RefusedError(f"database name {db_name!r} looks like prod/test")
-    postgres_db = env.get("POSTGRES_DB")
-    if postgres_db and postgres_db != db_name:
-        raise RefusedError("POSTGRES_DB and DATABASE_URL disagree")
-    mini_app_url = env.get("MINI_APP_URL", "")
-    if not mini_app_url:
-        raise RefusedError("MINI_APP_URL is not set (cannot confirm the staging host)")
-    host = urlparse(mini_app_url).hostname or ""
-    if host in PROD_HOSTS or not host.startswith("staging."):
-        raise RefusedError(f"MINI_APP_URL host {host!r} is not a staging host")
+    try:
+        staging = identify_staging(
+            database_url=env.get("DATABASE_URL", ""), mini_app_url=env.get("MINI_APP_URL", ""),
+            postgres_db=env.get("POSTGRES_DB"),
+        )
+    except NotStagingError as exc:
+        raise RefusedError(str(exc)) from exc
     if not env.get("BOT_TOKEN"):
         raise RefusedError("BOT_TOKEN is not set")
-    return db_name
+    return staging.db_name
 
 
 async def _purge(session, telegram_id: int) -> None:
