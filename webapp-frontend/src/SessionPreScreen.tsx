@@ -310,7 +310,7 @@ export function SessionPreScreen({
         const estimate = formatEstimate(estimateWorkoutSeconds(items));
         setSummary({
           meta: `${formatExerciseCount(items.length)}${estimate ? ` · ${estimate}` : ""}`,
-          rows: items.map((item) => ({ id: item.id, name: item.exercise_name, line: itemPrescriptionLine(workout, item.id) ?? summarizeProtocol(item.protocol).lines[0] })),
+          rows: items.map((item) => ({ id: item.id, name: item.exercise_name, line: itemPrescriptionLine(workout, item) ?? summarizeProtocol(item.protocol).lines[0] })),
         });
       } catch {
         // без сводки экран остаётся рабочим

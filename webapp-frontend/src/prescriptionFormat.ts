@@ -1,14 +1,22 @@
-import type { WorkoutResponseV2 } from "./apiV2";
+import type { WorkoutItemResponseV2, WorkoutResponseV2 } from "./apiV2";
+
+/** Ключ блока v2, построенного из V1-строки complex_items: `i<item.id>e<item.exercise_id>` —
+ * тот же, что у бэкенда (app/domain/workout_definition.py::v1_block_key, WORKOUT_DOMAIN_V2 §9.5).
+ * Упражнение — часть ключа: строка, сменившая упражнение, — другой блок. */
+export function v1BlockKey(item: Pick<WorkoutItemResponseV2, "id" | "exercise_id">): string {
+  return `i${item.id}e${item.exercise_id}`;
+}
 
 /** Текст рецепта из канонической версии v2 (issue #303, WORKOUT_DOMAIN_V2 §7): сервер считает
  * его одной функцией describe() для всех экранов — Detail, карточек, пре-скрина. Клиент рецепт
  * не выводит заново («17 × 3» вместо W-лесенки — ровно такой пересчёт). null — у тренировки нет
- * v2-версии, экран показывает прежнюю V1-сводку. Ключ блока V1-головы — `i<item.id>`. */
+ * v2-версии (или блока этой строки), экран показывает прежнюю V1-сводку. */
 export function itemPrescriptionLine(
   workout: Pick<WorkoutResponseV2, "prescription">,
-  itemId: number,
+  item: Pick<WorkoutItemResponseV2, "id" | "exercise_id">,
 ): string | null {
-  const block = workout.prescription?.find((candidate) => candidate.key === `i${itemId}`);
+  const key = v1BlockKey(item);
+  const block = workout.prescription?.find((candidate) => candidate.key === key);
   if (!block) {
     return null;
   }

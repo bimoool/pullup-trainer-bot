@@ -203,7 +203,7 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           {items.map((item) => (
             <li key={item.id} className="workout-detail-item">
               <span className="home-workout-title">{item.exercise_name}</span>
-              <span className="home-workout-meta" style={{ whiteSpace: "normal" }}>{itemPrescriptionLine(workout, item.id) ?? formatItemSummary(item.protocol)}</span>
+              <span className="home-workout-meta" style={{ whiteSpace: "normal" }}>{itemPrescriptionLine(workout, item) ?? formatItemSummary(item.protocol)}</span>
             </li>
           ))}
         </ul>
