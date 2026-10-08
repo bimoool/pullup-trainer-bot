@@ -226,3 +226,40 @@ V1 (`ComplexItem.protocol`, 4 types) maps deterministically to v2 blocks:
 `rounds = total / (work + rest)` (must divide exactly; otherwise reject as invalid V1 — none in
 seed). `reps_sets{source: progression}` → `source = progression(role)`. The W-ladder seed row is
 re-authored as the explicit 17-set ladder (new version; old sessions keep their snapshot).
+
+## 9. Implementation notes (Wave 1a, #303)
+
+Where the contract left a choice open, Wave 1a decided as follows (code: `app/domain/workout_definition.py`,
+`app/db/workout_definition_backfill.py`, migration `b7d2e9f4a1c3`). None changes a rule above.
+
+1. **Rest defaults (§3.2 п.2, §3.5).** A missing *or* `null` `rest_after_seconds` on a non-last set resolves to
+   `default_rest_seconds ?? 90` (the literal `??` of §3.2); "no rest phase" between sets is written as `0`. An
+   explicit rest on the last set of a block is **rejected** (W4, 422), never silently dropped. Same rule for
+   `rest_after_block_seconds`: missing/`null` on a non-last block → default (= the V1 live default 90 s);
+   non-null on the last block → 422.
+2. **Set role default.** `max_reps`/`max_time` default to `role = max`, others to `working`.
+3. **Interval blocks** have `extra_sets_allowed = false` (true is rejected); `prep_seconds` default 5.
+4. **Shorthand** accepted on input only: `{sets: N, reps: R | seconds: S, rest_seconds?}`; the stored form is
+   always explicit and fully populated (every key present, `null` not absent) so one meaning has one JSON and
+   one hash.
+5. **W5 across versions.** A block key may not move to a different exercise between versions of the same
+   definition (`assert_block_keys_stable`). Blocks derived from the V1 head use `key = "i<complex_item_id>"`.
+6. **Reverting content.** `UNIQUE (definition, content_hash)` means saving content identical to an *older*
+   version re-points `current_version_id` to that version; no new row, `version_no` never reused.
+7. **Immutability** is enforced by a DB trigger (`UPDATE` on `workout_definition_versions` raises), not only by
+   code. Versions cascade-delete only with their definition (user deletion / QA reset); archiving never deletes.
+8. **System content.** Version 1 = the V1 head mapped by §8 (W-лесенка v1 is honestly «17 × 3»); version 2
+   (current) = re-authored W-ladder / Максимум 180-120-60 / 3 минуты `record_reps_per_round`, applied only if
+   the V1 head equals the seeded one (otherwise reported). «Объём ×5» stays v1.
+9. **User workouts.** The Builder still writes V1 (`complex_items.protocol`); every head mutation re-syncs the
+   current version in the same transaction (idempotent), an empty/ambiguous head clears the pointer. A v2
+   authoring UI is a separate P2.
+10. **Migration imports pure domain code** (`app.domain.workout_definition`, `exercise_identity`) so that the V1
+    mapping and the content hash are one function shared with the runtime; re-authored content is frozen
+    literals. Deviation from the a4c8e1f7b2d9 "literals only" convention, recorded in the module docstring.
+11. **Not yet consumed:** Live still starts from the V1 `workout_snapshot` (W-ladder executes as 17 × 3 until
+    #306/#307 consume `PrescriptionSnapshot`); course STEP blocks still have no definition version
+    (progression-sourced main workout is #305). Consumers wired to `describe()` now: Workout Detail, Home
+    workout cards, Pre-screen (via `WorkoutResponse.prescription`) and `POST /api/v2/workouts/preview` (Builder
+    preview API). The Plan screen renders no prescription text today (nothing to rewire); the Builder editor
+    still lists its own V1 items (identical meaning for V1-authored workouts) until the v2 authoring UI.

@@ -23,6 +23,7 @@ import { summarizeProtocol } from "./protocolConfig";
 import { useBackButton } from "./useBackButton";
 import { formatExerciseCount } from "./workoutCardFormat";
 import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
+import { itemPrescriptionLine } from "./prescriptionFormat";
 
 /** Потолок ожидания досылки старого завершения перед стартом (R-4): зависший запрос не должен вешать «Начать». */
 const DRAIN_BEFORE_START_TIMEOUT_MS = 5_000;
@@ -309,7 +310,7 @@ export function SessionPreScreen({
         const estimate = formatEstimate(estimateWorkoutSeconds(items));
         setSummary({
           meta: `${formatExerciseCount(items.length)}${estimate ? ` · ${estimate}` : ""}`,
-          rows: items.map((item) => ({ id: item.id, name: item.exercise_name, line: summarizeProtocol(item.protocol).lines[0] })),
+          rows: items.map((item) => ({ id: item.id, name: item.exercise_name, line: itemPrescriptionLine(workout, item.id) ?? summarizeProtocol(item.protocol).lines[0] })),
         });
       } catch {
         // без сводки экран остаётся рабочим

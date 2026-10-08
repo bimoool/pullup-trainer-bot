@@ -157,12 +157,21 @@ export async function fetchDashboardStatus(initDataRaw: string): Promise<Dashboa
 
 // --- GET /api/v2/exercises (Checkpoint 3A, issue #196) — Exercise Library без UI ----
 
+export interface LabelRefV2 {
+  id: number;
+  display_name: string;
+}
+
 export interface ExerciseResponseV2 {
   id: number;
   name: string;
   metric_type: string;
   category: string;
   subcategory: string | null;
+  /** Issue #303: name/category/subcategory — человеческие подписи; *_ref — {id, display_name}. */
+  display_name?: string | null;
+  category_ref?: LabelRefV2 | null;
+  subcategory_ref?: LabelRefV2 | null;
 }
 
 export async function fetchExercises(initDataRaw: string): Promise<ExerciseResponseV2[]> {
@@ -183,12 +192,35 @@ export interface WorkoutItemResponseV2 {
   protocol: Record<string, unknown>;
 }
 
+/** Issue #303 — один блок канонического рецепта v2; description/rest_description — серверный describe(). */
+export interface PrescriptionBlockV2 {
+  key: string;
+  exercise: LabelRefV2;
+  kind: "sets" | "interval";
+  description: string;
+  rest_description: string | null;
+  prep_seconds: number;
+  rest_after_block_seconds: number | null;
+  total_target_reps: number | null;
+  sets: {
+    kind: "reps" | "max_reps" | "time" | "max_time";
+    target_reps: number | null;
+    target_seconds: number | null;
+    rest_after_seconds: number | null;
+    role: string;
+  }[] | null;
+  interval: { work_seconds: number; rest_seconds: number; rounds: number; record_reps_per_round: boolean } | null;
+}
+
 export interface WorkoutResponseV2 {
   id: number;
   title: string;
   source_type: string;
   owner_user_id: number | null;
   items: WorkoutItemResponseV2[] | null;
+  /** Issue #303: текущая неизменяемая версия и её рецепт; null — версии нет (показываем items). */
+  current_version?: { id: number; version_no: number; content_hash: string } | null;
+  prescription?: PrescriptionBlockV2[] | null;
 }
 
 export async function listWorkouts(initDataRaw: string): Promise<WorkoutResponseV2[]> {

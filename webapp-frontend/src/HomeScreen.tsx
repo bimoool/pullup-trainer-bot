@@ -22,6 +22,7 @@ import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { useModalSheet } from "./useModalSheet";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import { formatExerciseCount, formatExerciseNames, formatFirstProtocol } from "./workoutCardFormat";
+import { firstPrescriptionDescription } from "./prescriptionFormat";
 
 type Props = {
   initDataRaw: string;
@@ -502,7 +503,7 @@ export function HomeScreen({
             {systemWorkouts.map((workout) => {
               const items = workout.items ?? [];
               const names = formatExerciseNames(items);
-              const protocol = formatFirstProtocol(items);
+              const protocol = firstPrescriptionDescription(workout) ?? formatFirstProtocol(items);
               return (
                 <li key={workout.id}>
                   <button
@@ -557,7 +558,7 @@ export function HomeScreen({
           {workouts.workouts.map((workout) => {
             const items = workout.items ?? [];
             const names = formatExerciseNames(items);
-            const protocol = formatFirstProtocol(items);
+            const protocol = firstPrescriptionDescription(workout) ?? formatFirstProtocol(items);
             return (
               <li key={workout.id}>
                 <button

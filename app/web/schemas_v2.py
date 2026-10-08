@@ -40,6 +40,19 @@ class ExerciseResponse(BaseModel):
     metric_type: str
     category: str
     subcategory: str | None
+    # Issue #303 (WORKOUT_DOMAIN_V2 §2, E1): name/category/subcategory — человеческие подписи
+    # (display_name упражнения и категорий), не внутренние slug вроде "user"/"block_a".
+    # *_ref — {id, display_name} для кода, которому нужна идентичность категории.
+    display_name: str | None = None
+    category_ref: "LabelRef | None" = None
+    subcategory_ref: "LabelRef | None" = None
+
+
+class LabelRef(BaseModel):
+    """{id, display_name} — единая форма ссылки на сущность с подписью (E1)."""
+
+    id: int
+    display_name: str
 
 
 class ExerciseListResponse(BaseModel):
@@ -89,6 +102,61 @@ class WorkoutResponse(BaseModel):
     source_type: str
     owner_user_id: int | None
     items: list[WorkoutItemResponse] | None = None
+    # Issue #303: текущая неизменяемая версия и её рецепт (WORKOUT_DOMAIN_V2 §5, §7). None — у
+    # тренировки нет валидной v2-версии (пустая/неоднозначная V1-голова) — UI показывает items.
+    current_version: "WorkoutVersionRef | None" = None
+    prescription: "list[PrescriptionBlockResponse] | None" = None
+
+
+class WorkoutVersionRef(BaseModel):
+    id: int
+    version_no: int
+    content_hash: str
+
+
+class PrescriptionSetResponse(BaseModel):
+    """Один подход канонического рецепта. У max_reps/max_time цели нет (W2): null, не 0."""
+
+    kind: str
+    target_reps: int | None
+    target_seconds: int | None
+    rest_after_seconds: int | None
+    role: str
+
+
+class PrescriptionIntervalResponse(BaseModel):
+    work_seconds: int
+    rest_seconds: int
+    rounds: int
+    record_reps_per_round: bool
+
+
+class PrescriptionBlockResponse(BaseModel):
+    """Блок рецепта: description/rest_description — единственный текст рецепта для Detail,
+    плана, пре-скрина и превью Builder'а (describe(), §7)."""
+
+    key: str
+    exercise: LabelRef
+    kind: str
+    description: str
+    rest_description: str | None
+    prep_seconds: int
+    rest_after_block_seconds: int | None
+    total_target_reps: int | None
+    sets: list[PrescriptionSetResponse] | None
+    interval: PrescriptionIntervalResponse | None
+
+
+class WorkoutPreviewRequest(BaseModel):
+    """Содержимое v2 (WORKOUT_DOMAIN_V2 §3) — проверить и описать, ничего не сохраняя."""
+
+    content: dict
+
+
+class WorkoutPreviewResponse(BaseModel):
+    content: dict
+    content_hash: str
+    prescription: list[PrescriptionBlockResponse]
 
 
 class WorkoutSessionSummaryResponse(BaseModel):
@@ -533,3 +601,8 @@ class PlanItemMoveRequest(BaseModel):
     day_of_week: int | None = Field(ge=0, le=6)
     # issue #275 — перенос в другую неделю (None = неделя не меняется).
     plan_week_id: int | None = None
+
+
+# Issue #303: прямые ссылки вперёд на LabelRef/WorkoutVersionRef/PrescriptionBlockResponse.
+ExerciseResponse.model_rebuild()
+WorkoutResponse.model_rebuild()

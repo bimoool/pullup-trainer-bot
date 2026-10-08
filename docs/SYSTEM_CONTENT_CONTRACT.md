@@ -62,6 +62,14 @@ exercise records. The formats are those of the former «Факультатив»
 | «3 минуты подтягиваний» | `interval` 180 s, 10 s work / 20 s rest, starts with work | exactly the ADR interval example |
 | «Объём ×5» | `reps_sets` static, 5 sets × 8 reps, rest 120 s | «на объём» = 5 sets of 6–10 reps (the midpoint) |
 
+**v2 re-authoring (#303, migration `b7d2e9f4a1c3`).** The V1 rows above stay as they are (legacy head,
+still readable). Each workout also gets immutable WorkoutDefinition versions (`docs/domain/WORKOUT_DOMAIN_V2.md`
+§5): version 1 = the V1 head mapped one-to-one (§8), version 2 (current) for three of them removes the
+limitations listed above — W-лесенка = 17 explicit `reps` sets 5-4-3-2-1-2-3-4-5-4-3-2-1-2-3-4-5 rest 10 s;
+«Максимум подтягиваний» = 4 `max_reps` sets (no target) with rest 180/120/60; «3 минуты подтягиваний» =
+interval 6 × (10 work / 20 rest) with `record_reps_per_round`. Re-authoring happens only if the V1 head is
+exactly the seeded one (otherwise reported, not guessed). Literals: `app/db/workout_definition_backfill.py`.
+
 ## 5. Visibility rules
 
 - **Public exercise library** (`GET /api/v2/exercises`, picker, search, collections) = system exercises (any
