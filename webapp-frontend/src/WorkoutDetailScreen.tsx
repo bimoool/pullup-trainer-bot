@@ -12,6 +12,7 @@ import { formatExerciseCount } from "./workoutCardFormat";
 import {
   estimateWorkoutSeconds, formatEstimate, formatItemSummary, formatSetsDone,
 } from "./workoutDetailFormat";
+import { itemPrescriptionLine } from "./prescriptionFormat";
 import { useBackButton } from "./useBackButton";
 
 type Props = {
@@ -202,7 +203,7 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
           {items.map((item) => (
             <li key={item.id} className="workout-detail-item">
               <span className="home-workout-title">{item.exercise_name}</span>
-              <span className="home-workout-meta" style={{ whiteSpace: "normal" }}>{formatItemSummary(item.protocol)}</span>
+              <span className="home-workout-meta" style={{ whiteSpace: "normal" }}>{itemPrescriptionLine(workout, item) ?? formatItemSummary(item.protocol)}</span>
             </li>
           ))}
         </ul>

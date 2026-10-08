@@ -8,11 +8,13 @@ from app.db.models_program import (
     Complex,
     ComplexItem,
     Exercise,
+    ExerciseCategory,
     Program,
     ProgramInclusion,
     ProgramItem,
     ProgressionStrategyProfile,
 )
+from app.domain.exercise_identity import CATEGORY_MY_EXERCISES
 from app.domain.multi_program import (
     ELECTIVE_SUBCATEGORY_PREFIX,
     INTERNAL_ROLE_SUBCATEGORIES,
@@ -178,9 +180,15 @@ class ProgramRepository:
         значения по умолчанию для нового пользовательского упражнения без
         дополнительного UI на этой волне (Builder ещё не выбирает тип
         метрики отдельно от самого упражнения на этом шаге)."""
+        # Issue #303 (E1, E3): человеческая подпись и категория «Мои упражнения» сразу при
+        # создании; category="user" — legacy-колонка, читатели v2 её не показывают.
+        my_exercises_id = (await self._session.execute(
+            select(ExerciseCategory.id).where(ExerciseCategory.slug == CATEGORY_MY_EXERCISES),
+        )).scalar_one_or_none()
         exercise = Exercise(
             name=name, metric_type=MetricType.REPS, category="user",
             source_type="user", owner_user_id=owner_user_id,
+            display_name=name, category_id=my_exercises_id, visibility="user",
         )
         self._session.add(exercise)
         await self._session.flush()

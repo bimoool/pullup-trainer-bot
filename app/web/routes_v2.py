@@ -37,10 +37,12 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.db.repositories.users import UserRepository
+from app.db.repositories.workout_definitions import WorkoutDefinitionRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.activity_types import activity_label
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.electives import format_elective_set_note
+from app.domain.exercise_identity import exercise_display_label
 from app.domain.journal_calendar import (
     local_day_counts,
     local_range_bounds_utc,
@@ -63,6 +65,7 @@ from app.domain.program_schedule import (
     course_week_number,
     duration_weeks,
 )
+from app.domain.workout_definition import WorkoutContentError, content_hash, normalize, to_dict
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.live_session import (
@@ -82,6 +85,7 @@ from app.services.session_deletion import SessionDeletionService
 from app.services.session_editing import EditOutcome, EditStatus, SessionEditingService, SetEdit
 from app.services.session_log import TrainingSessionLogService
 from app.services.training_analytics import resolve_timezone
+from app.services.workout_definition import PrescriptionView, WorkoutDefinitionService, block_views
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2 import (
@@ -123,6 +127,8 @@ from app.web.schemas_v2 import (
     WorkoutItemResponse,
     WorkoutItemUpdateRequest,
     WorkoutListResponse,
+    WorkoutPreviewRequest,
+    WorkoutPreviewResponse,
     WorkoutResponse,
     WorkoutSessionsResponse,
     WorkoutSessionSummaryResponse,
@@ -150,6 +156,7 @@ from app.web.schemas_v2_session import (
     SessionCloneRequest,
     SessionEditRequest,
 )
+from app.web.workout_prescription import block_response, exercise_responses, prescription_fields
 
 router_v2 = APIRouter(prefix="/api/v2")
 
@@ -481,19 +488,8 @@ async def list_exercises(
         .where((Exercise.source_type == "system") | (Exercise.owner_user_id == user.id))
         .order_by(Exercise.id),
     )
-    exercises = result.scalars().all()
-    return ExerciseListResponse(
-        exercises=[
-            ExerciseResponse(
-                id=ex.id,
-                name=ex.name,
-                metric_type=ex.metric_type.value,
-                category=ex.category,
-                subcategory=ex.subcategory,
-            )
-            for ex in exercises
-        ],
-    )
+    exercises = list(result.scalars().all())
+    return ExerciseListResponse(exercises=await exercise_responses(session, exercises))
 
 
 @router_v2.post("/exercises", response_model=ExerciseResponse)
@@ -511,17 +507,26 @@ async def create_exercise(
     user = await _require_user(session, init_data)
     exercise = await ProgramRepository(session).create_user_exercise(name=body.name, owner_user_id=user.id)
     await session.commit()
-    return ExerciseResponse(
-        id=exercise.id, name=exercise.name, metric_type=exercise.metric_type.value,
-        category=exercise.category, subcategory=exercise.subcategory,
-    )
+    return (await exercise_responses(session, [exercise]))[0]
 
 
-def _workout_response(complex_: Complex, items: list[WorkoutItemResponse] | None = None) -> WorkoutResponse:
+def _workout_response(
+    complex_: Complex, items: list[WorkoutItemResponse] | None = None, prescription: PrescriptionView | None = None,
+) -> WorkoutResponse:
     return WorkoutResponse(
         id=complex_.id, title=complex_.name, source_type=complex_.source_type,
-        owner_user_id=complex_.owner_user_id, items=items,
+        owner_user_id=complex_.owner_user_id, items=items, **prescription_fields(prescription),
     )
+
+
+async def _prescription(session: AsyncSession, workout_id: int) -> PrescriptionView | None:
+    return (await WorkoutDefinitionService(session).prescriptions([workout_id])).get(workout_id)
+
+
+async def _sync_definition_head(session: AsyncSession, workout_id: int) -> None:
+    """Issue #303: правка V1-головы (complex_items/title) Builder'ом — версия v2 догоняет голову
+    в той же транзакции (идемпотентно: неизменное содержимое новую версию не создаёт)."""
+    await WorkoutDefinitionService(session).sync_head(workout_id)
 
 
 async def _build_workout_item_responses(
@@ -532,7 +537,7 @@ async def _build_workout_item_responses(
     применяется везде в проекте для этой цели)."""
     if name_by_id is None:
         exercises = await ProgramRepository(session).list_exercises_by_ids(sorted({item.exercise_id for item in items}))
-        name_by_id = {exercise.id: exercise.name for exercise in exercises}
+        name_by_id = {exercise.id: exercise_display_label(exercise.display_name, exercise.name) for exercise in exercises}
     return [
         WorkoutItemResponse(
             id=item.id, exercise_id=item.exercise_id,
@@ -567,11 +572,15 @@ async def _workout_list_response(programs: ProgramRepository, session: AsyncSess
     # упражнений), не по запросу на каждую: карточкам Главной нужны items.
     items_by_workout = await programs.list_complex_items_by_complex_ids([w.id for w in workouts])
     exercise_ids = sorted({item.exercise_id for items in items_by_workout.values() for item in items})
-    name_by_id = {ex.id: ex.name for ex in await programs.list_exercises_by_ids(exercise_ids)}
+    name_by_id = {
+        ex.id: exercise_display_label(ex.display_name, ex.name) for ex in await programs.list_exercises_by_ids(exercise_ids)
+    }
+    prescriptions = await WorkoutDefinitionService(session).prescriptions([w.id for w in workouts])
     return WorkoutListResponse(
         workouts=[
             _workout_response(
                 w, items=await _build_workout_item_responses(session, items_by_workout[w.id], name_by_id),
+                prescription=prescriptions.get(w.id),
             )
             for w in workouts
         ],
@@ -590,6 +599,46 @@ async def list_my_workouts(
     user = await _require_user(session, init_data)
     programs = ProgramRepository(session)
     return await _workout_list_response(programs, session, await programs.list_user_workouts(user.id))
+
+
+def _is_db_id(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 2**63 - 1
+
+
+@router_v2.post("/workouts/preview", response_model=WorkoutPreviewResponse)
+async def preview_workout_content(
+    body: WorkoutPreviewRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> WorkoutPreviewResponse:
+    """Issue #303 — превью/проверка содержимого v2 (WORKOUT_DOMAIN_V2 §3) для Builder'а: тот же
+    normalize() (W1–W8, W6 — видимость упражнений текущему пользователю) и тот же describe(), что у
+    сохранённых версий. Ничего не сохраняет. Невалидное содержимое — 422 с кодом инварианта и путём."""
+    user = await _require_user(session, init_data)
+    # Только корректные bigint-id идут в set и в БД: список/объект как exercise_id не хешируется
+    # (TypeError → 500), а id вне bigint ломает запрос. Всё остальное — дело normalize(): он
+    # отвечает 422 {code, path, message} на любой кривой exercise_id (#303 review C1).
+    blocks_raw = body.content.get("blocks")
+    exercise_ids = {
+        block["exercise_id"] for block in (blocks_raw if isinstance(blocks_raw, list) else [])
+        if isinstance(block, dict) and _is_db_id(block.get("exercise_id"))
+    }
+    programs = ProgramRepository(session)
+    visible = {
+        exercise_id for exercise_id in exercise_ids
+        if await programs.get_visible_exercise_for_user(exercise_id, user.id) is not None
+    }
+    try:
+        content = normalize(body.content, visible_exercise_ids=visible)
+    except WorkoutContentError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": exc.code, "path": exc.path, "message": exc.message},
+        ) from exc
+    exercises = await WorkoutDefinitionRepository(session).exercise_infos(sorted(visible))
+    return WorkoutPreviewResponse(
+        content=to_dict(content), content_hash=content_hash(content),
+        prescription=[block_response(view) for view in block_views(content, exercises)],
+    )
 
 
 # Объявлен ДО /workouts/{workout_id}: иначе «catalog» разбирался бы как workout_id.
@@ -623,7 +672,7 @@ async def get_workout_detail(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
     complex_items = await program_repo.list_complex_items(workout_id)
     items = await _build_workout_item_responses(session, complex_items)
-    return _workout_response(workout, items=items)
+    return _workout_response(workout, items=items, prescription=await _prescription(session, workout_id))
 
 
 @router_v2.get("/workouts/{workout_id}/sessions", response_model=WorkoutSessionsResponse)
@@ -679,6 +728,7 @@ async def add_workout_item(
         complex_id=workout_id, exercise_id=body.exercise_id,
         protocol=validated_protocol.model_dump(mode="json"),
     )
+    await _sync_definition_head(session, workout_id)
     await session.commit()
     return (await _build_workout_item_responses(session, [item]))[0]
 
@@ -716,6 +766,7 @@ async def update_workout_item(
         new_protocol = validated_protocol.model_dump(mode="json")
 
     updated = await program_repo.update_workout_item(item_id, exercise_id=new_exercise_id, protocol=new_protocol)
+    await _sync_definition_head(session, workout_id)
     await session.commit()
     return (await _build_workout_item_responses(session, [updated]))[0]
 
@@ -738,6 +789,7 @@ async def delete_workout_item(
     if item is None or item.complex_id != workout_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
     await program_repo.delete_workout_item(item_id)
+    await _sync_definition_head(session, workout_id)
     await session.commit()
 
 
@@ -760,10 +812,11 @@ async def move_workout_item(
     if item is None or item.complex_id != workout_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
     await program_repo.move_workout_item(item_id, direction=body.direction)
+    await _sync_definition_head(session, workout_id)
     await session.commit()
     refreshed_complex_items = await program_repo.list_complex_items(workout_id)
     items = await _build_workout_item_responses(session, refreshed_complex_items)
-    return _workout_response(workout, items=items)
+    return _workout_response(workout, items=items, prescription=await _prescription(session, workout_id))
 
 
 @router_v2.patch("/workouts/{workout_id}", response_model=WorkoutResponse)
@@ -782,6 +835,7 @@ async def update_workout_title(
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
     await ProgramRepository(session).update_complex_title(workout_id, body.title)
+    await _sync_definition_head(session, workout_id)
     await session.commit()
     refreshed = await ProgramRepository(session).get_complex(workout_id)
     return _workout_response(refreshed)
@@ -823,9 +877,10 @@ async def duplicate_workout(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
     name = f"{workout.name} (копия)"[:255]
     copy = await program_repo.duplicate_workout(workout, owner_user_id=user.id, name=name)
+    await _sync_definition_head(session, copy.id)
     await session.commit()
     items = await _build_workout_item_responses(session, await program_repo.list_complex_items(copy.id))
-    return _workout_response(copy, items=items)
+    return _workout_response(copy, items=items, prescription=await _prescription(session, copy.id))
 
 
 # --- План ------------------------------------------------------------------------------

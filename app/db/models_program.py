@@ -92,6 +92,25 @@ class MediaAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class ExerciseCategory(Base):
+    """Категория упражнения (issue #303, WORKOUT_DOMAIN_V2 §2): slug — внутренний ключ сида,
+    display_name — единственный источник подписи в UI (E1). parent_id — служебные подкатегории
+    (роли курса, факультативы) под «Подтягиваниями». Справочник засевается миграцией
+    b7d2e9f4a1c3 из app.domain.exercise_identity.CATEGORY_SEEDS."""
+
+    __tablename__ = "exercise_categories"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("exercise_categories.id"), nullable=True,
+    )
+    sort_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    is_service: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class Exercise(Base):
     """Каталожная единица. variants — список исполнений по снаряду/целевому
     RPE ({code, equipment_type, target_rpe, description}), свободная JSONB-
@@ -122,6 +141,23 @@ class Exercise(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Идентичность v2 (issue #303, WORKOUT_DOMAIN_V2 §2, E1–E4). Все nullable: старый код вставляет
+    # строки без них, читатели падают обратно на name/category (app.domain.exercise_identity).
+    # name/category/subcategory остаются как есть — legacy, не удаляются в этой кампании.
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    slug: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    category_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("exercise_categories.id"), nullable=True,
+    )
+    subcategory_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("exercise_categories.id"), nullable=True,
+    )
+    # public | internal | user (§2); NULL — строка вставлена старым кодом после бэкфилла.
+    visibility: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # E2: каноническая идентичность для истории/аналитики (NULL = само упражнение).
+    analytics_exercise_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("exercises.id", ondelete="SET NULL"), nullable=True,
+    )
 
 
 class Complex(Base):
@@ -150,6 +186,45 @@ class Complex(Base):
     # уничтожается (снимки сессий и PlanItem могли на него ссылаться), а
     # скрывается из всех пользовательских выборок.
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Голова определения v2 (issue #303, WORKOUT_DOMAIN_V2 §5): неизменяемая версия, которую
+    # сейчас показывают Detail/каталог. NULL — у тренировки пока нет валидной v2-версии (пустая
+    # или неоднозначная V1-голова). use_alter — цикл FK complexes ↔ workout_definition_versions.
+    current_version_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "workout_definition_versions.id", ondelete="SET NULL", use_alter=True,
+            name="fk_complexes_current_version_id",
+        ),
+        nullable=True,
+    )
+
+
+class WorkoutDefinitionVersion(Base):
+    """Неизменяемая версия содержимого тренировки (issue #303, AD-2, WORKOUT_DOMAIN_V2 §5).
+
+    content — нормализованный WorkoutContent v2 (app.domain.workout_definition.to_dict),
+    content_hash — sha256 канонического JSON. Версии append-only и монотонны (§5, решение B1):
+    содержимое, равное ТЕКУЩЕЙ версии, новой не создаёт; любое другое — version_no = max + 1,
+    поэтому хеш может повторяться у разных номеров (A → B → A = v1, v2, v3; хеш НЕ уникален).
+    Строки не обновляются никогда — это гарантирует триггер
+    trg_workout_definition_versions_immutable (миграция b7d2e9f4a1c3), не только код.
+    ON DELETE CASCADE от complexes — только чтобы не ломать существующие пути удаления
+    пользователя/QA-сброса; архивирование тренировки (archived_at) версии не трогает."""
+
+    __tablename__ = "workout_definition_versions"
+    __table_args__ = (
+        UniqueConstraint("workout_definition_id", "version_no", name="uq_wdv_definition_version_no"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    workout_definition_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("complexes.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class ComplexItem(Base):

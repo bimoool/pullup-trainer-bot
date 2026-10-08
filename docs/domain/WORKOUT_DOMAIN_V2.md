@@ -165,11 +165,25 @@ preparation). Authors may set any value ≥ 0.
 WorkoutDefinitionVersion
   id, workout_definition_id, version_no (1..), schema_version (2),
   content JSONB (normalized), content_hash (sha256 of canonical JSON), created_at
-  UNIQUE (workout_definition_id, version_no); UNIQUE (workout_definition_id, content_hash)
+  UNIQUE (workout_definition_id, version_no)        -- content_hash is NOT unique per definition
 ```
 
-- Saving a definition whose normalized hash equals the latest → no new version (idempotent).
+Versions are **append-only and monotonic** (owner decision B1, #303 review):
+
+- Saving content whose normalized hash equals the **current** version (`complexes.current_version_id`)
+  → no new version (semantic no-op, idempotent).
+- Saving any content different from the current version → a new row with
+  `version_no = max(version_no) + 1`, and `current_version_id` moves to it. The pointer only ever
+  moves forward to the newly created head; it is never re-pointed backwards to an older row merely
+  because that row's `content_hash` matches.
+- Historical content hashes may therefore repeat across different version numbers:
+  `A → B → A` produces `v1 = A, v2 = B, v3 = A` with current = v3 (`v3.content_hash = v1.content_hash`).
+  Saving `A` again while current = v3 creates nothing. Invariant: `current.version_no = max(version_no)`
+  whenever the pointer is set.
 - `complexes.current_version_id` points to the head. Archiving a definition never deletes versions.
+- **Reading a stored version is lenient** (see §9.12): verify the stored `content_hash` against the stored
+  JSON as written for its `schema_version`, then parse with a backward-compatible reader. Strict
+  `normalize()` applies to **new writes** only; history is never re-normalized or rewritten on read.
 
 ```
 PrescriptionSnapshot (stored on TrainingSession, self-contained)
@@ -226,3 +240,64 @@ V1 (`ComplexItem.protocol`, 4 types) maps deterministically to v2 blocks:
 `rounds = total / (work + rest)` (must divide exactly; otherwise reject as invalid V1 — none in
 seed). `reps_sets{source: progression}` → `source = progression(role)`. The W-ladder seed row is
 re-authored as the explicit 17-set ladder (new version; old sessions keep their snapshot).
+
+## 9. Implementation notes (Wave 1a, #303)
+
+Where the contract left a choice open, Wave 1a decided as follows (code: `app/domain/workout_definition.py`,
+`app/db/workout_definition_store.py`, migration `b7d2e9f4a1c3` + its frozen helper
+`app/db/migrations/_frozen/b7d2e9f4a1c3_backfill.py`). None changes a rule above.
+
+1. **Rest defaults (§3.2 п.2, §3.5).** A missing *or* `null` `rest_after_seconds` on a non-last set resolves to
+   `default_rest_seconds ?? 90` (the literal `??` of §3.2); "no rest phase" between sets is written as `0`. An
+   explicit rest on the last set of a block is **rejected** (W4, 422), never silently dropped. Same rule for
+   `rest_after_block_seconds`: missing/`null` on a non-last block → default (= the V1 live default 90 s);
+   non-null on the last block → 422.
+2. **Set role default.** `max_reps`/`max_time` default to `role = max`, others to `working`.
+3. **Interval blocks** have `extra_sets_allowed = false` (true is rejected); `prep_seconds` default 5.
+4. **Shorthand** accepted on input only: `{sets: N, reps: R | seconds: S, rest_seconds?}`; the stored form is
+   always explicit and fully populated (every key present, `null` not absent) so one meaning has one JSON and
+   one hash.
+5. **W5 across versions.** A block key may not mean a different exercise in *any* version of the same
+   definition — checked against the key→exercise pairs of **all** prior versions, not only the current one
+   (`assert_block_keys_stable`, enforced inside `save_version` for every write path). A key removed in one
+   version and re-introduced later must still name the exercise it named before. Blocks derived from the V1
+   head use `key = v1_block_key(item_id, exercise_id) = "i<complex_item_id>e<exercise_id>"`: a V1 key can
+   never denote two exercises — changing an item's exercise in the Builder yields a new key (a new block
+   identity), while ordinary edits (reps, rest, order, title) keep the key stable.
+6. **Append-only versions (owner decision B1).** See §5: no-op only against the *current* version; any other
+   content → `max(version_no) + 1`; `current_version_id` never moves backwards; hashes may repeat across
+   version numbers. There is no `UNIQUE (definition, content_hash)`.
+7. **Immutability** is enforced by a DB trigger (`UPDATE` on `workout_definition_versions` raises), not only by
+   code. Versions cascade-delete only with their definition (user deletion / QA reset); archiving never deletes.
+8. **System content.** Version 1 = the V1 head mapped by §8 (W-лесенка v1 is honestly «17 × 3»); version 2
+   (current) = re-authored W-ladder / Максимум 180-120-60 / 3 минуты `record_reps_per_round`, applied only if
+   the V1 head equals the seeded one (otherwise reported). «Объём ×5» stays v1.
+9. **User workouts.** The Builder still writes V1 (`complex_items.protocol`); every head mutation re-syncs the
+   current version in the same transaction (idempotent), an empty/ambiguous head clears the pointer. A v2
+   authoring UI is a separate P2.
+10. **Migration is frozen** (#303 review B2). Revision `b7d2e9f4a1c3` imports only
+    `app/db/migrations/_frozen/b7d2e9f4a1c3_backfill.py` (stdlib + SQLAlchemy): its own copy of the V1 → v2
+    mapping subset, the normalization defaults it needs, canonical JSON, sha256, category seeds/maps, system
+    exercise slugs and the re-authored system literals. It never imports `app.domain.*` or other mutable
+    runtime code, so a later change of runtime semantics cannot change what this revision writes. Parity
+    tests pin today's equivalence frozen ≡ runtime on every migration vector; literal golden SHA-256 hashes
+    pin the system contents this revision produces and must never be edited when runtime semantics change.
+    `scripts/backfill_workout_definition_v2.py` re-runs the same frozen backfill.
+11. **Not yet consumed:** Live still starts from the V1 `workout_snapshot` (W-ladder executes as 17 × 3 until
+    #306/#307 consume `PrescriptionSnapshot`); course STEP blocks still have no definition version
+    (progression-sourced main workout is #305). Consumers wired to `describe()` now: Workout Detail, Home
+    workout cards, Pre-screen (via `WorkoutResponse.prescription`) and `POST /api/v2/workouts/preview` (Builder
+    preview API). The Plan screen renders no prescription text today (nothing to rewire); the Builder editor
+    still lists its own V1 items (identical meaning for V1-authored workouts) until the v2 authoring UI.
+12. **Lenient historical reads.** `content_from_stored` / repository record reads / `snapshot_from_dict`:
+    (a) the integrity check hashes the *stored* JSON with the canonical serialization of its
+    `schema_version` (for schema 2: `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`,
+    sha256) — not today's `normalize()` + serializer; (b) parsing is per `schema_version` with a
+    backward-compatible reader: optional fields introduced later default when absent, unknown keys are
+    ignored, no defaults are re-derived and nothing is rewritten. Strict `normalize()` is for new writes.
+13. **Downgrade below `b7d2e9f4a1c3` is lossy.** Downgrade drops `workout_definition_versions` and the
+    exercise identity columns. Version history created after the upgrade (Builder edits, re-authored
+    versions, any `v2+` rows) is **lost**. A later upgrade rebuilds only what can be derived from the
+    surviving V1 heads (`complex_items`) plus the frozen system literals — one version per derivable head
+    (+ the re-authored system versions); arbitrary user version history is **not** restored identically.
+    Historical sessions are unaffected (they do not reference these tables).

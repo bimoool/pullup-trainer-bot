@@ -70,6 +70,8 @@ RESET_STEPS: tuple[tuple[str, str, str], ...] = (
     ("workout_sets", "user_id = :uid", "legacy"),
     ("baselines", "user_id = :uid", "legacy"),
     ("equipment_items", "user_id = :uid", "legacy"),
+    # Issue #303: версии своих тренировок (ON DELETE CASCADE и так, но явный шаг — честный dry-run).
+    ("workout_definition_versions", f"workout_definition_id IN ({_OWN_COMPLEXES})", "own workouts/exercises"),
     ("complex_items", f"complex_id IN ({_OWN_COMPLEXES})", "own workouts/exercises"),
     ("complexes", "owner_user_id = :uid", "own workouts/exercises"),
     ("exercises", "owner_user_id = :uid", "own workouts/exercises"),
@@ -81,7 +83,7 @@ PRESERVED_USER_TABLES = frozenset({"users", "subscriptions", "pending_payments"}
 # System / shared content and global state — never touched; counted before/after.
 SYSTEM_TABLES = frozenset({
     "programs", "program_items", "assessment_protocols", "collections", "collection_items", "media_assets",
-    "progression_strategy_profiles", "sheets_sync_state", "weekly_digests",
+    "progression_strategy_profiles", "sheets_sync_state", "weekly_digests", "exercise_categories",
 })
 # users columns that survive; everything else is reset to its model default.
 PRESERVED_USER_COLUMNS = frozenset({
@@ -96,6 +98,11 @@ SYSTEM_COUNTS = {
     "system_complex_items": (
         "SELECT count(*) FROM complex_items WHERE complex_id IN (SELECT id FROM complexes WHERE owner_user_id IS NULL)"
     ),
+    "system_workout_versions": (
+        "SELECT count(*) FROM workout_definition_versions WHERE workout_definition_id IN "
+        "(SELECT id FROM complexes WHERE owner_user_id IS NULL)"
+    ),
+    "exercise_categories": "SELECT count(*) FROM exercise_categories",
     "assessment_protocols": "SELECT count(*) FROM assessment_protocols",
     "collections": "SELECT count(*) FROM collections",
     "collection_items": "SELECT count(*) FROM collection_items",
