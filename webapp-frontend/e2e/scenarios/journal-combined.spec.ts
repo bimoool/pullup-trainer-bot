@@ -48,8 +48,9 @@ test("Планы → Подтягивания/Планка → Complete → Жу
   await page.getByRole("button", { name: "Планы" }).click();
 
   // --- Подтягивания: оба блока в одной Session ---
+  // #304: «Подтягивания» × 3 — три занятия; стартуем первое.
   await page.locator(".plan-week-day-group", { hasText: "Подтягивания" })
-    .getByRole("button", { name: /^Начать: / }).click();
+    .getByRole("button", { name: /^Начать: / }).first().click();
   const pullupsStartPromise = page.waitForResponse(
     (response) => response.url().includes("/api/v2/sessions/live") && response.status() === 200,
   );

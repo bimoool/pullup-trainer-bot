@@ -349,7 +349,7 @@ async def test_no_auto_enrol_and_removed_course_is_not_regenerated(session):
     assert (await session.execute(select(func.count()).select_from(ProgramInclusion))).scalar_one() == 1
     for row in aged["aggregates"][4]:
         await session.refresh(row)
-        assert (row.legacy_aggregate, row.status) == (True, "open")  # остаются историей недели
+        assert (row.legacy_aggregate, row.status) == (False, "open")  # строки снятого курса — как были
 
 
 async def test_guarded_repair_script_on_aged_profile_then_noop(session):
@@ -381,3 +381,65 @@ async def test_run_all_second_apply_has_zero_mutations(session, test_dsn):
         assert code == 0 and again["total_mutations"] == 0, again
     finally:
         await engine.dispose()
+
+
+async def test_course_without_materializable_slots_keeps_its_rows_startable(session):
+    """Регрессия (найдено E2E #304): синтетический STEP-курс без ProgramItem (строки PlanItem заведены
+    напрямую, как scripts/e2e_seed.py::seed_v2_session_ready) — занятий на замену нет, значит агрегатные
+    строки НЕ выводятся из плана и стартуются как раньше; повторная сходимость — 0 изменений."""
+    import uuid
+
+    from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
+    from app.web import routes_v2
+    from tests.test_web._v2_client import v2_get, v2_post
+
+    user = await UserRepository(session).create(telegram_id=6161, username="synthetic")
+    user = await UserRepository(session).update_subscription_cache(
+        user.id, status=SubscriptionStatus.TRIAL, expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step synth", config={})
+    session.add(profile)
+    await session.flush()
+    program = Program(
+        name="E2E Live Session", goal="e2e", structure_type=ProgramStructureType.RECURRING, category="synth_304",
+        progression_strategy_id=profile.id, config={"block_a": {"base_target": 10, "work_sets": 3}},
+    )
+    session.add(program)
+    await session.flush()
+    session.add_all([
+        Exercise(name="Блок A", metric_type=MetricType.REPS, category="synth_304", subcategory="block_a"),
+        Exercise(name="Блок Б", metric_type=MetricType.REPS, category="synth_304", subcategory="block_b"),
+    ])
+    await session.flush()
+    inclusion = await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+    )
+    plan = await TrainingPlanRepository(session).get_for_user(user.id)
+    rows = []
+    for item in inclusion.snapshot["exercises"]:
+        row = PlanItem(
+            training_plan_id=plan.id, exercise_id=item["exercise_id"], count_per_week=3,
+            program_inclusion_id=inclusion.id,
+        )
+        session.add(row)
+        rows.append(row)
+    await session.commit()
+
+    original = routes_v2._utcnow
+    routes_v2._utcnow = lambda: datetime.now(UTC)
+    try:
+        listed = (await v2_get(session, user.telegram_id, "/api/v2/plan")).json()["plan"]["plan_items"]
+    finally:
+        routes_v2._utcnow = original
+    assert sorted(i["id"] for i in listed) == sorted(r.id for r in rows)
+    assert all(i["status"] == "open" and not i["legacy_aggregate"] for i in listed)
+    started = await v2_post(session, user.telegram_id, "/api/v2/sessions/live", {
+        "client_session_id": str(uuid.uuid4()), "plan_item_ids": [r.id for r in rows],
+    })
+    assert started.status_code == 200, started.text
+    assert len(started.json()["blocks"]) == 2
+    _, again = await PlanConvergenceService(session).converge_user_plan(
+        training_plan_id=plan.id, today=datetime.now(UTC).date(),
+    )
+    assert again.mutations == 0, again.as_dict()
+

@@ -853,11 +853,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         >
           Мои тренировки
         </Button>
+      </div>
+      {/* issue #304 — минимальный вход «Свой план» (объём по неделям); отдельной строкой — шапка «Планов»
+          на 320px уже занята названием и «Мои тренировки». */}
+      <div className="plans-custom-plan-entry">
         <Button
-          className="action-button" size="s" mode="bezeled" data-testid="plans-custom-plan"
+          size="s" mode="plain" data-testid="plans-custom-plan"
           onClick={() => setMyWorkoutsView({ kind: "custom-plan" })}
         >
-          Свой план
+          Свой план по неделям
         </Button>
       </div>
       {plan.customPlans.length > 0 && (

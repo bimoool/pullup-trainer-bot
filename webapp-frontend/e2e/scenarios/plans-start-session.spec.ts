@@ -14,7 +14,8 @@ test("«Планы» → Подтягивания → Начать → live sess
 
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toBeVisible();
+  // #304: «Подтягивания» × 3 в неделю — три строки-занятия.
+  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(3);
 
   // Обычный пользователь не видит admin-вкладку — подтверждаем прямо в
   // тесте, чтобы Golden Journey нельзя было случайно пройти через lab.

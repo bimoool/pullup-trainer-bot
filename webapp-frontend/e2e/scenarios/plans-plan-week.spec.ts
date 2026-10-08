@@ -33,12 +33,13 @@ test("«Планы»: видна текущая неделя плана, эле�
   expect(week.week_number).toBe(1);
   expect(week.phase).toBe("base");
 
-  expect(plan.plan_items).toHaveLength(2);
+  // #304: одна строка = одно занятие — «вторник × 1» и «свободный пул × 3» = 4 занятия.
+  expect(plan.plan_items).toHaveLength(4);
   for (const item of plan.plan_items) {
     expect(item.plan_week_id).toBe(week.id);
   }
   expect(plan.plan_items.filter((item) => item.day_of_week !== null)).toHaveLength(1);
-  expect(plan.plan_items.filter((item) => item.day_of_week === null)).toHaveLength(1);
+  expect(plan.plan_items.filter((item) => item.day_of_week === null)).toHaveLength(3);
 
   // Визуально — текущая неделя подписана явно ("текущая"), элементы видны и
   // разделены на "по дням"/"свободный пул" (не смешаны в один список).
@@ -56,9 +57,9 @@ test("«Планы»: видна текущая неделя плана, эле�
   // #286 B: название и чип «0/1» — отдельные элементы одной строки.
   const weekRow = (counter: string) => page.getByTestId("plans-row")
     .filter({ has: page.getByTestId("plan-item-counter").filter({ hasText: new RegExp(`^${counter}$`) }) });
-  await expect(weekRow("0/1")).toContainText("Расписание недели (E2E)");
+  await expect(weekRow("0/1")).toHaveCount(4);
+  await expect(weekRow("0/1").first()).toContainText("Расписание недели (E2E)");
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(weekRow("0/3")).toContainText("Расписание недели (E2E)");
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);

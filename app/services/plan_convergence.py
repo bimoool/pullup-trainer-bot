@@ -257,11 +257,10 @@ class PlanConvergenceService:
             await self._ensure_program_occurrences(inclusions_by_id[inclusion_id], slots, week, report)
 
         for inclusion_id, aggregate_rows in aggregates.items():
-            if inclusion_id not in slots_by_inclusion:
-                # Курс снят (или не повторяющийся): строки остаются историей недели, как раньше.
-                for row in aggregate_rows:
-                    row.legacy_aggregate = True
-                    report.aggregates_frozen += 1
+            if not slots_by_inclusion.get(inclusion_id):
+                # Курс без занятий на замену — снят, не повторяющийся (FIXED/SINGLE_LESSON) или без
+                # материализуемых слотов: строки текущей/будущей недели остаются как были (стартуются и
+                # считаются по-старому). Агрегат выводится из плана ТОЛЬКО вместе с заменой занятиями.
                 continue
             await self._expand_program_aggregates(
                 inclusions_by_id[inclusion_id], slots_by_inclusion[inclusion_id], aggregate_rows, week,
@@ -333,9 +332,13 @@ class PlanConvergenceService:
         self, inclusion: ProgramInclusion, slots: list[ProgramSlot], aggregate_rows: list[PlanItem], week: PlanWeek,
         *, tz, report: ConvergenceReport,
     ) -> None:
-        """MIGRATION_V2 §5 п.2: агрегат с k сессиями → k засчитанных занятий по порядку performed_at."""
-        aggregate_ids = {row.id for row in aggregate_rows}
+        """MIGRATION_V2 §5 п.2: агрегат с k сессиями → k засчитанных занятий по порядку performed_at.
+        Строка, которой не соответствует ни один слот (нет занятия на замену), не выводится из плана."""
         slot_by_row = {row.id: self._slot_for_row(row, inclusion, slots) for row in aggregate_rows}
+        aggregate_rows = [row for row in aggregate_rows if slot_by_row[row.id] is not None]
+        if not aggregate_rows:
+            return
+        aggregate_ids = {row.id for row in aggregate_rows}
         occurrences = [
             row for row in await self._plans.list_items_by_origin(week.id)
             if row.program_inclusion_id == inclusion.id and row.occurrence_index is not None

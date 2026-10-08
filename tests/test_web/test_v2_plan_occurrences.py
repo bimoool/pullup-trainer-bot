@@ -365,7 +365,7 @@ async def test_j6_custom_plan_2_2_0_2_2_0_exact_occurrence_counts(session, user:
     assert done.status_code == 200
     plan = await _plan(session, user)
     assert (_summary(plan, 2)["completed"], _summary(plan, 2)["planned"]) == (1, 2)
-    assert [i["state"] for i in _week_items(plan, 2)][0] == "completed"
+    assert _week_items(plan, 2)[0]["state"] == "completed"
     journal = (await v2_get(session, user.telegram_id, "/api/v2/sessions?status=completed")).json()["sessions"]
     entry = next(e for e in journal if e["id"] == started.json()["id"])
     assert (entry["title"], entry["plan_item_id"]) == ("Моя силовая 304", week2[0]["id"])

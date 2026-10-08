@@ -519,7 +519,8 @@ for (const width of WIDTHS) {
 
 // --- Plans week (#258): степпер недели, счётчики «сделано/план», read-only прошлые недели --------
 // Seed: scripts/e2e_seed.py plan_week_stepper — прошлая неделя («Планка» 1/1) и текущая
-// («Планка» 1/2, «Отжимания» 0/1); только чтение, поэтому retry безопасен.
+// («Планка» × 2 с одной сессией, «Отжимания» × 1); только чтение, поэтому retry безопасен.
+// #304: одна строка = одно занятие — «Планка × 2» это две строки «1/1» и «0/1».
 const PLANS_WEEK_USERS = { 320: { id: 990_001, theme: "light" }, 390: { id: 990_002, theme: "dark" } } as const;
 
 for (const width of WIDTHS) {
@@ -544,11 +545,11 @@ for (const width of WIDTHS) {
       await expect(next).toBeEnabled();
       await expect(prev).toBeEnabled();
       await expect(progress).toContainText("Текущая неделя · 1 из 3");
-      await expect(counters).toHaveText(["1/2", "0/1"]);
+      await expect(counters).toHaveText(["1/1", "0/1", "0/1"]);
       await expect(page.getByTestId("plans-row").getByRole("button", { name: /^Начать: / })).toHaveCount(2); // строки недели, не блок «Сегодня»
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
       // #286 B: «Перенести»/«Убрать из плана» — в листе «⋯»; на строке — одна «⋯» вместо четырёх пилюль.
-      await expect(page.getByTestId("plans-row-more")).toHaveCount(2);
+      await expect(page.getByTestId("plans-row-more")).toHaveCount(3);
       await expectNoHorizontalOverflow(page, "Plans week: текущая");
       const currentLabel = await label.textContent();
 

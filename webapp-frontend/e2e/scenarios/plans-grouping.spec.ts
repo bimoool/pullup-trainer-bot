@@ -10,7 +10,11 @@ import { openAppAs } from "../fixtures/setup";
 // слипается с группой.
 const TELEGRAM_ID = 900_014;
 
-test("«Планы»: два PlanItem одной инклюзии с одинаковым day_of_week — ОДНА карточка, не две", async ({ page }) => {
+// issue #304 (AD-4): одна строка плана = одно занятие. Курс из двух элементов (Блок A / Блок Б) одного
+// дня — по-прежнему ОДНА тренировка (блоки A и Б вместе, без отдельных строк «Блок A»/«Блок Б»), но
+// «× 3 в неделю» теперь три строки-занятия «Подтягивания (E2E group)», каждая «0/1»; ручная строка
+// «× 2» — две своих строки, с курсом не слипаются.
+test("«Планы»: курс A+Б одного дня — занятия-строки курса, без «Блок A»/«Блок Б», ручная — отдельно", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   const planResponsePromise = page.waitForResponse(
@@ -21,38 +25,27 @@ test("«Планы»: два PlanItem одной инклюзии с одина�
 
   const planResponse = await planResponsePromise;
   const plan = (await planResponse.json()).plan as {
-    plan_items: { id: number; program_inclusion_id: number | null; day_of_week: number | null }[];
+    plan_items: {
+      id: number; program_inclusion_id: number | null; day_of_week: number | null; occurrence_index: number | null;
+    }[];
   };
 
-  // Данные — три строки на входе: 2 от инклюзии (одинаковый day_of_week),
-  // 1 ручная. Сам факт трёх строк в API не значит трёх карточек в UI —
-  // именно это и проверяем ниже.
-  expect(plan.plan_items).toHaveLength(3);
-  const grouped = plan.plan_items.filter((item) => item.program_inclusion_id !== null);
-  expect(grouped).toHaveLength(2);
-  expect(new Set(grouped.map((item) => item.day_of_week))).toEqual(new Set([null]));
+  const course = plan.plan_items.filter((item) => item.program_inclusion_id !== null);
+  expect(course.map((item) => item.occurrence_index)).toEqual([1, 2, 3]);
+  expect(new Set(course.map((item) => item.day_of_week))).toEqual(new Set([null]));
 
-  // Главная проверка — ровно ОДНА строка "Подтягивания (E2E group)" в недельном
-  // списке (свободный пул), не "Блок A" и "Блок Б" отдельными строками. Название
-  // курса ещё раз встречается в карточке «Текущий план» (#286 B) — это не строка недели.
   const weekRow = (name: string) => page.getByTestId("plans-row").filter({ hasText: name });
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(1);
+  await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(3);
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
-
-  // Ручной PlanItem — своя отдельная карточка, не слился ни с группой, ни
-  // потерялся.
-  await expect(weekRow("Растяжка")).toHaveCount(1);
+  await expect(weekRow("Растяжка")).toHaveCount(plan.plan_items.length - course.length);
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);
 
-  // Сохраняется после перезагрузки страницы (не только на первом рендере
-  // из кэша навигации).
   await page.reload();
   await page.getByRole("button", { name: "Планы" }).click();
-  await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(1);
-  await expect(weekRow("Растяжка")).toHaveCount(1);
+  await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(3);
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
 });
