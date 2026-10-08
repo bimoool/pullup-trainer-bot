@@ -11,6 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from app.db.migrations._frozen.b7d2e9f4a1c3_backfill import run_backfill
+
 revision: str = 'b7d2e9f4a1c3'
 down_revision: str | None = 'c3f7a9e2d5b1'
 branch_labels: str | Sequence[str] | None = None
@@ -26,15 +28,22 @@ depends_on: str | Sequence[str] | None = None
 #   * complexes.current_version_id — NULLABLE FK, ON DELETE SET NULL.
 # complex_items.protocol (V1) не меняется и остаётся читаемым.
 #
-# Backfill — app/db/workout_definition_backfill.run_backfill: детерминированно (ORDER BY id), по
-# натуральным ключам, повторный прогон = 0 изменений (scripts/backfill_workout_definition_v2.py
-# --dry-run показывает это на живой базе). Пишет только новые таблицы/колонки. Ни подписок, ни
-# programs.access_level, ни планов/включений/сессий/истории — не касается.
+# Backfill — app/db/migrations/_frozen/b7d2e9f4a1c3_backfill.run_backfill: ЗАМОРОЖЕННЫЙ помощник этой
+# ревизии (stdlib + SQLAlchemy, без app.domain.* и прочего рантайм-кода — WORKOUT_DOMAIN_V2 §9.10):
+# будущая правка рантайм-семантики не меняет того, что пишет эта ревизия. Детерминированно
+# (ORDER BY id), по натуральным ключам, повторный прогон = 0 изменений
+# (scripts/backfill_workout_definition_v2.py --dry-run показывает это на живой базе). Пишет только
+# новые таблицы/колонки. Ни подписок, ни programs.access_level, ни планов/включений/сессий/истории —
+# не касается. Версии append-only (WORKOUT_DOMAIN_V2 §5): хеш содержимого НЕ уникален в пределах
+# определения (A → B → A = v1, v2, v3), уникален только (definition, version_no).
 #
-# downgrade: удаляет только то, что добавила эта ревизия (контракт отката — MIGRATION_V2 §8:
-# откат кода всегда безопасен; откат схемы теряет лишь производные данные v2, которые повторный
-# upgrade детерминированно восстанавливает из V1-головы + литералов). Исторические строки
-# (сессии, их workout_snapshot) от этих таблиц не зависят.
+# downgrade: удаляет только то, что добавила эта ревизия. Откат схемы НИЖЕ этой ревизии ТЕРЯЕТ
+# ДАННЫЕ (WORKOUT_DOMAIN_V2 §9.13, MIGRATION_V2 §8): вся история версий, созданная после upgrade
+# (правки Builder'а, v2+, переписанные версии), удаляется вместе с таблицей. Повторный upgrade
+# восстанавливает лишь то, что выводится из уцелевших V1-голов (complex_items) и замороженных
+# литералов, — по одной версии на голову (+ переписанные системные); произвольная история версий
+# пользователя НЕ восстанавливается в прежнем виде. Исторические строки (сессии, их
+# workout_snapshot) от этих таблиц не зависят и откатом не затрагиваются.
 
 
 def upgrade() -> None:
@@ -81,7 +90,6 @@ def upgrade() -> None:
         sa.Column('content_hash', sa.String(length=64), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint('workout_definition_id', 'version_no', name='uq_wdv_definition_version_no'),
-        sa.UniqueConstraint('workout_definition_id', 'content_hash', name='uq_wdv_definition_content_hash'),
     )
     op.create_index(
         'ix_workout_definition_versions_workout_definition_id', 'workout_definition_versions',
@@ -103,8 +111,6 @@ def upgrade() -> None:
         'fk_complexes_current_version_id', 'complexes', 'workout_definition_versions',
         ['current_version_id'], ['id'], ondelete='SET NULL',
     )
-
-    from app.db.workout_definition_backfill import run_backfill
 
     run_backfill(op.get_bind())
 

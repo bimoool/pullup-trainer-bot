@@ -44,7 +44,7 @@ separate, later decision.
 
 | Target | Rule | Ambiguity handling |
 |---|---|---|
-| `workout_definition_versions` | V1 protocol → v2 content (WORKOUT §8); `content_hash` dedups | V1 interval not divisible → logged, version not created, workout flagged for review |
+| `workout_definition_versions` | V1 protocol → v2 content (WORKOUT §8); re-run is a no-op because content equal to the *current* version creates nothing (append-only, WORKOUT §5) | V1 interval not divisible → logged, version not created, workout flagged for review |
 | W-ladder system workout | new version with explicit 17-set ladder; old sessions keep their snapshot | — |
 | `exercise_categories` + `analytics_exercise_id` | table of string → category id; role/elective exercises → public «Подтягивания» | unknown strings → «Без категории» row, reported |
 | `program_inclusions.progression_state.block_b.work_sets` | absent → 4 | present → untouched |
@@ -118,6 +118,12 @@ writes only new columns/tables and is not reverted. Flags allow turning a reader
 redeploy. Dual-write keeps legacy tables authoritative until cutover, so rollback before cutover
 loses nothing. After cutover, rollback = flag off + legacy reads (native rows written meanwhile are
 already mirrored to legacy by dual-write until freeze; freeze happens only after Wave 4 sign-off).
+
+**Schema downgrade is not code rollback.** Downgrading the schema below a revision that created v2
+tables (first: `b7d2e9f4a1c3`, WORKOUT §9.13) drops those tables: v2 version history created after
+the upgrade is lost, and a re-upgrade rebuilds only what can be derived from the surviving V1 heads
+plus that revision's frozen literals. Never promise that arbitrary user version history survives a
+schema downgrade → upgrade cycle.
 
 ## 9. Implementation waves and parallelization
 

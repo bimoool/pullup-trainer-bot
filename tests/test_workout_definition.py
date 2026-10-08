@@ -27,8 +27,10 @@ from app.domain.workout_definition import (
     V1MappingError,
     WorkoutContentError,
     assert_block_keys_stable,
+    block_key_pairs,
     build_prescription_snapshot,
     canonical_json,
+    content_from_stored,
     content_from_v1,
     content_hash,
     describe,
@@ -37,6 +39,7 @@ from app.domain.workout_definition import (
     normalize,
     snapshot_from_dict,
     snapshot_to_dict,
+    stored_content_hash,
     to_dict,
     total_target_reps,
 )
@@ -282,9 +285,24 @@ def test_w5_block_key_cannot_move_to_another_exercise_between_versions():
     old = normalize(_one_block(sets=1, reps=1))
     new = normalize({"title": "T", "blocks": [{"key": "A", "exercise_id": 2, "sets": 1, "reps": 1}]})
     with pytest.raises(WorkoutContentError) as exc:
-        assert_block_keys_stable(old, new)
+        assert_block_keys_stable(block_key_pairs(old), new)
     assert exc.value.code == "W5"
-    assert_block_keys_stable(old, normalize(_one_block(sets=3, reps=1)))  # тот же ключ/упражнение — ок
+    assert_block_keys_stable(block_key_pairs(old), normalize(_one_block(sets=3, reps=1)))  # тот же ключ — ок
+
+
+def test_w5_checks_all_prior_versions_not_only_current():
+    """Ключ A удалён в v2 и возвращён в v3 с другим упражнением — это коллизия с v1 (review B3)."""
+    v1 = normalize({"title": "T", "blocks": [
+        {"key": "A", "exercise_id": 1, "sets": 1, "reps": 1}, {"key": "B", "exercise_id": 2, "sets": 1, "reps": 1},
+    ]})
+    v2 = normalize({"title": "T", "blocks": [{"key": "B", "exercise_id": 2, "sets": 1, "reps": 1}]})
+    history = block_key_pairs(v1) + block_key_pairs(v2)
+    reused = normalize({"title": "T", "blocks": [{"key": "A", "exercise_id": 3, "sets": 1, "reps": 1}]})
+    assert_block_keys_stable(block_key_pairs(v2), reused)  # против одной текущей — «можно»…
+    with pytest.raises(WorkoutContentError) as exc:
+        assert_block_keys_stable(history, reused)  # …против всей истории — нельзя
+    assert exc.value.code == "W5"
+    assert_block_keys_stable(history, normalize(_one_block(sets=2, reps=2)))  # A снова = упражнение 1 — ок
 
 
 def test_w6_exercise_visibility():
@@ -380,7 +398,7 @@ EXERCISES = {
 def test_snapshot_static_self_contained_and_roundtrips():
     ladder = [{"kind": "reps", "target_reps": r, "rest_after_seconds": 10} for r in W_LADDER]
     del ladder[-1]["rest_after_seconds"]
-    content = normalize({"title": "W-лесенка", "blocks": [{"key": "i1", "exercise_id": 1, "sets": ladder}]})
+    content = normalize({"title": "W-лесенка", "blocks": [{"key": "i1e1", "exercise_id": 1, "sets": ladder}]})
     snapshot = build_prescription_snapshot(
         content, workout_definition_id=5, workout_definition_version_id=11, version_no=2,
         exercises=EXERCISES, resolved_at=NOW,
@@ -475,7 +493,7 @@ def test_v1_reps_sets_maps_to_explicit_sets():
         "type": "reps_sets", "prescription": {"source": "static", "sets": 5, "reps": 8}, "rest_seconds": 120,
     })])
     block = content.blocks[0]
-    assert block.key == "i4"
+    assert block.key == "i4e1"
     assert [s.target_reps for s in block.sets] == [8] * 5
     assert [s.rest_after_seconds for s in block.sets] == [120] * 4 + [None]
     assert describe(block) == "5 × 8"
@@ -505,8 +523,8 @@ def test_v1_time_sets_and_interval():
                   "starts_with": "work"}, order=0),
     ])
     first, second = content.blocks
-    assert first.key == "i1" and first.interval.rounds == 6 and first.interval.record_reps_per_round is False
-    assert second.key == "i2" and describe(second) == "2 × 0:30"
+    assert first.key == "i1e1" and first.interval.rounds == 6 and first.interval.record_reps_per_round is False
+    assert second.key == "i2e3" and describe(second) == "2 × 0:30"
 
 
 def test_v1_interval_not_divisible_is_rejected_not_guessed():
@@ -539,6 +557,20 @@ def test_v1_legacy_columns_only_when_unambiguous():
     ):
         with pytest.raises(V1MappingError):
             content_from_v1("L", [_item(1, None, **kwargs)])
+
+
+def test_v1_block_key_includes_exercise_so_it_never_names_two_exercises():
+    protocol = {"type": "reps_sets", "prescription": {"source": "static", "sets": 1, "reps": 1}, "rest_seconds": 0}
+    first = content_from_v1("K", [_item(7, protocol, exercise_id=1)]).blocks[0]
+    second = content_from_v1("K", [_item(7, protocol, exercise_id=2)]).blocks[0]
+    assert (first.key, second.key) == ("i7e1", "i7e2")
+    edited = content_from_v1("K", [_item(7, {**protocol, "rest_seconds": 60}, exercise_id=1, order=3)]).blocks[0]
+    assert edited.key == first.key  # обычная правка (отдых, порядок) ключ не меняет
+
+
+def test_v1_protocol_that_is_not_an_object_is_flagged_not_crash():
+    with pytest.raises(V1MappingError):
+        content_from_v1("K", [_item(1, ["reps_sets"])])
 
 
 def test_v1_empty_workout_rejected():
@@ -582,3 +614,65 @@ def test_legacy_category_mapping():
     assert category_slug_for_legacy("Подтягивания") == "pull_ups"
     assert category_slug_for_legacy("user") == "my_exercises"
     assert category_slug_for_legacy("что-то новое") == "uncategorized"
+
+
+# --- Снисходительное чтение истории (#303 review, §9.12) ---------------------------------------
+
+
+def _stored(**block_overrides) -> dict:
+    data = to_dict(normalize(_one_block(sets=3, reps=10, **block_overrides)))
+    return copy.deepcopy(data)
+
+
+def test_content_from_stored_verifies_hash_of_stored_json_not_renormalized():
+    data = _stored()
+    digest = content_hash(normalize(data))
+    assert stored_content_hash(data) == digest
+    assert content_from_stored(data, expected_hash=digest) == normalize(data)
+    tampered = copy.deepcopy(data)
+    tampered["blocks"][0]["sets"][0]["target_reps"] = 11
+    with pytest.raises(WorkoutContentError) as exc:
+        content_from_stored(tampered, expected_hash=digest)
+    assert exc.value.code == "hash_mismatch"
+
+
+def test_content_from_stored_accepts_rows_without_later_optional_fields_and_ignores_unknown():
+    """Строка, записанная до появления необязательного поля, читается без него; поле,
+    добавленное позже писателем, старому читателю не мешает; хеш — того, что хранится."""
+    old_row = _stored()
+    for block in old_row["blocks"]:
+        del block["load"], block["progression_role"], block["source"]
+        for set_ in block["sets"]:
+            del set_["load"]
+    newer_row = _stored()
+    newer_row["blocks"][0]["notes"] = "добавлено будущей схемой"
+    for row in (old_row, newer_row):
+        content = content_from_stored(row, expected_hash=stored_content_hash(row))
+        assert describe(content.blocks[0]) == "3 × 10"
+        assert content.blocks[0].source is BlockSource.STATIC and content.blocks[0].load is None
+    # Строгий normalize() такую историю отверг бы — для новых записей он и остаётся строгим.
+    with pytest.raises(WorkoutContentError):
+        normalize(newer_row)
+
+
+def test_content_from_stored_does_not_rederive_defaults():
+    row = _stored()
+    row["blocks"][0]["prep_seconds"] = 0  # не умолчание сегодняшнего normalize() (5 у первого блока)
+    content = content_from_stored(row, expected_hash=stored_content_hash(row))
+    assert content.blocks[0].prep_seconds == 0
+
+
+def test_snapshot_from_dict_is_lenient_for_later_optional_fields():
+    snap = snapshot_to_dict(build_prescription_snapshot(
+        normalize(_one_block(sets=3, reps=10)), workout_definition_id=1, workout_definition_version_id=1,
+        version_no=1, exercises=EXERCISES, resolved_at=NOW,
+    ))
+    snap["blocks"][0]["future_field"] = {"x": 1}
+    snap["blocks"][0]["sets"][0]["future_set_field"] = True
+    snap["blocks"][0]["interval"] = None
+    del snap["blocks"][0]["load"], snap["blocks"][0]["category_id"]
+    for set_ in snap["blocks"][0]["sets"]:
+        del set_["load"]
+    restored = snapshot_from_dict(snap)
+    assert describe(restored.blocks[0]) == "3 × 10"
+    assert restored.blocks[0].category_id is None

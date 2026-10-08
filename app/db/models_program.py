@@ -203,8 +203,10 @@ class WorkoutDefinitionVersion(Base):
     """Неизменяемая версия содержимого тренировки (issue #303, AD-2, WORKOUT_DOMAIN_V2 §5).
 
     content — нормализованный WorkoutContent v2 (app.domain.workout_definition.to_dict),
-    content_hash — sha256 канонического JSON. Сохранение того же содержимого новой версии не
-    создаёт (UNIQUE (definition, hash)). Строки не обновляются никогда — это гарантирует триггер
+    content_hash — sha256 канонического JSON. Версии append-only и монотонны (§5, решение B1):
+    содержимое, равное ТЕКУЩЕЙ версии, новой не создаёт; любое другое — version_no = max + 1,
+    поэтому хеш может повторяться у разных номеров (A → B → A = v1, v2, v3; хеш НЕ уникален).
+    Строки не обновляются никогда — это гарантирует триггер
     trg_workout_definition_versions_immutable (миграция b7d2e9f4a1c3), не только код.
     ON DELETE CASCADE от complexes — только чтобы не ломать существующие пути удаления
     пользователя/QA-сброса; архивирование тренировки (archived_at) версии не трогает."""
@@ -212,7 +214,6 @@ class WorkoutDefinitionVersion(Base):
     __tablename__ = "workout_definition_versions"
     __table_args__ = (
         UniqueConstraint("workout_definition_id", "version_no", name="uq_wdv_definition_version_no"),
-        UniqueConstraint("workout_definition_id", "content_hash", name="uq_wdv_definition_content_hash"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

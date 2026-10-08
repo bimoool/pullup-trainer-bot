@@ -1,7 +1,8 @@
 """WorkoutDefinition v2 backfill — re-run / audit of what migration b7d2e9f4a1c3 does (issue #303).
 
 The migration already runs the backfill on `alembic upgrade head`; this script runs EXACTLY the same
-function (app.db.workout_definition_backfill.run_backfill) so an operator can see, on a live DB:
+frozen function (app/db/migrations/_frozen/b7d2e9f4a1c3_backfill.run_backfill — tied to that revision,
+independent of runtime domain code) so an operator can see, on a live DB:
   * dry run (default): the full report, transaction ROLLED BACK — nothing written;
   * --apply: the same, committed. Idempotent: after the migration (or a previous --apply) it reports
     total_changes: 0 (MIGRATION_V2 §3 "apply-again ⇒ 0 changes").
@@ -19,7 +20,7 @@ import asyncio
 import sys
 
 from app.db.base import async_session_factory
-from app.db.workout_definition_backfill import report_lines, run_backfill
+from app.db.migrations._frozen.b7d2e9f4a1c3_backfill import report_lines, run_backfill
 
 
 async def main() -> int:

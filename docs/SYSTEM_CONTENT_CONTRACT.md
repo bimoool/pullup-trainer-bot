@@ -68,7 +68,9 @@ still readable). Each workout also gets immutable WorkoutDefinition versions (`d
 limitations listed above — W-лесенка = 17 explicit `reps` sets 5-4-3-2-1-2-3-4-5-4-3-2-1-2-3-4-5 rest 10 s;
 «Максимум подтягиваний» = 4 `max_reps` sets (no target) with rest 180/120/60; «3 минуты подтягиваний» =
 interval 6 × (10 work / 20 rest) with `record_reps_per_round`. Re-authoring happens only if the V1 head is
-exactly the seeded one (otherwise reported, not guessed). Literals: `app/db/workout_definition_backfill.py`.
+exactly the seeded one (otherwise reported, not guessed). Literals (frozen, tied to the revision, with literal
+golden SHA-256 hashes in `tests/test_scripts/test_frozen_b7d2e9f4a1c3_parity.py`):
+`app/db/migrations/_frozen/b7d2e9f4a1c3_backfill.py`.
 
 ## 5. Visibility rules
 

@@ -1,14 +1,15 @@
 """WorkoutDefinition v2 — версии и идентичность упражнений (issue #303).
 
-Запись версии — тот же save_version/sync_from_v1_head, что у миграции и скрипта бэкфилла
-(app.db.workout_definition_backfill), через AsyncSession.run_sync: одна реализация номера версии,
-блокировки и UNIQUE-ключей на все пути записи."""
+Запись версии — save_version/sync_from_v1_head (app.db.workout_definition_store) через
+AsyncSession.run_sync: одна рантайм-реализация номера версии, блокировки и W5 по всей истории.
+Чтение версии — снисходительное (content_from_stored, WORKOUT_DOMAIN_V2 §9.12): хеш сверяется
+с хранимым JSON, история не прогоняется через сегодняшний normalize()."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import Complex, Exercise, ExerciseCategory, WorkoutDefinitionVersion
-from app.db.workout_definition_backfill import save_version, set_current_version, sync_from_v1_head
+from app.db.workout_definition_store import save_version, set_current_version, sync_from_v1_head
 from app.domain.exercise_identity import analytics_identity, exercise_display_label
 from app.domain.workout_definition import (
     ExerciseInfo,
@@ -31,8 +32,8 @@ class WorkoutDefinitionRepository:
         self._session = session
 
     async def save_content(self, workout_definition_id: int, content: WorkoutContent) -> tuple[WorkoutDefinitionVersionRecord, bool]:
-        """Идемпотентно: тот же нормализованный хеш — существующая версия, created=False.
-        Указатель current_version_id переводится на сохранённую версию."""
+        """Append-only (WORKOUT_DOMAIN_V2 §5): содержимое = текущей версии — она же, created=False;
+        иначе новая версия max + 1, указатель current_version_id переходит на неё."""
         connection = await self._session.connection()
 
         def _save(sync_connection) -> tuple[int, bool]:

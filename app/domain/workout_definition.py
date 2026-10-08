@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -518,14 +518,24 @@ def normalize(
     return WorkoutContent(title=title, default_rest_seconds=default_rest_seconds, blocks=blocks)
 
 
-def assert_block_keys_stable(previous: WorkoutContent, new: WorkoutContent) -> None:
+def block_key_pairs(content: WorkoutContent) -> list[tuple[str, int]]:
+    """(key, exercise_id) каждого блока — то, что W5 сверяет между версиями."""
+    return [(block.key, block.exercise_id) for block in content.blocks]
+
+
+def assert_block_keys_stable(history: Iterable[tuple[str, int]], new: WorkoutContent) -> None:
     """W5 (вторая половина): ключ блока — его идентичность между версиями. Один и тот же ключ
     не может «переехать» на другое упражнение — это был бы другой блок под старым именем, и
-    история/аналитика по ключу перепутались бы. Добавлять/удалять блоки можно."""
-    previous_exercise = {block.key: block.exercise_id for block in previous.blocks}
+    история/аналитика по ключу перепутались бы. Добавлять/удалять блоки можно.
+
+    history — пары (key, exercise_id) ВСЕХ прежних версий определения, не только текущей:
+    ключ, удалённый в одной версии и возвращённый позже, обязан означать то же упражнение."""
+    known: dict[str, set[int]] = {}
+    for key, exercise_id in history:
+        known.setdefault(key, set()).add(exercise_id)
     for i, block in enumerate(new.blocks):
-        old = previous_exercise.get(block.key)
-        if old is not None and old != block.exercise_id:
+        previous = known.get(block.key)
+        if previous is not None and previous != {block.exercise_id}:
             raise _fail("W5", f"$.blocks[{i}].key", f"ключ {block.key!r} уже означает другое упражнение")
 
 
@@ -598,8 +608,19 @@ def to_dict(content: WorkoutContent) -> dict[str, Any]:
     }
 
 
+def _canonical_json_schema_2(stored: Mapping[str, Any]) -> str:
+    """Каноническая сериализация хранимой формы schema_version = 2. Заморожена: ею посчитан
+    content_hash каждой версии schema 2, поэтому она не меняется никогда (новая схема — новая
+    функция в _STORED_CANONICAL_JSON)."""
+    return json.dumps(stored, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+# schema_version → сериализация, которой при ЗАПИСИ этой схемы считался content_hash (§9.12).
+_STORED_CANONICAL_JSON: dict[int, Callable[[Mapping[str, Any]], str]] = {2: _canonical_json_schema_2}
+
+
 def canonical_json(content: WorkoutContent) -> str:
-    return json.dumps(to_dict(content), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _STORED_CANONICAL_JSON[content.schema_version](to_dict(content))
 
 
 def content_hash(content: WorkoutContent) -> str:
@@ -902,42 +923,47 @@ def snapshot_to_dict(snapshot: PrescriptionSnapshot) -> dict[str, Any]:
 
 
 def snapshot_from_dict(data: Mapping[str, Any]) -> PrescriptionSnapshot:
-    """Чтение сохранённого снимка (JSON). Снимок уже прошёл проверку при построении, поэтому
-    здесь только обратная конвертация; кривой JSON — WorkoutContentError."""
-    if data.get("snapshot_schema") != SNAPSHOT_SCHEMA_VERSION:
-        raise _fail("invalid_schema_version", "$.snapshot_schema", f"ожидается {SNAPSHOT_SCHEMA_VERSION}")
+    """Чтение сохранённого снимка (JSON) — снисходительное (§9.12): снимок прошёл проверку при
+    построении, здесь только обратная конвертация обратно-совместимым читателем. Ни normalize(),
+    ни пересчёта умолчаний; поля, добавленные позже, необязательны, незнакомые ключи
+    игнорируются. Нечитаемый JSON — WorkoutContentError."""
+    data = _require_mapping(data, "$")
+    if data.get("snapshot_schema") not in _SNAPSHOT_SCHEMAS:
+        raise _fail("invalid_schema_version", "$.snapshot_schema", f"известны {sorted(_SNAPSHOT_SCHEMAS)}")
     blocks: list[SnapshotBlock] = []
-    for i, raw in enumerate(data["blocks"]):
+    for i, raw in enumerate(_read_list(data.get("blocks"), "$.blocks")):
         path = f"$.blocks[{i}]"
-        kind = _enum(BlockKind, raw["kind"], f"{path}.kind")
-        interval_raw = raw.get("interval")
-        sets: tuple[SetPrescription, ...] = ()
-        if kind is BlockKind.SETS:
-            parsed = [_parse_set(item, f"{path}.sets[{j}]") for j, item in enumerate(raw["sets"])]
-            sets = tuple(
-                _replace_rest(set_, raw["sets"][j]["rest_after_seconds"]) for j, (set_, _) in enumerate(parsed)
-            )
+        block = _require_mapping(raw, path)
+        exercise_id = _required(block, "exercise_id", path)
         blocks.append(SnapshotBlock(
-            key=raw["key"], exercise_id=raw["exercise_id"],
-            exercise_display_name=raw["exercise_display_name"],
-            analytics_exercise_id=raw["analytics_exercise_id"], category_id=raw.get("category_id"),
-            kind=kind, prep_seconds=raw["prep_seconds"],
-            rest_after_block_seconds=raw.get("rest_after_block_seconds"),
-            extra_sets_allowed=raw["extra_sets_allowed"],
-            load=_parse_load(raw.get("load"), f"{path}.load"), sets=sets,
-            interval=None if interval_raw is None else IntervalSpec(**interval_raw),
+            key=_required(block, "key", path), exercise_id=exercise_id,
+            exercise_display_name=block.get("exercise_display_name") or f"Упражнение #{exercise_id}",
+            analytics_exercise_id=block.get("analytics_exercise_id") or exercise_id,
+            category_id=block.get("category_id"),
+            kind=_read_enum(BlockKind, block.get("kind"), f"{path}.kind"),
+            prep_seconds=block.get("prep_seconds") or 0,
+            rest_after_block_seconds=block.get("rest_after_block_seconds"),
+            extra_sets_allowed=bool(block.get("extra_sets_allowed", False)),
+            load=_read_load(block.get("load"), f"{path}.load"),
+            sets=_read_sets(block.get("sets"), f"{path}.sets"),
+            interval=_read_interval(block.get("interval"), f"{path}.interval"),
         ))
-    p = data["provenance"]
+    p = _require_mapping(data.get("provenance"), "$.provenance")
+    try:
+        resolved_at = datetime.fromisoformat(_required(p, "resolved_at", "$.provenance"))
+    except (TypeError, ValueError):
+        raise _fail("unreadable", "$.provenance.resolved_at", "ожидается ISO-время") from None
     return PrescriptionSnapshot(
         workout_definition_id=data.get("workout_definition_id"),
         workout_definition_version_id=data.get("workout_definition_version_id"),
-        version_no=data.get("version_no"), title=data["title"], blocks=tuple(blocks),
+        version_no=data.get("version_no"), title=_required(data, "title", "$"), blocks=tuple(blocks),
         provenance=SnapshotProvenance(
-            kind=BlockSource(p["kind"]), resolved_at=datetime.fromisoformat(p["resolved_at"]),
+            kind=_read_enum(BlockSource, p.get("kind"), "$.provenance.kind"), resolved_at=resolved_at,
             program_inclusion_id=p.get("program_inclusion_id"), strategy=p.get("strategy"),
             progression_state_rev=p.get("progression_state_rev"),
         ),
         synthesized=bool(data.get("synthesized", False)),
+        snapshot_schema=data["snapshot_schema"],
     )
 
 
@@ -970,10 +996,12 @@ class V1Item:
     progression_role: str | None = field(default=None)
 
 
-def v1_block_key(item_id: int) -> str:
-    """Ключ блока для V1-головы — id строки complex_items: стабилен между версиями, пока
-    строка жива (W5), и одинаков при повторной конвертации (идемпотентность)."""
-    return f"i{item_id}"
+def v1_block_key(item_id: int, exercise_id: int) -> str:
+    """Ключ блока для V1-головы — «i<complex_item_id>e<exercise_id>». Стабилен между версиями,
+    пока строка жива и упражнение то же (W5), одинаков при повторной конвертации
+    (идемпотентность). Упражнение — часть ключа: смена упражнения у строки в Builder'е даёт
+    новый ключ, поэтому V1-ключ никогда не означает два разных упражнения (#303 review B3)."""
+    return f"i{item_id}e{exercise_id}"
 
 
 def _v1_rests(count: int, rest: int) -> list[dict[str, Any]]:
@@ -981,12 +1009,14 @@ def _v1_rests(count: int, rest: int) -> list[dict[str, Any]]:
 
 
 def _v1_protocol_block(item: V1Item) -> dict[str, Any]:
-    protocol = dict(item.protocol or {})
+    if not isinstance(item.protocol, Mapping):
+        raise V1MappingError(f"item {item.item_id}: protocol не объект")
+    protocol = dict(item.protocol)
     protocol_type = protocol.get("type")
     prescription = protocol.get("prescription") if isinstance(protocol.get("prescription"), Mapping) else {}
     source = prescription.get("source", "static")
     rest = protocol.get("rest_seconds", 0)
-    base: dict[str, Any] = {"key": v1_block_key(item.item_id), "exercise_id": item.exercise_id}
+    base: dict[str, Any] = {"key": v1_block_key(item.item_id, item.exercise_id), "exercise_id": item.exercise_id}
 
     if protocol_type == "reps_sets" and source == "progression":
         if not item.progression_role:
@@ -1039,7 +1069,7 @@ def _v1_legacy_block(item: V1Item) -> dict[str, Any]:
     if item.sets < 1 or value is None or value != value.to_integral_value() or value < 1:
         raise V1MappingError(f"item {item.item_id}: legacy-строка без однозначной цели")
     rest = item.rest_seconds if item.rest_seconds is not None else 0
-    base = {"key": v1_block_key(item.item_id), "exercise_id": item.exercise_id, "kind": "sets"}
+    base = {"key": v1_block_key(item.item_id, item.exercise_id), "exercise_id": item.exercise_id, "kind": "sets"}
     if item.target_unit == "reps":
         return {**base, "sets": [
             {"kind": "reps", "target_reps": int(value), **extra} for extra in _v1_rests(item.sets, rest)
@@ -1085,10 +1115,130 @@ class WorkoutDefinitionVersionRecord:
     created_at: datetime
 
 
+# ============================================================================
+# Снисходительное чтение хранимого (§9.12)
+# ============================================================================
+#
+# Историческая строка читается так, как её записали: целостность — хеш хранимого JSON той
+# сериализацией, что действовала для её schema_version; разбор — обратно-совместимым читателем
+# этой схемы. Строгий normalize() — только для НОВЫХ записей: прогон истории через сегодняшние
+# normalize()/to_dict() сделал бы каждое будущее изменение умолчаний или полей «порчей» старых
+# версий (hash_mismatch) или отказом их читать.
+
+_SNAPSHOT_SCHEMAS = frozenset({SNAPSHOT_SCHEMA_VERSION})
+
+
+def _required(data: Mapping[str, Any], key: str, path: str) -> Any:
+    value = data.get(key)
+    if value is None:
+        raise _fail("unreadable", f"{path}.{key}", "в сохранённой записи нет обязательного поля")
+    return value
+
+
+def _read_list(value: object, path: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise _fail("unreadable", path, "ожидается список")
+    return value
+
+
+def _read_enum(enum_type: type[StrEnum], value: object, path: str) -> Any:
+    try:
+        return enum_type(value)
+    except ValueError:
+        raise _fail("unreadable", path, f"неизвестное значение {value!r}") from None
+
+
+def _read_load(raw: object, path: str) -> LoadSpec | None:
+    if raw is None:
+        return None
+    data = _require_mapping(raw, path)
+    value = data.get("value_kg")
+    try:
+        value_kg = None if value is None else Decimal(str(value))
+    except InvalidOperation:
+        raise _fail("unreadable", f"{path}.value_kg", "вес должен быть числом") from None
+    return LoadSpec(kind=_read_enum(LoadKind, data.get("kind"), f"{path}.kind"), value_kg=value_kg,
+                    item_id=data.get("item_id"))
+
+
+def _read_set(raw: object, path: str) -> SetPrescription:
+    data = _require_mapping(raw, path)
+    kind = _read_enum(SetKind, data.get("kind"), f"{path}.kind")
+    role_raw = data.get("role")
+    if role_raw is None:
+        role = SetRole.MAX if kind in (SetKind.MAX_REPS, SetKind.MAX_TIME) else SetRole.WORKING
+    else:
+        role = _read_enum(SetRole, role_raw, f"{path}.role")
+    return SetPrescription(
+        kind=kind, target_reps=data.get("target_reps"), target_seconds=data.get("target_seconds"),
+        load=_read_load(data.get("load"), f"{path}.load"), rest_after_seconds=data.get("rest_after_seconds"),
+        role=role,
+    )
+
+
+def _read_sets(raw: object, path: str) -> tuple[SetPrescription, ...]:
+    return tuple(_read_set(item, f"{path}[{i}]") for i, item in enumerate(_read_list(raw, path)))
+
+
+def _read_interval(raw: object, path: str) -> IntervalSpec | None:
+    if raw is None:
+        return None
+    data = _require_mapping(raw, path)
+    return IntervalSpec(
+        work_seconds=_required(data, "work_seconds", path), rest_seconds=_required(data, "rest_seconds", path),
+        rounds=_required(data, "rounds", path), record_reps_per_round=bool(data.get("record_reps_per_round", False)),
+    )
+
+
+def _read_block_schema_2(raw: object, path: str) -> Block:
+    data = _require_mapping(raw, path)
+    kind = _read_enum(BlockKind, data.get("kind"), f"{path}.kind")
+    source_raw = data.get("source")
+    return Block(
+        key=_required(data, "key", path), exercise_id=_required(data, "exercise_id", path), kind=kind,
+        prep_seconds=data.get("prep_seconds") or 0,
+        rest_after_block_seconds=data.get("rest_after_block_seconds"),
+        extra_sets_allowed=bool(data.get("extra_sets_allowed", kind is BlockKind.SETS)),
+        load=_read_load(data.get("load"), f"{path}.load"),
+        source=BlockSource.STATIC if source_raw is None else _read_enum(BlockSource, source_raw, f"{path}.source"),
+        progression_role=data.get("progression_role"),
+        sets=_read_sets(data.get("sets"), f"{path}.sets"),
+        interval=_read_interval(data.get("interval"), f"{path}.interval"),
+    )
+
+
+def _read_content_schema_2(data: Mapping[str, Any]) -> WorkoutContent:
+    return WorkoutContent(
+        title=_required(data, "title", "$"), default_rest_seconds=data.get("default_rest_seconds"),
+        blocks=tuple(
+            _read_block_schema_2(raw, f"$.blocks[{i}]") for i, raw in enumerate(_read_list(data.get("blocks"), "$.blocks"))
+        ),
+        schema_version=2,
+    )
+
+
+# schema_version → обратно-совместимый читатель хранимой формы этой схемы.
+_STORED_READERS: dict[int, Callable[[Mapping[str, Any]], WorkoutContent]] = {2: _read_content_schema_2}
+
+
+def stored_content_hash(data: Mapping[str, Any]) -> str:
+    """sha256 хранимого JSON той канонической сериализацией, которой хеш считался при записи
+    его schema_version, — без normalize() и без сегодняшнего to_dict()."""
+    serializer = _STORED_CANONICAL_JSON.get(data.get("schema_version"))  # type: ignore[arg-type]
+    if serializer is None:
+        raise _fail("invalid_schema_version", "$.schema_version", f"известны {sorted(_STORED_CANONICAL_JSON)}")
+    return hashlib.sha256(serializer(data).encode("utf-8")).hexdigest()
+
+
 def content_from_stored(data: Mapping[str, Any], *, expected_hash: str | None = None) -> WorkoutContent:
-    """Хранимая форма → WorkoutContent. Нормализация идемпотентна, поэтому повторный normalize
-    ничего не меняет; expected_hash ловит порчу/ручную правку строки (содержимое ≠ хеш)."""
-    content = normalize(data)
-    if expected_hash is not None and content_hash(content) != expected_hash:
+    """Хранимая форма → WorkoutContent (§9.12). expected_hash ловит порчу/ручную правку строки
+    (хеш хранимого JSON ≠ записанный). Содержимое не нормализуется и не переписывается."""
+    data = _require_mapping(data, "$")
+    if expected_hash is not None and stored_content_hash(data) != expected_hash:
         raise WorkoutContentError("hash_mismatch", "$", "содержимое версии не совпадает с её хешем")
-    return content
+    reader = _STORED_READERS.get(data.get("schema_version"))  # type: ignore[arg-type]
+    if reader is None:
+        raise _fail("invalid_schema_version", "$.schema_version", f"известны {sorted(_STORED_READERS)}")
+    return reader(data)

@@ -4,7 +4,10 @@
   * пустая БД → upgrade head: версии системных тренировок, переписанные W/Максимум/3 минуты;
   * «старая» БД (V1-эпоха, ревизия c3f7a9e2d5b1 + пользовательские строки) → upgrade head:
     версии из V1-головы, неоднозначное помечено и не угадано, подписки/история/доступ — те же;
-  * повторный бэкфилл = 0 изменений; downgrade → upgrade восстанавливает то же самое.
+  * повторный (замороженный) бэкфилл = 0 изменений; рантайм-синхронизация после миграции — тоже;
+  * буквальные golden-хеши системного контента на реальной свежей установке;
+  * downgrade → upgrade восстанавливает выводимое из V1-голов; история версий сверх этого ТЕРЯЕТСЯ
+    (WORKOUT_DOMAIN_V2 §9.13) — тест это фиксирует, а не обещает обратное.
 """
 
 import asyncio
@@ -13,16 +16,11 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.db.workout_definition_backfill import (
-    MAX_LADDER_RESTS,
-    W_LADDER_REST_SECONDS,
-    W_LADDER_TARGETS,
-    report_lines,
-    run_backfill,
-)
-from app.domain.electives import MAX_REPS_LADDER_REST_SECONDS, W_LADDER
-from app.domain.electives import W_LADDER_REST_SECONDS as ELECTIVE_W_REST
+from app.db.migrations._frozen.b7d2e9f4a1c3_backfill import report_lines, run_backfill
+from app.db.workout_definition_store import sync_from_v1_head
+from app.domain.electives import W_LADDER
 from app.domain.workout_definition import content_from_stored, content_hash, describe
+from tests.test_scripts.test_frozen_b7d2e9f4a1c3_parity import GOLDEN_CURRENT, GOLDEN_V1
 from tests.test_scripts.test_system_content_migration import (
     _alembic,
     _fetch,
@@ -120,10 +118,20 @@ INSERT INTO training_sessions (id, user_id, source, performed_at, completed_at, 
 """
 
 
-def test_reauthored_literals_match_product_constants():
-    assert W_LADDER_TARGETS == W_LADDER
-    assert W_LADDER_REST_SECONDS == ELECTIVE_W_REST
-    assert MAX_LADDER_RESTS == MAX_REPS_LADDER_REST_SECONDS
+async def _runtime_sync_changes(dsn: str) -> int:
+    """Рантайм-путь (Builder) по всем тренировкам сразу после миграции: сколько версий создал бы."""
+    engine = create_async_engine(dsn)
+    try:
+        async with engine.begin() as conn:
+            def _sync_all(sync_conn) -> int:
+                rows = sync_conn.execute(sa.text("SELECT id, name FROM complexes WHERE source_type = 'user' ORDER BY id")).all()
+                return sum(sync_from_v1_head(sync_conn, row.id, row.name)[1] for row in rows)
+
+            created = await conn.run_sync(_sync_all)
+            await conn.rollback()
+            return created
+    finally:
+        await engine.dispose()
 
 
 # --- пустая БД ---------------------------------------------------------------------------------
@@ -164,6 +172,18 @@ def test_fresh_db_ships_versions_and_reauthored_system_content(deployed_dsn):  #
     assert _scalar(
         deployed_dsn, "SELECT count(*) FROM exercise_categories WHERE display_name ~ '^[a-z_]+$'",
     ) == 0
+
+
+def test_fresh_db_golden_hashes(deployed_dsn):  # noqa: F811
+    """Буквальные хеши того, что ревизия b7d2e9f4a1c3 пишет на свежую установку (golden — в
+    test_frozen_b7d2e9f4a1c3_parity.py, там же объяснено, почему они не меняются никогда)."""
+    for title, golden in GOLDEN_CURRENT.items():
+        versions = _versions(deployed_dsn, title)
+        current = next(v for v in versions if v.id == v.current_version_id)
+        assert current.content_hash == golden, title
+        assert versions[0].content_hash == GOLDEN_V1[title], title
+        assert current.version_no == max(v.version_no for v in versions)
+        assert content_from_stored(current.content, expected_hash=current.content_hash)
 
 
 def test_fresh_db_second_backfill_is_noop(scratch_dsn):  # noqa: F811
@@ -213,9 +233,16 @@ def test_aged_v1_db_upgrade_backfills_without_touching_history(scratch_dsn):  # 
     assert changes == 0, lines
     assert any("complex 6003" in line for line in lines)  # неоднозначное — в отчёте, не молча
     assert _fingerprint(scratch_dsn) == before
+    # Рантайм (Builder-синхронизация) сегодня видит то же содержимое — новых версий не создаёт.
+    assert _run(_runtime_sync_changes(scratch_dsn)) == 0
+    keys = _run(_fetch(scratch_dsn, "SELECT content->'blocks'->0->>'key' AS key FROM workout_definition_versions "
+                                    "WHERE workout_definition_id = 6001"))
+    assert [r.key for r in keys] == ["i7001e5001"]
 
 
-def test_downgrade_then_upgrade_restores_same_state(scratch_dsn):  # noqa: F811
+def test_downgrade_then_upgrade_restores_v1_derived_state(scratch_dsn):  # noqa: F811
+    """Без пользовательской истории версий (только то, что выводится из V1-голов и литералов)
+    откат → накат воспроизводит то же самое."""
     _alembic(scratch_dsn, "upgrade", PRE_V2_REVISION)
     _run(_seed_aged(scratch_dsn))
     before = _fingerprint(scratch_dsn)
@@ -233,6 +260,37 @@ def test_downgrade_then_upgrade_restores_same_state(scratch_dsn):  # noqa: F811
     _alembic(scratch_dsn, "upgrade", "head")
     again = _run(_fetch(scratch_dsn, "SELECT workout_definition_id, version_no, content_hash FROM workout_definition_versions ORDER BY 1, 2"))
     assert [tuple(r) for r in again] == [tuple(r) for r in first]
+
+
+def test_downgrade_below_revision_is_lossy_for_user_version_history(scratch_dsn):  # noqa: F811
+    """C3: откат схемы ниже b7d2e9f4a1c3 после того, как пользователь накопил историю версий,
+    ТЕРЯЕТ её; повторный upgrade строит только то, что выводится из уцелевшей V1-головы."""
+    _alembic(scratch_dsn, "upgrade", PRE_V2_REVISION)
+    _run(_seed_aged(scratch_dsn))
+    _alembic(scratch_dsn, "upgrade", "head")
+
+    async def _edit_head_twice() -> None:
+        engine = create_async_engine(scratch_dsn)
+        try:
+            async with engine.begin() as conn:
+                for reps in (5, 7):  # Builder: две правки → v2, v3
+                    await conn.exec_driver_sql(
+                        "UPDATE complex_items SET protocol = jsonb_set(protocol, '{prescription,reps}', "
+                        f"'{reps}') WHERE id = 7001"
+                    )
+                    await conn.run_sync(lambda c: sync_from_v1_head(c, 6001, "Моя 3×10"))
+        finally:
+            await engine.dispose()
+
+    _run(_edit_head_twice())
+    history = "SELECT version_no, content_hash FROM workout_definition_versions WHERE workout_definition_id = 6001 ORDER BY 1"
+    before = [tuple(r) for r in _run(_fetch(scratch_dsn, history))]
+    assert [no for no, _ in before] == [1, 2, 3]
+
+    _alembic(scratch_dsn, "downgrade", PRE_V2_REVISION)
+    _alembic(scratch_dsn, "upgrade", "head")
+    after = [tuple(r) for r in _run(_fetch(scratch_dsn, history))]
+    assert after == [(1, before[-1][1])]  # только версия из текущей V1-головы (7 повторений); v1/v2 потеряны
 
 
 def test_versions_reject_update(deployed_dsn):  # noqa: F811

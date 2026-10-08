@@ -601,6 +601,10 @@ async def list_my_workouts(
     return await _workout_list_response(programs, session, await programs.list_user_workouts(user.id))
 
 
+def _is_db_id(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 2**63 - 1
+
+
 @router_v2.post("/workouts/preview", response_model=WorkoutPreviewResponse)
 async def preview_workout_content(
     body: WorkoutPreviewRequest,
@@ -611,14 +615,18 @@ async def preview_workout_content(
     normalize() (W1–W8, W6 — видимость упражнений текущему пользователю) и тот же describe(), что у
     сохранённых версий. Ничего не сохраняет. Невалидное содержимое — 422 с кодом инварианта и путём."""
     user = await _require_user(session, init_data)
+    # Только корректные bigint-id идут в set и в БД: список/объект как exercise_id не хешируется
+    # (TypeError → 500), а id вне bigint ломает запрос. Всё остальное — дело normalize(): он
+    # отвечает 422 {code, path, message} на любой кривой exercise_id (#303 review C1).
+    blocks_raw = body.content.get("blocks")
     exercise_ids = {
-        block.get("exercise_id") for block in body.content.get("blocks") or [] if isinstance(block, dict)
+        block["exercise_id"] for block in (blocks_raw if isinstance(blocks_raw, list) else [])
+        if isinstance(block, dict) and _is_db_id(block.get("exercise_id"))
     }
     programs = ProgramRepository(session)
     visible = {
         exercise_id for exercise_id in exercise_ids
-        if isinstance(exercise_id, int) and not isinstance(exercise_id, bool)
-        and await programs.get_visible_exercise_for_user(exercise_id, user.id) is not None
+        if await programs.get_visible_exercise_for_user(exercise_id, user.id) is not None
     }
     try:
         content = normalize(body.content, visible_exercise_ids=visible)

@@ -6,7 +6,7 @@ import re
 
 from sqlalchemy import text
 
-from app.db.workout_definition_backfill import run_backfill
+from app.db.migrations._frozen.b7d2e9f4a1c3_backfill import run_backfill
 from tests.test_web._v2_client import v2_delete, v2_get, v2_patch, v2_post
 from tests.test_web.test_v2_system_content import _user, ship_system_content
 
@@ -172,3 +172,118 @@ async def test_exercise_labels_are_never_slugs(session, user):
             assert not SLUG.match(block["exercise"]["display_name"])
         for item in workout["items"]:
             assert not SLUG.match(item["exercise_name"])
+
+
+# --- #303 review C1: кривой exercise_id — 422 {code, path, message}, никогда не 500 ----------------
+
+
+async def test_preview_malformed_exercise_id_is_422_never_500(session, user):
+    for bad in ([1, 2], {"id": 1}, "1", 1.5, True, None, 0, -3, 2**63, 10**30):
+        response = await v2_post(
+            session, telegram_id=user.telegram_id, path="/api/v2/workouts/preview",
+            payload={"content": {"title": "T", "blocks": [{"key": "A", "exercise_id": bad, "sets": 1, "reps": 1}]}},
+        )
+        assert response.status_code == 422, (bad, response.text)
+        detail = response.json()["detail"]
+        assert set(detail) == {"code", "path", "message"}, (bad, detail)
+        assert detail["path"] == "$.blocks[0].exercise_id", (bad, detail)
+        assert detail["code"] in ("invalid_type", "out_of_range"), (bad, detail)
+
+    # blocks не списком / блок не объектом — тоже 422 канонического вида, не TypeError
+    for content in ({"title": "T", "blocks": 5}, {"title": "T", "blocks": [[{"exercise_id": [1]}]]}):
+        response = await v2_post(
+            session, telegram_id=user.telegram_id, path="/api/v2/workouts/preview", payload={"content": content},
+        )
+        assert response.status_code == 422, (content, response.text)
+        assert set(response.json()["detail"]) == {"code", "path", "message"}
+
+
+# --- #303 review B3: ключ блока V1 = i<item>e<exercise> ----------------------------------------------
+
+
+async def _builder_workout(session, user, *exercise_names: str) -> tuple[int, list[int]]:
+    workout_id = (await v2_post(
+        session, telegram_id=user.telegram_id, path="/api/v2/workouts", payload={"title": "Ключи"},
+    )).json()["id"]
+    exercise_ids = [
+        (await v2_post(session, telegram_id=user.telegram_id, path="/api/v2/exercises", payload={"name": name})).json()["id"]
+        for name in exercise_names
+    ]
+    return workout_id, exercise_ids
+
+
+async def _version_keys(session, workout_id: int) -> list[tuple[int, list[tuple[str, int]]]]:
+    rows = (await session.execute(
+        text("SELECT version_no, content FROM workout_definition_versions WHERE workout_definition_id = :id ORDER BY 1"),
+        {"id": workout_id},
+    )).all()
+    return [(row.version_no, [(b["key"], b["exercise_id"]) for b in row.content["blocks"]]) for row in rows]
+
+
+def _assert_no_key_collision(history: list[tuple[int, list[tuple[str, int]]]]) -> None:
+    exercises_by_key: dict[str, set[int]] = {}
+    for _, pairs in history:
+        for key, exercise_id in pairs:
+            exercises_by_key.setdefault(key, set()).add(exercise_id)
+    assert all(len(ids) == 1 for ids in exercises_by_key.values()), exercises_by_key
+
+
+PROTOCOL_3X10 = {"type": "reps_sets", "prescription": {"source": "static", "sets": 3, "reps": 10}, "rest_seconds": 90}
+
+
+async def test_builder_item_exercise_change_gets_new_block_key(session, user):
+    workout_id, (first, second) = await _builder_workout(session, user, "Первое", "Второе")
+    item = (await v2_post(
+        session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}/items",
+        payload={"exercise_id": first, "protocol": PROTOCOL_3X10},
+    )).json()
+    changed = await v2_patch(
+        session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}/items/{item['id']}",
+        payload={"exercise_id": second},
+    )
+    assert changed.status_code == 200
+
+    history = await _version_keys(session, workout_id)
+    assert history == [
+        (1, [(f"i{item['id']}e{first}", first)]),
+        (2, [(f"i{item['id']}e{second}", second)]),
+    ]
+    _assert_no_key_collision(history)
+
+    # и обратно на первое упражнение: прежний ключ снова означает то же упражнение — v3, без коллизии
+    await v2_patch(
+        session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}/items/{item['id']}",
+        payload={"exercise_id": first},
+    )
+    history = await _version_keys(session, workout_id)
+    assert [no for no, _ in history] == [1, 2, 3]
+    assert history[2][1] == [(f"i{item['id']}e{first}", first)]
+    _assert_no_key_collision(history)
+
+
+async def test_builder_ordinary_edits_keep_block_keys_stable(session, user):
+    workout_id, (first, second) = await _builder_workout(session, user, "Первое", "Второе")
+    items = [
+        (await v2_post(
+            session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}/items",
+            payload={"exercise_id": exercise_id, "protocol": PROTOCOL_3X10},
+        )).json()
+        for exercise_id in (first, second)
+    ]
+    expected = {f"i{items[0]['id']}e{first}", f"i{items[1]['id']}e{second}"}
+    await v2_patch(
+        session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}/items/{items[0]['id']}",
+        payload={"protocol": {**PROTOCOL_3X10, "prescription": {"source": "static", "sets": 5, "reps": 2}, "rest_seconds": 60}},
+    )
+    await v2_post(
+        session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}/items/{items[1]['id']}/move",
+        payload={"direction": "up"},
+    )
+    await v2_patch(session, telegram_id=user.telegram_id, path=f"/api/v2/workouts/{workout_id}", payload={"title": "Новое"})
+
+    history = await _version_keys(session, workout_id)
+    assert len(history) >= 4  # добавление ×2, правка, перестановка, переименование — каждое по версии
+    for _, pairs in history[1:]:
+        assert {key for key, _ in pairs} == expected
+    assert [key for key, _ in history[-1][1]] == [f"i{items[1]['id']}e{second}", f"i{items[0]['id']}e{first}"]
+    _assert_no_key_collision(history)

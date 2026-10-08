@@ -1,7 +1,7 @@
 """WorkoutDefinition v2 — оркестрация (issue #303, WORKOUT_DOMAIN_V2 §3–§5, §7).
 
-- save(): normalize (W1–W8, W6 по видимости упражнений владельцу) → проверка стабильности
-  ключей блоков относительно текущей версии (W5) → идемпотентная версия.
+- save(): normalize (W1–W8, W6 по видимости упражнений владельцу) → append-only версия
+  (no-op только против текущей; W5 — по ключам всех прежних версий, внутри save_version).
 - sync_head(): после правки V1-головы (complex_items) Builder'ом — версия догоняет голову.
 - prescription(): описание текущей версии — то, что показывают Detail/каталог/план/пре-скрин
   (один describe() на всех, §7).
@@ -16,7 +16,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import Complex
 from app.db.repositories.workout_definitions import WorkoutDefinitionRepository
 from app.domain.workout_definition import (
     Block,
@@ -26,7 +25,6 @@ from app.domain.workout_definition import (
     SnapshotResolutionError,
     WorkoutContent,
     WorkoutDefinitionVersionRecord,
-    assert_block_keys_stable,
     build_prescription_snapshot,
     describe,
     describe_rest,
@@ -86,11 +84,6 @@ class WorkoutDefinitionService:
         visible_exercise_ids: Collection[int] | None,
     ) -> tuple[WorkoutDefinitionVersionRecord, bool]:
         content = normalize(raw, visible_exercise_ids=visible_exercise_ids)
-        complex_ = await self._session.get(Complex, workout_definition_id)
-        if complex_ is not None and complex_.current_version_id is not None:
-            current = await self._repo.get_version(complex_.current_version_id)
-            if current is not None:
-                assert_block_keys_stable(current.content, content)
         return await self._repo.save_content(workout_definition_id, content)
 
     async def sync_head(self, workout_definition_id: int) -> tuple[int | None, bool, str | None]:
