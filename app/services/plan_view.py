@@ -193,6 +193,10 @@ class PlanScheduleService:
         item = await self._plans.get_plan_item_for_user(plan_item_id, user_id)
         if plan is None or item is None or item.status == PlanItemStatus.REMOVED:
             return None
+        if item.occurrence_index is None and not item.legacy_aggregate and item.program_inclusion_id is not None:
+            # Строка курса старой формы, которую converge_user_plan не заменил занятиями (курс снят / не
+            # повторяющийся / без слотов): как и раньше (#188 D2), программные строки не переносятся — 404.
+            return None
         if item.legacy_aggregate or item.occurrence_index is None:
             raise RescheduleError("Это историческая строка плана — её нельзя перенести")
         if await self._sessions.credits_for_plan_items([item.id]):

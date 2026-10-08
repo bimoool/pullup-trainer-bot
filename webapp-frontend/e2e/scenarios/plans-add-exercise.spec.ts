@@ -85,7 +85,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
   // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
-  await expect(rowTitle(page, "Подтягивания")).toHaveCount(1);
+  await expect(rowTitle(page, "Подтягивания")).toHaveCount(3);  // #304: три занятия-строки курса
   await expect(page.getByText("Среда")).toBeVisible();
   await expect(rowTitle(page, "Планка")).toBeVisible();
   await expect(page.getByText("Пятница")).toBeVisible();
