@@ -858,7 +858,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           на 320px уже занята названием и «Мои тренировки». */}
       <div className="plans-custom-plan-entry">
         <Button
-          size="s" mode="plain" data-testid="plans-custom-plan"
+          className="action-button" size="s" mode="plain" data-testid="plans-custom-plan"
           onClick={() => setMyWorkoutsView({ kind: "custom-plan" })}
         >
           Свой план по неделям

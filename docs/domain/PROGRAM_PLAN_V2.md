@@ -216,7 +216,9 @@ Where the contract left a choice open, Wave 1b decided as follows (code: `app/do
    one aggregate row); "one session → one item" is structural (single column).
 8. **`converge_user_plan`** is the only writer of plan structure (PL7). Past weeks: aggregates get
    `legacy_aggregate = true` only. Current/future weeks: course aggregates → `status = removed` +
-   `legacy_aggregate` (never deleted — M2M history points at them) and k sessions linked in that week → k
+   `legacy_aggregate` (never deleted — M2M history points at them) **only together with their replacement
+   occurrences** — rows of a course that is removed, non-recurring or has no materializable slot stay exactly as
+   they were (startable old-form rows) — and k sessions linked in that week → k
    occurrences (`performed_at` order; a session already crediting another occurrence is never moved); manual
    rows with `count_per_week = N` → N occurrences (the row itself is #1); custom plans → their week volume.
    Inclusion cache: `status` / `sequence_cursor` only from NULL; `completed_main_sessions` /
