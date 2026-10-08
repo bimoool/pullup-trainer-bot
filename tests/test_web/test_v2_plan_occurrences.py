@@ -357,6 +357,19 @@ async def test_j6_custom_plan_2_2_0_2_2_0_exact_occurrence_counts(session, user:
     plan = await _plan(session, user)
     assert [_summary(plan, n)["planned"] for n in (2, 3, 4)] == [2, 0, 2]
 
+    # J6: старт одного занятия засчитывает именно его («1 из 2»), запись Журнала — с именем тренировки.
+    week2 = _week_items(plan, 2)
+    started = await _start(session, user, [week2[0]["id"]])
+    assert started.status_code == 200, started.text
+    done = await v2_post(session, user.telegram_id, f"/api/v2/sessions/live/{started.json()['id']}/complete", {})
+    assert done.status_code == 200
+    plan = await _plan(session, user)
+    assert (_summary(plan, 2)["completed"], _summary(plan, 2)["planned"]) == (1, 2)
+    assert [i["state"] for i in _week_items(plan, 2)][0] == "completed"
+    journal = (await v2_get(session, user.telegram_id, "/api/v2/sessions?status=completed")).json()["sessions"]
+    entry = next(e for e in journal if e["id"] == started.json()["id"])
+    assert (entry["title"], entry["plan_item_id"]) == ("Моя силовая 304", week2[0]["id"])
+
 
 async def test_custom_plan_weekday_hint_does_not_change_volume(session, user: User, clock):
     user.timezone = "UTC"
