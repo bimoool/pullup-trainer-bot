@@ -9,6 +9,8 @@
    worktree, не в `main`; ничего не деплоить, не форс-пушить, не мержить без явной просьбы.
 2. **`docs/PROJECT_SPEC.md`** — принятое продуктовое поведение.
 3. **`docs/IMPLEMENTATION_PLAN.md`** — что сделано, что дальше, как работать.
+   Задача волн DOMAIN-V2 → сначала **`docs/domain/`** (целевой доменный контракт: Workout →
+   Program → Plan → Live → TrainingSession → Journal/Analytics, миграция, journeys J1–J12).
 4. **Релевантные skills** из `.claude/skills/` (`multi-program`, `migrations-safe`,
    `running-tests`, `offline-session`, `product-reference`, …).
 5. **Реальный код** — читать перед правкой, не полагаться на память/описание.

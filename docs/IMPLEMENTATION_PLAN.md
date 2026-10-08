@@ -76,6 +76,18 @@ Data-миграция `a4c8e1f7b2d9` (программа «Подтягиван�
 к курсам» (там же «Открыто для владельца»: итоговая матрица Free/Premium не решена). Следом — Phase C (аудит на
 локальном Mac), не начата.
 
+## DOMAIN-V2 Wave 0 — доменный контракт (2026-10-08, только документация)
+
+Ветка `architecture/wave0-domain-contract` (от `4298f8b`). Phase D-находки сведены в один контракт
+`docs/domain/` (Workout/Live/Program+Plan/TrainingSession/Migration/Acceptance J1–J12) вместо точечных
+фиксов. Принятые решения владельца сохранены (триал 7 дней, «Подтягивания» бесплатно навсегда, ACTIVE не
+понижается, `access_level` ≠ статус подписки, 2 дня отдыха между основными тренировками). Открыто: OD-1
+(стартовая прескрипция из теста на максимум: сейчас max=8 → 10×3 на собственном весе, базовая линия не
+читается), OD-2 (арифметика «2 дня отдыха»), OD-3 (подход на максимум в блоках курса), OD-4 (матрица
+Free/Premium). Порядок реализации: Wave 1 (Program+Plan foundation) → Wave 2 (Live Engine) ∥ Wave 3a
+(TrainingSession) → Wave 3b (Journal/Analytics) → Wave 4 (интеграция + iPhone) —
+`docs/domain/MIGRATION_V2.md` §9; issues — umbrella-issue кампании.
+
 ## Дальше
 
 1. ~~Draft PR `develop/current` → `main` и CI (#222)~~ — PR #226 (draft), CI зелёный.

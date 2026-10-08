@@ -1,0 +1,179 @@
+# PROGRAM_PLAN_V2 — Program, progression input, constraints, Plan, access
+
+Index: [README.md](README.md). Workout shape: [WORKOUT_DOMAIN_V2.md](WORKOUT_DOMAIN_V2.md).
+
+**Program** = *what* to train and *how it progresses* (content + rules, user-independent).
+**ProgramInclusion** = a user's enrolment (frozen snapshot + progression state).
+**Plan** = *concrete occurrences* in the user's calendar weeks (PlanItems).
+
+## 1. Program
+
+```
+Program
+  id, display_name, category_id, access_level (free | premium), structure_type
+  slots: ProgramSlot[]            ordered
+  progression_strategy_id, config (constants, schema_versioned)
+  frequency: { sessions_per_week: int, per_slot overrides }     DESIRED volume, not placement
+  constraints: SchedulingConstraint[]                           (§4)
+  assessment: { protocol_id, required_before_first_session: bool, validity_days } | null
+
+ProgramSlot
+  key              stable ("main", "elective_w", ...)
+  workout_definition_id
+  role             main | optional | assessment
+  spacing_group    str | null      sessions in the same group obey that group's min-rest
+  repeat           every_session | rotation(order) | once
+  counts_toward_progression bool   (main: true; optional: false)
+```
+
+«Подтягивания» (system, `access_level=free`): slot `main` → WorkoutDefinition «Подтягивания»
+(AD-3; one occurrence = blocks A+B), `sessions_per_week = 3`, spacing group `main` with
+`min_days_between_starts` (OD-2), assessment «Максимум подтягиваний» required before the first
+main session. Electives are `optional` slots outside the `main` spacing group (legacy rotation and
+limits unchanged).
+
+## 2. ProgramInclusion (enrolment state)
+
+Kept from today (`program_inclusions`): `snapshot` (frozen program content at enrolment),
+`progression_state` (live), `initial_progression_state` (frozen), `is_active`, `expires_at`. Added:
+
+- `progression_state_rev` int (+1 per applied progression; recorded in session snapshot provenance)
+- `sequence_cursor` (next slot occurrence number; progression is **sequence-based**, not calendar-based)
+- `baseline_assessment_result_id` (the assessment used to initialise state; §3)
+
+Completion state: `completed_main_sessions`, `last_main_session_at` (derived from sessions,
+cached), `status: active | paused | completed | removed`. Removing/re-adding a course **resumes**
+the previous inclusion state unless the user explicitly restarts (fixes DV-05 reset; restart is a
+separate explicit action).
+
+## 3. Assessment → initial prescription (traced; formula is an owner decision)
+
+**Trace at `4298f8b`, fresh user, assessment max = 8:**
+
+| Era | Path | Result | Why |
+|---|---|---|---|
+| Program era (Mini App, live today) | `POST /api/v2/program-inclusions {program_id}` (`webapp-frontend/src/apiV2.ts:811`) → `_build_initial_progression_state` (`app/services/program_inclusion.py:46-99`) | **10 × 3, BODYWEIGHT** | `target_a = config.block_a.base_target` (=10, seed `a4c8e1f7b2d9…py:52`; fallback `VOLUME_BLOCK.base_target`, `app/domain/constants.py:90`); `work_sets_a = 3`; equipment hard-coded BODYWEIGHT (`:82,:91`). **The baseline is never read** (docstring `:53-57`). Any max (3, 8, 20) gives 10 × 3. |
+| Bot era (legacy) | `suggest_starting_equipment(8)` + `initial_volume_target(8)` (`app/domain/progression.py:347-396`) | **10 × 3 on a BAND** (+ max set) | `8 ≤ 10` → band chosen to make ~10 reps reachable; `ceil(0.75 × max)` only when `max > 10`. Documented only in docstrings («Часть 10, пакет #2, п.14»); not in `docs/progression.md`. |
+
+Conclusion: **there is no explicit rule for the program era.** «10» is the default
+`base_target` applied because the baseline is not wired in; the bot era's safety condition (a
+band) was dropped. For max = 8, 3 × 10 bodyweight = 30 reps ≥ 3.75 × max per block, each set
+above the user's max — **unsafe/undefined**. Also wrong upward: max = 20 → 10 instead of
+`ceil(0.75 × 20) = 15`. Already logged as FD-17.
+
+Contract (mechanism, decided): `initial_state = InitialPrescriptionRule(program.config,
+assessment_result)` — a pure, versioned function; the inclusion records which rule version and
+which assessment result produced it. Enrolment into a program with `required_before_first_session`
+and no valid assessment yields state `awaiting_assessment`; the plan shows «Сначала тест на
+максимум», and the main slot is not startable until the assessment is logged.
+The **numbers** of the rule are OD-1.
+
+## 4. Scheduling constraints (min rest days)
+
+```
+SchedulingConstraint
+  spacing_group           "main"
+  min_days_between_starts int     calendar days in the user's timezone between local start dates
+```
+
+`available_from(group) = local_date(last completed session in group) + min_days_between_starts`.
+
+Today: `MIN_REST_DAYS = 2` with `days = current − last; days < 2 → TOO_EARLY`
+(`app/domain/rules.py:30-52`) — i.e. **Mon → Wed allowed (one full rest day)**. Enforced only in
+legacy bot/`/api/workout/plan` and as an advisory dashboard status; **not** on `POST
+/api/v2/sessions/live` (D6). `config.min_rest_days` is stored but never read.
+
+The owner rule «2 REST DAYS between MAIN sessions» read literally is `min_days_between_starts = 3`
+(Mon → Thu). Numbers for both (decision OD-2):
+
+| Value | Allowed after Mon | Mon/Wed/Fri valid? | Max in one Mon–Sun week | Sustained rate |
+|---|---|---|---|---|
+| 2 (code today) | Wed | yes | 4 (Mon, Wed, Fri, Sun) | 3.5 / week |
+| 3 (literal) | Thu | **no** | 3 (Mon, Thu, Sun) only if the previous week ended ≤ Fri | 2.33 / week |
+
+Rules (decided, independent of the value):
+
+- **K1** The server rejects `start` of a `main` occurrence before `available_from` with
+  `too_early{available_from}` (LIVE §7) — on every path (v2 live, legacy, bot), admins bypass as
+  today (`docs/payments.md`).
+- **K2** Desired frequency ≠ placement. For each week the plan computes
+  `feasible_remaining = count of dates d in [max(today, available_from), week_end]` stepping by
+  `min_days_between_starts`. Occurrences beyond `feasible_remaining` are shown as
+  **«не успеть на этой неделе»** (state `infeasible`), not as debt and not as missed.
+  Example (value 3): today Wed, last main Mon → available Thu → Thu, Sun → feasible 2 of 3.
+- **K3** Manual logging (post-factum) of a main session is allowed even if it violates spacing
+  (it already happened); it is flagged `spacing_violation=true` for progression to see.
+- **K4** Optional and custom workouts are not in the `main` group unless their program says so.
+
+## 5. Plan, PlanWeek, PlanItem, completion credit
+
+```
+TrainingPlan  (one per user; unchanged)
+PlanWeek      week_number, start_date (Monday, user tz), phase           (unchanged)
+PlanItem      ONE occurrence of ONE workout (AD-4)
+  id, plan_week_id NOT NULL, source: program | custom_plan | manual
+  program_inclusion_id | custom_plan_id | null
+  program_slot_key | null, occurrence_index (1..n within week & slot)
+  workout_definition_id NOT NULL
+  scheduled_date | null           optional calendar placement (weekday is metadata, not volume)
+  status (stored): open | rescheduled | removed
+  derived state: completed | missed | infeasible | available | too_early | awaiting_assessment
+```
+
+- **PL1** Volume = number of PlanItems. «3 из 3» counts occurrences, never `count_per_week`.
+- **PL2** Completion credit: a session credits **at most one** PlanItem, only through an explicit
+  `training_sessions.plan_item_id` chosen at start (from the plan) or at manual logging (user
+  picks the occurrence). A session never credits by matching exercises or weeks.
+- **PL3** Direct start from Workout Detail (`direct_live`) **never** credits the plan (J7).
+  Clone never copies the plan link (D10).
+- **PL4** A credited PlanItem is `completed` regardless of the session's week (starting a future
+  week's item early credits that item; J12).
+- **PL5** `missed` is derived: week ended, item open and not infeasible. No carry-over is
+  generated (Crimpd behaviour); progression is sequence-based so the next main occurrence just
+  continues the sequence.
+- **PL6** Rescheduling = move to another week and/or date, any source (course items too). Moves
+  are validated against K2 for display; K1 still decides at start.
+- **PL7** Course occurrences for future weeks inside the window (`MAX_FUTURE_PLAN_WEEKS = 4`) are
+  materialised by one idempotent `converge_user_plan(user, today)` (recovery audit T2); generation
+  never writes on GET outside that function.
+
+## 6. Future weeks
+
+**Visible and startable.** `_reject_future_week_course_item` (`app/services/live_session.py:297-307`)
+is removed (D8). The only gates at start are access (§8), K1 spacing and assessment.
+
+## 7. Custom workouts and per-week volume
+
+```
+CustomPlan (user-owned)
+  id, user_id, display_name, start_week_number
+  workouts: [{workout_definition_id, order}]      rotation pool
+  weeks: [{week_offset: 0.., count: 0..14}]       TRUE per-week volume
+  repeat: once | cycle
+  preferred_weekdays: int[] | null                optional placement hint
+```
+
+Example W1=2, W2=2, W3=0, W4=2, W5=2, W6=0 → weeks with 2, 2, 0, 2, 2, 0 PlanItems; a zero week
+is a valid, explicit value (today `count_per_week` is `ge=1`, `app/web/schemas_v2.py:506`, so 0 is
+inexpressible). Workouts are assigned by rotation. Manual one-off PlanItems remain (`source =
+manual`) for “add this workout to this week”.
+
+## 8. Access (preserved; not redesigned)
+
+Accepted decisions are listed in [README.md](README.md#accepted-decisions-recorded-not-re-opened).
+Contract points for the new model:
+
+- **AC1** Access gate is evaluated at *start* via `ProgramAccessService` on the PlanItem's program;
+  a PlanItem of a `free` program is always startable access-wise.
+- **AC2** Onboarding/assessment never writes subscription state except `start_trial`'s minimum
+  guarantee; no v2 migration touches `users.subscription_*` or `subscriptions` (MIGRATION §7).
+- **AC3** Custom plans and direct workouts are not gated (current behaviour) until OD-4.
+
+## 9. Owner decisions (blocking)
+
+| ID | Question | Blocks | Options with numbers |
+|---|---|---|---|
+| **OD-1** | Initial «Подтягивания» prescription from assessment max. Max = 8 gives 10 × 3 bodyweight today because the baseline is ignored (§3). | Wave 1 progression init (J1, J2) | (a) bot rule restored: max ≤ 10 → 10 × 3 **on a band** sized for ~10 (needs band selection in Mini App onboarding); max > 10 → `ceil(0.75·max)` × 3 bodyweight. (b) `ceil(0.75·max)` bodyweight for all: 8 → 6 × 3, 3 → 3 × 3, 20 → 15 × 3. (c) other explicit table. |
+| **OD-2** | «2 rest days» = `min_days_between_starts` **2** (Mon→Wed, today's code) or **3** (Mon→Thu)? | Wave 1 K1/K2 value (mechanism proceeds) | see §4 table |
+| **OD-3** | Main workout blocks keep the trailing **max set** (A: 3 × 10 + max; B: 4 × 3 + max) as in legacy? Current progression formula needs it. | Wave 1 resolver, J4 | yes (legacy parity) / no (then a new progression input must be specified) |
+| **OD-4** | Free vs Premium for everything outside the free «Подтягивания» program (custom plans, system ready workouts, electives, Journal/Analytics/export) and «one trial per account» vs admin-reset QA re-trial | Nothing in Waves 1–3 (current behaviour kept); needed before any new paywall | — |
