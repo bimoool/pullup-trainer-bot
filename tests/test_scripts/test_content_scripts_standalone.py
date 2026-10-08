@@ -21,12 +21,27 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from tests.test_scripts import _todays_orm_columns as todays_orm_columns
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _admin(dsn: str, statement: str) -> None:
     async def run() -> None:
         engine = create_async_engine(dsn.rsplit("/", 1)[0] + "/pullup", isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(sa.text(statement))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
+def _admin_on(dsn: str, statement: str) -> None:
+    """DDL в самой scratch-БД (не в служебной pullup)."""
+    async def run() -> None:
+        engine = create_async_engine(dsn, isolation_level="AUTOCOMMIT")
         try:
             async with engine.connect() as conn:
                 await conn.execute(sa.text(statement))
@@ -112,6 +127,9 @@ def test_seed_exercise_library_inserts_in_clean_interpreter_on_empty_db(pre_cont
     """Регрессия FD-06: на пустой библиотеке `python scripts/seed_exercise_library.py` вставляет строки и
     выходит 0 (раньше — NoReferencedTableError на flush)."""
     assert _count(pre_content_dsn, "SELECT count(*) FROM exercises") == 0
+    # Сегодняшний ORM на старой схеме — его поздние колонки на время скрипта (_todays_orm_columns.py).
+    for statement in todays_orm_columns.ADD:
+        _admin_on(pre_content_dsn, statement)
     for _ in range(2):
         result = _python(pre_content_dsn, "scripts/seed_exercise_library.py")
         assert result.returncode == 0, f"упал:\n{result.stdout}\n{result.stderr}"

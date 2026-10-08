@@ -1066,3 +1066,29 @@ def content_from_v1(title: str, items: Sequence[V1Item]) -> WorkoutContent:
         return normalize({"title": title, "blocks": blocks})
     except WorkoutContentError as exc:
         raise V1MappingError(f"V1 → v2 нарушает инвариант: {exc}") from exc
+
+
+# ============================================================================
+# Записи хранилища
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class WorkoutDefinitionVersionRecord:
+    """Строка workout_definition_versions, прочитанная репозиторием: content уже разобран."""
+
+    id: int
+    workout_definition_id: int
+    version_no: int
+    content: WorkoutContent
+    content_hash: str
+    created_at: datetime
+
+
+def content_from_stored(data: Mapping[str, Any], *, expected_hash: str | None = None) -> WorkoutContent:
+    """Хранимая форма → WorkoutContent. Нормализация идемпотентна, поэтому повторный normalize
+    ничего не меняет; expected_hash ловит порчу/ручную правку строки (содержимое ≠ хеш)."""
+    content = normalize(data)
+    if expected_hash is not None and content_hash(content) != expected_hash:
+        raise WorkoutContentError("hash_mismatch", "$", "содержимое версии не совпадает с её хешем")
+    return content

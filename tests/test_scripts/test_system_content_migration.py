@@ -31,6 +31,7 @@ from scripts.backfill_multi_program import (
 )
 from scripts.seed_collections import seed_collections
 from scripts.seed_exercise_library import seed_exercise_library
+from tests.test_scripts import _todays_orm_columns as todays_orm_columns
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PRE_CONTENT_REVISION = "9e3f1a4b6c80"  # head до ревизии системного контента
@@ -303,11 +304,14 @@ async def _run_catalog_scripts(dsn: str, *, with_collections: bool) -> dict[str,
 def test_migration_does_not_duplicate_what_seed_scripts_already_created(scratch_dsn: str, with_collections: bool):
     _alembic(scratch_dsn, "upgrade", PRE_CONTENT_REVISION)
     assert _scalar(scratch_dsn, "SELECT count(*) FROM programs") == 0  # до ревизии каталога нет
-    # Скрипты — сегодняшний ORM, он знает programs.access_level (c3f7a9e2d5b1, после ревизии каталога). Колонка
-    # добавляется только на время скриптов и снимается, чтобы БД была ровно «старая схема + строки скриптов».
-    _run(_execute(scratch_dsn, "ALTER TABLE programs ADD COLUMN access_level varchar(16) NOT NULL DEFAULT 'premium'"))
+    # Скрипты — сегодняшний ORM, он знает колонки поздних ревизий (programs.access_level, идентичность
+    # упражнений #303). Колонки добавляются только на время скриптов и снимаются, чтобы БД была ровно
+    # «старая схема + строки скриптов» (tests/test_scripts/_todays_orm_columns.py).
+    for statement in todays_orm_columns.ADD:
+        _run(_execute(scratch_dsn, statement))
     ids = _run(_run_catalog_scripts(scratch_dsn, with_collections=with_collections))
-    _run(_execute(scratch_dsn, "ALTER TABLE programs DROP COLUMN access_level"))
+    for statement in todays_orm_columns.DROP:
+        _run(_execute(scratch_dsn, statement))
 
     _alembic(scratch_dsn, "upgrade", "head")
 

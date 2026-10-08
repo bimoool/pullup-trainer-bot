@@ -61,6 +61,26 @@ LEGACY_SUBCATEGORY_TO_SLUG: dict[str, str] = {
 }
 
 
+# Внутренние slug системных упражнений (натуральный ключ сида — имя). Только для кода/сида,
+# в UI не выводятся никогда (E1).
+SYSTEM_EXERCISE_SLUGS: dict[str, str] = {
+    "Подтягивания": "pull_up",
+    "Подтягивания с резиной": "pull_up_band",
+    "Подтягивания с отягощением": "pull_up_weighted",
+    "Австралийские подтягивания": "australian_pull_up",
+    "Лопаточные подтягивания": "scapular_pull_up",
+    "Вис на турнике": "dead_hang",
+    "Планка": "plank",
+    "Отжимания": "push_up",
+    "Подтягивания — объём": "course_block_a",
+    "Подтягивания — сила": "course_block_b",
+    "Факультатив — подтягивания на максимум": "elective_max_reps_ladder",
+    "Факультатив — подтягивания W": "elective_w_ladder",
+    "Факультатив — 3 минуты подтягиваний": "elective_three_minutes",
+    "Факультатив — подтягивания на объём": "elective_volume_target",
+}
+
+
 def category_slug_for_legacy(category: str | None) -> str:
     """Неизвестная строка → «Без категории» (MIGRATION §3: не угадываем, а сообщаем)."""
     if category is None:
