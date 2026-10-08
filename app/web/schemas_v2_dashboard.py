@@ -5,6 +5,7 @@ app/web/routes_v2.py: PlanResponse там — сырой CRUD-снимок ре�
 пользовательский статус экрана, тот же водораздел, что _PlanContext/
 WorkoutPlanResponse у старой схемы в app/web/schemas.py."""
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel
@@ -57,6 +58,8 @@ class DashboardStatusResponse(BaseModel):
     фронтенд поясняет это статичной сноской, не пытается угадать."""
 
     status: Literal["not_migrated", "too_early", "gap_retest_required", "multiple_active_inclusions", "ready"]
+    # issue #304 (K1): при too_early — с какой даты доступна основная тренировка.
+    available_from: date | None = None
     program_name: str | None = None
     is_gap_rollback: bool = False
     work_sets_growth_reason: Literal["stall", "ceiling"] | None = None

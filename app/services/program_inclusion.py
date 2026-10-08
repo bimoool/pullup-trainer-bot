@@ -6,6 +6,7 @@ from app.db.models_program import Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.plan_occurrence import InclusionStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
 
 
@@ -16,6 +17,9 @@ class ProgramInclusionRequest:
     initial_target_b: int | None = None
     initial_volume_a: int = 0
     initial_volume_b: int = 0
+    # issue #304 (PROGRAM_PLAN_V2 §2): повторное подключение снятого курса ВОЗОБНОВЛЯЕТ прежнее
+    # включение (прогрессия, курсор, история). Начать заново — только явным restart=True.
+    restart: bool = False
 
 
 def _build_snapshot(
@@ -41,6 +45,13 @@ def _build_snapshot(
         "exercises": exercises,
         "program_items": program_items_snapshot(program_items),
     }
+
+
+def _freeze_slots(snapshot: dict, program: Program) -> dict:
+    """issue #304: слоты программы замораживаются в снимок при подключении (snapshot immutability) —
+    дальнейшая правка каталога не меняет уже подключённым пользователям структуру занятий."""
+    slots = derive_slots(snapshot, program_slots=program.slots, program_frequency=program.frequency)
+    return {**snapshot, "slots": [slot.to_dict() for slot in slots]}
 
 
 def _build_initial_progression_state(
@@ -128,13 +139,33 @@ class ProgramInclusionService:
         )
 
         plan = await self._plans.get_or_create_for_user(user_id)
-        snapshot = _build_snapshot(program, program_items, step_roles if is_step else {}, strategy_type)
+        if not request.restart:
+            resumed = await self._resume_previous(plan.id, program.id)
+            if resumed is not None:
+                return resumed
+        snapshot = _freeze_slots(
+            _build_snapshot(program, program_items, step_roles if is_step else {}, strategy_type), program,
+        )
         progression_state = _build_initial_progression_state(program, request, is_step)
 
         inclusion = await self._plans.create_inclusion(
             training_plan_id=plan.id, program_id=program.id, snapshot=snapshot, progression_state=progression_state,
         )
-        await self._plans.bulk_create_plan_items_from_program_items(
-            training_plan_id=plan.id, program_inclusion_id=inclusion.id, program_items=program_items,
-        )
+        inclusion.status = InclusionStatus.ACTIVE.value
+        # Занятия (одна строка = одно занятие) материализует converge_user_plan — вызывающий роут
+        # зовёт PlanWeekService.ensure_current_plan_week сразу после подключения. Агрегатные строки
+        # ProgramItem → PlanItem (count_per_week) больше не пишутся.
         return inclusion
+
+    async def _resume_previous(self, training_plan_id: int, program_id: int) -> ProgramInclusion | None:
+        """Снятый (is_active = false) курс той же программы возобновляется, если активного нет:
+        progression_state, sequence_cursor, started_at и история сохраняются (исправление DV-05)."""
+        inclusions = [i for i in await self._plans.list_inclusions(training_plan_id) if i.program_id == program_id]
+        if any(inclusion.is_active for inclusion in inclusions) or not inclusions:
+            return None
+        previous = inclusions[-1]
+        previous.is_active = True
+        previous.status = InclusionStatus.ACTIVE.value
+        previous.expires_at = None
+        await self._session.flush()
+        return previous

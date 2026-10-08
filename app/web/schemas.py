@@ -46,6 +46,7 @@ class DashboardResponse(BaseModel):
     считает ачивку TEN_WORKOUTS_STREAK, не своя эвристика."""
 
     status: str
+    available_from: date | None = None
     workouts_count: int = 0
     streak: int = 0
     days_since_last_workout: int | None = None
@@ -89,6 +90,8 @@ class WorkoutPlanResponse(BaseModel):
     тот же EquipmentItemRepository.list_for_user), пустой список иначе."""
 
     status: str
+    # issue #304 (K1): при status="too_early" — с какой даты можно начать основную тренировку.
+    available_from: date | None = None
     workout_set_id: int | None = None
     target_a: int | None = None
     target_b: int | None = None

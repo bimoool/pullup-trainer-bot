@@ -16,6 +16,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models_program import (
     Complex,
     ComplexItem,
@@ -53,10 +54,10 @@ from app.domain.multi_program import (
     MetricType,
     SessionSource,
     WeekPhase,
-    count_done_per_plan_item,
     is_plannable_week_number,
     plan_week_number,
 )
+from app.domain.plan_occurrence import InclusionStatus
 from app.domain.program_access import ProgramAccessLevel
 from app.domain.program_schedule import (
     block_role_title,
@@ -77,6 +78,13 @@ from app.services.live_session import (
     block_started_at,
     current_interval_timing,
 )
+from app.services.plan_spacing import TooEarlyError
+from app.services.plan_view import (
+    PlanItemView,
+    PlanScheduleService,
+    PlanViewService,
+    RescheduleError,
+)
 from app.services.plan_week import PlanWeekService
 from app.services.program_access import ProgramAccessService, SubscriptionRequiredError
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
@@ -88,6 +96,7 @@ from app.services.training_analytics import resolve_timezone
 from app.services.workout_definition import PrescriptionView, WorkoutDefinitionService, block_views
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
+from app.web.routes_v2_plan import custom_plan_response, too_early_http_error
 from app.web.schemas_v2 import (
     BlockProgressionResponse,
     ExerciseCreateRequest,
@@ -102,9 +111,11 @@ from app.web.schemas_v2 import (
     PlanItemMoveRequest,
     PlanItemResponse,
     PlanResponse,
+    PlanSpacingResponse,
     PlanWeekCopyResponse,
     PlanWeekCreateRequest,
     PlanWeekResponse,
+    PlanWeekSummaryResponse,
     ProgramInclusionCreateRequest,
     ProgramInclusionResponse,
     ProgramListResponse,
@@ -202,8 +213,19 @@ async def _inclusion_access_levels(session: AsyncSession, inclusions: list[Progr
 def _plan_item_response(
     item: PlanItem, complex_name_by_id: dict[int, str] | None = None,
     complex_source_type_by_id: dict[int, str] | None = None, done_count: int = 0,
+    view: PlanItemView | None = None,
 ) -> PlanItemResponse:
+    state = view.state if view is not None else None
     return PlanItemResponse(
+        source=item.source, workout_definition_id=item.workout_definition_id,
+        occurrence_index=item.occurrence_index, origin_plan_week_id=item.origin_plan_week_id,
+        program_slot_key=item.program_slot_key, custom_plan_id=item.custom_plan_id,
+        scheduled_date=item.scheduled_date, status=item.status, legacy_aggregate=item.legacy_aggregate,
+        spacing_group=view.spacing_group if view is not None else None,
+        state=state.state.value if state is not None else None,
+        available_from=state.available_from if state is not None else None,
+        projected_date=state.projected_date if state is not None else None,
+        credited_session_id=view.credited_session_id if view is not None else None,
         id=item.id, exercise_id=item.exercise_id, complex_id=item.complex_id,
         count_per_week=item.count_per_week, day_of_week=item.day_of_week,
         week_phase=item.week_phase.value if item.week_phase is not None else None,
@@ -281,6 +303,7 @@ def _session_response(
         can_edit=can_delete, activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
         blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
         progression_result=progression, progression_skipped_reason=skipped_reason, workout_id=workout_id,
+        plan_item_id=detail.plan_item_id,
     )
 
 
@@ -929,19 +952,11 @@ async def get_plan(
     # Phase D2 (issue #188) — тот же уже полученный complexes список, ни
     # одного дополнительного запроса.
     complex_source_type_by_id = {complex_.id: complex_.source_type for complex_ in complexes}
-    # issue #258 — счётчики «сделано» на неделю каждого item, в часовом поясе
-    # пользователя; не хранимый статус, считается из SessionPlanItem.
-    tz = resolve_timezone(user.timezone)
-    week_start_by_id = {week.id: week.start_date for week in plan_weeks}
-    week_start_by_item = {
-        item.id: week_start_by_id[item.plan_week_id]
-        for item in plan_items if item.plan_week_id in week_start_by_id
-    }
-    performed = await plans.list_completed_session_times_by_plan_item(
-        user_id=user.id, plan_item_ids=list(week_start_by_item),
-    )
-    done_by_item = count_done_per_plan_item(
-        week_start_by_item, [(item_id, at.astimezone(tz).date()) for item_id, at in performed],
+    # issue #304: занятия (одна строка = одно занятие), их производные состояния, «N из M» по
+    # занятиям, отдых MAIN. Счётчик старых агрегатных строк прошлых недель — прежний (#258).
+    view = await PlanViewService(session).build(
+        plan=plan, user=user, today=plan_today, plan_weeks=plan_weeks, plan_items=plan_items,
+        inclusions=inclusions,
     )
     access_levels = await _inclusion_access_levels(session, inclusions)
     return PlanResponse(
@@ -953,13 +968,28 @@ async def get_plan(
             ],
             plan_items=[
                 _plan_item_response(
-                    item, complex_name_by_id, complex_source_type_by_id, done_by_item.get(item.id, 0),
+                    item_view.item, complex_name_by_id, complex_source_type_by_id, item_view.done_count, item_view,
                 )
-                for item in plan_items
+                for item_view in view.items
             ],
             plan_weeks=[_plan_week_response(week) for week in plan_weeks],
             current_week_id=current_week.id,
             today=plan_today,
+            week_summaries=[
+                PlanWeekSummaryResponse(
+                    plan_week_id=week_id, planned=summary.planned, completed=summary.completed,
+                    infeasible=summary.infeasible, missed=summary.missed,
+                )
+                for week_id, summary in view.week_summaries
+            ],
+            spacing=[
+                PlanSpacingResponse(
+                    spacing_group=entry.spacing_group, min_days_between_starts=entry.min_days_between_starts,
+                    last_start_date=entry.last_start_date, available_from=entry.available_from,
+                )
+                for entry in view.spacing
+            ],
+            custom_plans=[custom_plan_response(custom_plan) for custom_plan in view.custom_plans],
         ),
     )
 
@@ -976,7 +1006,7 @@ async def create_program_inclusion(
         request=ProgramInclusionRequest(
             program_id=body.program_id, initial_target_a=body.initial_target_a,
             initial_target_b=body.initial_target_b, initial_volume_a=body.initial_volume_a,
-            initial_volume_b=body.initial_volume_b,
+            initial_volume_b=body.initial_volume_b, restart=body.restart,
         ),
     )
     if inclusion is None:
@@ -1006,6 +1036,7 @@ async def deactivate_program_inclusion(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Program inclusion not found")
     if inclusion.is_active:
         inclusion.is_active = False
+        inclusion.status = InclusionStatus.REMOVED.value
         if inclusion.expires_at is None:
             inclusion.expires_at = datetime.now(UTC)
         # #301 — ещё не выполнявшиеся строки курса в будущих неделях снимаются вместе с курсом
@@ -1145,6 +1176,9 @@ async def create_plan_item(
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    # issue #304 (AD-4): ручная строка — занятие(я); count_per_week > 1 разворачивает converge_user_plan
+    # (одна функция, никаких параллельных путей). Ответ — первое занятие.
+    await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan.id, today=_plan_today(user))
     return _plan_item_response(item)
 
 
@@ -1155,32 +1189,18 @@ async def move_plan_item(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> PlanItemResponse:
-    """Phase D2 (issue #188) — Move. plan_week_id не меняется в этой волне
-    (PlanItem остаётся в той же current PlanWeek). STEP/program-backed
-    (program_inclusion_id IS NOT NULL) и чужой PlanItem — оба дают 404,
-    не раскрывая пользователю причину (существующая 404-конвенция
-    проекта)."""
+    """Перенос занятия (issue #304, PL6): ЛЮБОЙ источник — курс, свой план, ручное; неделя
+    (plan_week_id), день (day_of_week, null = свободный пул) или дата (scheduled_date). Идентичность
+    занятия сохраняется; засчитанное, прошлое и историческая строка не двигаются (422). Чужой /
+    несуществующий — 404 (не раскрываем разницу)."""
     user = await _require_user(session, init_data)
-    plans = TrainingPlanRepository(session)
-    if body.plan_week_id is not None:
-        # issue #275 — перенос между неделями: целевая неделя своя и в окне
-        # «текущая .. +4»; ручной item из прошлой недели не двигаем.
-        plan = await plans.get_for_user(user.id)
-        target = await plans.get_plan_week_for_user(body.plan_week_id, user.id)
-        current = await plans.get_plan_item_for_user(plan_item_id, user.id)
-        if plan is None or target is None or current is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
-        current_number = plan_week_number(plan.created_at.date(), _plan_today(user))
-        source = (
-            await plans.get_plan_week_for_user(current.plan_week_id, user.id) if current.plan_week_id else None
+    try:
+        item = await PlanScheduleService(session).reschedule(
+            user_id=user.id, plan_item_id=plan_item_id, today=_plan_today(user), day_of_week=body.day_of_week,
+            plan_week_id=body.plan_week_id, scheduled_date=body.scheduled_date,
         )
-        if not is_plannable_week_number(target.week_number, current_number) or (
-            source is not None and source.week_number < current_number
-        ):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
-    item = await plans.update_mutable_plan_item_day(
-        plan_item_id, user.id, body.day_of_week, plan_week_id=body.plan_week_id,
-    )
+    except RescheduleError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if item is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
     return _plan_item_response(item)
@@ -1713,8 +1733,10 @@ async def start_live_session(
     try:
         result = await LiveSessionService(session).start_session(
             user_id=user.id, client_session_id=body.client_session_id, plan_item_ids=body.plan_item_ids,
-            workout_id=body.workout_id,
+            workout_id=body.workout_id, bypass_spacing=settings.is_admin(init_data.user.id),
         )
+    except TooEarlyError as exc:
+        raise too_early_http_error(exc) from exc
     except ActiveSessionConflictError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

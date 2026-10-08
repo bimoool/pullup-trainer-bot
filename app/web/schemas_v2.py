@@ -311,7 +311,26 @@ class PlanItemResponse(BaseModel):
     complex_source_type: str | None = None
     # issue #258 — сколько раз выполнен на своей неделе (завершённые сессии
     # через SessionPlanItem, дата в часовом поясе пользователя). Не колонка.
+    # issue #304: у занятия (occurrence_index не null) — 0/1 по явному кредиту.
     done_count: int = 0
+    # --- issue #304, PROGRAM_PLAN_V2 §5: одна строка = одно занятие ---
+    # occurrence_index NULL + legacy_aggregate — замороженная строка старой агрегатной формы прошлой
+    # недели (count_per_week занятий); у занятия count_per_week всегда 1.
+    source: str | None = None
+    workout_definition_id: int | None = None
+    occurrence_index: int | None = None
+    origin_plan_week_id: int | None = None
+    program_slot_key: str | None = None
+    custom_plan_id: int | None = None
+    scheduled_date: date | None = None
+    status: str = "open"
+    legacy_aggregate: bool = False
+    spacing_group: str | None = None
+    # Производное состояние: completed | missed | infeasible | available | too_early (+ дата).
+    state: str | None = None
+    available_from: date | None = None
+    projected_date: date | None = None
+    credited_session_id: int | None = None
 
 
 class PlanWeekResponse(BaseModel):
@@ -327,6 +346,53 @@ class PlanWeekResponse(BaseModel):
     phase: str
 
 
+class PlanWeekSummaryResponse(BaseModel):
+    """issue #304 (PL1, K2): «N из M» считает занятия; infeasible — «не успеть на этой неделе»."""
+
+    plan_week_id: int
+    planned: int
+    completed: int
+    infeasible: int
+    missed: int
+
+
+class PlanSpacingResponse(BaseModel):
+    """K1/K2: группа отдыха (main), минимум дней между локальными датами стартов, дата последнего
+    старта и ближайшая допустимая дата (None — истории нет)."""
+
+    spacing_group: str
+    min_days_between_starts: int
+    last_start_date: date | None
+    available_from: date | None
+
+
+class CustomPlanResponse(BaseModel):
+    id: int
+    display_name: str
+    start_week_number: int
+    workout_ids: list[int]
+    weeks: list[int]
+    repeat: str
+    preferred_weekdays: list[int] | None
+    is_active: bool
+
+
+class CustomPlanCreateRequest(BaseModel):
+    """PROGRAM_PLAN_V2 §7: weeks — ИСТИННЫЙ объём по неделям (0 допустим: W3 = 0); weekday —
+    необязательная подсказка размещения, не объём. start_week_number по умолчанию — текущая неделя."""
+
+    display_name: str = Field(min_length=1, max_length=255)
+    workout_ids: list[int] = Field(min_length=1, max_length=20)
+    weeks: list[int] = Field(min_length=1, max_length=52)
+    repeat: Literal["once", "cycle"] = "once"
+    preferred_weekdays: list[int] | None = None
+    start_week_number: int | None = None
+
+
+class CustomPlanListResponse(BaseModel):
+    items: list[CustomPlanResponse]
+
+
 class TrainingPlanResponse(BaseModel):
     id: int
     created_at: datetime
@@ -340,6 +406,10 @@ class TrainingPlanResponse(BaseModel):
     # считает день недели «Сегодня» внутри current_week_id, а не по часам устройства
     # (#288: другой пояс, понедельник около полуночи, приложение открыто всю ночь).
     today: date | None = None
+    # issue #304
+    week_summaries: list[PlanWeekSummaryResponse] = Field(default_factory=list)
+    spacing: list[PlanSpacingResponse] = Field(default_factory=list)
+    custom_plans: list[CustomPlanResponse] = Field(default_factory=list)
 
 
 class PlanResponse(BaseModel):
@@ -380,6 +450,9 @@ class ProgramInclusionCreateRequest(BaseModel):
     initial_target_b: int | None = None
     initial_volume_a: int = 0
     initial_volume_b: int = 0
+    # issue #304 (PROGRAM_PLAN_V2 §2): по умолчанию повторное подключение снятого курса возобновляет
+    # прежнее состояние; restart=true — явно начать заново (новое включение).
+    restart: bool = False
 
 
 # --- Сессии ---------------------------------------------------------------------------
@@ -541,6 +614,8 @@ class SessionResponse(BaseModel):
     # пересчёт применился.
     progression_result: SessionProgressionResponse | None
     progression_skipped_reason: str | None
+    # issue #304 (PL2): явно засчитанное занятие плана; None — прямой старт / копия / ручная запись.
+    plan_item_id: int | None = None
 
 
 class JournalDayResponse(BaseModel):
@@ -601,6 +676,9 @@ class PlanItemMoveRequest(BaseModel):
     day_of_week: int | None = Field(ge=0, le=6)
     # issue #275 — перенос в другую неделю (None = неделя не меняется).
     plan_week_id: int | None = None
+    # issue #304 (PL6): перенос ЛЮБОГО открытого занятия (курс, свой план, ручное) — неделя и/или день;
+    # scheduled_date задаёт обе сразу (должна лежать в целевой неделе). Засчитанное не двигается.
+    scheduled_date: date | None = None
 
 
 # Issue #303: прямые ссылки вперёд на LabelRef/WorkoutVersionRef/PrescriptionBlockResponse.

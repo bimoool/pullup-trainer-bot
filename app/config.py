@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]
 
+    # OD-2 (issue #304, PROGRAM_PLAN_V2 §4): минимум календарных дней между ЛОКАЛЬНЫМИ датами стартов MAIN
+    # — «два полных дня отдыха» (Пн → Чт = 3). Фолбэк, когда у программы нет programs.constraints.
+    main_min_days_between_starts: int = 3
+
     def is_admin(self, telegram_id: int) -> bool:
         return telegram_id in self.admin_id_list
 

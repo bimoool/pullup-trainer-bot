@@ -13,6 +13,7 @@ from app.db.models_program import (
     ProgramInclusion,
     ProgramItem,
     ProgressionStrategyProfile,
+    TrainingPlan,
 )
 from app.domain.exercise_identity import CATEGORY_MY_EXERCISES
 from app.domain.multi_program import (
@@ -138,6 +139,32 @@ class ProgramRepository:
             select(ProgramItem).where(ProgramItem.program_id == program_id).order_by(ProgramItem.id),
         )
         return list(result.scalars().all())
+
+    async def spacing_constraints_for_user(self, user_id: int) -> list | None:
+        """programs.constraints (issue #304, K1): программа активного включения пользователя с
+        заданными constraints; иначе каталожная программа «Подтягивания» (category pull_ups) — тот
+        же конфиг для legacy-путей без включения; None — нет нигде (вызывающий берёт фолбэк конфига)."""
+        result = await self._session.execute(
+            select(Program.constraints)
+            .join(ProgramInclusion, ProgramInclusion.program_id == Program.id)
+            .join(TrainingPlan, TrainingPlan.id == ProgramInclusion.training_plan_id)
+            .where(
+                TrainingPlan.user_id == user_id, ProgramInclusion.is_active.is_(True),
+                Program.constraints.is_not(None),
+            )
+            .order_by(ProgramInclusion.id)
+            .limit(1),
+        )
+        constraints = result.scalar_one_or_none()
+        if constraints is not None:
+            return constraints
+        result = await self._session.execute(
+            select(Program.constraints)
+            .where(Program.category == "pull_ups", Program.constraints.is_not(None))
+            .order_by(Program.id)
+            .limit(1),
+        )
+        return result.scalar_one_or_none()
 
     async def find_step_role_exercises(self, *, category: str | None) -> dict[str, Exercise]:
         """Роль "какой Exercise — блок A/Б" для StepProgressionStrategy —

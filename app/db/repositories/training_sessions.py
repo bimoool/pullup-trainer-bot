@@ -3,12 +3,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, and_, delete, exists, func, select
+from sqlalchemy import ColumnElement, and_, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
     Exercise,
+    PlanItem,
     SessionBlock,
     SessionPhase,
     SessionPlanItem,
@@ -19,7 +20,8 @@ from app.db.models_program import (
 )
 from app.domain.constants import ExerciseType
 from app.domain.live_session import DEFAULT_UNIT_BY_METRIC_TYPE
-from app.domain.multi_program import MetricType, SessionSource
+from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
+from app.domain.plan_occurrence import MAIN_SLOT_KEY
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,8 @@ class SessionDetail:
     activity_type: str | None = None
     duration_seconds: int | None = None
     blocks: list[SessionBlockDetail] = field(default_factory=list)
+    # issue #304: явно засчитанное занятие плана (PL2); None — прямой старт / копия / ручная запись.
+    plan_item_id: int | None = None
 
 
 class TrainingSessionRepository:
@@ -197,7 +201,7 @@ class TrainingSessionRepository:
     async def create_live_session(
         self, *, user_id: int, client_session_id: uuid.UUID, source: SessionSource, performed_at: datetime,
         plan_item_ids: list[int], blocks: list[SessionBlockInput], targets_by_block: list[list[SetTargetInput]],
-        phase_ends_at: datetime | None, workout_snapshot: dict | None = None,
+        phase_ends_at: datetime | None, workout_snapshot: dict | None = None, plan_item_id: int | None = None,
     ) -> TrainingSession:
         """Старт живой сессии (POST /sessions/live) — status=STARTED,
         phase_name=GET_READY (уже применяется здесь, не через отдельный
@@ -215,7 +219,7 @@ class TrainingSessionRepository:
             effort=None, comment=None, client_session_id=client_session_id,
             phase_name=SessionPhase.GET_READY, phase_ends_at=phase_ends_at,
             current_block_index=0, current_set_number=1, phase_index=0,
-            workout_snapshot=workout_snapshot,
+            workout_snapshot=workout_snapshot, plan_item_id=plan_item_id,
         )
         self._session.add(training_session)
         await self._session.flush()
@@ -256,12 +260,22 @@ class TrainingSessionRepository:
         фолбэк, эта функция не гадает."""
         if not session_ids:
             return {}
-        result = await self._session.execute(
-            select(SessionPlanItem).where(SessionPlanItem.session_id.in_(session_ids)),
-        )
         by_session: dict[int, list[int]] = {}
+        # issue #304: явный кредит (training_sessions.plan_item_id) — первым; старая M2M — история.
+        explicit = await self._session.execute(
+            select(TrainingSession.id, TrainingSession.plan_item_id).where(
+                TrainingSession.id.in_(session_ids), TrainingSession.plan_item_id.is_not(None),
+            ),
+        )
+        for session_id, plan_item_id in explicit.all():
+            by_session.setdefault(session_id, []).append(plan_item_id)
+        result = await self._session.execute(
+            select(SessionPlanItem).where(SessionPlanItem.session_id.in_(session_ids)).order_by(SessionPlanItem.id),
+        )
         for row in result.scalars().all():
-            by_session.setdefault(row.session_id, []).append(row.plan_item_id)
+            ids = by_session.setdefault(row.session_id, [])
+            if row.plan_item_id not in ids:
+                ids.append(row.plan_item_id)
         return by_session
 
     async def get_by_client_session_id(self, user_id: int, client_session_id: uuid.UUID) -> TrainingSession | None:
@@ -573,7 +587,7 @@ class TrainingSessionRepository:
                     current_set_number=session_row.current_set_number, phase_index=session_row.phase_index,
                     workout_snapshot=session_row.workout_snapshot,
                     activity_type=session_row.activity_type, duration_seconds=session_row.duration_seconds,
-                    blocks=block_details,
+                    blocks=block_details, plan_item_id=session_row.plan_item_id,
                 ),
             )
         return details
@@ -666,6 +680,7 @@ class TrainingSessionRepository:
             TrainingSession.client_session_id.is_(None),
             TrainingSession.workout_snapshot.is_(None),
             TrainingSession.activity_type.is_(None),
+            TrainingSession.plan_item_id.is_(None),
             ~has_plan_items,
             block_a_first,
         )
@@ -809,9 +824,80 @@ class TrainingSessionRepository:
         await self._session.flush()
         return True
 
+    # --- Явный кредит занятия и отдых MAIN (issue #304) -------------------------------------
+
+    @staticmethod
+    def main_session_predicate() -> ColumnElement[bool]:
+        """«Завершённая v2-сессия — старт MAIN» (K1, app.services.plan_spacing): засчитала занятие
+        main-слота (plan_item_id) ИЛИ содержит блок роли STEP (block_a/block_b) хотя бы с одним
+        записанным подходом. Пустые брошенные сессии отдых не сдвигают."""
+        role_block_with_log = exists().where(
+            SessionBlock.session_id == TrainingSession.id,
+            SessionBlock.exercise_id == Exercise.id,
+            Exercise.subcategory.in_(INTERNAL_ROLE_SUBCATEGORIES),
+            exists().where(SetLog.session_block_id == SessionBlock.id),
+        )
+        credited_main = exists().where(
+            PlanItem.id == TrainingSession.plan_item_id, PlanItem.program_slot_key == MAIN_SLOT_KEY,
+        )
+        return and_(TrainingSession.status == SessionStatus.COMPLETED, or_(credited_main, role_block_with_log))
+
+    async def latest_main_session_at(self, user_id: int) -> datetime | None:
+        result = await self._session.execute(
+            select(func.max(TrainingSession.performed_at)).where(
+                TrainingSession.user_id == user_id, self.main_session_predicate(),
+            ),
+        )
+        return result.scalar_one_or_none()
+
+    async def count_main_sessions(self, user_id: int) -> int:
+        result = await self._session.execute(
+            select(func.count(TrainingSession.id)).where(
+                TrainingSession.user_id == user_id, self.main_session_predicate(),
+            ),
+        )
+        return int(result.scalar_one())
+
+    async def credits_for_plan_items(self, plan_item_ids: list[int]) -> list[tuple[int, int, SessionStatus, datetime]]:
+        """(plan_item_id, session_id, status, performed_at) сессий, ЯВНО засчитавших занятия
+        (training_sessions.plan_item_id) — STARTED и COMPLETED, по возрастанию performed_at."""
+        if not plan_item_ids:
+            return []
+        result = await self._session.execute(
+            select(
+                TrainingSession.plan_item_id, TrainingSession.id, TrainingSession.status, TrainingSession.performed_at,
+            )
+            .where(TrainingSession.plan_item_id.in_(plan_item_ids))
+            .order_by(TrainingSession.performed_at, TrainingSession.id),
+        )
+        return [(row[0], row[1], row[2], row[3]) for row in result.all()]
+
+    async def legacy_links_for_plan_items(
+        self, plan_item_ids: list[int],
+    ) -> list[tuple[int, int, SessionStatus, datetime, int | None]]:
+        """(plan_item_id, session_id, status, performed_at, session.plan_item_id) по старой M2M-связи
+        (только чтение истории) — вход разворота агрегатных строк в converge_user_plan."""
+        if not plan_item_ids:
+            return []
+        result = await self._session.execute(
+            select(
+                SessionPlanItem.plan_item_id, TrainingSession.id, TrainingSession.status,
+                TrainingSession.performed_at, TrainingSession.plan_item_id,
+            )
+            .join(TrainingSession, TrainingSession.id == SessionPlanItem.session_id)
+            .where(SessionPlanItem.plan_item_id.in_(plan_item_ids))
+            .order_by(TrainingSession.performed_at, TrainingSession.id),
+        )
+        return [(row[0], row[1], row[2], row[3], row[4]) for row in result.all()]
+
+    async def set_plan_item_credit(self, session_id: int, plan_item_id: int | None) -> None:
+        training_session = await self._session.get(TrainingSession, session_id)
+        training_session.plan_item_id = plan_item_id
+        await self._session.flush()
+
     async def clone_session(self, source_id: int, *, user_id: int, performed_at: datetime) -> TrainingSession:
         """Копия завершённой сессии (#262): новая COMPLETED-сессия source=BACKDATED
-        с теми же блоками/целями/фактом/снимком/связями с PlanItem. Никакой
+        с теми же блоками/целями/фактом/снимком, БЕЗ кредита плана (#304). Никакой
         прогрессии: ни пересчёта, ни связи с инклюзией. completed_at =
         performed_at — у копии нет "длительности"."""
         original = await self._session.get(TrainingSession, source_id)
@@ -855,7 +941,7 @@ class TrainingSessionRepository:
                     value=log.value, unit=log.unit, effort=log.effort, note=log.note,
                     session_id=clone.id if log.set_index is not None else None, set_index=log.set_index,
                 ))
-        plan_item_ids = (await self.list_plan_item_ids_by_session([source_id])).get(source_id, [])
-        await self._create_session_plan_items(clone.id, plan_item_ids)
+        # issue #304 (D10, PL3): копия НЕ засчитывает занятия плана — ни явным plan_item_id, ни
+        # копированием старой M2M-связи оригинала.
         await self._session.flush()
         return clone

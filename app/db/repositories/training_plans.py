@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
     ComplexItem,
+    CustomPlan,
     PlanItem,
     PlanWeek,
     ProgramInclusion,
@@ -242,7 +243,10 @@ class TrainingPlanRepository:
         копирования недели (issue #275)."""
         result = await self._session.execute(
             select(PlanItem)
-            .where(PlanItem.plan_week_id == plan_week_id, PlanItem.program_inclusion_id.is_(None))
+            .where(
+                PlanItem.plan_week_id == plan_week_id, PlanItem.program_inclusion_id.is_(None),
+                PlanItem.custom_plan_id.is_(None), PlanItem.status != "removed",
+            )
             .order_by(PlanItem.id),
         )
         return list(result.scalars().all())
@@ -450,11 +454,13 @@ class TrainingPlanRepository:
             PlanWeek.week_number > after_week_number,
         )
         performed = select(SessionPlanItem.plan_item_id)
+        credited = select(TrainingSession.plan_item_id).where(TrainingSession.plan_item_id.is_not(None))
         result = await self._session.execute(
             delete(PlanItem).where(
                 PlanItem.program_inclusion_id == program_inclusion_id,
                 PlanItem.plan_week_id.in_(future_week_ids),
                 PlanItem.id.not_in(performed),
+                PlanItem.id.not_in(credited),
             ),
         )
         return result.rowcount or 0
@@ -477,3 +483,53 @@ class TrainingPlanRepository:
             ),
         )
         return [(row[0], row[1]) for row in result.all()]
+
+    # --- Занятия v2 / свой план (issue #304) -------------------------------------------------
+
+    async def list_items_in_week(self, plan_week_id: int) -> list[PlanItem]:
+        """Все строки, находящиеся сейчас в неделе (любой источник и статус), по id."""
+        result = await self._session.execute(
+            select(PlanItem).where(PlanItem.plan_week_id == plan_week_id).order_by(PlanItem.id),
+        )
+        return list(result.scalars().all())
+
+    async def list_items_by_origin(self, origin_plan_week_id: int) -> list[PlanItem]:
+        """Занятия, сгенерированные ДЛЯ недели (origin), где бы они сейчас ни лежали (перенос, PL6)."""
+        result = await self._session.execute(
+            select(PlanItem).where(PlanItem.origin_plan_week_id == origin_plan_week_id).order_by(PlanItem.id),
+        )
+        return list(result.scalars().all())
+
+    async def add_plan_item(self, item: PlanItem) -> PlanItem:
+        self._session.add(item)
+        await self._session.flush()
+        return item
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
+    async def list_custom_plans(self, training_plan_id: int) -> list[CustomPlan]:
+        result = await self._session.execute(
+            select(CustomPlan).where(CustomPlan.training_plan_id == training_plan_id).order_by(CustomPlan.id),
+        )
+        return list(result.scalars().all())
+
+    async def list_custom_plans_for_user(self, user_id: int) -> list[CustomPlan]:
+        result = await self._session.execute(
+            select(CustomPlan).where(CustomPlan.user_id == user_id).order_by(CustomPlan.id),
+        )
+        return list(result.scalars().all())
+
+    async def create_custom_plan(self, plan: CustomPlan) -> CustomPlan:
+        self._session.add(plan)
+        await self._session.flush()
+        return plan
+
+    async def first_complex_exercise_id(self, complex_id: int) -> int | None:
+        result = await self._session.execute(
+            select(ComplexItem.exercise_id)
+            .where(ComplexItem.complex_id == complex_id)
+            .order_by(ComplexItem.order_index)
+            .limit(1),
+        )
+        return result.scalar_one_or_none()

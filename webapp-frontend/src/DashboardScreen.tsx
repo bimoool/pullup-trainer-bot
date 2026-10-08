@@ -15,6 +15,7 @@ import {
   type PlanWeekResponseV2,
   type ProgramResponseV2,
   type ProgramInclusionResponseV2,
+  type CustomPlanV2,
   removePlanItem,
   deactivateProgramInclusion,
   type TrainingPlanResponseV2,
@@ -24,13 +25,14 @@ import { completedInclusions, inclusionDateRange, inclusionWeekLabel } from "./p
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { ActionSheet, MoreButton, PlanProgressBar, type SheetAction } from "./ActionSheet";
 import { AddToPlanScreen } from "./AddToPlanScreen";
+import { CustomPlanScreen } from "./CustomPlanScreen";
 import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
-  todayDayIndexInWeek, weekOpensLabel, weekProgress, weekRangeLabel,
+  occurrenceStateLabel, todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
@@ -108,6 +110,13 @@ function groupPlanItems(
   const groups = new Map<string, PlanItemGroup>();
   let manualSeq = 0;
   for (const item of items) {
+    // issue #304 (AD-4): занятие курса — своя карточка (одна строка = одно занятие, «0 из 3»).
+    if (item.program_inclusion_id !== null && item.occurrence_index !== null && item.occurrence_index !== undefined) {
+      const key = `occ:${item.id}`;
+      const inclusion = inclusions.find((i) => i.id === item.program_inclusion_id);
+      groups.set(key, { key, title: inclusion?.program_name ?? exerciseLabel(item, inclusions, exercises), items: [item] });
+      continue;
+    }
     if (item.program_inclusion_id === null) {
       const key = `manual:${item.id}:${manualSeq++}`;
       groups.set(key, { key, title: exerciseLabel(item, inclusions, exercises), items: [item] });
@@ -190,9 +199,11 @@ type PlanState = {
   currentWeekId: number | null;
   /** plan.today с сервера (YYYY-MM-DD, часовой пояс пользователя); null — старый ответ, тогда localToday(). */
   today: string | null;
+  /** issue #304 — свои планы с объёмом по неделям. */
+  customPlans: CustomPlanV2[];
 };
 
-const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null, today: null };
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null, today: null, customPlans: [] };
 
 /** #288 — план старше этого (мс) перечитывается при возврате в приложение: «Сегодня» не залипает на вчера. */
 const PLAN_STALE_MS = 60_000;
@@ -212,6 +223,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
     weeks: data.plan_weeks,
     currentWeekId: data.current_week_id ?? null,
     today: data.today ?? null,
+    customPlans: data.custom_plans ?? [],
   };
 }
 
@@ -219,6 +231,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
 // swap-state.
 type MyWorkoutsView =
   | { kind: "closed" }
+  | { kind: "custom-plan" }
   | { kind: "list" }
   | { kind: "create" }
   | { kind: "detail"; workoutId: number }
@@ -232,6 +245,8 @@ type PlansSheetState =
     kind: "row"; planItemId: number; title: string; dayOfWeek: number | null; planWeekId: number | null;
     /** id пользовательской тренировки — только для «Редактировать тренировку». */
     editWorkoutId: number | null;
+    /** issue #304 — занятие курса: только перенос (убрать — через «Убрать курс»). */
+    moveOnly?: boolean;
   }
   | { kind: "plan"; inclusionId: number | null };
 
@@ -580,6 +595,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // Phase C4a (issue #188) — «Мои тренировки» swap, до loading/error
   // ранних return'ов выше: не зависит от Plans-данных вообще, доступен
   // даже если /api/v2/dashboard ещё грузится/упал.
+  if (myWorkoutsView.kind === "custom-plan") {
+    return (
+      <CustomPlanScreen
+        initDataRaw={initDataRaw}
+        onBack={() => setMyWorkoutsView({ kind: "closed" })}
+        onCreated={() => { setMyWorkoutsView({ kind: "closed" }); reloadPlan(); }}
+      />
+    );
+  }
   if (myWorkoutsView.kind === "list") {
     return (
       <MyWorkoutsScreen
@@ -765,6 +789,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           }),
         },
       ];
+      if (sheet.moveOnly) {
+        return (
+          <ActionSheet
+            title={sheet.title} actions={actions} onClose={() => setSheet(null)} testId="plans-row-sheet"
+            returnFocusTo={sheetOpener}
+          />
+        );
+      }
       if (sheet.editWorkoutId !== null) {
         const workoutId = sheet.editWorkoutId;
         actions.push({
@@ -821,7 +853,23 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         >
           Мои тренировки
         </Button>
+        <Button
+          className="action-button" size="s" mode="bezeled" data-testid="plans-custom-plan"
+          onClick={() => setMyWorkoutsView({ kind: "custom-plan" })}
+        >
+          Свой план
+        </Button>
       </div>
+      {plan.customPlans.length > 0 && (
+        <Section className="block-section" header="Свои планы">
+          {plan.customPlans.map((custom) => (
+            <p key={custom.id} className="block-subtitle" data-testid="plans-custom-plan-row">
+              {`${custom.display_name}: ${custom.weeks.map((count, index) => `Н${index + 1} ${count}`).join(" · ")}`}
+              {custom.repeat === "cycle" ? " · по кругу" : ""}
+            </p>
+          ))}
+        </Section>
+      )}
       <div className="workout-mode-buttons vp-tabs plans-tabs" role="tablist" aria-label="Обзор плана">
         {([["now", "Сейчас"], ["completed", "Завершённые"]] as const).map(([key, label]) => (
           <button
@@ -1027,6 +1075,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               // и весь предмет действия, не случайный выбор из нескольких.
               // #286 B — эти действия теперь в листе «⋯» (одна кнопка на строке).
               const mutableItem = !isProgramBacked ? group.items[0] : null;
+              // issue #304 (PL6): занятие курса переносится (неделя/день), но не удаляется отдельно.
+              const occurrence = group.items.length === 1 && group.items[0].occurrence_index != null ? group.items[0] : null;
+              const movableCourseItem = isProgramBacked && occurrence !== null && occurrence.state !== "completed"
+                ? occurrence : null;
+              const stateLabel = occurrence === null ? null : occurrenceStateLabel(occurrence);
+              // §6: будущие недели видимы И стартуемы; K1 (отдых) решает сервер — «рано» не стартуем.
+              const canStart = (isCurrent || selectedIndex > currentIndex) && !(occurrence?.legacy_aggregate)
+                && occurrence?.state !== "too_early";
               const isRemoveConfirming = mutableItem !== null && removeConfirmPlanItemId === mutableItem.id;
               const isRemoving = mutableItem !== null && removingPlanItemId === mutableItem.id;
               const canEditWorkout = mutableItem !== null
@@ -1045,8 +1101,13 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                       <span className="plans-row-chip" data-done={rowDone} data-testid="plan-item-counter">
                         {`${counter.done}/${counter.planned}`}
                       </span>
+                      {stateLabel !== null && (
+                        <span className="plans-row-scheduled block-subtitle" data-testid="plans-row-state" data-state={occurrence?.state ?? ""}>
+                          {stateLabel}
+                        </span>
+                      )}
                     </div>
-                    {isCurrent && (
+                    {canStart && (
                       rowDone ? (
                         <button
                           type="button" className="plans-start plans-start-again" aria-label={`Повторить: ${rowLabel}`}
@@ -1063,10 +1124,15 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                         </button>
                       )
                     )}
-                    {!isCurrent && isProgramBacked && selectedIndex > currentIndex && (
-                      <span className="plans-row-scheduled block-subtitle" data-testid="plans-row-scheduled">
-                        {weekOpensLabel(week.start_date)}
-                      </span>
+                    {isEditable && movableCourseItem !== null && (
+                      <MoreButton
+                        label={`Действия: ${rowLabel}`} testId="plans-row-more" focusKey={`row-${movableCourseItem.id}`}
+                        onClick={(opener) => openSheet({
+                          kind: "row", planItemId: movableCourseItem.id, title: group.title,
+                          dayOfWeek: movableCourseItem.day_of_week, planWeekId: movableCourseItem.plan_week_id,
+                          editWorkoutId: null, moveOnly: true,
+                        }, opener)}
+                      />
                     )}
                     {isEditable && mutableItem !== null && !isRemoveConfirming && (
                       <MoreButton

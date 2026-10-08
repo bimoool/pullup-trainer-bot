@@ -45,7 +45,6 @@ from app.domain.constants import (
     DELOAD_INTERVAL_DAYS,
     HEAVY_BLOCK_FIXED_REPS,
     HEAVY_GROWTH_MAX_REPS_THRESHOLD,
-    MIN_REST_DAYS,
     SET_LENGTH,
     STRENGTH_BLOCK,
     VOLUME_BLOCK,
@@ -68,8 +67,10 @@ from app.domain.progression import (
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
+from app.services.plan_spacing import MainSpacingService
 from app.services.program_access import ProgramAccessService
 from app.services.subscription import SubscriptionService
+from app.services.training_analytics import resolve_timezone
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
 router = Router()
@@ -203,26 +204,20 @@ async def resolve_rest_day_notice(
         return None
 
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
-    workouts = WorkoutRepository(session)
-    history = await workouts.list_for_user(user.id)
-    if not history:
+    # issue #304 (K1, OD-2): «сегодня отдых» — тот же серверный источник, что запрет старта во всех
+    # путях (два полных дня отдыха: Пн → Чт), по legacy- и v2-истории, даты в поясе пользователя.
+    spacing = await MainSpacingService(session).status(user, now=now)
+    if not spacing.too_early:
         return None
 
-    readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
-    if readiness.status != TrainingReadiness.TOO_EARLY:
-        return None
-
-    # Таймер + дата/время (Часть 10, пакет #2, п.23) — домен считает только
-    # по date (check_training_readiness), а тут для реального "сколько
-    # ждать" в часах нужна полная дата-время последней тренировки, поэтому
-    # здесь, не в домене (презентационный расчёт, не влияет на саму логику
-    # готовности).
-    ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
+    # Таймер + дата/время (Часть 10, пакет #2, п.23): «через N ч» — до начала дня available_from
+    # в поясе пользователя (презентационный расчёт, не влияет на саму логику готовности).
+    ready_at_dt = spacing.available_from_at(user.timezone)
     hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
     message_text = texts.TOO_EARLY_FOR_WORKOUT.format(
         hours_left=hours_left,
-        ready_date=ready_at_dt.strftime("%d.%m"),
-        ready_time=ready_at_dt.strftime("%H:%M"),
+        ready_date=spacing.available_from.strftime("%d.%m"),
+        ready_time=ready_at_dt.astimezone(resolve_timezone(user.timezone)).strftime("%H:%M"),
     )
 
     electives = ElectiveWorkoutRepository(session)
@@ -255,17 +250,16 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
     history = await workouts.list_for_user(user.id)
 
     readiness = None
-    if history:
-        readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
-        if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
-            rest_day_notice = await resolve_rest_day_notice(session, telegram_id=callback.from_user.id, now=now)
-            # rest_day_notice всегда не None здесь: тот же readiness/history,
-            # что resolve_rest_day_notice пересчитывает само (is_admin уже
-            # проверен веткой выше).
+    if not is_admin:
+        rest_day_notice = await resolve_rest_day_notice(session, telegram_id=callback.from_user.id, now=now)
+        if rest_day_notice is not None:
+            # issue #304 (K1): старт основной тренировки раньше available_from отклоняется.
             message_text, keyboard = rest_day_notice
             await callback.message.answer(message_text, reply_markup=keyboard)
             await callback.answer()
             return
+    if history:
+        readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
         if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
             await state.set_state(RetestStates.waiting_for_baseline_reps)
             await callback.message.answer(

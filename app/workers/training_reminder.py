@@ -13,7 +13,7 @@ from app.db.base import async_session_factory
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import DEFAULT_TRAINING_REMINDER_HOUR
-from app.domain.rules import TrainingReadiness, check_training_readiness
+from app.services.plan_spacing import MainSpacingService
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +57,10 @@ async def _send_training_reminders(session: AsyncSession, bot: Bot) -> int:
         history = await workouts.list_for_user(user.id)
         if not history:
             continue
-        # UTC "сегодня", не local_now.date() — та же точка отсчёта, что и у
-        # resolve_rest_day_notice/handle_start_workout (issue #94): готовность
-        # к тренировке нигде в проекте не считается по локальному часовому
-        # поясу пользователя, local_now здесь только для часа отправки и
-        # анти-дублирования (training_reminder_last_sent_date).
-        readiness = check_training_readiness(history[-1].performed_at.date(), datetime.now(UTC).date())
-        if readiness.status == TrainingReadiness.TOO_EARLY:
+        # issue #304 (K1): «сегодня отдых» — тот же серверный источник, что запрет старта (два полных
+        # дня отдыха, даты в поясе пользователя): не напоминаем о тренировке, которую сервер отклонит.
+        spacing = await MainSpacingService(session).status(user, now=datetime.now(UTC))
+        if spacing.too_early:
             continue
 
         try:

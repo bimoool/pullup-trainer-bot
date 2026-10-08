@@ -51,6 +51,22 @@ async function extractErrorCode(response: Response): Promise<string | null> {
   }
 }
 
+/** issue #304 (K1): 409 too_early несёт available_from (YYYY-MM-DD, дата пользователя). */
+async function extractAvailableFrom(response: Response): Promise<string | null> {
+  try {
+    const data = await response.json();
+    return typeof data?.detail?.available_from === "string" ? data.detail.available_from : null;
+  } catch {
+    return null;
+  }
+}
+
+/** issue #304 (K1): старт основной тренировки раньше двух полных дней отдыха — дата, с которой можно. */
+export function tooEarlyAvailableFrom(error: unknown): string | null {
+  const value = error as { code?: string; availableFrom?: string | null } | null;
+  return value?.code === "too_early" ? value.availableFrom ?? null : null;
+}
+
 /** 402 subscription_required: курсовую тренировку без действующей подписки сервер не стартует. */
 export function isSubscriptionRequired(error: unknown): boolean {
   return (error as { code?: string } | null)?.code === "subscription_required";
@@ -88,6 +104,8 @@ export interface DashboardStatusResponse {
   work_sets_growth_reason: "stall" | "ceiling" | null;
   block_a: DashboardBlockResponse | null;
   block_b: DashboardBlockResponse | null;
+  /** issue #304 (K1): при too_early — с какой даты можно (YYYY-MM-DD, дата пользователя). */
+  available_from?: string | null;
 }
 
 async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
@@ -109,9 +127,10 @@ async function apiV2Post<TBody, TResult>(path: string, initDataRaw: string, body
   });
   if (!response.ok) {
     const code = await extractErrorCode(response.clone());
+    const availableFrom = code === "too_early" ? await extractAvailableFrom(response.clone()) : null;
     const message = await extractErrorMessage("POST", path, response);
     // status — классификация ошибок досылки живой сессии (liveFinish.ts, #287); code — доменная ошибка (#300).
-    throw Object.assign(new Error(message), { status: response.status, code });
+    throw Object.assign(new Error(message), { status: response.status, code, availableFrom });
   }
   return (await response.json()) as TResult;
 }
@@ -387,6 +406,67 @@ export interface PlanItemResponseV2 {
   complex_source_type: "user" | "system" | null;
   /** issue #258 — выполнений на своей неделе (завершённые сессии). */
   done_count: number;
+  // --- issue #304: одна строка = одно занятие (PROGRAM_PLAN_V2 §5) ---
+  source?: "program" | "custom_plan" | "manual" | null;
+  workout_definition_id?: number | null;
+  /** null — замороженная строка старой агрегатной формы прошлой недели (legacy_aggregate). */
+  occurrence_index?: number | null;
+  origin_plan_week_id?: number | null;
+  program_slot_key?: string | null;
+  custom_plan_id?: number | null;
+  scheduled_date?: string | null;
+  status?: "open" | "rescheduled" | "removed";
+  legacy_aggregate?: boolean;
+  spacing_group?: string | null;
+  /** Производное состояние занятия. */
+  state?: PlanOccurrenceState | null;
+  available_from?: string | null;
+  projected_date?: string | null;
+  credited_session_id?: number | null;
+}
+
+export type PlanOccurrenceState = "completed" | "missed" | "infeasible" | "available" | "too_early";
+
+export interface PlanWeekSummaryV2 {
+  plan_week_id: number;
+  planned: number;
+  completed: number;
+  infeasible: number;
+  missed: number;
+}
+
+export interface PlanSpacingV2 {
+  spacing_group: string;
+  min_days_between_starts: number;
+  last_start_date: string | null;
+  available_from: string | null;
+}
+
+export interface CustomPlanV2 {
+  id: number;
+  display_name: string;
+  start_week_number: number;
+  workout_ids: number[];
+  weeks: number[];
+  repeat: "once" | "cycle";
+  preferred_weekdays: number[] | null;
+  is_active: boolean;
+}
+
+export interface CustomPlanCreateV2 {
+  display_name: string;
+  workout_ids: number[];
+  /** Объём по неделям: [2, 2, 0, 2, 2, 0] — 0 допустим (пустая неделя). */
+  weeks: number[];
+  repeat?: "once" | "cycle";
+  /** Подсказка размещения (0 = Пн … 6 = Вс), не объём. */
+  preferred_weekdays?: number[] | null;
+  start_week_number?: number | null;
+}
+
+/** issue #304 (§7) — свой план с объёмом по неделям. */
+export async function createCustomPlan(initDataRaw: string, body: CustomPlanCreateV2): Promise<CustomPlanV2> {
+  return apiV2Post("/api/v2/custom-plans", initDataRaw, body);
 }
 
 /**
@@ -413,6 +493,10 @@ export interface TrainingPlanResponseV2 {
   current_week_id?: number | null;
   /** «Сегодня» (YYYY-MM-DD) в часовом поясе пользователя (#288) — день недели «Сегодня» считается по нему. */
   today?: string | null;
+  /** issue #304: «N из M» по занятиям; infeasible — «не успеть на этой неделе». */
+  week_summaries?: PlanWeekSummaryV2[];
+  spacing?: PlanSpacingV2[];
+  custom_plans?: CustomPlanV2[];
 }
 
 export async function fetchPlan(initDataRaw: string): Promise<TrainingPlanResponseV2 | null> {

@@ -25,6 +25,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -32,6 +33,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy.dialects.postgresql import JSONB
@@ -344,6 +346,16 @@ class Program(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Program v2 (issue #304, PROGRAM_PLAN_V2 §1). Все NULL у программ без разметки — тогда слоты
+    # выводятся из program_items снимка (app.domain.plan_occurrence.derive_slots).
+    # slots — [{key, role, workout_definition_id, spacing_group, repeat, counts_toward_progression}];
+    # frequency — ЖЕЛАЕМЫЙ объём {sessions_per_week, per_slot}, не размещение (AD-5);
+    # constraints — [{spacing_group, min_days_between_starts}] — источник K1/K2 (живое свойство
+    # каталога, как access_level); assessment — {protocol_id, required_before_first_session, validity_days}.
+    slots: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    frequency: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    constraints: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    assessment: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class ProgramItem(Base):
@@ -431,6 +443,45 @@ class ProgramInclusion(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # Состояние включения v2 (issue #304, PROGRAM_PLAN_V2 §2).
+    # progression_state_rev — +1 на каждую применённую прогрессию (провенанс снимка сессии);
+    # sequence_cursor — сколько занятий main-слота уже засчитано (прогрессия по последовательности, не
+    # по календарю; NULL — ещё не инициализирован converge_user_plan); status — active | paused |
+    # completed | removed (NULL — строка старого кода, читается по is_active);
+    # completed_main_sessions / last_main_session_at — кэш, производный от сессий (converge_user_plan).
+    progression_state_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    sequence_cursor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    baseline_assessment_result_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("assessment_results.id", ondelete="SET NULL"), nullable=True,
+    )
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    completed_main_sessions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_main_session_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CustomPlan(Base):
+    """Свой план пользователя (issue #304, PROGRAM_PLAN_V2 §7): ротация тренировок + ИСТИННЫЙ объём по
+    неделям. weeks — [count, ...] от недели start_week_number (0 — явная пустая неделя);
+    workouts — [workout_definition_id, ...] по порядку ротации; preferred_weekdays — подсказка
+    размещения (0 = Пн … 6 = Вс), не объём. Занятия материализует converge_user_plan."""
+
+    __tablename__ = "custom_plans"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    training_plan_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("training_plans.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    start_week_number: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    workouts: Mapped[list] = mapped_column(JSONB, nullable=False)
+    weeks: Mapped[list] = mapped_column(JSONB, nullable=False)
+    repeat: Mapped[str] = mapped_column(String(16), nullable=False, default="once", server_default="once")
+    preferred_weekdays: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class PlanItem(Base):
@@ -466,6 +517,38 @@ class PlanItem(Base):
         BigInteger, ForeignKey("plan_weeks.id", ondelete="CASCADE"), nullable=True, index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # --- Занятие v2 (issue #304, AD-4, PROGRAM_PLAN_V2 §5): ОДНА строка = ОДНО занятие ---
+    # occurrence_index NULL — строка старой агрегатной формы (count_per_week занятий в одной строке);
+    # legacy_aggregate=true — такая строка прошлой недели, замороженная как история (MIGRATION_V2 §3).
+    # origin_plan_week_id — неделя, ДЛЯ которой занятие сгенерировано (идентичность не меняется при
+    # переносе в другую неделю, PL6); plan_week_id — где оно сейчас. status — open | rescheduled |
+    # removed (removed: строка выведена из плана, но не удалена — на неё ссылается история M2M).
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    workout_definition_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("complexes.id"), nullable=True)
+    occurrence_index: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    origin_plan_week_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("plan_weeks.id", ondelete="CASCADE"), nullable=True,
+    )
+    scheduled_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    program_slot_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    custom_plan_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("custom_plans.id", ondelete="SET NULL"), nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", server_default="open")
+    legacy_aggregate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+    __table_args__ = (
+        Index(
+            "uq_plan_items_program_occurrence",
+            "origin_plan_week_id", "program_inclusion_id", "program_slot_key", "occurrence_index",
+            unique=True,
+            postgresql_where=text("program_inclusion_id IS NOT NULL AND occurrence_index IS NOT NULL"),
+        ),
+        Index(
+            "uq_plan_items_custom_occurrence", "origin_plan_week_id", "custom_plan_id", "occurrence_index",
+            unique=True, postgresql_where=text("custom_plan_id IS NOT NULL AND occurrence_index IS NOT NULL"),
+        ),
+    )
 
 
 class TrainingSession(Base):
@@ -523,10 +606,17 @@ class TrainingSession(Base):
     # старта (снапшот не меняется). NULL для legacy rows и для non-interval
     # сессий (standard STEP/manual path).
     workout_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Явный кредит (issue #304, PL2): сессия засчитывает НЕ БОЛЕЕ ОДНОГО занятия — выбранного при старте
+    # из плана. Прямой старт (Workout Detail) и копия сессии — всегда NULL (PL3). session_plan_items
+    # ниже — только чтение истории; новые записи кредита идут сюда.
+    plan_item_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("plan_items.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
 
 
 class SessionPlanItem(Base):
-    """M2M — связь TrainingSession с одним или несколькими PlanItem."""
+    """M2M — связь TrainingSession с одним или несколькими PlanItem. С issue #304 — только чтение
+    (история старых сессий, в т.ч. пары A+B курса); новые сессии пишут training_sessions.plan_item_id."""
 
     __tablename__ = "session_plan_items"
 

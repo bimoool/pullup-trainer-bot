@@ -31,6 +31,7 @@ from app.db.repositories.users import UserRepository
 from app.domain.constants import STRENGTH_BLOCK, EquipmentType
 from app.domain.progression import rollback_target
 from app.domain.rules import TrainingReadiness, check_training_readiness
+from app.services.plan_spacing import MainSpacingService
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2_dashboard import (
@@ -84,12 +85,14 @@ async def get_dashboard_status(
         return DashboardStatusResponse(status="not_migrated")
 
     is_gap_rollback = False
+    is_admin = settings.is_admin(init_data.user.id)
+    # issue #304 (K1): тот же отдых между стартами MAIN, что проверяет старт (Пн → Чт).
+    spacing = await MainSpacingService(session).status(user, now=datetime.now(UTC))
+    if spacing.too_early and not is_admin:
+        return DashboardStatusResponse(status="too_early", available_from=spacing.available_from)
     last_sessions = await TrainingSessionRepository(session).list_for_user(user.id, limit=1)
     if last_sessions:
-        is_admin = settings.is_admin(init_data.user.id)
         readiness = check_training_readiness(last_sessions[0].performed_at.date(), datetime.now(UTC).date())
-        if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
-            return DashboardStatusResponse(status="too_early")
         if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
             return DashboardStatusResponse(status="gap_retest_required")
         is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK

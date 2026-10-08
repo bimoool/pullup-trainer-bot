@@ -42,7 +42,6 @@ from app.domain.constants import (
     DEFAULT_REST_SECONDS_BLOCK_A,
     DEFAULT_REST_SECONDS_BLOCK_B,
     DEFAULT_TIMER_SOUND_VOLUME_PERCENT,
-    MIN_REST_DAYS,
     STRENGTH_BLOCK,
     SUBSCRIPTION_DAYS,
     SUBSCRIPTION_PRICE_RUB,
@@ -83,6 +82,7 @@ from app.domain.session import BlockAssignment, BlockLog
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
+from app.services.plan_spacing import MainSpacingService
 from app.services.program_access import ProgramAccessService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -249,6 +249,7 @@ async def get_dashboard(
 
     return DashboardResponse(
         status=context.status,
+        available_from=context.available_from,
         workouts_count=len(history),
         streak=streak,
         days_since_last_workout=days_since_last_workout,
@@ -696,6 +697,9 @@ class _PlanContext:
     # снаряда (issue #45/#48); полноценный UI выбора и заведения резины —
     # отдельно, PR 3.
     is_first_workout: bool = False
+    # issue #304 (K1): при status="too_early" — ближайшая дата старта основной тренировки
+    # (два полных дня отдыха, дата в поясе пользователя).
+    available_from: date | None = None
 
 
 async def _resolve_plan_context(
@@ -742,6 +746,13 @@ async def _resolve_plan_context(
     if not ProgramAccessService.legacy_pullup_cascade_allowed(user, now=now):
         return _PlanContext(status="no_access")
 
+    # issue #304 (K1, OD-2): отдых между стартами MAIN — единый серверный источник для всех путей
+    # (два полных дня отдыха: Пн → Чт), по legacy- И v2-истории (основная тренировка, сделанная в
+    # Mini App v2, тоже запрещает legacy-старт раньше срока). Админ — обход, как раньше.
+    spacing = await MainSpacingService(session).status(user, now=now)
+    if spacing.too_early and not settings.is_admin(telegram_id):
+        return _PlanContext(status="too_early", available_from=spacing.available_from)
+
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
     if not history:
@@ -770,8 +781,6 @@ async def _resolve_plan_context(
 
     is_admin = settings.is_admin(telegram_id)
     readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
-    if readiness.status == TrainingReadiness.TOO_EARLY and not is_admin:
-        return _PlanContext(status="too_early")
     if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
         return _PlanContext(status="gap_retest_required")
 
@@ -860,7 +869,7 @@ async def get_workout_plan(
     не переиспользует workout_set_id из этого ответа."""
     context = await _resolve_plan_context(session, init_data.user.id, now=datetime.now(UTC))
     if context.status != "ready":
-        return WorkoutPlanResponse(status=context.status)
+        return WorkoutPlanResponse(status=context.status, available_from=context.available_from)
 
     band_items: list[BandItemInfo] = []
     if EquipmentType.BAND in (context.equipment_a_type, context.equipment_b_type):
@@ -1764,7 +1773,7 @@ async def get_backdate_plan(
     и может отличаться от того, что унаследовала бы живая тренировка."""
     context = await _resolve_backdate_context(session, init_data.user.id, now=datetime.now(UTC))
     if context.status != "ready":
-        return WorkoutPlanResponse(status=context.status)
+        return WorkoutPlanResponse(status=context.status, available_from=context.available_from)
 
     items = await EquipmentItemRepository(session).list_for_user(context.user_id)
     band_items = [BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items]
@@ -2407,11 +2416,12 @@ async def get_elective_plan(
     ready_at: str | None = None
     hours_left: int | None = None
     if not is_admin:
-        readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
-        if readiness.status == TrainingReadiness.TOO_EARLY:
+        # issue #304 (K1): «день отдыха» — тот же источник, что и запрет старта основной тренировки.
+        spacing = await MainSpacingService(session).status(user, now=now)
+        if spacing.too_early:
             is_rest_day = True
-            ready_at_dt = history[-1].performed_at + timedelta(days=MIN_REST_DAYS)
-            ready_at = ready_at_dt.date().isoformat()
+            ready_at_dt = spacing.available_from_at(user.timezone)
+            ready_at = spacing.available_from.isoformat()
             hours_left = max(0, math.ceil((ready_at_dt - now).total_seconds() / 3600))
 
     electives = ElectiveWorkoutRepository(session)

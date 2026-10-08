@@ -9,6 +9,7 @@ import {
   startLiveSession,
   startWorkoutLiveSession,
   isSubscriptionRequired,
+  tooEarlyAvailableFrom,
   type DashboardBlockResponse,
   type LiveSessionResponse,
   type ProgramInclusionResponseV2,
@@ -24,6 +25,7 @@ import { useBackButton } from "./useBackButton";
 import { formatExerciseCount } from "./workoutCardFormat";
 import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
 import { itemPrescriptionLine } from "./prescriptionFormat";
+import { nextOccurrenceId, shortDateLabel } from "./planWeekNav";
 
 /** Потолок ожидания досылки старого завершения перед стартом (R-4): зависший запрос не должен вешать «Начать». */
 const DRAIN_BEFORE_START_TIMEOUT_MS = 5_000;
@@ -108,7 +110,7 @@ type ScreenState =
   | { phase: "loading"; title?: string }
   | { phase: "error"; message: string; title?: string; retryStart?: number[] }
   | { phase: "no_course"; title?: string }
-  | { phase: "blocked"; title?: string }
+  | { phase: "blocked"; title?: string; availableFrom?: string | null }
   | { phase: "subscription_required"; title?: string }
   | { phase: "needs_assessment"; title?: string }
   | { phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[] }
@@ -148,7 +150,16 @@ function findActiveInclusion(plan: TrainingPlanResponseV2 | null): ProgramInclus
 }
 
 function planItemIdsForInclusion(plan: TrainingPlanResponseV2, inclusion: ProgramInclusionResponseV2): number[] {
-  return plan.plan_items.filter((item) => item.program_inclusion_id === inclusion.id).map((item) => item.id);
+  // issue #304 (AD-4, PL2): одна тренировка засчитывает ОДНО занятие — следующее незасчитанное занятие
+  // курса текущей недели. Старый план без занятий (агрегатные строки) — прежний набор строк курса.
+  const occurrenceId = nextOccurrenceId(plan.plan_items, inclusion.id, plan.current_week_id ?? null);
+  if (occurrenceId !== null) {
+    return [occurrenceId];
+  }
+  return plan.plan_items
+    .filter((item) => item.program_inclusion_id === inclusion.id && (item.occurrence_index ?? null) === null
+      && !item.legacy_aggregate && item.plan_week_id === (plan.current_week_id ?? item.plan_week_id))
+    .map((item) => item.id);
 }
 
 export function SessionPreScreen({
@@ -269,7 +280,7 @@ export function SessionPreScreen({
             planItemIds: explicitPlanItemIds ?? planItemIdsForInclusion(plan, inclusion),
           });
         } else if (data.status === "too_early") {
-          setState({ phase: "blocked", title: title ?? data.program_name ?? undefined });
+          setState({ phase: "blocked", title: title ?? data.program_name ?? undefined, availableFrom: data.available_from ?? null });
         } else if (data.status === "gap_retest_required") {
           setState({ phase: "needs_assessment", title: title ?? data.program_name ?? undefined });
         } else {
@@ -343,6 +354,12 @@ export function SessionPreScreen({
       // 402 subscription_required: клиент считал, что доступ есть, а сервер — нет (истёк/кэш) — тот же экран подписки.
       if (isSubscriptionRequired(error)) {
         setState({ phase: "subscription_required", title: currentTitle });
+        return;
+      }
+      // issue #304 (K1): сервер не стартует основную тренировку раньше двух полных дней отдыха.
+      const availableFrom = tooEarlyAvailableFrom(error);
+      if (availableFrom !== null) {
+        setState({ phase: "blocked", title: currentTitle, availableFrom });
         return;
       }
       // 409 active_session_exists: на сервере уже идёт другая тренировка — тот же экран конфликта,
@@ -427,8 +444,10 @@ export function SessionPreScreen({
     return (
       <div className="pre-screen">
         <PreHeader title={displayTitle} eyebrow="Тренировка" />
-        <p className="screen-message">
-          Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.
+        <p className="screen-message" data-testid="pre-screen-too-early">
+          {state.availableFrom
+            ? `Нужно два полных дня отдыха между основными тренировками — следующая доступна с ${shortDateLabel(state.availableFrom)}.`
+            : "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл."}
         </p>
         <div className="pre-transport">
           <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>

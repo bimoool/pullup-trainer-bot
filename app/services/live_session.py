@@ -27,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models_program import PlanItem, PlanWeek, ProgramInclusion, SessionPhase, SessionStatus
+from app.db.models_program import PlanItem, ProgramInclusion, SessionPhase, SessionStatus
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import (
@@ -59,7 +59,8 @@ from app.domain.live_session import (
     next_phase,
     previous_phase,
 )
-from app.domain.multi_program import MetricType, SessionSource
+from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
+from app.domain.plan_occurrence import MAIN_SLOT_KEY, PlanItemStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.workout_protocol import DefinitionProtocol, ResolvedInterval, ResolvedProtocol
 from app.domain.workout_snapshot import (
@@ -69,6 +70,7 @@ from app.domain.workout_snapshot import (
     build_workout_snapshot,
     positional_snapshot_items,
 )
+from app.services.plan_spacing import MainSpacingService, TooEarlyError  # noqa: F401 — re-export
 from app.services.program_access import (  # noqa: F401 — re-export
     ProgramAccessService,
     SubscriptionRequiredError,
@@ -104,6 +106,8 @@ class ActiveSessionConflictError(Exception):
         super().__init__("Active live session already exists")
         self.active_session_id = active_session_id
 
+
+STALE_PLAN_ITEM_MESSAGE = "План обновился — открой «Планы» и выбери тренировку заново"
 
 # progression_skipped_reason повторного complete уже завершённой сессии:
 # прогрессия была применена (или пропущена) первым завершением, не этим.
@@ -178,6 +182,11 @@ def awaiting_block_start(detail: SessionDetail) -> bool:
     )
 
 
+def _utcnow() -> datetime:
+    """«Сейчас» для проверки отдыха K1 при старте (подменяется в тестах)."""
+    return datetime.now(UTC)
+
+
 def _phase_ends_at_from_offset(offset_seconds: int | None) -> datetime | None:
     if offset_seconds is None:
         return None
@@ -199,13 +208,15 @@ class LiveSessionService:
 
     async def start_session(
         self, *, user_id: int, client_session_id: uuid.UUID, plan_item_ids: list[int],
-        workout_id: int | None = None,
+        workout_id: int | None = None, bypass_spacing: bool = False,
     ) -> LiveSessionResult | None:
         """Идемпотентный старт: две конкурентные транзакции с одним client_session_id (офлайн-повтор,
         двойной тап) оба проходят проверку «сессии нет» и вставляют; проигравший упирается в
         uq_training_sessions_client_session_id. Вставка идёт под SAVEPOINT — при конфликте
         возвращается сессия победителя (а не 500). Конфликт при отсутствии СВОЕЙ сессии с этим UUID
-        (UUID занят другим пользователем) — ValueError -> 422, без раскрытия чужой сессии."""
+        (UUID занят другим пользователем) — ValueError -> 422, без раскрытия чужой сессии.
+
+        bypass_spacing — админ (settings.is_admin): обход K1, как в legacy-путях."""
         # N1 (#293): два устройства с РАЗНЫМИ client_session_id оба проходят проверку «активной нет».
         # Сериализуем старты пользователя advisory-локом до проверки (транзакционный — снимается на
         # commit/rollback, миграции/уникального индекса не требует). Конкурент ждёт, затем видит
@@ -218,7 +229,7 @@ class LiveSessionService:
             async with self._session.begin_nested():
                 return await self._start_session(
                     user_id=user_id, client_session_id=client_session_id, plan_item_ids=plan_item_ids,
-                    workout_id=workout_id,
+                    workout_id=workout_id, bypass_spacing=bypass_spacing,
                 )
         except IntegrityError:
             existing = await self._sessions.get_by_client_session_id(user_id, client_session_id)
@@ -228,13 +239,19 @@ class LiveSessionService:
 
     async def _start_session(
         self, *, user_id: int, client_session_id: uuid.UUID, plan_item_ids: list[int],
-        workout_id: int | None = None,
+        workout_id: int | None = None, bypass_spacing: bool = False,
     ) -> LiveSessionResult | None:
-        """ValueError — недопустимая комбинация plan items (Builder Workout
-        вперемешку с обычными строками в одной сессии): роут -> 422.
+        """ValueError — недопустимый набор строк плана (роут -> 422).
 
-        workout_id — «Начать» на Workout Detail: свободная (source=freeform)
-        сессия из замороженного снимка тренировки, без PlanItem."""
+        workout_id — «Начать» на Workout Detail: свободная (source=freeform) сессия из замороженного
+        снимка тренировки, БЕЗ кредита плана (PL3, J7).
+
+        issue #304 (PROGRAM_PLAN_V2 §5): старт из плана — ровно ОДНО занятие (PlanItem); сессия
+        засчитывает именно его (training_sessions.plan_item_id), в какой бы неделе оно ни было (PL4,
+        J12 — будущие недели стартуются, §6). Занятие, уже засчитанное другой сессией, повторно не
+        засчитывается («Ещё раз» — без кредита). Замороженные агрегатные строки прошлого и выведенные
+        из плана строки не стартуются (422 «план обновился»). Старт MAIN раньше available_from —
+        TooEarlyError (K1)."""
         existing = await self._sessions.get_by_client_session_id(user_id, client_session_id)
         if existing is not None:
             return await self._build_result(existing.id, user_id)
@@ -253,29 +270,55 @@ class LiveSessionService:
         if active is not None:
             raise ActiveSessionConflictError(active.id)
 
+        plan_items: list[PlanItem] = []
+        for plan_item_id in plan_item_ids:
+            plan_item = await self._plans.get_plan_item_for_user(plan_item_id, user_id)
+            if plan_item is None or plan_item.training_plan_id != plan.id:
+                return None
+            if plan_item.status == PlanItemStatus.REMOVED or plan_item.legacy_aggregate:
+                raise ValueError(STALE_PLAN_ITEM_MESSAGE)
+            plan_items.append(plan_item)
+        if not plan_items:
+            raise ValueError("Не выбрано занятие плана")
+        if len(plan_items) > 1 and any(item.occurrence_index is not None for item in plan_items):
+            raise ValueError("Одна тренировка засчитывает одно занятие плана")
+
         resolved_blocks: list[SessionBlockInput] = []
         resolved_targets: list[list[SetTargetInput]] = []
         snapshots: list[WorkoutSnapshot | None] = []
         block_protocols: list[ResolvedProtocol | None] = []
         course_inclusion_ids: list[int] = []
-        for plan_item_id in plan_item_ids:
-            plan_item = await self._plans.get_plan_item_for_user(plan_item_id, user_id)
-            if plan_item is None or plan_item.training_plan_id != plan.id:
-                return None
-            await self._reject_future_week_course_item(plan_item)
+        is_main = False
+        for plan_item in plan_items:
             if plan_item.program_inclusion_id is not None:
                 course_inclusion_ids.append(plan_item.program_inclusion_id)
-            blocks, targets, snapshot = await self._resolve_blocks_for_plan_item(plan_item)
-            resolved_blocks.extend(blocks)
-            resolved_targets.extend(targets)
-            snapshots.append(snapshot)
-            if snapshot is not None:
-                block_protocols.extend(item.protocol for item in snapshot.items)
+            if plan_item.program_slot_key == MAIN_SLOT_KEY and plan_item.program_inclusion_id is not None:
+                units = [await self._resolve_main_occurrence(plan_item)]
+                is_main = True
+            elif plan_item.program_slot_key is not None and plan_item.program_inclusion_id is not None:
+                units = await self._resolve_program_occurrence(plan_item)
             else:
-                block_protocols.extend([None] * len(blocks))
+                units = [await self._resolve_blocks_for_plan_item(plan_item)]
+            for blocks, targets, snapshot in units:
+                resolved_blocks.extend(blocks)
+                resolved_targets.extend(targets)
+                snapshots.append(snapshot)
+                if snapshot is not None:
+                    block_protocols.extend(item.protocol for item in snapshot.items)
+                else:
+                    block_protocols.extend([None] * len(blocks))
 
         if course_inclusion_ids:
             await self._require_program_access(user_id, course_inclusion_ids)
+        if is_main or await self._has_step_role_blocks(resolved_blocks):
+            user = await UserRepository(self._session).get_by_id(user_id)
+            await MainSpacingService(self._session).require_main_start_allowed(
+                user, now=_utcnow(), bypass=bypass_spacing,
+            )
+
+        credited = plan_items[0] if len(plan_items) == 1 and plan_items[0].occurrence_index is not None else None
+        if credited is not None and await self._sessions.credits_for_plan_items([credited.id]):
+            credited = None  # уже засчитано другой сессией — повтор без кредита
 
         workout_snapshot = self._combine_snapshots(snapshots)
 
@@ -288,23 +331,58 @@ class LiveSessionService:
 
         training_session = await self._sessions.create_live_session(
             user_id=user_id, client_session_id=client_session_id, source=SessionSource.PLAN,
-            performed_at=datetime.now(UTC), plan_item_ids=plan_item_ids,
+            performed_at=datetime.now(UTC), plan_item_ids=[],
             blocks=resolved_blocks, targets_by_block=resolved_targets, phase_ends_at=phase_ends_at,
-            workout_snapshot=workout_snapshot,
+            workout_snapshot=workout_snapshot, plan_item_id=credited.id if credited is not None else None,
         )
         return await self._build_result(training_session.id, user_id)
 
-    async def _reject_future_week_course_item(self, plan_item: PlanItem) -> None:
-        """#301 — строки курса в будущих неделях видны в «Планах», но стартовать их заранее нельзя:
-        цели/прогрессия курса считаются от ТЕКУЩЕГО состояния инклюзии, а счётчик «N из M»
-        привязан к неделе строки — ранняя сессия не засчиталась бы ни туда, ни сюда.
-        ValueError -> 422. Допуск в 1 день на часовой пояс (неделя пользователя может уже
-        начаться при ещё не наступившем UTC-понедельнике)."""
-        if plan_item.program_inclusion_id is None or plan_item.plan_week_id is None:
-            return
-        week = await self._session.get(PlanWeek, plan_item.plan_week_id)
-        if week is not None and week.start_date > datetime.now(UTC).date() + timedelta(days=1):
-            raise ValueError("Эта неделя ещё не началась — начать тренировку курса можно со своей недели")
+    async def _resolve_main_occurrence(
+        self, plan_item: PlanItem,
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], WorkoutSnapshot | None]:
+        """Занятие main-слота «Подтягиваний» = блоки A + Б (AD-3) из ролей СНИМКА своей инклюзии.
+        Числа подходов/целей — прежние (из progression_state); их корректность — #305."""
+        inclusion = await self._plans.get_inclusion_by_id(plan_item.program_inclusion_id)
+        roles = {item["role"]: item["exercise_id"] for item in (inclusion.snapshot or {}).get("exercises", [])}
+        if not inclusion.is_active or "block_a" not in roles or "block_b" not in roles:
+            raise ValueError(STALE_PLAN_ITEM_MESSAGE)
+        blocks: list[SessionBlockInput] = []
+        targets: list[list[SetTargetInput]] = []
+        for role in ("block_a", "block_b"):
+            role_blocks, role_targets = self._resolve_step_role_block(roles[role], inclusion, role)
+            blocks.extend(role_blocks)
+            targets.extend(role_targets)
+        return blocks, targets, None
+
+    async def _resolve_program_occurrence(
+        self, plan_item: PlanItem,
+    ) -> list[tuple[list[SessionBlockInput], list[list[SetTargetInput]], WorkoutSnapshot | None]]:
+        """Занятие слота курса = все элементы слота одной тренировкой (прежняя семантика карточки курса,
+        где старт слал все строки группы). Слот — из СНИМКА инклюзии (derive_slots)."""
+        inclusion = await self._plans.get_inclusion_by_id(plan_item.program_inclusion_id)
+        program = await self._programs.get_by_id(inclusion.program_id)
+        slots = derive_slots(
+            inclusion.snapshot, program_slots=program.slots if program else None,
+            program_frequency=program.frequency if program else None,
+        )
+        slot = next((slot for slot in slots if slot.key == plan_item.program_slot_key), None)
+        if not inclusion.is_active or slot is None or not slot.members:
+            raise ValueError(STALE_PLAN_ITEM_MESSAGE)
+        units = []
+        for member in slot.members:
+            if member.complex_id is not None:
+                units.append(await self._resolve_complex_blocks(member.complex_id))
+            else:
+                blocks, targets = await self._resolve_exercise_block_by_id(plan_item.training_plan_id, member.exercise_id)
+                units.append((blocks, targets, None))
+        return units
+
+    async def _has_step_role_blocks(self, blocks: list[SessionBlockInput]) -> bool:
+        exercise_ids = sorted({block.exercise_id for block in blocks if block.exercise_id is not None})
+        if not exercise_ids:
+            return False
+        exercises = await self._programs.list_exercises_by_ids(exercise_ids)
+        return any(exercise.subcategory in INTERNAL_ROLE_SUBCATEGORIES for exercise in exercises)
 
     async def _require_program_access(self, user_id: int, inclusion_ids: list[int]) -> None:
         """#300 / D6 + правило 2026-10-07: курсовая строка плана (program_inclusion_id) стартует, если её программа
@@ -436,10 +514,15 @@ class LiveSessionService:
     async def _resolve_exercise_block(
         self, plan_item: PlanItem,
     ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]]:
-        step_match = await self._find_step_role_for_exercise(plan_item.training_plan_id, plan_item.exercise_id)
+        return await self._resolve_exercise_block_by_id(plan_item.training_plan_id, plan_item.exercise_id)
+
+    async def _resolve_exercise_block_by_id(
+        self, training_plan_id: int, exercise_id: int,
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]]:
+        step_match = await self._find_step_role_for_exercise(training_plan_id, exercise_id)
         if step_match is not None:
-            return self._resolve_step_role_block(plan_item.exercise_id, *step_match)
-        return await self._resolve_plain_exercise_block(plan_item.exercise_id)
+            return self._resolve_step_role_block(exercise_id, *step_match)
+        return await self._resolve_plain_exercise_block(exercise_id)
 
     async def _find_step_role_for_exercise(
         self, training_plan_id: int, exercise_id: int,
@@ -857,6 +940,11 @@ class LiveSessionService:
                         block_a_sets=block_a_sets, block_b_sets=block_b_sets,
                     )
                     await self._plans.update_progression_state(inclusion.id, new_state)
+                    # PROGRAM_PLAN_V2 §2: +1 ревизия на каждую применённую прогрессию; курсор
+                    # последовательности сдвигается засчитанным занятием main-слота.
+                    inclusion.progression_state_rev = (inclusion.progression_state_rev or 0) + 1
+                    if detail.plan_item_id is not None and inclusion.sequence_cursor is not None:
+                        inclusion.sequence_cursor += 1
 
         final_detail = await self._sessions.get_for_user(session_id, user_id)
         return (

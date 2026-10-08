@@ -29,9 +29,42 @@ export function weekRangeLabel(startDate: string): string {
   return `${shortDate(start)} – ${shortDate(end)}`;
 }
 
-/** «Откроется 13 окт» — когда начнётся неделя (старт строк курса будущей недели недоступен заранее). */
-export function weekOpensLabel(startDate: string): string {
-  return `Откроется ${shortDate(parseDate(startDate))}`;
+/** «9 окт» для даты YYYY-MM-DD. */
+export function shortDateLabel(isoDate: string): string {
+  return shortDate(parseDate(isoDate));
+}
+
+/** issue #304 — производное состояние занятия (сервер) → подпись на строке плана. null — без подписи. */
+export interface OccurrenceLike {
+  state?: string | null;
+  available_from?: string | null;
+}
+
+export function occurrenceStateLabel(item: OccurrenceLike): string | null {
+  switch (item.state) {
+    case "too_early":
+      return item.available_from ? `Доступно с ${shortDateLabel(item.available_from)}` : "Ещё рано";
+    case "infeasible":
+      return "Не успеть на этой неделе";
+    case "missed":
+      return "Пропущено";
+    default:
+      return null;
+  }
+}
+
+/** Занятие курса для старта «по плану» без явного выбора: первое незасчитанное занятие курса в неделе
+ * (по номеру), предпочтительно не «не успеть»; одна строка = одно занятие (#304). */
+export function nextOccurrenceId(
+  items: { id: number; program_inclusion_id: number | null; plan_week_id: number | null; occurrence_index?: number | null; state?: string | null }[],
+  inclusionId: number, weekId: number | null,
+): number | null {
+  const candidates = items
+    .filter((item) => item.program_inclusion_id === inclusionId && item.plan_week_id === weekId
+      && item.occurrence_index !== null && item.occurrence_index !== undefined && item.state !== "completed")
+    .sort((a, b) => (a.occurrence_index ?? 0) - (b.occurrence_index ?? 0));
+  const preferred = candidates.find((item) => item.state !== "infeasible") ?? candidates[0];
+  return preferred?.id ?? null;
 }
 
 /** Индекс текущей недели в списке по возрастанию start_date: последняя
