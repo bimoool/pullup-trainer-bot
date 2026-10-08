@@ -31,6 +31,7 @@ from tests.test_scripts.test_system_content_migration import (
 )
 
 PRE_V2_REVISION = "c3f7a9e2d5b1"
+V2_REVISION = "b7d2e9f4a1c3"
 W_SEQUENCE = "5-4-3-2-1-2-3-4-5-4-3-2-1-2-3-4-5"
 
 # Таблицы, которые миграция не имеет права менять (MIGRATION_V2 §7 + история).
@@ -200,7 +201,9 @@ def test_aged_v1_db_upgrade_backfills_without_touching_history(scratch_dsn):  # 
     _run(_seed_aged(scratch_dsn))
     before = _fingerprint(scratch_dsn)
 
-    _alembic(scratch_dsn, "upgrade", "head")
+    # Ревизия ЭТОЙ волны (#303), не head: следующие ревизии (#304 d8a3c6f1e2b4) добавляют колонки в
+    # programs/plan_items/training_sessions — их собственная репетиция в test_program_plan_migration.py.
+    _alembic(scratch_dsn, "upgrade", V2_REVISION)
     assert _fingerprint(scratch_dsn) == before  # подписки, история, доступ, V1-головы — байт в байт
 
     current = {

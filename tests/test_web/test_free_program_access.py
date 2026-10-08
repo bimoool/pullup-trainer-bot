@@ -9,7 +9,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db.models import SubscriptionStatus, User
 from app.db.models_program import Program, ProgramInclusion, TrainingSession
@@ -46,10 +46,14 @@ async def _add_to_plan(session, user: User, program_id: int) -> dict:
 
 async def _current_course_items(session, user: User, inclusion_id: int) -> list[int]:
     plan = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")).json()["plan"]
-    return [
-        item["id"] for item in plan["plan_items"]
-        if item["program_inclusion_id"] == inclusion_id and item["plan_week_id"] == plan["current_week_id"]
-    ]
+    # issue #304: одна тренировка засчитывает ОДНО занятие — следующее незасчитанное занятие недели.
+    occurrences = sorted(
+        (item for item in plan["plan_items"]
+         if item["program_inclusion_id"] == inclusion_id and item["plan_week_id"] == plan["current_week_id"]
+         and item["state"] != "completed"),
+        key=lambda item: item["occurrence_index"],
+    )
+    return [occurrences[0]["id"]]
 
 
 async def _run_workout(session, user: User, inclusion: dict, plan_item_ids: list[int]) -> int:
@@ -91,7 +95,7 @@ async def test_expired_user_trains_the_free_pullups_program_end_to_end(session, 
 
     # 10. тренировки недели материализованы
     item_ids = await _current_course_items(session, user, inclusion["id"])
-    assert len(item_ids) >= 2
+    assert len(item_ids) == 1  # issue #304: одна тренировка = одно занятие плана
 
     # 11–12. стартовать и завершить — сессия сохранена завершённой
     session_id = await _run_workout(session, user, inclusion, item_ids)
@@ -157,8 +161,9 @@ async def test_premium_program_still_rejects_expired_user_while_free_one_works(s
 
     premium = await start([premium_item.id])
     assert premium.status_code == 402 and premium.json()["detail"]["code"] == "subscription_required"
+    # issue #304: одна тренировка засчитывает одно занятие — смешанный запрос отклоняется целиком.
     mixed = await start([*free_items, premium_item.id])
-    assert mixed.status_code == 402
+    assert mixed.status_code == 422
     assert (await start(free_items)).status_code == 200
 
 
@@ -169,6 +174,10 @@ async def test_free_access_survives_reload_reonboarding_and_expiry_again(session
     await _expire(session, user)
     inclusion = await _add_to_plan(session, user, program.id)
     first = await _run_workout(session, user, inclusion, await _current_course_items(session, user, inclusion["id"]))
+    # OD-2 (#304): следующая основная — после двух полных дней отдыха; первую «сдвигаем» на 3 дня назад.
+    await session.execute(update(TrainingSession).where(TrainingSession.id == first).values(
+        performed_at=datetime.now(UTC) - timedelta(days=3),
+    ))
 
     # повторный онбординг даёт триал, затем он снова истекает
     await SubscriptionService(session).start_trial(user.id, now=datetime.now(UTC))

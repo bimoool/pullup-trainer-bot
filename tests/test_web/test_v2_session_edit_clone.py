@@ -147,7 +147,9 @@ async def test_unsafe_sessions_are_409_and_hide_can_edit(session: AsyncSession, 
 async def test_unproven_session_without_snapshot_is_409(session: AsyncSession):
     user = await _user(session, 962005)
     session_id = await _finished_with_logs(session, user)
-    await session.execute(update(TrainingSession).where(TrainingSession.id == session_id).values(workout_snapshot=None))
+    await session.execute(update(TrainingSession).where(TrainingSession.id == session_id).values(
+        workout_snapshot=None, plan_item_id=None,  # #304: явный кредит — тоже связь с Workout
+    ))
     await session.execute(SessionPlanItem.__table__.delete().where(SessionPlanItem.session_id == session_id))
     await session.commit()
     response = await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{session_id}", {"comment": "x"})

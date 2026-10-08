@@ -80,10 +80,11 @@ async def test_get_plan_includes_current_plan_week_and_groups_items_by_it(sessio
     assert week["phase"] == "base"
     assert week["start_date"]  # материализована реальной сегодняшней датой, не проверяем конкретное число
 
-    assert len(plan["plan_items"]) == 2
-    assert all(item["plan_week_id"] == week["id"] for item in plan["plan_items"])
+    # issue #304 (AD-4): «вт × 1» + «пул × 3» = 4 занятия недели, у каждого count_per_week = 1.
+    assert len(plan["plan_items"]) == 4
+    assert all(item["plan_week_id"] == week["id"] and item["count_per_week"] == 1 for item in plan["plan_items"])
 
     by_day = [item for item in plan["plan_items"] if item["day_of_week"] is not None]
     free_pool = [item for item in plan["plan_items"] if item["day_of_week"] is None]
     assert [item["day_of_week"] for item in by_day] == [1]
-    assert len(free_pool) == 1
+    assert len(free_pool) == 3

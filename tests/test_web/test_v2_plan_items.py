@@ -57,10 +57,12 @@ async def test_program_inclusion_copies_program_items_into_plan_items(session, u
 
     items_response = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan-items")
     items = items_response.json()["items"]
-    assert len(items) == 2
-    assert {(i["count_per_week"], i["day_of_week"], i["week_phase"]) for i in items} == {
-        (3, 1, "base"), (1, None, "peak"),
-    }
+    # issue #304 (AD-4): каждый элемент программы → слот (по дню недели), неделя — занятия по одному:
+    # «вт × 3» и «пул × 1» = 4 занятия, у каждого count_per_week = 1.
+    assert sorted((i["program_slot_key"], i["occurrence_index"], i["day_of_week"]) for i in items) == [
+        ("day1", 1, 1), ("day1", 2, 1), ("day1", 3, 1), ("pool", 1, None),
+    ]
+    assert all(i["count_per_week"] == 1 for i in items)
     assert all(i["exercise_id"] == exercise.id for i in items)
     assert all(i["program_inclusion_id"] == inclusion_id for i in items)
 
@@ -87,7 +89,8 @@ async def test_create_plan_item_manually_has_no_program_inclusion(session, user:
     assert body["week_phase"] == "rest"
 
     listed = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan-items")
-    assert len(listed.json()["items"]) == 1
+    # issue #304 (AD-4): «2 раза в неделю» — два занятия (первое — созданная строка).
+    assert [(i["occurrence_index"], i["count_per_week"]) for i in listed.json()["items"]] == [(1, 1), (2, 1)]
 
 
 async def test_create_plan_item_rejects_both_exercise_and_complex(session, user: User):
@@ -125,7 +128,7 @@ async def test_list_plan_items_filters_by_program_inclusion_id(session, user: Us
     filtered = await v2_get(
         session, telegram_id=user.telegram_id, path=f"/api/v2/plan-items?program_inclusion_id={inclusion_id}",
     )
-    assert len(filtered.json()["items"]) == 2
+    assert len(filtered.json()["items"]) == 4  # #304: занятия курса (вт × 3 + пул × 1)
 
     unfiltered = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan-items")
-    assert len(unfiltered.json()["items"]) == 3
+    assert len(unfiltered.json()["items"]) == 9  # + ручная «5 раз в неделю» = 5 занятий

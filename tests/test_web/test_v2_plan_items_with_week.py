@@ -70,7 +70,8 @@ async def test_create_plan_item_with_plan_week_id_persists_correctly(session, us
     assert plan_data is not None
 
     items = plan_data["plan_items"]
-    assert len(items) == 1
+    # issue #304 (AD-4): «2 раза в неделю» = два занятия; первое — созданная строка.
+    assert [(i["occurrence_index"], i["count_per_week"]) for i in items] == [(1, 1), (2, 1)]
     item = items[0]
     assert item["id"] == created_body["id"]
     assert item["plan_week_id"] == week.id
@@ -169,7 +170,8 @@ async def test_first_add_without_plan_week_id_lands_in_current_week(session, use
     assert plan_data["current_week_id"] == body["plan_week_id"]
     assert [week["id"] for week in plan_data["plan_weeks"]] == [body["plan_week_id"]]
     rows = [item for item in plan_data["plan_items"] if item["plan_week_id"] == plan_data["current_week_id"]]
-    assert [item["id"] for item in rows] == [body["id"]]
+    # issue #304 (AD-4): «3 раза в неделю» = три занятия текущей недели, первое — созданная строка.
+    assert rows[0]["id"] == body["id"] and len(rows) == 3
     assert await _orphan_manual_count(session) == 0  # инвариант: ручной строки без недели не бывает
 
 
@@ -242,7 +244,7 @@ async def test_manual_item_appears_in_get_plan_within_plan_week(session, user: U
     assert len(weeks) == 1
     assert weeks[0]["id"] == week.id
 
-    assert len(items) == 1
+    assert len(items) == 4  # issue #304 (AD-4): «4 раза в неделю» = 4 занятия
     item = items[0]
     assert item["id"] == created_item_id
     assert item["plan_week_id"] == week.id

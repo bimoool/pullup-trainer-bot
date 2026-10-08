@@ -760,14 +760,13 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       await next.click();
       await expect(label).toHaveText(current);
 
-      // Будущая неделя (#301): у пользователя с курсом строки курса уже видны, но стартуют со своей недели;
+      // Будущая неделя (#301, #304 §6): у пользователя с курсом занятия курса видны и стартуемы;
       // неделя по-прежнему редактируемая.
       await expect(next).toBeEnabled();
       await next.click();
       await expect(label).not.toHaveText(current);
-      await expect(page.getByTestId("plans-row-scheduled").first()).toBeVisible();
       await expect(page.getByText("На эту неделю пока ничего не запланировано.")).toHaveCount(0);
-      await expect(page.getByRole("button", { name: /^Начать: / })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Начать: / }).first()).toBeVisible();
       await expect(page.getByRole("button", { name: "+ Добавить упражнение" })).toBeVisible();
       await expectScreenHealthy(page, "Планы: будущая неделя");
       await prev.click();

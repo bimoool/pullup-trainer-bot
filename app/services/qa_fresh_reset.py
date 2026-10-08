@@ -53,6 +53,8 @@ RESET_STEPS: tuple[tuple[str, str, str], ...] = (
     ("session_blocks", f"session_id IN ({_SESSIONS})", "sessions"),
     ("training_sessions", "user_id = :uid", "sessions"),
     ("plan_items", f"training_plan_id IN ({_PLANS})", "plan"),
+    # Issue #304: свои планы с объёмом по неделям (после занятий — plan_items.custom_plan_id ссылается сюда).
+    ("custom_plans", "user_id = :uid", "plan"),
     ("program_inclusions", f"training_plan_id IN ({_PLANS})", "plan"),
     ("plan_weeks", f"training_plan_id IN ({_PLANS})", "plan"),
     ("training_plans", "user_id = :uid", "plan"),

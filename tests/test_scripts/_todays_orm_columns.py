@@ -14,6 +14,11 @@ ADD = (
         "ADD COLUMN analytics_exercise_id bigint"
     ),
     "ALTER TABLE complexes ADD COLUMN current_version_id bigint",
+    # d8a3c6f1e2b4 (#304)
+    (
+        "ALTER TABLE programs ADD COLUMN slots jsonb, ADD COLUMN frequency jsonb, ADD COLUMN constraints jsonb, "
+        "ADD COLUMN assessment jsonb"
+    ),
 )
 DROP = (
     "ALTER TABLE programs DROP COLUMN access_level",
@@ -22,4 +27,5 @@ DROP = (
         "DROP COLUMN subcategory_id, DROP COLUMN visibility, DROP COLUMN analytics_exercise_id"
     ),
     "ALTER TABLE complexes DROP COLUMN current_version_id",
+    "ALTER TABLE programs DROP COLUMN slots, DROP COLUMN frequency, DROP COLUMN constraints, DROP COLUMN assessment",
 )

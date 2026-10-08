@@ -1109,7 +1109,8 @@ async def list_plan_items(
     if plan is None:
         return PlanItemListResponse(items=[])
     items = await plans.list_plan_items(plan.id, program_inclusion_id=program_inclusion_id)
-    return PlanItemListResponse(items=[_plan_item_response(item) for item in items])
+    # issue #304: выведенные из плана строки (агрегаты, развёрнутые в занятия) — не часть плана.
+    return PlanItemListResponse(items=[_plan_item_response(item) for item in items if item.status != "removed"])
 
 
 @router_v2.post("/plan-items", response_model=PlanItemResponse)
@@ -1194,6 +1195,11 @@ async def move_plan_item(
     занятия сохраняется; засчитанное, прошлое и историческая строка не двигаются (422). Чужой /
     несуществующий — 404 (не раскрываем разницу)."""
     user = await _require_user(session, init_data)
+    plan = await TrainingPlanRepository(session).get_for_user(user.id)
+    if plan is not None:
+        # Строки старой формы (до первого GET /plan после #304) сначала сводятся к занятиям — той же
+        # единственной converge_user_plan; первое занятие сохраняет id строки.
+        await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan.id, today=_plan_today(user))
     try:
         item = await PlanScheduleService(session).reschedule(
             user_id=user.id, plan_item_id=plan_item_id, today=_plan_today(user), day_of_week=body.day_of_week,
@@ -1299,8 +1305,9 @@ async def _resolve_session_titles(
             titles[detail.id] = workout_title_by_complex_id.get(complex_backed.complex_id)
         elif source_items and source_items[0].exercise_id is not None:
             titles[detail.id] = exercise_name_by_id.get(source_items[0].exercise_id)
-        elif detail.source == SessionSource.FREEFORM and detail.workout_snapshot is not None:
-            # «Начать» с Workout Detail: без PlanItem, заголовок — из замороженного снимка.
+        elif detail.workout_snapshot is not None:
+            # «Начать» с Workout Detail (без PlanItem) и копия сессии (#304: копия не связана с планом) —
+            # заголовок из замороженного снимка тренировки.
             titles[detail.id] = detail.workout_snapshot.get("title")
         else:
             titles[detail.id] = None

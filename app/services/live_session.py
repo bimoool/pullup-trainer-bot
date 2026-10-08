@@ -316,8 +316,11 @@ class LiveSessionService:
                 user, now=_utcnow(), bypass=bypass_spacing,
             )
 
-        credited = plan_items[0] if len(plan_items) == 1 and plan_items[0].occurrence_index is not None else None
-        if credited is not None and await self._sessions.credits_for_plan_items([credited.id]):
+        # Кредит — ровно одна строка: занятие (повторно не засчитывается) или, для строк старой формы,
+        # которых converge_user_plan ещё не развернул (старый клиент/данные до первого GET /plan), первая
+        # из запрошенных — как и раньше «засчитано на своей неделе», но без M2M (только чтение).
+        credited: PlanItem | None = plan_items[0]
+        if credited.occurrence_index is not None and await self._sessions.credits_for_plan_items([credited.id]):
             credited = None  # уже засчитано другой сессией — повтор без кредита
 
         workout_snapshot = self._combine_snapshots(snapshots)

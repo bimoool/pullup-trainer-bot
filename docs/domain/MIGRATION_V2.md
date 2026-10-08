@@ -85,7 +85,15 @@ history read by any v2 view.
    session (aged users with history are never pushed back to assessment).
 
 Invoked by the deploy-time script for all users and by login/`GET /plan` **only** via the same
-function (no other lazy writes). Invariant checker (`--dry-run`) asserts after convergence:
+function (no other lazy writes). **Wave 1b (#304):** the plan part is `app.services.plan_convergence
+.converge_user_plan` (steps 2–3 here; rules in PROGRAM_PLAN_V2 §10.8); the deploy-time runner is
+`scripts/repair_plan_convergence.py --all [--apply]` (dry-run by default, per-user transaction, guards:
+history/subscription/access unchanged, only the allowed #304 mutations; apply-again = 0 mutations). Revision
+`d8a3c6f1e2b4` itself only adds columns/tables and backfills literal SQL (`plan_items.source`,
+`workout_definition_id = complex_id`, inclusion `status`, `training_sessions.plan_item_id` for single-link
+sessions, the «Подтягивания» slots/frequency/constraints/assessment); downgrade drops exactly those (explicit
+credit, custom plans, occurrence markup — occurrence rows remain as ordinary rows; retired aggregates reappear
+to old code), re-upgrade restores the derivable backfill. Invariant checker (`--dry-run`) asserts after convergence:
 fresh-equivalence (a fresh user replaying the same events gets the same derived state) for the
 rehearsal profiles.
 

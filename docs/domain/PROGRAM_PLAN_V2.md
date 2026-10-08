@@ -174,6 +174,57 @@ Contract points for the new model:
 | ID | Question | Blocks | Options with numbers |
 |---|---|---|---|
 | **OD-1** | Initial «Подтягивания» prescription from assessment max. Max = 8 gives 10 × 3 bodyweight today because the baseline is ignored (§3). | Wave 1 progression init (J1, J2) | (a) bot rule restored: max ≤ 10 → 10 × 3 **on a band** sized for ~10 (needs band selection in Mini App onboarding); max > 10 → `ceil(0.75·max)` × 3 bodyweight. (b) `ceil(0.75·max)` bodyweight for all: 8 → 6 × 3, 3 → 3 × 3, 20 → 15 × 3. (c) other explicit table. |
-| **OD-2** | «2 rest days» = `min_days_between_starts` **2** (Mon→Wed, today's code) or **3** (Mon→Thu)? | Wave 1 K1/K2 value (mechanism proceeds) | see §4 table |
+| **OD-2** | «2 rest days» = `min_days_between_starts` **2** (Mon→Wed, today's code) or **3** (Mon→Thu)? | Wave 1 K1/K2 value (mechanism proceeds) | **Resolved 2026-10-08: 3** — two FULL rest days (Mon → Thu); see §10 |
 | **OD-3** | Main workout blocks keep the trailing **max set** (A: 3 × 10 + max; B: 4 × 3 + max) as in legacy? Current progression formula needs it. | Wave 1 resolver, J4 | yes (legacy parity) / no (then a new progression input must be specified) |
 | **OD-4** | Free vs Premium for everything outside the free «Подтягивания» program (custom plans, system ready workouts, electives, Journal/Analytics/export) and «one trial per account» vs admin-reset QA re-trial | Nothing in Waves 1–3 (current behaviour kept); needed before any new paywall | — |
+
+## 10. Implementation notes (Wave 1b, #304)
+
+Where the contract left a choice open, Wave 1b decided as follows (code: `app/domain/plan_occurrence.py`,
+`app/services/plan_convergence.py`, `app/services/plan_spacing.py`, `app/services/plan_view.py`, migration
+`d8a3c6f1e2b4`). None changes a rule above.
+
+1. **OD-2 resolved by the owner (2026-10-08):** two FULL rest days → `min_days_between_starts = 3`. Read source:
+   `programs.constraints` (seeded for «Подтягивания»: `[{spacing_group: main, min_days_between_starts: 3}]`) of the
+   user's active inclusion, else the catalogue «Подтягивания», else `settings.main_min_days_between_starts` (3).
+   Constraints are a live catalogue property (like `access_level`), not frozen in the inclusion snapshot.
+   `config.min_rest_days` (old «Mon → Wed» meaning) is left untouched and is not read.
+2. **Last MAIN start** = max of legacy `workouts` (completed) and completed v2 sessions that credit a `main`
+   occurrence or contain a STEP role block with ≥ 1 logged set (an empty abandoned start does not move rest).
+   Local dates in the user's timezone.
+3. **K1 error shape:** v2 live → `409 {code: "too_early", available_from: "YYYY-MM-DD", message}`; legacy
+   `GET /api/workout/plan` / `/api/dashboard` / `GET /api/v2/dashboard/status` → `status: "too_early"` +
+   `available_from`; bot → the existing «Рано…» text with the date (midnight of `available_from`, user tz).
+   Admin bypass unchanged (`settings.is_admin`).
+4. **Slots.** Frozen into the inclusion snapshot at enrolment (`snapshot.slots`). Legacy snapshots derive slots
+   from `program_items`: items with the same `day_of_week` (NULL = pool) form ONE slot (one occurrence executes
+   all of them — the old card grouped and started them together); the group containing STEP roles is `main`
+   (spacing group `main`, counts toward progression). The `main` slot has no WorkoutDefinition yet
+   (`workout_definition_id = NULL`): its occurrence resolves blocks A + B from the inclusion's role snapshot with
+   today's numbers — the main WD and prescription numbers are #305.
+5. **Occurrence identity** = `(origin_plan_week_id, program_inclusion_id | custom_plan_id, program_slot_key,
+   occurrence_index)` (partial unique indexes). `plan_week_id` / `day_of_week` / `scheduled_date` are placement
+   and may change (PL6, `status = rescheduled`). `scheduled_date = week start + day_of_week`.
+6. **Volume** = rows: the program materialises exactly `sessions_per_week` occurrences per open week (desired
+   volume); placement feasibility is derived on read (K2) — infeasible occurrences stay as rows with state
+   `infeasible`, never silently dropped and never placed in violation of rest. Projection chains across weeks
+   (`max(today, available_from)`, then `+ min_days`); a `scheduled_date` is honoured if not earlier than the chain.
+7. **Credit.** `training_sessions.plan_item_id`, set only at live start from the plan (one occurrence per start;
+   several → 422). An already-credited occurrence starts again without credit. Old-form rows that convergence
+   has not expanded yet (pre-#304 clients/data) credit the first requested row. Direct start and clone never
+   credit. No DB uniqueness on `plan_item_id` (legacy single-link backfill can map several historical sessions to
+   one aggregate row); "one session → one item" is structural (single column).
+8. **`converge_user_plan`** is the only writer of plan structure (PL7). Past weeks: aggregates get
+   `legacy_aggregate = true` only. Current/future weeks: course aggregates → `status = removed` +
+   `legacy_aggregate` (never deleted — M2M history points at them) and k sessions linked in that week → k
+   occurrences (`performed_at` order; a session already crediting another occurrence is never moved); manual
+   rows with `count_per_week = N` → N occurrences (the row itself is #1); custom plans → their week volume.
+   Inclusion cache: `status` / `sequence_cursor` only from NULL; `completed_main_sessions` /
+   `last_main_session_at` derived. It never enrols, never re-creates an inclusion, never touches
+   `started_at` / `progression_state` / `initial_progression_state` / subscription.
+9. **Resume (§2).** Re-adding a removed course reactivates the previous inclusion (`is_active`, `status`,
+   `expires_at = NULL`); `restart: true` creates a new one. `progression_state_rev` +1 per applied progression;
+   `sequence_cursor` +1 when a credited main occurrence completes with progression.
+10. **Not in this wave:** `awaiting_assessment` (assessment stored in `programs.assessment`, not enforced — #305 with
+    OD-1), K3 `spacing_violation` on post-factum logging (#307), occurrence `week_phase` (always `base`).
+

@@ -154,7 +154,9 @@ async def test_delete_denied_for_foreign_missing_active_and_unproven(session: As
 
     # Недоказанная Builder-природа: завершённая сессия без снимка и без связи с Workout.
     await _complete(session, owner, running["id"])
-    await session.execute(update(TrainingSession).where(TrainingSession.id == running["id"]).values(workout_snapshot=None))
+    await session.execute(update(TrainingSession).where(TrainingSession.id == running["id"]).values(
+        workout_snapshot=None, plan_item_id=None,  # #304: явный кредит — тоже связь с Workout
+    ))
     await session.execute(delete(SessionPlanItem).where(SessionPlanItem.session_id == running["id"]))
     await session.commit()
     unproven = await v2_delete(session, telegram_id=owner.telegram_id, path=f"/api/v2/sessions/{running['id']}")

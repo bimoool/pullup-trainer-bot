@@ -38,7 +38,9 @@ async function onboard(page: Page) {
   await expect(page.getByText("Что потренируем сегодня?")).toBeVisible();
 }
 
-test("«Подтягивания»: недели 2 и 3 не пустые — курс виден, старт откроется со своей недели", async ({ page }) => {
+// issue #304 (AD-4, §6, J12): неделя курса — 3 занятия (одна строка = одно занятие), будущие недели видимы И
+// стартуемы (замок «Откроется <дата>» снят).
+test("«Подтягивания»: недели 2 и 3 не пустые — 3 занятия, будущие стартуемы", async ({ page }) => {
   const { apiFailures } = await openAppAs(page, TELEGRAM_ID, { allowedApiStatuses: [404] });
   page.on("dialog", (dialog) => void dialog.accept());
   await onboard(page);
@@ -56,17 +58,17 @@ test("«Подтягивания»: недели 2 и 3 не пустые — к
   const assertCurrentWeekActionable = async () => {
     await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя");
     await expect(page.getByTestId("plan-week-progress")).not.toContainText("0 из 0");
-    await expect(rows).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toBeVisible();
+    await expect(rows).toHaveCount(3);
+    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ }).first()).toBeVisible();
   };
-  // Будущая неделя: строка курса на месте, не пустое состояние, а стартовать её до начала недели нельзя.
+  // Будущая неделя: занятия курса на месте, не пустое состояние, и их можно начать (§6).
   const assertFutureWeekHasCourse = async (weekNumber: number) => {
     await expect(page.getByTestId("plan-week-label")).toContainText(`Неделя ${weekNumber}`);
     await expect(page.getByTestId("plan-week-progress")).not.toContainText("0 из 0");
     await expect(page.getByText("На эту неделю пока ничего не запланировано.")).toHaveCount(0);
-    await expect(rows).toHaveCount(1);
-    await expect(rows.getByTestId("plans-row-scheduled")).toContainText("Откроется");
-    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
+    await expect(rows).toHaveCount(3);
+    await expect(page.getByText("Откроется")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(3);
   };
 
   await assertCurrentWeekActionable();

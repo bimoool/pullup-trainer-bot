@@ -1773,7 +1773,7 @@ async def get_backdate_plan(
     и может отличаться от того, что унаследовала бы живая тренировка."""
     context = await _resolve_backdate_context(session, init_data.user.id, now=datetime.now(UTC))
     if context.status != "ready":
-        return WorkoutPlanResponse(status=context.status, available_from=context.available_from)
+        return WorkoutPlanResponse(status=context.status)
 
     items = await EquipmentItemRepository(session).list_for_user(context.user_id)
     band_items = [BandItemInfo(id=item.id, name=item.name, resistance_kg=item.resistance_kg) for item in items]

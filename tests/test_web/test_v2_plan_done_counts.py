@@ -95,8 +95,15 @@ async def test_done_counts(session, user):
 
     response = await v2_get(session, user.telegram_id, "/api/v2/plan")
     assert response.status_code == 200
-    counts = {item["id"]: item["done_count"] for item in response.json()["plan"]["plan_items"]}
-    assert counts == {item_a.id: 2, item_b.id: 1, item_prev.id: 1}
+    items = response.json()["plan"]["plan_items"]
+    counts = {item["id"]: item["done_count"] for item in items}
+    # issue #304: строки ТЕКУЩЕЙ недели сведены к занятиям (item_a «3 в неделю» → 3 занятия), каждая сессия
+    # засчитывает не более одного занятия (PL2) в порядке performed_at: первая — item_a, смешанная A+B —
+    # второе занятие A (у item_b не засчитывается повторно), незавершённая — не «сделано».
+    # Прошлая неделя — замороженная агрегатная строка со старым счётчиком по M2M.
+    copies_a = sorted(i["id"] for i in items if i["id"] != item_a.id and i["plan_week_id"] == current.id
+                      and i["day_of_week"] == 0)
+    assert counts == {item_a.id: 1, copies_a[0]: 1, copies_a[1]: 0, item_b.id: 0, item_prev.id: 1}
 
 
 async def test_done_counts_use_user_timezone(session, user):

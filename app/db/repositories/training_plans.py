@@ -474,7 +474,7 @@ class TrainingPlanRepository:
         if not plan_item_ids:
             return []
         result = await self._session.execute(
-            select(SessionPlanItem.plan_item_id, TrainingSession.performed_at)
+            select(SessionPlanItem.plan_item_id, TrainingSession.performed_at, TrainingSession.id)
             .join(TrainingSession, TrainingSession.id == SessionPlanItem.session_id)
             .where(
                 SessionPlanItem.plan_item_id.in_(plan_item_ids),
@@ -482,7 +482,18 @@ class TrainingPlanRepository:
                 TrainingSession.status == SessionStatus.COMPLETED,
             ),
         )
-        return [(row[0], row[1]) for row in result.all()]
+        pairs = {(row[0], row[2]): row[1] for row in result.all()}
+        # issue #304: явный кредит (training_sessions.plan_item_id) — та же пара (строка, сессия) один раз.
+        explicit = await self._session.execute(
+            select(TrainingSession.plan_item_id, TrainingSession.performed_at, TrainingSession.id).where(
+                TrainingSession.plan_item_id.in_(plan_item_ids),
+                TrainingSession.user_id == user_id,
+                TrainingSession.status == SessionStatus.COMPLETED,
+            ),
+        )
+        for row in explicit.all():
+            pairs.setdefault((row[0], row[2]), row[1])
+        return [(item_id, performed_at) for (item_id, _), performed_at in pairs.items()]
 
     # --- Занятия v2 / свой план (issue #304) -------------------------------------------------
 

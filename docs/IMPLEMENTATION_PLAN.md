@@ -88,6 +88,21 @@ Free/Premium). Порядок реализации: Wave 1 (Program+Plan foundat
 (TrainingSession) → Wave 3b (Journal/Analytics) → Wave 4 (интеграция + iPhone) —
 `docs/domain/MIGRATION_V2.md` §9; issues — umbrella-issue кампании.
 
+## DOMAIN-V2 Wave 1 (2026-10-08)
+
+Линия интеграции `integration/domain-v2` = Wave 0 (`18ecb48`) + #303 (`6290bf0`, принят, PR #311 — draft как
+CI-свидетельство). Не мержится в `main`/`develop/current`; база следующих волн.
+
+- **W1a #303 WorkoutDefinition v2** — принят (второе независимое ревью APPROVED), `6290bf0`.
+- **W1b #304 Program + Plan foundation** — ветка `wave1/program-plan-v2`: одна строка `PlanItem` = одно
+  занятие, явный кредит `training_sessions.plan_item_id`, OD-2 решён (два полных дня отдыха →
+  `min_days_between_starts = 3`, Пн → Чт) и применяется сервером на всех путях старта, будущие недели
+  стартуемы, свой план с объёмом по неделям (0 допустим), перенос занятий, единственная идемпотентная
+  `converge_user_plan`, аддитивная миграция `d8a3c6f1e2b4`. Спека — `PROJECT_SPEC.md` «Планы v2…»;
+  решения реализации — `docs/domain/PROGRAM_PLAN_V2.md` §10. Ждёт независимого ревью.
+- Дальше: W1c #305 (прескрипция курса: OD-1/OD-3, WorkoutDefinition main-слота, `awaiting_assessment`),
+  затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
+
 ## Дальше
 
 1. ~~Draft PR `develop/current` → `main` и CI (#222)~~ — PR #226 (draft), CI зелёный.

@@ -13,6 +13,8 @@ PlanWeekService, normalize_legacy_snapshots. Единственная «ручн
 tests/test_scripts/test_backfill_multi_program.py::test_legacy_snapshot_without_program_items_gets_normalized;
 PlanItem'ы назначения не вставляются руками.
 
+issue #304: неделя курса — 3 занятия (одна строка = одно занятие), не 2 агрегатные строки A/Б.
+
 Починка (решение владельца 2026-10-06): PlanWeekService.converge_inclusion_snapshot дополняет ТОЛЬКО
 отсутствующий/пустой program_items активной инклюзии из live Program, громко в лог, идемпотентно; непустой
 исторический снимок, progression_state, started_at, прошлые PlanItem и сессии не трогаются. Раньше эти
@@ -141,7 +143,7 @@ async def test_control_fresh_course_added_in_september_has_rows_in_week_4(sessio
     plan = await _get_plan(session, clock, TODAY)
 
     assert _current_week_number(plan) == 4
-    assert len(_current_week_items(plan)) == 2
+    assert len(_current_week_items(plan)) == 3
 
 
 async def test_control_rerunning_backfill_normalization_heals_legacy_snapshot(session, user: User, clock):
@@ -160,7 +162,7 @@ async def test_control_rerunning_backfill_normalization_heals_legacy_snapshot(se
     await session.commit()
 
     plan = await _get_plan(session, clock, TODAY)
-    assert len(_current_week_items(plan)) == 2
+    assert len(_current_week_items(plan)) == 3
 
 
 async def _legacy_owner_like_state(session, user: User, clock) -> tuple[Program, list[ProgramItem], ProgramInclusion]:
@@ -171,7 +173,7 @@ async def _legacy_owner_like_state(session, user: User, clock) -> tuple[Program,
     program, items = await _program(session, with_items=True)
     inclusion_id = await _add_course(session, clock, program)
     week_1 = _current_week_items(await _get_plan(session, clock, OPENED_IN_WEEK_1))
-    assert len(week_1) == 2
+    assert len(week_1) == 3  # #304: курс (пул A+Б × 3) = 3 занятия
     inclusion = await session.get(ProgramInclusion, inclusion_id)
     inclusion.snapshot = {k: v for k, v in inclusion.snapshot.items() if k != "program_items"}
     inclusion.progression_state = PROGRESSED_STATE
@@ -206,7 +208,7 @@ async def test_aged_legacy_snapshot_converges_and_preserves_history_progression_
         plan = await _get_plan(session, clock, TODAY)
 
     assert _current_week_number(plan) == 4
-    assert len(_current_week_items(plan)) == 2
+    assert len(_current_week_items(plan)) == 3
     await session.refresh(inclusion)
     assert inclusion.snapshot["program_items"] == program_items_snapshot(items)
     assert {k: v for k, v in inclusion.snapshot.items() if k != "program_items"} == snapshot_before
@@ -225,7 +227,7 @@ async def test_aged_legacy_snapshot_converges_and_preserves_history_progression_
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="app.services.plan_week"):
         again = await _get_plan(session, clock, TODAY)
-    assert len(_current_week_items(again)) == 2  # без дублей
+    assert len(_current_week_items(again)) == 3  # без дублей
     assert not [r for r in caplog.records if r.getMessage().startswith(REPAIR_EVENT)]
 
 
@@ -249,7 +251,7 @@ async def test_non_empty_historical_snapshot_is_never_overwritten_from_live_prog
 
     await session.refresh(inclusion)
     assert inclusion.snapshot == snapshot_before
-    assert len(_current_week_items(plan)) == 2
+    assert len(_current_week_items(plan)) == 3
     assert extra.id not in {item["exercise_id"] for item in _current_week_items(plan)}
 
 
@@ -287,7 +289,7 @@ async def test_h2_legacy_backfill_snapshot_without_program_items_converges_on_cu
     await _plan_created_in_september(session, user)
     program, _ = await _program(session, with_items=True)
     inclusion_id = await _add_course(session, clock, program)
-    assert len(_current_week_items(await _get_plan(session, clock, OPENED_IN_WEEK_1))) == 2
+    assert len(_current_week_items(await _get_plan(session, clock, OPENED_IN_WEEK_1))) == 3
     inclusion = await session.get(ProgramInclusion, inclusion_id)
     inclusion.snapshot = {k: v for k, v in inclusion.snapshot.items() if k != "program_items"}
     await session.commit()
@@ -295,7 +297,7 @@ async def test_h2_legacy_backfill_snapshot_without_program_items_converges_on_cu
     plan = await _get_plan(session, clock, TODAY)
 
     assert _current_week_number(plan) == 4
-    assert len(_current_week_items(plan)) == 2  # сейчас 0 -> «0 из 0 · На эту неделю пока ничего не запланировано»
+    assert len(_current_week_items(plan)) == 3  # сейчас 0 -> «0 из 0 · На эту неделю пока ничего не запланировано»
 
 
 async def test_h3_course_added_while_program_had_no_program_items_converges_after_items_appear(
@@ -313,6 +315,6 @@ async def test_h3_course_added_while_program_had_no_program_items_converges_afte
 
     plan = await _get_plan(session, clock, TODAY)
 
-    assert len(_current_week_items(plan)) == 2  # сейчас 0
+    assert len(_current_week_items(plan)) == 3  # сейчас 0
     assert (await session.execute(select(PlanItem).where(PlanItem.plan_week_id.is_(None)))).scalars().all() == []
     assert (await session.execute(select(PlanWeek))).scalars().all()  # недели созданы, строк нет

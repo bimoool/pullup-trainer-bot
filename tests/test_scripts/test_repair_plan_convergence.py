@@ -109,12 +109,12 @@ async def test_dry_run_reports_the_exact_mutation_and_writes_nothing(session, cl
     assert report["result"] == "dry-run: rolled back, nothing written"
     assert report["current_week_number"] == 4
     assert report["before"]["current_week_plan_items"] == 0
-    assert report["after"]["current_week_plan_items"] == 2
+    assert report["after"]["current_week_plan_items"] == 3  # #304: 3 занятия main (A + Б в каждом)
     repairs = report["mutation"]["snapshot_repairs"]
     assert [(r["inclusion_id"], r["reason"], r["program_items_before"]) for r in repairs] == [
         (owner_id, "missing_program_items_key", "<missing key>"),
     ]
-    assert len(repairs[0]["program_items_after"]) == 2
+    assert len(repairs[0]["program_items_after"]) == 2  # снимок — по-прежнему 2 элемента программы
     assert {i["week_number"] for i in report["mutation"]["plan_items_created"]} == {4}
     assert report["guard_violations"] == []
     # nothing persisted
@@ -137,14 +137,14 @@ async def test_apply_repairs_only_the_target_identity_preserves_state_and_is_ide
     assert owner.progression_state == PROGRESSED
     assert owner.started_at == owner_started_at
     assert owner.is_active
-    assert await _current_week_items(session, owner_plan) == 2
+    assert await _current_week_items(session, owner_plan) == 3  # #304: занятия, не агрегатные строки
     # the other aged user is NOT auto-repaired by the targeted tool
     assert "program_items" not in (await _fresh(session, bystander_id)).snapshot
     assert await _current_week_items(session, bystander_plan) == 0
 
     code, again = await run_repair(session, telegram_id=OWNER_TG, apply=True, today=TODAY)
     assert (code, again["result"]) == (EXIT_OK, "nothing to do")
-    assert await _current_week_items(session, owner_plan) == 2
+    assert await _current_week_items(session, owner_plan) == 3
 
 
 async def test_unknown_identity_and_identity_without_plan_are_refused(session):

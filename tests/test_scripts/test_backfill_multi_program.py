@@ -93,10 +93,16 @@ async def test_backfilled_inclusion_has_plan_items_for_both_blocks(session, user
     items = (
         await session.execute(select(PlanItem).where(PlanItem.program_inclusion_id == inclusion.id))
     ).scalars().all()
-    exercise_ids = {item.exercise_id for item in items}
     snapshot_exercise_ids = {e["exercise_id"] for e in inclusion.snapshot["exercises"]}
-    assert exercise_ids == snapshot_exercise_ids
-    assert len(items) == 2  # блок A + блок Б
+    # issue #304: бэкфилл пишет агрегатные строки A + Б (как раньше), затем единственная converge_user_plan
+    # выводит их из плана (не удаляя) и материализует занятия main-слота: одно занятие = блоки A + Б.
+    aggregates = [item for item in items if item.occurrence_index is None]
+    assert {item.exercise_id for item in aggregates} == snapshot_exercise_ids
+    assert len(aggregates) == 2 and all(item.status == "removed" for item in aggregates)
+    occurrences = [item for item in items if item.occurrence_index is not None]
+    assert [(item.program_slot_key, item.occurrence_index) for item in occurrences] == [
+        ("main", 1), ("main", 2), ("main", 3),
+    ]
 
 
 async def test_zero_workouts_with_baseline_matches_first_workout_equipment_choice(session, user: User):

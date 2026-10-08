@@ -394,7 +394,12 @@ class PlanConvergenceService:
             )))
             report.occurrences_created += 1
         linked = await self._sessions_linked_in_week([row], week, tz)
-        sessions = [(session_id, performed_at) for session_id, (performed_at, _, _) in linked.items()]
+        # Сессия засчитывает не более одного занятия (PL2): уже засчитавшая другое занятие (например,
+        # смешанная сессия, отданная занятию соседней строки) не переносится.
+        sessions = [
+            (session_id, performed_at) for session_id, (performed_at, _, credit) in linked.items()
+            if credit is None or credit == row.id
+        ]
         by_index = {o.occurrence_index: o for o in occurrences}
         for index, session_id in assign_aggregate_credits(list(by_index), sessions).items():
             if linked[session_id][2] != by_index[index].id:

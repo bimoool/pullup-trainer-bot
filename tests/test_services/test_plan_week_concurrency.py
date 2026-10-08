@@ -72,7 +72,8 @@ async def test_concurrent_ensure_current_does_not_duplicate_program_items(sessio
 
     ids = await asyncio.gather(call(), call(), call())
     assert len(set(ids)) == 1
-    assert await _count(test_dsn, select(func.count()).select_from(PlanItem).where(PlanItem.training_plan_id == plan_id)) == 2
+    # issue #304: курс (пул A+Б × 3) = 3 занятия, ровно один раз несмотря на гонку.
+    assert await _count(test_dsn, select(func.count()).select_from(PlanItem).where(PlanItem.training_plan_id == plan_id)) == 3
 
 
 async def test_concurrent_ensure_plannable_week_is_conflict_safe(session, user: User, test_dsn):
@@ -128,5 +129,5 @@ async def test_concurrent_copy_to_next_does_not_duplicate_items(session, user: U
         select(func.count()).select_from(PlanItem).join(PlanWeek, PlanItem.plan_week_id == PlanWeek.id)
         .where(PlanWeek.training_plan_id == plan_id, PlanWeek.week_number == 2),
     )
-    # #301: 2 скопированные ручные строки + 2 строки курса из снимка (ровно один раз, без дублей при гонке).
-    assert target_count == 4
+    # #301/#304: 2 скопированные ручные строки + 3 занятия курса из снимка (ровно один раз, без дублей при гонке).
+    assert target_count == 5

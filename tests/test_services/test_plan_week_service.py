@@ -1,7 +1,12 @@
 """Checkpoint 1 (issue #188): PlanWeekService.ensure_current_plan_week —
 единственный канонический путь материализации Program -> PlanWeek/PlanItem.
 Пять обязательных сценариев из preflight (раздел 9): новый пользователь,
-идемпотентность, бэкфилл/старые данные, rollover, ownership."""
+идемпотентность, бэкфилл/старые данные, rollover, ownership.
+
+issue #304 (AD-4): одна строка = одно занятие. Синтетический курс ниже — два элемента пула «× 3»
+(одна тренировка A+Б, как и раньше группировалась карточка) → 3 занятия в неделю, у каждого
+count_per_week = 1. Старые агрегатные строки не удаляются: в текущей/будущей неделе они выводятся
+из плана (status = removed) и заменяются занятиями — «видимые» строки ниже их не включают."""
 
 import asyncio
 from datetime import UTC, date, datetime
@@ -23,6 +28,7 @@ from app.db.repositories.programs import program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
+from app.domain.plan_occurrence import derive_slots
 from app.services.plan_week import PlanWeekService
 
 
@@ -84,7 +90,8 @@ async def _make_plan_with_inclusion(
 
 
 async def _plan_items(session, plan_id: int) -> list[PlanItem]:
-    return await TrainingPlanRepository(session).list_plan_items(plan_id)
+    """Строки, составляющие план (выведенные из плана агрегаты — не в счёт, см. докстринг модуля)."""
+    return [item for item in await TrainingPlanRepository(session).list_plan_items(plan_id) if item.status != "removed"]
 
 
 # --- New user --------------------------------------------------------------------------
@@ -101,7 +108,7 @@ async def test_new_inclusion_materializes_into_current_week(session, user: User)
     assert week.week_number == 1
     assert week.start_date == date(2026, 9, 21)
     items = await _plan_items(session, plan.id)
-    assert len(items) == 2
+    assert [(item.occurrence_index, item.count_per_week) for item in items] == [(1, 1), (2, 1), (3, 1)]
     assert all(item.plan_week_id == week.id for item in items)
 
 
@@ -118,7 +125,7 @@ async def test_two_calls_same_day_create_no_duplicates(session, user: User):
 
     assert week1.id == week2.id
     items = await _plan_items(session, plan.id)
-    assert len(items) == 2  # не 4
+    assert len(items) == 3  # не 6
 
 
 # --- Existing/backfill: PlanItem без week получает FK, данные не меняются ---------------
@@ -140,10 +147,17 @@ async def test_unweeked_existing_plan_items_get_attached_not_duplicated(session,
         training_plan_id=plan.id, today=date(2026, 9, 21),
     )
 
+    # Старые строки привязаны к неделе и выведены из плана (не удалены — на них может ссылаться
+    # история M2M), вместо них — 3 занятия; повтор ничего не добавляет.
+    all_rows = await TrainingPlanRepository(session).list_plan_items(plan.id)
+    retired = [item for item in all_rows if item.id in pre_existing_ids]
+    assert len(retired) == 2 and all(
+        (item.plan_week_id, item.status, item.legacy_aggregate) == (week.id, "removed", True) for item in retired
+    )
     items = await _plan_items(session, plan.id)
-    assert len(items) == 2  # не создались новые поверх старых
-    assert {item.id for item in items} == pre_existing_ids  # те же самые строки
-    assert all(item.plan_week_id == week.id for item in items)
+    assert len(items) == 3 and all(item.plan_week_id == week.id for item in items)
+    await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
+    assert len(await TrainingPlanRepository(session).list_plan_items(plan.id)) == 5
 
 
 # --- Rollover ------------------------------------------------------------------------
@@ -157,7 +171,7 @@ async def test_rollover_creates_new_items_in_new_week_keeps_old_week_intact(sess
     week1 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
     week1_items = await _plan_items(session, plan.id)
     week1_item_ids = {item.id for item in week1_items}
-    assert len(week1_items) == 2
+    assert len(week1_items) == 3
 
     week2 = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 28))
 
@@ -165,17 +179,17 @@ async def test_rollover_creates_new_items_in_new_week_keeps_old_week_intact(sess
     assert week2.week_number == 2
 
     all_items = await _plan_items(session, plan.id)
-    assert len(all_items) == 4  # 2 старых + 2 новых, не апдейт старых
+    assert len(all_items) == 6  # 3 старых + 3 новых, не апдейт старых
 
     week1_items_after = [item for item in all_items if item.plan_week_id == week1.id]
     week2_items_new = [item for item in all_items if item.plan_week_id == week2.id]
     assert {item.id for item in week1_items_after} == week1_item_ids  # неделя 1 не тронута
-    assert len(week2_items_new) == 2
+    assert len(week2_items_new) == 3
 
     # повторный вызов в той же (второй) неделе — снова без дублей
     await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 29))
     all_items_again = await _plan_items(session, plan.id)
-    assert len(all_items_again) == 4
+    assert len(all_items_again) == 6
 
 
 # --- Snapshot immutability (Кирилл, checkpoint 1.1 — контрактный баг) -------------------
@@ -195,7 +209,7 @@ async def test_rollover_uses_snapshot_not_live_program(session, user: User):
         training_plan_id=plan.id, today=date(2026, 9, 21),
     )
     week1_items = await _plan_items(session, plan.id)
-    assert len(week1_items) == 2
+    assert len(week1_items) == 3
 
     # Мутация LIVE Program ПОСЛЕ подключения — третий ProgramItem, которого
     # в snapshot этого пользователя нет и быть не должно.
@@ -212,8 +226,11 @@ async def test_rollover_uses_snapshot_not_live_program(session, user: User):
     )
     week2_items = [item for item in await _plan_items(session, plan.id) if item.plan_week_id == week2.id]
 
-    assert len(week2_items) == 2  # НЕ 3 — новый ProgramItem программы не просочился
+    assert len(week2_items) == 3  # объём из снимка
     assert block_c.id not in {item.exercise_id for item in week2_items}
+    inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
+    members = {m.exercise_id for slot in derive_slots(inclusion.snapshot) for m in slot.members}
+    assert block_c.id not in members  # новый ProgramItem программы не просочился в занятие
 
 
 async def test_new_inclusion_after_program_mutation_gets_new_structure(session, user: User):
@@ -235,7 +252,11 @@ async def test_new_inclusion_after_program_mutation_gets_new_structure(session, 
 
     await PlanWeekService(session).ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
     items = await _plan_items(session, plan.id)
-    assert {item.exercise_id for item in items} == {program_items[0].exercise_id, program_items[1].exercise_id, block_c.id}
+    inclusion = (await TrainingPlanRepository(session).list_inclusions(plan.id))[0]
+    [slot] = derive_slots(inclusion.snapshot)  # все три элемента пула — одна тренировка-занятие
+    assert {m.exercise_id for m in slot.members} == {
+        program_items[0].exercise_id, program_items[1].exercise_id, block_c.id,
+    }
     assert len(items) == 3
 
 
@@ -427,7 +448,7 @@ async def test_orphan_attach_is_scoped_to_its_own_plan(session, user: User):
 
 async def _items_of_week(session, week_id: int) -> list[PlanItem]:
     return list((await session.execute(
-        sa_select(PlanItem).where(PlanItem.plan_week_id == week_id).order_by(PlanItem.id),
+        sa_select(PlanItem).where(PlanItem.plan_week_id == week_id, PlanItem.status != "removed").order_by(PlanItem.id),
     )).scalars())
 
 
@@ -443,15 +464,15 @@ async def test_plannable_future_weeks_get_course_rows_idempotently(session, user
     assert week3 is not None and week3.week_number == 3
     week2 = await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan.id, week_number=2)
 
-    assert len(await _items_of_week(session, week1.id)) == 2
+    assert len(await _items_of_week(session, week1.id)) == 3
     for week in (week2, week3):
         rows = await _items_of_week(session, week.id)
-        assert len(rows) == 2 and {r.count_per_week for r in rows} == {3}
+        assert len(rows) == 3 and {r.count_per_week for r in rows} == {1}
         assert all(r.program_inclusion_id is not None for r in rows)
 
     await service.ensure_plannable_week(training_plan_id=plan.id, week_number=3, today=today)
     await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
-    assert len(await _plan_items(session, plan.id)) == 6
+    assert len(await _plan_items(session, plan.id)) == 9
 
 
 async def test_existing_empty_future_week_is_filled_on_current_week_ensure(session, user: User):
@@ -468,9 +489,9 @@ async def test_existing_empty_future_week_is_filled_on_current_week_ensure(sessi
 
     await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
 
-    assert len(await _items_of_week(session, future.id)) == 2
+    assert len(await _items_of_week(session, future.id)) == 3
     await service.ensure_current_plan_week(training_plan_id=plan.id, today=today)
-    assert len(await _items_of_week(session, future.id)) == 2
+    assert len(await _items_of_week(session, future.id)) == 3
 
 
 async def test_rollover_after_prematerialisation_creates_no_duplicates(session, user: User):
@@ -481,14 +502,14 @@ async def test_rollover_after_prematerialisation_creates_no_duplicates(session, 
     await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 21))
     week2 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=2, today=date(2026, 9, 21))
     before = {r.id for r in await _items_of_week(session, week2.id)}
-    assert len(before) == 2
+    assert len(before) == 3
 
     current = await service.ensure_current_plan_week(training_plan_id=plan.id, today=date(2026, 9, 29))
 
     assert current.id == week2.id
     assert {r.id for r in await _items_of_week(session, week2.id)} == before
-    # неделя 3 (ещё не создана) не появилась сама; всего 2 + 2
-    assert len(await _plan_items(session, plan.id)) == 4
+    # неделя 3 (ещё не создана) не появилась сама; всего 3 + 3
+    assert len(await _plan_items(session, plan.id)) == 6
 
 
 async def test_future_weeks_use_snapshot_and_manual_only_plan_stays_empty(session, user: User):
@@ -504,7 +525,7 @@ async def test_future_weeks_use_snapshot_and_manual_only_plan_stays_empty(sessio
     ))
     await session.flush()
     week2 = await service.ensure_plannable_week(training_plan_id=plan.id, week_number=2, today=today)
-    assert sorted(r.count_per_week for r in await _items_of_week(session, week2.id)) == [3, 3]
+    assert sorted(r.count_per_week for r in await _items_of_week(session, week2.id)) == [1, 1, 1]  # из снимка
 
     manual_user = await UserRepository(session).create(telegram_id=424242, username="manual")
     manual_plan = TrainingPlan(user_id=manual_user.id, created_at=_DEFAULT_PLAN_CREATED_AT)
@@ -541,8 +562,8 @@ async def test_release_future_weeks_drops_unperformed_future_rows_only(session, 
 
     removed = await service.release_future_weeks_of_inclusion(inclusion=inclusion, today=today)
 
-    assert removed == 4  # недели 2 и 3 по 2 строки
-    assert len(await _items_of_week(session, week1.id)) == 2  # текущая не тронута
+    assert removed == 6  # недели 2 и 3 по 3 занятия
+    assert len(await _items_of_week(session, week1.id)) == 3  # текущая не тронута
     assert await _items_of_week(session, week3.id) == []
 
 
@@ -559,5 +580,5 @@ async def test_past_gap_weeks_are_created_empty(session, user: User):
     assert numbers == [1, 2, 3]
     gap = await TrainingPlanRepository(session).get_plan_week(training_plan_id=plan.id, week_number=2)
     assert await _items_of_week(session, gap.id) == []  # прошлое — без строк
-    assert len(await _items_of_week(session, week1.id)) == 2
-    assert len(await _items_of_week(session, week3.id)) == 2
+    assert len(await _items_of_week(session, week1.id)) == 3
+    assert len(await _items_of_week(session, week3.id)) == 3

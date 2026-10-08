@@ -263,9 +263,10 @@ async def test_aged_profile_converges_and_preserves_history(session):
 
 async def test_aged_profile_current_and_future_plan_stays_functional(session):
     """J2: после сходимости план работает: «2 из 3» текущей недели, next — available с Пт (Вт + 3)."""
-    from tests.test_web._v2_client import v2_get, v2_post
-    from app.web import routes_v2
     import uuid
+
+    from app.web import routes_v2
+    from tests.test_web._v2_client import v2_get, v2_post
 
     aged = await _aged_profile(session)
     routes_v2_now = datetime(2026, 10, 7, 12, tzinfo=UTC)
@@ -339,7 +340,7 @@ async def test_no_auto_enrol_and_removed_course_is_not_regenerated(session):
     aged = await _aged_profile(session)
     aged["inclusion"].is_active = False
     await session.commit()
-    _, report = await PlanConvergenceService(session).converge_user_plan(training_plan_id=aged["plan"].id, today=TODAY)
+    _, _report = await PlanConvergenceService(session).converge_user_plan(training_plan_id=aged["plan"].id, today=TODAY)
     await session.commit()
     main = (await session.execute(select(func.count()).select_from(PlanItem).where(
         PlanItem.program_slot_key.is_not(None),

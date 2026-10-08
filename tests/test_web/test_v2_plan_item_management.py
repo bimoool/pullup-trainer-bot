@@ -288,8 +288,9 @@ async def test_plan_response_complex_source_type_for_manual_exercise_is_null(ses
     await _create_manual_plan_item(session, user)
     response = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")
     items = response.json()["plan"]["plan_items"]
-    assert len(items) == 1
-    assert items[0]["complex_source_type"] is None
+    # issue #304 (AD-4): ручная строка «3 раза в неделю» → 3 занятия по одному.
+    assert [(i["count_per_week"], i["occurrence_index"]) for i in items] == [(1, 1), (1, 2), (1, 3)]
+    assert all(i["complex_source_type"] is None for i in items)
 
 
 async def test_plan_response_complex_source_type_for_user_workout(session, user: User):
