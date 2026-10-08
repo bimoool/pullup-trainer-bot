@@ -162,4 +162,16 @@ analytics rounding/labels in 3b, audio-hook subscriber UI.
 
 ### 9.2 GitHub issues
 
-Filled in after creation (see umbrella issue).
+Umbrella: bimoool/pullup-trainer-bot#302. All `status:backlog` (not `ready`: the orchestrator
+must not pick them up until the owner promotes them).
+
+| Wave | Issue | Severity | Depends on | Journeys |
+|---|---|---|---|---|
+| 1a WorkoutDefinition v2 | bimoool/pullup-trainer-bot#303 | P0 | — | J3, J1 |
+| 1b Program + Plan foundation | bimoool/pullup-trainer-bot#304 | P0 | #303; OD-2 value | J6, J7, J11, J12, J2 |
+| 1c Course prescription correctness | bimoool/pullup-trainer-bot#305 | P0 | #303; OD-1, OD-3 numbers | J4, J1, J2 |
+| 2 Live Engine v2 | bimoool/pullup-trainer-bot#306 | P1 | #303, #304, #307 migration | J5, J1, J3, J4 |
+| 3a TrainingSession v2 | bimoool/pullup-trainer-bot#307 | P0 | #303, #304 (∥ #306) | J8, J9, J10, J7 |
+| 3b Journal + Analytics | bimoool/pullup-trainer-bot#308 | P1 | #307 (∥ late #306) | J10, J2, J1, J9 |
+| 4 Integration + acceptance | bimoool/pullup-trainer-bot#309 | P1 | #306, #308 | J1–J12 |
+| Owner decisions OD-1…OD-4 | bimoool/pullup-trainer-bot#310 | — | — | — |
