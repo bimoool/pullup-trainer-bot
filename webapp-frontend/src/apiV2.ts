@@ -539,6 +539,8 @@ export interface LiveSetTargetResponse {
   metric_type: string;
   value: string;
   unit: string;
+  /** issue #305: подход на максимум (свойство цели). */
+  is_max_set?: boolean;
 }
 
 export interface LiveSessionBlockResponse {

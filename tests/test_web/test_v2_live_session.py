@@ -122,9 +122,8 @@ async def test_start_live_session_returns_get_ready_phase_with_step_targets(sess
     # base_target=10, work_sets=3 (config _make_step_program) -> 3 таргета по 10.
     assert [t["value"] for t in block_a["targets"]] == ["10.00", "10.00", "10.00"]
     block_b = next(b for b in body["blocks"] if b["exercise_id"] == roles["block_b"])
-    # block_b не хранит work_sets в progression_state -> дефолт 1 подход (см.
-    # app.services.live_session._resolve_step_role_block).
-    assert [t["value"] for t in block_b["targets"]] == ["3.00"]
+    # issue #305 (D2): block_b несёт work_sets = STRENGTH_BLOCK.work_sets (4) — 4 подхода, не 1.
+    assert [t["value"] for t in block_b["targets"]] == ["3.00"] * 4
 
 
 async def test_start_live_session_is_idempotent_by_client_session_id(session, user: User):

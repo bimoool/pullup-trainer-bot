@@ -73,7 +73,7 @@ async def test_create_inclusion_starts_from_config_base_targets_with_no_override
         "equipment_value": None, "equipment_item_id": None, "needs_new_equipment": False,
     }
     assert state["block_b"] == {
-        "target": 3, "volume": 0, "weak_streak": 0, "equipment_type": "bodyweight",
+        "target": 3, "volume": 0, "work_sets": 4, "weak_streak": 0, "equipment_type": "bodyweight",
         "equipment_value": None, "equipment_item_id": None, "needs_new_equipment": False,
         "is_heavy_next": False, "heavy_equipment_value_next": None,
     }
