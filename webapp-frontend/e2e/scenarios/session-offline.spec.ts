@@ -4,9 +4,9 @@ import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py v2_session_ready 900010 — STEP-курс синтетической
-// категории, block_a work_sets=3 (цель 10) + block_b дефолтный 1 подход
-// (цель 3) — ровно 4 подхода на сессию (см. докстринг сценария в
-// scripts/e2e_seed.py). Экран сессии v2 виден только ADMIN_IDS — сценарий
+// категории, block_a work_sets=3 (цель 10) + block_b 4 рабочих подхода
+// (цель 3; issue #305, D2: раньше ошибочно 1) — 7 подходов на сессию (см.
+// докстринг сценария в scripts/e2e_seed.py). Экран сессии v2 виден только ADMIN_IDS — сценарий
 // требует ADMIN_IDS=900010 (или шире) у тестового сервера, см.
 // webapp-frontend/e2e/README.md.
 const TELEGRAM_ID = 900_010;
@@ -53,10 +53,17 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   // см. app.domain.live_session.next_phase: "последний подход НЕпоследнего
   // блока -> get_ready первого подхода следующего блока".
   await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Готов" }).click();
-  await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await page.getByLabel("Повторений").fill("3");
-  await page.getByRole("button", { name: "Готово" }).click();
+  // Блок Б — 4 рабочих подхода (issue #305, D2: STRENGTH_BLOCK.work_sets).
+  for (let i = 0; i < 4; i += 1) {
+    await page.getByRole("button", { name: "Готов" }).click();
+    await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
+    await page.getByLabel("Повторений").fill("3");
+    await page.getByRole("button", { name: "Готово" }).click();
+    if (i < 3) {
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Пропустить отдых" }).click();
+    }
+  }
 
   await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
   await expect(page.getByText(/Нет сети/)).toBeVisible();
@@ -84,9 +91,9 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   expect(liveResponses.filter((r) => r.path.endsWith("/complete"))).toEqual([
     expect.objectContaining({ status: 200 }),
   ]);
-  // 3 подхода блока A + 1 подход блока Б = 4/4 показаны выполненными.
+  // 3 подхода блока A + 4 подхода блока Б показаны выполненными.
   await expect(page.getByText(/— 3\/3/)).toBeVisible();
-  await expect(page.getByText(/— 1\/1/)).toBeVisible();
+  await expect(page.getByText(/— 4\/4/)).toBeVisible();
   // work_sets_a=3 в конфиге сценария — StepProgressionStrategy на "держал
   // цель" даёт новую цель блока A (см. app/domain/progression.py) — здесь
   // важен сам факт, что новая цель показана, не конкретное число.
