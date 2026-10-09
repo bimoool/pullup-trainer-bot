@@ -252,7 +252,6 @@ class EditField(StrEnum):
 
 REASON_ACTIVE = "Тренировка ещё идёт — изменить её можно после завершения."
 REASON_LEGACY_COPY = "Запись перенесена из старой истории — её изменяет старая карточка."
-REASON_PROGRESSION = "Подходы этой тренировки учтены в прогрессии курса — их значения не меняются."
 REASON_ELECTIVE_NO_CLONE = "Факультатив нельзя повторить копией — запись вне плана записывается один раз."
 
 _METADATA = frozenset({EditField.DATE, EditField.DURATION, EditField.EFFORT, EditField.COMMENT})
@@ -262,15 +261,15 @@ _EXTERNAL = _METADATA | {EditField.ACTIVITY_TYPE, EditField.DISTANCE}
 
 @dataclass(frozen=True)
 class SessionFacts:
-    """Что предикат знает о сессии. consumed_by_progression — сессия питает прогрессию курса
-    (связана с занятием программы или содержит блок роли STEP); решает сервис тем же предикатом,
-    что и удаление (app.services.session_deletion), — второго определения нет."""
+    """Что предикат знает о сессии. Связи с курсом/планом (plan_item_id, program_inclusion_id), роли
+    STEP и «учтённости прогрессией» здесь нет намеренно: прогрессию двигает только подход на
+    максимум и только вперёд (решение владельца, TRAINING_SESSION_V2 §4), поэтому происхождение
+    сессии из плана/курса правку её фактов не ограничивает."""
 
     completed: bool
     kind: SessionKind
     source: SessionSourceV2
     origin: SessionOrigin
-    consumed_by_progression: bool
 
 
 @dataclass(frozen=True)
@@ -292,18 +291,18 @@ def edit_verdict(facts: SessionFacts) -> EditVerdict:
     """ED1: единственный предикат редактирования/копирования. Удаление — отдельный, более строгий
     предикат безопасного удаления (PROJECT_SPEC §3, конституция), он здесь не повторяется.
 
-    Толкование §4 (записано в PR #307): строка «planned_live / любая сессия, учтённая прогрессией»
-    ограничивает подходы только у сессий, учтённых прогрессией, — их значения «питали прогрессию».
-    Сессия своего плана (Builder-тренировка, без курса) прогрессию не питает и, как и до #307
-    (#262), правится целиком."""
+    Решение владельца (#307, финальное ревью B1): прогрессию двигает ТОЛЬКО явный подход на максимум,
+    и только на прямой границе прогрессии (#305) — следующий рецепт. Значения обычных рабочих
+    подходов прогрессию не питают; уже сгенерированная история и рецепты задним числом не
+    пересчитываются. Поэтому завершённая силовая сессия — из плана, курса, роли STEP или
+    source=planned_live — правится целиком (метаданные и значения подходов, в т.ч. подхода на
+    максимум: исправляется исторический факт) и копируется по общему правилу копии."""
     if not facts.completed:
         return EditVerdict(frozenset(), can_clone=False, reason=REASON_ACTIVE)
     if facts.origin is SessionOrigin.LEGACY_BACKFILL:
         return EditVerdict(frozenset(), can_clone=False, reason=REASON_LEGACY_COPY)
     if facts.kind is SessionKind.EXTERNAL_ACTIVITY:
         return EditVerdict(_EXTERNAL, can_clone=True)
-    if facts.consumed_by_progression:
-        return EditVerdict(_METADATA | {EditField.SET_NOTES}, can_clone=False, reason=REASON_PROGRESSION)
     if facts.origin is SessionOrigin.LEGACY_ELECTIVE:
         return EditVerdict(_FULL, can_clone=False, reason=REASON_ELECTIVE_NO_CLONE)
     return EditVerdict(_FULL, can_clone=True)

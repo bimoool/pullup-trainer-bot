@@ -901,7 +901,8 @@ async def seed_journal_edit(session: AsyncSession, telegram_id: int) -> None:
     """#262 — правка/клон из Журнала (пояс Europe/Moscow). Две завершённые сессии
     сегодня: Builder «Моя силовая» со снимком (can_edit; 2 подхода — второй с
     усилием и заметкой, усилие тренировки 3, комментарий) — 5 минут назад, и
-    историческая без снимка («Тренировка», can_edit=false) — 10 минут назад."""
+    историческая плановая без снимка («Тренировка»; #307 B1: правится и копируется,
+    не удаляется) — 10 минут назад."""
     user = await _onboard(session, telegram_id)
     user.timezone = "Europe/Moscow"
     pull = Exercise(

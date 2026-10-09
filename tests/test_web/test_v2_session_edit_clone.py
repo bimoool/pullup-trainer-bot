@@ -120,7 +120,7 @@ async def test_edit_and_clone_ownership_and_missing_are_404(session: AsyncSessio
     assert (await _listed(session, owner))[0]["effort"] is None
 
 
-async def test_unsafe_sessions_are_409_and_hide_can_edit(session: AsyncSession, user: User):
+async def test_active_is_409_course_session_editable_cloneable_not_deletable(session: AsyncSession, user: User):
     # STEP/program-backed
     _, roles, plan_item_ids = await _setup_step_session(session, user)
     step_id = await _start_and_complete(
@@ -137,18 +137,22 @@ async def test_unsafe_sessions_are_409_and_hide_can_edit(session: AsyncSession, 
     clone = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{running['id']}/clone", {})
     assert patch.status_code == 409 and clone.status_code == 409 and patch.json()["detail"]
 
-    # #307 (ED1): учтённая прогрессией курса — метаданные правятся, значения подходов и копия — нет.
+    # #307 B1 (решение владельца): сессия курса правится целиком и копируется — прогрессию двигает только
+    # подход на максимум и только вперёд; удаление — прежний строгий предикат: нет.
     step_path = f"/api/v2/sessions/{step_id}"
     assert (await v2_patch(session, user.telegram_id, step_path, {"comment": "x"})).status_code == 200
     changed = await v2_patch(session, user.telegram_id, step_path, {
-        "sets": [{"block_index": 0, "set_number": 1, "value": "99"}],
+        "sets": [{"block_index": 0, "set_number": 1, "value": "11"}],
     })
-    assert changed.status_code == 409 and changed.json()["detail"]
-    assert (await v2_post(session, user.telegram_id, f"{step_path}/clone", {})).status_code == 409
-    assert await session.scalar(select(func.count()).select_from(TrainingSession)) == 2
+    assert changed.status_code == 200, changed.text
     [card] = await _listed(session, user)  # активная в списке завершённых не показывается
-    assert card["can_edit"] is False and card["can_clone"] is False and "comment" in card["editable_fields"]
-    assert card["blocks"][0]["set_logs"][0]["value"] == "10.00" and card["comment"] == "x"
+    assert card["can_edit"] is True and card["can_clone"] is True and card["can_delete"] is False
+    assert card["blocks"][0]["set_logs"][0]["value"] == "11.00" and card["comment"] == "x"
+    assert (await v2_delete(session, user.telegram_id, step_path)).status_code == 409
+    cloned = await v2_post(session, user.telegram_id, f"{step_path}/clone", {})
+    assert cloned.status_code == 201, cloned.text
+    assert cloned.json()["plan_item_id"] is None
+    assert await session.scalar(select(func.count()).select_from(TrainingSession)) == 3
 
 
 async def test_session_without_proven_workout_is_editable_but_not_deletable(session: AsyncSession):

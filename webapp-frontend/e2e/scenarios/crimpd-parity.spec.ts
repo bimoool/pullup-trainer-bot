@@ -864,7 +864,7 @@ for (const width of WIDTHS) {
 // --- Journal edit/clone (#262): «Изменить» и «Повторить (клонировать)» в деталях записи ------
 // Seed: scripts/e2e_seed.py journal_edit 997201/997202 (по пользователю на ширину; сценарий
 // меняет данные). Две сегодняшние записи (МСК): Builder «Моя силовая» со снимком (can_edit) и
-// историческая без снимка («Тренировка» — править/клонировать нельзя, кнопок нет).
+// историческая плановая без снимка («Тренировка»): #307 B1 — правится и копируется, но не удаляется.
 const JOURNAL_EDIT_USERS: Record<number, number> = { 320: 997_201, 390: 997_202 };
 
 function mskDay(offsetDays: number): string {
@@ -877,7 +877,7 @@ for (const width of WIDTHS) {
   test.describe(`Journal edit/clone @${width}px`, () => {
     test.use({ viewport: { width, height: 760 } });
 
-    test("кнопки только у безопасной записи; правка значений/усилия/заметок/даты; клон на сегодня", async ({ page }) => {
+    test("кнопки по серверному предикату (плановая без снимка — правка и копия, без удаления); правка значений/усилия/заметок/даты; клон на сегодня", async ({ page }) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, JOURNAL_EDIT_USERS[width], { backButton: true });
       await openTab(page, "Журнал");
       const cards = page.locator(".history-card-clickable");
@@ -885,16 +885,17 @@ for (const width of WIDTHS) {
       const mine = cards.filter({ hasText: "Моя силовая" });
       const historical = cards.filter({ hasText: "Тренировка" }).filter({ hasNotText: "Моя силовая" });
 
-      // Историческая запись без снимка: сервер не доказал безопасность — ни «Изменить», ни «Повторить».
-      // Шторка (#280) честно показывает то же: только «Открыть» (и «Отмена»), без правки/клона/удаления.
+      // Историческая плановая запись без снимка (#307 B1, решение владельца): прогрессию двигает только
+      // подход на максимум и только вперёд — запись правится и копируется. Удаление — прежний строгий
+      // предикат безопасного удаления: независимость не доказана — «Удалить» нет. Шторка (#280) — то же.
       await historical.click();
       await expect(page.getByTestId("journal-entry-sheet")).toBeVisible();
-      await expect(page.getByTestId("journal-sheet-edit")).toHaveCount(0);
-      await expect(page.getByTestId("journal-sheet-clone")).toHaveCount(0);
+      await expect(page.getByTestId("journal-sheet-edit")).toHaveCount(1);
+      await expect(page.getByTestId("journal-sheet-clone")).toHaveCount(1);
       await expect(page.getByTestId("journal-sheet-delete")).toHaveCount(0);
       await page.getByTestId("journal-sheet-open").click();
-      await expect(page.getByRole("button", { name: /Изменить/ })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: /Повторить/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Изменить/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Повторить/ })).toBeVisible();
       await expect(page.getByRole("button", { name: /Удалить/ })).toHaveCount(0);
       await pressTelegramBackButton(page);
 

@@ -8,8 +8,8 @@ import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixt
 // #280 — шторка записи Журнала v2 (как в Crimpd: тап по карточке → «Открыть / Изменить / Повторить /
 // Удалить»). Действия — те же, что на экране деталей, и по тем же флагам записи.
 // Seed: scripts/e2e_seed.py journal_edit — две сегодняшние записи: Builder «Моя силовая» со снимком
-// (can_edit, привязана к тренировке → «Открыть тренировку») и историческая «Тренировка» без снимка
-// (только «Открыть»); «Бег» (свободная активность) тест создаёт через API. owner_optional_workout —
+// (can_edit, привязана к тренировке → «Открыть тренировку») и историческая плановая «Тренировка» без
+// снимка («Открыть / Изменить / Повторить», без «Удалить» — #307 B1); «Бег» (свободная активность) тест создаёт через API. owner_optional_workout —
 // факультатив (без «Повторить»: клон бэкенд отклоняет 409). По пользователю на ширину/тему и на retry.
 const ACTIONS_USERS = { 320: { id: 998_101, theme: "light" }, 390: { id: 998_111, theme: "dark" } } as const;
 // Тест типов создаёт запись «Бег» — свой пользователь, чтобы остальные видели ровно две записи.
@@ -86,7 +86,9 @@ for (const width of WIDTHS) {
 
       const expected: [string, Locator, Action[]][] = [
         ["Builder-запись", builder, ["open", "edit", "clone", "workout", "delete"]],
-        ["историческая без снимка", historical, ["open"]],
+        // #307 B1 (решение владельца): плановая запись без снимка правится и копируется (прогрессию двигает
+        // только подход на максимум и только вперёд); удаление — прежний строгий предикат: нет.
+        ["историческая без снимка", historical, ["open", "edit", "clone"]],
         ["свободная активность", activity, ["open", "edit", "clone", "delete"]],
       ];
       for (const [label, card, actions] of expected) {
@@ -245,9 +247,10 @@ for (const width of WIDTHS) {
       expect(deletes).toHaveLength(1);
       await expectNoHorizontalOverflow(page, "Журнал: после удаления из шторки");
 
-      // Оставшаяся (историческая) запись: удалить нельзя — в шторке только «Открыть».
+      // Оставшаяся (историческая плановая) запись: удалить нельзя (строгий предикат удаления), а
+      // правка и копия есть — #307 B1, решение владельца.
       await cards.first().click();
-      expect(await sheetActions(page)).toEqual(["open"]);
+      expect(await sheetActions(page)).toEqual(["open", "edit", "clone"]);
       await page.getByTestId("journal-sheet-cancel").click();
 
       expect(noWakeLock(consoleErrors)).toEqual([]);

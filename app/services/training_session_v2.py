@@ -33,7 +33,7 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.db.repositories.workout_definitions import WorkoutDefinitionRepository
-from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType
+from app.domain.multi_program import MetricType
 from app.domain.training_session_v2 import (
     Duration,
     EditVerdict,
@@ -54,12 +54,7 @@ from app.domain.training_session_v2 import (
 )
 from app.domain.workout_definition import SnapshotResolutionError, snapshot_to_dict
 from app.domain.workout_snapshot import positional_snapshot_items
-from app.services.session_deletion import (
-    REASON_PROGRAM,
-    REASON_STEP,
-    DeleteVerdict,
-    SessionDeletionService,
-)
+from app.services.session_deletion import DeleteVerdict, SessionDeletionService
 from app.services.workout_definition import WorkoutDefinitionService
 
 
@@ -198,35 +193,21 @@ class TrainingSessionV2Service:
     # --- Предикаты (ED1 + удаление) --------------------------------------------------------
 
     async def verdicts(self, details: list[SessionDetail], user_id: int) -> dict[int, SessionVerdicts]:
-        """Удаление — прежний строгий предикат (PROJECT_SPEC §3). Правка/копия — ED1;
-        consumed_by_progression — сессия связана с курсом или касается роли STEP (по вердикту
-        удаления или по самим блокам — у недоказуемых сессий удаление роль не проверяет)."""
+        """Удаление — прежний строгий предикат (PROJECT_SPEC §3). Правка/копия — ED1 по фактам самой
+        сессии (завершена, вид, источник, происхождение). Связь с курсом/планом, роль STEP или
+        source=planned_live правку подходов НЕ ограничивают: прогрессию двигает только подход на
+        максимум, и только вперёд (#305), — правка истории прогрессию не пересчитывает (решение
+        владельца, TRAINING_SESSION_V2 §4)."""
         if not details:
             return {}
         deletion = await SessionDeletionService(self._session).evaluate(details, user_id)
-        exercise_ids = sorted({b.exercise_id for d in details for b in d.blocks if b.exercise_id is not None})
-        role_exercise_ids = {
-            e.id for e in await self._programs.list_exercises_by_ids(exercise_ids)
-            if e.subcategory in INTERNAL_ROLE_SUBCATEGORIES
-        }
         result: dict[int, SessionVerdicts] = {}
         for detail in details:
-            delete_verdict = deletion[detail.id]
-            # Плановая сессия, чья независимость от прогрессии НЕ доказана (нет Builder-природы своей
-            # тренировки), считается возможно учтённой прогрессией (§4: «planned_live … — set actuals
-            # read-only»). Доказанная Builder-сессия своего плана правится целиком, как в #262.
-            consumed = (
-                delete_verdict.reason in (REASON_PROGRAM, REASON_STEP)
-                or detail.program_inclusion_id is not None
-                or any(block.exercise_id in role_exercise_ids for block in detail.blocks)
-                or (detail.source_v2 == SessionSourceV2.PLANNED_LIVE.value and not delete_verdict.can_delete)
-            )
             facts = SessionFacts(
                 completed=detail.status.value == "completed", kind=SessionKind(detail.kind),
                 source=SessionSourceV2(detail.source_v2), origin=SessionOrigin(detail.origin),
-                consumed_by_progression=consumed,
             )
-            result[detail.id] = SessionVerdicts(delete=delete_verdict, edit=edit_verdict(facts))
+            result[detail.id] = SessionVerdicts(delete=deletion[detail.id], edit=edit_verdict(facts))
         return result
 
     # --- Копия ----------------------------------------------------------------------------

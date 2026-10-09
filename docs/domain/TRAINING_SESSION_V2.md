@@ -79,20 +79,35 @@ SetLog        set_index, round_index | null, actual_reps | actual_seconds, load_
 
 | Session | Editable fields |
 |---|---|
-| `direct_live`, `manual_existing_workout`, `manual_custom` | date, duration, effort, comment, set actuals/effort/notes, add/remove extra sets |
-| `planned_live` / any session consumed by progression | date, duration, effort, comment, notes. Set actuals read-only (they fed progression; progression is not recomputed retroactively — current rule kept) |
+| `planned_live`, `direct_live`, `manual_existing_workout`, `manual_custom` — including sessions of a course/program, of a PlanItem and with STEP-role blocks | date, duration, effort, comment, set actuals/effort/notes (the MAX set included) |
 | `external_activity` | date, duration, activity_type, distance, effort, comment |
 | `active`, `cancelled` | none |
 
 - **ED1** The predicate is a pure domain function returning `can_edit`, `can_delete` and a reason;
-  the API serialises it; the frontend has no heuristics (current rule kept).
+  the API serialises it; the frontend has no heuristics (current rule kept). Plan/program provenance,
+  `source = planned_live` or a STEP role never restricts editing or cloning (owner decision, #307 final
+  review B1): **only the explicit MAX-set measurement drives progression; a TrainingSession stores an
+  editable historical fact; progression is forward-only and never rewrites history.** Deletion keeps the
+  stricter safe-delete predicate (PROJECT_SPEC §3), unchanged.
+- **ED1a** Editing an ordinary (non-MAX) set actual changes only the session (revision + 1); progression
+  state, `progression_state_rev`, PlanItems and already issued prescriptions (`set_targets`, snapshots)
+  stay byte-for-byte unchanged. Editing the MAX actual likewise only corrects the historical fact — no
+  retroactive recomputation; how the latest corrected MAX reaches the next prescription is #305 (§10).
+- **ED1b** Clone follows the general clone rule (§2/D10) for course/planned sessions too: no
+  `plan_item_id`, no `program_inclusion_id`, progression untouched. Note: a clone keeps the original's
+  blocks, so a clone of a course session (STEP-role blocks with logged sets) counts as a performed MAIN
+  start for rest spacing (`main_session_predicate`, PROGRAM_PLAN §4) on its date — it is a real
+  pull-up workout; it never credits an occurrence.
 - **ED2** Every edit increments `revision`; derived views recompute (§6 A7).
 - **ED3** The snapshot is never edited.
 
 ## 5. Progression boundary
 
 Only `planned_live` sessions of a program `main` slot apply progression, exactly once (current
-`complete` idempotency kept), using actuals of working sets + max set. Manual logging of a main
+`complete` idempotency kept), at completion, forward only. **Canonical (owner decision, #307 B1): only the
+explicit MAX-set result is the measurement that drives the next prescription; ordinary working-set
+actuals do not drive progression; already generated workouts are never regenerated.** (Known gap, #305:
+the current STEP `weak_streak` still reads working-set volume — follow-up N7.) Manual logging of a main
 session post-factum does **not** apply progression in Waves 1–3 (current behaviour); changing that
 is outside this contract.
 
@@ -185,13 +200,20 @@ schema change (`prescription_snapshot` is JSONB; `workout_definition_version_id`
 #305's `e3b9c5d7a2f1` and this `f4c1a7e9b3d2` both revise `d8a3c6f1e2b4`; whichever merges second
 rebases its `down_revision` (MIGRATION §9.1 — no parallel heads).
 
+**Corrected MAX values (seam for #305).** A Journal edit of a MAX set (`set_logs.value` of a set whose
+target `is_max_set`) is a historical correction only: #307 persists it, bumps `revision`, and changes no
+progression state, PlanItem or prescription. #307 emits no event and recomputes nothing. When/whether the
+latest corrected MAX of the current cycle feeds the **next** prescription is decided by #305 at its forward
+boundary (it can read `set_logs` + `set_targets.is_max_set` and the session `revision`); past cycles and
+completed workouts are never regenerated. The pre-existing explicit endpoint
+`POST /api/v2/program-inclusions/{id}/progression/{preview,apply}` (legacy cascade replay) is not called by
+any edit path and is outside this decision.
+
 ## 11. Implementation decisions (Wave 3a, to confirm in review)
 
-- **ED1 reading of "planned_live / any session consumed by progression":** set actuals are read-only
-  (and no clone) for sessions consumed by progression (linked to a course, `program_inclusion_id`, or
-  touching a STEP role) **and** for every `planned_live` session whose independence from progression is not
-  proven by the safe-delete predicate. The one exception is a proven custom-plan Builder session (own
-  workout, no course): fully editable and cloneable, as it was under #262 — its values never fed progression.
+- **ED1 (superseded reading, #307 final review B1):** an earlier reading made sessions "consumed by
+  progression" (course link, `program_inclusion_id`, STEP role, unproven `planned_live`) metadata-only and
+  non-cloneable. The owner rejected it: only the MAX set drives progression, forward-only — see §4 ED1/ED1a/ED1b.
 - **Status vocabulary:** the existing `started | completed` enum is kept (`started` = contract `active`).
   `cancelled` is not introduced: adding a PG enum value would break the previous image on rollback
   (old code cannot read it). An abandoned live session that the user completes stays `completed` with

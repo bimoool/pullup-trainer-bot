@@ -5,7 +5,7 @@ ACCEPTANCE_JOURNEYS_V2: там J7/J8/J9/J10 — клон без кредита /
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import User
@@ -14,6 +14,7 @@ from app.db.models_program import (
     ComplexItem,
     Exercise,
     PlanItem,
+    ProgramInclusion,
     SessionBlock,
     SessionPlanItem,
     SessionStatus,
@@ -144,7 +145,7 @@ async def test_j1_planned_workout_completion_one_session_with_credit_and_snapsho
     assert card["title"] == "Моя тренировка"
 
 
-async def test_j1_course_main_session_is_progression_consumed(session: AsyncSession, user: User):
+async def test_j1_course_main_session_is_fully_editable_and_cloneable(session: AsyncSession, user: User):
     inclusion, _roles, plan_item_ids = await _setup_step_session(session, user)
     started = await _start(session, user, {"plan_item_ids": [plan_item_ids["block_a"], plan_item_ids["block_b"]]})
     await _complete(session, user, started["id"])
@@ -155,9 +156,10 @@ async def test_j1_course_main_session_is_progression_consumed(session: AsyncSess
     row = await session.get(TrainingSession, started["id"])
     assert row.program_inclusion_id == inclusion["id"]
     assert card["prescription_snapshot"]["provenance"]["kind"] == "progression"
-    # ED1: метаданные — да, подходы и копия — нет; удаление — нет (как раньше)
-    assert "set_actuals" not in card["editable_fields"] and "comment" in card["editable_fields"]
-    assert card["can_clone"] is False and card["can_delete"] is False and card["can_edit"] is False
+    # ED1 (решение владельца, B1): сессия курса правится целиком и копируется — прогрессию двигает
+    # только подход на максимум и только вперёд (#305). Удаление — прежний строгий предикат: нет.
+    assert {"set_actuals", "comment", "date", "duration"} <= set(card["editable_fields"])
+    assert card["can_edit"] is True and card["can_clone"] is True and card["can_delete"] is False
 
 
 # --- J2: прямой старт → сессия без случайного кредита -----------------------------------------
@@ -421,22 +423,133 @@ async def test_date_edit_of_live_session_keeps_measured_duration(session: AsyncS
     assert analytics["metrics"]["total_minutes"] == duration // 60
 
 
-async def test_progression_session_set_values_are_read_only_but_metadata_editable(session: AsyncSession, user: User):
-    _, _roles, plan_item_ids = await _setup_step_session(session, user)
+async def _progression_fingerprint(session: AsyncSession, user: User) -> dict[str, list[str]]:
+    """Всё, что прогрессия/план считают состоянием курса, — построчно текстом (байт в байт): инклюзии
+    (progression_state, progression_state_rev, снимки, счётчики), занятия плана и цели подходов
+    (уже выданные рецепты). Правка исторической сессии не должна менять ни одной строки."""
+    uid = user.id
+
+    async def rows(sql: str) -> list[str]:
+        return [row[0] for row in await session.execute(text(sql), {"uid": uid})]
+
+    return {
+        "inclusions": await rows(
+            "SELECT row_to_json(x)::text FROM program_inclusions x WHERE training_plan_id IN "
+            "(SELECT id FROM training_plans WHERE user_id = :uid) ORDER BY id",
+        ),
+        "plan_items": await rows(
+            "SELECT row_to_json(x)::text FROM plan_items x WHERE training_plan_id IN "
+            "(SELECT id FROM training_plans WHERE user_id = :uid) ORDER BY id",
+        ),
+        "set_targets": await rows(
+            "SELECT row_to_json(x)::text FROM set_targets x JOIN session_blocks b ON b.id = x.session_block_id "
+            "JOIN training_sessions s ON s.id = b.session_id WHERE s.user_id = :uid ORDER BY x.id",
+        ),
+        "snapshots": await rows(
+            "SELECT coalesce(prescription_snapshot::text, '-') FROM training_sessions WHERE user_id = :uid ORDER BY id",
+        ),
+    }
+
+
+async def _completed_course_session(session: AsyncSession, user: User) -> tuple[dict, dict, int]:
+    inclusion, _roles, plan_item_ids = await _setup_step_session(session, user)
     body = await _start(session, user, {"plan_item_ids": [plan_item_ids["block_a"], plan_item_ids["block_b"]]})
     body = await _advance(session, user, body)
     await _log_set(session, user, body, set_index=0, value="10")
     await _complete(session, user, body["id"])
-    path = f"/api/v2/sessions/{body['id']}"
+    return inclusion, plan_item_ids, body["id"]
 
-    assert (await v2_patch(session, user.telegram_id, path, {"comment": "ок"})).status_code == 200
+
+async def test_course_session_ordinary_set_edit_persists_without_touching_progression(session: AsyncSession, user: User):
+    """B1 / решение владельца: обычный (не MAX) подход сессии курса правится; прогрессия, её ревизия,
+    занятия плана и выданные рецепты не меняются (ретро-пересчёта нет)."""
+    inclusion, _plan_item_ids, session_id = await _completed_course_session(session, user)
+    before = await _progression_fingerprint(session, user)
+    state_before = (await session.get(ProgramInclusion, inclusion["id"], populate_existing=True)).progression_state_rev
+    revision = (await session.get(TrainingSession, session_id, populate_existing=True)).revision
+
+    path = f"/api/v2/sessions/{session_id}"
     changed = await v2_patch(session, user.telegram_id, path, {"sets": [{"block_index": 0, "set_number": 1, "value": "12"}]})
-    assert changed.status_code == 409
-    same_value_note = await v2_patch(session, user.telegram_id, path, {
-        "sets": [{"block_index": 0, "set_number": 1, "value": "10", "note": "легко"}],
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["blocks"][0]["set_logs"][0]["value"] == "12.00"
+    row = await session.get(TrainingSession, session_id, populate_existing=True)
+    assert row.revision == revision + 1
+    log = await session.scalar(
+        select(SetLog).join(SessionBlock).where(SessionBlock.session_id == session_id, SetLog.set_number == 1)
+        .execution_options(populate_existing=True),
+    )
+    assert log.value == 12
+
+    assert await _progression_fingerprint(session, user) == before
+    incl = await session.get(ProgramInclusion, inclusion["id"], populate_existing=True)
+    assert incl.progression_state_rev == state_before
+
+
+async def test_non_max_edit_does_not_drive_progression_byte_for_byte(session: AsyncSession, user: User):
+    """Сколько бы раз и как бы ни правили рабочие подходы (вверх, вниз, метаданные вместе с ними) —
+    состояние прогрессии, будущий план и рецепты остаются байт в байт прежними."""
+    _inclusion, plan_item_ids, session_id = await _completed_course_session(session, user)
+    before = await _progression_fingerprint(session, user)
+    credits_before = await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values()))
+    path = f"/api/v2/sessions/{session_id}"
+    for value in ("30", "1", "11"):
+        edited = await v2_patch(session, user.telegram_id, path, {
+            "comment": f"правка {value}", "sets": [{"block_index": 0, "set_number": 1, "value": value}],
+        })
+        assert edited.status_code == 200, edited.text
+    assert await _progression_fingerprint(session, user) == before
+    assert await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values())) == credits_before
+
+
+async def test_max_set_edit_corrects_history_only(session: AsyncSession, user: User):
+    """Подход на максимум: исправленный исторический факт сохраняется, revision + 1; уже выданные
+    рецепты/план/прогрессия задним числом не меняются. Как поправленный MAX попадёт в СЛЕДУЮЩИЙ рецепт —
+    прямая граница прогрессии (#305), не здесь."""
+    await _setup_step_session(session, user)  # у пользователя есть курс с прогрессией
+    workout, [exercise] = await _workout(session, user, [MAX_2])
+    plan_item_id = await _plan_item(session, user, workout, exercise)
+    body = await _start(session, user, {"plan_item_ids": [plan_item_id]})
+    body = await _advance(session, user, body)
+    await _log_set(session, user, body, set_index=0, value="14")
+    await _complete(session, user, body["id"])
+    card = await _card(session, user, body["id"])
+    # R2: «на максимум» — свойство цели (живая сессия пишет SetLog без флага), исход его наследует
+    assert card["source_v2"] == "planned_live" and card["blocks"][0]["set_targets"][0]["is_max_set"] is True
+    assert card["blocks"][0]["outcomes"][0]["is_max_set"] is True
+    before = await _progression_fingerprint(session, user)
+    revision = (await session.get(TrainingSession, body["id"], populate_existing=True)).revision
+
+    edited = await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{body['id']}", {
+        "sets": [{"block_index": 0, "set_number": 1, "value": "16"}],
     })
-    assert same_value_note.status_code == 200
-    assert (await v2_post(session, user.telegram_id, f"{path}/clone", {})).status_code == 409
+    assert edited.status_code == 200, edited.text
+    block = edited.json()["blocks"][0]
+    assert block["set_logs"][0]["value"] == "16.00"
+    assert block["outcomes"][0]["is_max_set"] is True and block["outcomes"][0]["actual"] == "16.00"
+    assert (await session.get(TrainingSession, body["id"], populate_existing=True)).revision == revision + 1
+    assert await _progression_fingerprint(session, user) == before
+    assert [c[1] for c in await TrainingSessionRepository(session).credits_for_plan_items([plan_item_id])] == [body["id"]]
+
+
+async def test_course_session_clone_has_no_credit_and_does_not_touch_progression(session: AsyncSession, user: User):
+    """Копия сессии курса — по общему правилу копии: новая сессия без plan_item_id и инклюзии; кредиты
+    занятий и прогрессия не меняются."""
+    _inclusion, plan_item_ids, session_id = await _completed_course_session(session, user)
+    before = await _progression_fingerprint(session, user)
+    credits_before = await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values()))
+
+    response = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{session_id}/clone", {})
+    assert response.status_code == 201, response.text
+    clone = response.json()
+    assert clone["id"] != session_id and clone["plan_item_id"] is None
+    assert clone["source_v2"] in ("manual_existing_workout", "manual_custom")
+    clone_row = await session.get(TrainingSession, clone["id"], populate_existing=True)
+    assert clone_row.program_inclusion_id is None
+
+    after = await _progression_fingerprint(session, user)
+    assert after["inclusions"] == before["inclusions"] and after["plan_items"] == before["plan_items"]
+    assert after["set_targets"][: len(before["set_targets"])] == before["set_targets"]  # у копии — свои цели
+    assert await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values())) == credits_before
 
 
 # --- J9/J10/J14 (#307): история, старые кредиты, повторный backfill — tests/test_scripts --------
@@ -560,9 +673,10 @@ async def test_absent_snapshots_are_sql_null_not_json_null(session: AsyncSession
     )) == 1
 
 
-async def test_unproven_planned_session_is_metadata_only(session: AsyncSession, user: User):
-    """ED1 §4: плановая сессия без доказанной независимости от прогрессии (старая строка source=plan без
-    связей и снимка) — правятся метаданные, но не значения подходов и не копия (как и до #307)."""
+async def test_planned_session_without_proof_is_fully_editable_and_cloneable(session: AsyncSession, user: User):
+    """B1 / решение владельца: плановая сессия (старая строка source=plan без связей и снимка) не
+    становится «только метаданные» из-за происхождения из плана — правятся и метаданные, и значения
+    подходов, копия разрешена. Удаление — прежний строгий предикат (недоказанная — нет)."""
     pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="ts-v2")
     session.add(pull)
     await session.flush()
@@ -579,9 +693,14 @@ async def test_unproven_planned_session_is_metadata_only(session: AsyncSession, 
     await session.commit()
 
     card = await _card(session, user, orphan.id)
-    assert card["can_edit"] is False and card["can_clone"] is False and card["can_delete"] is False
-    assert "comment" in card["editable_fields"] and "set_actuals" not in card["editable_fields"]
+    assert card["source_v2"] == "planned_live"
+    assert card["can_edit"] is True and card["can_clone"] is True and card["can_delete"] is False
+    assert {"comment", "set_actuals"} <= set(card["editable_fields"])
     path = f"/api/v2/sessions/{orphan.id}"
     assert (await v2_patch(session, user.telegram_id, path, {"comment": "ок"})).status_code == 200
     changed = await v2_patch(session, user.telegram_id, path, {"sets": [{"block_index": 0, "set_number": 1, "value": "9"}]})
-    assert changed.status_code == 409
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["blocks"][0]["set_logs"][0]["value"] == "9.00"
+    cloned = await v2_post(session, user.telegram_id, f"{path}/clone", {})
+    assert cloned.status_code == 201, cloned.text
+    assert cloned.json()["plan_item_id"] is None

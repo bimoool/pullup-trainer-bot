@@ -1,5 +1,6 @@
 """Чистый домен TrainingSession v2 (issue #307, docs/domain/TRAINING_SESSION_V2.md) — без БД."""
 
+from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -12,7 +13,6 @@ from app.domain.training_session_v2 import (
     PRESCRIPTION_UNPRESCRIBED,
     REASON_ACTIVE,
     REASON_LEGACY_COPY,
-    REASON_PROGRESSION,
     DurationSource,
     EditField,
     LogRecord,
@@ -162,7 +162,7 @@ def test_move_session_date_keeps_duration():
 def _facts(**overrides) -> SessionFacts:
     values = {
         "completed": True, "kind": SessionKind.STRENGTH, "source": SessionSourceV2.MANUAL_EXISTING_WORKOUT,
-        "origin": SessionOrigin.NATIVE, "consumed_by_progression": False,
+        "origin": SessionOrigin.NATIVE,
     }
     values.update(overrides)
     return SessionFacts(**values)
@@ -174,11 +174,20 @@ def test_ed1_manual_and_direct_sessions_are_fully_editable():
         assert verdict.can_edit_sets and verdict.can_clone and EditField.DURATION in verdict.fields
 
 
-def test_ed1_progression_session_metadata_only_and_no_clone():
-    verdict = edit_verdict(_facts(source=SessionSourceV2.PLANNED_LIVE, consumed_by_progression=True))
-    assert not verdict.can_edit_sets and not verdict.can_clone
-    assert {EditField.DATE, EditField.DURATION, EditField.EFFORT, EditField.COMMENT, EditField.SET_NOTES} == verdict.fields
-    assert verdict.reason == REASON_PROGRESSION
+def test_ed1_planned_and_course_sessions_are_fully_editable_and_cloneable():
+    """B1 / решение владельца: прогрессию двигает только подход на максимум и только вперёд (#305) —
+    происхождение из плана/курса (planned_live) правку подходов и копию не ограничивает."""
+    verdict = edit_verdict(_facts(source=SessionSourceV2.PLANNED_LIVE))
+    assert verdict.can_edit_sets and verdict.can_clone and verdict.reason is None
+    assert verdict.fields == {
+        EditField.DATE, EditField.DURATION, EditField.EFFORT, EditField.COMMENT, EditField.SET_ACTUALS,
+        EditField.SET_NOTES,
+    }
+
+
+def test_ed1_facts_carry_no_progression_flag():
+    """Регрессия B1: у предиката нет входа «учтена прогрессией» — его нельзя снова включить флагом."""
+    assert "consumed_by_progression" not in {f.name for f in fields(SessionFacts)}
 
 
 def test_ed1_external_activity_fields():
