@@ -188,6 +188,8 @@ async def test_unproven_elective_shapes_stay_denied(session: AsyncSession):
     cards = {card["id"]: card for card in await _listed(session, user)}
     assert cards[elective_session_id]["can_delete"] is True
     for session_id in denied_ids:
-        assert cards[session_id]["can_delete"] is False and cards[session_id]["can_edit"] is False
+        # #307 (ED1): правка не зависит от доказательства для удаления (прогрессию эти записи не питают),
+        # удаление недоказанного — по-прежнему отказ.
+        assert cards[session_id]["can_delete"] is False and cards[session_id]["can_edit"] is True
         assert (await v2_delete(session, user.telegram_id, f"/api/v2/sessions/{session_id}")).status_code == 409
         assert await session.get(TrainingSession, session_id) is not None

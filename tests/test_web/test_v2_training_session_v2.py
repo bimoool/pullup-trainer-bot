@@ -535,3 +535,26 @@ async def test_legacy_m2m_credit_stays_readable(session: AsyncSession):
     card = await _card(session, user, legacy.id)
     assert card["source_v2"] == "planned_live"  # строка старого кода без v2-полей читается выведенным источником
     assert await session.scalar(select(func.count()).select_from(SetTarget)) == 0
+
+
+async def test_absent_snapshots_are_sql_null_not_json_null(session: AsyncSession, user: User):
+    """Регрессия (найдено E2E-сидом): явный None в JSONB-колонке пишется JSON-значением 'null', и
+    предикаты «… IS NULL» (отпечаток backfill-копий, история тренировки, backfill-скрипт) ломаются."""
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="ts-v2")
+    session.add(pull)
+    await session.flush()
+    manual = await v2_post(session, user.telegram_id, "/api/v2/sessions", {
+        "source": "backdated", "performed_at": _past(), "blocks": [{"exercise_id": pull.id, "sets": _sets("8")}],
+    })
+    activity = await v2_post(session, user.telegram_id, "/api/v2/sessions", {
+        "source": "freeform", "performed_at": _past(), "blocks": [], "activity_type": "running",
+        "duration_seconds": 1800,
+    })
+    assert manual.status_code == activity.status_code == 200
+    ids = [manual.json()["id"], activity.json()["id"]]
+    assert await session.scalar(select(func.count()).select_from(TrainingSession).where(
+        TrainingSession.id.in_(ids), TrainingSession.workout_snapshot.is_(None),
+    )) == 2
+    assert await session.scalar(select(func.count()).select_from(TrainingSession).where(
+        TrainingSession.id == ids[1], TrainingSession.prescription_snapshot.is_(None),
+    )) == 1

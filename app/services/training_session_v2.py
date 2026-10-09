@@ -35,9 +35,7 @@ from app.db.repositories.training_sessions import (
 from app.db.repositories.workout_definitions import WorkoutDefinitionRepository
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType
 from app.domain.training_session_v2 import (
-    UNKNOWN_DURATION,
     Duration,
-    DurationSource,
     EditVerdict,
     LogRecord,
     SessionFacts,
@@ -49,7 +47,6 @@ from app.domain.training_session_v2 import (
     SynthBlock,
     SynthSet,
     TargetRecord,
-    clone_source,
     edit_verdict,
     set_outcomes,
     snapshot_matches_blocks,
@@ -235,34 +232,16 @@ class TrainingSessionV2Service:
         активность; тот же снимок рецепта и определение, БЕЗ plan_item_id и инклюзии. Длительность:
         у внешней активности — введённая (это и есть запись активности), у силовой — неизвестна
         (копия не измерялась; не выдумываем)."""
-        kind = SessionKind(detail.kind)
-        source = clone_source(original_kind=kind, workout_definition_id=detail.workout_definition_id)
-        duration = (
-            Duration(detail.duration_seconds, detail_duration_source(detail))
-            if kind is SessionKind.EXTERNAL_ACTIVITY and detail.duration_seconds is not None else UNKNOWN_DURATION
-        )
-        stamp = SessionV2Stamp(
-            kind=kind.value, source_v2=source.value, origin=SessionOrigin.NATIVE.value,
-            workout_definition_id=detail.workout_definition_id,
-            workout_definition_version_id=detail.workout_definition_version_id,
-            prescription_snapshot=detail.prescription_snapshot, timezone=detail.timezone,
-            duration_seconds=duration.seconds, duration_source=duration.source.value,
-            distance_meters=detail.distance_meters,
-        )
-        clone = await self._sessions.clone_session(detail.id, user_id=user_id, performed_at=performed_at, stamp=stamp)
-        if kind is SessionKind.STRENGTH and detail.prescription_snapshot is None:
+        clone = await self._sessions.clone_session(detail.id, user_id=user_id, performed_at=performed_at)
+        if detail.kind == SessionKind.STRENGTH.value and detail.prescription_snapshot is None:
             # Оригинал — история до синтеза снимков (скрипт ещё не прошёл): копия получает свой.
             clone_detail = await self._sessions.get_for_user(clone.id, user_id)
             snapshot = await self.synthesized_snapshot(
                 clone_detail, workout_definition_id=detail.workout_definition_id, program_inclusion_id=None,
                 resolved_at=now,
             )
-            await self._sessions.apply_v2_stamp(clone.id, replace(stamp, prescription_snapshot=snapshot))
+            await self._sessions.set_prescription_snapshot(clone.id, snapshot)
         return clone.id
-
-
-def detail_duration_source(detail: SessionDetail) -> DurationSource:
-    return DurationSource(detail.duration_source) if detail.duration_source else DurationSource.ENTERED
 
 
 def _with_kind(detail: SessionDetail, kind: SessionKind) -> SessionDetail:

@@ -156,6 +156,7 @@ async def test_delete_denied_for_foreign_missing_active_and_unproven(session: As
     await _complete(session, owner, running["id"])
     await session.execute(update(TrainingSession).where(TrainingSession.id == running["id"]).values(
         workout_snapshot=None, plan_item_id=None,  # #304: явный кредит — тоже связь с Workout
+        workout_definition_id=None, prescription_snapshot=None,  # #307: явная идентичность — тоже
     ))
     await session.execute(delete(SessionPlanItem).where(SessionPlanItem.session_id == running["id"]))
     await session.commit()

@@ -128,3 +128,78 @@ One predicate feeds every view:
 External activity is a `TrainingSession(kind = external_activity)`: same timeline, same counts,
 same edit/delete predicate; **no** WorkoutDefinition, blocks, snapshot or plan credit. It does
 not pretend to be a strength workout.
+
+## 8. Completion interface (Wave 3a #307 → Wave 2 #306)
+
+One write boundary; the engine never writes several legacy tables itself.
+
+| | |
+|---|---|
+| Entry | `LiveSessionService.complete_session(session_id, user_id, abandoned, effort=None, comment=None, active_elapsed_ms=None)`; HTTP `POST /api/v2/sessions/live/{id}/complete` `{abandoned, effort?, comment?, active_elapsed_ms?}` |
+| Required | `session_id` of a `STARTED` session of `user_id`, `abandoned` (early finish: unperformed targets stay `not_performed`, progression skipped) |
+| Optional | `effort` 1–5, `comment` ≤ 1000, `active_elapsed_ms` (engine-measured active time, pauses excluded; 0…24 h) |
+| Transaction | the caller's request transaction; the session row is locked (`SELECT … FOR UPDATE`, same lock as `sets:batch`/start/finish), status re-read under the lock |
+| Idempotency | the session id is the key: a repeated completion (retry, lost response, double flush, concurrent request) returns the same session, `progression_skipped_reason = already_completed`, no second progression, duration/credit unchanged; review fields fill only empty values |
+| Result | `status = completed`, `completed_at = ended_at = now`, `duration_seconds`/`duration_source` (R3: `active_elapsed_ms` → `measured`; without it wall clock `started_at → ended_at` within [1 min, 6 h], else `unknown`) — written in exactly one place, `TrainingSessionRepository.mark_completed`, which every completion path (complete, finish interval, lazy interval finalisation) goes through |
+| Credit | unchanged by completion: `plan_item_id` is fixed at start (PL2/PL3); completion never adds or moves it |
+| Errors | unknown/foreign session → 404 (no disclosure); invalid body → 422 |
+
+Session creation fields (`source_v2`, `kind`, definition/version, `prescription_snapshot`, `started_at`,
+`timezone`, `program_inclusion_id`, `engine_version`) are written at start by
+`TrainingSessionV2Service.stamp_new` (live start) — #306's start path calls the same function with
+`engine_version = 2`. Manual/post-factum writes go through `ManualSessionService.record`
+(`client_session_id` = idempotency key: same key → same session; key of another user → 422).
+
+## 9. Read contract for Journal/Analytics (Wave 3b #308)
+
+Everything below is derivable from `training_sessions` + blocks/targets/logs alone (no legacy join):
+
+- **Identity of a completed workout:** one row per `training_sessions.id` with `status = completed`;
+  `origin` tells native rows from legacy copies (`legacy_backfill` rows are exactly today's
+  `_backfilled_fingerprint` set — #308 replaces the fingerprint by `origin` + `superseded_by_id`, A6).
+- **Source workout:** `workout_definition_id` (+ `workout_definition_version_id` when the snapshot came
+  from a version), `prescription_snapshot.title`, `source_v2`.
+- **Chronology:** `performed_at` (+ `timezone` of creation for the local day; NULL on history → profile tz).
+- **Duration:** `duration_seconds` with `duration_source`; `unknown` counts in `without_duration`,
+  never as 0 (A5). History is backfilled with exactly the minutes analytics already showed.
+- **Performed work:** `app.services.training_session_v2.block_outcomes(block)` (pure, `set_outcomes` in the
+  domain) — per prescribed set: target, actual, `performed | not_performed`, `is_max_set` (from the
+  target, R2); then extra sets (`is_extra`). Reps/volume = Σ actual of performed outcomes; load —
+  `set_logs.load_actual` when the engine writes it (NULL on history: not invented).
+- **Exercise identity:** `prescription_snapshot.blocks[].analytics_exercise_id` (E2), falling back to
+  `session_blocks.exercise_id`.
+- **Plan credit:** `plan_item_id` (explicit) ∪ legacy `session_plan_items` (read-only history) —
+  `TrainingSessionRepository.credited_plan_item_ids`.
+- **No double count:** a session is one row; clones are separate rows by design (new session, no credit).
+  API: `GET /api/v2/sessions` returns these fields plus `blocks[].outcomes`, `editable_fields`, `can_clone`.
+
+## 10. Seam with course prescription (#305)
+
+#307 does not compute prescriptions. It records whatever the start path wrote as `SetTarget`
+(including `is_max_set` targets) and derives the snapshot from them (`provenance.kind = progression`,
+`program_inclusion_id`) when no version snapshot matches. When #305 lands: (1) its `upsert_set_logs_batch`
+`is_max_set` inheritance and the read-side inheritance here agree (both by planned-set order); (2) set
+kinds are already stored (`set_targets.kind`); (3) a progression-resolved snapshot built with
+`build_prescription_snapshot(resolve_progression=…)` can replace the synthesized one at start without a
+schema change (`prescription_snapshot` is JSONB; `workout_definition_version_id` nullable). Alembic:
+#305's `e3b9c5d7a2f1` and this `f4c1a7e9b3d2` both revise `d8a3c6f1e2b4`; whichever merges second
+rebases its `down_revision` (MIGRATION §9.1 — no parallel heads).
+
+## 11. Implementation decisions (Wave 3a, to confirm in review)
+
+- **ED1 reading of "planned_live / any session consumed by progression":** set actuals are read-only
+  only for sessions consumed by progression (linked to a course, `program_inclusion_id`, or touching a
+  STEP role). A custom-plan Builder session (`planned_live`, no course) stays fully editable, as it was
+  under #262 — its values never fed progression.
+- **Status vocabulary:** the existing `started | completed` enum is kept (`started` = contract `active`).
+  `cancelled` is not introduced: adding a PG enum value would break the previous image on rollback
+  (old code cannot read it). An abandoned live session that the user completes stays `completed` with
+  `not_performed` targets; one never completed stays `started` and is not counted.
+- **Legacy rows not named by MIGRATION §3:** `freeform` without snapshot/activity → `direct_live` if it has
+  a `client_session_id` (a live start), else `manual_custom`; `POST /sessions source=plan` (one-shot
+  program record, QA path) → `planned_live`.
+- **Snapshot vs targets:** a version snapshot is stored only if it agrees with the written `SetTarget`
+  (same exercises in order, same set counts); otherwise the snapshot is synthesized from the targets
+  (`synthesized = true`) so it never contradicts R1. With #306 building targets from the snapshot the two
+  always agree.
+- **Clone duration:** strength copy → `unknown` (not measured); external activity copy → entered value copied.

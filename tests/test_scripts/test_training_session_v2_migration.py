@@ -13,11 +13,11 @@ Aged-набор на ревизии d8a3c6f1e2b4 (до #307):
   9009 активная (не завершённая) живая сессия.
 """
 
-import asyncio
 from datetime import UTC, date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.domain.training_session_v2 import effective_duration_seconds
 from app.services.training_analytics import TrainingAnalyticsService
 from scripts.backfill_training_session_v2 import run
 from tests.test_scripts.test_program_plan_migration import _exec
@@ -38,7 +38,7 @@ HISTORY = {
     "subscriptions": "*",
     "training_sessions": (
         "id, user_id, source, status, performed_at, completed_at, effort, comment, activity_type, "
-        "workout_snapshot, plan_item_id, client_session_id"
+        "duration_seconds, workout_snapshot, plan_item_id, client_session_id"
     ),
     "session_blocks": "id, session_id, order_index, exercise_id, complex_id, result, started_at",
     "set_targets": "id, session_block_id, set_number, is_max_set, metric_type, value, unit",
@@ -120,6 +120,13 @@ INSERT INTO session_plan_items (session_id, plan_item_id) VALUES (9007, 5003), (
 """
 
 
+def _effective(row) -> int | None:
+    return effective_duration_seconds(
+        duration_seconds=row.duration_seconds, duration_source=row.duration_source,
+        performed_at=row.performed_at, completed_at=row.completed_at,
+    )
+
+
 def _sessions(dsn: str) -> dict[int, object]:
     return {r.id: r for r in _run(_fetch(dsn, "SELECT * FROM training_sessions ORDER BY id"))}
 
@@ -184,12 +191,13 @@ def test_aged_upgrade_maps_sources_without_inventing_data(scratch_dsn):  # noqa:
         **{i: "native" for i in rows}, 9005: "legacy_backfill", 9006: "legacy_elective",
     }
     assert rows[9004].kind == "external_activity" and all(rows[i].kind == "strength" for i in rows if i != 9004)
-    # длительность: измеренная живая — да; ручная/копия/факультатив — неизвестна (не 0, не выдумка)
-    assert (rows[9001].duration_seconds, rows[9001].duration_source) == (1800, "measured")
+    # длительность: измеренная живая — да; ручная/копия/факультатив — неизвестна (не 0, не выдумка).
+    # Колонка duration_seconds истории не переписывается — измеренная = completed_at − performed_at.
+    assert (rows[9001].duration_seconds, rows[9001].duration_source) == (None, "measured")
+    assert _effective(rows[9001]) == 1800 and _effective(rows[9008]) == 10800
     assert (rows[9004].duration_seconds, rows[9004].duration_source) == (2700, "entered")
-    assert (rows[9008].duration_seconds, rows[9008].duration_source) == (10800, "measured")
     for i in (9002, 9003, 9005, 9006):
-        assert (rows[i].duration_seconds, rows[i].duration_source) == (None, "unknown")
+        assert (rows[i].duration_seconds, rows[i].duration_source, _effective(rows[i])) == (None, "unknown", None)
     assert rows[9001].started_at == rows[9001].performed_at and rows[9001].ended_at == rows[9001].completed_at
     assert rows[9001].engine_version == 1 and rows[9002].engine_version is None
     assert rows[9001].workout_definition_id == 6002 and rows[9008].workout_definition_id == 6002
@@ -262,7 +270,7 @@ INSERT INTO training_sessions (id, user_id, source, status, performed_at, comple
     assert (rows[9501].kind, rows[9501].source_v2, rows[9501].origin, rows[9501].duration_source) == (
         "external_activity", "external_activity", "native", "entered",
     )
-    assert (rows[9502].source_v2, rows[9502].duration_source, rows[9502].duration_seconds) == (
+    assert (rows[9502].source_v2, rows[9502].duration_source, _effective(rows[9502])) == (
         "manual_custom", "unknown", None,
     )
     code, again = _run(_backfill(scratch_dsn, apply=True))
@@ -273,9 +281,9 @@ def test_rerun_upgrade_and_downgrade_upgrade(scratch_dsn):  # noqa: F811
     _prepare(scratch_dsn)
     before = _fingerprint(scratch_dsn)
     _alembic(scratch_dsn, "upgrade", "head")
-    mapped = {i: (r.source_v2, r.origin, r.duration_seconds) for i, r in _sessions(scratch_dsn).items()}
+    mapped = {i: (r.source_v2, r.origin, r.duration_source) for i, r in _sessions(scratch_dsn).items()}
     _alembic(scratch_dsn, "upgrade", "head")  # повторный деплой — ничего
-    assert {i: (r.source_v2, r.origin, r.duration_seconds) for i, r in _sessions(scratch_dsn).items()} == mapped
+    assert {i: (r.source_v2, r.origin, r.duration_source) for i, r in _sessions(scratch_dsn).items()} == mapped
 
     _alembic(scratch_dsn, "downgrade", PRE_REVISION)
     assert _fingerprint(scratch_dsn) == before  # откат схемы не трогает историю и кредит
@@ -283,10 +291,10 @@ def test_rerun_upgrade_and_downgrade_upgrade(scratch_dsn):  # noqa: F811
         scratch_dsn, "SELECT column_name FROM information_schema.columns WHERE table_name = 'training_sessions'",
     ))}
     assert "source_v2" not in columns and "prescription_snapshot" not in columns
-    assert _scalar(scratch_dsn, "SELECT duration_seconds FROM training_sessions WHERE id = 9001") == 1800
+    assert _scalar(scratch_dsn, "SELECT duration_seconds FROM training_sessions WHERE id = 9001") is None
 
     _alembic(scratch_dsn, "upgrade", REVISION)
-    assert {i: (r.source_v2, r.origin, r.duration_seconds) for i, r in _sessions(scratch_dsn).items()} == mapped
+    assert {i: (r.source_v2, r.origin, r.duration_source) for i, r in _sessions(scratch_dsn).items()} == mapped
     assert _fingerprint(scratch_dsn) == before
 
 

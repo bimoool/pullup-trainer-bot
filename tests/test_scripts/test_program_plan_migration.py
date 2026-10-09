@@ -40,9 +40,14 @@ HISTORY = {
         "id, user_id, source, status, performed_at, completed_at, effort, comment, activity_type, "
         "duration_seconds, workout_snapshot"
     ),
-    "session_blocks": "*",
-    "set_targets": "*",
-    "set_logs": "*",
+    # Явный список колонок, а не «*»: последующие аддитивные ревизии (#307 добавил block_key/status/kind/…)
+    # не меняют значения истории, но меняют текст строки «*».
+    "session_blocks": "id, session_id, order_index, exercise_id, complex_id, result, started_at, created_at",
+    "set_targets": "id, session_block_id, set_number, is_max_set, metric_type, value, unit, effort, note, created_at",
+    "set_logs": (
+        "id, session_block_id, set_target_id, set_number, is_max_set, metric_type, value, unit, effort, note, "
+        "created_at, session_id, set_index, is_extra"
+    ),
     "session_plan_items": "*",
     "plan_weeks": "*",
     "program_inclusions": "id, training_plan_id, program_id, snapshot, progression_state, initial_progression_state, "

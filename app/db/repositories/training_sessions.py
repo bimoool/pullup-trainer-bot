@@ -24,10 +24,12 @@ from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, Se
 from app.domain.plan_occurrence import MAIN_SLOT_KEY
 from app.domain.training_session_v2 import (
     DurationSource,
+    SessionKind,
     SessionOrigin,
     SessionSourceV2,
     SessionTimes,
     SetStatus,
+    clone_source,
     legacy_source_v2,
     measured_duration,
     move_session_date,
@@ -246,9 +248,12 @@ class TrainingSessionRepository:
             user_id=user_id, source=source, status=SessionStatus.COMPLETED,
             performed_at=performed_at, effort=effort, comment=comment,
             completed_at=completed_at if completed_at is not None else datetime.now(UTC),
-            activity_type=activity_type, duration_seconds=duration_seconds,
-            workout_snapshot=workout_snapshot, client_session_id=client_session_id,
+            activity_type=activity_type, duration_seconds=duration_seconds, client_session_id=client_session_id,
         )
+        if workout_snapshot is not None:
+            # JSONB: явный None записался бы JSON-значением 'null', а не SQL NULL — и предикаты
+            # «workout_snapshot IS NULL» (отпечаток backfill-копий, история тренировки) перестали бы работать.
+            training_session.workout_snapshot = workout_snapshot
         self._session.add(training_session)
         await self._session.flush()
 
@@ -583,6 +588,13 @@ class TrainingSessionRepository:
         training_session.duration_source = duration.source.value
         await self._session.flush()
 
+    async def set_prescription_snapshot(self, session_id: int, snapshot: dict) -> None:
+        """Снимок рецепта пишется один раз (S1) — только туда, где его ещё нет."""
+        training_session = await self._session.get(TrainingSession, session_id)
+        if training_session.prescription_snapshot is None:
+            training_session.prescription_snapshot = snapshot
+            await self._session.flush()
+
     async def apply_v2_stamp(self, session_id: int, stamp: SessionV2Stamp) -> None:
         """Записывает поля v2 только что созданной сессии (тот же запрос/транзакция, что и создание)."""
         training_session = await self._session.get(TrainingSession, session_id)
@@ -591,7 +603,8 @@ class TrainingSessionRepository:
         training_session.origin = stamp.origin
         training_session.workout_definition_id = stamp.workout_definition_id
         training_session.workout_definition_version_id = stamp.workout_definition_version_id
-        training_session.prescription_snapshot = stamp.prescription_snapshot
+        if stamp.prescription_snapshot is not None:  # JSONB: None — не JSON 'null' (см. create_session)
+            training_session.prescription_snapshot = stamp.prescription_snapshot
         training_session.program_inclusion_id = stamp.program_inclusion_id
         training_session.started_at = stamp.started_at
         training_session.timezone = stamp.timezone
@@ -1080,7 +1093,7 @@ class TrainingSessionRepository:
         await self._session.flush()
 
     async def clone_session(
-        self, source_id: int, *, user_id: int, performed_at: datetime, stamp: SessionV2Stamp,
+        self, source_id: int, *, user_id: int, performed_at: datetime, stamp: SessionV2Stamp | None = None,
     ) -> TrainingSession:
         """Копия завершённой сессии (#262): новая COMPLETED-сессия source=BACKDATED
         с теми же блоками/целями/фактом/снимком, БЕЗ кредита плана (#304). Никакой
@@ -1138,5 +1151,21 @@ class TrainingSessionRepository:
         # issue #304 (D10, PL3): копия НЕ засчитывает занятия плана — ни явным plan_item_id, ни
         # копированием старой M2M-связи оригинала.
         await self._session.flush()
+        if stamp is None:
+            # Без явного stamp — то же правило копии (§2), что у app.services.training_session_v2.clone.
+            kind = SessionKind(original.kind or ("external_activity" if original.activity_type else "strength"))
+            stamp = SessionV2Stamp(
+                kind=kind.value,
+                source_v2=clone_source(original_kind=kind, workout_definition_id=original.workout_definition_id).value,
+                workout_definition_id=original.workout_definition_id,
+                workout_definition_version_id=original.workout_definition_version_id,
+                prescription_snapshot=original.prescription_snapshot, timezone=original.timezone,
+                duration_seconds=original.duration_seconds if kind is SessionKind.EXTERNAL_ACTIVITY else None,
+                duration_source=(
+                    DurationSource.ENTERED.value if kind is SessionKind.EXTERNAL_ACTIVITY and original.duration_seconds
+                    else DurationSource.UNKNOWN.value
+                ),
+                distance_meters=original.distance_meters,
+            )
         await self.apply_v2_stamp(clone.id, stamp)
         return clone

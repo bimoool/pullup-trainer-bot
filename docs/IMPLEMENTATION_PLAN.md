@@ -107,6 +107,16 @@ CI-свидетельство). Не мержится в `main`/`develop/current
 - Дальше: W1c #305 (прескрипция курса: OD-1/OD-3, WorkoutDefinition main-слота, `awaiting_assessment`),
   затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
 
+## DOMAIN-V2 Wave 3a — TrainingSession v2 (#307, 2026-10-09)
+
+Ветка `wave2/training-session-v2` от `integration/domain-v2` @ `3983108` (#303 + #304), независимо от #305;
+draft PR #315. Одна аддитивная миграция колонок сессии `f4c1a7e9b3d2` (на неё опирается #306), чистый домен
+`app/domain/training_session_v2.py`, канонический слой записи (`TrainingSessionV2Service`,
+`ManualSessionService`, длительность в `mark_completed`), ED1, R3/R4, идентичность «Тренировку из моих» (D9),
+копия без кредита (D10), скрипт `scripts/backfill_training_session_v2.py`. Интерфейс завершения для #306 и
+контракт чтения для #308 — `docs/domain/TRAINING_SESSION_V2.md` §8–§9; шов с #305 — §10. Статус: на
+независимом ревью. Дальше: #306 (движок v2) и #308 (Journal/Analytics поверх контракта чтения).
+
 ## Дальше
 
 1. ~~Draft PR `develop/current` → `main` и CI (#222)~~ — PR #226 (draft), CI зелёный.

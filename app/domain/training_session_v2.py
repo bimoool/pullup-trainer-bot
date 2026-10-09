@@ -187,12 +187,28 @@ def legacy_duration(
     *, has_activity: bool, duration_seconds: int | None, performed_at: datetime, completed_at: datetime | None,
 ) -> Duration:
     """MIGRATION_V2 §3: активность — её значение (entered); прочие — completed_at − performed_at в
-    окне [1 мин, 6 ч] (measured), иначе unknown. Ровно то, что аналитика уже считала минутами."""
+    окне [1 мин, 6 ч] (measured), иначе unknown. Ровно то, что аналитика уже считала минутами.
+    Backfill пишет только source; seconds — для читателя (effective_duration_seconds)."""
     if has_activity:
         return Duration(duration_seconds, DurationSource.ENTERED) if duration_seconds else UNKNOWN_DURATION
     if duration_seconds is not None:
         return Duration(duration_seconds, DurationSource.MEASURED)
     return measured_duration(performed_at, completed_at)
+
+
+def effective_duration_seconds(
+    *, duration_seconds: int | None, duration_source: str | None, performed_at: datetime,
+    completed_at: datetime | None,
+) -> int | None:
+    """Длительность сессии для любого читателя (A5): сохранённая, иначе — у измеренной истории
+    (миграция не переписывает duration_seconds) completed_at − performed_at в окне [1 мин, 6 ч];
+    unknown — None (никогда не 0). Строка старого кода без duration_source читается так же, как
+    читала аналитика."""
+    if duration_seconds is not None:
+        return duration_seconds
+    if duration_source not in (None, DurationSource.MEASURED.value):
+        return None
+    return measured_duration(performed_at, completed_at).seconds
 
 
 @dataclass(frozen=True)

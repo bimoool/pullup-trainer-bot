@@ -18,7 +18,7 @@ from app.db.models_program import (
     TrainingSession,
 )
 from app.services.training_analytics import resolve_timezone
-from tests.test_web._v2_client import v2_get, v2_patch, v2_post
+from tests.test_web._v2_client import v2_delete, v2_get, v2_patch, v2_post
 from tests.test_web.test_v2_journal_v2 import _complete, _finished_mixed_session
 from tests.test_web.test_v2_live_session import _setup_step_session
 from tests.test_web.test_v2_mixed_workout import REPS, _exercise, _start, _user, _workout_plan_item
@@ -132,28 +132,39 @@ async def test_unsafe_sessions_are_409_and_hide_can_edit(session: AsyncSession, 
     plan_item_id, _ = await _workout_plan_item(session, user, [(pull, REPS)], title="Активная")
     running = await _start(session, user, plan_item_id)
 
-    for target in (step_id, running["id"]):
-        patch = await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{target}", {"comment": "x"})
-        clone = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{target}/clone", {})
-        assert patch.status_code == 409 and clone.status_code == 409
-        assert patch.json()["detail"]
+    # Активная: ни правки, ни копии.
+    patch = await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{running['id']}", {"comment": "x"})
+    clone = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{running['id']}/clone", {})
+    assert patch.status_code == 409 and clone.status_code == 409 and patch.json()["detail"]
+
+    # #307 (ED1): учтённая прогрессией курса — метаданные правятся, значения подходов и копия — нет.
+    step_path = f"/api/v2/sessions/{step_id}"
+    assert (await v2_patch(session, user.telegram_id, step_path, {"comment": "x"})).status_code == 200
+    changed = await v2_patch(session, user.telegram_id, step_path, {
+        "sets": [{"block_index": 0, "set_number": 1, "value": "99"}],
+    })
+    assert changed.status_code == 409 and changed.json()["detail"]
+    assert (await v2_post(session, user.telegram_id, f"{step_path}/clone", {})).status_code == 409
     assert await session.scalar(select(func.count()).select_from(TrainingSession)) == 2
-    step_session = await session.get(TrainingSession, step_id)
-    await session.refresh(step_session)
-    assert step_session.comment is None
-    assert all(card["can_edit"] is False for card in await _listed(session, user))
+    [card] = await _listed(session, user)  # активная в списке завершённых не показывается
+    assert card["can_edit"] is False and card["can_clone"] is False and "comment" in card["editable_fields"]
+    assert card["blocks"][0]["set_logs"][0]["value"] == "10.00" and card["comment"] == "x"
 
 
-async def test_unproven_session_without_snapshot_is_409(session: AsyncSession):
+async def test_session_without_proven_workout_is_editable_but_not_deletable(session: AsyncSession):
+    """#307 (ED1, D9): правка больше не требует доказательства для удаления — сессия без снимка и
+    связи с тренировкой, не учтённая прогрессией, правится; удаление по-прежнему запрещено."""
     user = await _user(session, 962005)
     session_id = await _finished_with_logs(session, user)
     await session.execute(update(TrainingSession).where(TrainingSession.id == session_id).values(
         workout_snapshot=None, plan_item_id=None,  # #304: явный кредит — тоже связь с Workout
+        workout_definition_id=None, prescription_snapshot=None,  # #307: явная идентичность — тоже
     ))
     await session.execute(SessionPlanItem.__table__.delete().where(SessionPlanItem.session_id == session_id))
     await session.commit()
     response = await v2_patch(session, user.telegram_id, f"/api/v2/sessions/{session_id}", {"comment": "x"})
-    assert response.status_code == 409
+    assert response.status_code == 200 and response.json()["can_delete"] is False
+    assert (await v2_delete(session, user.telegram_id, f"/api/v2/sessions/{session_id}")).status_code == 409
 
 
 async def test_clone_copies_tree_as_backdated_without_progression(session: AsyncSession):

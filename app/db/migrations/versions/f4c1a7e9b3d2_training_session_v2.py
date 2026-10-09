@@ -43,9 +43,10 @@ depends_on: str | Sequence[str] | None = None
 #   3. source_v2 — таблица MIGRATION_V2 §3 (app.domain.training_session_v2.legacy_source_v2):
 #      backdated без снимка — manual_custom; восстановление идентичности по ТОЧНОМУ совпадению
 #      (→ manual_existing_workout) делает scripts/backfill_training_session_v2.py, не эта ревизия;
-#   4. длительность: активность — её значение (entered); остальные — completed_at − performed_at в окне
-#      [60 с, 6 ч] (measured) — ровно то, что аналитика уже показывала минутами; иначе unknown (никогда
-#      не 0 и не выдумка);
+#   4. длительность — только duration_source: активность — entered; остальные — measured, если
+#      completed_at − performed_at в окне [60 с, 6 ч] (ровно то, что аналитика уже показывала минутами),
+#      иначе unknown (никогда не 0 и не выдумка). Сама колонка duration_seconds истории не переписывается:
+#      измеренная длительность истории = completed_at − performed_at (effective_duration_seconds);
 #   5. живые сессии (client_session_id): started_at = performed_at, ended_at = completed_at,
 #      engine_version = 1;
 #   6. workout_definition_id: из v1-снимка (workout_snapshot.workout_id), если такой Complex есть; иначе у
@@ -57,9 +58,9 @@ depends_on: str | Sequence[str] | None = None
 # Подписки, доступ к программам, plan_items и прогрессия не читаются и не пишутся (MIGRATION_V2 §7).
 #
 # downgrade снимает ровно добавленное этой ревизией: теряются явный источник/происхождение, ссылка на
-# определение/версию, prescription_snapshot, модель длительности (duration_seconds остаётся: колонка
-# старше этой ревизии; заполненное здесь значение старый код читает как длительность — те же числа, что
-# он сам вычислял), ревизии правок, статусы подходов. Сессии, их подходы и кредит плана не тронуты.
+# определение/версию, prescription_snapshot, источник длительности, ревизии правок, статусы подходов.
+# duration_seconds (колонка старше ревизии) остаётся как есть: у истории её никто не менял; у сессий,
+# завершённых новым кодом, старый код прочитает её как длительность. Сессии, их подходы и кредит плана не тронуты.
 # Повторный upgrade восстанавливает backfill 1–6; синтез снимков — повторный прогон скрипта.
 
 _SESSION_COLUMNS = (
@@ -185,6 +186,9 @@ def _backfill() -> None:
         "WHERE source_v2 IS NULL"
     ))
 
+    # duration_seconds истории НЕ переписывается (это колонка старше ревизии: история байт в байт).
+    # measured с NULL duration_seconds = completed_at − performed_at (то, что аналитика и показывала);
+    # единая точка чтения — app.domain.training_session_v2.effective_duration_seconds.
     conn.execute(sa.text(
         "UPDATE training_sessions SET duration_source = CASE "
         "  WHEN activity_type IS NOT NULL AND duration_seconds IS NOT NULL THEN 'entered' "
@@ -192,12 +196,7 @@ def _backfill() -> None:
         "  WHEN duration_seconds IS NOT NULL THEN 'measured' "
         "  WHEN completed_at IS NOT NULL "
         "   AND EXTRACT(EPOCH FROM (completed_at - performed_at)) BETWEEN 60 AND 21600 THEN 'measured' "
-        "  ELSE 'unknown' END, "
-        "duration_seconds = CASE "
-        "  WHEN activity_type IS NULL AND duration_seconds IS NULL AND completed_at IS NOT NULL "
-        "   AND EXTRACT(EPOCH FROM (completed_at - performed_at)) BETWEEN 60 AND 21600 "
-        "  THEN FLOOR(EXTRACT(EPOCH FROM (completed_at - performed_at)))::integer "
-        "  ELSE duration_seconds END "
+        "  ELSE 'unknown' END "
         "WHERE duration_source IS NULL"
     ))
     conn.execute(sa.text(

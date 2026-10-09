@@ -173,9 +173,7 @@ async def backfill_user(session: AsyncSession, user_id: int) -> UserReport:
                 has_activity=row.activity_type is not None, duration_seconds=row.duration_seconds,
                 performed_at=row.performed_at, completed_at=row.completed_at,
             )
-            if row.duration_seconds is None:
-                row.duration_seconds = duration.seconds
-            row.duration_source = duration.source.value
+            row.duration_source = duration.source.value  # duration_seconds истории не переписывается
             report.mutations["duration"] += 1
     await session.flush()
 

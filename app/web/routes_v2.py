@@ -66,6 +66,7 @@ from app.domain.program_schedule import (
     course_week_number,
     duration_weeks,
 )
+from app.domain.training_session_v2 import effective_duration_seconds
 from app.domain.workout_definition import WorkoutContentError, content_hash, normalize, to_dict
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
@@ -328,7 +329,13 @@ def _session_response(
         can_delete=verdicts is not None and verdicts.delete.can_delete,
         # can_edit — прежний смысл для экрана правки: правится целиком (у внешней активности — без подходов).
         can_edit=edit is not None and (edit.can_edit_sets or detail.kind == "external_activity"),
-        activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
+        activity_type=detail.activity_type,
+        # issue #307 (A5): эффективная длительность — сохранённая или, у измеренной истории,
+        # completed_at − performed_at; неизвестная — null (не 0).
+        duration_seconds=effective_duration_seconds(
+            duration_seconds=detail.duration_seconds, duration_source=detail.duration_source,
+            performed_at=detail.performed_at, completed_at=detail.completed_at,
+        ),
         blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
         progression_result=progression, progression_skipped_reason=skipped_reason, workout_id=workout_id,
         plan_item_id=detail.plan_item_id, kind=detail.kind, source_v2=detail.source_v2, origin=detail.origin,
