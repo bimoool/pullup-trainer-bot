@@ -136,6 +136,18 @@ PlanItem      ONE occurrence of ONE workout (AD-4)
 - **PL7** Course occurrences for future weeks inside the window (`MAX_FUTURE_PLAN_WEEKS = 4`) are
   materialised by one idempotent `converge_user_plan(user, today)` (recovery audit T2); generation
   never writes on GET outside that function.
+- **PL8** A **credited** PlanItem (referenced by any session: `training_sessions.plan_item_id` or the
+  legacy M2M) is never deleted, soft-removed or re-pointed by a user action. An explicit «Убрать из
+  плана» of it → `422 {code: credited_plan_item}`; deleting the workout or stopping its plan leaves it
+  (and its credit) exactly as it was.
+- **PL9** Removing an uncredited **custom-plan** occurrence is a soft removal (`status = removed`): the
+  row keeps its identity, so convergence never regenerates it. Program occurrences are not removable one
+  by one (the course is removed as a whole, §2); an uncredited **manual** row is hard-deleted (nothing
+  regenerates it).
+- **PL10** Rows of a removed course (`is_active = false`) that are uncredited and in the current or a
+  future week are not part of the actionable plan: `GET /plan` omits them (no `available`, not in
+  «N из M»); the DB rows stay (re-adding the course resumes them). Credited rows and past weeks stay
+  visible as history.
 
 ## 6. Future weeks
 
@@ -152,6 +164,11 @@ CustomPlan (user-owned)
   repeat: once | cycle
   preferred_weekdays: int[] | null                optional placement hint
 ```
+
+**Stopping a custom plan** (`POST /api/v2/custom-plans/{id}/deactivate`, owner only, else 404):
+`is_active = false` — an inactive custom plan never materialises new occurrences; its uncredited
+current/future occurrences are soft-removed (PL9); credited occurrences, past weeks and sessions are
+unchanged; a repeated call has no further effect. There is no re-activation in this wave.
 
 Example W1=2, W2=2, W3=0, W4=2, W5=2, W6=0 → weeks with 2, 2, 0, 2, 2, 0 PlanItems; a zero week
 is a valid, explicit value (today `count_per_week` is `ge=1`, `app/web/schemas_v2.py:506`, so 0 is
@@ -227,6 +244,11 @@ Where the contract left a choice open, Wave 1b decided as follows (code: `app/do
 9. **Resume (§2).** Re-adding a removed course reactivates the previous inclusion (`is_active`, `status`,
    `expires_at = NULL`); `restart: true` creates a new one. `progression_state_rev` +1 per applied progression;
    `sequence_cursor` +1 when a credited main occurrence completes with progression.
-10. **Not in this wave:** `awaiting_assessment` (assessment stored in `programs.assessment`, not enforced — #305 with
+10. **Removal and concurrency (independent review B1/B3/C1).** `app/services/plan_removal.py` applies PL8–PL10 for
+    «Убрать из плана», workout deletion and «Остановить план». Before reading credit it takes the user's live-start
+    advisory lock (`lock_user_starts`, the same lock a crediting start holds), then the plan row lock (`lock_plan`, the
+    lock `converge_user_plan` holds) — a start and a removal of the same occurrence, or a removal/stop and a convergence,
+    serialise; lock order advisory → plan, no cycle. No schema change (existing `status`, `is_active`, `plan_item_id`).
+11. **Not in this wave:** `awaiting_assessment` (assessment stored in `programs.assessment`, not enforced — #305 with
     OD-1), K3 `spacing_violation` on post-factum logging (#307), occurrence `week_phase` (always `base`).
 

@@ -872,6 +872,21 @@ class TrainingSessionRepository:
         )
         return [(row[0], row[1], row[2], row[3]) for row in result.all()]
 
+    async def credited_plan_item_ids(self, plan_item_ids: list[int]) -> set[int]:
+        """Строки плана, на которые ссылается ХОТЬ ОДНА сессия (STARTED или COMPLETED): явный кредит
+        (training_sessions.plan_item_id) или старая M2M-связь session_plan_items. Такая строка — история
+        кредита: её нельзя удалить жёстко (FK SET NULL / CASCADE стёр бы кредит, а сходимость
+        пересоздала бы занятие открытым — «1 из 2» → «0 из 2»), снять или убрать вместе с планом (#304 B1)."""
+        if not plan_item_ids:
+            return set()
+        explicit = await self._session.execute(
+            select(TrainingSession.plan_item_id).where(TrainingSession.plan_item_id.in_(plan_item_ids)),
+        )
+        legacy = await self._session.execute(
+            select(SessionPlanItem.plan_item_id).where(SessionPlanItem.plan_item_id.in_(plan_item_ids)),
+        )
+        return {row[0] for row in explicit.all()} | {row[0] for row in legacy.all()}
+
     async def legacy_links_for_plan_items(
         self, plan_item_ids: list[int],
     ) -> list[tuple[int, int, SessionStatus, datetime, int | None]]:

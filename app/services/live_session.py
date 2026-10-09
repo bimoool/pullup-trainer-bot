@@ -197,6 +197,18 @@ def _phase_ends_at_from_offset(offset_seconds: int | None) -> datetime | None:
 _START_LOCK_NAMESPACE = 0x4C53
 
 
+async def lock_user_starts(session: AsyncSession, user_id: int) -> None:
+    """Транзакционный advisory-лок «старт / кредит занятия» пользователя (N1, #293). Его же берут
+    удаление занятия и остановка своего плана (#304 B1/B3, app.services.plan_removal) ДО проверки
+    кредита: старт, засчитывающий занятие, и его снятие/удаление сериализуются — проверка «есть ли
+    кредит» не может проскочить мимо незакоммиченного старта, а старт видит уже снятое занятие.
+    Порядок локов: этот, затем строка плана (lock_plan) — у старта плана-лока нет, у сходимости нет
+    этого, цикла ожидания нет."""
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:ns, :uid)"), {"ns": _START_LOCK_NAMESPACE, "uid": user_id},
+    )
+
+
 class LiveSessionService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -221,10 +233,7 @@ class LiveSessionService:
         # Сериализуем старты пользователя advisory-локом до проверки (транзакционный — снимается на
         # commit/rollback, миграции/уникального индекса не требует). Конкурент ждёт, затем видит
         # STARTED-сессию победителя и получает 409; повтор с тем же client_session_id — existing.
-        await self._session.execute(
-            text("SELECT pg_advisory_xact_lock(:ns, :uid)"),
-            {"ns": _START_LOCK_NAMESPACE, "uid": user_id},
-        )
+        await lock_user_starts(self._session, user_id)
         try:
             async with self._session.begin_nested():
                 return await self._start_session(

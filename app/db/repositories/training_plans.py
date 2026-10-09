@@ -251,37 +251,25 @@ class TrainingPlanRepository:
         )
         return list(result.scalars().all())
 
-    async def delete_mutable_plan_item(self, plan_item_id: int, user_id: int) -> bool:
-        """Phase D2 (issue #188) — Remove. Тот же mutability guard, что
-        update_mutable_plan_item_day — STEP/program-backed недоступны.
-        Удаляет только саму строку PlanItem — Exercise/Complex/ComplexItem/
-        ProgramInclusion/TrainingSession/workout_snapshot не задеты (нет
-        каскада на них с этой стороны, PlanItem — листовая таблица
-        относительно них)."""
-        item = await self.get_plan_item_for_user(plan_item_id, user_id)
-        if item is None or item.program_inclusion_id is not None:
-            return False
+    async def list_workout_plan_items(self, training_plan_id: int, complex_id: int) -> list[PlanItem]:
+        """Issue #261 / #304 B1 — НЕ программные строки плана (ручные и своего плана) с этой
+        тренировкой: вход удаления тренировки. Что с ними делать (удалить / снять / оставить
+        засчитанные) — решает app.services.plan_removal, не репозиторий."""
+        result = await self._session.execute(
+            select(PlanItem)
+            .where(
+                PlanItem.training_plan_id == training_plan_id, PlanItem.complex_id == complex_id,
+                PlanItem.program_inclusion_id.is_(None),
+            )
+            .order_by(PlanItem.id),
+        )
+        return list(result.scalars().all())
+
+    async def delete_plan_item(self, item: PlanItem) -> None:
+        """Жёсткое удаление ОДНОЙ строки — только незасчитанная ручная (проверка у вызывающего,
+        app.services.plan_removal). Exercise/Complex/TrainingSession не задеты (PlanItem — листовая)."""
         await self._session.delete(item)
         await self._session.flush()
-        return True
-
-    async def delete_plan_items_for_workout(self, user_id: int, complex_id: int) -> int:
-        """Issue #261 — при удалении пользовательской тренировки убирает из плана
-        её ручные PlanItem (program-backed не трогаем — user Workout не бывает в
-        каталожных Program). Определения и снимки сессий не задеты; уходят лишь
-        строки PlanItem и их связи session_plan_items (CASCADE)."""
-        plan = await self.get_for_user(user_id)
-        if plan is None:
-            return 0
-        result = await self._session.execute(
-            delete(PlanItem).where(
-                PlanItem.training_plan_id == plan.id,
-                PlanItem.complex_id == complex_id,
-                PlanItem.program_inclusion_id.is_(None),
-            ),
-        )
-        await self._session.flush()
-        return result.rowcount or 0
 
     async def bulk_create_plan_items_from_program_items(
         self, *, training_plan_id: int, program_inclusion_id: int, program_items: list[ProgramItem],
@@ -528,6 +516,19 @@ class TrainingPlanRepository:
     async def list_custom_plans_for_user(self, user_id: int) -> list[CustomPlan]:
         result = await self._session.execute(
             select(CustomPlan).where(CustomPlan.user_id == user_id).order_by(CustomPlan.id),
+        )
+        return list(result.scalars().all())
+
+    async def get_custom_plan_for_user(self, custom_plan_id: int, user_id: int) -> CustomPlan | None:
+        """Ownership по user_id: чужой и несуществующий неразличимы (404, PROJECT_SPEC §5)."""
+        result = await self._session.execute(
+            select(CustomPlan).where(CustomPlan.id == custom_plan_id, CustomPlan.user_id == user_id),
+        )
+        return result.scalar_one_or_none()
+
+    async def list_custom_plan_items(self, custom_plan_id: int) -> list[PlanItem]:
+        result = await self._session.execute(
+            select(PlanItem).where(PlanItem.custom_plan_id == custom_plan_id).order_by(PlanItem.id),
         )
         return list(result.scalars().all())
 

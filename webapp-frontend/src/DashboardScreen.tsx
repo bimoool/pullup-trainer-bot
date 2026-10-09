@@ -17,6 +17,7 @@ import {
   type ProgramInclusionResponseV2,
   type CustomPlanV2,
   removePlanItem,
+  deactivateCustomPlan,
   deactivateProgramInclusion,
   type TrainingPlanResponseV2,
 } from "./apiV2";
@@ -326,6 +327,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const [overviewTab, setOverviewTab] = useState<"now" | "completed">("now");
   const [removeInclusionConfirmId, setRemoveInclusionConfirmId] = useState<number | null>(null);
   const [removingInclusionId, setRemovingInclusionId] = useState<number | null>(null);
+  const [stoppingCustomPlanId, setStoppingCustomPlanId] = useState<number | null>(null);
+  const [customPlanError, setCustomPlanError] = useState<string | null>(null);
   const [inclusionError, setInclusionError] = useState<string | null>(null);
 
   // issue #275 — планирование вперёд: › за последней неделей создаёт следующую;
@@ -416,6 +419,23 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       setInclusionError(error instanceof Error ? error.message : String(error));
     } finally {
       setRemovingInclusionId(null);
+    }
+  }
+
+  // issue #304 (B3) — «Остановить план»: свой план больше не добавляет занятия, история остаётся.
+  async function handleStopCustomPlan(customPlanId: number, name: string) {
+    if (!window.confirm(`Остановить план «${name}»? Выполненные тренировки останутся в истории.`)) {
+      return;
+    }
+    setStoppingCustomPlanId(customPlanId);
+    setCustomPlanError(null);
+    try {
+      await deactivateCustomPlan(initDataRaw, customPlanId);
+      await reloadPlan();
+    } catch (error) {
+      setCustomPlanError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStoppingCustomPlanId(null);
     }
   }
 
@@ -867,11 +887,24 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       {plan.customPlans.length > 0 && (
         <Section className="block-section" header="Свои планы">
           {plan.customPlans.map((custom) => (
-            <p key={custom.id} className="block-subtitle" data-testid="plans-custom-plan-row">
-              {`${custom.display_name}: ${custom.weeks.map((count, index) => `Н${index + 1} ${count}`).join(" · ")}`}
-              {custom.repeat === "cycle" ? " · по кругу" : ""}
-            </p>
+            <div key={custom.id} className="plans-row-main" data-testid="plans-custom-plan-row" data-active={custom.is_active}>
+              <p className="block-subtitle">
+                {`${custom.display_name}: ${custom.weeks.map((count, index) => `Н${index + 1} ${count}`).join(" · ")}`}
+                {custom.repeat === "cycle" ? " · по кругу" : ""}
+                {custom.is_active ? "" : " · остановлен"}
+              </p>
+              {custom.is_active && (
+                <Button
+                  size="s" mode="outline" data-testid="plans-custom-plan-stop"
+                  disabled={stoppingCustomPlanId !== null}
+                  onClick={() => void handleStopCustomPlan(custom.id, custom.display_name)}
+                >
+                  {stoppingCustomPlanId === custom.id ? "Останавливаю…" : "Остановить план"}
+                </Button>
+              )}
+            </div>
           ))}
+          {customPlanError && <p className="gap-banner">{customPlanError}</p>}
         </Section>
       )}
       <div className="workout-mode-buttons vp-tabs plans-tabs" role="tablist" aria-label="Обзор плана">

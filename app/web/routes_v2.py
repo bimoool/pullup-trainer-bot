@@ -78,6 +78,11 @@ from app.services.live_session import (
     block_started_at,
     current_interval_timing,
 )
+from app.services.plan_removal import (
+    CREDITED_PLAN_ITEM_CODE,
+    CreditedPlanItemError,
+    PlanRemovalService,
+)
 from app.services.plan_spacing import TooEarlyError
 from app.services.plan_view import (
     PlanItemView,
@@ -879,7 +884,8 @@ async def delete_workout(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    await TrainingPlanRepository(session).delete_plan_items_for_workout(user.id, workout_id)
+    # #304 B1: засчитанные строки (история кредита) остаются, занятия своего плана снимаются мягко.
+    await PlanRemovalService(session).remove_workout_items(user_id=user.id, complex_id=workout_id)
     await FavoriteRepository(session).remove(user.id, "workout", workout_id)
     await program_repo.archive_workout(workout)
     await session.commit()
@@ -1218,14 +1224,18 @@ async def remove_plan_item(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """Phase D2 (issue #188) — Remove. Удаляет только саму строку
-    PlanItem — Exercise/Complex/ComplexItem/ProgramInclusion/
-    TrainingSession/workout_snapshot/Journal history не задеты. STEP/
-    program-backed и чужой PlanItem — оба 404."""
+    """«Убрать из плана» (issue #188 D2; #304 B1, PROGRAM_PLAN_V2 §5 PL8). Засчитанное занятие — 422
+    {code: credited_plan_item}, кредит не меняется. Занятие своего плана снимается мягко (status =
+    removed — сходимость его не пересоздаёт); ручная незасчитанная строка удаляется. Определения,
+    сессии и Журнал не задеты. Занятие курса, уже снятое, чужое — 404."""
     user = await _require_user(session, init_data)
-    plans = TrainingPlanRepository(session)
-    deleted = await plans.delete_mutable_plan_item(plan_item_id, user.id)
-    if not deleted:
+    try:
+        removal = await PlanRemovalService(session).remove_plan_item(user_id=user.id, plan_item_id=plan_item_id)
+    except CreditedPlanItemError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": CREDITED_PLAN_ITEM_CODE, "message": str(exc)},
+        ) from exc
+    if removal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "PlanItem not found")
 
 

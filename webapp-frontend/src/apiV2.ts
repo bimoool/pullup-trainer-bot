@@ -469,6 +469,12 @@ export async function createCustomPlan(initDataRaw: string, body: CustomPlanCrea
   return apiV2Post("/api/v2/custom-plans", initDataRaw, body);
 }
 
+/** issue #304 (B3) — «Остановить план»: is_active=false, незасчитанные занятия текущей/будущих недель снимаются,
+ * засчитанные и история остаются. Повтор безопасен. */
+export async function deactivateCustomPlan(initDataRaw: string, customPlanId: number): Promise<CustomPlanV2> {
+  return apiV2Post(`/api/v2/custom-plans/${customPlanId}/deactivate`, initDataRaw, {});
+}
+
 /**
  * issue #193 (WORKER B) — реальная PlanWeek (Checkpoint 1/1.1, issue #188),
  * не то же самое, что PlanItemResponseV2.week_phase (свойство самой строки

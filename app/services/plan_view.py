@@ -83,8 +83,8 @@ class PlanViewService:
         plan_items: list[PlanItem], inclusions: list[ProgramInclusion],
     ) -> PlanView:
         tz = resolve_timezone(user.timezone)
-        visible = [item for item in plan_items if item.status != PlanItemStatus.REMOVED]
         week_by_id = {week.id: week for week in plan_weeks}
+        visible = await self._actionable_rows(plan_items, inclusions, week_by_id, today)
 
         # Старые агрегатные строки — прежний счётчик «сделано на своей неделе» по M2M (#258).
         aggregates = [item for item in visible if item.occurrence_index is None]
@@ -153,6 +153,26 @@ class PlanViewService:
             items=views, week_summaries=summaries, spacing=spacing,
             custom_plans=await self._plans.list_custom_plans(plan.id),
         )
+
+    async def _actionable_rows(
+        self, plan_items: list[PlanItem], inclusions: list[ProgramInclusion], week_by_id: dict[int, PlanWeek],
+        today: date,
+    ) -> list[PlanItem]:
+        """Строки плана для показа: без снятых (status = removed) и без НЕзасчитанных строк убранного
+        курса (is_active = false) в текущей/будущих неделях (#304 C1) — их старт сервер отклоняет, поэтому
+        «Начать» / available и «0 из 3» они не дают. Засчитанные строки убранного курса и прошлые недели
+        (история) остаются; строки в БД не меняются (повторное «Добавить» курса вернёт их как были)."""
+        inactive = {inclusion.id for inclusion in inclusions if not inclusion.is_active}
+        rows = [item for item in plan_items if item.status != PlanItemStatus.REMOVED]
+        candidates = [
+            item.id for item in rows
+            if item.program_inclusion_id in inactive and item.plan_week_id in week_by_id
+            and week_by_id[item.plan_week_id].start_date + timedelta(days=6) >= today
+        ]
+        if not candidates:
+            return rows
+        hidden = set(candidates) - await self._sessions.credited_plan_item_ids(candidates)
+        return [item for item in rows if item.id not in hidden]
 
     async def _spacing_groups(self, occurrences: list[PlanItem], inclusions: list[ProgramInclusion]) -> dict[int, str]:
         """Группа отдыха занятия курса — из слотов его инклюзии (свой план/ручные — без группы, K4)."""

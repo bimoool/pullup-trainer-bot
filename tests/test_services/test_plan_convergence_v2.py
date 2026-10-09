@@ -261,23 +261,26 @@ async def test_aged_profile_converges_and_preserves_history(session):
     assert await _credits(session, aged["user"].id) == credits_after_first
 
 
-async def test_aged_profile_current_and_future_plan_stays_functional(session):
-    """J2: после сходимости план работает: «2 из 3» текущей недели, next — available с Пт (Вт + 3)."""
+async def test_aged_profile_current_and_future_plan_stays_functional(session, monkeypatch):
+    """J2: после сходимости план работает: «2 из 3» текущей недели, next — available с Пт (Вт + 3).
+
+    #304 B2: ОБА авторитетных часа зафиксированы на всё время теста — «сегодня» плана
+    (routes_v2._utcnow) и «сейчас» проверки отдыха на старте (live_session._utcnow). Раньше старт шёл по
+    реальным часам: с реальной даты ≥ 2026-10-09 (= available_from) он проходил, и тест краснел."""
     import uuid
 
+    from app.services import live_session
     from app.web import routes_v2
     from tests.test_web._v2_client import v2_get, v2_post
 
     aged = await _aged_profile(session)
-    routes_v2_now = datetime(2026, 10, 7, 12, tzinfo=UTC)
-    original = routes_v2._utcnow
-    routes_v2._utcnow = lambda: routes_v2_now
-    try:
-        plan = (await v2_get(session, aged["user"].telegram_id, "/api/v2/plan")).json()["plan"]
-        await v2_post(session, aged["user"].telegram_id, "/api/v2/plan/weeks", {"week_number": 5})
-        plan = (await v2_get(session, aged["user"].telegram_id, "/api/v2/plan")).json()["plan"]
-    finally:
-        routes_v2._utcnow = original
+    fixed_now = datetime(2026, 10, 7, 12, tzinfo=UTC)  # = TODAY, среда недели 4
+    monkeypatch.setattr(routes_v2, "_utcnow", lambda: fixed_now)
+    monkeypatch.setattr(live_session, "_utcnow", lambda: fixed_now)
+    plan = (await v2_get(session, aged["user"].telegram_id, "/api/v2/plan")).json()["plan"]
+    await v2_post(session, aged["user"].telegram_id, "/api/v2/plan/weeks", {"week_number": 5})
+    plan = (await v2_get(session, aged["user"].telegram_id, "/api/v2/plan")).json()["plan"]
+    assert plan["today"] == TODAY.isoformat()
     week_id = {w["week_number"]: w["id"] for w in plan["plan_weeks"]}
     summary = {s["plan_week_id"]: s for s in plan["week_summaries"]}
     assert (summary[week_id[4]]["planned"], summary[week_id[4]]["completed"]) == (5, 3)  # 3 main + 2 ручных
@@ -294,6 +297,7 @@ async def test_aged_profile_current_and_future_plan_stays_functional(session):
         "client_session_id": str(uuid.uuid4()), "plan_item_ids": [future[0]["id"]],
     })
     assert started.status_code == 409 and started.json()["detail"]["code"] == "too_early"
+    assert started.json()["detail"]["available_from"] == "2026-10-09"
 
 
 async def test_fresh_inclusion_converges_to_occurrences_and_second_run_is_noop(session):

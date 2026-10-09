@@ -19,6 +19,7 @@ from app.domain.multi_program import (
     plan_week_number,
 )
 from app.domain.plan_occurrence import CustomPlanError, CustomPlanRepeat, validate_custom_plan
+from app.services.plan_removal import PlanRemovalService
 from app.services.plan_spacing import TooEarlyError
 from app.services.plan_week import PlanWeekService
 from app.web.auth import get_validated_init_data
@@ -100,3 +101,24 @@ async def create_custom_plan(
     )
     await session.commit()
     return custom_plan_response(custom_plan)
+
+
+@router_v2_plan.post("/custom-plans/{custom_plan_id}/deactivate", response_model=CustomPlanResponse)
+async def deactivate_custom_plan(
+    custom_plan_id: int,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> CustomPlanResponse:
+    """«Остановить план» (#304 B3): is_active = false, новые занятия не материализуются; незасчитанные
+    занятия текущей/будущих недель снимаются мягко; засчитанные и история — без изменений. Повтор —
+    без побочных эффектов. Чужой / несуществующий — 404. Подписку и доступ не трогает."""
+    from app.web.routes_v2 import _plan_today, _require_user
+
+    user = await _require_user(session, init_data)
+    result = await PlanRemovalService(session).deactivate_custom_plan(
+        user_id=user.id, custom_plan_id=custom_plan_id, today=_plan_today(user),
+    )
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Custom plan not found")
+    await session.commit()
+    return custom_plan_response(result.custom_plan)
