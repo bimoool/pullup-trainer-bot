@@ -47,7 +47,7 @@ separate, later decision.
 | `workout_definition_versions` | V1 protocol → v2 content (WORKOUT §8); re-run is a no-op because content equal to the *current* version creates nothing (append-only, WORKOUT §5) | V1 interval not divisible → logged, version not created, workout flagged for review |
 | W-ladder system workout | new version with explicit 17-set ladder; old sessions keep their snapshot | — |
 | `exercise_categories` + `analytics_exercise_id` | table of string → category id; role/elective exercises → public «Подтягивания» | unknown strings → «Без категории» row, reported |
-| `program_inclusions.progression_state.block_b.work_sets` | absent → 4 | present → untouched |
+| `program_inclusions.progression_state.block_b.work_sets` | absent → 4 (revision `e3b9c5d7a2f1`, #305; `null` = absent) | present → untouched |
 | `training_sessions.source_v2` | `plan` → `planned_live`; `freeform` + snapshot → `direct_live`; `freeform` + `activity_type` → `external_activity`; `backdated` + snapshot → `manual_existing_workout`; `backdated` without snapshot → identity recovery (next row); `elective` → `manual_existing_workout` with `origin = legacy_elective` | — |
 | Identity recovery for old backdated sessions (D9 history) | recover `workout_definition_id` **only if** exactly one of the user's workouts (live or archived, at a version current at `performed_at`) has an identical ordered exercise list; record `identity_recovered_by = exact_match_v1` | 0 or ≥ 2 matches → `manual_custom`, never guessed |
 | `prescription_snapshot` for sessions without one | synthesize from `set_targets` + exercise names, `synthesized = true` | missing targets → `kind: unprescribed` |

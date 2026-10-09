@@ -44,6 +44,11 @@ from app.domain.block_execution import (
     rest_seconds_for_protocol,
     targets_for_protocol,
 )
+from app.domain.course_prescription import (
+    COURSE_TRAILING_MAX_SET_RULE,
+    normalize_progression_state,
+    resolve_progression_block,
+)
 from app.domain.interval_timing import (
     IntervalPhase,
     calculate_completed_cycles,
@@ -60,7 +65,7 @@ from app.domain.live_session import (
     previous_phase,
 )
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
-from app.domain.plan_occurrence import MAIN_SLOT_KEY, PlanItemStatus, derive_slots
+from app.domain.plan_occurrence import MAIN_SLOT_KEY, InclusionStatus, PlanItemStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.training_session_v2 import SessionSourceV2
 from app.domain.workout_protocol import DefinitionProtocol, ResolvedInterval, ResolvedProtocol
@@ -70,6 +75,10 @@ from app.domain.workout_snapshot import (
     WorkoutSnapshot,
     build_workout_snapshot,
     positional_snapshot_items,
+)
+from app.services.course_assessment import (
+    AssessmentRequiredError,
+    promote_if_assessed,
 )
 from app.services.plan_spacing import MainSpacingService, TooEarlyError  # noqa: F401 — re-export
 from app.services.program_access import (  # noqa: F401 — re-export
@@ -391,6 +400,7 @@ class LiveSessionService:
         roles = {item["role"]: item["exercise_id"] for item in (inclusion.snapshot or {}).get("exercises", [])}
         if not inclusion.is_active or "block_a" not in roles or "block_b" not in roles:
             raise ValueError(STALE_PLAN_ITEM_MESSAGE)
+        await self._require_assessment(inclusion)
         blocks: list[SessionBlockInput] = []
         targets: list[list[SetTargetInput]] = []
         for role in ("block_a", "block_b"):
@@ -398,6 +408,18 @@ class LiveSessionService:
             blocks.extend(role_blocks)
             targets.extend(role_targets)
         return blocks, targets, None
+
+    async def _require_assessment(self, inclusion: ProgramInclusion) -> None:
+        """issue #305 (PROGRAM_PLAN_V2 §3): main-блоки инклюзии в awaiting_assessment не стартуют, пока
+        замер не записан. Записанный с тех пор замер переводит инклюзию в active тем же единственным
+        переходом, что и convergence (promote_if_assessed), — старт не ждёт следующего GET /plan."""
+        if inclusion.status != InclusionStatus.AWAITING_ASSESSMENT.value:
+            return
+        program = await self._programs.get_by_id(inclusion.program_id)
+        if await promote_if_assessed(self._session, inclusion, program, now=_utcnow()):
+            return
+        protocol_id = (program.assessment or {}).get("protocol_id") if program is not None else None
+        raise AssessmentRequiredError(inclusion.id, protocol_id)
 
     async def _resolve_program_occurrence(
         self, plan_item: PlanItem,
@@ -580,6 +602,7 @@ class LiveSessionService:
     ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]]:
         step_match = await self._find_step_role_for_exercise(training_plan_id, exercise_id)
         if step_match is not None:
+            await self._require_assessment(step_match[0])
             return self._resolve_step_role_block(exercise_id, *step_match)
         return await self._resolve_plain_exercise_block(exercise_id)
 
@@ -608,19 +631,20 @@ class LiveSessionService:
     def _resolve_step_role_block(
         self, exercise_id: int, inclusion: ProgramInclusion, role: str,
     ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]]:
-        """sets_count — progression_state[role]["work_sets"], если есть
-        (блок A — объёмный, растущее число рабочих подходов, см.
-        app.services.session_log._apply_step_progression), иначе 1 (блок Б
-        — силовой, число подходов у него в этой волне не выведено в
-        progression_state отдельным полем, см. план задачи: "default 1 if
-        role is block_b" — намеренное упрощение, не забытое поле)."""
-        role_state = inclusion.progression_state[role]
-        sets_count = role_state.get("work_sets", 1)
-        target = Decimal(role_state["target"])
+        """Подходы блока курса — ЕДИНСТВЕННЫЙ резолвер resolve_progression_block (issue #305,
+        WORKOUT_DOMAIN_V2 §6): рабочих подходов ровно work_sets роли (обе роли; у block_b старых
+        инклюзий поле дописывает normalize_progression_state — тот же источник STRENGTH_BLOCK.work_sets,
+        что у миграции e3b9c5d7a2f1), без тихого «1» (D2). Хвостовой подход на максимум — OD-3
+        (COURSE_TRAILING_MAX_SET_RULE); его цель помечена is_max_set и так и пишется в SetLog (D3)."""
+        state = normalize_progression_state(inclusion.progression_state)
+        prescriptions = resolve_progression_block(role, state, trailing_max_set=COURSE_TRAILING_MAX_SET_RULE)
         block = SessionBlockInput(exercise_id=exercise_id, sets=[])
         targets = [
-            SetTargetInput(set_number=i + 1, metric_type=MetricType.REPS, value=target, unit="reps")
-            for i in range(sets_count)
+            SetTargetInput(
+                set_number=p.set_number, metric_type=MetricType.REPS, value=Decimal(p.target_reps), unit="reps",
+                is_max_set=p.is_max_set,
+            )
+            for p in prescriptions
         ]
         return [block], [targets]
 

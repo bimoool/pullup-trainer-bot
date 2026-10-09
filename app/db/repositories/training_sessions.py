@@ -463,8 +463,20 @@ class TrainingSessionRepository:
             log.set_index: log for log in existing_logs if log.set_index is not None
         }
         count_by_block_id: dict[int, int] = {}
+        planned_count_by_block_id: dict[int, int] = {}
         for log in existing_logs:
             count_by_block_id[log.session_block_id] = count_by_block_id.get(log.session_block_id, 0) + 1
+            if not log.is_extra:
+                planned_count_by_block_id[log.session_block_id] = planned_count_by_block_id.get(log.session_block_id, 0) + 1
+        # issue #305 (TRAINING_SESSION R2, D3): is_max_set — свойство ЦЕЛИ подхода. Новый плановый подход
+        # блока (не «+ Ещё подход») наследует его у цели с тем же порядковым номером среди плановых
+        # подходов — раньше здесь стоял жёсткий False, и результат подхода на максимум терялся для прогрессии.
+        targets_result = await self._session.execute(
+            select(SetTarget).where(SetTarget.session_block_id.in_([block.id for block in blocks])),
+        )
+        max_target_numbers = {
+            (target.session_block_id, target.set_number) for target in targets_result.scalars() if target.is_max_set
+        }
 
         for entry in unique_entries:
             block = self._resolve_batch_block(blocks, entry, current_block_index)
@@ -486,9 +498,13 @@ class TrainingSessionRepository:
                 continue
 
             count_by_block_id[block.id] = count_by_block_id.get(block.id, 0) + 1
+            is_max_set = False
+            if not entry.is_extra:
+                planned_count_by_block_id[block.id] = planned_count_by_block_id.get(block.id, 0) + 1
+                is_max_set = (block.id, planned_count_by_block_id[block.id]) in max_target_numbers
             insert_stmt = pg_insert(SetLog).values(
                 session_block_id=block.id, session_id=session_id, set_index=entry.set_index,
-                set_number=count_by_block_id[block.id], is_max_set=False, metric_type=metric_type,
+                set_number=count_by_block_id[block.id], is_max_set=is_max_set, metric_type=metric_type,
                 value=entry.value, unit=unit, effort=entry.effort, note=entry.note, is_extra=entry.is_extra,
             )
             await self._session.execute(

@@ -533,6 +533,8 @@ async def _build_progression_state(
         "block_b": {
             "target": state_b.target,
             "volume": state_b.volume,
+            # issue #305: каноническая форма — work_sets у обеих ролей (у блока Б он постоянный).
+            "work_sets": STRENGTH_BLOCK.work_sets,
             "weak_streak": weak_streak_b,
             "equipment_type": state_b.equipment_type.value,
             "equipment_value": _decimal_str(state_b.equipment_value),

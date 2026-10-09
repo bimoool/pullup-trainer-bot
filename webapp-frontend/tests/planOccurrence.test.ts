@@ -10,6 +10,7 @@ test("occurrenceStateLabel: «рано» с датой, «не успеть», �
   assert.equal(occurrenceStateLabel({ state: "too_early", available_from: "2026-10-08" }), "Доступно с 8 окт");
   assert.equal(occurrenceStateLabel({ state: "infeasible" }), "Не успеть на этой неделе");
   assert.equal(occurrenceStateLabel({ state: "missed" }), "Пропущено");
+  assert.equal(occurrenceStateLabel({ state: "awaiting_assessment" }), "Сначала тест на максимум"); // #305
   assert.equal(occurrenceStateLabel({ state: "available" }), null);
   assert.equal(occurrenceStateLabel({ state: "completed" }), null);
   assert.equal(occurrenceStateLabel({}), null);

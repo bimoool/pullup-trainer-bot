@@ -31,8 +31,11 @@ from app.domain.multi_program import (
     plan_week_number,
 )
 from app.domain.plan_occurrence import (
+    MAIN_SLOT_KEY,
     MAIN_SPACING_GROUP,
+    InclusionStatus,
     OccurrenceInput,
+    OccurrenceState,
     OccurrenceStateResult,
     PlanItemStatus,
     WeekSummary,
@@ -126,6 +129,18 @@ class PlanViewService:
         states = derive_occurrence_states(
             inputs, today=today, available_from_by_group=available_by_group, min_days_by_group=min_days_by_group,
         )
+
+        # issue #305 (PROGRAM_PLAN_V2 §3): main-занятия инклюзии, ждущей замера, — «Сначала тест на максимум».
+        awaiting = {
+            inclusion.id for inclusion in inclusions
+            if inclusion.is_active and inclusion.status == InclusionStatus.AWAITING_ASSESSMENT.value
+        }
+        for item in visible:
+            if (
+                item.program_inclusion_id in awaiting and item.program_slot_key == MAIN_SLOT_KEY
+                and item.id not in credited and item.id in states
+            ):
+                states[item.id] = OccurrenceStateResult(state=OccurrenceState.AWAITING_ASSESSMENT)
 
         week_id_by_item = {item.id: item.plan_week_id for item in visible}
         summaries = [

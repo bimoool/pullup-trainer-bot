@@ -16,6 +16,7 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.domain.constants import EquipmentType
+from app.domain.course_prescription import normalize_progression_state
 from app.domain.multi_program import MetricType, SessionSource
 from app.domain.progression_strategy import ProgressionContext, StepProgressionStrategy
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
@@ -118,6 +119,8 @@ def _apply_step_progression(
     просто применённые к единственной новой записи, а не заново
     выведенные — тот же приём, каким _weak_streak/_stall_streak сами
     устроены СНАРУЖИ recalculate_cascade для старой схемы."""
+    # issue #305: каноническая форма (block_b.work_sets) — новое состояние несёт её дальше.
+    progression_state = normalize_progression_state(progression_state)
     block_a_state, block_b_state = progression_state["block_a"], progression_state["block_b"]
     block_a_log = _block_log_from_sets(block_a_sets)
     block_b_log = _block_log_from_sets(block_b_sets)

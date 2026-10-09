@@ -224,6 +224,9 @@ AD-3: one WorkoutDefinition «Подтягивания» with two blocks, matchi
   (`delta = max_reps − target`, `app/domain/progression.py:121`); without it progression cannot
   grow (D3). Owner confirmation that «4 × 3» means *4 working sets + the max set*: OD-3.
 - Load comes from progression state (`equipment_type/value/item_id`) into `LoadSpec`.
+- **Wave 1c (#305):** the resolver and `block_b.work_sets` backfill are implemented
+  (`app/domain/course_prescription.py`); the trailing max set is an explicit `TrailingMaxSetRule` pending OD-3 —
+  see PROGRAM_PLAN_V2 §11.
 
 ## 7. Display contract (shared by plan, live, journal, analytics)
 
