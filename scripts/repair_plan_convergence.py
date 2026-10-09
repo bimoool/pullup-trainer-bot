@@ -181,16 +181,17 @@ def _diff(before: _State, after: _State, *, current_week_number: int) -> tuple[d
             continue
         # issue #305: единственное разрешённое изменение состояния — переход awaiting_assessment → active
         # (замер записан): status, провенанс и пересчитанное тем же правилом стартовое состояние.
-        promoted = b["status"] == "awaiting_assessment" and a["status"] == "active"
-        if b["status"] != a["status"] and b["status"] is not None and not promoted:
-            violations.append(f"inclusion {inc_id}: status {b['status']} -> {a['status']} is not allowed")
-        if a["status"] == "awaiting_assessment" and b["status"] != "awaiting_assessment":
+        b_status, a_status = b.get("status"), a.get("status")
+        promoted = b_status == "awaiting_assessment" and a_status == "active"
+        if b_status != a_status and b_status is not None and not promoted:
+            violations.append(f"inclusion {inc_id}: status {b_status} -> {a_status} is not allowed")
+        if a_status == "awaiting_assessment" and b_status != "awaiting_assessment":
             violations.append(f"inclusion {inc_id}: pushed back to awaiting_assessment")
         guarded = ("program_id", "is_active", "started_at", "expires_at")
         if not promoted:
             guarded += ("progression_state", "initial_progression_state", "prescription_provenance")
         for key in guarded:
-            if a[key] != b[key]:
+            if a.get(key) != b.get(key):
                 violations.append(f"inclusion {inc_id}: {key} changed")
         b_snap, a_snap = b["snapshot"] or {}, a["snapshot"] or {}
         if a_snap == b_snap:

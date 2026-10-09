@@ -170,6 +170,9 @@ def test_b_c_aged_db_upgrade_and_converge_preserve_access_and_history(scratch_ds
         finally:
             await engine.dispose()
 
+    # Сегодняшний ORM знает колонку следующей ревизии (#305 e3b9c5d7a2f1) — добавить её только для прогона
+    # runtime-converge на схеме ЭТОЙ ревизии (как tests/test_scripts/_todays_orm_columns.py).
+    _run(_exec(scratch_dsn, "ALTER TABLE program_inclusions ADD COLUMN prescription_provenance jsonb"))
     code, dry = asyncio.run(converge(False))
     assert code == 0 and dry["total_mutations"] > 0, dry
     assert _fingerprint(scratch_dsn) == before  # dry-run ничего не пишет

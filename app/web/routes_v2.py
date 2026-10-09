@@ -1759,7 +1759,7 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                 targets=[
                     LiveSetTargetResponse(
                         set_number=target.set_number, metric_type=target.metric_type.value,
-                        value=str(target.value), unit=target.unit,
+                        value=str(target.value), unit=target.unit, is_max_set=target.is_max_set,
                     )
                     for target in block.set_targets
                 ],
