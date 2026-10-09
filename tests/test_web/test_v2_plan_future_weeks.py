@@ -83,7 +83,13 @@ async def test_readd_after_removal_has_no_ghost_or_duplicate_future_rows(session
     assert removed.status_code == 200
     plan = (await v2_get(session, user.telegram_id, "/api/v2/plan")).json()["plan"]
     weeks = _by_week(plan)
-    assert len(weeks[current]) == 3 and current + 1 not in weeks  # текущая как раньше, будущая очищена
+    # #304 C1: незасчитанные занятия убранного курса в текущей неделе не отдаются (их старт — 422); строки в БД
+    # остаются (возобновление вернёт их). Будущая неделя очищена (#301).
+    assert current not in weeks and current + 1 not in weeks
+    current_ids = sorted((await session.execute(
+        select(PlanItem.id).where(PlanItem.program_inclusion_id == inclusion_id, PlanItem.status == "open"),
+    )).scalars().all())
+    assert len(current_ids) == 3
 
     program_id = (await session.execute(select(Program.id).where(Program.name == "Курс 301"))).scalar_one()
     again = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {"program_id": program_id})
@@ -94,6 +100,7 @@ async def test_readd_after_removal_has_no_ghost_or_duplicate_future_rows(session
     future = [i for i in plan["plan_items"] if i["program_inclusion_id"] == again.json()["id"]]
     weeks = _by_week({**plan, "plan_items": future})
     assert len(weeks[current]) == 3 and len(weeks[current + 1]) == 3
+    assert sorted(i["id"] for i in weeks[current]) == current_ids  # те же занятия, не новые
 
 
 async def test_course_occurrence_of_future_week_starts_and_credits_itself(session, user: User):
