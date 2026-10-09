@@ -284,6 +284,46 @@ Where the contract left a choice open, Wave 1b decided as follows (code: `app/do
     materialises the workout, a convergence before it only creates rows the deletion then removes, a start before the
     deletion keeps its credit, and a start after it is rejected. No new lock, no schema change (`custom_plans.is_active`,
     `plan_items.status`, `complexes.archived_at`).
-11. **Not in this wave:** `awaiting_assessment` (assessment stored in `programs.assessment`, not enforced — #305 with
-    OD-1), K3 `spacing_violation` on post-factum logging (#307), occurrence `week_phase` (always `base`).
+11. **Not in this wave:** `awaiting_assessment` (implemented by #305, §11 below), K3 `spacing_violation` on
+    post-factum logging (#307), occurrence `week_phase` (always `base`).
+
+## 11. Implementation notes (Wave 1c, #305)
+
+Code: `app/domain/course_prescription.py` (pure), `app/services/course_assessment.py`, migration `e3b9c5d7a2f1`.
+OD-1 and OD-3 are **open** (#310); nothing below answers them.
+
+1. **Canonical state shape.** Both STEP roles carry `work_sets`. `normalize_progression_state` fills only a missing
+   (absent or `null`) `block_b.work_sets` with `STRENGTH_BLOCK.work_sets` (4); a present value, targets, equipment,
+   counters and `block_a` are untouched. Persisted by migration `e3b9c5d7a2f1` (frozen literal 4, same predicate);
+   Live, the v2 Dashboard and `_apply_step_progression` read the normalized form (the next applied progression
+   persists it). `converge_user_plan` still never writes `progression_state` except the §11.5 transition.
+2. **Resolver.** `resolve_progression_block(role, state, trailing_max_set=rule)` is the only source of course-block
+   sets: exactly `work_sets` working sets at `target` for both roles, no default (missing/invalid → error). The
+   trailing max set is an explicit parameter `TrailingMaxSetRule` (`INCLUDE` | `OMIT` | `UNDECIDED`) read from the
+   single decision point `COURSE_TRAILING_MAX_SET_RULE`, today `UNDECIDED`, which executes the pre-#305 behaviour
+   (no max set). OD-3 = yes → set `INCLUDE` (one max set appended last, `target 0`, `is_max_set`); OD-3 = no → `OMIT`
+   plus the new progression input the owner specifies. No other code changes for either answer.
+3. **Max identity (TRAINING_SESSION R2).** `upsert_set_logs_batch` copies `is_max_set` from the block's `SetTarget`
+   whose `set_number` equals the entry's position among the block's *planned* (non-extra) logs; extra sets are never
+   max and do not shift it. The completion path already carried `is_max_set` into `BlockLog.max_reps`
+   (`_block_log_from_sets`); the progression formula is unchanged.
+4. **InitialPrescriptionRule.** Pure, versioned (`rule_id@version` registry, `CURRENT_INITIAL_PRESCRIPTION_RULE`),
+   input = program config + assessment + explicit API targets. The only registered rule is
+   `program_config_default@0` = the pre-#305 numbers (config `base_target`, bodyweight; assessment ignored),
+   `decided = False`. Provenance on `program_inclusions.prescription_provenance` (rule, version, decided, assessment
+   `{source, id, max_reps, performed_on}`, explicit targets, assessment state); `baseline_assessment_result_id` when the
+   assessment is an `assessment_results` row. OD-1 → a new rule key; old inclusions keep their provenance.
+5. **`awaiting_assessment` (§3).** Valid assessment = latest `assessment_results` row of `programs.assessment.protocol_id`
+   **or** onboarding `baselines` row (the same «max pull-ups»), performed within `validity_days` (user tz). Main history
+   = `MainSpacingService.last_main_start_at` (legacy `workouts` + native main sessions). New inclusion: required +
+   no valid assessment + no main history → `status = awaiting_assessment` (`varchar(32)`); resumed inclusions keep
+   their status. Its open main occurrences derive `state = awaiting_assessment`; a main start → 409
+   `assessment_required`. The only exit is `promote_if_assessed` (live start and `converge_user_plan`): status →
+   `active`, provenance updated, starting state re-derived by the same rule (written only if different). Nothing ever
+   moves an inclusion *into* `awaiting_assessment` except enrolment — existing active inclusions are never demoted
+   (MIGRATION_V2 §5.4 step 4 is applied at enrolment only; demoting pre-#305 active inclusions without history would
+   need the owner's call). The repair script's guards allow exactly this transition.
+6. **Remaining blocked:** OD-1 numbers (max 3/8/20 table, band selection) and OD-3 (whether Live appends the max set;
+   J4's «expected 4» on the real path, counter «1/5», 5 `SetTarget`/`SetLog` rows). The main slot still has no
+   WorkoutDefinition version (`workout_definition_id = NULL`) — it resolves A + B through the resolver above.
 

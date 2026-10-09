@@ -29,6 +29,9 @@ from tests.test_scripts.test_system_content_migration import (
 )
 
 PRE_REVISION = "b7d2e9f4a1c3"
+# Ревизия ЭТОЙ волны (#304), не head: следующая ревизия (#305 e3b9c5d7a2f1) по контракту дописывает
+# progression_state.block_b.work_sets — её репетиция в test_course_prescription_migration.py.
+REVISION = "d8a3c6f1e2b4"
 
 # Таблицы/колонки, которые ни миграция, ни converge менять не имеют права (MIGRATION_V2 §7 + история).
 HISTORY = {
@@ -148,7 +151,7 @@ def test_b_c_aged_db_upgrade_and_converge_preserve_access_and_history(scratch_ds
     _run(_exec(scratch_dsn, AGED))
     before = _fingerprint(scratch_dsn)
 
-    _alembic(scratch_dsn, "upgrade", "head")
+    _alembic(scratch_dsn, "upgrade", REVISION)
     assert _fingerprint(scratch_dsn) == before  # F/G: подписки, доступ, история — байт в байт
 
     # Аддитивный бэкфилл: источник строк, статус включения, кредит только для single-link.
@@ -194,9 +197,9 @@ def test_b_c_aged_db_upgrade_and_converge_preserve_access_and_history(scratch_ds
 def test_d_second_upgrade_and_rerun_backfill_are_noop(scratch_dsn):  # noqa: F811
     _alembic(scratch_dsn, "upgrade", PRE_REVISION)
     _run(_exec(scratch_dsn, AGED))
-    _alembic(scratch_dsn, "upgrade", "head")
+    _alembic(scratch_dsn, "upgrade", REVISION)
     snapshot = _run(_fetch(scratch_dsn, "SELECT id, source, workout_definition_id, status FROM plan_items ORDER BY id"))
-    _alembic(scratch_dsn, "upgrade", "head")  # повторный деплой — ничего
+    _alembic(scratch_dsn, "upgrade", REVISION)  # повторный деплой — ничего
     assert _run(_fetch(
         scratch_dsn, "SELECT id, source, workout_definition_id, status FROM plan_items ORDER BY id",
     )) == snapshot
@@ -206,7 +209,7 @@ def test_e_downgrade_then_upgrade_keeps_history_and_rebuilds_derivable(scratch_d
     _alembic(scratch_dsn, "upgrade", PRE_REVISION)
     _run(_exec(scratch_dsn, AGED))
     before = _fingerprint(scratch_dsn)
-    _alembic(scratch_dsn, "upgrade", "head")
+    _alembic(scratch_dsn, "upgrade", REVISION)
     _alembic(scratch_dsn, "downgrade", PRE_REVISION)
     assert _fingerprint(scratch_dsn) == before  # история и M2M переживают откат схемы
     columns = {r.column_name for r in _run(_fetch(
@@ -215,6 +218,6 @@ def test_e_downgrade_then_upgrade_keeps_history_and_rebuilds_derivable(scratch_d
     assert "plan_item_id" not in columns
     assert _scalar(scratch_dsn, "SELECT to_regclass('custom_plans') IS NULL") is True
 
-    _alembic(scratch_dsn, "upgrade", "head")
+    _alembic(scratch_dsn, "upgrade", REVISION)
     assert _fingerprint(scratch_dsn) == before
     assert _scalar(scratch_dsn, "SELECT plan_item_id FROM training_sessions WHERE id = 8004") == 5100  # выводимое

@@ -91,7 +91,8 @@ Free/Premium). Порядок реализации: Wave 1 (Program+Plan foundat
 ## DOMAIN-V2 Wave 1 (2026-10-08)
 
 Линия интеграции `integration/domain-v2` = Wave 0 (`18ecb48`) + #303 (`6290bf0`, принят, PR #311 — draft как
-CI-свидетельство). Не мержится в `main`/`develop/current`; база следующих волн.
+CI-свидетельство) + #304 (`3983108`, принят 2026-10-09, fast-forward; PR #312 — draft как CI-свидетельство). Не
+мержится в `main`/`develop/current`; база следующих волн.
 
 - **W1a #303 WorkoutDefinition v2** — принят (второе независимое ревью APPROVED), `6290bf0`.
 - **W1b #304 Program + Plan foundation** — ветка `wave1/program-plan-v2`: одна строка `PlanItem` = одно
@@ -104,8 +105,16 @@ CI-свидетельство). Не мержится в `main`/`develop/current
   C1 строки убранного курса); исправлено. Второе независимое ревью — CHANGES REQUIRED (блокер F: свой план
   материализовал удалённую тренировку; решения владельца — без пересчёта ротации, автоостановка плана без живых
   тренировок, прошлые недели не трогаются); исправлено, ждёт финального фокусного ревью.
-- Дальше: W1c #305 (прескрипция курса: OD-1/OD-3, WorkoutDefinition main-слота, `awaiting_assessment`),
-  затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
+- **W1b #304** — финальное фокусное ревью APPROVED WITH NON-BLOCKING FINDINGS; принят (`3983108`) и влит в
+  линию интеграции.
+- **W1c #305 Course prescription** — ветка `wave1/course-prescription` (от `3983108`): блок Б несёт
+  `work_sets = 4` (миграция `e3b9c5d7a2f1`, absent/null → 4), единственный резолвер `resolve_progression_block`
+  (рабочих подходов = `work_sets` обеих ролей), `is_max_set` сохраняется от цели до прогрессии, оболочка
+  `InitialPrescriptionRule` с провенансом, `awaiting_assessment`. **Блокировано решениями владельца (#310):** OD-1
+  (числа стартовой прескрипции; пока действует прежнее правило `program_config_default@0`, `decided = false`) и
+  OD-3 (хвостовой подход на максимум; пока не добавляется — цель Б на v2-пути не растёт). Реализация —
+  `docs/domain/PROGRAM_PLAN_V2.md` §11.
+- Дальше: после решений OD-1/OD-3 — их числа в #305; затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
 
 ## DOMAIN-V2 Wave 3a — TrainingSession v2 (#307, 2026-10-09)
 

@@ -10,6 +10,7 @@ from app.config import settings
 from app.db.repositories.training_sessions import BatchSetLogInput, SessionDetail
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.course_assessment import AssessmentRequiredError
 from app.services.live_engine import (
     ClientEvent,
     ClientEventConflictError,
@@ -212,6 +213,15 @@ async def start_live_session(
         )
     except TooEarlyError as exc:
         raise too_early_http_error(exc) from exc
+    except AssessmentRequiredError as exc:
+        # issue #305 (PROGRAM_PLAN_V2 §3): «Сначала тест на максимум».
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "code": "assessment_required", "protocol_id": exc.protocol_id,
+                "message": "Сначала тест на максимум — после него откроется основная тренировка.",
+            },
+        ) from exc
     except ActiveSessionConflictError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

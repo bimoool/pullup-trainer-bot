@@ -1,13 +1,19 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
-from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.course_prescription import (
+    AssessmentSource,
+    InclusionAssessmentState,
+    PrescriptionOverrides,
+)
 from app.domain.plan_occurrence import InclusionStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.services.course_assessment import CourseAssessmentService, initial_inclusion_state
 
 
 @dataclass(frozen=True)
@@ -54,62 +60,6 @@ def _freeze_slots(snapshot: dict, program: Program) -> dict:
     return {**snapshot, "slots": [slot.to_dict() for slot in slots]}
 
 
-def _build_initial_progression_state(
-    program: Program, request: ProgramInclusionRequest, is_step: bool,
-) -> dict:
-    """Форма — та же, что app.db.repositories.workouts.NextBlockState/
-    scripts/backfill_multi_program.py::_build_progression_state отдают для
-    старой схемы (issue #165, план п.2 подтверждён Кириллом): GET
-    /api/v2/plan не должен видеть два разных формата progression_state в
-    зависимости от того, откуда взялась инклюзия. Без замера/интеграции с
-    AssessmentResult в этой волне (открытый вопрос плана, согласовано
-    Кириллом как "ок для этой волны") — старт либо с явно переданных
-    initial_target_a/b, либо с config.block_a/b.base_target, как у нового
-    пользователя без замера."""
-    if not is_step:
-        return {}
-
-    config = program.config or {}
-    block_a_config = config.get("block_a", {})
-    block_b_config = config.get("block_b", {})
-    target_a = request.initial_target_a if request.initial_target_a is not None else (
-        block_a_config.get("base_target", VOLUME_BLOCK.base_target)
-    )
-    target_b = request.initial_target_b if request.initial_target_b is not None else (
-        block_b_config.get("base_target", STRENGTH_BLOCK.base_target)
-    )
-    work_sets_a = block_a_config.get("work_sets", VOLUME_BLOCK.work_sets)
-
-    return {
-        "schema_version": 1,
-        "strategy_type": ProgressionStrategyType.STEP.value,
-        "block_a": {
-            "target": target_a,
-            "volume": request.initial_volume_a,
-            "work_sets": work_sets_a,
-            "work_sets_growth_reason": None,
-            "weak_streak": 0,
-            "stall_streak": 0,
-            "equipment_type": EquipmentType.BODYWEIGHT.value,
-            "equipment_value": None,
-            "equipment_item_id": None,
-            "needs_new_equipment": False,
-        },
-        "block_b": {
-            "target": target_b,
-            "volume": request.initial_volume_b,
-            "weak_streak": 0,
-            "equipment_type": EquipmentType.BODYWEIGHT.value,
-            "equipment_value": None,
-            "equipment_item_id": None,
-            "needs_new_equipment": False,
-            "is_heavy_next": False,
-            "heavy_equipment_value_next": None,
-        },
-        "workouts_completed_in_set": 0,
-    }
-
-
 class ProgramInclusionService:
     """Оркестрация POST /api/v2/program-inclusions (issue #165, волна 3):
     snapshot + копирование ProgramItem -> PlanItem + инициализация
@@ -146,12 +96,33 @@ class ProgramInclusionService:
         snapshot = _freeze_slots(
             _build_snapshot(program, program_items, step_roles if is_step else {}, strategy_type), program,
         )
-        progression_state = _build_initial_progression_state(program, request, is_step)
+        # issue #305 (PROGRAM_PLAN_V2 §3): стартовое состояние — чистое версионированное правило
+        # (InitialPrescriptionRule) от замера; провенанс (правило, версия, замер) — на инклюзии. Замер
+        # обязателен и его нет, а основных тренировок у пользователя не было → awaiting_assessment.
+        status = InclusionStatus.ACTIVE
+        provenance = None
+        baseline_result_id = None
+        if is_step:
+            now = datetime.now(UTC)
+            evaluation = await CourseAssessmentService(self._session).evaluate(user_id=user_id, program=program, now=now)
+            overrides = PrescriptionOverrides(
+                target_a=request.initial_target_a, target_b=request.initial_target_b,
+                volume_a=request.initial_volume_a, volume_b=request.initial_volume_b,
+            )
+            progression_state, provenance = initial_inclusion_state(program, evaluation, overrides, now=now)
+            if evaluation.state == InclusionAssessmentState.AWAITING_ASSESSMENT:
+                status = InclusionStatus.AWAITING_ASSESSMENT
+            if evaluation.assessment is not None and evaluation.assessment.source == AssessmentSource.ASSESSMENT_RESULT:
+                baseline_result_id = evaluation.assessment.id
+        else:
+            progression_state = {}
 
         inclusion = await self._plans.create_inclusion(
             training_plan_id=plan.id, program_id=program.id, snapshot=snapshot, progression_state=progression_state,
         )
-        inclusion.status = InclusionStatus.ACTIVE.value
+        inclusion.status = status.value
+        inclusion.prescription_provenance = provenance
+        inclusion.baseline_assessment_result_id = baseline_result_id
         # Занятия (одна строка = одно занятие) материализует converge_user_plan — вызывающий роут
         # зовёт PlanWeekService.ensure_current_plan_week сразу после подключения. Агрегатные строки
         # ProgramItem → PlanItem (count_per_week) больше не пишутся.
@@ -165,7 +136,10 @@ class ProgramInclusionService:
             return None
         previous = inclusions[-1]
         previous.is_active = True
-        previous.status = InclusionStatus.ACTIVE.value
+        # issue #305: возобновление не возвращает на замер и не снимает ожидание замера само —
+        # awaiting_assessment → active делает только promote_if_assessed (convergence / старт).
+        if previous.status != InclusionStatus.AWAITING_ASSESSMENT.value:
+            previous.status = InclusionStatus.ACTIVE.value
         previous.expires_at = None
         await self._session.flush()
         return previous

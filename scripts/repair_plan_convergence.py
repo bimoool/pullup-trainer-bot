@@ -34,7 +34,9 @@ the guards therefore allow (everything else still aborts):
     the explicit credit of a session that was linked to that aggregate in that week. Every other session
     field (status, dates, source, effort, comment, duration, blocks, set logs) must be unchanged;
   * inclusion cache fields: status / sequence_cursor (only from NULL), completed_main_sessions,
-    last_main_session_at. started_at / progression_state / initial_progression_state never change.
+    last_main_session_at. started_at / progression_state / initial_progression_state never change, except
+    the #305 transition awaiting_assessment -> active (assessment logged), which may also re-derive the
+    starting state by the same InitialPrescriptionRule; no inclusion is ever moved back to awaiting_assessment.
   * programs.access_level and users.subscription_* / subscriptions rows: never change.
 
     # deploy-time rehearsal over EVERY user with a plan (dry run; then --apply; then again: 0 mutations)
@@ -121,6 +123,7 @@ async def _capture(session: AsyncSession, user: User, plan: TrainingPlan) -> _St
             "expires_at": inc.expires_at, "snapshot": copy.deepcopy(inc.snapshot),
             "progression_state": copy.deepcopy(inc.progression_state),
             "initial_progression_state": copy.deepcopy(inc.initial_progression_state),
+            "status": inc.status, "prescription_provenance": copy.deepcopy(inc.prescription_provenance),
         }
     for week in (await session.execute(select(PlanWeek).where(PlanWeek.training_plan_id == plan.id))).scalars():
         state.weeks[week.id] = {"week_number": week.week_number, "start_date": week.start_date}
@@ -176,7 +179,17 @@ def _diff(before: _State, after: _State, *, current_week_number: int) -> tuple[d
         if a is None:
             violations.append(f"inclusion {inc_id} disappeared")
             continue
-        for key in ("program_id", "is_active", "started_at", "expires_at", "progression_state", "initial_progression_state"):
+        # issue #305: единственное разрешённое изменение состояния — переход awaiting_assessment → active
+        # (замер записан): status, провенанс и пересчитанное тем же правилом стартовое состояние.
+        promoted = b["status"] == "awaiting_assessment" and a["status"] == "active"
+        if b["status"] != a["status"] and b["status"] is not None and not promoted:
+            violations.append(f"inclusion {inc_id}: status {b['status']} -> {a['status']} is not allowed")
+        if a["status"] == "awaiting_assessment" and b["status"] != "awaiting_assessment":
+            violations.append(f"inclusion {inc_id}: pushed back to awaiting_assessment")
+        guarded = ("program_id", "is_active", "started_at", "expires_at")
+        if not promoted:
+            guarded += ("progression_state", "initial_progression_state", "prescription_provenance")
+        for key in guarded:
             if a[key] != b[key]:
                 violations.append(f"inclusion {inc_id}: {key} changed")
         b_snap, a_snap = b["snapshot"] or {}, a["snapshot"] or {}
