@@ -206,16 +206,15 @@ export function JournalV2Detail({
         </Button>
       )}
       {session.can_edit && (
-        <>
-          <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("edit")}>
-            <Icon name="edit" size={18} className="vp-icon-lead" />Изменить
-          </Button>
-          {session.source !== "elective" && (
-            <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("clone")}>
-              <Icon name="repeat" size={18} className="vp-icon-lead" />Повторить (клонировать)
-            </Button>
-          )}
-        </>
+        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("edit")}>
+          <Icon name="edit" size={18} className="vp-icon-lead" />Изменить
+        </Button>
+      )}
+      {/* #307 (ED1): копию разрешает сервер (can_clone); старый ответ без поля — прежнее правило. */}
+      {(session.can_clone ?? (session.can_edit && session.source !== "elective")) && (
+        <Button className="action-button" size="l" stretched mode="outline" onClick={() => setMode("clone")}>
+          <Icon name="repeat" size={18} className="vp-icon-lead" />Повторить (клонировать)
+        </Button>
       )}
       {session.can_delete && (
         <Button className="action-button" size="l" stretched mode="outline" loading={deleting} onClick={() => void handleDelete()}>

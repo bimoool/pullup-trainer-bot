@@ -803,6 +803,13 @@ export interface SessionResponseV2 {
   can_edit: boolean;
   /** #281 — своя живая тренировка, из которой выполнена сессия; «Открыть тренировку» только при не-null. */
   workout_id?: number | null;
+  /** #307 (ED1) — что можно менять и можно ли повторить копией; фронт эвристик не строит. */
+  editable_fields?: string[];
+  can_clone?: boolean;
+  edit_reason?: string | null;
+  source_v2?: string | null;
+  workout_definition_id?: number | null;
+  duration_source?: string | null;
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
 }
@@ -892,6 +899,9 @@ export interface SessionEditRequestV2 {
   effort?: string | null;
   comment?: string | null;
   sets: { block_index: number; set_number: number; value: string; effort: string | null; note: string | null }[];
+  /** #307 (J9): длительность (сек) и тип внешней активности; что разрешено — editable_fields. */
+  duration_seconds?: number;
+  activity_type?: string;
 }
 
 export async function editSession(

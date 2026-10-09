@@ -78,6 +78,11 @@ from app.services.live_session import (
     block_started_at,
     current_interval_timing,
 )
+from app.services.manual_session import (
+    ManualSessionError,
+    ManualSessionRequest,
+    ManualSessionService,
+)
 from app.services.plan_removal import (
     CREDITED_PLAN_ITEM_CODE,
     CreditedPlanItemError,
@@ -96,8 +101,12 @@ from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclu
 from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_deletion import SessionDeletionService
 from app.services.session_editing import EditOutcome, EditStatus, SessionEditingService, SetEdit
-from app.services.session_log import TrainingSessionLogService
 from app.services.training_analytics import resolve_timezone
+from app.services.training_session_v2 import (
+    SessionVerdicts,
+    TrainingSessionV2Service,
+    block_outcomes,
+)
 from app.services.workout_definition import PrescriptionView, WorkoutDefinitionService, block_views
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
@@ -136,6 +145,7 @@ from app.web.schemas_v2 import (
     SessionSetTargetResponse,
     SetLogInputSchema,
     SetLogResponse,
+    SetOutcomeResponse,
     TrainingPlanResponse,
     WorkoutCreateRequest,
     WorkoutItemCreateRequest,
@@ -261,8 +271,8 @@ def _set_log_note(source: SessionSource, note: str | None, value: Decimal | None
 
 def _session_response(
     detail: SessionDetail, *, progression: SessionProgressionResponse | None, skipped_reason: str | None,
-    title: str | None = None, exercise_names: dict[int, str] | None = None, can_delete: bool = False,
-    workout_id: int | None = None,
+    title: str | None = None, exercise_names: dict[int, str] | None = None,
+    verdicts: SessionVerdicts | None = None, workout_id: int | None = None,
 ) -> SessionResponse:
     """exercise_names — имена из каталога для блоков без замороженного снимка
     (manual/STEP); внутренние STEP-роли в него не попадают, поэтому у их
@@ -299,16 +309,36 @@ def _session_response(
                 )
                 for log in block.set_logs
             ],
+            outcomes=[
+                SetOutcomeResponse(
+                    prescribed_set_number=o.prescribed_set_number,
+                    target=str(o.target) if o.target is not None else None,
+                    actual=str(o.actual) if o.actual is not None else None,
+                    is_max_set=o.is_max_set, is_extra=o.is_extra, status=o.status.value,
+                )
+                for o in block_outcomes(block)
+            ],
         )
 
+    edit = verdicts.edit if verdicts is not None else None
     return SessionResponse(
         id=detail.id, source=detail.source.value, status=detail.status.value,
         performed_at=detail.performed_at, effort=str(detail.effort) if detail.effort is not None else None,
-        comment=detail.comment, title=activity_label(detail.activity_type) or title, can_delete=can_delete,
-        can_edit=can_delete, activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
+        comment=detail.comment, title=activity_label(detail.activity_type) or title,
+        can_delete=verdicts is not None and verdicts.delete.can_delete,
+        # can_edit — прежний смысл для экрана правки: правится целиком (у внешней активности — без подходов).
+        can_edit=edit is not None and (edit.can_edit_sets or detail.kind == "external_activity"),
+        activity_type=detail.activity_type, duration_seconds=detail.duration_seconds,
         blocks=[_block(block, item) for block, item in zip(detail.blocks, snapshot_items, strict=True)],
         progression_result=progression, progression_skipped_reason=skipped_reason, workout_id=workout_id,
-        plan_item_id=detail.plan_item_id,
+        plan_item_id=detail.plan_item_id, kind=detail.kind, source_v2=detail.source_v2, origin=detail.origin,
+        workout_definition_id=detail.workout_definition_id,
+        workout_definition_version_id=detail.workout_definition_version_id,
+        duration_source=detail.duration_source, distance_meters=detail.distance_meters,
+        started_at=detail.started_at, ended_at=detail.ended_at, revision=detail.revision,
+        editable_fields=sorted(field.value for field in edit.fields) if edit is not None else [],
+        can_clone=edit is not None and edit.can_clone, edit_reason=edit.reason if edit is not None else None,
+        prescription_snapshot=detail.prescription_snapshot,
     )
 
 
@@ -320,6 +350,9 @@ async def _openable_workout_ids(
     (архивная) или чужая тренировка — ссылки нет, а не мёртвая кнопка."""
     referenced: dict[int, int] = {}
     for detail in details:
+        if detail.workout_definition_id is not None:  # issue #307: явная идентичность сессии
+            referenced[detail.id] = detail.workout_definition_id
+            continue
         raw = (detail.workout_snapshot or {}).get("workout_id")
         if isinstance(raw, int) and not isinstance(raw, bool):
             referenced[detail.id] = raw
@@ -1315,13 +1348,23 @@ async def _resolve_session_titles(
         if program_backed is not None:
             titles[detail.id] = program_name_by_inclusion.get(program_backed.program_inclusion_id)
         elif complex_backed is not None:
-            titles[detail.id] = workout_title_by_complex_id.get(complex_backed.complex_id)
+            # S2 (issue #307): история показывает имя, замороженное при старте, а не текущее имя
+            # изменяемой тренировки; без снимка (старые строки) — имя тренировки, как раньше.
+            titles[detail.id] = (
+                (detail.workout_snapshot or {}).get("title")
+                or (detail.prescription_snapshot or {}).get("title")
+                or workout_title_by_complex_id.get(complex_backed.complex_id)
+            )
         elif source_items and source_items[0].exercise_id is not None:
             titles[detail.id] = exercise_name_by_id.get(source_items[0].exercise_id)
         elif detail.workout_snapshot is not None:
             # «Начать» с Workout Detail (без PlanItem) и копия сессии (#304: копия не связана с планом) —
             # заголовок из замороженного снимка тренировки.
             titles[detail.id] = detail.workout_snapshot.get("title")
+        elif detail.workout_definition_id is not None and detail.prescription_snapshot is not None:
+            # issue #307 (D9): запись известной тренировки без Builder-протокола — заголовок из снимка
+            # рецепта (S2: история рендерится из снимка, а не из изменяемого определения).
+            titles[detail.id] = detail.prescription_snapshot.get("title") or None
         else:
             titles[detail.id] = None
     return titles
@@ -1383,13 +1426,13 @@ async def list_sessions(
     details = fetched[:limit]
     titles = await _resolve_session_titles(session, details, user.id)
     names = await _catalog_exercise_names(session, details)
-    verdicts = await SessionDeletionService(session).evaluate(details, user.id)
+    verdicts = await TrainingSessionV2Service(session).verdicts(details, user.id)
     workout_ids = await _openable_workout_ids(session, details, user.id)
     return SessionListResponse(
         sessions=[
             _session_response(
                 detail, progression=None, skipped_reason=None, title=titles.get(detail.id),
-                exercise_names=names, can_delete=verdicts[detail.id].can_delete,
+                exercise_names=names, verdicts=verdicts[detail.id],
                 workout_id=workout_ids.get(detail.id),
             )
             for detail in details
@@ -1476,11 +1519,11 @@ async def _single_session_response(session: AsyncSession, session_id: int, user_
     detail = await TrainingSessionRepository(session).get_for_user(session_id, user_id)
     titles = await _resolve_session_titles(session, [detail], user_id)
     names = await _catalog_exercise_names(session, [detail])
-    verdict = (await SessionDeletionService(session).evaluate([detail], user_id))[detail.id]
+    verdicts = (await TrainingSessionV2Service(session).verdicts([detail], user_id))[detail.id]
     workout_ids = await _openable_workout_ids(session, [detail], user_id)
     return _session_response(
         detail, progression=None, skipped_reason=None, title=titles.get(detail.id),
-        exercise_names=names, can_delete=verdict.can_delete, workout_id=workout_ids.get(detail.id),
+        exercise_names=names, verdicts=verdicts, workout_id=workout_ids.get(detail.id),
     )
 
 
@@ -1504,6 +1547,9 @@ async def edit_session(
         comment=(body.comment,) if "comment" in fields else None,
         sets=[SetEdit(s.block_index, s.set_number, s.value, s.effort, s.note) for s in body.sets],
         now=datetime.now(UTC),
+        duration_seconds=(body.duration_seconds,) if "duration_seconds" in fields else None,
+        activity_type=body.activity_type,
+        distance_meters=(body.distance_meters,) if "distance_meters" in fields else None,
     )
     _raise_for_edit_failure(outcome)
     return await _single_session_response(session, session_id, user.id)
@@ -1582,17 +1628,31 @@ async def create_session(
             block.complex_id, user.id,
         ) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    if body.workout_definition_id is not None and await program_repo.get_visible_workout_for_user(
+        body.workout_definition_id, user.id,
+    ) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
     # Запись задним числом/свободная активность завершена в момент performed_at:
     # длительность не выводится из «сейчас» (иначе минуты Analytics были бы вымышлены).
     completed_at = body.performed_at if is_journal_entry else None
-    result, inclusion_not_found = await TrainingSessionLogService(session).record_session(
-        user_id=user.id, source=SessionSource(body.source), performed_at=body.performed_at,
-        effort=body.effort, comment=body.comment, blocks=[_block_input(b) for b in body.blocks],
-        program_inclusion_id=body.program_inclusion_id, completed_at=completed_at,
-        activity_type=body.activity_type, duration_seconds=body.duration_seconds,
-    )
-    if inclusion_not_found:
+    try:
+        outcome = await ManualSessionService(session).record(
+            user.id,
+            ManualSessionRequest(
+                source=SessionSource(body.source), performed_at=body.performed_at,
+                blocks=[_block_input(b) for b in body.blocks], effort=body.effort, comment=body.comment,
+                program_inclusion_id=body.program_inclusion_id, activity_type=body.activity_type,
+                duration_seconds=body.duration_seconds, distance_meters=body.distance_meters,
+                workout_definition_id=body.workout_definition_id, client_session_id=body.client_session_id,
+                timezone=user.timezone, completed_at=completed_at,
+            ),
+            now=datetime.now(UTC),
+        )
+    except ManualSessionError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if outcome.inclusion_not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ProgramInclusion not found")
+    result = outcome.result
 
     progression = None
     if result.progression_result is not None:
@@ -1611,8 +1671,14 @@ async def create_session(
     # Коммит до ответа: Журнал перечитывает список сразу после записи (#263), а коммит
     # зависимости get_session выполняется уже после отправки ответа.
     await session.commit()
+    detail = result.session
+    titles = await _resolve_session_titles(session, [detail], user.id)
+    names = await _catalog_exercise_names(session, [detail])
+    verdicts = (await TrainingSessionV2Service(session).verdicts([detail], user.id))[detail.id]
+    workout_ids = await _openable_workout_ids(session, [detail], user.id)
     return _session_response(
-        result.session, progression=progression, skipped_reason=result.progression_skipped_reason,
+        detail, progression=progression, skipped_reason=result.progression_skipped_reason,
+        title=titles.get(detail.id), exercise_names=names, verdicts=verdicts, workout_id=workout_ids.get(detail.id),
     )
 
 
@@ -1906,7 +1972,7 @@ async def complete_live_session(
     user = await _require_user(session, init_data)
     result, not_found = await LiveSessionService(session).complete_session(
         session_id=session_id, user_id=user.id, abandoned=body.abandoned,
-        effort=body.effort, comment=body.comment,
+        effort=body.effort, comment=body.comment, active_elapsed_ms=body.active_elapsed_ms,
     )
     if not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")

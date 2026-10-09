@@ -612,6 +612,41 @@ class TrainingSession(Base):
     plan_item_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("plan_items.id", ondelete="SET NULL"), nullable=True, index=True,
     )
+    # --- TrainingSession v2 (issue #307, docs/domain/TRAINING_SESSION_V2.md §2–§4) ---------------
+    # Значения — app.domain.training_session_v2 (SessionKind/SessionSourceV2/SessionOrigin/
+    # DurationSource); строки, не PG enum: CHECK в миграции f4c1a7e9b3d2. NULL — строка старого кода,
+    # записанная после миграции и до выкладки нового (читатель выводит значение тем же
+    # legacy_source_v2, что и backfill).
+    kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_v2: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    workout_definition_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("complexes.id", ondelete="SET NULL"), nullable=True,
+    )
+    workout_definition_version_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("workout_definition_versions.id", ondelete="SET NULL"), nullable=True,
+    )
+    # PrescriptionSnapshot (WORKOUT_DOMAIN_V2 §5, S1): пишется один раз при создании, не правится (ED3).
+    prescription_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    program_inclusion_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("program_inclusions.id", ondelete="SET NULL"), nullable=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    distance_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    spacing_violation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    engine_version: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    superseded_by_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("training_sessions.id", ondelete="SET NULL"), nullable=True,
+    )
+    identity_recovered_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    __table_args__ = (
+        Index("ix_training_sessions_user_workout_definition", "user_id", "workout_definition_id"),
+    )
 
 
 class SessionPlanItem(Base):
@@ -657,6 +692,10 @@ class SessionBlock(Base):
     # performed_at" (см. app.services.live_session._block_started_at).
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # issue #307 (TRAINING_SESSION_V2 §3): ключ блока снимка, статус и конец блока. NULL у истории.
+    block_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class SetTarget(Base):
@@ -678,6 +717,9 @@ class SetTarget(Base):
     effort: Mapped[Decimal | None] = mapped_column(Numeric(3, 1), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # issue #307: SetKind цели (reps/max_reps/time/max_time). NULL у истории — выводится из
+    # metric_type + is_max_set.
+    kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class SetLog(Base):
@@ -717,6 +759,11 @@ class SetLog(Base):
     set_index: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     # issue #264: «+ Ещё подход» — подход сверх плана; прогрессия его игнорирует.
     is_extra: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # issue #307 (TRAINING_SESSION_V2 §3): номер раунда интервала, статус подхода
+    # (performed | not_performed — app.domain.training_session_v2.SetStatus), фактическая нагрузка.
+    round_index: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="performed", server_default="performed")
+    load_actual: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("session_id", "set_index", name="uq_set_logs_session_set_index"),

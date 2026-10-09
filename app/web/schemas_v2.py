@@ -3,6 +3,7 @@
 (старая схема подтягиваний), не расширяет его: поля/формы здесь принципиально
 другие (Exercise/TrainingSession вместо Block/Workout)."""
 
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -477,8 +478,8 @@ class SessionBlockInputSchema(BaseModel):
     def _exactly_one_target(self) -> "SessionBlockInputSchema":
         if (self.exercise_id is None) == (self.complex_id is None):
             raise ValueError("ровно одно из exercise_id/complex_id")
-        if not self.sets:
-            raise ValueError("sets не может быть пустым")
+        # Пустой блок допустим только у записи известной тренировки (workout_definition_id) —
+        # проверяет SessionCreateRequest: упражнение тренировки, которое не выполнялось.
         return self
 
 
@@ -493,6 +494,12 @@ class SessionCreateRequest(BaseModel):
     # blocks пуст. Остальные поля игнорируются для обычных источников.
     activity_type: str | None = None
     duration_seconds: int | None = None
+    # issue #307 (TRAINING_SESSION_V2 §2, D9): запись известной тренировки («Тренировку из моих») —
+    # сервер строит рецепт и снимок тем же путём, что живой старт; blocks — все упражнения тренировки
+    # по порядку (пустой sets — не выполнялось). client_session_id — ключ идемпотентности повтора.
+    workout_definition_id: int | None = None
+    client_session_id: uuid.UUID | None = None
+    distance_meters: int | None = Field(default=None, ge=1, le=1_000_000)
 
     @model_validator(mode="after")
     def _journal_log_rules(self) -> "SessionCreateRequest":
@@ -511,11 +518,25 @@ class SessionCreateRequest(BaseModel):
                 raise ValueError("у свободной активности нет блоков")
             if self.program_inclusion_id is not None:
                 raise ValueError("свободная активность не привязывается к программе")
-        elif self.activity_type is not None or self.duration_seconds is not None:
-            raise ValueError("activity_type/duration_seconds — только для source=freeform активности")
+        elif self.activity_type is not None:
+            raise ValueError("activity_type — только для source=freeform активности")
+        elif self.duration_seconds is not None and (
+            self.source != "backdated"
+            or not MIN_ACTIVITY_SECONDS <= self.duration_seconds <= MAX_ACTIVITY_SECONDS
+        ):
+            # R3: у ручной силовой записи длительность — введённая пользователем (entered), иначе unknown.
+            raise ValueError("duration_seconds — у активности или записи задним числом, от 1 минуты до 12 часов")
+        if self.distance_meters is not None and self.activity_type is None:
+            raise ValueError("distance_meters — только у активности")
+        if self.workout_definition_id is not None and self.source != "backdated":
+            raise ValueError("workout_definition_id — только у записи задним числом")
+        if self.workout_definition_id is None and any(not block.sets for block in self.blocks):
+            raise ValueError("sets не может быть пустым")
         if self.source == "backdated":
             if not self.blocks:
                 raise ValueError("blocks не может быть пустым")
+            if not any(block.sets for block in self.blocks):
+                raise ValueError("Введи хотя бы один подход")
             if self.program_inclusion_id is not None:
                 raise ValueError("записанная задним числом тренировка не меняет прогрессию программы")
         return self
@@ -530,6 +551,18 @@ class SetLogResponse(BaseModel):
     effort: str | None
     note: str | None
     is_extra: bool = False
+
+
+class SetOutcomeResponse(BaseModel):
+    """issue #307 (TRAINING_SESSION_V2 §3, R1/R2): исход подхода — факт против рецепта.
+    prescribed_set_number/target — null у подхода сверх рецепта; actual — null у невыполненного."""
+
+    prescribed_set_number: int | None
+    target: str | None
+    actual: str | None
+    is_max_set: bool
+    is_extra: bool
+    status: Literal["performed", "not_performed"]
 
 
 class SessionSetTargetResponse(BaseModel):
@@ -565,6 +598,8 @@ class SessionBlockResponse(BaseModel):
     started_at: datetime | None = None
     set_targets: list[SessionSetTargetResponse] = []
     interval_config: IntervalConfigResponse | None = None
+    # issue #307: сопоставление факта с рецептом (не выполнено / сверх плана / подход на максимум).
+    outcomes: list[SetOutcomeResponse] = []
 
 
 class BlockProgressionResponse(BaseModel):
@@ -616,6 +651,24 @@ class SessionResponse(BaseModel):
     progression_skipped_reason: str | None
     # issue #304 (PL2): явно засчитанное занятие плана; None — прямой старт / копия / ручная запись.
     plan_item_id: int | None = None
+    # --- issue #307 (TRAINING_SESSION_V2 §2–§4): канонические поля сессии ---
+    kind: str = "strength"
+    source_v2: str | None = None
+    origin: str | None = None
+    workout_definition_id: int | None = None
+    workout_definition_version_id: int | None = None
+    duration_source: str | None = None
+    distance_meters: int | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    revision: int = 0
+    # ED1: что можно менять (date/duration/effort/comment/set_actuals/set_notes/activity_type/distance),
+    # можно ли повторить копией и почему нет. can_edit выше — «правится целиком, включая значения
+    # подходов» (прежний смысл для текущего экрана правки).
+    editable_fields: list[str] = []
+    can_clone: bool = False
+    edit_reason: str | None = None
+    prescription_snapshot: dict | None = None
 
 
 class JournalDayResponse(BaseModel):

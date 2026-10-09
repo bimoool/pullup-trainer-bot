@@ -9,6 +9,7 @@ import {
   buildEditPayload, initialDraft, isDateAllowed, SET_NOTE_MAX, todayKey, type EditDraft, type SetDraft,
 } from "./journalEdit";
 import { sanitizeDecimalInput } from "./decimalInput";
+import { ACTIVITY_TYPE_OPTIONS } from "./journalLog";
 
 const UNIT_LABELS: Record<string, string> = { reps: "повт.", s: "сек", kg: "кг", deg: "°", m: "м" };
 
@@ -131,6 +132,26 @@ export function JournalV2EditForm({
           </Section>
         );
       })}
+
+      {draft.activity !== null && (
+        <>
+          <span className="field-label">Тип активности</span>
+          <select
+            className="journal-edit-select" aria-label="Тип активности" value={draft.activity.type}
+            onChange={(e) => setDraft({ ...draft, activity: { ...draft.activity!, type: e.target.value } })}
+          >
+            {ACTIVITY_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="field-label">Длительность (ч:мм)</span>
+          <input
+            className="journal-edit-input" type="text" inputMode="numeric" aria-label="Длительность активности"
+            placeholder="1:30" value={draft.activity.duration}
+            onChange={(e) => setDraft({ ...draft, activity: { ...draft.activity!, duration: e.target.value } })}
+          />
+        </>
+      )}
 
       <span className="field-label">Как прошла тренировка?</span>
       <EffortSelect

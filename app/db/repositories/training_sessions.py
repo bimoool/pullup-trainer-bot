@@ -22,6 +22,16 @@ from app.domain.constants import ExerciseType
 from app.domain.live_session import DEFAULT_UNIT_BY_METRIC_TYPE
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.plan_occurrence import MAIN_SLOT_KEY
+from app.domain.training_session_v2 import (
+    DurationSource,
+    SessionOrigin,
+    SessionSourceV2,
+    SessionTimes,
+    SetStatus,
+    legacy_source_v2,
+    measured_duration,
+    move_session_date,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +63,15 @@ class SetTargetInput:
     value: Decimal
     unit: str
     is_max_set: bool = False
+    kind: str | None = None  # issue #307: SetKind цели
+
+
+def target_kind(target: SetTargetInput) -> str:
+    """SetKind цели (issue #307) из metric_type + is_max_set — то, что уже знает SetTarget."""
+    time_based = target.metric_type == MetricType.TIME
+    if target.is_max_set:
+        return "max_time" if time_based else "max_reps"
+    return "time" if time_based else "reps"
 
 
 @dataclass(frozen=True)
@@ -91,6 +110,8 @@ class SessionSetLogDetail:
     # #292: ключ идемпотентности живой сессии — клиент перезаписывает ИМ ЖЕ
     # переоткрытый подход (None у записей не-live пути).
     set_index: int | None = None
+    # issue #307: performed | not_performed (TRAINING_SESSION_V2 §3).
+    status: str = SetStatus.PERFORMED.value
 
 
 @dataclass(frozen=True)
@@ -100,6 +121,7 @@ class SessionSetTargetDetail:
     metric_type: MetricType
     value: Decimal
     unit: str
+    kind: str | None = None  # issue #307: SetKind цели; None у истории
 
 
 @dataclass(frozen=True)
@@ -118,6 +140,28 @@ class SessionBlockDetail:
     set_targets: list[SessionSetTargetDetail] = field(default_factory=list)
     result: dict | None = None
     started_at: datetime | None = None
+    block_key: str | None = None
+
+
+@dataclass(frozen=True)
+class SessionV2Stamp:
+    """Поля TrainingSession v2 (issue #307, TRAINING_SESSION_V2 §2), которые пишет канонический слой
+    app.services.training_session_v2 при создании сессии. source_v2/kind/origin задаются при создании и
+    потом не выводятся заново (кроме детерминированного backfill строк старого кода)."""
+
+    kind: str
+    source_v2: str
+    origin: str = SessionOrigin.NATIVE.value
+    workout_definition_id: int | None = None
+    workout_definition_version_id: int | None = None
+    prescription_snapshot: dict | None = None
+    program_inclusion_id: int | None = None
+    started_at: datetime | None = None
+    timezone: str | None = None
+    duration_seconds: int | None = None
+    duration_source: str | None = None
+    distance_meters: int | None = None
+    engine_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +197,24 @@ class SessionDetail:
     blocks: list[SessionBlockDetail] = field(default_factory=list)
     # issue #304: явно засчитанное занятие плана (PL2); None — прямой старт / копия / ручная запись.
     plan_item_id: int | None = None
+    # --- issue #307 (TRAINING_SESSION_V2 §2). source_v2/kind/origin всегда заполнены: у строки старого
+    # кода (NULL в БД) — выведены тем же legacy_source_v2, что и backfill.
+    kind: str = "strength"
+    source_v2: str = SessionSourceV2.MANUAL_CUSTOM.value
+    origin: str = SessionOrigin.NATIVE.value
+    workout_definition_id: int | None = None
+    workout_definition_version_id: int | None = None
+    prescription_snapshot: dict | None = None
+    program_inclusion_id: int | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_source: str | None = None
+    timezone: str | None = None
+    distance_meters: int | None = None
+    revision: int = 0
+    engine_version: int | None = None
+    superseded_by_id: int | None = None
+    identity_recovered_by: str | None = None
 
 
 class TrainingSessionRepository:
@@ -169,13 +231,23 @@ class TrainingSessionRepository:
         self, *, user_id: int, source: SessionSource, performed_at: datetime,
         effort: Decimal | None, comment: str | None, blocks: list[SessionBlockInput],
         completed_at: datetime | None = None, activity_type: str | None = None,
-        duration_seconds: int | None = None,
+        duration_seconds: int | None = None, targets_by_block: list[list[SetTargetInput]] | None = None,
+        workout_snapshot: dict | None = None, client_session_id: uuid.UUID | None = None,
     ) -> TrainingSession:
+        """Завершённая сессия одним запросом (ручная запись Журнала, запись программы).
+
+        issue #307: targets_by_block — рецепт известной тренировки (manual_existing_workout; тот же
+        резолв, что у живого старта). Тогда каждый факт связывается со своей целью ПО ПОРЯДКУ в блоке
+        (set_target_id) и наследует её is_max_set (R2); цели без факта — невыполненные подходы (R1).
+        Факты сверх числа целей пишутся как is_extra. workout_snapshot — тот же v1-снимок, что пишет
+        живой старт. client_session_id — ключ идемпотентности ручной записи (тот же глобально
+        уникальный столбец, что у живого старта)."""
         training_session = TrainingSession(
             user_id=user_id, source=source, status=SessionStatus.COMPLETED,
             performed_at=performed_at, effort=effort, comment=comment,
             completed_at=completed_at if completed_at is not None else datetime.now(UTC),
             activity_type=activity_type, duration_seconds=duration_seconds,
+            workout_snapshot=workout_snapshot, client_session_id=client_session_id,
         )
         self._session.add(training_session)
         await self._session.flush()
@@ -187,11 +259,26 @@ class TrainingSessionRepository:
             )
             self._session.add(session_block)
             await self._session.flush()
-            for set_log in block.sets:
+            targets: list[SetTarget] = []
+            for target in (targets_by_block[order_index] if targets_by_block is not None else []):
+                row = SetTarget(
+                    session_block_id=session_block.id, set_number=target.set_number,
+                    is_max_set=target.is_max_set, metric_type=target.metric_type,
+                    value=target.value, unit=target.unit, kind=target.kind or target_kind(target),
+                )
+                self._session.add(row)
+                targets.append(row)
+            if targets:
+                await self._session.flush()
+            for position, set_log in enumerate(sorted(block.sets, key=lambda s: s.set_number)):
+                target = targets[position] if position < len(targets) else None
                 self._session.add(
                     SetLog(
                         session_block_id=session_block.id, set_number=set_log.set_number,
-                        is_max_set=set_log.is_max_set, metric_type=set_log.metric_type,
+                        set_target_id=target.id if target is not None else None,
+                        is_max_set=set_log.is_max_set or (target is not None and target.is_max_set),
+                        is_extra=targets_by_block is not None and target is None,
+                        metric_type=set_log.metric_type,
                         value=set_log.value, unit=set_log.unit, effort=set_log.effort, note=set_log.note,
                     ),
                 )
@@ -236,7 +323,7 @@ class TrainingSessionRepository:
                     SetTarget(
                         session_block_id=session_block.id, set_number=target.set_number,
                         is_max_set=target.is_max_set, metric_type=target.metric_type,
-                        value=target.value, unit=target.unit,
+                        value=target.value, unit=target.unit, kind=target.kind or target_kind(target),
                     ),
                 )
 
@@ -469,17 +556,50 @@ class TrainingSessionRepository:
             training_session.comment = comment
         await self._session.flush()
 
-    async def mark_completed(self, session_id: int, completed_at: datetime | None = None) -> None:
-        """Завершение живой сессии — status/phase_name/phase_ends_at только;
+    async def mark_completed(
+        self, session_id: int, completed_at: datetime | None = None, *, active_elapsed_ms: int | None = None,
+    ) -> None:
+        """Завершение живой сессии — status/phase_name/phase_ends_at;
         "зачтено ли что-то в прогрессию" (abandoned) — транзитная деталь
         запроса, не состояние сессии, поэтому не персистится здесь (решает
         app.services.live_session.complete_session, вызывающий этот метод
-        одинаково в обоих случаях)."""
+        одинаково в обоих случаях).
+
+        issue #307 (R3): здесь же — ЕДИНСТВЕННОЕ место, где живая сессия получает ended_at и
+        длительность (через него проходят complete, finish interval и ленивая финализация интервала).
+        active_elapsed_ms — от движка v2 (#306, паузы исключены); без него — стенные часы
+        started_at (или performed_at) → completed_at в окне [1 мин, 6 ч], иначе unknown."""
         training_session = await self._session.get(TrainingSession, session_id)
         training_session.status = SessionStatus.COMPLETED
         training_session.completed_at = completed_at if completed_at is not None else datetime.now(UTC)
         training_session.phase_name = SessionPhase.DONE
         training_session.phase_ends_at = None
+        training_session.ended_at = training_session.completed_at
+        duration = measured_duration(
+            training_session.started_at or training_session.performed_at, training_session.ended_at,
+            active_elapsed_ms=active_elapsed_ms,
+        )
+        training_session.duration_seconds = duration.seconds
+        training_session.duration_source = duration.source.value
+        await self._session.flush()
+
+    async def apply_v2_stamp(self, session_id: int, stamp: SessionV2Stamp) -> None:
+        """Записывает поля v2 только что созданной сессии (тот же запрос/транзакция, что и создание)."""
+        training_session = await self._session.get(TrainingSession, session_id)
+        training_session.kind = stamp.kind
+        training_session.source_v2 = stamp.source_v2
+        training_session.origin = stamp.origin
+        training_session.workout_definition_id = stamp.workout_definition_id
+        training_session.workout_definition_version_id = stamp.workout_definition_version_id
+        training_session.prescription_snapshot = stamp.prescription_snapshot
+        training_session.program_inclusion_id = stamp.program_inclusion_id
+        training_session.started_at = stamp.started_at
+        training_session.timezone = stamp.timezone
+        training_session.distance_meters = stamp.distance_meters
+        training_session.engine_version = stamp.engine_version
+        if stamp.duration_source is not None:
+            training_session.duration_seconds = stamp.duration_seconds
+            training_session.duration_source = stamp.duration_source
         await self._session.flush()
 
     async def delete_session(self, session_id: int) -> None:
@@ -562,7 +682,7 @@ class TrainingSessionRepository:
                         SessionSetLogDetail(
                             set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type,
                             value=log.value, unit=log.unit, effort=log.effort, note=log.note,
-                            is_extra=log.is_extra, set_index=log.set_index,
+                            is_extra=log.is_extra, set_index=log.set_index, status=log.status,
                         )
                         for log in set_logs_by_block[block.id]
                     ],
@@ -570,10 +690,11 @@ class TrainingSessionRepository:
                         SessionSetTargetDetail(
                             set_number=target.set_number, is_max_set=target.is_max_set,
                             metric_type=target.metric_type, value=target.value, unit=target.unit,
+                            kind=target.kind,
                         )
                         for target in set_targets_by_block[block.id]
                     ],
-                    result=block.result, started_at=block.started_at,
+                    result=block.result, started_at=block.started_at, block_key=block.block_key,
                 )
                 for block in blocks_by_session[session_row.id]
             ]
@@ -588,6 +709,26 @@ class TrainingSessionRepository:
                     workout_snapshot=session_row.workout_snapshot,
                     activity_type=session_row.activity_type, duration_seconds=session_row.duration_seconds,
                     blocks=block_details, plan_item_id=session_row.plan_item_id,
+                    kind=session_row.kind or ("external_activity" if session_row.activity_type else "strength"),
+                    source_v2=session_row.source_v2 or legacy_source_v2(
+                        legacy_source=SessionSource(session_row.source).value,
+                        has_activity=session_row.activity_type is not None,
+                        has_workout_snapshot=session_row.workout_snapshot is not None,
+                        is_live=session_row.client_session_id is not None,
+                    ).value,
+                    origin=session_row.origin or (
+                        SessionOrigin.LEGACY_ELECTIVE.value if session_row.source == SessionSource.ELECTIVE
+                        else SessionOrigin.NATIVE.value
+                    ),
+                    workout_definition_id=session_row.workout_definition_id,
+                    workout_definition_version_id=session_row.workout_definition_version_id,
+                    prescription_snapshot=session_row.prescription_snapshot,
+                    program_inclusion_id=session_row.program_inclusion_id,
+                    started_at=session_row.started_at, ended_at=session_row.ended_at,
+                    duration_source=session_row.duration_source, timezone=session_row.timezone,
+                    distance_meters=session_row.distance_meters, revision=session_row.revision,
+                    engine_version=session_row.engine_version, superseded_by_id=session_row.superseded_by_id,
+                    identity_recovered_by=session_row.identity_recovered_by,
                 ),
             )
         return details
@@ -735,14 +876,18 @@ class TrainingSessionRepository:
         return [(row.category, row.subcategory) for row in result.all()]
 
     async def list_completed_for_workout(self, user_id: int, workout_id: int) -> list[SessionDetail]:
-        """Завершённые сессии пользователя, чей замороженный workout_snapshot
-        ссылается на этот Workout (workout_snapshot.workout_id). Новые первыми."""
+        """Завершённые сессии пользователя этого Workout: явная идентичность (workout_definition_id,
+        issue #307 — в т.ч. «Тренировку из моих») или, у строк до неё, замороженный workout_snapshot
+        (workout_snapshot.workout_id). Новые первыми."""
         result = await self._session.execute(
             select(TrainingSession)
             .where(
                 TrainingSession.user_id == user_id,
                 TrainingSession.status == SessionStatus.COMPLETED,
-                TrainingSession.workout_snapshot["workout_id"].astext == str(workout_id),
+                or_(
+                    TrainingSession.workout_definition_id == workout_id,
+                    TrainingSession.workout_snapshot["workout_id"].astext == str(workout_id),
+                ),
             )
             .order_by(TrainingSession.performed_at.desc(), TrainingSession.id.desc()),
         )
@@ -791,19 +936,43 @@ class TrainingSessionRepository:
     async def update_session_fields(
         self, session_id: int, *, performed_at: datetime | None = None,
         effort: tuple[Decimal | None] | None = None, comment: tuple[str | None] | None = None,
+        duration_seconds: tuple[int | None] | None = None, activity_type: str | None = None,
+        distance_meters: tuple[int | None] | None = None,
     ) -> None:
-        """Правка завершённой сессии (#262). effort/comment — однокортежи, чтобы
-        отличить "не менять" (None) от "очистить" ((None,)). Блоки/подходы не
-        трогаются."""
+        """Правка завершённой сессии (#262, #307). Однокортежи отличают "не менять" (None) от
+        "очистить" ((None,)). Блоки/подходы не трогаются.
+
+        R4 (#307, D13): смена даты сдвигает performed_at и started/ended/completed_at на одну дельту
+        (app.domain.training_session_v2.move_session_date) — duration_seconds не меняется. Раньше
+        completed_at «подтягивался» к performed_at и стирал длительность. duration_seconds — введённая
+        пользователем длительность (entered), (None,) — неизвестна. ED2: каждая правка — revision + 1."""
         training_session = await self._session.get(TrainingSession, session_id)
         if performed_at is not None:
-            training_session.performed_at = performed_at
-            if training_session.completed_at is not None and training_session.completed_at < performed_at:
-                training_session.completed_at = performed_at
+            moved = move_session_date(
+                SessionTimes(
+                    performed_at=training_session.performed_at, started_at=training_session.started_at,
+                    ended_at=training_session.ended_at, completed_at=training_session.completed_at,
+                ),
+                performed_at,
+            )
+            training_session.performed_at = moved.performed_at
+            training_session.started_at = moved.started_at
+            training_session.ended_at = moved.ended_at
+            training_session.completed_at = moved.completed_at
         if effort is not None:
             training_session.effort = effort[0]
         if comment is not None:
             training_session.comment = comment[0]
+        if duration_seconds is not None:
+            training_session.duration_seconds = duration_seconds[0]
+            training_session.duration_source = (
+                DurationSource.ENTERED.value if duration_seconds[0] is not None else DurationSource.UNKNOWN.value
+            )
+        if activity_type is not None:
+            training_session.activity_type = activity_type
+        if distance_meters is not None:
+            training_session.distance_meters = distance_meters[0]
+        training_session.revision = (training_session.revision or 0) + 1
         training_session.updated_at = datetime.now(UTC)
         await self._session.flush()
 
@@ -910,16 +1079,23 @@ class TrainingSessionRepository:
         training_session.plan_item_id = plan_item_id
         await self._session.flush()
 
-    async def clone_session(self, source_id: int, *, user_id: int, performed_at: datetime) -> TrainingSession:
+    async def clone_session(
+        self, source_id: int, *, user_id: int, performed_at: datetime, stamp: SessionV2Stamp,
+    ) -> TrainingSession:
         """Копия завершённой сессии (#262): новая COMPLETED-сессия source=BACKDATED
         с теми же блоками/целями/фактом/снимком, БЕЗ кредита плана (#304). Никакой
-        прогрессии: ни пересчёта, ни связи с инклюзией. completed_at =
-        performed_at — у копии нет "длительности"."""
+        прогрессии: ни пересчёта, ни связи с инклюзией.
+
+        issue #307: stamp — поля v2 копии (source_v2 = manual_existing_workout / manual_custom /
+        external_activity, то же определение и снимок рецепта, без plan_item_id и инклюзии,
+        длительность — по правилу копии из app.services.training_session_v2). У внешней активности
+        копируются тип/дистанция (раньше копия активности выходила пустой силовой записью)."""
         original = await self._session.get(TrainingSession, source_id)
         clone = TrainingSession(
             user_id=user_id, source=SessionSource.BACKDATED, status=SessionStatus.COMPLETED,
             performed_at=performed_at, completed_at=performed_at,
             effort=original.effort, comment=original.comment, workout_snapshot=original.workout_snapshot,
+            activity_type=original.activity_type,
         )
         self._session.add(clone)
         await self._session.flush()
@@ -931,6 +1107,7 @@ class TrainingSessionRepository:
             new_block = SessionBlock(
                 session_id=clone.id, order_index=block.order_index, exercise_id=block.exercise_id,
                 complex_id=block.complex_id, result=block.result, started_at=block.started_at,
+                block_key=block.block_key, status=block.status, ended_at=block.ended_at,
             )
             self._session.add(new_block)
             await self._session.flush()
@@ -941,7 +1118,7 @@ class TrainingSessionRepository:
             for target in targets:
                 new_target = SetTarget(
                     session_block_id=new_block.id, set_number=target.set_number, is_max_set=target.is_max_set,
-                    metric_type=target.metric_type, value=target.value, unit=target.unit,
+                    metric_type=target.metric_type, value=target.value, unit=target.unit, kind=target.kind,
                 )
                 self._session.add(new_target)
                 await self._session.flush()
@@ -955,8 +1132,11 @@ class TrainingSessionRepository:
                     set_number=log.set_number, is_max_set=log.is_max_set, metric_type=log.metric_type,
                     value=log.value, unit=log.unit, effort=log.effort, note=log.note,
                     session_id=clone.id if log.set_index is not None else None, set_index=log.set_index,
+                    is_extra=log.is_extra, status=log.status, round_index=log.round_index,
+                    load_actual=log.load_actual,
                 ))
         # issue #304 (D10, PL3): копия НЕ засчитывает занятия плана — ни явным plan_item_id, ни
         # копированием старой M2M-связи оригинала.
         await self._session.flush()
+        await self.apply_v2_stamp(clone.id, stamp)
         return clone

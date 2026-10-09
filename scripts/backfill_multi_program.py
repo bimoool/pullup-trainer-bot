@@ -124,6 +124,13 @@ from app.domain.multi_program import (
 from app.domain.program_access import ProgramAccessLevel
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.training_session_v2 import (
+    DurationSource,
+    SessionKind,
+    SessionOrigin,
+    SessionSourceV2,
+    legacy_source_v2,
+)
 from app.services.plan_week import PlanWeekService
 
 _PROGRAM_NAME = "Подтягивания"
@@ -375,6 +382,14 @@ async def _create_training_session_for_workout(
         status=SessionStatus.COMPLETED,
         performed_at=workout.performed_at,
         comment=workout.comment,
+        # issue #307 (MIGRATION_V2 §3): копия legacy Workout — origin legacy_backfill; длительность
+        # legacy-записи неизвестна (не выдумываем). source_v2 — тем же правилом, что у миграции.
+        kind=SessionKind.STRENGTH.value, origin=SessionOrigin.LEGACY_BACKFILL.value,
+        source_v2=legacy_source_v2(
+            legacy_source=_resolve_session_source(workout).value, has_activity=False, has_workout_snapshot=False,
+            is_live=False,
+        ).value,
+        duration_source=DurationSource.UNKNOWN.value,
     )
     session.add(training_session)
     await session.flush()
@@ -416,6 +431,9 @@ async def _create_training_session_for_elective(
         source=SessionSource.ELECTIVE,
         status=SessionStatus.COMPLETED,
         performed_at=elective.performed_at,
+        # issue #307 (MIGRATION_V2 §3): elective → manual_existing_workout, origin legacy_elective.
+        kind=SessionKind.STRENGTH.value, origin=SessionOrigin.LEGACY_ELECTIVE.value,
+        source_v2=SessionSourceV2.MANUAL_EXISTING_WORKOUT.value, duration_source=DurationSource.UNKNOWN.value,
     )
     session.add(training_session)
     await session.flush()

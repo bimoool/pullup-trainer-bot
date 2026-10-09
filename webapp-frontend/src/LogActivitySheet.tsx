@@ -243,6 +243,8 @@ export function BackdatedWorkoutForm({
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // #307: ключ идемпотентности записи — один на форму: повтор после потерянного ответа не создаёт вторую.
+  const [clientSessionId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     let cancelled = false;
@@ -306,6 +308,7 @@ export function BackdatedWorkoutForm({
       date,
       items.map((item) => ({ exerciseId: item.exercise_id, protocol: item.protocol, values: values[item.id] ?? [] })),
       effort, note, new Date(), timeZone,
+      workoutId !== null ? { workoutDefinitionId: workoutId, clientSessionId } : undefined,
     );
     if (payload === null) {
       setError("Введи хотя бы один подход");

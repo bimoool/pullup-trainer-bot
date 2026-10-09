@@ -1,6 +1,7 @@
 import type { SessionEditRequestV2, SessionResponseV2 } from "./apiV2";
 import { WORKOUT_COMMENT_MAX } from "./effortScale.ts";
 import { localDateKey } from "./journalCalendarModel.ts";
+import { durationError, formatDurationHm, parseDurationHm } from "./journalLog.ts";
 
 /** Лимиты зеркалят app/web/schemas_v2_session.py::SessionSetEditSchema. */
 export const SET_NOTE_MAX = 500;
@@ -20,6 +21,8 @@ export interface EditDraft {
   effort: string; // "" — без оценки
   comment: string;
   sets: SetDraft[];
+  /** #307 (J9): внешняя активность — тип и длительность ч:мм; null у силовой записи. */
+  activity: { type: string; duration: string } | null;
 }
 
 /** Число без хвостовых нулей: "8.00" → "8", "7.50" → "7.5". */
@@ -43,6 +46,12 @@ export function initialDraft(session: SessionResponseV2, timeZone: string): Edit
         note: log.note ?? "",
       })),
     ),
+    activity: session.activity_type
+      ? {
+        type: session.activity_type,
+        duration: session.duration_seconds != null ? formatDurationHm(session.duration_seconds) : "",
+      }
+      : null,
   };
 }
 
@@ -92,6 +101,19 @@ export function buildEditPayload(
   };
   if (draft.date !== localDateKey(session.performed_at, timeZone)) {
     payload.performed_on = draft.date;
+  }
+  if (draft.activity !== null) {
+    const problem = durationError(draft.activity.duration);
+    if (problem !== null) {
+      return { ok: false, error: problem };
+    }
+    const seconds = parseDurationHm(draft.activity.duration);
+    if (seconds !== null && seconds !== session.duration_seconds) {
+      payload.duration_seconds = seconds;
+    }
+    if (draft.activity.type !== session.activity_type) {
+      payload.activity_type = draft.activity.type;
+    }
   }
   return { ok: true, payload };
 }

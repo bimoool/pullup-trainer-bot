@@ -7,6 +7,8 @@ type SheetSession = {
   can_edit: boolean;
   can_delete: boolean;
   workout_id?: number | null;
+  /** #307 (ED1): сервер отдельно решает, можно ли повторить копией. Нет поля (старый ответ) — прежнее правило. */
+  can_clone?: boolean;
 };
 
 /** Порядок и метки действий шторки (Crimpd: View / Edit / Clone / Delete). */
@@ -29,9 +31,9 @@ export function journalSheetActions(
   const actions: JournalSheetAction[] = ["open"];
   if (session.can_edit) {
     actions.push("edit");
-    if (session.source !== "elective") {
-      actions.push("clone");
-    }
+  }
+  if (session.can_clone ?? (session.can_edit && session.source !== "elective")) {
+    actions.push("clone");
   }
   if (opts.canOpenWorkout && session.workout_id != null) {
     actions.push("workout");

@@ -107,6 +107,9 @@ class LiveSessionCompleteRequest(BaseModel):
     # Оценка тренировки целиком (необязательно); на прогрессию не влияет.
     effort: Decimal | None = Field(default=None, ge=1, le=5)
     comment: str | None = Field(default=None, max_length=1000)
+    # issue #307 (R3, TRAINING_SESSION_V2 §8): активная длительность от движка (паузы исключены).
+    # Нет — сервер берёт стенные часы старт → завершение в окне [1 мин, 6 ч].
+    active_elapsed_ms: int | None = Field(default=None, ge=0, le=86_400_000)
 
     @field_validator("comment")
     @classmethod
@@ -269,6 +272,11 @@ class SessionEditRequest(BaseModel):
     effort: Decimal | None = Field(default=None, ge=1, le=5)
     comment: str | None = Field(default=None, max_length=1000)
     sets: list[SessionSetEditSchema] = Field(default_factory=list, max_length=200)
+    # issue #307 (TRAINING_SESSION_V2 §4): длительность (секунды; null — неизвестна), тип и дистанция
+    # внешней активности. Что из этого разрешено у сессии — editable_fields в ответе (ED1).
+    duration_seconds: int | None = Field(default=None, ge=1)
+    activity_type: str | None = None
+    distance_meters: int | None = Field(default=None, ge=1)
 
     @field_validator("comment")
     @classmethod

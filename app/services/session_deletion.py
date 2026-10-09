@@ -109,6 +109,7 @@ class SessionDeletionService:
 
         complex_ids = {item.complex_id for item in plan_items.values() if item.complex_id is not None}
         complex_ids |= {wid for wid in (_snapshot_workout_id(d) for d in details) if wid is not None}
+        complex_ids |= {d.workout_definition_id for d in details if d.workout_definition_id is not None}
         complexes = {c.id: c for c in await self._programs.list_complexes_by_ids(sorted(complex_ids))}
 
         elective_exercise_ids = sorted({
@@ -158,6 +159,10 @@ class SessionDeletionService:
             proven = True
         elif detail.workout_snapshot is not None:
             proven = snapshot_workout_id is not None and _is_user_workout(complexes.get(snapshot_workout_id), user_id)
+        elif detail.workout_definition_id is not None and detail.prescription_snapshot is not None:
+            # issue #307: запись «Тренировку из моих» своей тренировки без Builder-протокола — идентичность
+            # и замороженный рецепт хранятся явно (workout_definition_id + prescription_snapshot).
+            proven = _is_user_workout(complexes.get(detail.workout_definition_id), user_id)
         else:
             proven = bool(linked) and all(
                 item.complex_id is not None and _is_user_workout(complexes.get(item.complex_id), user_id)

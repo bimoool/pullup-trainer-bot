@@ -111,6 +111,15 @@ export interface SessionCreatePayload {
   }[];
   activity_type?: string;
   duration_seconds?: number;
+  /** #307 (D9): запись известной тренировки — сервер строит рецепт и снимок, как при живом старте. */
+  workout_definition_id?: number;
+  /** #307: ключ идемпотентности — повтор отправки той же формы не создаёт вторую запись. */
+  client_session_id?: string;
+}
+
+export interface BackdatedWorkoutRef {
+  workoutDefinitionId: number;
+  clientSessionId: string;
 }
 
 function cleanComment(comment: string): string | null {
@@ -122,19 +131,29 @@ function cleanComment(comment: string): string | null {
  * подходов не попадают в запись; null — нечего записывать. */
 export function buildBackdatedPayload(
   date: string, exercises: BackdatedExerciseInput[], effort: string | null, comment: string, now: Date = new Date(), timeZone?: string,
+  workout?: BackdatedWorkoutRef,
 ): SessionCreatePayload | null {
-  const blocks = exercises.flatMap((exercise) => {
+  const allBlocks = exercises.map((exercise) => {
     const metric = metricForProtocol(exercise.protocol);
     const sets = exercise.values
       .map((value) => value.trim().replace(",", "."))
       .filter((value) => value !== "" && Number(value) > 0)
       .map((value, index) => ({ set_number: index + 1, ...metric, value }));
-    return sets.length === 0 ? [] : [{ exercise_id: exercise.exerciseId, sets }];
+    return { exercise_id: exercise.exerciseId, sets };
   });
-  if (blocks.length === 0) {
+  if (allBlocks.every((block) => block.sets.length === 0)) {
     return null;
   }
-  return { source: "backdated", performed_at: performedAtFor(date, now, timeZone), effort, comment: cleanComment(comment), blocks };
+  const base = { source: "backdated" as const, performed_at: performedAtFor(date, now, timeZone), effort, comment: cleanComment(comment) };
+  if (workout === undefined) {
+    return { ...base, blocks: allBlocks.filter((block) => block.sets.length > 0) };
+  }
+  // Известная тренировка: все упражнения по порядку (пустое — не выполнялось), чтобы сервер сопоставил
+  // введённое с рецептом по позиции.
+  return {
+    ...base, blocks: allBlocks, workout_definition_id: workout.workoutDefinitionId,
+    client_session_id: workout.clientSessionId,
+  };
 }
 
 /** Тело запроса записи сессии для «Другую активность». */

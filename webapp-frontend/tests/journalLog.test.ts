@@ -74,6 +74,30 @@ test("buildBackdatedPayload: пропускает пустые подходы, n
   assert.equal(buildBackdatedPayload("2026-10-02", [], null, "", now), null);
 });
 
+test("buildBackdatedPayload: известная тренировка — все упражнения по порядку + идентичность (#307, D9)", () => {
+  const now = new Date(2026, 9, 2, 8, 15, 0);
+  const payload = buildBackdatedPayload(
+    "2026-10-02",
+    [
+      { exerciseId: 5, protocol: { type: "reps_sets" }, values: ["6", "6", "5", "4"] },
+      { exerciseId: 6, protocol: { type: "time_sets" }, values: ["", ""] },
+    ],
+    null, "", now, undefined, { workoutDefinitionId: 42, clientSessionId: "c0ffee00-0000-4000-8000-000000000001" },
+  );
+  assert.ok(payload !== null);
+  assert.equal(payload.workout_definition_id, 42);
+  assert.equal(payload.client_session_id, "c0ffee00-0000-4000-8000-000000000001");
+  assert.deepEqual(payload.blocks.map((block) => block.exercise_id), [5, 6]);
+  assert.deepEqual(payload.blocks[0].sets.map((set) => set.value), ["6", "6", "5", "4"]);
+  assert.deepEqual(payload.blocks[1].sets, []);
+  assert.equal(
+    buildBackdatedPayload("2026-10-02", [{ exerciseId: 5, protocol: {}, values: [""] }], null, "", now, undefined, {
+      workoutDefinitionId: 42, clientSessionId: "x",
+    }),
+    null,
+  );
+});
+
 test("buildActivityPayload", () => {
   const now = new Date(2026, 9, 2, 8, 15, 0);
   const payload = buildActivityPayload("2026-09-30", "running", "1:15", "3", "", now);

@@ -62,6 +62,7 @@ from app.domain.live_session import (
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.plan_occurrence import MAIN_SLOT_KEY, PlanItemStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.training_session_v2 import SessionSourceV2
 from app.domain.workout_protocol import DefinitionProtocol, ResolvedInterval, ResolvedProtocol
 from app.domain.workout_snapshot import (
     UnresolvedProgressionError,
@@ -81,6 +82,7 @@ from app.services.session_log import (
     _match_step_blocks,
     _session_block_input_from_detail,
 )
+from app.services.training_session_v2 import TrainingSessionV2Service
 
 
 @dataclass(frozen=True)
@@ -349,13 +351,36 @@ class LiveSessionService:
         phase_state = initial_phase(block_plans)
         phase_ends_at = _phase_ends_at_from_offset(phase_state.ends_at_offset_seconds)
 
+        performed_at = datetime.now(UTC)
         training_session = await self._sessions.create_live_session(
             user_id=user_id, client_session_id=client_session_id, source=SessionSource.PLAN,
-            performed_at=datetime.now(UTC), plan_item_ids=[],
+            performed_at=performed_at, plan_item_ids=[],
             blocks=resolved_blocks, targets_by_block=resolved_targets, phase_ends_at=phase_ends_at,
             workout_snapshot=workout_snapshot, plan_item_id=credited.id if credited is not None else None,
         )
+        # issue #307 (TRAINING_SESSION_V2 §2): planned_live — определение и снимок рецепта из занятия.
+        # Строка старой формы (до сходимости #304) знает тренировку только через complex_id.
+        definition_ids = {
+            item.workout_definition_id or (item.complex_id if item.program_inclusion_id is None else None)
+            for item in plan_items
+        }
+        await self._stamp_live_start(
+            training_session.id, user_id, source=SessionSourceV2.PLANNED_LIVE, performed_at=performed_at,
+            workout_definition_id=definition_ids.pop() if len(definition_ids) == 1 else None,
+            program_inclusion_id=course_inclusion_ids[0] if len(set(course_inclusion_ids)) == 1 else None,
+        )
         return await self._build_result(training_session.id, user_id)
+
+    async def _stamp_live_start(
+        self, session_id: int, user_id: int, *, source: SessionSourceV2, performed_at: datetime,
+        workout_definition_id: int | None, program_inclusion_id: int | None,
+    ) -> None:
+        user = await UserRepository(self._session).get_by_id(user_id)
+        await TrainingSessionV2Service(self._session).stamp_new(
+            session_id, user_id, source=source, resolved_at=performed_at,
+            workout_definition_id=workout_definition_id, program_inclusion_id=program_inclusion_id,
+            started_at=performed_at, timezone=user.timezone if user is not None else None, engine_version=1,
+        )
 
     async def _resolve_main_occurrence(
         self, plan_item: PlanItem,
@@ -436,11 +461,17 @@ class LiveSessionService:
             for block_targets, protocol in zip(targets, block_protocols, strict=True)
         ]
         phase_state = initial_phase(block_plans)
+        performed_at = datetime.now(UTC)
         training_session = await self._sessions.create_live_session(
             user_id=user_id, client_session_id=client_session_id, source=SessionSource.FREEFORM,
-            performed_at=datetime.now(UTC), plan_item_ids=[], blocks=blocks, targets_by_block=targets,
+            performed_at=performed_at, plan_item_ids=[], blocks=blocks, targets_by_block=targets,
             phase_ends_at=_phase_ends_at_from_offset(phase_state.ends_at_offset_seconds),
             workout_snapshot=snapshot.model_dump(mode="json") if snapshot is not None else None,
+        )
+        # issue #307: direct_live — определение = эта тренировка, plan_item_id = None (PL3).
+        await self._stamp_live_start(
+            training_session.id, user_id, source=SessionSourceV2.DIRECT_LIVE, performed_at=performed_at,
+            workout_definition_id=workout_id, program_inclusion_id=None,
         )
         return await self._build_result(training_session.id, user_id)
 
@@ -473,6 +504,14 @@ class LiveSessionService:
             return await self._resolve_complex_blocks(plan_item.complex_id)
         blocks, targets = await self._resolve_exercise_block(plan_item)
         return blocks, targets, None  # exercise path никогда не Builder
+
+    async def resolve_workout(
+        self, complex_id: int,
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], WorkoutSnapshot | None]:
+        """Рецепт тренировки ровно так, как его разрешает живой старт (блоки, цели, v1-снимок) —
+        issue #307: ручная запись известной тренировки строит сессию ЭТИМ ЖЕ путём
+        (app.services.manual_session), второго резолвера нет."""
+        return await self._resolve_complex_blocks(complex_id)
 
     async def _resolve_complex_blocks(
         self, complex_id: int,
@@ -883,12 +922,17 @@ class LiveSessionService:
 
     async def complete_session(
         self, *, session_id: int, user_id: int, abandoned: bool,
-        effort: Decimal | None = None, comment: str | None = None,
+        effort: Decimal | None = None, comment: str | None = None, active_elapsed_ms: int | None = None,
     ) -> tuple[CompleteResult | None, bool]:
         """Второй элемент — True, если сессия не найдена/не принадлежит
         пользователю (роут превращает в 404) — тот же (result, not_found)
         приём, что TrainingSessionLogService.record_session уже использует
-        для program_inclusion_id (app.services.session_log)."""
+        для program_inclusion_id (app.services.session_log).
+
+        issue #307 — канонический интерфейс завершения (TRAINING_SESSION_V2 §8, в т.ч. для движка v2
+        #306): active_elapsed_ms — измеренная движком активная длительность (паузы исключены);
+        без неё — стенные часы старт → завершение в окне [1 мин, 6 ч] (R3). Повтор — тот же ответ, без
+        второй прогрессии и без смены длительности."""
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None:
             return None, True
@@ -912,7 +956,7 @@ class LiveSessionService:
                 False,
             )
 
-        await self._sessions.mark_completed(session_id)
+        await self._sessions.mark_completed(session_id, active_elapsed_ms=active_elapsed_ms)
         if effort is not None or comment is not None:
             await self._sessions.save_workout_review(session_id, effort=effort, comment=comment)
 

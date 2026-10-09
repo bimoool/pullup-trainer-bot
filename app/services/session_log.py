@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -11,6 +12,7 @@ from app.db.repositories.training_sessions import (
     SessionBlockInput,
     SessionDetail,
     SetLogInput,
+    SetTargetInput,
     TrainingSessionRepository,
 )
 from app.domain.constants import EquipmentType
@@ -230,6 +232,8 @@ class TrainingSessionLogService:
         effort: Decimal | None, comment: str | None, blocks: list[SessionBlockInput],
         program_inclusion_id: int | None, completed_at: datetime | None = None,
         activity_type: str | None = None, duration_seconds: int | None = None,
+        targets_by_block: list[list[SetTargetInput]] | None = None, workout_snapshot: dict | None = None,
+        client_session_id: uuid.UUID | None = None,
     ) -> tuple[RecordSessionResult | None, bool]:
         """Второй элемент кортежа — True, если program_inclusion_id передан,
         но не найден/не принадлежит пользователю (вызывающий код превращает
@@ -244,7 +248,8 @@ class TrainingSessionLogService:
         training_session = await self._sessions.create_session(
             user_id=user_id, source=source, performed_at=performed_at,
             effort=effort, comment=comment, blocks=blocks, completed_at=completed_at,
-            activity_type=activity_type, duration_seconds=duration_seconds,
+            activity_type=activity_type, duration_seconds=duration_seconds, targets_by_block=targets_by_block,
+            workout_snapshot=workout_snapshot, client_session_id=client_session_id,
         )
         session_detail = await self._sessions.get_for_user(training_session.id, user_id)
 
