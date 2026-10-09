@@ -37,8 +37,8 @@ WorkoutScreen вообще, независимо от того, есть ли у
 SessionV2Lab.tsx) — тот же приём "не отдельный сервисный слой", что и
 сценарии выше, только сервисы/репозитории уже другие (ProgramInclusionService/
 TrainingSessionLogService волны 3, не WorkoutRepository старой схемы):
-  - v2_session_ready — STEP-курс, block_a work_sets=3 (итого 3+1=4 подхода
-    на сессию) — под E2E "офлайн 4 подхода" раздела 15.
+  - v2_session_ready — STEP-курс, block_a work_sets=3 + block_b 4 подхода
+    (#305, D2; итого 7 подходов на сессию) — под E2E «офлайн-подходы» раздела 15.
   - v2_session_complex — Program без стратегии + Complex из 3 упражнений,
     один PlanItem — под E2E "комплекс из 3, сделал 2".
   - v2_session_progression_edit — STEP-курс с ОДНОЙ прошлой сессией вчера,
@@ -261,9 +261,10 @@ async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None
     """STEP-курс синтетической категории — тот же рецепт, что
     tests/test_web/test_v2_live_session.py::_setup_step_session (PlanItem на
     каждую роль заводится напрямую, без ProgramItem: программа синтетическая,
-    без недельной матрицы). work_sets=3 у блока A + дефолтный 1 подход блока
-    Б (см. app.services.live_session._resolve_step_role_block) — сессия из
-    ОБОИХ PlanItem даёт ровно 4 подхода, под E2E "офлайн, 4 подхода"."""
+    без недельной матрицы). work_sets=3 у блока A + 4 подхода блока Б
+    (STRENGTH_BLOCK.work_sets, issue #305 — раньше ошибочно 1; резолвер
+    app.domain.course_prescription.resolve_progression_block) — сессия из ОБОИХ
+    PlanItem даёт 7 подходов, под E2E «офлайн-подходы»."""
     user = await _onboard(session, telegram_id)
 
     profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
