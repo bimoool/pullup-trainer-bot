@@ -212,10 +212,14 @@ class TrainingSessionV2Service:
         result: dict[int, SessionVerdicts] = {}
         for detail in details:
             delete_verdict = deletion[detail.id]
+            # Плановая сессия, чья независимость от прогрессии НЕ доказана (нет Builder-природы своей
+            # тренировки), считается возможно учтённой прогрессией (§4: «planned_live … — set actuals
+            # read-only»). Доказанная Builder-сессия своего плана правится целиком, как в #262.
             consumed = (
                 delete_verdict.reason in (REASON_PROGRAM, REASON_STEP)
                 or detail.program_inclusion_id is not None
                 or any(block.exercise_id in role_exercise_ids for block in detail.blocks)
+                or (detail.source_v2 == SessionSourceV2.PLANNED_LIVE.value and not delete_verdict.can_delete)
             )
             facts = SessionFacts(
                 completed=detail.status.value == "completed", kind=SessionKind(detail.kind),

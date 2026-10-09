@@ -188,9 +188,10 @@ rebases its `down_revision` (MIGRATION §9.1 — no parallel heads).
 ## 11. Implementation decisions (Wave 3a, to confirm in review)
 
 - **ED1 reading of "planned_live / any session consumed by progression":** set actuals are read-only
-  only for sessions consumed by progression (linked to a course, `program_inclusion_id`, or touching a
-  STEP role). A custom-plan Builder session (`planned_live`, no course) stays fully editable, as it was
-  under #262 — its values never fed progression.
+  (and no clone) for sessions consumed by progression (linked to a course, `program_inclusion_id`, or
+  touching a STEP role) **and** for every `planned_live` session whose independence from progression is not
+  proven by the safe-delete predicate. The one exception is a proven custom-plan Builder session (own
+  workout, no course): fully editable and cloneable, as it was under #262 — its values never fed progression.
 - **Status vocabulary:** the existing `started | completed` enum is kept (`started` = contract `active`).
   `cancelled` is not introduced: adding a PG enum value would break the previous image on rollback
   (old code cannot read it). An abandoned live session that the user completes stays `completed` with

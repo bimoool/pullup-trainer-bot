@@ -558,3 +558,30 @@ async def test_absent_snapshots_are_sql_null_not_json_null(session: AsyncSession
     assert await session.scalar(select(func.count()).select_from(TrainingSession).where(
         TrainingSession.id == ids[1], TrainingSession.prescription_snapshot.is_(None),
     )) == 1
+
+
+async def test_unproven_planned_session_is_metadata_only(session: AsyncSession, user: User):
+    """ED1 §4: плановая сессия без доказанной независимости от прогрессии (старая строка source=plan без
+    связей и снимка) — правятся метаданные, но не значения подходов и не копия (как и до #307)."""
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="ts-v2")
+    session.add(pull)
+    await session.flush()
+    orphan = TrainingSession(
+        user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED,
+        performed_at=datetime.now(UTC) - timedelta(days=1), completed_at=datetime.now(UTC) - timedelta(days=1),
+    )
+    session.add(orphan)
+    await session.flush()
+    block = SessionBlock(session_id=orphan.id, order_index=0, exercise_id=pull.id)
+    session.add(block)
+    await session.flush()
+    session.add(SetLog(session_block_id=block.id, set_number=1, metric_type=MetricType.REPS, value=8, unit="reps"))
+    await session.commit()
+
+    card = await _card(session, user, orphan.id)
+    assert card["can_edit"] is False and card["can_clone"] is False and card["can_delete"] is False
+    assert "comment" in card["editable_fields"] and "set_actuals" not in card["editable_fields"]
+    path = f"/api/v2/sessions/{orphan.id}"
+    assert (await v2_patch(session, user.telegram_id, path, {"comment": "ок"})).status_code == 200
+    changed = await v2_patch(session, user.telegram_id, path, {"sets": [{"block_index": 0, "set_number": 1, "value": "9"}]})
+    assert changed.status_code == 409
