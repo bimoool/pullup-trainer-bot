@@ -4,7 +4,8 @@
 
 * «Убрать из плана» одно занятие (DELETE /api/v2/plan-items/{id});
 * удаление своей тренировки (DELETE /api/v2/workouts/{id}) — её строки плана;
-* «Остановить план» своего плана (POST /api/v2/custom-plans/{id}/deactivate).
+* «Остановить план» своего плана (POST /api/v2/custom-plans/{id}/deactivate);
+* (сходимость) свой план, у которого не осталось живых тренировок, — автоостановка (#304 F).
 
 Правила:
 
@@ -17,6 +18,11 @@
 3. Незасчитанная ручная строка (без курса и своего плана) удаляется жёстко, как и раньше: её
    повторно не материализует никто.
 4. Занятия курса этим путём не снимаются (404, как раньше): курс снимается целиком («Убрать курс»).
+5. Снятие занятий своего плана при удалении тренировки, остановке и автоостановке плана касается
+   только ТЕКУЩЕЙ и БУДУЩИХ недель: прошлые недели — история («пропущено»), не меняются (#304 F, N1).
+   Удаление тренировки, после которого в своём плане не остаётся ни одной живой тренировки,
+   останавливает план (is_active = false). Оставшиеся тренировки объём удалённой не забирают —
+   ротация не пересчитывается, её позиции остаются дырами (PROGRAM_PLAN_V2 §7).
 
 Конкурентность: до проверки кредита берётся advisory-лок стартов пользователя
 (app.services.live_session.lock_user_starts — старт, засчитывающий занятие, сериализован с ним), затем
@@ -59,6 +65,37 @@ class WorkoutItemsRemoval:
 class CustomPlanDeactivation:
     custom_plan: CustomPlan
     removed: int
+
+
+async def retire_open_custom_rows(
+    session: AsyncSession, plan: TrainingPlan, items: list[PlanItem], *, today: date,
+) -> int:
+    """Мягко снять (status = removed) незасчитанные занятия своего плана ТЕКУЩЕЙ и БУДУЩИХ недель
+    (правила 1, 2, 5). Прошлые недели, засчитанные, уже снятые и строки не своего плана — без изменений.
+    Без локов: вызывающий уже держит лок плана (и, кроме сходимости, лок стартов — см. модуль)."""
+    plans = TrainingPlanRepository(session)
+    current_number = plan_week_number(plan.created_at.date(), today)
+    week_number_by_id = {week.id: week.week_number for week in await plans.list_plan_weeks(plan.id)}
+    for item in items:
+        await session.refresh(item)  # могли быть загружены до лока (identity map)
+    candidates = [
+        item for item in items
+        if item.custom_plan_id is not None and item.status != PlanItemStatus.REMOVED
+        and week_number_by_id.get(item.plan_week_id, current_number) >= current_number
+    ]
+    credited = await TrainingSessionRepository(session).credited_plan_item_ids([item.id for item in candidates])
+    retired = [item for item in candidates if item.id not in credited]
+    for item in retired:
+        item.status = PlanItemStatus.REMOVED.value
+    await plans.flush()
+    return len(retired)
+
+
+async def stop_custom_plan(session: AsyncSession, plan: TrainingPlan, custom_plan: CustomPlan, *, today: date) -> int:
+    """is_active = false + снятие открытых занятий текущей/будущих недель. Идемпотентно (повтор — 0)."""
+    custom_plan.is_active = False
+    items = await TrainingPlanRepository(session).list_custom_plan_items(custom_plan.id)
+    return await retire_open_custom_rows(session, plan, items, today=today)
 
 
 class PlanRemovalService:
@@ -119,17 +156,29 @@ class PlanRemovalService:
         await self._apply(delete, soft)
         return PlanItemRemoval.REMOVED if soft else PlanItemRemoval.DELETED
 
-    async def remove_workout_items(self, *, user_id: int, complex_id: int) -> WorkoutItemsRemoval:
-        """Удаление своей тренировки: незасчитанные ручные строки — удалить, занятия своего плана —
-        снять, засчитанные (любой источник) — оставить как есть (история кредита)."""
+    async def remove_workout_items(self, *, user_id: int, complex_id: int, today: date) -> WorkoutItemsRemoval:
+        """Удаление (архивирование) своей тренировки: незасчитанные ручные строки — удалить, занятия
+        своего плана текущей/будущих недель — снять, засчитанные (любой источник) и прошлые недели своего
+        плана — оставить как есть (история). Свой план, где живых тренировок не осталось, — остановить."""
         plan = await self._lock(user_id)
         if plan is None:
             return WorkoutItemsRemoval(deleted=0, removed=0, kept_credited=0)
         items = await self._plans.list_workout_plan_items(plan.id, complex_id)
         await self._refresh(items)
-        delete, soft, kept = await self._disposal(items)
-        await self._apply(delete, soft)
-        return WorkoutItemsRemoval(deleted=len(delete), removed=len(soft), kept_credited=kept)
+        manual = [item for item in items if item.custom_plan_id is None]
+        delete, _, kept = await self._disposal(manual)
+        await self._apply(delete, [])
+        custom_items = [item for item in items if item.custom_plan_id is not None]
+        kept += len(await self._sessions.credited_plan_item_ids([item.id for item in custom_items]))
+        removed = await retire_open_custom_rows(self._session, plan, custom_items, today=today)
+        for custom_plan in await self._plans.list_custom_plans(plan.id):
+            await self._session.refresh(custom_plan)
+            if not custom_plan.is_active or complex_id not in custom_plan.workouts:
+                continue
+            live = await self._plans.live_workout_ids(list(custom_plan.workouts), user_id) - {complex_id}
+            if not live:
+                removed += await stop_custom_plan(self._session, plan, custom_plan, today=today)
+        return WorkoutItemsRemoval(deleted=len(delete), removed=removed, kept_credited=kept)
 
     async def deactivate_custom_plan(
         self, *, user_id: int, custom_plan_id: int, today: date,
@@ -144,16 +193,5 @@ class PlanRemovalService:
         if custom_plan is None or custom_plan.training_plan_id != plan.id:
             return None
         await self._session.refresh(custom_plan)
-        custom_plan.is_active = False
-        current_number = plan_week_number(plan.created_at.date(), today)
-        week_number_by_id = {week.id: week.week_number for week in await self._plans.list_plan_weeks(plan.id)}
-        items = await self._plans.list_custom_plan_items(custom_plan.id)
-        await self._refresh(items)
-        open_items = [
-            item for item in items
-            if item.status != PlanItemStatus.REMOVED
-            and week_number_by_id.get(item.plan_week_id, current_number) >= current_number
-        ]
-        _, soft, _ = await self._disposal(open_items)
-        await self._apply([], soft)
-        return CustomPlanDeactivation(custom_plan=custom_plan, removed=len(soft))
+        removed = await stop_custom_plan(self._session, plan, custom_plan, today=today)
+        return CustomPlanDeactivation(custom_plan=custom_plan, removed=removed)

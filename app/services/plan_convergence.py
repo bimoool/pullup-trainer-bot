@@ -18,7 +18,9 @@ PL7, MIGRATION_V2 §3, §5).
      ссылается история M2M);
    * ручная строка с count_per_week = N → N занятий (первое — сама строка, её кредиты сохраняются);
    * у активных инклюзий — недостающие занятия слотов (желаемый объём, ровно sessions_per_week);
-   * у активных своих планов — недостающие занятия недели (объём недели, 0 — пусто);
+   * у активных своих планов — недостающие занятия недели (объём недели, 0 — пусто) только живых
+     (не архивных) тренировок, без пересчёта ротации; открытые занятия удалённой тренировки — removed;
+     свой план без живых тренировок останавливается (#304 F, PROGRAM_PLAN_V2 §7);
 5. кэш инклюзии: status (NULL → по is_active), sequence_cursor (NULL → число засчитанных MAIN),
    completed_main_sessions / last_main_session_at — производные от сессий.
 
@@ -66,6 +68,7 @@ from app.domain.plan_occurrence import (
     custom_week_occurrences,
     derive_slots,
 )
+from app.services.plan_removal import retire_open_custom_rows, stop_custom_plan
 from app.services.plan_spacing import MainSpacingService
 from app.services.training_analytics import resolve_timezone
 
@@ -97,6 +100,8 @@ class ConvergenceReport:
     occurrences_created: int = 0
     credits_linked: int = 0
     inclusion_fields_updated: int = 0
+    custom_rows_retired: int = 0
+    custom_plans_stopped: int = 0
     gaps: list[str] = field(default_factory=list)
 
     @property
@@ -104,7 +109,7 @@ class ConvergenceReport:
         return (
             self.weeks_created + self.orphans_attached + self.snapshot_repairs + self.aggregates_frozen
             + self.aggregates_expanded + self.manual_converted + self.occurrences_created + self.credits_linked
-            + self.inclusion_fields_updated
+            + self.inclusion_fields_updated + self.custom_rows_retired + self.custom_plans_stopped
         )
 
     def as_dict(self) -> dict:
@@ -114,6 +119,7 @@ class ConvergenceReport:
             "aggregates_frozen": self.aggregates_frozen, "aggregates_expanded": self.aggregates_expanded,
             "manual_converted": self.manual_converted, "occurrences_created": self.occurrences_created,
             "credits_linked": self.credits_linked, "inclusion_fields_updated": self.inclusion_fields_updated,
+            "custom_rows_retired": self.custom_rows_retired, "custom_plans_stopped": self.custom_plans_stopped,
             "mutations": self.mutations, "gaps": self.gaps,
         }
 
@@ -195,7 +201,7 @@ class PlanConvergenceService:
 
         user = await UserRepository(self._session).get_by_id(plan.user_id)
         tz = resolve_timezone(user.timezone if user is not None else None)
-        custom_plans = [cp for cp in await self._plans.list_custom_plans(plan.id) if cp.is_active]
+        custom_plans, live_workouts = await self._live_custom_plans(plan, today, report)
         inclusions_by_id = {inclusion.id: inclusion for inclusion in inclusions}
         for week in await self._plans.list_plan_weeks(plan.id):
             if week.week_number > current_number + MAX_FUTURE_PLAN_WEEKS:
@@ -205,7 +211,7 @@ class PlanConvergenceService:
                 continue
             await self._converge_open_week(
                 week, tz=tz, inclusions_by_id=inclusions_by_id, slots_by_inclusion=slots_by_inclusion,
-                custom_plans=custom_plans, report=report,
+                custom_plans=custom_plans, live_workouts=live_workouts, plan=plan, today=today, report=report,
             )
 
         await self._refresh_inclusion_fields(plan, inclusions, slots_by_inclusion, report)
@@ -241,7 +247,8 @@ class PlanConvergenceService:
 
     async def _converge_open_week(
         self, week: PlanWeek, *, tz, inclusions_by_id: dict[int, ProgramInclusion],
-        slots_by_inclusion: dict[int, list[ProgramSlot]], custom_plans: list[CustomPlan], report: ConvergenceReport,
+        slots_by_inclusion: dict[int, list[ProgramSlot]], custom_plans: list[CustomPlan],
+        live_workouts: dict[int, set[int]], plan: TrainingPlan, today: date, report: ConvergenceReport,
     ) -> None:
         rows = await self._plans.list_items_in_week(week.id)
         aggregates: dict[int, list[PlanItem]] = {}
@@ -268,7 +275,9 @@ class PlanConvergenceService:
             )
 
         for custom_plan in custom_plans:
-            await self._ensure_custom_occurrences(custom_plan, week, report)
+            await self._ensure_custom_occurrences(
+                custom_plan, week, live_workouts[custom_plan.id], plan=plan, today=today, report=report,
+            )
 
     # --- Курс -------------------------------------------------------------------------------
 
@@ -410,7 +419,45 @@ class PlanConvergenceService:
                 report.credits_linked += 1
         report.manual_converted += 1
 
-    async def _ensure_custom_occurrences(self, custom_plan: CustomPlan, week: PlanWeek, report: ConvergenceReport) -> None:
+    async def _live_custom_plans(
+        self, plan: TrainingPlan, today: date, report: ConvergenceReport,
+    ) -> tuple[list[CustomPlan], dict[int, set[int]]]:
+        """Активные свои планы и их ЖИВЫЕ тренировки (#304 F): удалённая (архивная) или чужая тренировка
+        не материализуется. План, где живых не осталось ни одной, останавливается (is_active = false,
+        открытые занятия текущей/будущих недель — removed; история и засчитанные — как были)."""
+        active: list[CustomPlan] = []
+        live_workouts: dict[int, set[int]] = {}
+        for custom_plan in await self._plans.list_custom_plans(plan.id):
+            if not custom_plan.is_active:
+                continue
+            live = await self._plans.live_workout_ids(list(custom_plan.workouts), plan.user_id)
+            if not live:
+                report.custom_rows_retired += await stop_custom_plan(self._session, plan, custom_plan, today=today)
+                report.custom_plans_stopped += 1
+                _log_convergence(
+                    "custom_plan_auto_stopped", training_plan_id=plan.id, custom_plan_id=custom_plan.id,
+                    reason="no_live_workouts",
+                )
+                continue
+            active.append(custom_plan)
+            live_workouts[custom_plan.id] = live
+        return active, live_workouts
+
+    async def _ensure_custom_occurrences(
+        self, custom_plan: CustomPlan, week: PlanWeek, live: set[int], *, plan: TrainingPlan, today: date,
+        report: ConvergenceReport,
+    ) -> None:
+        """Недостающие занятия недели своего плана. Позиции ротации — из ПОЛНОГО сохранённого списка
+        тренировок: позиция удалённой тренировки остаётся дырой (её занятие не создаётся), оставшиеся
+        не сдвигаются и её объём не забирают, occurrence_index не перенумеровывается (#304 F). Открытые
+        занятия удалённой тренировки в этой (текущей/будущей) неделе снимаются (removed)."""
+        rows = [row for row in await self._plans.list_items_by_origin(week.id) if row.custom_plan_id == custom_plan.id]
+        stale = [
+            row for row in rows
+            if row.workout_definition_id not in live and row.status != PlanItemStatus.REMOVED
+        ]
+        if stale:
+            report.custom_rows_retired += await retire_open_custom_rows(self._session, plan, stale, today=today)
         offset = week.week_number - custom_plan.start_week_number
         specs = custom_week_occurrences(
             workout_ids=list(custom_plan.workouts), weeks=list(custom_plan.weeks),
@@ -419,12 +466,9 @@ class PlanConvergenceService:
         )
         if not specs:
             return
-        existing = {
-            row.occurrence_index for row in await self._plans.list_items_by_origin(week.id)
-            if row.custom_plan_id == custom_plan.id
-        }
+        existing = {row.occurrence_index for row in rows}
         for spec in specs:
-            if spec.occurrence_index in existing:
+            if spec.occurrence_index in existing or spec.workout_definition_id not in live:
                 continue
             exercise_id = await self._plans.first_complex_exercise_id(spec.workout_definition_id)
             if exercise_id is None:

@@ -884,8 +884,11 @@ async def delete_workout(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
-    # #304 B1: засчитанные строки (история кредита) остаются, занятия своего плана снимаются мягко.
-    await PlanRemovalService(session).remove_workout_items(user_id=user.id, complex_id=workout_id)
+    # #304 B1/F: засчитанные строки (история кредита) и прошлые недели остаются, открытые занятия своего
+    # плана текущей/будущих недель снимаются мягко; свой план без живых тренировок останавливается.
+    await PlanRemovalService(session).remove_workout_items(
+        user_id=user.id, complex_id=workout_id, today=_plan_today(user),
+    )
     await FavoriteRepository(session).remove(user.id, "workout", workout_id)
     await program_repo.archive_workout(workout)
     await session.commit()

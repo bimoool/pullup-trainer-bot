@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
+    Complex,
     ComplexItem,
     CustomPlan,
     PlanItem,
@@ -536,6 +537,25 @@ class TrainingPlanRepository:
         self._session.add(plan)
         await self._session.flush()
         return plan
+
+    async def live_workout_ids(self, complex_ids: list[int], user_id: int) -> set[int]:
+        """#304 F — тренировки из complex_ids, на которые ещё можно ссылаться планом пользователя:
+        не архивные (удалённые) и видимые ему по жизненному циклу Builder — свой user Workout или
+        системная тренировка без владельца (те же правила, что ProgramRepository.get_visible_workout_for_user).
+        Читается запросом колонок, а не session.get: архивирование из другой транзакции видно после лока,
+        даже если Complex уже лежит в identity map."""
+        if not complex_ids:
+            return set()
+        result = await self._session.execute(
+            select(Complex.id).where(
+                Complex.id.in_(set(complex_ids)), Complex.archived_at.is_(None),
+                or_(
+                    and_(Complex.source_type == "system", Complex.owner_user_id.is_(None)),
+                    and_(Complex.source_type == "user", Complex.owner_user_id == user_id),
+                ),
+            ),
+        )
+        return set(result.scalars().all())
 
     async def first_complex_exercise_id(self, complex_id: int) -> int | None:
         result = await self._session.execute(

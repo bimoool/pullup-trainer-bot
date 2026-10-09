@@ -148,6 +148,10 @@ PlanItem      ONE occurrence of ONE workout (AD-4)
   future week are not part of the actionable plan: `GET /plan` omits them (no `available`, not in
   «N из M»); the DB rows stay (re-adding the course resumes them). Credited rows and past weeks stay
   visible as history.
+- **PL11** A custom-plan / manual row whose workout is **deleted (archived) or no longer the user's** is not
+  actionable: in the current or a future week, uncredited, `GET /plan` omits it, and a live start of it is
+  rejected (`422` «План обновился…», the canonical stale-plan response) even if the row still exists. Credited
+  rows and past weeks stay visible as history (see §7 «Deleted workouts»).
 
 ## 6. Future weeks
 
@@ -169,6 +173,29 @@ CustomPlan (user-owned)
 `is_active = false` — an inactive custom plan never materialises new occurrences; its uncredited
 current/future occurrences are soft-removed (PL9); credited occurrences, past weeks and sessions are
 unchanged; a repeated call has no further effect. There is no re-activation in this wave.
+
+**Deleted (archived) workouts in a custom plan** (owner decision, #304 second review, blocker F). A workout of
+`workouts` is *live* when it is not archived (`complexes.archived_at IS NULL`) and is the user's own Builder
+workout or an ownerless system workout (the same visibility rule as `get_visible_workout_for_user`).
+
+- Archived/deleted workout references are **ignored for future materialisation**: `converge_user_plan` creates
+  no occurrence for them. The stored rotation vector is **not** changed.
+- **No re-rotation.** Rotation positions come from the full stored `workouts` list; the deleted workout's
+  positions stay holes. Remaining workouts keep their own positions and do **not** absorb the deleted
+  workout's volume (that would silently change the prescription). `occurrence_index` is never renumbered.
+  Example `workouts = [W1, W2]`, `weeks = [3]`, cycle: week 1 = W1·1, W2·2, W1·3; after W1 is deleted week 1
+  has only W2·2, week 2 only W2·1 and W2·3.
+- **Existing rows.** Uncredited occurrences of the deleted workout in the **current and future** weeks →
+  `status = removed` (same row, same identity; convergence does not recreate it). Credited occurrences and
+  **all past-week** rows (completed or missed) stay unchanged — the same past/current split as «Остановить
+  план». Workout deletion (`DELETE /api/v2/workouts/{id}`) does this immediately; convergence does it again for
+  any row it finds (archive by another path).
+- **Empty plan.** If an active custom plan has **zero** live workouts left, it is stopped automatically
+  (`is_active = false`, exactly as «Остановить план»: open current/future rows removed, history and credits
+  kept, plan object kept). Idempotent; done both by workout deletion and by convergence. The UI shows it as
+  stopped.
+- **Defence in depth.** Live start re-checks the workout of a non-course row and answers 422 «План обновился…»
+  for an archived one (PL11).
 
 Example W1=2, W2=2, W3=0, W4=2, W5=2, W6=0 → weeks with 2, 2, 0, 2, 2, 0 PlanItems; a zero week
 is a valid, explicit value (today `count_per_week` is `ge=1`, `app/web/schemas_v2.py:506`, so 0 is
@@ -249,6 +276,12 @@ Where the contract left a choice open, Wave 1b decided as follows (code: `app/do
     advisory lock (`lock_user_starts`, the same lock a crediting start holds), then the plan row lock (`lock_plan`, the
     lock `converge_user_plan` holds) — a start and a removal of the same occurrence, or a removal/stop and a convergence,
     serialise; lock order advisory → plan, no cycle. No schema change (existing `status`, `is_active`, `plan_item_id`).
+    **Second review, blocker F (deleted workouts, §7):** workout deletion runs under the same two locks and archives the
+    workout in the same transaction; convergence reads the workout's archive state (a column query, after `lock_plan`)
+    before reading credits; live start reads it after `lock_user_starts`. So a convergence after the deletion never
+    materialises the workout, a convergence before it only creates rows the deletion then removes, a start before the
+    deletion keeps its credit, and a start after it is rejected. No new lock, no schema change (`custom_plans.is_active`,
+    `plan_items.status`, `complexes.archived_at`).
 11. **Not in this wave:** `awaiting_assessment` (assessment stored in `programs.assessment`, not enforced — #305 with
     OD-1), K3 `spacing_violation` on post-factum logging (#307), occurrence `week_phase` (always `base`).
 

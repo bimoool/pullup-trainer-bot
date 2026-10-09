@@ -286,6 +286,14 @@ class LiveSessionService:
                 return None
             if plan_item.status == PlanItemStatus.REMOVED or plan_item.legacy_aggregate:
                 raise ValueError(STALE_PLAN_ITEM_MESSAGE)
+            if (
+                plan_item.program_inclusion_id is None and plan_item.complex_id is not None
+                and not await self._plans.live_workout_ids([plan_item.complex_id], user_id)
+            ):
+                # #304 F (страховка): строка своего плана / ручная, чья тренировка удалена (архив) или
+                # недоступна, не стартует, даже если строка ещё есть. Читается после лока стартов: удаление
+                # тренировки держит тот же лок, поэтому старт видит уже закоммиченный архив.
+                raise ValueError(STALE_PLAN_ITEM_MESSAGE)
             plan_items.append(plan_item)
         if not plan_items:
             raise ValueError("Не выбрано занятие плана")

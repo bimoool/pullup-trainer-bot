@@ -84,7 +84,7 @@ class PlanViewService:
     ) -> PlanView:
         tz = resolve_timezone(user.timezone)
         week_by_id = {week.id: week for week in plan_weeks}
-        visible = await self._actionable_rows(plan_items, inclusions, week_by_id, today)
+        visible = await self._actionable_rows(plan_items, inclusions, week_by_id, today, user_id=user.id)
 
         # Старые агрегатные строки — прежний счётчик «сделано на своей неделе» по M2M (#258).
         aggregates = [item for item in visible if item.occurrence_index is None]
@@ -156,18 +156,22 @@ class PlanViewService:
 
     async def _actionable_rows(
         self, plan_items: list[PlanItem], inclusions: list[ProgramInclusion], week_by_id: dict[int, PlanWeek],
-        today: date,
+        today: date, *, user_id: int,
     ) -> list[PlanItem]:
-        """Строки плана для показа: без снятых (status = removed) и без НЕзасчитанных строк убранного
-        курса (is_active = false) в текущей/будущих неделях (#304 C1) — их старт сервер отклоняет, поэтому
-        «Начать» / available и «0 из 3» они не дают. Засчитанные строки убранного курса и прошлые недели
-        (история) остаются; строки в БД не меняются (повторное «Добавить» курса вернёт их как были)."""
+        """Строки плана для показа: без снятых (status = removed) и без НЕзасчитанных строк текущей/будущих
+        недель, которые сервер не стартует: строки убранного курса (is_active = false, #304 C1) и строки
+        своего плана / ручные с удалённой (архивной) тренировкой (#304 F) — «Начать» / available и «0 из 3»
+        они не дают. Засчитанные строки и прошлые недели (история) остаются; строки в БД не меняются."""
         inactive = {inclusion.id for inclusion in inclusions if not inclusion.is_active}
         rows = [item for item in plan_items if item.status != PlanItemStatus.REMOVED]
-        candidates = [
-            item.id for item in rows
-            if item.program_inclusion_id in inactive and item.plan_week_id in week_by_id
-            and week_by_id[item.plan_week_id].start_date + timedelta(days=6) >= today
+        open_weeks = [
+            item for item in rows
+            if item.plan_week_id in week_by_id and week_by_id[item.plan_week_id].start_date + timedelta(days=6) >= today
+        ]
+        workout_rows = [item for item in open_weeks if item.program_inclusion_id is None and item.complex_id is not None]
+        live = await self._plans.live_workout_ids([item.complex_id for item in workout_rows], user_id)
+        candidates = [item.id for item in open_weeks if item.program_inclusion_id in inactive] + [
+            item.id for item in workout_rows if item.complex_id not in live
         ]
         if not candidates:
             return rows
