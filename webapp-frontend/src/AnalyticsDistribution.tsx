@@ -6,7 +6,7 @@ import {
   categoryColors,
   donutRings,
   formatPercent,
-  formatShare,
+  formatCount,
   formatTableMinutes,
   ringArcPath,
 } from "./analyticsDistributionModel";
@@ -19,7 +19,7 @@ const INNER = { from: 40, to: 62 };
 const OUTER = { from: 65, to: 86 };
 
 function formatValue(value: number, metric: MetricKey): string {
-  return metric === "minutes" ? formatMinutes(Math.round(value)) : formatShare(value);
+  return metric === "minutes" ? formatMinutes(Math.round(value)) : formatCount(value);
 }
 
 type DonutProps = {
@@ -82,9 +82,9 @@ export function DistributionDonut({ dist, metric, homeOrder = [], titleAction }:
 
 type Category = AnalyticsDistributionV2["categories"][number];
 
-/** Ненулевая строка: хоть какая-то доля тренировок или минут (округление таблицы — 0.01 / 1). */
+/** Ненулевая строка: есть хотя бы одна тренировка или минута (значения целые, #308). */
 function hasValue(item: { workouts: number; minutes: number }): boolean {
-  return item.workouts >= 0.005 || item.minutes >= 0.5;
+  return item.workouts >= 1 || item.minutes >= 1;
 }
 
 /** «Сводка»: по умолчанию только строки с данными, «Показать все» раскрывает нули каталога;
@@ -113,7 +113,7 @@ export function DistributionTable({ dist, homeOrder = [] }: { dist: AnalyticsDis
           ))}
           <tr className="analytics-summary-total" data-testid="summary-total">
             <th scope="row">Итого</th>
-            <td>{formatShare(dist.total_workouts)}</td>
+            <td>{formatCount(dist.total_workouts)}</td>
             <td>{formatTableMinutes(dist.total_minutes)}</td>
           </tr>
         </tbody>
@@ -139,13 +139,13 @@ function SummaryRows({ category, color, showAll }: { category: Category; color?:
           {color !== undefined && <span className="analytics-legend-swatch analytics-summary-swatch" style={{ background: color }} aria-hidden="true" />}
           {category.name}
         </th>
-        <td>{formatShare(category.workouts)}</td>
+        <td>{formatCount(category.workouts)}</td>
         <td>{formatTableMinutes(category.minutes)}</td>
       </tr>
       {subs.map((sub) => (
         <tr key={sub.name} className="analytics-summary-sub" data-testid="summary-subcategory" data-category={category.name}>
           <th scope="row" title={sub.name}>{sub.name}</th>
-          <td>{formatShare(sub.workouts)}</td>
+          <td>{formatCount(sub.workouts)}</td>
           <td>{formatTableMinutes(sub.minutes)}</td>
         </tr>
       ))}

@@ -234,3 +234,28 @@ any edit path and is outside this decision.
   (`synthesized = true`) so it never contradicts R1. With #306 building targets from the snapshot the two
   always agree.
 - **Clone duration:** strength copy → `unknown` (not measured); external activity copy → entered value copied.
+
+## 12. Implementation decisions (Wave 3b, #308)
+
+- **`canonical_sessions`** = `status = completed ∧ superseded_at IS NULL` — `TrainingSessionRepository.canonical_predicate`,
+  читают календарь/список Журнала, `GET /api/profile` (`workouts_count`) и Analytics. «Не архивирована» в схеме
+  TrainingSession выражается тем же `superseded_at` (архивирование определения `complexes.archived_at` сессии не скрывает).
+  Замещение — колонки `superseded_at`/`superseded_reason` (`legacy_deleted | legacy_replaced | native_duplicate`), указатель на
+  заменяющую сессию — `superseded_by_id`; замещённая строка не удаляется и никогда не снимается автоматически.
+- **Ключ копии** `(origin, legacy_id)` уникален; `legacy_id` — `workouts.id` (legacy_backfill) / `elective_workouts.id`
+  (legacy_elective). Dual-write (запись/правка/удаление/факультатив/админ-сброс) и backfill делят `LegacyConvergenceRepository`.
+  Копия `legacy_backfill` не редактируется в Журнале v2 (ED1, `REASON_LEGACY_COPY`) — её изменяет legacy-карточка.
+- **primary_category** (A2): у `Complex` нет собственной категории, поэтому «категория определения» выражается категориями его
+  упражнений: категория блока с наибольшим числом выполненных подходов, ничья — первый блок; внешняя активность — «Другая
+  активность» (подкатегория — подпись вида); нет блоков — «Без категории». Курс, факультатив, «из моих», копия, пользовательская
+  и интервальная сессии проходят одно правило. Явная категория определения (если появится) встанет перед ним.
+- **Подписи** (A3): `app.domain.exercise_identity.category_label/subcategory_label`; ключ-идентификатор → «Без категории»/нет
+  подкатегории, служебные подкатегории (роли курса, факультативы) в подкатегории не показываются.
+- **Минуты** (A5): `round_minutes` — половина вверх; `allocate_largest_remainder` — ничья в пользу раньше стоящей части.
+- **История упражнения** (A4): блоки одной сессии с одной `analytics_identity` — одна запись; подход «на максимум» блока рабочих
+  подходов — отдельная панель `max_effort`. Протокол блока: v1-снимок Builder-сессии, иначе выводится из выполненного.
+- **Неоднозначность сведения** (MIGRATION §3): копия без ключа привязывается к legacy-строке только по точному совпадению
+  (момент, источник, упражнения и подходы); непарные живые строки получают новую копию, непарные копии замещаются; факультатив
+  без копии, записанный до миграции пользователя, не воскрешается (отчёт `ambiguous_elective_without_copy`).
+- **Известные пробелы:** `GET /api/dashboard` (`workouts_count`, экран готовности) остаётся по legacy-цепочке; `exercise.category` в
+  каталоге/поиске — свои подписи каталога, вне Журнала и Аналитики.

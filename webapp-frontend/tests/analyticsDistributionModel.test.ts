@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  NEUTRAL_COLOR, categoryColors, donutRings, formatPercent, formatShare, ringArcPath,
+  NEUTRAL_COLOR, categoryColors, donutRings, formatCount, formatPercent, ringArcPath,
 } from "../src/analyticsDistributionModel.ts";
 import { categoryColorVar } from "../src/homeDiscovery.ts";
 import type { AnalyticsDistributionV2 } from "../src/apiV2.ts";
@@ -10,14 +10,14 @@ import type { AnalyticsDistributionV2 } from "../src/apiV2.ts";
 const dist: AnalyticsDistributionV2 = {
   categories: [
     {
-      name: "Тяга", workouts: 1.5, minutes: 50,
-      subcategories: [{ name: "Верт", workouts: 1, minutes: 40 }, { name: "Гориз", workouts: 0.25, minutes: 5 }],
+      name: "Тяга", workouts: 3, minutes: 50,
+      subcategories: [{ name: "Верт", workouts: 2, minutes: 40 }, { name: "Гориз", workouts: 1, minutes: 5 }],
     },
     { name: "Ноги", workouts: 0, minutes: 0, subcategories: [] },
-    { name: "Кор", workouts: 0.5, minutes: 10, subcategories: [] },
-    { name: "Другая активность", workouts: 1, minutes: 30, subcategories: [] },
+    { name: "Кор", workouts: 1, minutes: 10, subcategories: [] },
+    { name: "Другая активность", workouts: 2, minutes: 30, subcategories: [] },
   ],
-  total_workouts: 3, total_minutes: 90,
+  total_workouts: 6, total_minutes: 90,
 };
 
 test("categoryColors: цвет по имени (порядок Главной), служебная категория нейтральная", () => {
@@ -66,12 +66,12 @@ test("categoryColors: категории Главной с индексом ≥ 
 
 test("donutRings: внутреннее кольцо — категории без нулей, доли в сумме 1", () => {
   const { inner, outer, total } = donutRings(dist, "workouts");
-  assert.equal(total, 3);
+  assert.equal(total, 6);
   assert.deepEqual(inner.map((s) => s.label), ["Тяга", "Кор", "Другая активность"]);
   assert.equal(inner[0].start, 0);
   assert.ok(Math.abs(inner[inner.length - 1].end - 1) < 1e-9);
-  // внешнее: две подкатегории Тяги + остаток (0.25), затем Кор и «Другая» целиком
-  assert.deepEqual(outer.map((s) => s.label), ["Верт", "Гориз", "Тяга", "Кор", "Другая активность"]);
+  // внешнее: подкатегории Тяги (2 + 1 = все 3 тренировки категории — остатка нет), затем Кор и «Другая» целиком
+  assert.deepEqual(outer.map((s) => s.label), ["Верт", "Гориз", "Кор", "Другая активность"]);
   assert.ok(Math.abs(outer[outer.length - 1].end - 1) < 1e-9);
 });
 
@@ -88,10 +88,20 @@ test("ringArcPath: полный круг не вырождается, large-arc 
   assert.match(small, /A60 60 0 0 1/);
 });
 
-test("форматирование долей и процентов", () => {
-  assert.equal(formatShare(1.5), "1.5");
-  assert.equal(formatShare(2), "2");
-  assert.equal(formatShare(0.6667), "0.67");
+test("donutRings: минуты подкатегорий — остаток категории виден отдельным бледным сегментом", () => {
+  const { outer } = donutRings(dist, "minutes");
+  assert.deepEqual(outer.map((s) => [s.label, s.value]), [
+    ["Верт", 40], ["Гориз", 5], ["Тяга", 5], ["Кор", 10], ["Другая активность", 30],
+  ]);
+  assert.ok(Math.abs(outer[outer.length - 1].end - 1) < 1e-9);
+});
+
+test("тренировки — только целые: дробь не показывается", () => {
+  assert.equal(formatCount(2), "2");
+  assert.equal(formatCount(0), "0");
+  assert.equal(formatCount(0.5), "1"); // страховка: «0.5 тренировки» не рендерится никогда
+  assert.equal(formatCount(1.5), "2");
+  assert.ok(!/[.,]/.test(formatCount(2.4)));
   assert.equal(formatPercent(1, 4), "25%");
   assert.equal(formatPercent(1, 0), "0%");
 });

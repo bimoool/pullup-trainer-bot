@@ -1,11 +1,15 @@
 // Чистые помощники «Распределение по категориям» (CRIMPD #274): сегменты кольцевой
-// диаграммы, цвета, формат дробных значений. Без React и DOM.
+// диаграммы, цвета, формат целых значений. Без React и DOM.
+//
+// #308: тренировка атомарна — API отдаёт ЦЕЛЫЕ числа тренировок (одна категория на сессию) и целые минуты,
+// сумма частей равна итогу. Никаких долей («0.5 тренировки») здесь нет и быть не должно.
 
 import type { AnalyticsDistributionV2 } from "./apiV2";
 import type { MetricKey } from "./analyticsMetric";
 import { CATEGORY_PALETTE_SIZE, categoryColorVar } from "./homeDiscovery.ts";
 
-const EPSILON = 0.005;
+// Значения целые: ненулевое — это ≥ 1; порог 0.5 только страхует от float-шума.
+const EPSILON = 0.5;
 
 /** Нейтральный цвет служебной категории «Другая активность» / «Без категории». */
 export const NEUTRAL_COLOR = "#8a8f98";
@@ -134,9 +138,9 @@ export function ringArcPath(
   return `M${f(x1)} ${f(y1)} A${rOuter} ${rOuter} 0 ${large} 1 ${f(x2)} ${f(y2)} L${f(x3)} ${f(y3)} A${rInner} ${rInner} 0 ${large} 0 ${f(x4)} ${f(y4)} Z`;
 }
 
-/** Дробные тренировки (смешанная сессия делится по долям блоков): до 2 знаков, без хвостовых нулей. */
-export function formatShare(value: number): string {
-  return String(Number(value.toFixed(2)));
+/** Число тренировок: целое. Дробь от сервера не ожидается; если придёт — округляем, а не показываем «0.5». */
+export function formatCount(value: number): string {
+  return String(Math.round(value));
 }
 
 /** Минуты таблицы: округление до целых. */

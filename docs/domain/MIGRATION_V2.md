@@ -71,6 +71,13 @@ history read by any v2 view.
    fingerprints. Legacy cascade/readiness logic keeps reading legacy tables until the bot path is
    retired (out of this campaign).
 
+**Implemented in Wave 3b (#308), revision `a7e2c5b9d1f4`:** columns `legacy_id`, `superseded_at`, `superseded_reason`,
+`UNIQUE (origin, legacy_id)`; dual-write in `LegacyConvergenceRepository` (called by `WorkoutRepository`,
+`ElectiveWorkoutRepository`, workout deletion and admin reset); deploy-time convergence
+`python scripts/backfill_multi_program.py --converge-history [--apply]` (dry-run by default, per-user transaction, apply-again = 0,
+legacy tables never written). Deploy order: `alembic upgrade head` → `--converge-history` (review the dry-run) → `--converge-history --apply`
+→ `up -d`. Schema downgrade drops the three columns (copies stay); re-upgrade + `--apply` restores keys and supersessions.
+
 ## 5. Aged-state convergence
 
 `converge_user_domain_v2(user, today)` — one idempotent function, extending
