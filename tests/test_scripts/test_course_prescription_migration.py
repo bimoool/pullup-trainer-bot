@@ -2,7 +2,7 @@
 
 Каждый сценарий — своя временная БД и `alembic` подпроцессом (как deploy/deploy-run.sh):
   A. пустая БД → upgrade head: колонка provenance, status вмещает awaiting_assessment;
-  B. aged-БД на #304 (d8a3c6f1e2b4): инклюзия без block_b.work_sets (цель/снаряд/счётчики свои),
+  B. aged-БД на #304 (d8a3c6f1e2b4) → #307 (f4c1a7e9b3d2, предыдущая ревизия цепочки): инклюзия без block_b.work_sets (цель/снаряд/счётчики свои),
      с null, с уже заданным work_sets, не-STEP → upgrade: дописан ТОЛЬКО недостающий work_sets = 4,
      всё остальное (цели, снаряд, initial_progression_state, status/cursor/rev, история, подписки) —
      байт в байт;
@@ -28,7 +28,10 @@ from tests.test_scripts.test_system_content_migration import (
     scratch_dsn,  # noqa: F401 — фикстура
 )
 
-PRE_REVISION = "d8a3c6f1e2b4"
+# Aged-строки засеваются на #304 (схема фикстуры AGED), затем БД поднимается до #307 — ревизии, за которой
+# идёт e3b9c5d7a2f1 (#307 принят первым, MIGRATION §9.1 — одна голова).
+AGED_REVISION = "d8a3c6f1e2b4"
+PRE_REVISION = "f4c1a7e9b3d2"
 REVISION = "e3b9c5d7a2f1"
 
 _BAND_STATE_B = {
@@ -90,9 +93,10 @@ def _states(dsn: str) -> dict[int, dict]:
 
 
 def _seed_aged(dsn: str) -> None:
-    _alembic(dsn, "upgrade", PRE_REVISION)
+    _alembic(dsn, "upgrade", AGED_REVISION)
     _run(_exec(dsn, AGED))
     _run(_exec(dsn, EXTRA))
+    _alembic(dsn, "upgrade", PRE_REVISION)
 
 
 def test_a_fresh_db_has_provenance_column_and_wide_status(deployed_dsn):  # noqa: F811
@@ -160,3 +164,15 @@ def test_d_downgrade_maps_awaiting_to_active_and_keeps_work_sets(scratch_dsn):  
     _alembic(scratch_dsn, "downgrade", PRE_REVISION)
     assert _scalar(scratch_dsn, "SELECT status FROM program_inclusions WHERE id = 3001") == "active"
     assert _states(scratch_dsn)[3001]["block_b"]["work_sets"] == 4
+
+
+def test_e_single_head_follows_training_session_v2(scratch_dsn):  # noqa: F811
+    """#307 (f4c1a7e9b3d2) принят первым: e3b9c5d7a2f1 идёт за ним, голова одна."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    assert script.get_heads() == [REVISION]
+    assert script.get_revision(REVISION).down_revision == PRE_REVISION
+    _alembic(scratch_dsn, "upgrade", "head")
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == REVISION

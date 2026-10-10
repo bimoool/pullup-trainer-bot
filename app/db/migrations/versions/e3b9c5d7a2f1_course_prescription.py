@@ -1,7 +1,7 @@
 """Course prescription: block_b.work_sets backfill, awaiting_assessment status, prescription provenance (issue #305)
 
 Revision ID: e3b9c5d7a2f1
-Revises: d8a3c6f1e2b4
+Revises: f4c1a7e9b3d2
 Create Date: 2026-10-09 12:00:00.000000
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = 'e3b9c5d7a2f1'
-down_revision: str | None = 'd8a3c6f1e2b4'
+down_revision: str | None = 'f4c1a7e9b3d2'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
