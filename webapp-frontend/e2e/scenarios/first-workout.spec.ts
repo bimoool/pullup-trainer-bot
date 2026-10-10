@@ -29,9 +29,10 @@ test("первая тренировка: курс из каталога → в �
   await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
 
   await expect(page.getByText("Тренировка завершена", { exact: true })).toBeVisible();
-  await expect(page.getByText(/— 1\/3/)).toBeVisible(); // один из трёх подходов блока A
-  // статус блока не только иконкой: скринридер слышит «не выполнено» (1 из 3 подходов)
-  await expect(page.locator(".live-card-title").filter({ hasText: /— 1\/3/ }).locator(".vp-sr-only")).toHaveText(", не выполнено");
+  // один из четырёх подходов блока A: 3 рабочих + подход на максимум (#305, OD-3 решён: включать)
+  await expect(page.getByText(/— 1\/4/)).toBeVisible();
+  // статус блока не только иконкой: скринридер слышит «не выполнено» (1 из 4 подходов)
+  await expect(page.locator(".live-card-title").filter({ hasText: /— 1\/4/ }).locator(".vp-sr-only")).toHaveText(", не выполнено");
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);

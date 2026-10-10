@@ -425,7 +425,8 @@ export interface PlanItemResponseV2 {
   credited_session_id?: number | null;
 }
 
-export type PlanOccurrenceState = "completed" | "missed" | "infeasible" | "available" | "too_early";
+export type PlanOccurrenceState =
+  "completed" | "missed" | "infeasible" | "available" | "too_early" | "awaiting_assessment";
 
 export interface PlanWeekSummaryV2 {
   plan_week_id: number;
@@ -536,6 +537,8 @@ export interface LiveSetTargetResponse {
   metric_type: string;
   value: string;
   unit: string;
+  /** issue #305: подход на максимум (свойство цели). */
+  is_max_set?: boolean;
 }
 
 export interface LiveSessionBlockResponse {

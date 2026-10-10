@@ -187,13 +187,12 @@ async def test_dashboard_status_gap_retest_required_after_long_break(session, us
 
 
 def _expected_target_a_after_one_session() -> int:
-    """Прямой вызов того же домена, что StepProgressionStrategy.apply()
-    делегирует изнутри (app/domain/progression_strategy.py) - независимое
-    вычисление ожидаемой цели после ровно одной тренировки блока A с нуля
-    (target=10, work_sets=3, volume=0 -> _BLOCK_A_WORKING_REPS/_MAX_REPS)."""
+    """Прямой вызов формулы блока A — независимое вычисление ожидаемой цели после ровно одной тренировки
+    с нуля (target=10, work_sets=3). #305: прогрессию двигает только подход на максимум — рабочие подходы
+    формула получает предписанными (3 × 10), а не выполненными (_BLOCK_A_WORKING_REPS), вход «слабой
+    тренировки» — промах замера (max ≥ цели → нет)."""
     result = recalculate_volume_block(
-        10, 3, _BLOCK_A_WORKING_REPS, _BLOCK_A_MAX_REPS,
-        sum(_BLOCK_A_WORKING_REPS) + _BLOCK_A_MAX_REPS, 0, EquipmentType.BODYWEIGHT,
+        10, 3, (10, 10, 10), _BLOCK_A_MAX_REPS, 0, 0, EquipmentType.BODYWEIGHT,
         consecutive_weak_before=0, consecutive_stall_before=0,
     )
     return result.new_target

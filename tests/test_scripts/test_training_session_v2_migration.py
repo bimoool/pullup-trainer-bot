@@ -300,5 +300,6 @@ def test_rerun_upgrade_and_downgrade_upgrade(scratch_dsn):  # noqa: F811
 
 def test_fresh_install_single_head(scratch_dsn):  # noqa: F811
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == REVISION
+    # Голова цепочки — следующая ревизия (#305 e3b9c5d7a2f1 идёт за этой); эта ревизия применена.
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == "e3b9c5d7a2f1"
     assert _scalar(scratch_dsn, "SELECT count(*) FROM training_sessions") == 0

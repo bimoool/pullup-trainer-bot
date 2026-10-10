@@ -119,12 +119,12 @@ async def test_start_live_session_returns_get_ready_phase_with_step_targets(sess
     assert len(body["blocks"]) == 2
 
     block_a = next(b for b in body["blocks"] if b["exercise_id"] == roles["block_a"])
-    # base_target=10, work_sets=3 (config _make_step_program) -> 3 таргета по 10.
-    assert [t["value"] for t in block_a["targets"]] == ["10.00", "10.00", "10.00"]
+    # base_target=10, work_sets=3 (config _make_step_program) -> 3 таргета по 10 + подход на максимум
+    # (#305, OD-3 решён: включать; цели у замера нет).
+    assert [(t["value"], t["is_max_set"]) for t in block_a["targets"]] == [("10.00", False)] * 3 + [("0.00", True)]
     block_b = next(b for b in body["blocks"] if b["exercise_id"] == roles["block_b"])
-    # block_b не хранит work_sets в progression_state -> дефолт 1 подход (см.
-    # app.services.live_session._resolve_step_role_block).
-    assert [t["value"] for t in block_b["targets"]] == ["3.00"]
+    # issue #305 (D2): block_b несёт work_sets = STRENGTH_BLOCK.work_sets (4) — 4 подхода, не 1, + max.
+    assert [(t["value"], t["is_max_set"]) for t in block_b["targets"]] == [("3.00", False)] * 4 + [("0.00", True)]
 
 
 async def test_start_live_session_is_idempotent_by_client_session_id(session, user: User):

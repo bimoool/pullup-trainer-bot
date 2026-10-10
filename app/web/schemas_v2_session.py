@@ -133,6 +133,8 @@ class LiveSetTargetResponse(BaseModel):
     metric_type: str
     value: str
     unit: str
+    # issue #305 (TRAINING_SESSION R2): подход на максимум — свойство цели.
+    is_max_set: bool = False
 
 
 class LiveSetLogResponse(SetLogResponse):

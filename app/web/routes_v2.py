@@ -70,6 +70,7 @@ from app.domain.training_session_v2 import effective_duration_seconds
 from app.domain.workout_definition import WorkoutContentError, content_hash, normalize, to_dict
 from app.domain.workout_protocol import UserWorkoutProtocol
 from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.course_assessment import AssessmentRequiredError
 from app.services.live_session import (
     ActiveSessionConflictError,
     CompleteResult,
@@ -1758,7 +1759,7 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                 targets=[
                     LiveSetTargetResponse(
                         set_number=target.set_number, metric_type=target.metric_type.value,
-                        value=str(target.value), unit=target.unit,
+                        value=str(target.value), unit=target.unit, is_max_set=target.is_max_set,
                     )
                     for target in block.set_targets
                 ],
@@ -1830,6 +1831,15 @@ async def start_live_session(
         )
     except TooEarlyError as exc:
         raise too_early_http_error(exc) from exc
+    except AssessmentRequiredError as exc:
+        # issue #305 (PROGRAM_PLAN_V2 §3): «Сначала тест на максимум».
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "code": "assessment_required", "protocol_id": exc.protocol_id,
+                "message": "Сначала тест на максимум — после него откроется основная тренировка.",
+            },
+        ) from exc
     except ActiveSessionConflictError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,

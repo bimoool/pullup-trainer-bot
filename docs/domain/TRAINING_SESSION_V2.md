@@ -205,14 +205,15 @@ Everything below is derivable from `training_sessions` + blocks/targets/logs alo
 kinds are already stored (`set_targets.kind`); (3) a progression-resolved snapshot built with
 `build_prescription_snapshot(resolve_progression=…)` can replace the synthesized one at start without a
 schema change (`prescription_snapshot` is JSONB; `workout_definition_version_id` nullable). Alembic:
-#305's `e3b9c5d7a2f1` and this `f4c1a7e9b3d2` both revise `d8a3c6f1e2b4`; whichever merges second
-rebases its `down_revision` (MIGRATION §9.1 — no parallel heads).
+#307 merged first; #305's `e3b9c5d7a2f1` now revises this `f4c1a7e9b3d2` (MIGRATION §9.1 — one head).
 
 **Corrected MAX values (seam for #305).** A Journal edit of a MAX set (`set_logs.value` of a set whose
 target `is_max_set`) is a historical correction only: #307 persists it, bumps `revision`, and changes no
 progression state, PlanItem or prescription. #307 emits no event and recomputes nothing. When/whether the
 latest corrected MAX of the current cycle feeds the **next** prescription is decided by #305 at its forward
-boundary (it can read `set_logs` + `set_targets.is_max_set` and the session `revision`); past cycles and
+boundary. **#305 decision:** it does not. The step is applied once, at completion of the course MAIN session,
+from that session's max set as completed (`advance_step_progression`, PROGRAM_PLAN_V2 §11.3a/3b); a later
+correction of that max is history only, and the next cycle is driven by its own new measurement. Past cycles and
 completed workouts are never regenerated. The pre-existing explicit endpoint
 `POST /api/v2/program-inclusions/{id}/progression/{preview,apply}` (legacy cascade replay) is not called by
 any edit path and is outside this decision.

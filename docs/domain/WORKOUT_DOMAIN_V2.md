@@ -222,8 +222,12 @@ AD-3: one WorkoutDefinition «Подтягивания» with two blocks, matchi
   `block_b.work_sets = 4` from `STRENGTH_BLOCK.work_sets`).
 - The trailing `max_reps` set is **required input** of the current progression formula
   (`delta = max_reps − target`, `app/domain/progression.py:121`); without it progression cannot
-  grow (D3). Owner confirmation that «4 × 3» means *4 working sets + the max set*: OD-3.
+  grow (D3). OD-3 resolved by the owner: «4 × 3» = *4 working sets + the explicit max set*, and the max set
+  is the **only** progression input (working-set actuals never move the state).
 - Load comes from progression state (`equipment_type/value/item_id`) into `LoadSpec`.
+- **Wave 1c (#305):** the resolver and `block_b.work_sets` backfill are implemented
+  (`app/domain/course_prescription.py`); the resolver always appends one max set, and
+  `advance_step_progression` steps the state from it alone, forward-only — see PROGRAM_PLAN_V2 §11.
 
 ## 7. Display contract (shared by plan, live, journal, analytics)
 

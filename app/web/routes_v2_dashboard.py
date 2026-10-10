@@ -28,7 +28,8 @@ from app.config import settings
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
-from app.domain.constants import STRENGTH_BLOCK, EquipmentType
+from app.domain.constants import EquipmentType
+from app.domain.course_prescription import normalize_progression_state
 from app.domain.progression import rollback_target
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.services.plan_spacing import MainSpacingService
@@ -97,6 +98,8 @@ async def get_dashboard_status(
             return DashboardStatusResponse(status="gap_retest_required")
         is_gap_rollback = readiness.status == TrainingReadiness.GAP_ROLLBACK
 
+    # issue #305: число подходов обоих блоков — из канонического состояния (то же, что исполняет Live).
+    progression_state = normalize_progression_state(progression_state)
     block_a_state, block_b_state = progression_state["block_a"], progression_state["block_b"]
     target_a = rollback_target(block_a_state["target"]) if is_gap_rollback else block_a_state["target"]
 
@@ -109,7 +112,7 @@ async def get_dashboard_status(
             target=target_a, work_sets=block_a_state["work_sets"], equipment=_equipment_response(block_a_state),
         ),
         block_b=DashboardBlockResponse(
-            target=block_b_state["target"], work_sets=STRENGTH_BLOCK.work_sets,
+            target=block_b_state["target"], work_sets=block_b_state["work_sets"],
             equipment=_equipment_response(block_b_state),
         ),
     )

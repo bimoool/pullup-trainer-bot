@@ -4,9 +4,10 @@ import { noWakeLock } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py v2_session_ready 900010 — STEP-курс синтетической
-// категории, block_a work_sets=3 (цель 10) + block_b дефолтный 1 подход
-// (цель 3) — ровно 4 подхода на сессию (см. докстринг сценария в
-// scripts/e2e_seed.py). Экран сессии v2 виден только ADMIN_IDS — сценарий
+// категории, block_a work_sets=3 (цель 10) + подход на максимум, block_b 4 рабочих
+// подхода (цель 3; issue #305, D2: раньше ошибочно 1) + подход на максимум (OD-3 решён:
+// включать) — 9 подходов на сессию (см.
+// докстринг сценария в scripts/e2e_seed.py). Экран сессии v2 виден только ADMIN_IDS — сценарий
 // требует ADMIN_IDS=900010 (или шире) у тестового сервера, см.
 // webapp-frontend/e2e/README.md.
 const TELEGRAM_ID = 900_010;
@@ -37,13 +38,16 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   // про то, что plan_item_ids резолвятся online-запросом /api/v2/plan).
   await context.setOffline(true);
 
-  // Блок A — 3 подхода (get_ready -> go -> log -> rest -> get_ready -> ...).
-  for (let i = 0; i < 3; i += 1) {
+  // Блок A — 3 рабочих подхода + подход на максимум (get_ready -> go -> log -> rest -> ...).
+  for (let i = 0; i < 4; i += 1) {
     await page.getByRole("button", { name: "Готов" }).click();
     await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-    await page.getByLabel("Повторений").fill("10");
+    if (i === 3) {
+      await expect(page.getByText(/Подход 4\/4 · Максимум/)).toBeVisible(); // замер, не «Цель: 0»
+    }
+    await page.getByLabel("Повторений").fill(i === 3 ? "12" : "10");
     await page.getByRole("button", { name: "Готово" }).click();
-    if (i < 2) {
+    if (i < 3) {
       await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Пропустить отдых" }).click();
     }
@@ -53,10 +57,17 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   // см. app.domain.live_session.next_phase: "последний подход НЕпоследнего
   // блока -> get_ready первого подхода следующего блока".
   await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Готов" }).click();
-  await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await page.getByLabel("Повторений").fill("3");
-  await page.getByRole("button", { name: "Готово" }).click();
+  // Блок Б — 4 рабочих подхода (issue #305, D2: STRENGTH_BLOCK.work_sets) + подход на максимум.
+  for (let i = 0; i < 5; i += 1) {
+    await page.getByRole("button", { name: "Готов" }).click();
+    await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
+    await page.getByLabel("Повторений").fill(i === 4 ? "5" : "3");
+    await page.getByRole("button", { name: "Готово" }).click();
+    if (i < 4) {
+      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Пропустить отдых" }).click();
+    }
+  }
 
   await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
   await expect(page.getByText(/Нет сети/)).toBeVisible();
@@ -84,12 +95,11 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   expect(liveResponses.filter((r) => r.path.endsWith("/complete"))).toEqual([
     expect.objectContaining({ status: 200 }),
   ]);
-  // 3 подхода блока A + 1 подход блока Б = 4/4 показаны выполненными.
-  await expect(page.getByText(/— 3\/3/)).toBeVisible();
-  await expect(page.getByText(/— 1\/1/)).toBeVisible();
-  // work_sets_a=3 в конфиге сценария — StepProgressionStrategy на "держал
-  // цель" даёт новую цель блока A (см. app/domain/progression.py) — здесь
-  // важен сам факт, что новая цель показана, не конкретное число.
+  // 3 + max блока A и 4 + max блока Б показаны выполненными.
+  await expect(page.getByText(/— 4\/4/)).toBeVisible();
+  await expect(page.getByText(/— 5\/5/)).toBeVisible();
+  // Прогрессию двигает только подход на максимум (#305): max 12 > цели 10 (A), 5 > 3 (Б) — цели растут.
+  // Здесь важен сам факт, что новая цель показана; числа — в tests/test_web/test_v2_course_prescription.py.
   await expect(page.getByText("Новая цель", { exact: true })).toBeVisible();
   await expect(page.getByText(/^\d+ → \d+$/)).toHaveCount(2); // по строке на блок (A и Б)
 

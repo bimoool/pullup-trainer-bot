@@ -22,7 +22,9 @@ PL7, MIGRATION_V2 §3, §5).
      (не архивных) тренировок, без пересчёта ротации; открытые занятия удалённой тренировки — removed;
      свой план без живых тренировок останавливается (#304 F, PROGRAM_PLAN_V2 §7);
 5. кэш инклюзии: status (NULL → по is_active), sequence_cursor (NULL → число засчитанных MAIN),
-   completed_main_sessions / last_main_session_at — производные от сессий.
+   completed_main_sessions / last_main_session_at — производные от сессий;
+6. issue #305: awaiting_assessment → active, если замер записан (promote_if_assessed; стартовое
+   состояние такой инклюзии пересчитывается тем же правилом). Обратно на замер — никогда.
 
 Не делает: не подключает курсы (no auto-enrol), не удаляет и не пересоздаёт инклюзию, не трогает
 started_at / progression_state / initial_progression_state / снимок (кроме #301-починки пустого
@@ -68,6 +70,7 @@ from app.domain.plan_occurrence import (
     custom_week_occurrences,
     derive_slots,
 )
+from app.services.course_assessment import promote_if_assessed
 from app.services.plan_removal import retire_open_custom_rows, stop_custom_plan
 from app.services.plan_spacing import MainSpacingService
 from app.services.training_analytics import resolve_timezone
@@ -102,6 +105,7 @@ class ConvergenceReport:
     inclusion_fields_updated: int = 0
     custom_rows_retired: int = 0
     custom_plans_stopped: int = 0
+    assessments_promoted: int = 0
     gaps: list[str] = field(default_factory=list)
 
     @property
@@ -110,6 +114,7 @@ class ConvergenceReport:
             self.weeks_created + self.orphans_attached + self.snapshot_repairs + self.aggregates_frozen
             + self.aggregates_expanded + self.manual_converted + self.occurrences_created + self.credits_linked
             + self.inclusion_fields_updated + self.custom_rows_retired + self.custom_plans_stopped
+            + self.assessments_promoted
         )
 
     def as_dict(self) -> dict:
@@ -120,7 +125,7 @@ class ConvergenceReport:
             "manual_converted": self.manual_converted, "occurrences_created": self.occurrences_created,
             "credits_linked": self.credits_linked, "inclusion_fields_updated": self.inclusion_fields_updated,
             "custom_rows_retired": self.custom_rows_retired, "custom_plans_stopped": self.custom_plans_stopped,
-            "mutations": self.mutations, "gaps": self.gaps,
+            "assessments_promoted": self.assessments_promoted, "mutations": self.mutations, "gaps": self.gaps,
         }
 
 
@@ -498,6 +503,11 @@ class PlanConvergenceService:
             if inclusion.status is None:
                 inclusion.status = (InclusionStatus.ACTIVE if inclusion.is_active else InclusionStatus.REMOVED).value
                 changed = True
+            if inclusion.is_active and inclusion.status == InclusionStatus.AWAITING_ASSESSMENT.value:
+                # issue #305: единственный переход awaiting_assessment → active (замер записан). Обратного
+                # перехода convergence не делает никогда (MIGRATION_V2 §5.4: aged — не на замер).
+                program = await self._programs.get_by_id(inclusion.program_id)
+                report.assessments_promoted += await promote_if_assessed(self._session, inclusion, program)
             has_main = any(slot.key == MAIN_SLOT_KEY for slot in slots_by_inclusion.get(inclusion.id, []))
             if inclusion.is_active and has_main:
                 if main_count is None:

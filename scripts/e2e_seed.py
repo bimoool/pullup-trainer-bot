@@ -37,8 +37,8 @@ WorkoutScreen вообще, независимо от того, есть ли у
 SessionV2Lab.tsx) — тот же приём "не отдельный сервисный слой", что и
 сценарии выше, только сервисы/репозитории уже другие (ProgramInclusionService/
 TrainingSessionLogService волны 3, не WorkoutRepository старой схемы):
-  - v2_session_ready — STEP-курс, block_a work_sets=3 (итого 3+1=4 подхода
-    на сессию) — под E2E "офлайн 4 подхода" раздела 15.
+  - v2_session_ready — STEP-курс, block_a work_sets=3 + block_b 4 подхода
+    (#305, D2; итого 7 подходов на сессию) — под E2E «офлайн-подходы» раздела 15.
   - v2_session_complex — Program без стратегии + Complex из 3 упражнений,
     один PlanItem — под E2E "комплекс из 3, сделал 2".
   - v2_session_progression_edit — STEP-курс с ОДНОЙ прошлой сессией вчера,
@@ -261,9 +261,11 @@ async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None
     """STEP-курс синтетической категории — тот же рецепт, что
     tests/test_web/test_v2_live_session.py::_setup_step_session (PlanItem на
     каждую роль заводится напрямую, без ProgramItem: программа синтетическая,
-    без недельной матрицы). work_sets=3 у блока A + дефолтный 1 подход блока
-    Б (см. app.services.live_session._resolve_step_role_block) — сессия из
-    ОБОИХ PlanItem даёт ровно 4 подхода, под E2E "офлайн, 4 подхода"."""
+    без недельной матрицы). work_sets=3 у блока A + 4 подхода блока Б
+    (STRENGTH_BLOCK.work_sets, issue #305 — раньше ошибочно 1) и у каждого блока
+    последним — подход на максимум (OD-3 решён; резолвер
+    app.domain.course_prescription.resolve_progression_block) — сессия из ОБОИХ
+    PlanItem даёт 4 + 5 = 9 подходов, под E2E «офлайн-подходы»."""
     user = await _onboard(session, telegram_id)
 
     profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
@@ -347,14 +349,12 @@ async def seed_v2_session_complex(session: AsyncSession, telegram_id: int) -> No
 
 
 async def seed_v2_session_progression_edit(session: AsyncSession, telegram_id: int) -> None:
-    """STEP-курс + ОДНА прошлая сессия вчера — числа те же, что уже
-    доказаны в tests/test_web/test_v2_live_session.py::
-    test_complete_live_session_applies_step_progression_matching_direct_strategy_call
-    (11/11/11 блок A, 4/4/4/4 блок Б), не выдуманы заново под E2E. Правка
-    E2E-сценария поднимает блок A до 16/16/16/18(max) — та же сильная
-    правка, что tests/test_web/test_v2_progression_cascade.py::
-    test_preview_and_apply_cascade_recomputes_full_chain_and_converges,
-    гарантированно сдвигающая цель (deltas не пустой)."""
+    """STEP-курс + ОДНА прошлая сессия вчера (11/11/11 + max 10 блок A, 4/4/4/4 + max 4 блок Б).
+    #305: прогрессию двигает только подход на максимум — вчерашний max блока A равен цели (10, цель
+    держится), правка E2E-сценария поднимает его до 18 (> цели) — та же правка, что
+    tests/test_web/test_v2_progression_cascade.py::
+    test_preview_and_apply_cascade_recomputes_full_chain_and_converges, гарантированно сдвигающая
+    цель (deltas не пустой)."""
     user = await _onboard(session, telegram_id)
 
     profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
@@ -395,7 +395,7 @@ async def seed_v2_session_progression_edit(session: AsyncSession, telegram_id: i
         user_id=user.id, source=SessionSource.PLAN, performed_at=datetime.now(UTC) - timedelta(days=1),
         effort=None, comment=None, program_inclusion_id=inclusion.id,
         blocks=[
-            _sets(role_to_exercise_id["block_a"], [11, 11, 11], 12),
+            _sets(role_to_exercise_id["block_a"], [11, 11, 11], 10),
             _sets(role_to_exercise_id["block_b"], [4, 4, 4, 4], 4),
         ],
     )
