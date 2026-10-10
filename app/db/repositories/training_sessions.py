@@ -844,6 +844,17 @@ class TrainingSessionRepository:
         сессии не скрывает."""
         return and_(TrainingSession.status == SessionStatus.COMPLETED, cls.not_superseded())
 
+    async def superseded_legacy_ids(self, user_id: int, origin: SessionOrigin) -> set[int]:
+        """legacy_id строк старой схемы, чья нативная копия замещена — их legacy-карточка в Журнале не
+        показывается (копия не входит в canonical_sessions, A6)."""
+        result = await self._session.execute(
+            select(TrainingSession.legacy_id).where(
+                TrainingSession.user_id == user_id, TrainingSession.origin == origin.value,
+                TrainingSession.legacy_id.is_not(None), TrainingSession.superseded_at.is_not(None),
+            ),
+        )
+        return set(result.scalars().all())
+
     @staticmethod
     def is_not_legacy_card() -> ColumnElement[bool]:
         """Представление Журнала: нативная копия legacy Workout (origin = legacy_backfill) показана

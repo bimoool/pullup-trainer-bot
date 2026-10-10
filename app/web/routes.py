@@ -79,6 +79,7 @@ from app.domain.reports import (
 )
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockAssignment, BlockLog
+from app.domain.training_session_v2 import SessionOrigin
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
@@ -1152,6 +1153,10 @@ async def get_history(
         return HistoryResponse(items=[], has_more=False)
 
     history = await WorkoutRepository(session).list_for_user(user.id)
+    # #308: карточка = представление КАНОНИЧЕСКОЙ копии. Если копию заместили (дубль нативной сессии,
+    # сведение), карточку не показываем — иначе Журнал считал бы эту тренировку второй раз (A6).
+    superseded = await TrainingSessionRepository(session).superseded_legacy_ids(user.id, SessionOrigin.LEGACY_BACKFILL)
+    history = [w for w in history if w.id not in superseded]
     # «Следующая цель» (#285 L2) — только у самой свежей тренировки ВСЕЙ истории: id берётся до
     # фильтра по датам, иначе у новейшей карточки каждого месяца она показывалась бы как «текущая».
     latest_workout_id = history[-1].id if history else None

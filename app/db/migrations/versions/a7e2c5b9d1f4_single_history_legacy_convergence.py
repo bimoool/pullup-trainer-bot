@@ -35,7 +35,8 @@ depends_on: str | Sequence[str] | None = None
 #
 # downgrade drops exactly the added index/constraints/columns. Sessions, blocks and set logs are untouched, so
 # a superseded copy (its legacy row was deleted) reappears to old code as an ordinary completed session; the
-# next upgrade + backfill apply re-supersedes it deterministically (legacy row absent => orphan).
+# next upgrade + backfill apply re-supersedes it deterministically (legacy row absent => orphan); the
+# informational superseded_reason may then read legacy_deleted where it was legacy_replaced.
 
 
 def upgrade() -> None:

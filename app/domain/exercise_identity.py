@@ -86,7 +86,7 @@ SYSTEM_EXERCISE_SLUGS: dict[str, str] = {
 OTHER_ACTIVITY_LABEL = "Другая активность"
 UNCATEGORIZED_LABEL = "Без категории"
 CATEGORY_LABELS: dict[str, str] = {seed.slug: seed.display_name for seed in CATEGORY_SEEDS}
-_INTERNAL_KEY = re.compile(r"^[A-Za-z0-9_]+$")
+_INTERNAL_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def looks_like_internal_key(text: str | None) -> bool:

@@ -528,6 +528,17 @@ def _render_history(counts: Counter, *, dry_run: bool) -> list[str]:
     ]
 
 
+async def _count_missing_copies(session: AsyncSession, origin: SessionOrigin, legacy_ids: list[int]) -> int:
+    if not legacy_ids:
+        return 0
+    have = await session.scalar(
+        select(func.count()).select_from(TrainingSession).where(
+            TrainingSession.origin == origin.value, TrainingSession.legacy_id.in_(legacy_ids),
+        ),
+    )
+    return len(legacy_ids) - int(have or 0)
+
+
 async def converge_history_all(session: AsyncSession, *, apply: bool, user_ids: list[int] | None = None) -> Counter:
     """MIGRATION_V2 §4: у каждой живой строки workouts/elective_workouts — ровно одна нативная копия
     (origin, legacy_id). Идёт по ВСЕМ пользователям с legacy-историей или копиями (не только онбордившимся и не
@@ -650,8 +661,13 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
 
         if dry_run:
             report.users_migrated_this_run += 1
-            report.training_sessions_regular_total += len(history)
-            report.training_sessions_elective_total += len(electives)
+            # Копии, которые dual-write (#308) уже создал, заново не создаются — считаем только недостающие.
+            report.training_sessions_regular_total += await _count_missing_copies(
+                session, SessionOrigin.LEGACY_BACKFILL, [w.id for w in history],
+            )
+            report.training_sessions_elective_total += await _count_missing_copies(
+                session, SessionOrigin.LEGACY_ELECTIVE, [e.id for e in electives],
+            )
             continue
 
         for workout in history:

@@ -54,6 +54,7 @@ ELECTIVE_EXERCISE_NAMES: dict[ElectiveType, str] = {
     ElectiveType.VOLUME_TARGET: "Факультатив — подтягивания на объём",
 }
 
+PUBLIC_PULL_UP_NAME = "Подтягивания"
 REASON_LEGACY_DELETED = "legacy_deleted"
 REASON_LEGACY_REPLACED = "legacy_replaced"
 REASON_NATIVE_DUPLICATE = "native_duplicate"
@@ -124,10 +125,21 @@ class LegacyConvergenceRepository:
             return existing
         exercise = Exercise(
             name=name, metric_type=MetricType.REPS, category=ExerciseType.PULL_UPS.value, subcategory=subcategory,
+            # E2: служебное упражнение курса/факультатива — то же «Подтягивания» в истории и аналитике (как
+            # засеяла миграция b7d2e9f4a1c3 для строк, существовавших тогда).
+            analytics_exercise_id=await self._public_pull_up_id(),
         )
         self._session.add(exercise)
         await self._session.flush()
         return exercise
+
+    async def _public_pull_up_id(self) -> int | None:
+        result = await self._session.execute(
+            select(Exercise.id).where(
+                Exercise.name == PUBLIC_PULL_UP_NAME, Exercise.source_type == "system", Exercise.owner_user_id.is_(None),
+            ).order_by(Exercise.id).limit(1),
+        )
+        return result.scalar_one_or_none()
 
     async def course_exercise_ids(self) -> tuple[int, int]:
         exercise_a = await self._get_or_create_exercise(name=EXERCISE_BLOCK_A_NAME, subcategory="block_a")
