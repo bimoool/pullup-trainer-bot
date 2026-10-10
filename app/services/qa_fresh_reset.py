@@ -50,6 +50,8 @@ RESET_STEPS: tuple[tuple[str, str, str], ...] = (
     ("session_plan_items",
      f"session_id IN ({_SESSIONS}) OR plan_item_id IN (SELECT id FROM plan_items WHERE training_plan_id IN ({_PLANS}))",
      "sessions"),
+    # Issue #306: журнал событий движка v2 (ON DELETE CASCADE и так, но явный шаг — честный dry-run).
+    ("session_events", f"session_id IN ({_SESSIONS})", "sessions"),
     ("session_blocks", f"session_id IN ({_SESSIONS})", "sessions"),
     ("training_sessions", "user_id = :uid", "sessions"),
     ("plan_items", f"training_plan_id IN ({_PLANS})", "plan"),
