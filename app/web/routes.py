@@ -457,19 +457,14 @@ async def get_profile(
     user = await SubscriptionService(session).refresh_status(user.id, now=datetime.now(UTC))
 
     achievements = await AchievementRepository(session).list_for_user(user.id)
-    # Сводка Профиля считает и legacy-историю, и завершённые тренировки Журнала v2 (#277, D2). Legacy
-    # Workout — источник правды для перенесённой истории (#284), поэтому v2-копии backfill-а (отпечаток
-    # TrainingSessionRepository._backfilled_fingerprint) не считаются — иначе мигрированный пользователь
-    # посчитан дважды. Display-only: готовность/прогрессия по-прежнему по legacy.
-    history = await WorkoutRepository(session).list_for_user(user.id)
+    # Сводка Профиля = canonical_sessions (#308, A1) — то же множество, что календарь/список Журнала и
+    # Аналитика: legacy Workout отдельно не прибавляются (каждая имеет нативную копию, MIGRATION §4),
+    # замещённые (superseded) строки не считаются. Display-only: готовность/прогрессия по-прежнему по legacy.
     sessions_repo = TrainingSessionRepository(session)
-    workouts_count = len(history) + await sessions_repo.count_completed(user.id, exclude_backfilled=True)
-    last_moments = [record.performed_at for record in history]
-    latest_session = await sessions_repo.latest_completed_performed_at(user.id, exclude_backfilled=True)
-    if latest_session is not None:
-        last_moments.append(latest_session)
+    workouts_count = await sessions_repo.count_completed(user.id)
+    latest_moment = await sessions_repo.latest_completed_performed_at(user.id)
     days_since_last_workout = (
-        (datetime.now(UTC).date() - max(last_moments).date()).days if last_moments else None
+        (datetime.now(UTC).date() - latest_moment.date()).days if latest_moment is not None else None
     )
 
     # Список ачивок с датами (issue #66, п.1) — тот же ACHIEVEMENT_LABELS,
@@ -1147,8 +1142,9 @@ async def get_history(
     Новейшие тренировки — первыми (естественный порядок для ленты).
 
     Журнал (#284) показывает ВСЕ legacy-карточки: старая схема — источник правды для перенесённой
-    backfill-ом истории, а карточка — единственное представление с «Изменить»/«Удалить». Дубли
-    убирает Журнал v2 (GET /api/v2/sessions?exclude_backfilled=true), не этот эндпоинт. Параметр
+    backfill-ом истории, а карточка — единственное представление с «Изменить»/«Удалить». Каждая карточка
+    — представление нативной копии (origin = legacy_backfill, #308), которую Журнал v2 не дублирует
+    (GET /api/v2/sessions?exclude_legacy_cards=true), а календарь/Профиль/Аналитика считают один раз. Параметр
     exclude_migrated (#282) удалён; неизвестные query-параметры FastAPI игнорирует, поэтому старые
     клиенты с `&exclude_migrated=true` продолжают работать и получают все записи."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
@@ -1161,10 +1157,13 @@ async def get_history(
     latest_workout_id = history[-1].id if history else None
     # date_from/date_to (#256, Журнал по месяцам) — включительно, по той же дате,
     # что показывает карточка (performed_at.date()).
+    # #308: день — ЛОКАЛЬНЫЙ день пользователя (timezone), тот же, что в календаре и в карточках Журнала v2:
+    # одна тренировка не уезжает на соседний день из-за UTC (A1, J10).
+    tz = resolve_timezone(user.timezone)
     if date_from is not None:
-        history = [w for w in history if w.performed_at.date() >= date_from]
+        history = [w for w in history if w.performed_at.astimezone(tz).date() >= date_from]
     if date_to is not None:
-        history = [w for w in history if w.performed_at.date() <= date_to]
+        history = [w for w in history if w.performed_at.astimezone(tz).date() <= date_to]
     newest_first = list(reversed(history))
     page = newest_first[offset : offset + limit]
 
@@ -1176,7 +1175,7 @@ async def get_history(
         items.append(
             HistoryEntryResponse(
                 workout_id=workout.id,
-                performed_at=workout.performed_at.date().isoformat(),
+                performed_at=workout.performed_at.astimezone(tz).date().isoformat(),
                 is_backdated=not workout.participates_in_cascade,
                 is_deletable=True,
                 comment=workout.comment,

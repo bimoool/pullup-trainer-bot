@@ -3,12 +3,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, and_, delete, exists, func, or_, select
+from sqlalchemy import ColumnElement, and_, delete, distinct, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import (
     Exercise,
+    ExerciseCategory,
     PlanItem,
     SessionBlock,
     SessionPhase,
@@ -19,6 +20,7 @@ from app.db.models_program import (
     TrainingSession,
 )
 from app.domain.constants import ExerciseType
+from app.domain.exercise_identity import CATEGORY_LABELS, analytics_identity, exercise_display_label
 from app.domain.live_session import DEFAULT_UNIT_BY_METRIC_TYPE
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.plan_occurrence import MAIN_SLOT_KEY
@@ -217,7 +219,22 @@ class SessionDetail:
     revision: int = 0
     engine_version: int | None = None
     superseded_by_id: int | None = None
+    legacy_id: int | None = None
+    superseded_at: datetime | None = None
     identity_recovered_by: str | None = None
+
+
+@dataclass(frozen=True)
+class ExerciseCatalogInfo:
+    """Каталожная идентичность блока для Журнала/Аналитики (E1/E2, #308): identity_id = analytics_identity,
+    label — display_name идентичности (никогда не slug), category/subcategory — ключ или подпись категории
+    САМОГО упражнения блока (человеческую подпись выдаёт app.domain.exercise_identity)."""
+
+    id: int
+    identity_id: int
+    label: str
+    category: str | None
+    subcategory: str | None
 
 
 class TrainingSessionRepository:
@@ -742,6 +759,7 @@ class TrainingSessionRepository:
                     duration_source=session_row.duration_source, timezone=session_row.timezone,
                     distance_meters=session_row.distance_meters, revision=session_row.revision,
                     engine_version=session_row.engine_version, superseded_by_id=session_row.superseded_by_id,
+                    legacy_id=session_row.legacy_id, superseded_at=session_row.superseded_at,
                     identity_recovered_by=session_row.identity_recovered_by,
                 ),
             )
@@ -750,7 +768,7 @@ class TrainingSessionRepository:
     async def list_for_user(
         self, user_id: int, *, limit: int = 50, offset: int = 0, status: SessionStatus | None = None,
         performed_from: datetime | None = None, performed_to: datetime | None = None,
-        exclude_backfilled: bool = False,
+        exclude_legacy_cards: bool = False,
     ) -> list[SessionDetail]:
         """offset/limit — срез уже загруженного списка (тот же приём, что
         GET /api/history, issue #50), не отдельный SQL LIMIT/OFFSET —
@@ -767,11 +785,16 @@ class TrainingSessionRepository:
         performed_from/performed_to (#256) — полуинтервал [from, to) по
         performed_at (Журнал по месяцам), оба необязательны.
 
-        exclude_backfilled (#284) — скрыть сессии, созданные backfill-ом legacy Workout (отпечаток —
-        _backfilled_fingerprint); срез offset/limit считается уже после скрытия."""
-        query = select(TrainingSession).where(TrainingSession.user_id == user_id)
-        if exclude_backfilled:
-            query = query.where(~self._backfilled_fingerprint())
+        Замещённые (superseded_at) строки не возвращаются никогда (A6): удалённая/пересведённая legacy-запись
+        не воскресает в списке.
+
+        exclude_legacy_cards (#284 → #308) — скрыть нативные копии legacy Workout (origin = legacy_backfill):
+        их показывает legacy-карточка («Изменить»/«Удалить» старой схемы). Это ПРЕДСТАВЛЕНИЕ, а не счёт:
+        такие сессии входят в canonical_sessions и в каждый итог ровно один раз. Срез offset/limit
+        считается уже после скрытия."""
+        query = select(TrainingSession).where(TrainingSession.user_id == user_id, self.not_superseded())
+        if exclude_legacy_cards:
+            query = query.where(self.is_not_legacy_card())
         if status is not None:
             query = query.where(TrainingSession.status == status)
         if performed_from is not None:
@@ -784,44 +807,58 @@ class TrainingSessionRepository:
         return await self._load_details(page)
 
     async def completed_performed_at(
-        self, user_id: int, performed_from: datetime, performed_to: datetime, *, exclude_backfilled: bool = False,
+        self, user_id: int, performed_from: datetime, performed_to: datetime,
     ) -> list[datetime]:
-        """Только моменты завершённых сессий в [from, to) — для календаря Журнала
-        (без загрузки блоков/подходов). exclude_backfilled (#284) — как в list_for_user."""
+        """Только моменты canonical_sessions в [from, to) — для календаря Журнала (без загрузки
+        блоков/подходов). Тот же предикат, что у списка Журнала, Профиля и Аналитики (A1)."""
         query = select(TrainingSession.performed_at).where(
-            TrainingSession.user_id == user_id,
-            TrainingSession.status == SessionStatus.COMPLETED,
+            TrainingSession.user_id == user_id, self.canonical_predicate(),
             TrainingSession.performed_at >= performed_from,
             TrainingSession.performed_at < performed_to,
         )
-        if exclude_backfilled:
-            query = query.where(~self._backfilled_fingerprint())
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
-    async def count_completed(self, user_id: int, *, exclude_backfilled: bool = False) -> int:
-        """Число завершённых сессий пользователя (сводка Профиля, #277). exclude_backfilled (#284) —
-        без копий, созданных backfill-ом (их историю считает legacy Workout)."""
-        query = select(func.count()).select_from(TrainingSession).where(
-            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
+    async def count_completed(self, user_id: int) -> int:
+        """total_workouts: число canonical_sessions пользователя (сводка Профиля, #277; A1) — целое,
+        count(distinct id) по тому же предикату, что Журнал и Аналитика."""
+        query = select(func.count(distinct(TrainingSession.id))).where(
+            TrainingSession.user_id == user_id, self.canonical_predicate(),
         )
-        if exclude_backfilled:
-            query = query.where(~self._backfilled_fingerprint())
         result = await self._session.execute(query)
         return int(result.scalar_one())
 
-    @staticmethod
-    def _backfilled_fingerprint() -> ColumnElement[bool]:
-        """Отпечаток v2-сессии, созданной backfill-ом legacy Workout (#163/#284): то, чем она отличается
-        от сессий живого потока Mini App и электива. Старая схема остаётся источником правды для
-        перенесённой истории (docstring scripts/backfill_multi_program.py), поэтому Журнал такие
-        сессии не показывает — их показывает legacy-карточка со своими действиями.
+    # --- canonical_sessions (TRAINING_SESSION_V2 §6, MIGRATION_V2 §4) -----------------------------
 
-        COMPLETED, source plan/freeform/backdated (не elective), нет client_session_id (его ставит
-        только живой старт), нет workout_snapshot, нет activity_type, нет SessionPlanItem (backfill
-        не привязывает PlanItem), а первый блок — системное упражнение блока A подтягиваний
-        (category=pull_ups, subcategory=block_a — seed_catalog backfill-а; блок A есть у каждой
-        перенесённой записи, в том числе свободной). Не зависит от наличия парной legacy-записи."""
+    @staticmethod
+    def not_superseded() -> ColumnElement[bool]:
+        """A6: строка не замещена (её legacy-запись удалена/пересведена или она дублирует нативную)."""
+        return TrainingSession.superseded_at.is_(None)
+
+    @classmethod
+    def canonical_predicate(cls) -> ColumnElement[bool]:
+        """ЕДИНСТВЕННЫЙ предикат «настоящая завершённая тренировка» (A1/A6): status = completed ∧ не
+        замещена. Календарь/список Журнала, итог Профиля, Аналитика и экспорт читают его же — отдельных
+        эвристик исключения (отпечатков, флагов по эндпоинтам) больше нет. «Не архивирована» в схеме
+        TrainingSession выражается тем же superseded_at: архивирование определения (complexes.archived_at)
+        сессии не скрывает."""
+        return and_(TrainingSession.status == SessionStatus.COMPLETED, cls.not_superseded())
+
+    @staticmethod
+    def is_not_legacy_card() -> ColumnElement[bool]:
+        """Представление Журнала: нативная копия legacy Workout (origin = legacy_backfill) показана
+        legacy-карточкой старой схемы, v2-карточкой её не дублируем. Электив (legacy_elective) и всё
+        нативное показываются v2-карточкой. Явный origin, а не отпечаток; строка без origin (код до #307
+        в окне деплоя) читается как нативная — её классифицирует backfill-скрипт."""
+        return or_(
+            TrainingSession.origin.is_(None), TrainingSession.origin != SessionOrigin.LEGACY_BACKFILL.value,
+        )
+
+    @staticmethod
+    def legacy_copy_fingerprint_for_recovery() -> ColumnElement[bool]:
+        """ТОЛЬКО для восстановления (scripts/backfill_*): отпечаток копии legacy Workout, созданной
+        backfill-ом до origin/legacy_id (#163/#284), — чтобы классифицировать строки, у которых origin ещё
+        NULL (окно деплоя). Ни один читатель Журнала/Профиля/Аналитики его не использует (A6)."""
         block_a_first = exists().where(
             SessionBlock.session_id == TrainingSession.id, SessionBlock.order_index == 0,
             SessionBlock.exercise_id == Exercise.id,
@@ -840,26 +877,20 @@ class TrainingSessionRepository:
             block_a_first,
         )
 
-    async def latest_completed_performed_at(
-        self, user_id: int, *, exclude_backfilled: bool = False,
-    ) -> datetime | None:
+    async def latest_completed_performed_at(self, user_id: int) -> datetime | None:
         query = select(func.max(TrainingSession.performed_at)).where(
-            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
+            TrainingSession.user_id == user_id, self.canonical_predicate(),
         )
-        if exclude_backfilled:
-            query = query.where(~self._backfilled_fingerprint())
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
-    async def list_all_completed(self, user_id: int, *, exclude_backfilled: bool = False) -> list[SessionDetail]:
-        """ВСЕ завершённые сессии пользователя (для аналитики) — не зависит от
-        пагинации Журнала. Порядок — по performed_at по возрастанию. exclude_backfilled (#284) —
-        как в list_for_user (CSV-экспорт: перенесённую историю отдаёт legacy-таблица)."""
-        query = select(TrainingSession).where(
-            TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.COMPLETED,
-        )
-        if exclude_backfilled:
-            query = query.where(~self._backfilled_fingerprint())
+    async def list_all_completed(self, user_id: int, *, exclude_legacy_cards: bool = False) -> list[SessionDetail]:
+        """ВСЕ canonical_sessions пользователя (для аналитики) — не зависит от пагинации Журнала.
+        Порядок — по performed_at по возрастанию. exclude_legacy_cards — как в list_for_user (CSV-экспорт:
+        подробности перенесённой истории отдаёт legacy-таблица; аналитика его НЕ передаёт)."""
+        query = select(TrainingSession).where(TrainingSession.user_id == user_id, self.canonical_predicate())
+        if exclude_legacy_cards:
+            query = query.where(self.is_not_legacy_card())
         result = await self._session.execute(query.order_by(TrainingSession.performed_at))
         return await self._load_details(list(result.scalars().all()))
 
@@ -869,6 +900,46 @@ class TrainingSessionRepository:
             return {}
         result = await self._session.execute(select(Exercise.id, Exercise.name).where(Exercise.id.in_(exercise_ids)))
         return {row.id: row.name for row in result.all()}
+
+    async def exercise_catalog(self, exercise_ids: set[int]) -> dict[int, ExerciseCatalogInfo]:
+        """E1/E2 для набора упражнений блоков: analytics_identity, подпись идентичности (display_name,
+        не slug) и категория/подкатегория самого упражнения (по category_id/subcategory_id, иначе — по
+        старым строкам exercises.category/subcategory). Фиксированное число запросов."""
+        if not exercise_ids:
+            return {}
+        own = (await self._session.execute(select(Exercise).where(Exercise.id.in_(exercise_ids)))).scalars().all()
+        identity_ids = {analytics_identity(e.id, e.analytics_exercise_id) for e in own}
+        by_id = {e.id: e for e in own}
+        missing = identity_ids - set(by_id)
+        if missing:
+            for e in (await self._session.execute(select(Exercise).where(Exercise.id.in_(missing)))).scalars():
+                by_id[e.id] = e
+        category_ids = {e.category_id for e in own if e.category_id} | {e.subcategory_id for e in own if e.subcategory_id}
+        categories = {}
+        if category_ids:
+            categories = {
+                c.id: c for c in (
+                    await self._session.execute(select(ExerciseCategory).where(ExerciseCategory.id.in_(category_ids)))
+                ).scalars()
+            }
+
+        def category_key(category_id: int | None, legacy: str | None) -> str | None:
+            row = categories.get(category_id) if category_id else None
+            if row is None:
+                return legacy
+            return row.slug if row.slug in CATEGORY_LABELS else row.display_name
+
+        result: dict[int, ExerciseCatalogInfo] = {}
+        for e in own:
+            identity_id = analytics_identity(e.id, e.analytics_exercise_id)
+            identity = by_id.get(identity_id, e)
+            result[e.id] = ExerciseCatalogInfo(
+                id=e.id, identity_id=identity_id,
+                label=exercise_display_label(identity.display_name, identity.name),
+                category=category_key(e.category_id, e.category),
+                subcategory=category_key(e.subcategory_id, e.subcategory),
+            )
+        return result
 
     async def exercise_categories(self, exercise_ids: set[int]) -> dict[int, tuple[str, str | None]]:
         """(category, subcategory) упражнений по id — для распределения аналитики (#274)."""
@@ -897,7 +968,7 @@ class TrainingSessionRepository:
             select(TrainingSession)
             .where(
                 TrainingSession.user_id == user_id,
-                TrainingSession.status == SessionStatus.COMPLETED,
+                self.canonical_predicate(),
                 or_(
                     TrainingSession.workout_definition_id == workout_id,
                     TrainingSession.workout_snapshot["workout_id"].astext == str(workout_id),

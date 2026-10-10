@@ -643,6 +643,17 @@ class TrainingSession(Base):
         BigInteger, ForeignKey("training_sessions.id", ondelete="SET NULL"), nullable=True,
     )
     identity_recovered_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # --- Single history (issue #308, MIGRATION_V2 §4, TRAINING_SESSION_V2 §6 A6) --------------------------
+    # legacy_id — id строки старой схемы (workouts.id при origin = legacy_backfill, elective_workouts.id при
+    # origin = legacy_elective), из которой сведена эта нативная копия; NULL у нативных сессий. Пара
+    # (origin, legacy_id) уникальна (uq_training_sessions_origin_legacy_id): повторное сведение копию не дублирует.
+    legacy_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # superseded_at IS NOT NULL — строка не считается отдельной тренировкой (сводка canonical_sessions): её
+    # legacy-строку удалили (legacy_deleted), заменили пересведённой копией (legacy_replaced) или она дублирует
+    # нативную сессию (native_duplicate, superseded_by_id указывает на неё). Строка не удаляется (CLAUDE.md:
+    # архивировать, не удалять).
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     __table_args__ = (
         Index("ix_training_sessions_user_workout_definition", "user_id", "workout_definition_id"),

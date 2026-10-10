@@ -31,6 +31,7 @@ from tests.test_scripts.test_system_content_migration import (
 
 PRE_REVISION = "d8a3c6f1e2b4"
 REVISION = "f4c1a7e9b3d2"
+HEAD = "a7e2c5b9d1f4"
 
 # Колонки, которые ни миграция, ни скрипт не имеют права менять (история, кредит, подписка).
 HISTORY = {
@@ -300,5 +301,5 @@ def test_rerun_upgrade_and_downgrade_upgrade(scratch_dsn):  # noqa: F811
 
 def test_fresh_install_single_head(scratch_dsn):  # noqa: F811
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == REVISION
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == HEAD  # #308 revises REVISION
     assert _scalar(scratch_dsn, "SELECT count(*) FROM training_sessions") == 0

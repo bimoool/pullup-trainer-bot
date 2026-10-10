@@ -31,11 +31,16 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models_program import Complex, Exercise, PlanItem, ProgramInclusion, SessionStatus
+from app.db.repositories.legacy_convergence import (
+    REASON_LEGACY_DELETED,
+    LegacyConvergenceRepository,
+)
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import SessionDetail, TrainingSessionRepository
 from app.domain.multi_program import SessionSource
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.training_session_v2 import SessionOrigin
 from app.domain.workout_snapshot import WorkoutSnapshot
 from app.services.session_log import _match_step_blocks, _session_block_input_from_detail
 
@@ -192,5 +197,13 @@ class SessionDeletionService:
             return False, None
         verdict = (await self.evaluate([detail], user_id))[detail.id]
         if verdict.can_delete:
-            await self._sessions.delete_session(session_id)
+            if detail.legacy_id is not None or detail.origin == SessionOrigin.LEGACY_ELECTIVE.value:
+                # Копия legacy-факультатива (#308): строка legacy-таблицы остаётся, поэтому копию нельзя
+                # просто удалить — повторное сведение воссоздало бы удалённую запись. Копия замещается
+                # (legacy_deleted) и исчезает из canonical_sessions, не удаляясь (архивировать, не удалять);
+                # ключ (origin, legacy_id) остаётся занятым, а историческую копию без ключа привяжет сведение.
+                copy = await self._sessions.lock_session(session_id)
+                await LegacyConvergenceRepository(self._session).supersede_copy(copy, reason=REASON_LEGACY_DELETED)
+            else:
+                await self._sessions.delete_session(session_id)
         return True, verdict

@@ -1,6 +1,8 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.repositories.legacy_convergence import LegacyConvergenceRepository
+
 
 async def reset_user_progress(session: AsyncSession, user_id: int) -> None:
     """Админ-инструмент для тестирования (Часть 9 респека): архивирует (не
@@ -41,6 +43,10 @@ async def reset_user_progress(session: AsyncSession, user_id: int) -> None:
         ),
         params,
     )
+
+    # Нативные копии удаляемых workouts замещаются (#308): без этого сброшенная история продолжала бы
+    # считаться в Журнале/Профиле/Аналитике. Строки копий остаются (архивировать, не удалять).
+    await LegacyConvergenceRepository(session).supersede_user_legacy_copies(user_id)
 
     # workouts удаляются первыми — blocks.workout_id ON DELETE CASCADE
     # унесёт blocks автоматически, отдельный DELETE не нужен.
