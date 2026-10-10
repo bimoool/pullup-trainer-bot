@@ -70,7 +70,7 @@ SetLog        set_index, round_index | null, actual_reps | actual_seconds, load_
 - **R2** `is_max_set` is a property of the target (`kind = max_reps`) and is preserved on
   persistence (D3).
 - **R3** Duration: live → `active_elapsed_ms` from the engine (pauses excluded),
-  `duration_source = measured`; manual → optional user-entered minutes (`entered`) else `unknown`;
+  `duration_source = measured` (a value that rounds to 0 s or exceeds 6 h is `unknown` — #307 N2, decided in #306); manual → optional user-entered minutes (`entered`) else `unknown`;
   external → required (`entered`). `completed_at − performed_at` is **no longer** the duration rule.
 - **R4** Editing the date moves `performed_at` (and `started_at/ended_at` by the same delta) but
   never changes `duration_seconds` (D13).
@@ -160,17 +160,17 @@ One write boundary; the engine never writes several legacy tables itself.
 |---|---|
 | Entry | `LiveSessionService.complete_session(session_id, user_id, abandoned, effort=None, comment=None, active_elapsed_ms=None)`; HTTP `POST /api/v2/sessions/live/{id}/complete` `{abandoned, effort?, comment?, active_elapsed_ms?}` |
 | Required | `session_id` of a `STARTED` session of `user_id`, `abandoned` (early finish: unperformed targets stay `not_performed`, progression skipped) |
-| Optional | `effort` 1–5, `comment` ≤ 1000, `active_elapsed_ms` (engine-measured active time, pauses excluded; 0…24 h) |
+| Optional | `effort` 1–5, `comment` ≤ 1000, `active_elapsed_ms` (engine-measured active time, pauses excluded; 0…24 h; a value that rounds to 0 s or exceeds 6 h → `unknown`, #307 N2 resolved in #306), `ended_at` (service-level only, engine v2) |
 | Transaction | the caller's request transaction; the session row is locked (`SELECT … FOR UPDATE`, same lock as `sets:batch`/start/finish), status re-read under the lock |
 | Idempotency | the session id is the key: a repeated completion (retry, lost response, double flush, concurrent request) returns the same session, `progression_skipped_reason = already_completed`, no second progression, duration/credit unchanged; review fields fill only empty values |
-| Result | `status = completed`, `completed_at = ended_at = now`, `duration_seconds`/`duration_source` (R3: `active_elapsed_ms` → `measured`; without it wall clock `started_at → ended_at` within [1 min, 6 h], else `unknown`) — written in exactly one place, `TrainingSessionRepository.mark_completed`, which every completion path (complete, finish interval, lazy interval finalisation) goes through |
+| Result | `status = completed`, `completed_at = ended_at = now` (or `ended_at` passed by the engine v2 — its COMPLETE time, #306), `duration_seconds`/`duration_source` (R3: `active_elapsed_ms` → `measured`; without it wall clock `started_at → ended_at` within [1 min, 6 h], else `unknown`) — written in exactly one place, `TrainingSessionRepository.mark_completed`, which every completion path (complete, finish interval, lazy interval finalisation) goes through |
 | Credit | unchanged by completion: `plan_item_id` is fixed at start (PL2/PL3); completion never adds or moves it |
 | Errors | unknown/foreign session → 404 (no disclosure); invalid body → 422 |
 
 Session creation fields (`source_v2`, `kind`, definition/version, `prescription_snapshot`, `started_at`,
 `timezone`, `program_inclusion_id`, `engine_version`) are written at start by
 `TrainingSessionV2Service.stamp_new` (live start) — #306's start path calls the same function with
-`engine_version = 2`. Manual/post-factum writes go through `ManualSessionService.record`
+`engine_version = 2` (LIVE_ENGINE_V2 §9). Manual/post-factum writes go through `ManualSessionService.record`
 (`client_session_id` = idempotency key: same key → same session; key of another user → 422).
 
 ## 9. Read contract for Journal/Analytics (Wave 3b #308)
