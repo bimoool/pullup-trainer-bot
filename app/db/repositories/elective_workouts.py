@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ElectiveWorkout, EquipmentItem
+from app.db.repositories.legacy_convergence import LegacyConvergenceRepository
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 
@@ -42,6 +43,8 @@ class ElectiveWorkoutRepository:
         )
         self._session.add(elective)
         await self._session.flush()
+        # Dual-write (#308, MIGRATION_V2 §4): нативная копия факультатива — в той же транзакции.
+        await LegacyConvergenceRepository(self._session).sync_elective(elective)
         return elective
 
     async def list_types_for_user(self, user_id: int) -> list[ElectiveType]:

@@ -66,8 +66,8 @@ SessionBlock/SetLog не рассчитаны на эти детали — см.
 
 import argparse
 import asyncio
-import json
-from dataclasses import dataclass, replace
+from collections import Counter
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -75,31 +75,35 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import async_session_factory
-from app.db.models import Block, BlockType, ElectiveWorkout, User, Workout, WorkoutStatus
+from app.db.models import BlockType, ElectiveWorkout, User, Workout, WorkoutStatus
 from app.db.models_program import (
     Exercise,
     Program,
     ProgramInclusion,
     ProgramItem,
     ProgressionStrategyProfile,
-    SessionBlock,
     SessionStatus,
-    SetLog,
     TrainingPlan,
     TrainingSession,
 )
 from app.db.repositories.baselines import BaselineRepository
+from app.db.repositories.legacy_convergence import (
+    ELECTIVE_EXERCISE_NAMES,
+    EXERCISE_BLOCK_A_NAME,
+    EXERCISE_BLOCK_B_NAME,
+    ConvergenceOutcome,
+    LegacyConvergenceRepository,
+)
 from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
+from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import (
     WorkoutRepository,
-    _block_to_log,
     _exclude_deload_entries,
     _exclude_free_entries,
     _exclude_heavy_entries,
-    _find_block,
     _stall_streak,
     _weak_streak,
 )
@@ -113,7 +117,6 @@ from app.domain.constants import (
     ExerciseType,
 )
 from app.domain.electives import ElectiveType
-from app.domain.journal_dedupe import resolve_legacy_session_source
 from app.domain.multi_program import (
     MetricType,
     ProgramStructureType,
@@ -124,25 +127,15 @@ from app.domain.multi_program import (
 from app.domain.program_access import ProgramAccessLevel
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
-from app.domain.training_session_v2 import (
-    DurationSource,
-    SessionKind,
-    SessionOrigin,
-    SessionSourceV2,
-    legacy_source_v2,
-)
+from app.domain.training_session_v2 import SessionOrigin
+from app.services.legacy_history_convergence import LegacyHistoryConvergenceService
 from app.services.plan_week import PlanWeekService
 
 _PROGRAM_NAME = "Подтягивания"
 _STRATEGY_PROFILE_NAME = "Пошаговая прогрессия подтягиваний"
-_EXERCISE_BLOCK_A_NAME = "Подтягивания — объём"
-_EXERCISE_BLOCK_B_NAME = "Подтягивания — сила"
-_ELECTIVE_EXERCISE_NAMES: dict[ElectiveType, str] = {
-    ElectiveType.MAX_REPS_LADDER: "Факультатив — подтягивания на максимум",
-    ElectiveType.W_LADDER: "Факультатив — подтягивания W",
-    ElectiveType.THREE_MINUTES: "Факультатив — 3 минуты подтягиваний",
-    ElectiveType.VOLUME_TARGET: "Факультатив — подтягивания на объём",
-}
+_EXERCISE_BLOCK_A_NAME = EXERCISE_BLOCK_A_NAME
+_EXERCISE_BLOCK_B_NAME = EXERCISE_BLOCK_B_NAME
+_ELECTIVE_EXERCISE_NAMES = ELECTIVE_EXERCISE_NAMES
 
 
 # --- Seed справочных данных (п.1) --------------------------------------------------
@@ -308,105 +301,15 @@ async def seed_catalog(session: AsyncSession) -> SeedCatalog:
 # --- Перенос истории Workout -> TrainingSession (п.3) ------------------------------
 
 
-def _resolve_session_source(workout: Workout) -> SessionSource:
-    """Та самая таблица соответствий, ради которой SessionSource в волне 1
-    завела FREEFORM/BACKDATED (issue #160) — прямое отражение
-    participates_in_cascade/is_free_entry старой схемы. Таблица живёт в
-    app.domain.journal_dedupe; отпечаток созданных backfill-ом сессий, которые Журнал (#284) не
-    показывает, — TrainingSessionRepository._backfilled_fingerprint (по первому блоку A)."""
-    return resolve_legacy_session_source(
-        participates_in_cascade=workout.participates_in_cascade, is_free_entry=workout.is_free_entry,
-    )
-
-
-async def _add_session_block_with_logs(
-    session: AsyncSession, *, session_id: int, order_index: int, exercise_id: int, block: Block,
-) -> int:
-    """Возвращает число созданных SetLog — только для отчётности, поведение
-    не меняет."""
-    session_block = SessionBlock(session_id=session_id, order_index=order_index, exercise_id=exercise_id)
-    session.add(session_block)
-    await session.flush()
-
-    log = _block_to_log(block)
-    set_number = 1
-    created = 0
-
-    if log.reported_volume is not None:
-        # Итог за тренировку без раскладки по подходам (issue #88) —
-        # working_reps всегда пуст в этом случае, раскладывать нечего.
-        session.add(
-            SetLog(
-                session_block_id=session_block.id, set_number=set_number, is_max_set=False,
-                metric_type=MetricType.REPS, value=Decimal(log.reported_volume), unit="reps",
-                note="итог без раскладки по подходам",
-            ),
-        )
-        set_number += 1
-        created += 1
-        if block.max_reps:
-            session.add(
-                SetLog(
-                    session_block_id=session_block.id, set_number=set_number, is_max_set=True,
-                    metric_type=MetricType.REPS, value=Decimal(block.max_reps), unit="reps",
-                ),
-            )
-            created += 1
-        return created
-
-    for reps in block.working_reps:
-        session.add(
-            SetLog(
-                session_block_id=session_block.id, set_number=set_number, is_max_set=False,
-                metric_type=MetricType.REPS, value=Decimal(reps), unit="reps",
-            ),
-        )
-        set_number += 1
-        created += 1
-    session.add(
-        SetLog(
-            session_block_id=session_block.id, set_number=set_number, is_max_set=True,
-            metric_type=MetricType.REPS, value=Decimal(block.max_reps), unit="reps",
-        ),
-    )
-    created += 1
-    return created
-
-
 async def _create_training_session_for_workout(
     session: AsyncSession, workout: Workout, *, exercise_a_id: int, exercise_b_id: int,
-) -> None:
-    training_session = TrainingSession(
-        user_id=workout.user_id,
-        source=_resolve_session_source(workout),
-        status=SessionStatus.COMPLETED,
-        performed_at=workout.performed_at,
-        comment=workout.comment,
-        # issue #307 (MIGRATION_V2 §3): копия legacy Workout — origin legacy_backfill; длительность
-        # legacy-записи неизвестна (не выдумываем). source_v2 — тем же правилом, что у миграции.
-        kind=SessionKind.STRENGTH.value, origin=SessionOrigin.LEGACY_BACKFILL.value,
-        source_v2=legacy_source_v2(
-            legacy_source=_resolve_session_source(workout).value, has_activity=False, has_workout_snapshot=False,
-            is_live=False,
-        ).value,
-        duration_source=DurationSource.UNKNOWN.value,
+) -> ConvergenceOutcome:
+    """Нативная копия legacy Workout (MIGRATION_V2 §3/§4). С #308 — ТА ЖЕ функция, что dual-write писателей
+    старой схемы (LegacyConvergenceRepository.sync_workout): ключ (origin, legacy_id) уникален, повторный
+    вызов копию не дублирует и не меняет (UNCHANGED)."""
+    return await LegacyConvergenceRepository(session).sync_workout(
+        workout, exercise_a_id=exercise_a_id, exercise_b_id=exercise_b_id,
     )
-    session.add(training_session)
-    await session.flush()
-
-    block_a = _find_block(workout, BlockType.A)
-    await _add_session_block_with_logs(
-        session, session_id=training_session.id, order_index=0, exercise_id=exercise_a_id, block=block_a,
-    )
-
-    if not workout.is_free_entry:
-        # Фиктивный блок Б свободных подтягиваний (working_reps=[],
-        # max_reps=0, issue #109/#156) сознательно не переносится — см.
-        # докстринг модуля.
-        block_b = _find_block(workout, BlockType.B)
-        await _add_session_block_with_logs(
-            session, session_id=training_session.id, order_index=1, exercise_id=exercise_b_id, block=block_b,
-        )
 
 
 # --- Перенос ElectiveWorkout -> TrainingSession(source=elective) (п.3) -------------
@@ -425,43 +328,10 @@ async def _list_all_electives_for_user(session: AsyncSession, user_id: int) -> l
 
 async def _create_training_session_for_elective(
     session: AsyncSession, elective: ElectiveWorkout, *, exercise_id: int,
-) -> None:
-    training_session = TrainingSession(
-        user_id=elective.user_id,
-        source=SessionSource.ELECTIVE,
-        status=SessionStatus.COMPLETED,
-        performed_at=elective.performed_at,
-        # issue #307 (MIGRATION_V2 §3): elective → manual_existing_workout, origin legacy_elective.
-        kind=SessionKind.STRENGTH.value, origin=SessionOrigin.LEGACY_ELECTIVE.value,
-        source_v2=SessionSourceV2.MANUAL_EXISTING_WORKOUT.value, duration_source=DurationSource.UNKNOWN.value,
-    )
-    session.add(training_session)
-    await session.flush()
-
-    session_block = SessionBlock(session_id=training_session.id, order_index=0, exercise_id=exercise_id)
-    session.add(session_block)
-    await session.flush()
-
-    # Снаряд факультатива — единственная деталь блока/сессии, для которой
-    # схема SessionBlock/SetLog не заводит структурных полей (см. докстринг
-    # модуля) — упаковано в note, единственное свободное текстовое поле.
-    note = json.dumps(
-        {
-            "format": elective.elective_type.value,
-            "reps_sequence": elective.reps_sequence,
-            "equipment_type": elective.equipment_type.value,
-            "equipment_value": str(elective.equipment_value) if elective.equipment_value is not None else None,
-            "equipment_item_id": elective.equipment_item_id,
-            "equipment_item_name": elective.equipment_item_name,
-        },
-        ensure_ascii=False,
-    )
-    session.add(
-        SetLog(
-            session_block_id=session_block.id, set_number=1, is_max_set=False,
-            metric_type=MetricType.REPS, value=Decimal(elective.total_reps), unit="reps", note=note,
-        ),
-    )
+) -> ConvergenceOutcome:
+    """Копия факультатива (origin legacy_elective, ключ legacy_id). Создаётся один раз; существующую
+    (в т.ч. отредактированную в Журнале) повторный вызов не трогает."""
+    return await LegacyConvergenceRepository(session).sync_elective(elective, exercise_id=exercise_id)
 
 
 # --- progression_state (п.2) --------------------------------------------------------
@@ -595,6 +465,8 @@ class BackfillReport:
     workouts_completed_expected: int = 0
     electives_expected: int = 0
     legacy_snapshots_normalized: int = 0
+    # #308: сведение legacy-истории уже мигрированных пользователей (HistoryConvergenceReport)
+    history: Counter = field(default_factory=Counter)
 
     def render(self) -> str:
         lines = [
@@ -609,6 +481,7 @@ class BackfillReport:
         if self.dry_run:
             lines.append(f"Будет создано TrainingSession (обычных): {self.training_sessions_regular_total}")
             lines.append(f"Будет создано TrainingSession (elective): {self.training_sessions_elective_total}")
+            lines += _render_history(self.history, dry_run=True)
             return "\n".join(lines)
 
         plans_ok = "OK" if self.training_plans_total == self.users_onboarded else "РАСХОЖДЕНИЕ"
@@ -627,8 +500,77 @@ class BackfillReport:
                 f"(ожидается {self.electives_expected}) [{elective_ok}]"
             ),
             f"Нормализовано legacy-снимков (program_items добавлен): {self.legacy_snapshots_normalized}",
+            *_render_history(self.history, dry_run=False),
         ]
         return "\n".join(lines)
+
+
+_HISTORY_LABELS = (
+    ("classified", "origin проставлен копиям без origin"),
+    ("bound", "копий привязано к legacy-строке (legacy_id)"),
+    ("created", "копий создано"),
+    ("elective_created", "копий факультативов создано"),
+    ("updated", "копий обновлено"),
+    ("superseded", "копий замещено (legacy-строка удалена/заменена)"),
+    ("unchanged", "копий без изменений"),
+    ("ambiguous_elective_without_copy", "факультативов без копии, НЕ воскрешены (неоднозначно)"),
+    ("elective_unkeyed_copies_kept", "копий факультативов без пары оставлено как есть"),
+    ("superseded_but_alive", "замещённых копий с живой legacy-строкой (оставлены замещёнными)"),
+)
+
+
+def _render_history(counts: Counter, *, dry_run: bool) -> list[str]:
+    if not counts:
+        return []
+    prefix = "[будет] " if dry_run else ""
+    return ["Сведение legacy-истории (#308, MIGRATION_V2 §4):"] + [
+        f"  {prefix}{label}: {counts[key]}" for key, label in _HISTORY_LABELS if counts[key]
+    ]
+
+
+async def _count_missing_copies(session: AsyncSession, origin: SessionOrigin, legacy_ids: list[int]) -> int:
+    if not legacy_ids:
+        return 0
+    have = await session.scalar(
+        select(func.count()).select_from(TrainingSession).where(
+            TrainingSession.origin == origin.value, TrainingSession.legacy_id.in_(legacy_ids),
+        ),
+    )
+    return len(legacy_ids) - int(have or 0)
+
+
+async def converge_history_all(session: AsyncSession, *, apply: bool, user_ids: list[int] | None = None) -> Counter:
+    """MIGRATION_V2 §4: у каждой живой строки workouts/elective_workouts — ровно одна нативная копия
+    (origin, legacy_id). Идёт по ВСЕМ пользователям с legacy-историей или копиями (не только онбордившимся и не
+    только «ещё не смигрированным»), по одному в транзакции; dry-run (apply=False) только читает.
+    Повторный apply возвращает counts без изменяющих ключей (mutations = 0)."""
+    total: Counter = Counter()
+    if user_ids is None:
+        ids: set[int] = set()
+        for column in (Workout.user_id, ElectiveWorkout.user_id):
+            ids |= set((await session.execute(select(column).distinct())).scalars().all())
+        ids |= set((await session.execute(
+            select(TrainingSession.user_id).where(
+                TrainingSession.origin.in_((SessionOrigin.LEGACY_BACKFILL.value, SessionOrigin.LEGACY_ELECTIVE.value)),
+            ).distinct(),
+        )).scalars().all())
+        ids |= set((await session.execute(
+            select(TrainingSession.user_id).where(
+                TrainingSession.origin.is_(None), TrainingSession.status == SessionStatus.COMPLETED,
+                TrainingSessionRepository.legacy_copy_fingerprint_for_recovery(),
+            ).distinct(),
+        )).scalars().all())
+        user_ids = sorted(ids)
+    service = LegacyHistoryConvergenceService(session)
+    for user_id in user_ids:
+        report = await service.converge_user(user_id, apply=apply)
+        total.update(report.counts)
+        total["users"] += 1
+        if apply:
+            await session.commit()
+        else:
+            await session.rollback()
+    return total
 
 
 async def normalize_legacy_snapshots(session: AsyncSession, *, program_id: int, program_items_snap: list[dict]) -> int:
@@ -702,6 +644,16 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
                         training_plan_id=plan.id, today=now.date(),
                     )
                     await session.commit()
+            # #308: legacy-история уже мигрированного пользователя сводится в нативные копии
+            # (привязка, недостающие, обновлённые, замещённые); dry-run только считает.
+            history_report = await LegacyHistoryConvergenceService(session).converge_user(
+                user.id, apply=not dry_run,
+            )
+            report.history.update(history_report.counts)
+            if dry_run:
+                await session.rollback()
+            else:
+                await session.commit()
             continue
 
         history = await workout_repo.list_for_user(user.id)
@@ -709,8 +661,13 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
 
         if dry_run:
             report.users_migrated_this_run += 1
-            report.training_sessions_regular_total += len(history)
-            report.training_sessions_elective_total += len(electives)
+            # Копии, которые dual-write (#308) уже создал, заново не создаются — считаем только недостающие.
+            report.training_sessions_regular_total += await _count_missing_copies(
+                session, SessionOrigin.LEGACY_BACKFILL, [w.id for w in history],
+            )
+            report.training_sessions_elective_total += await _count_missing_copies(
+                session, SessionOrigin.LEGACY_ELECTIVE, [e.id for e in electives],
+            )
             continue
 
         for workout in history:
@@ -792,9 +749,28 @@ async def main() -> None:
             "реального прогона на проде без отдельного подтверждения"
         ),
     )
+    parser.add_argument(
+        "--converge-history", action="store_true",
+        help=(
+            "ТОЛЬКО сведение legacy-истории в нативные копии (#308) для всех пользователей, без миграции плана; "
+            "по умолчанию dry-run, запись — с --apply"
+        ),
+    )
+    parser.add_argument("--apply", action="store_true", help="с --converge-history: записать изменения")
     args = parser.parse_args()
     if args.dry_run and args.truncate:
         raise SystemExit("--dry-run и --truncate несовместимы")
+    if args.converge_history and (args.truncate or args.dry_run):
+        raise SystemExit("--converge-history несовместим с --truncate/--dry-run (dry-run — без --apply)")
+    if args.apply and not args.converge_history:
+        raise SystemExit("--apply допустим только с --converge-history")
+
+    if args.converge_history:
+        async with async_session_factory() as session:
+            counts = await converge_history_all(session, apply=args.apply)
+            print("\n".join(["Прогон завершён" if args.apply else "DRY-RUN (ничего не записано)",
+                              f"Пользователей: {counts['users']}", *_render_history(counts, dry_run=not args.apply)]))
+        return
 
     async with async_session_factory() as session:
         if args.truncate:

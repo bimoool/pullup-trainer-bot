@@ -23,6 +23,18 @@ ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && docker compose up -d app"
 ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && docker compose run --rm app alembic upgrade head"
 ```
 
+**Ревизия `a7e2c5b9d1f4` (#308, единая история) требует ещё одного шага — сведения legacy-истории** (миграция
+только добавляет колонки, данные не трогает). Сначала dry-run, затем apply; повторный apply должен вывести 0
+изменений. Скрипт не пишет в legacy-таблицы (`workouts`/`blocks`/`elective_workouts`):
+
+```bash
+ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && docker compose run --rm app python scripts/backfill_multi_program.py --converge-history"
+ssh root@<VPS_HOST> "cd /root/pullup-trainer-bot && docker compose run --rm app python scripts/backfill_multi_program.py --converge-history --apply"
+```
+
+Пока шаг не выполнен, Журнал/Профиль/Analytics могут расходиться на записях, сделанных старым кодом между
+миграцией и выкладкой. Порядок: миграция → dry-run → `--apply` → `up -d`. Подробности — `docs/domain/MIGRATION_V2.md` §4.
+
 Причина этого правила — реальный инцидент (ревизия формулы прогрессии
 блока на объём, миграция `e2c7a4f19d3b`): миграция добавляла колонки в
 `blocks`, но не в `blocks_archive_admin_reset` — постоянную архивную

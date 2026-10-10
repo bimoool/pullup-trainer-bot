@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models import Block, BlockType, EquipmentItem, Workout, WorkoutStatus
+from app.db.repositories.legacy_convergence import LegacyConvergenceRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.domain.constants import (
     DELOAD_INTERVAL_DAYS,
@@ -258,6 +259,13 @@ class WorkoutRepository:
             return None
         item = await self._session.get(EquipmentItem, equipment_item_id)
         return item.name if item is not None else None
+
+    async def _converge(self, workout: Workout) -> None:
+        """Dual-write (#308, MIGRATION_V2 §4): нативная копия legacy Workout создаётся/обновляется в той же
+        транзакции, что и сама запись — иначе v2-виды (Журнал, Профиль, Аналитика) не увидят правку. Все
+        писатели старой схемы (бот, Mini App, правка, бэкдейт, свободные подтягивания) проходят через методы
+        этого репозитория, поэтому хук один на каждый из них; заморозка писателей — Wave 4."""
+        await LegacyConvergenceRepository(self._session).sync_workout(workout)
 
     async def get_by_id(self, workout_id: int) -> Workout | None:
         result = await self._session.execute(
@@ -653,6 +661,7 @@ class WorkoutRepository:
         await self._session.flush()
         await self._workout_sets.increment_completed(workout.workout_set_id, completed_at=workout.performed_at)
         await self._session.refresh(workout, attribute_names=["blocks"])
+        await self._converge(workout)
         return workout
 
     async def record_backdated_workout(
@@ -754,6 +763,7 @@ class WorkoutRepository:
         await self._session.flush()
         await self._workout_sets.increment_completed(workout.workout_set_id, completed_at=workout.performed_at)
         await self._session.refresh(workout, attribute_names=["blocks"])
+        await self._converge(workout)
         return workout
 
     async def record_free_workout(
@@ -825,6 +835,7 @@ class WorkoutRepository:
 
         await self._session.flush()
         await self._session.refresh(workout, attribute_names=["blocks"])
+        await self._converge(workout)
         return workout
 
     async def _load_cascade_position(self, workout_id: int) -> tuple[list[Workout], int, Workout]:
@@ -953,6 +964,7 @@ class WorkoutRepository:
 
         await self._session.flush()
         await self._session.refresh(workout, attribute_names=["blocks"])
+        await self._converge(workout)
         return workout
 
     async def preview_edit_workout(
@@ -1113,6 +1125,7 @@ class WorkoutRepository:
 
         await self._session.flush()
         await self._session.refresh(workout, attribute_names=["blocks"])
+        await self._converge(workout)
         return workout
 
     async def correct_block_equipment(

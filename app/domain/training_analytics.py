@@ -11,12 +11,28 @@
   * Активность — по локальным календарным дням пользователя; сессии из
     будущего исключены; смешанная сессия считается ОДИН раз.
   * Не выдумываем: общий объём между протоколами, стрик, длительность
-    сессии, вес/нагрузку, RPE, "план vs факт" для интервалов."""
+    сессии, вес/нагрузку, RPE, "план vs факт" для интервалов.
+  * Тренировка атомарна (issue #308, SESSION §6 A2): каждая сессия — ровно в одной
+    категории, все счётчики тренировок — целые; минуты считаются в секундах и
+    раздаются методом наибольшего остатка (A5), чтобы части давали показанный итог."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
+
+from app.domain.canonical_history import (
+    AttributionBlock,
+    allocate_largest_remainder,
+    attribute_primary_category,
+    round_minutes,
+)
+from app.domain.exercise_identity import (
+    OTHER_ACTIVITY_LABEL,
+    UNCATEGORIZED_LABEL,
+    category_label,
+    subcategory_label,
+)
 
 ACTIVITY_WINDOW_DAYS = 30
 ACTIVITY_WEEKS = 12
@@ -38,6 +54,9 @@ class AnalyticsBlock:
     protocol_type: str | None  # reps_sets | time_sets | max_effort | interval | None
     set_logs: list[AnalyticsSetLog] = field(default_factory=list)
     result: dict | None = None  # interval result
+    # Подходы "на максимум" блока рабочих подходов (course Block B: 4×3 + max): отдельная панель
+    # max_effort того же упражнения (A4); у блока одного протокола пусто.
+    max_set_logs: list[AnalyticsSetLog] = field(default_factory=list)
     # Категория упражнения каталога (#274); None — нет упражнения/legacy
     category: str | None = None
     subcategory: str | None = None
@@ -51,6 +70,10 @@ class AnalyticsSession:
     # Свободная активность (#263): заявленная длительность, источник минут вместо completed_at
     duration_seconds: int | None = None
     activity_type: str | None = None
+    # Подпись вида внешней активности («Бег») — подкатегория «Другой активности»; None — неизвестный вид.
+    activity_label: str | None = None
+    # Каноническая сессия (#308): id строки TrainingSession — для тестов/диагностики сверки.
+    session_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -231,6 +254,15 @@ _PANEL_BUILDERS = {
 _PROTOCOL_ORDER = {"reps_sets": 0, "time_sets": 1, "max_effort": 2, "interval": 3}
 
 
+def _protocol_parts(block: AnalyticsBlock) -> list[tuple[str, list[AnalyticsSetLog]]]:
+    """Вклады блока в панели: основной протокол и, у блока рабочих подходов с подходами «на максимум»
+    (course Block B: 4×3 + max), отдельный вклад в max_effort того же упражнения."""
+    parts = [(block.protocol_type, block.set_logs)]
+    if block.max_set_logs and block.protocol_type == "reps_sets":
+        parts.append(("max_effort", block.max_set_logs))
+    return parts
+
+
 def compute_training_analytics(sessions: list[AnalyticsSession], now: datetime, tz: ZoneInfo) -> TrainingAnalytics:
     past = _completed_past(sessions, now)
     activity = compute_activity(past, now, tz)
@@ -238,12 +270,29 @@ def compute_training_analytics(sessions: list[AnalyticsSession], now: datetime, 
     groups: dict[tuple[int, str], list[tuple[datetime, AnalyticsBlock]]] = {}
     names: dict[int, str] = {}
     for session in past:
+        # A4: несколько блоков ОДНОЙ сессии с одной идентичностью упражнения и протоколом (курс: блоки A и Б —
+        # оба «Подтягивания») — одна запись истории этой сессии, а не по записи на блок: session_count считает
+        # тренировки. Интервалы не склеиваются (результат у каждого свой).
+        merged: dict[tuple[int, str], AnalyticsBlock] = {}
         for block in session.blocks:
             if block.protocol_type is None or block.exercise_id is None:
-                continue  # STEP/legacy: только активность
-            groups.setdefault((block.exercise_id, block.protocol_type), []).append((session.performed_at, block))
+                continue  # блок без идентичности/протокола: только активность
             if block.exercise_name:
                 names[block.exercise_id] = block.exercise_name  # самое свежее имя
+            for protocol, logs in _protocol_parts(block):
+                key = (block.exercise_id, protocol)
+                part = AnalyticsBlock(
+                    exercise_id=block.exercise_id, exercise_name=block.exercise_name, protocol_type=protocol,
+                    set_logs=logs, result=block.result,
+                )
+                if protocol == "interval":
+                    groups.setdefault(key, []).append((session.performed_at, part))
+                elif key in merged:
+                    merged[key] = replace(merged[key], set_logs=[*merged[key].set_logs, *logs])
+                else:
+                    merged[key] = part
+        for key, part in merged.items():
+            groups.setdefault(key, []).append((session.performed_at, part))
 
     panels = [
         panel
@@ -254,7 +303,7 @@ def compute_training_analytics(sessions: list[AnalyticsSession], now: datetime, 
     return TrainingAnalytics(activity=activity, panels=panels)
 
 
-# --- Метрики по неделям: тренировки / минуты (CRIMPD, #259) ------------------------
+# --- Метрики по неделям: тренировки / минуты (CRIMPD, #259; целые и сверенные, #308) ------
 
 MIN_DURATION_SECONDS = 60
 MAX_DURATION_SECONDS = 6 * 3600
@@ -265,7 +314,8 @@ MAX_RANGE_DAYS = 366
 class WeekMetric:
     week_start: date  # понедельник
     workouts: int
-    minutes: int  # целые минуты: сумма секунд недели // 60
+    minutes: int  # целые минуты, метод наибольшего остатка: Σ недель == total_minutes
+    seconds: int = 0  # исходные секунды недели (A5: считаем в секундах, округляем один раз)
 
 
 @dataclass(frozen=True)
@@ -275,7 +325,8 @@ class MetricsSeries:
     weeks: list[WeekMetric]
     total_workouts: int
     total_minutes: int
-    without_duration: int  # тренировки диапазона, не попавшие в минуты
+    without_duration: int  # тренировки диапазона, не попавшие в минуты (A5: неизвестная длительность)
+    total_seconds: int = 0
 
 
 def session_duration_seconds(session: AnalyticsSession) -> int | None:
@@ -296,7 +347,11 @@ def compute_metrics_series(
 ) -> MetricsSeries:
     """Недельные ряды (недели с понедельника в часовом поясе пользователя)
     по локальным дням [date_from, date_to]; сессии из будущего исключены.
-    Каждая неделя диапазона присутствует в ряду, даже пустая."""
+    Каждая неделя диапазона присутствует в ряду, даже пустая.
+
+    A5: секунды недель суммируются без потерь, total_minutes = round(Σ секунд / 60), а минуты недель —
+    метод наибольшего остатка от тех же секунд, поэтому Σ weeks.minutes == total_minutes (раньше каждая
+    неделя усекалась отдельно, и сумма расходилась с итогом, D13)."""
     week_seconds: dict[date, int] = {}
     week_workouts: dict[date, int] = {}
     without = 0
@@ -316,106 +371,132 @@ def compute_metrics_series(
         week_seconds[week] = week_seconds.get(week, 0) + seconds
         total_seconds += seconds
 
-    weeks: list[WeekMetric] = []
+    weeks_list: list[date] = []
     week = _week_start(date_from)
     last = _week_start(date_to)
     while week <= last:
-        weeks.append(WeekMetric(
-            week_start=week, workouts=week_workouts.get(week, 0), minutes=week_seconds.get(week, 0) // 60,
-        ))
+        weeks_list.append(week)
         week += timedelta(weeks=1)
+    total_minutes = round_minutes(total_seconds)
+    minutes = allocate_largest_remainder([week_seconds.get(w, 0) for w in weeks_list], total_minutes)
     return MetricsSeries(
-        date_from=date_from, date_to=date_to, weeks=weeks, total_workouts=total_workouts,
-        total_minutes=total_seconds // 60, without_duration=without,
+        date_from=date_from, date_to=date_to,
+        weeks=[
+            WeekMetric(
+                week_start=w, workouts=week_workouts.get(w, 0), minutes=m, seconds=week_seconds.get(w, 0),
+            )
+            for w, m in zip(weeks_list, minutes, strict=True)
+        ],
+        total_workouts=total_workouts, total_minutes=total_minutes, without_duration=without,
+        total_seconds=total_seconds,
     )
 
 
-# --- Распределение по категориям (CRIMPD #274) -------------------------------------
+# --- Распределение по категориям (CRIMPD #274; одна категория на сессию, #308) ------------
 
-OTHER_ACTIVITY_CATEGORY = "Другая активность"
-UNCATEGORIZED = "Без категории"
+OTHER_ACTIVITY_CATEGORY = OTHER_ACTIVITY_LABEL
+UNCATEGORIZED = UNCATEGORIZED_LABEL
 
 
 @dataclass(frozen=True)
 class DistributionSub:
     name: str
-    workouts: float
-    minutes: float
+    workouts: int
+    minutes: int
 
 
 @dataclass(frozen=True)
 class DistributionCategory:
     name: str
-    workouts: float
-    minutes: float
+    workouts: int
+    minutes: int
     subcategories: list[DistributionSub]
 
 
 @dataclass(frozen=True)
 class Distribution:
     categories: list[DistributionCategory]
-    total_workouts: float
-    total_minutes: float
+    total_workouts: int
+    total_minutes: int
 
 
-def _session_shares(session: AnalyticsSession) -> dict[tuple[str, str | None], float]:
-    """Доли сессии по (категория, подкатегория); сумма долей = 1. Свободная
-    активность — целиком «Другая активность». Смешанная сессия делится
-    пропорционально числу блоков (каждый блок — равная доля); блок без
-    категории (legacy/STEP) идёт в «Без категории»."""
-    if session.activity_type is not None:
-        return {(OTHER_ACTIVITY_CATEGORY, None): 1.0}
-    if not session.blocks:
-        return {(UNCATEGORIZED, None): 1.0}
-    share = 1.0 / len(session.blocks)
-    shares: dict[tuple[str, str | None], float] = {}
-    for block in session.blocks:
-        key = (block.category, block.subcategory) if block.category else (UNCATEGORIZED, None)
-        shares[key] = shares.get(key, 0.0) + share
-    return shares
+def primary_category_of(session: AnalyticsSession) -> tuple[str, str | None]:
+    """A2: (категория, подкатегория) сессии — подписи для людей, ровно одна пара. Правило — в
+    app.domain.canonical_history.attribute_primary_category; блок без упражнения/категории даёт
+    «Без категории», а не пропадает."""
+    result = attribute_primary_category(
+        is_external_activity=session.activity_type is not None, activity_label=session.activity_label,
+        blocks=[
+            AttributionBlock(
+                category=block.category, subcategory=block.subcategory,
+                performed_sets=len(block.set_logs) + len(block.max_set_logs),
+            )
+            for block in session.blocks
+        ],
+    )
+    return result.category, result.subcategory
 
 
 def compute_distribution(
     sessions: list[AnalyticsSession], library: list[tuple[str, str | None]],
     date_from: date, date_to: date, now: datetime, tz: ZoneInfo,
 ) -> Distribution:
-    """Тренировки и минуты по категориям за [date_from, date_to] (локальные
-    дни; сессии из будущего исключены). library — (category, subcategory)
-    каталога: их строки присутствуют и с нулями. Сессия без валидной
-    длительности даёт долю тренировки, но не минут. Итого по тренировкам =
-    число тренировок диапазона (доли одной сессии в сумме дают 1)."""
-    cells: dict[tuple[str, str | None], list[float]] = {}
+    """Тренировки и минуты по категориям за [date_from, date_to] (локальные дни; сессии из будущего
+    исключены). library — (category, subcategory) каталога: их строки присутствуют и с нулями (подписи
+    человеческие, дубли после сопоставления схлопываются). Каждая сессия — ровно в одной категории:
+    Σ workouts по категориям == число тренировок диапазона, все счётчики целые (A1/A2). Сессия без
+    валидной длительности даёт тренировку, но не минуты (A5). Минуты категорий — секунды, раздаваемые
+    наибольшим остатком до итога round(Σ секунд / 60); внутри категории подкатегории — тем же
+    методом до минут категории (остаток минут категории — «без подкатегории»)."""
+    cells: dict[str, dict[str | None, list[int]]] = {}  # категория -> подкатегория|None -> [тренировки, секунды]
     for category, subcategory in library:
-        cells.setdefault((category, subcategory), [0.0, 0.0])
+        label = category_label(category)
+        if label == UNCATEGORIZED:
+            continue  # «Без категории» из каталога не показываем нулевой строкой
+        cells.setdefault(label, {None: [0, 0]})
+        sub = subcategory_label(subcategory)
+        if sub is not None:
+            cells[label].setdefault(sub, [0, 0])
+    total_seconds = 0
     for session in _completed_past(sessions, now):
         if not date_from <= session.performed_at.astimezone(tz).date() <= date_to:
             continue
-        seconds = session_duration_seconds(session)
-        minutes = 0.0 if seconds is None else seconds / 60
-        for key, share in _session_shares(session).items():
-            cell = cells.setdefault(key, [0.0, 0.0])
-            cell[0] += share
-            cell[1] += share * minutes
+        category, subcategory = primary_category_of(session)
+        seconds = session_duration_seconds(session) or 0
+        total_seconds += seconds
+        group = cells.setdefault(category, {None: [0, 0]})
+        for key in {None, subcategory}:
+            cell = group.setdefault(key, [0, 0])
+            cell[0] += 1
+            cell[1] += seconds
 
-    by_category: dict[str, list[tuple[str | None, list[float]]]] = {}
-    for (category, subcategory), values in cells.items():
-        by_category.setdefault(category, []).append((subcategory, values))
-
+    names = list(cells)
+    total_minutes = round_minutes(total_seconds)
+    category_minutes = allocate_largest_remainder([cells[name][None][1] for name in names], total_minutes)
     categories: list[DistributionCategory] = []
-    for category, items in by_category.items():
-        subs = [
-            DistributionSub(name=sub, workouts=round(v[0], 2), minutes=round(v[1], 1))
-            for sub, v in sorted(((s, v) for s, v in items if s is not None), key=lambda x: x[0].lower())
-        ]
+    for name, minutes in zip(names, category_minutes, strict=True):
+        group = cells[name]
+        sub_names = sorted((key for key in group if key is not None), key=str.lower)
+        sub_minutes = allocate_sub_minutes([group[key][1] for key in sub_names], group[None][1], minutes)
         categories.append(DistributionCategory(
-            name=category, workouts=round(sum(v[0] for _, v in items), 2),
-            minutes=round(sum(v[1] for _, v in items), 1), subcategories=subs,
+            name=name, workouts=group[None][0], minutes=minutes,
+            subcategories=[
+                DistributionSub(name=key, workouts=group[key][0], minutes=m)
+                for key, m in zip(sub_names, sub_minutes, strict=True)
+            ],
         ))
     # Крупные сверху; при равенстве — по имени. Служебные категории — в конце.
     tail = {OTHER_ACTIVITY_CATEGORY: 1, UNCATEGORIZED: 2}
     categories.sort(key=lambda c: (tail.get(c.name, 0), -c.workouts, c.name.lower()))
     return Distribution(
-        categories=categories,
-        total_workouts=round(sum(c[0] for c in cells.values()), 2),
-        total_minutes=round(sum(c[1] for c in cells.values()), 1),
+        categories=categories, total_workouts=sum(c.workouts for c in categories), total_minutes=total_minutes,
     )
+
+
+def allocate_sub_minutes(sub_seconds: list[int], category_seconds: int, category_minutes: int) -> list[int]:
+    """Минуты подкатегорий внутри категории: секунды подкатегорий + «остаток без подкатегории» делят
+    минуты категории наибольшим остатком; возвращаются только подкатегории (Σ ≤ минут категории,
+    остальное — строка категории без подкатегории)."""
+    rest_seconds = max(category_seconds - sum(sub_seconds), 0)
+    allocated = allocate_largest_remainder([*sub_seconds, rest_seconds], category_minutes)
+    return allocated[:-1]

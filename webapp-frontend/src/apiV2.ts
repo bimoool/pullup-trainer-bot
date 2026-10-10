@@ -855,15 +855,15 @@ export interface SessionsPage {
 }
 
 /** Страница Журнала v2 — тот же GET /sessions (limit/offset), has_more
- * считает сервер. exclude_backfilled (#284): сессии, созданные backfill-ом legacy-истории, не
- * показываются — перенесённую тренировку Журнал показывает legacy-карточкой (с «Изменить»/«Удалить»). */
+ * считает сервер. exclude_legacy_cards (#284 → #308): нативные копии legacy-записей (origin legacy_backfill) не
+ * дублируются — такую тренировку Журнал показывает legacy-карточкой (с «Изменить»/«Удалить»); в итогах она одна. */
 export async function fetchSessionsPage(
   initDataRaw: string, limit: number, offset: number, status: "started" | "completed",
   range?: { from: string; to: string },
 ): Promise<SessionsPage> {
   const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
   return apiV2Get<SessionsPage>(
-    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}${dates}&exclude_backfilled=true`, initDataRaw,
+    `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}${dates}&exclude_legacy_cards=true`, initDataRaw,
   );
 }
 

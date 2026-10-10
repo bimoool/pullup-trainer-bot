@@ -72,7 +72,7 @@ async def test_backfilled_elective_is_the_object_and_is_deletable_editable(sessi
     assert card["blocks"][0]["set_logs"][0]["value"] == "9.00"
 
 
-async def test_delete_elective_removes_only_the_session_tree(session: AsyncSession):
+async def test_delete_elective_supersedes_the_copy_and_keeps_legacy_rows(session: AsyncSession):
     user = await _user(session, 962792)
     elective, session_id = await _backfilled_elective(session, user)
     other_elective, other_id = await _backfilled_elective(
@@ -84,13 +84,19 @@ async def test_delete_elective_removes_only_the_session_tree(session: AsyncSessi
     assert response.status_code == 204
 
     assert [card["id"] for card in await _listed(session, user)] == [other_id]
-    assert await session.get(TrainingSession, session_id) is None
+    # #308: legacy-строка факультатива остаётся, поэтому копия не удаляется, а ЗАМЕЩАЕТСЯ (иначе повторное
+    # сведение воссоздало бы удалённую запись) — она вне canonical_sessions и никуда не попадает
+    deleted = await session.get(TrainingSession, session_id)
+    await session.refresh(deleted)
+    assert deleted.superseded_at is not None and deleted.superseded_reason == "legacy_deleted"
+    assert deleted.legacy_id == elective.id
     # соседняя запись, legacy-строки и определения Exercise не тронуты
-    assert await session.get(TrainingSession, other_id) is not None
+    other = await session.get(TrainingSession, other_id)
+    assert other is not None and other.superseded_at is None
     assert await session.scalar(select(func.count()).select_from(ElectiveWorkout)) == 2
     assert await session.get(ElectiveWorkout, elective.id) is not None
     assert set(await session.scalars(select(Exercise.id).where(Exercise.name.like("Факультатив — %")))) == exercise_ids
-    assert await session.scalar(select(func.count()).select_from(SessionBlock)) == 1
+    assert await session.scalar(select(func.count()).select_from(SessionBlock)) == 2
     assert other_elective.id is not None
 
 

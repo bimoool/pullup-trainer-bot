@@ -2,6 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Workout
+from app.db.repositories.legacy_convergence import LegacyConvergenceRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 
@@ -13,6 +14,9 @@ async def _archive_and_delete(session: AsyncSession, workout: Workout) -> None:
     удаляет саму строку workouts (blocks удаляются вслед за ней через
     ON DELETE CASCADE на workout_id, см. app.db.models.Block)."""
     params = {"workout_id": workout.id}
+    # Dual-write (#308, MIGRATION_V2 §4): нативная копия этой тренировки замещается (legacy_deleted) в той же
+    # транзакции — иначе Журнал/Профиль/Аналитика продолжили бы считать удалённую запись.
+    await LegacyConvergenceRepository(session).supersede_deleted_workout(workout.id)
     await session.execute(
         text(
             "INSERT INTO blocks_archive_admin_reset "

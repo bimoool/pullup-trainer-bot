@@ -39,7 +39,6 @@ from app.db.repositories.training_sessions import (
 )
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_definitions import WorkoutDefinitionRepository
-from app.db.repositories.workouts import WorkoutRepository
 from app.domain.activity_types import activity_label
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.electives import format_elective_set_note
@@ -375,7 +374,11 @@ async def _catalog_exercise_names(session: AsyncSession, details: list[SessionDe
         block.exercise_id for detail in details for block in detail.blocks if block.exercise_id is not None
     })
     exercises = await ProgramRepository(session).list_exercises_by_ids(exercise_ids)
-    return {ex.id: ex.name for ex in exercises if ex.subcategory not in ("block_a", "block_b")}
+    # E1 (#308): подпись — display_name (если заполнено), а не внутреннее name/slug.
+    return {
+        ex.id: exercise_display_label(ex.display_name, ex.name)
+        for ex in exercises if ex.subcategory not in ("block_a", "block_b")
+    }
 
 
 # --- Каталог ---------------------------------------------------------------------------
@@ -1384,7 +1387,8 @@ async def list_sessions(
     status_filter: Literal["started", "completed"] | None = Query(default=None, alias="status"),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    exclude_backfilled: bool = Query(default=False),
+    exclude_legacy_cards: bool = Query(default=False),
+    exclude_backfilled: bool = Query(default=False, description="deprecated alias of exclude_legacy_cards"),
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> SessionListResponse:
@@ -1395,11 +1399,12 @@ async def list_sessions(
     date_from/date_to (#256) — включительно, ЛОКАЛЬНЫЕ дни пользователя (его
     часовой пояс, как в Analytics v2); Журнал грузит месяц за запрос.
 
-    exclude_backfilled (#284) — только для Журнала: скрыть v2-сессии, созданные backfill-ом legacy
-    Workout (#163; отпечаток — TrainingSessionRepository._backfilled_fingerprint). Старая схема —
-    источник правды для перенесённой истории, её карточки показаны отдельно (GET /api/history) и
-    только у них есть «Изменить»/«Удалить». Электив (#279, source=elective) и живые/Builder-сессии
-    не скрываются. has_more считается после скрытия. Без флага — прежний ответ."""
+    exclude_legacy_cards (#284 → #308; старое имя exclude_backfilled — алиас для закэшированных клиентов) —
+    только для Журнала: не возвращать нативные копии legacy Workout (origin = legacy_backfill) — их
+    показывает legacy-карточка (GET /api/history) с «Изменить»/«Удалить» старой схемы. Это представление:
+    такие сессии входят в canonical_sessions и в календарь/Профиль/Аналитику ровно один раз. Электив
+    (legacy_elective) и живые/Builder-сессии не скрываются; замещённые (superseded) строки не
+    возвращаются никогда. has_more считается после скрытия. Без флага — все canonical + STARTED."""
     user = await _require_user(session, init_data)
     performed_from = performed_to = None
     if date_from is not None or date_to is not None:
@@ -1427,7 +1432,8 @@ async def list_sessions(
     # limit+1 — только чтобы честно ответить has_more без отдельного запроса.
     fetched = await TrainingSessionRepository(session).list_for_user(
         user.id, limit=limit + 1, offset=offset, status=status_value,
-        performed_from=performed_from, performed_to=performed_to, exclude_backfilled=exclude_backfilled,
+        performed_from=performed_from, performed_to=performed_to,
+        exclude_legacy_cards=exclude_legacy_cards or exclude_backfilled,
     )
     has_more = len(fetched) > limit
     details = fetched[:limit]
@@ -1454,11 +1460,11 @@ async def journal_days(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> JournalDaysResponse:
-    """Календарь Журнала (#256): сколько завершённых тренировок в каждый день
-    месяца. v2-сессии — по локальному дню пользователя (timezone, дефолт проекта
-    — Europe/Moscow, как в Analytics v2); legacy Workout — по дате, которую
-    показывает карточка Истории (UTC-дата performed_at). Только агрегаты по
-    границам месяца, без сканирования всей истории."""
+    """Календарь Журнала (#256): сколько завершённых тренировок в каждый день месяца. Считается по
+    canonical_sessions (#308, A1) — тому же множеству, что список Журнала, Профиль и Аналитика: одна
+    строка TrainingSession = одна тренировка, день — ЛОКАЛЬНЫЙ день пользователя (timezone, дефолт
+    проекта — Europe/Moscow). Legacy Workout отдельно не добавляются: каждая имеет нативную копию
+    (MIGRATION §4), поэтому суммы не расходятся. Только агрегаты по границам месяца."""
     try:
         year, month_number = parse_month(month)
     except ValueError as exc:
@@ -1467,25 +1473,14 @@ async def journal_days(
     tz = resolve_timezone(user.timezone)
     first_day, last_day = month_date_range(year, month_number)
     sessions_repo = TrainingSessionRepository(session)
-    workouts_repo = WorkoutRepository(session)
 
     start, end = local_range_bounds_utc(first_day, last_day, tz)
-    # v2-сессии, созданные backfill-ом (#284), не считаются: их показывает legacy-карточка ниже —
-    # те же правила, что у списка Журнала (GET /sessions?exclude_backfilled=true).
-    counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end, exclude_backfilled=True), tz)
-    legacy_start, legacy_end = local_range_bounds_utc(first_day, last_day, UTC)
-    for day, count in local_day_counts(
-        await workouts_repo.completed_performed_at(user.id, legacy_start, legacy_end), UTC,
-    ).items():
-        counts[day] = counts.get(day, 0) + count
+    counts = local_day_counts(await sessions_repo.completed_performed_at(user.id, start, end), tz)
 
     latest_days: list[date] = []
-    latest_session = await sessions_repo.latest_completed_performed_at(user.id, exclude_backfilled=True)
+    latest_session = await sessions_repo.latest_completed_performed_at(user.id)
     if latest_session is not None:
         latest_days.append(latest_session.astimezone(tz).date())
-    latest_workout = await workouts_repo.latest_completed_performed_at(user.id)
-    if latest_workout is not None:
-        latest_days.append(latest_workout.astimezone(UTC).date())
     latest = max(latest_days) if latest_days else None
     return JournalDaysResponse(
         month=f"{year:04d}-{month_number:02d}",
@@ -1619,11 +1614,11 @@ async def create_session(
             if await program_repo.get_visible_exercise_for_user(block.exercise_id, user.id) is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
             # #285: внутренняя STEP-роль (block_a/block_b) — не для записей Журнала/свободных/элективных:
-            # такая сессия совпала бы с отпечатком backfill-копии (_backfilled_fingerprint) и пропала из
-            # Журнала. STEP-блоки допустимы только у сессии программы (program_inclusion_id) — по ним
-            # считается прогрессия; публичный клиент их так не шлёт.
-            # Исключение — только сессия плана своей инклюзии (source=plan): любая другая форма с
-            # program_inclusion_id (backdated/freeform/…) обходила бы отпечаток (#224 review).
+            # по таким блокам считается прогрессия, у публичного клиента их быть не должно. (До #308 такая
+            # сессия ещё и совпадала с отпечатком backfill-копии и пропадала из Журнала; отпечатка больше нет —
+            # правило осталось ради прогрессии.) STEP-блоки допустимы только у сессии программы
+            # (program_inclusion_id), и только source=plan своей инклюзии: любая другая форма с
+            # program_inclusion_id (backdated/freeform/…) обходила бы правило (#224 review).
             step_blocks_allowed = body.program_inclusion_id is not None and body.source == "plan"
             if not step_blocks_allowed and await program_repo.get_publicly_attachable_exercise_for_user(
                 block.exercise_id, user.id,

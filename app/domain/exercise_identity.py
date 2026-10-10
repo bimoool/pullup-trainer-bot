@@ -81,6 +81,47 @@ SYSTEM_EXERCISE_SLUGS: dict[str, str] = {
 }
 
 
+# --- Человеческие подписи категорий для Журнала/Аналитики (issue #308, SESSION §6 A3) ---------
+
+OTHER_ACTIVITY_LABEL = "Другая активность"
+UNCATEGORIZED_LABEL = "Без категории"
+CATEGORY_LABELS: dict[str, str] = {seed.slug: seed.display_name for seed in CATEGORY_SEEDS}
+_INTERNAL_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def looks_like_internal_key(text: str | None) -> bool:
+    """Идентификатор вида pull_ups / block_a / user / manual_custom / dist274_pull: ASCII без пробелов.
+    Такая строка — ключ, не подпись (E1); человеческий текст («Хват», «Мои упражнения») ключом не является."""
+    return text is not None and bool(_INTERNAL_KEY.match(text.strip()))
+
+
+def category_label(raw: str | None) -> str:
+    """Подпись категории для UI из чего угодно: slug сида, старая строка exercises.category или уже подпись.
+    Неизвестный ключ → «Без категории» (MIGRATION §3: не угадываем и не показываем ключ)."""
+    if raw is None or not raw.strip():
+        return UNCATEGORIZED_LABEL
+    text = raw.strip()
+    slug = LEGACY_CATEGORY_TO_SLUG.get(text) or (text if text in CATEGORY_LABELS else None)
+    if slug is not None:
+        return CATEGORY_LABELS[slug]
+    return UNCATEGORIZED_LABEL if looks_like_internal_key(text) else text
+
+
+def is_service_subcategory(raw: str | None) -> bool:
+    """Служебные подкатегории (роли курса, факультативы) — не отдельный тип тренировки для пользователя."""
+    return raw is not None and (raw.strip() in LEGACY_SUBCATEGORY_TO_SLUG)
+
+
+def subcategory_label(raw: str | None) -> str | None:
+    """Публичная подкатегория → подпись; служебная и неизвестный ключ → None (в строку категории)."""
+    if raw is None or not raw.strip() or is_service_subcategory(raw):
+        return None
+    text = raw.strip()
+    if text in CATEGORY_LABELS:
+        return CATEGORY_LABELS[text]
+    return None if looks_like_internal_key(text) else text
+
+
 def category_slug_for_legacy(category: str | None) -> str:
     """Неизвестная строка → «Без категории» (MIGRATION §3: не угадываем, а сообщаем)."""
     if category is None:

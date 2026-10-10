@@ -1,10 +1,10 @@
-"""#284 (исправление #282) — Журнал не показывает backfill-копию (v2 TrainingSession, #163) и
-показывает ВСЕ legacy-карточки: у них есть «Изменить»/«Удалить», старая схема — источник правды
-для перенесённой истории. Скрытие зависит только от отпечатка v2-сессии, а не от наличия парной
-legacy-записи. Display-only: данные не меняются.
+"""#284 (исправление #282) → #308 — нативная копия legacy Workout (origin = legacy_backfill) не дублируется
+в Журнале v2 (её показывает legacy-карточка с «Изменить»/«Удалить»), а в итогах (календарь, Профиль,
+Аналитика) входит в canonical_sessions РОВНО ОДИН раз. Скрытие — по явному origin, не по отпечатку;
+замещённая (superseded) копия удалённой legacy-записи не показывается и не считается нигде.
 
-Backfill-копии создаются НАСТОЯЩИМИ функциями scripts/backfill_multi_program.py, чтобы тест
-ломался, если отпечаток backfill-сессии разойдётся с тем, что backfill реально пишет."""
+Копии создаются НАСТОЯЩЕЙ функцией сведения (dual-write писателей старой схемы и scripts/backfill_multi_program.py
+делят одну реализацию — LegacyConvergenceRepository), чтобы тест ломался, если они разойдутся."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -110,7 +110,8 @@ def _maxes(items: list[dict]) -> list[str]:
 
 async def _migrated_user(session: AsyncSession, telegram_id: int):
     """Каскадная (макс. 11) + задним числом (12) + свободная (13), все перенесены; затем
-    пост-миграционная legacy-запись (14), v2-копии у неё нет."""
+    пост-миграционная legacy-запись (14): с #308 dual-write даёт ей нативную копию сразу (раньше v2-копии
+    у неё не было, и Аналитика/Журнал/Профиль расходились, D14)."""
     user, workout_set = await _legacy_user(session, telegram_id)
     repo = WorkoutRepository(session)
     await repo.record_workout(**_kwargs(user, workout_set, BASE, 11))
@@ -131,7 +132,7 @@ def _edit_payload(max_a: int) -> dict:
 async def test_journal_hides_backfill_copies_and_legacy_shows_every_card_with_actions(session: AsyncSession):
     user, _workout_set, post = await _migrated_user(session, 982001)
 
-    # Журнал v2 не содержит ни одной backfill-копии (все три перенесённые записи — копии)
+    # Журнал v2 не содержит ни одной копии legacy Workout (все четыре записи показаны legacy-карточками)
     page = await _journal_v2(session, user.telegram_id)
     assert page["sessions"] == [] and page["has_more"] is False
 
@@ -142,13 +143,13 @@ async def test_journal_hides_backfill_copies_and_legacy_shows_every_card_with_ac
     assert all(item["is_deletable"] for item in items)
     assert items[0]["target_a"] is not None  # цель следующей тренировки — на самой свежей, как до #282
     assert all(item["target_a"] is None for item in items[1:])
-    # без флага exclude_backfilled прежний ответ /sessions — v2-копии на месте (SessionJournalScreen)
-    assert len((await _journal_v2(session, user.telegram_id, hide=False))["sessions"]) == 3
-    # скрытие — только отображение: ни одна запись не изменена и не удалена
+    # без флага ответ /sessions — все canonical-копии на месте (SessionJournalScreen): 4 записи = 4 копии
+    assert len((await _journal_v2(session, user.telegram_id, hide=False))["sessions"]) == 4
+    # скрытие — только отображение: ни одна запись не изменена и не удалена; копия у КАЖДОЙ legacy-строки
     assert await session.scalar(select(func.count()).select_from(Workout).where(Workout.user_id == user.id)) == 4
     assert await session.scalar(
         select(func.count()).select_from(TrainingSession).where(TrainingSession.user_id == user.id),
-    ) == 3
+    ) == 4
 
 
 async def test_history_endpoint_ignores_legacy_exclude_migrated_param(session: AsyncSession):
@@ -174,10 +175,15 @@ async def test_legacy_edit_after_migration_is_visible(session: AsyncSession):
     items = await _history(session, user.telegram_id)
     assert sum("максимум 17" in i["result_a"] for i in items) == 1
     assert sum("максимум 12" in i["result_a"] for i in items) == 0
-    assert (await _journal_v2(session, user.telegram_id))["sessions"] == []  # stale v2-копия не вернулась
+    assert (await _journal_v2(session, user.telegram_id))["sessions"] == []  # копия в Журнале v2 не дублируется
+    # #308: правка legacy-записи обновила и её копию (revision + 1), а не оставила устаревшую
+    copy = await session.scalar(
+        select(TrainingSession).where(TrainingSession.user_id == user.id, TrainingSession.legacy_id == migrated["workout_id"]),
+    )
+    assert copy is not None and copy.revision == 1
 
 
-async def test_legacy_delete_does_not_resurrect_v2_copy(session: AsyncSession):
+async def test_legacy_delete_supersedes_the_native_copy_everywhere(session: AsyncSession):
     user, _workout_set, _post = await _migrated_user(session, 982004)
     migrated = next(i for i in await _history(session, user.telegram_id) if "максимум 12" in i["result_a"])
 
@@ -186,10 +192,18 @@ async def test_legacy_delete_does_not_resurrect_v2_copy(session: AsyncSession):
 
     items = await _history(session, user.telegram_id)
     assert len(items) == 3 and sum("максимум 12" in i["result_a"] for i in items) == 0
-    # v2-копия удалённой записи ещё лежит в БД (удаление legacy её не трогает) — но Журнал её не показывает
+    # #308: копия удалённой записи ЗАМЕЩЕНА (строка остаётся — архивировать, не удалять), её нет ни в
+    # списке Журнала, ни в календаре, ни в Профиле
     assert await session.scalar(
         select(func.count()).select_from(TrainingSession).where(TrainingSession.user_id == user.id),
-    ) == 3
+    ) == 4
+    assert await session.scalar(
+        select(func.count()).select_from(TrainingSession).where(
+            TrainingSession.user_id == user.id, TrainingSession.superseded_at.is_not(None),
+            TrainingSession.superseded_reason == "legacy_deleted",
+        ),
+    ) == 1
+    assert len((await _journal_v2(session, user.telegram_id, hide=False))["sessions"]) == 3  # замещённая не возвращается
     assert (await _journal_v2(session, user.telegram_id))["sessions"] == []
     body = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/journal/days?month=2026-10")).json()
     assert body["days"] == [{"date": "2026-10-02", "count": 3}]
@@ -333,29 +347,30 @@ async def test_backfilled_copies_do_not_distort_pagination(session: AsyncSession
 
 
 async def test_journal_days_agree_with_the_list(session: AsyncSession):
-    """Календарь = (v2-сессии без backfill-копий) + все legacy; число сходится со списком Журнала
-    (v2-список + legacy-история) за месяц. Электив и живая сессия считаются, копии — нет."""
+    """Календарь = canonical_sessions; число сходится со списком Журнала (v2-список без карточек legacy +
+    legacy-история) за месяц: каждая legacy-запись — одна копия, одна карточка, один счёт."""
     user, _workout_set, _post = await _migrated_user(session, 982010)
     block_a = await _get_or_create_exercise(session, name=_EXERCISE_BLOCK_A_NAME, subcategory="block_a")
     await _live_flow_session(session, user, exercise_id=block_a.id, client_session_id=uuid.uuid4())
 
     body = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/journal/days?month=2026-10")).json()
-    # 4 legacy-карточки (3 перенесённые + 1 после миграции) + 1 живая v2-сессия; 3 backfill-копии не считаются
+    # 4 копии legacy-записей (3 перенесённые + 1 после миграции, dual-write) + 1 живая v2-сессия
     assert body["days"] == [{"date": "2026-10-02", "count": 5}]
     listed = len((await _journal_v2(session, user.telegram_id))["sessions"]) + len(await _history(session, user.telegram_id))
     assert listed == 5
     assert body["latest_month"] == "2026-10"
 
 
-async def test_latest_month_ignores_backfill_copies(session: AsyncSession):
-    """latest_month не указывает на месяц, в котором остались только скрытые backfill-копии."""
+async def test_latest_month_ignores_superseded_copies(session: AsyncSession):
+    """latest_month не указывает на месяц, в котором осталась только замещённая копия удалённой legacy-записи."""
     user, workout_set = await _legacy_user(session, 982012)
-    workout = await WorkoutRepository(session).record_backdated_workout(**_kwargs(user, workout_set, BASE, 11))
-    await _backfill(session, [workout])
-    await session.execute(
-        TrainingSession.__table__.update().where(TrainingSession.user_id == user.id)
-        .values(performed_at=BASE + timedelta(days=60)),  # копия «в декабре», legacy-запись — в октябре
-    )
+    repo = WorkoutRepository(session)
+    await repo.record_backdated_workout(**_kwargs(user, workout_set, BASE, 11))
+    december = await repo.record_backdated_workout(**_kwargs(user, workout_set, BASE + timedelta(days=60), 12))
 
+    body = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/journal/days?month=2026-10")).json()
+    assert body["latest_month"] == "2026-12"
+    deleted = await v2_delete(session, user.telegram_id, f"/api/history/{december.id}")
+    assert deleted.status_code == 200, deleted.text
     body = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/journal/days?month=2026-10")).json()
     assert body["latest_month"] == "2026-10"
