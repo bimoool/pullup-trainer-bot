@@ -1,7 +1,7 @@
 """#277 (D2) — сводка Профиля учитывает завершённые тренировки Журнала v2, а не только legacy Workout.
 
-Display-only: считаются и legacy, и v2 TrainingSession; перенесённые backfill-ом (#163) не считаются
-дважды: legacy Workout — источник правды, backfill-копии v2 исключаются отпечатком (#284)."""
+С #308 сводка = canonical_sessions: каждая legacy Workout имеет ровно одну нативную копию (dual-write), и она
+считается один раз; legacy Workout отдельно не прибавляются, замещённые копии не считаются."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
