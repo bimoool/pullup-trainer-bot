@@ -23,7 +23,7 @@ seed plan_week_stepper 990001
 seed plan_week_stepper 990002
 seed builder_workouts 910001
 # issue #306: Live Engine v2 (автопереходы, пауза, интервал) — по пользователю на сценарий.
-for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609; do seed live_engine "$id"; done
+for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612; do seed live_engine "$id"; done
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002

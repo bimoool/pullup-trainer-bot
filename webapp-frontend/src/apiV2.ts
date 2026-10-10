@@ -9,6 +9,7 @@
 import type { EnginePlan, EngineState, TimelineCue } from "./liveEngine";
 
 import type { SessionCreatePayload } from "./journalLog";
+import { awaitEngineReconciliation } from "./engineGate.ts";
 import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
 import type { PeerInsights } from "./peerInsightsFormat";
 import type { ProgramAccessLevel } from "./programAccess";
@@ -712,7 +713,10 @@ export async function startWorkoutLiveSession(
   });
 }
 
+/** #306 F1: чтения ниже сервер сопровождает проекцией дедлайнов (project_due) — они ждут сверки сохранённых
+ * офлайн-очередей движка v2 (engineGate.ts), иначе опередили бы действие пользователя, сделанное до дедлайна. */
 export async function fetchActiveLiveSession(initDataRaw: string): Promise<LiveSessionResponse | null> {
+  await awaitEngineReconciliation();
   const response = await apiV2Get<{ session: LiveSessionResponse | null }>(
     "/api/v2/sessions/live/active", initDataRaw,
   );
@@ -896,6 +900,7 @@ export async function fetchSessions(
   initDataRaw: string, limit = 20, status?: "started" | "completed",
 ): Promise<SessionResponseV2[]> {
   const statusParam = status ? `&status=${status}` : "";
+  await awaitEngineReconciliation(); // #306 F1: список проецирует дедлайны идущих сессий
   const response = await apiV2Get<{ sessions: SessionResponseV2[] }>(
     `/api/v2/sessions?limit=${limit}${statusParam}`, initDataRaw,
   );
@@ -915,6 +920,7 @@ export async function fetchSessionsPage(
   range?: { from: string; to: string },
 ): Promise<SessionsPage> {
   const dates = range ? `&date_from=${range.from}&date_to=${range.to}` : "";
+  await awaitEngineReconciliation(); // #306 F1: список проецирует дедлайны идущих сессий
   return apiV2Get<SessionsPage>(
     `/api/v2/sessions?limit=${limit}&offset=${offset}&status=${status}${dates}&exclude_backfilled=true`, initDataRaw,
   );

@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { remainingMs, start, type EnginePlan } from "../src/liveEngine.ts";
+import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
-  clearQueue, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue, saveQueue,
-  serverOffsetMs, type DrainApi, type EngineQueue, type QueueStore,
+  claimQueue, clearQueue, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
+  releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, wakeEngineReconciliation, type DrainApi,
+  type EngineQueue, type QueueStore,
 } from "../src/liveEngineClient.ts";
 
 const PLAN: EnginePlan = {
@@ -215,4 +217,135 @@ test("drain никогда не бросает: сбой IndexedDB не лома
   await saveQueue({ ...emptyQueue(71), events: [stop("d1")] }, store);
   store.set = async () => { throw new Error("quota"); };  // ответ получен, а записать остаток нельзя
   assert.deepEqual(await drainEngineQueues("init", store, api), { pending: true });
+});
+
+// --- #306 F1: сверка с повторами и ворота для чтений с проекцией ------------------------------------
+
+/** Чтение с проекцией (GET /active, список сессий) — так его делает apiV2.ts: сначала ворота. */
+async function gatedRead(order: string[], name: string): Promise<void> {
+  await awaitEngineReconciliation();
+  order.push(name);
+}
+
+function scriptedApi(script: Record<number, (unknown | Error)[]>, order: string[]) {
+  const attempts = new Map<number, number>();
+  return fakeApi({
+    events: (sessionId, ids) => {
+      const n = attempts.get(sessionId) ?? 0;
+      attempts.set(sessionId, n + 1);
+      const step = script[sessionId]?.[n];
+      if (step instanceof Error) {
+        order.push(`events:${sessionId}:fail`);
+        return step;
+      }
+      order.push(`events:${sessionId}:ok`);
+      return step ?? { engine_status: "active", event_results: ids.map((id) => ({ client_event_id: id, outcome: "applied" })) };
+    },
+  });
+}
+
+test("F1: временный сбой первой досылки — повтор сам, без online; чтение с проекцией ждёт успеха", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(81), events: [stop("t1", 3_000)] }, store);
+  const order: string[] = [];
+  const { api } = scriptedApi({ 81: [new TypeError("Failed to fetch")] }, order);
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [5] });
+  const read = gatedRead(order, "GET /active");  // App: возобновление активной сессии
+  await done;
+  await read;
+  assert.deepEqual(order, ["events:81:fail", "events:81:ok", "GET /active"]);
+  assert.equal(store.data.size, 0);
+});
+
+test("F1: Журнал, открытый во время повторов, не опережает очередь (список ждёт сверки)", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(82), events: [stop("j1", 3_000)] }, store);
+  const order: string[] = [];
+  const failure = Object.assign(new Error("HTTP 502"), { status: 502 });
+  const { api } = scriptedApi({ 82: [failure, new TypeError("Failed to fetch")] }, order);
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [5, 5] });
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  const journal = gatedRead(order, "GET /api/v2/sessions");  // пользователь открыл Журнал между повторами
+  await Promise.all([done, journal]);
+  assert.deepEqual(order, ["events:82:fail", "events:82:fail", "events:82:ok", "GET /api/v2/sessions"]);
+});
+
+test("F1: окончательный ответ (404/409) — без повторов, ворота открываются; иной 4xx — очередь цела, без повторов", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(83), events: [stop("g")] }, store);
+  await saveQueue({ ...emptyQueue(84), events: [stop("r")] }, store);
+  const order: string[] = [];
+  const { api, calls } = scriptedApi({ 83: [httpError(404)], 84: [httpError(422)] }, order);
+  await startEngineReconciliation("init", { store, api, delaysMs: [5] });
+  await gatedRead(order, "read");
+  assert.equal(calls.length, 2);  // по одной попытке: окончательные ответы не повторяются
+  assert.equal(store.data.has("pullup:v2:live-engine-queue:83"), false);  // 404 — сессии нет, досылать некуда
+  assert.equal(store.data.has("pullup:v2:live-engine-queue:84"), true);   // 422 — не выбрасывается молча
+});
+
+test("F1: очереди по сессиям — сбой одной не держит другую: B снята с первой попытки, A — после повтора", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(85), events: [stop("a")] }, store);
+  await saveQueue({ ...emptyQueue(86), events: [stop("b")] }, store);
+  const order: string[] = [];
+  const { api } = scriptedApi({ 85: [new TypeError("Failed to fetch"), new TypeError("Failed to fetch")] }, order);
+  let sawBClearedWhileAPending = false;
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [20, 20] });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  sawBClearedWhileAPending = !store.data.has("pullup:v2:live-engine-queue:86") && store.data.has("pullup:v2:live-engine-queue:85");
+  await done;
+  assert.equal(sawBClearedWhileAPending, true);
+  assert.deepEqual(order, ["events:85:fail", "events:86:ok", "events:85:fail", "events:85:ok"]);
+  assert.equal(store.data.size, 0);
+});
+
+test("F1: нет очередей — ни одного запроса, ворота открыты сразу (Журнал/Главная без задержки)", async () => {
+  const order: string[] = [];
+  const { api, calls } = fakeApi();
+  const started = Date.now();
+  await startEngineReconciliation("init", { store: memoryStore(), api });
+  await gatedRead(order, "read");
+  assert.deepEqual(calls, []);
+  assert.deepEqual(order, ["read"]);
+  assert.ok(Date.now() - started < 50);
+});
+
+test("F1: очередь сессии, открытой на экране, сверка App не трогает; после ухода с экрана — досылает", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(87), events: [stop("own")] }, store);
+  const order: string[] = [];
+  const { api, calls } = scriptedApi({}, order);
+  claimQueue(87);
+  await startEngineReconciliation("init", { store, api });
+  assert.deepEqual(calls, []);
+  assert.equal(store.data.size, 1);
+  releaseQueue(87);
+  await startEngineReconciliation("init", { store, api });
+  assert.deepEqual(order, ["events:87:ok"]);
+  assert.equal(store.data.size, 0);
+});
+
+test("F1: пауза между повторами ограничена и будится online/возвратом (без busy-loop)", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(88), events: [stop("w")] }, store);
+  const order: string[] = [];
+  const { api } = scriptedApi({ 88: [new TypeError("Failed to fetch")] }, order);
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [60_000] });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(order, ["events:88:fail"]);  // ждёт паузу, не крутится
+  wakeEngineReconciliation();  // `online` / приложение снова на экране
+  await done;
+  assert.deepEqual(order, ["events:88:fail", "events:88:ok"]);
+});
+
+test("F1: одна сверка на приложение — повторный старт будит идущую и возвращает её же", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(89), events: [stop("s")] }, store);
+  const order: string[] = [];
+  const { api } = scriptedApi({ 89: [new TypeError("Failed to fetch")] }, order);
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [60_000] });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(startEngineReconciliation("init", { store, api }), done);  // online → тот же promise, повтор сейчас
+  await done;
+  assert.deepEqual(order, ["events:89:fail", "events:89:ok"]);
 });

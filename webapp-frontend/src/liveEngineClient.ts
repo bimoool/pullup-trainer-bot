@@ -13,6 +13,7 @@
 import { del, get, keys, set } from "idb-keyval";
 
 import { completeLiveSession, postLiveEngineEvents } from "./apiV2.ts";
+import { holdEngineReconciliation } from "./engineGate.ts";
 import { applyEvent, project, type EngineEvent, type EnginePlan, type EngineState, type Payload } from "./liveEngine.ts";
 
 /** Очередь — своя у каждой сессии (`…:<session_id>`): старт сессии B не стирает недосланное сессии A. */
@@ -181,6 +182,7 @@ function isTransient(error: unknown): boolean {
  */
 export async function drainEngineQueues(
   initDataRaw: string, store: QueueStore = idbStore, api: DrainApi = httpApi,
+  skip: ReadonlySet<number> = claimedSessions,
 ): Promise<DrainResult> {
   let queues: EngineQueue[];
   try {
@@ -190,6 +192,9 @@ export async function drainEngineQueues(
   }
   let pending = false;
   for (const stored of queues) {
+    if (skip.has(stored.sessionId)) {
+      continue;  // очередью владеет открытый экран этой сессии — он сам её досылает
+    }
     let queue = stored;
     try {
       if (!hasWork(queue)) {
@@ -227,4 +232,76 @@ export async function drainEngineQueues(
     }
   }
   return { pending };
+}
+
+// --- #306 F1: сверка с повторами и ворота для чтений с проекцией ------------------------------------
+
+/** Сессии, чьей очередью сейчас владеет открытый LiveEngineScreen: сверка App их не трогает (иначе две
+ * записи одной очереди в IndexedDB затёрли бы друг друга). */
+const claimedSessions = new Set<number>();
+
+export function claimQueue(sessionId: number): void {
+  claimedSessions.add(sessionId);
+}
+
+export function releaseQueue(sessionId: number): void {
+  claimedSessions.delete(sessionId);
+}
+
+/** Паузы между повторами при временном сбое (сеть/5xx): ограниченный рост, без busy-loop. */
+export const RECONCILE_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+
+export interface ReconcileOptions {
+  store?: QueueStore;
+  api?: DrainApi;
+  delaysMs?: readonly number[];
+}
+
+let reconciling: Promise<void> | null = null;
+let wakeReconcile: (() => void) | null = null;
+
+/**
+ * #306 F1 — сверка всех сохранённых очередей движка v2, пока она не удастся.
+ *
+ * Пока сверка идёт, чтения, которые сервер сопровождает проекцией дедлайнов (GET /sessions/live/active,
+ * список сессий), ждут её (engineGate.ts → apiV2.ts): сохранённое действие пользователя, сделанное до
+ * дедлайна, всегда доходит раньше этого дедлайна. Временный сбой (сеть, 5xx, 408/429) — очередь цела,
+ * повтор через 1, 2, 4, 8, 15, 15… с; ворота держатся. Окончательный ответ (404/409, прочий 4xx) повтор не
+ * вызывает. Одна сверка на приложение: повторный вызов будит ждущую паузу и возвращает тот же promise;
+ * `wakeEngineReconciliation` — то же по `online`/возврату на экран. Нет очередей — завершается сразу (одно
+ * чтение IndexedDB, без сети).
+ */
+export function startEngineReconciliation(initDataRaw: string, options: ReconcileOptions = {}): Promise<void> {
+  if (reconciling !== null) {
+    wakeEngineReconciliation();
+    return reconciling;
+  }
+  const delays = options.delaysMs ?? RECONCILE_RETRY_DELAYS_MS;
+  const run = (async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      const { pending } = await drainEngineQueues(initDataRaw, options.store, options.api);
+      if (!pending) {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(done, delays[Math.min(attempt, delays.length - 1)]);
+        function done() {
+          clearTimeout(timer);
+          wakeReconcile = null;
+          resolve();
+        }
+        wakeReconcile = done;
+      });
+    }
+  })().finally(() => {
+    reconciling = null;
+  });
+  reconciling = run;
+  holdEngineReconciliation(run);
+  return run;
+}
+
+/** Повторить сверку сейчас (вернулась сеть, приложение снова на экране), не дожидаясь паузы. */
+export function wakeEngineReconciliation(): void {
+  wakeReconcile?.();
 }

@@ -11,7 +11,8 @@ import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { classifySyncError, type SyncFailure } from "./liveFinish";
 import { activeElapsedMs, remainingMs, type EngineState, type Phase, type PlanBlock } from "./liveEngine";
 import {
-  clearQueue, displayState, dropAcknowledged, emptyQueue, loadQueue, newEvent, saveQueue, serverOffsetMs,
+  claimQueue, clearQueue, displayState, dropAcknowledged, emptyQueue, loadQueue, newEvent, releaseQueue, saveQueue,
+  serverOffsetMs, startEngineReconciliation,
   type EngineQueue,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
@@ -186,6 +187,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
 
   useEffect(() => {
     let cancelled = false;
+    // #306 F1: пока экран открыт, очередью этой сессии владеет он (сверка App её пропускает); после ухода
+    // недосланное подхватывает сверка App (startEngineReconciliation).
+    claimQueue(initialSession.id);
     void loadQueue(initialSession.id).then((stored) => {
       if (cancelled) {
         return;
@@ -200,6 +204,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     });
     return () => {
       cancelled = true;
+      releaseQueue(initialSession.id);
+      // Недосланное (сбой сети перед «Выйти») сверяет App. Старт — здесь, в очистке: React выполняет её раньше
+      // эффектов экранов, которые монтируются следом, — их чтения с проекцией уже увидят ворота.
+      void startEngineReconciliation(initDataRaw);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSession.id]);
