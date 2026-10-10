@@ -107,14 +107,15 @@ CI-свидетельство) + #304 (`3983108`, принят 2026-10-09, fast-
   тренировок, прошлые недели не трогаются); исправлено, ждёт финального фокусного ревью.
 - **W1b #304** — финальное фокусное ревью APPROVED WITH NON-BLOCKING FINDINGS; принят (`3983108`) и влит в
   линию интеграции.
-- **W1c #305 Course prescription** — ветка `wave1/course-prescription` (от `3983108`): блок Б несёт
-  `work_sets = 4` (миграция `e3b9c5d7a2f1`, absent/null → 4), единственный резолвер `resolve_progression_block`
-  (рабочих подходов = `work_sets` обеих ролей), `is_max_set` сохраняется от цели до прогрессии, оболочка
-  `InitialPrescriptionRule` с провенансом, `awaiting_assessment`. **Блокировано решениями владельца (#310):** OD-1
-  (числа стартовой прескрипции; пока действует прежнее правило `program_config_default@0`, `decided = false`) и
-  OD-3 (хвостовой подход на максимум; пока не добавляется — цель Б на v2-пути не растёт). Реализация —
-  `docs/domain/PROGRAM_PLAN_V2.md` §11.
-- Дальше: после решений OD-1/OD-3 — их числа в #305; затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
+- **W1c #305 Course prescription** — ветка `wave1/course-prescription`, перебазирована на принятый #307
+  (`2ab2b19`); миграция `e3b9c5d7a2f1` идёт за `f4c1a7e9b3d2` (одна голова). Блок Б несёт `work_sets = 4`
+  (absent/null → 4), единственный резолвер `resolve_progression_block` (рабочих = `work_sets` обеих ролей + один
+  явный подход на максимум — OD-3 решён), `is_max_set` сохраняется от цели до TrainingSession V2 и прогрессии;
+  прогрессию двигает ТОЛЬКО подход на максимум, только вперёд (`advance_step_progression`, решение владельца;
+  `weak_streak` по объёму снят); оболочка `InitialPrescriptionRule` с провенансом, `awaiting_assessment`.
+  **Открыт только OD-1** (#310: числа стартовой прескрипции; пока `program_config_default@0`, `decided = false`).
+  Реализация — `docs/domain/PROGRAM_PLAN_V2.md` §11.
+- Дальше: после решения OD-1 — его правило в #305; затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
 
 ## DOMAIN-V2 Wave 3a — TrainingSession v2 (#307, 2026-10-09)
 

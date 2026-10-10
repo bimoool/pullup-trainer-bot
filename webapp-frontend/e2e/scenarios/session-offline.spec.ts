@@ -4,8 +4,9 @@ import { noWakeLock, playSetsV2 } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py v2_session_ready 900010 — STEP-курс синтетической
-// категории, block_a work_sets=3 (цель 10) + block_b 4 рабочих подхода
-// (цель 3; issue #305, D2: раньше ошибочно 1) — 7 подходов на сессию (см.
+// категории, block_a work_sets=3 (цель 10) + подход на максимум, block_b 4 рабочих
+// подхода (цель 3; issue #305, D2: раньше ошибочно 1) + подход на максимум (OD-3 решён:
+// включать) — 9 подходов на сессию (см.
 // докстринг сценария в scripts/e2e_seed.py). Экран сессии v2 виден только ADMIN_IDS — сценарий
 // требует ADMIN_IDS=900010 (или шире) у тестового сервера, см.
 // webapp-frontend/e2e/README.md.
@@ -34,9 +35,9 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
 
   // issue #306 (Live Engine v2): офлайн экран рисует проекцию той же функцией переходов, что сервер;
   // действия — события в очереди (IndexedDB). Ожидание сокращается «Начать сейчас» (skip_wait).
-  // Блок A — 3 подхода, отдых блока, блок Б — 1 подход: всё офлайн.
-  // Блок A — 3 подхода, блок Б — 4 рабочих подхода (issue #305, D2: STRENGTH_BLOCK.work_sets).
-  await playSetsV2(page, ["10", "10", "10", "3", "3", "3", "3"]);
+  // Всё офлайн. Блок A — 3 рабочих подхода + подход на максимум (12 > цели 10), блок Б — 4 рабочих подхода
+  // (issue #305, D2: STRENGTH_BLOCK.work_sets) + подход на максимум (5 > цели 3; OD-3: включать).
+  await playSetsV2(page, ["10", "10", "10", "12", "3", "3", "3", "3", "5"]);
 
   await expect(page.getByTestId("engine-complete")).toBeVisible();
   await expect(page.getByText(/Нет сети/)).toBeVisible();
@@ -61,12 +62,11 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   expect(liveResponses.filter((r) => r.path.endsWith("/complete"))).toEqual([
     expect.objectContaining({ status: 200 }),
   ]);
-  // 3 подхода блока A + 4 подхода блока Б показаны выполненными.
-  await expect(page.getByText(/— 3\/3/)).toBeVisible();
+  // 3 + max блока A и 4 + max блока Б показаны выполненными.
   await expect(page.getByText(/— 4\/4/)).toBeVisible();
-  // work_sets_a=3 в конфиге сценария — StepProgressionStrategy на "держал
-  // цель" даёт новую цель блока A (см. app/domain/progression.py) — здесь
-  // важен сам факт, что новая цель показана, не конкретное число.
+  await expect(page.getByText(/— 5\/5/)).toBeVisible();
+  // Прогрессию двигает только подход на максимум (#305): max 12 > цели 10 (A), 5 > 3 (Б) — цели растут.
+  // Здесь важен сам факт, что новая цель показана; числа — в tests/test_web/test_v2_course_prescription.py.
   await expect(page.getByText("Новая цель", { exact: true })).toBeVisible();
   await expect(page.getByText(/^\d+ → \d+$/)).toHaveCount(2); // по строке на блок (A и Б)
 

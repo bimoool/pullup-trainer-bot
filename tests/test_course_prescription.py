@@ -1,7 +1,8 @@
 """issue #305 (W1c): чистые правила прескрипции курса — app/domain/course_prescription.py.
 
-Только механизм, не зависящий от решений владельца OD-1 (числа стартовой прескрипции) и OD-3
-(хвостовой подход на максимум): правило OD-3 передаётся резолверу явно, числа OD-1 не проверяются."""
+OD-3 решён владельцем (подход на максимум включается), прогрессию двигает только подход на максимум
+(решение владельца) — оба правила проверяются здесь. Числа стартовой прескрипции (OD-1) открыты и не
+проверяются."""
 
 from datetime import UTC, date, datetime
 
@@ -9,7 +10,6 @@ import pytest
 
 from app.domain.constants import STRENGTH_BLOCK
 from app.domain.course_prescription import (
-    COURSE_TRAILING_MAX_SET_RULE,
     CURRENT_INITIAL_PRESCRIPTION_RULE,
     AssessmentInput,
     AssessmentRequirement,
@@ -17,7 +17,7 @@ from app.domain.course_prescription import (
     InclusionAssessmentState,
     InvalidProgressionStateError,
     PrescriptionOverrides,
-    TrailingMaxSetRule,
+    advance_step_progression,
     get_initial_prescription_rule,
     initial_assessment_state,
     latest_valid_assessment,
@@ -77,44 +77,107 @@ def test_k_normalization_is_idempotent_and_ignores_non_step_state():
 # --- D / E: резолвер ------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("rule", [TrailingMaxSetRule.OMIT, TrailingMaxSetRule.UNDECIDED])
-def test_d_resolver_reads_work_sets_for_both_roles(rule):
+def _shape(sets) -> list[tuple[int, int, bool]]:
+    return [(s.set_number, s.target_reps, s.is_max_set) for s in sets]
+
+
+def test_d_resolver_reads_work_sets_for_both_roles_and_appends_one_max_set():
     state = _state(block_a={"target": 12, "work_sets": 5}, block_b={"target": 2, "work_sets": 6})
-    a = resolve_progression_block("block_a", state, trailing_max_set=rule)
-    b = resolve_progression_block("block_b", state, trailing_max_set=rule)
-    assert [(s.set_number, s.target_reps, s.is_max_set) for s in a] == [(n, 12, False) for n in range(1, 6)]
-    assert [(s.set_number, s.target_reps, s.is_max_set) for s in b] == [(n, 2, False) for n in range(1, 7)]
+    a = resolve_progression_block("block_a", state)
+    b = resolve_progression_block("block_b", state)
+    assert _shape(a) == [(n, 12, False) for n in range(1, 6)] + [(6, 0, True)]
+    assert _shape(b) == [(n, 2, False) for n in range(1, 7)] + [(7, 0, True)]
 
 
 def test_e_block_b_with_work_sets_4_resolves_four_working_sets_never_one():
     state = normalize_progression_state(_state(block_b={"target": 3}))
-    working = [s for s in resolve_progression_block("block_b", state, trailing_max_set=COURSE_TRAILING_MAX_SET_RULE)
-               if not s.is_max_set]
+    working = [s for s in resolve_progression_block("block_b", state) if not s.is_max_set]
     assert len(working) == 4 and {s.target_reps for s in working} == {3}
 
 
 def test_e_missing_work_sets_is_an_error_not_a_silent_single_set():
     with pytest.raises(InvalidProgressionStateError):
-        resolve_progression_block("block_b", _state(block_b={"target": 3}), trailing_max_set=TrailingMaxSetRule.OMIT)
+        resolve_progression_block("block_b", _state(block_b={"target": 3}))
     with pytest.raises(InvalidProgressionStateError):
-        resolve_progression_block("block_b", _state(block_b={"target": 3, "work_sets": 0}),
-                                  trailing_max_set=TrailingMaxSetRule.OMIT)
+        resolve_progression_block("block_b", _state(block_b={"target": 3, "work_sets": 0}))
 
 
-def test_trailing_max_set_is_appended_last_only_when_rule_includes_it():
-    """Механизм для любого ответа OD-3: INCLUDE → work_sets рабочих + один max последним; иначе — без max."""
-    state = _state()
-    included = resolve_progression_block("block_b", state, trailing_max_set=TrailingMaxSetRule.INCLUDE)
-    assert [(s.set_number, s.is_max_set) for s in included] == [(1, False), (2, False), (3, False), (4, False), (5, True)]
-    assert included[-1].target_reps == 0  # у подхода на максимум цели нет
+def test_a_od3_max_set_is_included_last_exactly_once():
+    """OD-3 решён: «4 × 3» = 4 рабочих + ОДИН явный подход на максимум последним, без цели (target 0)."""
+    included = resolve_progression_block("block_b", _state())
+    assert _shape(included) == [(1, 3, False), (2, 3, False), (3, 3, False), (4, 3, False), (5, 0, True)]
     assert sum(s.is_max_set for s in included) == 1
-    assert not any(s.is_max_set for s in resolve_progression_block("block_b", state, trailing_max_set=TrailingMaxSetRule.OMIT))
 
 
-def test_od3_is_recorded_as_undecided_not_silently_answered():
-    """OD-3 (#310) открыт: единственная точка решения в коде помечена как нерешённая. Тест меняется вместе
-    с записанным решением владельца, не раньше."""
-    assert COURSE_TRAILING_MAX_SET_RULE == TrailingMaxSetRule.UNDECIDED
+# --- C / D / E / F: прогрессию двигает только подход на максимум, только вперёд ----------------
+
+STEP_STATE = {
+    "schema_version": 1, "strategy_type": "step",
+    "block_a": {
+        "target": 10, "volume": 30, "work_sets": 3, "work_sets_growth_reason": None, "weak_streak": 0,
+        "stall_streak": 0, "equipment_type": "bodyweight", "equipment_value": None, "equipment_item_id": None,
+        "needs_new_equipment": False,
+    },
+    "block_b": {
+        "target": 3, "volume": 12, "work_sets": 4, "weak_streak": 0, "equipment_type": "bodyweight",
+        "equipment_value": None, "equipment_item_id": None, "needs_new_equipment": False,
+        "is_heavy_next": False, "heavy_equipment_value_next": None,
+    },
+    "workouts_completed_in_set": 2,
+}
+
+
+def test_c_state_carries_no_working_set_input():
+    """Сигнатура шага прогрессии принимает только замеры (max_a/max_b): рабочие подходы физически не
+    могут попасть в расчёт. Одинаковый замер → байт в байт одинаковое следующее состояние."""
+    import inspect
+
+    assert set(inspect.signature(advance_step_progression).parameters) == {"progression_state", "max_a", "max_b"}
+    first, *_ = advance_step_progression(STEP_STATE, max_a=12, max_b=5)
+    second, *_ = advance_step_progression(STEP_STATE, max_a=12, max_b=5)
+    assert first == second
+    assert first["block_a"]["volume"] == 30 and first["block_b"]["volume"] == 12  # объём — не вход и не пишется
+
+
+@pytest.mark.parametrize(("max_b", "expected_target_b"), [(5, 4), (3, 3), (2, 3)])
+def test_d_max_drives_next_target(max_b, expected_target_b):
+    """J4: цель 3, max 6/5 > 3 → 3 + max(1, ceil(3·0.05)) = 4; max = цель → держим; max < цели — держим
+    (первый промах, откат только после 3 подряд)."""
+    state, _a, advance_b = advance_step_progression(STEP_STATE, max_a=None, max_b=max_b)
+    assert state["block_b"]["target"] == expected_target_b
+    assert (advance_b.target_before, advance_b.target_after, advance_b.measured) == (3, expected_target_b, True)
+
+
+def test_d_block_a_grows_only_from_its_max():
+    state, advance_a, _b = advance_step_progression(STEP_STATE, max_a=12, max_b=None)
+    assert state["block_a"]["target"] == 11  # 10 + max(1, ceil(10·0.05))
+    assert advance_a.measured and advance_a.target_after == 11
+    assert state["block_b"] == STEP_STATE["block_b"]  # без замера Б не двигается
+
+
+def test_e_no_max_measurement_changes_no_role():
+    """Рабочие подходы без подхода на максимум (или подход не выполнен) — прогрессии нет."""
+    state, advance_a, advance_b = advance_step_progression(STEP_STATE, max_a=None, max_b=None)
+    assert state["block_a"] == STEP_STATE["block_a"] and state["block_b"] == STEP_STATE["block_b"]
+    assert not advance_a.measured and not advance_b.measured
+
+
+def test_e_weak_streak_counts_max_misses_not_volume():
+    """weak_streak — подряд идущие промахи ЗАМЕРА; откат −1 на третьем. Объём рабочих подходов не участвует."""
+    state = STEP_STATE
+    targets = []
+    for _ in range(3):
+        state, _a, _b = advance_step_progression(state, max_a=None, max_b=2)
+        targets.append((state["block_b"]["target"], state["block_b"]["weak_streak"]))
+    assert targets == [(3, 1), (3, 2), (2, 3)]
+    reset, *_ = advance_step_progression(state, max_a=None, max_b=2)  # max = новая цель 2 → не промах
+    assert reset["block_b"]["weak_streak"] == 0
+
+
+def test_f_forward_only_input_state_is_not_mutated():
+    snapshot = repr(STEP_STATE)
+    advance_step_progression(STEP_STATE, max_a=40, max_b=9)
+    assert repr(STEP_STATE) == snapshot
 
 
 # --- I / J: ворота замера ---------------------------------------------------------------------
@@ -172,7 +235,7 @@ def test_rule_output_has_canonical_shape_with_work_sets_for_both_roles():
     assert state["block_b"]["work_sets"] == STRENGTH_BLOCK.work_sets
     assert normalize_progression_state(state) == state
     for role in ("block_a", "block_b"):
-        assert resolve_progression_block(role, state, trailing_max_set=TrailingMaxSetRule.OMIT)
+        assert resolve_progression_block(role, state)
 
 
 def test_provenance_records_rule_version_and_assessment_input():
