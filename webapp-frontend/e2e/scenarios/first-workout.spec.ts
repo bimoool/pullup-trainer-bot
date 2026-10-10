@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { noWakeLock, playSets, startWorkout } from "../fixtures/builderFlow";
+import { noWakeLock, startWorkout, playSetsV2, finishV2 } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py first_workout 900002 — анкета пройдена, тренировок и
@@ -24,9 +24,8 @@ test("первая тренировка: курс из каталога → в �
   await expect(page.getByRole("button", { name: "В плане", exact: true })).toBeVisible();
 
   await startWorkout(page, PROGRAM);
-  await playSets(page, ["10"]);
-  await page.getByRole("button", { name: "Завершить" }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
+  await playSetsV2(page, ["10"]); // #306: Live Engine v2
+  await finishV2(page, { early: true });
 
   await expect(page.getByText("Тренировка завершена", { exact: true })).toBeVisible();
   await expect(page.getByText(/— 1\/3/)).toBeVisible(); // один из трёх подходов блока A

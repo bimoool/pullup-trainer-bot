@@ -434,7 +434,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
             )}
           </div>
           <p className="live-target" data-testid="engine-target">
-            {isInterval ? `Раунд ${unitNumber}/${totalUnits}` : `Подход ${unitNumber}/${totalUnits}`}
+            {isInterval ? `Раунд ${unitNumber}/${totalUnits}`
+              : `${spec?.kind === "max_reps" || spec?.kind === "max_time" ? "Попытка" : "Подход"} ${unitNumber}/${totalUnits}`}
             {spec?.kind === "max_reps" || spec?.kind === "max_time" ? " · Максимум"
               : spec?.target != null ? ` · Цель: ${spec.kind === "time" ? formatDuration(spec.target) : `${spec.target} повт.`}` : ""}
           </p>

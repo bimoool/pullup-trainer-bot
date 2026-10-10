@@ -42,18 +42,19 @@ test("«Планы» → Подтягивания → Начать → live sess
   await page.waitForTimeout(1000);
   await expect(page.getByText("Живая тренировка")).toBeVisible();
 
-  // --- Записать реальный подход ---
-  await page.getByRole("button", { name: "Готов", exact: true }).click();
-  await page.waitForTimeout(500);
-  await expect(page.getByTestId("result-hint")).toContainText("Цель:");
-  await page.getByRole("textbox", { name: "Повторений" }).fill("10");
+  // --- Записать реальный подход (Live Engine v2, #306): «Приготовься» → «Пошёл» сам по дедлайну ---
+  expect(startedSession.engine_version).toBe(2);
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл", { timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "Готов", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("engine-target")).toContainText("Цель: 10 повт.");
+  await page.getByLabel("Результат подхода").fill("10");
 
   const setResponsePromise = page.waitForResponse(
-    (response) => response.url().includes("/sets:batch") && response.status() === 200,
+    (response) => response.url().includes(`/sessions/live/${sessionId}/events`) && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Готово", exact: true }).click();
+  await page.getByTestId("engine-submit").click();
   await setResponsePromise;
-  await page.waitForTimeout(500);
+  await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
 
   // --- RELOAD PROOF: посреди STARTED-сессии ---
   await page.reload({ waitUntil: "networkidle" });
@@ -62,6 +63,8 @@ test("«Планы» → Подтягивания → Начать → live sess
   // сессию, не создать новую; экран живой тренировки должен восстановиться
   // сам (fetchActiveLiveSession), без похода через "Планы" заново.
   await expect(page.getByText("Живая тренировка")).toBeVisible();
+  await expect(page.getByTestId("engine-phase")).toHaveText(/Отдых|Пошёл/); // фаза — с сервера
+  await expect(page.getByTestId("engine-target")).toContainText(/Подход [12]\/3/);
 
   console.log("session id (persisted across reload):", sessionId);
 

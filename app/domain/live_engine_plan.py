@@ -87,7 +87,9 @@ def fallback_block(
     """Блок без снимка версии: цели сессии + умолчания контракта (докстринг модуля)."""
     if interval is not None:
         cycle = interval.work_seconds + interval.rest_seconds
-        rounds = max(1, interval.total_duration_seconds // cycle) if cycle > 0 else 1
+        # Раунды = число фаз работы, НАЧАТЫХ за общее время V1 (у V1 15 с при 5/5 — две работы: 0–5, 10–15);
+        # кратное время (норма v2, WORKOUT §8) даёт ровно total / (work + rest).
+        rounds = max(1, -(-interval.total_duration_seconds // cycle)) if cycle > 0 else 1
         return {
             "kind": BLOCK_INTERVAL, "prep_seconds": DEFAULT_PREP_SECONDS,
             "rest_after_block_seconds": DEFAULT_BLOCK_REST_SECONDS, "extra_sets_allowed": False,

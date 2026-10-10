@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
+import { noWakeLock, playSetsV2, finishV2 } from "../../fixtures/builderFlow";
 import { openAppAs } from "../../fixtures/setup";
 
 /**
@@ -57,10 +57,9 @@ test("J1: новый пользователь проходит курс «Под
   await start.click();
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
   await expect(page.getByText("Живая тренировка")).toBeVisible();
-  await playSets(page, ["10", "10", "10"]);
-  await page.getByRole("button", { name: "Завершить", exact: true }).click();
-  await clickAndSync(page, "Сохранить и завершить", "/complete");
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  await playSetsV2(page, ["10", "10", "10"]); // #306: блок A, переходы по дедлайну / «Начать сейчас»
+  await finishV2(page, { early: true });
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 
   // Журнал: сессия по плану видна и переживает reload.

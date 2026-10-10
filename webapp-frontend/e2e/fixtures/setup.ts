@@ -17,13 +17,22 @@ import { mockTelegramWebApp, type TelegramMockOptions, type TelegramTheme } from
 export async function openAppAs(
   page: Page,
   telegramId: number,
-  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean; telegram?: Omit<TelegramMockOptions, "backButton"> } = {},
+  options: {
+    allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean;
+    telegram?: Omit<TelegramMockOptions, "backButton">;
+    /** issue #306: «v1» — новые старты на движке v1 (сценарии экрана v1, который обслуживает сессии
+     * engine_version = 1); по умолчанию — Live Engine v2, как у пользователей. */
+    liveEngine?: "v1" | "v2";
+  } = {},
 ): Promise<{ consoleErrors: string[]; apiFailures: string[] }> {
   const consoleErrors = collectConsoleErrors(page);
   const apiFailures = collectUnexpectedApiFailures(page, options.allowedApiStatuses ?? []);
 
   const initDataRaw = buildInitData({ id: telegramId, firstName: options.firstName ?? "E2E" }, getTestBotToken());
   await mockTelegramWebApp(page, initDataRaw, options.theme, { ...options.telegram, backButton: options.backButton });
+  if (options.liveEngine === "v1") {
+    await page.addInitScript(() => window.localStorage.setItem("pullup:live-engine-version", "1"));
+  }
   await page.goto("/");
 
   return { consoleErrors, apiFailures };

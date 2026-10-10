@@ -674,6 +674,18 @@ export interface LiveSetBatchEntry {
 
 /** issue #306: новые тренировки исполняются Live Engine v2 (сервер — единственный источник переходов). */
 export const LIVE_ENGINE_VERSION = 2;
+const LIVE_ENGINE_OVERRIDE_KEY = "pullup:live-engine-version";
+
+/** Версия движка для НОВОГО старта. Аварийный откат клиента на движок v1 (MIGRATION_V2 §8: флаг
+ * выключает писателя без отката схемы) — localStorage «pullup:live-engine-version» = «1»; им же E2E
+ * проверяют экран движка v1, который продолжает обслуживать сессии engine_version = 1. */
+export function liveEngineVersionForStart(): number {
+  try {
+    return globalThis.localStorage?.getItem(LIVE_ENGINE_OVERRIDE_KEY) === "1" ? 1 : LIVE_ENGINE_VERSION;
+  } catch {
+    return LIVE_ENGINE_VERSION;
+  }
+}
 
 export async function startLiveSession(
   initDataRaw: string,
@@ -683,7 +695,7 @@ export async function startLiveSession(
   return apiV2Post("/api/v2/sessions/live", initDataRaw, {
     client_session_id: clientSessionId,
     plan_item_ids: planItemIds,
-    engine_version: LIVE_ENGINE_VERSION,
+    engine_version: liveEngineVersionForStart(),
   });
 }
 
@@ -696,7 +708,7 @@ export async function startWorkoutLiveSession(
   return apiV2Post("/api/v2/sessions/live", initDataRaw, {
     client_session_id: clientSessionId,
     workout_id: workoutId,
-    engine_version: LIVE_ENGINE_VERSION,
+    engine_version: liveEngineVersionForStart(),
   });
 }
 
