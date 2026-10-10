@@ -16,7 +16,7 @@
     категории, все счётчики тренировок — целые; минуты считаются в секундах и
     раздаются методом наибольшего остатка (A5), чтобы части давали показанный итог."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -254,6 +254,15 @@ _PANEL_BUILDERS = {
 _PROTOCOL_ORDER = {"reps_sets": 0, "time_sets": 1, "max_effort": 2, "interval": 3}
 
 
+def _protocol_parts(block: AnalyticsBlock) -> list[tuple[str, list[AnalyticsSetLog]]]:
+    """Вклады блока в панели: основной протокол и, у блока рабочих подходов с подходами «на максимум»
+    (course Block B: 4×3 + max), отдельный вклад в max_effort того же упражнения."""
+    parts = [(block.protocol_type, block.set_logs)]
+    if block.max_set_logs and block.protocol_type == "reps_sets":
+        parts.append(("max_effort", block.max_set_logs))
+    return parts
+
+
 def compute_training_analytics(sessions: list[AnalyticsSession], now: datetime, tz: ZoneInfo) -> TrainingAnalytics:
     past = _completed_past(sessions, now)
     activity = compute_activity(past, now, tz)
@@ -261,19 +270,29 @@ def compute_training_analytics(sessions: list[AnalyticsSession], now: datetime, 
     groups: dict[tuple[int, str], list[tuple[datetime, AnalyticsBlock]]] = {}
     names: dict[int, str] = {}
     for session in past:
+        # A4: несколько блоков ОДНОЙ сессии с одной идентичностью упражнения и протоколом (курс: блоки A и Б —
+        # оба «Подтягивания») — одна запись истории этой сессии, а не по записи на блок: session_count считает
+        # тренировки. Интервалы не склеиваются (результат у каждого свой).
+        merged: dict[tuple[int, str], AnalyticsBlock] = {}
         for block in session.blocks:
             if block.protocol_type is None or block.exercise_id is None:
                 continue  # блок без идентичности/протокола: только активность
-            groups.setdefault((block.exercise_id, block.protocol_type), []).append((session.performed_at, block))
-            if block.max_set_logs and block.protocol_type == "reps_sets":
-                groups.setdefault((block.exercise_id, "max_effort"), []).append(
-                    (session.performed_at, AnalyticsBlock(
-                        exercise_id=block.exercise_id, exercise_name=block.exercise_name,
-                        protocol_type="max_effort", set_logs=block.max_set_logs,
-                    )),
-                )
             if block.exercise_name:
                 names[block.exercise_id] = block.exercise_name  # самое свежее имя
+            for protocol, logs in _protocol_parts(block):
+                key = (block.exercise_id, protocol)
+                part = AnalyticsBlock(
+                    exercise_id=block.exercise_id, exercise_name=block.exercise_name, protocol_type=protocol,
+                    set_logs=logs, result=block.result,
+                )
+                if protocol == "interval":
+                    groups.setdefault(key, []).append((session.performed_at, part))
+                elif key in merged:
+                    merged[key] = replace(merged[key], set_logs=[*merged[key].set_logs, *logs])
+                else:
+                    merged[key] = part
+        for key, part in merged.items():
+            groups.setdefault(key, []).append((session.performed_at, part))
 
     panels = [
         panel

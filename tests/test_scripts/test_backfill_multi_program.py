@@ -400,12 +400,16 @@ async def test_dry_run_does_not_write_anything(session, user: User):
         block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
     )
 
+    # #308: dual-write уже создал нативную копию этой записи — dry-run её не «создаст» второй раз и ничего не пишет
+    sessions_before = [row.id for row in (await session.execute(select(TrainingSession))).scalars().all()]
+    assert len(sessions_before) == 1
+
     report = await backfill_all(session, now=NOW, dry_run=True)
 
     assert report.users_migrated_this_run == 1
     assert report.training_sessions_regular_total == 1
     assert (await session.execute(select(TrainingPlan))).scalars().all() == []
-    assert (await session.execute(select(TrainingSession))).scalars().all() == []
+    assert [row.id for row in (await session.execute(select(TrainingSession))).scalars().all()] == sessions_before
     assert (await session.execute(select(Program))).scalars().all() == []
 
 
