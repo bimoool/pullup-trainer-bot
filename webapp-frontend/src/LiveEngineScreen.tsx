@@ -5,7 +5,7 @@ import {
   completeLiveSession, fetchActiveLiveSession, postLiveEngineEvents,
   type LiveSessionCompleteResponse, type LiveSessionResponse,
 } from "./apiV2";
-import { formatDuration, formatNumber } from "./blockFormat";
+import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFormat";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { classifySyncError, type SyncFailure } from "./liveFinish";
@@ -365,6 +365,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const isBlockRest = state.phase === "REST" && state.rest_kind === "block";
   const nextBlockIndex = isBlockRest ? state.cursor.block_index + 1 : null;
   const lastLog = [...state.logs].reverse().find((log) => !log.is_extra && log.value !== null) ?? null;
+  const lastLogKind = lastLog !== null ? plan.blocks[lastLog.block_index]?.sets?.[lastLog.set_index]?.kind : undefined;
+  const lastLogLabel = lastLogKind === "time" || lastLogKind === "max_time" ? "Секунды" : "Повторений";
   const timedWork = state.phase === "WORK" && (isInterval || spec?.kind === "time");
   const countUp = state.phase === "WORK" && spec?.kind === "max_time";
   const workInput = state.phase === "WORK" && !isInterval && (spec?.kind === "reps" || spec?.kind === "max_reps");
@@ -512,7 +514,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           ) : (
             <div className="live-summary-row">
               <p className="live-summary-line" data-testid="log-panel-summary">
-                {`Подход ${lastLog.set_index + 1}: ${formatNumber(lastLog.value ?? 0)}`}
+                {formatLoggedSetSummary(lastLog.set_index + 1, String(lastLog.value ?? ""), lastLogLabel)}
               </p>
               <button
                 type="button" className="live-link-button live-edit-button" data-testid="engine-edit-last"

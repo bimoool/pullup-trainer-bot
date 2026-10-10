@@ -75,3 +75,29 @@ export async function finishV2(page: Page, { early = false }: { early?: boolean 
   }
   await completed;
 }
+
+/** issue #306 — подход «на максимум по времени» (секундомер): «Стоп» → поле с измеренным → своё значение → «Готово». */
+export async function logMaxTimeV2(page: Page, value: string) {
+  const phase = page.getByTestId("engine-phase");
+  await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
+  if ((await phase.textContent())?.trim() !== "Пошёл") {
+    await page.getByTestId("engine-skip").click();
+  }
+  await expect(phase).toHaveText("Пошёл");
+  await page.getByTestId("engine-stop").click();
+  await expect(phase).toHaveText("Результат");
+  await page.getByLabel("Результат подхода").fill(value);
+  await page.getByTestId("engine-submit").click();
+}
+
+/** issue #306 — подход на время: «Стоп» записывает измеренные секунды (цель — по дедлайну сама). */
+export async function stopTimedSetV2(page: Page) {
+  const phase = page.getByTestId("engine-phase");
+  await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
+  if ((await phase.textContent())?.trim() !== "Пошёл") {
+    await page.getByTestId("engine-skip").click();
+  }
+  await expect(phase).toHaveText("Пошёл");
+  await page.getByTestId("engine-stop").click();
+  await expect(phase).not.toHaveText("Пошёл");
+}

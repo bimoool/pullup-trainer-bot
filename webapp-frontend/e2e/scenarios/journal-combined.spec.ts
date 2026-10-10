@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { noWakeLock } from "../fixtures/builderFlow";
+import { finishV2, logMaxTimeV2, noWakeLock, playSetsV2 } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py journal_combined 900018 — один пользователь: legacy
@@ -11,28 +11,6 @@ const TELEGRAM_ID = 900_018;
 
 test("Планы → Подтягивания/Планка → Complete → Журнал показывает обе + legacy не пропала", async ({ page }) => {
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
-
-  // Фаза подхода меняется асинхронно (отдых → «Приготовься» → «Пошёл» → поле): ждём, пока
-  // появится любой из управляющих элементов, а не проверяем count() мгновенно (гонка).
-  async function logSet(value: string) {
-    const field = page.getByLabel(/Результат|Секунды|Повторений/);
-    const ready = page.getByRole("button", { name: "Готов", exact: true });
-    const skipRest = page.getByRole("button", { name: "Пропустить отдых", exact: true });
-    await expect(field.or(ready).or(skipRest).first()).toBeVisible();
-    if (await skipRest.isVisible()) {
-      await skipRest.click();
-      await expect(field.or(ready).first()).toBeVisible();
-    }
-    if (await ready.isVisible()) {
-      await ready.click();
-    }
-    await field.fill(value);
-    const setResponsePromise = page.waitForResponse(
-      (response) => response.url().includes("sets:batch") && response.status() === 200,
-    );
-    await page.getByRole("button", { name: "Готово", exact: true }).click();
-    await setResponsePromise;
-  }
 
   // Журнал показывает месяц (#263): legacy-запись «10 дней назад» живёт в предыдущем месяце
   // (или в текущем, если «сегодня» ≥ 11-е число) — листаем назад, пока она не найдётся.
@@ -58,16 +36,9 @@ test("Планы → Подтягивания/Планка → Complete → Жу
   const pullupsStarted = await pullupsStartPromise.then((r) => r.json());
   expect(pullupsStarted.blocks).toHaveLength(2);
 
-  await logSet("10");
-  await logSet("9");
-  await logSet("11");
-  await logSet("3");
-  const pullupsCompletePromise = page.waitForResponse(
-    (response) => response.url().includes("/complete") && response.status() === 200,
-  );
-  await page.getByRole("button", { name: "Завершить", exact: true }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
-  await pullupsCompletePromise;
+  // issue #306 (Live Engine v2): блок A (3) → отдых блока → блок Б (1) без «Готов»/«Пропустить отдых».
+  await playSetsV2(page, ["10", "9", "11", "3"]);
+  await finishV2(page);
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
 
   // --- Планка ---
@@ -76,13 +47,8 @@ test("Планы → Подтягивания/Планка → Complete → Жу
     .getByRole("button", { name: /^Начать: / }).click();
   await expect(page.getByText("Планка")).toBeVisible();
   await page.getByRole("button", { name: "Начать", exact: true }).click();
-  await logSet("30");
-  const plankCompletePromise = page.waitForResponse(
-    (response) => response.url().includes("/complete") && response.status() === 200,
-  );
-  await page.getByRole("button", { name: "Завершить", exact: true }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
-  await plankCompletePromise;
+  await logMaxTimeV2(page, "30");
+  await finishV2(page, { early: true });
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
 
   // --- Журнал: обе новые + legacy не пропала ---

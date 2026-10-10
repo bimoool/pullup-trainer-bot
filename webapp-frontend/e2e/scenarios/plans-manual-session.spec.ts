@@ -44,15 +44,19 @@ test("«Планы» → manual «Планка»/«Отжимания» → Star
   await expect(page.getByTestId("live-now").getByText("Планка", { exact: true })).toBeVisible();
   await expect(page.getByText(/Цель: 0/)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Готов", exact: true }).click();
-  await page.waitForSelector("text=Пошёл", { timeout: 8000 });
-  await page.getByLabel(/Результат|Секунды|Повторений/).fill("30");
+  // issue #306 (Live Engine v2): подход «на максимум по времени» — секундомер, «Стоп» даёт измеренное
+  // (правится перед «Готово»). Подготовка 5 с — сама или «Начать сейчас».
+  await page.getByTestId("engine-skip").click();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+  await expect(page.getByTestId("engine-stopwatch")).toBeVisible();
+  await page.getByTestId("engine-stop").click();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Результат");
+  await page.getByLabel("Результат подхода").fill("30");
   const setResponsePromise = page.waitForResponse(
-    (response) => response.url().includes("sets:batch") && response.status() === 200,
+    (response) => response.url().includes(`/sessions/live/${plankSessionId}/events`) && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Готово", exact: true }).click();
+  await page.getByTestId("engine-submit").click();
   await setResponsePromise;
-  await page.waitForTimeout(600);
 
   // --- Reload посреди STARTED manual-сессии ---
   await page.reload({ waitUntil: "networkidle" });
@@ -65,16 +69,16 @@ test("«Планы» → manual «Планка»/«Отжимания» → Star
   const completeResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/complete") && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Завершить", exact: true }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
+  await page.getByTestId("engine-finish").click();
+  await page.getByTestId("engine-finish-confirm").click();
   const completed = await completeResponsePromise.then((r) => r.json());
   expect(completed.id).toBe(plankSessionId);
   expect(completed.status).toBe("completed");
 
   await page.waitForTimeout(600);
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
   await expect(page.getByText(/^Упражнение #/)).toHaveCount(0);
-  await expect(page.getByText(/30/)).toBeVisible();
+  await expect(page.getByText(/0:30|30/).first()).toBeVisible();
 
   expect(apiFailures).toEqual([]);
   expect(noWakeLock(consoleErrors)).toEqual([]);
