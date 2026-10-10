@@ -10,6 +10,7 @@ from app.web.routes_v2_assessments import router_v2_assessments
 from app.web.routes_v2_collections import router_v2_collections
 from app.web.routes_v2_dashboard import router_v2_dashboard
 from app.web.routes_v2_export import router_v2_export
+from app.web.routes_v2_live import router_v2_live
 from app.web.routes_v2_plan import router_v2_plan
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
@@ -24,6 +25,8 @@ app.include_router(router)
 # /api/v2, параллельно старым /api/* маршрутам, НЕ подключена к
 # webapp-frontend/ (см. докстринг app/web/routes_v2.py).
 app.include_router(router_v2)
+# Живая сессия (issue #306) — свой роутер, вынесен из routes_v2.py.
+app.include_router(router_v2_live)
 # Волна 4 (issue #167) — единственный pull-up-специфичный /api/v2/*
 # эндпоинт, ПОДКЛЮЧЁННЫЙ к webapp-frontend/ (DashboardScreen.tsx), в
 # отличие от router_v2 выше (см. докстринг routes_v2_dashboard.py).
