@@ -170,8 +170,11 @@ def test_b_c_aged_db_upgrade_and_converge_preserve_access_and_history(scratch_ds
         finally:
             await engine.dispose()
 
-    # Сегодняшний ORM знает колонку следующей ревизии (#305 e3b9c5d7a2f1) — добавить её только для прогона
-    # runtime-converge на схеме ЭТОЙ ревизии (как tests/test_scripts/_todays_orm_columns.py).
+    # Сегодняшний ORM знает колонки следующих ревизий: #307 f4c1a7e9b3d2, #306 a9e6c3d1f5b7 и #308 a7e2c5b9d1f4
+    # (колонки сессий — аддитивные ревизии, история не меняется) и #305 e3b9c5d7a2f1 (prescription_provenance). Для
+    # прогона runtime-converge поднимаем схему до головы integration (#308), а колонку #305 добавляем только на время
+    # прогона (как _todays_orm_columns.py).
+    _alembic(scratch_dsn, "upgrade", "a7e2c5b9d1f4")
     _run(_exec(scratch_dsn, "ALTER TABLE program_inclusions ADD COLUMN prescription_provenance jsonb"))
     code, dry = asyncio.run(converge(False))
     assert code == 0 and dry["total_mutations"] > 0, dry
