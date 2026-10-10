@@ -859,6 +859,12 @@ async def seed_live_engine(session: AsyncSession, telegram_id: int) -> None:
             "key": "A", "exercise_id": pull.id, "prep_seconds": 4,
             "sets": [{"kind": "reps", "target_reps": 5, "rest_after_seconds": 30}, {"kind": "reps", "target_reps": 5}],
         }]),
+        # #306 B1: офлайн-«Стоп» подхода на время + перезапуск приложения (live-engine-v2.spec.ts, 8).
+        ("Движок: стоп", [
+            {"key": "A", "exercise_id": plank.id, "prep_seconds": 3, "rest_after_block_seconds": 5,
+             "sets": [{"kind": "time", "target_seconds": 15}]},
+            {"key": "B", "exercise_id": pull.id, "prep_seconds": 0, "sets": [{"kind": "reps", "target_reps": 3}]},
+        ]),
     ]
     definitions = WorkoutDefinitionRepository(session)
     for day, (title, blocks) in enumerate(workouts):

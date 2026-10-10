@@ -171,6 +171,85 @@ test("6. Интервал на том же движке: пауза/переза
   expect(apiFailures).toEqual([]);
 });
 
+/** #306 B1: сохранённые очереди движка v2 в IndexedDB (idb-keyval: keyval-store/keyval), по сессиям. */
+async function storedEngineQueues(page: Page): Promise<number> {
+  return page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const open = indexedDB.open("keyval-store");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("keyval")) {
+        resolve(0);
+        return;
+      }
+      const request = db.transaction("keyval").objectStore("keyval").getAllKeys();
+      request.onsuccess = () => resolve(request.result.filter((key) => String(key).startsWith("pullup:v2:live-engine-queue")).length);
+      request.onerror = () => reject(request.error);
+    };
+  }));
+}
+
+async function serverEngineState(page: Page, telegramId: number) {
+  const initData = buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken());
+  const response = await page.request.get(API_ACTIVE, { headers: { "X-Telegram-Init-Data": initData } });
+  return (await response.json()).session?.engine?.state ?? null;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("8. #306 B1: «Стоп» подхода на время офлайн, приложение перезапущено после дедлайна — записано измеренное, не цель", async ({ page, context }) => {
+  await openAppAs(page, 930_608);
+  await startPlanned(page, "Движок: стоп");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 8_000 }); // планка 15 с
+  await context.setOffline(true);
+  await sleep(3_000);
+  await page.getByTestId("engine-stop").click(); // Стоп на ~3 с — событие только в очереди устройства
+  await expect(phase(page)).not.toHaveText("Пошёл");
+  expect(await storedEngineQueues(page)).toBe(1);
+  await page.close(); // WebView выгружен
+  await sleep(15_000); // дедлайн подхода (15 с) прошёл, пока приложения не было
+  await context.setOffline(false);
+  const back = await context.newPage();
+  const { apiFailures } = await openAppAs(back, 930_608); // запуск: досылка очереди → затем GET /active
+  await expect(back.getByTestId("engine-phase")).toHaveText(/Пошёл|Отдых/, { timeout: 10_000 });
+  const state = await serverEngineState(back, 930_608);
+  expect(state).not.toBeNull();
+  expect(state.logs[0].block_index).toBe(0);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(2);
+  expect(state.logs[0].value).toBeLessThanOrEqual(7); // измеренное, а не цель 15
+  expect(await storedEngineQueues(back)).toBe(0); // очередь снята после подтверждения сервером
+  expect(apiFailures).toEqual([]);
+});
+
+test("9. #306 B1: пауза интервала офлайн, приложение перезапущено позже — на паузе, остаток тот же, не завершилась сама", async ({ page, context, browser }) => {
+  await openAppAs(page, 930_609);
+  await startPlanned(page, "Движок: интервал"); // 3 с + 2 × (5 + 4) с ≈ 21 с без паузы
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 6_000 });
+  await context.setOffline(true);
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase(page)).toHaveText("Пошёл · пауза");
+  const frozen = parseTimer(await page.getByTestId("engine-timer").innerText());
+  expect(await storedEngineQueues(page)).toBe(1);
+  await page.close();
+  await sleep(25_000); // без паузы интервал уже закончился бы сам
+  await context.setOffline(false);
+  const back = await context.newPage();
+  const { apiFailures } = await openAppAs(back, 930_609);
+  await expect(back.getByTestId("engine-phase")).toHaveText("Пошёл · пауза", { timeout: 10_000 });
+  expect(Math.abs(parseTimer(await back.getByTestId("engine-timer").innerText()) - frozen)).toBeLessThanOrEqual(1);
+  const state = await serverEngineState(back, 930_609);
+  expect(state.status).toBe("active");
+  expect(state.paused_at).not.toBeNull();
+  expect(Math.abs(state.paused_remaining_ms / 1000 - frozen)).toBeLessThanOrEqual(1.5);
+  expect(await storedEngineQueues(back)).toBe(0);
+  const other = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const device = await other.newPage(); // второе устройство видит ту же паузу
+  await openAppAs(device, 930_609);
+  await expect(device.getByTestId("engine-phase")).toHaveText("Пошёл · пауза", { timeout: 10_000 });
+  await other.close();
+  expect(apiFailures).toEqual([]);
+});
+
 test.describe("320 px", () => {
   test.use({ viewport: { width: 320, height: 640 } });
 

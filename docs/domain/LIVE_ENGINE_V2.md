@@ -195,8 +195,15 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     path as an empty events request) — the client returning from background sees the advanced state.
 12. **Client.** `LiveEngineScreen` renders `project(fold(server.state, queue), Date.now() + offset)` with the
     mirror; the offset comes from `engine.server_time_ms` against the request midpoint. No duration constants, no
-    `endsAtOverride`/`pausedRemainingMs`, no second timer. The offline queue lives in IndexedDB; any server
-    response replaces the base state and drops acknowledged events. Audio: the engine exposes
+    `endsAtOverride`/`pausedRemainingMs`, no second timer. The offline queue lives in IndexedDB, one per session
+    (`pullup:v2:live-engine-queue:<session_id>`, events + the pending review); any server response replaces the base
+    state and drops acknowledged events. **Ordering (acceptance B1):** a stored queue is sent before any request that
+    can project deadlines — the app drains every stored queue at launch before its first API call
+    (`drainEngineQueues`; `GET /active` and the session list both project), and again on `online`; while something
+    is left unsent, the launch-time active-session check waits for `online` (drain, then `GET /active`). User input
+    made before a deadline therefore reaches the server before that deadline is persisted; the server's rules
+    (clamping, stale no-op, duplicate) are unchanged. The same drain sends a review queued for a session the server
+    already completed by itself (no longer active, so no screen would reopen it). Audio: the engine exposes
     `timeline(state)` (and the response carries it); the screen schedules only the phase-end cue from the single
     deadline, never retroactively (P4). Sound assets are out of scope.
 13. **Rollback switch (MIGRATION §8 "flags").** `localStorage["pullup:live-engine-version"] = "1"` makes the client

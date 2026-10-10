@@ -1,5 +1,5 @@
 import { retrieveLaunchParams } from "@telegram-apps/sdk";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
 import { setDisplayPrefs } from "./displayPrefs";
@@ -10,6 +10,7 @@ import { PlanSessionFlow } from "./PlanSessionFlow";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen, type JournalRestore } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
+import { drainEngineQueues } from "./liveEngineClient";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { AnalyticsScreen } from "./AnalyticsScreen";
@@ -151,6 +152,8 @@ export function App() {
   // выход из потока доступен только через собственный onClose экранов
   // (SessionPreScreen.onGoToWorkout на отмену, SessionSummaryScreen.onClose
   // после Complete), не через обычные табы/нижнее меню.
+  // #306 B1: при запуске очередь движка v2 не дослана (нет сети) — возобновление сессии ждёт досылки.
+  const engineResumeDeferred = useRef(false);
   const [v2Session, setV2Session] = useState<
     | { planItemIds: number[]; manual: boolean; title: string }
     | { workoutId: number; title: string }
@@ -239,6 +242,12 @@ export function App() {
             `initDataRaw is empty — открыто не из Telegram? [${describeInitDataFailure(retrieveError, telegramWebApp)}]`,
           );
         }
+        // #306 B1: недосланные офлайн-события движка v2 (Стоп, пауза, оценка) уходят ДО первого запроса,
+        // способного спроецировать дедлайны сессии (GET /sessions/live/active, список сессий Журнала), —
+        // иначе действие пользователя, сделанное до дедлайна, сервер счёл бы устаревшим. Нет очереди —
+        // только чтение IndexedDB, без сети.
+        const drained = await drainEngineQueues(initDataRaw);
+        engineResumeDeferred.current = drained.pending;
         const data = await fetchHello(initDataRaw);
         if (!cancelled) {
           setState({ status: "ready", data, initDataRaw });
@@ -276,6 +285,11 @@ export function App() {
     if (state.data.onboarding_step === "not_registered") {
       return;
     }
+    if (engineResumeDeferred.current) {
+      // #306 B1: часть офлайн-событий не дослана (нет сети) — проверка активной сессии спроецировала бы
+      // её дедлайны раньше них. Возобновление — по `online`, после досылки (эффект ниже).
+      return;
+    }
     let cancelled = false;
     fetchActiveLiveSession(state.initDataRaw)
       .then((activeSession) => {
@@ -303,9 +317,22 @@ export function App() {
       return;
     }
     const initDataRaw = state.initDataRaw;
-    const handleOnline = () => void drainQueuedFinish(initDataRaw);
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
+    const handleOnline = async () => {
+      await drainQueuedFinish(initDataRaw);
+      // #306 B1: очереди движка v2 (в т.ч. оценка сессии, которую сервер уже завершил сам) — тоже отсюда.
+      const { pending } = await drainEngineQueues(initDataRaw);
+      if (pending || !engineResumeDeferred.current) {
+        return;
+      }
+      engineResumeDeferred.current = false;
+      const activeSession = await fetchActiveLiveSession(initDataRaw).catch(() => null);
+      if (activeSession !== null) {
+        setV2Session({ resumedSession: activeSession });
+      }
+    };
+    const onOnline = () => void handleOnline();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initDataRaw неизменен после "ready".
   }, [state.status, liveFlowOpen]);
 

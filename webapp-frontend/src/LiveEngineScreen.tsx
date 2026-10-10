@@ -89,7 +89,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       return;
     }
     closed.current = true;
-    await clearQueue();
+    await clearQueue(initialSession.id);
     if (result.progression_skipped_reason === "cancelled" || result.engine_status === "cancelled") {
       onLeave();
       return;
