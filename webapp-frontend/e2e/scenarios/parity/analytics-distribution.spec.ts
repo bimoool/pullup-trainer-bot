@@ -5,9 +5,9 @@ import { expectNoHorizontalOverflow, openTab, selectMetric, WIDTHS } from "../..
 import { openAppAs } from "../../fixtures/setup";
 
 // Crimpd parity — Analytics distribution (#274): Аналитика → «По типам» (SVG-кольцо + легенда) и «Сводка».
-// Сид `analytics_distribution` (только чтение; 999301/999311 + retry): за 1 мес pull 1.5 тр./50 мин
-// (vertical 1/40, horizontal 0.5/10), core 0.5/10, legs 0/0, «Другая активность» 1/30; итого 3 / 90.
-// За 3 мес core 1.5/70, итого 4 / 150.
+// Сид `analytics_distribution` (только чтение; 999301/999311 + retry): за 1 мес «Хват» 2 тр./60 мин
+// (вертикальная 1/40, горизонтальная 1/20), ОФП 1/10, «Ноги» 0/0, «Другая активность» 1/30; итого 4 / 100.
+// За 3 мес ОФП 2/70, итого 5 / 160. Тренировка атомарна (#308): все числа целые, подписи человеческие.
 const BASE = { 320: 999_301, 390: 999_311 } as const;
 const THEMES = { 320: "light", 390: "dark" } as const;
 
@@ -30,9 +30,9 @@ for (const width of WIDTHS) {
       await expect(block).toContainText("По типам");
       const legend = page.getByTestId("analytics-legend-item");
       await expect(legend).toHaveCount(3); // категории с ненулевым значением: pull, core, «Другая активность»
-      await expect(legend.filter({ hasText: "e2e_dist_pull" })).toContainText("1.5");
+      await expect(legend.filter({ hasText: "Хват" })).toContainText("2 ·");
       await expect(legend.filter({ hasText: "Другая активность" })).toContainText("1 ·");
-      await expect(legend.filter({ hasText: "e2e_dist_legs" })).toHaveCount(0);
+      await expect(legend.filter({ hasText: "Ноги" })).toHaveCount(0);
 
       // Два кольца: внутреннее — 3 категории; внешнее — vertical, horizontal, остаток pull-нет, core, другая.
       await expect(page.getByTestId("analytics-donut")).toBeVisible();
@@ -55,9 +55,9 @@ for (const width of WIDTHS) {
       expect(palette).not.toContain(other);
       await expectNoHorizontalOverflow(page, "Аналитика: распределение");
 
-      // Метрика «Минуты» перерисовывает кольцо: pull 50, core 10, другая 30.
+      // Метрика «Минуты» перерисовывает кольцо: хват 60, ОФП 10, другая 30.
       await selectMetric(page, "Минуты");
-      await expect(legend.filter({ hasText: "e2e_dist_pull" })).toContainText("50 мин");
+      await expect(legend.filter({ hasText: "Хват" })).toContainText("1 ч");
       await expect(legend.filter({ hasText: "Другая активность" })).toContainText("30 мин");
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
@@ -71,28 +71,28 @@ for (const width of WIDTHS) {
       await summary.scrollIntoViewIfNeeded();
       await expect(summary.locator("thead")).toContainText("Тренировки");
       await expect(summary.locator("thead")).toContainText("Минуты");
-      expect(await cells(row(page, "e2e_dist_pull"))).toEqual(["e2e_dist_pull", "1.5", "50"]);
-      expect(await cells(row(page, "e2e_dist_core"))).toEqual(["e2e_dist_core", "0.5", "10"]);
+      expect(await cells(row(page, "Хват"))).toEqual(["Хват", "2", "60"]);
+      expect(await cells(row(page, "Общая физическая подготовка"))).toEqual(["Общая физическая подготовка", "1", "10"]);
       // нулевые строки каталога скрыты по умолчанию и раскрываются кнопкой «Показать все»
-      await expect(row(page, "e2e_dist_legs")).toHaveCount(0);
+      await expect(row(page, "Ноги")).toHaveCount(0);
       await page.getByTestId("summary-show-all").click();
-      expect(await cells(row(page, "e2e_dist_legs"))).toEqual(["e2e_dist_legs", "0", "0"]);
+      expect(await cells(row(page, "Ноги"))).toEqual(["Ноги", "0", "0"]);
       await page.getByTestId("summary-show-all").click();
-      await expect(row(page, "e2e_dist_legs")).toHaveCount(0);
+      await expect(row(page, "Ноги")).toHaveCount(0);
       expect(await cells(row(page, "Другая активность"))).toEqual(["Другая активность", "1", "30"]);
-      const subs = page.locator('[data-testid="summary-subcategory"][data-category="e2e_dist_pull"]');
+      const subs = page.locator('[data-testid="summary-subcategory"][data-category="Хват"]');
       expect(await subs.evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll("th, td")].map((c) => c.textContent?.trim())))).toEqual([
-        ["horizontal", "0.5", "10"], ["vertical", "1", "40"],
+        ["Вертикальная", "1", "40"], ["Горизонтальная", "1", "20"],
       ]);
       const total = page.getByTestId("summary-total");
-      expect(await cells(total)).toEqual(["Итого", "3", "90"]);
+      expect(await cells(total)).toEqual(["Итого", "4", "100"]);
       // «Другая активность» — последняя категория.
       await expect(page.getByTestId("summary-category").last()).toHaveAttribute("data-category", "Другая активность");
       await expectNoHorizontalOverflow(page, "Аналитика: сводка");
 
       await page.getByRole("tab", { name: "3 мес" }).click();
-      await expect.poll(async () => cells(total)).toEqual(["Итого", "4", "150"]);
-      expect(await cells(row(page, "e2e_dist_core"))).toEqual(["e2e_dist_core", "1.5", "70"]);
+      await expect.poll(async () => cells(total)).toEqual(["Итого", "5", "160"]);
+      expect(await cells(row(page, "Общая физическая подготовка"))).toEqual(["Общая физическая подготовка", "2", "70"]);
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });

@@ -1016,9 +1016,9 @@ async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     user = await _onboard(session, telegram_id)
     user.timezone = "Pacific/Kiritimati"
     tz = ZoneInfo("Pacific/Kiritimati")
-    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_analytics", source_type="user", owner_user_id=user.id)
-    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_analytics", source_type="user", owner_user_id=user.id)
-    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_analytics", source_type="user", owner_user_id=user.id)
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="Общая физическая подготовка", source_type="user", owner_user_id=user.id)
+    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="Общая физическая подготовка", source_type="user", owner_user_id=user.id)
+    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="Общая физическая подготовка", source_type="user", owner_user_id=user.id)
     session.add_all([pull, plank, burpee])
     await session.flush()
 
@@ -1343,12 +1343,14 @@ async def seed_background_interval(session: AsyncSession, telegram_id: int) -> N
 
 
 async def seed_analytics_distribution(session: AsyncSession, telegram_id: int) -> None:
-    """#274 «Analytics distribution»: свои упражнения категорий e2e_dist_pull (подкатегории
-    vertical/horizontal), e2e_dist_core, e2e_dist_legs (без тренировок — строка с нулями) и сессии:
-      * 3 дня назад — pull/vertical, 40 мин; 5 дней назад — pull/horizontal + core (50/50), 20 мин;
-      * 6 дней назад — свободная активность «Бег», 30 мин; 50 дней назад — core, 60 мин (виден с 3 мес).
-    1 мес: pull 1.5/50 (vertical 1/40, horizontal 0.5/10), core 0.5/10, legs 0/0, «Другая активность»
-    1/30; итого 3 / 90. 3 мес: core 1.5/70, итого 4 / 150."""
+    """#274/#308 «Analytics distribution»: свои упражнения категорий «Хват» (подкатегории «Вертикальная»/
+    «Горизонтальная»), «Общая физическая подготовка», «Ноги» (без тренировок — строка с нулями) и сессии (каждая
+    тренировка — ровно в одной категории, счётчики целые):
+      * 3 дня назад — хват/вертикальная, 40 мин; 5 дней назад — хват/горизонтальная, 20 мин;
+      * 4 дня назад — ОФП, 10 мин; 6 дней назад — свободная активность «Бег», 30 мин;
+      * 50 дней назад — ОФП, 60 мин (виден с 3 мес).
+    1 мес: хват 2/60 (вертикальная 1/40, горизонтальная 1/20), ОФП 1/10, ноги 0/0, «Другая активность» 1/30;
+    итого 4 / 100. 3 мес: ОФП 2/70, итого 5 / 160."""
     user = await _onboard(session, telegram_id)
 
     def exercise(name: str, category: str, subcategory: str | None = None) -> Exercise:
@@ -1357,10 +1359,10 @@ async def seed_analytics_distribution(session: AsyncSession, telegram_id: int) -
             source_type="user", owner_user_id=user.id,
         )
 
-    vertical = exercise("Тяга вертикальная", "e2e_dist_pull", "vertical")
-    horizontal = exercise("Тяга горизонтальная", "e2e_dist_pull", "horizontal")
-    core = exercise("Пресс", "e2e_dist_core")
-    legs = exercise("Приседания", "e2e_dist_legs")
+    vertical = exercise("Тяга вертикальная", "Хват", "Вертикальная")
+    horizontal = exercise("Тяга горизонтальная", "Хват", "Горизонтальная")
+    core = exercise("Пресс", "Общая физическая подготовка")
+    legs = exercise("Приседания", "Ноги")
     session.add_all([vertical, horizontal, core, legs])
     await session.flush()
 
@@ -1378,7 +1380,8 @@ async def seed_analytics_distribution(session: AsyncSession, telegram_id: int) -
             session.add(SessionBlock(session_id=training.id, order_index=index, exercise_id=item.id))
 
     await add(3, 40, [vertical])
-    await add(5, 20, [horizontal, core])
+    await add(5, 20, [horizontal])
+    await add(4, 10, [core])
     await add(6, 30, [], activity_type="running")
     await add(50, 60, [core])
     await session.flush()
