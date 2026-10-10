@@ -48,10 +48,13 @@ async def test_weekly_series_for_both_metrics_and_exclusions(session: AsyncSessi
     assert [w["week_start"] for w in metrics["weeks"]] == ["2025-03-03", "2025-03-10"]  # понедельники
     first, second = metrics["weeks"]
     assert first["workouts"] == 6  # все завершённые, в т.ч. без данных о времени
-    assert first["minutes"] == 435  # 45 + 30.5 (1830 с) + 360, суммирование секунд, потом // 60
+    # #308 (A5): секунды недель 26130 + 1200 = 27330 с = 455.5 мин -> итог 456 (половина вверх); минуты недель
+    # раздаются методом наибольшего остатка, поэтому СУММА недель == итогу (раньше 435 + 20 != итог при дробных)
+    assert first["minutes"] == 436
     assert second == {"week_start": "2025-03-10", "workouts": 1, "minutes": 20}
     assert metrics["total_workouts"] == 7
-    assert metrics["total_minutes"] == 455
+    assert metrics["total_minutes"] == 456
+    assert sum(w["minutes"] for w in metrics["weeks"]) == metrics["total_minutes"]
     assert metrics["without_duration"] == 3  # None, <1 мин, >6 ч
 
 

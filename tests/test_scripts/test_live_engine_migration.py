@@ -40,9 +40,12 @@ def test_fresh_install_single_head_creates_engine_schema(scratch_dsn):  # noqa: 
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    assert ScriptDirectory.from_config(Config("alembic.ini")).get_heads() == [REVISION]
+    # Одна голова; эта ревизия — в её истории (#308 надстраивает a7e2c5b9d1f4 поверх, MIGRATION §9.1).
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    (head,) = script.get_heads()
+    assert REVISION in {rev.revision for rev in script.walk_revisions(base="base", head=head)}
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == REVISION
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == head
     assert _scalar(scratch_dsn, "SELECT count(*) FROM session_events") == 0
     columns = _scalar(
         scratch_dsn,

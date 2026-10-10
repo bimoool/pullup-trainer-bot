@@ -69,7 +69,7 @@ async def build_rows(session: AsyncSession, *, user_id: int, timezone: str | Non
     tz = resolve_timezone(timezone)
     sessions = TrainingSessionRepository(session)
     # перенесённую backfill-ом историю отдаёт legacy-таблица (#284), v2-копии не дублируем
-    details = await sessions.list_all_completed(user_id, exclude_backfilled=True)
+    details = await sessions.list_all_completed(user_id, exclude_legacy_cards=True)
     ids = {b.exercise_id for d in details for b in d.blocks if b.exercise_id is not None}
     names = await sessions.exercise_names(ids)
     rows: list[list[str]] = []

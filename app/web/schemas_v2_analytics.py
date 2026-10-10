@@ -73,25 +73,26 @@ class AnalyticsMetricsResponse(BaseModel):
 
 class AnalyticsDistributionSubResponse(BaseModel):
     name: str
-    workouts: float
-    minutes: float
+    workouts: int
+    minutes: int
 
 
 class AnalyticsDistributionCategoryResponse(BaseModel):
     name: str
-    workouts: float
-    minutes: float
+    workouts: int
+    minutes: int
     subcategories: list[AnalyticsDistributionSubResponse]
 
 
 class AnalyticsDistributionResponse(BaseModel):
-    """Распределение тренировок/минут диапазона по категориям (#274). Смешанная
-    сессия делится по долям блоков (дробные значения), итог по тренировкам =
-    число тренировок диапазона. Категории каталога присутствуют с нулями."""
+    """Распределение тренировок/минут диапазона по категориям (#274, #308). Тренировка атомарна: каждая
+    сессия — ровно в одной категории (primary_category), все счётчики ЦЕЛЫЕ, Σ workouts по категориям ==
+    total_workouts == metrics.total_workouts, Σ minutes == total_minutes == metrics.total_minutes. Подписи
+    только человеческие. Категории каталога присутствуют с нулями."""
 
     categories: list[AnalyticsDistributionCategoryResponse]
-    total_workouts: float
-    total_minutes: float
+    total_workouts: int
+    total_minutes: int
 
 
 class TrainingAnalyticsResponse(BaseModel):

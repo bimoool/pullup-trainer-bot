@@ -81,7 +81,7 @@ async def _fingerprint_ids(session: AsyncSession, ids: list[int]) -> set[int]:
         return set()
     rows = await session.execute(
         select(TrainingSession.id).where(
-            TrainingSession.id.in_(ids), TrainingSessionRepository._backfilled_fingerprint(),
+            TrainingSession.id.in_(ids), TrainingSessionRepository.legacy_copy_fingerprint_for_recovery(),
         ),
     )
     return {row[0] for row in rows}
