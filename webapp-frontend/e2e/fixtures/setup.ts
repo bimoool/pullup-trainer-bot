@@ -31,7 +31,13 @@ export async function openAppAs(
   const initDataRaw = buildInitData({ id: telegramId, firstName: options.firstName ?? "E2E" }, getTestBotToken());
   await mockTelegramWebApp(page, initDataRaw, options.theme, { ...options.telegram, backButton: options.backButton });
   if (options.liveEngine === "v1") {
-    await page.addInitScript(() => window.localStorage.setItem("pullup:live-engine-version", "1"));
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("pullup:live-engine-version", "1");
+      } catch {
+        // документ без доступа к хранилищу (страница офлайн-ошибки, sandbox-фрейм) — переключатель не нужен
+      }
+    });
   }
   await page.goto("/");
 
@@ -43,6 +49,12 @@ export async function openAppAs(
  * openAppAs({ liveEngine: "v1" })). Поведение Live Engine v2 — live-engine-v2.spec.ts и переведённые сценарии. */
 export function useLiveEngineV1(api: { beforeEach: (fn: (args: { page: Page }) => Promise<void>) => void }): void {
   api.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.setItem("pullup:live-engine-version", "1"));
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("pullup:live-engine-version", "1");
+      } catch {
+        // документ без доступа к хранилищу (страница офлайн-ошибки, sandbox-фрейм) — переключатель не нужен
+      }
+    });
   });
 }
