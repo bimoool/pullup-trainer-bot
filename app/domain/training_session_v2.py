@@ -173,7 +173,14 @@ def measured_duration(
     if active_elapsed_ms is not None:
         if active_elapsed_ms < 0:
             raise ValueError("active_elapsed_ms < 0")
-        return Duration(round(active_elapsed_ms / 1000), DurationSource.MEASURED)
+        # #307 N2 (решено в #306): 0 мс (до секунды) — не «измеренные 0 секунд», а отсутствие измерения;
+        # больше 6 ч активного времени — брошенная открытой сессия, не тренировка. Оба — unknown (A5:
+        # without_duration, никогда не 0 и не выдуманная минута). Короткая честная работа (планка 40 с)
+        # остаётся measured: нижнего окна в 1 мин у измерения движка нет.
+        seconds = (active_elapsed_ms + 500) // 1000
+        if seconds <= 0 or seconds > MAX_MEASURED_SECONDS:
+            return UNKNOWN_DURATION
+        return Duration(seconds, DurationSource.MEASURED)
     if started_at is None or ended_at is None:
         return UNKNOWN_DURATION
     seconds = (ended_at - started_at).total_seconds()

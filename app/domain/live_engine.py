@@ -576,6 +576,11 @@ def advance(
         return _submit_result(plan, state, new, payload, at)
 
     if kind == EV_FINISH_EARLY:
+        if not any(not log["is_extra"] for log in new["logs"]):
+            # Ничего не выполнено: «0 работы» не становится завершённой тренировкой (нет записи в
+            # Журнале, кредита плана, длительности) — это отмена (T5), а не T4.
+            _cancel(new, at, effects, reason="zero_work")
+            return new, effects
         _accrue(new, at)
         cursor = new["cursor"]
         block_already_finished = new["phase"] == REST and new["rest_kind"] == REST_BLOCK
@@ -587,20 +592,7 @@ def advance(
         return new, effects
 
     if kind == EV_CANCEL:
-        _accrue(new, at)
-        new["phase"] = COMPLETE
-        new["status"] = CANCELLED
-        new["rest_kind"] = None
-        new["phase_started_at"] = at
-        new["phase_duration_ms"] = None
-        new["phase_deadline_at"] = None
-        new["paused_at"] = None
-        new["paused_remaining_ms"] = None
-        new["pending_value"] = None
-        new["active_since"] = None
-        new["ended_at"] = at
-        new["phase_seq"] += 1
-        effects.append({"type": FX_CANCELLED})
+        _cancel(new, at, effects, reason="cancel")
         return new, effects
 
     if kind == EV_ADD_EXTRA_SET:
@@ -610,6 +602,24 @@ def advance(
         return _correct_previous(state, new, payload, at)
 
     return _noop(state)
+
+
+def _cancel(state: dict[str, Any], at: int, effects: list[dict[str, Any]], *, reason: str) -> None:
+    _accrue(state, at)
+    state["phase"] = COMPLETE
+    state["status"] = CANCELLED
+    state["rest_kind"] = None
+    state["phase_started_at"] = at
+    state["phase_duration_ms"] = None
+    state["phase_deadline_at"] = None
+    state["paused_at"] = None
+    state["paused_remaining_ms"] = None
+    state["phase_active_ms"] = 0
+    state["pending_value"] = None
+    state["active_since"] = None
+    state["ended_at"] = at
+    state["phase_seq"] += 1
+    effects.append({"type": FX_CANCELLED, "reason": reason})
 
 
 def _block_has_logs(state: dict[str, Any], block_index: int) -> bool:

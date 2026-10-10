@@ -1,7 +1,6 @@
 """Живая (server-driven) сессия — /api/v2/sessions/live/* (issue #306: вынесено из routes_v2.py
 механически, без изменения поведения; Live Engine v2 строится поверх этого роутера)."""
 
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from init_data_py import InitData
@@ -11,14 +10,24 @@ from app.config import settings
 from app.db.repositories.training_sessions import BatchSetLogInput, SessionDetail
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.live_engine import (
+    ClientEvent,
+    ClientEventConflictError,
+    EngineVersionMismatchError,
+    LiveEngineService,
+    engine_now,
+    engine_view,
+)
 from app.services.live_session import (
     ActiveSessionConflictError,
     CompleteResult,
+    EngineV1OnlyError,
     LiveSessionService,
     PhaseBackConflictError,
     awaiting_block_start,
     block_started_at,
     current_interval_timing,
+    is_engine_v2,
 )
 from app.services.plan_spacing import TooEarlyError
 from app.services.program_access import SubscriptionRequiredError
@@ -30,6 +39,10 @@ from app.web.schemas_v2 import BlockProgressionResponse, SessionProgressionRespo
 from app.web.schemas_v2_session import (
     IntervalConfigResponse,
     IntervalStateResponse,
+    LiveEngineEventResult,
+    LiveEngineEventsRequest,
+    LiveEngineEventsResponse,
+    LiveEngineView,
     LiveSessionActiveResponse,
     LiveSessionBlockRequest,
     LiveSessionBlockResponse,
@@ -46,6 +59,20 @@ from app.web.schemas_v2_session import (
 )
 
 router_v2_live = APIRouter(prefix="/api/v2")
+
+
+def _engine_mismatch() -> HTTPException:
+    """issue #306: эндпоинт движка v1 для сессии движка v2 (и наоборот) — состояние не меняется."""
+    return HTTPException(
+        status.HTTP_409_CONFLICT,
+        {"code": "engine_version_mismatch", "message": "Сессия исполняется другой версией движка."},
+    )
+
+
+def _snapshot_names(detail: SessionDetail) -> list[str | None]:
+    blocks = (detail.prescription_snapshot or {}).get("blocks") or []
+    names = [block.get("exercise_display_name") for block in blocks]
+    return names if len(names) == len(detail.blocks) else [None] * len(detail.blocks)
 
 
 # --- Живая (server-driven) сессия -------------------------------------------------------
@@ -74,8 +101,10 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
 
     Намеренно без try/except вокруг парсинга снимка: он пишется только
     системой при старте, сбой парсинга — реальная порча данных."""
-    now = datetime.now(UTC)
+    now = engine_now()
     snapshot_items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
+    snapshot_names = _snapshot_names(detail)
+    view = engine_view(detail, now)
 
     interval_state: IntervalStateResponse | None = None
     timing = current_interval_timing(detail, now)
@@ -110,7 +139,7 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                 order_index=block.order_index, exercise_id=block.exercise_id, complex_id=block.complex_id,
                 result=block.result,
                 protocol_type=item.protocol.type.value if item is not None else None,
-                exercise_name=item.exercise_name if item is not None else None,
+                exercise_name=item.exercise_name if item is not None else snapshot_names[block.order_index],
                 rest_seconds=rest_seconds_for_protocol(item.protocol) if item is not None else None,
                 started_at=block_started_at(detail, block.order_index),
                 interval_config=_interval_config(item),
@@ -137,6 +166,9 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
         "interval": interval_state,
         "awaiting_block_start": awaiting_block_start(detail),
         "title": title,
+        "engine_version": detail.engine_version,
+        "engine": LiveEngineView(**view) if view is not None else None,
+        "engine_status": detail.engine_status,
     }
 
 
@@ -176,6 +208,7 @@ async def start_live_session(
         result = await LiveSessionService(session).start_session(
             user_id=user.id, client_session_id=body.client_session_id, plan_item_ids=body.plan_item_ids,
             workout_id=body.workout_id, bypass_spacing=settings.is_admin(init_data.user.id),
+            engine_version=body.engine_version,
         )
     except TooEarlyError as exc:
         raise too_early_http_error(exc) from exc
@@ -221,9 +254,12 @@ async def advance_live_session_phase(
     session: AsyncSession = Depends(get_session),
 ) -> LiveSessionResponse:
     user = await _require_user(session, init_data)
-    result = await LiveSessionService(session).advance_phase(
-        session_id=session_id, user_id=user.id, expected_phase_index=body.expected_phase_index,
-    )
+    try:
+        result = await LiveSessionService(session).advance_phase(
+            session_id=session_id, user_id=user.id, expected_phase_index=body.expected_phase_index,
+        )
+    except EngineV1OnlyError as exc:
+        raise _engine_mismatch() from exc
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     return _live_session_response(result.session)
@@ -246,6 +282,8 @@ async def back_live_session_phase(
         )
     except PhaseBackConflictError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, error.code) from error
+    except EngineV1OnlyError as exc:
+        raise _engine_mismatch() from exc
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     return _live_session_response(result.session)
@@ -261,9 +299,12 @@ async def start_live_session_block(
     """R1 — явный "Начать" следующего блока после interstitial. Идемпотентен
     (двойной клик стартует блок один раз)."""
     user = await _require_user(session, init_data)
-    result = await LiveSessionService(session).start_block(
-        session_id=session_id, user_id=user.id, expected_block_index=body.expected_block_index,
-    )
+    try:
+        result = await LiveSessionService(session).start_block(
+            session_id=session_id, user_id=user.id, expected_block_index=body.expected_block_index,
+        )
+    except EngineV1OnlyError as exc:
+        raise _engine_mismatch() from exc
     if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     return _live_session_response(result.session)
@@ -280,9 +321,12 @@ async def finish_live_session_interval_block(
     сессия остаётся STARTED и ждёт следующий блок; последний блок —
     завершает сессию."""
     user = await _require_user(session, init_data)
-    result, not_found = await LiveSessionService(session).finish_interval_block(
-        session_id=session_id, user_id=user.id, expected_block_index=body.expected_block_index,
-    )
+    try:
+        result, not_found = await LiveSessionService(session).finish_interval_block(
+            session_id=session_id, user_id=user.id, expected_block_index=body.expected_block_index,
+        )
+    except EngineV1OnlyError as exc:
+        raise _engine_mismatch() from exc
     if not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     return _live_session_complete_response(result)
@@ -308,6 +352,8 @@ async def batch_live_session_sets(
         result = await LiveSessionService(session).batch_sets(
             session_id=session_id, user_id=user.id, entries=entries,
         )
+    except EngineV1OnlyError as exc:
+        raise _engine_mismatch() from exc
     except ValueError as exc:
         # Exercise из батча не найден среди блоков сессии — см. докстринг
         # TrainingSessionRepository.upsert_set_logs_batch: репозиторий сам
@@ -326,10 +372,82 @@ async def complete_live_session(
     session: AsyncSession = Depends(get_session),
 ) -> LiveSessionCompleteResponse:
     user = await _require_user(session, init_data)
-    result, not_found = await LiveSessionService(session).complete_session(
+    live = LiveSessionService(session)
+    detail = await live.get_session(session_id=session_id, user_id=user.id)
+    if detail is not None and is_engine_v2(detail):
+        return await _complete_engine_v2(session, user.id, session_id, body)
+    result, not_found = await live.complete_session(
         session_id=session_id, user_id=user.id, abandoned=body.abandoned,
         effort=body.effort, comment=body.comment, active_elapsed_ms=body.active_elapsed_ms,
     )
     if not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     return _live_session_complete_response(result)
+
+
+async def _complete_engine_v2(
+    session: AsyncSession, user_id: int, session_id: int, body: LiveSessionCompleteRequest,
+) -> LiveSessionCompleteResponse:
+    """issue #306: интерфейс #307 POST …/complete сохраняется для сессии v2. Идущая сессия
+    заканчивается серверным finish_early (длительность — активное время движка, а не active_elapsed_ms
+    клиента: время — авторитет сервера); затем идемпотентный complete_session дописывает оценку и заметку.
+    «Ноль работы» — отмена (T5): не завершается, оценка не пишется."""
+    engine_service = LiveEngineService(session)
+    sync = await engine_service.finish_from_complete(session_id, user_id, abandoned=body.abandoned)
+    if sync is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    live = LiveSessionService(session)
+    detail = await live.get_session(session_id=session_id, user_id=user_id)
+    if detail.engine_status == "cancelled":
+        return LiveSessionCompleteResponse(
+            **_live_session_response_fields(detail), progression_result=None, progression_skipped_reason="cancelled",
+        )
+    result, _ = await live.complete_session(
+        session_id=session_id, user_id=user_id, abandoned=body.abandoned, effort=body.effort, comment=body.comment,
+    )
+    first = sync.completion
+    if first is not None:  # завершилась этим запросом — отдаём итог первого завершения (прогрессия)
+        result = CompleteResult(
+            session=result.session, progression_result=first.progression_result,
+            progression_skipped_reason=first.progression_skipped_reason,
+        )
+    return _live_session_complete_response(result)
+
+
+@router_v2_live.post("/sessions/live/{session_id}/events", response_model=LiveEngineEventsResponse)
+async def post_live_session_events(
+    session_id: int,
+    body: LiveEngineEventsRequest,
+    init_data: InitData = Depends(get_validated_init_data),
+    session: AsyncSession = Depends(get_session),
+) -> LiveEngineEventsResponse:
+    """issue #306 (LIVE_ENGINE_V2 §2 C4): события движка v2 — по одному или офлайн-очередью в порядке
+    возникновения. Повтор client_event_id — no-op (outcome=duplicate), устаревшее событие — no-op
+    (outcome=noop), всегда 200 с текущим состоянием (дедлайны до «сейчас» уже применены)."""
+    user = await _require_user(session, init_data)
+    events = [
+        ClientEvent(client_event_id=e.client_event_id, type=e.type, payload=e.payload, client_at=e.client_at)
+        for e in body.events
+    ]
+    try:
+        sync = await LiveEngineService(session).sync(session_id, user.id, events)
+    except EngineVersionMismatchError as exc:
+        raise _engine_mismatch() from exc
+    except ClientEventConflictError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "client_event_id уже использован") from exc
+    if sync is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
+    detail = await LiveSessionService(session).get_session(session_id=session_id, user_id=user.id)
+    titles = await _resolve_session_titles(session, [detail], user.id)
+    completion = sync.completion
+    base = _live_session_complete_response(
+        CompleteResult(
+            session=detail,
+            progression_result=completion.progression_result if completion is not None else None,
+            progression_skipped_reason=completion.progression_skipped_reason if completion is not None else None,
+        ),
+    )
+    return LiveEngineEventsResponse(
+        **{**base.model_dump(), "title": titles.get(detail.id)},
+        event_results=[LiveEngineEventResult(client_event_id=r.client_event_id, outcome=r.outcome) for r in sync.events],
+    )

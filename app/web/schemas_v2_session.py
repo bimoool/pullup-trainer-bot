@@ -10,6 +10,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.domain.live_engine import CLIENT_EVENT_TYPES
 from app.web.schemas_v2 import (
     IntervalConfigResponse,
     SessionProgressionResponse,
@@ -30,6 +31,9 @@ class LiveSessionStartRequest(BaseModel):
     # «Начать» на Workout Detail: свободная сессия из снимка своей тренировки,
     # взаимоисключающе с plan_item_ids.
     workout_id: int | None = None
+    # issue #306: 2 — сессия исполняется Live Engine v2 (новый клиент шлёт явно); без поля — движок v1
+    # (старые закэшированные бандлы Mini App продолжают работать, MIGRATION_V2 §6).
+    engine_version: int = Field(default=1, ge=1, le=2)
 
     @model_validator(mode="after")
     def _workout_xor_plan_items(self) -> "LiveSessionStartRequest":
@@ -199,6 +203,23 @@ class LiveSessionResponse(BaseModel):
     # не resolvable (тот же честный пробел, что _resolve_session_titles
     # уже применяет для Журнала).
     title: str | None = None
+    # issue #306: 1 — движок v1 (phase/next…); 2 — Live Engine v2 (POST …/events), см. engine.
+    engine_version: int | None = None
+    engine: "LiveEngineView | None" = None
+    # Отменена (T5): сессия хранится архивом, не идёт и не засчитана.
+    engine_status: str | None = None
+
+
+class LiveEngineView(BaseModel):
+    """issue #306 (LIVE_ENGINE_V2 §1–§2, §6): состояние движка v2 — единственный источник отсчёта.
+    Клиент берёт server_offset = server_time_ms − (момент ответа по своим часам) и рисует
+    deadline − (now + offset); своих констант длительности и переходов у него нет. timeline — аудио-хуки
+    текущей и следующей фазы (прошедшие клиент не воспроизводит, P4)."""
+
+    plan: dict
+    state: dict
+    server_time_ms: int
+    timeline: list[dict]
 
 
 class LiveSessionCompleteResponse(LiveSessionResponse):
@@ -215,6 +236,49 @@ class LiveSessionActiveResponse(BaseModel):
     /sessions/live/active для баннера "продолжить тренировку" (10.8)."""
 
     session: LiveSessionResponse | None
+
+
+# --- POST /sessions/live/{id}/events (issue #306) -----------------------------------------
+
+
+class LiveEngineEventRequest(BaseModel):
+    """Одно событие движка v2 (имена — LIVE_ENGINE_V2 §3). client_event_id — ключ идемпотентности
+    (повтор — no-op, 200); client_at — недоверенное время клиента (сервер зажимает в [last_at, now])."""
+
+    client_event_id: UUID
+    type: str = Field(min_length=1, max_length=32)
+    payload: dict = Field(default_factory=dict)
+    client_at: datetime | None = None
+
+    @field_validator("type")
+    @classmethod
+    def _client_event_type(cls, value: str) -> str:
+        # start/deadline — только серверные события; чужие имена контракта не принимаются.
+        if value not in CLIENT_EVENT_TYPES:
+            raise ValueError(f"неизвестное событие клиента: {value}")
+        return value
+
+    @field_validator("payload")
+    @classmethod
+    def _small_payload(cls, value: dict) -> dict:
+        if len(str(value)) > 4000:
+            raise ValueError("payload слишком большой")
+        return value
+
+
+class LiveEngineEventsRequest(BaseModel):
+    """Офлайн-очередь досылается одним запросом в порядке возникновения (C4)."""
+
+    events: list[LiveEngineEventRequest] = Field(default_factory=list, max_length=200)
+
+
+class LiveEngineEventResult(BaseModel):
+    client_event_id: UUID
+    outcome: str  # applied | noop | duplicate
+
+
+class LiveEngineEventsResponse(LiveSessionCompleteResponse):
+    event_results: list[LiveEngineEventResult]
 
 
 # --- Каскад прогрессии ---------------------------------------------------------------------
@@ -286,3 +350,8 @@ class SessionEditRequest(BaseModel):
 
 class SessionCloneRequest(BaseModel):
     performed_on: date | None = None  # по умолчанию — сегодня (локальный день)
+
+
+LiveSessionResponse.model_rebuild()
+LiveSessionCompleteResponse.model_rebuild()
+LiveEngineEventsResponse.model_rebuild()

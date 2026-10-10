@@ -408,11 +408,21 @@
       "steps": [
         {"op": "apply", "at": 3000, "event": {"type": "cancel", "payload": {}},
          "expect": {"status": "cancelled", "phase": "COMPLETE", "ended_at": 3000, "active_elapsed_ms": 3000},
-         "expect_effects": [{"type": "cancelled"}]},
+         "expect_effects": [{"type": "cancelled", "reason": "cancel"}]},
         {"op": "apply", "at": 9000,
          "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
          "expect": {"status": "cancelled", "logs": []}, "expect_effects": []},
         {"op": "project", "now": 100000, "expect": {"status": "cancelled"}, "expect_events": []}
+      ]
+    },
+    {
+      "name": "finish_early with zero work performed is a cancel (zero-work session never becomes a completed workout)",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 40000, "event": {"type": "finish_early", "payload": {}},
+         "expect": {"status": "cancelled", "phase": "COMPLETE", "ended_at": 40000, "logs": []},
+         "expect_events": [{"type": "deadline", "at": 5000}],
+         "expect_effects": [{"type": "cancelled", "reason": "zero_work"}]}
       ]
     },
     {
