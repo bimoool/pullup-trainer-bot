@@ -93,12 +93,12 @@ for (const width of WIDTHS) {
         await summary.scrollIntoViewIfNeeded();
         // по умолчанию: только категории с данными (pull, core, «Другая активность»)
         await expect(summary.getByTestId("summary-category")).toHaveCount(3);
-        await expect(summary.getByTestId("summary-category").filter({ hasText: "e2e_dist_legs" })).toHaveCount(0);
+        await expect(summary.getByTestId("summary-category").filter({ hasText: "Ноги" })).toHaveCount(0);
         const showAll = page.getByTestId("summary-show-all");
         await expect(showAll).toContainText("Показать все");
         await showAll.click();
         expect(await summary.getByTestId("summary-category").count()).toBeGreaterThan(3);
-        await expect(summary.getByTestId("summary-category").filter({ hasText: "e2e_dist_legs" })).toHaveCount(1);
+        await expect(summary.getByTestId("summary-category").filter({ hasText: "Ноги" })).toHaveCount(1);
         await expect(showAll).toContainText("Скрыть пустые");
 
         // первая колонка и легенда: одна строка + многоточие, без переноса внутри слова
