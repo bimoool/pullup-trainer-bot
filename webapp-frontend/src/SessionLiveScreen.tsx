@@ -921,7 +921,9 @@ export function SessionLiveScreen({
             </div>
             <p className="live-target">
               {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
-              {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
+              {isMaxBlock || targetForSet?.is_max_set === true
+                ? " · Максимум"
+                : planText !== null ? ` · Цель: ${planText}` : ""}
             </p>
             {showPips && (
               <div className="live-pips" aria-hidden="true">

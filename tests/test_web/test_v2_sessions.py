@@ -108,14 +108,16 @@ async def test_create_session_applies_step_progression_matching_direct_strategy_
     assert body["progression_result"] is not None
 
     # --- reference: тот же расчёт напрямую через StepProgressionStrategy ---
+    # #305 (решение владельца): прогрессию двигает только подход на максимум — рабочие подходы формула
+    # получает ПРЕДПИСАННЫМИ (3 × 10, 4 × 3), не выполненными; объём — не вход (reported_volume = 0).
     record = WorkoutRecord(
         performed_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC),
         block_a=BlockAssignment(
-            log=BlockLog(working_reps=(11, 11, 11), max_reps=12),
+            log=BlockLog(working_reps=(10, 10, 10), max_reps=12, reported_volume=0),
             target_before=10, target_after=10, equipment_changed=False, equipment_type=EquipmentType.BODYWEIGHT,
         ),
         block_b=BlockAssignment(
-            log=BlockLog(working_reps=(4, 4, 4, 4), max_reps=4),
+            log=BlockLog(working_reps=(3, 3, 3, 3), max_reps=4, reported_volume=0),
             target_before=3, target_after=3, equipment_changed=False, equipment_type=EquipmentType.BODYWEIGHT,
         ),
     )
@@ -134,9 +136,9 @@ async def test_create_session_applies_step_progression_matching_direct_strategy_
     plan_response = await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/plan")
     state = plan_response.json()["plan"]["program_inclusions"][0]["progression_state"]
     assert state["block_a"]["target"] == reference.block_a.target_after
-    assert state["block_a"]["volume"] == 45  # 11+11+11+12
     assert state["block_b"]["target"] == reference.block_b.target_after
-    assert state["block_b"]["volume"] == 20  # 4*4+4
+    # объём рабочих подходов больше не пишется в состояние (не вход прогрессии) — прежнее значение
+    assert state["block_a"]["volume"] == 0 and state["block_b"]["volume"] == 0
 
 
 async def test_create_session_without_inclusion_only_writes_fact(session, user: User):

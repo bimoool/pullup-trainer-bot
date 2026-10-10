@@ -143,7 +143,7 @@ Issues: umbrella and wave issues are listed in [§9.2](#92-github-issues).
 Wave 1  Program + Plan foundation       (core models; single writer)
   1a WorkoutDefinition v2 + versions + snapshot + exercise identity   ← first, everything depends on it
   1b Program/Plan occurrences + constraints + custom weekly volume     ← after 1a schema merged
-  1c Course prescription correctness (block B, max set, init rule)     ← after 1a; OD-1/OD-3 for numbers
+  1c Course prescription correctness (block B, max set, init rule)     ← after 1a; OD-1 for numbers (OD-3 resolved)
 Wave 2  Live Engine v2                    ← after 1a (snapshot shape) + 1b (start preconditions)
 Wave 3  TrainingSession / Journal / Analytics
   3a Session contract + manual identity + editing                     ← after 1a; parallel with Wave 2
@@ -183,7 +183,7 @@ must not pick them up until the owner promotes them).
 |---|---|---|---|---|
 | 1a WorkoutDefinition v2 | bimoool/pullup-trainer-bot#303 | P0 | — | J3, J1 |
 | 1b Program + Plan foundation | bimoool/pullup-trainer-bot#304 | P0 | #303; OD-2 value | J6, J7, J11, J12, J2 |
-| 1c Course prescription correctness | bimoool/pullup-trainer-bot#305 | P0 | #303; OD-1, OD-3 numbers | J4, J1, J2 |
+| 1c Course prescription correctness | bimoool/pullup-trainer-bot#305 | P0 | #303, #307 (Alembic parent); OD-1 numbers | J4, J1, J2 |
 | 2 Live Engine v2 | bimoool/pullup-trainer-bot#306 | P1 | #303, #304, #307 migration | J5, J1, J3, J4 |
 | 3a TrainingSession v2 | bimoool/pullup-trainer-bot#307 | P0 | #303, #304 (∥ #306) | J8, J9, J10, J7 |
 | 3b Journal + Analytics | bimoool/pullup-trainer-bot#308 | P1 | #307 (∥ late #306) | J10, J2, J1, J9 |

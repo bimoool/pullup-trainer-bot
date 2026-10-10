@@ -6,9 +6,9 @@ MIGRATION_V2 §3/§5). Чистая логика: без aiogram/sqlalchemy, «�
 1. ``normalize_progression_state`` — каноническая форма STEP-состояния: ОБЕ роли несут ``work_sets``.
    У ``block_b`` старых инклюзий поля нет (D2) — дописывается ``STRENGTH_BLOCK.work_sets``; присутствующее
    значение не трогается. Тот же источник, что у миграции ``e3b9c5d7a2f1`` (литерал 4) и convergence.
-2. ``resolve_progression_block(role, state, trailing_max_set=...)`` — подходы блока курса. Число РАБОЧИХ
-   подходов = ``work_sets`` роли (без тихого «1» по умолчанию). Хвостовой подход на максимум — решение
-   владельца **OD-3** (#310), передаётся явно (``TrailingMaxSetRule``), а не выводится из отсутствия поля.
+2. ``resolve_progression_block(role, state)`` — подходы блока курса: ``work_sets`` рабочих (без тихого «1»
+   по умолчанию) + один явный подход на максимум (OD-3 решён: включать). ``advance_step_progression`` —
+   шаг прогрессии: только подход на максимум, только вперёд (решение владельца).
 3. ``InitialPrescriptionRule`` — чистое версионированное правило стартового состояния из замера
    (решение владельца **OD-1** — числа). Пока OD-1 не решён, зарегистрировано единственное правило
    ``program_config_default@0`` = прежнее поведение (``config.block_*.base_target``, собственный вес),
@@ -23,6 +23,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
+from app.domain.progression import recalculate_target, recalculate_volume_block
 
 ROLE_BLOCK_A = "block_a"
 ROLE_BLOCK_B = "block_b"
@@ -70,28 +71,6 @@ def role_work_sets(role: str, progression_state: Mapping) -> int:
 # --- 2. Резолвер блока курса -----------------------------------------------------------------
 
 
-class TrailingMaxSetRule(StrEnum):
-    """Хвостовой подход на максимум в блоках курса — OD-3 (#310).
-
-    * ``INCLUDE`` — «4 × 3» = 4 рабочих + подход на максимум (наследие бота; формула прогрессии
-      ``delta = max − target`` получает свой вход);
-    * ``OMIT`` — только рабочие подходы (тогда владелец должен задать другой вход прогрессии);
-    * ``UNDECIDED`` — OD-3 не решён: выполняется прежнее поведение v2-пути (подхода на максимум нет),
-      явно помеченное как нерешённое. Это не выбор ответа — это статус-кво до решения."""
-
-    INCLUDE = "include"
-    OMIT = "omit"
-    UNDECIDED = "undecided"
-
-
-# Единственное место решения OD-3 в коде. Меняется ТОЛЬКО по записанному решению владельца в #310.
-COURSE_TRAILING_MAX_SET_RULE = TrailingMaxSetRule.UNDECIDED
-
-
-def appends_trailing_max_set(rule: TrailingMaxSetRule) -> bool:
-    return rule == TrailingMaxSetRule.INCLUDE
-
-
 @dataclass(frozen=True)
 class ProgressionSetPrescription:
     """Один подход блока курса. ``is_max_set`` — свойство цели (TRAINING_SESSION R2), его сохраняет
@@ -102,20 +81,118 @@ class ProgressionSetPrescription:
     is_max_set: bool = False
 
 
-def resolve_progression_block(
-    role: str, progression_state: Mapping, *, trailing_max_set: TrailingMaxSetRule,
-) -> tuple[ProgressionSetPrescription, ...]:
-    """Подходы блока роли ``block_a`` / ``block_b`` (WORKOUT_DOMAIN_V2 §6). Рабочих подходов ровно
-    ``work_sets`` (для обеих ролей), цель — ``target`` роли; подход на максимум добавляется последним
-    только при ``TrailingMaxSetRule.INCLUDE``. Состояние должно быть нормализовано."""
+def resolve_progression_block(role: str, progression_state: Mapping) -> tuple[ProgressionSetPrescription, ...]:
+    """Подходы блока роли ``block_a`` / ``block_b`` (WORKOUT_DOMAIN_V2 §6): ровно ``work_sets`` рабочих
+    подходов (для обеих ролей) на ``target`` роли и ПОСЛЕДНИМ — один явный подход на максимум
+    (``is_max_set``, ``target_reps = 0``). OD-3 решён владельцем: подход на максимум включается — это
+    замер цикла и единственный вход прогрессии (``advance_step_progression``). Состояние должно быть
+    нормализовано."""
     if role not in PROGRESSION_ROLES:
         raise InvalidProgressionStateError(f"unknown progression role {role!r}")
     work_sets = role_work_sets(role, progression_state)
     target = int(progression_state[role]["target"])
     sets = [ProgressionSetPrescription(set_number=i + 1, target_reps=target) for i in range(work_sets)]
-    if appends_trailing_max_set(trailing_max_set):
-        sets.append(ProgressionSetPrescription(set_number=work_sets + 1, target_reps=0, is_max_set=True))
+    sets.append(ProgressionSetPrescription(set_number=work_sets + 1, target_reps=0, is_max_set=True))
     return tuple(sets)
+
+
+# --- 2b. Прогрессия курса: только подход на максимум, только вперёд ----------------------------
+
+
+@dataclass(frozen=True)
+class RoleAdvance:
+    """Итог шага прогрессии одной роли. ``measured`` — был ли в сессии выполненный подход на
+    максимум этой роли; без замера роль не двигается (``target_before == target_after``)."""
+
+    target_before: int
+    target_after: int
+    equipment_changed: bool
+    measured: bool
+
+
+def _prescribed_working_reps(role_state: Mapping) -> tuple[int, ...]:
+    """Рабочие подходы цикла так, как они были ПРЕДПИСАНЫ (``work_sets`` × ``target``), — не как
+    выполнены. Формула шага берёт из рабочих подходов среднее (ветка роста) и порог смены снаряда;
+    подставляя предписание, а не факт, мы гарантируем, что фактические рабочие подходы прогрессию
+    не двигают (решение владельца): при выполнении «по плану» результат тот же, что у прежней формулы."""
+    return (int(role_state["target"]),) * int(role_state["work_sets"])
+
+
+def _max_miss_signal(missed: bool) -> tuple[int, int]:
+    """Вход «слабой тренировки» формулы — ``volume < prev_volume`` (объём рабочих подходов). Курс
+    подаёт туда ПРОМАХ ЗАМЕРА (подход на максимум ниже цели): (0, 1) — промах, (0, 0) — нет. Счётчик
+    ``weak_streak`` роли считает подряд идущие промахи замера, а не просадки объёма."""
+    return (0, 1) if missed else (0, 0)
+
+
+def advance_step_progression(
+    progression_state: Mapping, *, max_a: int | None, max_b: int | None,
+) -> tuple[dict, RoleAdvance, RoleAdvance]:
+    """Шаг прогрессии курса на прямой границе (завершение основной тренировки курса). Решение
+    владельца: прогрессию двигает ТОЛЬКО явный подход на максимум; рабочие подходы хранятся и
+    показываются, но не меняют состояние.
+
+    ``max_a`` / ``max_b`` — повторения выполненного подхода на максимум этой сессии (``None`` — замера
+    роли нет: подход на максимум не выполнен или отсутствует; роль не двигается). Формула — прежняя
+    (``recalculate_volume_block`` для блока А, ``recalculate_target`` для блока Б: рост, если
+    max > target, на ``max(1, ceil(target·STEP_PCT))``; max = target — держим; откат −1 после
+    ``WEAK_STREAK_ROLLBACK_THRESHOLD`` подряд промахов; смена снаряда, иерархия подходов блока А),
+    но все её входы выводятся из предписания и замера (``_prescribed_working_reps``,
+    ``_max_miss_signal``). Поле ``volume`` состояния больше не вход и не переписывается.
+
+    Только вперёд: функция получает текущее состояние и замер ЭТОЙ сессии; прошлые сессии, их правки
+    и уже выданные рецепты она не читает и не пересчитывает. Чистая и детерминированная."""
+    state = normalize_progression_state(progression_state)
+    block_a, block_b = dict(state[ROLE_BLOCK_A]), dict(state[ROLE_BLOCK_B])
+    advance_a = RoleAdvance(block_a["target"], block_a["target"], False, measured=False)
+    advance_b = RoleAdvance(block_b["target"], block_b["target"], False, measured=False)
+
+    if max_a is not None:
+        target, work_sets = int(block_a["target"]), int(block_a["work_sets"])
+        missed = max_a < target
+        volume, prev_volume = _max_miss_signal(missed)
+        result = recalculate_volume_block(
+            target, work_sets, _prescribed_working_reps(block_a), max_a, volume, prev_volume,
+            EquipmentType(block_a["equipment_type"]),
+            consecutive_weak_before=int(block_a.get("weak_streak") or 0),
+            consecutive_stall_before=int(block_a.get("stall_streak") or 0),
+        )
+        grew = result.new_target > target or result.new_work_sets > work_sets
+        block_a.update({
+            "target": result.new_target,
+            "work_sets": result.new_work_sets,
+            "work_sets_growth_reason": (
+                result.work_sets_growth_reason.value if result.work_sets_growth_reason is not None else None
+            ),
+            "weak_streak": int(block_a.get("weak_streak") or 0) + 1 if missed else 0,
+            "stall_streak": 0 if grew else int(block_a.get("stall_streak") or 0) + 1,
+            "needs_new_equipment": result.equipment_changed,
+        })
+        advance_a = RoleAdvance(target, result.new_target, result.equipment_changed, measured=True)
+
+    if max_b is not None:
+        target = int(block_b["target"])
+        missed = max_b < target
+        volume, prev_volume = _max_miss_signal(missed)
+        result_b = recalculate_target(
+            STRENGTH_BLOCK, target, _prescribed_working_reps(block_b), max_b, volume, prev_volume,
+            consecutive_weak_before=int(block_b.get("weak_streak") or 0),
+        )
+        block_b.update({
+            "target": result_b.new_target,
+            "weak_streak": int(block_b.get("weak_streak") or 0) + 1 if missed else 0,
+            "needs_new_equipment": result_b.equipment_changed,
+        })
+        advance_b = RoleAdvance(target, result_b.new_target, result_b.equipment_changed, measured=True)
+
+    new_state = {
+        **state,
+        "schema_version": state.get("schema_version", 1),
+        ROLE_BLOCK_A: block_a,
+        ROLE_BLOCK_B: block_b,
+        "workouts_completed_in_set": state.get("workouts_completed_in_set", 0) + 1,
+    }
+    return new_state, advance_a, advance_b
 
 
 # --- 3. Стартовая прескрипция и ворота замера --------------------------------------------------

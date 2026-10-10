@@ -262,9 +262,10 @@ async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None
     tests/test_web/test_v2_live_session.py::_setup_step_session (PlanItem на
     каждую роль заводится напрямую, без ProgramItem: программа синтетическая,
     без недельной матрицы). work_sets=3 у блока A + 4 подхода блока Б
-    (STRENGTH_BLOCK.work_sets, issue #305 — раньше ошибочно 1; резолвер
+    (STRENGTH_BLOCK.work_sets, issue #305 — раньше ошибочно 1) и у каждого блока
+    последним — подход на максимум (OD-3 решён; резолвер
     app.domain.course_prescription.resolve_progression_block) — сессия из ОБОИХ
-    PlanItem даёт 7 подходов, под E2E «офлайн-подходы»."""
+    PlanItem даёт 4 + 5 = 9 подходов, под E2E «офлайн-подходы»."""
     user = await _onboard(session, telegram_id)
 
     profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})

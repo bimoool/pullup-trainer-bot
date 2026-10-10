@@ -45,7 +45,6 @@ from app.domain.block_execution import (
     targets_for_protocol,
 )
 from app.domain.course_prescription import (
-    COURSE_TRAILING_MAX_SET_RULE,
     normalize_progression_state,
     resolve_progression_block,
 )
@@ -634,10 +633,11 @@ class LiveSessionService:
         """Подходы блока курса — ЕДИНСТВЕННЫЙ резолвер resolve_progression_block (issue #305,
         WORKOUT_DOMAIN_V2 §6): рабочих подходов ровно work_sets роли (обе роли; у block_b старых
         инклюзий поле дописывает normalize_progression_state — тот же источник STRENGTH_BLOCK.work_sets,
-        что у миграции e3b9c5d7a2f1), без тихого «1» (D2). Хвостовой подход на максимум — OD-3
-        (COURSE_TRAILING_MAX_SET_RULE); его цель помечена is_max_set и так и пишется в SetLog (D3)."""
+        что у миграции e3b9c5d7a2f1), без тихого «1» (D2), и последним — явный подход на максимум (OD-3
+        решён: включать); его цель помечена is_max_set, так и пишется в SetLog (D3) и именно он — вход
+        прогрессии (advance_step_progression)."""
         state = normalize_progression_state(inclusion.progression_state)
-        prescriptions = resolve_progression_block(role, state, trailing_max_set=COURSE_TRAILING_MAX_SET_RULE)
+        prescriptions = resolve_progression_block(role, state)
         block = SessionBlockInput(exercise_id=exercise_id, sets=[])
         targets = [
             SetTargetInput(

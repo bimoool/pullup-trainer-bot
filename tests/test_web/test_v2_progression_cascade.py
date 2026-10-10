@@ -59,13 +59,15 @@ def _sets_block(exercise_id: int, working_reps: list[int], max_reps: int) -> dic
     return {"exercise_id": exercise_id, "sets": sets}
 
 
-async def _record_session(session, telegram_id: int, inclusion_id: int, performed_at: str, roles: dict) -> dict:
+async def _record_session(
+    session, telegram_id: int, inclusion_id: int, performed_at: str, roles: dict, max_a: int = 12,
+) -> dict:
     response = await v2_post(
         session, telegram_id=telegram_id, path="/api/v2/sessions",
         payload={
             "source": "plan", "performed_at": performed_at, "program_inclusion_id": inclusion_id,
             "blocks": [
-                _sets_block(roles["block_a"], [11, 11, 11], 12),
+                _sets_block(roles["block_a"], [11, 11, 11], max_a),
                 _sets_block(roles["block_b"], [4, 4, 4, 4], 4),
             ],
         },
@@ -145,7 +147,9 @@ async def test_preview_and_apply_cascade_recomputes_full_chain_and_converges(ses
     inclusion = await _create_inclusion(session, user.telegram_id, program.id)
     roles = _exercise_ids_by_role(inclusion)
 
-    session1 = await _record_session(session, user.telegram_id, inclusion["id"], "2026-01-05T10:00:00Z", roles)
+    # #305: прогрессию двигает только подход на максимум — первая сессия держит цель (max = цели 10),
+    # правка поднимает её max выше цели, и это растит цель дальше по всей последующей цепочке.
+    session1 = await _record_session(session, user.telegram_id, inclusion["id"], "2026-01-05T10:00:00Z", roles, max_a=10)
     await _record_session(session, user.telegram_id, inclusion["id"], "2026-01-08T10:00:00Z", roles)
 
     state_before = await _progression_state(session, user.telegram_id, inclusion["id"])
