@@ -93,11 +93,19 @@ SetLog        set_index, round_index | null, actual_reps | actual_seconds, load_
   state, `progression_state_rev`, PlanItems and already issued prescriptions (`set_targets`, snapshots)
   stay byte-for-byte unchanged. Editing the MAX actual likewise only corrects the historical fact — no
   retroactive recomputation; how the latest corrected MAX reaches the next prescription is #305 (§10).
-- **ED1b** Clone follows the general clone rule (§2/D10) for course/planned sessions too: no
-  `plan_item_id`, no `program_inclusion_id`, progression untouched. Note: a clone keeps the original's
-  blocks, so a clone of a course session (STEP-role blocks with logged sets) counts as a performed MAIN
-  start for rest spacing (`main_session_predicate`, PROGRAM_PLAN §4) on its date — it is a real
-  pull-up workout; it never credits an occurrence.
+- **ED1b** A clone/repeat is a **manual historical repeat** (owner decision, #307 final review). It follows
+  the general clone rule (§2/D10) for course/planned sessions too: no `plan_item_id`, no
+  `program_inclusion_id`, `source_v2 = manual_existing_workout | manual_custom`. It may preserve the
+  original performed blocks for Journal/history, but copied course-role (STEP) blocks do not grant program
+  semantics: a clone never affects program spacing (MAIN rest, K1), course MAIN counters
+  (`completed_main_sessions`, `last_main_session_at`, `latest_main_session_at`), PlanItem/occurrence credit
+  or progression. It still counts as a normal completed workout in Journal and Analytics. To affect the
+  course schedule the user starts the workout through the course / PlanItem flow. Implementation:
+  `TrainingSessionRepository.main_session_predicate` excludes native manual records
+  (`MANUAL_SOURCES`, `origin = native`) from its STEP-role branch; rows without `source_v2` (pre-#307 /
+  deploy window) and legacy Workout copies (`origin = legacy_backfill`) keep their MAIN classification, so
+  aged counters never decrease. A manual record with STEP-role blocks can only come from a clone (the API
+  rejects them otherwise, #285).
 - **ED2** Every edit increments `revision`; derived views recompute (§6 A7).
 - **ED3** The snapshot is never edited.
 

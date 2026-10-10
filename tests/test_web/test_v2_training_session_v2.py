@@ -25,6 +25,7 @@ from app.db.models_program import (
 )
 from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.domain.multi_program import MetricType, SessionSource
+from app.services.plan_spacing import MainSpacingService
 from tests.test_web._v2_client import v2_delete, v2_get, v2_patch, v2_post
 from tests.test_web.test_v2_live_session import _setup_step_session
 from tests.test_web.test_v2_live_session_workout_start import _user
@@ -550,6 +551,40 @@ async def test_course_session_clone_has_no_credit_and_does_not_touch_progression
     assert after["inclusions"] == before["inclusions"] and after["plan_items"] == before["plan_items"]
     assert after["set_targets"][: len(before["set_targets"])] == before["set_targets"]  # у копии — свои цели
     assert await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values())) == credits_before
+
+
+async def test_clone_of_course_session_does_not_shift_main_spacing(session: AsyncSession, user: User):
+    """Решение владельца (#307, финальное ревью): копия сессии курса — ручной исторический повтор.
+    Она есть в Журнале и в аналитике (общий счёт тренировок), но НЕ старт MAIN: последний MAIN, число
+    MAIN и доступность следующей тренировки курса (отдых K1) не меняются."""
+    _inclusion, plan_item_ids, session_id = await _completed_course_session(session, user)
+    past = datetime.now(UTC) - timedelta(days=5)
+    await session.execute(update(TrainingSession).where(TrainingSession.id == session_id).values(
+        performed_at=past, started_at=past, ended_at=past + timedelta(minutes=30),
+        completed_at=past + timedelta(minutes=30),
+    ))
+    await session.commit()
+    spacing = MainSpacingService(session)
+    now = datetime.now(UTC)
+    main_before = (await spacing.last_main_start_at(user.id), await spacing.count_native_main_sessions(user.id))
+    status_before = await spacing.status(user, now=now)
+    assert status_before.too_early is False
+    workouts_before = (await v2_get(session, user.telegram_id, "/api/v2/analytics/training")).json()["metrics"]["total_workouts"]
+    credits_before = await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values()))
+
+    response = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{session_id}/clone", {})
+    assert response.status_code == 201, response.text
+    clone = response.json()
+    assert clone["status"] == "completed" and clone["plan_item_id"] is None
+
+    assert (await spacing.last_main_start_at(user.id), await spacing.count_native_main_sessions(user.id)) == main_before
+    status_after = await spacing.status(user, now=now)
+    assert status_after.too_early is False and status_after.available_from == status_before.available_from
+    assert await TrainingSessionRepository(session).credits_for_plan_items(list(plan_item_ids.values())) == credits_before
+    # обычная завершённая запись: Журнал и общий счёт тренировок — да
+    assert clone["id"] in {card["id"] for card in await _listed(session, user)}
+    metrics = (await v2_get(session, user.telegram_id, "/api/v2/analytics/training")).json()["metrics"]
+    assert metrics["total_workouts"] == workouts_before + 1
 
 
 # --- J9/J10/J14 (#307): история, старые кредиты, повторный backfill — tests/test_scripts --------

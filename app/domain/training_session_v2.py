@@ -119,6 +119,14 @@ def kind_for_source(source: SessionSourceV2) -> SessionKind:
     return SessionKind.EXTERNAL_ACTIVITY if source is SessionSourceV2.EXTERNAL_ACTIVITY else SessionKind.STRENGTH
 
 
+# Ручные/пост-фактум источники (в т.ч. копия, §2/D10): историческая запись, НЕ старт курса. Блоки ролей
+# STEP, перенесённые в копию, не дают ей программной семантики: такая сессия не двигает отдых MAIN,
+# счётчики инклюзии, кредит занятия и прогрессию (решение владельца, #307 финальное ревью; §4 ED1b).
+MANUAL_SOURCES: frozenset[SessionSourceV2] = frozenset({
+    SessionSourceV2.MANUAL_EXISTING_WORKOUT, SessionSourceV2.MANUAL_CUSTOM,
+})
+
+
 def clone_source(*, original_kind: SessionKind, workout_definition_id: int | None) -> SessionSourceV2:
     """Копия (§2, D10): manual_existing_workout, если у оригинала есть определение, иначе
     manual_custom; внешняя активность остаётся внешней. plan_item_id копии — всегда None."""

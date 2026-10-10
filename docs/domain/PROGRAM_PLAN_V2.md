@@ -235,6 +235,8 @@ Where the contract left a choice open, Wave 1b decided as follows (code: `app/do
    `config.min_rest_days` (old «Mon → Wed» meaning) is left untouched and is not read.
 2. **Last MAIN start** = max of legacy `workouts` (completed) and completed v2 sessions that credit a `main`
    occurrence or contain a STEP role block with ≥ 1 logged set (an empty abandoned start does not move rest).
+   A native manual record / clone (`source_v2 = manual_existing_workout | manual_custom`) is never a MAIN
+   start, even with copied STEP-role blocks (TRAINING_SESSION_V2 §4 ED1b, #307).
    Local dates in the user's timezone.
 3. **K1 error shape:** v2 live → `409 {code: "too_early", available_from: "YYYY-MM-DD", message}`; legacy
    `GET /api/workout/plan` / `/api/dashboard` / `GET /api/v2/dashboard/status` → `status: "too_early"` +

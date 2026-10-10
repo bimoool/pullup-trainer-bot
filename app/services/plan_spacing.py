@@ -14,7 +14,8 @@ legacy `/api/workout/plan`, бот («Начать тренировку», ст�
 * legacy `workouts` (завершённые; вся история старой схемы — это основная тренировка);
 * v2 `training_sessions` (завершённые): засчитавшие занятие main-слота (plan_item_id) ИЛИ с блоком
   роли STEP (block_a/block_b) и хотя бы одним записанным подходом в нём. Пустые (без единого
-  подхода) брошенные сессии отдых не сдвигают.
+  подхода) брошенные сессии отдых не сдвигают. Ручная запись/копия (source_v2 = manual_*) — не старт
+  MAIN даже со скопированными блоками ролей (#307; TrainingSessionRepository.main_session_predicate).
 """
 
 from dataclasses import dataclass

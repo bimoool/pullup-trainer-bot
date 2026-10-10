@@ -23,6 +23,7 @@ from app.domain.live_session import DEFAULT_UNIT_BY_METRIC_TYPE
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.plan_occurrence import MAIN_SLOT_KEY
 from app.domain.training_session_v2 import (
+    MANUAL_SOURCES,
     DurationSource,
     SessionKind,
     SessionOrigin,
@@ -1012,17 +1013,33 @@ class TrainingSessionRepository:
     def main_session_predicate() -> ColumnElement[bool]:
         """«Завершённая v2-сессия — старт MAIN» (K1, app.services.plan_spacing): засчитала занятие
         main-слота (plan_item_id) ИЛИ содержит блок роли STEP (block_a/block_b) хотя бы с одним
-        записанным подходом. Пустые брошенные сессии отдых не сдвигают."""
+        записанным подходом. Пустые брошенные сессии отдых не сдвигают.
+
+        issue #307 (решение владельца): ручная/пост-фактум запись приложения (source_v2 =
+        manual_existing_workout / manual_custom, origin = native) — это исторический повтор, не старт
+        курса, даже если в ней (копии) есть блоки ролей STEP: она не двигает отдых MAIN, не входит в
+        completed_main_sessions/last_main_session_at. Ветка ролей по-прежнему считает живые сессии курса,
+        строки без source_v2 (старый код в окне деплоя) и копии legacy Workout (origin = legacy_backfill:
+        так считалась история до #307 — счётчики старых пользователей не уменьшаются). Ручную запись с
+        блоками ролей API не создаёт иначе как копией (#285)."""
         role_block_with_log = exists().where(
             SessionBlock.session_id == TrainingSession.id,
             SessionBlock.exercise_id == Exercise.id,
             Exercise.subcategory.in_(INTERNAL_ROLE_SUBCATEGORIES),
             exists().where(SetLog.session_block_id == SessionBlock.id),
         )
+        manual_record = and_(
+            # coalesce: строка без source_v2 (NULL) — не ручная; без него NOT(NULL) выкинул бы её из MAIN
+            func.coalesce(TrainingSession.source_v2, "").in_([source.value for source in MANUAL_SOURCES]),
+            TrainingSession.origin.is_distinct_from(SessionOrigin.LEGACY_BACKFILL.value),
+        )
         credited_main = exists().where(
             PlanItem.id == TrainingSession.plan_item_id, PlanItem.program_slot_key == MAIN_SLOT_KEY,
         )
-        return and_(TrainingSession.status == SessionStatus.COMPLETED, or_(credited_main, role_block_with_log))
+        return and_(
+            TrainingSession.status == SessionStatus.COMPLETED,
+            or_(credited_main, and_(role_block_with_log, ~manual_record)),
+        )
 
     async def latest_main_session_at(self, user_id: int) -> datetime | None:
         result = await self._session.execute(
