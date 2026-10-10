@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../fixtures/builderFlow";
 import { metricSelect, openJournalEntry, selectMetric } from "../fixtures/parity";
-import { openAppAs } from "../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Crimpd 8.5.x full-parity contract (docs/CRIMPD_FULL_PARITY_8_5.md).
 //

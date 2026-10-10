@@ -5,8 +5,11 @@ import {
   captureDownloads, COMBOS, expectScreenHealthy, openJournalEntry, openTab, selectMetric,
 } from "../../fixtures/parity";
 import { pickPlanAction, pickRowAction } from "../../fixtures/plans";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Crimpd parity — «Full sweep» (#277, docs/CRIMPD_FULL_PARITY_8_5.md, все строки).
 //

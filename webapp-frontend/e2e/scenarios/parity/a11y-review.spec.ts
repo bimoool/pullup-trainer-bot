@@ -3,8 +3,11 @@ import { expect, test } from "@playwright/test";
 import { expectA11yClean, expectFocusRings } from "../../fixtures/a11y";
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import type { TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // #290 «Visual/a11y review (wave 13)»: сквозные проверки доступности на Live Session, Журнале, Планах и
 // Поиске — контраст ≥ AA в светлой И тёмной темах, цели касания ≥ 44px, имена у кнопок, видимый фокус,

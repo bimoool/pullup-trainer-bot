@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets, startWorkout } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // #287 — завершение живой тренировки в очереди (HIGH 1/2) и фокус поля (MED 3).
 // HIGH 1: завершение, поставленное офлайн, не застревает: досылается на mount после повторного

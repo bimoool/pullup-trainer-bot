@@ -2,8 +2,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { emitTelegramThemeChange, pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Live Session UX fixes (#285 A): M1 — экранная клавиатура vs липкий транспорт и Enter в поле
 // записи подхода; M2 — офлайн-завершение закрывает шторку и показывает статус; M3 — BackButton с

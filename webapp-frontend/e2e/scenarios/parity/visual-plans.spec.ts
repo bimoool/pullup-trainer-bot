@@ -4,8 +4,11 @@ import * as path from "node:path";
 
 import { mutatePlanResponse, overridePlanToday, PLAN_START, pickPlanAction, pickRowAction, watchServerPlanToday } from "../../fixtures/plans";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // #286 B — экран «Планы»: строка дня (цветная полоска + название + чип «0/1» + «Начать» + «⋯»), нижние листы
 // действий, карточка плана «Неделя n из N» + полоса прогресса, блок «Сегодня», вкладки с подчёркиванием.

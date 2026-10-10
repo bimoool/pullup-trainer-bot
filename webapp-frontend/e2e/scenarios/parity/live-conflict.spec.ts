@@ -1,9 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
 import type { TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // R-4 (#289): plan-путь старта тоже отвечает 409 active_session_exists, а пред-экран показывает тот же
 // экран конфликта, что и workout-путь («Продолжить текущую»), а не сырую ошибку.

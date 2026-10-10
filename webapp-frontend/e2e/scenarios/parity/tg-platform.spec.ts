@@ -2,11 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { noWakeLock, playSets } from "../../fixtures/builderFlow";
 import { openTab } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import {
   emitNativeTelegramEvent, emitNativeTelegramThemeChange, emitTelegramEvent, isTelegramBackButtonVisible,
   isTelegramClosingConfirmationOn, pressTelegramBackButton, telegramCalls,
 } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Платформа Telegram (#224): то, что десктопный Chromium без мока не видит. Мок — fixtures/telegramMock.ts
 // (версия Bot API, safe area, журнал вызовов WebApp). Сиды 9988xx — scripts/e2e_seed_all.sh.

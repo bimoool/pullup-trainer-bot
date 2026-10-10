@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import type { TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // R-4 follow-up (#293 N2/N3). Seeds (scripts/e2e_seed_all.sh): session_recovery 99360x/99361x (N2), 99362x/99363x (N3);
 // все мутируют; id + retry.

@@ -6,8 +6,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { expectA11yClean } from "../../fixtures/a11y";
 import { clickAndSync } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // #290 follow-up (a11y2): Home «Все ›» ≥44, Workout Detail назад/сердце 44, дни «Добавить в план» ≥44 без переполнения,
 // «+»-шторка Главной и шторка метрик Аналитики (aria-modal, фокус внутрь, Tab-ловушка, Escape/BackButton, возврат фокуса),

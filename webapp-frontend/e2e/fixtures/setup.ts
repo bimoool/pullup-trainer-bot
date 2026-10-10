@@ -37,3 +37,12 @@ export async function openAppAs(
 
   return { consoleErrors, apiFailures };
 }
+
+/** issue #306: сценарии экрана движка v1 (он обслуживает сессии engine_version = 1, начатые до Live Engine v2) —
+ * новые старты в этом файле идут на движке v1 (тот же аварийный переключатель клиента, что
+ * openAppAs({ liveEngine: "v1" })). Поведение Live Engine v2 — live-engine-v2.spec.ts и переведённые сценарии. */
+export function useLiveEngineV1(api: { beforeEach: (fn: (args: { page: Page }) => Promise<void>) => void }): void {
+  api.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem("pullup:live-engine-version", "1"));
+  });
+}

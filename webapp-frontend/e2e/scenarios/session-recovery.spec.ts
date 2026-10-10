@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../fixtures/builderFlow";
-import { openAppAs } from "../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Восстановление активной тренировки после фона и повторного открытия
 // (issue #246). scripts/e2e_seed.py session_recovery 930002: Workout

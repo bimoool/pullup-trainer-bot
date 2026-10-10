@@ -6,7 +6,10 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
 import { openJournalEntry } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Новый пользователь на каждый прогон (онбординг идёт через UI): id из секунд, либо GATE_TELEGRAM_ID.
 const TG = Number(process.env.GATE_TELEGRAM_ID ?? 7_400_000 + (Math.floor(Date.now() / 1000) % 900_001));

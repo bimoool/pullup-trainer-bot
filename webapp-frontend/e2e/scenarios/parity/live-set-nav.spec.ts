@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import type { TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // #292 «Предыдущий подход» в Live: шаг назад переоткрывает предыдущий подход (SetLog не удаляется,
 // повторное «Готово» перезаписывает ту же строку), недоступен на границе блока и офлайн/при очереди.

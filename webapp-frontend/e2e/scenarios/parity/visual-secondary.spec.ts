@@ -5,8 +5,11 @@ import * as path from "node:path";
 import { noWakeLock } from "../../fixtures/builderFlow";
 import { pickRowAction } from "../../fixtures/plans";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import type { TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // CRIMPD VISUAL (#280, tier 3): второстепенные экраны в языке оболочки (screens-secondary.css) —
 // пред-экран сессии, Builder (создание/редактор/выбор упражнения/протокол), Настройки, история
