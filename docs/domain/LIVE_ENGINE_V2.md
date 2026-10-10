@@ -188,7 +188,9 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     version's snapshot (the W-ladder executes as 17 sets, J3) and the engine plan 1:1 from it. Synthesized
     snapshots (STEP course blocks, legacy without a version) carry no rest/prep; the engine plan then uses the
     contract defaults (WORKOUT §3.2/§3.6/§9.1: rest 90 s or the V1 protocol's rest, block rest 90 s, prep 5 s for
-    the first block and for blocks starting with a timed set or an interval).
+    the first block and for blocks starting with a timed set or an interval). A V1 interval whose total is not a
+    multiple of work + rest keeps V1's count of work rounds (`ceil(total / (work + rest))`; V1 15 s at 5/5 = two
+    work phases).
 11. **Projection on read (P3).** `GET /sessions/live/active` and the session list project due deadlines (same
     path as an empty events request) — the client returning from background sees the advanced state.
 12. **Client.** `LiveEngineScreen` renders `project(fold(server.state, queue), Date.now() + offset)` with the
@@ -197,3 +199,7 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     response replaces the base state and drops acknowledged events. Audio: the engine exposes
     `timeline(state)` (and the response carries it); the screen schedules only the phase-end cue from the single
     deadline, never retroactively (P4). Sound assets are out of scope.
+13. **Rollback switch (MIGRATION §8 "flags").** `localStorage["pullup:live-engine-version"] = "1"` makes the client
+    start new sessions on engine v1 (server unchanged; running v2 sessions keep v2). E2E specs that assert the v1
+    screen's own UX (it still serves `engine_version = 1` sessions until W4) pin it per file
+    (`useLiveEngineV1(test)`); v2 behaviour is covered by `live-engine-v2.spec.ts` and the converted journeys.
