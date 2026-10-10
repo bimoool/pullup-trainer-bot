@@ -30,7 +30,7 @@ from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.services import live_session
-from app.web import routes_v2
+from app.web import routes_v2, routes_v2_live
 from app.web.routes import _resolve_plan_context
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
 
@@ -207,7 +207,7 @@ async def test_admin_bypasses_rest(session, user: User, clock, monkeypatch):
     occurrences = _week_items(await _plan(session, user), 1)
     started = await _start(session, user, [occurrences[0]["id"]])
     await _finish(session, user, started, performed_at=MON)
-    monkeypatch.setattr(routes_v2.settings, "admin_ids", str(user.telegram_id))
+    monkeypatch.setattr(routes_v2_live.settings, "admin_ids", str(user.telegram_id))
     clock(TUE)
     assert (await _start(session, user, [occurrences[1]["id"]])).status_code == 200
 

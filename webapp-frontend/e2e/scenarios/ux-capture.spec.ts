@@ -3,7 +3,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { clickAndSync, playSets } from "../fixtures/builderFlow";
-import { openAppAs } from "../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Reusable black-box capture of OUR app for docs/REFERENCE_UX_REVIEW.md.
 // Skipped unless UX_CAPTURE=1. Output: $UX_CAPTURE_DIR/<label>/<width>/<name>.png + <name>.txt

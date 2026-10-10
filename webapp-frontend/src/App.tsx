@@ -10,6 +10,7 @@ import { PlanSessionFlow } from "./PlanSessionFlow";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen, type JournalRestore } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
+import { startEngineReconciliation, wakeEngineReconciliation } from "./liveEngineClient";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { AnalyticsScreen } from "./AnalyticsScreen";
@@ -239,6 +240,12 @@ export function App() {
             `initDataRaw is empty — открыто не из Telegram? [${describeInitDataFailure(retrieveError, telegramWebApp)}]`,
           );
         }
+        // #306 B1/F1: недосланные офлайн-события движка v2 (Стоп, пауза, оценка) должны дойти до сервера
+        // раньше любого чтения, которое проецирует дедлайны сессии (GET /sessions/live/active, список сессий
+        // Журнала): иначе действие пользователя, сделанное до дедлайна, сервер счёл бы устаревшим. Сверка
+        // стартует здесь, до первого экрана, и повторяется при временных сбоях; такие чтения ждут её
+        // (engineGate.ts). Нет очереди — одно чтение IndexedDB, без сети и без задержки.
+        void startEngineReconciliation(initDataRaw);
         const data = await fetchHello(initDataRaw);
         if (!cancelled) {
           setState({ status: "ready", data, initDataRaw });
@@ -303,9 +310,24 @@ export function App() {
       return;
     }
     const initDataRaw = state.initDataRaw;
-    const handleOnline = () => void drainQueuedFinish(initDataRaw);
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
+    // #306 F1: экран тренировки закрыт (или ещё не открывался) — недосланное его очереди (события, оценка
+    // сессии, которую сервер уже завершил сам) сверяет App; идущая сверка просто продолжается.
+    void startEngineReconciliation(initDataRaw);
+    const onOnline = () => {
+      void drainQueuedFinish(initDataRaw);
+      void startEngineReconciliation(initDataRaw); // идёт с паузой между повторами — повтор сейчас
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        wakeEngineReconciliation();
+      }
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initDataRaw неизменен после "ready".
   }, [state.status, liveFlowOpen]);
 

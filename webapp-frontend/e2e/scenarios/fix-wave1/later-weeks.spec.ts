@@ -13,7 +13,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { ensureCourseExists } from "../../fixtures/courseSeed";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 const TELEGRAM_ID = 7_900_000 + (Date.now() % 90_000);
 const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8001";

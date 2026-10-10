@@ -44,3 +44,60 @@ export async function playSets(page: Page, values: string[], rest = true) {
 
 // Headless Chromium не даёт Wake Lock — шум окружения, не баг приложения.
 export const noWakeLock = (errors: string[]) => errors.filter((e) => !e.includes("Wake Lock"));
+
+/** issue #306 — Live Engine v2: подход за подходом без «Готов»/«Пропустить отдых». Ожидание (подготовка/отдых)
+ * сокращается необязательным «Начать сейчас» (skip_wait) — сам переход по дедлайну проверяет
+ * live-engine-v2.spec.ts реальным временем. После последнего подхода ничего не трогает. */
+export async function playSetsV2(page: Page, values: string[]) {
+  for (const value of values) {
+    const phase = page.getByTestId("engine-phase");
+    await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
+    if ((await phase.textContent())?.trim() !== "Пошёл") {
+      await page.getByTestId("engine-skip").click();
+    }
+    await expect(phase).toHaveText("Пошёл");
+    await page.getByLabel("Результат подхода").fill(value);
+    await page.getByTestId("engine-submit").click();
+    await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
+  }
+}
+
+/** issue #306 — завершить тренировку v2: экран «Тренировка завершена» → «Сохранить» (или досрочно —
+ * «Завершить» → «Сохранить и завершить»). */
+export async function finishV2(page: Page, { early = false }: { early?: boolean } = {}) {
+  const completed = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+  if (early) {
+    await page.getByTestId("engine-finish").click();
+    await page.getByTestId("engine-finish-confirm").click();
+  } else {
+    await expect(page.getByTestId("engine-complete")).toBeVisible();
+    await page.getByTestId("engine-save").click();
+  }
+  await completed;
+}
+
+/** issue #306 — подход «на максимум по времени» (секундомер): «Стоп» → поле с измеренным → своё значение → «Готово». */
+export async function logMaxTimeV2(page: Page, value: string) {
+  const phase = page.getByTestId("engine-phase");
+  await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
+  if ((await phase.textContent())?.trim() !== "Пошёл") {
+    await page.getByTestId("engine-skip").click();
+  }
+  await expect(phase).toHaveText("Пошёл");
+  await page.getByTestId("engine-stop").click();
+  await expect(phase).toHaveText("Результат");
+  await page.getByLabel("Результат подхода").fill(value);
+  await page.getByTestId("engine-submit").click();
+}
+
+/** issue #306 — подход на время: «Стоп» записывает измеренные секунды (цель — по дедлайну сама). */
+export async function stopTimedSetV2(page: Page) {
+  const phase = page.getByTestId("engine-phase");
+  await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
+  if ((await phase.textContent())?.trim() !== "Пошёл") {
+    await page.getByTestId("engine-skip").click();
+  }
+  await expect(phase).toHaveText("Пошёл");
+  await page.getByTestId("engine-stop").click();
+  await expect(phase).not.toHaveText("Пошёл");
+}

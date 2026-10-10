@@ -2,7 +2,10 @@ import { expect, test } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Crimpd parity — Workout Detail «Начать» / «Записать» (#273).
 // Seed: scripts/e2e_seed.py golden_journey — своя Workout «Золотая тренировка» (reps 2 x 8), пустой

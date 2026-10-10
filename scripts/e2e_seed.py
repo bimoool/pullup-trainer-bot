@@ -819,6 +819,69 @@ async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> Exer
     return pull
 
 
+async def seed_live_engine(session: AsyncSession, telegram_id: int) -> None:
+    """issue #306 — Live Engine v2 E2E: Builder-тренировки текущей недели с КОРОТКИМИ таймингами версии
+    определения v2 (отдых/подготовка/отдых блока в секундах), чтобы автопереходы проверялись реальным
+    временем сервера без «Начать сейчас». Версия пишется напрямую (v2-контент — то, что исполняет движок)."""
+    from app.db.repositories.workout_definitions import WorkoutDefinitionRepository
+    from app.domain.workout_definition import normalize
+
+    user = await _onboard(session, telegram_id)
+    plan = TrainingPlan(user_id=user.id)
+    session.add(plan)
+    await session.flush()
+    today = datetime.now(UTC).date()
+    week_number = plan_week_number(plan.created_at.date(), today)
+    week = await TrainingPlanRepository(session).create_plan_week(
+        training_plan_id=plan.id, week_number=week_number,
+        start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
+    )
+    pull = Exercise(name="Подтягивания", metric_type=MetricType.REPS, category="e2e_engine", source_type="user", owner_user_id=user.id)
+    plank = Exercise(name="Планка", metric_type=MetricType.TIME, category="e2e_engine", source_type="user", owner_user_id=user.id)
+    burpee = Exercise(name="Бёрпи", metric_type=MetricType.REPS, category="e2e_engine", source_type="user", owner_user_id=user.id)
+    session.add_all([pull, plank, burpee])
+    await session.flush()
+    workouts = [
+        ("Движок: подходы", [{
+            "key": "A", "exercise_id": pull.id, "prep_seconds": 4,
+            "sets": [{"kind": "reps", "target_reps": 5, "rest_after_seconds": 6}, {"kind": "reps", "target_reps": 5}],
+        }]),
+        ("Движок: блоки", [
+            {"key": "A", "exercise_id": pull.id, "prep_seconds": 0, "rest_after_block_seconds": 6,
+             "sets": [{"kind": "reps", "target_reps": 3}]},
+            {"key": "B", "exercise_id": plank.id, "prep_seconds": 3, "sets": [{"kind": "time", "target_seconds": 5}]},
+        ]),
+        ("Движок: интервал", [{
+            "key": "A", "exercise_id": burpee.id, "kind": "interval", "prep_seconds": 3,
+            "interval": {"work_seconds": 5, "rest_seconds": 4, "rounds": 2, "record_reps_per_round": False},
+        }]),
+        ("Движок: пауза", [{
+            "key": "A", "exercise_id": pull.id, "prep_seconds": 4,
+            "sets": [{"kind": "reps", "target_reps": 5, "rest_after_seconds": 30}, {"kind": "reps", "target_reps": 5}],
+        }]),
+        # #306 B1: офлайн-«Стоп» подхода на время + перезапуск приложения (live-engine-v2.spec.ts, 8).
+        ("Движок: стоп", [
+            {"key": "A", "exercise_id": plank.id, "prep_seconds": 3, "rest_after_block_seconds": 5,
+             "sets": [{"kind": "time", "target_seconds": 15}]},
+            {"key": "B", "exercise_id": pull.id, "prep_seconds": 0, "sets": [{"kind": "reps", "target_reps": 3}]},
+        ]),
+    ]
+    definitions = WorkoutDefinitionRepository(session)
+    for day, (title, blocks) in enumerate(workouts):
+        workout = Complex(name=title, source_type="user", owner_user_id=user.id)
+        session.add(workout)
+        await session.flush()
+        for index, block in enumerate(blocks):
+            session.add(ComplexItem(complex_id=workout.id, exercise_id=block["exercise_id"], order_index=index, sets=0))
+        await session.flush()
+        await definitions.save_content(workout.id, normalize({"title": title, "blocks": blocks}))
+        session.add(PlanItem(
+            training_plan_id=plan.id, exercise_id=blocks[0]["exercise_id"], complex_id=workout.id, count_per_week=1,
+            day_of_week=day % 7, program_inclusion_id=None, plan_week_id=week.id,
+        ))
+    await session.flush()
+
+
 async def seed_journal_v2(session: AsyncSession, telegram_id: int) -> None:
     """REBUILD-1 (R2) — те же Builder Workout, что builder_workouts, плюс 30
     завершённых "исторических" сессий (без снимка — их удалять нельзя) для
@@ -1663,6 +1726,7 @@ SCENARIOS = {
     "journal_edit": seed_journal_edit,
     "journal_plans_polish": seed_journal_plans_polish,
     "builder_workouts": seed_builder_workouts,
+    "live_engine": seed_live_engine,
     "not_onboarded": seed_not_onboarded,
     "first_workout": seed_first_workout,
     "ready": seed_ready,

@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { pressTelegramBackButton } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Crimpd parity — residual gaps (#281): Журнал «Открыть тренировку» (J5), Главная «Все ›» по категории (H4),
 // тесты в поиске + чип «Тесты» (D6), вибрация конца фазы таймера (R14).

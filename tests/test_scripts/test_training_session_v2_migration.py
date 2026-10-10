@@ -299,6 +299,13 @@ def test_rerun_upgrade_and_downgrade_upgrade(scratch_dsn):  # noqa: F811
 
 
 def test_fresh_install_single_head(scratch_dsn):  # noqa: F811
+    """Одна голова; эта ревизия — в её истории (#306 надстраивает a9e6c3d1f5b7 поверх, MIGRATION §9.1)."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+    (head,) = script.get_heads()
+    assert REVISION in {rev.revision for rev in script.walk_revisions(base="base", head=head)}
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == REVISION
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == head
     assert _scalar(scratch_dsn, "SELECT count(*) FROM training_sessions") == 0

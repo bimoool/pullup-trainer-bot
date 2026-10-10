@@ -1,8 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 import { noWakeLock, playSets } from "../fixtures/builderFlow";
-import { openAppAs } from "../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Выход из Summary после живой сессии (issue #253, QA §5): ни пустого, ни
 // устаревшего экрана. scripts/e2e_seed.py session_recovery 930006: Workout

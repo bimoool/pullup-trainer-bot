@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { openAppAs } from "../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // scripts/e2e_seed.py ready 900003 — одна прошлая тренировка 5 дней назад
 // (старая схема: блоки Объём/Сила на резине), плана на неделю нет.

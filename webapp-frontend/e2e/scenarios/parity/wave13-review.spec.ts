@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
 import { openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { pressTelegramBackButton, type TelegramTheme } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Wave 13b review (#293): регрессии навигации/R-4, найденные независимым ревью 43de3b4..6a76084.
 // Seeds (scripts/e2e_seed_all.sh): session_recovery 99330{1,2}/99333{1,2} (мутирует), journal_return

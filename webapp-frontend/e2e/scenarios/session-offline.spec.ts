@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { noWakeLock } from "../fixtures/builderFlow";
+import { noWakeLock, playSetsV2 } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py v2_session_ready 900010 — STEP-курс синтетической
@@ -27,46 +27,22 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   await expect(page.getByText("E2E Live Session")).toBeVisible();
 
   await page.getByRole("button", { name: "Начать" }).click();
-  await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Приготовься");
 
-  // Сеть отключается ПОСЛЕ старта сессии (POST /sessions/live уже прошёл
-  // онлайн) — та же последовательность, что в тексте критерия готовности:
-  // "начинает сессию, вносит подходы при отключённой сети", не "начинает
-  // сессию при отключённой сети" (старт живой сессии офлайн — отдельный,
-  // не реализованный в этой волне сценарий, см. докстринг SessionPreScreen.tsx
-  // про то, что plan_item_ids резолвятся online-запросом /api/v2/plan).
+  // Сеть отключается ПОСЛЕ старта сессии (POST /sessions/live уже прошёл онлайн).
   await context.setOffline(true);
 
-  // Блок A — 3 подхода (get_ready -> go -> log -> rest -> get_ready -> ...).
-  for (let i = 0; i < 3; i += 1) {
-    await page.getByRole("button", { name: "Готов" }).click();
-    await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-    await page.getByLabel("Повторений").fill("10");
-    await page.getByRole("button", { name: "Готово" }).click();
-    if (i < 2) {
-      await expect(page.getByRole("heading", { name: "Отдых", exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Пропустить отдых" }).click();
-    }
-  }
+  // issue #306 (Live Engine v2): офлайн экран рисует проекцию той же функцией переходов, что сервер;
+  // действия — события в очереди (IndexedDB). Ожидание сокращается «Начать сейчас» (skip_wait).
+  // Блок A — 3 подхода, отдых блока, блок Б — 1 подход: всё офлайн.
+  await playSetsV2(page, ["10", "10", "10", "3"]);
 
-  // Последний подход блока A ведёт СРАЗУ в get_ready блока Б (без rest) —
-  // см. app.domain.live_session.next_phase: "последний подход НЕпоследнего
-  // блока -> get_ready первого подхода следующего блока".
-  await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Готов" }).click();
-  await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await page.getByLabel("Повторений").fill("3");
-  await page.getByRole("button", { name: "Готово" }).click();
-
-  await expect(page.getByText("Все подходы плана выполнены")).toBeVisible();
+  await expect(page.getByTestId("engine-complete")).toBeVisible();
   await expect(page.getByText(/Нет сети/)).toBeVisible();
 
-  // Враждебный тайминг НАМЕРЕННО (fix/concurrent-set-batch): реконнект сам
-  // запускает синхронизацию накопленного (событие "online" -> POST
-  // /sets:batch), и "Завершить" тапается СРАЗУ, не дожидаясь её. Раньше это
-  // слало второй такой же батч параллельно и ловило 500
-  // (uq_set_logs_session_set_index); теперь сервер к дублю устойчив, а клиент
-  // досылает одним флашем за раз. Не добавлять сюда ожидание синхронизации.
+  // Враждебный тайминг НАМЕРЕННО: реконнект сам запускает досылку очереди (событие "online"),
+  // а «Сохранить» тапается СРАЗУ. Досылка single-flight: события уходят одним запросом по порядку,
+  // повтор — no-op по client_event_id; завершение — ровно один POST /complete.
   const liveResponses: { path: string; status: number }[] = [];
   page.on("response", (response) => {
     const url = decodeURIComponent(response.url());
@@ -75,12 +51,12 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
     }
   });
   await context.setOffline(false);
-  await page.getByRole("button", { name: "Завершить" }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
+  await page.getByTestId("engine-save").click();
 
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
+  await expect(page.getByTestId("engine-phase")).toHaveCount(0); // Summary, не экран движка
   expect(liveResponses.filter((r) => r.status >= 500)).toEqual([]);
-  expect(liveResponses.some((r) => r.path.endsWith("/sets:batch") && r.status === 200)).toBe(true);
+  expect(liveResponses.some((r) => r.path.endsWith("/events") && r.status === 200)).toBe(true);
   expect(liveResponses.filter((r) => r.path.endsWith("/complete"))).toEqual([
     expect.objectContaining({ status: 200 }),
   ]);

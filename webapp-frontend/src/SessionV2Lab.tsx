@@ -13,6 +13,7 @@ import { clearLocalSession } from "./offlineSession";
 import { DashboardV2Screen } from "./DashboardV2Screen";
 import { SessionEditScreen } from "./SessionEditScreen";
 import { SessionJournalScreen } from "./SessionJournalScreen";
+import { LiveEngineScreen } from "./LiveEngineScreen";
 import { SessionLiveScreen } from "./SessionLiveScreen";
 import { SessionPreScreen } from "./SessionPreScreen";
 import { SessionSummaryScreen } from "./SessionSummaryScreen";
@@ -83,6 +84,17 @@ export function SessionV2Lab({ initDataRaw, onGoToWorkout }: Props) {
   }
 
   if (screen.kind === "live") {
+    if (screen.session.engine_version === 2 && screen.session.engine) {
+      // issue #306: сессия Live Engine v2 — экран-проекция серверного движка.
+      return (
+        <LiveEngineScreen
+          initDataRaw={initDataRaw}
+          initialSession={screen.session}
+          onCompleted={(result) => setScreen({ kind: "summary", result })}
+          onLeave={() => setScreen({ kind: "dashboard" })}
+        />
+      );
+    }
     return (
       <SessionLiveScreen
         initDataRaw={initDataRaw}

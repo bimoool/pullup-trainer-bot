@@ -2,7 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // #277 (Journal/Plans leftovers): 1) карточка Журнала на 320 не режет бейдж типа и деградирует по названию (2 строки);
 // 2) выполненная строка дня Планов (1/1) показывает «✓ 1/1» (галочка — CSS, текст счётчика «1/1») и вторичное «Повторить», а не главное «Начать: …»;

@@ -17,14 +17,44 @@ import { mockTelegramWebApp, type TelegramMockOptions, type TelegramTheme } from
 export async function openAppAs(
   page: Page,
   telegramId: number,
-  options: { allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean; telegram?: Omit<TelegramMockOptions, "backButton"> } = {},
+  options: {
+    allowedApiStatuses?: number[]; firstName?: string; theme?: TelegramTheme; backButton?: boolean;
+    telegram?: Omit<TelegramMockOptions, "backButton">;
+    /** issue #306: «v1» — новые старты на движке v1 (сценарии экрана v1, который обслуживает сессии
+     * engine_version = 1); по умолчанию — Live Engine v2, как у пользователей. */
+    liveEngine?: "v1" | "v2";
+  } = {},
 ): Promise<{ consoleErrors: string[]; apiFailures: string[] }> {
   const consoleErrors = collectConsoleErrors(page);
   const apiFailures = collectUnexpectedApiFailures(page, options.allowedApiStatuses ?? []);
 
   const initDataRaw = buildInitData({ id: telegramId, firstName: options.firstName ?? "E2E" }, getTestBotToken());
   await mockTelegramWebApp(page, initDataRaw, options.theme, { ...options.telegram, backButton: options.backButton });
+  if (options.liveEngine === "v1") {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("pullup:live-engine-version", "1");
+      } catch {
+        // документ без доступа к хранилищу (страница офлайн-ошибки, sandbox-фрейм) — переключатель не нужен
+      }
+    });
+  }
   await page.goto("/");
 
   return { consoleErrors, apiFailures };
+}
+
+/** issue #306: сценарии экрана движка v1 (он обслуживает сессии engine_version = 1, начатые до Live Engine v2) —
+ * новые старты в этом файле идут на движке v1 (тот же аварийный переключатель клиента, что
+ * openAppAs({ liveEngine: "v1" })). Поведение Live Engine v2 — live-engine-v2.spec.ts и переведённые сценарии. */
+export function useLiveEngineV1(api: { beforeEach: (fn: (args: { page: Page }) => Promise<void>) => void }): void {
+  api.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("pullup:live-engine-version", "1");
+      } catch {
+        // документ без доступа к хранилищу (страница офлайн-ошибки, sandbox-фрейм) — переключатель не нужен
+      }
+    });
+  });
 }

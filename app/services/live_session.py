@@ -49,6 +49,15 @@ from app.domain.interval_timing import (
     calculate_completed_cycles,
     compute_interval_timing,
 )
+from app.domain.live_engine import ENGINE_VERSION as ENGINE_V2
+from app.domain.live_engine_plan import (
+    FallbackInterval,
+    FallbackTarget,
+    fallback_block,
+    finalize_plan,
+    plan_block_from_snapshot,
+    snapshot_is_executable,
+)
 from app.domain.live_session import (
     DEFAULT_UNIT_BY_METRIC_TYPE,
     GET_READY_SECONDS,
@@ -62,7 +71,8 @@ from app.domain.live_session import (
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.plan_occurrence import MAIN_SLOT_KEY, PlanItemStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
-from app.domain.training_session_v2 import SessionSourceV2
+from app.domain.training_session_v2 import SessionSourceV2, snapshot_matches_blocks
+from app.domain.workout_definition import BlockKind, SetKind, SnapshotResolutionError
 from app.domain.workout_protocol import DefinitionProtocol, ResolvedInterval, ResolvedProtocol
 from app.domain.workout_snapshot import (
     UnresolvedProgressionError,
@@ -71,6 +81,7 @@ from app.domain.workout_snapshot import (
     build_workout_snapshot,
     positional_snapshot_items,
 )
+from app.services.live_engine import LiveEngineService
 from app.services.plan_spacing import MainSpacingService, TooEarlyError  # noqa: F401 — re-export
 from app.services.program_access import (  # noqa: F401 — re-export
     ProgramAccessService,
@@ -83,6 +94,7 @@ from app.services.session_log import (
     _session_block_input_from_detail,
 )
 from app.services.training_session_v2 import TrainingSessionV2Service
+from app.services.workout_definition import WorkoutDefinitionService
 
 
 @dataclass(frozen=True)
@@ -146,10 +158,22 @@ def block_started_at(detail: SessionDetail, index: int) -> datetime | None:
     return started_at
 
 
+def is_engine_v2(detail: SessionDetail) -> bool:
+    """issue #306: сессия исполняется движком v2 (app.services.live_engine) — фазовая машина v1
+    (phase/next, blocks/start, interval-таймер v1) к ней не применяется."""
+    return detail.engine_version == ENGINE_V2
+
+
+class EngineV1OnlyError(Exception):
+    """Эндпоинт движка v1 вызван для сессии движка v2 — роут -> 409 engine_version_mismatch."""
+
+
 def current_interval_timing(detail: SessionDetail, now: datetime):
     """Server-authoritative состояние ТЕКУЩЕГО interval-блока или None.
     Не начатый блок (нет started_at) и не interval-блок не проецируются как
-    активное interval-состояние."""
+    активное interval-состояние. Сессия движка v2 — None (интервал там — фазы движка)."""
+    if is_engine_v2(detail):
+        return None
     if detail.status != SessionStatus.STARTED or detail.current_block_index >= len(detail.blocks):
         return None
     index = detail.current_block_index
@@ -177,7 +201,8 @@ def awaiting_block_start(detail: SessionDetail) -> bool:
     """STARTED-сессия Builder-тренировки стоит перед ещё не начатым блоком
     (interstitial)."""
     return (
-        has_manual_block_transitions(detail)
+        not is_engine_v2(detail)
+        and has_manual_block_transitions(detail)
         and detail.status == SessionStatus.STARTED
         and detail.current_block_index < len(detail.blocks)
         and block_started_at(detail, detail.current_block_index) is None
@@ -217,12 +242,13 @@ class LiveSessionService:
         self._sessions = TrainingSessionRepository(session)
         self._plans = TrainingPlanRepository(session)
         self._programs = ProgramRepository(session)
+        self._engine_version = 1
 
     # --- Старт -----------------------------------------------------------
 
     async def start_session(
         self, *, user_id: int, client_session_id: uuid.UUID, plan_item_ids: list[int],
-        workout_id: int | None = None, bypass_spacing: bool = False,
+        workout_id: int | None = None, bypass_spacing: bool = False, engine_version: int = 1,
     ) -> LiveSessionResult | None:
         """Идемпотентный старт: две конкурентные транзакции с одним client_session_id (офлайн-повтор,
         двойной тап) оба проходят проверку «сессии нет» и вставляют; проигравший упирается в
@@ -230,7 +256,12 @@ class LiveSessionService:
         возвращается сессия победителя (а не 500). Конфликт при отсутствии СВОЕЙ сессии с этим UUID
         (UUID занят другим пользователем) — ValueError -> 422, без раскрытия чужой сессии.
 
-        bypass_spacing — админ (settings.is_admin): обход K1, как в legacy-путях."""
+        bypass_spacing — админ (settings.is_admin): обход K1, как в legacy-путях.
+
+        engine_version (issue #306): 2 — новая сессия исполняется Live Engine v2 (клиент-движок v2 шлёт
+        его явно); без него — движок v1, как раньше (старые закэшированные бандлы Mini App, MIGRATION §6).
+        Повтор старта с тем же client_session_id возвращает существующую сессию её же движка."""
+        self._engine_version = ENGINE_V2 if engine_version == ENGINE_V2 else 1
         # N1 (#293): два устройства с РАЗНЫМИ client_session_id оба проходят проверку «активной нет».
         # Сериализуем старты пользователя advisory-локом до проверки (транзакционный — снимается на
         # commit/rollback, миграции/уникального индекса не требует). Конкурент ждёт, затем видит
@@ -379,8 +410,18 @@ class LiveSessionService:
         await TrainingSessionV2Service(self._session).stamp_new(
             session_id, user_id, source=source, resolved_at=performed_at,
             workout_definition_id=workout_definition_id, program_inclusion_id=program_inclusion_id,
-            started_at=performed_at, timezone=user.timezone if user is not None else None, engine_version=1,
+            started_at=performed_at, timezone=user.timezone if user is not None else None,
+            engine_version=self._engine_version,
         )
+        if self._engine_version == ENGINE_V2:
+            await self._initialize_engine_v2(session_id, user_id, performed_at)
+
+    async def _initialize_engine_v2(self, session_id: int, user_id: int, at: datetime) -> None:
+        """issue #306: план движка из PrescriptionSnapshot сессии (#307 записал его этим же стартом) и
+        событие start. Снимок версии v2 исполняется 1:1; синтезированный (STEP-курс, legacy) — по целям
+        сессии с умолчаниями контракта (app.domain.live_engine_plan)."""
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        await LiveEngineService(self._session).initialize(session_id, user_id, plan=engine_plan_for(detail), at=at)
 
     async def _resolve_main_occurrence(
         self, plan_item: PlanItem,
@@ -514,6 +555,55 @@ class LiveSessionService:
         return await self._resolve_complex_blocks(complex_id)
 
     async def _resolve_complex_blocks(
+        self, complex_id: int,
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], WorkoutSnapshot | None]:
+        v1 = await self._resolve_complex_blocks_v1(complex_id)
+        if self._engine_version != ENGINE_V2:
+            return v1
+        v2 = await self._resolve_from_definition_version(complex_id)
+        if v2 is None:
+            return v1
+        blocks, targets = v2
+        v1_blocks, _, v1_snapshot = v1
+        # v1-снимок остаётся (протокол/имя блока в ответе), только если позиционно совпадает с блоками v2.
+        aligned = [b.exercise_id for b in v1_blocks] == [b.exercise_id for b in blocks]
+        return blocks, targets, v1_snapshot if aligned else None
+
+    async def _resolve_from_definition_version(
+        self, complex_id: int,
+    ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]]] | None:
+        """issue #306: движок v2 исполняет ТЕКУЩУЮ версию определения (WORKOUT §5) — цели подходов
+        строятся из снимка версии, а не из V1-головы (W-лесенка — 17 подходов в порядке 5-4-3-…, J3).
+        None — версии нет или её снимок не разрешается (progression-блок без резолвера): прежний путь."""
+        complex_ = await self._programs.get_complex(complex_id)
+        if complex_ is None or complex_.current_version_id is None:
+            return None
+        try:
+            snapshot = await WorkoutDefinitionService(self._session).build_snapshot(
+                complex_.current_version_id, resolved_at=datetime.now(UTC),
+            )
+        except SnapshotResolutionError:
+            return None
+        blocks: list[SessionBlockInput] = []
+        targets: list[list[SetTargetInput]] = []
+        for block in snapshot.blocks:
+            blocks.append(SessionBlockInput(exercise_id=block.exercise_id, sets=[]))
+            if block.kind is BlockKind.INTERVAL:
+                targets.append([])
+                continue
+            block_targets = []
+            for number, set_ in enumerate(block.sets, start=1):
+                timed = set_.kind in (SetKind.TIME, SetKind.MAX_TIME)
+                is_max = set_.kind in (SetKind.MAX_REPS, SetKind.MAX_TIME)
+                amount = set_.target_seconds if set_.kind is SetKind.TIME else set_.target_reps if set_.kind is SetKind.REPS else 0
+                block_targets.append(SetTargetInput(
+                    set_number=number, metric_type=MetricType.TIME if timed else MetricType.REPS,
+                    value=Decimal(amount or 0), unit="s" if timed else "reps", is_max_set=is_max, kind=set_.kind.value,
+                ))
+            targets.append(block_targets)
+        return blocks, targets
+
+    async def _resolve_complex_blocks_v1(
         self, complex_id: int,
     ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], WorkoutSnapshot | None]:
         """Один SessionBlock на каждый ComplexItem, по order_index.
@@ -653,6 +743,8 @@ class LiveSessionService:
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None or detail.status != SessionStatus.STARTED:
             return None
+        if is_engine_v2(detail):
+            raise EngineV1OnlyError()
 
         if expected_phase_index == detail.phase_index and self._is_standard_block_running(detail):
             protocols = self._block_protocols(detail)
@@ -702,6 +794,8 @@ class LiveSessionService:
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None:
             return None
+        if is_engine_v2(detail):
+            raise EngineV1OnlyError()
         await self._sessions.lock_session(session_id)
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail.status != SessionStatus.STARTED:
@@ -737,6 +831,8 @@ class LiveSessionService:
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None or detail.status != SessionStatus.STARTED:
             return None
+        if is_engine_v2(detail):
+            raise EngineV1OnlyError()
         await self._sessions.lock_session(session_id)
         detail = await self._sessions.get_for_user(session_id, user_id)
 
@@ -759,6 +855,8 @@ class LiveSessionService:
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None:
             return None
+        if is_engine_v2(detail):
+            raise EngineV1OnlyError()
         # upsert_set_logs_batch может поднять ValueError (exercise_id не
         # найден среди блоков сессии) — намеренно не ловим здесь, роут
         # превращает её в 404 (см. докстринг репозитория/план задачи).
@@ -778,6 +876,10 @@ class LiveSessionService:
         # сессию не отдаём — фронт идёт в Summary/Journal обычным путём.
         await self.finalize_expired_interval_if_needed(training_session.id, user_id)
         result = await self._build_result(training_session.id, user_id)
+        if result is not None and is_engine_v2(result.session):
+            # P3: истёкшие в фоне дедлайны уже применены, когда клиент вернулся (без тапа).
+            await LiveEngineService(self._session).project_due(training_session.id, user_id)
+            result = await self._build_result(training_session.id, user_id)
         if result is not None and result.session.status != SessionStatus.STARTED:
             return None
         return result
@@ -834,7 +936,11 @@ class LiveSessionService:
     async def finalize_expired_interval_if_needed(self, session_id: int, user_id: int) -> None:
         """Lazy completion истёкшего interval-блока (идемпотентно). Вызывается
         из GET /sessions/live/active и из листинга сессий — один helper на
-        все места."""
+        все места. issue #306: сессия движка v2 — ленивая проекция её дедлайнов (P3), тот же вызов."""
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        if detail is not None and is_engine_v2(detail):
+            await LiveEngineService(self._session).project_due(session_id, user_id)
+            return
         await self._finalize_due_interval(session_id, user_id)
 
     async def _finalize_due_interval(self, session_id: int, user_id: int) -> str:
@@ -844,7 +950,7 @@ class LiveSessionService:
         — если блок последний — завершает сессию. Незапущенный interval-блок
         никогда не финализируется (у него нет таймера)."""
         detail = await self._sessions.get_for_user(session_id, user_id)
-        if detail is None or detail.status != SessionStatus.STARTED:
+        if detail is None or detail.status != SessionStatus.STARTED or is_engine_v2(detail):
             return "none"
         index = detail.current_block_index
         if index >= len(detail.blocks):
@@ -898,6 +1004,8 @@ class LiveSessionService:
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None:
             return None, True
+        if is_engine_v2(detail):
+            raise EngineV1OnlyError()
         if detail.status == SessionStatus.STARTED and detail.current_block_index == expected_block_index:
             index = detail.current_block_index
             is_last = index >= len(detail.blocks) - 1
@@ -923,6 +1031,7 @@ class LiveSessionService:
     async def complete_session(
         self, *, session_id: int, user_id: int, abandoned: bool,
         effort: Decimal | None = None, comment: str | None = None, active_elapsed_ms: int | None = None,
+        ended_at: datetime | None = None,
     ) -> tuple[CompleteResult | None, bool]:
         """Второй элемент — True, если сессия не найдена/не принадлежит
         пользователю (роут превращает в 404) — тот же (result, not_found)
@@ -932,7 +1041,10 @@ class LiveSessionService:
         issue #307 — канонический интерфейс завершения (TRAINING_SESSION_V2 §8, в т.ч. для движка v2
         #306): active_elapsed_ms — измеренная движком активная длительность (паузы исключены);
         без неё — стенные часы старт → завершение в окне [1 мин, 6 ч] (R3). Повтор — тот же ответ, без
-        второй прогрессии и без смены длительности."""
+        второй прогрессии и без смены длительности.
+
+        ended_at (issue #306, необязательный): момент COMPLETE по часам движка v2 — проекция дедлайнов
+        могла довести сессию до конца в фоне раньше, чем её прочитали; без него — «сейчас», как раньше."""
         detail = await self._sessions.get_for_user(session_id, user_id)
         if detail is None:
             return None, True
@@ -956,7 +1068,7 @@ class LiveSessionService:
                 False,
             )
 
-        await self._sessions.mark_completed(session_id, active_elapsed_ms=active_elapsed_ms)
+        await self._sessions.mark_completed(session_id, ended_at, active_elapsed_ms=active_elapsed_ms)
         if effort is not None or comment is not None:
             await self._sessions.save_workout_review(session_id, effort=effort, comment=comment)
 
@@ -966,7 +1078,8 @@ class LiveSessionService:
         # время блока реально вышло) — детерминированный planned result;
         # ручное раннее — честный elapsed.
         index = detail.current_block_index
-        if index < len(detail.blocks) and detail.blocks[index].result is None:
+        if not is_engine_v2(detail) and index < len(detail.blocks) and detail.blocks[index].result is None:
+            # Движок v2 пишет итог интервала сам (эффект block_finished) — здесь только v1.
             item = self._block_protocols(detail)[index]
             started_at = block_started_at(detail, index)
             if item is not None and is_interval_protocol(item.protocol) and started_at is not None:
@@ -1036,6 +1149,9 @@ class LiveSessionService:
                 return inclusion
         return None
 
+    async def get_session(self, *, session_id: int, user_id: int) -> SessionDetail | None:
+        return await self._sessions.get_for_user(session_id, user_id)
+
     # --- Общий сбор результата ---------------------------------------------
 
     async def _build_result(self, session_id: int, user_id: int) -> LiveSessionResult | None:
@@ -1043,3 +1159,35 @@ class LiveSessionService:
         if detail is None:
             return None
         return LiveSessionResult(session=detail)
+
+
+def engine_plan_for(detail: SessionDetail) -> dict:
+    """План движка v2 сессии (issue #306): снимок версии v2, согласованный с целями сессии, — 1:1;
+    иначе (синтезированный снимок: STEP-курс, legacy без версии) — по целям сессии и v1-протоколу блока
+    с умолчаниями контракта (app.domain.live_engine_plan)."""
+    snapshot = detail.prescription_snapshot
+    if snapshot_is_executable(snapshot) and snapshot_matches_blocks(
+        snapshot, [(block.exercise_id, len(block.set_targets)) for block in detail.blocks],
+    ):
+        return finalize_plan([plan_block_from_snapshot(block) for block in snapshot["blocks"]])
+    items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
+    blocks = []
+    for index, (block, item) in enumerate(zip(detail.blocks, items, strict=True)):
+        protocol = item.protocol if item is not None else None
+        interval = interval_protocol(protocol)
+        blocks.append(fallback_block(
+            [
+                FallbackTarget(
+                    metric="time" if target.metric_type == MetricType.TIME else "reps", value=int(target.value),
+                    is_max_set=target.is_max_set,
+                )
+                for target in block.set_targets
+            ],
+            rest_seconds=rest_seconds_for_protocol(protocol),
+            interval=FallbackInterval(
+                work_seconds=interval.work_seconds, rest_seconds=interval.rest_seconds,
+                total_duration_seconds=interval.total_duration_seconds,
+            ) if interval is not None else None,
+            is_first_block=index == 0,
+        ))
+    return finalize_plan(blocks)

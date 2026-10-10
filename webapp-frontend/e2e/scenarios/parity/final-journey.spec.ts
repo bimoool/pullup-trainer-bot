@@ -4,8 +4,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
 import { COMBOS, expectScreenHealthy, openTab } from "../../fixtures/parity";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 // Crimpd parity — «Final journey» (#277): путь РЕАЛЬНОГО пользователя, а не таблица переходов
 // (её ведёт full-sweep.spec.ts). Главная → поиск → деталь тренировки → старт → живая сессия →

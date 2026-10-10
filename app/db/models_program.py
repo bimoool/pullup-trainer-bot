@@ -643,9 +643,43 @@ class TrainingSession(Base):
         BigInteger, ForeignKey("training_sessions.id", ondelete="SET NULL"), nullable=True,
     )
     identity_recovered_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # --- Live Engine v2 (issue #306, docs/domain/LIVE_ENGINE_V2.md §1; миграция a9e6c3d1f5b7) -----------
+    # engine_plan — неизменяемый план движка (из PrescriptionSnapshot при старте); engine_state — кэш
+    # свёртки session_events (app.domain.live_engine); engine_status — active | completed | cancelled.
+    # NULL у сессий движка v1 и у всей истории.
+    engine_plan: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    engine_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    engine_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     __table_args__ = (
         Index("ix_training_sessions_user_workout_definition", "user_id", "workout_definition_id"),
+    )
+
+
+class SessionEvent(Base):
+    """Append-only журнал событий движка v2 (LIVE_ENGINE_V2 §1). client_event_id — ключ идемпотентности
+    офлайн-повтора (NULL у серверных событий: start, deadline). server_at — момент, с которым событие
+    применено (зажатый client_at или дедлайн); outcome — applied | noop (устаревшее/дубль-по-смыслу
+    тоже хранится: свёртка детерминирована и даёт тот же no-op)."""
+
+    __tablename__ = "session_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=False,
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    client_event_id: Mapped[uuid.UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    client_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    server_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "seq", name="uq_session_events_session_seq"),
+        UniqueConstraint("client_event_id", name="uq_session_events_client_event_id"),
     )
 
 

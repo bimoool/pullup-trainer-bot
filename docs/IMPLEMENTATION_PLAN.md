@@ -115,7 +115,17 @@ draft PR #315. Одна аддитивная миграция колонок с�
 `ManualSessionService`, длительность в `mark_completed`), ED1, R3/R4, идентичность «Тренировку из моих» (D9),
 копия без кредита (D10), скрипт `scripts/backfill_training_session_v2.py`. Интерфейс завершения для #306 и
 контракт чтения для #308 — `docs/domain/TRAINING_SESSION_V2.md` §8–§9; шов с #305 — §10. Статус: на
-независимом ревью. Дальше: #306 (движок v2) и #308 (Journal/Analytics поверх контракта чтения).
+принят 2026-10-10 (`integration/domain-v2` → `2ab2b19`). Follow-ups N1–N4, N7, N8, N9 (legacy
+`progression/{preview,apply}` может переиграть ручные копии) — открыты, не в #306.
+
+## DOMAIN-V2 Wave 2 — Live Engine v2 (#306, 2026-10-10)
+
+Ветка `wave2/live-engine-v2` от `integration/domain-v2` @ `2ab2b19` (#307 принят), draft PR #316. Живые роуты
+вынесены в `app/web/routes_v2_live.py` (механически, OpenAPI байт-в-байт). Чистый движок
+`app/domain/live_engine.py` + TS-зеркало `webapp-frontend/src/liveEngine.ts` на общих векторах
+`contracts/live_engine_vectors.json` (pytest + vitest). Миграция `a9e6c3d1f5b7`: `engine_plan/engine_state/
+engine_status` + `session_events`. Завершение — через `complete_session` #307. Решения — LIVE_ENGINE_V2 §9.
+Статус: на независимом ревью. Дальше: #308 (Journal/Analytics), #305 (прескрипция курса); снятие экрана v1 — W4.
 
 ## Дальше
 

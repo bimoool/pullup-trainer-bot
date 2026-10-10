@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { clickAndSync, noWakeLock, playSets, startWorkout } from "../fixtures/builderFlow";
+import { finishV2, noWakeLock, playSetsV2, startWorkout, stopTimedSetV2 } from "../fixtures/builderFlow";
 import { openJournalEntry } from "../fixtures/parity";
 import { openAppAs } from "../fixtures/setup";
 
@@ -17,21 +17,24 @@ test("Journal v2: карточки всех протоколов, детали, 
 
   // --- Наполняем журнал реальными тренировками: time и смешанная ---
   await startWorkout(page, "Только time");
-  await playSets(page, ["30", "25"]);
-  await page.getByRole("button", { name: "Завершить" }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  // issue #306 (Live Engine v2): подход на время — «Стоп» записывает измеренное.
+  await stopTimedSetV2(page);
+  await page.getByTestId("engine-edit-last").click(); // правка на отдыхе (correct_previous)
+  await page.getByLabel("Исправить подход").fill("30");
+  await page.getByRole("button", { name: "Сохранить подход" }).click();
+  await expect(page.getByTestId("log-panel-summary")).toHaveText("Подход 1: 0:30");
+  await stopTimedSetV2(page);
+  await finishV2(page);
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 
   await startWorkout(page, "Смешанная");
-  await playSets(page, ["8", "7"]);
-  await clickAndSync(page, "Начать", "/blocks/start");
-  await expect(page.getByText("Следующее упражнение")).toBeVisible({ timeout: 40_000 }); // interval истёк
-  await page.getByRole("button", { name: "Начать", exact: true }).click();
-  await playSets(page, ["18", "22"]);
-  await page.getByRole("button", { name: "Завершить" }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  await playSetsV2(page, ["8", "7"]);
+  await page.getByTestId("engine-skip").click(); // отдых блока → интервал
+  await expect(page.getByTestId("engine-next-block")).toContainText("Отжимания", { timeout: 40_000 }); // interval истёк
+  await playSetsV2(page, ["18", "22"]);
+  await finishV2(page);
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 
   // --- Журнал: каждый блок независимо, человекочитаемо ---
@@ -45,7 +48,7 @@ test("Journal v2: карточки всех протоколов, детали, 
   const timeCard = page.locator(".history-card").filter({ hasText: "Только time" });
   await expect(statValue(timeCard, "sets")).toHaveText("2");
   await expect(timeCard.locator(".journal-stat[data-stat=\"time\"] .journal-stat-label")).toHaveText("Время");
-  await expect(statValue(timeCard, "time")).toHaveText("0:55");
+  await expect(statValue(timeCard, "time")).toHaveText(/^0:3\d$/); // 30 (исправлено) + измеренный «Стоп»
   await expect(page.locator(".history-card").filter({ hasText: /\.00|reps|"type"|Упражнение #/ })).toHaveCount(0);
 
   // --- Пагинация: первая страница 25, "Показать ещё" дозагружает без дублей ---

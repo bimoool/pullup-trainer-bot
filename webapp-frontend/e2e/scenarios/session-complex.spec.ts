@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { noWakeLock } from "../fixtures/builderFlow";
+import { finishV2, noWakeLock, playSetsV2 } from "../fixtures/builderFlow";
 import { openAppAs } from "../fixtures/setup";
 
 // scripts/e2e_seed.py v2_session_complex 900011 — Program без стратегии +
@@ -25,31 +25,15 @@ test("live-сессия (v2): комплекс из 3 упражнений, за
   await page.getByRole("button", { name: "Начать" }).click();
   await page.getByRole("button", { name: "Начать" }).click();
 
-  // Упражнение 1 из 3.
-  await page.getByRole("button", { name: "Готов" }).click();
-  await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await expect(page.getByTestId("result-hint")).toContainText("Цель:");
-  await page.getByLabel("Повторений").fill("10");
-  await page.getByRole("button", { name: "Готово" }).click();
+  // issue #306 (Live Engine v2): упражнения сменяются сами по дедлайну отдыха блока; здесь ожидание
+  // сокращается «Начать сейчас». Упражнения 1 и 2 из 3, третье не трогаем — завершаем досрочно.
+  await expect(page.getByTestId("engine-target")).toContainText("Цель:");
+  await playSetsV2(page, ["10", "10"]);
+  await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
+  await expect(page.getByTestId("engine-next-block")).toBeVisible();
+  await finishV2(page, { early: true });
 
-  // Один подход на упражнение -> сразу get_ready следующего упражнения
-  // (next_phase: "последний подход НЕпоследнего блока -> get_ready
-  // следующего блока", без фазы "Отдых").
-  await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
-
-  // Упражнение 2 из 3.
-  await page.getByRole("button", { name: "Готов" }).click();
-  await expect(page.getByRole("heading", { name: "Пошёл", exact: true })).toBeVisible();
-  await expect(page.getByTestId("result-hint")).toContainText("Цель:");
-  await page.getByLabel("Повторений").fill("10");
-  await page.getByRole("button", { name: "Готово" }).click();
-
-  // Упражнение 3 не трогаем — завершаем сессию досрочно.
-  await expect(page.getByRole("heading", { name: "Приготовься", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Завершить" }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить", exact: true }).click();
-
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
   await expect(page.getByText(/— 1\/1/)).toHaveCount(2); // два выполненных упражнения
   await expect(page.getByText(/— 0\/1/)).toHaveCount(1); // третье осталось нетронутым
   await expect(page.getByText("Не выполнено — осталось в плане.")).toBeVisible();

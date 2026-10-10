@@ -115,6 +115,17 @@ def test_measured_duration_prefers_engine_active_time():
     assert duration.seconds == 3000 and duration.source is DurationSource.MEASURED
 
 
+def test_zero_engine_time_is_unknown_not_a_measured_zero():
+    """#307 N2 (решено в #306): 0 мс — не «измеренные 0 секунд»; округление до 0 с — тоже; больше 6 ч
+    активного времени — брошенная открытой сессия. Короткая честная работа остаётся measured."""
+    for value in (0, 499, MAX_MEASURED_SECONDS * 1000 + 501):
+        duration = measured_duration(T0, T0 + timedelta(hours=1), active_elapsed_ms=value)
+        assert duration.source is DurationSource.UNKNOWN and duration.seconds is None, value
+    short = measured_duration(T0, T0 + timedelta(seconds=40), active_elapsed_ms=40_000)
+    assert (short.seconds, short.source) == (40, DurationSource.MEASURED)
+    assert measured_duration(T0, T0, active_elapsed_ms=500).seconds == 1  # половина — вверх
+
+
 def test_measured_duration_wall_clock_window():
     assert measured_duration(T0, T0 + timedelta(minutes=25)).seconds == 1500
     assert measured_duration(T0, T0 + timedelta(seconds=30)).source is DurationSource.UNKNOWN

@@ -133,3 +133,86 @@ Errors are typed (`too_early{available_from}`, `subscription_required`, `active_
 Sessions started under the current engine keep `engine_version = 1` and finish under it; only
 new sessions use v2 (MIGRATION §6). The legacy v1 screen (`LiveWorkoutScreen.tsx`, `/api/workout/draft`)
 is retired after Wave 4 acceptance, not modified.
+
+## 9. Implementation decisions (Wave 2, #306)
+
+Code: `app/domain/live_engine.py` (pure engine), `app/domain/live_engine_plan.py` (plan from snapshot),
+`app/services/live_engine.py` (events, projection, effects), `app/web/routes_v2_live.py` (router split out of
+`routes_v2.py`), `webapp-frontend/src/liveEngine.ts` (mirror), `webapp-frontend/src/LiveEngineScreen.tsx`.
+Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_engine_vectors.py`, vitest
+`webapp-frontend/tests/liveEngineVectors.vitest.ts`). Migration `a9e6c3d1f5b7`. None of these changes a rule above.
+
+1. **Data shape.** Plan, state and events are plain JSON, time is integer UTC epoch ms — one representation for
+   Python, TypeScript and the vectors. `advance(plan, state, event, at) → (state', effects)`: the plan is the
+   immutable input built once at start (stored in `training_sessions.engine_plan`); `effects` are what the
+   service persists (`set_logged`, `set_corrected`, `block_started`, `block_finished`, `completed`, `cancelled`).
+   Rounding of measured seconds is half-up in integers (Python's `round()` is banker's).
+2. **Engine selection.** `POST /sessions/live` takes `engine_version` (default 1). The current client sends 2;
+   cached old bundles keep starting v1 sessions (MIGRATION §6). A v2 session refuses every v1 transition endpoint
+   (`phase/next|back`, `blocks/start|finish`, `sets:batch`) with `409 engine_version_mismatch`; `POST /events` on a
+   v1 session is the same 409. `POST …/complete` keeps the #307 interface for both (v2: server `finish_early`,
+   then the idempotent `complete_session` fills effort/comment).
+3. **Event API.** `POST /sessions/live/{id}/events {events: [{client_event_id, type, payload, client_at}]}`. Under
+   the session row lock: duplicate `client_event_id` → `duplicate` (no new row, 200); `client_at` clamped to
+   `[last_at, now]`; deadlines up to that moment are projected and persisted as `deadline` events
+   (`server_at = deadline`); then the event (`applied` or `noop`, both stored — replay folds them identically);
+   finally deadlines up to now. A `client_event_id` already used by another session → 422 (no disclosure);
+   foreign session → 404. Only client event types are accepted (`start`/`deadline` are server-only).
+4. **Staleness.** Control events (`skip_wait`, `pause`, `resume`, `stop`) carry `phase_seq` and are no-ops when it
+   is stale. `phase_seq` grows on every phase change, not on pause/resume or log edits. Result events
+   (`submit_result`) are addressed by cursor `{block_index, set_index, round_index}`, not by `phase_seq`: a set
+   submitted offline is not lost to clock jitter at a PREP boundary (if the server is still in PREP of that same
+   set, PREP ends at the event time). A result for a set the cursor already passed is a no-op.
+5. **Set kinds.** `time`: at the WORK deadline the result is the target (T3, hands-free); `stop` ends it early with
+   the measured active seconds; corrections via `correct_previous`. `max_time`: `stop` → RESULT with the measured
+   value, waits for `submit_result`. Interval rounds: the round's WORK deadline logs the round; with
+   `record_reps_per_round` the round rest is a RESULT phase that keeps the rest deadline (clock never stops,
+   input optional; input turns the remainder into REST). A round without entered reps writes no `SetLog`
+   (no fake «0 повт.»); the block's `result` JSON keeps `completed_cycles`.
+6. **Extra sets** (`add_extra_set {block_index, value}`) are logged immediately and never change the phase — the
+   table's `WORK(extra) → RESULT → back` collapsed into one event, as #264 already behaved. Allowed once the block's
+   prescribed sets are all logged (block rest or later), including after COMPLETE of the last block.
+   `correct_previous` targets an existing log; after completion it bumps `revision` (ED2).
+7. **Completion.** COMPLETE is terminal and is written through `LiveSessionService.complete_session` (#307, the
+   single writer) with `active_elapsed_ms` from the engine and `ended_at` = the engine's COMPLETE time (a
+   background projection may complete the session before anyone reads it). `abandoned` = some prescribed set was
+   not logged. The review (effort/comment) is a later idempotent `complete` call.
+8. **Zero work and duration (#307 N2).** `finish_early` with no performed prescribed set is a cancel (T5): no
+   journal entry, credit or duration — zero work never becomes a completed workout. `active_elapsed_ms` that
+   rounds to 0 s, or exceeds 6 h (a session left open), gives `duration_source = unknown`, never a measured 0 and
+   never an invented minute; short honest work (a 40 s plank) stays `measured`.
+9. **Cancel (T5) without a new enum value.** `mp_session_status` is not extended (TRAINING_SESSION_V2 §11).
+   `engine_status = cancelled` (CHECK-constrained string) marks the archived row; `status` stays `started`;
+   `plan_item_id` is cleared (no plan credit). Active-session lookup and session lists exclude it.
+10. **Plan source.** A v2 start of a Builder workout with a definition version builds `SetTarget` from the
+    version's snapshot (the W-ladder executes as 17 sets, J3) and the engine plan 1:1 from it. Synthesized
+    snapshots (STEP course blocks, legacy without a version) carry no rest/prep; the engine plan then uses the
+    contract defaults (WORKOUT §3.2/§3.6/§9.1: rest 90 s or the V1 protocol's rest, block rest 90 s, prep 5 s for
+    the first block and for blocks starting with a timed set or an interval). A V1 interval whose total is not a
+    multiple of work + rest keeps V1's count of work rounds (`ceil(total / (work + rest))`; V1 15 s at 5/5 = two
+    work phases).
+11. **Projection on read (P3).** `GET /sessions/live/active` and the session list project due deadlines (same
+    path as an empty events request) — the client returning from background sees the advanced state.
+12. **Client.** `LiveEngineScreen` renders `project(fold(server.state, queue), Date.now() + offset)` with the
+    mirror; the offset comes from `engine.server_time_ms` against the request midpoint. No duration constants, no
+    `endsAtOverride`/`pausedRemainingMs`, no second timer. The offline queue lives in IndexedDB, one per session
+    (`pullup:v2:live-engine-queue:<session_id>`, events + the pending review); any server response replaces the base
+    state and drops acknowledged events. **Ordering (acceptance B1):** a stored queue is sent before any request that
+    can project deadlines. Projecting endpoints: `GET /sessions/live/active`, `GET /sessions` (lazy projection of
+    started sessions), and `POST …/events` / `POST …/complete` of a v2 session (the reconciliation itself and the open
+    screen of that session). The app starts one reconciliation of all stored queues at launch, before its first screen
+    (`startEngineReconciliation`), and again when the live screen closes and on `online`; a transient failure
+    (network, 5xx, 408/429) keeps the queue and retries after 1, 2, 4, 8, 15, 15… s (woken early by `online` or the
+    app becoming visible). While it runs, every client read of the two projecting GETs waits for it
+    (`engineGate.ts`, awaited inside `fetchActiveLiveSession` / `fetchSessions` / `fetchSessionsPage`). A terminal
+    answer (404/409 — the session is gone or is not v2) drops that queue; another 4xx keeps it without retrying. The
+    open screen owns its session's queue (`claimQueue`), so the app-level drain skips it. User input made before a
+    deadline therefore always reaches the server before that deadline is persisted; the server's rules (clamping,
+    stale no-op, duplicate) are unchanged. The same drain sends a review queued for a session the server
+    already completed by itself (no longer active, so no screen would reopen it). Audio: the engine exposes
+    `timeline(state)` (and the response carries it); the screen schedules only the phase-end cue from the single
+    deadline, never retroactively (P4). Sound assets are out of scope.
+13. **Rollback switch (MIGRATION §8 "flags").** `localStorage["pullup:live-engine-version"] = "1"` makes the client
+    start new sessions on engine v1 (server unchanged; running v2 sessions keep v2). E2E specs that assert the v1
+    screen's own UX (it still serves `engine_version = 1` sessions until W4) pin it per file
+    (`useLiveEngineV1(test)`); v2 behaviour is covered by `live-engine-v2.spec.ts` and the converted journeys.

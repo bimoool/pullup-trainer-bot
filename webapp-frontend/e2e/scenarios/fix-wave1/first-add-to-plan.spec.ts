@@ -14,6 +14,7 @@
 // «Начать» → Live → «Завершить» → «1 из 1» (и после reload).
 import { expect, test, type Page } from "@playwright/test";
 
+import { playSetsV2 } from "../../fixtures/builderFlow";
 import { openAppAs } from "../../fixtures/setup";
 
 const TELEGRAM_ID = 7_500_000 + (Date.now() % 400_000);
@@ -85,16 +86,12 @@ test("первое «Добавить в план» нового пользов�
   // Старт из «Планов» → Live → завершение.
   await page.getByRole("button", { name: new RegExp(`^Начать: ${WORKOUT}`) }).click();
   await page.getByRole("button", { name: "Начать" }).click();
-  await page.getByRole("button", { name: "Готов" }).click();
-  await page.getByLabel("Повторений").fill("9");
-  await page.getByRole("button", { name: "Готово" }).click();
-  await page.getByRole("button", { name: "Пропустить отдых" }).click();
-  await page.getByRole("button", { name: "Готов" }).click();
-  await page.getByLabel("Повторений").fill("7");
-  await page.getByRole("button", { name: "Готово" }).click();
-  await page.getByRole("button", { name: "Завершить" }).first().click();
+  // issue #306 (Live Engine v2): без «Готов»/«Пропустить отдых»; после последнего подхода — досрочное завершение с оценкой.
+  await playSetsV2(page, ["9"]);
+  await playSetsV2(page, ["7"]);
+  await page.getByTestId("engine-finish").click(); // досрочно: план длиннее двух подходов
   await page.getByRole("button", { name: /3 Средне/ }).click();
-  await page.getByRole("button", { name: "Сохранить и завершить" }).click();
+  await page.getByTestId("engine-finish-confirm").click();
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
   await page.getByRole("button", { name: "Закрыть" }).click();
 

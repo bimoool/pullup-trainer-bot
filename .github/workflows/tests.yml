@@ -19,6 +19,7 @@ on:
       - "tests/**"
       - "scripts/**"
       - "webapp-frontend/**"
+      - "contracts/**"
       - "alembic.ini"
       - "pyproject.toml"
       - ".github/workflows/tests.yml"
@@ -106,3 +107,7 @@ jobs:
       - name: Unit tests (protocol config)
         working-directory: webapp-frontend
         run: npm run test:unit
+      # issue #306: те же JSON-векторы Live Engine v2, что pytest (contracts/live_engine_vectors.json).
+      - name: Live Engine v2 shared vectors (vitest)
+        working-directory: webapp-frontend
+        run: npm run test:vectors

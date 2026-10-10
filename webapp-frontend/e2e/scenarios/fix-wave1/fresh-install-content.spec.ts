@@ -1,7 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 
 import { noWakeLock } from "../../fixtures/builderFlow";
-import { openAppAs } from "../../fixtures/setup";
+import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
+
+// issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
+useLiveEngineV1(test);
 
 /**
  * Fix Wave 1, #296 (FD-01/FD-06/FD-07): системный контент приезжает вместе с `alembic upgrade head`.

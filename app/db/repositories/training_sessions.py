@@ -69,6 +69,9 @@ class SetTargetInput:
     kind: str | None = None  # issue #307: SetKind цели
 
 
+ENGINE_STATUS_CANCELLED = "cancelled"
+
+
 def target_kind(target: SetTargetInput) -> str:
     """SetKind цели (issue #307) из metric_type + is_max_set — то, что уже знает SetTarget."""
     time_based = target.metric_type == MetricType.TIME
@@ -147,6 +150,17 @@ class SessionBlockDetail:
 
 
 @dataclass(frozen=True)
+class EngineMirror:
+    """Колонки фазы движка v1, зеркалируемые из состояния v2 (issue #306)."""
+
+    phase_name: SessionPhase
+    phase_ends_at: datetime | None
+    current_block_index: int
+    current_set_number: int
+    phase_index: int
+
+
+@dataclass(frozen=True)
 class SessionV2Stamp:
     """Поля TrainingSession v2 (issue #307, TRAINING_SESSION_V2 §2), которые пишет канонический слой
     app.services.training_session_v2 при создании сессии. source_v2/kind/origin задаются при создании и
@@ -218,6 +232,10 @@ class SessionDetail:
     engine_version: int | None = None
     superseded_by_id: int | None = None
     identity_recovered_by: str | None = None
+    # --- issue #306 (LIVE_ENGINE_V2 §1): план/состояние движка v2; None у сессий движка v1 и истории.
+    engine_plan: dict | None = None
+    engine_state: dict | None = None
+    engine_status: str | None = None
 
 
 class TrainingSessionRepository:
@@ -388,7 +406,11 @@ class TrainingSessionRepository:
         Самая свежая по performed_at, если их почему-то больше одной."""
         result = await self._session.execute(
             select(TrainingSession)
-            .where(TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.STARTED)
+            .where(
+                TrainingSession.user_id == user_id, TrainingSession.status == SessionStatus.STARTED,
+                # issue #306: отменённая сессия движка v2 (T5) хранится архивом, но не «идёт».
+                TrainingSession.engine_status.is_distinct_from(ENGINE_STATUS_CANCELLED),
+            )
             .order_by(TrainingSession.performed_at.desc(), TrainingSession.id.desc())
             .limit(1),
         )
@@ -638,6 +660,92 @@ class TrainingSessionRepository:
         )
         return result.scalar_one_or_none()
 
+    # --- Live Engine v2 (issue #306) ------------------------------------------------------------
+
+    async def save_engine(
+        self, session_id: int, *, state: dict, plan: dict | None = None, mirror: "EngineMirror | None" = None,
+    ) -> None:
+        """Кэш свёртки событий (engine_state) + зеркало в колонки фазы v1 (phase_name/phase_ends_at/
+        current_*): их читают общие ответы и старый образ при откате. План пишется один раз (старт)."""
+        training_session = await self._session.get(TrainingSession, session_id)
+        if plan is not None:
+            training_session.engine_plan = plan
+        training_session.engine_state = state
+        training_session.engine_status = state["status"]
+        if mirror is not None:
+            training_session.phase_name = mirror.phase_name
+            training_session.phase_ends_at = mirror.phase_ends_at
+            training_session.current_block_index = mirror.current_block_index
+            training_session.current_set_number = mirror.current_set_number
+            training_session.phase_index = mirror.phase_index
+        await self._session.flush()
+
+    async def upsert_engine_set_log(
+        self, session_id: int, *, block_index: int, set_number: int, log_index: int, value: Decimal,
+        effort: Decimal | None, note: str | None, is_extra: bool, round_index: int | None,
+        metric_type: MetricType, unit: str,
+    ) -> None:
+        """Подход/раунд движка v2 → SetLog. Ключ идемпотентности — (session_id, set_index = log_index
+        движка): повтор/правка перезаписывает ту же строку. Плановый подход связан со своей целью
+        (set_target_id) и наследует её is_max_set (R2: маркер MAX сохраняется)."""
+        block = (await self._session.execute(
+            select(SessionBlock).where(SessionBlock.session_id == session_id, SessionBlock.order_index == block_index),
+        )).scalar_one()
+        target = None
+        if not is_extra and round_index is None:
+            target = (await self._session.execute(
+                select(SetTarget).where(SetTarget.session_block_id == block.id, SetTarget.set_number == set_number),
+            )).scalar_one_or_none()
+        insert_stmt = pg_insert(SetLog).values(
+            session_block_id=block.id, session_id=session_id, set_index=log_index, set_number=set_number,
+            set_target_id=target.id if target is not None else None,
+            is_max_set=bool(target is not None and target.is_max_set), metric_type=metric_type,
+            value=value, unit=unit, effort=effort, note=note, is_extra=is_extra, round_index=round_index,
+        )
+        await self._session.execute(
+            insert_stmt.on_conflict_do_update(
+                constraint="uq_set_logs_session_set_index",
+                set_={
+                    "value": insert_stmt.excluded.value, "effort": insert_stmt.excluded.effort,
+                    "note": insert_stmt.excluded.note,
+                },
+            ),
+        )
+        await self._session.flush()
+
+    async def finish_block(self, session_id: int, block_index: int, *, ended_at: datetime, result: dict | None) -> None:
+        block = (await self._session.execute(
+            select(SessionBlock).where(SessionBlock.session_id == session_id, SessionBlock.order_index == block_index),
+        )).scalar_one()
+        block.ended_at = ended_at
+        if result is not None and block.result is None:
+            block.result = result
+        await self._session.flush()
+
+    async def start_engine_block(self, session_id: int, block_index: int, started_at: datetime) -> None:
+        block = (await self._session.execute(
+            select(SessionBlock).where(SessionBlock.session_id == session_id, SessionBlock.order_index == block_index),
+        )).scalar_one()
+        if block.started_at is None:
+            block.started_at = started_at
+            await self._session.flush()
+
+    async def mark_engine_cancelled(self, session_id: int, *, ended_at: datetime) -> None:
+        """T5: отмена — строка остаётся (архив), статус v1 STARTED не меняется (PG enum не расширяется,
+        TRAINING_SESSION_V2 §11), кредит занятия снимается (без кредита плана), фаза — done."""
+        training_session = await self._session.get(TrainingSession, session_id)
+        training_session.engine_status = ENGINE_STATUS_CANCELLED
+        training_session.plan_item_id = None
+        training_session.ended_at = ended_at
+        training_session.phase_name = SessionPhase.DONE
+        training_session.phase_ends_at = None
+        await self._session.flush()
+
+    async def bump_revision(self, session_id: int) -> None:
+        training_session = await self._session.get(TrainingSession, session_id)
+        training_session.revision = (training_session.revision or 0) + 1
+        await self._session.flush()
+
     async def mark_block_started(self, block_id: int, started_at: datetime) -> None:
         block = await self._session.get(SessionBlock, block_id)
         block.started_at = started_at
@@ -743,6 +851,8 @@ class TrainingSessionRepository:
                     distance_meters=session_row.distance_meters, revision=session_row.revision,
                     engine_version=session_row.engine_version, superseded_by_id=session_row.superseded_by_id,
                     identity_recovered_by=session_row.identity_recovered_by,
+                    engine_plan=session_row.engine_plan, engine_state=session_row.engine_state,
+                    engine_status=session_row.engine_status,
                 ),
             )
         return details
@@ -769,7 +879,11 @@ class TrainingSessionRepository:
 
         exclude_backfilled (#284) — скрыть сессии, созданные backfill-ом legacy Workout (отпечаток —
         _backfilled_fingerprint); срез offset/limit считается уже после скрытия."""
-        query = select(TrainingSession).where(TrainingSession.user_id == user_id)
+        query = select(TrainingSession).where(
+            TrainingSession.user_id == user_id,
+            # issue #306 (T5): отменённая сессия движка v2 — архив, ни в одном списке не показывается.
+            TrainingSession.engine_status.is_distinct_from(ENGINE_STATUS_CANCELLED),
+        )
         if exclude_backfilled:
             query = query.where(~self._backfilled_fingerprint())
         if status is not None:
