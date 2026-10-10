@@ -374,7 +374,11 @@ async def _catalog_exercise_names(session: AsyncSession, details: list[SessionDe
         block.exercise_id for detail in details for block in detail.blocks if block.exercise_id is not None
     })
     exercises = await ProgramRepository(session).list_exercises_by_ids(exercise_ids)
-    return {ex.id: ex.name for ex in exercises if ex.subcategory not in ("block_a", "block_b")}
+    # E1 (#308): подпись — display_name (если заполнено), а не внутреннее name/slug.
+    return {
+        ex.id: exercise_display_label(ex.display_name, ex.name)
+        for ex in exercises if ex.subcategory not in ("block_a", "block_b")
+    }
 
 
 # --- Каталог ---------------------------------------------------------------------------

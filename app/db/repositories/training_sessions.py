@@ -1120,6 +1120,8 @@ class TrainingSessionRepository:
         )
         return and_(
             TrainingSession.status == SessionStatus.COMPLETED,
+            # #308: замещённая копия (её legacy-тренировку удалили/заменили) — не тренировка и MAIN-отдых не двигает
+            TrainingSession.superseded_at.is_(None),
             or_(credited_main, and_(role_block_with_log, ~manual_record)),
         )
 

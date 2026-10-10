@@ -159,3 +159,20 @@ async def test_admin_reset_supersedes_all_copies_of_the_user(session: AsyncSessi
     assert len(workout_copies) == 2 and all(c.superseded_reason == "legacy_deleted" for c in workout_copies)
     [elective_copy] = await _copies(session, user, SessionOrigin.LEGACY_ELECTIVE)
     assert elective_copy.superseded_at is None  # elective_workouts сброс не затрагивает
+
+
+async def test_a_deleted_legacy_workout_no_longer_moves_the_main_rest_window(session: AsyncSession, user: User):
+    from app.db.repositories.training_sessions import TrainingSessionRepository
+
+    workout_set = await _workout_set(session, user)
+    repo = WorkoutRepository(session)
+    first = await repo.record_workout(**_kwargs(user, workout_set, AT, 11))
+    second = await repo.record_workout(**_kwargs(user, workout_set, AT + timedelta(days=3), 12))
+    sessions = TrainingSessionRepository(session)
+    assert await sessions.latest_main_session_at(user.id) == AT + timedelta(days=3)
+
+    await delete_cascade_workout(session, await repo.get_by_id(second.id))
+
+    assert await sessions.latest_main_session_at(user.id) == AT  # замещённая копия MAIN не считается
+    assert await sessions.count_main_sessions(user.id) == 1
+    assert first.id != second.id
