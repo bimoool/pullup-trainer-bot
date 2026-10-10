@@ -1,0 +1,498 @@
+{
+  "description": "Live Engine v2 shared transition vectors (issue #306, docs/domain/LIVE_ENGINE_V2.md §2 C3). Consumed verbatim by pytest (tests/test_live_engine_vectors.py) and vitest (webapp-frontend/tests/liveEngineVectors.test.ts). Expectations are hand-derived from the contract, not generated. Time is integer ms. Step ops: apply (project to at, then advance event at at — the canonical replay step), advance (raw advance, no projection), project (to now), timeline, clamp. 'expect' is a deep subset match (objects: listed keys only; arrays: exact length and order).",
+  "plans": {
+    "basic": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 5, "rest_after_block_seconds": null, "extra_sets_allowed": true,
+         "sets": [
+           {"kind": "reps", "target": 10, "rest_after_seconds": 60},
+           {"kind": "reps", "target": 10, "rest_after_seconds": 60},
+           {"kind": "reps", "target": 10, "rest_after_seconds": null}
+         ]}
+      ]
+    },
+    "two_blocks": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 5, "rest_after_block_seconds": 90, "extra_sets_allowed": true,
+         "sets": [
+           {"kind": "reps", "target": 5, "rest_after_seconds": 30},
+           {"kind": "max_reps", "target": null, "rest_after_seconds": null}
+         ]},
+        {"kind": "sets", "prep_seconds": 5, "rest_after_block_seconds": null, "extra_sets_allowed": true,
+         "sets": [
+           {"kind": "time", "target": 30, "rest_after_seconds": 20},
+           {"kind": "time", "target": 30, "rest_after_seconds": null}
+         ]}
+      ]
+    },
+    "no_block_rest": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": 0, "extra_sets_allowed": true,
+         "sets": [{"kind": "reps", "target": 5, "rest_after_seconds": null}]},
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": false,
+         "sets": [{"kind": "reps", "target": 3, "rest_after_seconds": null}]}
+      ]
+    },
+    "no_rest": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": true,
+         "sets": [
+           {"kind": "reps", "target": 5, "rest_after_seconds": 0},
+           {"kind": "reps", "target": 5, "rest_after_seconds": null}
+         ]}
+      ]
+    },
+    "interval": {
+      "blocks": [
+        {"kind": "interval", "prep_seconds": 5, "rest_after_block_seconds": null, "extra_sets_allowed": false,
+         "interval": {"work_seconds": 10, "rest_seconds": 20, "rounds": 3, "record_reps_per_round": false}}
+      ]
+    },
+    "interval_reps": {
+      "blocks": [
+        {"kind": "interval", "prep_seconds": 5, "rest_after_block_seconds": null, "extra_sets_allowed": false,
+         "interval": {"work_seconds": 10, "rest_seconds": 20, "rounds": 2, "record_reps_per_round": true}}
+      ]
+    },
+    "max_time": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": true,
+         "sets": [{"kind": "max_time", "target": null, "rest_after_seconds": null}]}
+      ]
+    },
+    "mixed": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 5, "rest_after_block_seconds": 60, "extra_sets_allowed": true,
+         "sets": [{"kind": "reps", "target": 8, "rest_after_seconds": null}]},
+        {"kind": "interval", "prep_seconds": 5, "rest_after_block_seconds": 30, "extra_sets_allowed": false,
+         "interval": {"work_seconds": 10, "rest_seconds": 5, "rounds": 2, "record_reps_per_round": false}},
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": true,
+         "sets": [{"kind": "max_reps", "target": null, "rest_after_seconds": null}]}
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "basic normal workout: auto PREP->WORK, auto REST->WORK, three sets, COMPLETE",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "start_expect": {"status": "active", "phase": "PREP", "phase_seq": 0, "phase_deadline_at": 5000,
+                       "cursor": {"block_index": 0, "set_index": 0, "round_index": null}},
+      "steps": [
+        {"op": "project", "now": 4999, "expect": {"phase": "PREP", "phase_seq": 0}, "expect_events": []},
+        {"op": "project", "now": 5000,
+         "expect": {"phase": "WORK", "phase_seq": 1, "phase_started_at": 5000, "phase_deadline_at": null},
+         "expect_events": [{"type": "deadline", "at": 5000}]},
+        {"op": "apply", "at": 20000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "rest_kind": "set", "phase_seq": 2, "phase_deadline_at": 80000,
+                    "cursor": {"block_index": 0, "set_index": 0, "round_index": null},
+                    "logs": [{"block_index": 0, "set_index": 0, "value": 10, "is_extra": false, "log_index": 0}]},
+         "expect_effects": [{"type": "set_logged", "log": {"set_index": 0, "value": 10}}]},
+        {"op": "project", "now": 80000,
+         "expect": {"phase": "WORK", "phase_seq": 3, "phase_started_at": 80000,
+                    "cursor": {"block_index": 0, "set_index": 1, "round_index": null}}},
+        {"op": "apply", "at": 90000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 9}},
+         "expect": {"phase": "REST", "phase_seq": 4, "phase_deadline_at": 150000}},
+        {"op": "apply", "at": 160000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 2, "round_index": null, "value": 8}},
+         "expect": {"status": "completed", "phase": "COMPLETE", "phase_seq": 6, "phase_deadline_at": null,
+                    "active_elapsed_ms": 160000, "ended_at": 160000,
+                    "logs": [{"value": 10}, {"value": 9}, {"value": 8}]},
+         "expect_events": [{"type": "deadline", "at": 150000}],
+         "expect_effects": [
+           {"type": "set_logged", "log": {"set_index": 2, "value": 8}},
+           {"type": "block_finished", "block_index": 0, "started_at": 0, "at": 160000},
+           {"type": "completed", "abandoned": false, "active_elapsed_ms": 160000}
+         ]}
+      ]
+    },
+    {
+      "name": "skip_wait starts WORK now; a second (stale) skip_wait is a no-op",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 2000, "event": {"type": "skip_wait", "payload": {"phase_seq": 0}},
+         "expect": {"phase": "WORK", "phase_seq": 1, "phase_started_at": 2000}},
+        {"op": "apply", "at": 3000, "event": {"type": "skip_wait", "payload": {"phase_seq": 0}},
+         "expect": {"phase": "WORK", "phase_seq": 1, "phase_started_at": 2000}, "expect_effects": []},
+        {"op": "apply", "at": 10000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_seq": 2, "phase_deadline_at": 70000}},
+        {"op": "apply", "at": 30000, "event": {"type": "skip_wait", "payload": {"phase_seq": 2}},
+         "expect": {"phase": "WORK", "phase_seq": 3, "phase_started_at": 30000,
+                    "cursor": {"block_index": 0, "set_index": 1, "round_index": null}}}
+      ]
+    },
+    {
+      "name": "server-side pause freezes the deadline; resume re-issues it with the same remaining time",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 2000, "event": {"type": "pause", "payload": {"phase_seq": 0}},
+         "expect": {"phase": "PREP", "paused_at": 2000, "paused_remaining_ms": 3000, "phase_deadline_at": null,
+                    "active_elapsed_ms": 2000, "active_since": null}},
+        {"op": "project", "now": 100000, "expect": {"phase": "PREP", "paused_at": 2000}, "expect_events": []},
+        {"op": "apply", "at": 3000, "event": {"type": "pause", "payload": {"phase_seq": 0}},
+         "expect": {"paused_at": 2000, "paused_remaining_ms": 3000}, "expect_effects": []},
+        {"op": "apply", "at": 10000, "event": {"type": "resume", "payload": {"phase_seq": 0}},
+         "expect": {"phase": "PREP", "paused_at": null, "paused_remaining_ms": null, "phase_deadline_at": 13000,
+                    "active_since": 10000, "phase_seq": 0}},
+        {"op": "apply", "at": 10500, "event": {"type": "resume", "payload": {"phase_seq": 0}},
+         "expect": {"phase_deadline_at": 13000}, "expect_effects": []},
+        {"op": "project", "now": 13000,
+         "expect": {"phase": "WORK", "phase_seq": 1, "phase_started_at": 13000, "active_elapsed_ms": 5000}}
+      ]
+    },
+    {
+      "name": "pause during REST; resume preserves remaining duration",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 6000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_deadline_at": 66000, "phase_seq": 2},
+         "expect_events": [{"type": "deadline", "at": 5000}]},
+        {"op": "apply", "at": 26000, "event": {"type": "pause", "payload": {"phase_seq": 2}},
+         "expect": {"paused_remaining_ms": 40000, "phase_deadline_at": null}},
+        {"op": "apply", "at": 326000, "event": {"type": "resume", "payload": {"phase_seq": 2}},
+         "expect": {"phase": "REST", "phase_deadline_at": 366000, "active_elapsed_ms": 26000}},
+        {"op": "project", "now": 365999, "expect": {"phase": "REST"}},
+        {"op": "project", "now": 366000, "expect": {"phase": "WORK", "phase_seq": 3, "active_elapsed_ms": 66000}}
+      ]
+    },
+    {
+      "name": "background across a rest end: the queued event arrives after the deadline; projection runs first",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 20000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_deadline_at": 80000}},
+        {"op": "project", "now": 140000,
+         "expect": {"phase": "WORK", "phase_seq": 3, "phase_started_at": 80000,
+                    "cursor": {"block_index": 0, "set_index": 1, "round_index": null}},
+         "expect_events": [{"type": "deadline", "at": 80000}]},
+        {"op": "apply", "at": 141000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 7}},
+         "expect": {"phase": "REST", "phase_deadline_at": 201000, "logs": [{"value": 10}, {"value": 7}]},
+         "expect_events": []}
+      ]
+    },
+    {
+      "name": "offline queue: multiple queued events replay deterministically in order",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 9000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 11}},
+         "expect": {"phase": "REST", "phase_deadline_at": 69000},
+         "expect_events": [{"type": "deadline", "at": 5000}]},
+        {"op": "apply", "at": 75000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_deadline_at": 135000, "phase_seq": 4},
+         "expect_events": [{"type": "deadline", "at": 69000}]},
+        {"op": "apply", "at": 80000, "event": {"type": "pause", "payload": {"phase_seq": 4}},
+         "expect": {"paused_remaining_ms": 55000}},
+        {"op": "apply", "at": 90000, "event": {"type": "resume", "payload": {"phase_seq": 4}},
+         "expect": {"phase_deadline_at": 145000}}
+      ]
+    },
+    {
+      "name": "duplicate submit_result (lost response + retry) is a no-op: cursor already moved",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 9000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_seq": 2, "logs": [{"value": 10}]}},
+        {"op": "apply", "at": 9500,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_seq": 2, "logs": [{"value": 10}]}, "expect_effects": []}
+      ]
+    },
+    {
+      "name": "stale pause after the server already advanced the phase is a no-op",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "project", "now": 6000, "expect": {"phase": "WORK", "phase_seq": 1}},
+        {"op": "apply", "at": 7000, "event": {"type": "pause", "payload": {"phase_seq": 0}},
+         "expect": {"phase": "WORK", "paused_at": null, "phase_seq": 1}, "expect_effects": []}
+      ]
+    },
+    {
+      "name": "submit during PREP of the same set (clock skew at the boundary) ends PREP now and logs the set",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 4800,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST", "phase_seq": 2, "phase_deadline_at": 64800, "logs": [{"value": 10, "logged_at": 4800}]}}
+      ]
+    },
+    {
+      "name": "multiple blocks: block rest then next block start automatically, timed sets run hands-free to COMPLETE",
+      "plan": "two_blocks", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 10000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}},
+         "expect": {"phase": "REST", "rest_kind": "set", "phase_deadline_at": 40000}},
+        {"op": "apply", "at": 50000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 12}},
+         "expect": {"phase": "REST", "rest_kind": "block", "phase_deadline_at": 140000,
+                    "cursor": {"block_index": 0, "set_index": 1, "round_index": null}},
+         "expect_effects": [
+           {"type": "set_logged", "log": {"block_index": 0, "set_index": 1, "value": 12}},
+           {"type": "block_finished", "block_index": 0, "started_at": 0, "at": 50000}
+         ]},
+        {"op": "project", "now": 140000,
+         "expect": {"phase": "PREP", "phase_deadline_at": 145000,
+                    "cursor": {"block_index": 1, "set_index": 0, "round_index": null}},
+         "expect_effects": [{"type": "block_started", "block_index": 1, "at": 140000}]},
+        {"op": "project", "now": 1000000,
+         "expect": {"status": "completed", "phase": "COMPLETE", "ended_at": 225000, "active_elapsed_ms": 225000,
+                    "logs": [{"value": 5}, {"value": 12},
+                             {"block_index": 1, "set_index": 0, "value": 30, "logged_at": 175000},
+                             {"block_index": 1, "set_index": 1, "value": 30, "logged_at": 225000}]},
+         "expect_events": [{"type": "deadline", "at": 145000}, {"type": "deadline", "at": 175000},
+                           {"type": "deadline", "at": 195000}, {"type": "deadline", "at": 225000}]}
+      ]
+    },
+    {
+      "name": "zero block rest and zero prep: the next block starts WORK immediately",
+      "plan": "no_block_rest", "start_at": 0, "rebuild": true,
+      "start_expect": {"phase": "WORK", "phase_seq": 0, "phase_deadline_at": null},
+      "steps": [
+        {"op": "apply", "at": 5000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}},
+         "expect": {"phase": "WORK", "phase_seq": 1, "cursor": {"block_index": 1, "set_index": 0, "round_index": null}}}
+      ]
+    },
+    {
+      "name": "zero rest between sets: WORK of the next set without a REST phase",
+      "plan": "no_rest", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 5000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}},
+         "expect": {"phase": "WORK", "phase_seq": 1, "phase_started_at": 5000,
+                    "cursor": {"block_index": 0, "set_index": 1, "round_index": null}}}
+      ]
+    },
+    {
+      "name": "interval rounds run on the same engine; pause/resume works inside a round",
+      "plan": "interval", "start_at": 0, "rebuild": true,
+      "start_expect": {"phase": "PREP", "phase_deadline_at": 5000, "cursor": {"block_index": 0, "set_index": 0, "round_index": 0}},
+      "steps": [
+        {"op": "project", "now": 15000,
+         "expect": {"phase": "REST", "rest_kind": "round", "phase_deadline_at": 35000,
+                    "logs": [{"round_index": 0, "value": null}]}},
+        {"op": "project", "now": 40000,
+         "expect": {"phase": "WORK", "phase_deadline_at": 45000, "cursor": {"block_index": 0, "set_index": 1, "round_index": 1}}},
+        {"op": "apply", "at": 40000, "event": {"type": "pause", "payload": {"phase_seq": 3}},
+         "expect": {"paused_remaining_ms": 5000, "phase_deadline_at": null}},
+        {"op": "project", "now": 90000, "expect": {"phase": "WORK", "paused_at": 40000}, "expect_events": []},
+        {"op": "apply", "at": 50000, "event": {"type": "resume", "payload": {"phase_seq": 3}},
+         "expect": {"phase_deadline_at": 55000}},
+        {"op": "project", "now": 1000000,
+         "expect": {"status": "completed", "ended_at": 105000, "active_elapsed_ms": 95000,
+                    "logs": [{"round_index": 0}, {"round_index": 1}, {"round_index": 2}]},
+         "expect_effects": [
+           {"type": "set_logged", "log": {"round_index": 1}},
+           {"type": "set_logged", "log": {"round_index": 2}},
+           {"type": "block_finished", "block_index": 0, "started_at": 0, "at": 105000, "completed_rounds": 3},
+           {"type": "completed", "abandoned": false, "active_elapsed_ms": 95000}
+         ]}
+      ]
+    },
+    {
+      "name": "interval with per-round reps: RESULT holds the round rest clock, input moves it to REST, no input is fine",
+      "plan": "interval_reps", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "project", "now": 15000,
+         "expect": {"phase": "RESULT", "phase_deadline_at": 35000, "cursor": {"block_index": 0, "set_index": 0, "round_index": 0}}},
+        {"op": "apply", "at": 20000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": 0, "value": 7}},
+         "expect": {"phase": "REST", "rest_kind": "round", "phase_deadline_at": 35000, "logs": [{"value": 7}]},
+         "expect_effects": [{"type": "set_corrected", "log": {"round_index": 0, "value": 7}}]},
+        {"op": "project", "now": 1000000,
+         "expect": {"status": "completed", "ended_at": 65000, "logs": [{"value": 7}, {"round_index": 1, "value": null}]}}
+      ]
+    },
+    {
+      "name": "max_time: stop measures active WORK time excluding pause; RESULT waits for the user",
+      "plan": "max_time", "start_at": 0, "rebuild": true,
+      "start_expect": {"phase": "WORK", "phase_deadline_at": null},
+      "steps": [
+        {"op": "apply", "at": 10000, "event": {"type": "pause", "payload": {"phase_seq": 0}}, "expect": {"paused_at": 10000}},
+        {"op": "apply", "at": 20000, "event": {"type": "resume", "payload": {"phase_seq": 0}}, "expect": {"paused_at": null}},
+        {"op": "apply", "at": 25400, "event": {"type": "stop", "payload": {"phase_seq": 0}},
+         "expect": {"phase": "RESULT", "pending_value": 15, "phase_deadline_at": null, "phase_seq": 1}},
+        {"op": "apply", "at": 26000, "event": {"type": "skip_wait", "payload": {"phase_seq": 1}},
+         "expect": {"phase": "RESULT"}, "expect_effects": []},
+        {"op": "apply", "at": 30000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 16}},
+         "expect": {"status": "completed", "active_elapsed_ms": 20000, "logs": [{"value": 16}]}}
+      ]
+    },
+    {
+      "name": "extra set: rejected before the block's prescribed sets are done, accepted after (phase unchanged)",
+      "plan": "two_blocks", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 10000, "event": {"type": "add_extra_set", "payload": {"block_index": 0, "value": 4}},
+         "expect": {"phase": "WORK", "logs": []}, "expect_effects": []},
+        {"op": "apply", "at": 11000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}},
+         "expect": {"phase": "REST"}},
+        {"op": "apply", "at": 41000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 9}},
+         "expect": {"phase": "REST", "rest_kind": "block", "phase_seq": 4}},
+        {"op": "apply", "at": 60000, "event": {"type": "add_extra_set", "payload": {"block_index": 0, "value": 6}},
+         "expect": {"phase": "REST", "rest_kind": "block", "phase_seq": 4, "phase_deadline_at": 131000,
+                    "logs": [{"value": 5}, {"value": 9}, {"set_index": 2, "value": 6, "is_extra": true}]},
+         "expect_effects": [{"type": "set_logged", "log": {"set_index": 2, "is_extra": true, "value": 6}}]}
+      ]
+    },
+    {
+      "name": "extra set after COMPLETE of the last block is still recorded; status stays completed",
+      "plan": "no_block_rest", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 5000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}},
+         "expect": {"phase": "WORK"}},
+        {"op": "apply", "at": 9000,
+         "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 0, "round_index": null, "value": 3}},
+         "expect": {"status": "completed"}},
+        {"op": "apply", "at": 12000, "event": {"type": "add_extra_set", "payload": {"block_index": 0, "value": 4}},
+         "expect": {"status": "completed", "phase": "COMPLETE", "active_elapsed_ms": 9000,
+                    "logs": [{"value": 5}, {"value": 3}, {"block_index": 0, "set_index": 1, "is_extra": true}]}},
+        {"op": "apply", "at": 13000, "event": {"type": "add_extra_set", "payload": {"block_index": 1, "value": 4}},
+         "expect": {"logs": [{}, {}, {}]}, "expect_effects": []}
+      ]
+    },
+    {
+      "name": "correct_previous edits the log only; phase, deadline and phase_seq are unchanged",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 9000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10, "effort": 3}},
+         "expect": {"phase": "REST", "phase_seq": 2, "phase_deadline_at": 69000}},
+        {"op": "apply", "at": 20000,
+         "event": {"type": "correct_previous", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 12}},
+         "expect": {"phase": "REST", "phase_seq": 2, "phase_deadline_at": 69000,
+                    "logs": [{"value": 12, "effort": 3, "logged_at": 9000}]},
+         "expect_effects": [{"type": "set_corrected", "log": {"value": 12}}]},
+        {"op": "apply", "at": 21000,
+         "event": {"type": "correct_previous", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 12}},
+         "expect": {"logs": [{"value": 12}]}, "expect_effects": []},
+        {"op": "apply", "at": 22000,
+         "event": {"type": "correct_previous", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 12}},
+         "expect_effects": []}
+      ]
+    },
+    {
+      "name": "finish_early: valid terminal state, abandoned=true while prescribed sets remain",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 9000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST"}},
+        {"op": "apply", "at": 30000, "event": {"type": "finish_early", "payload": {}},
+         "expect": {"status": "completed", "phase": "COMPLETE", "phase_deadline_at": null, "ended_at": 30000,
+                    "active_elapsed_ms": 30000, "phase_seq": 3},
+         "expect_effects": [
+           {"type": "block_finished", "block_index": 0, "at": 30000},
+           {"type": "completed", "abandoned": true, "active_elapsed_ms": 30000}
+         ]},
+        {"op": "apply", "at": 31000, "event": {"type": "finish_early", "payload": {}},
+         "expect": {"ended_at": 30000}, "expect_effects": []},
+        {"op": "apply", "at": 32000, "event": {"type": "skip_wait", "payload": {"phase_seq": 3}},
+         "expect": {"phase": "COMPLETE"}, "expect_effects": []}
+      ]
+    },
+    {
+      "name": "cancel: cancelled terminal state, later events are no-ops",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 3000, "event": {"type": "cancel", "payload": {}},
+         "expect": {"status": "cancelled", "phase": "COMPLETE", "ended_at": 3000, "active_elapsed_ms": 3000},
+         "expect_effects": [{"type": "cancelled"}]},
+        {"op": "apply", "at": 9000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"status": "cancelled", "logs": []}, "expect_effects": []},
+        {"op": "project", "now": 100000, "expect": {"status": "cancelled"}, "expect_events": []}
+      ]
+    },
+    {
+      "name": "invalid submit (wrong cursor / bad value) is a no-op",
+      "plan": "basic", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 6000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 10}},
+         "expect": {"phase": "WORK", "logs": []}, "expect_effects": []},
+        {"op": "apply", "at": 6000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": -1}},
+         "expect": {"phase": "WORK", "logs": []}, "expect_effects": []},
+        {"op": "apply", "at": 6000, "event": {"type": "unknown_event", "payload": {}},
+         "expect": {"phase": "WORK"}, "expect_effects": []}
+      ]
+    },
+    {
+      "name": "mixed workout: sets -> interval -> max, every transition automatic except the user's results",
+      "plan": "mixed", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 20000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 8}},
+         "expect": {"phase": "REST", "rest_kind": "block", "phase_deadline_at": 80000}},
+        {"op": "project", "now": 85000, "expect": {"phase": "WORK", "cursor": {"block_index": 1, "set_index": 0, "round_index": 0}, "phase_deadline_at": 95000}},
+        {"op": "project", "now": 1000000,
+         "expect": {"phase": "WORK", "phase_started_at": 145000, "phase_deadline_at": null,
+                    "cursor": {"block_index": 2, "set_index": 0, "round_index": null}},
+         "expect_events": [{"type": "deadline", "at": 95000}, {"type": "deadline", "at": 100000},
+                           {"type": "deadline", "at": 110000}, {"type": "deadline", "at": 115000},
+                           {"type": "deadline", "at": 145000}]},
+        {"op": "apply", "at": 1000000,
+         "event": {"type": "submit_result", "payload": {"block_index": 2, "set_index": 0, "round_index": null, "value": 14}},
+         "expect": {"status": "completed", "ended_at": 1000000}}
+      ]
+    },
+    {
+      "name": "raw advance does not project; a deadline event before its time is a no-op",
+      "plan": "basic", "start_at": 0, "rebuild": false,
+      "steps": [
+        {"op": "advance", "at": 4000, "event": {"type": "deadline", "payload": {}}, "expect": {"phase": "PREP"}, "expect_effects": []},
+        {"op": "advance", "at": 7000, "event": {"type": "deadline", "payload": {}},
+         "expect": {"phase": "WORK", "phase_started_at": 5000, "active_elapsed_ms": 5000}}
+      ]
+    },
+    {
+      "name": "audio timeline: PREP cues and the next WORK start; REST cues include warn_10s; paused = empty",
+      "plan": "basic", "start_at": 0, "rebuild": false,
+      "steps": [
+        {"op": "timeline", "expect": [
+          {"type": "count_3", "at": 2000}, {"type": "count_2", "at": 3000}, {"type": "count_1", "at": 4000},
+          {"type": "work_start", "at": 5000}]},
+        {"op": "apply", "at": 20000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 10}},
+         "expect": {"phase": "REST"}},
+        {"op": "timeline", "expect": [
+          {"type": "warn_10s", "at": 70000}, {"type": "count_3", "at": 77000}, {"type": "count_2", "at": 78000},
+          {"type": "count_1", "at": 79000}, {"type": "rest_end", "at": 80000}, {"type": "work_start", "at": 80000}]},
+        {"op": "apply", "at": 30000, "event": {"type": "pause", "payload": {"phase_seq": 2}}, "expect": {"paused_at": 30000}},
+        {"op": "timeline", "expect": []}
+      ]
+    },
+    {
+      "name": "audio timeline: timed WORK has work_end; the last deadline leads to workout_complete",
+      "plan": "two_blocks", "start_at": 0, "rebuild": false,
+      "steps": [
+        {"op": "apply", "at": 10000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}}},
+        {"op": "apply", "at": 50000,
+         "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 9}}},
+        {"op": "project", "now": 196000, "expect": {"phase": "WORK", "phase_deadline_at": 225000}},
+        {"op": "timeline", "expect": [
+          {"type": "work_start", "at": 195000}, {"type": "count_3", "at": 222000}, {"type": "count_2", "at": 223000},
+          {"type": "count_1", "at": 224000}, {"type": "work_end", "at": 225000}, {"type": "workout_complete", "at": 225000}]}
+      ]
+    }
+  ],
+  "clamp": [
+    {"name": "inside window", "client_at": 5000, "last_at": 1000, "now": 9000, "expect": 5000},
+    {"name": "client clock behind the last event", "client_at": 500, "last_at": 1000, "now": 9000, "expect": 1000},
+    {"name": "client clock ahead of the server", "client_at": 99999, "last_at": 1000, "now": 9000, "expect": 9000},
+    {"name": "no client_at", "client_at": null, "last_at": 1000, "now": 9000, "expect": 9000}
+  ]
+}
