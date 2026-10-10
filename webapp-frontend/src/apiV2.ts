@@ -6,6 +6,7 @@
  * (вместе с DashboardScreen.tsx), которому разрешено упоминать /api/v2 — см.
  * allowlist в tests/test_web/test_v2_not_wired_to_ui.py.
  */
+import type { EnginePlan, EngineState, TimelineCue } from "./liveEngine";
 
 import type { SessionCreatePayload } from "./journalLog";
 import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
@@ -616,6 +617,41 @@ export interface LiveSessionResponse {
    * PlanSessionFlow/IntervalLiveScreen получали пустой title после
    * перезагрузки посреди тренировки. */
   title: string | null;
+  /** issue #306: 1 — движок v1 (phase/next…), 2 — Live Engine v2 (POST …/events, поле engine). */
+  engine_version?: number | null;
+  engine?: LiveEngineView | null;
+  /** «cancelled» — сессия v2 отменена (архив, не идёт и не засчитана). */
+  engine_status?: string | null;
+}
+
+/** issue #306 (LIVE_ENGINE_V2 §1–§2, §6): единственный источник отсчёта — state.phase_deadline_at;
+ * server_offset = server_time_ms − момент ответа по часам клиента. */
+export interface LiveEngineView {
+  plan: EnginePlan;
+  state: EngineState;
+  server_time_ms: number;
+  timeline: TimelineCue[];
+}
+
+export interface LiveEngineEventInput {
+  client_event_id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  /** ISO, время клиента с поправкой на server_offset; сервер зажимает в [last_at, now]. */
+  client_at?: string | null;
+}
+
+export interface LiveEngineEventsResponse extends LiveSessionCompleteResponse {
+  event_results: { client_event_id: string; outcome: "applied" | "noop" | "duplicate" }[];
+}
+
+/** issue #306: события движка v2 (по одному или офлайн-очередью в порядке возникновения). */
+export async function postLiveEngineEvents(
+  initDataRaw: string,
+  sessionId: number,
+  events: LiveEngineEventInput[],
+): Promise<LiveEngineEventsResponse> {
+  return apiV2Post(`/api/v2/sessions/live/${sessionId}/events`, initDataRaw, { events });
 }
 
 export interface LiveSessionCompleteResponse extends LiveSessionResponse {
@@ -636,6 +672,9 @@ export interface LiveSetBatchEntry {
   is_extra?: boolean;
 }
 
+/** issue #306: новые тренировки исполняются Live Engine v2 (сервер — единственный источник переходов). */
+export const LIVE_ENGINE_VERSION = 2;
+
 export async function startLiveSession(
   initDataRaw: string,
   clientSessionId: string,
@@ -644,6 +683,7 @@ export async function startLiveSession(
   return apiV2Post("/api/v2/sessions/live", initDataRaw, {
     client_session_id: clientSessionId,
     plan_item_ids: planItemIds,
+    engine_version: LIVE_ENGINE_VERSION,
   });
 }
 
@@ -656,6 +696,7 @@ export async function startWorkoutLiveSession(
   return apiV2Post("/api/v2/sessions/live", initDataRaw, {
     client_session_id: clientSessionId,
     workout_id: workoutId,
+    engine_version: LIVE_ENGINE_VERSION,
   });
 }
 

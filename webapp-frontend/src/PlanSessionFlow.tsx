@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { type ExerciseResponseV2, fetchExercises, type LiveSessionCompleteResponse, type LiveSessionResponse } from "./apiV2";
 import { IntervalLiveScreen } from "./IntervalLiveScreen";
+import { LiveEngineScreen } from "./LiveEngineScreen";
 import { SessionLiveScreen } from "./SessionLiveScreen";
 import { SessionPreScreen } from "./SessionPreScreen";
 import { SessionSummaryScreen } from "./SessionSummaryScreen";
@@ -112,6 +113,22 @@ export function PlanSessionFlow({ initDataRaw, planItemIds, manual, title, initi
     // не начатый interval-блок показывается interstitial'ом внутри
     // SessionLiveScreen. key по (сессия, блок) — экран и его локальное
     // состояние пересоздаются на каждом блоке, ничего не протекает дальше.
+    if (screen.session.engine_version === 2 && screen.session.engine) {
+      // issue #306: Live Engine v2 — один экран на всю тренировку (подходы, STEP-блоки и интервалы идут
+      // через один движок; блоки сменяются сами по дедлайну, без interstitial «Начать»).
+      return (
+        <LiveEngineScreen
+          key={screen.session.id}
+          initDataRaw={initDataRaw}
+          initialSession={screen.session}
+          onCompleted={(result) => setScreen({ kind: "summary", result })}
+          onLeave={onClose}
+          resolveExerciseName={resolveExerciseName}
+          title={title}
+        />
+      );
+    }
+    // Движок v1 (сессии, начатые до #306, engine_version = 1) — прежние экраны без изменений.
     const blockKey = `${screen.session.id}-${screen.session.current_block_index}`;
     const onSessionUpdate = (session: LiveSessionResponse) => setScreen({ kind: "live", session });
     if (screen.session.interval !== null) {
