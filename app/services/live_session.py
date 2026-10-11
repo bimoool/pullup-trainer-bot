@@ -1263,10 +1263,15 @@ def engine_plan_for(detail: SessionDetail) -> dict:
     ):
         return finalize_plan([plan_block_from_snapshot(block) for block in snapshot["blocks"]])
     items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
+    # Синтезированный снимок по позиции блоков сессии: явный отдых, если он там записан (рецепт V5.6, #305:
+    # 240/30 → 900 → 180), важнее умолчаний движка; у остальных синтезированных снимков его нет (None).
+    snapshot_blocks = (snapshot or {}).get("blocks") or []
+    snapshot_blocks = snapshot_blocks if len(snapshot_blocks) == len(detail.blocks) else [{}] * len(detail.blocks)
     blocks = []
     for index, (block, item) in enumerate(zip(detail.blocks, items, strict=True)):
         protocol = item.protocol if item is not None else None
         interval = interval_protocol(protocol)
+        snap_block = snapshot_blocks[index] or {}
         blocks.append(fallback_block(
             [
                 FallbackTarget(
@@ -1281,5 +1286,7 @@ def engine_plan_for(detail: SessionDetail) -> dict:
                 total_duration_seconds=interval.total_duration_seconds,
             ) if interval is not None else None,
             is_first_block=index == 0,
+            set_rests=[snap_set.get("rest_after_seconds") for snap_set in snap_block.get("sets") or []],
+            block_rest_seconds=snap_block.get("rest_after_block_seconds"),
         ))
     return finalize_plan(blocks)

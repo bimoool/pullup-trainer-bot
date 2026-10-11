@@ -80,11 +80,21 @@ def _fallback_set_kind(target: FallbackTarget) -> tuple[str, int | None]:
     return SET_REPS, target.value
 
 
+def _explicit_seconds(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def fallback_block(
     targets: Sequence[FallbackTarget], *, rest_seconds: int | None, interval: FallbackInterval | None,
-    is_first_block: bool,
+    is_first_block: bool, set_rests: Sequence[Any] | None = None, block_rest_seconds: Any = None,
 ) -> dict[str, Any]:
-    """Блок без снимка версии: цели сессии + умолчания контракта (докстринг модуля)."""
+    """Блок без снимка версии: цели сессии + умолчания контракта (докстринг модуля).
+
+    set_rests / block_rest_seconds — явный отдых из снимка сессии (рецепт курса V5.6, #305: 240/30 → 900 → 180).
+    Явное значение всегда важнее умолчания (решение владельца #306 п. 5: умолчания — только при отсутствии
+    значения); None — значения нет, действует умолчание."""
+    block_rest = _explicit_seconds(block_rest_seconds)
+    block_rest = DEFAULT_BLOCK_REST_SECONDS if block_rest is None else block_rest
     if interval is not None:
         cycle = interval.work_seconds + interval.rest_seconds
         # Раунды = число фаз работы, НАЧАТЫХ за общее время V1 (у V1 15 с при 5/5 — две работы: 0–5, 10–15);
@@ -92,23 +102,25 @@ def fallback_block(
         rounds = max(1, -(-interval.total_duration_seconds // cycle)) if cycle > 0 else 1
         return {
             "kind": BLOCK_INTERVAL, "prep_seconds": DEFAULT_PREP_SECONDS,
-            "rest_after_block_seconds": DEFAULT_BLOCK_REST_SECONDS, "extra_sets_allowed": False,
+            "rest_after_block_seconds": block_rest, "extra_sets_allowed": False,
             "interval": {
                 "work_seconds": interval.work_seconds, "rest_seconds": interval.rest_seconds, "rounds": rounds,
                 "record_reps_per_round": False,
             },
         }
     rest = SYSTEM_DEFAULT_REST_SECONDS if rest_seconds is None else rest_seconds
+    explicit = list(set_rests) if set_rests is not None and len(set_rests) == len(targets) else None
     sets = []
-    for target in targets or (FallbackTarget("reps", 0, True),):
+    for index, target in enumerate(targets or (FallbackTarget("reps", 0, True),)):
         kind, value = _fallback_set_kind(target)
-        sets.append({"kind": kind, "target": value, "rest_after_seconds": rest})
+        own = _explicit_seconds(explicit[index]) if explicit is not None and index < len(explicit) else None
+        sets.append({"kind": kind, "target": value, "rest_after_seconds": rest if own is None else own})
     sets[-1]["rest_after_seconds"] = None
     timed_start = sets[0]["kind"] in (SET_TIME, SET_MAX_TIME)
     return {
         "kind": BLOCK_SETS,
         "prep_seconds": DEFAULT_PREP_SECONDS if is_first_block or timed_start else 0,
-        "rest_after_block_seconds": DEFAULT_BLOCK_REST_SECONDS, "extra_sets_allowed": True, "sets": sets,
+        "rest_after_block_seconds": block_rest, "extra_sets_allowed": True, "sets": sets,
     }
 
 
