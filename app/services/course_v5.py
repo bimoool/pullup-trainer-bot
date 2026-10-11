@@ -41,6 +41,7 @@ from app.domain.pullups_v5 import (
     advance_session,
     apply_inputs,
     clear_recovery_check,
+    confirm_assistance,
     is_v5_state,
     one_rm_rest_ok,
     pending_inputs,
@@ -196,8 +197,13 @@ async def advance_from_session(
 
 async def update_inputs(
     session: AsyncSession, inclusion: ProgramInclusion, update: EntryInputs, *, clear_recovery: bool = False,
+    confirmations: list[tuple[str, AssistanceSetup]] | None = None,
 ) -> V5State:
+    """Входы и подтверждения помощи — только вперёд. Неполная/недопустимая запись помощи —
+    V5StateError (роут → 422), состояние не меняется."""
     state = apply_inputs(v5_state(inclusion), update)
+    for block, setup in confirmations or []:
+        state = confirm_assistance(state, block, setup)
     if clear_recovery:
         state = clear_recovery_check(state)
     _store(inclusion, state)

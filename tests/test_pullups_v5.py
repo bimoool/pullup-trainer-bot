@@ -34,6 +34,7 @@ from app.domain.pullups_v5 import (
     b_start,
     b_volume_fact,
     clear_recovery_check,
+    confirm_assistance,
     initial_state,
     initial_weighted_loads,
     is_v5_state,
@@ -47,11 +48,25 @@ from app.domain.pullups_v5 import (
 )
 
 D = Decimal
+# Личный упорядоченный список резин (EquipmentItem.position: 0 — больше всего помощи): в нём только id и
+# название — крепление, цвет и положение стопы/колена он НЕ подтверждает.
 BAND_HEAVY = AssistanceSetup(kind="band", equipment_item_id=1, name="Красная")
 BAND_MID = AssistanceSetup(kind="band", equipment_item_id=2, name="Синяя")
 BAND_LIGHT = AssistanceSetup(kind="band", equipment_item_id=3, name="Жёлтая")
-LADDER = (BAND_HEAVY, BAND_MID, BAND_LIGHT)  # личный порядок: 0 — больше всего помощи
-VOLUME_BAND = AssistanceSetup(kind="band", equipment_item_id=2, name="Синяя", attachment="петля", body_position="стопа")
+LADDER = (BAND_HEAVY, BAND_MID, BAND_LIGHT)
+
+
+def _full(band: AssistanceSetup, colour: str) -> AssistanceSetup:
+    """Полностью подтверждённая пользователем запись резины (§8.2)."""
+    return AssistanceSetup(
+        kind="band", equipment_item_id=band.equipment_item_id, name=band.name, colour=colour,
+        attachment="петля на перекладине", body_position="стопа",
+    )
+
+
+MID_FULL = _full(BAND_MID, "синяя")
+LIGHT_FULL = _full(BAND_LIGHT, "жёлтая")
+VOLUME_BAND = _full(BAND_MID, "синяя")
 
 
 def _session(state: V5State, role: WorkoutRole | None = None) -> SessionPrescription:
@@ -83,7 +98,7 @@ def _weighted(m: int = 25, **kwargs) -> V5State:
 
 def _assisted(**kwargs) -> V5State:
     return initial_state(EntryInputs(
-        fresh_max=0, volume_capacity=10, volume_assistance=VOLUME_BAND, strength_assistance=BAND_MID, **kwargs,
+        fresh_max=0, volume_capacity=10, volume_assistance=VOLUME_BAND, strength_assistance=MID_FULL, **kwargs,
     ))
 
 
@@ -181,7 +196,7 @@ def test_m15_needs_no_transition_week():
 
 def test_m6_stays_assisted():
     """M=6 ещё не открывает уровень с весом."""
-    state = initial_state(EntryInputs(fresh_max=6, volume_capacity=10, volume_assistance=VOLUME_BAND, strength_assistance=BAND_LIGHT))
+    state = initial_state(EntryInputs(fresh_max=6, volume_capacity=10, volume_assistance=VOLUME_BAND, strength_assistance=LIGHT_FULL))
     assert state.level is ProgramLevel.ASSISTED
     assert _session(state).strength.block_role is BlockRole.ASSISTED_STRENGTH
 
@@ -229,7 +244,9 @@ def _a_cycle(state: V5State, volume: tuple, tech: bool | None = True) -> V5State
     after_a = _run(state, volume, (5, 5, 5, 5, 5), tech=tech)
     b = _session(after_a.state)
     neutral_b = (b.volume.sets[0].target_reps,) * (len(b.volume.sets) - 1) + (1,)
-    return after_a, _run(after_a.state, neutral_b, (3, 3, 3, 3, 3)).state
+    # Сила B «по плану»: 5/5/5/5/5 у силы с помощью (контроль 5 — та же помощь), 3/3/3/3/3 у 5×3.
+    neutral_strength = tuple(s.target_reps for s in b.strength.sets)
+    return after_a, _run(after_a.state, neutral_b, neutral_strength).state
 
 
 def test_a_green_adds_one_mandatory_rep_total():
@@ -291,7 +308,10 @@ def test_a_two_reds_without_additions_emit_assistance_intent_not_guess():
     outcome, state = _a_cycle(state, (7, 7, 5, 7))
     assert outcome.volume.decision == "increase_assistance"
     assert outcome.volume.assistance_intent is AssistanceIntent.INCREASE
-    assert state.volume_a.assistance == AssistanceSetup(kind="band", equipment_item_id=1, name="Красная")
+    # Резина по порядку списка предложена, но не подтверждена: блок хранит прежнюю, намерение ждёт.
+    assert state.volume_a.assistance == VOLUME_BAND
+    assert state.assistance_pending == ({"block": "volume_a", "intent": "increase_assistance", "proposed": BAND_HEAVY.to_dict()},)
+    assert PendingInput.ASSISTANCE_CONFIRMATION in prescribe_session(state, WorkoutRole.A).missing
 
 
 def test_a_green_without_confirmed_technique_does_not_progress():
@@ -399,39 +419,57 @@ def test_b_known_volume_replaces_first_a_fact():
 # --- Сила уровня 1 (§8.2) -------------------------------------------------------------------------
 
 
-def test_assisted_strength_eight_decreases_assistance_one_step():
+def test_assisted_strength_eight_decreases_assistance_one_step_after_confirmation():
     outcome = _run(_assisted(), (7, 7, 7, 8), (5, 5, 5, 5, 8))
     assert outcome.strength.block_role is BlockRole.ASSISTED_STRENGTH
     assert outcome.strength.assistance_intent is AssistanceIntent.DECREASE
-    assert outcome.state.strength_a.assistance == AssistanceSetup(kind="band", equipment_item_id=3, name="Жёлтая")
-    assert outcome.state.strength_b.assistance == BAND_MID  # A и B — независимо
+    assert outcome.strength.reason == "assistance_confirmation_required"
+    # Следующая ступень по личному порядку — «Жёлтая», но её крепление/положение не подтверждены:
+    # блок хранит прежнюю подтверждённую помощь, намерение и предложение ждут пользователя.
+    state = outcome.state
+    assert state.strength_a.assistance == MID_FULL
+    assert state.assistance_pending == ({"block": "strength_a", "intent": "decrease_assistance", "proposed": BAND_LIGHT.to_dict()},)
+    assert state.strength_b.assistance == MID_FULL  # A и B — независимо
+    assert prescribe_session(state, WorkoutRole.A).missing == (PendingInput.ASSISTANCE_CONFIRMATION,)
+    with pytest.raises(ValueError):
+        confirm_assistance(state, "strength_a", BAND_LIGHT)  # неполная запись не принимается
+    confirmed = confirm_assistance(state, "strength_a", LIGHT_FULL)
+    assert confirmed.assistance_pending == () and confirmed.strength_a.assistance == LIGHT_FULL
 
 
 @pytest.mark.parametrize("control", [5, 6, 7])
 def test_assisted_strength_five_to_seven_keeps(control):
     outcome = _run(_assisted(), (7, 7, 7, 8), (5, 5, 5, 5, control))
     assert outcome.strength.assistance_intent is AssistanceIntent.KEEP
-    assert outcome.state.strength_a.assistance == BAND_MID
+    assert outcome.state.strength_a.assistance == MID_FULL and outcome.state.assistance_pending == ()
 
 
 @pytest.mark.parametrize("strength", [(5, 4, 5, 5, 8), (5, 5, 5, 5, 4), (5, 5, 5, 5, None)])
 def test_assisted_strength_miss_increases_assistance(strength):
     outcome = _run(_assisted(), (7, 7, 7, 8), strength)
     assert outcome.strength.assistance_intent is AssistanceIntent.INCREASE
-    assert outcome.state.strength_a.assistance == AssistanceSetup(kind="band", equipment_item_id=1, name="Красная")
+    assert outcome.state.strength_a.assistance == MID_FULL  # до подтверждения — прежняя
+    assert outcome.state.assistance_pending[0]["proposed"] == BAND_HEAVY.to_dict()
 
 
 def test_assisted_strength_lightest_band_steps_to_bodyweight():
-    state = initial_state(EntryInputs(fresh_max=4, volume_capacity=10, volume_assistance=VOLUME_BAND, strength_assistance=BAND_LIGHT))
+    state = initial_state(EntryInputs(fresh_max=4, volume_capacity=10, volume_assistance=VOLUME_BAND, strength_assistance=LIGHT_FULL))
     outcome = _run(state, (7, 7, 7, 8), (5, 5, 5, 5, 8))
     assert outcome.state.strength_a.assistance == BODYWEIGHT
 
 
 def test_assisted_strength_unknown_ladder_requires_selection_and_keeps_setup():
     outcome = _run(_assisted(), (7, 7, 7, 8), (5, 5, 5, 5, 8), ladder=())
-    assert outcome.strength.reason == "assistance_selection_required"
-    assert outcome.state.strength_a.assistance == BAND_MID
-    assert PendingInput.ASSISTANCE_SELECTION in prescribe_session(outcome.state, WorkoutRole.A).missing
+    assert outcome.strength.reason == "assistance_confirmation_required"
+    assert outcome.state.strength_a.assistance == MID_FULL
+    assert outcome.state.assistance_pending == ({"block": "strength_a", "intent": "decrease_assistance", "proposed": None},)
+    assert PendingInput.ASSISTANCE_CONFIRMATION in prescribe_session(outcome.state, WorkoutRole.A).missing
+
+
+def test_incomplete_band_setup_is_never_ready():
+    state = initial_state(EntryInputs(fresh_max=4, volume_capacity=10, volume_assistance=BAND_MID, strength_assistance=BAND_LIGHT))
+    assert set(prescribe_session(state).missing) == {PendingInput.VOLUME_ASSISTANCE, PendingInput.STRENGTH_ASSISTANCE}
+    assert not BAND_MID.is_complete and MID_FULL.is_complete and BODYWEIGHT.is_complete
 
 
 def test_bodyweight_5_5_5_5_8_qualifies_for_weighted_level():
@@ -690,9 +728,13 @@ def test_prescription_snapshot_contents():
     assert data["program_version"] == "pullups_v5_6" and data["workout_role"] == "A" and data["level"] == "assisted"
     assert data["inter_block_rest_seconds"] == 900
     assert data["structure"] == ["warm_up", "volume", "inter_block_rest", "strength_ramp_up", "strength"]
+    # Разминка и подводка в источнике названы, но не описаны — явно «не предписаны», без выдуманного содержания.
+    assert data["warm_up"]["prescribed"] is False and "content" in data["warm_up"]["missing"]
+    assert data["strength_ramp_up"]["prescribed"] is False
+    assert data["strength_ramp_up"]["counts_as_working_sets"] is False
     volume, strength = data["blocks"]
     assert volume["block_role"] == "a_volume" and volume["rest_seconds"] == 240
-    assert volume["assistance"]["attachment"] == "петля" and volume["assistance"]["body_position"] == "стопа"
+    assert volume["assistance"]["attachment"] == "петля на перекладине" and volume["assistance"]["body_position"] == "стопа"
     assert [s["rest_after_seconds"] for s in volume["sets"]] == [240, 240, 240, None]
     assert strength["block_role"] == "assisted_strength" and strength["sets"][-1]["cap_reps"] == 8
     assert data["source_inputs"]["volume_capacity"] == 10 and data["source_inputs"]["fresh_max"] == 0

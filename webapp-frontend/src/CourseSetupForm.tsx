@@ -8,7 +8,19 @@ import { Button, Input, List, Section } from "@telegram-apps/telegram-ui";
 import { useState } from "react";
 
 import { putCourseInputs } from "./apiV2";
-import { type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describePendingInputs } from "./courseV5";
+import {
+  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describePendingInputs,
+} from "./courseV5";
+
+export interface AssistancePending {
+  block: string;
+  intent: string;
+  proposed: { name?: string | null } | null;
+}
+
+const BLOCK_TITLE: Record<string, string> = {
+  volume_a: "Объём A", volume_b: "Объём B", strength_a: "Сила A", strength_b: "Сила B",
+};
 
 const EMPTY_BAND: BandFields = { bodyweight: false, name: "", colour: "", attachment: "", body_position: "" };
 
@@ -32,10 +44,16 @@ function BandSection(
             header="Резина (модель/название)" data-testid={`${testId}-name`} value={value.name}
             onChange={(e) => onChange({ ...value, name: e.target.value })}
           />
-          <Input header="Цвет" value={value.colour} onChange={(e) => onChange({ ...value, colour: e.target.value })} />
-          <Input header="Крепление" value={value.attachment} onChange={(e) => onChange({ ...value, attachment: e.target.value })} />
           <Input
-            header="Положение (стопа / колено)" value={value.body_position}
+            header="Цвет" data-testid={`${testId}-colour`} value={value.colour}
+            onChange={(e) => onChange({ ...value, colour: e.target.value })}
+          />
+          <Input
+            header="Крепление" data-testid={`${testId}-attachment`} value={value.attachment}
+            onChange={(e) => onChange({ ...value, attachment: e.target.value })}
+          />
+          <Input
+            header="Положение (стопа / колено)" data-testid={`${testId}-position`} value={value.body_position}
             onChange={(e) => onChange({ ...value, body_position: e.target.value })}
           />
         </>
@@ -45,13 +63,20 @@ function BandSection(
 }
 
 export function CourseSetupForm(
-  { initDataRaw, inclusionId, missing, onSaved }:
-  { initDataRaw: string; inclusionId: number; missing: string[]; onSaved: () => void },
+  { initDataRaw, inclusionId, missing, assistancePending = [], onSaved }:
+  {
+    initDataRaw: string; inclusionId: number; missing: string[]; assistancePending?: AssistancePending[];
+    onSaved: () => void;
+  },
 ) {
   const [numbers, setNumbers] = useState<Record<string, string>>({});
   const [volumeBand, setVolumeBand] = useState<BandFields>(EMPTY_BAND);
   const [strengthBand, setStrengthBand] = useState<BandFields>(EMPTY_BAND);
   const [recovery, setRecovery] = useState(false);
+  // Смена помощи ждёт подтверждения ПОЛНОЙ записи резины; предложение по личному порядку — только название.
+  const [pendingBands, setPendingBands] = useState<Record<string, BandFields>>(() => Object.fromEntries(
+    assistancePending.map((entry) => [entry.block, { ...EMPTY_BAND, name: entry.proposed?.name ?? "" }]),
+  ));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fields = missing.flatMap((item) => COURSE_INPUT_FIELDS[item] ?? []);
@@ -68,6 +93,15 @@ export function CourseSetupForm(
         },
         recovery,
       );
+      const confirmations = assistanceConfirmations(
+        assistancePending.map((entry) => ({ block: entry.block, fields: pendingBands[entry.block] ?? EMPTY_BAND })),
+      );
+      if (confirmations.length < assistancePending.length) {
+        setError("Заполните резину целиком: модель, цвет, крепление и положение стопы/колена (или «без помощи»).");
+      }
+      if (confirmations.length > 0) {
+        body.assistance_confirmations = confirmations;
+      }
       const result = await putCourseInputs(initDataRaw, inclusionId, body);
       if (result.pending_inputs.length > 0) {
         setError(`Ещё не хватает: ${describePendingInputs(result.pending_inputs)}.`);
@@ -107,9 +141,16 @@ export function CourseSetupForm(
           </label>
         </Section>
       )}
-      {missing.includes("assistance_selection") && (
-        <p className="screen-message">Выберите следующую резину в «Мои резины» (порядок определяет ступень).</p>
-      )}
+      {assistancePending.map((entry) => (
+        <BandSection
+          key={entry.block}
+          title={`${BLOCK_TITLE[entry.block] ?? entry.block}: ${entry.intent === "decrease_assistance" ? "меньше помощи" : "больше помощи"}${
+            entry.proposed?.name ? ` — по вашему порядку: «${entry.proposed.name}»` : " — выберите резину"}`}
+          value={pendingBands[entry.block] ?? EMPTY_BAND}
+          onChange={(next) => setPendingBands({ ...pendingBands, [entry.block]: next })}
+          allowBodyweight={entry.block.startsWith("strength")} testId={`course-confirm-${entry.block}`}
+        />
+      ))}
       {error !== null && <p className="live-hint" role="alert">{error}</p>}
       <div className="pre-transport">
         <Button className="action-button vs-primary" size="l" stretched disabled={saving} onClick={() => void save()} data-testid="course-setup-save">

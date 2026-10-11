@@ -1,4 +1,4 @@
-import { CourseSetupForm } from "./CourseSetupForm";
+import { type AssistancePending, CourseSetupForm } from "./CourseSetupForm";
 import { describePendingInputs } from "./courseV5";
 import { Button, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
@@ -115,7 +115,7 @@ type ScreenState =
   | { phase: "blocked"; title?: string; availableFrom?: string | null }
   | { phase: "subscription_required"; title?: string }
   | { phase: "needs_assessment"; title?: string }
-  | { phase: "course_setup"; title?: string; missing: string[]; inclusionId: number | null }
+  | { phase: "course_setup"; title?: string; missing: string[]; inclusionId: number | null; assistancePending: AssistancePending[] }
   | { phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[] }
   | { phase: "ready_generic"; programName: string; planItemIds: number[] }
   | { phase: "ready_manual"; title: string; planItemIds: number[] }
@@ -296,6 +296,7 @@ export function SessionPreScreen({
           setState({
             phase: "course_setup", title: title ?? data.program_name ?? undefined,
             missing: data.course_pending_inputs ?? [], inclusionId: data.program_inclusion_id ?? null,
+            assistancePending: (data.course_assistance_pending ?? []) as AssistancePending[],
           });
         } else if (data.status === "gap_retest_required") {
           setState({ phase: "needs_assessment", title: title ?? data.program_name ?? undefined });
@@ -498,6 +499,7 @@ export function SessionPreScreen({
         {state.inclusionId !== null && (
           <CourseSetupForm
             initDataRaw={initDataRaw} inclusionId={state.inclusionId} missing={state.missing}
+            assistancePending={state.assistancePending}
             onSaved={() => setReloadKey((key) => key + 1)}
           />
         )}

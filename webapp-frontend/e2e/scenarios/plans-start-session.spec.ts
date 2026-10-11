@@ -14,8 +14,9 @@ test("«Планы» → Подтягивания → Начать → live sess
 
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  // #304: «Подтягивания» × 3 в неделю — три строки-занятия.
-  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(3);
+  // #304: одна строка = одно занятие. #305 (V5.6 §1): новая инклюзия V5.6 — 2 основных занятия в неделю
+  // (A и B), каталог поставляемой программы (3) не меняется — частота заморожена в снимке инклюзии.
+  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(2);
 
   // Обычный пользователь не видит admin-вкладку — подтверждаем прямо в
   // тесте, чтобы Golden Journey нельзя было случайно пройти через lab.

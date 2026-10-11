@@ -28,7 +28,11 @@ test("первая тренировка: курс из каталога → в �
   await openPreScreen(page, PROGRAM);
   await expect(page.getByTestId("course-setup-required")).toBeVisible();
   await page.getByTestId("course-input-volume_capacity").fill("10");
+  // V5.6 §8.2: резина записывается целиком — модель, цвет, крепление, положение стопы/колена.
   await page.getByTestId("course-volume-band-name").fill("Синяя");
+  await page.getByTestId("course-volume-band-colour").fill("синяя");
+  await page.getByTestId("course-volume-band-attachment").fill("петля на перекладине");
+  await page.getByTestId("course-volume-band-position").fill("стопа");
   await page.getByTestId("course-strength-band-bodyweight").check();
   await page.getByTestId("course-setup-save").click();
   // R = 10 → A: 7/7/7/7+ (floor(0,7·10)), сила 5/5/5/5/5–8 без помощи.

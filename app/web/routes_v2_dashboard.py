@@ -106,7 +106,8 @@ async def _v5_status(session: AsyncSession, user, inclusion, *, is_admin: bool) 
     prescription = prescribe_session(state)
     if isinstance(prescription, PrescriptionPending):
         return DashboardStatusResponse(
-            status="course_setup_required", course_pending_inputs=[item.value for item in prescription.missing], **common,
+            status="course_setup_required", course_pending_inputs=[item.value for item in prescription.missing],
+            course_assistance_pending=list(state.assistance_pending), **common,
         )
     return DashboardStatusResponse(
         status="ready", block_a=_v5_block(prescription.volume), block_b=_v5_block(prescription.strength),

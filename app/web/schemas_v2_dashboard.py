@@ -78,3 +78,5 @@ class DashboardStatusResponse(BaseModel):
     program_inclusion_id: int | None = None
     course: dict | None = None
     course_pending_inputs: list[str] | None = None
+    # Смены помощи, ждущие подтверждения полной записи резины: [{block, intent, proposed}].
+    course_assistance_pending: list[dict] | None = None

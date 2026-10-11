@@ -16,7 +16,12 @@ from app.domain.course_prescription import (
 )
 from app.domain.plan_occurrence import InclusionStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
-from app.domain.pullups_v5 import LEGACY_PROGRAM_VERSION, PROGRAM_VERSION, EntryInputs
+from app.domain.pullups_v5 import (
+    LEGACY_PROGRAM_VERSION,
+    PROGRAM_VERSION,
+    EntryInputs,
+    schedule_snapshot,
+)
 from app.services.course_assessment import CourseAssessmentService, initial_inclusion_state
 
 
@@ -130,6 +135,10 @@ class ProgramInclusionService:
         provenance = None
         baseline_result_id = None
         rule_key = initial_rule_key(request)
+        if is_step and rule_key == CURRENT_INITIAL_PRESCRIPTION_RULE:
+            # issue #305 (V5.6 §1): две основные тренировки в неделю — только для новой инклюзии V5.6,
+            # замораживается в её снимок. Каталог (programs.frequency) и снимки устаревших инклюзий не меняются.
+            snapshot = schedule_snapshot(snapshot)
         if is_step:
             now = datetime.now(UTC)
             evaluation = await CourseAssessmentService(self._session).evaluate(user_id=user_id, program=program, now=now)

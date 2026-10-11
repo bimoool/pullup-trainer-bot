@@ -26,6 +26,24 @@ STATE_SCHEMA_VERSION = 1
 
 # --- Параметры продукта V5.6 (гипотезы продукта, не биологические пороги) ---------------------
 
+# Расписание (§1 «Две тренировки в неделю»): ровно 2 основных занятия в неделю, A и B по
+# последовательности. Действует ТОЛЬКО для инклюзий V5.6 — замораживается в их снимок при подключении
+# (version-scoped), каталог программы и снимки устаревших инклюзий не меняются.
+MAIN_SESSIONS_PER_WEEK = 2
+
+# Разминка (§1 п. 1) и подводка к рабочему сопротивлению (§1 п. 4, §8.2, §8.4): в документе V5.6 только
+# названы; содержание (упражнения, подходы, повторения, нагрузка, время, отдых) НЕ задано и не придумывается.
+WARM_UP_SPEC = {
+    "prescribed": False, "source": "V5.6 §1 п. 1 «разминка»",
+    "missing": ["content", "duration_seconds", "sets_or_exercises", "rest_before_volume_seconds"],
+}
+STRENGTH_RAMP_UP_SPEC = {
+    "prescribed": False, "counts_as_working_sets": False,
+    "source": "V5.6 §1 п. 4 «подводка к рабочему сопротивлению»; §8.4 «короткая подводка, не входящая в пять "
+              "рабочих подходов»; §8.2 «одно-два собственных повторения можно оставить в подводке»",
+    "missing": ["sets", "reps", "load_or_assistance", "rest_seconds", "rest_before_first_work_set_seconds"],
+}
+
 # Время (§1, §10): A-объём 4 минуты, B-объём строго 30 секунд, объём → сила 15 минут, сила 3 минуты.
 A_VOLUME_REST_SECONDS = 240
 B_VOLUME_REST_SECONDS = 30
@@ -138,7 +156,9 @@ class PendingInput(StrEnum):
     ONE_REP_MAX = "one_rep_max"  # E1RM или подтверждённый 5×5 / 5×3
     LOAD_STEP = "load_step"  # доступный шаг дополнительного веса
     VOLUME_REFERENCE = "volume_reference"  # V_ref первой B: факт первой A или подтверждённый объём
-    ASSISTANCE_SELECTION = "assistance_selection"  # нужно выбрать следующую резину (порядок неизвестен)
+    # Смена помощи ждёт подтверждения ПОЛНОЙ записи следующей резины пользователем (модель, цвет, крепление,
+    # положение стопы/колена): порядок личного списка резин этого не подтверждает. Намерение сохраняется.
+    ASSISTANCE_CONFIRMATION = "assistance_confirmation"
     RECOVERY_CHECK = "recovery_check"  # §9: два занятия подряд хуже по обоим блокам
 
 
@@ -165,6 +185,15 @@ class AssistanceSetup:
     def is_bodyweight(self) -> bool:
         return self.kind == BODYWEIGHT_KIND
 
+    @property
+    def is_complete(self) -> bool:
+        """Запись помощи готова к использованию: без помощи — всегда; резина — только если подтверждены
+        модель/название, цвет, крепление и положение стопы или колена (§8.2). Неполная запись (например,
+        резина, взятая по порядку из личного списка, где есть только название) готовой не считается."""
+        if self.is_bodyweight:
+            return True
+        return all(bool((value or "").strip()) for value in (self.name, self.colour, self.attachment, self.body_position))
+
     def to_dict(self) -> dict:
         return {
             "kind": self.kind, "equipment_item_id": self.equipment_item_id, "name": self.name,
@@ -189,6 +218,15 @@ BODYWEIGHT = AssistanceSetup(kind=BODYWEIGHT_KIND)
 
 def _setup_dict(setup: AssistanceSetup | None) -> dict | None:
     return setup.to_dict() if setup is not None else None
+
+
+# Блоки состояния, у которых есть помощь (ключи записей «ожидает подтверждения»).
+VOLUME_A_BLOCK, VOLUME_B_BLOCK, STRENGTH_A_BLOCK, STRENGTH_B_BLOCK = "volume_a", "volume_b", "strength_a", "strength_b"
+ASSISTANCE_BLOCKS = (VOLUME_A_BLOCK, VOLUME_B_BLOCK, STRENGTH_A_BLOCK, STRENGTH_B_BLOCK)
+
+
+def _role_blocks(role: "WorkoutRole") -> tuple[str, str]:
+    return (VOLUME_A_BLOCK, STRENGTH_A_BLOCK) if role is WorkoutRole.A else (VOLUME_B_BLOCK, STRENGTH_B_BLOCK)
 
 
 @dataclass(frozen=True)
@@ -237,6 +275,22 @@ def step_assistance(
 
 def _from_ladder(item: AssistanceSetup) -> AssistanceSetup:
     return AssistanceSetup(kind=BAND_KIND, equipment_item_id=item.equipment_item_id, name=item.name, colour=item.colour)
+
+
+# --- Расписание -----------------------------------------------------------------------------------
+
+
+def schedule_snapshot(snapshot: Mapping) -> dict:
+    """Снимок инклюзии V5.6: main-слот — ``MAIN_SESSIONS_PER_WEEK`` занятий в неделю (§1). Прочие слоты
+    и состав main-слота не трогаются; метка ``schedule`` фиксирует источник частоты. Идемпотентно."""
+    slots = [
+        {**slot, "sessions_per_week": MAIN_SESSIONS_PER_WEEK} if slot.get("key") == "main" else dict(slot)
+        for slot in snapshot.get("slots") or []
+    ]
+    return {
+        **snapshot, "slots": slots,
+        "schedule": {"program_version": PROGRAM_VERSION, "main_sessions_per_week": MAIN_SESSIONS_PER_WEEK},
+    }
 
 
 # --- Вес -----------------------------------------------------------------------------------------
@@ -570,7 +624,10 @@ class V5State:
     sessions_completed: int = 0
     both_deteriorated_streak: int = 0
     recovery_check_required: bool = False
-    assistance_selection: tuple[str, ...] = ()  # блоки, где следующая резина ждёт выбора пользователя
+    # Записи «смена помощи ждёт подтверждения»: {"block", "intent", "proposed" (резина по порядку списка или
+    # None — следующую ступень выбирает пользователь)}. Пока запись есть, занятие этой роли не стартует, а
+    # блок продолжает хранить прежнюю ПОДТВЕРЖДЁННУЮ помощь.
+    assistance_pending: tuple[dict, ...] = ()
     one_rm_tests: tuple[dict, ...] = ()  # история тестов 1RM (append-only факты)
 
     def to_dict(self) -> dict:
@@ -589,7 +646,7 @@ class V5State:
             "sessions_completed": self.sessions_completed,
             "both_deteriorated_streak": self.both_deteriorated_streak,
             "recovery_check_required": self.recovery_check_required,
-            "assistance_selection": list(self.assistance_selection),
+            "assistance_pending": list(self.assistance_pending),
             "one_rm_tests": list(self.one_rm_tests),
         }
 
@@ -609,7 +666,7 @@ class V5State:
             sessions_completed=int(data.get("sessions_completed") or 0),
             both_deteriorated_streak=int(data.get("both_deteriorated_streak") or 0),
             recovery_check_required=bool(data.get("recovery_check_required")),
-            assistance_selection=tuple(data.get("assistance_selection") or ()),
+            assistance_pending=tuple(data.get("assistance_pending") or ()),
             one_rm_tests=tuple(data.get("one_rm_tests") or ()),
         )
 
@@ -729,20 +786,55 @@ def apply_inputs(state: V5State, update: EntryInputs) -> V5State:
             load = _weighted_start(fresh, role).load_kg
             if load is not None:
                 new = _with_strength(new, role, StrengthState(mode=WEIGHTED_MODE, load_kg=load))
-    selection = set(new.assistance_selection)
+    # Стартовые записи помощи уровня 1 (после первой сессии — только там, где смена не ждёт подтверждения;
+    # ожидающая смена подтверждается confirm_assistance, а не общим вводом).
+    pending_blocks = {entry["block"] for entry in new.assistance_pending}
     if update.volume_assistance is not None and new.level is ProgramLevel.ASSISTED:
-        new = replace(
-            new, volume_a=replace(new.volume_a, assistance=update.volume_assistance),
-            volume_b=replace(new.volume_b, assistance=update.volume_assistance),
-        )
-        selection -= {BlockRole.A_VOLUME.value, BlockRole.B_VOLUME.value}
+        if VOLUME_A_BLOCK not in pending_blocks:
+            new = replace(new, volume_a=replace(new.volume_a, assistance=update.volume_assistance))
+        if VOLUME_B_BLOCK not in pending_blocks:
+            new = replace(new, volume_b=replace(new.volume_b, assistance=update.volume_assistance))
     if update.strength_assistance is not None:
-        for role in WorkoutRole:
+        for role, block in ((WorkoutRole.A, STRENGTH_A_BLOCK), (WorkoutRole.B, STRENGTH_B_BLOCK)):
             strength = new.strength(role)
-            if strength is not None and strength.mode == ASSISTED_MODE:
+            if strength is not None and strength.mode == ASSISTED_MODE and block not in pending_blocks:
                 new = _with_strength(new, role, replace(strength, assistance=update.strength_assistance))
-        selection -= {f"{BlockRole.ASSISTED_STRENGTH.value}:{role.value}" for role in WorkoutRole}
-    return replace(new, assistance_selection=tuple(sorted(selection)))
+    return new
+
+
+def confirm_assistance(state: V5State, block: str, setup: AssistanceSetup) -> V5State:
+    """Пользователь подтвердил ПОЛНУЮ запись помощи блока (модель, цвет, крепление, положение — или «без
+    помощи»). Снимает ожидание этого блока; следующая одноимённая тренировка идёт с этой помощью.
+    Неполная запись не принимается — готовой к использованию она не считается."""
+    if block not in ASSISTANCE_BLOCKS:
+        raise V5StateError(f"unknown assistance block {block!r}")
+    if not setup.is_complete:
+        raise V5StateError("assistance setup is incomplete: model, colour, attachment and foot/knee position are required")
+    if block == VOLUME_A_BLOCK:
+        new = replace(state, volume_a=replace(state.volume_a, assistance=setup))
+    elif block == VOLUME_B_BLOCK:
+        new = replace(state, volume_b=replace(state.volume_b, assistance=setup))
+    else:
+        role = WorkoutRole.A if block == STRENGTH_A_BLOCK else WorkoutRole.B
+        strength = state.strength(role)
+        if strength is None or strength.mode != ASSISTED_MODE:
+            raise V5StateError(f"{block} has no assistance in its current mode")
+        new = _with_strength(state, role, replace(strength, assistance=setup))
+    return replace(new, assistance_pending=tuple(e for e in new.assistance_pending if e["block"] != block))
+
+
+def _assistance_change(
+    block: str, current: AssistanceSetup | None, step: AssistanceStep,
+) -> tuple[AssistanceSetup | None, dict | None]:
+    """Применить шаг помощи или сохранить НАМЕРЕНИЕ до подтверждения. Готовая запись (масса тела или
+    полностью подтверждённая резина) применяется сразу; иначе блок сохраняет прежнюю подтверждённую
+    помощь, а запись ожидания хранит намерение и предложенную по порядку резину (или None)."""
+    if step.intent is AssistanceIntent.KEEP or step.setup == current and not step.selection_required:
+        return current, None
+    if not step.selection_required and step.setup is not None and step.setup.is_complete:
+        return step.setup, None
+    proposed = None if step.selection_required else step.setup
+    return current, {"block": block, "intent": step.intent.value, "proposed": _setup_dict(proposed)}
 
 
 def record_one_rm_test(state: V5State, attempts: Sequence[OneRmAttempt], *, performed_at: str) -> tuple[V5State, OneRmResult]:
@@ -835,6 +927,10 @@ class SessionPrescription:
             "workout_role": self.role.value,
             "level": self.level.value,
             "structure": ["warm_up", "volume", "inter_block_rest", "strength_ramp_up", "strength"],
+            # Разминка и подводка названы в документе V5.6 (§1 п. 1 и п. 4), но их содержание не задано —
+            # здесь они явно «не предписаны», а не придуманы. Подводка не входит в рабочие подходы (§8.4).
+            "warm_up": dict(WARM_UP_SPEC),
+            "strength_ramp_up": dict(STRENGTH_RAMP_UP_SPEC),
             "blocks": [self.volume.to_dict(), self.strength.to_dict()],
             "inter_block_rest_seconds": self.inter_block_rest_seconds,
             "source_inputs": self.source_inputs,
@@ -857,21 +953,21 @@ def pending_inputs(state: V5State, role: WorkoutRole | None = None) -> tuple[Pen
         return (PendingInput.FRESH_MAX,)
     if state.recovery_check_required:
         missing.append(PendingInput.RECOVERY_CHECK)
-    if state.assistance_selection:
-        missing.append(PendingInput.ASSISTANCE_SELECTION)
+    if any(entry["block"] in _role_blocks(role) for entry in state.assistance_pending):
+        missing.append(PendingInput.ASSISTANCE_CONFIRMATION)
+    volume_assistance = state.volume_a.assistance if role is WorkoutRole.A else state.volume_b.assistance
     if role is WorkoutRole.A:
         if state.volume_a.targets is None:
             missing.append(PendingInput.VOLUME_CAPACITY)
-        if state.volume_a.assistance is None:
-            missing.append(PendingInput.VOLUME_ASSISTANCE)
-    else:
-        if state.volume_b.stage is BVolumeStage.PENDING_REFERENCE:
-            # Первая B — от факта первой A или от подтверждённого объёма (known_volume).
-            missing.append(PendingInput.VOLUME_REFERENCE)
-        if state.volume_b.assistance is None:
-            missing.append(PendingInput.VOLUME_ASSISTANCE)
+    elif state.volume_b.stage is BVolumeStage.PENDING_REFERENCE:
+        # Первая B — от факта первой A или от подтверждённого объёма (known_volume).
+        missing.append(PendingInput.VOLUME_REFERENCE)
+    if volume_assistance is None or not volume_assistance.is_complete:
+        missing.append(PendingInput.VOLUME_ASSISTANCE)
     strength = state.strength(role)
-    if strength is not None and strength.mode == ASSISTED_MODE and strength.assistance is None:
+    if strength is not None and strength.mode == ASSISTED_MODE and (
+        strength.assistance is None or not strength.assistance.is_complete
+    ):
         missing.append(PendingInput.STRENGTH_ASSISTANCE)
     if strength is not None and strength.mode == WEIGHTED_MODE and strength.load_kg is None:
         if state.inputs.e1rm_kg is None:
@@ -1079,11 +1175,12 @@ def _advance_a_volume(state: V5State, block: Mapping, result: BlockResult, *, in
                 # Откатывать нечего (план стартовый): по §4 — «или усиливается помощь». Конкретную резину
                 # программа не угадывает: шаг по личному списку или выбор пользователя.
                 step = step_assistance(volume.assistance, AssistanceIntent.INCREASE, ladder)
-                new = replace(new, assistance=step.setup, red_streak=0)
+                applied, pending = _assistance_change(VOLUME_A_BLOCK, volume.assistance, step)
+                new = replace(new, assistance=applied, red_streak=0)
                 decision, intent = "increase_assistance", AssistanceIntent.INCREASE
-                details = {**details, "selection_required": step.selection_required, "assistance_after": _setup_dict(step.setup)}
-                if step.selection_required:
-                    reason = "assistance_selection_required"
+                details = {**details, "assistance_after": _setup_dict(applied), "pending_assistance": pending}
+                if pending is not None:
+                    reason = "assistance_confirmation_required"
     else:
         new = replace(new, red_streak=0)
     return new, BlockOutcome(BlockRole.A_VOLUME, decision, reason, fact_volume, intent, details)
@@ -1178,10 +1275,12 @@ def _advance_assisted_strength(state: V5State, role: WorkoutRole, result: BlockR
     if intent is AssistanceIntent.DECREASE and increases_paused:
         intent, reason = AssistanceIntent.KEEP, "recovery_check_required"
     step = step_assistance(strength.assistance, intent, ladder)
-    new = replace(strength, assistance=step.setup)
-    details = {**details, "assistance_after": _setup_dict(step.setup), "selection_required": step.selection_required}
-    if step.selection_required:
-        reason = "assistance_selection_required"
+    block = STRENGTH_A_BLOCK if role is WorkoutRole.A else STRENGTH_B_BLOCK
+    applied, pending = _assistance_change(block, strength.assistance, step)
+    new = replace(strength, assistance=applied)
+    details = {**details, "assistance_after": _setup_dict(applied), "pending_assistance": pending}
+    if pending is not None:
+        reason = "assistance_confirmation_required"
     return new, BlockOutcome(BlockRole.ASSISTED_STRENGTH, intent.value, reason, None, intent, details), False
 
 
@@ -1262,7 +1361,7 @@ def _qualify(state: V5State, signal_details: dict) -> V5State:
         state, level=ProgramLevel.TRANSITION, volume_a=volume_a, volume_b=volume_b,
         strength_a=_weighted_start(state.inputs, WorkoutRole.A), strength_b=_weighted_start(state.inputs, WorkoutRole.B),
         qualification={"signal": "in_program", **signal_details},
-        assistance_selection=(),
+        assistance_pending=(),  # резина убирается из объёма, сила — с весом: ожидающих смен помощи нет
     )
 
 
@@ -1332,12 +1431,13 @@ def advance_session(
     streak = state.both_deteriorated_streak + 1 if both else 0
     new = replace(new, both_deteriorated_streak=streak, recovery_check_required=state.recovery_check_required or streak >= 2)
 
-    selection = set(new.assistance_selection)
-    if volume_outcome.reason == "assistance_selection_required":
-        selection.add(BlockRole.A_VOLUME.value)
-    if strength_outcome.reason == "assistance_selection_required":
-        selection.add(f"{BlockRole.ASSISTED_STRENGTH.value}:{role.value}")
-    new = replace(new, assistance_selection=tuple(sorted(selection)))
+    # Смены помощи, ждущие подтверждения полной записи резины: намерение сохраняется до подтверждения.
+    pending = [entry for entry in new.assistance_pending]
+    for outcome in (volume_outcome, strength_outcome):
+        entry = outcome.details.get("pending_assistance")
+        if entry is not None:
+            pending = [e for e in pending if e["block"] != entry["block"]] + [entry]
+    new = replace(new, assistance_pending=tuple(pending))
 
     if qualified:
         new = _qualify(new, {"workout_role": role.value, "result": [r for r in result.strength.reps]})

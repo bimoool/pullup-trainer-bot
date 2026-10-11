@@ -30,6 +30,7 @@ from app.domain.pullups_v5 import (
     OneRmAttempt,
     PrescriptionPending,
     V5State,
+    V5StateError,
     next_one_rm_set,
     pending_inputs,
     prescribe_session,
@@ -81,7 +82,8 @@ class CourseStateResponse(BaseModel):
     next_workout_role: str
     pending_inputs: list[str]
     next_workout: dict | None
-    assistance_selection: list[str]
+    # Смены помощи, ждущие подтверждения полной записи резины: [{block, intent, proposed}].
+    assistance_pending: list[dict]
     recovery_check_required: bool
     state: dict
     one_rep_max: dict | None = None
@@ -93,7 +95,7 @@ def _course_response(state: V5State, *, one_rep_max: dict | None = None) -> Cour
         program_version=PROGRAM_VERSION, level=state.level.value if state.level is not None else None,
         next_workout_role=state.next_role.value, pending_inputs=[item.value for item in pending_inputs(state)],
         next_workout=None if isinstance(prescription, PrescriptionPending) else prescription.to_dict(),
-        assistance_selection=list(state.assistance_selection),
+        assistance_pending=list(state.assistance_pending),
         recovery_check_required=state.recovery_check_required, state=state.to_dict(), one_rep_max=one_rep_max,
     )
 
@@ -126,7 +128,13 @@ async def put_course_inputs(
     session: AsyncSession = Depends(get_session),
 ) -> CourseStateResponse:
     _user, inclusion = await _require_course(session, init_data, inclusion_id)
-    state = await update_inputs(session, inclusion, body.to_domain(), clear_recovery=body.clear_recovery_check)
+    try:
+        state = await update_inputs(
+            session, inclusion, body.to_domain(), clear_recovery=body.clear_recovery_check,
+            confirmations=[(c.block, c.setup.to_domain()) for c in body.assistance_confirmations],
+        )
+    except V5StateError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
     return _course_response(state)
 

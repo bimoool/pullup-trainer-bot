@@ -53,7 +53,7 @@ async def _pullups(session) -> Program:
         progression_strategy_id=profile.id, access_level="free",
         config={"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}},
         constraints=[{"spacing_group": "main", "min_days_between_starts": 3}],
-        frequency={"sessions_per_week": 4, "per_slot": {}},
+        frequency={"sessions_per_week": 3, "per_slot": {}},  # каталог: 3 — как у поставляемой программы
     )
     session.add(program)
     await session.flush()
@@ -81,6 +81,9 @@ async def _enrol(session, user: User, program: Program, *, fresh_max: int | None
 
 
 async def _main_occurrences(session, user: User, week_number: int = 1) -> list[dict]:
+    if week_number > 1:
+        created = await v2_post(session, user.telegram_id, "/api/v2/plan/weeks", {"week_number": week_number})
+        assert created.status_code == 200, created.text
     response = await v2_get(session, user.telegram_id, "/api/v2/plan")
     assert response.status_code == 200, response.text
     plan = response.json()["plan"]
@@ -127,8 +130,9 @@ async def _cycle(session, user: User, clock, index: int, reps_by_block: list[lis
     """Одно основное занятие (через 3 дня после предыдущего — отдых MAIN): старт, подходы, завершение."""
     at = MON + timedelta(days=3 * index)
     clock(at)
-    occurrences = await _main_occurrences(session, user)
-    started = await _start(session, user, occurrences[index]["id"])
+    # V5.6 §1: две основные тренировки в неделю — занятие index живёт в неделе 1 + index // 2.
+    occurrences = await _main_occurrences(session, user, week_number=1 + index // 2)
+    started = await _start(session, user, occurrences[index % 2]["id"])
     assert started.status_code == 200, started.text
     body = started.json()
     await _log(session, user, body, reps_by_block)
@@ -177,6 +181,10 @@ async def test_missing_inputs_block_start_with_explicit_list_then_inputs_unblock
     assert set(dashboard.json()["course_pending_inputs"]) == set(detail["missing"])
 
     band = {"kind": "band", "name": "Синяя", "colour": "синяя", "attachment": "петля", "body_position": "стопа"}
+    incomplete = await v2_put(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course/inputs", {
+        "volume_capacity": 10, "volume_assistance": {"kind": "band", "name": "Синяя"},
+    })
+    assert incomplete.status_code == 200 and "volume_assistance" in incomplete.json()["pending_inputs"]  # не готова
     put = await v2_put(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course/inputs", {
         "volume_capacity": 10, "volume_assistance": band, "strength_assistance": {"kind": "bodyweight"},
     })
@@ -200,6 +208,45 @@ async def test_legacy_targets_or_version_create_legacy_inclusion(session, user: 
         "program_id": program.id, "program_version": "pullups_v5_6", "initial_target_a": 12, "restart": True,
     })
     assert bad.status_code == 422
+
+
+# --- Расписание: две основные тренировки в неделю только у V5.6 -------------------------------------
+
+
+async def test_v5_enrolment_freezes_two_main_sessions_per_week(session, user: User, clock):
+    program = await _pullups(session)
+    inclusion = await _setup_weighted(session, user, program)
+    main = next(slot for slot in inclusion.snapshot["slots"] if slot["key"] == "main")
+    assert main["sessions_per_week"] == 2
+    assert inclusion.snapshot["schedule"] == {"program_version": "pullups_v5_6", "main_sessions_per_week": 2}
+    assert len(await _main_occurrences(session, user)) == 2
+    await session.refresh(program)
+    assert program.frequency["sessions_per_week"] == 3  # каталог не изменён
+    # Повторная инициализация (convergence) объём не меняет.
+    from app.services.plan_convergence import PlanConvergenceService
+    _, again = await PlanConvergenceService(session).converge_user_plan(
+        training_plan_id=inclusion.training_plan_id, today=MON.date(),
+    )
+    assert again.mutations == 0, again.as_dict()
+    assert len(await _main_occurrences(session, user)) == 2
+
+
+async def test_legacy_enrolment_keeps_catalog_frequency(session, user: User, clock):
+    inclusion = await _enrol(session, user, await _pullups(session), program_version="pullups_legacy_step")
+    main = next(slot for slot in inclusion.snapshot["slots"] if slot["key"] == "main")
+    assert main["sessions_per_week"] == 3 and "schedule" not in inclusion.snapshot
+    assert len(await _main_occurrences(session, user)) == 3
+
+
+async def test_aged_legacy_snapshot_without_frozen_slots_is_not_rescheduled(session, user: User, clock):
+    """Инклюзия до #304 (снимок без slots) читает частоту из каталога, как раньше; V5.6 её не трогает."""
+    inclusion = await _enrol(session, user, await _pullups(session), program_version="pullups_legacy_step")
+    snapshot = {k: v for k, v in inclusion.snapshot.items() if k != "slots"}
+    inclusion.snapshot = snapshot
+    await session.flush()
+    assert len(await _main_occurrences(session, user)) == 3
+    await session.refresh(inclusion)
+    assert "schedule" not in inclusion.snapshot and "program_version" not in inclusion.progression_state
 
 
 # --- Живой старт: SetTarget и снимок рецепта ----------------------------------------------------------
@@ -300,7 +347,7 @@ async def test_a_then_b_sequence_progresses_each_block_by_its_own_signal(session
     assert [Decimal(t["value"]) for t in a2["blocks"][0]["targets"]] == [18, 17, 17, 17]
     assert a2["blocks"][1]["course_block"]["display"] == "5×5 +6.5 кг"
     clock(MON + timedelta(days=9))
-    b2 = await _start(session, user, (await _main_occurrences(session, user))[3]["id"])
+    b2 = await _start(session, user, (await _main_occurrences(session, user, week_number=2))[1]["id"])
     assert b2.status_code == 200, b2.text
     assert b2.json()["blocks"][0]["course_block"]["intermediate_goal"] == 68  # прошлый факт 67 + 1
 
@@ -316,7 +363,17 @@ async def test_unconfirmed_technique_never_counts_as_valid(session, user: User, 
     assert inclusion.progression_state["strength_a"]["load_kg"] == "5"
 
 
-async def test_assisted_strength_steps_band_by_users_own_order(session, user: User, clock):
+def _band(item: EquipmentItem, colour: str) -> dict:
+    return {
+        "kind": "band", "equipment_item_id": item.id, "name": item.name, "colour": colour,
+        "attachment": "петля на перекладине", "body_position": "стопа",
+    }
+
+
+async def test_assisted_strength_band_step_waits_for_full_setup_confirmation(session, user: User, clock):
+    """Следующая ступень помощи — по ЛИЧНОМУ порядку резин, но порядок не подтверждает цвет, крепление и
+    положение стопы/колена: блок хранит прежнюю подтверждённую помощь, намерение ждёт, старт этой роли
+    заблокирован до подтверждения полной записи; неполная запись — 422."""
     program = await _pullups(session)
     session.add_all([
         EquipmentItem(user_id=user.id, name="Красная", position=0),
@@ -326,17 +383,44 @@ async def test_assisted_strength_steps_band_by_users_own_order(session, user: Us
     await session.flush()
     items = list((await session.execute(select(EquipmentItem).where(EquipmentItem.user_id == user.id).order_by(EquipmentItem.position))).scalars())
     inclusion = await _enrol(session, user, program, fresh_max=4, course_inputs={
-        "volume_capacity": 10, "volume_assistance": {"kind": "band", "equipment_item_id": items[0].id, "name": "Красная"},
-        "strength_assistance": {"kind": "band", "equipment_item_id": items[1].id, "name": "Синяя", "attachment": "петля"},
+        "volume_capacity": 10, "volume_assistance": _band(items[0], "красная"),
+        "strength_assistance": _band(items[1], "синяя"),
     })
     started, done = await _cycle(session, user, clock, 0, [[7, 7, 7, 9], [5, 5, 5, 5, 8]])
     assert [t["marker"] for t in started["blocks"][1]["targets"]] == ["working"] * 4 + ["control"]
     assert started["blocks"][1]["targets"][-1]["cap_reps"] == 8
     strength = done["course_progression"]["blocks"][1]
     assert (strength["block_role"], strength["assistance_intent"]) == ("assisted_strength", "decrease_assistance")
+    assert strength["reason"] == "assistance_confirmation_required"
     await session.refresh(inclusion)
-    assert inclusion.progression_state["strength_a"]["assistance"]["equipment_item_id"] == items[2].id
-    assert inclusion.progression_state["strength_b"]["assistance"]["equipment_item_id"] == items[1].id
+    state = inclusion.progression_state
+    assert state["strength_a"]["assistance"] == _band(items[1], "синяя")  # прежняя, подтверждённая
+    assert state["assistance_pending"] == [{
+        "block": "strength_a", "intent": "decrease_assistance",
+        "proposed": {"kind": "band", "equipment_item_id": items[2].id, "name": "Жёлтая", "colour": None,
+                     "attachment": None, "body_position": None},
+    }]
+    assert state["strength_b"]["assistance"] == _band(items[1], "синяя")
+
+    # B не затронута; следующая A — только после подтверждения.
+    await _cycle(session, user, clock, 1, [[5] * 10, [5, 5, 5, 5, 6]])
+    clock(MON + timedelta(days=6))
+    blocked = await _start(session, user, (await _main_occurrences(session, user, week_number=2))[0]["id"])
+    assert blocked.status_code == 409 and blocked.json()["detail"]["missing"] == ["assistance_confirmation"]
+
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/inputs"
+    partial = await v2_put(session, user.telegram_id, path, {"assistance_confirmations": [
+        {"block": "strength_a", "setup": {"kind": "band", "equipment_item_id": items[2].id, "name": "Жёлтая"}},
+    ]})
+    assert partial.status_code == 422
+    confirmed = await v2_put(session, user.telegram_id, path, {"assistance_confirmations": [
+        {"block": "strength_a", "setup": _band(items[2], "жёлтая")},
+    ]})
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["assistance_pending"] == [] and confirmed.json()["pending_inputs"] == []
+    started = await _start(session, user, (await _main_occurrences(session, user, week_number=2))[0]["id"])
+    assert started.status_code == 200, started.text
+    assert started.json()["blocks"][1]["course_block"]["assistance"] == _band(items[2], "жёлтая")
 
 
 # --- Только вперёд, идемпотентность, копия ---------------------------------------------------------

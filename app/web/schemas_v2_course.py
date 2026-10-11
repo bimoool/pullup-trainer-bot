@@ -24,6 +24,14 @@ class AssistanceSetupSchema(BaseModel):
         return AssistanceSetup(**self.model_dump())
 
 
+class AssistanceConfirmationSchema(BaseModel):
+    """Подтверждение ПОЛНОЙ записи помощи блока, ждущего смены (или исправление записи): резина —
+    модель/название, цвет, крепление, положение стопы/колена; либо «без помощи». Неполная запись — 422."""
+
+    block: Literal["volume_a", "volume_b", "strength_a", "strength_b"]
+    setup: AssistanceSetupSchema
+
+
 class CourseInputsRequest(BaseModel):
     fresh_max: int | None = Field(default=None, ge=0, le=999)
     volume_capacity: int | None = Field(default=None, ge=1, le=999)
@@ -36,6 +44,7 @@ class CourseInputsRequest(BaseModel):
     known_strength_b_kg: Decimal | None = Field(default=None, ge=0, le=300)
     volume_assistance: AssistanceSetupSchema | None = None
     strength_assistance: AssistanceSetupSchema | None = None
+    assistance_confirmations: list[AssistanceConfirmationSchema] = Field(default_factory=list, max_length=4)
     # §9: пользователь проверил восстановление и внешнюю тяговую нагрузку — прибавки снова назначаются.
     clear_recovery_check: bool = False
 

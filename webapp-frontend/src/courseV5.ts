@@ -86,7 +86,7 @@ const REASON_TEXT: Record<string, string> = {
   technique_unconfirmed: "техника не подтверждена",
   rest_unconfirmed: "отдых не подтверждён",
   plan_not_closed: "план не закрыт",
-  assistance_selection_required: "выберите следующую резину",
+  assistance_confirmation_required: "подтвердите следующую резину целиком (модель, цвет, крепление, положение)",
   recovery_check_required: "сначала проверка восстановления",
   load_increment_unavailable: "нет доступного шага веса",
 };
@@ -116,7 +116,7 @@ const PENDING_TEXT: Record<string, string> = {
   one_rep_max: "тест 1RM (или недавний результат 5×5 / 5×3)",
   load_step: "шаг дополнительного веса",
   volume_reference: "объём первой тренировки A",
-  assistance_selection: "выбор следующей резины",
+  assistance_confirmation: "подтверждение следующей резины (модель, цвет, крепление, положение)",
   recovery_check: "проверка восстановления",
 };
 
@@ -129,7 +129,12 @@ export const COURSE_INPUT_FIELDS: Record<string, { key: string; label: string; u
   fresh_max: [{ key: "fresh_max", label: "Свежий максимум строгих подтягиваний", unit: "повт." }],
   volume_capacity: [{ key: "volume_capacity", label: "Строгих повторений с объёмной резиной (≈8–12)", unit: "повт." }],
   body_mass: [{ key: "body_mass_kg", label: "Масса тела", unit: "кг" }],
-  one_rep_max: [{ key: "e1rm_kg", label: "1RM: дополнительный вес на одно строгое повторение", unit: "кг" }],
+  one_rep_max: [
+    { key: "e1rm_kg", label: "1RM: дополнительный вес на одно строгое повторение", unit: "кг" },
+    // V5.6 §8: недавний подтверждённый результат в том же стандарте и месте, после объёмного блока, сильнее 1RM.
+    { key: "known_strength_a_kg", label: "Или: недавно закрытые 5×5 (сила A) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
+    { key: "known_strength_b_kg", label: "Или: недавно закрытые 5×3 (сила B) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
+  ],
   load_step: [{ key: "load_step_kg", label: "Шаг дополнительного веса (самый маленький диск)", unit: "кг" }],
 };
 
@@ -139,6 +144,25 @@ export interface BandFields {
   colour: string;
   attachment: string;
   body_position: string;
+}
+
+export function bandComplete(fields: BandFields): boolean {
+  return fields.bodyweight || [fields.name, fields.colour, fields.attachment, fields.body_position].every((v) => v.trim() !== "");
+}
+
+/** Подтверждения смены помощи: только полностью заполненные записи (или «без помощи»). */
+export function assistanceConfirmations(
+  entries: { block: string; fields: BandFields }[],
+): { block: string; setup: Record<string, unknown> }[] {
+  return entries.filter((entry) => bandComplete(entry.fields)).map(({ block, fields }) => ({
+    block,
+    setup: fields.bodyweight
+      ? { kind: "bodyweight" }
+      : {
+        kind: "band", name: fields.name.trim(), colour: fields.colour.trim(), attachment: fields.attachment.trim(),
+        body_position: fields.body_position.trim(),
+      },
+  }));
 }
 
 /** Тело PUT …/course/inputs из значений формы: пустые поля не шлём (не угадываем значения). */
@@ -159,7 +183,8 @@ export function courseInputsPayload(
     if (fields.bodyweight) {
       return { kind: "bodyweight" };
     }
-    if (fields.name.trim() === "") {
+    // Резина готова к использованию только целиком: модель/название, цвет, крепление, положение (V5.6 §8.2).
+    if (!bandComplete(fields)) {
       return null;
     }
     return {

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  blockChecks, courseInputsPayload, courseTargetText, describeCourseOutcome, describePendingInputs,
+  assistanceConfirmations, blockChecks, courseInputsPayload, courseTargetText, describeCourseOutcome,
+  describePendingInputs,
 } from "../src/courseV5.ts";
 
 test("courseTargetText: маркеры V5.6", () => {
@@ -48,15 +49,35 @@ test("courseInputsPayload: только заполненное, резина о�
   assert.deepEqual(
     courseInputsPayload(
       { volume_capacity: "10" },
-      { volume: { ...empty, name: "Синяя", attachment: "петля" }, strength: { ...empty, bodyweight: true } },
+      {
+        volume: { ...empty, name: "Синяя", colour: "синяя", attachment: "петля", body_position: "стопа" },
+        strength: { ...empty, bodyweight: true },
+      },
       true,
     ),
     {
       volume_capacity: 10,
-      volume_assistance: { kind: "band", name: "Синяя", colour: null, attachment: "петля", body_position: null },
+      volume_assistance: { kind: "band", name: "Синяя", colour: "синяя", attachment: "петля", body_position: "стопа" },
       strength_assistance: { kind: "bodyweight" },
       clear_recovery_check: true,
     },
   );
   assert.deepEqual(courseInputsPayload({}, { volume: empty }, false), {}); // резина без названия не угадывается
+  // Неполная резина (нет цвета/положения) не отправляется как готовая.
+  assert.deepEqual(courseInputsPayload({}, { volume: { ...empty, name: "Синяя", attachment: "петля" } }, false), {});
+});
+
+test("assistanceConfirmations: только полные записи или «без помощи»", () => {
+  const empty = { bodyweight: false, name: "", colour: "", attachment: "", body_position: "" };
+  assert.deepEqual(
+    assistanceConfirmations([
+      { block: "strength_a", fields: { ...empty, name: "Жёлтая" } },
+      { block: "volume_a", fields: { bodyweight: false, name: "Красная", colour: "красная", attachment: "петля", body_position: "колено" } },
+      { block: "strength_b", fields: { ...empty, bodyweight: true } },
+    ]),
+    [
+      { block: "volume_a", setup: { kind: "band", name: "Красная", colour: "красная", attachment: "петля", body_position: "колено" } },
+      { block: "strength_b", setup: { kind: "bodyweight" } },
+    ],
+  );
 });

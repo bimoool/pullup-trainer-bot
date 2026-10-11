@@ -119,6 +119,8 @@ export interface DashboardStatusResponse {
   program_inclusion_id?: number | null;
   course?: Record<string, unknown> | null;
   course_pending_inputs?: string[] | null;
+  /** Смены помощи, ждущие подтверждения полной записи резины. */
+  course_assistance_pending?: { block: string; intent: string; proposed: { name?: string | null } | null }[] | null;
 }
 
 async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
