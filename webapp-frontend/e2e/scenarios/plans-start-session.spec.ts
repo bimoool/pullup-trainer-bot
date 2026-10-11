@@ -27,8 +27,10 @@ test("«Планы» → Подтягивания → Начать → live sess
 
   // --- STEP readiness не обойдена: видны реальные цели по блокам, не
   // просто голая кнопка "Начать" без пред-экрана ---
-  await expect(page.getByRole("heading", { name: "Цель 1: 10 повторений" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Цель 2: 3 повторений" })).toBeVisible();
+  // issue #305 (V5.6): сид — M = 12 (замер онбординга) → переходная неделя: объём A 5/5/5/5+, сила 5×5;
+  // E1RM 20 при массе 75 → 0,75·95 − 75 < 0 → собственный вес (scripts/e2e_seed.py::_V5_E2E_INPUTS).
+  await expect(page.getByRole("heading", { name: "Блок 1: 5/5/5/5+" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Блок 2: 5×5 масса тела" })).toBeVisible();
 
   const startResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/api/v2/sessions/live") && response.status() === 200,
