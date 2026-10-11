@@ -206,7 +206,10 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     app becoming visible). While it runs, every client read of the two projecting GETs waits for it
     (`engineGate.ts`, awaited inside `fetchActiveLiveSession` / `fetchSessions` / `fetchSessionsPage`). A terminal
     answer (404/409 — the session is gone or is not v2) drops that queue; another 4xx keeps it without retrying. The
-    open screen owns its session's queue (`claimQueue`), so the app-level drain skips it. User input made before a
+    open screen owns its session's queue (`claimQueue`), so the app-level drain skips it. A request (or a
+    `releaseQueue`) that arrives while a pass is running marks a rerun: the reconciliation finishes only after a
+    complete pass during which no new request arrived, so a queue released mid-pass is always reconsidered before
+    the gate opens. User input made before a
     deadline therefore always reaches the server before that deadline is persisted; the server's rules (clamping,
     stale no-op, duplicate) are unchanged. The same drain sends a review queued for a session the server
     already completed by itself (no longer active, so no screen would reopen it). Audio: the engine exposes

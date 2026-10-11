@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { remainingMs, start, type EnginePlan } from "../src/liveEngine.ts";
+import {
+  applyEvent, clampClientAt, project, remainingMs, start, type EngineEvent, type EnginePlan, type EngineState,
+} from "../src/liveEngine.ts";
+import { fetchActiveLiveSession, fetchSessions } from "../src/apiV2.ts";
 import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
   claimQueue, clearQueue, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
@@ -348,4 +351,263 @@ test("F1: одна сверка на приложение — повторный
   assert.equal(startEngineReconciliation("init", { store, api }), done);  // online → тот же promise, повтор сейчас
   await done;
   assert.deepEqual(order, ["events:89:fail", "events:89:ok"]);
+});
+
+// --- #306: запрос сверки посреди идущего прохода (экран освободил очередь) -------------------------
+
+/** Сервер на настоящем движке (liveEngine.ts — зеркало серверного, общие векторы): POST событий —
+ * зажатый client_at, применение, проекция до «сейчас»; чтение с проекцией (GET /active, список сессий) —
+ * project(now). Дубль client_event_id — no-op. */
+function engineServer(sessions: Record<number, { plan: EnginePlan; startAt: number }>) {
+  const state = new Map<number, EngineState>();
+  const seen = new Set<string>();
+  for (const [id, { plan, startAt }] of Object.entries(sessions)) {
+    state.set(Number(id), start(plan, startAt)[0]);
+  }
+  const server = {
+    now: 0,
+    plan: (id: number) => sessions[id].plan,
+    state: (id: number) => state.get(id) as EngineState,
+    post(id: number, events: { client_event_id: string; type: string; payload: Record<string, unknown>; client_at?: string | null }[]) {
+      const plan = sessions[id].plan;
+      let current = state.get(id) as EngineState;
+      const results = events.map((event) => {
+        if (seen.has(event.client_event_id)) {
+          return { client_event_id: event.client_event_id, outcome: "duplicate" };
+        }
+        seen.add(event.client_event_id);
+        const clientAt = event.client_at ? Date.parse(event.client_at) : null;
+        const at = clampClientAt(clientAt, current.last_at, server.now);
+        const before = JSON.stringify(current);
+        [current] = applyEvent(plan, current, { type: event.type, payload: event.payload } as EngineEvent, at);
+        return { client_event_id: event.client_event_id, outcome: JSON.stringify(current) === before ? "noop" : "applied" };
+      });
+      [current] = project(plan, current, server.now);
+      state.set(id, current);
+      return { engine_status: current.status, event_results: results };
+    },
+    /** GET /sessions/live/active или список сессий: сервер проецирует истёкшие дедлайны. */
+    projectingRead(id: number) {
+      state.set(id, project(sessions[id].plan, state.get(id) as EngineState, server.now)[0]);
+    },
+  };
+  return server;
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+const TIMED_15: EnginePlan = {
+  blocks: [
+    { kind: "sets", prep_seconds: 0, rest_after_block_seconds: 5, extra_sets_allowed: true,
+      sets: [{ kind: "time", target: 15, rest_after_seconds: null }] },
+    { kind: "sets", prep_seconds: 0, rest_after_block_seconds: null, extra_sets_allowed: true,
+      sets: [{ kind: "reps", target: 3, rest_after_seconds: null }] },
+  ],
+};
+const INTERVAL: EnginePlan = {
+  blocks: [{ kind: "interval", prep_seconds: 3, rest_after_block_seconds: null, extra_sets_allowed: false,
+    interval: { work_seconds: 5, rest_seconds: 4, rounds: 2, record_reps_per_round: false } }],
+};
+
+/**
+ * Гонка ревьюера: сверка App идёт (очередь сессии A, её POST в полёте); очередь сессии S принадлежит
+ * открытому экрану (claim) — проход её пропускает. Посреди POST сессии A экран закрывается: releaseQueue(S) +
+ * startEngineReconciliation() (так делает очистка LiveEngineScreen). Затем открыт Журнал (чтение с проекцией).
+ */
+async function claimReleaseRace(opts: { sQueue: QueuedEngineEventLike[]; serverS: { plan: EnginePlan; startAt: number }; readAtMs: number }) {
+  const A = 901;
+  const S = 902;
+  const server = engineServer({ [A]: { plan: TIMED_15, startAt: 0 }, [S]: opts.serverS });
+  const store = memoryStore();
+  // S сохранена раньше A: проход ПРОХОДИТ мимо S (она ещё за экраном) и только потом шлёт A — ровно гонка ревьюера.
+  await saveQueue({ ...emptyQueue(S), events: opts.sQueue }, store);
+  await saveQueue({ ...emptyQueue(A), events: [{ client_event_id: "a-stop", type: "stop", payload: { phase_seq: server.state(A).phase_seq }, client_at_ms: 2_000 }] }, store);
+  const order: string[] = [];
+  const aInFlight = deferred();
+  const aRelease = deferred();
+  let passes = 0;
+  const countingStore: QueueStore = { ...store, keys: async () => { passes += 1; return store.keys(); } };
+  const api: DrainApi = {
+    postEvents: (async (_init: string, id: number, events: Parameters<typeof server.post>[1]) => {
+      order.push(`events:${id}`);
+      if (id === A) {
+        aInFlight.resolve();
+        await aRelease.promise;  // POST сессии A ещё в полёте
+      }
+      return server.post(id, events);
+    }) as unknown as DrainApi["postEvents"],
+    complete: (async () => ({ status: "completed" })) as unknown as DrainApi["complete"],
+  };
+  server.now = opts.readAtMs;  // приложение открыто через много секунд после дедлайнов
+  claimQueue(S);
+  const reconcile = startEngineReconciliation("init", { store: countingStore, api, delaysMs: [5] });
+  await aInFlight.promise;  // первый проход: S уже пропущена (claim), A в полёте
+  releaseQueue(S);  // экран закрыт…
+  const joined = startEngineReconciliation("init", { store: countingStore, api, delaysMs: [5] });  // …и просит сверку
+  const journal = (async () => {
+    await awaitEngineReconciliation();  // fetchSessions / fetchActiveLiveSession (apiV2.ts)
+    order.push("journal");
+    server.projectingRead(S);
+  })();
+  aRelease.resolve();
+  await Promise.all([reconcile, journal]);
+  return { server, store, order, passes, joined, reconcile, S };
+}
+
+type QueuedEngineEventLike = { client_event_id: string; type: string; payload: Record<string, unknown>; client_at_ms: number };
+
+test("гонка ревьюера: очередь, освобождённая экраном посреди прохода, сверяется до открытия ворот", async () => {
+  const stopS = { client_event_id: "s-stop", type: "stop", payload: { phase_seq: start(TIMED_15, 0)[0].phase_seq }, client_at_ms: 4_000 };
+  const { server, store, order, passes, joined, reconcile, S } = await claimReleaseRace({
+    sQueue: [stopS], serverS: { plan: TIMED_15, startAt: 0 }, readAtMs: 100_000,
+  });
+  assert.equal(server.state(S).logs[0].value, 4);  // «Стоп» на 4 с — не цель 15
+  assert.equal(joined, reconcile);  // single-flight: тот же promise, второй петли нет
+  assert.deepEqual(order, ["events:901", "events:902", "journal"]);  // S досылается (второй проход) ДО чтения с проекцией
+  assert.equal(passes, 2);  // второй полный проход — ровно один
+  assert.equal(store.data.size, 0);
+});
+
+test("гонка ревьюера, пауза: пауза доходит раньше проекции — активна, на паузе, остаток верный", async () => {
+  const [initial] = start(INTERVAL, 0);
+  const atWork = project(INTERVAL, initial, 3_500)[0];  // раунд 1 идёт с 3 с, дедлайн — 8 с
+  const pauseS = { client_event_id: "s-pause", type: "pause", payload: { phase_seq: atWork.phase_seq }, client_at_ms: 4_000 };
+  const { server, order, S } = await claimReleaseRace({
+    sQueue: [pauseS], serverS: { plan: INTERVAL, startAt: 0 }, readAtMs: 600_000,
+  });
+  const state = server.state(S);
+  assert.equal(state.status, "active");  // не завершилась сама
+  assert.equal(state.paused_at, 4_000);
+  assert.equal(state.paused_remaining_ms, 4_000);
+  assert.equal(remainingMs(state, 600_000), 4_000);
+  assert.deepEqual(order, ["events:901", "events:902", "journal"]);
+});
+
+test("несколько запросов посреди одного прохода: одна петля, один дополнительный проход, ворота — после", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(912), events: [stop("m-s")] }, store);  // пропускается первым проходом (claim)
+  await saveQueue({ ...emptyQueue(911), events: [stop("m-a")] }, store);
+  let passes = 0;
+  const countingStore: QueueStore = { ...store, keys: async () => { passes += 1; return store.keys(); } };
+  const inFlight = deferred();
+  const releaseA = deferred();
+  const order: string[] = [];
+  const { api } = fakeApi({
+    events: (sessionId, ids) => {
+      order.push(`events:${sessionId}`);
+      return { engine_status: "active", event_results: ids.map((id) => ({ client_event_id: id, outcome: "applied" })) };
+    },
+  });
+  const slowApi: DrainApi = {
+    ...api,
+    postEvents: (async (...args: Parameters<DrainApi["postEvents"]>) => {
+      if (args[1] === 911) {
+        inFlight.resolve();
+        await releaseA.promise;
+      }
+      return api.postEvents(...args);
+    }) as DrainApi["postEvents"],
+  };
+  claimQueue(912);
+  const run = startEngineReconciliation("init", { store: countingStore, api: slowApi });
+  await inFlight.promise;
+  releaseQueue(912);
+  const joins = [1, 2, 3, 4, 5].map(() => startEngineReconciliation("init", { store: countingStore, api: slowApi }));
+  for (const joined of joins) {
+    assert.equal(joined, run);  // параллельных петель нет
+  }
+  const read = gatedRead(order, "read");
+  releaseA.resolve();
+  await Promise.all([run, read]);
+  assert.equal(passes, 2);  // пять запросов — один дополнительный полный проход, не пять
+  assert.deepEqual(order, ["events:911", "events:912", "read"]);
+});
+
+test("запрос посреди прохода без изменений очередей: не больше одного стабилизирующего прохода, ворота открываются", async () => {
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(921), events: [stop("n-a")] }, store);
+  let passes = 0;
+  const countingStore: QueueStore = { ...store, keys: async () => { passes += 1; return store.keys(); } };
+  const inFlight = deferred();
+  const release = deferred();
+  const { api } = fakeApi();
+  const slowApi: DrainApi = {
+    ...api,
+    postEvents: (async (...args: Parameters<DrainApi["postEvents"]>) => {
+      inFlight.resolve();
+      await release.promise;
+      return api.postEvents(...args);
+    }) as DrainApi["postEvents"],
+  };
+  const run = startEngineReconciliation("init", { store: countingStore, api: slowApi });
+  await inFlight.promise;
+  assert.equal(startEngineReconciliation("init", { store: countingStore, api: slowApi }), run);
+  release.resolve();
+  await run;
+  assert.equal(passes, 2);
+  const order: string[] = [];
+  await gatedRead(order, "read");
+  assert.deepEqual(order, ["read"]);
+});
+
+test("запрос сразу после завершения сверки начинает новую (не теряется в окне выхода)", async () => {
+  const store = memoryStore();
+  const { api, calls } = fakeApi();
+  const first = startEngineReconciliation("init", { store, api });
+  await first;
+  await saveQueue({ ...emptyQueue(931), events: [stop("late")] }, store);  // экран закрылся с очередью
+  const second = startEngineReconciliation("init", { store, api });
+  assert.notEqual(second, first);
+  await second;
+  assert.deepEqual(calls, [{ kind: "events", sessionId: 931, ids: ["late"] }]);
+});
+
+test("гонка ревьюера через настоящие apiV2.fetchSessions / fetchActiveLiveSession: запрос уходит в сеть только после S", async () => {
+  const S = 942;
+  const A = 941;
+  const store = memoryStore();
+  await saveQueue({ ...emptyQueue(S), events: [stop("g-s", 4_000)] }, store);
+  await saveQueue({ ...emptyQueue(A), events: [stop("g-a")] }, store);
+  const order: string[] = [];
+  const aInFlight = deferred();
+  const aRelease = deferred();
+  const { api } = fakeApi();
+  const slowApi: DrainApi = {
+    ...api,
+    postEvents: (async (...args: Parameters<DrainApi["postEvents"]>) => {
+      order.push(`events:${args[1]}`);  // запрос ушёл
+      if (args[1] === A) {
+        aInFlight.resolve();
+        await aRelease.promise;
+      }
+      return api.postEvents(...args);
+    }) as DrainApi["postEvents"],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    order.push(url.includes("/live/active") ? "GET active" : "GET sessions");
+    const body = url.includes("/live/active") ? { session: null } : { sessions: [] };
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    claimQueue(S);
+    const run = startEngineReconciliation("init", { store, api: slowApi });
+    await aInFlight.promise;  // S уже пропущена, POST сессии A в полёте
+    releaseQueue(S);
+    void startEngineReconciliation("init", { store, api: slowApi });
+    const reads = Promise.all([fetchSessions("init"), fetchActiveLiveSession("init")]);  // Журнал + App
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.deepEqual(order, ["events:941"]);  // ни одного чтения с проекцией, пока S не дослана
+    aRelease.resolve();
+    await Promise.all([run, reads]);
+    assert.deepEqual(order.slice(0, 2), ["events:941", "events:942"]);
+    assert.deepEqual(order.slice(2).sort(), ["GET active", "GET sessions"]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

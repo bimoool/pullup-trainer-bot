@@ -246,6 +246,9 @@ export function claimQueue(sessionId: number): void {
 
 export function releaseQueue(sessionId: number): void {
   claimedSessions.delete(sessionId);
+  if (reconciling !== null) {
+    rerunRequested = true;  // идущий проход эту сессию пропустил — нужен ещё один полный проход
+  }
 }
 
 /** Паузы между повторами при временном сбое (сеть/5xx): ограниченный рост, без busy-loop. */
@@ -259,6 +262,9 @@ export interface ReconcileOptions {
 
 let reconciling: Promise<void> | null = null;
 let wakeReconcile: (() => void) | null = null;
+/** Запрос сверки (или освобождение очереди экраном) пришёл, пока шёл проход: этот проход мог не увидеть новое
+ * состояние очередей — до выхода нужен ещё один полный проход. */
+let rerunRequested = false;
 
 /**
  * #306 F1 — сверка всех сохранённых очередей движка v2, пока она не удастся.
@@ -273,18 +279,29 @@ let wakeReconcile: (() => void) | null = null;
  */
 export function startEngineReconciliation(initDataRaw: string, options: ReconcileOptions = {}): Promise<void> {
   if (reconciling !== null) {
+    rerunRequested = true;  // запрос не теряется, даже если проход сейчас идёт, а не спит
     wakeEngineReconciliation();
     return reconciling;
   }
   const delays = options.delaysMs ?? RECONCILE_RETRY_DELAYS_MS;
+  rerunRequested = false;
   const run = (async () => {
-    for (let attempt = 0; ; attempt += 1) {
+    for (let attempt = 0; ; ) {
+      rerunRequested = false;
       const { pending } = await drainEngineQueues(initDataRaw, options.store, options.api);
       if (!pending) {
+        if (rerunRequested) {
+          continue;  // за время прохода пришёл запрос / освободилась очередь — ещё один полный проход
+        }
+        // Решение «стабильно» и снятие single-flight — один синхронный шаг: запрос, пришедший после него,
+        // начнёт новую сверку (и новые ворота), а не присоединится к уже завершённой.
+        reconciling = null;
         return;
       }
+      const delay = delays[Math.min(attempt, delays.length - 1)];
+      attempt += 1;
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(done, delays[Math.min(attempt, delays.length - 1)]);
+        const timer = setTimeout(done, delay);
         function done() {
           clearTimeout(timer);
           wakeReconcile = null;
@@ -294,7 +311,9 @@ export function startEngineReconciliation(initDataRaw: string, options: Reconcil
       });
     }
   })().finally(() => {
-    reconciling = null;
+    if (reconciling === run) {
+      reconciling = null;
+    }
   });
   reconciling = run;
   holdEngineReconciliation(run);
