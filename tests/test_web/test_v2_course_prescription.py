@@ -1,15 +1,14 @@
-"""DOMAIN-V2 Wave 1c (issue #305): прескрипция курса «Подтягивания» на реальном Postgres через API.
+"""DOMAIN-V2 Wave 1c (issue #305): механизм прескрипции курса на реальном Postgres через API —
+для УСТАРЕВШЕЙ версии программы (pullups_legacy_step; инклюзии явно создаются этой версией).
 
-OD-3 решён (подход на максимум включается), прогрессию двигает ТОЛЬКО подход на максимум, только вперёд
-(решения владельца); числа стартовой прескрипции (OD-1) открыты и здесь не проверяются:
-  A/E  свежая инклюзия: block_b.work_sets = 4, Live блока Б — 4 рабочих подхода (D2), не 1, + max;
-  B    цель с is_max_set → SetLog.is_max_set → чтение TrainingSession V2 (исходы) → вход прогрессии (D3);
-  C/D/E одинаковый max + разные рабочие → одинаковое следующее состояние; одинаковые рабочие + разный
-       max → разное; провалы рабочих подходов сами по себе ничего не меняют (J4: цель 3, max 6 → 4);
-  F    правка истории (обычный подход и max) не переписывает ни состояния, ни плана, ни рецептов, а
-       следующий рецепт строится из замера на момент завершения;
-  I/J  awaiting_assessment: свежий без замера ждёт замера и не стартует main; записанный замер
-       переводит в active; пользователь с историей основных тренировок — никогда на замер;
+Текущая программа — V5.6 (tests/test_web/test_v2_course_v5.py, tests/test_pullups_v5.py). Прежнее
+решение «прогрессию двигает только подход на максимум» заменено V5.6: его тесты (C/D/E) удалены, а не
+сохранены ради зелёного прогона. Здесь — то, что остаётся верным для устаревшей версии:
+  A/E  block_b.work_sets = 4, Live блока Б — 4 рабочих подхода (D2), не 1, + подход на максимум;
+  B    цель с is_max_set → SetLog.is_max_set → чтение TrainingSession V2 (исходы) (D3);
+  F    правка истории не переписывает ни состояния, ни плана, ни рецептов (только вперёд);
+  I/J  awaiting_assessment (обе версии): свежий без замера ждёт замера и не стартует main; записанный
+       замер переводит в active тем же правилом, которым создана инклюзия; с историей — никогда на замер;
   K/L  повторный converge = 0 изменений; подписка/доступ не меняются.
 """
 
@@ -88,11 +87,12 @@ async def _pullups(session, *, assessment_required: bool = False) -> Program:
     return program
 
 
-async def _enrol(session, user: User, program: Program) -> ProgramInclusion:
+async def _enrol(session, user: User, program: Program, *, version: str | None = "pullups_legacy_step") -> ProgramInclusion:
     user.timezone = "UTC"
     session.add(TrainingPlan(user_id=user.id, created_at=MON - timedelta(hours=1)))
     await session.flush()
-    response = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {"program_id": program.id})
+    payload = {"program_id": program.id} | ({"program_version": version} if version else {})
+    response = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", payload)
     assert response.status_code == 200, response.text
     return await session.get(ProgramInclusion, response.json()["id"])
 
@@ -143,7 +143,8 @@ async def test_a_fresh_inclusion_block_b_has_four_work_sets_and_records_provenan
     assert inclusion.progression_state["block_b"]["work_sets"] == STRENGTH_BLOCK.work_sets == 4
     assert inclusion.status == "active"
     assert inclusion.prescription_provenance["rule_id"] == "program_config_default"
-    assert inclusion.prescription_provenance["rule_decided"] is False  # OD-1 открыт
+    assert inclusion.prescription_provenance["rule_decided"] is False  # статус-кво устаревшей версии
+    assert inclusion.prescription_provenance["program_version"] == "pullups_legacy_step"
 
 
 async def test_e_live_block_b_executes_and_persists_four_working_sets_not_one(session, user: User, clock):
@@ -249,82 +250,6 @@ async def test_b_extra_set_before_max_does_not_steal_or_shift_max_identity(sessi
     assert flagged == [(7, False)]  # ровно один max, у планового пятого подхода
 
 
-# --- C / D / E: прогрессию двигает только подход на максимум -----------------------------------------
-
-
-def _without_counter(state: dict) -> dict:
-    return {k: v for k, v in state.items() if k != "workouts_completed_in_set"}
-
-
-async def _next_state_after(session, user: User, clock, inclusion: ProgramInclusion, initial: dict,
-                            reps_by_block: list[list[int]], occurrence_index: int) -> dict:
-    """Следующее состояние после одного цикла от ОДНОГО И ТОГО ЖЕ стартового состояния."""
-    inclusion.progression_state = initial
-    await session.flush()
-    await _course_cycle(session, user, clock, occurrence_index, reps_by_block)
-    await session.refresh(inclusion)
-    return dict(inclusion.progression_state)
-
-
-async def test_c_same_max_different_working_sets_gives_same_next_progression(session, user: User, clock):
-    inclusion = await _enrol(session, user, await _pullups(session))
-    initial = dict(inclusion.progression_state)
-
-    on_plan = await _next_state_after(session, user, clock, inclusion, initial, [[10, 10, 10, 12], [3, 3, 3, 3, 6]], 0)
-    off_plan = await _next_state_after(session, user, clock, inclusion, initial, [[25, 1, 0, 12], [0, 9, 1, 2, 6]], 1)
-
-    assert on_plan == off_plan  # байт в байт: рабочие подходы — не вход
-    assert on_plan["block_a"]["target"] == 11 and on_plan["block_b"]["target"] == 4  # J4: 3 → 4 по max 6
-
-    # Следующий рецепт одинаков: тот же резолвер от того же состояния.
-    clock(MON + timedelta(days=6))
-    started = await _start(session, user, (await _main_occurrences(session, user))[2]["id"])
-    assert [Decimal(str(t["value"])) for t in started.json()["blocks"][1]["targets"]] == [4, 4, 4, 4, 0]
-
-
-async def test_d_same_working_sets_different_max_gives_different_next_prescription(session, user: User, clock):
-    inclusion = await _enrol(session, user, await _pullups(session))
-    initial = dict(inclusion.progression_state)
-    working_a, working_b = [10, 10, 10], [3, 3, 3, 3]
-
-    held = await _next_state_after(session, user, clock, inclusion, initial, [[*working_a, 10], [*working_b, 3]], 0)
-    grown = await _next_state_after(session, user, clock, inclusion, initial, [[*working_a, 15], [*working_b, 6]], 1)
-
-    assert (held["block_a"]["target"], held["block_b"]["target"]) == (10, 3)  # max = цель → держим
-    assert (grown["block_a"]["target"], grown["block_b"]["target"]) == (11, 4)  # max > цели → +шаг
-
-
-async def test_e_working_set_failures_alone_do_not_mutate_progression(session, user: User, clock):
-    """Провалы рабочих подходов (0 повторений, объём ниже прошлого) при том же max: следующее состояние —
-    то же, что при выполнении по плану; трижды подряд — ни отката цели, ни weak_streak (раньше откат по
-    «слабому объёму» срабатывал на третьей)."""
-    inclusion = await _enrol(session, user, await _pullups(session))
-    initial = dict(inclusion.progression_state)
-    on_plan = await _next_state_after(session, user, clock, inclusion, initial, [[10, 10, 10, 10], [3, 3, 3, 3, 3]], 0)
-    failed = await _next_state_after(session, user, clock, inclusion, initial, [[0, 0, 0, 10], [0, 0, 0, 0, 3]], 1)
-    assert failed == on_plan
-
-
-async def test_e_three_failed_working_cycles_in_a_row_do_not_roll_back(session, user: User, clock):
-    inclusion = await _enrol(session, user, await _pullups(session))
-    state = dict(inclusion.progression_state)
-    # Прошлый объём велик — по старому правилу каждый из трёх циклов был бы «слабым» (объём < прошлого).
-    state["block_a"] = {**state["block_a"], "volume": 1000}
-    state["block_b"] = {**state["block_b"], "volume": 1000}
-    for index in (0, 1, 2):
-        state = await _next_state_after(session, user, clock, inclusion, state, [[0, 0, 0, 10], [0, 0, 0, 0, 3]], index)
-        assert (state["block_a"]["target"], state["block_b"]["target"]) == (10, 3)
-        assert state["block_a"]["weak_streak"] == state["block_b"]["weak_streak"] == 0
-
-
-async def test_e_missing_max_measurement_does_not_move_progression(session, user: User, clock):
-    """Подход на максимум не выполнен (рабочие подходы есть) — замера нет, роль не двигается."""
-    inclusion = await _enrol(session, user, await _pullups(session))
-    initial = dict(inclusion.progression_state)
-    state = await _next_state_after(session, user, clock, inclusion, initial, [[30, 30, 30], [9, 9, 9, 9]], 0)
-    assert _without_counter(state) == _without_counter(initial)
-
-
 # --- F: только вперёд — правка истории ничего не пересчитывает ------------------------------------
 
 
@@ -350,11 +275,33 @@ async def test_f_historical_edits_do_not_rewrite_progression_and_next_prescripti
     assert [(t.set_number, t.value, t.is_max_set) for t in await _block_rows(session, SetTarget, body["id"], 1)] == targets_before
     assert await _main_occurrences(session, user) == plan_before
 
-    # Следующий рецепт — от состояния, рассчитанного на границе завершения (max 6 → цель 4), не от
-    # поправленного задним числом max 1.
+    # Следующий рецепт — от состояния, рассчитанного на границе завершения формулой устаревшей версии
+    # (рабочие 3·3·3·3 + max 6 → цель 4, recalculate_target), не от поправленного задним числом max 1.
     clock(MON + timedelta(days=3))
     started = await _start(session, user, (await _main_occurrences(session, user))[1]["id"])
     assert [Decimal(str(t["value"])) for t in started.json()["blocks"][1]["targets"]] == [4, 4, 4, 4, 0]
+
+
+async def test_i_v5_inclusion_awaits_assessment_and_promotes_with_its_own_rule(session, user: User, clock):
+    """Программа V5.6 и ворота замера: без замера — awaiting; записанный замер (M = 25) переводит в active
+    тем же правилом pullups_v5_6@1 — уровень 2, A 17/17/17/17+ (без 1RM сила ждёт ввода)."""
+    program = await _pullups(session, assessment_required=True)
+    inclusion = await _enrol(session, user, program, version=None)
+    assert inclusion.status == "awaiting_assessment"
+    assert inclusion.progression_state["program_version"] == "pullups_v5_6"
+    assert inclusion.progression_state["level"] is None
+    session.add(AssessmentResult(
+        user_id=user.id, protocol_id=program.assessment["protocol_id"], performed_at=MON, value=Decimal(25), unit="reps",
+    ))
+    await session.flush()
+    blocked = await _start(session, user, (await _main_occurrences(session, user))[0]["id"])
+    assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "course_setup_required"
+    await session.refresh(inclusion)
+    assert inclusion.status == "active"
+    assert inclusion.prescription_provenance["rule_id"] == "pullups_v5_6"
+    state = inclusion.progression_state
+    assert state["level"] == "weighted" and state["volume_a"]["targets"] == [17, 17, 17, 17]
+    assert state["inputs"]["fresh_max"] == 25
 
 
 # --- I / J: awaiting_assessment --------------------------------------------------------------------

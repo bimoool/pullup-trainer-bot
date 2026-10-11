@@ -1,5 +1,6 @@
 """app.services.progression_cascade — правка исторической сессии в рамках
-STEP-прогрессии (issue #165, продолжение волны 3, раздел 10.6
+STEP-прогрессии УСТАРЕВШЕЙ версии программы (pullups_legacy_step; к V5.6 неприменимо — issue #305,
+прогрессия V5.6 только вперёд) (issue #165, продолжение волны 3, раздел 10.6
 docs/plan-and-specs.md "Редактирование сессии из плана"): preview/apply
 пересчитывают ВСЮ цепочку STEP-сессий заново от
 ProgramInclusion.initial_progression_state (неизменяемый снимок на момент
@@ -31,6 +32,7 @@ from app.db.repositories.training_sessions import (
     TrainingSessionRepository,
 )
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.pullups_v5 import is_v5_state
 from app.services.session_log import (
     _ROLE_BLOCK_A,
     _ROLE_BLOCK_B,
@@ -142,6 +144,10 @@ class ProgressionCascadeService:
         if inclusion is None:
             return None
         if inclusion.snapshot.get("progression_strategy_type") != ProgressionStrategyType.STEP.value:
+            return _NOT_STEP_STRATEGY
+        if is_v5_state(inclusion.progression_state):
+            # issue #305: программа V5.6 прогрессирует только вперёд — правка истории (#307) меняет факт,
+            # но не пересчитывает состояние и не перестраивает выданные рецепты. Реплей к ней неприменим.
             return _NOT_STEP_STRATEGY
 
         edited_session = await self._sessions.get_for_user(edited_session_id, user_id)

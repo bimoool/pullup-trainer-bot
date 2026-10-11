@@ -111,11 +111,13 @@ CI-свидетельство) + #304 (`3983108`, принят 2026-10-09, fast-
   (`2ab2b19`); миграция `e3b9c5d7a2f1` идёт за `f4c1a7e9b3d2` (одна голова). Блок Б несёт `work_sets = 4`
   (absent/null → 4), единственный резолвер `resolve_progression_block` (рабочих = `work_sets` обеих ролей + один
   явный подход на максимум — OD-3 решён), `is_max_set` сохраняется от цели до TrainingSession V2 и прогрессии;
-  прогрессию двигает ТОЛЬКО подход на максимум, только вперёд (`advance_step_progression`, решение владельца;
-  `weak_streak` по объёму снят); оболочка `InitialPrescriptionRule` с провенансом, `awaiting_assessment`.
-  **Открыт только OD-1** (#310: числа стартовой прескрипции; пока `program_config_default@0`, `decided = false`).
-  Реализация — `docs/domain/PROGRAM_PLAN_V2.md` §11.
-- Дальше: после решения OD-1 — его правило в #305; затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
+  оболочка `InitialPrescriptionRule` с провенансом, `awaiting_assessment`. Прежнее «прогрессию двигает ТОЛЬКО подход
+  на максимум» (`advance_step_progression`) **заменено решением владельца V5.6** (11.10.2026): новые инклюзии —
+  программа `pullups_v5_6` (`docs/domain/PULLUPS_V5_6.md`, правило `pullups_v5_6@1`), у каждого блока свой сигнал;
+  устаревшие инклюзии — прежняя формула бот-эпохи (`pullups_legacy_step`), без перевода. Реализация —
+  `docs/domain/PROGRAM_PLAN_V2.md` §11. Миграция V5.6 `b5d8e1f3a6c9` (за `e3b9c5d7a2f1`).
+- Дальше: интеграция #306/#308, затем перебазирование #305 (переподвесить миграции после #306/#308); исполнение
+  рецепта V5.6 движком #306; UX входов V5.6.
 
 ## DOMAIN-V2 Wave 3a — TrainingSession v2 (#307, 2026-10-09)
 

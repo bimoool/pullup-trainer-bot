@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,13 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models_program import Program, ProgramInclusion
 from app.db.repositories.programs import ProgramRepository, program_items_snapshot
 from app.db.repositories.training_plans import TrainingPlanRepository
+from app.db.repositories.users import UserRepository
 from app.domain.course_prescription import (
+    CURRENT_INITIAL_PRESCRIPTION_RULE,
+    LEGACY_INITIAL_PRESCRIPTION_RULE,
     AssessmentSource,
     InclusionAssessmentState,
     PrescriptionOverrides,
 )
 from app.domain.plan_occurrence import InclusionStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.pullups_v5 import LEGACY_PROGRAM_VERSION, PROGRAM_VERSION, EntryInputs
 from app.services.course_assessment import CourseAssessmentService, initial_inclusion_state
 
 
@@ -26,6 +30,29 @@ class ProgramInclusionRequest:
     # issue #304 (PROGRAM_PLAN_V2 §2): повторное подключение снятого курса ВОЗОБНОВЛЯЕТ прежнее
     # включение (прогрессия, курсор, история). Начать заново — только явным restart=True.
     restart: bool = False
+    # issue #305: версия программы новой инклюзии. None — текущая (V5.6, pullups_v5_6). Устаревшая
+    # (pullups_legacy_step) — только явно: program_version или прежние поля initial_target_a/b, которые
+    # описывают состояние устаревшей версии. course_inputs — входы V5.6 (§3): R, резины, E1RM, шаг веса…
+    program_version: str | None = None
+    course_inputs: EntryInputs | None = None
+
+
+class UnknownProgramVersionError(ValueError):
+    pass
+
+
+def initial_rule_key(request: ProgramInclusionRequest) -> str:
+    """Правило стартовой прескрипции новой инклюзии (issue #305)."""
+    if request.program_version is None:
+        legacy = request.initial_target_a is not None or request.initial_target_b is not None
+        return LEGACY_INITIAL_PRESCRIPTION_RULE if legacy else CURRENT_INITIAL_PRESCRIPTION_RULE
+    if request.program_version == LEGACY_PROGRAM_VERSION:
+        return LEGACY_INITIAL_PRESCRIPTION_RULE
+    if request.program_version == PROGRAM_VERSION:
+        if request.initial_target_a is not None or request.initial_target_b is not None:
+            raise UnknownProgramVersionError("initial_target_a/b относятся к устаревшей версии программы")
+        return CURRENT_INITIAL_PRESCRIPTION_RULE
+    raise UnknownProgramVersionError(f"Неизвестная версия программы: {request.program_version}")
 
 
 def _build_snapshot(
@@ -102,6 +129,7 @@ class ProgramInclusionService:
         status = InclusionStatus.ACTIVE
         provenance = None
         baseline_result_id = None
+        rule_key = initial_rule_key(request)
         if is_step:
             now = datetime.now(UTC)
             evaluation = await CourseAssessmentService(self._session).evaluate(user_id=user_id, program=program, now=now)
@@ -109,7 +137,16 @@ class ProgramInclusionService:
                 target_a=request.initial_target_a, target_b=request.initial_target_b,
                 volume_a=request.initial_volume_a, volume_b=request.initial_volume_b,
             )
-            progression_state, provenance = initial_inclusion_state(program, evaluation, overrides, now=now)
+            inputs = None
+            if rule_key == CURRENT_INITIAL_PRESCRIPTION_RULE:
+                # BW — из профиля (V5.6 §8.5: масса тела обновляется раз в неделю), если не передана явно.
+                inputs = request.course_inputs or EntryInputs()
+                user = await UserRepository(self._session).get_by_id(user_id)
+                if inputs.body_mass_kg is None and user is not None and user.weight_kg is not None:
+                    inputs = replace(inputs, body_mass_kg=user.weight_kg)
+            progression_state, provenance = initial_inclusion_state(
+                program, evaluation, overrides, now=now, rule_key=rule_key, inputs=inputs,
+            )
             if evaluation.state == InclusionAssessmentState.AWAITING_ASSESSMENT:
                 status = InclusionStatus.AWAITING_ASSESSMENT
             if evaluation.assessment is not None and evaluation.assessment.source == AssessmentSource.ASSESSMENT_RESULT:

@@ -1,23 +1,26 @@
-"""issue #305 (W1c): чистые правила прескрипции курса — app/domain/course_prescription.py.
+"""issue #305 (W1c): механизм версий прескрипции курса — app/domain/course_prescription.py.
 
-OD-3 решён владельцем (подход на максимум включается), прогрессию двигает только подход на максимум
-(решение владельца) — оба правила проверяются здесь. Числа стартовой прескрипции (OD-1) открыты и не
-проверяются."""
+Текущая программа — V5.6 (pullups_v5_6, домен и золотые тесты — tests/test_pullups_v5.py). Здесь —
+реестр правил стартовой прескрипции, ворота замера и машинерия УСТАРЕВШЕЙ версии (pullups_legacy_step:
+нормализация block_b.work_sets, резолвер «рабочие + максимум» бот-эпохи). Прежнее решение «прогрессию
+двигает только подход на максимум» заменено решением владельца V5.6 и здесь не проверяется."""
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 
+from app.db.repositories.training_sessions import SetLogInput
 from app.domain.constants import STRENGTH_BLOCK
 from app.domain.course_prescription import (
     CURRENT_INITIAL_PRESCRIPTION_RULE,
+    LEGACY_INITIAL_PRESCRIPTION_RULE,
     AssessmentInput,
     AssessmentRequirement,
     AssessmentSource,
     InclusionAssessmentState,
     InvalidProgressionStateError,
     PrescriptionOverrides,
-    advance_step_progression,
     get_initial_prescription_rule,
     initial_assessment_state,
     latest_valid_assessment,
@@ -25,7 +28,12 @@ from app.domain.course_prescription import (
     prescription_provenance,
     progression_state_needs_normalization,
     resolve_progression_block,
+    rule_key_from_provenance,
 )
+from app.domain.multi_program import MetricType
+from app.domain.progression import recalculate_target
+from app.domain.pullups_v5 import EntryInputs, is_v5_state
+from app.services.session_log import _apply_step_progression
 
 AGED_BLOCK_B = {
     "target": 6, "volume": 30, "weak_streak": 2, "equipment_type": "band", "equipment_value": "25",
@@ -109,9 +117,9 @@ def test_a_od3_max_set_is_included_last_exactly_once():
     assert sum(s.is_max_set for s in included) == 1
 
 
-# --- C / D / E / F: прогрессию двигает только подход на максимум, только вперёд ----------------
+# --- УСТАРЕВШАЯ версия программы (pullups_legacy_step): формула бот-эпохи, не V5.6 -----------------
 
-STEP_STATE = {
+LEGACY_STATE = {
     "schema_version": 1, "strategy_type": "step",
     "block_a": {
         "target": 10, "volume": 30, "work_sets": 3, "work_sets_growth_reason": None, "weak_streak": 0,
@@ -127,57 +135,32 @@ STEP_STATE = {
 }
 
 
-def test_c_state_carries_no_working_set_input():
-    """Сигнатура шага прогрессии принимает только замеры (max_a/max_b): рабочие подходы физически не
-    могут попасть в расчёт. Одинаковый замер → байт в байт одинаковое следующее состояние."""
-    import inspect
-
-    assert set(inspect.signature(advance_step_progression).parameters) == {"progression_state", "max_a", "max_b"}
-    first, *_ = advance_step_progression(STEP_STATE, max_a=12, max_b=5)
-    second, *_ = advance_step_progression(STEP_STATE, max_a=12, max_b=5)
-    assert first == second
-    assert first["block_a"]["volume"] == 30 and first["block_b"]["volume"] == 12  # объём — не вход и не пишется
-
-
-@pytest.mark.parametrize(("max_b", "expected_target_b"), [(5, 4), (3, 3), (2, 3)])
-def test_d_max_drives_next_target(max_b, expected_target_b):
-    """J4: цель 3, max 6/5 > 3 → 3 + max(1, ceil(3·0.05)) = 4; max = цель → держим; max < цели — держим
-    (первый промах, откат только после 3 подряд)."""
-    state, _a, advance_b = advance_step_progression(STEP_STATE, max_a=None, max_b=max_b)
-    assert state["block_b"]["target"] == expected_target_b
-    assert (advance_b.target_before, advance_b.target_after, advance_b.measured) == (3, expected_target_b, True)
+def _sets(working: list[int], max_reps: int) -> list[SetLogInput]:
+    logs = [
+        SetLogInput(set_number=i + 1, metric_type=MetricType.REPS, value=Decimal(r), unit="reps")
+        for i, r in enumerate(working)
+    ]
+    logs.append(SetLogInput(
+        set_number=len(working) + 1, metric_type=MetricType.REPS, value=Decimal(max_reps), unit="reps", is_max_set=True,
+    ))
+    return logs
 
 
-def test_d_block_a_grows_only_from_its_max():
-    state, advance_a, _b = advance_step_progression(STEP_STATE, max_a=12, max_b=None)
-    assert state["block_a"]["target"] == 11  # 10 + max(1, ceil(10·0.05))
-    assert advance_a.measured and advance_a.target_after == 11
-    assert state["block_b"] == STEP_STATE["block_b"]  # без замера Б не двигается
-
-
-def test_e_no_max_measurement_changes_no_role():
-    """Рабочие подходы без подхода на максимум (или подход не выполнен) — прогрессии нет."""
-    state, advance_a, advance_b = advance_step_progression(STEP_STATE, max_a=None, max_b=None)
-    assert state["block_a"] == STEP_STATE["block_a"] and state["block_b"] == STEP_STATE["block_b"]
-    assert not advance_a.measured and not advance_b.measured
-
-
-def test_e_weak_streak_counts_max_misses_not_volume():
-    """weak_streak — подряд идущие промахи ЗАМЕРА; откат −1 на третьем. Объём рабочих подходов не участвует."""
-    state = STEP_STATE
-    targets = []
-    for _ in range(3):
-        state, _a, _b = advance_step_progression(state, max_a=None, max_b=2)
-        targets.append((state["block_b"]["target"], state["block_b"]["weak_streak"]))
-    assert targets == [(3, 1), (3, 2), (2, 3)]
-    reset, *_ = advance_step_progression(state, max_a=None, max_b=2)  # max = новая цель 2 → не промах
-    assert reset["block_b"]["weak_streak"] == 0
-
-
-def test_f_forward_only_input_state_is_not_mutated():
-    snapshot = repr(STEP_STATE)
-    advance_step_progression(STEP_STATE, max_a=40, max_b=9)
-    assert repr(STEP_STATE) == snapshot
+def test_legacy_version_keeps_bot_era_formula_not_v5():
+    """Инклюзии УСТАРЕВШЕЙ версии (без program_version) прогрессируют прежней формулой бот-эпохи —
+    рабочие подходы + подход на максимум (``recalculate_target``), как до #305. Это не правило V5.6 и
+    не «MAX-only»: J4 «3·3·3·3 + max 6» — вектор только устаревшей версии."""
+    assert not is_v5_state(LEGACY_STATE)
+    new_state, result = _apply_step_progression(
+        LEGACY_STATE, performed_at=datetime(2026, 10, 9, tzinfo=UTC),
+        block_a_sets=_sets([10, 10, 10], 12), block_b_sets=_sets([3, 3, 3, 3], 6),
+    )
+    # Объём блока бот-эпохи = рабочие + максимум: 3·4 + 6 = 18 (прошлый — 12).
+    expected_b = recalculate_target(STRENGTH_BLOCK, 3, (3, 3, 3, 3), 6, 18, 12, consecutive_weak_before=0)
+    assert result.block_b.target_after == expected_b.new_target
+    assert new_state["block_b"]["target"] == expected_b.new_target
+    assert new_state["block_b"]["volume"] == 18  # объём (рабочие + максимум) — вход прежней формулы
+    assert "program_version" not in new_state
 
 
 # --- I / J: ворота замера ---------------------------------------------------------------------
@@ -219,17 +202,27 @@ def test_latest_valid_assessment_respects_validity_window_and_is_deterministic()
     assert latest_valid_assessment([old], today=TODAY, validity_days=None) == old
 
 
-# --- InitialPrescriptionRule: оболочка (числа — OD-1) --------------------------------------------
+# --- InitialPrescriptionRule: реестр версий --------------------------------------------------------
 
 
-def test_current_rule_is_versioned_and_marked_undecided_pending_od1():
+def test_current_rule_is_v5_6_and_decided():
     rule = get_initial_prescription_rule()
-    assert CURRENT_INITIAL_PRESCRIPTION_RULE == f"{rule.rule_id}@{rule.version}"
-    assert rule.decided is False  # OD-1 (#310) не решён — правило не утверждено владельцем
+    assert CURRENT_INITIAL_PRESCRIPTION_RULE == f"{rule.rule_id}@{rule.version}" == "pullups_v5_6@1"
+    assert rule.decided is True and rule.program_version == "pullups_v5_6"
 
 
-def test_rule_output_has_canonical_shape_with_work_sets_for_both_roles():
-    state = get_initial_prescription_rule().prescribe(
+def test_v5_rule_takes_fresh_max_from_assessment():
+    state = get_initial_prescription_rule().prescribe({}, _assessment(0), PrescriptionOverrides())
+    assert is_v5_state(state) and state["level"] == "assisted"  # M = 8 < 10
+    assert state["inputs"]["fresh_max"] == 8
+    explicit = get_initial_prescription_rule().prescribe({}, _assessment(0), PrescriptionOverrides(), EntryInputs(fresh_max=25))
+    assert explicit["level"] == "weighted"  # явный ввод сильнее замера
+
+
+def test_legacy_rule_stays_registered_with_canonical_shape():
+    rule = get_initial_prescription_rule(LEGACY_INITIAL_PRESCRIPTION_RULE)
+    assert rule.decided is False and rule.program_version == "pullups_legacy_step"
+    state = rule.prescribe(
         {"block_a": {"base_target": 10, "work_sets": 3}, "block_b": {"base_target": 3}}, None, PrescriptionOverrides(),
     )
     assert state["block_b"]["work_sets"] == STRENGTH_BLOCK.work_sets
@@ -238,17 +231,25 @@ def test_rule_output_has_canonical_shape_with_work_sets_for_both_roles():
         assert resolve_progression_block(role, state)
 
 
-def test_provenance_records_rule_version_and_assessment_input():
+def test_rule_key_from_provenance_reads_old_and_new_records():
+    assert rule_key_from_provenance(None) == LEGACY_INITIAL_PRESCRIPTION_RULE
+    assert rule_key_from_provenance({"rule_id": "program_config_default", "rule_version": 0}) == "program_config_default@0"
+    assert rule_key_from_provenance({"rule_id": "pullups_v5_6", "rule_version": 1}) == "pullups_v5_6@1"
+
+
+def test_provenance_records_rule_version_inputs_and_assessment():
     rule = get_initial_prescription_rule()
     assessment = _assessment(2, AssessmentSource.ASSESSMENT_RESULT, 42)
     provenance = prescription_provenance(
-        rule, assessment=assessment, overrides=PrescriptionOverrides(target_b=5),
+        rule, assessment=assessment, overrides=PrescriptionOverrides(),
         state=InclusionAssessmentState.ACTIVE, computed_at=datetime(2026, 10, 9, tzinfo=UTC),
+        inputs=EntryInputs(volume_capacity=10),
     )
-    assert provenance["rule_id"] == rule.rule_id and provenance["rule_version"] == rule.version
-    assert provenance["rule_decided"] is False
+    assert provenance["rule_id"] == "pullups_v5_6" and provenance["rule_version"] == 1
+    assert provenance["rule_decided"] is True and provenance["program_version"] == "pullups_v5_6"
+    assert provenance["inputs"]["volume_capacity"] == 10
     assert provenance["assessment"] == {
         "source": "assessment_result", "id": 42, "max_reps": 8, "performed_on": "2026-10-07",
     }
-    assert provenance["explicit_targets"] == {"target_b": 5}
+    assert provenance["explicit_targets"] is None
     assert provenance["assessment_state"] == "active"

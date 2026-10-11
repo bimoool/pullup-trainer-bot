@@ -309,7 +309,7 @@ async def test_fresh_inclusion_converges_to_occurrences_and_second_run_is_noop(s
     from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 
     inclusion = await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, program_version="pullups_legacy_step"),
     )
     assert [s["key"] for s in inclusion.snapshot["slots"]] == ["main"]
     _, first = await PlanConvergenceService(session).converge_user_plan(training_plan_id=plan.id, today=TODAY)
@@ -416,7 +416,7 @@ async def test_course_without_materializable_slots_keeps_its_rows_startable(sess
     ])
     await session.flush()
     inclusion = await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, program_version="pullups_legacy_step"),
     )
     plan = await TrainingPlanRepository(session).get_for_user(user.id)
     rows = []

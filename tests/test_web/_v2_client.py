@@ -64,12 +64,12 @@ async def v2_patch(session, telegram_id: int, path: str, payload: dict):
         app.dependency_overrides.clear()
 
 
-async def v2_put(session, telegram_id: int, path: str):
-    """Issue #272 — PUT /favorites/{type}/{id} (тела нет)."""
+async def v2_put(session, telegram_id: int, path: str, payload: dict | None = None):
+    """Issue #272 — PUT /favorites/{type}/{id} (тела нет); #305 — PUT …/course/inputs (с телом)."""
     _override_dependencies(session, telegram_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            return await client.put(path)
+            return await client.put(path) if payload is None else await client.put(path, json=payload)
     finally:
         app.dependency_overrides.clear()
 

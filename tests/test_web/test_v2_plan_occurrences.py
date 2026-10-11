@@ -78,7 +78,9 @@ async def _enrol(session, user: User, clock, now: datetime = MON) -> dict:
     await session.flush()
     clock(now)
     program = await _pullups_program(session)
-    response = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {"program_id": program.id})
+    response = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {
+        "program_id": program.id, "program_version": "pullups_legacy_step",  # #305: план/отдых MAIN — версия-независимо
+    })
     assert response.status_code == 200
     return response.json()
 

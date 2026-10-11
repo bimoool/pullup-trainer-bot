@@ -48,12 +48,27 @@ async def test_create_inclusion_for_unknown_program_id_is_404(session, user: Use
     assert response.status_code == 404
 
 
-async def test_create_inclusion_starts_from_config_base_targets_with_no_override(session, user: User):
+async def test_create_inclusion_defaults_to_program_v5_6(session, user: User):
+    """issue #305: новая инклюзия STEP-программы — программа V5.6 (pullups_v5_6), не прежние цели
+    config.base_target. Без замера M уровень не классифицирован — рецепт ждёт ввода."""
+    program = await _make_step_program(session)
+    response = await v2_post(
+        session, telegram_id=user.telegram_id, path="/api/v2/program-inclusions", payload={"program_id": program.id},
+    )
+    assert response.status_code == 200
+    state = response.json()["progression_state"]
+    assert state["program_version"] == "pullups_v5_6" and state["strategy_type"] == "step"
+    assert state["level"] is None and state["next_role"] == "A"
+    assert "block_a" not in state and "block_b" not in state
+
+
+async def test_create_legacy_inclusion_starts_from_config_base_targets_with_no_override(session, user: User):
+    """Устаревшая версия программы (явно): прежние цели config.block_a/b.base_target."""
     program = await _make_step_program(session)
 
     response = await v2_post(
         session, telegram_id=user.telegram_id, path="/api/v2/program-inclusions",
-        payload={"program_id": program.id},
+        payload={"program_id": program.id, "program_version": "pullups_legacy_step"},
     )
 
     assert response.status_code == 200

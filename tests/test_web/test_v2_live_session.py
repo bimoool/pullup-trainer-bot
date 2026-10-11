@@ -54,7 +54,8 @@ async def _make_step_program(session, *, category: str = "live_sessions") -> Pro
 
 async def _create_inclusion(session, telegram_id: int, program_id: int) -> dict:
     response = await v2_post(
-        session, telegram_id=telegram_id, path="/api/v2/program-inclusions", payload={"program_id": program_id},
+        session, telegram_id=telegram_id, path="/api/v2/program-inclusions",
+        payload={"program_id": program_id, "program_version": "pullups_legacy_step"},  # #305: машинерия устаревшей версии
     )
     assert response.status_code == 200
     return response.json()

@@ -75,6 +75,7 @@ from app.domain.live_session import (
 from app.domain.multi_program import INTERNAL_ROLE_SUBCATEGORIES, MetricType, SessionSource
 from app.domain.plan_occurrence import MAIN_SLOT_KEY, InclusionStatus, PlanItemStatus, derive_slots
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.pullups_v5 import is_v5_state
 from app.domain.training_session_v2 import SessionSourceV2, snapshot_matches_blocks
 from app.domain.workout_definition import BlockKind, SetKind, SnapshotResolutionError
 from app.domain.workout_protocol import DefinitionProtocol, ResolvedInterval, ResolvedProtocol
@@ -89,6 +90,7 @@ from app.services.course_assessment import (
     AssessmentRequiredError,
     promote_if_assessed,
 )
+from app.services.course_v5 import advance_from_session, prescribe_main, targets_for
 from app.services.live_engine import LiveEngineService
 from app.services.plan_spacing import MainSpacingService, TooEarlyError  # noqa: F401 — re-export
 from app.services.program_access import (  # noqa: F401 — re-export
@@ -136,11 +138,17 @@ STALE_PLAN_ITEM_MESSAGE = "План обновился — открой «Пла
 ALREADY_COMPLETED_REASON = "already_completed"
 
 
+V5_MAIN_ONLY_MESSAGE = "Тренировка программы «Подтягивания» стартует занятием плана целиком (A или B)."
+
+
 @dataclass(frozen=True)
 class CompleteResult:
     session: SessionDetail
     progression_result: SessionProgressionResult | None
     progression_skipped_reason: str | None
+    # issue #305: типизированный итог прогрессии программы V5.6 (по блокам) — вместо target_before/after
+    # устаревшей версии; None у устаревшей программы и у сессий вне курса.
+    course_progression: dict | None = None
 
 
 def _db_phase(name: SessionPhaseName) -> SessionPhase:
@@ -251,6 +259,9 @@ class LiveSessionService:
         self._plans = TrainingPlanRepository(session)
         self._programs = ProgramRepository(session)
         self._engine_version = 1
+        # issue #305: рецепт V5.6 основного занятия, выданный при текущем старте (пишется в снимок сессии).
+        self._course_prescription: dict | None = None
+        self._course_state_rev: int = 0
 
     # --- Старт -----------------------------------------------------------
 
@@ -305,6 +316,7 @@ class LiveSessionService:
         existing = await self._sessions.get_by_client_session_id(user_id, client_session_id)
         if existing is not None:
             return await self._build_result(existing.id, user_id)
+        self._course_prescription = None
 
         if workout_id is not None:
             return await self._start_workout_session(
@@ -407,12 +419,14 @@ class LiveSessionService:
             training_session.id, user_id, source=SessionSourceV2.PLANNED_LIVE, performed_at=performed_at,
             workout_definition_id=definition_ids.pop() if len(definition_ids) == 1 else None,
             program_inclusion_id=course_inclusion_ids[0] if len(set(course_inclusion_ids)) == 1 else None,
+            course_prescription=self._course_prescription, progression_state_rev=self._course_state_rev,
         )
         return await self._build_result(training_session.id, user_id)
 
     async def _stamp_live_start(
         self, session_id: int, user_id: int, *, source: SessionSourceV2, performed_at: datetime,
         workout_definition_id: int | None, program_inclusion_id: int | None,
+        course_prescription: dict | None = None, progression_state_rev: int = 0,
     ) -> None:
         user = await UserRepository(self._session).get_by_id(user_id)
         await TrainingSessionV2Service(self._session).stamp_new(
@@ -420,6 +434,7 @@ class LiveSessionService:
             workout_definition_id=workout_definition_id, program_inclusion_id=program_inclusion_id,
             started_at=performed_at, timezone=user.timezone if user is not None else None,
             engine_version=self._engine_version,
+            course_prescription=course_prescription, progression_state_rev=progression_state_rev,
         )
         if self._engine_version == ENGINE_V2:
             await self._initialize_engine_v2(session_id, user_id, performed_at)
@@ -434,13 +449,29 @@ class LiveSessionService:
     async def _resolve_main_occurrence(
         self, plan_item: PlanItem,
     ) -> tuple[list[SessionBlockInput], list[list[SetTargetInput]], WorkoutSnapshot | None]:
-        """Занятие main-слота «Подтягиваний» = блоки A + Б (AD-3) из ролей СНИМКА своей инклюзии.
-        Числа подходов/целей — прежние (из progression_state); их корректность — #305."""
+        """Занятие main-слота «Подтягиваний» из ролей СНИМКА своей инклюзии.
+
+        issue #305: программа V5.6 (progression_state.program_version = pullups_v5_6) — занятие A или B
+        по последовательности: объёмный блок (упражнение роли block_a) + силовой (роли block_b), рецепт —
+        app.services.course_v5 (без входов — CourseSetupRequiredError → 409). Инклюзия УСТАРЕВШЕЙ версии —
+        прежние блоки A + Б (рабочие подходы + подход на максимум, формула бот-эпохи)."""
         inclusion = await self._plans.get_inclusion_by_id(plan_item.program_inclusion_id)
         roles = {item["role"]: item["exercise_id"] for item in (inclusion.snapshot or {}).get("exercises", [])}
         if not inclusion.is_active or "block_a" not in roles or "block_b" not in roles:
             raise ValueError(STALE_PLAN_ITEM_MESSAGE)
         await self._require_assessment(inclusion)
+        if is_v5_state(inclusion.progression_state):
+            user = await UserRepository(self._session).get_by_id(await self._inclusion_user_id(inclusion))
+            prescription = await prescribe_main(
+                self._session, inclusion, body_mass_kg=user.weight_kg if user is not None else None,
+            )
+            volume_targets, strength_targets = targets_for(prescription)
+            self._course_prescription = prescription.to_dict()
+            self._course_state_rev = inclusion.progression_state_rev or 0
+            return (
+                [SessionBlockInput(exercise_id=roles["block_a"], sets=[]), SessionBlockInput(exercise_id=roles["block_b"], sets=[])],
+                [volume_targets, strength_targets], None,
+            )
         blocks: list[SessionBlockInput] = []
         targets: list[list[SetTargetInput]] = []
         for role in ("block_a", "block_b"):
@@ -448,6 +479,10 @@ class LiveSessionService:
             blocks.extend(role_blocks)
             targets.extend(role_targets)
         return blocks, targets, None
+
+    async def _inclusion_user_id(self, inclusion: ProgramInclusion) -> int:
+        plan = await self._plans.get_by_id(inclusion.training_plan_id)
+        return plan.user_id
 
     async def _require_assessment(self, inclusion: ProgramInclusion) -> None:
         """issue #305 (PROGRAM_PLAN_V2 §3): main-блоки инклюзии в awaiting_assessment не стартуют, пока
@@ -692,6 +727,10 @@ class LiveSessionService:
         step_match = await self._find_step_role_for_exercise(training_plan_id, exercise_id)
         if step_match is not None:
             await self._require_assessment(step_match[0])
+            if is_v5_state(step_match[0].progression_state):
+                # issue #305: блок программы V5.6 не стартует отдельно — только занятием main-слота (A/B),
+                # иначе рецепт A/B и его снимок не выдаются.
+                raise ValueError(V5_MAIN_ONLY_MESSAGE)
             return self._resolve_step_role_block(exercise_id, *step_match)
         return await self._resolve_plain_exercise_block(exercise_id)
 
@@ -1056,6 +1095,7 @@ class LiveSessionService:
         self, *, session_id: int, user_id: int, abandoned: bool,
         effort: Decimal | None = None, comment: str | None = None, active_elapsed_ms: int | None = None,
         ended_at: datetime | None = None,
+        block_checks: dict[int, tuple[bool | None, bool | None]] | None = None,
     ) -> tuple[CompleteResult | None, bool]:
         """Второй элемент — True, если сессия не найдена/не принадлежит
         пользователю (роут превращает в 404) — тот же (result, not_found)
@@ -1095,6 +1135,9 @@ class LiveSessionService:
         await self._sessions.mark_completed(session_id, ended_at, active_elapsed_ms=active_elapsed_ms)
         if effort is not None or comment is not None:
             await self._sessions.save_workout_review(session_id, effort=effort, comment=comment)
+        if block_checks:
+            # issue #305 (V5.6): явные подтверждения техники/отдыха по блокам — до расчёта прогрессии.
+            await self._sessions.save_block_checks(session_id, block_checks)
 
         # Явное завершение пишет interval result для ТЕКУЩЕГО начатого
         # interval-блока (предыдущие уже финализированы при переходе, ещё не
@@ -1120,6 +1163,7 @@ class LiveSessionService:
                 await self._sessions.save_interval_block_result(detail.blocks[index].id, result)
 
         progression_result: SessionProgressionResult | None = None
+        course_progression: dict | None = None
         skipped_reason: str | None = None
         if abandoned:
             skipped_reason = "abandoned"
@@ -1130,6 +1174,19 @@ class LiveSessionService:
             inclusion = await self._find_step_inclusion_for_session(detail, user_id)
             if inclusion is None:
                 skipped_reason = "no_program_inclusion"
+            elif is_v5_state(inclusion.progression_state):
+                # issue #305: программа V5.6 — рецепт из снимка ЭТОЙ сессии, только вперёд.
+                completed = await self._sessions.get_for_user(session_id, user_id)
+                user = await UserRepository(self._session).get_by_id(user_id)
+                advance = await advance_from_session(
+                    self._session, inclusion, completed, user_id=user_id,
+                    body_mass_kg=user.weight_kg if user is not None else None,
+                )
+                course_progression, skipped_reason = advance.progression, advance.skipped_reason
+                if course_progression is not None:
+                    inclusion.progression_state_rev = (inclusion.progression_state_rev or 0) + 1
+                    if detail.plan_item_id is not None and inclusion.sequence_cursor is not None:
+                        inclusion.sequence_cursor += 1
             else:
                 matched = _match_step_blocks(inclusion, [_session_block_input_from_detail(b) for b in detail.blocks])
                 if matched is None:
@@ -1151,7 +1208,7 @@ class LiveSessionService:
         return (
             CompleteResult(
                 session=final_detail, progression_result=progression_result,
-                progression_skipped_reason=skipped_reason,
+                progression_skipped_reason=skipped_reason, course_progression=course_progression,
             ),
             False,
         )
@@ -1175,6 +1232,17 @@ class LiveSessionService:
 
     async def get_session(self, *, session_id: int, user_id: int) -> SessionDetail | None:
         return await self._sessions.get_for_user(session_id, user_id)
+
+    async def save_block_checks_if_started(
+        self, *, session_id: int, user_id: int, block_checks: dict[int, tuple[bool | None, bool | None]],
+    ) -> None:
+        """issue #305 × #306: подтверждения V5.6 (техника/отдых по блоку), пришедшие с POST …/complete сессии
+        движка v2, записываются ДО её серверного завершения — как complete_session делает для движка v1. Уже
+        завершённая сессия не меняется: её прогрессия посчитана один раз."""
+        await self._sessions.lock_session(session_id)
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        if detail is not None and detail.status == SessionStatus.STARTED:
+            await self._sessions.save_block_checks(session_id, block_checks)
 
     # --- Общий сбор результата ---------------------------------------------
 

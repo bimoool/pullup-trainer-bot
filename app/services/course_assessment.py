@@ -20,6 +20,7 @@ from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.users import UserRepository
 from app.domain.course_prescription import (
+    CURRENT_INITIAL_PRESCRIPTION_RULE,
     AssessmentInput,
     AssessmentRequirement,
     AssessmentSource,
@@ -29,8 +30,10 @@ from app.domain.course_prescription import (
     initial_assessment_state,
     latest_valid_assessment,
     prescription_provenance,
+    rule_key_from_provenance,
 )
 from app.domain.plan_occurrence import InclusionStatus
+from app.domain.pullups_v5 import EntryInputs
 from app.services.plan_spacing import MainSpacingService
 from app.services.training_analytics import resolve_timezone
 
@@ -88,12 +91,15 @@ class CourseAssessmentService:
 
 def initial_inclusion_state(
     program: Program, evaluation: AssessmentEvaluation, overrides: PrescriptionOverrides, *, now: datetime,
+    rule_key: str = CURRENT_INITIAL_PRESCRIPTION_RULE, inputs: EntryInputs | None = None,
 ) -> tuple[dict, dict]:
-    """(progression_state, prescription_provenance) нового STEP-включения по текущему правилу."""
-    rule = get_initial_prescription_rule()
-    state = rule.prescribe(program.config or {}, evaluation.assessment, overrides)
+    """(progression_state, prescription_provenance) нового STEP-включения по правилу ``rule_key``
+    (по умолчанию текущее — V5.6). ``inputs`` — входы V5.6 (§3), записываются в провенанс."""
+    rule = get_initial_prescription_rule(rule_key)
+    state = rule.prescribe(program.config or {}, evaluation.assessment, overrides, inputs)
     provenance = prescription_provenance(
         rule, assessment=evaluation.assessment, overrides=overrides, state=evaluation.state, computed_at=now,
+        inputs=inputs,
     )
     return state, provenance
 
@@ -118,7 +124,11 @@ async def promote_if_assessed(
     if evaluation.state != InclusionAssessmentState.ACTIVE:
         return False
     overrides = _overrides_from_provenance(inclusion.prescription_provenance)
-    state, provenance = initial_inclusion_state(program, evaluation, overrides, now=now)
+    provenance_inputs = (inclusion.prescription_provenance or {}).get("inputs")
+    state, provenance = initial_inclusion_state(
+        program, evaluation, overrides, now=now, rule_key=rule_key_from_provenance(inclusion.prescription_provenance),
+        inputs=EntryInputs.from_dict(provenance_inputs) if provenance_inputs is not None else None,
+    )
     if state != inclusion.progression_state:
         inclusion.progression_state = state
         inclusion.initial_progression_state = state

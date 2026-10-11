@@ -4,6 +4,13 @@ import { expect, type Page } from "@playwright/test";
  * карточки "Планов", пройти подходы блока. */
 
 export async function startWorkout(page: Page, title: string) {
+  await openPreScreen(page, title);
+  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+}
+
+/** «Планы» → первое занятие курса/тренировки → пред-экран (SessionPreScreen), без старта. */
+export async function openPreScreen(page: Page, title: string) {
   // на деталях (курс/тренировка) нижней навигации нет — сначала «назад» на вкладку
   const tabbar = page.locator(".bottom-tabbar");
   // дождаться первого рендера: либо навигация, либо «назад» (иначе isVisible() читает ещё пустую страницу)
@@ -16,8 +23,6 @@ export async function startWorkout(page: Page, title: string) {
     .filter({ hasText: new RegExp(`^${title}`) });
   // #304: одна строка плана = одно занятие — у «N раз в неделю» несколько строк; берём первое занятие.
   await group.getByRole("button", { name: /^Начать: / }).first().click();
-  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
-  await expect(page.getByText("Живая тренировка")).toBeVisible();
 }
 
 /** Клик + ожидание ответа сервера: повторный тап во время уже идущего

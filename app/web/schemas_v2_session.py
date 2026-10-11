@@ -106,8 +106,17 @@ class LiveSetBatchRequest(BaseModel):
 # --- POST /sessions/live/{id}/complete ----------------------------------------------------
 
 
+class BlockCheckSchema(BaseModel):
+    """issue #305 (V5.6): явное подтверждение пользователя по блоку. None — неизвестно (не «валидно»)."""
+
+    block_index: int = Field(ge=0)
+    technique_valid: bool | None = None
+    rest_within_limit: bool | None = None
+
+
 class LiveSessionCompleteRequest(BaseModel):
     abandoned: bool = False
+    block_checks: list[BlockCheckSchema] | None = None
     # Оценка тренировки целиком (необязательно); на прогрессию не влияет.
     effort: Decimal | None = Field(default=None, ge=1, le=5)
     comment: str | None = Field(default=None, max_length=1000)
@@ -139,6 +148,10 @@ class LiveSetTargetResponse(BaseModel):
     unit: str
     # issue #305 (TRAINING_SESSION R2): подход на максимум — свойство цели.
     is_max_set: bool = False
+    # issue #305 (V5.6): маркер подхода из снимка рецепта — working | amrap (последний подход A: технический
+    # максимум, value — минимальная цель p4) | control (5–8, cap_reps = 8) | dynamic (подход B, стоп-правило).
+    marker: str | None = None
+    cap_reps: int | None = None
 
 
 class LiveSetLogResponse(SetLogResponse):
@@ -166,6 +179,11 @@ class LiveSessionBlockResponse(BaseModel):
     # planned_duration_seconds, actual_duration_seconds, completed_cycles}.
     # None для standard STANDARD/REPS/MAX блоков (result там не пишется).
     result: dict | None = None
+    # issue #305: блок рецепта программы V5.6 из снимка сессии (роль блока, отдых, помощь, вес, стоп-правило B,
+    # промежуточная цель) и подтверждения пользователя. None вне V5.6.
+    course_block: dict | None = None
+    technique_valid: bool | None = None
+    rest_within_limit: bool | None = None
 
 
 class IntervalStateResponse(BaseModel):
@@ -197,6 +215,9 @@ class LiveSessionResponse(BaseModel):
     # R1: сессия стоит перед ещё не начатым блоком — фронт показывает
     # interstitial "Готово ✓ / Следующее упражнение / Начать".
     awaiting_block_start: bool = False
+    # issue #305: рецепт основного занятия программы V5.6 из снимка сессии (роль A/B, уровень, отдых
+    # 240/30 → 900 → 180, маркеры, входы расчёта) — источник для движка #306. None вне V5.6.
+    course_program: dict | None = None
     # Phase B2 gate fix (issue #215) — найдено живым reload-прогоном:
     # /sessions/live/active не резолвил title вообще, App.tsx's resumedSession
     # ветка передавала PlanSessionFlow пустую строку — "3 минуты подтягиваний"
@@ -231,6 +252,9 @@ class LiveSessionCompleteResponse(LiveSessionResponse):
 
     progression_result: SessionProgressionResponse | None
     progression_skipped_reason: str | None
+    # issue #305: итог прогрессии программы V5.6 — типизирован по блокам (a_volume / b_volume /
+    # assisted_strength / a_weighted_strength / b_weighted_strength); None у устаревшей версии.
+    course_progression: dict | None = None
 
 
 class LiveSessionActiveResponse(BaseModel):

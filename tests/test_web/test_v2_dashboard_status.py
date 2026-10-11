@@ -42,7 +42,8 @@ async def _make_step_program(session, *, category: str = "pullups_dashboard") ->
 
 async def _create_inclusion(session, telegram_id: int, program_id: int) -> dict:
     response = await v2_post(
-        session, telegram_id=telegram_id, path="/api/v2/program-inclusions", payload={"program_id": program_id},
+        session, telegram_id=telegram_id, path="/api/v2/program-inclusions",
+        payload={"program_id": program_id, "program_version": "pullups_legacy_step"},  # #305: устаревшая версия программы
     )
     assert response.status_code == 200
     return response.json()
@@ -150,14 +151,14 @@ async def test_dashboard_status_ready_before_any_session_shows_config_base_targe
     assert body["program_name"] == "Синтетика дашборда"
     assert body["is_gap_rollback"] is False
     assert body["block_a"] == {
-        "target": 10, "work_sets": 3,
+        "target": 10, "work_sets": 3, "display": None, "block_role": None,
         "equipment": {
             "type": "bodyweight", "value": None, "item_id": None,
             "label": "собственный вес", "needs_new_equipment": False,
         },
     }
     assert body["block_b"] == {
-        "target": 3, "work_sets": 4,
+        "target": 3, "work_sets": 4, "display": None, "block_role": None,
         "equipment": {
             "type": "bodyweight", "value": None, "item_id": None,
             "label": "собственный вес", "needs_new_equipment": False,
@@ -187,12 +188,13 @@ async def test_dashboard_status_gap_retest_required_after_long_break(session, us
 
 
 def _expected_target_a_after_one_session() -> int:
-    """Прямой вызов формулы блока A — независимое вычисление ожидаемой цели после ровно одной тренировки
-    с нуля (target=10, work_sets=3). #305: прогрессию двигает только подход на максимум — рабочие подходы
-    формула получает предписанными (3 × 10), а не выполненными (_BLOCK_A_WORKING_REPS), вход «слабой
-    тренировки» — промах замера (max ≥ цели → нет)."""
+    """Прямой вызов того же домена, что StepProgressionStrategy.apply()
+    делегирует изнутри (app/domain/progression_strategy.py) - независимое
+    вычисление ожидаемой цели после ровно одной тренировки блока A с нуля
+    (target=10, work_sets=3, volume=0 -> _BLOCK_A_WORKING_REPS/_MAX_REPS)."""
     result = recalculate_volume_block(
-        10, 3, (10, 10, 10), _BLOCK_A_MAX_REPS, 0, 0, EquipmentType.BODYWEIGHT,
+        10, 3, _BLOCK_A_WORKING_REPS, _BLOCK_A_MAX_REPS,
+        sum(_BLOCK_A_WORKING_REPS) + _BLOCK_A_MAX_REPS, 0, EquipmentType.BODYWEIGHT,
         consecutive_weak_before=0, consecutive_stall_before=0,
     )
     return result.new_target

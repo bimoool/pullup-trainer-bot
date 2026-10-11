@@ -11,6 +11,7 @@ from app.db.repositories.training_sessions import BatchSetLogInput, SessionDetai
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.course_assessment import AssessmentRequiredError
+from app.services.course_v5 import CourseSetupRequiredError, course_prescription_of
 from app.services.live_engine import (
     ClientEvent,
     ClientEventConflictError,
@@ -106,6 +107,8 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
     snapshot_items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
     snapshot_names = _snapshot_names(detail)
     view = engine_view(detail, now)
+    course_program = course_prescription_of(detail)
+    course_blocks = (course_program or {}).get("blocks") or []
 
     interval_state: IntervalStateResponse | None = None
     timing = current_interval_timing(detail, now)
@@ -148,6 +151,7 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                     LiveSetTargetResponse(
                         set_number=target.set_number, metric_type=target.metric_type.value,
                         value=str(target.value), unit=target.unit, is_max_set=target.is_max_set,
+                        **_course_set_fields(course_blocks, block.order_index, target.set_number),
                     )
                     for target in block.set_targets
                 ],
@@ -160,6 +164,8 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
                     )
                     for log in block.set_logs
                 ],
+                course_block=course_blocks[block.order_index] if block.order_index < len(course_blocks) else None,
+                technique_valid=block.technique_valid, rest_within_limit=block.rest_within_limit,
             )
             for block, item in zip(detail.blocks, snapshot_items, strict=True)
         ],
@@ -170,6 +176,7 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
         "engine_version": detail.engine_version,
         "engine": LiveEngineView(**view) if view is not None else None,
         "engine_status": detail.engine_status,
+        "course_program": course_program,
     }
 
 
@@ -195,7 +202,25 @@ def _live_session_complete_response(result: CompleteResult) -> LiveSessionComple
     return LiveSessionCompleteResponse(
         **_live_session_response_fields(result.session),
         progression_result=progression, progression_skipped_reason=result.progression_skipped_reason,
+        course_progression=result.course_progression,
     )
+
+
+def _course_set_fields(course_blocks: list, block_index: int, set_number: int) -> dict:
+    """issue #305: маркер/потолок подхода V5.6 из снимка рецепта (пусто вне V5.6)."""
+    if block_index >= len(course_blocks):
+        return {}
+    for course_set in course_blocks[block_index].get("sets") or []:
+        if course_set.get("set_number") == set_number:
+            return {"marker": course_set.get("marker"), "cap_reps": course_set.get("cap_reps")}
+    return {}
+
+
+def _block_checks(body: LiveSessionCompleteRequest) -> dict[int, tuple[bool | None, bool | None]] | None:
+    """issue #305 (V5.6 §11): подтверждения техники/отдыха по блоку из POST …/complete."""
+    if not body.block_checks:
+        return None
+    return {check.block_index: (check.technique_valid, check.rest_within_limit) for check in body.block_checks}
 
 
 @router_v2_live.post("/sessions/live", response_model=LiveSessionResponse)
@@ -213,6 +238,15 @@ async def start_live_session(
         )
     except TooEarlyError as exc:
         raise too_early_http_error(exc) from exc
+    except CourseSetupRequiredError as exc:
+        # issue #305 (V5.6): рецепт не считается без входов (R, резина, 1RM, шаг веса…) — ничего не угадываем.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {
+                "code": "course_setup_required", "inclusion_id": exc.inclusion_id, "missing": list(exc.missing),
+                "message": "Для следующей тренировки программы не хватает данных — заполните их перед стартом.",
+            },
+        ) from exc
     except AssessmentRequiredError as exc:
         # issue #305 (PROGRAM_PLAN_V2 §3): «Сначала тест на максимум».
         raise HTTPException(
@@ -389,6 +423,7 @@ async def complete_live_session(
     result, not_found = await live.complete_session(
         session_id=session_id, user_id=user.id, abandoned=body.abandoned,
         effort=body.effort, comment=body.comment, active_elapsed_ms=body.active_elapsed_ms,
+        block_checks=_block_checks(body),
     )
     if not_found:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
@@ -402,11 +437,17 @@ async def _complete_engine_v2(
     заканчивается серверным finish_early (длительность — активное время движка, а не active_elapsed_ms
     клиента: время — авторитет сервера); затем идемпотентный complete_session дописывает оценку и заметку.
     «Ноль работы» — отмена (T5): не завершается, оценка не пишется."""
+    live = LiveSessionService(session)
+    checks = _block_checks(body)
+    if checks:
+        # issue #305 (V5.6 §11) поверх #306: подтверждения из этого запроса сохраняются ДО серверного finish_early —
+        # прогрессия V5.6 при завершении читает их (как при завершении движка v1). Уже завершённую сессию
+        # (движок довёл её до конца сам) это не меняет: прогрессия считается один раз.
+        await live.save_block_checks_if_started(session_id=session_id, user_id=user_id, block_checks=checks)
     engine_service = LiveEngineService(session)
     sync = await engine_service.finish_from_complete(session_id, user_id, abandoned=body.abandoned)
     if sync is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
-    live = LiveSessionService(session)
     detail = await live.get_session(session_id=session_id, user_id=user_id)
     if detail.engine_status == "cancelled":
         return LiveSessionCompleteResponse(
@@ -419,7 +460,7 @@ async def _complete_engine_v2(
     if first is not None:  # завершилась этим запросом — отдаём итог первого завершения (прогрессия)
         result = CompleteResult(
             session=result.session, progression_result=first.progression_result,
-            progression_skipped_reason=first.progression_skipped_reason,
+            progression_skipped_reason=first.progression_skipped_reason, course_progression=first.course_progression,
         )
     return _live_session_complete_response(result)
 
@@ -455,6 +496,7 @@ async def post_live_session_events(
             session=detail,
             progression_result=completion.progression_result if completion is not None else None,
             progression_skipped_reason=completion.progression_skipped_reason if completion is not None else None,
+            course_progression=completion.course_progression if completion is not None else None,
         ),
     )
     return LiveEngineEventsResponse(

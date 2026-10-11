@@ -19,6 +19,7 @@
  * (сразу, если онлайн, из очереди — когда сеть вернулась).
  */
 
+import type { BlockCheck } from "./courseV5";
 import { del, get, set } from "idb-keyval";
 
 import {
@@ -143,7 +144,9 @@ export interface LocalLiveSession {
   nextSetIndex: number;
   pendingSets: QueuedSet[];
   pendingPhaseAdvances: number;
-  completeRequested: { abandoned: boolean; effort?: string | null; comment?: string | null } | null;
+  completeRequested: {
+    abandoned: boolean; effort?: string | null; comment?: string | null; block_checks?: BlockCheck[] | null;
+  } | null;
   /** #264 — пауза get_ready/rest: сколько мс отсчёта осталось на момент паузы.
    * Только клиентское состояние (сервер таймер не ведёт — ends_at лишь
    * подсказка отображения), живёт в этом снимке и переживает reload/фон. */
@@ -438,6 +441,7 @@ export async function flushLocalSession(
     return completeLiveSession(initDataRaw, local.serverSessionId, local.completeRequested.abandoned, {
       effort: local.completeRequested.effort ?? null,
       comment: local.completeRequested.comment ?? null,
+      block_checks: local.completeRequested.block_checks ?? null,
     });
   }
 
@@ -466,6 +470,7 @@ export async function completeIfFinishedElsewhere(
   return completeLiveSession(initDataRaw, local.serverSessionId, local.completeRequested.abandoned, {
     effort: local.completeRequested.effort ?? null,
     comment: local.completeRequested.comment ?? null,
+    block_checks: local.completeRequested.block_checks ?? null,
   });
 }
 

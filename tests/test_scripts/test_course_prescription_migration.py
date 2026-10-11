@@ -9,7 +9,10 @@
      байт в байт;
   C. повторный upgrade / downgrade → upgrade = тот же результат (детерминированно), converge после
      миграции и повторный converge = 0 изменений;
-  D. downgrade: awaiting_assessment → active, work_sets остаётся (старый код читает его).
+  D. downgrade: awaiting_assessment → active, work_sets остаётся (старый код читает его);
+  F. ревизия программы V5.6 b5d8e1f3a6c9 (за e3b9c5d7a2f1): только две nullable-колонки подтверждений
+     session_blocks; aged-инклюзии в V5.6 не переводятся (progression_state байт в байт, program_version
+     не появляется), история сессий не меняется; downgrade → upgrade детерминированно.
 """
 
 import asyncio
@@ -34,6 +37,7 @@ from tests.test_scripts.test_system_content_migration import (
 AGED_REVISION = "d8a3c6f1e2b4"
 PRE_REVISION = "a7e2c5b9d1f4"  # голова integration/domain-v2 (#307 → #306 → #308)
 REVISION = "e3b9c5d7a2f1"
+V5_REVISION = "b5d8e1f3a6c9"
 
 _BAND_STATE_B = {
     "target": 5, "volume": 21, "weak_streak": 1, "equipment_type": "band", "equipment_value": "25",
@@ -169,12 +173,55 @@ def test_d_downgrade_maps_awaiting_to_active_and_keeps_work_sets(scratch_dsn):  
 
 def test_e_single_head_follows_training_session_v2(scratch_dsn):  # noqa: F811
     """#307 → #306 → #308 (f4c1a7e9b3d2 → a9e6c3d1f5b7 → a7e2c5b9d1f4) приняты первыми: e3b9c5d7a2f1 идёт за ними,
-    голова одна."""
+    за ней ревизия V5.6 b5d8e1f3a6c9; голова одна (MIGRATION_V2 §9.1)."""
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == [REVISION]
+    assert script.get_heads() == [V5_REVISION]
     assert script.get_revision(REVISION).down_revision == PRE_REVISION
+    assert script.get_revision(V5_REVISION).down_revision == REVISION
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == REVISION
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == V5_REVISION
+
+
+_SESSION_BLOCK_FACTS = (
+    "SELECT count(*) || ':' || coalesce(md5(string_agg(x::text, '|' ORDER BY x::text)), '-') FROM "
+    "(SELECT id, session_id, order_index, exercise_id, complex_id, result, started_at, block_key, status, ended_at "
+    "FROM session_blocks) x"
+)
+
+
+def test_f_v5_revision_is_additive_and_does_not_convert_aged_inclusions(scratch_dsn):  # noqa: F811
+    _seed_aged(scratch_dsn)
+    _alembic(scratch_dsn, "upgrade", REVISION)
+    states = _states(scratch_dsn)
+    blocks = _scalar(scratch_dsn, _SESSION_BLOCK_FACTS)
+    assert _scalar(scratch_dsn, "SELECT count(*) FROM session_blocks") > 0  # aged-история есть
+
+    _alembic(scratch_dsn, "upgrade", V5_REVISION)
+    columns = {
+        r.column_name: r for r in _run(_fetch(
+            scratch_dsn,
+            "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'session_blocks' AND column_name IN ('technique_valid', 'rest_within_limit')",
+        ))
+    }
+    assert {name: (c.data_type, c.is_nullable) for name, c in columns.items()} == {
+        "technique_valid": ("boolean", "YES"), "rest_within_limit": ("boolean", "YES"),
+    }
+    assert _scalar(
+        scratch_dsn, "SELECT count(*) FROM session_blocks WHERE technique_valid IS NOT NULL OR rest_within_limit IS NOT NULL",
+    ) == 0  # неизвестно, а не «валидно»
+    assert _states(scratch_dsn) == states  # aged-инклюзии не переводятся в V5.6
+    assert all("program_version" not in state for state in states.values())
+    assert _scalar(scratch_dsn, _SESSION_BLOCK_FACTS) == blocks
+
+    _alembic(scratch_dsn, "downgrade", REVISION)
+    assert _scalar(
+        scratch_dsn,
+        "SELECT count(*) FROM information_schema.columns WHERE table_name = 'session_blocks' "
+        "AND column_name IN ('technique_valid', 'rest_within_limit')",
+    ) == 0
+    _alembic(scratch_dsn, "upgrade", V5_REVISION)
+    assert _states(scratch_dsn) == states and _scalar(scratch_dsn, _SESSION_BLOCK_FACTS) == blocks

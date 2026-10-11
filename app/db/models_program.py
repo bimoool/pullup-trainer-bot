@@ -745,6 +745,11 @@ class SessionBlock(Base):
     block_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # issue #305 (программа V5.6): явное подтверждение пользователя — техника по стандарту / отдых не
+    # превышал предписанного. NULL — неизвестно, и правило прогрессии, требующее валидной техники или
+    # отдыха, НЕизвестное значение валидным не считает. Компьютерной оценки техники нет.
+    technique_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rest_within_limit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class SetTarget(Base):

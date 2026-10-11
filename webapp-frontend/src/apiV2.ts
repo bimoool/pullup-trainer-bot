@@ -8,6 +8,7 @@
  */
 import type { EnginePlan, EngineState, TimelineCue } from "./liveEngine";
 
+import type { BlockCheck, CourseBlockOutcome } from "./courseV5";
 import type { SessionCreatePayload } from "./journalLog";
 import { awaitEngineReconciliation } from "./engineGate.ts";
 import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
@@ -86,6 +87,9 @@ export interface DashboardBlockResponse {
   target: number;
   work_sets: number;
   equipment: DashboardEquipmentResponse;
+  /** issue #305 (V5.6): готовая запись плана блока («19/18/18/18+», «15×5», «5×5 +12.5 кг»). */
+  display?: string | null;
+  block_role?: string | null;
 }
 
 /**
@@ -100,7 +104,9 @@ export interface DashboardBlockResponse {
  * форма тренировки.
  */
 export interface DashboardStatusResponse {
-  status: "not_migrated" | "too_early" | "gap_retest_required" | "multiple_active_inclusions" | "ready";
+  status:
+    | "not_migrated" | "too_early" | "gap_retest_required" | "multiple_active_inclusions" | "ready"
+    | "course_setup_required";
   program_name: string | null;
   is_gap_rollback: boolean;
   work_sets_growth_reason: "stall" | "ceiling" | null;
@@ -108,6 +114,11 @@ export interface DashboardStatusResponse {
   block_b: DashboardBlockResponse | null;
   /** issue #304 (K1): при too_early — с какой даты можно (YYYY-MM-DD, дата пользователя). */
   available_from?: string | null;
+  /** issue #305 (V5.6): версия программы, рецепт следующего занятия и недостающие входы. */
+  program_version?: string | null;
+  program_inclusion_id?: number | null;
+  course?: Record<string, unknown> | null;
+  course_pending_inputs?: string[] | null;
 }
 
 async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {
@@ -170,6 +181,22 @@ async function apiV2Delete(path: string, initDataRaw: string): Promise<void> {
     const message = await extractErrorMessage("DELETE", path, response);
     throw new Error(message);
   }
+}
+
+/** issue #305 (V5.6): PUT /api/v2/program-inclusions/{id}/course/inputs — входы программы (только вперёд). */
+export async function putCourseInputs(
+  initDataRaw: string, inclusionId: number, body: Record<string, unknown>,
+): Promise<{ pending_inputs: string[]; level: string | null }> {
+  const path = `/api/v2/program-inclusions/${inclusionId}/course/inputs`;
+  const response = await fetch(path, {
+    method: "PUT",
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage("PUT", path, response));
+  }
+  return (await response.json()) as { pending_inputs: string[]; level: string | null };
 }
 
 export async function fetchDashboardStatus(initDataRaw: string): Promise<DashboardStatusResponse> {
@@ -541,6 +568,9 @@ export interface LiveSetTargetResponse {
   unit: string;
   /** issue #305: подход на максимум (свойство цели). */
   is_max_set?: boolean;
+  /** issue #305 (V5.6): маркер подхода из снимка рецепта — working | amrap | control | dynamic. */
+  marker?: string | null;
+  cap_reps?: number | null;
 }
 
 export interface LiveSessionBlockResponse {
@@ -548,6 +578,10 @@ export interface LiveSessionBlockResponse {
   exercise_id: number | null;
   complex_id: number | null;
   targets: LiveSetTargetResponse[];
+  /** issue #305 (V5.6): блок рецепта (роль, отдых, помощь, вес, стоп-правило B) и подтверждения. */
+  course_block?: Record<string, unknown> | null;
+  technique_valid?: boolean | null;
+  rest_within_limit?: boolean | null;
   set_logs: SetLogResponseV2[];
   /** Phase B2 gate fix (issue #215) — SessionBlock.result (Phase B1),
    * контракт для interval: {type: "interval", started_at, completed_at,
@@ -626,6 +660,8 @@ export interface LiveSessionResponse {
   engine?: LiveEngineView | null;
   /** «cancelled» — сессия v2 отменена (архив, не идёт и не засчитана). */
   engine_status?: string | null;
+  /** issue #305 (V5.6): рецепт основного занятия из снимка (роль A/B, уровень, отдых, маркеры). */
+  course_program?: Record<string, unknown> | null;
 }
 
 /** issue #306 (LIVE_ENGINE_V2 §1–§2, §6): единственный источник отсчёта — state.phase_deadline_at;
@@ -661,6 +697,14 @@ export async function postLiveEngineEvents(
 export interface LiveSessionCompleteResponse extends LiveSessionResponse {
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
+  /** issue #305 (V5.6): итог прогрессии, типизированный по блокам; null у устаревшей версии. */
+  course_progression?: {
+    workout_role: string;
+    next_workout_role: string;
+    qualified: boolean;
+    blocks: CourseBlockOutcome[];
+    pending_inputs: string[];
+  } | null;
 }
 
 export interface LiveSetBatchEntry {
@@ -781,13 +825,15 @@ export async function completeLiveSession(
   initDataRaw: string,
   sessionId: number,
   abandoned: boolean,
-  review?: { effort?: string | null; comment?: string | null },
+  review?: { effort?: string | null; comment?: string | null; block_checks?: BlockCheck[] | null },
 ): Promise<LiveSessionCompleteResponse> {
-  // effort/comment — оценка тренировки целиком (необязательно); пустое не шлём.
+  // effort/comment — оценка тренировки целиком (необязательно); пустое не шлём. block_checks — V5.6 (#305):
+  // подтверждения техники/отдыха по блокам; неотмеченное — null («неизвестно»).
   return apiV2Post(`/api/v2/sessions/live/${sessionId}/complete`, initDataRaw, {
     abandoned,
     ...(review?.effort ? { effort: review.effort } : {}),
     ...(review?.comment ? { comment: review.comment } : {}),
+    ...(review?.block_checks && review.block_checks.length > 0 ? { block_checks: review.block_checks } : {}),
   });
 }
 

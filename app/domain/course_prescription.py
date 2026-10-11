@@ -1,29 +1,29 @@
 """Прескрипция курса «Подтягивания» (issue #305, W1c; WORKOUT_DOMAIN_V2 §6, PROGRAM_PLAN_V2 §3,
 MIGRATION_V2 §3/§5). Чистая логика: без aiogram/sqlalchemy, «сегодня» приходит параметром.
 
-Три части:
+**Текущая программа — V5.6** (``pullups_v5_6``, решение владельца от 11.10.2026, заменяет прежнее
+решение OD-3 «прогрессию двигает только подход на максимум»): её домен — ``app/domain/pullups_v5.py``,
+контракт — ``docs/domain/PULLUPS_V5_6.md``. Здесь — общий механизм версий:
 
-1. ``normalize_progression_state`` — каноническая форма STEP-состояния: ОБЕ роли несут ``work_sets``.
-   У ``block_b`` старых инклюзий поля нет (D2) — дописывается ``STRENGTH_BLOCK.work_sets``; присутствующее
-   значение не трогается. Тот же источник, что у миграции ``e3b9c5d7a2f1`` (литерал 4) и convergence.
-2. ``resolve_progression_block(role, state)`` — подходы блока курса: ``work_sets`` рабочих (без тихого «1»
-   по умолчанию) + один явный подход на максимум (OD-3 решён: включать). ``advance_step_progression`` —
-   шаг прогрессии: только подход на максимум, только вперёд (решение владельца).
-3. ``InitialPrescriptionRule`` — чистое версионированное правило стартового состояния из замера
-   (решение владельца **OD-1** — числа). Пока OD-1 не решён, зарегистрировано единственное правило
-   ``program_config_default@0`` = прежнее поведение (``config.block_*.base_target``, собственный вес),
-   помеченное ``decided = False``: оно НЕ ответ на OD-1, а сохранённый статус-кво с провенансом, чтобы
-   инклюзии, созданные до решения, были отличимы. Плюс ворота ``awaiting_assessment``.
+1. ``InitialPrescriptionRule`` — чистое версионированное правило стартового состояния (реестр
+   ``rule_id@version``, провенанс на инклюзии). Текущее — ``pullups_v5_6@1`` (``decided = True``).
+   ``program_config_default@0`` остаётся в реестре: им созданы инклюзии УСТАРЕВШЕЙ версии программы
+   (``pullups_legacy_step``), их провенанс должен оставаться читаемым. Плюс ворота ``awaiting_assessment``.
+2. УСТАРЕВШАЯ версия (``pullups_legacy_step``) — состояние ``block_a``/``block_b`` бот-эпохи:
+   ``normalize_progression_state`` (у ``block_b`` старых инклюзий нет ``work_sets`` — D2, дописывается
+   ``STRENGTH_BLOCK.work_sets``, как у миграции ``e3b9c5d7a2f1``) и ``resolve_progression_block``
+   (``work_sets`` рабочих подходов + подход на максимум — структура тренировки бот-эпохи, вход прежней
+   формулы ``recalculate_target``). V5.6 их не использует и старые инклюзии в V5.6 не переводит.
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Protocol
 
 from app.domain.constants import STRENGTH_BLOCK, VOLUME_BLOCK, EquipmentType
-from app.domain.progression import recalculate_target, recalculate_volume_block
+from app.domain.pullups_v5 import EntryInputs, initial_state
 
 ROLE_BLOCK_A = "block_a"
 ROLE_BLOCK_B = "block_b"
@@ -82,11 +82,11 @@ class ProgressionSetPrescription:
 
 
 def resolve_progression_block(role: str, progression_state: Mapping) -> tuple[ProgressionSetPrescription, ...]:
-    """Подходы блока роли ``block_a`` / ``block_b`` (WORKOUT_DOMAIN_V2 §6): ровно ``work_sets`` рабочих
-    подходов (для обеих ролей) на ``target`` роли и ПОСЛЕДНИМ — один явный подход на максимум
-    (``is_max_set``, ``target_reps = 0``). OD-3 решён владельцем: подход на максимум включается — это
-    замер цикла и единственный вход прогрессии (``advance_step_progression``). Состояние должно быть
-    нормализовано."""
+    """УСТАРЕВШАЯ версия программы (``pullups_legacy_step``): подходы блока роли ``block_a`` / ``block_b``
+    — ровно ``work_sets`` рабочих подходов (для обеих ролей, без тихого «1», D2) на ``target`` роли и
+    ПОСЛЕДНИМ — подход на максимум (``is_max_set``, ``target_reps = 0``): так устроена тренировка
+    бот-эпохи, и подход на максимум — вход её формулы (``recalculate_target``: рабочие подходы + максимум).
+    Для V5.6 не используется (там у каждого блока свой сигнал). Состояние должно быть нормализовано."""
     if role not in PROGRESSION_ROLES:
         raise InvalidProgressionStateError(f"unknown progression role {role!r}")
     work_sets = role_work_sets(role, progression_state)
@@ -94,105 +94,6 @@ def resolve_progression_block(role: str, progression_state: Mapping) -> tuple[Pr
     sets = [ProgressionSetPrescription(set_number=i + 1, target_reps=target) for i in range(work_sets)]
     sets.append(ProgressionSetPrescription(set_number=work_sets + 1, target_reps=0, is_max_set=True))
     return tuple(sets)
-
-
-# --- 2b. Прогрессия курса: только подход на максимум, только вперёд ----------------------------
-
-
-@dataclass(frozen=True)
-class RoleAdvance:
-    """Итог шага прогрессии одной роли. ``measured`` — был ли в сессии выполненный подход на
-    максимум этой роли; без замера роль не двигается (``target_before == target_after``)."""
-
-    target_before: int
-    target_after: int
-    equipment_changed: bool
-    measured: bool
-
-
-def _prescribed_working_reps(role_state: Mapping) -> tuple[int, ...]:
-    """Рабочие подходы цикла так, как они были ПРЕДПИСАНЫ (``work_sets`` × ``target``), — не как
-    выполнены. Формула шага берёт из рабочих подходов среднее (ветка роста) и порог смены снаряда;
-    подставляя предписание, а не факт, мы гарантируем, что фактические рабочие подходы прогрессию
-    не двигают (решение владельца): при выполнении «по плану» результат тот же, что у прежней формулы."""
-    return (int(role_state["target"]),) * int(role_state["work_sets"])
-
-
-def _max_miss_signal(missed: bool) -> tuple[int, int]:
-    """Вход «слабой тренировки» формулы — ``volume < prev_volume`` (объём рабочих подходов). Курс
-    подаёт туда ПРОМАХ ЗАМЕРА (подход на максимум ниже цели): (0, 1) — промах, (0, 0) — нет. Счётчик
-    ``weak_streak`` роли считает подряд идущие промахи замера, а не просадки объёма."""
-    return (0, 1) if missed else (0, 0)
-
-
-def advance_step_progression(
-    progression_state: Mapping, *, max_a: int | None, max_b: int | None,
-) -> tuple[dict, RoleAdvance, RoleAdvance]:
-    """Шаг прогрессии курса на прямой границе (завершение основной тренировки курса). Решение
-    владельца: прогрессию двигает ТОЛЬКО явный подход на максимум; рабочие подходы хранятся и
-    показываются, но не меняют состояние.
-
-    ``max_a`` / ``max_b`` — повторения выполненного подхода на максимум этой сессии (``None`` — замера
-    роли нет: подход на максимум не выполнен или отсутствует; роль не двигается). Формула — прежняя
-    (``recalculate_volume_block`` для блока А, ``recalculate_target`` для блока Б: рост, если
-    max > target, на ``max(1, ceil(target·STEP_PCT))``; max = target — держим; откат −1 после
-    ``WEAK_STREAK_ROLLBACK_THRESHOLD`` подряд промахов; смена снаряда, иерархия подходов блока А),
-    но все её входы выводятся из предписания и замера (``_prescribed_working_reps``,
-    ``_max_miss_signal``). Поле ``volume`` состояния больше не вход и не переписывается.
-
-    Только вперёд: функция получает текущее состояние и замер ЭТОЙ сессии; прошлые сессии, их правки
-    и уже выданные рецепты она не читает и не пересчитывает. Чистая и детерминированная."""
-    state = normalize_progression_state(progression_state)
-    block_a, block_b = dict(state[ROLE_BLOCK_A]), dict(state[ROLE_BLOCK_B])
-    advance_a = RoleAdvance(block_a["target"], block_a["target"], False, measured=False)
-    advance_b = RoleAdvance(block_b["target"], block_b["target"], False, measured=False)
-
-    if max_a is not None:
-        target, work_sets = int(block_a["target"]), int(block_a["work_sets"])
-        missed = max_a < target
-        volume, prev_volume = _max_miss_signal(missed)
-        result = recalculate_volume_block(
-            target, work_sets, _prescribed_working_reps(block_a), max_a, volume, prev_volume,
-            EquipmentType(block_a["equipment_type"]),
-            consecutive_weak_before=int(block_a.get("weak_streak") or 0),
-            consecutive_stall_before=int(block_a.get("stall_streak") or 0),
-        )
-        grew = result.new_target > target or result.new_work_sets > work_sets
-        block_a.update({
-            "target": result.new_target,
-            "work_sets": result.new_work_sets,
-            "work_sets_growth_reason": (
-                result.work_sets_growth_reason.value if result.work_sets_growth_reason is not None else None
-            ),
-            "weak_streak": int(block_a.get("weak_streak") or 0) + 1 if missed else 0,
-            "stall_streak": 0 if grew else int(block_a.get("stall_streak") or 0) + 1,
-            "needs_new_equipment": result.equipment_changed,
-        })
-        advance_a = RoleAdvance(target, result.new_target, result.equipment_changed, measured=True)
-
-    if max_b is not None:
-        target = int(block_b["target"])
-        missed = max_b < target
-        volume, prev_volume = _max_miss_signal(missed)
-        result_b = recalculate_target(
-            STRENGTH_BLOCK, target, _prescribed_working_reps(block_b), max_b, volume, prev_volume,
-            consecutive_weak_before=int(block_b.get("weak_streak") or 0),
-        )
-        block_b.update({
-            "target": result_b.new_target,
-            "weak_streak": int(block_b.get("weak_streak") or 0) + 1 if missed else 0,
-            "needs_new_equipment": result_b.equipment_changed,
-        })
-        advance_b = RoleAdvance(target, result_b.new_target, result_b.equipment_changed, measured=True)
-
-    new_state = {
-        **state,
-        "schema_version": state.get("schema_version", 1),
-        ROLE_BLOCK_A: block_a,
-        ROLE_BLOCK_B: block_b,
-        "workouts_completed_in_set": state.get("workouts_completed_in_set", 0) + 1,
-    }
-    return new_state, advance_a, advance_b
 
 
 # --- 3. Стартовая прескрипция и ворота замера --------------------------------------------------
@@ -281,11 +182,13 @@ class PrescriptionOverrides:
 class InitialPrescriptionRule(Protocol):
     rule_id: str
     version: int
-    # False — правило не утверждено владельцем (OD-1 открыт): сохранённый статус-кво.
+    # False — правило не утверждено владельцем (сохранённый статус-кво устаревшей версии).
     decided: bool
+    program_version: str
 
     def prescribe(
         self, program_config: Mapping, assessment: AssessmentInput | None, overrides: PrescriptionOverrides,
+        inputs: EntryInputs | None = None,
     ) -> dict: ...
 
 
@@ -325,21 +228,22 @@ def _step_state(*, target_a: int, target_b: int, work_sets_a: int, work_sets_b: 
 
 @dataclass(frozen=True)
 class ProgramConfigDefaultRule:
-    """Прежнее (до #305) поведение Mini App: цели — ``config.block_a/b.base_target`` (иначе
-    ``VOLUME_BLOCK``/``STRENGTH_BLOCK``), снаряд — собственный вес, замер не читается.
-
-    НЕ решение OD-1 (``decided = False``): сохранено без изменений, чтобы подключение продолжало
-    работать до решения владельца; провенанс ``program_config_default@0`` помечает такие инклюзии.
-    Единственное отличие от старого кода — ``block_b.work_sets`` теперь записывается (D2)."""
+    """УСТАРЕВШАЯ версия программы (``pullups_legacy_step``) — прежнее (до #305) поведение Mini App:
+    цели — ``config.block_a/b.base_target`` (иначе ``VOLUME_BLOCK``/``STRENGTH_BLOCK``), снаряд —
+    собственный вес, замер не читается. Новые инклюзии получают её только явным запросом устаревшей
+    версии (``program_version`` или прежние поля ``initial_target_a/b``); по умолчанию — V5.6.
+    Отличие от старого кода — ``block_b.work_sets`` записывается (D2)."""
 
     rule_id: str = "program_config_default"
     version: int = 0
     decided: bool = False
+    program_version: str = "pullups_legacy_step"
 
     def prescribe(
         self, program_config: Mapping, assessment: AssessmentInput | None, overrides: PrescriptionOverrides,
+        inputs: EntryInputs | None = None,
     ) -> dict:
-        del assessment  # статус-кво: замер не читается (OD-1 открыт)
+        del assessment, inputs  # статус-кво устаревшей версии: замер не читается
         block_a = (program_config or {}).get(ROLE_BLOCK_A, {})
         block_b = (program_config or {}).get(ROLE_BLOCK_B, {})
         return _step_state(
@@ -351,22 +255,60 @@ class ProgramConfigDefaultRule:
         )
 
 
+@dataclass(frozen=True)
+class PullupsV56Rule:
+    """Стартовое состояние программы V5.6 (решение владельца, заменяет вопрос OD-1 для новой версии):
+    уровень и стартовые дозы — ``app.domain.pullups_v5.initial_state`` из входов §3. M берётся из
+    явного ввода, иначе из валидного замера (максимум подтягиваний). Прежние ``initial_target_a/b``
+    к V5.6 не относятся (это поля устаревшей версии)."""
+
+    rule_id: str = "pullups_v5_6"
+    version: int = 1
+    decided: bool = True
+    program_version: str = "pullups_v5_6"
+
+    def prescribe(
+        self, program_config: Mapping, assessment: AssessmentInput | None, overrides: PrescriptionOverrides,
+        inputs: EntryInputs | None = None,
+    ) -> dict:
+        del program_config, overrides
+        inputs = inputs or EntryInputs()
+        if inputs.fresh_max is None and assessment is not None:
+            inputs = replace(inputs, fresh_max=assessment.max_reps)
+        return initial_state(inputs).to_dict()
+
+
+LEGACY_INITIAL_PRESCRIPTION_RULE = "program_config_default@0"
+
 _RULES: dict[str, Callable[[], InitialPrescriptionRule]] = {
-    "program_config_default@0": ProgramConfigDefaultRule,
+    LEGACY_INITIAL_PRESCRIPTION_RULE: ProgramConfigDefaultRule,
+    "pullups_v5_6@1": PullupsV56Rule,
 }
 
-# Текущее правило стартовой прескрипции. Меняется ТОЛЬКО по записанному решению OD-1 (#310):
-# новое правило — новый rule_id/version, старое остаётся в реестре (провенанс прежних инклюзий).
-CURRENT_INITIAL_PRESCRIPTION_RULE = "program_config_default@0"
+# Текущее правило стартовой прескрипции: программа V5.6. Новое правило — новый rule_id/version,
+# прежние остаются в реестре (провенанс ранее созданных инклюзий).
+CURRENT_INITIAL_PRESCRIPTION_RULE = "pullups_v5_6@1"
 
 
 def get_initial_prescription_rule(key: str = CURRENT_INITIAL_PRESCRIPTION_RULE) -> InitialPrescriptionRule:
     return _RULES[key]()
 
 
+def rule_key(rule: InitialPrescriptionRule) -> str:
+    return f"{rule.rule_id}@{rule.version}"
+
+
+def rule_key_from_provenance(provenance: Mapping | None) -> str:
+    """Правило, которым создана инклюзия (пересчёт при снятии ожидания замера — тем же правилом).
+    Инклюзия без провенанса создана до #305 — устаревшей версией."""
+    if not provenance or provenance.get("rule_id") is None:
+        return LEGACY_INITIAL_PRESCRIPTION_RULE
+    return f"{provenance['rule_id']}@{provenance['rule_version']}"
+
+
 def prescription_provenance(
     rule: InitialPrescriptionRule, *, assessment: AssessmentInput | None, overrides: PrescriptionOverrides,
-    state: InclusionAssessmentState, computed_at: datetime,
+    state: InclusionAssessmentState, computed_at: datetime, inputs: EntryInputs | None = None,
 ) -> dict:
     """Запись на инклюзии: каким правилом и из какого замера получено стартовое состояние."""
     explicit = {
@@ -378,6 +320,8 @@ def prescription_provenance(
         "rule_id": rule.rule_id,
         "rule_version": rule.version,
         "rule_decided": rule.decided,
+        "program_version": rule.program_version,
+        "inputs": inputs.to_dict() if inputs is not None else None,
         "assessment": assessment.provenance() if assessment is not None else None,
         "explicit_targets": explicit or None,
         "assessment_state": state.value,

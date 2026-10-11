@@ -149,6 +149,9 @@ class SessionBlockDetail:
     result: dict | None = None
     started_at: datetime | None = None
     block_key: str | None = None
+    # issue #305: подтверждения пользователя (None — неизвестно, не «валидно»).
+    technique_valid: bool | None = None
+    rest_within_limit: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -784,6 +787,19 @@ class TrainingSessionRepository:
         block.started_at = started_at
         await self._session.flush()
 
+    async def save_block_checks(
+        self, session_id: int, checks: dict[int, tuple[bool | None, bool | None]],
+    ) -> None:
+        """issue #305 (V5.6): подтверждения пользователя по блокам сессии — {order_index: (техника по
+        стандарту, отдых в пределах)}. None оставляет поле неизвестным (не «валидным»)."""
+        blocks = (await self._session.execute(
+            select(SessionBlock).where(SessionBlock.session_id == session_id),
+        )).scalars().all()
+        for block in blocks:
+            if block.order_index in checks:
+                block.technique_valid, block.rest_within_limit = checks[block.order_index]
+        await self._session.flush()
+
     async def save_interval_block_result(self, block_id: int, result: dict) -> None:
         """Phase B1 (issue #215): сохранение result для interval SessionBlock
         после lazy finalization. Вызывается только для interval blocks, не
@@ -850,6 +866,7 @@ class TrainingSessionRepository:
                         for target in set_targets_by_block[block.id]
                     ],
                     result=block.result, started_at=block.started_at, block_key=block.block_key,
+                    technique_valid=block.technique_valid, rest_within_limit=block.rest_within_limit,
                 )
                 for block in blocks_by_session[session_row.id]
             ]
@@ -1352,6 +1369,7 @@ class TrainingSessionRepository:
                 session_id=clone.id, order_index=block.order_index, exercise_id=block.exercise_id,
                 complex_id=block.complex_id, result=block.result, started_at=block.started_at,
                 block_key=block.block_key, status=block.status, ended_at=block.ended_at,
+                technique_valid=block.technique_valid, rest_within_limit=block.rest_within_limit,
             )
             self._session.add(new_block)
             await self._session.flush()

@@ -15,11 +15,18 @@ from app.db.repositories.training_sessions import (
     SetTargetInput,
     TrainingSessionRepository,
 )
-from app.domain.course_prescription import advance_step_progression
+from app.domain.constants import EquipmentType
 from app.domain.multi_program import MetricType, SessionSource
-from app.domain.training_session_v2 import SetStatus
+from app.domain.progression_strategy import ProgressionContext, StepProgressionStrategy
+from app.domain.pullups_v5 import is_v5_state
+from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
 
-# Роли блока А/Б курса — та же конвенция snapshot
+# issue #305: инклюзия программы V5.6 (progression_state.program_version = "pullups_v5_6") прогрессирует
+# ТОЛЬКО от рецепта, выданного живым стартом и записанного в снимок сессии (app.services.course_v5).
+# Целиковая запись POST /sessions такого рецепта не несёт — факт пишется, прогрессия не применяется.
+V5_REQUIRES_PRESCRIBED_SESSION = "v5_requires_prescribed_session"
+
+# Роли блока А/Б для StepProgressionStrategy — та же конвенция snapshot
 # ["exercises"], которую строит ProgramInclusionService/
 # scripts/backfill_multi_program.py (issue #165, подтверждено Кириллом).
 _ROLE_BLOCK_A = "block_a"
@@ -46,6 +53,15 @@ class RecordSessionResult:
     progression_skipped_reason: str | None
 
 
+def _equipment_type_from_state(block_state: dict) -> EquipmentType:
+    return EquipmentType(block_state["equipment_type"])
+
+
+def _equipment_value_from_state(block_state: dict) -> Decimal | None:
+    value = block_state.get("equipment_value")
+    return Decimal(value) if value is not None else None
+
+
 def _session_block_input_from_detail(block: SessionBlockDetail) -> SessionBlockInput:
     """Обратное преобразование SessionBlockDetail (то, что вернул
     репозиторий при чтении) -> SessionBlockInput (то, что принимают
@@ -62,43 +78,120 @@ def _session_block_input_from_detail(block: SessionBlockDetail) -> SessionBlockI
                 is_max_set=log.is_max_set, effort=log.effort, note=log.note,
             )
             for log in block.set_logs
-            # issue #264: подходы сверх плана не участвуют в прогрессии; #305: невыполненный подход
-            # (#307 not_performed) — не замер.
-            if not log.is_extra and log.status == SetStatus.PERFORMED.value
+            if not log.is_extra  # issue #264: подходы сверх плана не участвуют в прогрессии
         ],
     )
 
 
-def _max_measurement(sets: list[SetLogInput]) -> int | None:
-    """Замер цикла — выполненный плановый подход на максимум блока (``is_max_set`` наследуется у цели,
-    #305 D3). Нет такого подхода — замера нет (None), роль в этой сессии не двигается. Рабочие подходы
-    сюда не попадают ни в каком виде (решение владельца: прогрессию двигает только подход на максимум)."""
+def _block_log_from_sets(sets: list[SetLogInput]) -> BlockLog:
+    working_reps = tuple(
+        int(s.value) for s in sorted(sets, key=lambda s: s.set_number) if not s.is_max_set
+    )
     max_set = next((s for s in sets if s.is_max_set), None)
-    return int(max_set.value) if max_set is not None else None
+    return BlockLog(working_reps=working_reps, max_reps=int(max_set.value) if max_set is not None else 0)
+
+
+def _block_assignment(log: BlockLog, block_state: dict) -> BlockAssignment:
+    return BlockAssignment(
+        log=log,
+        target_before=block_state["target"],
+        target_after=block_state["target"],
+        equipment_changed=False,
+        equipment_type=_equipment_type_from_state(block_state),
+        equipment_value=_equipment_value_from_state(block_state),
+        equipment_item_id=block_state.get("equipment_item_id"),
+    )
 
 
 def _apply_step_progression(
     progression_state: dict, *, performed_at: datetime, block_a_sets: list[SetLogInput], block_b_sets: list[SetLogInput],
 ) -> tuple[dict, SessionProgressionResult]:
-    """Единственная точка, где путь v2 применяет прогрессию курса (POST /sessions, завершение живой
-    сессии, явный каскад /progression/apply). Решение владельца (#305): шаг прогрессии считается
-    ТОЛЬКО по явному подходу на максимум этой сессии — ``advance_step_progression``
-    (app/domain/course_prescription.py). Значения рабочих подходов, их промахи и объём на состояние не
-    влияют (прежний ``weak_streak`` по объёму рабочих подходов снят: теперь это подряд идущие промахи
-    замера). Только вперёд: читается текущее состояние и замер этой сессии, история не пересчитывается.
-    ``performed_at`` в расчёт не входит (оставлен в сигнатуре для вызывающих)."""
-    del performed_at
-    new_state, advance_a, advance_b = advance_step_progression(
-        progression_state, max_a=_max_measurement(block_a_sets), max_b=_max_measurement(block_b_sets),
+    """УСТАРЕВШАЯ версия программы (``pullups_legacy_step``, issue #305): инклюзии, созданные до V5.6,
+    исполняются и прогрессируют прежним кодом бот-эпохи (рабочие подходы + подход на максимум,
+    StepProgressionStrategy) — V5.6 их не переписывает. Новые инклюзии — app.services.course_v5.
+
+    Единственное место, где новый код волны 3 касается пересчёта
+    прогрессии — целиком через StepProgressionStrategy.apply() (волна 0,
+    issue #158), не второй путь расчёта (issue #165, план п. "используй
+    ProgressionStrategy... не пиши второй, отдельный путь").
+
+    weak_streak/stall_streak в progression_state — бегущие счётчики
+    (та же форма, что уже использует scripts/backfill_multi_program.py::
+    _build_progression_state), не пересчитываемые из полной истории при
+    каждом вызове: у TrainingSession/SessionBlock (в отличие от старой
+    Block) нет персистентных target_before/after на запись, поэтому
+    app.db.repositories.workouts._weak_streak/_stall_streak (сканирование
+    истории) здесь неприменимо — состояние обязано жить в
+    ProgramInclusion.progression_state между вызовами. Формулы обновления
+    ниже — те же условия, что recalculate_cascade уже использует ВНУТРИ
+    своего цикла (см. app/domain/progression.py) для этих же счётчиков,
+    просто применённые к единственной новой записи, а не заново
+    выведенные — тот же приём, каким _weak_streak/_stall_streak сами
+    устроены СНАРУЖИ recalculate_cascade для старой схемы."""
+    block_a_state, block_b_state = progression_state["block_a"], progression_state["block_b"]
+    block_a_log = _block_log_from_sets(block_a_sets)
+    block_b_log = _block_log_from_sets(block_b_sets)
+
+    record = WorkoutRecord(
+        performed_at=performed_at,
+        block_a=_block_assignment(block_a_log, block_a_state),
+        block_b=_block_assignment(block_b_log, block_b_state),
     )
+    context = ProgressionContext(
+        starting_target_a=block_a_state["target"], starting_target_b=block_b_state["target"],
+        starting_volume_a=block_a_state["volume"], starting_volume_b=block_b_state["volume"],
+        subsequent_workouts=[record],
+        starting_weak_streak_a=block_a_state["weak_streak"], starting_weak_streak_b=block_b_state["weak_streak"],
+        starting_work_sets_a=block_a_state["work_sets"], starting_stall_streak_a=block_a_state["stall_streak"],
+    )
+    [result] = StepProgressionStrategy().apply(context)
+
+    grew_a = (
+        result.block_a.target_after > result.block_a.target_before
+        or result.block_a.work_sets_after > block_a_state["work_sets"]
+    )
+    new_weak_streak_a = block_a_state["weak_streak"] + 1 if result.block_a.log.volume < block_a_state["volume"] else 0
+    new_stall_streak_a = 0 if grew_a else block_a_state["stall_streak"] + 1
+    new_weak_streak_b = block_b_state["weak_streak"] + 1 if result.block_b.log.volume < block_b_state["volume"] else 0
+
+    new_state = {
+        "schema_version": progression_state.get("schema_version", 1),
+        "strategy_type": progression_state["strategy_type"],
+        "block_a": {
+            **block_a_state,
+            "target": result.block_a.target_after,
+            "volume": result.block_a.log.volume,
+            "work_sets": result.block_a.work_sets_after,
+            "work_sets_growth_reason": (
+                result.block_a.work_sets_growth_reason.value
+                if result.block_a.work_sets_growth_reason is not None else None
+            ),
+            "weak_streak": new_weak_streak_a,
+            "stall_streak": new_stall_streak_a,
+            # Смена снаряда (equipment_changed=True) только СИГНАЛИЗИРУЕТСЯ —
+            # выбор конкретного следующего снаряда (какой вес/резина) в этой
+            # волне не автоматизирован (нет UI, нет эндпоинта выбора), тот же
+            # принцип "явный пробел, не молчаливое поведение", что и у
+            # equipment_setup_required в старой схеме (см. CLAUDE.md).
+            "needs_new_equipment": result.block_a.equipment_changed,
+        },
+        "block_b": {
+            **block_b_state,
+            "target": result.block_b.target_after,
+            "volume": result.block_b.log.volume,
+            "weak_streak": new_weak_streak_b,
+            "needs_new_equipment": result.block_b.equipment_changed,
+        },
+        "workouts_completed_in_set": progression_state.get("workouts_completed_in_set", 0) + 1,
+    }
     progression_result = SessionProgressionResult(
         block_a=BlockProgressionResult(
-            target_before=advance_a.target_before, target_after=advance_a.target_after,
-            equipment_changed=advance_a.equipment_changed,
+            target_before=result.block_a.target_before, target_after=result.block_a.target_after,
+            equipment_changed=result.block_a.equipment_changed,
         ),
         block_b=BlockProgressionResult(
-            target_before=advance_b.target_before, target_after=advance_b.target_after,
-            equipment_changed=advance_b.equipment_changed,
+            target_before=result.block_b.target_before, target_after=result.block_b.target_after,
+            equipment_changed=result.block_b.equipment_changed,
         ),
     )
     return new_state, progression_result
@@ -135,7 +228,7 @@ class TrainingSessionLogService:
     """Оркестрация POST /api/v2/sessions (issue #165, волна 3): всегда
     пишет факт через TrainingSessionRepository; УСЛОВНО (см.
     _match_step_blocks/_apply_step_progression) пересчитывает
-    ProgramInclusion.progression_state через advance_step_progression (#305) —
+    ProgramInclusion.progression_state через StepProgressionStrategy —
     единственное место волны 3, где новый код касается пересчёта
     прогрессии."""
 
@@ -176,6 +269,8 @@ class TrainingSessionLogService:
             skipped_reason = "no_program_inclusion"
         elif inclusion.snapshot.get("progression_strategy_type") != "step":
             skipped_reason = "not_step_strategy"
+        elif is_v5_state(inclusion.progression_state):
+            skipped_reason = V5_REQUIRES_PRESCRIBED_SESSION
         else:
             matched = _match_step_blocks(inclusion, blocks)
             if matched is None:

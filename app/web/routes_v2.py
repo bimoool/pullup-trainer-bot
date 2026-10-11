@@ -89,7 +89,11 @@ from app.services.plan_view import (
 )
 from app.services.plan_week import PlanWeekService
 from app.services.program_access import ProgramAccessService
-from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
+from app.services.program_inclusion import (
+    ProgramInclusionRequest,
+    ProgramInclusionService,
+    UnknownProgramVersionError,
+)
 from app.services.progression_cascade import ProgressionCascadeService
 from app.services.session_deletion import SessionDeletionService
 from app.services.session_editing import EditOutcome, EditStatus, SessionEditingService, SetEdit
@@ -1024,6 +1028,20 @@ async def get_plan(
     )
 
 
+async def _create_inclusion(session: AsyncSession, user_id: int, body: ProgramInclusionCreateRequest):
+    """issue #305: версия программы и входы V5.6 — из запроса (по умолчанию текущая версия V5.6)."""
+    return await ProgramInclusionService(session).create_inclusion(
+        user_id=user_id,
+        request=ProgramInclusionRequest(
+            program_id=body.program_id, initial_target_a=body.initial_target_a,
+            initial_target_b=body.initial_target_b, initial_volume_a=body.initial_volume_a,
+            initial_volume_b=body.initial_volume_b, restart=body.restart,
+            program_version=body.program_version,
+            course_inputs=body.course_inputs.to_domain() if body.course_inputs is not None else None,
+        ),
+    )
+
+
 @router_v2.post("/program-inclusions", response_model=ProgramInclusionResponse)
 async def create_program_inclusion(
     body: ProgramInclusionCreateRequest,
@@ -1031,14 +1049,10 @@ async def create_program_inclusion(
     session: AsyncSession = Depends(get_session),
 ) -> ProgramInclusionResponse:
     user = await _require_user(session, init_data)
-    inclusion = await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id,
-        request=ProgramInclusionRequest(
-            program_id=body.program_id, initial_target_a=body.initial_target_a,
-            initial_target_b=body.initial_target_b, initial_volume_a=body.initial_volume_a,
-            initial_volume_b=body.initial_volume_b, restart=body.restart,
-        ),
-    )
+    try:
+        inclusion = await _create_inclusion(session, user.id, body)
+    except UnknownProgramVersionError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if inclusion is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Program not found")
     # Checkpoint 1 (issue #188) — тонкий вызов канонического сервиса, вся
@@ -1711,7 +1725,7 @@ async def preview_progression_cascade(
     if deltas is None:
         if not_applicable:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, "ProgramInclusion is not a step-strategy inclusion",
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "ProgramInclusion is not a legacy step-strategy inclusion (V5.6 progression is forward-only)",
             )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ProgramInclusion or session not found")
     return _progression_preview_response(deltas)
@@ -1732,7 +1746,7 @@ async def apply_progression_cascade(
     if deltas is None:
         if not_applicable:
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, "ProgramInclusion is not a step-strategy inclusion",
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "ProgramInclusion is not a legacy step-strategy inclusion (V5.6 progression is forward-only)",
             )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "ProgramInclusion or session not found")
     return _progression_preview_response(deltas)

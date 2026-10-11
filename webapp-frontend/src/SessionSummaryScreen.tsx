@@ -1,3 +1,4 @@
+import { describeCourseOutcome } from "./courseV5";
 import { Button } from "@telegram-apps/telegram-ui";
 
 import type { LiveSessionCompleteResponse, SetLogResponseV2 } from "./apiV2";
@@ -180,6 +181,14 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
               </p>
             );
           })()}
+        </section>
+      )}
+      {result.course_progression && (
+        <section className="live-card live-card-goal" data-testid="course-progression">
+          <h3 className="live-card-title">Следующая тренировка {result.course_progression.next_workout_role}</h3>
+          {result.course_progression.blocks.map((outcome) => (
+            <p key={outcome.block_role} className="live-row">{describeCourseOutcome(outcome)}</p>
+          ))}
         </section>
       )}
       {skippedReasonLabel(result.progression_skipped_reason) && (

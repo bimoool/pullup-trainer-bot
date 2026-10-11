@@ -65,8 +65,8 @@ test("live-сессия (v2): 4 подхода офлайн, синхрониз�
   // 3 + max блока A и 4 + max блока Б показаны выполненными.
   await expect(page.getByText(/— 4\/4/)).toBeVisible();
   await expect(page.getByText(/— 5\/5/)).toBeVisible();
-  // Прогрессию двигает только подход на максимум (#305): max 12 > цели 10 (A), 5 > 3 (Б) — цели растут.
-  // Здесь важен сам факт, что новая цель показана; числа — в tests/test_web/test_v2_course_prescription.py.
+  // Устаревшая версия программы (#305: сид явно pullups_legacy_step) — формула бот-эпохи (рабочие + максимум).
+  // Здесь важен сам факт, что новая цель показана, не конкретное число.
   await expect(page.getByText("Новая цель", { exact: true })).toBeVisible();
   await expect(page.getByText(/^\d+ → \d+$/)).toHaveCount(2); // по строке на блок (A и Б)
 

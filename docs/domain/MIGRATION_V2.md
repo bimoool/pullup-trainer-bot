@@ -150,7 +150,8 @@ Issues: umbrella and wave issues are listed in [§9.2](#92-github-issues).
 Wave 1  Program + Plan foundation       (core models; single writer)
   1a WorkoutDefinition v2 + versions + snapshot + exercise identity   ← first, everything depends on it
   1b Program/Plan occurrences + constraints + custom weekly volume     ← after 1a schema merged
-  1c Course prescription correctness (block B, max set, init rule)     ← after 1a; OD-1 for numbers (OD-3 resolved)
+  1c Course prescription correctness (block B, max set, init rule)     ← after 1a; superseded in substance by
+     pull-up program V5.6 (PULLUPS_V5_6.md); its migrations must be reparented after #306/#308 integration
 Wave 2  Live Engine v2                    ← after 1a (snapshot shape) + 1b (start preconditions)
 Wave 3  TrainingSession / Journal / Analytics
   3a Session contract + manual identity + editing                     ← after 1a; parallel with Wave 2

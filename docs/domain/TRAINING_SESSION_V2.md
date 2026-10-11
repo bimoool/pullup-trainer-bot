@@ -218,11 +218,22 @@ completed workouts are never regenerated. The pre-existing explicit endpoint
 `POST /api/v2/program-inclusions/{id}/progression/{preview,apply}` (legacy cascade replay) is not called by
 any edit path and is outside this decision.
 
+**V5.6 (owner decision 2026-10-11, `PULLUPS_V5_6.md`) supersedes the MAX-only rule above for the current
+program.** The forward-only boundary is kept and made stricter: the V5.6 prescription of each MAIN session is
+written once into `prescription_snapshot.provenance.course_program` at live start; completion progresses from
+that snapshot and the session's facts, typed per block (`a_volume`, `b_volume`, `assisted_strength`,
+`a_weighted_strength`, `b_weighted_strength`); no block reads `is_max_set` as its progression input. Historical
+edits of any set (including A's AMRAP) change facts only; snapshots, `SetTarget`, PlanItems and the state are not
+rebuilt; the cascade replay endpoint refuses V5.6 inclusions (422). New per-block user confirmations
+`session_blocks.technique_valid` / `rest_within_limit` (NULL = unknown, never valid) are facts of the session and
+are copied by clone like other facts. The MAX-only text above remains the record of the legacy version.
+
 ## 11. Implementation decisions (Wave 3a, to confirm in review)
 
 - **ED1 (superseded reading, #307 final review B1):** an earlier reading made sessions "consumed by
   progression" (course link, `program_inclusion_id`, STEP role, unproven `planned_live`) metadata-only and
   non-cloneable. The owner rejected it: only the MAX set drives progression, forward-only — see §4 ED1/ED1a/ED1b.
+  (The «only the MAX set» part is superseded by V5.6 — §10; «forward-only, history edits are facts» stands.)
 - **Status vocabulary:** the existing `started | completed` enum is kept (`started` = contract `active`).
   `cancelled` is not introduced: adding a PG enum value would break the previous image on rollback
   (old code cannot read it). An abandoned live session that the user completes stays `completed` with
