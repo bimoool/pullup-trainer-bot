@@ -570,6 +570,18 @@ async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) 
     )
 
 
+async def seed_v5_one_rep_max(session: AsyncSession, telegram_id: int) -> None:
+    """#305 V5.6 §10: тот же курс, что plan_week_start_session (M = 12 → переходная неделя, масса тела из анкеты,
+    шаг веса 1,25), но без E1RM и без недавних 5×5/5×3 — пред-экран просит 1RM, и тест проходится в приложении
+    по шагам лестницы. Тренировок нет — правило 48 ч тест не блокирует."""
+    user = await _onboard(session, telegram_id)
+    program = await _shipped_pull_ups_program(session)
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id,
+        request=ProgramInclusionRequest(program_id=program.id, course_inputs=EntryInputs(load_step_kg=Decimal("1.25"))),
+    )
+
+
 async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int) -> None:
     """Checkpoint 4B (issue #188) — две manual PlanItem уже размещены по
     дням в текущей неделе (program_inclusion_id=NULL, ровно как их создаёт
@@ -1751,6 +1763,7 @@ SCENARIOS = {
     "plan_week_grouping": seed_plan_week_grouping,
     "plan_week_add_exercise": seed_plan_week_add_exercise,
     "plan_week_start_session": seed_plan_week_start_session,
+    "v5_one_rep_max": seed_v5_one_rep_max,
     "plan_week_manual_session": seed_plan_week_manual_session,
     "journal_combined": seed_journal_combined,
     "plan_week_stepper": seed_plan_week_stepper,

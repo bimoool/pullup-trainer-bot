@@ -1198,14 +1198,17 @@ def b_volume_fact(planned_sets: int, result: BlockResult) -> tuple[tuple[int, ..
     VB_fact) и блок завершается; подходы после остановки не учитываются. Нарушение техники тоже
     завершает блок."""
     counted: list[int] = []
+    # Подходы оборвались, а техника блока нарушена — это остановка по технике (движок #306 завершает блок
+    # по «техника нарушена»), а не досрочный выход.
+    cut_short = BStopReason.TECHNIQUE if result.technique_valid is False else BStopReason.ENDED_EARLY
     for actual in result.reps[:planned_sets]:
         if actual is None:
-            return tuple(counted), BStopReason.ENDED_EARLY
+            return tuple(counted), cut_short
         counted.append(actual)
         if actual <= B_STOP_AT_OR_BELOW:
             return tuple(counted), BStopReason.LOW_REPS
     if len(counted) < planned_sets:
-        return tuple(counted), BStopReason.ENDED_EARLY
+        return tuple(counted), cut_short
     if result.technique_valid is False:
         return tuple(counted), BStopReason.TECHNIQUE
     return tuple(counted), BStopReason.PLANNED_SETS_DONE

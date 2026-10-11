@@ -57,6 +57,7 @@ from app.domain.live_engine import ENGINE_VERSION as ENGINE_V2
 from app.domain.live_engine_plan import (
     FallbackInterval,
     FallbackTarget,
+    apply_course_rules,
     fallback_block,
     finalize_plan,
     plan_block_from_snapshot,
@@ -90,7 +91,12 @@ from app.services.course_assessment import (
     AssessmentRequiredError,
     promote_if_assessed,
 )
-from app.services.course_v5 import advance_from_session, prescribe_main, targets_for
+from app.services.course_v5 import (
+    advance_from_session,
+    course_prescription_of,
+    prescribe_main,
+    targets_for,
+)
 from app.services.live_engine import LiveEngineService
 from app.services.plan_spacing import MainSpacingService, TooEarlyError  # noqa: F401 — re-export
 from app.services.program_access import (  # noqa: F401 — re-export
@@ -1233,16 +1239,6 @@ class LiveSessionService:
     async def get_session(self, *, session_id: int, user_id: int) -> SessionDetail | None:
         return await self._sessions.get_for_user(session_id, user_id)
 
-    async def save_block_checks_if_started(
-        self, *, session_id: int, user_id: int, block_checks: dict[int, tuple[bool | None, bool | None]],
-    ) -> None:
-        """issue #305 × #306: подтверждения V5.6 (техника/отдых по блоку), пришедшие с POST …/complete сессии
-        движка v2, записываются ДО её серверного завершения — как complete_session делает для движка v1. Уже
-        завершённая сессия не меняется: её прогрессия посчитана один раз."""
-        await self._sessions.lock_session(session_id)
-        detail = await self._sessions.get_for_user(session_id, user_id)
-        if detail is not None and detail.status == SessionStatus.STARTED:
-            await self._sessions.save_block_checks(session_id, block_checks)
 
     # --- Общий сбор результата ---------------------------------------------
 
@@ -1289,4 +1285,7 @@ def engine_plan_for(detail: SessionDetail) -> dict:
             set_rests=[snap_set.get("rest_after_seconds") for snap_set in snap_block.get("sets") or []],
             block_rest_seconds=snap_block.get("rest_after_block_seconds"),
         ))
+    course = course_prescription_of(detail)
+    if course is not None:
+        apply_course_rules(blocks, course["blocks"])
     return finalize_plan(blocks)

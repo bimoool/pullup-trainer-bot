@@ -32,6 +32,7 @@ from app.domain.pullups_v5 import (
     V5State,
     V5StateError,
     next_one_rm_set,
+    one_rm_rest_ok,
     pending_inputs,
     prescribe_session,
 )
@@ -110,6 +111,20 @@ async def _require_course(session: AsyncSession, init_data: InitData, inclusion_
     return user, inclusion
 
 
+def _too_soon() -> HTTPException:
+    return HTTPException(
+        status.HTTP_409_CONFLICT,
+        {"code": "one_rep_max_too_soon", "message": "Тест 1RM — не раньше чем через 48 часов после тяжёлой тяговой работы."},
+    )
+
+
+async def _require_one_rep_max_day(session: AsyncSession, user_id: int) -> None:
+    last_heavy = await MainSpacingService(session).last_main_start_at(user_id)
+    hours = (datetime.now(UTC) - last_heavy).total_seconds() / 3600 if last_heavy is not None else None
+    if not one_rm_rest_ok(hours_since_heavy_pulling=hours):
+        raise _too_soon()
+
+
 @router_v2_course.get("/{inclusion_id}/course", response_model=CourseStateResponse)
 async def get_course_state(
     inclusion_id: int,
@@ -146,8 +161,12 @@ async def one_rep_max_next_set(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session),
 ) -> OneRmNextSetResponse:
-    _user, inclusion = await _require_course(session, init_data, inclusion_id)
+    user, inclusion = await _require_course(session, init_data, inclusion_id)
     state = v5_state(inclusion)
+    if not body.attempts:
+        # Начало лестницы — та же проверка «отдельный свежий день, ≥ 48 ч после тяжёлой тяговой работы»
+        # (§8.3), что у записи теста: пользователь не проходит тест, чтобы получить отказ в конце.
+        await _require_one_rep_max_day(session, user.id)
     if state.inputs.body_mass_kg is None or state.inputs.load_step_kg is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -181,10 +200,7 @@ async def record_course_one_rep_max(
             last_heavy_pulling_at=last_heavy,
         )
     except OneRepMaxTooSoonError as exc:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            {"code": "one_rep_max_too_soon", "message": "Тест 1RM — не раньше чем через 48 часов после тяжёлой тяговой работы."},
-        ) from exc
+        raise _too_soon() from exc
     await session.commit()
     return _course_response(state, one_rep_max={
         "e1rm_kg": format(result.e1rm_kg.normalize(), "f") if result.e1rm_kg is not None else None,

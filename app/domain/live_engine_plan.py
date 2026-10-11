@@ -124,6 +124,30 @@ def fallback_block(
     }
 
 
+def apply_course_rules(blocks: list[dict[str, Any]], course_blocks: Sequence[Mapping[str, Any]]) -> None:
+    """Рецепт V5.6 из снимка сессии (#305) → правила плана движка: подтверждение техники/отдыха у каждого
+    блока (§11), стоп-правило объёма B (§6) и отображение подходов — маркер, минимальная цель AMRAP p4
+    (§5), потолок контрольного подхода (§7). Цели, отдых и подготовка не меняются; число блоков/подходов
+    не совпало — план остаётся без правил (ничего не угадывается)."""
+    if len(blocks) != len(course_blocks):
+        return
+    for block, course in zip(blocks, course_blocks, strict=True):
+        sets = block.get("sets") or []
+        course_sets = course.get("sets") or []
+        if block["kind"] != BLOCK_SETS or len(sets) != len(course_sets):
+            continue
+        block["confirm_checks"] = True
+        stop_rule = course.get("stop_rule") or {}
+        if isinstance(stop_rule.get("stop_at_or_below"), int):
+            block["stop_at_or_below"] = stop_rule["stop_at_or_below"]
+        for plan_set, course_set in zip(sets, course_sets, strict=True):
+            plan_set["marker"] = course_set.get("marker")
+            if course_set.get("marker") == "amrap":
+                plan_set["min_target"] = course_set.get("target_reps")
+            if course_set.get("cap_reps") is not None:
+                plan_set["cap"] = course_set["cap_reps"]
+
+
 def finalize_plan(blocks: list[dict[str, Any]]) -> dict[str, Any]:
     """Последний блок без отдыха после себя (W-контракт); проверка инвариантов движка."""
     if blocks:

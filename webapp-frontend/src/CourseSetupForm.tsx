@@ -1,13 +1,14 @@
 /**
  * issue #305 (V5.6): ввод недостающих входов программы «Подтягивания» перед основной тренировкой
  * (PUT …/program-inclusions/{id}/course/inputs через apiV2.putCourseInputs). Показываются только поля из списка недостающих;
- * пустое не отправляется — сервер ничего не угадывает. Ведение теста 1RM по шагам и выбор следующей
- * резины из личного списка — шов (сюда вводится результат теста / название резины).
+ * пустое не отправляется — сервер ничего не угадывает. Тест 1RM ведётся по шагам лестницы V5.6 §10
+ * (OneRepMaxTest: подход за подходом с сервера, стоп после первой неудачи, ≤ 8 подходов, 48 ч); недавний
+ * подтверждённый 5×5 / 5×3 — альтернатива тесту (сильнее стартовой формулы, §9).
  */
 import { Button, Input, List, Section } from "@telegram-apps/telegram-ui";
 import { useState } from "react";
 
-import { putCourseInputs } from "./apiV2";
+import { postOneRepMax, postOneRepMaxNextSet, putCourseInputs, type OneRmAttemptV2, type OneRmNextSetV2 } from "./apiV2";
 import {
   assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describePendingInputs,
 } from "./courseV5";
@@ -58,6 +59,115 @@ function BandSection(
           />
         </>
       )}
+    </Section>
+  );
+}
+
+const SPEEDS: { value: "fast" | "normal" | "slow"; label: string }[] = [
+  { value: "fast", label: "Быстро" }, { value: "normal", label: "Обычно" }, { value: "slow", label: "Медленно" },
+];
+
+/**
+ * Тест 1RM в приложении (V5.6 §10) по существующему API: сервер выдаёт следующий подход лестницы
+ * (BW×5 → +10% ×3 → +20% ×1 → одиночные по скорости), стоп — после первой неудачной/недействительной
+ * попытки или восьмого подхода; результат — последний успешный доп. вес (2RM не используется). Отдых между
+ * подходами — 3 мин. Начало теста раньше 48 ч после тяжёлой тяговой работы сервер отклоняет сразу.
+ */
+export function OneRepMaxTest(
+  { initDataRaw, inclusionId, onSaved }: { initDataRaw: string; inclusionId: number; onSaved: () => void },
+) {
+  const [attempts, setAttempts] = useState<OneRmAttemptV2[]>([]);
+  const [next, setNext] = useState<OneRmNextSetV2 | null>(null);
+  const [running, setRunning] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function step(done: OneRmAttemptV2[]) {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await postOneRepMaxNextSet(initDataRaw, inclusionId, done);
+      setAttempts(done);
+      setNext(response);
+      setRunning(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function record() {
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await postOneRepMax(initDataRaw, inclusionId, attempts);
+      const e1rm = saved.one_rep_max?.e1rm_kg ?? null;
+      setResult(e1rm === null ? "Успешных попыток нет — результат не записан." : `1RM: +${e1rm} кг${saved.one_rep_max?.conservative ? " (консервативно)" : ""}`);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const current = next?.next_set ?? null;
+  const attempt = (success: boolean, speed: "fast" | "normal" | "slow" | null = null) => {
+    if (current === null) {
+      return;
+    }
+    void step([...attempts, { load_kg: current.load_kg, reps: current.reps, success, speed }]);
+  };
+
+  return (
+    <Section header="Тест 1RM в приложении" data-testid="one-rm-test">
+      {!running && (
+        <>
+          <p className="live-hint">
+            Отдельный свежий день: не после объёма и не раньше 48 ч после тяжёлой тяговой работы. До 8 подходов,
+            отдых 3 мин, стоп после первой неудачной попытки.
+          </p>
+          <Button size="m" stretched mode="bezeled" disabled={busy} data-testid="one-rm-start" onClick={() => void step([])}>
+            Начать тест
+          </Button>
+        </>
+      )}
+      {running && current !== null && (
+        <div data-testid="one-rm-step">
+          <p className="live-plan" data-testid="one-rm-next">
+            Подход {current.set_number} из 8: {Number(current.load_kg) > 0 ? `+${current.load_kg} кг` : "собственный вес"} × {current.reps}
+          </p>
+          {attempts.length > 0 && <p className="live-hint">Перед подходом — отдых {Math.round((next?.rest_seconds ?? 180) / 60)} мин.</p>}
+          {current.reps === 1 ? (
+            <div className="live-chips" data-testid="one-rm-speed">
+              {SPEEDS.map((speed) => (
+                <button key={speed.value} type="button" className="live-chip" disabled={busy} onClick={() => attempt(true, speed.value)}>
+                  Получилось · {speed.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <Button size="m" stretched disabled={busy} data-testid="one-rm-success" onClick={() => attempt(true)}>
+              Получилось чисто
+            </Button>
+          )}
+          <Button size="m" stretched mode="outline" disabled={busy} data-testid="one-rm-fail" onClick={() => attempt(false)}>
+            Не получилось / техника нарушена
+          </Button>
+        </div>
+      )}
+      {running && current === null && result === null && (
+        <div data-testid="one-rm-finished">
+          <p className="live-plan">Тест окончен: {attempts.length} подх.</p>
+          <Button size="m" stretched disabled={busy} data-testid="one-rm-save" onClick={() => void record()}>
+            Сохранить результат
+          </Button>
+        </div>
+      )}
+      {result !== null && <p className="live-plan" data-testid="one-rm-result">{result}</p>}
+      {error !== null && <p className="live-hint" role="alert" data-testid="one-rm-error">{error}</p>}
     </Section>
   );
 }
@@ -126,6 +236,9 @@ export function CourseSetupForm(
             />
           ))}
         </Section>
+      )}
+      {missing.includes("one_rep_max") && (
+        <OneRepMaxTest initDataRaw={initDataRaw} inclusionId={inclusionId} onSaved={onSaved} />
       )}
       {missing.includes("volume_assistance") && (
         <BandSection title="Объёмная резина" value={volumeBand} onChange={setVolumeBand} allowBodyweight={false} testId="course-volume-band" />

@@ -535,6 +535,14 @@ async def test_one_rep_max_ladder_and_48h_rule(session, user: User, clock):
     await session.flush()
     too_soon = await v2_post(session, user.telegram_id, path, {"attempts": [{"load_kg": "0", "reps": 5, "success": True}]})
     assert too_soon.status_code == 409 and too_soon.json()["detail"]["code"] == "one_rep_max_too_soon"
+    # Начало лестницы проверяет тот же день/48 ч заранее (пользователь не проходит тест ради отказа в конце);
+    # следующий подход уже начатого теста — без повторной проверки.
+    ladder_start = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": []})
+    assert ladder_start.status_code == 409 and ladder_start.json()["detail"]["code"] == "one_rep_max_too_soon"
+    ladder_next = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": [
+        {"load_kg": "0", "reps": 5, "success": True},
+    ]})
+    assert ladder_next.status_code == 200 and ladder_next.json()["next_set"]["set_number"] == 2
 
 
 async def test_course_endpoints_404_for_legacy_inclusion(session, user: User, clock):

@@ -438,14 +438,12 @@ async def _complete_engine_v2(
     клиента: время — авторитет сервера); затем идемпотентный complete_session дописывает оценку и заметку.
     «Ноль работы» — отмена (T5): не завершается, оценка не пишется."""
     live = LiveSessionService(session)
-    checks = _block_checks(body)
-    if checks:
-        # issue #305 (V5.6 §11) поверх #306: подтверждения из этого запроса сохраняются ДО серверного finish_early —
-        # прогрессия V5.6 при завершении читает их (как при завершении движка v1). Уже завершённую сессию
-        # (движок довёл её до конца сам) это не меняет: прогрессия считается один раз.
-        await live.save_block_checks_if_started(session_id=session_id, user_id=user_id, block_checks=checks)
     engine_service = LiveEngineService(session)
-    sync = await engine_service.finish_from_complete(session_id, user_id, abandoned=body.abandoned)
+    # issue #305 (V5.6 §11) поверх #306: подтверждения этого запроса идут в payload серверного finish_early
+    # (журнал событий, воспроизводимо); уже завершённую сессию они не меняют — прогрессия считается один раз.
+    sync = await engine_service.finish_from_complete(
+        session_id, user_id, abandoned=body.abandoned, block_checks=_block_checks(body),
+    )
     if sync is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Live session not found")
     detail = await live.get_session(session_id=session_id, user_id=user_id)

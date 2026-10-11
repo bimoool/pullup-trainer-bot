@@ -201,6 +201,46 @@ export async function putCourseInputs(
   return (await response.json()) as { pending_inputs: string[]; level: string | null };
 }
 
+/** issue #305 (V5.6 §10): одна попытка теста 1RM — доп. вес, повторения, успех; скорость — у одиночных. */
+export interface OneRmAttemptV2 {
+  load_kg: string;
+  reps: number;
+  success: boolean;
+  speed?: "fast" | "normal" | "slow" | null;
+}
+
+export interface OneRmNextSetV2 {
+  next_set: { set_number: number; load_kg: string; reps: number } | null;
+  rest_seconds: number;
+}
+
+async function postCourse<T>(initDataRaw: string, path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "X-Telegram-Init-Data": initDataRaw, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage("POST", path, response));
+  }
+  return (await response.json()) as T;
+}
+
+/** POST …/course/one-rep-max/next-set — следующий подход лестницы (null — тест окончен). Начало лестницы
+ * (пустой список) проверяет «≥ 48 ч после тяжёлой тяговой работы» — 409 one_rep_max_too_soon. */
+export function postOneRepMaxNextSet(initDataRaw: string, inclusionId: number, attempts: OneRmAttemptV2[]) {
+  return postCourse<OneRmNextSetV2>(
+    initDataRaw, `/api/v2/program-inclusions/${inclusionId}/course/one-rep-max/next-set`, { attempts },
+  );
+}
+
+/** POST …/course/one-rep-max — записать тест; результат — последний успешный доп. вес (E1RM). */
+export function postOneRepMax(initDataRaw: string, inclusionId: number, attempts: OneRmAttemptV2[]) {
+  return postCourse<{ pending_inputs: string[]; one_rep_max: { e1rm_kg: string | null; conservative: boolean } | null }>(
+    initDataRaw, `/api/v2/program-inclusions/${inclusionId}/course/one-rep-max`, { attempts },
+  );
+}
+
 export async function fetchDashboardStatus(initDataRaw: string): Promise<DashboardStatusResponse> {
   return apiV2Get<DashboardStatusResponse>("/api/v2/dashboard/status", initDataRaw);
 }
