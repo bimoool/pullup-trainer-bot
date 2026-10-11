@@ -611,3 +611,71 @@ test("гонка ревьюера через настоящие apiV2.fetchSessi
     globalThis.fetch = realFetch;
   }
 });
+
+/**
+ * N1 (финальное ревью #306): окно выхода сверки. Проход решил «стабильно» — и в тот же синхронный шаг
+ * снимает single-flight (`reconciling = null`). Раньше снятие было в `.finally` — на несколько микрозадач
+ * позже: запрос, пришедший в этом окне, присоединялся к уже завершившейся сверке, его rerun никто не читал,
+ * ворота открывались, и чтение с проекцией обгоняло очередь S.
+ *
+ * Окно — конкретное смещение в микрозадачах после ответа на POST сессии A; зависит от числа await внутри
+ * drainEngineQueues, поэтому тест перебирает небольшой диапазон смещений (детерминированно, без таймеров):
+ * на каждом смещении экран S закрывается (releaseQueue + startEngineReconciliation) и сразу открывается Журнал
+ * (настоящий fetchSessions). На любом смещении «Стоп» S на 4 с должен дойти раньше проекции.
+ */
+test("N1: запрос в окне выхода сверки не теряется — «Стоп» S доходит раньше проекции на любом смещении микрозадач", async () => {
+  const lostAt: number[] = [];
+  for (let offset = 0; offset <= 20; offset += 1) {
+    const S = 960 + offset * 2;
+    const A = S + 1;
+    const server = engineServer({ [S]: { plan: TIMED_15, startAt: 0 }, [A]: { plan: TIMED_15, startAt: 0 } });
+    server.now = 100_000;  // приложение открыто давно после дедлайнов: проекция записала бы цель 15 с
+    const store = memoryStore();
+    const phaseSeq = server.state(S).phase_seq;
+    await saveQueue({ ...emptyQueue(S), events: [{ client_event_id: `n1-s-${offset}`, type: "stop", payload: { phase_seq: phaseSeq }, client_at_ms: 4_000 }] }, store);
+    await saveQueue({ ...emptyQueue(A), events: [{ client_event_id: `n1-a-${offset}`, type: "stop", payload: { phase_seq: phaseSeq }, client_at_ms: 2_000 }] }, store);
+    const order: string[] = [];
+    let screenClosed: Promise<unknown> = Promise.resolve();
+    const api: DrainApi = {
+      postEvents: ((_init: string, id: number, events: Parameters<typeof server.post>[1]) => {
+        order.push(`events:${id}`);
+        const response = Promise.resolve(server.post(id, events));
+        if (id === A) {
+          // Экран S закрывается через `offset` микрозадач после ответа сервера на POST сессии A.
+          screenClosed = response.then(async () => {
+            for (let i = 0; i < offset; i += 1) {
+              await Promise.resolve();
+            }
+            releaseQueue(S);
+            void startEngineReconciliation("init", { store, api });
+            const realFetch = globalThis.fetch;
+            globalThis.fetch = (async () => {
+              order.push("GET /sessions");
+              server.projectingRead(S);  // сервер проецирует дедлайны идущих сессий
+              return new Response(JSON.stringify({ sessions: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+            }) as typeof fetch;
+            try {
+              await fetchSessions("init");  // Журнал — за воротами (apiV2.ts)
+            } finally {
+              globalThis.fetch = realFetch;
+            }
+          });
+        }
+        return response;
+      }) as unknown as DrainApi["postEvents"],
+      complete: (async () => ({ status: "completed" })) as unknown as DrainApi["complete"],
+    };
+    claimQueue(S);  // S за открытым экраном: первый проход её пропускает
+    await startEngineReconciliation("init", { store, api });
+    await screenClosed;
+    await awaitEngineReconciliation();
+    const stored = server.state(S).logs[0]?.value;
+    const sentBeforeRead = order.indexOf(`events:${S}`) >= 0 && order.indexOf(`events:${S}`) < order.indexOf("GET /sessions");
+    if (stored !== 4 || !sentBeforeRead || store.data.size !== 0) {
+      lostAt.push(offset);
+    }
+    assert.equal(stored, 4, `смещение ${offset}: «Стоп» S записан как ${stored} (цель 15 = очередь обогнана проекцией); ${JSON.stringify(order)}`);
+    assert.ok(sentBeforeRead, `смещение ${offset}: ${JSON.stringify(order)}`);
+  }
+  assert.deepEqual(lostAt, []);
+});
