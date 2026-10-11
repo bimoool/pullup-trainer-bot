@@ -55,6 +55,14 @@ test("J1: новый пользователь проходит курс «Под
 
   // Live: пре-экран → первый блок (3 подхода) → завершить → сохранить.
   await start.click();
+  // issue #305 (V5.6): онбординг M = 8 → уровень 1 (с помощью). Пред-экран просит недостающие входы
+  // (R с объёмной резиной, объёмная резина, помощь в силе) — не угадывает их.
+  await expect(page.getByTestId("course-setup-required")).toBeVisible();
+  await page.getByTestId("course-input-volume_capacity").fill("10");
+  await page.getByTestId("course-volume-band-name").fill("Синяя");
+  await page.getByTestId("course-strength-band-bodyweight").check();
+  await page.getByTestId("course-setup-save").click();
+  await expect(page.getByText("Блок 1: 7/7/7/7+")).toBeVisible();
   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
   await expect(page.getByText("Живая тренировка")).toBeVisible();
   await playSetsV2(page, ["10", "10", "10"]); // #306: блок A, переходы по дедлайну / «Начать сейчас»
