@@ -49,8 +49,9 @@ test("«Планы» → Подтягивания → Начать → live sess
   expect(startedSession.engine_version).toBe(2);
   await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл", { timeout: 10_000 });
   await expect(page.getByRole("button", { name: "Готов", exact: true })).toHaveCount(0);
-  await expect(page.getByTestId("engine-target")).toContainText("Цель: 10 повт.");
-  await page.getByLabel("Результат подхода").fill("10");
+  // #305 V5.6 переходная неделя: объём A 5/5/5/5+ — первый подход «5».
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/4 · Цель: 5 повт.");
+  await page.getByLabel("Результат подхода").fill("5");
 
   const setResponsePromise = page.waitForResponse(
     (response) => response.url().includes(`/sessions/live/${sessionId}/events`) && response.status() === 200,
@@ -67,7 +68,7 @@ test("«Планы» → Подтягивания → Начать → live sess
   // сам (fetchActiveLiveSession), без похода через "Планы" заново.
   await expect(page.getByText("Живая тренировка")).toBeVisible();
   await expect(page.getByTestId("engine-phase")).toHaveText(/Отдых|Пошёл/); // фаза — с сервера
-  await expect(page.getByTestId("engine-target")).toContainText(/Подход [12]\/3/);
+  await expect(page.getByTestId("engine-target")).toContainText(/Подход [12]\/4/);
 
   console.log("session id (persisted across reload):", sessionId);
 
