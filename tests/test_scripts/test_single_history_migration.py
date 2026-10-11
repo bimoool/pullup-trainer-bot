@@ -25,6 +25,7 @@ from tests.test_scripts.test_system_content_migration import (
 PRE_REVISION = "f4c1a7e9b3d2"
 PARENT_REVISION = "a9e6c3d1f5b7"  # #306 Live Engine v2: a7e2c5b9d1f4 надстраивает его
 HEAD = "a7e2c5b9d1f4"
+CHAIN_HEAD = "b5d8e1f3a6c9"  # #305 (e3b9c5d7a2f1 → b5d8e1f3a6c9) надстраивает a7e2c5b9d1f4
 
 # Содержимое legacy-таблиц и подписок не имеет права измениться ни миграцией, ни сведением.
 LEGACY_GUARD = {
@@ -129,12 +130,12 @@ def _summary(dsn: str) -> dict:
 
 def test_fresh_install_has_a_single_head_and_the_unique_copy_key(scratch_dsn):  # noqa: F811
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == HEAD
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == CHAIN_HEAD
     heads = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
         env={**__import__("os").environ, "DATABASE_URL": scratch_dsn, "BOT_TOKEN": "x"},
     ).stdout.strip().splitlines()
-    assert len(heads) == 1 and heads[0].startswith(HEAD)
+    assert len(heads) == 1 and heads[0].startswith(CHAIN_HEAD)
     columns = {r[0] for r in _run(_fetch(scratch_dsn, """
         SELECT column_name FROM information_schema.columns WHERE table_name = 'training_sessions'"""))}
     assert {"legacy_id", "superseded_at", "superseded_reason", "superseded_by_id"} <= columns

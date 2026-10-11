@@ -67,7 +67,7 @@ async def test_onboarded_zero_workouts_gets_default_progression_state(session, u
         "equipment_item_id": None, "needs_new_equipment": True,
     }
     assert state["block_b"] == {
-        "target": 3, "volume": 0, "weak_streak": 0, "equipment_type": "band", "equipment_value": None,
+        "target": 3, "volume": 0, "work_sets": 4, "weak_streak": 0, "equipment_type": "band", "equipment_value": None,
         "equipment_item_id": None, "needs_new_equipment": True, "is_heavy_next": False,
         "heavy_equipment_value_next": None,
     }

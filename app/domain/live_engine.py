@@ -26,6 +26,18 @@ pytest и vitest). Поэтому состояние, план и события
   останавливаются, тренировка идёт сама); ввод повторов в RESULT → REST с тем же дедлайном.
 - ``add_extra_set`` несёт значение и фазу не двигает (#264: «не двигает фазу»), то есть
   «WORK(extra) → RESULT → назад, где был» схлопнуто в одно событие.
+
+Подтверждения блоков и стоп-правило (#305 × #306, программа «Подтягивания» V5.6 §6/§11) — только для
+плана, который их запрашивает (``confirm_checks`` / ``stop_at_or_below`` у блока); у остальных планов
+состояние и переходы прежние байт-в-байт:
+- блок с ``stop_at_or_below``: результат ≤ порога или ``technique = "invalid"`` в ``submit_result``
+  записывается и завершает БЛОК (остальные подходы не исполняются), дальше — отдых блока и следующий блок;
+- последний подход тренировки с неотвеченным подтверждением → фаза CONFIRM (без дедлайна, часы стоят):
+  ``confirm_blocks`` записывает ответы (``valid``/``invalid``/``null`` = неизвестно) и, когда отвечено всё,
+  завершает тренировку — каноническое завершение ровно одно; ``finish_early`` (выход) завершает с
+  неотвеченными = неизвестно;
+- пауза в отдыхе между подходами блока — серверный факт «отдых превышен» (``rest_paused``); отдых
+  «в пределах» им можно опровергнуть, но не подтвердить (подтверждает только пользователь).
 """
 
 from __future__ import annotations
@@ -41,6 +53,7 @@ WORK = "WORK"
 RESULT = "RESULT"
 REST = "REST"
 COMPLETE = "COMPLETE"
+CONFIRM = "CONFIRM"  # #305: ждёт подтверждений техники/отдыха перед завершением
 
 ACTIVE = "active"
 COMPLETED = "completed"
@@ -63,11 +76,19 @@ EV_FINISH_EARLY = "finish_early"
 EV_CANCEL = "cancel"
 EV_ADD_EXTRA_SET = "add_extra_set"
 EV_CORRECT_PREVIOUS = "correct_previous"
+EV_CONFIRM_BLOCKS = "confirm_blocks"
 
 CLIENT_EVENT_TYPES = frozenset({
     EV_SKIP_WAIT, EV_SUBMIT_RESULT, EV_STOP, EV_PAUSE, EV_RESUME, EV_FINISH_EARLY, EV_CANCEL,
-    EV_ADD_EXTRA_SET, EV_CORRECT_PREVIOUS,
+    EV_ADD_EXTRA_SET, EV_CORRECT_PREVIOUS, EV_CONFIRM_BLOCKS,
 })
+
+# Ответ подтверждения (технике / отдыху): None — неизвестно, никогда не «валидно».
+CHECK_VALID = "valid"
+CHECK_INVALID = "invalid"
+CHECK_ANSWERS = (CHECK_VALID, CHECK_INVALID, None)
+STOP_LOW_REPS = "low_reps"
+STOP_TECHNIQUE = "technique"
 
 # Виды подходов (WORKOUT_DOMAIN_V2 §3).
 SET_REPS = "reps"
@@ -112,6 +133,9 @@ def validate_plan(plan: dict[str, Any]) -> None:
         rest_block = block.get("rest_after_block_seconds")
         if rest_block is not None and (not isinstance(rest_block, int) or rest_block < 0):
             raise EngineError(f"blocks[{index}].rest_after_block_seconds")
+        stop = block.get("stop_at_or_below")
+        if stop is not None and (not isinstance(stop, int) or isinstance(stop, bool) or stop < 0 or kind != BLOCK_SETS):
+            raise EngineError(f"blocks[{index}].stop_at_or_below")
         if kind == BLOCK_SETS:
             sets = block.get("sets")
             if not isinstance(sets, list) or not sets:
@@ -146,6 +170,20 @@ def _set_spec(plan: dict[str, Any], block_index: int, set_index: int) -> dict[st
 
 def _is_interval(plan: dict[str, Any], block_index: int) -> bool:
     return _block(plan, block_index)["kind"] == BLOCK_INTERVAL
+
+
+def _confirms(plan: dict[str, Any], block_index: int) -> bool:
+    return bool(_block(plan, block_index).get("confirm_checks"))
+
+
+def _stop_at(plan: dict[str, Any], block_index: int) -> int | None:
+    return _block(plan, block_index).get("stop_at_or_below")
+
+
+def _has_course_rules(plan: dict[str, Any]) -> bool:
+    """План запрашивает подтверждения блоков или стоп-правило — тогда (и только тогда) в состоянии есть
+    ``checks`` / ``rest_paused`` / ``stopped_blocks``."""
+    return any(block.get("confirm_checks") or block.get("stop_at_or_below") is not None for block in plan["blocks"])
 
 
 def _prescribed_count(plan: dict[str, Any], block_index: int) -> int:
@@ -228,6 +266,10 @@ def start(plan: dict[str, Any], at: int) -> tuple[dict[str, Any], list[dict[str,
         "block_started_at": None,
         "logs": [],
     }
+    if _has_course_rules(plan):
+        state["checks"] = [None] * len(plan["blocks"])
+        state["rest_paused"] = []
+        state["stopped_blocks"] = []
     effects: list[dict[str, Any]] = []
     _enter_block(plan, state, 0, at, effects)
     return state, effects
@@ -373,7 +415,61 @@ def _after_block(plan: dict[str, Any], state: dict[str, Any], at: int, effects: 
         else:
             _enter_block(plan, state, block_index + 1, at, effects)
         return
-    _finish(plan, state, at, effects, abandoned=False)
+    if _unanswered_checks(plan, state):
+        _enter_confirm(state, at)
+        return
+    _finish(plan, state, at, effects, abandoned=not _all_prescribed_logged(plan, state))
+
+
+def _unanswered_checks(plan: dict[str, Any], state: dict[str, Any]) -> bool:
+    """Есть начатый блок с подтверждением, на которое пользователь ещё не ответил."""
+    checks = state.get("checks")
+    if checks is None:
+        return False
+    return any(
+        _confirms(plan, index) and checks[index] is None and _block_has_logs(state, index)
+        for index in range(len(plan["blocks"]))
+    )
+
+
+def _enter_confirm(state: dict[str, Any], at: int) -> None:
+    """Все плановые подходы позади, ответы ещё нужны: часы тренировки останавливаются (длительность — до
+    последнего подхода), фаза ждёт ``confirm_blocks`` без дедлайна."""
+    _accrue(state, at)
+    state["phase"] = CONFIRM
+    state["rest_kind"] = None
+    state["phase_started_at"] = at
+    state["phase_duration_ms"] = None
+    state["phase_deadline_at"] = None
+    state["paused_at"] = None
+    state["paused_remaining_ms"] = None
+    state["phase_active_ms"] = 0
+    state["pending_value"] = None
+    state["active_since"] = None
+    state["phase_seq"] += 1
+
+
+def _apply_checks(plan: dict[str, Any], state: dict[str, Any], raw: Any) -> None:
+    """Ответы ``[{block_index, technique, rest}]``; невалидная запись пропускается целиком. Ответ можно
+    переписать до завершения (последний выигрывает)."""
+    checks = state.get("checks")
+    if checks is None or not isinstance(raw, list):
+        return
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("block_index")
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(plan["blocks"]):
+            continue
+        technique, rest = entry.get("technique"), entry.get("rest")
+        if not _confirms(plan, index) or technique not in CHECK_ANSWERS or rest not in CHECK_ANSWERS:
+            continue
+        checks[index] = {"technique": technique, "rest": rest}
+
+
+def _finish_from_confirm(plan: dict[str, Any], state: dict[str, Any], at: int, effects: list[dict[str, Any]]) -> None:
+    state["last_at"] = max(state["last_at"], at)
+    _finish(plan, state, state["phase_started_at"], effects, abandoned=not _all_prescribed_logged(plan, state))
 
 
 def _finish(
@@ -399,7 +495,10 @@ def _finish(
 
 
 def _all_prescribed_logged(plan: dict[str, Any], state: dict[str, Any]) -> bool:
+    stopped = {entry["block_index"] for entry in state.get("stopped_blocks") or []}
     for block_index in range(len(plan["blocks"])):
+        if block_index in stopped:
+            continue  # стоп-правило завершило блок — это его штатный конец, а не недоделка
         logged = {
             (log["set_index"], log["round_index"]) for log in state["logs"]
             if log["block_index"] == block_index and not log["is_extra"]
@@ -528,8 +627,12 @@ def advance(
         return new, effects
 
     if kind == EV_PAUSE:
-        if not _seq_matches(new, payload) or new["paused_at"] is not None or new["phase"] == COMPLETE:
+        if not _seq_matches(new, payload) or new["paused_at"] is not None or new["phase"] in (COMPLETE, CONFIRM):
             return _noop(state)
+        if new["phase"] == REST and new["rest_kind"] == REST_SET and "rest_paused" in new:
+            block_index = new["cursor"]["block_index"]
+            if block_index not in new["rest_paused"]:
+                new["rest_paused"] = sorted([*new["rest_paused"], block_index])
         _accrue(new, at)
         new["active_since"] = None
         new["paused_at"] = at
@@ -576,6 +679,10 @@ def advance(
         return _submit_result(plan, state, new, payload, at)
 
     if kind == EV_FINISH_EARLY:
+        _apply_checks(plan, new, payload.get("checks"))
+        if new["phase"] == CONFIRM:
+            _finish_from_confirm(plan, new, at, effects)
+            return new, effects
         if not any(not log["is_extra"] for log in new["logs"]):
             # Ничего не выполнено: «0 работы» не становится завершённой тренировкой (нет записи в
             # Журнале, кредита плана, длительности) — это отмена (T5), а не T4.
@@ -600,6 +707,15 @@ def advance(
 
     if kind == EV_CORRECT_PREVIOUS:
         return _correct_previous(state, new, payload, at)
+
+    if kind == EV_CONFIRM_BLOCKS:
+        _apply_checks(plan, new, payload.get("checks"))
+        if new.get("checks") == state.get("checks"):
+            return _noop(state)
+        new["last_at"] = max(new["last_at"], at)
+        if new["phase"] == CONFIRM and not _unanswered_checks(plan, new):
+            _finish_from_confirm(plan, new, at, effects)
+        return new, effects
 
     return _noop(state)
 
@@ -673,6 +789,14 @@ def _submit_result(
         new, effects, block_index=block_index, set_index=cursor["set_index"], round_index=None, value=value,
         is_extra=False, at=at, effort=effort, note=note,
     )
+    stop_at = _stop_at(plan, block_index)
+    if stop_at is not None and (value <= stop_at or payload.get("technique") == CHECK_INVALID):
+        # Стоп-правило (V5.6 §6): подход записан (входит в факт блока), блок закончен — дальше отдых блока
+        # и следующий блок; оставшиеся подходы этого блока не исполняются.
+        reason = STOP_TECHNIQUE if payload.get("technique") == CHECK_INVALID else STOP_LOW_REPS
+        new["stopped_blocks"] = [*new["stopped_blocks"], {"block_index": block_index, "reason": reason}]
+        _after_block(plan, new, at, effects)
+        return new, effects
     _after_set(plan, new, at, effects)
     return new, effects
 
@@ -727,6 +851,32 @@ def _correct_previous(
     if new["active_since"] is not None:
         _accrue(new, at)
     return new, [{"type": FX_SET_CORRECTED, "log": dict(log)}]
+
+
+def block_check_results(plan: dict[str, Any], state: dict[str, Any]) -> dict[int, tuple[bool | None, bool | None]]:
+    """Итог подтверждений по блоку для записи при завершении: ``{block_index: (technique_valid,
+    rest_within_limit)}`` — только блоки с ``confirm_checks``.
+
+    Техника: ответ пользователя; блок, остановленный ``technique = "invalid"``, — False (это тоже его ответ).
+    Отдых: ответ пользователя, но серверный факт паузы в отдыхе между подходами блока — False; серверный
+    факт отдых только опровергает, «в пределах» без ответа пользователя не ставится. Неизвестно — None."""
+    checks = state.get("checks")
+    if checks is None:
+        return {}
+    by_answer = {CHECK_VALID: True, CHECK_INVALID: False, None: None}
+    technique_stops = {
+        entry["block_index"] for entry in state.get("stopped_blocks") or [] if entry["reason"] == STOP_TECHNIQUE
+    }
+    rest_paused = set(state.get("rest_paused") or [])
+    results: dict[int, tuple[bool | None, bool | None]] = {}
+    for index in range(len(plan["blocks"])):
+        if not _confirms(plan, index):
+            continue
+        answer = checks[index] or {}
+        technique = False if index in technique_stops else by_answer[answer.get("technique")]
+        rest = False if index in rest_paused else by_answer[answer.get("rest")]
+        results[index] = (technique, rest)
+    return results
 
 
 # ============================================================================

@@ -21,3 +21,9 @@ test("unknown unit -> fallback «Результат»", () => {
   assert.deepEqual(resultInputLabel("reps_sets", t("5", "kg")), { label: "Результат", hint: "Цель: 5 kg" });
   assert.deepEqual(resultInputLabel(null, null), { label: "Результат", hint: null });
 });
+
+test("course max set (issue #305) -> «Повторений», no «Цель: 0» hint", () => {
+  const maxSet = { ...t("0", "reps"), is_max_set: true };
+  assert.deepEqual(resultInputLabel(null, maxSet), { label: "Повторений", hint: null });
+  assert.deepEqual(resultInputLabel(null, t("3", "reps")), { label: "Повторений", hint: "Цель: 3 повт." });
+});

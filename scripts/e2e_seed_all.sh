@@ -17,6 +17,9 @@ seed plan_week_ready 900013
 seed plan_week_grouping 900014
 seed plan_week_add_exercise 900015
 seed plan_week_start_session 900016
+# #305 V5.6: подтверждения техники/отдыха в движке (CONFIRM) и тест 1RM в приложении.
+seed plan_week_start_session 930501
+seed v5_one_rep_max 930502
 seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed plan_week_stepper 990001

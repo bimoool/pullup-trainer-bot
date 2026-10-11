@@ -20,7 +20,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
   // #266: имя курса есть и в карточке плана, и в строке недели — проверяем строку недели.
-  // #304: «Подтягивания» × 3 — три строки-занятия, у каждой «0/1».
+  // #304: одна строка = одно занятие. #305 (V5.6 §1): новая инклюзия V5.6 — 2 занятия в неделю (A/B).
   await expect(rowTitle(page, "Подтягивания").first()).toBeVisible();
   await expect(rowCounter(page, "Подтягивания").first()).toHaveText(/^\d+\/\d+$/);
 
@@ -64,7 +64,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
   // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
-  await expect(rowTitle(page, "Подтягивания")).toHaveCount(3);  // #304: три занятия-строки курса
+  await expect(rowTitle(page, "Подтягивания")).toHaveCount(2);  // #305 (V5.6): два занятия-строки курса в неделю
 
   expect(apiFailures).toEqual([]);
   expect(consoleErrors).toEqual([]);
@@ -85,7 +85,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
   // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
-  await expect(rowTitle(page, "Подтягивания")).toHaveCount(3);  // #304: три занятия-строки курса
+  await expect(rowTitle(page, "Подтягивания")).toHaveCount(2);  // #305 (V5.6): два занятия-строки курса в неделю
   await expect(page.getByText("Среда")).toBeVisible();
   await expect(rowTitle(page, "Планка")).toBeVisible();
   await expect(page.getByText("Пятница")).toBeVisible();

@@ -69,6 +69,38 @@
         {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": true,
          "sets": [{"kind": "max_reps", "target": null, "rest_after_seconds": null}]}
       ]
+    },
+    "course": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": 900, "extra_sets_allowed": true, "confirm_checks": true,
+         "sets": [
+           {"kind": "reps", "target": 5, "rest_after_seconds": 240},
+           {"kind": "reps", "target": 5, "rest_after_seconds": 240},
+           {"kind": "max_reps", "target": null, "rest_after_seconds": null, "marker": "amrap", "min_target": 5}
+         ]},
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": true, "confirm_checks": true, "stop_at_or_below": 2,
+         "sets": [
+           {"kind": "reps", "target": 5, "rest_after_seconds": 30},
+           {"kind": "reps", "target": 5, "rest_after_seconds": 30},
+           {"kind": "reps", "target": 5, "rest_after_seconds": 30},
+           {"kind": "reps", "target": 5, "rest_after_seconds": null}
+         ]}
+      ]
+    },
+    "course_b": {
+      "blocks": [
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": 900, "extra_sets_allowed": true, "confirm_checks": true, "stop_at_or_below": 2,
+         "sets": [
+           {"kind": "reps", "target": 5, "rest_after_seconds": 30},
+           {"kind": "reps", "target": 5, "rest_after_seconds": 30},
+           {"kind": "reps", "target": 5, "rest_after_seconds": null}
+         ]},
+        {"kind": "sets", "prep_seconds": 0, "rest_after_block_seconds": null, "extra_sets_allowed": true, "confirm_checks": true,
+         "sets": [
+           {"kind": "reps", "target": 5, "rest_after_seconds": 180},
+           {"kind": "reps", "target": 5, "rest_after_seconds": null, "marker": "control", "cap": 8}
+         ]}
+      ]
     }
   },
   "cases": [
@@ -496,6 +528,57 @@
         {"op": "timeline", "expect": [
           {"type": "work_start", "at": 195000}, {"type": "count_3", "at": 222000}, {"type": "count_2", "at": 223000},
           {"type": "count_1", "at": 224000}, {"type": "work_end", "at": 225000}, {"type": "workout_complete", "at": 225000}]}
+      ]
+    },
+    {
+      "name": "course confirm: last set enters CONFIRM (clock stops), confirm_blocks completes exactly once",
+      "plan": "course", "start_at": 0, "rebuild": true, "start_expect": {"phase": "WORK", "phase_seq": 0, "checks": [null, null], "rest_paused": [], "stopped_blocks": []},
+      "steps": [
+        {"op": "apply", "at": 10000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "rest_kind": "set", "phase_deadline_at": 250000}},
+        {"op": "apply", "at": 250000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "phase_deadline_at": 490000}},
+        {"op": "apply", "at": 490000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 2, "round_index": null, "value": 3}}, "expect": {"phase": "REST", "rest_kind": "block", "phase_deadline_at": 1390000, "phase_seq": 5}},
+        {"op": "apply", "at": 1390000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 0, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "phase_deadline_at": 1420000}},
+        {"op": "apply", "at": 1420000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 1, "round_index": null, "value": 3}}},
+        {"op": "apply", "at": 1450000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 2, "round_index": null, "value": 3}}},
+        {"op": "apply", "at": 1480000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 3, "round_index": null, "value": 4}}, "expect": {"status": "active", "phase": "CONFIRM", "phase_deadline_at": null, "active_since": null, "active_elapsed_ms": 1480000, "phase_started_at": 1480000, "phase_seq": 13, "ended_at": null}, "expect_effects": [{"type": "set_logged"}, {"type": "block_finished", "block_index": 1, "at": 1480000}]},
+        {"op": "timeline", "expect": []},
+        {"op": "apply", "at": 1490000, "event": {"type": "pause", "payload": {"phase_seq": 13}}, "expect": {"paused_at": null, "phase": "CONFIRM"}, "expect_effects": []},
+        {"op": "apply", "at": 1495000, "event": {"type": "skip_wait", "payload": {"phase_seq": 13}}, "expect": {"phase": "CONFIRM"}, "expect_effects": []},
+        {"op": "apply", "at": 1496000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 3, "round_index": null, "value": 5}}, "expect": {"phase": "CONFIRM"}, "expect_effects": []},
+        {"op": "apply", "at": 1500000, "event": {"type": "confirm_blocks", "payload": {"checks": [{"block_index": 0, "technique": "valid", "rest": "valid"}, {"block_index": 7, "technique": "valid", "rest": "valid"}, {"block_index": 1, "technique": "maybe", "rest": null}]}}, "expect": {"status": "active", "phase": "CONFIRM", "checks": [{"technique": "valid", "rest": "valid"}, null], "last_at": 1500000}, "expect_effects": []},
+        {"op": "apply", "at": 1505000, "event": {"type": "confirm_blocks", "payload": {"checks": [{"block_index": 0, "technique": "valid", "rest": "valid"}]}}, "expect": {"last_at": 1500000}, "expect_effects": []},
+        {"op": "apply", "at": 1510000, "event": {"type": "confirm_blocks", "payload": {"checks": [{"block_index": 1, "technique": "invalid", "rest": null}]}}, "expect": {"status": "completed", "phase": "COMPLETE", "ended_at": 1480000, "active_elapsed_ms": 1480000, "phase_seq": 14, "last_at": 1510000, "checks": [{"technique": "valid", "rest": "valid"}, {"technique": "invalid", "rest": null}]}, "expect_effects": [{"type": "completed", "abandoned": false, "active_elapsed_ms": 1480000}]},
+        {"op": "apply", "at": 1520000, "event": {"type": "confirm_blocks", "payload": {"checks": [{"block_index": 1, "technique": "valid", "rest": "valid"}]}}, "expect": {"checks": [{"technique": "valid", "rest": "valid"}, {"technique": "invalid", "rest": null}]}, "expect_effects": []},
+        {"op": "apply", "at": 1530000, "event": {"type": "finish_early", "payload": {}}, "expect": {"ended_at": 1480000, "phase_seq": 14}, "expect_effects": []}
+      ]
+    },
+    {
+      "name": "course stop: B <= 2 ends only the B block, block rest then strength, abandoned=false; finish_early in CONFIRM carries checks",
+      "plan": "course_b", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 5000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "rest_kind": "set", "phase_deadline_at": 35000}},
+        {"op": "apply", "at": 35000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 2}}, "expect": {"phase": "REST", "rest_kind": "block", "phase_deadline_at": 935000, "phase_seq": 3, "stopped_blocks": [{"block_index": 0, "reason": "low_reps"}]}, "expect_effects": [{"type": "set_logged", "log": {"block_index": 0, "set_index": 1, "value": 2}}, {"type": "block_finished", "block_index": 0, "at": 35000}]},
+        {"op": "apply", "at": 935000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 0, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "cursor": {"block_index": 1, "set_index": 0}, "phase_deadline_at": 1115000}},
+        {"op": "apply", "at": 1115000, "event": {"type": "submit_result", "payload": {"block_index": 1, "set_index": 1, "round_index": null, "value": 9}}, "expect": {"phase": "CONFIRM", "status": "active", "phase_seq": 7}},
+        {"op": "apply", "at": 1120000, "event": {"type": "finish_early", "payload": {"checks": [{"block_index": 0, "technique": "valid", "rest": "valid"}, {"block_index": 1, "technique": "valid", "rest": null}]}}, "expect": {"status": "completed", "ended_at": 1115000, "active_elapsed_ms": 1115000, "checks": [{"technique": "valid", "rest": "valid"}, {"technique": "valid", "rest": null}]}, "expect_effects": [{"type": "completed", "abandoned": false, "active_elapsed_ms": 1115000}]}
+      ]
+    },
+    {
+      "name": "course stop: invalid technique ends the B block; finish_early in block rest leaves checks unknown, abandoned=true",
+      "plan": "course_b", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 5000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5, "technique": "invalid"}}, "expect": {"phase": "REST", "rest_kind": "block", "phase_deadline_at": 905000, "stopped_blocks": [{"block_index": 0, "reason": "technique"}]}},
+        {"op": "apply", "at": 10000, "event": {"type": "finish_early", "payload": {}}, "expect": {"status": "completed", "ended_at": 10000, "checks": [null, null]}, "expect_effects": [{"type": "completed", "abandoned": true, "active_elapsed_ms": 10000}]}
+      ]
+    },
+    {
+      "name": "course pause in a set rest records the rest fact (rest_paused); resume keeps it",
+      "plan": "course_b", "start_at": 0, "rebuild": true,
+      "steps": [
+        {"op": "apply", "at": 5000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 0, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "phase_seq": 1}},
+        {"op": "apply", "at": 10000, "event": {"type": "pause", "payload": {"phase_seq": 1}}, "expect": {"rest_paused": [0], "paused_remaining_ms": 25000}},
+        {"op": "apply", "at": 70000, "event": {"type": "resume", "payload": {"phase_seq": 1}}, "expect": {"rest_paused": [0], "phase_deadline_at": 95000}},
+        {"op": "apply", "at": 95000, "event": {"type": "submit_result", "payload": {"block_index": 0, "set_index": 1, "round_index": null, "value": 5}}, "expect": {"phase": "REST", "rest_paused": [0]}}
       ]
     }
   ],

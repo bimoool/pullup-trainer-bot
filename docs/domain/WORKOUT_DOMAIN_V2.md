@@ -209,6 +209,12 @@ PrescriptionSnapshot (stored on TrainingSession, self-contained)
 
 ## 6. The main «Подтягивания» workout (progression-sourced)
 
+> **Current program: V5.6** (`PULLUPS_V5_6.md`, owner decision 2026-10-11). Two sessions A and B, each = volume
+> block + 900 s + strength block; A volume `a/a/a/a+` (rest 240, last set a technical AMRAP with minimum `p4`),
+> B volume `S×q` (rest 30, dynamic stop after ≤ 2 reps, **no max set**), strength `5/5/5/5/5–8` (level 1) or
+> `5×5` / `5×3` with load (level 2), rest 180. The table below and the max-set resolver describe the **legacy
+> program version** (`pullups_legacy_step`) only.
+
 AD-3: one WorkoutDefinition «Подтягивания» with two blocks, matching the legacy pull-up workout
 (`webapp-frontend/src/LiveWorkoutScreen.tsx:74-92`, `app/domain/constants.py:90-91,200-202`):
 
@@ -222,8 +228,12 @@ AD-3: one WorkoutDefinition «Подтягивания» with two blocks, matchi
   `block_b.work_sets = 4` from `STRENGTH_BLOCK.work_sets`).
 - The trailing `max_reps` set is **required input** of the current progression formula
   (`delta = max_reps − target`, `app/domain/progression.py:121`); without it progression cannot
-  grow (D3). Owner confirmation that «4 × 3» means *4 working sets + the max set*: OD-3.
+  grow (D3). (Legacy version only: OD-3 was resolved as «4 working sets + the explicit max set, the max set is the
+  only progression input» at `cc4aa65`; V5.6 superseded it — legacy inclusions keep the bot-era formula.)
 - Load comes from progression state (`equipment_type/value/item_id`) into `LoadSpec`.
+- **Wave 1c (#305):** the legacy resolver and `block_b.work_sets` backfill are implemented
+  (`app/domain/course_prescription.py`, legacy version); V5.6 prescriptions come from `app/domain/pullups_v5.py`
+  and are written once into the session snapshot (`provenance.course_program`) — see `PULLUPS_V5_6.md` §12.
 
 ## 7. Display contract (shared by plan, live, journal, analytics)
 

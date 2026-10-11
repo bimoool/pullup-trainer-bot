@@ -4,6 +4,13 @@ import { expect, type Page } from "@playwright/test";
  * карточки "Планов", пройти подходы блока. */
 
 export async function startWorkout(page: Page, title: string) {
+  await openPreScreen(page, title);
+  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+}
+
+/** «Планы» → первое занятие курса/тренировки → пред-экран (SessionPreScreen), без старта. */
+export async function openPreScreen(page: Page, title: string) {
   // на деталях (курс/тренировка) нижней навигации нет — сначала «назад» на вкладку
   const tabbar = page.locator(".bottom-tabbar");
   // дождаться первого рендера: либо навигация, либо «назад» (иначе isVisible() читает ещё пустую страницу)
@@ -16,8 +23,6 @@ export async function startWorkout(page: Page, title: string) {
     .filter({ hasText: new RegExp(`^${title}`) });
   // #304: одна строка плана = одно занятие — у «N раз в неделю» несколько строк; берём первое занятие.
   await group.getByRole("button", { name: /^Начать: / }).first().click();
-  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
-  await expect(page.getByText("Живая тренировка")).toBeVisible();
 }
 
 /** Клик + ожидание ответа сервера: повторный тап во время уже идущего
@@ -63,17 +68,36 @@ export async function playSetsV2(page: Page, values: string[]) {
 }
 
 /** issue #306 — завершить тренировку v2: экран «Тренировка завершена» → «Сохранить» (или досрочно —
- * «Завершить» → «Сохранить и завершить»). */
-export async function finishV2(page: Page, { early = false }: { early?: boolean } = {}) {
+ * «Завершить» → «Сохранить и завершить»). #305: тренировка курса V5.6 после последнего подхода ждёт
+ * подтверждения техники/отдыха (CONFIRM) — `checks: "valid"` отвечает «Да» по всем блокам, иначе ответы
+ * остаются «Не знаю». */
+export async function finishV2(
+  page: Page, { early = false, checks = "unknown" }: { early?: boolean; checks?: "valid" | "unknown" } = {},
+) {
   const completed = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
   if (early) {
     await page.getByTestId("engine-finish").click();
     await page.getByTestId("engine-finish-confirm").click();
   } else {
+    await expect(page.getByTestId("engine-complete").or(page.getByTestId("engine-confirm"))).toBeVisible();
+    if (await page.getByTestId("engine-confirm").isVisible()) {
+      await answerChecksV2(page, checks);
+      await page.getByTestId("engine-confirm-submit").click();
+    }
     await expect(page.getByTestId("engine-complete")).toBeVisible();
     await page.getByTestId("engine-save").click();
   }
   await completed;
+}
+
+/** #305 V5.6 §11: ответить «Да» на технику и отдых всех блоков формы (или оставить «Не знаю»). */
+export async function answerChecksV2(page: Page, checks: "valid" | "unknown") {
+  if (checks !== "valid") {
+    return;
+  }
+  for (const group of await page.locator('[data-testid^="check-technique-"], [data-testid^="check-rest-"]').all()) {
+    await group.getByRole("button", { name: "Да", exact: true }).click();
+  }
 }
 
 /** issue #306 — подход «на максимум по времени» (секундомер): «Стоп» → поле с измеренным → своё значение → «Готово». */

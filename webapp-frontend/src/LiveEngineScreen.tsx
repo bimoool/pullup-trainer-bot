@@ -9,7 +9,9 @@ import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFor
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { classifySyncError, type SyncFailure } from "./liveFinish";
-import { activeElapsedMs, remainingMs, type EngineState, type Phase, type PlanBlock } from "./liveEngine";
+import {
+  activeElapsedMs, remainingMs, type CheckAnswer, type EnginePlan, type EngineState, type Phase, type PlanBlock,
+} from "./liveEngine";
 import {
   claimQueue, clearQueue, displayState, dropAcknowledged, emptyQueue, loadQueue, newEvent, releaseQueue, saveQueue,
   serverOffsetMs, startEngineReconciliation,
@@ -36,7 +38,29 @@ const RESYNC_INTERVAL_MS = 15_000;
 const GET_READY_CUE_SECONDS = 10;
 
 /** CSS-фаза live.css (цвета/подписи общие с экраном движка v1). */
-const PHASE_CSS: Record<Phase, string> = { PREP: "get_ready", WORK: "go", RESULT: "go", REST: "rest", COMPLETE: "done" };
+const PHASE_CSS: Record<Phase, string> = {
+  PREP: "get_ready", WORK: "go", RESULT: "go", REST: "rest", CONFIRM: "done", COMPLETE: "done",
+};
+
+type BlockAnswers = { technique: CheckAnswer; rest: CheckAnswer };
+
+/** #305 V5.6 §11: блоки, по которым нужен ответ о технике и отдыхе (план просит, блок начат). */
+function blocksToConfirm(plan: EnginePlan, state: EngineState): number[] {
+  return plan.blocks
+    .map((block, index) => (block.confirm_checks && state.logs.some((log) => log.block_index === index) ? index : -1))
+    .filter((index) => index >= 0);
+}
+
+/** Серверные факты: блок остановлен «техника нарушена»; в отдыхе между подходами была пауза. */
+const techniqueStopped = (state: EngineState, index: number): boolean =>
+  (state.stopped_blocks ?? []).some((entry) => entry.block_index === index && entry.reason === "technique");
+const restPaused = (state: EngineState, index: number): boolean => (state.rest_paused ?? []).includes(index);
+
+function checksPayload(indexes: number[], answers: Record<number, BlockAnswers>) {
+  return indexes.map((index) => ({
+    block_index: index, technique: answers[index]?.technique ?? null, rest: answers[index]?.rest ?? null,
+  }));
+}
 
 /**
  * Live-экран движка v2 (issue #306, LIVE_ENGINE_V2): проекция серверного состояния. Переходы по
@@ -62,6 +86,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
+  const [answers, setAnswers] = useState<Record<number, BlockAnswers>>({});
   const syncing = useRef<Promise<void> | null>(null);
   const resync = useRef(false);
   const firstCompletion = useRef<LiveSessionCompleteResponse | null>(null);
@@ -330,8 +355,11 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       return;
     }
     const review = { effort: reviewEffort, comment: reviewComment.trim() || null };
+    // #305: ответы о технике/отдыхе (неотвеченное = неизвестно) — в payload finish_early, в журнал событий.
+    const confirmIndexes = plan ? blocksToConfirm(plan, state) : [];
+    const finishPayload = confirmIndexes.length > 0 ? { checks: checksPayload(confirmIndexes, answers) } : {};
     const events = state.status === "active"
-      ? [...queueRef.current.events, newEvent("finish_early", {}, Date.now() + offset)]
+      ? [...queueRef.current.events, newEvent("finish_early", finishPayload, Date.now() + offset)]
       : queueRef.current.events;
     const next = { ...queueRef.current, events, complete: review };
     setQueue(next);
@@ -389,20 +417,33 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const phaseLabel = state.phase === "PREP" ? "Приготовься"
     : state.phase === "WORK" ? "Пошёл"
       : state.phase === "RESULT" ? (isInterval ? "Повторы раунда" : "Результат")
-        : state.phase === "REST" ? "Отдых" : "Готово";
+        : state.phase === "REST" ? "Отдых"
+          : state.phase === "CONFIRM" ? "Техника и отдых" : "Готово";
+  const confirmIndexes = blocksToConfirm(plan, state);
+  const stopRule = !isInterval && block.stop_at_or_below != null ? block.stop_at_or_below : null;
+  const cap = spec?.cap ?? null;
+  const overCap = cap !== null && isCompleteDecimal(value) && Number(value) > cap;
   const remainingSeconds = remaining !== null ? remaining / 1000 : null;
   const getReadyCue = state.phase === "REST" && remainingSeconds !== null && !paused && remainingSeconds <= GET_READY_CUE_SECONDS;
 
-  const submit = (event?: React.FormEvent) => {
+  const submit = (event?: React.FormEvent, technique?: "invalid") => {
     event?.preventDefault();
     if (!isCompleteDecimal(value)) {
       return;
     }
     void enqueue("submit_result", {
       block_index: state.cursor.block_index, set_index: state.cursor.set_index, round_index: state.cursor.round_index,
-      value: Number(value),
+      value: Number(value), ...(technique ? { technique } : {}),
     });
   };
+  const answerOf = (index: number): BlockAnswers => answers[index] ?? { technique: null, rest: null };
+  const setAnswer = (index: number, key: keyof BlockAnswers, answer: CheckAnswer) =>
+    setAnswers((current) => ({ ...current, [index]: { ...answerOf(index), [key]: answer } }));
+  const checksForm = confirmIndexes.length > 0 && (
+    <BlockChecks
+      indexes={confirmIndexes} plan={plan} state={state} answerOf={answerOf} onAnswer={setAnswer} blockName={blockName}
+    />
+  );
 
   return (
     <div className="live-screen" data-phase={PHASE_CSS[state.phase]} data-engine-phase={state.phase} data-paused={paused ? "true" : undefined}>
@@ -411,7 +452,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           <p className="live-eyebrow">Живая тренировка</p>
           {title && <p className="live-workout-title">{title}</p>}
         </div>
-        {state.status === "active" && !finishing && (
+        {state.status === "active" && state.phase !== "CONFIRM" && !finishing && (
           <button type="button" className="live-finish" data-testid="engine-finish" onClick={() => setReviewOpen(true)}>
             Завершить
           </button>
@@ -446,9 +487,16 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           <p className="live-target" data-testid="engine-target">
             {isInterval ? `Раунд ${unitNumber}/${totalUnits}`
               : `${spec?.kind === "max_reps" || spec?.kind === "max_time" ? "Попытка" : "Подход"} ${unitNumber}/${totalUnits}`}
-            {spec?.kind === "max_reps" || spec?.kind === "max_time" ? " · Максимум"
-              : spec?.target != null ? ` · Цель: ${spec.kind === "time" ? formatDuration(spec.target) : `${spec.target} повт.`}` : ""}
+            {spec?.min_target != null ? ` · Минимум ${spec.min_target} повт. (AMRAP)`
+              : spec?.kind === "max_reps" || spec?.kind === "max_time" ? " · Максимум"
+                : spec?.target != null && cap !== null ? ` · Цель: ${spec.target}–${cap} повт. (потолок ${cap})`
+                  : spec?.target != null ? ` · Цель: ${spec.kind === "time" ? formatDuration(spec.target) : `${spec.target} повт.`}` : ""}
           </p>
+          {stopRule !== null && state.phase === "WORK" && (
+            <p className="live-hint" data-testid="engine-stop-rule">
+              {stopRule} повт. или меньше — подход засчитывается, и блок заканчивается.
+            </p>
+          )}
         </div>
       )}
 
@@ -491,7 +539,26 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
                 onChange={(e) => setValue(sanitizeDecimalInput(e.target.value))}
               />
             </label>
+            {overCap && (
+              <p className="live-hint" data-testid="engine-over-cap">
+                Больше {cap} не засчитывается: запишется как введено, в расчёт пойдёт {cap}.
+              </p>
+            )}
           </form>
+        </section>
+      )}
+
+      {state.phase === "CONFIRM" && !finishing && (
+        <section className="live-panel" data-testid="engine-confirm">
+          <h3 className="live-panel-title">Подтвердите технику и отдых</h3>
+          <p className="live-hint">«Не знаю» не считается подтверждением: тренировка сохранится, но прибавки не будет.</p>
+          {checksForm}
+          <Button
+            className="live-primary" size="l" stretched data-testid="engine-confirm-submit"
+            onClick={() => void enqueue("confirm_blocks", { checks: checksPayload(confirmIndexes, answers) })}
+          >
+            Подтвердить и завершить
+          </Button>
         </section>
       )}
 
@@ -587,6 +654,14 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
               Готово
             </Button>
           )}
+          {workInput && stopRule !== null && (
+            <Button
+              className="live-secondary" size="m" stretched mode="bezeled" data-testid="engine-submit-technique-broken"
+              disabled={!isCompleteDecimal(value)} onClick={() => submit(undefined, "invalid")}
+            >
+              Готово · техника нарушена (конец блока)
+            </Button>
+          )}
           {(countUp || (timedWork && spec?.kind === "time")) && (
             <Button
               className={countUp ? "live-primary" : "live-secondary"} size={countUp ? "l" : "m"} stretched mode={countUp ? undefined : "bezeled"}
@@ -609,7 +684,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
                 Начать сейчас
               </Button>
             )}
-            {state.status === "active" && (
+            {state.status === "active" && state.phase !== "CONFIRM" && (
               <Button
                 className="live-secondary" size="m" stretched mode="bezeled" data-testid="pause-toggle"
                 onClick={() => void enqueue(paused ? "resume" : "pause", { phase_seq: state.phase_seq })}
@@ -636,6 +711,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
             <div className="live-sheet-handle" aria-hidden="true" />
             <h3 className="live-sheet-title">Как прошла тренировка?</h3>
             <p className="live-hint">Что сделано — зачтено, остальное останется в плане.</p>
+            {checksForm}
             <EffortChips value={reviewEffort} onPick={(next) => setReviewEffort(reviewEffort === next ? null : next)} />
             <label className="live-field live-note-field">
               <span className="live-field-label">Заметка</span>
@@ -656,6 +732,69 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           </section>
         </div>
       )}
+    </div>
+  );
+}
+
+const ANSWER_OPTIONS: { value: CheckAnswer; label: string }[] = [
+  { value: "valid", label: "Да" }, { value: "invalid", label: "Нет" }, { value: null, label: "Не знаю" },
+];
+
+/** #305 V5.6 §11: ответ по блоку — техника соблюдена / отдых в пределах: да, нет, не знаю (= не подтверждено).
+ * Серверные факты не переспрашиваются: блок, остановленный «техника нарушена», и пауза в отдыхе между
+ * подходами (отдых превышен) показываются как есть. */
+function BlockChecks({ indexes, plan, state, answerOf, onAnswer, blockName }: {
+  indexes: number[]; plan: EnginePlan; state: EngineState; answerOf: (index: number) => BlockAnswers;
+  onAnswer: (index: number, key: keyof BlockAnswers, answer: CheckAnswer) => void;
+  blockName: (index: number) => string | null;
+}) {
+  return (
+    <div className="live-checks" data-testid="engine-checks">
+      {indexes.map((index) => {
+        const rest = plan.blocks[index].sets?.[0]?.rest_after_seconds ?? null;
+        const answer = answerOf(index);
+        return (
+          <fieldset key={index} className="live-check-block" data-testid={`engine-checks-block-${index}`}>
+            <legend className="live-field-label">{blockName(index) ?? `Блок ${index + 1}`}</legend>
+            {techniqueStopped(state, index) ? (
+              <p className="live-hint">Техника: нарушена (блок остановлен)</p>
+            ) : (
+              <AnswerChips
+                label="Техника соблюдена" testId={`check-technique-${index}`} value={answer.technique}
+                onPick={(next) => onAnswer(index, "technique", next)}
+              />
+            )}
+            {restPaused(state, index) ? (
+              <p className="live-hint">Отдых: превышен (была пауза во время отдыха)</p>
+            ) : (
+              <AnswerChips
+                label={rest !== null ? `Отдых не дольше ${formatDuration(rest)}` : "Отдых в пределах"}
+                testId={`check-rest-${index}`} value={answer.rest} onPick={(next) => onAnswer(index, "rest", next)}
+              />
+            )}
+          </fieldset>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnswerChips({ label, testId, value, onPick }: {
+  label: string; testId: string; value: CheckAnswer; onPick: (value: CheckAnswer) => void;
+}) {
+  return (
+    <div className="live-check-row">
+      <span className="live-check-label">{label}</span>
+      <div className="live-chips" data-testid={testId}>
+        {ANSWER_OPTIONS.map((option) => (
+          <button
+            key={option.label} type="button" aria-pressed={value === option.value}
+            className={value === option.value ? "live-chip live-chip-active" : "live-chip"} onClick={() => onPick(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

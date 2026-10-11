@@ -37,8 +37,8 @@ WorkoutScreen вообще, независимо от того, есть ли у
 SessionV2Lab.tsx) — тот же приём "не отдельный сервисный слой", что и
 сценарии выше, только сервисы/репозитории уже другие (ProgramInclusionService/
 TrainingSessionLogService волны 3, не WorkoutRepository старой схемы):
-  - v2_session_ready — STEP-курс, block_a work_sets=3 (итого 3+1=4 подхода
-    на сессию) — под E2E "офлайн 4 подхода" раздела 15.
+  - v2_session_ready — STEP-курс, block_a work_sets=3 + block_b 4 подхода
+    (#305, D2; итого 7 подходов на сессию) — под E2E «офлайн-подходы» раздела 15.
   - v2_session_complex — Program без стратегии + Complex из 3 упражнений,
     один PlanItem — под E2E "комплекс из 3, сделал 2".
   - v2_session_progression_edit — STEP-курс с ОДНОЙ прошлой сессией вчера,
@@ -112,6 +112,7 @@ from app.domain.multi_program import (
     plan_week_start_date,
 )
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.pullups_v5 import LEGACY_PROGRAM_VERSION, EntryInputs
 from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
@@ -132,6 +133,12 @@ _QUESTIONNAIRE_DEFAULTS = {
     "birth_date": date(1995, 1, 1),
     "timezone": "Europe/Moscow",
 }
+
+
+# issue #305: программа «Подтягивания» V5.6 — без входов основная тренировка не стартует (409
+# course_setup_required). Сид даёт полный набор: M — замер онбординга (12 → переходная неделя), BW — анкета
+# (75), E1RM 20 и шаг 1,25 → 5×5 и 5×3 с массой тела (0,75·95 − 75 < 0; 0,80·95 − 75 = 1 → вниз до 0).
+_V5_E2E_INPUTS = EntryInputs(e1rm_kg=Decimal(20), load_step_kg=Decimal("1.25"))
 
 
 async def _shipped_pull_ups_program(session: AsyncSession) -> Program:
@@ -261,9 +268,12 @@ async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None
     """STEP-курс синтетической категории — тот же рецепт, что
     tests/test_web/test_v2_live_session.py::_setup_step_session (PlanItem на
     каждую роль заводится напрямую, без ProgramItem: программа синтетическая,
-    без недельной матрицы). work_sets=3 у блока A + дефолтный 1 подход блока
-    Б (см. app.services.live_session._resolve_step_role_block) — сессия из
-    ОБОИХ PlanItem даёт ровно 4 подхода, под E2E "офлайн, 4 подхода"."""
+    без недельной матрицы). УСТАРЕВШАЯ версия программы (pullups_legacy_step, #305:
+    строки ролей старой формы — машинерия устаревшей версии): work_sets=3 у блока A + 4
+    подхода блока Б (STRENGTH_BLOCK.work_sets, D2 — раньше ошибочно 1) и у каждого блока
+    последним — подход на максимум бот-эпохи (резолвер
+    app.domain.course_prescription.resolve_progression_block) — сессия из ОБОИХ
+    PlanItem даёт 4 + 5 = 9 подходов, под E2E «офлайн-подходы»."""
     user = await _onboard(session, telegram_id)
 
     profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
@@ -283,7 +293,7 @@ async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None
     await session.flush()
 
     inclusion = await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, program_version=LEGACY_PROGRAM_VERSION),
     )
     role_by_exercise_id = {e["exercise_id"]: e["role"] for e in inclusion.snapshot["exercises"]}
 
@@ -347,7 +357,8 @@ async def seed_v2_session_complex(session: AsyncSession, telegram_id: int) -> No
 
 
 async def seed_v2_session_progression_edit(session: AsyncSession, telegram_id: int) -> None:
-    """STEP-курс + ОДНА прошлая сессия вчера — числа те же, что уже
+    """STEP-курс УСТАРЕВШЕЙ версии программы (pullups_legacy_step, #305: каскадный реплей —
+    машинерия только устаревшей версии) + ОДНА прошлая сессия вчера — числа те же, что уже
     доказаны в tests/test_web/test_v2_live_session.py::
     test_complete_live_session_applies_step_progression_matching_direct_strategy_call
     (11/11/11 блок A, 4/4/4/4 блок Б), не выдуманы заново под E2E. Правка
@@ -374,7 +385,7 @@ async def seed_v2_session_progression_edit(session: AsyncSession, telegram_id: i
     await session.flush()
 
     inclusion = await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, program_version=LEGACY_PROGRAM_VERSION),
     )
     role_to_exercise_id = {e["role"]: e["exercise_id"] for e in inclusion.snapshot["exercises"]}
 
@@ -448,7 +459,7 @@ async def seed_plan_week_ready(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
     await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
 
 
@@ -492,7 +503,7 @@ async def seed_plan_week_grouping(session: AsyncSession, telegram_id: int) -> No
     await session.flush()
 
     await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
 
     plan = await TrainingPlanRepository(session).get_for_user(user.id)
@@ -536,7 +547,7 @@ async def seed_plan_week_add_exercise(session: AsyncSession, telegram_id: int) -
     program = await _shipped_pull_ups_program(session)
 
     await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
 
 
@@ -555,7 +566,19 @@ async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) 
     program = await _shipped_pull_ups_program(session)
 
     await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
+    )
+
+
+async def seed_v5_one_rep_max(session: AsyncSession, telegram_id: int) -> None:
+    """#305 V5.6 §10: тот же курс, что plan_week_start_session (M = 12 → переходная неделя, масса тела из анкеты,
+    шаг веса 1,25), но без E1RM и без недавних 5×5/5×3 — пред-экран просит 1RM, и тест проходится в приложении
+    по шагам лестницы. Тренировок нет — правило 48 ч тест не блокирует."""
+    user = await _onboard(session, telegram_id)
+    program = await _shipped_pull_ups_program(session)
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id,
+        request=ProgramInclusionRequest(program_id=program.id, course_inputs=EntryInputs(load_step_kg=Decimal("1.25"))),
     )
 
 
@@ -701,8 +724,8 @@ async def seed_plans_overview(session: AsyncSession, telegram_id: int) -> None:
 
     service = ProgramInclusionService(session)
     for target in (course, removable):
-        await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id))
-    ended = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=past.id))
+        await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id, course_inputs=_V5_E2E_INPUTS))
+    ended = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=past.id, course_inputs=_V5_E2E_INPUTS))
     ended.is_active = False
     ended.started_at = datetime.now(UTC) - timedelta(days=40)
     ended.expires_at = datetime.now(UTC) - timedelta(days=1)
@@ -742,7 +765,7 @@ async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None
 
     program = await _shipped_pull_ups_program(session)
     await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
 
     plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
@@ -1516,7 +1539,7 @@ async def seed_sweep_populated(session: AsyncSession, telegram_id: int) -> None:
         ])
         await session.flush()
     await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
 
     repo = TrainingSessionRepository(session)
@@ -1740,6 +1763,7 @@ SCENARIOS = {
     "plan_week_grouping": seed_plan_week_grouping,
     "plan_week_add_exercise": seed_plan_week_add_exercise,
     "plan_week_start_session": seed_plan_week_start_session,
+    "v5_one_rep_max": seed_v5_one_rep_max,
     "plan_week_manual_session": seed_plan_week_manual_session,
     "journal_combined": seed_journal_combined,
     "plan_week_stepper": seed_plan_week_stepper,

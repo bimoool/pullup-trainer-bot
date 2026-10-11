@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.domain.activity_types import ACTIVITY_TYPES, MAX_ACTIVITY_SECONDS, MIN_ACTIVITY_SECONDS
+from app.web.schemas_v2_course import CourseInputsRequest
 
 # --- Каталог (read-only на этой волне) ---------------------------------------------
 
@@ -454,6 +455,10 @@ class ProgramInclusionCreateRequest(BaseModel):
     # issue #304 (PROGRAM_PLAN_V2 §2): по умолчанию повторное подключение снятого курса возобновляет
     # прежнее состояние; restart=true — явно начать заново (новое включение).
     restart: bool = False
+    # issue #305: версия программы (None — текущая V5.6, pullups_v5_6; pullups_legacy_step — устаревшая)
+    # и входы V5.6 (§3) — та же схема, что PUT /program-inclusions/{id}/course/inputs.
+    program_version: Literal["pullups_v5_6", "pullups_legacy_step"] | None = None
+    course_inputs: CourseInputsRequest | None = None
 
 
 # --- Сессии ---------------------------------------------------------------------------

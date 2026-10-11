@@ -54,6 +54,7 @@ from app.domain.training_session_v2 import (
 )
 from app.domain.workout_definition import SnapshotResolutionError, snapshot_to_dict
 from app.domain.workout_snapshot import positional_snapshot_items
+from app.services.course_v5 import course_snapshot_patch
 from app.services.session_deletion import DeleteVerdict, SessionDeletionService
 from app.services.workout_definition import WorkoutDefinitionService
 
@@ -168,10 +169,12 @@ class TrainingSessionV2Service:
         workout_definition_id: int | None = None, program_inclusion_id: int | None = None,
         started_at: datetime | None = None, timezone: str | None = None, duration: Duration | None = None,
         distance_meters: int | None = None, engine_version: int | None = None,
-        origin: SessionOrigin = SessionOrigin.NATIVE,
+        origin: SessionOrigin = SessionOrigin.NATIVE, course_prescription: dict | None = None,
+        progression_state_rev: int = 0,
     ) -> SessionDetail:
         """Поля v2 сессии, созданной в этой же транзакции. duration=None — не трогать (живая сессия
-        получает длительность при завершении)."""
+        получает длительность при завершении). course_prescription — рецепт программы V5.6 основного
+        занятия (issue #305): пишется в снимок сейчас, один раз (S1), и больше не пересчитывается."""
         detail = await self._sessions.get_for_user(session_id, user_id)
         kind = SessionKind.EXTERNAL_ACTIVITY if source is SessionSourceV2.EXTERNAL_ACTIVITY else SessionKind.STRENGTH
         detail_for_snapshot = detail if detail.kind == kind.value else _with_kind(detail, kind)
@@ -179,6 +182,8 @@ class TrainingSessionV2Service:
             detail_for_snapshot, workout_definition_id=workout_definition_id,
             program_inclusion_id=program_inclusion_id, resolved_at=resolved_at,
         )
+        if course_prescription is not None and snapshot is not None:
+            snapshot = course_snapshot_patch(snapshot, course_prescription, progression_state_rev=progression_state_rev)
         await self._sessions.apply_v2_stamp(session_id, SessionV2Stamp(
             kind=kind.value, source_v2=source.value, origin=origin.value,
             workout_definition_id=workout_definition_id,

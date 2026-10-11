@@ -8,6 +8,7 @@ from app.web.routes_v2 import router_v2
 from app.web.routes_v2_analytics import router_v2_analytics
 from app.web.routes_v2_assessments import router_v2_assessments
 from app.web.routes_v2_collections import router_v2_collections
+from app.web.routes_v2_course import router_v2_course
 from app.web.routes_v2_dashboard import router_v2_dashboard
 from app.web.routes_v2_export import router_v2_export
 from app.web.routes_v2_live import router_v2_live
@@ -40,6 +41,8 @@ app.include_router(router_v2_assessments)
 app.include_router(router_v2_export)
 # CRIMPD #271 — редакционные подборки («Подборки» на Главной).
 app.include_router(router_v2_collections)
+# issue #305 — программа «Подтягивания» V5.6: состояние, входы, тест 1RM.
+app.include_router(router_v2_course)
 
 
 @app.get("/health")

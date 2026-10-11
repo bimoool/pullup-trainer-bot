@@ -38,7 +38,8 @@ async def _free_program(session) -> Program:
 
 async def _add_to_plan(session, user: User, program_id: int) -> dict:
     response = await v2_post(
-        session, telegram_id=user.telegram_id, path="/api/v2/program-inclusions", payload={"program_id": program_id},
+        session, telegram_id=user.telegram_id, path="/api/v2/program-inclusions",
+        payload={"program_id": program_id, "program_version": "pullups_legacy_step"},  # #305: машинерия устаревшей версии
     )
     assert response.status_code == 200, response.text
     return response.json()

@@ -41,9 +41,10 @@ async function onboard(page: Page) {
   await expect(page.getByText("Что потренируем сегодня?")).toBeVisible();
 }
 
-// issue #304 (AD-4, §6, J12): неделя курса — 3 занятия (одна строка = одно занятие), будущие недели видимы И
-// стартуемы (замок «Откроется <дата>» снят).
-test("«Подтягивания»: недели 2 и 3 не пустые — 3 занятия, будущие стартуемы", async ({ page }) => {
+// issue #304 (AD-4, §6, J12): неделя курса — одна строка = одно занятие, будущие недели видимы И стартуемы
+// (замок «Откроется <дата>» снят). #305 (V5.6 §1): новая инклюзия V5.6 — 2 занятия в неделю (A/B); каталог (3)
+// и устаревшие инклюзии не меняются.
+test("«Подтягивания»: недели 2 и 3 не пустые — 2 занятия (V5.6), будущие стартуемы", async ({ page }) => {
   const { apiFailures } = await openAppAs(page, TELEGRAM_ID, { allowedApiStatuses: [404] });
   page.on("dialog", (dialog) => void dialog.accept());
   await onboard(page);
@@ -61,7 +62,7 @@ test("«Подтягивания»: недели 2 и 3 не пустые — 3 
   const assertCurrentWeekActionable = async () => {
     await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя");
     await expect(page.getByTestId("plan-week-progress")).not.toContainText("0 из 0");
-    await expect(rows).toHaveCount(3);
+    await expect(rows).toHaveCount(2);
     await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ }).first()).toBeVisible();
   };
   // Будущая неделя: занятия курса на месте, не пустое состояние, и их можно начать (§6).
@@ -69,9 +70,9 @@ test("«Подтягивания»: недели 2 и 3 не пустые — 3 
     await expect(page.getByTestId("plan-week-label")).toContainText(`Неделя ${weekNumber}`);
     await expect(page.getByTestId("plan-week-progress")).not.toContainText("0 из 0");
     await expect(page.getByText("На эту неделю пока ничего не запланировано.")).toHaveCount(0);
-    await expect(rows).toHaveCount(3);
+    await expect(rows).toHaveCount(2);
     await expect(page.getByText("Откроется")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(3);
+    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(2);
   };
 
   await assertCurrentWeekActionable();

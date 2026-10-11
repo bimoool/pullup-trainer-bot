@@ -1,3 +1,4 @@
+import { blockChecks, courseTargetText } from "./courseV5";
 import { Button } from "@telegram-apps/telegram-ui";
 import { Icon } from "./Icon";
 import { useEffect, useRef, useState } from "react";
@@ -129,6 +130,8 @@ export function SessionLiveScreen({
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
+  // issue #305 (V5.6): подтверждения техники/отдыха по блокам. Неотмеченное уходит как «неизвестно».
+  const [courseFlags, setCourseFlags] = useState<{ technique: boolean; rest: boolean }[]>([]);
   const sheetRef = useRef<HTMLElement | null>(null);
   // #264: форма «+ Ещё подход» (локальный ввод; сам подход живёт в pendingSets).
   const [extraOpen, setExtraOpen] = useState(false);
@@ -707,7 +710,10 @@ export function SessionLiveScreen({
       }
       await commitLocal({
         ...withRestEdit(current),
-        completeRequested: { abandoned: false, ...reviewPayload(reviewEffort, reviewComment) },
+        completeRequested: {
+          abandoned: false, ...reviewPayload(reviewEffort, reviewComment),
+          ...(current.server.course_program ? { block_checks: blockChecks(courseFlagsFor(current.server, courseFlags)) } : {}),
+        },
       });
       // M2 (#285): завершение уже зафиксировано локально — шторка закрывается, а статус «завершение
       // в очереди» (finishing ниже) показывает, что тап сработал, даже если сети нет.
@@ -921,7 +927,11 @@ export function SessionLiveScreen({
             </div>
             <p className="live-target">
               {isMaxBlock ? "Попытка" : "Подход"} {local.localPhase.setNumber}/{targetsCount}
-              {isMaxBlock ? " · Максимум" : planText !== null ? ` · Цель: ${planText}` : ""}
+              {courseTargetText(targetForSet) !== null
+                ? ` · ${courseTargetText(targetForSet)}`
+                : isMaxBlock || targetForSet?.is_max_set === true
+                  ? " · Максимум"
+                  : planText !== null ? ` · Цель: ${planText}` : ""}
             </p>
             {showPips && (
               <div className="live-pips" aria-hidden="true">
@@ -1121,6 +1131,28 @@ export function SessionLiveScreen({
               testId="workout-effort" value={reviewEffort}
               onPick={(next) => setReviewEffort(reviewEffort === next ? null : next)}
             />
+            {local.server.course_program && (
+              <fieldset className="live-field" data-testid="course-block-checks">
+                <legend className="live-field-label">По стандарту программы (без отметки — «неизвестно», прогрессия не засчитается)</legend>
+                {courseFlagsFor(local.server, courseFlags).map((flag, index) => (
+                  <div key={index} className="live-hint">
+                    <strong>{blockName(local.server.blocks[index]) ?? `Блок ${index + 1}`}</strong>
+                    <label>
+                      <input
+                        type="checkbox" checked={flag.technique} data-testid={`course-technique-${index}`}
+                        onChange={(e) => setCourseFlags(updateFlag(courseFlagsFor(local.server, courseFlags), index, { technique: e.target.checked }))}
+                      />{" "}Техника по стандарту
+                    </label>{" "}
+                    <label>
+                      <input
+                        type="checkbox" checked={flag.rest} data-testid={`course-rest-${index}`}
+                        onChange={(e) => setCourseFlags(updateFlag(courseFlagsFor(local.server, courseFlags), index, { rest: e.target.checked }))}
+                      />{" "}Отдых не дольше предписанного
+                    </label>
+                  </div>
+                ))}
+              </fieldset>
+            )}
             <label className="live-field live-note-field">
               <span className="live-field-label">Заметка</span>
               <textarea
@@ -1180,3 +1212,17 @@ function EffortChips({ testId, value, onPick }: { testId: string; value: string 
     </div>
   );
 }
+
+/** issue #305: флаги подтверждений по числу блоков сессии (по умолчанию — не отмечено). */
+function courseFlagsFor(
+  server: { blocks: unknown[] }, flags: { technique: boolean; rest: boolean }[],
+): { technique: boolean; rest: boolean }[] {
+  return server.blocks.map((_, index) => flags[index] ?? { technique: false, rest: false });
+}
+
+function updateFlag(
+  flags: { technique: boolean; rest: boolean }[], index: number, patch: Partial<{ technique: boolean; rest: boolean }>,
+): { technique: boolean; rest: boolean }[] {
+  return flags.map((flag, i) => (i === index ? { ...flag, ...patch } : flag));
+}
+

@@ -48,6 +48,8 @@ export function occurrenceStateLabel(item: OccurrenceLike): string | null {
       return "Не успеть на этой неделе";
     case "missed":
       return "Пропущено";
+    case "awaiting_assessment":
+      return "Сначала тест на максимум";
     default:
       return null;
   }

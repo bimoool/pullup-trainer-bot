@@ -26,7 +26,7 @@ test("Планы → Подтягивания/Планка → Complete → Жу
   await page.getByRole("button", { name: "Планы" }).click();
 
   // --- Подтягивания: оба блока в одной Session ---
-  // #304: «Подтягивания» × 3 — три занятия; стартуем первое.
+  // #304: одна строка = одно занятие; #305 (V5.6): 2 занятия в неделю — стартуем первое.
   await page.locator(".plan-week-day-group", { hasText: "Подтягивания" })
     .getByRole("button", { name: /^Начать: / }).first().click();
   const pullupsStartPromise = page.waitForResponse(
@@ -36,8 +36,10 @@ test("Планы → Подтягивания/Планка → Complete → Жу
   const pullupsStarted = await pullupsStartPromise.then((r) => r.json());
   expect(pullupsStarted.blocks).toHaveLength(2);
 
-  // issue #306 (Live Engine v2): блок A (3) → отдых блока → блок Б (1) без «Готов»/«Пропустить отдых».
-  await playSetsV2(page, ["10", "9", "11", "3"]);
+  // issue #306 (Live Engine v2) × #305 (V5.6, переходная неделя, M = 10): объём A 5/5/5/5+ → 900 с → сила 5×5,
+  // без «Готов»/«Пропустить отдых».
+  expect(pullupsStarted.engine.plan.blocks.map((b: { sets: unknown[] }) => b.sets.length)).toEqual([4, 5]);
+  await playSetsV2(page, ["5", "5", "5", "6", "5", "5", "5", "5", "5"]);
   await finishV2(page);
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
 

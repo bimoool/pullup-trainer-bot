@@ -91,7 +91,8 @@ Free/Premium). Порядок реализации: Wave 1 (Program+Plan foundat
 ## DOMAIN-V2 Wave 1 (2026-10-08)
 
 Линия интеграции `integration/domain-v2` = Wave 0 (`18ecb48`) + #303 (`6290bf0`, принят, PR #311 — draft как
-CI-свидетельство). Не мержится в `main`/`develop/current`; база следующих волн.
+CI-свидетельство) + #304 (`3983108`, принят 2026-10-09, fast-forward; PR #312 — draft как CI-свидетельство). Не
+мержится в `main`/`develop/current`; база следующих волн.
 
 - **W1a #303 WorkoutDefinition v2** — принят (второе независимое ревью APPROVED), `6290bf0`.
 - **W1b #304 Program + Plan foundation** — ветка `wave1/program-plan-v2`: одна строка `PlanItem` = одно
@@ -104,8 +105,19 @@ CI-свидетельство). Не мержится в `main`/`develop/current
   C1 строки убранного курса); исправлено. Второе независимое ревью — CHANGES REQUIRED (блокер F: свой план
   материализовал удалённую тренировку; решения владельца — без пересчёта ротации, автоостановка плана без живых
   тренировок, прошлые недели не трогаются); исправлено, ждёт финального фокусного ревью.
-- Дальше: W1c #305 (прескрипция курса: OD-1/OD-3, WorkoutDefinition main-слота, `awaiting_assessment`),
-  затем Wave 2/3 по `docs/domain/MIGRATION_V2.md` §9.
+- **W1b #304** — финальное фокусное ревью APPROVED WITH NON-BLOCKING FINDINGS; принят (`3983108`) и влит в
+  линию интеграции.
+- **W1c #305 Course prescription** — ветка `wave1/course-prescription`, перебазирована на принятый #307
+  (`2ab2b19`); миграция `e3b9c5d7a2f1` идёт за `f4c1a7e9b3d2` (одна голова). Блок Б несёт `work_sets = 4`
+  (absent/null → 4), единственный резолвер `resolve_progression_block` (рабочих = `work_sets` обеих ролей + один
+  явный подход на максимум — OD-3 решён), `is_max_set` сохраняется от цели до TrainingSession V2 и прогрессии;
+  оболочка `InitialPrescriptionRule` с провенансом, `awaiting_assessment`. Прежнее «прогрессию двигает ТОЛЬКО подход
+  на максимум» (`advance_step_progression`) **заменено решением владельца V5.6** (11.10.2026): новые инклюзии —
+  программа `pullups_v5_6` (`docs/domain/PULLUPS_V5_6.md`, правило `pullups_v5_6@1`), у каждого блока свой сигнал;
+  устаревшие инклюзии — прежняя формула бот-эпохи (`pullups_legacy_step`), без перевода. Реализация —
+  `docs/domain/PROGRAM_PLAN_V2.md` §11. Миграция V5.6 `b5d8e1f3a6c9` (за `e3b9c5d7a2f1`).
+- Дальше: интеграция #306/#308, затем перебазирование #305 (переподвесить миграции после #306/#308); исполнение
+  рецепта V5.6 движком #306; UX входов V5.6.
 
 ## DOMAIN-V2 Wave 3a — TrainingSession v2 (#307, 2026-10-09)
 

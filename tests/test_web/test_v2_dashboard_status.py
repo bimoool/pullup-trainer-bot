@@ -42,7 +42,8 @@ async def _make_step_program(session, *, category: str = "pullups_dashboard") ->
 
 async def _create_inclusion(session, telegram_id: int, program_id: int) -> dict:
     response = await v2_post(
-        session, telegram_id=telegram_id, path="/api/v2/program-inclusions", payload={"program_id": program_id},
+        session, telegram_id=telegram_id, path="/api/v2/program-inclusions",
+        payload={"program_id": program_id, "program_version": "pullups_legacy_step"},  # #305: устаревшая версия программы
     )
     assert response.status_code == 200
     return response.json()
@@ -150,14 +151,14 @@ async def test_dashboard_status_ready_before_any_session_shows_config_base_targe
     assert body["program_name"] == "Синтетика дашборда"
     assert body["is_gap_rollback"] is False
     assert body["block_a"] == {
-        "target": 10, "work_sets": 3,
+        "target": 10, "work_sets": 3, "display": None, "block_role": None,
         "equipment": {
             "type": "bodyweight", "value": None, "item_id": None,
             "label": "собственный вес", "needs_new_equipment": False,
         },
     }
     assert body["block_b"] == {
-        "target": 3, "work_sets": 4,
+        "target": 3, "work_sets": 4, "display": None, "block_role": None,
         "equipment": {
             "type": "bodyweight", "value": None, "item_id": None,
             "label": "собственный вес", "needs_new_equipment": False,
