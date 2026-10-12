@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseInputsPayload, courseTargetText, describeCourseOutcome,
-  describeOneRepMaxOutcome, describePendingInputs,
+  assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseBlockName, courseInputsPayload, courseTargetText, describeCourseOutcome,
+  describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds,
 } from "../src/courseV5.ts";
 
 test("courseTargetText: маркеры V5.6", () => {
@@ -107,4 +107,38 @@ test("describeOneRepMaxOutcome: подтверждённым 1RM называе�
     e1rm_kg: null, conservative: false, outcome: "stopped", confirmed: false, last_successful_single_kg: null,
   });
   assert.ok(stoppedEarly.includes("успешного одиночного подхода не было"));
+});
+
+test("courseBlockName: названия объёма/силы из снимка сессии, без выдумки", () => {
+  const snapshot = {
+    provenance: {
+      course_program: {
+        blocks: [{ block_role: "a_volume" }, { block_role: "a_weighted_strength" }],
+      },
+    },
+  };
+  assert.equal(courseBlockName(snapshot, 0), "Объём A");
+  assert.equal(courseBlockName(snapshot, 1), "Сила A (5×5)");
+  assert.equal(courseBlockName(snapshot, 2), null);
+  assert.equal(courseBlockName(null, 0), null);
+  assert.equal(courseBlockName({ provenance: { strategy: "step" } }, 0), null);
+  assert.equal(courseBlockName({ provenance: { course_program: { blocks: [{ block_role: "mystery" }] } } }, 0), null);
+});
+
+test("describeSetupNeeds: зачем помощь/вес — по правилам допуска, без выдуманной резины и килограммов", () => {
+  const assisted = describeSetupNeeds(["volume_capacity", "volume_assistance", "strength_assistance"]).join(" ");
+  assert.match(assisted, /меньше 10/);
+  assert.match(assisted, /не подбирает ни резину, ни её усилие/);
+  assert.match(assisted, /модель, цвет, крепление и положение/);
+  const weighted = describeSetupNeeds(["one_rep_max", "load_step"]).join(" ");
+  assert.match(weighted, /Допуск к работе с весом получен/);
+  assert.match(weighted, /1RM/);
+  assert.match(weighted, /Вес не назначается/);
+  for (const text of [assisted, weighted]) {
+    assert.doesNotMatch(text, /\d+(?:[.,]\d+)?\s?кг/); // ни одного конкретного значения веса/резины
+  }
+  const pending = describeSetupNeeds(["assistance_confirmation"], [{ block: "volume_a", intent: "decrease_assistance" }]);
+  assert.equal(pending.length, 1);
+  assert.match(pending[0], /уменьшить помощь/);
+  assert.deepEqual(describeSetupNeeds(["fresh_max", "body_mass"]), []);
 });

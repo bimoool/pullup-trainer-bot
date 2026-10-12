@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  categoryColorVar, collectCategories, groupProgramsByCategory, homeCategoryOrder, programCategoryColorVar,
+  categoryColorVar, categoryLabel, collectCategories, groupProgramsByCategory, homeCategoryOrder, programCategoryColorVar,
   searchContent, toggleSearchFilter,
 } from "../src/homeDiscovery.ts";
 
@@ -102,4 +102,26 @@ test("categoryColorVar: цвет — функция имени, Главная �
   // не из рядов Главной: стабильный хеш, не зависит от порядка
   assert.equal(categoryColorVar("unknown", order), categoryColorVar("unknown", [...order].reverse().concat("x")));
   assert.match(categoryColorVar("unknown", order), /^var\(--vp-cat-[0-5]\)$/);
+});
+
+test("categoryLabel: слаги каталога — человеческие подписи, а не pull_ups/PULL_UPS", () => {
+  assert.equal(categoryLabel("pull_ups"), "Подтягивания");
+  assert.equal(categoryLabel("PULL_UPS"), "Подтягивания");
+  assert.equal(categoryLabel("general_fitness"), "Общая физическая подготовка");
+  assert.equal(categoryLabel("Подтягивания"), "Подтягивания");
+  assert.equal(categoryLabel("some_new_slug"), "Some new slug");
+  assert.equal(categoryLabel(null), "Другое");
+  assert.equal(categoryLabel("  "), "Другое");
+});
+
+test("слаг программы и подпись упражнения — одна категория: ряд, чип, фильтр", () => {
+  const slugPrograms = [program(1, "Подтягивания", "pull_ups")];
+  const labelled = [exercise(1, "Подтягивания с резиной", "Подтягивания")];
+  assert.deepEqual(groupProgramsByCategory(slugPrograms).map((r) => r.category), ["Подтягивания"]);
+  assert.deepEqual(collectCategories(slugPrograms, labelled), ["Подтягивания"]);
+  const hit = searchContent({ programs: slugPrograms, workouts: [], exercises: labelled }, "", "Подтягивания");
+  assert.equal(hit.programs.length, 1);
+  assert.equal(hit.exercises.length, 1);
+  // цвет категории не зависит от того, слаг пришёл или подпись (Аналитика отдаёт слаг)
+  assert.equal(categoryColorVar("pull_ups", homeCategoryOrder(slugPrograms)), categoryColorVar("Подтягивания", homeCategoryOrder(slugPrograms)));
 });

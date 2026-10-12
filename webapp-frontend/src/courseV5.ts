@@ -65,6 +65,22 @@ const BLOCK_LABEL: Record<string, string> = {
   b_weighted_strength: "Сила B (5×3)",
 };
 
+/** Название блока основного занятия V5.6 по порядку блока в сессии — из замороженного рецепта сессии
+ * (`prescription_snapshot.provenance.course_program.blocks[i].block_role`): «Объём A», «Сила A (5×5)».
+ * null — снимка/роли нет (не V5.6, старая сессия): подпись не выдумываем. */
+export function courseBlockName(snapshot: Record<string, unknown> | null | undefined, blockIndex: number): string | null {
+  const provenance = snapshot?.["provenance"];
+  const program = provenance !== null && typeof provenance === "object"
+    ? (provenance as Record<string, unknown>)["course_program"] : null;
+  const blocks = program !== null && typeof program === "object" ? (program as Record<string, unknown>)["blocks"] : null;
+  if (!Array.isArray(blocks)) {
+    return null;
+  }
+  const block = blocks[blockIndex];
+  const role = block !== null && typeof block === "object" ? (block as Record<string, unknown>)["block_role"] : null;
+  return typeof role === "string" ? BLOCK_LABEL[role] ?? null : null;
+}
+
 const DECISION_TEXT: Record<string, string> = {
   add_mandatory_rep: "+1 обязательное повторение в следующей A",
   repeat: "план повторяется",
@@ -121,6 +137,50 @@ const PENDING_TEXT: Record<string, string> = {
 
 export function describePendingInputs(missing: string[]): string {
   return missing.map((item) => PENDING_TEXT[item] ?? item).join(", ");
+}
+
+/**
+ * Зачем программе помощь/вес — по ПРАВИЛАМ ДОПУСКА V5.6 (§8.2, docs/domain/PULLUPS_V5_6.md), а не по придуманным
+ * порогам: свежий максимум M < 10 — уровень 1, объём и сила начинаются с помощью (резина); M ≥ 10 — допуск к
+ * работе с весом (сила считается от 1RM или недавнего 5×5 / 5×3). Конкретную резину и килограммы приложение не
+ * назначает: резину пользователь записывает целиком (модель, цвет, крепление, положение), вес даёт тест или его
+ * собственный недавний результат. Пустой список — объяснять нечего (в форме нет входов про помощь/вес).
+ */
+export function describeSetupNeeds(
+  missing: string[], assistancePending: { block: string; intent: string }[] = [],
+): string[] {
+  const lines: string[] = [];
+  if (missing.includes("volume_assistance") || missing.includes("strength_assistance")) {
+    lines.push(
+      "Свежий максимум строгих подтягиваний пока меньше 10 — по правилам допуска программа начинается с помощью: "
+      + "резина в объёмных подходах и в силовом блоке. Допуск к работе с весом откроется, когда сила пройдёт "
+      + "5/5/5/5/8 без помощи или свежий максимум достигнет 10.",
+    );
+    lines.push(
+      "Укажите ту резину, которой вы реально пользуетесь: приложение не подбирает ни резину, ни её усилие. "
+      + "Запись принимается целиком — модель, цвет, крепление и положение стопы/колена; подтверждается кнопкой «Сохранить».",
+    );
+  }
+  if (missing.includes("one_rep_max")) {
+    lines.push(
+      "Допуск к работе с весом получен (свежий максимум 10 и больше или сила без помощи 5/5/5/5/8) — сила считается "
+      + "с дополнительным весом. Вес не назначается "
+      + "наугад: его даёт тест 1RM в приложении или ваш недавний результат 5×5 / 5×3 в том же стандарте и месте.",
+    );
+  }
+  if (missing.includes("load_step")) {
+    lines.push("Шаг веса нужен, чтобы округлять нагрузку вниз до реального диска; приложение его не подставляет.");
+  }
+  for (const entry of assistancePending) {
+    lines.push(
+      entry.intent === "decrease_assistance"
+        ? "По правилам ступеней помощи прошлое занятие позволяет уменьшить помощь — выберите следующую резину и "
+          + "подтвердите её запись целиком; пока не подтверждено, прежняя помощь сохраняется."
+        : "По правилам ступеней помощи прошлое занятие просит больше помощи — выберите следующую резину и "
+          + "подтвердите её запись целиком; пока не подтверждено, прежняя помощь сохраняется.",
+    );
+  }
+  return [...new Set(lines)];
 }
 
 /** Поля формы входов V5.6 — какие показать для списка недостающих входов (порядок — порядок формы). */

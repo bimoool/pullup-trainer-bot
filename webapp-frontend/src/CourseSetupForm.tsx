@@ -6,13 +6,14 @@
  * прошлого теста; можно явно остановиться самому — тогда это не подтверждённый 1RM); E1RM вручную не вводится. Недавний 5×5 / 5×3 со слов пользователя — альтернатива тесту (§9; сервер его не сверяет).
  * Пауза прибавок §9 — не вход: RecoveryCheckNotice показывается рядом со стартом и его не блокирует.
  */
-import { Button, Input, List, Section } from "@telegram-apps/telegram-ui";
+import { Button, List, Section } from "@telegram-apps/telegram-ui";
 import { useState } from "react";
 
+import { LabeledInput } from "./LabeledField";
 import { postOneRepMax, postOneRepMaxNextSet, putCourseInputs, type OneRmAttemptV2, type OneRmNextSetV2 } from "./apiV2";
 import {
   assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describeOneRepMaxOutcome,
-  describePendingInputs,
+  describePendingInputs, describeSetupNeeds,
 } from "./courseV5";
 
 export interface AssistancePending {
@@ -43,20 +44,20 @@ function BandSection(
       )}
       {!value.bodyweight && (
         <>
-          <Input
-            header="Резина (модель/название)" data-testid={`${testId}-name`} value={value.name}
+          <LabeledInput
+            label="Резина (модель/название)" data-testid={`${testId}-name`} value={value.name}
             onChange={(e) => onChange({ ...value, name: e.target.value })}
           />
-          <Input
-            header="Цвет" data-testid={`${testId}-colour`} value={value.colour}
+          <LabeledInput
+            label="Цвет резины" data-testid={`${testId}-colour`} value={value.colour}
             onChange={(e) => onChange({ ...value, colour: e.target.value })}
           />
-          <Input
-            header="Крепление" data-testid={`${testId}-attachment`} value={value.attachment}
+          <LabeledInput
+            label="Крепление" data-testid={`${testId}-attachment`} value={value.attachment}
             onChange={(e) => onChange({ ...value, attachment: e.target.value })}
           />
-          <Input
-            header="Положение (стопа / колено)" data-testid={`${testId}-position`} value={value.body_position}
+          <LabeledInput
+            label="Положение: стопа или колено" data-testid={`${testId}-position`} value={value.body_position}
             onChange={(e) => onChange({ ...value, body_position: e.target.value })}
           />
         </>
@@ -199,6 +200,7 @@ export function CourseSetupForm(
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fields = missing.flatMap((item) => COURSE_INPUT_FIELDS[item] ?? []);
+  const needs = describeSetupNeeds(missing, assistancePending);
 
   async function save() {
     setSaving(true);
@@ -235,11 +237,16 @@ export function CourseSetupForm(
 
   return (
     <List data-testid="course-setup-form">
+      {needs.length > 0 && (
+        <Section header="Зачем это нужно" data-testid="course-setup-why">
+          {needs.map((line) => <p key={line} className="live-hint labeled-field-note">{line}</p>)}
+        </Section>
+      )}
       {fields.length > 0 && (
         <Section header="Данные для расчёта программы">
           {fields.map((field) => (
-            <Input
-              key={field.key} header={field.unit ? `${field.label}, ${field.unit}` : field.label} inputMode="decimal"
+            <LabeledInput
+              key={field.key} label={field.unit ? `${field.label}, ${field.unit}` : field.label} inputMode="decimal"
               data-testid={`course-input-${field.key}`} value={numbers[field.key] ?? ""}
               onChange={(e) => setNumbers({ ...numbers, [field.key]: e.target.value })}
             />

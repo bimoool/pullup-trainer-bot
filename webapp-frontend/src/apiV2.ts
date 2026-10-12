@@ -964,6 +964,9 @@ export interface SessionResponseV2 {
   duration_source?: string | null;
   progression_result: SessionProgressionResponseV2 | null;
   progression_skipped_reason: string | null;
+  /** Замороженный рецепт сессии (#307); у основных занятий V5.6 — `provenance.course_program` с ролями блоков.
+   * Только чтение: названия блоков берутся отсюда, снимок не переписывается. */
+  prescription_snapshot?: Record<string, unknown> | null;
 }
 
 export interface SessionSetTargetResponseV2 {

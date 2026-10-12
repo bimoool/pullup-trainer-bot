@@ -5,7 +5,7 @@ import {
   type AssessmentProtocolV2, type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { formatLastResult } from "./assessmentsFormat";
-import { collectCategories, searchContent, toggleSearchFilter } from "./homeDiscovery";
+import { categoryLabel, collectCategories, searchContent, toggleSearchFilter } from "./homeDiscovery";
 import { useBackButton } from "./useBackButton";
 
 export type SearchState = { query: string; category: string | null; favoritesOnly: boolean; testsOnly: boolean };
@@ -200,7 +200,7 @@ export function SearchScreen({
                   <li key={`e${exercise.id}`}>
                     <button type="button" className="search-result" data-testid="search-result-exercise" onClick={() => onOpenExercise(exercise.id, exercise.name)}>
                       <span className="home-workout-title">{exercise.name}</span>
-                      <span className="home-workout-meta">{exercise.category}</span>
+                      <span className="home-workout-meta">{categoryLabel(exercise.category)}</span>
                     </button>
                   </li>
                 ))}

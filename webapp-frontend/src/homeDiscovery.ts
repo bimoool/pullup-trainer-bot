@@ -7,9 +7,37 @@ export const OTHER_CATEGORY = "Другое";
 
 export type ProgramRow = { category: string; programs: ProgramResponseV2[] };
 
-function normalizedCategory(category: string | null | undefined): string {
+/** Подписи слагов категорий каталога (app/domain/exercise_identity.py::CATEGORY_SEEDS): у программ
+ * `category` — слаг сида («pull_ups»), у упражнений — уже подпись («Подтягивания»). Показываем и
+ * группируем по подписи, чтобы «pull_ups» и «Подтягивания» были одной категорией. */
+const CATEGORY_LABELS: Record<string, string> = {
+  pull_ups: "Подтягивания",
+  grip: "Хват",
+  general_fitness: "Общая физическая подготовка",
+  my_exercises: "Мои упражнения",
+  uncategorized: "Без категории",
+};
+
+/** Человеческая подпись категории: известный слаг — по справочнику, неизвестный технический слаг
+ * (`snake_case`/`SCREAMING_CASE`) — слова через пробел с заглавной; обычный текст — как есть. */
+export function categoryLabel(category: string | null | undefined): string {
   const value = (category ?? "").trim();
-  return value === "" ? OTHER_CATEGORY : value;
+  if (value === "") {
+    return OTHER_CATEGORY;
+  }
+  const known = CATEGORY_LABELS[value.toLowerCase()];
+  if (known !== undefined) {
+    return known;
+  }
+  if (/^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/.test(value)) {
+    const words = value.toLowerCase().split("_").join(" ");
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
+  return value;
+}
+
+function normalizedCategory(category: string | null | undefined): string {
+  return categoryLabel(category);
 }
 
 /** Программы по рядам-категориям: порядок рядов — по первому появлению,
@@ -75,9 +103,9 @@ export function collectCategories(
 ): string[] {
   const seen = new Set<string>();
   for (const item of [...programs, ...exercises]) {
-    const raw = (item.category ?? "").trim();
-    if (raw !== "") {
-      seen.add(raw);
+    const label = normalizedCategory(item.category);
+    if (label !== OTHER_CATEGORY) {
+      seen.add(label);
     }
   }
   return [...seen].sort((a, b) => a.localeCompare(b, "ru"));
@@ -117,14 +145,14 @@ export function searchContent(
   const query = rawQuery.trim().toLocaleLowerCase("ru");
   const programs = testsOnly ? [] : data.programs.filter(
     (p) => inFavorites("program", p.id)
-      && (category === null || (p.category ?? "").trim() === category)
+      && (category === null || categoryLabel(p.category) === category)
       && (query === "" || matches(p.name, query) || matches(p.goal ?? "", query)),
   );
   const workouts = category !== null || testsOnly
     ? []
     : data.workouts.filter((w) => inFavorites("workout", w.id) && (query === "" || matches(w.title, query)));
   const exercises = testsOnly ? [] : data.exercises.filter(
-    (e) => favorites === null && (category === null || (e.category ?? "").trim() === category)
+    (e) => favorites === null && (category === null || categoryLabel(e.category) === category)
       && (query === "" || matches(e.name, query)),
   );
   const tests = category !== null || favorites !== null

@@ -1,4 +1,4 @@
-import { Button, Input, Section, Select } from "@telegram-apps/telegram-ui";
+import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import {
@@ -10,6 +10,7 @@ import {
 } from "./api";
 import { parseOptionalWeight } from "./WorkoutScreen";
 import { sanitizeDecimalInput } from "./decimalInput";
+import { LabeledInput, LabeledSelect } from "./LabeledField";
 
 type Props = {
   initDataRaw: string;
@@ -201,13 +202,12 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
         <p className="plan-title">Замер</p>
         <p className="screen-message">{BASELINE_GUIDE}</p>
         <Section className="block-section">
-          <Input
-            header="Сколько подтягиваний вышло?"
+          <LabeledInput
+            label="Сколько подтягиваний вышло?"
             type="number"
             inputMode="numeric"
             min={0}
             max={999}
-            aria-label="Число подтягиваний"
             value={repsInput}
             onChange={(e) => setRepsInput(e.target.value)}
           />
@@ -280,32 +280,29 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
 
       <Section className="block-section">
         {current === "weight" && (
-          <Input
-            header="Твой вес в кг?"
+          <LabeledInput
+            label="Твой вес в кг?"
             type="text"
             inputMode="decimal"
             placeholder="Например: 78"
-            aria-label="Вес, кг"
             value={weightKg}
             onChange={(e) => setWeightKg(sanitizeDecimalInput(e.target.value))}
           />
         )}
         {current === "height" && (
-          <Input
-            header="Рост в см?"
+          <LabeledInput
+            label="Рост в см?"
             type="number"
             inputMode="numeric"
             min={0}
             placeholder="Например: 180"
-            aria-label="Рост, см"
             value={heightCm}
             onChange={(e) => setHeightCm(e.target.value)}
           />
         )}
         {current === "gender" && (
-          <Select
-            header="Пол?"
-            aria-label="Пол"
+          <LabeledSelect
+            label="Пол?"
             value={gender}
             onChange={(e) => setGender(e.target.value as "male" | "female" | "")}
           >
@@ -315,21 +312,19 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
                 {option.label}
               </option>
             ))}
-          </Select>
+          </LabeledSelect>
         )}
         {current === "birth_date" && (
-          <Input
-            header="Дата рождения?"
+          <LabeledInput
+            label="Дата рождения?"
             type="date"
-            aria-label="Дата рождения"
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value)}
           />
         )}
         {current === "timezone" && (
-          <Select
-            header="Часовой пояс?"
-            aria-label="Часовой пояс"
+          <LabeledSelect
+            label="Часовой пояс?"
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
           >
@@ -339,7 +334,7 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
                 {option.label}
               </option>
             ))}
-          </Select>
+          </LabeledSelect>
         )}
       </Section>
 

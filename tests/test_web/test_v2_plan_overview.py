@@ -135,3 +135,45 @@ async def test_inclusion_current_week_only_with_explicit_duration(session, user:
     open_ended = await _program(session, with_items=False)
     other = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {"program_id": open_ended.id})
     assert other.json()["duration_weeks"] is None and other.json()["current_week"] is None
+
+
+async def test_schedule_of_step_course_shows_two_main_sessions_per_week_without_invented_start(session, user: User):
+    """V5.6 (#305): новая инклюзия курса-ступеньки — 2 основных занятия в неделю; карточка каталога не обещает
+    «3 раза в неделю» и стартовое «10 повт. × 3 подх.» из config (прескрипцию определяют входы пользователя).
+    Строки каталога (ProgramItem) и снимки прежних инклюзий не меняются — это только подпись превью."""
+    from app.db.models_program import ProgressionStrategyProfile
+    from app.domain.progression_strategy import ProgressionStrategyType
+
+    profile = ProgressionStrategyProfile(strategy_type=ProgressionStrategyType.STEP, name="Step", config={})
+    session.add(profile)
+    await session.flush()
+    program = Program(
+        name="Курс-ступенька", goal="цель", structure_type=ProgramStructureType.RECURRING, category="step_overview",
+        progression_strategy_id=profile.id, config={"block_a": {"base_target": 10, "work_sets": 3}},
+    )
+    session.add(program)
+    await session.flush()
+    ex_a = Exercise(name="Блок A", metric_type=MetricType.REPS, category="step_overview", subcategory="block_a")
+    ex_b = Exercise(name="Блок Б", metric_type=MetricType.REPS, category="step_overview", subcategory="block_b")
+    session.add_all([ex_a, ex_b])
+    await session.flush()
+    session.add_all([
+        ProgramItem(program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=ex.id, count_per_week=3, day_of_week=None)
+        for ex in (ex_a, ex_b)
+    ])
+    await session.flush()
+
+    response = await v2_get(session, user.telegram_id, f"/api/v2/programs/{program.id}/schedule")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["phases"] == ["base"]
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert (item["count_per_week"], item["count_label"]) == (2, "2 раза в неделю")
+    assert item["title"] == "Основные тренировки"
+    assert "10" not in (item["target_label"] or "") and "подх." not in (item["target_label"] or "")
+    assert "по вашим данным" in item["target_label"]
+    # каталог не тронут: строки ProgramItem прежние (legacy-расписание сохраняется для старых инклюзий)
+    stored = (await session.execute(select(ProgramItem.count_per_week).where(ProgramItem.program_id == program.id))).scalars().all()
+    assert stored == [3, 3]

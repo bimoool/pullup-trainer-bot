@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 import { fetchProgramSchedule, type ProgramResponseV2, type ProgramScheduleV2 } from "./apiV2";
 import { BackChevron } from "./BackChevron";
 import { FavoriteHeart } from "./FavoriteHeart";
+import { categoryLabel } from "./homeDiscovery";
 import { DAY_NAMES_RU, groupScheduleByPhase, PHASE_LABELS_RU } from "./plansOverview";
 import { useBackButton } from "./useBackButton";
 
@@ -84,7 +85,7 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
     <div>
       <div className="vs-cover" style={{ ["--cat" as string]: `var(--vp-cat-${categoryIndex(program.category)})` }} data-testid="program-cover">
         <BackChevron onClick={onBack} />
-        {program.category && <span className="vs-cover-label">{program.category}</span>}
+        {program.category && <span className="vs-cover-label">{categoryLabel(program.category)}</span>}
       </div>
       <div className="favorite-title-row">
         <p className="plan-title" data-testid="program-detail-title">{program.name}</p>
