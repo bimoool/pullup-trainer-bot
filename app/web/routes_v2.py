@@ -417,21 +417,33 @@ async def get_program_schedule(
     # «10 × 3» из config каталога. Строки каталога (ProgramItem) и снимки прежних инклюзий не трогаются.
     strategy_profile = (
         await programs.get_strategy_profile(program.progression_strategy_id)
-        if program.progression_strategy_id is not None else None
+        if program.progression_strategy_id is not None
+        else None
     )
     step_roles = await programs.find_step_role_exercises(category=program.category)
     if (
-        strategy_profile is not None and strategy_profile.strategy_type == ProgressionStrategyType.STEP
-        and step_roles.get("block_a") and step_roles.get("block_b") and program_items
+        strategy_profile is not None
+        and strategy_profile.strategy_type == ProgressionStrategyType.STEP
+        and step_roles.get("block_a")
+        and step_roles.get("block_b")
+        and program_items
     ):
         title, count, count_label, target_label = v5_main_schedule_row()
         phase = min({i.week_phase for i in program_items}, key=lambda p: p.value)
         return ProgramScheduleResponse(
-            program_id=program.id, duration_weeks=duration_weeks(program.config), phases=[phase.value],
-            items=[ProgramScheduleItemResponse(
-                week_phase=phase.value, day_of_week=None, count_per_week=count, title=title,
-                count_label=count_label, target_label=target_label,
-            )],
+            program_id=program.id,
+            duration_weeks=duration_weeks(program.config),
+            phases=[phase.value],
+            items=[
+                ProgramScheduleItemResponse(
+                    week_phase=phase.value,
+                    day_of_week=None,
+                    count_per_week=count,
+                    title=title,
+                    count_label=count_label,
+                    target_label=target_label,
+                )
+            ],
         )
     for item in sorted(program_items, key=lambda i: (i.week_phase.value, i.day_of_week is None, i.day_of_week or 0, i.id)):
         exercise = exercises.get(item.exercise_id) if item.exercise_id is not None else None

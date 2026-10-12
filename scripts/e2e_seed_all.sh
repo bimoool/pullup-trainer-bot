@@ -20,6 +20,9 @@ seed plan_week_start_session 900016
 # #305 V5.6: подтверждения техники/отдыха в движке (CONFIRM) и тест 1RM в приложении.
 seed plan_week_start_session 930501
 seed v5_one_rep_max 930502
+# ui-clarity (fix-wave1/ui-clarity.spec.ts): СВОЙ профиль «курс без 1RM» — только чтение (пред-экран, без сохранения);
+# 930502 принадлежит course-v5-engine.spec.ts, который проходит тест 1RM и меняет его состояние.
+seed v5_one_rep_max 930701
 seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed plan_week_stepper 990001

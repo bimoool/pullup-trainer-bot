@@ -45,24 +45,48 @@ async def _seed_paid_course() -> None:
     from app.domain.program_access import ProgramAccessLevel
 
     async with async_session_factory() as session:
-        existing = (await session.execute(select(Program).where(Program.name == PAID_COURSE_NAME))).scalars().first()
+        existing = (
+            (await session.execute(select(Program).where(Program.name == PAID_COURSE_NAME)))
+            .scalars()
+            .first()
+        )
         if existing is not None:
             assert existing.access_level == ProgramAccessLevel.PREMIUM.value
             print(f"paid course exists: program_id={existing.id}")
             return
-        exercise = (await session.execute(
-            select(Exercise).where(Exercise.name == "Отжимания", Exercise.owner_user_id.is_(None)),
-        )).scalars().first()
-        assert exercise is not None, "system library exercise «Отжимания» missing — run alembic upgrade head"
+        exercise = (
+            (
+                await session.execute(
+                    select(Exercise).where(
+                        Exercise.name == "Отжимания", Exercise.owner_user_id.is_(None)
+                    ),
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert exercise is not None, (
+            "system library exercise «Отжимания» missing — run alembic upgrade head"
+        )
         program = Program(
-            name=PAID_COURSE_NAME, goal="Проверка платного доступа (E2E)", structure_type=ProgramStructureType.RECURRING,
-            category=PAID_COURSE_CATEGORY, config={}, access_level=ProgramAccessLevel.PREMIUM.value,
+            name=PAID_COURSE_NAME,
+            goal="Проверка платного доступа (E2E)",
+            structure_type=ProgramStructureType.RECURRING,
+            category=PAID_COURSE_CATEGORY,
+            config={},
+            access_level=ProgramAccessLevel.PREMIUM.value,
         )
         session.add(program)
         await session.flush()
-        session.add(ProgramItem(
-            program_id=program.id, week_phase=WeekPhase.BASE, exercise_id=exercise.id, count_per_week=3, day_of_week=None,
-        ))
+        session.add(
+            ProgramItem(
+                program_id=program.id,
+                week_phase=WeekPhase.BASE,
+                exercise_id=exercise.id,
+                count_per_week=3,
+                day_of_week=None,
+            )
+        )
         await session.commit()
         print(f"paid course created: program_id={program.id}")
 

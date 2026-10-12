@@ -1,7 +1,5 @@
-import { execSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
@@ -38,14 +36,8 @@ const PLATFORMS = [
 const WIDTHS = [320, 390] as const;
 const THEMES: TelegramTheme[] = ["light", "dark"];
 
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
-
-/** Свежий посев пользователя «курс без 1RM» (scripts/e2e_seed.py v5_one_rep_max): общий 930502 мутируют другие спеки. */
-function seedOneRepMaxUser(telegramId: number): void {
-  execSync(`"${process.env.PYTHON ?? "python"}" scripts/e2e_seed.py v5_one_rep_max ${telegramId}`, {
-    cwd: REPO, env: { ...process.env, PYTHONPATH: REPO },
-  });
-}
+/** Посев v5_one_rep_max (только чтение), зарегистрирован в scripts/e2e_seed_all.sh. */
+const ONE_RM_USER = 930_701;
 
 const BASE_ID = 7_300_000 + (Math.floor(Date.now() / 1000) % 600_000);
 let counter = 0;
@@ -87,6 +79,12 @@ async function fillOnboarding(page: Page, tag: string, labels: { baseline: boole
     await page.getByLabel("Сколько подтягиваний вышло?").fill("8");
     await page.getByRole("button", { name: "Далее" }).click();
     await page.getByRole("button", { name: "Да" }).click();
+    // сразу после замера — что он значит для помощи/веса и следующий шаг (обычный пользователь, не admin)
+    const qualification = page.getByTestId("baseline-qualification");
+    await expect(qualification).toBeVisible();
+    await expect(qualification).toContainText("начнётся с помощью");
+    await expect(page.getByTestId("baseline-next-step")).toContainText("«Добавить в план»");
+    await shot(page, `${tag}-onb-1b-after-baseline`);
     await page.getByRole("button", { name: "Продолжить" }).click();
   }
   await expectCaption(page, "Твой вес в кг?", "input");
@@ -151,10 +149,9 @@ for (const { name: platformName, platform } of PLATFORMS) {
         });
 
         test("1RM: подписи 5×5 / 5×3 видны целиком", async ({ page }) => {
-          // курс без 1RM: свежий посев v5_one_rep_max на каждый прогон; пользователь только читается
-          const id = nextId();
-          seedOneRepMaxUser(id);
-          const { consoleErrors, apiFailures } = await openAppAs(page, id, { theme, telegram: { platform } });
+          // scripts/e2e_seed_all.sh: v5_one_rep_max 930701 — собственный профиль этого спека (930502 мутирует
+          // course-v5-engine); экран только читается — ничего не сохраняется, повторные прогоны безопасны.
+          const { consoleErrors, apiFailures } = await openAppAs(page, ONE_RM_USER, { theme, telegram: { platform } });
           await page.getByRole("button", { name: "Планы" }).click();
           await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
           await expect(page.getByTestId("course-setup-required")).toBeVisible();
@@ -245,5 +242,30 @@ for (const theme of THEMES) {
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });
+  });
+}
+
+for (const { reps, headline, line } of [
+  { reps: 12, headline: "допуск к работе с весом", line: "тест 1RM" },
+  { reps: 16, headline: "дополнительным весом", line: "тест 1RM" },
+]) {
+  test(`сразу после замера ${reps}: нужен вес, а не резина — обычный пользователь`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    const { consoleErrors, apiFailures } = await openAppAs(page, nextId());
+    await page.getByLabel("Сколько подтягиваний вышло?").fill(String(reps));
+    await page.getByRole("button", { name: "Далее" }).click();
+    await page.getByRole("button", { name: "Да" }).click();
+    const qualification = page.getByTestId("baseline-qualification");
+    await expect(qualification).toContainText(`Замер ${reps}`);
+    await expect(qualification).toContainText(headline);
+    await expect(qualification).toContainText(line);
+    await expect(qualification).not.toContainText("Вам понадобится резина");
+    await expect(qualification).not.toContainText(/\d+\s?кг/);
+    await shot(page, `after-baseline-${reps}`);
+    // следующий шаг ведёт в существующий поток: Продолжить → анкета
+    await page.getByRole("button", { name: "Продолжить" }).click();
+    await expect(page.getByLabel("Твой вес в кг?")).toBeVisible();
+    expect(noWakeLock(consoleErrors)).toEqual([]);
+    expect(apiFailures).toEqual([]);
   });
 }

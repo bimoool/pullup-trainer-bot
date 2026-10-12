@@ -66,6 +66,8 @@ def v5_main_schedule_row() -> tuple[str, int, str, str]:
     два основных занятия в неделю. Стартовых «N повт. × M подх.» нет — прескрипцию определяют входы
     пользователя, а не `programs.config`; ProgramItem каталога и устаревшие инклюзии это не меняет."""
     return (
-        "Основные тренировки", MAIN_SESSIONS_PER_WEEK, count_per_week_label(MAIN_SESSIONS_PER_WEEK),
+        "Основные тренировки",
+        MAIN_SESSIONS_PER_WEEK,
+        count_per_week_label(MAIN_SESSIONS_PER_WEEK),
         V5_MAIN_TARGET_LABEL,
     )

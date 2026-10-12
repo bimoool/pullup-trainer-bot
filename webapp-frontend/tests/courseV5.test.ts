@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseBlockName, courseInputsPayload, courseTargetText, describeCourseOutcome,
-  describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds,
+  describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, describeBaselineQualification,
 } from "../src/courseV5.ts";
 
 test("courseTargetText: маркеры V5.6", () => {
@@ -141,4 +141,22 @@ test("describeSetupNeeds: зачем помощь/вес — по правила
   assert.equal(pending.length, 1);
   assert.match(pending[0], /уменьшить помощь/);
   assert.deepEqual(describeSetupNeeds(["fresh_max", "body_mass"]), []);
+});
+
+test("describeBaselineQualification: помощь/вес сразу после замера по порогам допуска 10 и 15, без назначений", () => {
+  const low = describeBaselineQualification(8);
+  assert.match(low.headline, /с помощью/);
+  assert.match(low.lines.join(" "), /резина/i);
+  const mid = describeBaselineQualification(10);
+  assert.match(mid.headline, /допуск к работе с весом/);
+  assert.match(mid.lines.join(" "), /1RM/);
+  assert.equal(describeBaselineQualification(14).headline, mid.headline.replace("10", "14"));
+  const high = describeBaselineQualification(15);
+  assert.match(high.headline, /дополнительным весом/);
+  assert.match(describeBaselineQualification(0).headline, /с помощью/);
+  for (const view of [low, mid, high]) {
+    const text = [view.headline, ...view.lines, view.nextStep].join(" ");
+    assert.doesNotMatch(text, /\d+(?:[.,]\d+)?\s?кг/); // ни килограммов, ни конкретной резины
+    assert.match(view.nextStep, /«Добавить в план»/);
+  }
 });

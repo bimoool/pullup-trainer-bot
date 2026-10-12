@@ -10,6 +10,7 @@ import {
 } from "./api";
 import { parseOptionalWeight } from "./WorkoutScreen";
 import { sanitizeDecimalInput } from "./decimalInput";
+import { describeBaselineQualification } from "./courseV5";
 import { LabeledInput, LabeledSelect } from "./LabeledField";
 
 type Props = {
@@ -45,6 +46,18 @@ const GENDER_OPTIONS: { value: "male" | "female"; label: string }[] = [
   { value: "male", label: "Мужской" },
   { value: "female", label: "Женский" },
 ];
+
+/** Что замер значит для помощи/веса (существующие правила допуска V5.6) и следующий шаг — сразу после замера. */
+function BaselineQualification({ reps }: { reps: number }) {
+  const view = describeBaselineQualification(reps);
+  return (
+    <div className="profile-card" data-testid="baseline-qualification">
+      <p className="block-subtitle">{view.headline}</p>
+      {view.lines.map((line) => <p key={line} className="hint">{line}</p>)}
+      <p className="hint" data-testid="baseline-next-step">{view.nextStep}</p>
+    </div>
+  );
+}
 
 /** Замер + анкета (issue #124, PR 2) — второй из трёх бот-only кусков,
  * перенесённых в Mini App (после разминки, PR 1). Пошаговость сохранена
@@ -254,6 +267,7 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
       <div>
         <p className="plan-title">Уровень зафиксирован</p>
         <p className="screen-message">{state.message}</p>
+        <BaselineQualification reps={state.reps} />
         <p className="screen-message">{WELCOME_AFTER_BASELINE}</p>
         <Button
           className="action-button"
