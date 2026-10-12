@@ -64,8 +64,9 @@ day_of_week=NULL, они сделаны под экран сессии, не п�
 
 import argparse
 import asyncio
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -623,21 +624,34 @@ async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int)
     await session.flush()
 
 
+def stepper_session_performed_at(week_start: date, now: datetime, tz: ZoneInfo) -> datetime:
+    """Момент завершённой сессии недели plan_week_stepper: полдень ПОНЕДЕЛЬНИКА недели в поясе пользователя,
+    но не позже `now` — аналитика намеренно исключает сессии из будущего (`performed_at <= now`), а в понедельник
+    до полудня «полдень этой недели» ещё впереди. Неделя `week_start` не позже локального «сегодня»
+    (текущая считается по локальной дате пользователя), поэтому результат всегда внутри своей недели:
+    на границе (понедельник 00:00 в поясе) это ровно `now` = начало недели."""
+    return min(datetime.combine(week_start, time(12), tzinfo=tz), now).astimezone(UTC)
+
+
 async def seed_plan_week_stepper(session: AsyncSession, telegram_id: int) -> None:
     """issue #258 — две недели плана (прошлая и текущая), manual PlanItem'ы со
     счётчиками: текущая — «Планка» 2×/нед (1 завершённая сессия → 1/2) и
     «Отжимания» 1×/нед (0/1); прошлая — «Планка» 1×/нед (1/1). Сессии
-    заведены напрямую (COMPLETED + SessionPlanItem), сам тест только читает."""
+    заведены напрямую (COMPLETED + SessionPlanItem), сам тест только читает.
+
+    Время: недели считаются по локальной дате пользователя (как `_plan_today` в API), а завершённая сессия
+    текущей недели не уходит в будущее (см. stepper_session_performed_at)."""
     user = await _onboard(session, telegram_id)
     await seed_exercise_library(session)
 
     now = datetime.now(UTC)
+    tz = ZoneInfo(user.timezone)
     plan = TrainingPlan(user_id=user.id, created_at=now - timedelta(days=14))
     session.add(plan)
     await session.flush()
 
     created = plan.created_at.date()
-    current_number = plan_week_number(created, now.date())
+    current_number = plan_week_number(created, now.astimezone(tz).date())
     plans = TrainingPlanRepository(session)
     previous = await plans.create_plan_week(
         training_plan_id=plan.id, week_number=current_number - 1,
@@ -666,12 +680,10 @@ async def seed_plan_week_stepper(session: AsyncSession, telegram_id: int) -> Non
     session.add_all([item_plank, item_pushups, item_prev])
     await session.flush()
 
-    def noon(week) -> datetime:
-        return datetime.combine(week.start_date, datetime.min.time(), tzinfo=UTC) + timedelta(hours=12)
-
     for item, week in ((item_plank, current), (item_prev, previous)):
         training_session = TrainingSession(
-            user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED, performed_at=noon(week),
+            user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED,
+            performed_at=stepper_session_performed_at(week.start_date, now, tz),
         )
         session.add(training_session)
         await session.flush()
