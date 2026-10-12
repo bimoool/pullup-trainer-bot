@@ -144,10 +144,13 @@ async def _cycle(session, user: User, clock, index: int, reps_by_block: list[lis
     return body, done
 
 
+# Уровень 2 через заявленные пользователем недавние 5×5 / 5×3 (те же веса, что E1RM 30 при BW 70 и шаге
+# 0,5: 0,75·100 − 70 = 5, 0,80·100 − 70 = 10): E1RM напрямую не вводится — только тестом 1RM.
+WEIGHTED_INPUTS = {"known_strength_a_kg": "5", "known_strength_b_kg": "10", "load_step_kg": "0.5"}
+
+
 async def _setup_weighted(session, user: User, program: Program) -> ProgramInclusion:
-    inclusion = await _enrol(
-        session, user, program, course_inputs={"e1rm_kg": "30", "load_step_kg": "0.5"},
-    )
+    inclusion = await _enrol(session, user, program, course_inputs=WEIGHTED_INPUTS)
     return inclusion
 
 
@@ -162,7 +165,7 @@ async def test_new_inclusion_uses_v5_6_rule_and_records_provenance(session, user
     assert (state["strength_a"]["load_kg"], state["strength_b"]["load_kg"]) == ("5", "10")
     provenance = inclusion.prescription_provenance
     assert (provenance["rule_id"], provenance["rule_version"], provenance["rule_decided"]) == ("pullups_v5_6", 1, True)
-    assert provenance["program_version"] == "pullups_v5_6" and provenance["inputs"]["e1rm_kg"] == "30"
+    assert provenance["program_version"] == "pullups_v5_6" and provenance["inputs"]["known_strength_a_kg"] == "5"
     assert provenance["assessment"]["max_reps"] == 25
 
 
@@ -272,7 +275,7 @@ async def test_a_start_writes_targets_and_full_prescription_snapshot(session, us
     course = snapshot["provenance"]["course_program"]
     assert course["program_version"] == "pullups_v5_6" and course["level"] == "weighted"
     assert [b["block_role"] for b in course["blocks"]] == ["a_volume", "a_weighted_strength"]
-    assert course["source_inputs"]["fresh_max"] == 25 and course["source_inputs"]["e1rm_kg"] == "30"
+    assert course["source_inputs"]["fresh_max"] == 25 and course["source_inputs"]["known_strength_b_kg"] == "10"
     assert snapshot["provenance"]["strategy"] == "pullups_v5_6"
     assert snapshot["provenance"]["progression_state_rev"] == inclusion.progression_state_rev
     assert snapshot["blocks"][0]["rest_after_block_seconds"] == 900
@@ -533,16 +536,163 @@ async def test_one_rep_max_ladder_and_48h_rule(session, user: User, clock):
     await _cycle(session, user, clock, 0, [[5, 5, 5, 7], [5, 5, 5, 5, 5]])
     await session.execute(update(TrainingSession).values(performed_at=datetime.now(UTC) - timedelta(hours=10)))
     await session.flush()
-    too_soon = await v2_post(session, user.telegram_id, path, {"attempts": [{"load_kg": "0", "reps": 5, "success": True}]})
+    too_soon = await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})
     assert too_soon.status_code == 409 and too_soon.json()["detail"]["code"] == "one_rep_max_too_soon"
-    # Начало лестницы проверяет тот же день/48 ч заранее (пользователь не проходит тест ради отказа в конце);
-    # следующий подход уже начатого теста — без повторной проверки.
     ladder_start = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": []})
     assert ladder_start.status_code == 409 and ladder_start.json()["detail"]["code"] == "one_rep_max_too_soon"
-    ladder_next = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": [
-        {"load_kg": "0", "reps": 5, "success": True},
+
+
+# BW 80, шаг 1,25: BW×5 → +7,5×3 → +15×1 → после обычного +3,75; неудача — тест окончен, результат 15.
+VALID_TEST = [
+    {"load_kg": "0", "reps": 5, "success": True}, {"load_kg": "7.5", "reps": 3, "success": True},
+    {"load_kg": "15", "reps": 1, "success": True, "speed": "normal"}, {"load_kg": "18.75", "reps": 1, "success": False},
+]
+
+
+async def _transition_80(session, user: User) -> ProgramInclusion:
+    program = await _pullups(session)
+    return await _enrol(session, user, program, fresh_max=12, weight="80", course_inputs={"load_step_kg": "1.25"})
+
+
+async def _state_of(session, inclusion: ProgramInclusion) -> dict:
+    await session.refresh(inclusion)
+    return dict(inclusion.progression_state)
+
+
+async def test_direct_e1rm_input_is_rejected_without_state_change(session, user: User, clock):
+    """review #305: E1RM — только результат стандартизированного теста; общий ввод его не принимает."""
+    inclusion = await _transition_80(session, user)
+    before = await _state_of(session, inclusion)
+    put = await v2_put(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course/inputs", {
+        "e1rm_kg": "40", "load_step_kg": "2.5",
+    })
+    assert put.status_code == 422, put.text
+    assert await _state_of(session, inclusion) == before  # весь запрос отклонён: шаг веса тоже не записан
+    state = await v2_get(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course")
+    assert state.json()["pending_inputs"] == ["one_rep_max"]
+
+    other = await _enrol_raw(session, user, course_inputs={"e1rm_kg": "40", "load_step_kg": "1.25"})
+    assert other.status_code == 422, other.text  # и при подключении курса
+
+
+async def _enrol_raw(session, user: User, **payload):
+    program = await _pullups(session)
+    return await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {"program_id": program.id, **payload})
+
+
+@pytest.mark.parametrize("attempts", [
+    pytest.param([
+        {"load_kg": "0", "reps": 5, "success": True}, {"load_kg": "7.5", "reps": 3, "success": True},
+        {"load_kg": "40", "reps": 1, "success": True, "speed": "fast"}, {"load_kg": "47.5", "reps": 1, "success": False},
+    ], id="off-ladder-record"),
+    pytest.param([
+        {"load_kg": "0", "reps": 5, "success": True}, {"load_kg": "7.5", "reps": 3, "success": False},
+        {"load_kg": "15", "reps": 1, "success": True, "speed": "fast"},
+    ], id="failure-then-success"),
+    pytest.param([*VALID_TEST, {"load_kg": "18.75", "reps": 1, "success": True, "speed": "slow"}], id="success-after-terminal-failure"),
+    pytest.param([{"load_kg": "60", "reps": 1, "success": True, "speed": "fast"}], id="single-arbitrary-success"),
+    pytest.param([{"load_kg": "0", "reps": 5, "success": True}], id="unfinished-test"),
+])
+async def test_invalid_one_rep_max_test_is_rejected_whole(session, user: User, clock, attempts):
+    inclusion = await _transition_80(session, user)
+    before = await _state_of(session, inclusion)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    recorded = await v2_post(session, user.telegram_id, path, {"attempts": attempts})
+    assert recorded.status_code == 422, recorded.text
+    assert recorded.json()["detail"]["code"] == "one_rep_max_invalid"
+    after = await _state_of(session, inclusion)
+    assert after == before and after["one_rm_tests"] == [] and after["inputs"]["e1rm_kg"] is None
+
+
+async def test_next_set_rejects_off_ladder_or_post_failure_attempts(session, user: User, clock):
+    inclusion = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max/next-set"
+    off = await v2_post(session, user.telegram_id, path, {"attempts": [{"load_kg": "30", "reps": 5, "success": True}]})
+    assert off.status_code == 422 and off.json()["detail"]["code"] == "one_rep_max_invalid"
+    after_fail = await v2_post(session, user.telegram_id, path, {"attempts": [
+        {"load_kg": "0", "reps": 5, "success": False}, {"load_kg": "7.5", "reps": 3, "success": True},
     ]})
-    assert ladder_next.status_code == 200 and ladder_next.json()["next_set"]["set_number"] == 2
+    assert after_fail.status_code == 422
+    ended = await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})
+    assert ended.status_code == 200 and ended.json()["next_set"] is None
+
+
+async def test_forged_in_progress_test_does_not_bypass_48h(session, user: User, clock):
+    """Клиентский список попыток не делает тест «уже идущим»: 48 ч проверяются на каждом шаге по серверному
+    времени, и запись оконченного теста — тоже."""
+    inclusion = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    assert (await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})).status_code == 200
+    await _cycle(session, user, clock, 0, [[5, 5, 5, 7], [5, 5, 5, 5, 5]])
+    await session.execute(update(TrainingSession).values(performed_at=datetime.now(UTC) - timedelta(hours=10)))
+    await session.flush()
+    before = await _state_of(session, inclusion)
+    forged = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": VALID_TEST[:2]})
+    assert forged.status_code == 409 and forged.json()["detail"]["code"] == "one_rep_max_too_soon"
+    recorded = await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})
+    assert recorded.status_code == 409 and recorded.json()["detail"]["code"] == "one_rep_max_too_soon"
+    assert await _state_of(session, inclusion) == before
+
+
+async def test_eighth_attempt_test_played_through_server_ladder(session, user: User, clock):
+    inclusion = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    attempts: list[dict] = []
+    while True:
+        nxt = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": attempts})
+        assert nxt.status_code == 200, nxt.text
+        step = nxt.json()["next_set"]
+        if step is None:
+            break
+        attempts.append({
+            "load_kg": step["load_kg"], "reps": step["reps"], "success": True,
+            **({"speed": "fast"} if step["reps"] == 1 else {}),
+        })
+    assert [a["load_kg"] for a in attempts] == ["0", "7.5", "15", "22.5", "30", "37.5", "45", "52.5"]
+    recorded = await v2_post(session, user.telegram_id, path, {"attempts": attempts})
+    assert recorded.status_code == 200, recorded.text
+    assert recorded.json()["one_rep_max"] == {"e1rm_kg": "52.5", "conservative": True, "sets_used": 8}
+    state = await _state_of(session, inclusion)
+    assert state["inputs"]["e1rm_kg"] == "52.5" and len(state["one_rm_tests"]) == 1
+
+
+async def test_one_rep_max_not_applicable_to_assisted_level(session, user: User, clock):
+    inclusion = await _enrol(session, user, await _pullups(session), fresh_max=3, course_inputs={"load_step_kg": "1.25"})
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    for url, body in ((f"{path}/next-set", {"attempts": []}), (path, {"attempts": VALID_TEST})):
+        response = await v2_post(session, user.telegram_id, url, body)
+        assert response.status_code == 409 and response.json()["detail"]["code"] == "one_rep_max_not_applicable"
+
+
+# --- §9: пауза прибавок до проверки восстановления -------------------------------------------------------
+
+
+async def test_recovery_check_does_not_block_start_holds_increases_and_confirmation_clears(session, user: User, clock):
+    inclusion = await _setup_weighted(session, user, await _pullups(session))
+    # Пауза §9 (два занятия подряд хуже по обоим блокам — сама серия покрыта доменным тестом).
+    paused = {**inclusion.progression_state, "recovery_check_required": True, "both_deteriorated_streak": 2}
+    inclusion.progression_state = paused
+    await session.flush()
+
+    dashboard = (await v2_get(session, user.telegram_id, "/api/v2/dashboard/status")).json()
+    assert dashboard["status"] == "ready" and dashboard["course_recovery_check_required"] is True
+    course = (await v2_get(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course")).json()
+    assert course["pending_inputs"] == [] and course["recovery_check_required"] is True
+
+    _a, done = await _cycle(session, user, clock, 0, [[17, 17, 17, 19], [5, 5, 5, 5, 5]])  # старт разрешён
+    volume, strength = done["course_progression"]["blocks"]
+    assert (volume["decision"], volume["reason"]) == ("repeat", "recovery_check_required")
+    assert (strength["decision"], strength["reason"]) == ("hold", "recovery_check_required")
+    state = await _state_of(session, inclusion)
+    assert state["volume_a"]["targets"] == [17, 17, 17, 17] and state["strength_a"]["load_kg"] == "5"
+    assert state["recovery_check_required"] is True
+
+    put = await v2_put(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course/inputs", {
+        "clear_recovery_check": True,
+    })
+    assert put.status_code == 200 and put.json()["recovery_check_required"] is False
+    dashboard = (await v2_get(session, user.telegram_id, "/api/v2/dashboard/status")).json()
+    assert dashboard["course_recovery_check_required"] is False
 
 
 async def test_course_endpoints_404_for_legacy_inclusion(session, user: User, clock):

@@ -4,11 +4,17 @@
 
 * ``GET  /api/v2/program-inclusions/{id}/course`` — версия, уровень, роль следующего занятия, рецепт
   следующего занятия (или список недостающих входов);
-* ``PUT  /api/v2/program-inclusions/{id}/course/inputs`` — входы §3 (R, резины, E1RM, шаг веса,
-  подтверждённые результаты, выбор следующей резины, снятие паузы §9). Только вперёд;
+* ``PUT  /api/v2/program-inclusions/{id}/course/inputs`` — входы §3 (R, резины, шаг веса, заявленные
+  пользователем 5×5/5×3, выбор следующей резины, снятие паузы §9). Только вперёд. E1RM здесь НЕ
+  принимается (422): он — только результат теста;
 * ``POST /api/v2/program-inclusions/{id}/course/one-rep-max/next-set`` — следующий подход лестницы 1RM;
-* ``POST /api/v2/program-inclusions/{id}/course/one-rep-max`` — записать тест 1RM (не раньше 48 ч после
-  тяжёлой тяговой работы).
+* ``POST /api/v2/program-inclusions/{id}/course/one-rep-max`` — записать оконченный тест 1RM.
+
+Оба эндпоинта теста на КАЖДОМ запросе проверяют: тест применим (сила с весом, иначе 409
+``one_rep_max_not_applicable``), есть BW и шаг (409 ``course_setup_required``), ≥ 48 ч после тяжёлой
+тяговой работы по серверному времени (409 ``one_rep_max_too_soon``) и что присланные попытки — ровно
+лестница §10 (422 ``one_rep_max_invalid``; запись — только оконченный тест). Клиентский список попыток
+поэтому не даёт ни «уже идущего теста» в обход 48 ч, ни произвольного результата.
 
 Инклюзия устаревшей версии программы (без program_version) здесь — 404: её не переводим в V5.6.
 """
@@ -28,13 +34,17 @@ from app.domain.pullups_v5 import (
     PROGRAM_VERSION,
     AttemptSpeed,
     OneRmAttempt,
+    OneRmTestError,
     PrescriptionPending,
     V5State,
     V5StateError,
     next_one_rm_set,
+    one_rm_applicable,
+    one_rm_missing_inputs,
     one_rm_rest_ok,
     pending_inputs,
     prescribe_session,
+    validate_one_rm_attempts,
 )
 from app.services.course_v5 import (
     OneRepMaxTooSoonError,
@@ -125,6 +135,21 @@ async def _require_one_rep_max_day(session: AsyncSession, user_id: int) -> None:
         raise _too_soon()
 
 
+def _require_one_rep_max_eligible(state: V5State) -> None:
+    if not one_rm_applicable(state):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            {"code": "one_rep_max_not_applicable", "message": "Тест 1RM нужен только силе с весом."},
+        )
+    missing = one_rm_missing_inputs(state)
+    if missing:
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "course_setup_required", "missing": [m.value for m in missing]})
+
+
+def _invalid_test(exc: OneRmTestError) -> HTTPException:
+    return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "one_rep_max_invalid", "message": str(exc)})
+
+
 @router_v2_course.get("/{inclusion_id}/course", response_model=CourseStateResponse)
 async def get_course_state(
     inclusion_id: int,
@@ -163,21 +188,19 @@ async def one_rep_max_next_set(
 ) -> OneRmNextSetResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
     state = v5_state(inclusion)
-    if not body.attempts:
-        # Начало лестницы — та же проверка «отдельный свежий день, ≥ 48 ч после тяжёлой тяговой работы»
-        # (§8.3), что у записи теста: пользователь не проходит тест, чтобы получить отказ в конце.
-        await _require_one_rep_max_day(session, user.id)
-    if state.inputs.body_mass_kg is None or state.inputs.load_step_kg is None:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            {"code": "course_setup_required", "missing": [
-                name for name, value in (("body_mass", state.inputs.body_mass_kg), ("load_step", state.inputs.load_step_kg))
-                if value is None
-            ]},
+    _require_one_rep_max_eligible(state)
+    # «Отдельный свежий день, ≥ 48 ч после тяжёлой тяговой работы» (§10) — на КАЖДОМ шаге по серверному
+    # времени, а не только на пустом списке: присланные попытки не делают тест «уже идущим». Настоящий
+    # тест это не ломает: время только растёт, а новая тяжёлая работа и так делает тест недействительным.
+    await _require_one_rep_max_day(session, user.id)
+    attempts = [a.to_domain() for a in body.attempts]
+    try:
+        validate_one_rm_attempts(
+            attempts, body_mass=state.inputs.body_mass_kg, load_step=state.inputs.load_step_kg, complete=False,
         )
-    nxt = next_one_rm_set(
-        [a.to_domain() for a in body.attempts], body_mass=state.inputs.body_mass_kg, load_step=state.inputs.load_step_kg,
-    )
+    except OneRmTestError as exc:
+        raise _invalid_test(exc) from exc
+    nxt = next_one_rm_set(attempts, body_mass=state.inputs.body_mass_kg, load_step=state.inputs.load_step_kg)
     return OneRmNextSetResponse(
         next_set=None if nxt is None else {
             "set_number": nxt.set_number, "load_kg": format(nxt.load_kg.normalize(), "f"), "reps": nxt.reps,
@@ -193,6 +216,7 @@ async def record_course_one_rep_max(
     session: AsyncSession = Depends(get_session),
 ) -> CourseStateResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
+    _require_one_rep_max_eligible(v5_state(inclusion))
     last_heavy = await MainSpacingService(session).last_main_start_at(user.id)
     try:
         state, result = await record_one_rep_max(
@@ -201,6 +225,8 @@ async def record_course_one_rep_max(
         )
     except OneRepMaxTooSoonError as exc:
         raise _too_soon() from exc
+    except OneRmTestError as exc:
+        raise _invalid_test(exc) from exc
     await session.commit()
     return _course_response(state, one_rep_max={
         "e1rm_kg": format(result.e1rm_kg.normalize(), "f") if result.e1rm_kg is not None else None,

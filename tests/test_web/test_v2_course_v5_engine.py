@@ -36,7 +36,8 @@ VALID = [
 ]
 
 LIVE = "/api/v2/sessions/live"
-WEIGHTED_INPUTS = {"e1rm_kg": "30", "load_step_kg": "0.5"}
+# E1RM напрямую не вводится (только тестом 1RM) — заявленные 5×5 / 5×3 дают те же веса 5 / 10 кг.
+WEIGHTED_INPUTS = {"known_strength_a_kg": "5", "known_strength_b_kg": "10", "load_step_kg": "0.5"}
 
 
 async def _start(session, user, plan_item_id: int) -> dict:

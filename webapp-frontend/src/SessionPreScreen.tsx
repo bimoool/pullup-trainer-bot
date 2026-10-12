@@ -1,4 +1,4 @@
-import { type AssistancePending, CourseSetupForm } from "./CourseSetupForm";
+import { type AssistancePending, CourseSetupForm, RecoveryCheckNotice } from "./CourseSetupForm";
 import { describePendingInputs } from "./courseV5";
 import { Button, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
@@ -115,8 +115,15 @@ type ScreenState =
   | { phase: "blocked"; title?: string; availableFrom?: string | null }
   | { phase: "subscription_required"; title?: string }
   | { phase: "needs_assessment"; title?: string }
-  | { phase: "course_setup"; title?: string; missing: string[]; inclusionId: number | null; assistancePending: AssistancePending[] }
-  | { phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[] }
+  | {
+    phase: "course_setup"; title?: string; missing: string[]; inclusionId: number | null; assistancePending: AssistancePending[];
+    recoveryCheck: boolean;
+  }
+  | {
+    phase: "ready_step"; blockA: DashboardBlockResponse; blockB: DashboardBlockResponse; programName: string | null; planItemIds: number[];
+    /** V5.6 §9: инклюзия, ждущая проверки восстановления (прибавки на паузе; старт разрешён), иначе null. */
+    recoveryCheckInclusionId: number | null;
+  }
   | { phase: "ready_generic"; programName: string; planItemIds: number[] }
   | { phase: "ready_manual"; title: string; planItemIds: number[] }
   | { phase: "starting"; planItemIds: number[]; title?: string };
@@ -289,6 +296,7 @@ export function SessionPreScreen({
           setState({
             phase: "ready_step", blockA: data.block_a, blockB: data.block_b, programName: data.program_name,
             planItemIds: explicitPlanItemIds ?? planItemIdsForInclusion(plan, inclusion),
+            recoveryCheckInclusionId: data.course_recovery_check_required ? data.program_inclusion_id ?? null : null,
           });
         } else if (data.status === "too_early") {
           setState({ phase: "blocked", title: title ?? data.program_name ?? undefined, availableFrom: data.available_from ?? null });
@@ -297,6 +305,7 @@ export function SessionPreScreen({
             phase: "course_setup", title: title ?? data.program_name ?? undefined,
             missing: data.course_pending_inputs ?? [], inclusionId: data.program_inclusion_id ?? null,
             assistancePending: (data.course_assistance_pending ?? []) as AssistancePending[],
+            recoveryCheck: data.course_recovery_check_required === true,
           });
         } else if (data.status === "gap_retest_required") {
           setState({ phase: "needs_assessment", title: title ?? data.program_name ?? undefined });
@@ -503,6 +512,11 @@ export function SessionPreScreen({
             onSaved={() => setReloadKey((key) => key + 1)}
           />
         )}
+        {state.inclusionId !== null && state.recoveryCheck && (
+          <RecoveryCheckNotice
+            initDataRaw={initDataRaw} inclusionId={state.inclusionId} onSaved={() => setReloadKey((key) => key + 1)}
+          />
+        )}
       </div>
     );
   }
@@ -590,6 +604,12 @@ export function SessionPreScreen({
         <>
           <BlockTargetCard index={1} block={step.blockA} />
           <BlockTargetCard index={2} block={step.blockB} />
+          {step.recoveryCheckInclusionId !== null && (
+            <RecoveryCheckNotice
+              initDataRaw={initDataRaw} inclusionId={step.recoveryCheckInclusionId}
+              onSaved={() => setReloadKey((key) => key + 1)}
+            />
+          )}
         </>
       )}
       <div className="pre-transport">

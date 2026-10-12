@@ -113,11 +113,10 @@ const PENDING_TEXT: Record<string, string> = {
   volume_assistance: "объёмная резина",
   strength_assistance: "помощь в силовом блоке",
   body_mass: "масса тела",
-  one_rep_max: "тест 1RM (или недавний результат 5×5 / 5×3)",
+  one_rep_max: "тест 1RM (или ваш недавний результат 5×5 / 5×3)",
   load_step: "шаг дополнительного веса",
   volume_reference: "объём первой тренировки A",
   assistance_confirmation: "подтверждение следующей резины (модель, цвет, крепление, положение)",
-  recovery_check: "проверка восстановления",
 };
 
 export function describePendingInputs(missing: string[]): string {
@@ -130,10 +129,10 @@ export const COURSE_INPUT_FIELDS: Record<string, { key: string; label: string; u
   volume_capacity: [{ key: "volume_capacity", label: "Строгих повторений с объёмной резиной (≈8–12)", unit: "повт." }],
   body_mass: [{ key: "body_mass_kg", label: "Масса тела", unit: "кг" }],
   one_rep_max: [
-    { key: "e1rm_kg", label: "1RM: дополнительный вес на одно строгое повторение", unit: "кг" },
-    // V5.6 §8: недавний подтверждённый результат в том же стандарте и месте, после объёмного блока, сильнее 1RM.
-    { key: "known_strength_a_kg", label: "Или: недавно закрытые 5×5 (сила A) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
-    { key: "known_strength_b_kg", label: "Или: недавно закрытые 5×3 (сила B) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
+    // E1RM вручную не вводится: он — только результат теста 1RM в приложении (OneRepMaxTest, сервер проверяет
+    // лестницу). Альтернатива — недавний результат 5×5 / 5×3 со слов пользователя (V5.6 §8; сервер его не сверяет).
+    { key: "known_strength_a_kg", label: "Или: вы недавно закрыли 5×5 (сила A) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
+    { key: "known_strength_b_kg", label: "Или: вы недавно закрыли 5×3 (сила B) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
   ],
   load_step: [{ key: "load_step_kg", label: "Шаг дополнительного веса (самый маленький диск)", unit: "кг" }],
 };
