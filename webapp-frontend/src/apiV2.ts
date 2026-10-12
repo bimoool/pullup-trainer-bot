@@ -121,6 +121,8 @@ export interface DashboardStatusResponse {
   course_pending_inputs?: string[] | null;
   /** Смены помощи, ждущие подтверждения полной записи резины. */
   course_assistance_pending?: { block: string; intent: string; proposed: { name?: string | null } | null }[] | null;
+  /** §9: новые прибавки на паузе до проверки восстановления; старт не блокируется. */
+  course_recovery_check_required?: boolean | null;
 }
 
 async function apiV2Get<T>(path: string, initDataRaw: string): Promise<T> {

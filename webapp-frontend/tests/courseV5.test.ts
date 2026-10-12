@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  assistanceConfirmations, blockChecks, courseInputsPayload, courseTargetText, describeCourseOutcome,
+  assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseInputsPayload, courseTargetText, describeCourseOutcome,
   describePendingInputs,
 } from "../src/courseV5.ts";
 
@@ -38,13 +38,13 @@ test("describeCourseOutcome: типизированные итоги блоко�
 });
 
 test("describePendingInputs", () => {
-  assert.equal(describePendingInputs(["one_rep_max", "load_step"]), "тест 1RM (или недавний результат 5×5 / 5×3), шаг дополнительного веса");
+  assert.equal(describePendingInputs(["one_rep_max", "load_step"]), "тест 1RM (или ваш недавний результат 5×5 / 5×3), шаг дополнительного веса");
 });
 
 test("courseInputsPayload: только заполненное, резина однозначно, без помощи — явно", () => {
   const empty = { bodyweight: false, name: "", colour: "", attachment: "", body_position: "" };
-  assert.deepEqual(courseInputsPayload({ e1rm_kg: "20", load_step_kg: "1,25", fresh_max: "" }, {}, false), {
-    e1rm_kg: "20", load_step_kg: "1.25",
+  assert.deepEqual(courseInputsPayload({ known_strength_a_kg: "20", load_step_kg: "1,25", fresh_max: "" }, {}, false), {
+    known_strength_a_kg: "20", load_step_kg: "1.25",
   });
   assert.deepEqual(
     courseInputsPayload(
@@ -80,4 +80,10 @@ test("assistanceConfirmations: только полные записи или «�
       { block: "strength_b", setup: { kind: "bodyweight" } },
     ],
   );
+});
+
+test("1RM вручную не вводится: только тест в приложении или заявленные 5×5 / 5×3", () => {
+  const keys = Object.values(COURSE_INPUT_FIELDS).flat().map((field) => field.key);
+  assert.ok(!keys.includes("e1rm_kg"));
+  assert.deepEqual(COURSE_INPUT_FIELDS.one_rep_max.map((field) => field.key), ["known_strength_a_kg", "known_strength_b_kg"]);
 });

@@ -19,6 +19,7 @@ from app.domain.pullups_v5 import (
     BVolumeStage,
     EntryInputs,
     OneRmAttempt,
+    OneRmTestError,
     PendingInput,
     PrescriptionPending,
     ProgramLevel,
@@ -40,11 +41,15 @@ from app.domain.pullups_v5 import (
     is_v5_state,
     load_increment,
     next_one_rm_set,
+    one_rm_missing_inputs,
     one_rm_rest_ok,
     one_rm_result,
+    pending_inputs,
     prescribe_session,
     program_version_of,
+    record_one_rm_test,
     step_assistance,
+    validate_one_rm_attempts,
 )
 
 D = Decimal
@@ -671,6 +676,70 @@ def test_one_rm_eight_sets_max_and_conservative_eighth():
     assert result.e1rm_kg == D("7") and result.conservative is True
 
 
+# --- Тест 1RM: серверная проверка лестницы (review #305) -------------------------------------------------
+
+BW80, STEP125 = D("80"), D("1.25")
+
+
+def _ok(load: str, reps: int, speed: AttemptSpeed | None = None) -> OneRmAttempt:
+    return OneRmAttempt(D(load), reps, True, speed)
+
+
+def _fail(load: str, reps: int) -> OneRmAttempt:
+    return OneRmAttempt(D(load), reps, False)
+
+
+# BW 80, шаг 1,25: BW×5 → +7,5×3 → +15×1 → после обычного +3,75 (5% BW = 4 → вниз до шага).
+VALID_TERMINAL_FAILURE = [
+    _ok("0", 5), _ok("7.5", 3), _ok("15", 1, AttemptSpeed.NORMAL), _fail("18.75", 1),
+]
+
+
+def _transition_80() -> V5State:
+    return initial_state(EntryInputs(fresh_max=12, body_mass_kg=BW80, load_step_kg=STEP125))
+
+
+def test_one_rm_validation_accepts_exact_ladder_with_terminal_failure_or_eighth_set():
+    validate_one_rm_attempts(VALID_TERMINAL_FAILURE, body_mass=BW80, load_step=STEP125, complete=True)
+    # Восемь подходов: после быстрого — +7,5 (10% BW = 8 → вниз до шага); восьмой успешный быстрый — консервативно.
+    eight = [_ok("0", 5), _ok("7.5", 3)] + [_ok(str(15 + 7.5 * i), 1, AttemptSpeed.FAST) for i in range(6)]
+    validate_one_rm_attempts(eight, body_mass=BW80, load_step=STEP125, complete=True)
+    state, result = record_one_rm_test(_transition_80(), eight, performed_at="2026-10-10T10:00:00+00:00")
+    assert (result.e1rm_kg, result.conservative, result.sets_used) == (D("52.5"), True, 8)
+    assert state.inputs.e1rm_kg == D("52.5") and len(state.one_rm_tests) == 1
+    assert state.one_rm_tests[0]["body_mass_kg"] == "80" and state.one_rm_tests[0]["load_step_kg"] == "1.25"
+    # Неудача на первом подходе — оконченный тест без результата.
+    state, result = record_one_rm_test(_transition_80(), [_fail("0", 5)], performed_at="2026-10-10T10:00:00+00:00")
+    assert result.e1rm_kg is None and state.inputs.e1rm_kg is None and len(state.one_rm_tests) == 1
+
+
+@pytest.mark.parametrize("attempts", [
+    pytest.param([_ok("0", 5), _ok("7.5", 3), _ok("40", 1, AttemptSpeed.FAST), _fail("47.5", 1)], id="off-ladder-load"),
+    pytest.param([_ok("0", 5), _ok("7.5", 5), _ok("15", 1, AttemptSpeed.NORMAL), _fail("18.75", 1)], id="wrong-reps"),
+    pytest.param([_ok("0", 5), _fail("7.5", 3), _ok("15", 1, AttemptSpeed.FAST)], id="success-after-failure"),
+    pytest.param([*VALID_TERMINAL_FAILURE, _ok("18.75", 1, AttemptSpeed.SLOW)], id="attempt-after-terminal-failure"),
+    pytest.param([_ok("50", 1, AttemptSpeed.FAST)], id="single-arbitrary-success"),
+    pytest.param([_ok("0", 5)], id="single-valid-success-not-finished"),
+    pytest.param([_ok("0", 5), _ok("7.5", 3), _ok("15", 1, AttemptSpeed.FAST)], id="stopped-mid-ladder"),
+    pytest.param([_ok("0", 5), _ok("7.5", 3), _ok("15", 1), _fail("17.5", 1)], id="single-success-without-speed"),
+    pytest.param([], id="empty"),
+])
+def test_one_rm_record_rejects_whole_invalid_test_without_state_change(attempts):
+    state = _transition_80()
+    with pytest.raises(OneRmTestError):
+        record_one_rm_test(state, attempts, performed_at="2026-10-10T10:00:00+00:00")
+    assert state.one_rm_tests == () and state.inputs.e1rm_kg is None  # чистая функция: ничего не записано
+
+
+def test_one_rm_record_requires_weighted_strength_and_ladder_inputs():
+    with pytest.raises(OneRmTestError):  # уровень 1 — силе с весом нечего применять
+        record_one_rm_test(_assisted(body_mass_kg=BW80, load_step_kg=STEP125), VALID_TERMINAL_FAILURE, performed_at="x")
+    no_step = initial_state(EntryInputs(fresh_max=12, body_mass_kg=BW80))
+    assert one_rm_missing_inputs(no_step) == (PendingInput.LOAD_STEP,)
+    with pytest.raises(OneRmTestError):
+        record_one_rm_test(no_step, VALID_TERMINAL_FAILURE, performed_at="x")
+
+
 def test_one_rm_preconditions():
     assert one_rm_rest_ok(hours_since_heavy_pulling=47) is False
     assert one_rm_rest_ok(hours_since_heavy_pulling=48) is True
@@ -694,8 +763,28 @@ def test_two_sessions_with_both_blocks_worse_pause_increases_until_recovery_chec
     b = _session(state)
     b2 = _run(state, (b.volume.sets[0].target_reps,) * (len(b.volume.sets) - 2) + (1,), (3, 3, 3, 2, 2))
     assert b2.state.recovery_check_required is True
-    assert PendingInput.RECOVERY_CHECK in prescribe_session(b2.state).missing
-    assert prescribe_session(clear_recovery_check(b2.state)).__class__ is SessionPrescription
+    # Пауза — не вход: занятие назначается с удержанной нагрузкой (старт не блокируется).
+    paused = b2.state
+    held = _session(paused)
+    assert pending_inputs(paused) == ()
+    assert [s.target_reps for s in held.volume.sets] == list(paused.volume_a.targets)
+    assert held.strength.external_load_kg == paused.strength_a.load_kg
+
+    # Полностью закрытое занятие во время паузы: прибавки не назначаются, нагрузка удерживается.
+    perfect_volume = tuple(s.target_reps for s in held.volume.sets[:-1]) + (held.volume.sets[-1].target_reps + 2,)
+    during = _run(paused, perfect_volume, (5, 5, 5, 5, 5))
+    assert during.volume.reason == "recovery_check_required" and during.strength.reason == "recovery_check_required"
+    assert during.state.volume_a.targets == paused.volume_a.targets
+    assert during.state.strength_a.load_kg == paused.strength_a.load_kg
+    assert during.state.recovery_check_required is True
+
+    # Подтверждение проверки снимает паузу: то же закрытое занятие снова даёт прибавки.
+    cleared = clear_recovery_check(paused)
+    assert cleared.recovery_check_required is False and cleared.both_deteriorated_streak == 0
+    after = _run(cleared, perfect_volume, (5, 5, 5, 5, 5))
+    assert after.strength.decision == "increase_load"
+    assert after.state.strength_a.load_kg > paused.strength_a.load_kg
+    assert sum(after.state.volume_a.targets) == sum(paused.volume_a.targets) + 1
 
 
 # --- Только вперёд ------------------------------------------------------------------------------------

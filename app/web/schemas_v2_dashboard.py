@@ -80,3 +80,6 @@ class DashboardStatusResponse(BaseModel):
     course_pending_inputs: list[str] | None = None
     # Смены помощи, ждущие подтверждения полной записи резины: [{block, intent, proposed}].
     course_assistance_pending: list[dict] | None = None
+    # §9: новые прибавки на паузе до проверки восстановления — старт НЕ блокирует (не pending input);
+    # фронт показывает подтверждение (PUT …/course/inputs clear_recovery_check).
+    course_recovery_check_required: bool | None = None

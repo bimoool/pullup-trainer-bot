@@ -2,8 +2,9 @@
  * issue #305 (V5.6): ввод недостающих входов программы «Подтягивания» перед основной тренировкой
  * (PUT …/program-inclusions/{id}/course/inputs через apiV2.putCourseInputs). Показываются только поля из списка недостающих;
  * пустое не отправляется — сервер ничего не угадывает. Тест 1RM ведётся по шагам лестницы V5.6 §10
- * (OneRepMaxTest: подход за подходом с сервера, стоп после первой неудачи, ≤ 8 подходов, 48 ч); недавний
- * подтверждённый 5×5 / 5×3 — альтернатива тесту (сильнее стартовой формулы, §9).
+ * (OneRepMaxTest: подход за подходом с сервера, стоп после первой неудачи, ≤ 8 подходов, 48 ч); E1RM вручную
+ * не вводится. Недавний 5×5 / 5×3 со слов пользователя — альтернатива тесту (§9; сервер его не сверяет).
+ * Пауза прибавок §9 — не вход: RecoveryCheckNotice показывается рядом со стартом и его не блокирует.
  */
 import { Button, Input, List, Section } from "@telegram-apps/telegram-ui";
 import { useState } from "react";
@@ -182,7 +183,6 @@ export function CourseSetupForm(
   const [numbers, setNumbers] = useState<Record<string, string>>({});
   const [volumeBand, setVolumeBand] = useState<BandFields>(EMPTY_BAND);
   const [strengthBand, setStrengthBand] = useState<BandFields>(EMPTY_BAND);
-  const [recovery, setRecovery] = useState(false);
   // Смена помощи ждёт подтверждения ПОЛНОЙ записи резины; предложение по личному порядку — только название.
   const [pendingBands, setPendingBands] = useState<Record<string, BandFields>>(() => Object.fromEntries(
     assistancePending.map((entry) => [entry.block, { ...EMPTY_BAND, name: entry.proposed?.name ?? "" }]),
@@ -201,7 +201,7 @@ export function CourseSetupForm(
           volume: missing.includes("volume_assistance") ? volumeBand : undefined,
           strength: missing.includes("strength_assistance") ? strengthBand : undefined,
         },
-        recovery,
+        false,
       );
       const confirmations = assistanceConfirmations(
         assistancePending.map((entry) => ({ block: entry.block, fields: pendingBands[entry.block] ?? EMPTY_BAND })),
@@ -246,14 +246,6 @@ export function CourseSetupForm(
       {missing.includes("strength_assistance") && (
         <BandSection title="Помощь в силовом блоке" value={strengthBand} onChange={setStrengthBand} allowBodyweight testId="course-strength-band" />
       )}
-      {missing.includes("recovery_check") && (
-        <Section header="Два занятия подряд хуже по обоим блокам">
-          <label className="live-hint">
-            <input type="checkbox" checked={recovery} onChange={(e) => setRecovery(e.target.checked)} />{" "}
-            Восстановление и внешняя тяговая нагрузка проверены
-          </label>
-        </Section>
-      )}
       {assistancePending.map((entry) => (
         <BandSection
           key={entry.block}
@@ -271,5 +263,42 @@ export function CourseSetupForm(
         </Button>
       </div>
     </List>
+  );
+}
+
+/**
+ * V5.6 §9: два занятия подряд хуже по обоим блокам — новые прибавки на паузе до проверки восстановления и
+ * внешней тяговой нагрузки. Тренироваться можно (нагрузка удерживается); подтверждение снимает паузу.
+ */
+export function RecoveryCheckNotice(
+  { initDataRaw, inclusionId, onSaved }: { initDataRaw: string; inclusionId: number; onSaved: () => void },
+) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await putCourseInputs(initDataRaw, inclusionId, courseInputsPayload({}, {}, true));
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section header="Два занятия подряд хуже по обоим блокам" data-testid="course-recovery-check">
+      <p className="live-hint">
+        Новые прибавки на паузе, пока вы не проверите восстановление и внешнюю тяговую нагрузку. Тренироваться
+        можно — нагрузка останется прежней.
+      </p>
+      <Button size="m" stretched mode="bezeled" disabled={busy} data-testid="course-recovery-confirm" onClick={() => void confirm()}>
+        Восстановление и внешняя нагрузка проверены
+      </Button>
+      {error !== null && <p className="live-hint" role="alert">{error}</p>}
+    </Section>
   );
 }

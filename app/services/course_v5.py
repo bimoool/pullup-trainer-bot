@@ -10,8 +10,9 @@
 * ``advance_from_session`` — шаг прогрессии по завершённому занятию: вход — рецепт ИЗ СНИМКА сессии и её
   факт. Только вперёд: прошлые сессии, их снимки и PlanItem не пересчитываются; правка истории (#307)
   меняет факт, но не состояние.
-* ``update_inputs`` / ``record_one_rep_max`` — ввод недостающих входов (R, резины, E1RM, шаг веса,
-  выбор следующей резины, снятие паузы §9) — только вперёд.
+* ``update_inputs`` / ``record_one_rep_max`` — ввод недостающих входов (R, резины, шаг веса, выбор
+  следующей резины, снятие паузы §9) и запись теста 1RM — только вперёд. E1RM приходит ТОЛЬКО из
+  оконченного теста по лестнице §10, проверенного сервером; общий ввод его не принимает.
 """
 
 from dataclasses import dataclass
@@ -219,6 +220,8 @@ async def record_one_rep_max(
     hours = (performed_at - last_heavy_pulling_at).total_seconds() / 3600 if last_heavy_pulling_at is not None else None
     if not one_rm_rest_ok(hours_since_heavy_pulling=hours):
         raise OneRepMaxTooSoonError()
+    # Лестница, повторения, скорости, стоп и «тест окончен» проверяются целиком ДО записи: некорректный
+    # тест — OneRmTestError, состояние и история тестов не меняются.
     state, result = record_one_rm_test(v5_state(inclusion), attempts, performed_at=performed_at.isoformat())
     _store(inclusion, state)
     await session.flush()

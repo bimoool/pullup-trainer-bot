@@ -153,13 +153,15 @@ class PendingInput(StrEnum):
     VOLUME_ASSISTANCE = "volume_assistance"  # объёмная резина уровня 1
     STRENGTH_ASSISTANCE = "strength_assistance"  # помощь в силовом блоке уровня 1 (или явно «без помощи»)
     BODY_MASS = "body_mass"  # BW
-    ONE_REP_MAX = "one_rep_max"  # E1RM или подтверждённый 5×5 / 5×3
+    # E1RM — только из записанного стандартизированного теста (§10, record_one_rm_test); или заявленные
+    # пользователем недавние 5×5 / 5×3 (self-report, сервер их не проверяет).
+    ONE_REP_MAX = "one_rep_max"
     LOAD_STEP = "load_step"  # доступный шаг дополнительного веса
     VOLUME_REFERENCE = "volume_reference"  # V_ref первой B: факт первой A или подтверждённый объём
     # Смена помощи ждёт подтверждения ПОЛНОЙ записи следующей резины пользователем (модель, цвет, крепление,
     # положение стопы/колена): порядок личного списка резин этого не подтверждает. Намерение сохраняется.
     ASSISTANCE_CONFIRMATION = "assistance_confirmation"
-    RECOVERY_CHECK = "recovery_check"  # §9: два занятия подряд хуже по обоим блокам
+    # §9 (пауза прибавок до проверки восстановления) — НЕ вход: старт не блокирует, см. recovery_check_required.
 
 
 # --- Помощь (резина) ----------------------------------------------------------------------------
@@ -400,6 +402,57 @@ def one_rm_result(attempts: Sequence[OneRmAttempt]) -> OneRmResult:
     last = successful[-1]
     conservative = len(attempts) >= ONE_RM_MAX_SETS and attempts[-1].success and last.speed is not AttemptSpeed.SLOW
     return OneRmResult(last.load_kg, conservative, len(attempts))
+
+
+class OneRmTestError(V5StateError):
+    """Попытки не повторяют лестницу §10 — тест не принимается целиком (роут → 422, ничего не пишется)."""
+
+
+def one_rm_applicable(state: "V5State") -> bool:
+    """Тест 1RM нужен только силе с весом (переходный уровень и уровень 2): уровню 1 и неклассифицированному
+    уровню результат негде применить."""
+    return any(
+        strength is not None and strength.mode == WEIGHTED_MODE for strength in (state.strength_a, state.strength_b)
+    )
+
+
+def one_rm_missing_inputs(state: "V5State") -> tuple[PendingInput, ...]:
+    """Без BW и шага веса лестницу не построить (и не проверить) — тест не начинается и не записывается."""
+    missing = []
+    if state.inputs.body_mass_kg is None:
+        missing.append(PendingInput.BODY_MASS)
+    if state.inputs.load_step_kg is None:
+        missing.append(PendingInput.LOAD_STEP)
+    return tuple(missing)
+
+
+def validate_one_rm_attempts(
+    attempts: Sequence[OneRmAttempt], *, body_mass: Decimal, load_step: Decimal, complete: bool,
+) -> None:
+    """Попытки — ровно лестница §10 (``next_one_rm_set``), без новых правил: каждая попытка — тот вес и те
+    повторения, что лестница выдала после предыдущих; после неудачной/недействительной попытки и после
+    восьмого подхода попыток нет; успешное одиночное повторение несёт скорость (от неё зависит следующий
+    вес и консервативность восьмого); у неудачной попытки и у подходов ×5/×3 скорости нет. ``complete`` —
+    тест окончен по правилу лестницы (неудача или восьмой подход): записывается только оконченный тест,
+    поэтому одиночный «успешный» вес или остановка посреди лестницы тестом не считаются."""
+    if len(attempts) > ONE_RM_MAX_SETS:
+        raise OneRmTestError(f"at most {ONE_RM_MAX_SETS} attempts")
+    for index, attempt in enumerate(attempts):
+        number = index + 1
+        expected = next_one_rm_set(attempts[:index], body_mass=body_mass, load_step=load_step)
+        if expected is None:
+            raise OneRmTestError(f"attempt {number}: the test already ended (failed attempt or eighth set)")
+        if attempt.load_kg != expected.load_kg or attempt.reps != expected.reps:
+            raise OneRmTestError(
+                f"attempt {number}: the ladder prescribes +{_dec_str(expected.load_kg)} kg × {expected.reps}",
+            )
+        if attempt.success and expected.reps == 1:
+            if attempt.speed is None:
+                raise OneRmTestError(f"attempt {number}: a successful single needs its speed")
+        elif attempt.speed is not None:
+            raise OneRmTestError(f"attempt {number}: speed applies only to a successful single")
+    if complete and (not attempts or next_one_rm_set(attempts, body_mass=body_mass, load_step=load_step) is not None):
+        raise OneRmTestError("the test is not finished: it ends after a failed attempt or the eighth set")
 
 
 def one_rm_rest_ok(*, hours_since_heavy_pulling: float | None) -> bool:
@@ -839,10 +892,21 @@ def _assistance_change(
 
 def record_one_rm_test(state: V5State, attempts: Sequence[OneRmAttempt], *, performed_at: str) -> tuple[V5State, OneRmResult]:
     """Тест 1RM — отдельный факт (append-only); результат становится E1RM и заполняет ожидающие веса
-    силы (выданные рецепты не меняются). Тест без успешного подхода результата не даёт."""
+    силы (выданные рецепты не меняются). Тест без успешного подхода результата не даёт.
+
+    Принимается только оконченный тест по лестнице §10 от BW и шага веса состояния
+    (``validate_one_rm_attempts``); иначе ``OneRmTestError`` и состояние не меняется. Это единственный
+    путь E1RM в состояние: общий ввод входов E1RM не принимает."""
+    if not one_rm_applicable(state):
+        raise OneRmTestError("1RM test applies only to weighted strength")
+    if one_rm_missing_inputs(state):
+        raise OneRmTestError("1RM test needs body mass and load step")
+    body_mass, load_step = state.inputs.body_mass_kg, state.inputs.load_step_kg
+    validate_one_rm_attempts(attempts, body_mass=body_mass, load_step=load_step, complete=True)
     result = one_rm_result(attempts)
     record = {
         "performed_at": performed_at,
+        "body_mass_kg": _dec_str(body_mass), "load_step_kg": _dec_str(load_step),
         "attempts": [
             {"load_kg": _dec_str(a.load_kg), "reps": a.reps, "success": a.success,
              "speed": a.speed.value if a.speed is not None else None}
@@ -951,8 +1015,6 @@ def pending_inputs(state: V5State, role: WorkoutRole | None = None) -> tuple[Pen
     missing: list[PendingInput] = []
     if state.level is None:
         return (PendingInput.FRESH_MAX,)
-    if state.recovery_check_required:
-        missing.append(PendingInput.RECOVERY_CHECK)
     if any(entry["block"] in _role_blocks(role) for entry in state.assistance_pending):
         missing.append(PendingInput.ASSISTANCE_CONFIRMATION)
     volume_assistance = state.volume_a.assistance if role is WorkoutRole.A else state.volume_b.assistance
