@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import {
   assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseInputsPayload, courseTargetText, describeCourseOutcome,
-  describePendingInputs,
+  describeOneRepMaxOutcome, describePendingInputs,
 } from "../src/courseV5.ts";
 
 test("courseTargetText: маркеры V5.6", () => {
@@ -86,4 +86,25 @@ test("1RM вручную не вводится: только тест в при�
   const keys = Object.values(COURSE_INPUT_FIELDS).flat().map((field) => field.key);
   assert.ok(!keys.includes("e1rm_kg"));
   assert.deepEqual(COURSE_INPUT_FIELDS.one_rep_max.map((field) => field.key), ["known_strength_a_kg", "known_strength_b_kg"]);
+});
+
+test("describeOneRepMaxOutcome: подтверждённым 1RM называется только оконченный тест с одиночным подходом", () => {
+  assert.equal(
+    describeOneRepMaxOutcome({ e1rm_kg: "15", conservative: false, outcome: "completed", confirmed: true, last_successful_single_kg: "15" }),
+    "1RM: +15 кг",
+  );
+  assert.equal(describeOneRepMaxOutcome({ e1rm_kg: "52.5", conservative: true }), "1RM: +52.5 кг (консервативно)");
+  assert.equal(
+    describeOneRepMaxOutcome({ e1rm_kg: null, conservative: false, outcome: "completed", confirmed: false, last_successful_single_kg: null }),
+    "Тест окончен и сохранён, но успешного одиночного подхода нет — 1RM не назначен.",
+  );
+  const stopped = describeOneRepMaxOutcome({
+    e1rm_kg: null, conservative: false, outcome: "stopped", confirmed: false, last_successful_single_kg: "15",
+  });
+  assert.ok(stopped.includes("остановлен") && stopped.includes("+15 кг") && stopped.includes("не подтверждённый 1RM"));
+  assert.ok(!stopped.startsWith("1RM"));
+  const stoppedEarly = describeOneRepMaxOutcome({
+    e1rm_kg: null, conservative: false, outcome: "stopped", confirmed: false, last_successful_single_kg: null,
+  });
+  assert.ok(stoppedEarly.includes("успешного одиночного подхода не было"));
 });

@@ -12,7 +12,9 @@
   меняет факт, но не состояние.
 * ``update_inputs`` / ``record_one_rep_max`` — ввод недостающих входов (R, резины, шаг веса, выбор
   следующей резины, снятие паузы §9) и запись теста 1RM — только вперёд. E1RM приходит ТОЛЬКО из
-  оконченного теста по лестнице §10, проверенного сервером; общий ввод его не принимает.
+  оконченного теста по лестнице §10 (неудача или восьмой подход) с успешным одиночным подходом,
+  проверенного сервером; добровольно остановленный тест сохраняется, но E1RM не даёт; общий ввод его не
+  принимает.
 """
 
 from dataclasses import dataclass
@@ -33,6 +35,7 @@ from app.domain.pullups_v5 import (
     BlockResult,
     EntryInputs,
     OneRmAttempt,
+    OneRmOutcome,
     OneRmResult,
     PrescriptionPending,
     SessionPrescription,
@@ -44,6 +47,7 @@ from app.domain.pullups_v5 import (
     clear_recovery_check,
     confirm_assistance,
     is_v5_state,
+    latest_one_rm_test_at,
     one_rm_rest_ok,
     pending_inputs,
     prescribe_session,
@@ -65,7 +69,7 @@ class CourseSetupRequiredError(Exception):
 
 
 class OneRepMaxTooSoonError(Exception):
-    """Тест 1RM раньше 48 ч после тяжёлой тяговой работы (§8.3)."""
+    """Тест 1RM раньше 48 ч после тяжёлой тяговой работы — MAIN или предыдущего сохранённого теста (§10)."""
 
 
 @dataclass(frozen=True)
@@ -212,17 +216,52 @@ async def update_inputs(
     return state
 
 
+async def last_heavy_pulling_at(session: AsyncSession, inclusion: ProgramInclusion, user_id: int) -> datetime | None:
+    """Последняя тяжёлая тяговая работа для допуска к тесту 1RM (§10) — по серверным временам: старт
+    основного занятия (MAIN) и любой СОХРАНЁННЫЙ тест 1RM пользователя. Тесты ищутся во всех V5.6-инклюзиях
+    плана, а не только в этой: снятие курса и подключение заново (``restart``) не обнуляет 48 ч."""
+    # Локальный импорт: plan_spacing → … → training_session_v2 → этот модуль (цикл на уровне модулей).
+    from app.services.plan_spacing import MainSpacingService
+
+    main = await MainSpacingService(session).last_main_start_at(user_id)
+    tests = [
+        test
+        for other in await TrainingPlanRepository(session).list_inclusions(inclusion.training_plan_id)
+        if is_v5_state(other.progression_state)
+        for test in v5_state(other).one_rm_tests
+    ]
+    candidates = [value for value in (main, latest_one_rm_test_at(tests)) if value is not None]
+    return max(candidates) if candidates else None
+
+
+def one_rep_max_day_ok(last_heavy_at: datetime | None, *, now: datetime) -> bool:
+    hours = (now - last_heavy_at).total_seconds() / 3600 if last_heavy_at is not None else None
+    return one_rm_rest_ok(hours_since_heavy_pulling=hours)
+
+
 async def record_one_rep_max(
-    session: AsyncSession, inclusion: ProgramInclusion, attempts: list[OneRmAttempt], *, performed_at: datetime,
-    last_heavy_pulling_at: datetime | None,
+    session: AsyncSession, inclusion: ProgramInclusion, attempts: list[OneRmAttempt], *, user_id: int,
+    performed_at: datetime, outcome: OneRmOutcome = OneRmOutcome.COMPLETED,
 ) -> tuple[V5State, OneRmResult]:
-    """Тест 1RM — отдельный свежий день, не раньше 48 ч после тяжёлой тяговой работы (§8.3)."""
-    hours = (performed_at - last_heavy_pulling_at).total_seconds() / 3600 if last_heavy_pulling_at is not None else None
-    if not one_rm_rest_ok(hours_since_heavy_pulling=hours):
+    """Тест 1RM — отдельный свежий день, не раньше 48 ч после тяжёлой тяговой работы: MAIN или
+    предыдущего сохранённого теста 1RM (§10).
+
+    Конкурентность: два одновременных запроса записи (двойной тап, два устройства) оба прошли бы проверку
+    «последнего теста нет» и оба дописали бы тест. Поэтому до проверки берётся тот же транзакционный
+    advisory-лок пользователя, что у старта занятия (``lock_user_starts``): записи 1RM сериализуются между
+    собой и со стартом MAIN; после лока инклюзия перечитывается из БД, и проигравший видит уже
+    закоммиченный тест победителя → 409, ничего не пишется."""
+    from app.services.live_session import lock_user_starts  # live_session импортирует этот модуль
+
+    await lock_user_starts(session, user_id)
+    await session.refresh(inclusion)
+    if not one_rep_max_day_ok(await last_heavy_pulling_at(session, inclusion, user_id), now=performed_at):
         raise OneRepMaxTooSoonError()
-    # Лестница, повторения, скорости, стоп и «тест окончен» проверяются целиком ДО записи: некорректный
-    # тест — OneRmTestError, состояние и история тестов не меняются.
-    state, result = record_one_rm_test(v5_state(inclusion), attempts, performed_at=performed_at.isoformat())
+    # Лестница, повторения, скорости и способ окончания (оконченный тест / явная остановка) проверяются
+    # целиком ДО записи: некорректный тест — OneRmTestError, состояние и история тестов не меняются.
+    state, result = record_one_rm_test(
+        v5_state(inclusion), attempts, performed_at=performed_at.isoformat(), outcome=outcome,
+    )
     _store(inclusion, state)
     await session.flush()
     return state, result

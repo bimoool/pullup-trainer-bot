@@ -2,8 +2,8 @@
  * issue #305 (V5.6): ввод недостающих входов программы «Подтягивания» перед основной тренировкой
  * (PUT …/program-inclusions/{id}/course/inputs через apiV2.putCourseInputs). Показываются только поля из списка недостающих;
  * пустое не отправляется — сервер ничего не угадывает. Тест 1RM ведётся по шагам лестницы V5.6 §10
- * (OneRepMaxTest: подход за подходом с сервера, стоп после первой неудачи, ≤ 8 подходов, 48 ч); E1RM вручную
- * не вводится. Недавний 5×5 / 5×3 со слов пользователя — альтернатива тесту (§9; сервер его не сверяет).
+ * (OneRepMaxTest: подход за подходом с сервера, стоп после первой неудачи, ≤ 8 подходов, 48 ч от MAIN и
+ * прошлого теста; можно явно остановиться самому — тогда это не подтверждённый 1RM); E1RM вручную не вводится. Недавний 5×5 / 5×3 со слов пользователя — альтернатива тесту (§9; сервер его не сверяет).
  * Пауза прибавок §9 — не вход: RecoveryCheckNotice показывается рядом со стартом и его не блокирует.
  */
 import { Button, Input, List, Section } from "@telegram-apps/telegram-ui";
@@ -11,7 +11,8 @@ import { useState } from "react";
 
 import { postOneRepMax, postOneRepMaxNextSet, putCourseInputs, type OneRmAttemptV2, type OneRmNextSetV2 } from "./apiV2";
 import {
-  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describePendingInputs,
+  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describeOneRepMaxOutcome,
+  describePendingInputs,
 } from "./courseV5";
 
 export interface AssistancePending {
@@ -71,8 +72,11 @@ const SPEEDS: { value: "fast" | "normal" | "slow"; label: string }[] = [
 /**
  * Тест 1RM в приложении (V5.6 §10) по существующему API: сервер выдаёт следующий подход лестницы
  * (BW×5 → +10% ×3 → +20% ×1 → одиночные по скорости), стоп — после первой неудачной/недействительной
- * попытки или восьмого подхода; результат — последний успешный доп. вес (2RM не используется). Отдых между
- * подходами — 3 мин. Начало теста раньше 48 ч после тяжёлой тяговой работы сервер отклоняет сразу.
+ * попытки или восьмого подхода; результат — последний успешный одиночный доп. вес (2RM не используется).
+ * Дойти до неудачи не обязательно: «Остановить тест» записывает явную добровольную остановку (без ложной
+ * неудачи) — попытки сохраняются, но это не подтверждённый 1RM и нагрузку он не задаёт. Отдых между
+ * подходами — 3 мин. Начало теста раньше 48 ч после тяжёлой тяговой работы или прошлого теста сервер
+ * отклоняет сразу.
  */
 export function OneRepMaxTest(
   { initDataRaw, inclusionId, onSaved }: { initDataRaw: string; inclusionId: number; onSaved: () => void },
@@ -99,13 +103,12 @@ export function OneRepMaxTest(
     }
   }
 
-  async function record() {
+  async function record(stopped = false) {
     setBusy(true);
     setError(null);
     try {
-      const saved = await postOneRepMax(initDataRaw, inclusionId, attempts);
-      const e1rm = saved.one_rep_max?.e1rm_kg ?? null;
-      setResult(e1rm === null ? "Успешных попыток нет — результат не записан." : `1RM: +${e1rm} кг${saved.one_rep_max?.conservative ? " (консервативно)" : ""}`);
+      const saved = await postOneRepMax(initDataRaw, inclusionId, attempts, stopped);
+      setResult(describeOneRepMaxOutcome(saved.one_rep_max));
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -127,15 +130,16 @@ export function OneRepMaxTest(
       {!running && (
         <>
           <p className="live-hint">
-            Отдельный свежий день: не после объёма и не раньше 48 ч после тяжёлой тяговой работы. До 8 подходов,
-            отдых 3 мин, стоп после первой неудачной попытки.
+            Отдельный свежий день: не после объёма и не раньше 48 ч после тяжёлой тяговой работы или прошлого
+            теста 1RM. До 8 подходов, отдых 3 мин, стоп после первой неудачной попытки. Остановиться можно и
+            раньше — тогда результат сохранится, но не будет подтверждённым 1RM.
           </p>
           <Button size="m" stretched mode="bezeled" disabled={busy} data-testid="one-rm-start" onClick={() => void step([])}>
             Начать тест
           </Button>
         </>
       )}
-      {running && current !== null && (
+      {running && current !== null && result === null && (
         <div data-testid="one-rm-step">
           <p className="live-plan" data-testid="one-rm-next">
             Подход {current.set_number} из 8: {Number(current.load_kg) > 0 ? `+${current.load_kg} кг` : "собственный вес"} × {current.reps}
@@ -157,6 +161,11 @@ export function OneRepMaxTest(
           <Button size="m" stretched mode="outline" disabled={busy} data-testid="one-rm-fail" onClick={() => attempt(false)}>
             Не получилось / техника нарушена
           </Button>
+          {attempts.length > 0 && (
+            <Button size="m" stretched mode="plain" disabled={busy} data-testid="one-rm-stop" onClick={() => void record(true)}>
+              Остановить тест (не подтверждённый 1RM)
+            </Button>
+          )}
         </div>
       )}
       {running && current === null && result === null && (
