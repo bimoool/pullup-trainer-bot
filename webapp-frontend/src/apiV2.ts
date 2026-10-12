@@ -8,7 +8,7 @@
  */
 import type { EnginePlan, EngineState, TimelineCue } from "./liveEngine";
 
-import type { BlockCheck, CourseBlockOutcome } from "./courseV5";
+import type { BlockCheck, CourseBlockOutcome, OneRepMaxOutcomeV2 } from "./courseV5";
 import type { SessionCreatePayload } from "./journalLog";
 import { awaitEngineReconciliation } from "./engineGate.ts";
 import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
@@ -236,10 +236,12 @@ export function postOneRepMaxNextSet(initDataRaw: string, inclusionId: number, a
   );
 }
 
-/** POST …/course/one-rep-max — записать тест; результат — последний успешный доп. вес (E1RM). */
-export function postOneRepMax(initDataRaw: string, inclusionId: number, attempts: OneRmAttemptV2[]) {
-  return postCourse<{ pending_inputs: string[]; one_rep_max: { e1rm_kg: string | null; conservative: boolean } | null }>(
-    initDataRaw, `/api/v2/program-inclusions/${inclusionId}/course/one-rep-max`, { attempts },
+/** POST …/course/one-rep-max — записать тест. Без `stopped` — оконченный по правилу лестницы (неудача или
+ * восьмой подход): E1RM — последний успешный одиночный доп. вес. `stopped: true` — явная добровольная
+ * остановка: попытки сохраняются, E1RM не назначается. 48 ч считаются и от MAIN, и от прошлого теста. */
+export function postOneRepMax(initDataRaw: string, inclusionId: number, attempts: OneRmAttemptV2[], stopped = false) {
+  return postCourse<{ pending_inputs: string[]; one_rep_max: OneRepMaxOutcomeV2 | null }>(
+    initDataRaw, `/api/v2/program-inclusions/${inclusionId}/course/one-rep-max`, { attempts, stopped },
   );
 }
 

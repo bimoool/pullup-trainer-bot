@@ -15,8 +15,9 @@
 три попытки до калибровки, лестница теста 1RM. Менять их — только новой версией программы.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 
@@ -366,11 +367,32 @@ class OneRmNextSet:
     reps: int
 
 
+class OneRmOutcome(StrEnum):
+    """Чем закончился записанный тест 1RM (§10).
+
+    * ``completed`` — стандартизированный тест окончен по правилу лестницы: неудачная/недействительная
+      попытка или восьмой подход. Только он даёт подтверждённый E1RM.
+    * ``stopped`` — пользователь явно остановил тест сам, не дойдя до неудачи и до восьмого подхода
+      (без ложной «неудачи»). Попытки и последний успешный одиночный вес сохраняются как факт, но это НЕ
+      подтверждённый 1RM: E1RM не назначается и веса силы из него автоматически не считаются."""
+
+    COMPLETED = "completed"
+    STOPPED = "stopped"
+
+
 @dataclass(frozen=True)
 class OneRmResult:
-    e1rm_kg: Decimal | None  # None — не выполнен даже первый подход; результата нет
+    # Подтверждённый E1RM: только у оконченного стандартизированного теста и только при успешном
+    # одиночном подходе; иначе None и вход не назначается.
+    e1rm_kg: Decimal | None
     conservative: bool  # восьмой подход успешен и явно не предельный — консервативный максимум
     sets_used: int
+    outcome: OneRmOutcome = OneRmOutcome.COMPLETED
+    last_successful_single_kg: Decimal | None = None  # последний успешный одиночный (×1) доп. вес, если был
+
+    @property
+    def confirmed(self) -> bool:
+        return self.e1rm_kg is not None
 
 
 def next_one_rm_set(attempts: Sequence[OneRmAttempt], *, body_mass: Decimal, load_step: Decimal) -> OneRmNextSet | None:
@@ -393,15 +415,20 @@ def next_one_rm_set(attempts: Sequence[OneRmAttempt], *, body_mass: Decimal, loa
     return OneRmNextSet(number, last.load_kg + max(increment, load_step), 1)
 
 
-def one_rm_result(attempts: Sequence[OneRmAttempt]) -> OneRmResult:
-    """Результат — последний успешно поднятый ДОПОЛНИТЕЛЬНЫЙ вес. Восьмой успешный и не медленный
-    подход помечается консервативным (точный 1RM — в другой день)."""
-    successful = [attempt for attempt in attempts if attempt.success]
-    if not successful:
-        return OneRmResult(None, False, len(attempts))
-    last = successful[-1]
-    conservative = len(attempts) >= ONE_RM_MAX_SETS and attempts[-1].success and last.speed is not AttemptSpeed.SLOW
-    return OneRmResult(last.load_kg, conservative, len(attempts))
+def one_rm_result(attempts: Sequence[OneRmAttempt], *, outcome: OneRmOutcome = OneRmOutcome.COMPLETED) -> OneRmResult:
+    """Результат — последний успешный ОДИНОЧНЫЙ (×1) дополнительный вес: E1RM — вес на одно повторение,
+    подходы ×5/×3 разминочной части лестницы его не дают. Нет успешного одиночного — E1RM не назначается.
+    Восьмой успешный и не медленный подход помечается консервативным (точный 1RM — в другой день).
+    Добровольная остановка (``OneRmOutcome.STOPPED``) сохраняет последний успешный одиночный вес как факт,
+    но подтверждённым 1RM не считается: ``e1rm_kg`` — None."""
+    singles = [attempt for attempt in attempts if attempt.success and attempt.reps == 1]
+    last_single = singles[-1].load_kg if singles else None
+    if outcome is OneRmOutcome.STOPPED or last_single is None:
+        return OneRmResult(None, False, len(attempts), outcome, last_single)
+    conservative = (
+        len(attempts) >= ONE_RM_MAX_SETS and attempts[-1].success and attempts[-1].speed is not AttemptSpeed.SLOW
+    )
+    return OneRmResult(last_single, conservative, len(attempts), outcome, last_single)
 
 
 class OneRmTestError(V5StateError):
@@ -427,14 +454,18 @@ def one_rm_missing_inputs(state: "V5State") -> tuple[PendingInput, ...]:
 
 
 def validate_one_rm_attempts(
-    attempts: Sequence[OneRmAttempt], *, body_mass: Decimal, load_step: Decimal, complete: bool,
+    attempts: Sequence[OneRmAttempt], *, body_mass: Decimal, load_step: Decimal,
+    outcome: OneRmOutcome | None = None,
 ) -> None:
     """Попытки — ровно лестница §10 (``next_one_rm_set``), без новых правил: каждая попытка — тот вес и те
     повторения, что лестница выдала после предыдущих; после неудачной/недействительной попытки и после
     восьмого подхода попыток нет; успешное одиночное повторение несёт скорость (от неё зависит следующий
-    вес и консервативность восьмого); у неудачной попытки и у подходов ×5/×3 скорости нет. ``complete`` —
-    тест окончен по правилу лестницы (неудача или восьмой подход): записывается только оконченный тест,
-    поэтому одиночный «успешный» вес или остановка посреди лестницы тестом не считаются."""
+    вес и консервативность восьмого); у неудачной попытки и у подходов ×5/×3 скорости нет.
+
+    ``outcome`` — как тест записывается (None — тест ещё идёт, проверяются только сами попытки):
+    ``COMPLETED`` — лестница окончена по своему правилу (неудача или восьмой подход); ``STOPPED`` —
+    явная добровольная остановка: хотя бы одна попытка, и лестница по своему правилу ещё НЕ окончена
+    (иначе это оконченный тест, а не остановка). Дойти до неудачи или восьмого подхода не обязательно."""
     if len(attempts) > ONE_RM_MAX_SETS:
         raise OneRmTestError(f"at most {ONE_RM_MAX_SETS} attempts")
     for index, attempt in enumerate(attempts):
@@ -451,13 +482,31 @@ def validate_one_rm_attempts(
                 raise OneRmTestError(f"attempt {number}: a successful single needs its speed")
         elif attempt.speed is not None:
             raise OneRmTestError(f"attempt {number}: speed applies only to a successful single")
-    if complete and (not attempts or next_one_rm_set(attempts, body_mass=body_mass, load_step=load_step) is not None):
-        raise OneRmTestError("the test is not finished: it ends after a failed attempt or the eighth set")
+    if outcome is None:
+        return
+    if not attempts:
+        raise OneRmTestError("no attempts to record")
+    ladder_ended = next_one_rm_set(attempts, body_mass=body_mass, load_step=load_step) is None
+    if outcome is OneRmOutcome.COMPLETED and not ladder_ended:
+        raise OneRmTestError(
+            "the test is not finished: it ends after a failed attempt or the eighth set; "
+            "to end it earlier, record a voluntary stop",
+        )
+    if outcome is OneRmOutcome.STOPPED and ladder_ended:
+        raise OneRmTestError("the ladder already ended (failed attempt or eighth set): record it as completed")
 
 
 def one_rm_rest_ok(*, hours_since_heavy_pulling: float | None) -> bool:
     """Тест — в отдельный свежий день, не раньше чем через 48 ч после тяжёлой тяговой работы."""
     return hours_since_heavy_pulling is None or hours_since_heavy_pulling >= ONE_RM_MIN_HOURS_AFTER_HEAVY_PULLING
+
+
+def latest_one_rm_test_at(tests: Iterable[dict]) -> datetime | None:
+    """Серверное время последнего СОХРАНЁННОГО теста 1RM (``performed_at`` записи — время сервера в момент
+    записи, клиент его не задаёт). Любой сохранённый тест — оконченный или добровольно остановленный —
+    тяжёлая тяговая работа для следующего теста: 48 ч считаются и от него, не только от MAIN."""
+    stamps = [datetime.fromisoformat(test["performed_at"]) for test in tests if test.get("performed_at")]
+    return max(stamps) if stamps else None
 
 
 # --- Стартовые формулы ----------------------------------------------------------------------------
@@ -890,22 +939,27 @@ def _assistance_change(
     return current, {"block": block, "intent": step.intent.value, "proposed": _setup_dict(proposed)}
 
 
-def record_one_rm_test(state: V5State, attempts: Sequence[OneRmAttempt], *, performed_at: str) -> tuple[V5State, OneRmResult]:
-    """Тест 1RM — отдельный факт (append-only); результат становится E1RM и заполняет ожидающие веса
-    силы (выданные рецепты не меняются). Тест без успешного подхода результата не даёт.
+def record_one_rm_test(
+    state: V5State, attempts: Sequence[OneRmAttempt], *, performed_at: str,
+    outcome: OneRmOutcome = OneRmOutcome.COMPLETED,
+) -> tuple[V5State, OneRmResult]:
+    """Тест 1RM — отдельный факт (append-only). Оконченный стандартизированный тест с успешным одиночным
+    подходом даёт E1RM и заполняет ожидающие веса силы (выданные рецепты не меняются); без успешного
+    одиночного E1RM не назначается. Добровольно остановленный тест сохраняется как факт (попытки и
+    последний успешный одиночный вес), но E1RM из него не назначается и веса не считаются.
 
-    Принимается только оконченный тест по лестнице §10 от BW и шага веса состояния
-    (``validate_one_rm_attempts``); иначе ``OneRmTestError`` и состояние не меняется. Это единственный
-    путь E1RM в состояние: общий ввод входов E1RM не принимает."""
+    Попытки проверяются по лестнице §10 от BW и шага веса состояния (``validate_one_rm_attempts``);
+    иначе ``OneRmTestError`` и состояние не меняется. Это единственный путь E1RM в состояние: общий ввод
+    входов E1RM не принимает."""
     if not one_rm_applicable(state):
         raise OneRmTestError("1RM test applies only to weighted strength")
     if one_rm_missing_inputs(state):
         raise OneRmTestError("1RM test needs body mass and load step")
     body_mass, load_step = state.inputs.body_mass_kg, state.inputs.load_step_kg
-    validate_one_rm_attempts(attempts, body_mass=body_mass, load_step=load_step, complete=True)
-    result = one_rm_result(attempts)
+    validate_one_rm_attempts(attempts, body_mass=body_mass, load_step=load_step, outcome=outcome)
+    result = one_rm_result(attempts, outcome=outcome)
     record = {
-        "performed_at": performed_at,
+        "performed_at": performed_at, "outcome": outcome.value, "standardized": outcome is OneRmOutcome.COMPLETED,
         "body_mass_kg": _dec_str(body_mass), "load_step_kg": _dec_str(load_step),
         "attempts": [
             {"load_kg": _dec_str(a.load_kg), "reps": a.reps, "success": a.success,
@@ -913,6 +967,7 @@ def record_one_rm_test(state: V5State, attempts: Sequence[OneRmAttempt], *, perf
             for a in attempts
         ],
         "e1rm_kg": _dec_str(result.e1rm_kg), "conservative": result.conservative,
+        "last_successful_single_kg": _dec_str(result.last_successful_single_kg),
     }
     new = replace(state, one_rm_tests=(*state.one_rm_tests, record))
     if result.e1rm_kg is not None:

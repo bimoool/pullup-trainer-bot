@@ -204,3 +204,33 @@ export function courseInputsPayload(
   }
   return body;
 }
+
+/** Итог записанного теста 1RM (POST …/course/one-rep-max, V5.6 §10, review #318). */
+export interface OneRepMaxOutcomeV2 {
+  e1rm_kg: string | null;
+  conservative: boolean;
+  sets_used?: number;
+  outcome?: "completed" | "stopped";
+  confirmed?: boolean;
+  last_successful_single_kg?: string | null;
+}
+
+/**
+ * Текст итога теста. Подтверждённым 1RM называется только оконченный стандартизированный тест (неудача или
+ * восьмой подход) с успешным одиночным подходом. Добровольная остановка — сохранённый факт: последний
+ * успешный одиночный вес показывается, но это не 1RM и нагрузку он не задаёт.
+ */
+export function describeOneRepMaxOutcome(result: OneRepMaxOutcomeV2 | null): string {
+  if (result === null) {
+    return "Результат не записан.";
+  }
+  const single = result.last_successful_single_kg ?? null;
+  if (result.outcome === "stopped") {
+    const best = single === null ? "успешного одиночного подхода не было" : `последний успешный одиночный: +${single} кг`;
+    return `Тест остановлен вами и сохранён (${best}). Это не подтверждённый 1RM — вес силовых подходов по нему не назначается.`;
+  }
+  if (result.e1rm_kg === null) {
+    return "Тест окончен и сохранён, но успешного одиночного подхода нет — 1RM не назначен.";
+  }
+  return `1RM: +${result.e1rm_kg} кг${result.conservative ? " (консервативно)" : ""}`;
+}

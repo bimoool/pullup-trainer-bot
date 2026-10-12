@@ -8,13 +8,17 @@
   пользователем 5×5/5×3, выбор следующей резины, снятие паузы §9). Только вперёд. E1RM здесь НЕ
   принимается (422): он — только результат теста;
 * ``POST /api/v2/program-inclusions/{id}/course/one-rep-max/next-set`` — следующий подход лестницы 1RM;
-* ``POST /api/v2/program-inclusions/{id}/course/one-rep-max`` — записать оконченный тест 1RM.
+* ``POST /api/v2/program-inclusions/{id}/course/one-rep-max`` — записать тест 1RM: оконченный по правилу
+  лестницы (неудача или восьмой подход) или явно остановленный пользователем (``stopped: true``).
 
 Оба эндпоинта теста на КАЖДОМ запросе проверяют: тест применим (сила с весом, иначе 409
-``one_rep_max_not_applicable``), есть BW и шаг (409 ``course_setup_required``), ≥ 48 ч после тяжёлой
-тяговой работы по серверному времени (409 ``one_rep_max_too_soon``) и что присланные попытки — ровно
-лестница §10 (422 ``one_rep_max_invalid``; запись — только оконченный тест). Клиентский список попыток
-поэтому не даёт ни «уже идущего теста» в обход 48 ч, ни произвольного результата.
+``one_rep_max_not_applicable``), есть BW и шаг (409 ``course_setup_required``), ≥ 48 ч по серверному
+времени после тяжёлой тяговой работы — старта MAIN и предыдущего сохранённого теста 1RM (409
+``one_rep_max_too_soon``), и что присланные попытки — ровно лестница §10 (422 ``one_rep_max_invalid``).
+Клиентский список попыток поэтому не даёт ни «уже идущего теста» в обход 48 ч, ни произвольного
+результата. Запись сериализована advisory-локом пользователя: два одновременных запроса не запишут два
+теста. Подтверждённый E1RM даёт только оконченный тест с успешным одиночным подходом; остановленный —
+факт без E1RM.
 
 Инклюзия устаревшей версии программы (без program_version) здесь — 404: её не переводим в V5.6.
 """
@@ -34,6 +38,7 @@ from app.domain.pullups_v5 import (
     PROGRAM_VERSION,
     AttemptSpeed,
     OneRmAttempt,
+    OneRmOutcome,
     OneRmTestError,
     PrescriptionPending,
     V5State,
@@ -41,7 +46,6 @@ from app.domain.pullups_v5 import (
     next_one_rm_set,
     one_rm_applicable,
     one_rm_missing_inputs,
-    one_rm_rest_ok,
     pending_inputs,
     prescribe_session,
     validate_one_rm_attempts,
@@ -49,11 +53,12 @@ from app.domain.pullups_v5 import (
 from app.services.course_v5 import (
     OneRepMaxTooSoonError,
     inclusion_for_user,
+    last_heavy_pulling_at,
+    one_rep_max_day_ok,
     record_one_rep_max,
     update_inputs,
     v5_state,
 )
-from app.services.plan_spacing import MainSpacingService
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.schemas_v2_course import CourseInputsRequest
@@ -80,6 +85,9 @@ class OneRmNextSetRequest(BaseModel):
 
 class OneRmRecordRequest(BaseModel):
     attempts: list[OneRmAttemptSchema] = Field(min_length=1, max_length=8)
+    # Явная добровольная остановка до неудачи и до восьмого подхода (вместо ложной «неудачи»): попытки
+    # сохраняются, но E1RM не назначается. False — оконченный по правилу лестницы стандартизированный тест.
+    stopped: bool = False
 
 
 class OneRmNextSetResponse(BaseModel):
@@ -124,14 +132,15 @@ async def _require_course(session: AsyncSession, init_data: InitData, inclusion_
 def _too_soon() -> HTTPException:
     return HTTPException(
         status.HTTP_409_CONFLICT,
-        {"code": "one_rep_max_too_soon", "message": "Тест 1RM — не раньше чем через 48 часов после тяжёлой тяговой работы."},
+        {
+            "code": "one_rep_max_too_soon",
+            "message": "Тест 1RM — не раньше чем через 48 часов после тяжёлой тяговой работы или предыдущего теста 1RM.",
+        },
     )
 
 
-async def _require_one_rep_max_day(session: AsyncSession, user_id: int) -> None:
-    last_heavy = await MainSpacingService(session).last_main_start_at(user_id)
-    hours = (datetime.now(UTC) - last_heavy).total_seconds() / 3600 if last_heavy is not None else None
-    if not one_rm_rest_ok(hours_since_heavy_pulling=hours):
+async def _require_one_rep_max_day(session: AsyncSession, inclusion, user_id: int) -> None:
+    if not one_rep_max_day_ok(await last_heavy_pulling_at(session, inclusion, user_id), now=datetime.now(UTC)):
         raise _too_soon()
 
 
@@ -192,11 +201,11 @@ async def one_rep_max_next_set(
     # «Отдельный свежий день, ≥ 48 ч после тяжёлой тяговой работы» (§10) — на КАЖДОМ шаге по серверному
     # времени, а не только на пустом списке: присланные попытки не делают тест «уже идущим». Настоящий
     # тест это не ломает: время только растёт, а новая тяжёлая работа и так делает тест недействительным.
-    await _require_one_rep_max_day(session, user.id)
+    await _require_one_rep_max_day(session, inclusion, user.id)
     attempts = [a.to_domain() for a in body.attempts]
     try:
         validate_one_rm_attempts(
-            attempts, body_mass=state.inputs.body_mass_kg, load_step=state.inputs.load_step_kg, complete=False,
+            attempts, body_mass=state.inputs.body_mass_kg, load_step=state.inputs.load_step_kg,
         )
     except OneRmTestError as exc:
         raise _invalid_test(exc) from exc
@@ -217,11 +226,10 @@ async def record_course_one_rep_max(
 ) -> CourseStateResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
     _require_one_rep_max_eligible(v5_state(inclusion))
-    last_heavy = await MainSpacingService(session).last_main_start_at(user.id)
     try:
         state, result = await record_one_rep_max(
-            session, inclusion, [a.to_domain() for a in body.attempts], performed_at=datetime.now(UTC),
-            last_heavy_pulling_at=last_heavy,
+            session, inclusion, [a.to_domain() for a in body.attempts], user_id=user.id,
+            performed_at=datetime.now(UTC), outcome=OneRmOutcome.STOPPED if body.stopped else OneRmOutcome.COMPLETED,
         )
     except OneRepMaxTooSoonError as exc:
         raise _too_soon() from exc
@@ -229,6 +237,11 @@ async def record_course_one_rep_max(
         raise _invalid_test(exc) from exc
     await session.commit()
     return _course_response(state, one_rep_max={
-        "e1rm_kg": format(result.e1rm_kg.normalize(), "f") if result.e1rm_kg is not None else None,
-        "conservative": result.conservative, "sets_used": result.sets_used,
+        "e1rm_kg": _kg(result.e1rm_kg), "conservative": result.conservative, "sets_used": result.sets_used,
+        "outcome": result.outcome.value, "confirmed": result.confirmed,
+        "last_successful_single_kg": _kg(result.last_successful_single_kg),
     })
+
+
+def _kg(value: Decimal | None) -> str | None:
+    return format(value.normalize(), "f") if value is not None else None

@@ -3,6 +3,7 @@
 Каждый пример — из документа владельца «Подтягивания V5.6» (docs/domain/PULLUPS_V5_6.md) или из
 постановки #305; ожидаемые значения — точные числа, а не пересчёт той же формулой."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -19,6 +20,7 @@ from app.domain.pullups_v5 import (
     BVolumeStage,
     EntryInputs,
     OneRmAttempt,
+    OneRmOutcome,
     OneRmTestError,
     PendingInput,
     PrescriptionPending,
@@ -39,6 +41,7 @@ from app.domain.pullups_v5 import (
     initial_state,
     initial_weighted_loads,
     is_v5_state,
+    latest_one_rm_test_at,
     load_increment,
     next_one_rm_set,
     one_rm_missing_inputs,
@@ -700,13 +703,15 @@ def _transition_80() -> V5State:
 
 
 def test_one_rm_validation_accepts_exact_ladder_with_terminal_failure_or_eighth_set():
-    validate_one_rm_attempts(VALID_TERMINAL_FAILURE, body_mass=BW80, load_step=STEP125, complete=True)
+    validate_one_rm_attempts(VALID_TERMINAL_FAILURE, body_mass=BW80, load_step=STEP125, outcome=OneRmOutcome.COMPLETED)
     # Восемь подходов: после быстрого — +7,5 (10% BW = 8 → вниз до шага); восьмой успешный быстрый — консервативно.
     eight = [_ok("0", 5), _ok("7.5", 3)] + [_ok(str(15 + 7.5 * i), 1, AttemptSpeed.FAST) for i in range(6)]
-    validate_one_rm_attempts(eight, body_mass=BW80, load_step=STEP125, complete=True)
+    validate_one_rm_attempts(eight, body_mass=BW80, load_step=STEP125, outcome=OneRmOutcome.COMPLETED)
     state, result = record_one_rm_test(_transition_80(), eight, performed_at="2026-10-10T10:00:00+00:00")
     assert (result.e1rm_kg, result.conservative, result.sets_used) == (D("52.5"), True, 8)
+    assert result.outcome is OneRmOutcome.COMPLETED and result.confirmed is True
     assert state.inputs.e1rm_kg == D("52.5") and len(state.one_rm_tests) == 1
+    assert state.one_rm_tests[0]["outcome"] == "completed" and state.one_rm_tests[0]["standardized"] is True
     assert state.one_rm_tests[0]["body_mass_kg"] == "80" and state.one_rm_tests[0]["load_step_kg"] == "1.25"
     # Неудача на первом подходе — оконченный тест без результата.
     state, result = record_one_rm_test(_transition_80(), [_fail("0", 5)], performed_at="2026-10-10T10:00:00+00:00")
@@ -738,6 +743,74 @@ def test_one_rm_record_requires_weighted_strength_and_ladder_inputs():
     assert one_rm_missing_inputs(no_step) == (PendingInput.LOAD_STEP,)
     with pytest.raises(OneRmTestError):
         record_one_rm_test(no_step, VALID_TERMINAL_FAILURE, performed_at="x")
+
+
+def test_completed_test_without_successful_single_assigns_no_e1rm():
+    """E1RM — вес на ОДНО повторение: успешные ×5/×3 его не дают. Неудача на третьем подходе (+15 × 1) —
+    оконченный тест, записан как факт, но E1RM не назначается (раньше брался +7,5 из подхода ×3)."""
+    attempts = [_ok("0", 5), _ok("7.5", 3), _fail("15", 1)]
+    state, result = record_one_rm_test(_transition_80(), attempts, performed_at="2026-10-10T10:00:00+00:00")
+    assert (result.e1rm_kg, result.last_successful_single_kg, result.confirmed) == (None, None, False)
+    assert state.inputs.e1rm_kg is None and pending_inputs(state) == (PendingInput.ONE_REP_MAX,)
+    assert state.one_rm_tests[0]["outcome"] == "completed" and state.one_rm_tests[0]["e1rm_kg"] is None
+
+
+# --- Тест 1RM: явная добровольная остановка (review #318) -----------------------------------------------
+
+
+@pytest.mark.parametrize(("attempts", "last_single"), [
+    # BW 80, шаг 1,25: остановился после +15 × 1 (обычный) — до неудачи и до восьмого подхода.
+    pytest.param([_ok("0", 5), _ok("7.5", 3), _ok("15", 1, AttemptSpeed.NORMAL)], D("15"), id="after-first-single"),
+    # +15 быстрый → +22,5 (10% BW = 8 → 7,5) обычный → +26,25 (5% = 4 → 3,75) медленный — остановка.
+    pytest.param([
+        _ok("0", 5), _ok("7.5", 3), _ok("15", 1, AttemptSpeed.FAST), _ok("22.5", 1, AttemptSpeed.NORMAL),
+        _ok("26.25", 1, AttemptSpeed.SLOW),
+    ], D("26.25"), id="after-five-sets"),
+    # Остановка после разминочных ×5/×3: одиночного успешного нет — сохраняется только факт попыток.
+    pytest.param([_ok("0", 5)], None, id="after-bw-x5"),
+    pytest.param([_ok("0", 5), _ok("7.5", 3)], None, id="after-x3"),
+])
+def test_voluntary_stop_keeps_attempts_and_last_single_but_assigns_no_e1rm(attempts, last_single):
+    state, result = record_one_rm_test(
+        _transition_80(), attempts, performed_at="2026-10-10T10:00:00+00:00", outcome=OneRmOutcome.STOPPED,
+    )
+    assert result.outcome is OneRmOutcome.STOPPED and result.confirmed is False and result.e1rm_kg is None
+    assert result.last_successful_single_kg == last_single and result.sets_used == len(attempts)
+    assert result.conservative is False
+    # Не подтверждённый 1RM: E1RM не назначен, веса силы не посчитаны — курс по-прежнему ждёт тест.
+    assert state.inputs.e1rm_kg is None and pending_inputs(state) == (PendingInput.ONE_REP_MAX,)
+    assert state.strength_a.load_kg is None and state.strength_b.load_kg is None
+    (record,) = state.one_rm_tests
+    assert record["outcome"] == "stopped" and record["standardized"] is False and record["e1rm_kg"] is None
+    assert record["last_successful_single_kg"] == (str(last_single) if last_single is not None else None)
+    assert len(record["attempts"]) == len(attempts) and all(a["success"] for a in record["attempts"])
+
+
+@pytest.mark.parametrize("attempts", [
+    pytest.param([], id="nothing-to-record"),
+    pytest.param([_ok("0", 5), _ok("10", 3)], id="off-ladder"),
+    pytest.param([_ok("0", 5), _ok("7.5", 3), _ok("15", 1)], id="single-without-speed"),
+    pytest.param(VALID_TERMINAL_FAILURE, id="ladder-already-ended-by-failure"),
+    pytest.param(
+        [_ok("0", 5), _ok("7.5", 3)] + [_ok(str(15 + 7.5 * i), 1, AttemptSpeed.FAST) for i in range(6)],
+        id="ladder-already-ended-by-eighth-set",
+    ),
+])
+def test_voluntary_stop_keeps_server_ladder_validation(attempts):
+    state = _transition_80()
+    with pytest.raises(OneRmTestError):
+        record_one_rm_test(state, attempts, performed_at="2026-10-10T10:00:00+00:00", outcome=OneRmOutcome.STOPPED)
+    assert state.one_rm_tests == ()
+
+
+def test_latest_one_rm_test_at_uses_saved_server_timestamps():
+    assert latest_one_rm_test_at(()) is None
+    tests = [
+        {"performed_at": "2026-10-10T10:00:00+00:00", "outcome": "completed"},
+        {"performed_at": "2026-10-12T09:30:00+00:00", "outcome": "stopped"},
+        {"performed_at": "2026-10-11T08:00:00+00:00"},  # запись до review #318 — без outcome
+    ]
+    assert latest_one_rm_test_at(tests) == datetime(2026, 10, 12, 9, 30, tzinfo=UTC)
 
 
 def test_one_rm_preconditions():

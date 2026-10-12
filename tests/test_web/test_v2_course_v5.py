@@ -651,9 +651,133 @@ async def test_eighth_attempt_test_played_through_server_ladder(session, user: U
     assert [a["load_kg"] for a in attempts] == ["0", "7.5", "15", "22.5", "30", "37.5", "45", "52.5"]
     recorded = await v2_post(session, user.telegram_id, path, {"attempts": attempts})
     assert recorded.status_code == 200, recorded.text
-    assert recorded.json()["one_rep_max"] == {"e1rm_kg": "52.5", "conservative": True, "sets_used": 8}
+    assert recorded.json()["one_rep_max"] == {
+        "e1rm_kg": "52.5", "conservative": True, "sets_used": 8, "outcome": "completed", "confirmed": True,
+        "last_successful_single_kg": "52.5",
+    }
     state = await _state_of(session, inclusion)
     assert state["inputs"]["e1rm_kg"] == "52.5" and len(state["one_rm_tests"]) == 1
+
+
+# --- Тест 1RM: 48 ч и от предыдущего сохранённого теста (review #318) ------------------------------------
+
+
+async def _age_saved_tests(session, inclusion: ProgramInclusion, hours: float) -> None:
+    """Сдвинуть серверное время сохранённых тестов в прошлое (как будто они записаны `hours` назад)."""
+    await session.refresh(inclusion)
+    state = dict(inclusion.progression_state)
+    at = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+    state["one_rm_tests"] = [{**test, "performed_at": at} for test in state["one_rm_tests"]]
+    inclusion.progression_state = state
+    await session.flush()
+
+
+STOPPED_TEST = VALID_TEST[:3]  # BW×5 → +7,5×3 → +15×1 (обычный) — и явная остановка
+
+
+@pytest.mark.parametrize("first_stopped", [False, True], ids=["after-completed", "after-stopped"])
+async def test_second_one_rep_max_within_48h_of_saved_test_is_rejected_without_change(
+    session, user: User, clock, first_stopped,
+):
+    """Две последовательные записи: MAIN не было вовсе, но предыдущий СОХРАНЁННЫЙ тест (оконченный или
+    остановленный) — тяжёлая тяговая работа: второй тест раньше 48 ч — 409, состояние не меняется; и
+    начало новой лестницы тоже 409. Через 48 ч по серверному времени — снова можно."""
+    inclusion = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    first = {"attempts": STOPPED_TEST, "stopped": True} if first_stopped else {"attempts": VALID_TEST}
+    assert (await v2_post(session, user.telegram_id, path, first)).status_code == 200
+    before = await _state_of(session, inclusion)
+
+    second = await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})
+    assert second.status_code == 409 and second.json()["detail"]["code"] == "one_rep_max_too_soon"
+    stopped = await v2_post(session, user.telegram_id, path, {"attempts": STOPPED_TEST, "stopped": True})
+    assert stopped.status_code == 409 and stopped.json()["detail"]["code"] == "one_rep_max_too_soon"
+    ladder = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": []})
+    assert ladder.status_code == 409 and ladder.json()["detail"]["code"] == "one_rep_max_too_soon"
+    assert await _state_of(session, inclusion) == before and len(before["one_rm_tests"]) == 1
+
+    await _age_saved_tests(session, inclusion, hours=47.5)
+    still = await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})
+    assert still.status_code == 409  # 47,5 ч < 48 ч
+    await _age_saved_tests(session, inclusion, hours=48.5)
+    again = await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})
+    assert again.status_code == 200, again.text
+    assert len((await _state_of(session, inclusion))["one_rm_tests"]) == 2
+
+
+async def test_saved_test_of_previous_inclusion_still_counts_after_restart(session, user: User, clock):
+    """Тесты ищутся по всем V5.6-инклюзиям плана: снятие курса и подключение заново (restart) 48 ч не
+    обнуляет."""
+    old = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{old.id}/course/one-rep-max"
+    assert (await v2_post(session, user.telegram_id, path, {"attempts": VALID_TEST})).status_code == 200
+    old.is_active = False
+    await session.flush()
+    restarted = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {
+        "program_id": old.program_id, "restart": True, "course_inputs": {"load_step_kg": "1.25"},
+    })
+    assert restarted.status_code == 200, restarted.text
+    new_id = restarted.json()["id"]
+    assert new_id != old.id
+    new_path = f"/api/v2/program-inclusions/{new_id}/course/one-rep-max"
+    blocked = await v2_post(session, user.telegram_id, new_path, {"attempts": VALID_TEST})
+    assert blocked.status_code == 409 and blocked.json()["detail"]["code"] == "one_rep_max_too_soon"
+
+
+# --- Тест 1RM: явная добровольная остановка (review #318) ------------------------------------------------
+
+
+async def test_voluntary_stop_is_saved_but_not_a_confirmed_1rm(session, user: User, clock):
+    """Остановка после +15 × 1 без ложной «неудачи»: попытки и последний успешный одиночный вес сохранены,
+    но это не подтверждённый 1RM — E1RM не назначен, веса силы не посчитаны, курс по-прежнему ждёт тест."""
+    inclusion = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    # Лестница продолжилась бы (+18,75 × 1) — тест не окончен по своему правилу.
+    nxt = await v2_post(session, user.telegram_id, f"{path}/next-set", {"attempts": STOPPED_TEST})
+    assert nxt.json()["next_set"] == {"set_number": 4, "load_kg": "18.75", "reps": 1}
+    recorded = await v2_post(session, user.telegram_id, path, {"attempts": STOPPED_TEST, "stopped": True})
+    assert recorded.status_code == 200, recorded.text
+    body = recorded.json()
+    assert body["one_rep_max"] == {
+        "e1rm_kg": None, "conservative": False, "sets_used": 3, "outcome": "stopped", "confirmed": False,
+        "last_successful_single_kg": "15",
+    }
+    assert body["pending_inputs"] == ["one_rep_max"] and body["next_workout"] is None
+    state = await _state_of(session, inclusion)
+    assert state["inputs"]["e1rm_kg"] is None
+    (record,) = state["one_rm_tests"]
+    assert record["outcome"] == "stopped" and record["standardized"] is False
+    assert record["last_successful_single_kg"] == "15" and len(record["attempts"]) == 3
+    assert all(attempt["success"] for attempt in record["attempts"])  # без ложной неудачи
+
+
+@pytest.mark.parametrize(("attempts", "stopped"), [
+    pytest.param(STOPPED_TEST, False, id="unfinished-without-explicit-stop"),
+    pytest.param(VALID_TEST, True, id="stop-after-terminal-failure"),
+    pytest.param([{"load_kg": "0", "reps": 5, "success": True}, {"load_kg": "10", "reps": 3, "success": True}], True,
+                 id="stop-off-ladder"),
+    pytest.param([{"load_kg": "60", "reps": 1, "success": True, "speed": "fast"}], True, id="stop-arbitrary-single"),
+])
+async def test_voluntary_stop_keeps_ladder_validation(session, user: User, clock, attempts, stopped):
+    inclusion = await _transition_80(session, user)
+    before = await _state_of(session, inclusion)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    recorded = await v2_post(session, user.telegram_id, path, {"attempts": attempts, "stopped": stopped})
+    assert recorded.status_code == 422 and recorded.json()["detail"]["code"] == "one_rep_max_invalid"
+    assert await _state_of(session, inclusion) == before
+
+
+async def test_completed_test_without_successful_single_assigns_no_e1rm(session, user: User, clock):
+    inclusion = await _transition_80(session, user)
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max"
+    recorded = await v2_post(session, user.telegram_id, path, {"attempts": [
+        {"load_kg": "0", "reps": 5, "success": True}, {"load_kg": "7.5", "reps": 3, "success": True},
+        {"load_kg": "15", "reps": 1, "success": False},
+    ]})
+    assert recorded.status_code == 200, recorded.text
+    assert recorded.json()["one_rep_max"]["e1rm_kg"] is None
+    assert recorded.json()["one_rep_max"]["confirmed"] is False
+    assert recorded.json()["pending_inputs"] == ["one_rep_max"]
 
 
 async def test_one_rep_max_not_applicable_to_assisted_level(session, user: User, clock):
