@@ -2949,3 +2949,30 @@ golden-хеши (`tests/test_scripts/test_frozen_b7d2e9f4a1c3_parity.py`), им�
   расхождении не применяет прибавку к другому весу (`load_changed_since_prescription`).
 - **Ловушка 4 — `status varchar(16)`.** `awaiting_assessment` = 19 символов; ревизия `e3b9c5d7a2f1` расширяет колонку до
   32 (совместимо со старым кодом), downgrade переводит такие строки в `active`.
+
+## Lost update `progression_state` V5.6: тест 1RM ↔ ввод входов ↔ завершение MAIN (review #320)
+
+Инцидент (ревью, 3/3): `PUT /course/inputs` читал `progression_state`, тем временем запись теста 1RM
+коммитила тест, затем PUT записывал прочитанный ранее JSONB целиком — исчезали `one_rm_tests` и E1RM, а
+с ними и правило 48 ч. Тот же механизм подтверждён тестом для `complete_session` → `advance_from_session`
+(завершение затирает тест; запись теста затирает шаг прогрессии) и закрыт заодно для старта MAIN
+(`prescribe_main` дописывает массу тела). Advisory-лок стартов брали только запись 1RM и старт — PUT и
+завершение шли мимо него.
+
+Решение — одна точка сериализации на строке инклюзии: `TrainingPlanRepository.lock_inclusion`
+(`SELECT … FOR NO KEY UPDATE` + `populate_existing`) ДО построения нового состояния во всех
+read-modify-write курса: `update_inputs`, `record_one_rep_max` (вместо `refresh`), `prescribe_main`,
+`complete_session` (сразу после поиска инклюзии, обе ветки — V5.6 и прежний STEP). Клиентский debounce
+гонку не лечит и не используется.
+
+- **Порядок локов:** advisory-лок стартов пользователя → строка `training_sessions` → строка
+  `program_inclusions`. Держащий строку инклюзии не берёт ни advisory, ни строку сессии, ни
+  `lock_plan`, поэтому цикла со стартом MAIN (advisory → инклюзия), записью 1RM (advisory → инклюзия),
+  завершением (сессия → инклюзия), сходимостью/снятием плана (план → инклюзия) нет.
+- **NO KEY UPDATE, не FOR UPDATE:** вставка сессии/PlanItem со ссылкой на инклюзию берёт KEY SHARE и
+  не должна ждать.
+- **Exactly-once не изменился:** повторное «Завершить» по-прежнему отсекает `lock_session` + статус;
+  лок инклюзии берётся уже после этой проверки.
+- Тесты: `tests/test_web/test_v2_course_v5_state_lost_update.py` — свои сессии/транзакции на запрос,
+  запрос A стоит на Event после чтения, B идёт до конца или до ожидания лока (`pg_stat_activity`), без
+  sleep-таймингов. Откат исправления — 4 из 5 падают (тест/E1RM/входы/прогрессия потеряны).

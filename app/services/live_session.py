@@ -1178,6 +1178,11 @@ class LiveSessionService:
             skipped_reason = "not_plan_session"
         else:
             inclusion = await self._find_step_inclusion_for_session(detail, user_id)
+            if inclusion is not None:
+                # Строка инклюзии под лок с перечитыванием ДО шага прогрессии: тест 1RM / ввод входов,
+                # закоммиченные конкурентом, не затираются устаревшим progression_state (lost update).
+                # Порядок: строка сессии (выше) → строка инклюзии — тот же, что у остальных писателей.
+                await self._plans.lock_inclusion(inclusion.id)
             if inclusion is None:
                 skipped_reason = "no_program_inclusion"
             elif is_v5_state(inclusion.progression_state):

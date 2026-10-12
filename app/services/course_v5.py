@@ -89,6 +89,13 @@ async def assistance_ladder(session: AsyncSession, user_id: int) -> tuple[Assist
     return tuple(AssistanceSetup(kind=BAND_KIND, equipment_item_id=item.id, name=item.name) for item in items)
 
 
+async def _lock_fresh(session: AsyncSession, inclusion: ProgramInclusion) -> None:
+    """Строка инклюзии под FOR NO KEY UPDATE и перечитанное закоммиченное состояние — до построения нового
+    state: все записи progression_state курса сериализуются на этой строке (иначе lost update целого
+    JSONB: тест 1RM, E1RM, входы или шаг прогрессии конкурента)."""
+    await TrainingPlanRepository(session).lock_inclusion(inclusion.id)
+
+
 def _store(inclusion: ProgramInclusion, state: V5State) -> None:
     # Новый dict целиком — SQLAlchemy надёжно видит только замену JSONB-атрибута.
     inclusion.progression_state = state.to_dict()
@@ -99,6 +106,7 @@ async def prescribe_main(
 ) -> SessionPrescription:
     """Рецепт следующего основного занятия. Текущая масса тела из профиля (обновляется раз в неделю,
     §8.5) переносится во входы ВПЕРЁД — для будущих расчётов; выданные рецепты не трогаются."""
+    await _lock_fresh(session, inclusion)
     state = v5_state(inclusion)
     if body_mass_kg is not None and state.inputs.body_mass_kg != body_mass_kg:
         state = apply_inputs(state, EntryInputs(body_mass_kg=body_mass_kg))
@@ -174,7 +182,9 @@ async def advance_from_session(
     session: AsyncSession, inclusion: ProgramInclusion, detail: SessionDetail, *, user_id: int,
     body_mass_kg: Decimal | None,
 ) -> CourseAdvanceResult:
-    """Прогрессия V5.6 по завершённому основному занятию — рецепт берётся ИЗ СНИМКА этой сессии."""
+    """Прогрессия V5.6 по завершённому основному занятию — рецепт берётся ИЗ СНИМКА этой сессии.
+    Вызывающий (complete_session) уже держит строку инклюзии (``lock_inclusion``): шаг строится от
+    актуального состояния, конкурентный тест 1RM / ввод входов не затирается."""
     prescription = course_prescription_of(detail)
     if prescription is None:
         return CourseAdvanceResult(None, "v5_requires_prescribed_session")
@@ -205,7 +215,10 @@ async def update_inputs(
     confirmations: list[tuple[str, AssistanceSetup]] | None = None,
 ) -> V5State:
     """Входы и подтверждения помощи — только вперёд. Неполная/недопустимая запись помощи —
-    V5StateError (роут → 422), состояние не меняется."""
+    V5StateError (роут → 422), состояние не меняется. Строится от перечитанного под локом строки
+    состояния, а не от загруженного роутом: иначе запись теста 1RM / прогрессия, закоммиченные между
+    чтением и записью, были бы затёрты."""
+    await _lock_fresh(session, inclusion)
     state = apply_inputs(v5_state(inclusion), update)
     for block, setup in confirmations or []:
         state = confirm_assistance(state, block, setup)
@@ -249,12 +262,13 @@ async def record_one_rep_max(
     Конкурентность: два одновременных запроса записи (двойной тап, два устройства) оба прошли бы проверку
     «последнего теста нет» и оба дописали бы тест. Поэтому до проверки берётся тот же транзакционный
     advisory-лок пользователя, что у старта занятия (``lock_user_starts``): записи 1RM сериализуются между
-    собой и со стартом MAIN; после лока инклюзия перечитывается из БД, и проигравший видит уже
-    закоммиченный тест победителя → 409, ничего не пишется."""
+    собой и со стартом MAIN; затем берётся строка инклюзии (``lock_inclusion``, общий лок с вводом входов
+    и прогрессией завершения) с перечитыванием из БД: проигравший видит уже закоммиченный тест победителя
+    → 409, ничего не пишется, а конкурентные входы / шаг прогрессии не затираются."""
     from app.services.live_session import lock_user_starts  # live_session импортирует этот модуль
 
     await lock_user_starts(session, user_id)
-    await session.refresh(inclusion)
+    await _lock_fresh(session, inclusion)
     if not one_rep_max_day_ok(await last_heavy_pulling_at(session, inclusion, user_id), now=performed_at):
         raise OneRepMaxTooSoonError()
     # Лестница, повторения, скорости и способ окончания (оконченный тест / явная остановка) проверяются

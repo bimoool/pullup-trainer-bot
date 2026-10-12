@@ -67,6 +67,20 @@ class TrainingPlanRepository:
     async def get_inclusion_by_id(self, inclusion_id: int) -> ProgramInclusion | None:
         return await self._session.get(ProgramInclusion, inclusion_id)
 
+    async def lock_inclusion(self, inclusion_id: int) -> ProgramInclusion | None:
+        """SELECT ... FOR NO KEY UPDATE строки инклюзии — точка сериализации всех read-modify-write
+        progression_state (вход курса, тест 1RM, прогрессия завершения, масса тела при старте): JSONB
+        пишется целиком, и без лока конкурент, прочитавший состояние раньше, записывал бы устаревший dict
+        поверх чужого коммита (lost update). populate_existing: после ожидания лока объект в identity map
+        перечитывается закоммиченным состоянием. NO KEY — не конфликтует с KEY SHARE внешних ключей
+        (вставка сессии/PlanItem со ссылкой на инклюзию не ждёт). Порядок локов: advisory-лок стартов
+        пользователя → строка сессии → строка инклюзии; держащий этот лок ни тот, ни другой не берёт."""
+        result = await self._session.execute(
+            select(ProgramInclusion).where(ProgramInclusion.id == inclusion_id).with_for_update(key_share=True)
+            .execution_options(populate_existing=True),
+        )
+        return result.scalar_one_or_none()
+
     async def get_inclusion_for_user(self, inclusion_id: int, user_id: int) -> ProgramInclusion | None:
         """Ownership-проверка через join на training_plans — 404, не 403,
         тем же принципом, что EquipmentItemRepository.rename/.delete (см.
