@@ -1,0 +1,1830 @@
+
+Running 527 tests using 1 worker
+
+  ✓    1 [chromium] › scenarios/analytics-v2.spec.ts:14:1 › Analytics v2: активность, панели протоколов, разделение reps/max, >200 сессий (1.3s)
+  ✓    2 [chromium] › scenarios/analytics-v2.spec.ts:71:1 › Analytics v2: ошибка не блокирует «Программу»; повтор работает (1.1s)
+  ✓    3 [chromium] › scenarios/analytics-v2.spec.ts:93:3 › Analytics v2: 320px без горизонтального скролла (708ms)
+  ✓    4 [chromium] › scenarios/analytics-v2.spec.ts:93:3 › Analytics v2: 390px без горизонтального скролла (675ms)
+  ✘    5 [chromium] › scenarios/builder-execution.spec.ts:20:1 › A. reps standalone: цели из prescription, Summary после последнего блока (2.0m)
+  -    6 [chromium] › scenarios/builder-execution.spec.ts:35:1 › B. time standalone: таймер работы от сервера, «Стоп» записывает измеренное
+  -    7 [chromium] › scenarios/builder-execution.spec.ts:55:1 › C. max standalone: попытки без выдуманной цели
+  -    8 [chromium] › scenarios/builder-execution.spec.ts:70:1 › D. interval standalone: тот же движок, раунды идут сами до конца
+  -    9 [chromium] › scenarios/builder-execution.spec.ts:85:1 › E. mixed reps -> interval -> max: блоки сменяются сами, reload посреди интервала, Summary
+  -   10 [chromium] › scenarios/builder-execution.spec.ts:128:1 › F. дубли упражнения: подходы второго блока не попадают в первый
+  ✘   11 [chromium] › scenarios/builder-execution.spec.ts:20:1 › A. reps standalone: цели из prescription, Summary после последнего блока (retry #1) (2.0m)
+  -   12 [chromium] › scenarios/builder-execution.spec.ts:35:1 › B. time standalone: таймер работы от сервера, «Стоп» записывает измеренное (retry #1)
+  -   13 [chromium] › scenarios/builder-execution.spec.ts:55:1 › C. max standalone: попытки без выдуманной цели (retry #1)
+  -   14 [chromium] › scenarios/builder-execution.spec.ts:70:1 › D. interval standalone: тот же движок, раунды идут сами до конца (retry #1)
+  -   15 [chromium] › scenarios/builder-execution.spec.ts:85:1 › E. mixed reps -> interval -> max: блоки сменяются сами, reload посреди интервала, Summary (retry #1)
+  -   16 [chromium] › scenarios/builder-execution.spec.ts:128:1 › F. дубли упражнения: подходы второго блока не попадают в первый (retry #1)
+  ✓   17 [chromium] › scenarios/builder-ux.spec.ts:18:1 › создание: пустое название блокирует шаг, протоколы объяснены словами (967ms)
+  ✘   18 [chromium] › scenarios/builder-ux.spec.ts:38:1 › reps: явные подписи, −/+ и ввод, превью = то, что сохранится и открывается снова (817ms)
+  -   19 [chromium] › scenarios/builder-ux.spec.ts:83:1 › time, max, interval: свои подписи, превью, сохранение
+  ✓   20 [chromium] › scenarios/builder-ux.spec.ts:18:1 › создание: пустое название блокирует шаг, протоколы объяснены словами (retry #1) (1.6s)
+  ✘   21 [chromium] › scenarios/builder-ux.spec.ts:38:1 › reps: явные подписи, −/+ и ввод, превью = то, что сохранится и открывается снова (retry #1) (1.1s)
+  -   22 [chromium] › scenarios/builder-ux.spec.ts:83:1 › time, max, interval: свои подписи, превью, сохранение (retry #1)
+  ✘   23 [chromium] › scenarios/course-v5-engine.spec.ts:10:1 › V5.6 A: после последнего подхода — подтверждение техники и отдыха, затем одно завершение с прибавкой (30.2s)
+  ✘   24 [chromium] › scenarios/course-v5-engine.spec.ts:10:1 › V5.6 A: после последнего подхода — подтверждение техники и отдыха, затем одно завершение с прибавкой (retry #1) (30.3s)
+  ✘   25 [chromium] › scenarios/course-v5-engine.spec.ts:45:1 › V5.6: нет 1RM — тест проходится в приложении по лестнице, результат открывает тренировку (6.3s)
+  ✘   26 [chromium] › scenarios/course-v5-engine.spec.ts:45:1 › V5.6: нет 1RM — тест проходится в приложении по лестнице, результат открывает тренировку (retry #1) (6.5s)
+  ✘   27 [chromium] › scenarios/first-workout.spec.ts:16:1 › первая тренировка: курс из каталога → в план → живая тренировка → итог (30.2s)
+  ✘   28 [chromium] › scenarios/first-workout.spec.ts:16:1 › первая тренировка: курс из каталога → в план → живая тренировка → итог (retry #1) (30.3s)
+  ✓   29 [chromium] › scenarios/fix-wave1/custom-workout-direct.spec.ts:79:1 › новый пользователь: своя тренировка с нуля -> упражнение -> протокол -> сохранить -> перезагрузка -> начать -> журнал (5.4s)
+  ✓   30 [chromium] › scenarios/fix-wave1/custom-workout-direct.spec.ts:123:1 › тренировка без упражнений: причина рядом с «Начать» и один тап до выбора упражнения (3.1s)
+  ✓   31 [chromium] › scenarios/fix-wave1/custom-workout-direct.spec.ts:153:1 › E1: «Планы» без плана не зацикливается с «Главной» — каждый CTA ведёт к действию (2.9s)
+
+  ✘   32 [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:72:1 › Просроченный пользователь: курс за подпиской, свои тренировки доступны, grant возвращает курс (9.7s)
+
+  ✘   33 [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:72:1 › Просроченный пользователь: курс за подпиской, свои тренировки доступны, grant возвращает курс (retry #1) (9.2s)
+
+  ✘   34 [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:143:1 › Клиент считает доступ активным, сервер отвечает 402 — тот же экран подписки (13.1s)
+
+  ✘   35 [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:143:1 › Клиент считает доступ активным, сервер отвечает 402 — тот же экран подписки (retry #1) (13.7s)
+  ✓   36 [chromium] › scenarios/fix-wave1/first-add-to-plan.spec.ts:44:1 › первое «Добавить в план» нового пользователя: строка видна, переживает reload, стартует и считается (6.4s)
+  ✓   37 [chromium] › scenarios/fix-wave1/fresh-install-content.spec.ts:71:1 › новый пользователь: Главная → «Подтягивания» → в план → курс стартуемый в Планах, после перезагрузки тоже (3.2s)
+  ✓   38 [chromium] › scenarios/fix-wave1/fresh-install-content.spec.ts:95:1 › новый пользователь: «Создать тренировку» → «+ Добавить упражнение» — системные упражнения видны без ввода, «Факультатив» нет (2.1s)
+  ✓   39 [chromium] › scenarios/fix-wave1/fresh-install-content.spec.ts:119:1 › новый пользователь: готовая тренировка находится в поиске и на Главной, детали → «Начать» ведут к старту (2.6s)
+  ✓   40 [chromium] › scenarios/fix-wave1/j1-course-end-to-end.spec.ts:40:1 › J1: новый пользователь проходит курс «Подтягивания» от каталога до Журнала и Аналитики (7.3s)
+  ✓   41 [chromium] › scenarios/fix-wave1/later-weeks.spec.ts:47:1 › «Подтягивания»: недели 2 и 3 не пустые — 2 занятия (V5.6), будущие стартуемы (4.2s)
+  ✘   42 [chromium] › scenarios/golden-journey.spec.ts:25:1 › Golden Journey: Главная → в план → тренировка → Summary → Аналитика → Журнал → удаление (1.8s)
+  ✘   43 [chromium] › scenarios/golden-journey.spec.ts:25:1 › Golden Journey: Главная → в план → тренировка → Summary → Аналитика → Журнал → удаление (retry #1) (1.8s)
+  ✓   44 [chromium] › scenarios/home-discovery.spec.ts:20:3 › Главная @320px: Программы, Мои тренировки, чужие не видны, без переполнения (1.2s)
+  ✓   45 [chromium] › scenarios/home-discovery.spec.ts:20:3 › Главная @390px: Программы, Мои тренировки, чужие не видны, без переполнения (740ms)
+  ✘   46 [chromium] › scenarios/home-discovery.spec.ts:64:1 › Главная: открыть Мою тренировку, создать новую, навигация цела (7.3s)
+  ✘   47 [chromium] › scenarios/home-discovery.spec.ts:64:1 › Главная: открыть Мою тренировку, создать новую, навигация цела (retry #1) (7.1s)
+  ✘   48 [chromium] › scenarios/journal-combined.spec.ts:12:1 › Планы → Подтягивания/Планка → Complete → Журнал показывает обе + legacy не пропала (30.2s)
+  ✘   49 [chromium] › scenarios/journal-combined.spec.ts:12:1 › Планы → Подтягивания/Планка → Complete → Журнал показывает обе + legacy не пропала (retry #1) (30.2s)
+  ✘   50 [chromium] › scenarios/journal-v2.spec.ts:14:1 › Journal v2: карточки всех протоколов, детали, безопасное удаление, пагинация (2.0m)
+  ✘   51 [chromium] › scenarios/journal-v2.spec.ts:14:1 › Journal v2: карточки всех протоколов, детали, безопасное удаление, пагинация (retry #1) (2.0m)
+  ✘   52 [chromium] › scenarios/live-engine-v2.spec.ts:55:1 › 1. PREP → WORK по дедлайну, без тапа (2.0m)
+  ✘   53 [chromium] › scenarios/live-engine-v2.spec.ts:55:1 › 1. PREP → WORK по дедлайну, без тапа (retry #1) (2.0m)
+  ✘   54 [chromium] › scenarios/live-engine-v2.spec.ts:67:1 › 2. REST → следующий WORK по дедлайну; таймер = сервер ±1 с (2.0m)
+  ✘   55 [chromium] › scenarios/live-engine-v2.spec.ts:67:1 › 2. REST → следующий WORK по дедлайну; таймер = сервер ±1 с (retry #1) (2.0m)
+  ✘   56 [chromium] › scenarios/live-engine-v2.spec.ts:85:1 › 3. Отдых блока → следующий блок сам; подход на время засчитывается сам; итог (2.0m)
+  ✘   57 [chromium] › scenarios/live-engine-v2.spec.ts:85:1 › 3. Отдых блока → следующий блок сам; подход на время засчитывается сам; итог (retry #1) (2.0m)
+  ✘   58 [chromium] › scenarios/live-engine-v2.spec.ts:105:1 › 4. Фон/перезагрузка поперёк дедлайна: на возврате фаза уже переключена (2.0m)
+  ✘   59 [chromium] › scenarios/live-engine-v2.spec.ts:105:1 › 4. Фон/перезагрузка поперёк дедлайна: на возврате фаза уже переключена (retry #1) (2.0m)
+  ✘   60 [chromium] › scenarios/live-engine-v2.spec.ts:122:1 › 5. Пауза на сервере: переживает перезагрузку и второе устройство; «Продолжить» — тот же остаток (2.0m)
+  ✘   61 [chromium] › scenarios/live-engine-v2.spec.ts:122:1 › 5. Пауза на сервере: переживает перезагрузку и второе устройство; «Продолжить» — тот же остаток (retry #1) (2.0m)
+  ✘   62 [chromium] › scenarios/live-engine-v2.spec.ts:154:1 › 6. Интервал на том же движке: пауза/перезагрузка/продолжение, завершение само (2.0m)
+  ✘   63 [chromium] › scenarios/live-engine-v2.spec.ts:154:1 › 6. Интервал на том же движке: пауза/перезагрузка/продолжение, завершение само (retry #1) (2.0m)
+  ✓   64 [chromium] › scenarios/live-engine-v2.spec.ts:200:1 › 8. #306 B1: «Стоп» подхода на время офлайн, приложение перезапущено после дедлайна — записано измеренное, не цель (24.3s)
+  ✓   65 [chromium] › scenarios/live-engine-v2.spec.ts:224:1 › 9. #306 B1: пауза интервала офлайн, приложение перезапущено позже — на паузе, остаток тот же, не завершилась сама (31.7s)
+  ✓   66 [chromium] › scenarios/live-engine-v2.spec.ts:309:1 › 10. #306 F1: первая досылка при запуске упала (браузер онлайн) — повтор сам, «Стоп» не перекрыт целью (24.5s)
+  ✓   67 [chromium] › scenarios/live-engine-v2.spec.ts:325:1 › 11. #306 F1: Журнал, открытый до успешного повтора, не проецирует дедлайн раньше очереди (27.1s)
+  ✓   68 [chromium] › scenarios/live-engine-v2.spec.ts:342:1 › 12. #306 F1: пауза офлайн, первая досылка упала, перезагрузка при «онлайн» — пауза дошла раньше проекции (32.2s)
+  ✓   69 [chromium] › scenarios/live-engine-v2.spec.ts:371:3 › 320 px › 7. Экран движка без горизонтальной прокрутки на 320 px (6.7s)
+  ✓   70 [chromium] › scenarios/not-onboarded.spec.ts:11:1 › совсем новый пользователь: сразу видит замер Mini App, без нижнего меню (556ms)
+  ✘   71 [chromium] › scenarios/plans-add-exercise.spec.ts:17:1 › «Планы»: добавить Планку в Среду и Отжимания в Пятницу через picker (2.5s)
+  ✘   72 [chromium] › scenarios/plans-add-exercise.spec.ts:17:1 › «Планы»: добавить Планку в Среду и Отжимания в Пятницу через picker (retry #1) (2.9s)
+  ✓   73 [chromium] › scenarios/plans-grouping.spec.ts:17:1 › «Планы»: курс A+Б одного дня — занятия-строки курса, без «Блок A»/«Блок Б», ручная — отдельно (1.6s)
+  ✘   74 [chromium] › scenarios/plans-manual-session.spec.ts:11:1 › «Планы» → manual «Планка»/«Отжимания» → Start без ProgramInclusion → Complete → Summary (30.2s)
+  ✘   75 [chromium] › scenarios/plans-manual-session.spec.ts:11:1 › «Планы» → manual «Планка»/«Отжимания» → Start без ProgramInclusion → Complete → Summary (retry #1) (30.2s)
+  ✓   76 [chromium] › scenarios/plans-plan-week.spec.ts:16:1 › «Планы»: видна текущая неделя плана, элементы реально относятся к ней (875ms)
+  ✘   77 [chromium] › scenarios/plans-start-session.spec.ts:12:1 › «Планы» → Подтягивания → Начать → live session → Complete, без admin/lab (5.8s)
+  ✘   78 [chromium] › scenarios/plans-start-session.spec.ts:12:1 › «Планы» → Подтягивания → Начать → live session → Complete, без admin/lab (retry #1) (5.8s)
+  ✓   79 [chromium] › scenarios/ready.spec.ts:18:1 › возвращающийся пользователь: нет глобального старта, прошлая тренировка — в Журнале (1.1s)
+  ✓   80 [chromium] › scenarios/session-back-button.spec.ts:37:1 › BackButton: отмена подтверждения оставляет ту же сессию, подход сохранён; подтверждение завершает ровно один раз (3.4s)
+  ✘   81 [chromium] › scenarios/session-complex.spec.ts:18:1 › live-сессия (v2): комплекс из 3 упражнений, завершил после двух (30.2s)
+  ✘   82 [chromium] › scenarios/session-complex.spec.ts:18:1 › live-сессия (v2): комплекс из 3 упражнений, завершил после двух (retry #1) (30.2s)
+  ✓   83 [chromium] › scenarios/session-offline.spec.ts:19:1 › live-сессия (v2): 4 подхода офлайн, синхронизация и завершение после подключения сети (4.1s)
+  ✘   84 [chromium] › scenarios/session-progression-edit.spec.ts:17:1 › правка вчерашней v2-сессии: preview → Оставить не меняет цель, Применить меняет (6.2s)
+  ✘   85 [chromium] › scenarios/session-progression-edit.spec.ts:17:1 › правка вчерашней v2-сессии: preview → Оставить не меняет цель, Применить меняет (retry #1) (6.8s)
+  ✘   86 [chromium] › scenarios/session-recovery.spec.ts:24:1 › активная тренировка: фон/передний план, reload — та же сессия, подходы не дублируются, таймер по часам (3.1s)
+  ✓   87 [chromium] › scenarios/session-recovery.spec.ts:24:1 › активная тренировка: фон/передний план, reload — та же сессия, подходы не дублируются, таймер по часам (retry #1) (9.3s)
+  ✘   88 [chromium] › scenarios/session-summary-exit.spec.ts:18:1 › Summary: BackButton не воскрешает сессию, «Закрыть» ведёт на живой экран, повторный вход не возвращает завершённую (2.8s)
+  ✓   89 [chromium] › scenarios/session-summary-exit.spec.ts:18:1 › Summary: BackButton не воскрешает сессию, «Закрыть» ведёт на живой экран, повторный вход не возвращает завершённую (retry #1) (5.0s)
+  -   90 [chromium] › scenarios/ux-capture.spec.ts:40:3 › capture builder+home @390
+  -   91 [chromium] › scenarios/ux-capture.spec.ts:73:3 › capture execution @390
+  -   92 [chromium] › scenarios/ux-capture.spec.ts:96:3 › capture tabs @390
+  -   93 [chromium] › scenarios/ux-capture.spec.ts:142:3 › capture live+settings+collections @390
+  -   94 [chromium] › scenarios/ux-capture.spec.ts:40:3 › capture builder+home @320
+  -   95 [chromium] › scenarios/ux-capture.spec.ts:73:3 › capture execution @320
+  -   96 [chromium] › scenarios/ux-capture.spec.ts:96:3 › capture tabs @320
+  -   97 [chromium] › scenarios/ux-capture.spec.ts:142:3 › capture live+settings+collections @320
+  ✓   98 [parity] › scenarios/crimpd-parity.spec.ts:39:5 › Baseline surface @320px › пять вкладок открываются и показывают основное содержимое (1.6s)
+  ✓   99 [parity] › scenarios/crimpd-parity.spec.ts:39:5 › Baseline surface @390px › пять вкладок открываются и показывают основное содержимое (1.5s)
+  ✓  100 [parity] › scenarios/crimpd-parity.spec.ts:85:7 › Home @320px light › sticky поиск, ряды категорий, поиск с фильтром и «+»-шторка (3.7s)
+  ✓  101 [parity] › scenarios/crimpd-parity.spec.ts:156:7 › Home @320px light › закрытие поиска возвращает на Главную с сохранённой прокруткой (1.2s)
+  ✓  102 [parity] › scenarios/crimpd-parity.spec.ts:85:7 › Home @320px dark › sticky поиск, ряды категорий, поиск с фильтром и «+»-шторка (3.3s)
+  ✓  103 [parity] › scenarios/crimpd-parity.spec.ts:156:7 › Home @320px dark › закрытие поиска возвращает на Главную с сохранённой прокруткой (923ms)
+  ✓  104 [parity] › scenarios/crimpd-parity.spec.ts:85:7 › Home @390px light › sticky поиск, ряды категорий, поиск с фильтром и «+»-шторка (3.0s)
+  ✓  105 [parity] › scenarios/crimpd-parity.spec.ts:156:7 › Home @390px light › закрытие поиска возвращает на Главную с сохранённой прокруткой (821ms)
+  ✓  106 [parity] › scenarios/crimpd-parity.spec.ts:85:7 › Home @390px dark › sticky поиск, ряды категорий, поиск с фильтром и «+»-шторка (2.4s)
+  ✓  107 [parity] › scenarios/crimpd-parity.spec.ts:156:7 › Home @390px dark › закрытие поиска возвращает на Главную с сохранённой прокруткой (1.0s)
+  ✓  108 [parity] › scenarios/crimpd-parity.spec.ts:182:7 › Workout Detail @320px light › карточка с Главной открывает деталь: сводка, упражнения, действия, история (1.5s)
+  ✓  109 [parity] › scenarios/crimpd-parity.spec.ts:216:7 › Workout Detail @320px light › пустая история и оценка длительности; вход из «Мои тренировки» (1.5s)
+  ✓  110 [parity] › scenarios/crimpd-parity.spec.ts:182:7 › Workout Detail @320px dark › карточка с Главной открывает деталь: сводка, упражнения, действия, история (1.9s)
+  ✓  111 [parity] › scenarios/crimpd-parity.spec.ts:216:7 › Workout Detail @320px dark › пустая история и оценка длительности; вход из «Мои тренировки» (1.6s)
+  ✓  112 [parity] › scenarios/crimpd-parity.spec.ts:182:7 › Workout Detail @390px light › карточка с Главной открывает деталь: сводка, упражнения, действия, история (1.8s)
+  ✓  113 [parity] › scenarios/crimpd-parity.spec.ts:216:7 › Workout Detail @390px light › пустая история и оценка длительности; вход из «Мои тренировки» (2.3s)
+  ✓  114 [parity] › scenarios/crimpd-parity.spec.ts:182:7 › Workout Detail @390px dark › карточка с Главной открывает деталь: сводка, упражнения, действия, история (1.6s)
+  ✓  115 [parity] › scenarios/crimpd-parity.spec.ts:216:7 › Workout Detail @390px dark › пустая история и оценка длительности; вход из «Мои тренировки» (1.5s)
+  ✓  116 [parity] › scenarios/crimpd-parity.spec.ts:250:7 › Favorites @320px light › тумблер, сохранение после перезагрузки, ряд на Главной и чип в поиске (3.0s)
+  ✓  117 [parity] › scenarios/crimpd-parity.spec.ts:317:7 › Favorites @320px light › при ошибке запроса сердечко откатывается с короткой ошибкой (1.5s)
+  ✓  118 [parity] › scenarios/crimpd-parity.spec.ts:250:7 › Favorites @320px dark › тумблер, сохранение после перезагрузки, ряд на Главной и чип в поиске (3.6s)
+  ✓  119 [parity] › scenarios/crimpd-parity.spec.ts:317:7 › Favorites @320px dark › при ошибке запроса сердечко откатывается с короткой ошибкой (1.3s)
+  ✓  120 [parity] › scenarios/crimpd-parity.spec.ts:250:7 › Favorites @390px light › тумблер, сохранение после перезагрузки, ряд на Главной и чип в поиске (4.1s)
+  ✓  121 [parity] › scenarios/crimpd-parity.spec.ts:317:7 › Favorites @390px light › при ошибке запроса сердечко откатывается с короткой ошибкой (1.4s)
+  ✓  122 [parity] › scenarios/crimpd-parity.spec.ts:250:7 › Favorites @390px dark › тумблер, сохранение после перезагрузки, ряд на Главной и чип в поиске (3.9s)
+  ✓  123 [parity] › scenarios/crimpd-parity.spec.ts:317:7 › Favorites @390px dark › при ошибке запроса сердечко откатывается с короткой ошибкой (1.5s)
+  ✓  124 [parity] › scenarios/crimpd-parity.spec.ts:357:7 › Journal calendar @320px light › месяц-бар, точки на днях, выбор дня, переключение месяца, пустой месяц (2.4s)
+  ✓  125 [parity] › scenarios/crimpd-parity.spec.ts:357:7 › Journal calendar @320px dark › месяц-бар, точки на днях, выбор дня, переключение месяца, пустой месяц (2.1s)
+  ✓  126 [parity] › scenarios/crimpd-parity.spec.ts:357:7 › Journal calendar @390px light › месяц-бар, точки на днях, выбор дня, переключение месяца, пустой месяц (1.7s)
+  ✓  127 [parity] › scenarios/crimpd-parity.spec.ts:357:7 › Journal calendar @390px dark › месяц-бар, точки на днях, выбор дня, переключение месяца, пустой месяц (3.0s)
+  ✘  128 [parity] › scenarios/crimpd-parity.spec.ts:445:5 › Live effort @320px light › чипы со словами, review-шаг «Как прошла тренировка?», оценка и заметка в Журнале (4.2s)
+  ✓  129 [parity] › scenarios/crimpd-parity.spec.ts:445:5 › Live effort @320px light › чипы со словами, review-шаг «Как прошла тренировка?», оценка и заметка в Журнале (retry #1) (4.9s)
+  ✘  130 [parity] › scenarios/crimpd-parity.spec.ts:445:5 › Live effort @390px dark › чипы со словами, review-шаг «Как прошла тренировка?», оценка и заметка в Журнале (5.6s)
+  ✓  131 [parity] › scenarios/crimpd-parity.spec.ts:445:5 › Live effort @390px dark › чипы со словами, review-шаг «Как прошла тренировка?», оценка и заметка в Журнале (retry #1) (4.9s)
+  ✓  132 [parity] › scenarios/crimpd-parity.spec.ts:534:5 › Plans week @320px light › степпер недели, счётчики, прогресс «N из M», прошлая неделя read-only (2.0s)
+  ✓  133 [parity] › scenarios/crimpd-parity.spec.ts:534:5 › Plans week @390px dark › степпер недели, счётчики, прогресс «N из M», прошлая неделя read-only (1.2s)
+  ✓  134 [parity] › scenarios/crimpd-parity.spec.ts:604:5 › Analytics metric @320px light › по умолчанию 1 мес / Тренировки; переключение метрики, периода и «Свой» (1.7s)
+  ✓  135 [parity] › scenarios/crimpd-parity.spec.ts:604:5 › Analytics metric @390px dark › по умолчанию 1 мес / Тренировки; переключение метрики, периода и «Свой» (1.6s)
+  ✓  136 [parity] › scenarios/crimpd-parity.spec.ts:699:5 › Tests @320px light › карточки с Главной и Профиля; запись, график, правка и удаление результата (2.7s)
+  ✓  137 [parity] › scenarios/crimpd-parity.spec.ts:699:5 › Tests @390px dark › карточки с Главной и Профиля; запись, график, правка и удаление результата (2.7s)
+  ✘  138 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @320px light › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (30.2s)
+  ✘  139 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @320px light › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (retry #1) (30.2s)
+  ✘  140 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @320px dark › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (30.3s)
+  ✘  141 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @320px dark › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (retry #1) (30.2s)
+  ✘  142 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @390px light › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (30.3s)
+  ✘  143 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @390px light › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (retry #1) (30.4s)
+  ✘  144 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @390px dark › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (30.4s)
+  ✘  145 [parity] › scenarios/crimpd-parity.spec.ts:809:7 › Workout delete/duplicate @390px dark › дублирование появляется сразу; удаление с подтверждением убирает из Главной, списка и поиска (retry #1) (30.2s)
+  ✘  146 [parity] › scenarios/crimpd-parity.spec.ts:883:5 › Journal edit/clone @320px › кнопки по серверному предикату (плановая без снимка — правка и копия, без удаления); правка значений/усилия/заметок/даты; клон на сегодня (5.8s)
+  ✘  147 [parity] › scenarios/crimpd-parity.spec.ts:883:5 › Journal edit/clone @320px › кнопки по серверному предикату (плановая без снимка — правка и копия, без удаления); правка значений/усилия/заметок/даты; клон на сегодня (retry #1) (5.8s)
+  ✘  148 [parity] › scenarios/crimpd-parity.spec.ts:883:5 › Journal edit/clone @390px › кнопки по серверному предикату (плановая без снимка — правка и копия, без удаления); правка значений/усилия/заметок/даты; клон на сегодня (5.9s)
+  ✘  149 [parity] › scenarios/crimpd-parity.spec.ts:883:5 › Journal edit/clone @390px › кнопки по серверному предикату (плановая без снимка — правка и копия, без удаления); правка значений/усилия/заметок/даты; клон на сегодня (retry #1) (5.9s)
+  ✓  150 [parity] › scenarios/crimpd-parity.spec.ts:982:5 › Live extra set & pause @320px light › пауза замораживает отдых и переживает reload; «+ Ещё подход» после плана уходит как is_extra (7.8s)
+  ✓  151 [parity] › scenarios/crimpd-parity.spec.ts:982:5 › Live extra set & pause @390px dark › пауза замораживает отдых и переживает reload; «+ Ещё подход» после плана уходит как is_extra (7.1s)
+  ✘  152 [parity] › scenarios/crimpd-parity.spec.ts:1084:5 › Live logging panel @320px light › работа — свёрнута; длинный отдых — раскрыта, правка того же подхода без дубля (2.0m)
+  ✓  153 [parity] › scenarios/crimpd-parity.spec.ts:1084:5 › Live logging panel @320px light › работа — свёрнута; длинный отдых — раскрыта, правка того же подхода без дубля (retry #1) (3.7s)
+  ✘  154 [parity] › scenarios/crimpd-parity.spec.ts:1140:5 › Live logging panel @320px light › короткий отдых: «Приготовься» с обратным отсчётом, панель свёрнута, раскрывается вручную (2.0m)
+  ✓  155 [parity] › scenarios/crimpd-parity.spec.ts:1140:5 › Live logging panel @320px light › короткий отдых: «Приготовься» с обратным отсчётом, панель свёрнута, раскрывается вручную (retry #1) (3.9s)
+  ✘  156 [parity] › scenarios/crimpd-parity.spec.ts:1084:5 › Live logging panel @390px dark › работа — свёрнута; длинный отдых — раскрыта, правка того же подхода без дубля (2.0m)
+  ✓  157 [parity] › scenarios/crimpd-parity.spec.ts:1084:5 › Live logging panel @390px dark › работа — свёрнута; длинный отдых — раскрыта, правка того же подхода без дубля (retry #1) (4.2s)
+  ✘  158 [parity] › scenarios/crimpd-parity.spec.ts:1140:5 › Live logging panel @390px dark › короткий отдых: «Приготовься» с обратным отсчётом, панель свёрнута, раскрывается вручную (2.0m)
+  ✓  159 [parity] › scenarios/crimpd-parity.spec.ts:1140:5 › Live logging panel @390px dark › короткий отдых: «Приготовься» с обратным отсчётом, панель свёрнута, раскрывается вручную (retry #1) (2.7s)
+  ✓  160 [parity] › scenarios/parity/a11y-followup.spec.ts:115:7 › A11y follow-up @320px light › Главная: «Все ›» ≥ 44px, «+»-шторка — модальный диалог, обложки AA на всех цветах категорий (3.1s)
+  ✓  161 [parity] › scenarios/parity/a11y-followup.spec.ts:137:7 › A11y follow-up @320px light › Деталь тренировки и «Добавить в план»: назад/сердце 44px, дни ≥ 44px без переполнения (1.5s)
+  ✘  162 [parity] › scenarios/parity/a11y-followup.spec.ts:162:7 › A11y follow-up @320px light › Аналитика: select/«Показать все» 44px, подписи графика ≥ 11px, шторка метрик — диалог, пустой пользователь без «Показать все» (1.8s)
+  ✓  163 [parity] › scenarios/parity/a11y-followup.spec.ts:162:7 › A11y follow-up @320px light › Аналитика: select/«Показать все» 44px, подписи графика ≥ 11px, шторка метрик — диалог, пустой пользователь без «Показать все» (retry #1) (3.0s)
+  ✘  164 [parity] › scenarios/parity/a11y-followup.spec.ts:193:7 › A11y follow-up @320px light › Live: открытая панель оценки видна над липким транспортом (2.0m)
+  ✓  165 [parity] › scenarios/parity/a11y-followup.spec.ts:193:7 › A11y follow-up @320px light › Live: открытая панель оценки видна над липким транспортом (retry #1) (2.4s)
+  ✓  166 [parity] › scenarios/parity/a11y-followup.spec.ts:115:7 › A11y follow-up @320px dark › Главная: «Все ›» ≥ 44px, «+»-шторка — модальный диалог, обложки AA на всех цветах категорий (4.6s)
+  ✓  167 [parity] › scenarios/parity/a11y-followup.spec.ts:137:7 › A11y follow-up @320px dark › Деталь тренировки и «Добавить в план»: назад/сердце 44px, дни ≥ 44px без переполнения (1.4s)
+  ✓  168 [parity] › scenarios/parity/a11y-followup.spec.ts:162:7 › A11y follow-up @320px dark › Аналитика: select/«Показать все» 44px, подписи графика ≥ 11px, шторка метрик — диалог, пустой пользователь без «Показать все» (1.5s)
+  ✘  169 [parity] › scenarios/parity/a11y-followup.spec.ts:193:7 › A11y follow-up @320px dark › Live: открытая панель оценки видна над липким транспортом (2.0m)
+  ✓  170 [parity] › scenarios/parity/a11y-followup.spec.ts:193:7 › A11y follow-up @320px dark › Live: открытая панель оценки видна над липким транспортом (retry #1) (1.5s)
+  ✓  171 [parity] › scenarios/parity/a11y-followup.spec.ts:115:7 › A11y follow-up @390px light › Главная: «Все ›» ≥ 44px, «+»-шторка — модальный диалог, обложки AA на всех цветах категорий (3.5s)
+  ✓  172 [parity] › scenarios/parity/a11y-followup.spec.ts:137:7 › A11y follow-up @390px light › Деталь тренировки и «Добавить в план»: назад/сердце 44px, дни ≥ 44px без переполнения (1.1s)
+  ✓  173 [parity] › scenarios/parity/a11y-followup.spec.ts:162:7 › A11y follow-up @390px light › Аналитика: select/«Показать все» 44px, подписи графика ≥ 11px, шторка метрик — диалог, пустой пользователь без «Показать все» (1.5s)
+  ✘  174 [parity] › scenarios/parity/a11y-followup.spec.ts:193:7 › A11y follow-up @390px light › Live: открытая панель оценки видна над липким транспортом (2.0m)
+  ✓  175 [parity] › scenarios/parity/a11y-followup.spec.ts:193:7 › A11y follow-up @390px light › Live: открытая панель оценки видна над липким транспортом (retry #1) (1.4s)
+  ✓  176 [parity] › scenarios/parity/a11y-followup.spec.ts:115:7 › A11y follow-up @390px dark › Главная: «Все ›» ≥ 44px, «+»-шторка — модальный диалог, обложки AA на всех цветах категорий (3.1s)
+  ✓  177 [parity] › scenarios/parity/a11y-followup.spec.ts:137:7 › A11y follow-up @390px dark › Деталь тренировки и «Добавить в план»: назад/сердце 44px, дни ≥ 44px без переполнения (1.2s)
+  ✓  178 [parity] › scenarios/parity/a11y-followup.spec.ts:162:7 › A11y follow-up @390px dark › Аналитика: select/«Показать все» 44px, подписи графика ≥ 11px, шторка метрик — диалог, пустой пользователь без «Показать все» (1.3s)
+.ts:21:5 › Export @390px dark › карточка экспорта; в Telegram — downloadFile с подписанной ссылкой, ответ — CSV с BOM (716ms)
+  ✓  178 [parity] › scenarios/parity/export.spec.ts:79:5 › Export @390px dark › вне Telegram (нет downloadFile) — открывается ссылка (483ms)
+  ✓  179 [parity] › scenarios/parity/final-journey.spec.ts:118:5 › Final journey @320px light › пустой пользователь: вкладки, поиск, подборки, настройки — без тупиков (4.8s)
+  ✘  180 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (1.3s)
+  ✘  181 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (retry #1) (1.4s)
+  ✓  182 [parity] › scenarios/parity/final-journey.spec.ts:118:5 › Final journey @320px dark › пустой пользователь: вкладки, поиск, подборки, настройки — без тупиков (4.9s)
+  ✘  183 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (1.2s)
+  ✘  184 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (retry #1) (1.3s)
+  ✓  185 [parity] › scenarios/parity/final-journey.spec.ts:118:5 › Final journey @390px light › пустой пользователь: вкладки, поиск, подборки, настройки — без тупиков (7.3s)
+  ✘  186 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (1.4s)
+  ✘  187 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (retry #1) (1.5s)
+  ✓  188 [parity] › scenarios/parity/final-journey.spec.ts:118:5 › Final journey @390px dark › пустой пользователь: вкладки, поиск, подборки, настройки — без тупиков (4.9s)
+  ✘  189 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (1.3s)
+  ✘  190 [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль (retry #1) (1.3s)
+  ✓  191 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px light empty › вкладки: непустой контент, без overflow и ошибок (1.1s)
+  ✓  192 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @320px light empty › регрессия D3: Планы без курсов: подсказка «Добавьте курс на Главной» — с кнопкой-переходом (514ms)
+  ✓  193 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @320px light empty › переходы: основные действия ведут дальше и возвращают назад (23.0s)
+  ✘  194 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px light populated › вкладки: непустой контент, без overflow и ошибок (6.4s)
+  ✘  195 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px light populated › вкладки: непустой контент, без overflow и ошибок (retry #1) (6.2s)
+  ✓  196 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @320px light populated › регрессия D1: Деталь тренировки → «Записать» → «← Назад» возвращает на деталь, а не в Журнал (1.1s)
+  ✓  197 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @320px light populated › переходы: основные действия ведут дальше и возвращают назад (33.0s)
+  ✓  198 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px dark empty › вкладки: непустой контент, без overflow и ошибок (1.4s)
+  ✓  199 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @320px dark empty › регрессия D3: Планы без курсов: подсказка «Добавьте курс на Главной» — с кнопкой-переходом (605ms)
+  ✓  200 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @320px dark empty › переходы: основные действия ведут дальше и возвращают назад (24.5s)
+  ✘  201 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px dark populated › вкладки: непустой контент, без overflow и ошибок (6.3s)
+  ✘  202 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px dark populated › вкладки: непустой контент, без overflow и ошибок (retry #1) (6.7s)
+  ✓  203 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @320px dark populated › регрессия D1: Деталь тренировки → «Записать» → «← Назад» возвращает на деталь, а не в Журнал (962ms)
+  ✓  204 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @320px dark populated › переходы: основные действия ведут дальше и возвращают назад (29.9s)
+  ✓  205 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px light empty › вкладки: непустой контент, без overflow и ошибок (970ms)
+  ✓  206 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @390px light empty › регрессия D3: Планы без курсов: подсказка «Добавьте курс на Главной» — с кнопкой-переходом (452ms)
+  ✓  207 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @390px light empty › переходы: основные действия ведут дальше и возвращают назад (22.1s)
+  ✘  208 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px light populated › вкладки: непустой контент, без overflow и ошибок (6.1s)
+  ✘  209 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px light populated › вкладки: непустой контент, без overflow и ошибок (retry #1) (6.6s)
+  ✓  210 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @390px light populated › регрессия D1: Деталь тренировки → «Записать» → «← Назад» возвращает на деталь, а не в Журнал (972ms)
+  ✓  211 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @390px light populated › переходы: основные действия ведут дальше и возвращают назад (34.5s)
+  ✓  212 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px dark empty › вкладки: непустой контент, без overflow и ошибок (1.2s)
+  ✓  213 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @390px dark empty › регрессия D3: Планы без курсов: подсказка «Добавьте курс на Главной» — с кнопкой-переходом (568ms)
+  ✓  214 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @390px dark empty › переходы: основные действия ведут дальше и возвращают назад (24.5s)
+  ✘  215 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px dark populated › вкладки: непустой контент, без overflow и ошибок (6.1s)
+  ✘  216 [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px dark populated › вкладки: непустой контент, без overflow и ошибок (retry #1) (6.2s)
+  ✓  217 [parity] › scenarios/parity/full-sweep.spec.ts:566:11 › Full sweep @390px dark populated › регрессия D1: Деталь тренировки → «Записать» → «← Назад» возвращает на деталь, а не в Журнал (862ms)
+  ✓  218 [parity] › scenarios/parity/full-sweep.spec.ts:573:7 › Full sweep @390px dark populated › переходы: основные действия ведут дальше и возвращают назад (28.8s)
+  ✘  219 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (589ms)
+  ✘  220 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (retry #1) (973ms)
+  ✓  221 [parity] › scenarios/parity/full-sweep.spec.ts:677:5 › Full sweep flows @320px light › тесты: запись → тренд → Профиль (1.5s)
+  ✓  222 [parity] › scenarios/parity/full-sweep.spec.ts:721:5 › Full sweep flows @320px light › настройки → единицы: профиль и форма пересчитываются, хранение метрическое (1.3s)
+  ✓  223 [parity] › scenarios/parity/full-sweep.spec.ts:741:5 › Full sweep flows @320px light › планы: назад к прошлой неделе, вперёд (#275) — будущая неделя, копирование с подтверждением, перенос (2.0s)
+  ✘  224 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (646ms)
+  ✘  225 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (retry #1) (590ms)
+  ✓  226 [parity] › scenarios/parity/full-sweep.spec.ts:677:5 › Full sweep flows @320px dark › тесты: запись → тренд → Профиль (2.0s)
+  ✓  227 [parity] › scenarios/parity/full-sweep.spec.ts:721:5 › Full sweep flows @320px dark › настройки → единицы: профиль и форма пересчитываются, хранение метрическое (1.7s)
+  ✓  228 [parity] › scenarios/parity/full-sweep.spec.ts:741:5 › Full sweep flows @320px dark › планы: назад к прошлой неделе, вперёд (#275) — будущая неделя, копирование с подтверждением, перенос (2.1s)
+  ✘  229 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (787ms)
+  ✘  230 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (retry #1) (911ms)
+  ✓  231 [parity] › scenarios/parity/full-sweep.spec.ts:677:5 › Full sweep flows @390px light › тесты: запись → тренд → Профиль (1.6s)
+  ✓  232 [parity] › scenarios/parity/full-sweep.spec.ts:721:5 › Full sweep flows @390px light › настройки → единицы: профиль и форма пересчитываются, хранение метрическое (1.1s)
+  ✓  233 [parity] › scenarios/parity/full-sweep.spec.ts:741:5 › Full sweep flows @390px light › планы: назад к прошлой неделе, вперёд (#275) — будущая неделя, копирование с подтверждением, перенос (2.2s)
+  ✘  234 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (682ms)
+  ✘  235 [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт (retry #1) (754ms)
+  ✓  236 [parity] › scenarios/parity/full-sweep.spec.ts:677:5 › Full sweep flows @390px dark › тесты: запись → тренд → Профиль (1.5s)
+  ✓  237 [parity] › scenarios/parity/full-sweep.spec.ts:721:5 › Full sweep flows @390px dark › настройки → единицы: профиль и форма пересчитываются, хранение метрическое (1.4s)
+  ✓  238 [parity] › scenarios/parity/full-sweep.spec.ts:741:5 › Full sweep flows @390px dark › планы: назад к прошлой неделе, вперёд (#275) — будущая неделя, копирование с подтверждением, перенос (2.0s)
+  ✓  239 [parity] › scenarios/parity/journal-dedupe.spec.ts:23:5 › Journal dedupe @320px light › каждая тренировка один раз, у карточек есть действия; правка и удаление работают (1.6s)
+  ✓  240 [parity] › scenarios/parity/journal-dedupe.spec.ts:23:5 › Journal dedupe @390px dark › каждая тренировка один раз, у карточек есть действия; правка и удаление работают (1.4s)
+  ✓  241 [parity] › scenarios/parity/journal-log.spec.ts:28:5 › Journal log @320px light › шторка → свободная активность и тренировка из моих появляются в Журнале и Аналитике (2.5s)
+  ✓  242 [parity] › scenarios/parity/journal-log.spec.ts:124:5 › Journal log @320px light › «+» на Главной ведёт в Журнал со шторкой записи (659ms)
+  ✓  243 [parity] › scenarios/parity/journal-log.spec.ts:28:5 › Journal log @390px dark › шторка → свободная активность и тренировка из моих появляются в Журнале и Аналитике (2.7s)
+  ✓  244 [parity] › scenarios/parity/journal-log.spec.ts:124:5 › Journal log @390px dark › «+» на Главной ведёт в Журнал со шторкой записи (578ms)
+  ✓  245 [parity] › scenarios/parity/journal-plans-polish.spec.ts:34:7 › Journal/Plans polish @320px light › карточка Журнала: бейдж типа не обрезан, название — до 2 строк, полный текст остаётся в DOM (693ms)
+  ✓  246 [parity] › scenarios/parity/journal-plans-polish.spec.ts:81:7 › Journal/Plans polish @320px light › Планы: выполненная строка 1/1 — «✓ 1/1» и вторичное «Повторить», без главного «Начать: …» (800ms)
+  ✓  247 [parity] › scenarios/parity/journal-plans-polish.spec.ts:101:7 › Journal/Plans polish @320px light › форма «Изменить»: круглая «← Назад» = «Отмена», запись не меняется (958ms)
+  ✓  248 [parity] › scenarios/parity/journal-plans-polish.spec.ts:34:7 › Journal/Plans polish @320px dark › карточка Журнала: бейдж типа не обрезан, название — до 2 строк, полный текст остаётся в DOM (737ms)
+  ✓  249 [parity] › scenarios/parity/journal-plans-polish.spec.ts:81:7 › Journal/Plans polish @320px dark › Планы: выполненная строка 1/1 — «✓ 1/1» и вторичное «Повторить», без главного «Начать: …» (633ms)
+  ✓  250 [parity] › scenarios/parity/journal-plans-polish.spec.ts:101:7 › Journal/Plans polish @320px dark › форма «Изменить»: круглая «← Назад» = «Отмена», запись не меняется (1.0s)
+  ✓  251 [parity] › scenarios/parity/journal-plans-polish.spec.ts:34:7 › Journal/Plans polish @390px light › карточка Журнала: бейдж типа не обрезан, название — до 2 строк, полный текст остаётся в DOM (701ms)
+  ✓  252 [parity] › scenarios/parity/journal-plans-polish.spec.ts:81:7 › Journal/Plans polish @390px light › Планы: выполненная строка 1/1 — «✓ 1/1» и вторичное «Повторить», без главного «Начать: …» (784ms)
+  ✓  253 [parity] › scenarios/parity/journal-plans-polish.spec.ts:101:7 › Journal/Plans polish @390px light › форма «Изменить»: круглая «← Назад» = «Отмена», запись не меняется (1.1s)
+  ✓  254 [parity] › scenarios/parity/journal-plans-polish.spec.ts:34:7 › Journal/Plans polish @390px dark › карточка Журнала: бейдж типа не обрезан, название — до 2 строк, полный текст остаётся в DOM (914ms)
+  ✓  255 [parity] › scenarios/parity/journal-plans-polish.spec.ts:81:7 › Journal/Plans polish @390px dark › Планы: выполненная строка 1/1 — «✓ 1/1» и вторичное «Повторить», без главного «Начать: …» (675ms)
+  ✓  256 [parity] › scenarios/parity/journal-plans-polish.spec.ts:101:7 › Journal/Plans polish @390px dark › форма «Изменить»: круглая «← Назад» = «Отмена», запись не меняется (1.0s)
+  ✓  257 [parity] › scenarios/parity/journal-return.spec.ts:20:5 › Journal return @320px light › Back из «Открыть тренировку» — тот же месяц и та же запись (1.8s)
+  ✓  258 [parity] › scenarios/parity/journal-return.spec.ts:20:5 › Journal return @390px dark › Back из «Открыть тренировку» — тот же месяц и та же запись (1.7s)
+  ✓  259 [parity] › scenarios/parity/journal-sheet.spec.ts:77:5 › Journal entry sheet @320px light › действия по типам записей совпадают с экраном деталей; «Открыть» ведёт на деталь (1.8s)
+  ✓  260 [parity] › scenarios/parity/journal-sheet.spec.ts:116:5 › Journal entry sheet @320px light › закрытие: Escape, фон, «Отмена», Telegram BackButton; фокус внутри шторки и возвращается на карточку (2.0s)
+  ✓  261 [parity] › scenarios/parity/journal-sheet.spec.ts:170:5 › Journal entry sheet @320px light › «Изменить» и «Повторить» из шторки открывают форму сразу; «Отмена» ведёт в Журнал, не в тупик (898ms)
+  ✓  262 [parity] › scenarios/parity/journal-sheet.spec.ts:206:5 › Journal entry sheet: delete @320px light › удаление: «Отмена» подтверждения ничего не удаляет; подтверждённое — убирает запись и закрывает шторку (1.7s)
+  ✓  263 [parity] › scenarios/parity/journal-sheet.spec.ts:265:5 › Journal entry sheet: elective @320px light › факультатив: «Изменить» и «Удалить» есть, «Повторить» нет (клон — 409) (691ms)
+  ✓  264 [parity] › scenarios/parity/journal-sheet.spec.ts:77:5 › Journal entry sheet @390px dark › действия по типам записей совпадают с экраном деталей; «Открыть» ведёт на деталь (1.7s)
+  ✓  265 [parity] › scenarios/parity/journal-sheet.spec.ts:116:5 › Journal entry sheet @390px dark › закрытие: Escape, фон, «Отмена», Telegram BackButton; фокус внутри шторки и возвращается на карточку (1.8s)
+  ✓  266 [parity] › scenarios/parity/journal-sheet.spec.ts:170:5 › Journal entry sheet @390px dark › «Изменить» и «Повторить» из шторки открывают форму сразу; «Отмена» ведёт в Журнал, не в тупик (811ms)
+  ✓  267 [parity] › scenarios/parity/journal-sheet.spec.ts:206:5 › Journal entry sheet: delete @390px dark › удаление: «Отмена» подтверждения ничего не удаляет; подтверждённое — убирает запись и закрывает шторку (1.5s)
+  ✓  268 [parity] › scenarios/parity/journal-sheet.spec.ts:265:5 › Journal entry sheet: elective @390px dark › факультатив: «Изменить» и «Удалить» есть, «Повторить» нет (клон — 409) (714ms)
+  ✓  269 [parity] › scenarios/parity/live-conflict.spec.ts:32:5 › Live conflict R-4 @320px light › старт из Планов при уже идущей тренировке: 409 → «Продолжить текущую», а не сырая ошибка (1.5s)
+  ✓  270 [parity] › scenarios/parity/live-conflict.spec.ts:32:5 › Live conflict R-4 @390px dark › старт из Планов при уже идущей тренировке: 409 → «Продолжить текущую», а не сырая ошибка (1.2s)
+  ✓  271 [parity] › scenarios/parity/live-final.spec.ts:39:7 › Live final @320px light › пред-экран: иерархия, карточки упражнений, главное действие над safe area (1.1s)
+  ✓  272 [parity] › scenarios/parity/live-final.spec.ts:76:7 › Live final @320px light › предыдущий подход правится с отдыха и с «Приготовься», данные не теряются (3.6s)
+  ✓  273 [parity] › scenarios/parity/live-final.spec.ts:39:7 › Live final @320px dark › пред-экран: иерархия, карточки упражнений, главное действие над safe area (1.1s)
+  ✓  274 [parity] › scenarios/parity/live-final.spec.ts:76:7 › Live final @320px dark › предыдущий подход правится с отдыха и с «Приготовься», данные не теряются (3.7s)
+  ✓  275 [parity] › scenarios/parity/live-final.spec.ts:39:7 › Live final @390px light › пред-экран: иерархия, карточки упражнений, главное действие над safe area (1.4s)
+  ✓  276 [parity] › scenarios/parity/live-final.spec.ts:76:7 › Live final @390px light › предыдущий подход правится с отдыха и с «Приготовься», данные не теряются (3.8s)
+  ✓  277 [parity] › scenarios/parity/live-final.spec.ts:39:7 › Live final @390px dark › пред-экран: иерархия, карточки упражнений, главное действие над safe area (1.3s)
+  ✓  278 [parity] › scenarios/parity/live-final.spec.ts:76:7 › Live final @390px dark › предыдущий подход правится с отдыха и с «Приготовься», данные не теряются (3.6s)
+  ✓  279 [parity] › scenarios/parity/live-finish.spec.ts:77:5 › Live finish-pending #287 @320px light › HIGH 1: офлайн-завершение → приложение закрыто без сети → открыто онлайн: завершение уходит само (1.7s)
+  ✓  280 [parity] › scenarios/parity/live-finish.spec.ts:101:5 › Live finish-pending #287 @320px light › HIGH 1: Back при завершении в очереди уводит к вкладкам; сеть вернулась — завершение досылается без экрана (1.6s)
+  ✓  281 [parity] › scenarios/parity/live-finish.spec.ts:144:5 › Live finish-pending #287 @320px light › HIGH 1: ответ complete потерян → «Отправить ещё раз» → 404 на переходе из очереди → сессия уже завершена → Summary (1.7s)
+  ✓  282 [parity] › scenarios/parity/live-finish.spec.ts:190:5 › Live finish-pending #287 @320px light › HIGH 1: ушли с неотправленным завершением и начали тренировку снова — старое завершение досылается до замены снимка (1.6s)
+  ✓  283 [parity] › scenarios/parity/live-finish.spec.ts:230:5 › Live finish-pending #287 @320px light › MED 3: фокус остаётся в поле (iOS: тап по кнопке без blur) — транспорт не прилипает под клавиатуру (3.2s)
+  ✓  284 [parity] › scenarios/parity/live-finish.spec.ts:266:5 › Live finish-pending #287 @320px light › HIGH 2: interstitial между блоками с завершением в очереди — без «Начать», завершение уходит (1.7s)
+  ✓  285 [parity] › scenarios/parity/live-finish.spec.ts:77:5 › Live finish-pending #287 @390px dark › HIGH 1: офлайн-завершение → приложение закрыто без сети → открыто онлайн: завершение уходит само (1.9s)
+  ✓  286 [parity] › scenarios/parity/live-finish.spec.ts:101:5 › Live finish-pending #287 @390px dark › HIGH 1: Back при завершении в очереди уводит к вкладкам; сеть вернулась — завершение досылается без экрана (1.8s)
+  ✓  287 [parity] › scenarios/parity/live-finish.spec.ts:144:5 › Live finish-pending #287 @390px dark › HIGH 1: ответ complete потерян → «Отправить ещё раз» → 404 на переходе из очереди → сессия уже завершена → Summary (1.7s)
+  ✓  288 [parity] › scenarios/parity/live-finish.spec.ts:190:5 › Live finish-pending #287 @390px dark › HIGH 1: ушли с неотправленным завершением и начали тренировку снова — старое завершение досылается до замены снимка (1.6s)
+  ✓  289 [parity] › scenarios/parity/live-finish.spec.ts:230:5 › Live finish-pending #287 @390px dark › MED 3: фокус остаётся в поле (iOS: тап по кнопке без blur) — транспорт не прилипает под клавиатуру (2.6s)
+  ✓  290 [parity] › scenarios/parity/live-finish.spec.ts:266:5 › Live finish-pending #287 @390px dark › HIGH 2: interstitial между блоками с завершением в очереди — без «Начать», завершение уходит (1.9s)
+  ✓  291 [parity] › scenarios/parity/live-set-nav.spec.ts:55:7 › Live set nav @320px light › с отдыха: назад открывает тот же подход со значением, повторное «Готово» перезаписывает без дублей (2.4s)
+  ✓  292 [parity] › scenarios/parity/live-set-nav.spec.ts:98:7 › Live set nav @320px light › с «Приготовься» следующего подхода: назад к предыдущему, без правки — итог прежний, потерь нет (3.4s)
+  ✓  293 [parity] › scenarios/parity/live-set-nav.spec.ts:134:7 › Live set nav @320px light › офлайн и при очереди: «Предыдущий подход» недоступен, данные не теряются, сеть вернулась — работает (2.0s)
+  ✓  294 [parity] › scenarios/parity/live-set-nav.spec.ts:55:7 › Live set nav @320px dark › с отдыха: назад открывает тот же подход со значением, повторное «Готово» перезаписывает без дублей (2.0s)
+  ✓  295 [parity] › scenarios/parity/live-set-nav.spec.ts:98:7 › Live set nav @320px dark › с «Приготовься» следующего подхода: назад к предыдущему, без правки — итог прежний, потерь нет (2.6s)
+  ✓  296 [parity] › scenarios/parity/live-set-nav.spec.ts:134:7 › Live set nav @320px dark › офлайн и при очереди: «Предыдущий подход» недоступен, данные не теряются, сеть вернулась — работает (2.8s)
+  ✓  297 [parity] › scenarios/parity/live-set-nav.spec.ts:55:7 › Live set nav @390px light › с отдыха: назад открывает тот же подход со значением, повторное «Готово» перезаписывает без дублей (2.4s)
+  ✓  298 [parity] › scenarios/parity/live-set-nav.spec.ts:98:7 › Live set nav @390px light › с «Приготовься» следующего подхода: назад к предыдущему, без правки — итог прежний, потерь нет (2.7s)
+  ✓  299 [parity] › scenarios/parity/live-set-nav.spec.ts:134:7 › Live set nav @390px light › офлайн и при очереди: «Предыдущий подход» недоступен, данные не теряются, сеть вернулась — работает (2.8s)
+  ✓  300 [parity] › scenarios/parity/live-set-nav.spec.ts:55:7 › Live set nav @390px dark › с отдыха: назад открывает тот же подход со значением, повторное «Готово» перезаписывает без дублей (2.9s)
+  ✓  301 [parity] › scenarios/parity/live-set-nav.spec.ts:98:7 › Live set nav @390px dark › с «Приготовься» следующего подхода: назад к предыдущему, без правки — итог прежний, потерь нет (3.0s)
+  ✓  302 [parity] › scenarios/parity/live-set-nav.spec.ts:134:7 › Live set nav @390px dark › офлайн и при очереди: «Предыдущий подход» недоступен, данные не теряются, сеть вернулась — работает (2.5s)
+  ✓  303 [parity] › scenarios/parity/live-ux.spec.ts:107:7 › Live UX #285 @320px light › M1: поле записи при клавиатуре не закрыто транспортом, Enter записывает подход (2.0s)
+  ✓  304 [parity] › scenarios/parity/live-ux.spec.ts:172:7 › Live UX #285 @320px light › M2: офлайн «Сохранить и завершить» закрывает шторку и показывает статус завершения (1.3s)
+  ✓  305 [parity] › scenarios/parity/live-ux.spec.ts:214:7 › Live UX #285 @320px light › M3: Back и Escape закрывают шторку, оценка и заметка остаются, фокус в диалоге и возвращается (2.4s)
+  ✓  306 [parity] › scenarios/parity/live-ux.spec.ts:292:7 › Live UX #285 @320px light › #286: счётчик подходов, нейтральный таймер, сводка на отдыхе, читаемое неактивное «Готово» (1.7s)
+  ✓  307 [parity] › scenarios/parity/live-ux.spec.ts:343:7 › Live UX #285 @320px light › L3: themeChanged Telegram перекрашивает приложение (переменные, схема, appearance tgui) (437ms)
+  ✓  308 [parity] › scenarios/parity/live-ux.spec.ts:107:7 › Live UX #285 @320px dark › M1: поле записи при клавиатуре не закрыто транспортом, Enter записывает подход (2.0s)
+  ✓  309 [parity] › scenarios/parity/live-ux.spec.ts:172:7 › Live UX #285 @320px dark › M2: офлайн «Сохранить и завершить» закрывает шторку и показывает статус завершения (1.4s)
+  ✓  310 [parity] › scenarios/parity/live-ux.spec.ts:214:7 › Live UX #285 @320px dark › M3: Back и Escape закрывают шторку, оценка и заметка остаются, фокус в диалоге и возвращается (2.1s)
+  ✓  311 [parity] › scenarios/parity/live-ux.spec.ts:292:7 › Live UX #285 @320px dark › #286: счётчик подходов, нейтральный таймер, сводка на отдыхе, читаемое неактивное «Готово» (1.3s)
+  ✓  312 [parity] › scenarios/parity/live-ux.spec.ts:343:7 › Live UX #285 @320px dark › L3: themeChanged Telegram перекрашивает приложение (переменные, схема, appearance tgui) (511ms)
+  ✓  313 [parity] › scenarios/parity/live-ux.spec.ts:107:7 › Live UX #285 @390px light › M1: поле записи при клавиатуре не закрыто транспортом, Enter записывает подход (2.5s)
+  ✓  314 [parity] › scenarios/parity/live-ux.spec.ts:172:7 › Live UX #285 @390px light › M2: офлайн «Сохранить и завершить» закрывает шторку и показывает статус завершения (1.4s)
+  ✓  315 [parity] › scenarios/parity/live-ux.spec.ts:214:7 › Live UX #285 @390px light › M3: Back и Escape закрывают шторку, оценка и заметка остаются, фокус в диалоге и возвращается (2.5s)
+  ✓  316 [parity] › scenarios/parity/live-ux.spec.ts:292:7 › Live UX #285 @390px light › #286: счётчик подходов, нейтральный таймер, сводка на отдыхе, читаемое неактивное «Готово» (1.8s)
+  ✓  317 [parity] › scenarios/parity/live-ux.spec.ts:343:7 › Live UX #285 @390px light › L3: themeChanged Telegram перекрашивает приложение (переменные, схема, appearance tgui) (652ms)
+  ✓  318 [parity] › scenarios/parity/live-ux.spec.ts:107:7 › Live UX #285 @390px dark › M1: поле записи при клавиатуре не закрыто транспортом, Enter записывает подход (2.5s)
+  ✓  319 [parity] › scenarios/parity/live-ux.spec.ts:172:7 › Live UX #285 @390px dark › M2: офлайн «Сохранить и завершить» закрывает шторку и показывает статус завершения (1.3s)
+  ✓  320 [parity] › scenarios/parity/live-ux.spec.ts:214:7 › Live UX #285 @390px dark › M3: Back и Escape закрывают шторку, оценка и заметка остаются, фокус в диалоге и возвращается (2.2s)
+  ✓  321 [parity] › scenarios/parity/live-ux.spec.ts:292:7 › Live UX #285 @390px dark › #286: счётчик подходов, нейтральный таймер, сводка на отдыхе, читаемое неактивное «Готово» (1.4s)
+  ✓  322 [parity] › scenarios/parity/live-ux.spec.ts:343:7 › Live UX #285 @390px dark › L3: themeChanged Telegram перекрашивает приложение (переменные, схема, appearance tgui) (608ms)
+  ✓  323 [parity] › scenarios/parity/owner-optional-workout.spec.ts:23:5 › Owner optional workout @320px light › факультатив в Журнале: видно → открыть → изменить → удалить (1.4s)
+  ✓  324 [parity] › scenarios/parity/owner-optional-workout.spec.ts:23:5 › Owner optional workout @390px dark › факультатив в Журнале: видно → открыть → изменить → удалить (1.5s)
+  ✓  325 [parity] › scenarios/parity/peer-insights.spec.ts:34:5 › Peer insights @320px light › когорта из ≥20 человек: подпись, процентиль, медиана, следующий ориентир; в ответе только агрегаты (642ms)
+  ✓  326 [parity] › scenarios/parity/peer-insights.spec.ts:67:5 › Peer insights @320px light › лимит запросов (429): дружелюбный текст вместо чисел (547ms)
+  ✓  327 [parity] › scenarios/parity/peer-insights.spec.ts:81:5 › Peer insights @320px light › мало данных: точный текст вместо чисел (672ms)
+  ✓  328 [parity] › scenarios/parity/peer-insights.spec.ts:95:5 › Peer insights @320px light › нет результата: подсказка записать; после записи блок обновляется (мало данных) (643ms)
+  ✓  329 [parity] › scenarios/parity/peer-insights.spec.ts:34:5 › Peer insights @390px dark › когорта из ≥20 человек: подпись, процентиль, медиана, следующий ориентир; в ответе только агрегаты (588ms)
+  ✓  330 [parity] › scenarios/parity/peer-insights.spec.ts:67:5 › Peer insights @390px dark › лимит запросов (429): дружелюбный текст вместо чисел (523ms)
+  ✓  331 [parity] › scenarios/parity/peer-insights.spec.ts:81:5 › Peer insights @390px dark › мало данных: точный текст вместо чисел (515ms)
+  ✓  332 [parity] › scenarios/parity/peer-insights.spec.ts:95:5 › Peer insights @390px dark › нет результата: подсказка записать; после записи блок обновляется (мало данных) (564ms)
+  ✓  333 [parity] › scenarios/parity/plans-current-week.spec.ts:19:5 › Plans current week @320px light › «Добавить в план» из Workout Detail попадает в текущую неделю, а не в будущую (1.5s)
+  ✓  334 [parity] › scenarios/parity/plans-current-week.spec.ts:19:5 › Plans current week @390px dark › «Добавить в план» из Workout Detail попадает в текущую неделю, а не в будущую (1.5s)
+  ✓  335 [parity] › scenarios/parity/plans-overview.spec.ts:21:5 › Plans overview @320px light › «Сейчас»: карточка плана с неделей курса и прогрессом; «Завершённые»: убранный курс с датами (882ms)
+  ✓  336 [parity] › scenarios/parity/plans-overview.spec.ts:55:5 › Plans overview @320px light › детали программы: расписание из ProgramItem с фазами; без строк — только описание (1.0s)
+  ✓  337 [parity] › scenarios/parity/plans-overview.spec.ts:87:5 › Plans overview remove @320px light › «Убрать курс из плана»: подтверждение, курс уходит из «Сейчас» и появляется в «Завершённых» (2.2s)
+  ✓  338 [parity] › scenarios/parity/plans-overview.spec.ts:21:5 › Plans overview @390px dark › «Сейчас»: карточка плана с неделей курса и прогрессом; «Завершённые»: убранный курс с датами (629ms)
+  ✓  339 [parity] › scenarios/parity/plans-overview.spec.ts:55:5 › Plans overview @390px dark › детали программы: расписание из ProgramItem с фазами; без строк — только описание (684ms)
+  ✓  340 [parity] › scenarios/parity/plans-overview.spec.ts:87:5 › Plans overview remove @390px dark › «Убрать курс из плана»: подтверждение, курс уходит из «Сейчас» и появляется в «Завершённых» (1.6s)
+  ✓  341 [parity] › scenarios/parity/plans-schedule.spec.ts:18:5 › Plans schedule @320px light › будущая неделя по › , копирование недели с подтверждением, перенос на другую неделю (1.8s)
+  ✓  342 [parity] › scenarios/parity/plans-schedule.spec.ts:18:5 › Plans schedule @390px dark › будущая неделя по › , копирование недели с подтверждением, перенос на другую неделю (1.8s)
+  ✓  343 [parity] › scenarios/parity/r4-followup.spec.ts:38:5 › R-4 follow-up @320px light › N2: досылка завершения дольше 5 с — «Завершение отправляется…» с повтором, а не «Продолжить текущую» (7.6s)
+  ✓  344 [parity] › scenarios/parity/r4-followup.spec.ts:99:5 › R-4 follow-up @320px light › N3: ошибка на пред-экране (офлайн «Начать») — «Повторить» и «Назад» ≥44px (1.7s)
+  ✓  345 [parity] › scenarios/parity/r4-followup.spec.ts:38:5 › R-4 follow-up @390px dark › N2: досылка завершения дольше 5 с — «Завершение отправляется…» с повтором, а не «Продолжить текущую» (7.5s)
+  ✓  346 [parity] › scenarios/parity/r4-followup.spec.ts:99:5 › R-4 follow-up @390px dark › N3: ошибка на пред-экране (офлайн «Начать») — «Повторить» и «Назад» ≥44px (1.8s)
+  ✓  347 [parity] › scenarios/parity/residual-gaps.spec.ts:50:5 › Residual gaps @320px light › Журнал: «Открыть тренировку» ведёт в Workout Detail, «назад» возвращает в Журнал (1.2s)
+  ✓  348 [parity] › scenarios/parity/residual-gaps.spec.ts:82:5 › Residual gaps @320px light › Главная: «Все ›» у ряда категории открывает поиск по ней; у «Другое» кнопки нет (962ms)
+  ✓  349 [parity] › scenarios/parity/residual-gaps.spec.ts:104:5 › Residual gaps @320px light › Поиск: тесты находятся по названию, чип «Тесты», деталь теста и возврат в поиск (1.1s)
+  ✓  350 [parity] › scenarios/parity/residual-gaps.spec.ts:131:5 › Residual gaps @320px light › вибрация: по умолчанию включена и срабатывает в конце фазы отдыха (4.3s)
+  ✓  351 [parity] › scenarios/parity/residual-gaps.spec.ts:149:5 › Residual gaps @320px light › вибрация: выключатель в Настройках сохраняется и отключает сигнал (5.6s)
+  ✓  352 [parity] › scenarios/parity/residual-gaps.spec.ts:50:5 › Residual gaps @390px dark › Журнал: «Открыть тренировку» ведёт в Workout Detail, «назад» возвращает в Журнал (1.2s)
+  ✓  353 [parity] › scenarios/parity/residual-gaps.spec.ts:82:5 › Residual gaps @390px dark › Главная: «Все ›» у ряда категории открывает поиск по ней; у «Другое» кнопки нет (821ms)
+  ✓  354 [parity] › scenarios/parity/residual-gaps.spec.ts:104:5 › Residual gaps @390px dark › Поиск: тесты находятся по названию, чип «Тесты», деталь теста и возврат в поиск (928ms)
+  ✓  355 [parity] › scenarios/parity/residual-gaps.spec.ts:131:5 › Residual gaps @390px dark › вибрация: по умолчанию включена и срабатывает в конце фазы отдыха (4.3s)
+  ✓  356 [parity] › scenarios/parity/residual-gaps.spec.ts:149:5 › Residual gaps @390px dark › вибрация: выключатель в Настройках сохраняется и отключает сигнал (6.0s)
+  ✓  357 [parity] › scenarios/parity/settings.spec.ts:30:5 › Settings @320px light › секции экрана; единицы фунты/дюймы → профиль показывает пересчёт, хранение метрическое (1.3s)
+  ✓  358 [parity] › scenarios/parity/settings.spec.ts:72:5 › Settings @320px light › тема-override: ничего не меняется до «Сохранить», затем применяется и переживает перезагрузку (1.4s)
+  ✓  359 [parity] › scenarios/parity/settings.spec.ts:97:5 › Settings @320px light › «Отмена» отбрасывает правки: единицы, тема и вес остаются прежними (810ms)
+  ✓  360 [parity] › scenarios/parity/settings.spec.ts:30:5 › Settings @390px dark › секции экрана; единицы фунты/дюймы → профиль показывает пересчёт, хранение метрическое (1.3s)
+  ✓  361 [parity] › scenarios/parity/settings.spec.ts:72:5 › Settings @390px dark › тема-override: ничего не меняется до «Сохранить», затем применяется и переживает перезагрузку (1.7s)
+  ✓  362 [parity] › scenarios/parity/settings.spec.ts:97:5 › Settings @390px dark › «Отмена» отбрасывает правки: единицы, тема и вес остаются прежними (1.1s)
+  ✓  363 [parity] › scenarios/parity/sweep-defects.spec.ts:34:5 › Sweep defects @320px light › D1: «Записать» → «← Назад» возвращает на Workout Detail (Главная) (983ms)
+  ✓  364 [parity] › scenarios/parity/sweep-defects.spec.ts:53:5 › Sweep defects @320px light › D1: Telegram BackButton из формы «Записать» возвращает на Workout Detail (864ms)
+  ✓  365 [parity] › scenarios/parity/sweep-defects.spec.ts:64:5 › Sweep defects @320px light › D1: «Записать» с детали на вкладке «Планы» → «← Назад» возвращает на деталь в «Планах» (1.0s)
+  ✘  366 [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @320px light › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале (6.3s)
+  ✘  367 [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @320px light › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале (retry #1) (6.2s)
+  ✓  368 [parity] › scenarios/parity/sweep-defects.spec.ts:106:5 › Sweep defects @320px light › D2: Профиль учитывает завершённые тренировки Журнала v2 (812ms)
+  ✓  369 [parity] › scenarios/parity/sweep-defects.spec.ts:120:5 › Sweep defects @320px light › D3: Планы без курсов — кнопка «Выбрать курс на Главной» ведёт на Главную (666ms)
+  ✓  370 [parity] › scenarios/parity/sweep-defects.spec.ts:34:5 › Sweep defects @390px dark › D1: «Записать» → «← Назад» возвращает на Workout Detail (Главная) (1.0s)
+  ✓  371 [parity] › scenarios/parity/sweep-defects.spec.ts:53:5 › Sweep defects @390px dark › D1: Telegram BackButton из формы «Записать» возвращает на Workout Detail (911ms)
+  ✓  372 [parity] › scenarios/parity/sweep-defects.spec.ts:64:5 › Sweep defects @390px dark › D1: «Записать» с детали на вкладке «Планы» → «← Назад» возвращает на деталь в «Планах» (1.1s)
+  ✘  373 [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @390px dark › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале (6.2s)
+  ✘  374 [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @390px dark › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале (retry #1) (6.5s)
+  ✓  375 [parity] › scenarios/parity/sweep-defects.spec.ts:106:5 › Sweep defects @390px dark › D2: Профиль учитывает завершённые тренировки Журнала v2 (738ms)
+  ✓  376 [parity] › scenarios/parity/sweep-defects.spec.ts:120:5 › Sweep defects @390px dark › D3: Планы без курсов — кнопка «Выбрать курс на Главной» ведёт на Главную (751ms)
+  ✓  377 [parity] › scenarios/parity/tg-platform.spec.ts:25:3 › Платформа Telegram › BackButton: скрыта на корневых вкладках, видна на деталях, один клик — один шаг назад (2.1s)
+  ✓  378 [parity] › scenarios/parity/tg-platform.spec.ts:68:3 › Платформа Telegram › старт: ready/expand/запрет свайпа (8.0), цвета хрома по светлой оболочке, закрытие с подтверждением только в живой сессии (1.6s)
+  ✓  379 [parity] › scenarios/parity/tg-platform.spec.ts:113:3 › Платформа Telegram › версии: до 7.7 нет disableVerticalSwipes, до 7.10 нет setBottomBarColor, до 6.2 нет подтверждения закрытия (381ms)
+  ✓  380 [parity] › scenarios/parity/tg-platform.spec.ts:125:3 › Платформа Telegram › safe area (Bot API 8.0): нижняя навигация и контент сдвинуты на инсет, событие safeAreaChanged обновляет отступы (498ms)
+  ✓  381 [parity] › scenarios/parity/tg-platform.spec.ts:161:3 › Платформа Telegram › нативный клиент (#287): theme_changed только по шине SDK перекрашивает приложение, мост WebApp не нужен (542ms)
+  ✓  382 [parity] › scenarios/parity/tg-platform.spec.ts:189:3 › Платформа Telegram › нативный клиент (#287): safe_area_changed / content_safe_area_changed по шине SDK обновляют отступы (399ms)
+  ✓  383 [parity] › scenarios/parity/tg-platform.spec.ts:215:3 › Платформа Telegram › без инсетов (7.0, как до аудита): отступы сверху/снизу штатные (455ms)
+  ✓  384 [parity] › scenarios/parity/tg-platform.spec.ts:226:3 › Платформа Telegram › десятичная запятая: «78,5» принимается как 78.5 и сохраняется (899ms)
+  ✓  385 [parity] › scenarios/parity/tg-platform.spec.ts:246:3 › Платформа Telegram › просроченный initData (401): понятная подсказка «открой заново» и кнопка «Закрыть» (357ms)
+  ✓  386 [parity] › scenarios/parity/tz-date-defaults.spec.ts:22:3 › Даты по умолчанию — день профиля, не устройства (#294) › предусловие: день устройства отличается от дня профиля (2ms)
+  ✓  387 [parity] › scenarios/parity/tz-date-defaults.spec.ts:26:3 › Даты по умолчанию — день профиля, не устройства (#294) › Тесты: дата по умолчанию и max — сегодня профиля, результат записывается (849ms)
+  ✓  388 [parity] › scenarios/parity/tz-date-defaults.spec.ts:43:3 › Даты по умолчанию — день профиля, не устройства (#294) › Журнал «+ Записать»: дата по умолчанию и max — сегодня профиля, активность сохраняется (753ms)
+  ✓  389 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:34:7 › Visual analytics+profile @320px light › Аналитика: одна шапка, KPI-строка, «по типам» выше «по неделям», легенда разными цветами палитры (737ms)
+  ✓  390 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:90:7 › Visual analytics+profile @320px light › Аналитика: сводка без нулевых строк + «Показать все», длинные названия — многоточие без разрыва слов (672ms)
+  ✓  391 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:125:7 › Visual analytics+profile @320px light › Профиль: шапка-идентичность, крупные вес/рост, тесты плоским списком, SVG вместо эмодзи (743ms)
+  ✓  392 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:34:7 › Visual analytics+profile @320px dark › Аналитика: одна шапка, KPI-строка, «по типам» выше «по неделям», легенда разными цветами палитры (553ms)
+  ✓  393 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:90:7 › Visual analytics+profile @320px dark › Аналитика: сводка без нулевых строк + «Показать все», длинные названия — многоточие без разрыва слов (575ms)
+  ✓  394 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:125:7 › Visual analytics+profile @320px dark › Профиль: шапка-идентичность, крупные вес/рост, тесты плоским списком, SVG вместо эмодзи (691ms)
+  ✓  395 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:34:7 › Visual analytics+profile @390px light › Аналитика: одна шапка, KPI-строка, «по типам» выше «по неделям», легенда разными цветами палитры (682ms)
+  ✓  396 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:90:7 › Visual analytics+profile @390px light › Аналитика: сводка без нулевых строк + «Показать все», длинные названия — многоточие без разрыва слов (692ms)
+  ✓  397 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:125:7 › Visual analytics+profile @390px light › Профиль: шапка-идентичность, крупные вес/рост, тесты плоским списком, SVG вместо эмодзи (965ms)
+  ✓  398 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:34:7 › Visual analytics+profile @390px dark › Аналитика: одна шапка, KPI-строка, «по типам» выше «по неделям», легенда разными цветами палитры (771ms)
+  ✓  399 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:90:7 › Visual analytics+profile @390px dark › Аналитика: сводка без нулевых строк + «Показать все», длинные названия — многоточие без разрыва слов (635ms)
+  ✓  400 [parity] › scenarios/parity/visual-analytics-profile.spec.ts:125:7 › Visual analytics+profile @390px dark › Профиль: шапка-идентичность, крупные вес/рост, тесты плоским списком, SVG вместо эмодзи (965ms)
+  ✓  401 [parity] › scenarios/parity/visual-final.spec.ts:46:7 › Visual final @320px light › нижняя навигация скрыта на деталях и вторичных экранах, «назад» её возвращает (968ms)
+  ✓  402 [parity] › scenarios/parity/visual-final.spec.ts:87:7 › Visual final @320px light › подборка, поиск, тесты (и деталь теста), настройки — без нижней навигации (1.6s)
+  ✓  403 [parity] › scenarios/parity/visual-final.spec.ts:135:7 › Visual final @320px light › Главная: заголовок группы не наезжает на «Все ›» (1.8s)
+  ✓  404 [parity] › scenarios/parity/visual-final.spec.ts:157:7 › Visual final @320px light › Аналитика: «Итого», честный счётчик, цвета легенды = кольцо; склонение в Профиле (1.1s)
+  ✓  405 [parity] › scenarios/parity/visual-final.spec.ts:46:7 › Visual final @320px dark › нижняя навигация скрыта на деталях и вторичных экранах, «назад» её возвращает (1.0s)
+  ✓  406 [parity] › scenarios/parity/visual-final.spec.ts:87:7 › Visual final @320px dark › подборка, поиск, тесты (и деталь теста), настройки — без нижней навигации (2.1s)
+  ✓  407 [parity] › scenarios/parity/visual-final.spec.ts:135:7 › Visual final @320px dark › Главная: заголовок группы не наезжает на «Все ›» (1.7s)
+  ✓  408 [parity] › scenarios/parity/visual-final.spec.ts:157:7 › Visual final @320px dark › Аналитика: «Итого», честный счётчик, цвета легенды = кольцо; склонение в Профиле (803ms)
+  ✓  409 [parity] › scenarios/parity/visual-final.spec.ts:46:7 › Visual final @390px light › нижняя навигация скрыта на деталях и вторичных экранах, «назад» её возвращает (1.1s)
+  ✓  410 [parity] › scenarios/parity/visual-final.spec.ts:87:7 › Visual final @390px light › подборка, поиск, тесты (и деталь теста), настройки — без нижней навигации (2.3s)
+  ✓  411 [parity] › scenarios/parity/visual-final.spec.ts:135:7 › Visual final @390px light › Главная: заголовок группы не наезжает на «Все ›» (2.1s)
+  ✓  412 [parity] › scenarios/parity/visual-final.spec.ts:157:7 › Visual final @390px light › Аналитика: «Итого», честный счётчик, цвета легенды = кольцо; склонение в Профиле (987ms)
+  ✓  413 [parity] › scenarios/parity/visual-final.spec.ts:46:7 › Visual final @390px dark › нижняя навигация скрыта на деталях и вторичных экранах, «назад» её возвращает (1.1s)
+  ✓  414 [parity] › scenarios/parity/visual-final.spec.ts:87:7 › Visual final @390px dark › подборка, поиск, тесты (и деталь теста), настройки — без нижней навигации (2.1s)
+  ✓  415 [parity] › scenarios/parity/visual-final.spec.ts:135:7 › Visual final @390px dark › Главная: заголовок группы не наезжает на «Все ›» (2.1s)
+  ✓  416 [parity] › scenarios/parity/visual-final.spec.ts:157:7 › Visual final @390px dark › Аналитика: «Итого», честный счётчик, цвета легенды = кольцо; склонение в Профиле (987ms)
+  ✓  417 [parity] › scenarios/parity/visual-home-detail.spec.ts:31:7 › Visual home/detail @320px light › Главная: первая карточка ряда на x=16, вторая выглядывает; бейджи-глифы; заголовок не занимает место (750ms)
+  ✓  418 [parity] › scenarios/parity/visual-home-detail.spec.ts:70:7 › Visual home/detail @320px light › Главная: порядок секций как в эталоне, «Избранное» скрыто, пока пусто (677ms)
+  ✓  419 [parity] › scenarios/parity/visual-home-detail.spec.ts:116:7 › Visual home/detail @320px light › Workout Detail: hero, название ≤ 2 строк, 4 действия в ряд, навигация скрыта на детали и видна на вкладках (1.2s)
+  ✓  420 [parity] › scenarios/parity/visual-home-detail.spec.ts:31:7 › Visual home/detail @320px dark › Главная: первая карточка ряда на x=16, вторая выглядывает; бейджи-глифы; заголовок не занимает место (696ms)
+  ✓  421 [parity] › scenarios/parity/visual-home-detail.spec.ts:70:7 › Visual home/detail @320px dark › Главная: порядок секций как в эталоне, «Избранное» скрыто, пока пусто (605ms)
+  ✓  422 [parity] › scenarios/parity/visual-home-detail.spec.ts:116:7 › Visual home/detail @320px dark › Workout Detail: hero, название ≤ 2 строк, 4 действия в ряд, навигация скрыта на детали и видна на вкладках (1.4s)
+  ✓  423 [parity] › scenarios/parity/visual-home-detail.spec.ts:31:7 › Visual home/detail @390px light › Главная: первая карточка ряда на x=16, вторая выглядывает; бейджи-глифы; заголовок не занимает место (821ms)
+  ✓  424 [parity] › scenarios/parity/visual-home-detail.spec.ts:70:7 › Visual home/detail @390px light › Главная: порядок секций как в эталоне, «Избранное» скрыто, пока пусто (744ms)
+  ✓  425 [parity] › scenarios/parity/visual-home-detail.spec.ts:116:7 › Visual home/detail @390px light › Workout Detail: hero, название ≤ 2 строк, 4 действия в ряд, навигация скрыта на детали и видна на вкладках (1.3s)
+  ✓  426 [parity] › scenarios/parity/visual-home-detail.spec.ts:31:7 › Visual home/detail @390px dark › Главная: первая карточка ряда на x=16, вторая выглядывает; бейджи-глифы; заголовок не занимает место (811ms)
+  ✓  427 [parity] › scenarios/parity/visual-home-detail.spec.ts:70:7 › Visual home/detail @390px dark › Главная: порядок секций как в эталоне, «Избранное» скрыто, пока пусто (682ms)
+  ✓  428 [parity] › scenarios/parity/visual-home-detail.spec.ts:116:7 › Visual home/detail @390px dark › Workout Detail: hero, название ≤ 2 строк, 4 действия в ряд, навигация скрыта на детали и видна на вкладках (1.3s)
+  ✓  429 [parity] › scenarios/parity/visual-live.spec.ts:50:7 › Visual live @320px light › плеер: огромный таймер, главное действие без прокрутки, шторка итога, итоговый экран (3.0s)
+  ✓  430 [parity] › scenarios/parity/visual-live.spec.ts:50:7 › Visual live @320px dark › плеер: огромный таймер, главное действие без прокрутки, шторка итога, итоговый экран (3.1s)
+  ✓  431 [parity] › scenarios/parity/visual-live.spec.ts:50:7 › Visual live @390px light › плеер: огромный таймер, главное действие без прокрутки, шторка итога, итоговый экран (3.5s)
+  ✓  432 [parity] › scenarios/parity/visual-live.spec.ts:50:7 › Visual live @390px dark › плеер: огромный таймер, главное действие без прокрутки, шторка итога, итоговый экран (2.9s)
+  ✓  433 [parity] › scenarios/parity/visual-plans.spec.ts:73:5 › Plans visual @320px light › строка дня: одна кнопка + «⋯», название в одну строку, шаблон полосы/чипа; блок «Сегодня» (1.3s)
+  ✓  434 [parity] › scenarios/parity/visual-plans.spec.ts:148:5 › Plans visual @320px light › «Сегодня» идёт от plan.today сервера, а не от часов устройства; вне недели — блока нет; пересчёт при возврате в приложение (#288) (999ms)
+  ✓  435 [parity] › scenarios/parity/visual-plans.spec.ts:196:5 › Plans visual @320px light › Escape закрывает лист, даже когда фокус вне него; фокус возвращается на «⋯» (#288) (648ms)
+  ✓  436 [parity] › scenarios/parity/visual-plans.spec.ts:213:5 › Plans visual @320px light › степпер недели: двузначный номер «Неделя 12 · 28 сен – 4 окт» в одну строку, без overflow (#288, check 9) (868ms)
+  ✓  437 [parity] › scenarios/parity/visual-plans.spec.ts:238:5 › Plans visual @320px light › пустой план: полоса прогресса без aria-valuemax=0, «Сегодня» — секция с заголовком (#288) (606ms)
+  ✓  438 [parity] › scenarios/parity/visual-plans.spec.ts:256:5 › Plans visual @320px light › «Сегодня»: секция именуется заголовком, у одинаковых названий в разные дни — разные имена кнопок (#288) (861ms)
+  ✓  439 [parity] › scenarios/parity/visual-plans.spec.ts:282:5 › Plans visual @320px light › лист «⋯» строки: пункты, «Убрать» красным; Escape, фон, «Отмена» и Telegram BackButton закрывают; фокус возвращается (1.5s)
+  ✓  440 [parity] › scenarios/parity/visual-plans.spec.ts:347:5 › Plans visual @320px light › «Убрать из плана» через лист: подтверждение, «Отмена» ничего не меняет, «Убрать» удаляет строку (1.1s)
+  ✓  441 [parity] › scenarios/parity/visual-plans.spec.ts:377:5 › Plans visual plan card @320px light › карточка плана: «Неделя n из N» + полоса прогресса, лист плана («⋯»: копирование недели и «Убрать курс из плана») (1.2s)
+  ✓  442 [parity] › scenarios/parity/visual-plans.spec.ts:438:5 › Plans visual plan card @320px light › контраст: чипы категорий, «Начать» и «Убрать» ≥ 4.5 (#288) (521ms)
+  ✓  443 [parity] › scenarios/parity/visual-plans.spec.ts:459:5 › Plans visual plan card @320px light › полоса прогресса недели отражает «N из M» (1 из 3 → 33%) (700ms)
+  ✓  444 [parity] › scenarios/parity/visual-plans.spec.ts:73:5 › Plans visual @390px dark › строка дня: одна кнопка + «⋯», название в одну строку, шаблон полосы/чипа; блок «Сегодня» (1.3s)
+  ✓  445 [parity] › scenarios/parity/visual-plans.spec.ts:148:5 › Plans visual @390px dark › «Сегодня» идёт от plan.today сервера, а не от часов устройства; вне недели — блока нет; пересчёт при возврате в приложение (#288) (1.0s)
+  ✓  446 [parity] › scenarios/parity/visual-plans.spec.ts:196:5 › Plans visual @390px dark › Escape закрывает лист, даже когда фокус вне него; фокус возвращается на «⋯» (#288) (706ms)
+  ✓  447 [parity] › scenarios/parity/visual-plans.spec.ts:213:5 › Plans visual @390px dark › степпер недели: двузначный номер «Неделя 12 · 28 сен – 4 окт» в одну строку, без overflow (#288, check 9) (711ms)
+  ✓  448 [parity] › scenarios/parity/visual-plans.spec.ts:238:5 › Plans visual @390px dark › пустой план: полоса прогресса без aria-valuemax=0, «Сегодня» — секция с заголовком (#288) (773ms)
+  ✓  449 [parity] › scenarios/parity/visual-plans.spec.ts:256:5 › Plans visual @390px dark › «Сегодня»: секция именуется заголовком, у одинаковых названий в разные дни — разные имена кнопок (#288) (711ms)
+  ✓  450 [parity] › scenarios/parity/visual-plans.spec.ts:282:5 › Plans visual @390px dark › лист «⋯» строки: пункты, «Убрать» красным; Escape, фон, «Отмена» и Telegram BackButton закрывают; фокус возвращается (2.2s)
+  ✓  451 [parity] › scenarios/parity/visual-plans.spec.ts:347:5 › Plans visual @390px dark › «Убрать из плана» через лист: подтверждение, «Отмена» ничего не меняет, «Убрать» удаляет строку (1.2s)
+  ✓  452 [parity] › scenarios/parity/visual-plans.spec.ts:377:5 › Plans visual plan card @390px dark › карточка плана: «Неделя n из N» + полоса прогресса, лист плана («⋯»: копирование недели и «Убрать курс из плана») (1.4s)
+  ✓  453 [parity] › scenarios/parity/visual-plans.spec.ts:438:5 › Plans visual plan card @390px dark › контраст: чипы категорий, «Начать» и «Убрать» ≥ 4.5 (#288) (676ms)
+  ✓  454 [parity] › scenarios/parity/visual-plans.spec.ts:459:5 › Plans visual plan card @390px dark › полоса прогресса недели отражает «N из M» (1 из 3 → 33%) (797ms)
+  ✓  455 [parity] › scenarios/parity/visual-screens.spec.ts:27:7 › Visual screens @320px light › Журнал: карточка «бейдж + название» и подписанная сетка из 3 показателей, цветная метка типа, заголовок дня, календарь без overflow (926ms)
+  ✓  456 [parity] › scenarios/parity/visual-screens.spec.ts:91:7 › Visual screens @320px light › Профиль: grouped list со строками-иконками и шевронами (693ms)
+  ✓  457 [parity] › scenarios/parity/visual-screens.spec.ts:108:7 › Visual screens @320px light › Аналитика: единая шапка (метрика-список + табы с подчёркиванием), цвета легенды из палитры --vp-cat-* (702ms)
+  ✓  458 [parity] › scenarios/parity/visual-screens.spec.ts:151:7 › Visual screens @320px light › Планы: карточка курса цветом программы, чипы дней (736ms)
+  ✓  459 [parity] › scenarios/parity/visual-screens.spec.ts:172:7 › Visual screens @320px light › Главная: promo-баннеры с уникальными именами, без дублей «Создать тренировку» (783ms)
+  ✓  460 [parity] › scenarios/parity/visual-screens.spec.ts:197:7 › Visual screens @320px light › Главная: баннер «внести активность» открывает Журнал со шторкой записи (605ms)
+  ✓  461 [parity] › scenarios/parity/visual-screens.spec.ts:205:7 › Visual screens @320px light › все вкладки без горизонтального overflow (3.4s)
+  ✓  462 [parity] › scenarios/parity/visual-screens.spec.ts:27:7 › Visual screens @320px dark › Журнал: карточка «бейдж + название» и подписанная сетка из 3 показателей, цветная метка типа, заголовок дня, календарь без overflow (1.0s)
+  ✓  463 [parity] › scenarios/parity/visual-screens.spec.ts:91:7 › Visual screens @320px dark › Профиль: grouped list со строками-иконками и шевронами (648ms)
+  ✓  464 [parity] › scenarios/parity/visual-screens.spec.ts:108:7 › Visual screens @320px dark › Аналитика: единая шапка (метрика-список + табы с подчёркиванием), цвета легенды из палитры --vp-cat-* (1.4s)
+  ✓  465 [parity] › scenarios/parity/visual-screens.spec.ts:151:7 › Visual screens @320px dark › Планы: карточка курса цветом программы, чипы дней (570ms)
+  ✓  466 [parity] › scenarios/parity/visual-screens.spec.ts:172:7 › Visual screens @320px dark › Главная: promo-баннеры с уникальными именами, без дублей «Создать тренировку» (563ms)
+  ✓  467 [parity] › scenarios/parity/visual-screens.spec.ts:197:7 › Visual screens @320px dark › Главная: баннер «внести активность» открывает Журнал со шторкой записи (447ms)
+  ✓  468 [parity] › scenarios/parity/visual-screens.spec.ts:205:7 › Visual screens @320px dark › все вкладки без горизонтального overflow (3.2s)
+  ✓  469 [parity] › scenarios/parity/visual-screens.spec.ts:27:7 › Visual screens @390px light › Журнал: карточка «бейдж + название» и подписанная сетка из 3 показателей, цветная метка типа, заголовок дня, календарь без overflow (770ms)
+  ✓  470 [parity] › scenarios/parity/visual-screens.spec.ts:91:7 › Visual screens @390px light › Профиль: grouped list со строками-иконками и шевронами (440ms)
+  ✓  471 [parity] › scenarios/parity/visual-screens.spec.ts:108:7 › Visual screens @390px light › Аналитика: единая шапка (метрика-список + табы с подчёркиванием), цвета легенды из палитры --vp-cat-* (616ms)
+  ✓  472 [parity] › scenarios/parity/visual-screens.spec.ts:151:7 › Visual screens @390px light › Планы: карточка курса цветом программы, чипы дней (598ms)
+  ✓  473 [parity] › scenarios/parity/visual-screens.spec.ts:172:7 › Visual screens @390px light › Главная: promo-баннеры с уникальными именами, без дублей «Создать тренировку» (666ms)
+  ✓  474 [parity] › scenarios/parity/visual-screens.spec.ts:197:7 › Visual screens @390px light › Главная: баннер «внести активность» открывает Журнал со шторкой записи (473ms)
+  ✓  475 [parity] › scenarios/parity/visual-screens.spec.ts:205:7 › Visual screens @390px light › все вкладки без горизонтального overflow (3.2s)
+  ✓  476 [parity] › scenarios/parity/visual-screens.spec.ts:27:7 › Visual screens @390px dark › Журнал: карточка «бейдж + название» и подписанная сетка из 3 показателей, цветная метка типа, заголовок дня, календарь без overflow (880ms)
+  ✓  477 [parity] › scenarios/parity/visual-screens.spec.ts:91:7 › Visual screens @390px dark › Профиль: grouped list со строками-иконками и шевронами (565ms)
+  ✓  478 [parity] › scenarios/parity/visual-screens.spec.ts:108:7 › Visual screens @390px dark › Аналитика: единая шапка (метрика-список + табы с подчёркиванием), цвета легенды из палитры --vp-cat-* (552ms)
+  ✓  479 [parity] › scenarios/parity/visual-screens.spec.ts:151:7 › Visual screens @390px dark › Планы: карточка курса цветом программы, чипы дней (504ms)
+  ✓  480 [parity] › scenarios/parity/visual-screens.spec.ts:172:7 › Visual screens @390px dark › Главная: promo-баннеры с уникальными именами, без дублей «Создать тренировку» (622ms)
+  ✓  481 [parity] › scenarios/parity/visual-screens.spec.ts:197:7 › Visual screens @390px dark › Главная: баннер «внести активность» открывает Журнал со шторкой записи (471ms)
+  ✓  482 [parity] › scenarios/parity/visual-screens.spec.ts:205:7 › Visual screens @390px dark › все вкладки без горизонтального overflow (3.2s)
+  ✓  483 [parity] › scenarios/parity/visual-secondary.spec.ts:110:7 › Visual secondary @320px light › Builder: создание, редактор, выбор упражнения, протокол; пред-экран сессии; «Добавить в план»; «Перенести» (5.9s)
+  ✓  484 [parity] › scenarios/parity/visual-secondary.spec.ts:193:7 › Visual secondary @320px light › Настройки и история веса (1.8s)
+  ✓  485 [parity] › scenarios/parity/visual-secondary.spec.ts:216:7 › Visual secondary @320px light › Тесты, деталь теста с «Сравнением с похожими» (1.6s)
+  ✓  486 [parity] › scenarios/parity/visual-secondary.spec.ts:241:7 › Visual secondary @320px light › #287 LOW 5/7: «Начать» пред-экрана у низа окна (над safe area), кольцо фокуса в списке не обрезано (1.2s)
+  ✓  487 [parity] › scenarios/parity/visual-secondary.spec.ts:276:7 › Visual secondary @320px light › Program Detail, подборка, поиск (1.8s)
+  ✓  488 [parity] › scenarios/parity/visual-secondary.spec.ts:110:7 › Visual secondary @320px dark › Builder: создание, редактор, выбор упражнения, протокол; пред-экран сессии; «Добавить в план»; «Перенести» (5.4s)
+  ✓  489 [parity] › scenarios/parity/visual-secondary.spec.ts:193:7 › Visual secondary @320px dark › Настройки и история веса (1.7s)
+  ✓  490 [parity] › scenarios/parity/visual-secondary.spec.ts:216:7 › Visual secondary @320px dark › Тесты, деталь теста с «Сравнением с похожими» (1.7s)
+  ✓  491 [parity] › scenarios/parity/visual-secondary.spec.ts:241:7 › Visual secondary @320px dark › #287 LOW 5/7: «Начать» пред-экрана у низа окна (над safe area), кольцо фокуса в списке не обрезано (1.0s)
+  ✓  492 [parity] › scenarios/parity/visual-secondary.spec.ts:276:7 › Visual secondary @320px dark › Program Detail, подборка, поиск (1.8s)
+  ✓  493 [parity] › scenarios/parity/visual-secondary.spec.ts:110:7 › Visual secondary @390px light › Builder: создание, редактор, выбор упражнения, протокол; пред-экран сессии; «Добавить в план»; «Перенести» (5.5s)
+  ✓  494 [parity] › scenarios/parity/visual-secondary.spec.ts:193:7 › Visual secondary @390px light › Настройки и история веса (1.5s)
+  ✓  495 [parity] › scenarios/parity/visual-secondary.spec.ts:216:7 › Visual secondary @390px light › Тесты, деталь теста с «Сравнением с похожими» (1.5s)
+  ✓  496 [parity] › scenarios/parity/visual-secondary.spec.ts:241:7 › Visual secondary @390px light › #287 LOW 5/7: «Начать» пред-экрана у низа окна (над safe area), кольцо фокуса в списке не обрезано (1.0s)
+  ✓  497 [parity] › scenarios/parity/visual-secondary.spec.ts:276:7 › Visual secondary @390px light › Program Detail, подборка, поиск (1.9s)
+  ✓  498 [parity] › scenarios/parity/visual-secondary.spec.ts:110:7 › Visual secondary @390px dark › Builder: создание, редактор, выбор упражнения, протокол; пред-экран сессии; «Добавить в план»; «Перенести» (4.8s)
+  ✓  499 [parity] › scenarios/parity/visual-secondary.spec.ts:193:7 › Visual secondary @390px dark › Настройки и история веса (1.5s)
+  ✓  500 [parity] › scenarios/parity/visual-secondary.spec.ts:216:7 › Visual secondary @390px dark › Тесты, деталь теста с «Сравнением с похожими» (1.5s)
+  ✓  501 [parity] › scenarios/parity/visual-secondary.spec.ts:241:7 › Visual secondary @390px dark › #287 LOW 5/7: «Начать» пред-экрана у низа окна (над safe area), кольцо фокуса в списке не обрезано (881ms)
+  ✓  502 [parity] › scenarios/parity/visual-secondary.spec.ts:276:7 › Visual secondary @390px dark › Program Detail, подборка, поиск (1.6s)
+  ✓  503 [parity] › scenarios/parity/visual-settings-tests.spec.ts:42:7 › Visual settings/tests @320px light › Настройки: группы-секции со строками, без эмодзи, тёмные поверхности, color-scheme по теме (678ms)
+  ✓  504 [parity] › scenarios/parity/visual-settings-tests.spec.ts:91:7 › Visual settings/tests @320px light › Настройки: «Отмена» и Telegram BackButton возвращают в Профиль (650ms)
+  ✓  505 [parity] › scenarios/parity/visual-settings-tests.spec.ts:104:7 › Visual settings/tests @320px light › Тесты: карточки (бейдж, название, результат, шеврон) и возврат на Главную из списка и детали (1.0s)
+  ✓  506 [parity] › scenarios/parity/visual-settings-tests.spec.ts:151:7 › Visual settings/tests @320px light › Тесты из Профиля: деталь возвращает в Профиль (631ms)
+  ✓  507 [parity] › scenarios/parity/visual-settings-tests.spec.ts:42:7 › Visual settings/tests @320px dark › Настройки: группы-секции со строками, без эмодзи, тёмные поверхности, color-scheme по теме (715ms)
+  ✓  508 [parity] › scenarios/parity/visual-settings-tests.spec.ts:91:7 › Visual settings/tests @320px dark › Настройки: «Отмена» и Telegram BackButton возвращают в Профиль (664ms)
+  ✓  509 [parity] › scenarios/parity/visual-settings-tests.spec.ts:104:7 › Visual settings/tests @320px dark › Тесты: карточки (бейдж, название, результат, шеврон) и возврат на Главную из списка и детали (1.0s)
+  ✓  510 [parity] › scenarios/parity/visual-settings-tests.spec.ts:151:7 › Visual settings/tests @320px dark › Тесты из Профиля: деталь возвращает в Профиль (682ms)
+  ✓  511 [parity] › scenarios/parity/visual-settings-tests.spec.ts:42:7 › Visual settings/tests @390px light › Настройки: группы-секции со строками, без эмодзи, тёмные поверхности, color-scheme по теме (703ms)
+  ✓  512 [parity] › scenarios/parity/visual-settings-tests.spec.ts:91:7 › Visual settings/tests @390px light › Настройки: «Отмена» и Telegram BackButton возвращают в Профиль (696ms)
+  ✓  513 [parity] › scenarios/parity/visual-settings-tests.spec.ts:104:7 › Visual settings/tests @390px light › Тесты: карточки (бейдж, название, результат, шеврон) и возврат на Главную из списка и детали (1.1s)
+  ✓  514 [parity] › scenarios/parity/visual-settings-tests.spec.ts:151:7 › Visual settings/tests @390px light › Тесты из Профиля: деталь возвращает в Профиль (709ms)
+  ✓  515 [parity] › scenarios/parity/visual-settings-tests.spec.ts:42:7 › Visual settings/tests @390px dark › Настройки: группы-секции со строками, без эмодзи, тёмные поверхности, color-scheme по теме (679ms)
+  ✓  516 [parity] › scenarios/parity/visual-settings-tests.spec.ts:91:7 › Visual settings/tests @390px dark › Настройки: «Отмена» и Telegram BackButton возвращают в Профиль (690ms)
+  ✓  517 [parity] › scenarios/parity/visual-settings-tests.spec.ts:104:7 › Visual settings/tests @390px dark › Тесты: карточки (бейдж, название, результат, шеврон) и возврат на Главную из списка и детали (1.1s)
+  ✓  518 [parity] › scenarios/parity/visual-settings-tests.spec.ts:151:7 › Visual settings/tests @390px dark › Тесты из Профиля: деталь возвращает в Профиль (730ms)
+  ✓  519 [parity] › scenarios/parity/visual-shell.spec.ts:35:7 › Visual shell @320px light › нижняя навигация: 5 вкладок, активная помечена, внутри окна; заголовки экранов; без overflow (2.9s)
+  ✓  520 [parity] › scenarios/parity/visual-shell.spec.ts:63:7 › Visual shell @320px light › Главная: заголовки секций, горизонтальные ряды, sticky-поиск остаётся при прокрутке (765ms)
+  ✓  521 [parity] › scenarios/parity/visual-shell.spec.ts:94:7 › Visual shell @320px light › поверхности: фон страницы и карточки различаются; Workout Detail — 4 действия без overflow (698ms)
+  ✓  522 [parity] › scenarios/parity/visual-shell.spec.ts:35:7 › Visual shell @320px dark › нижняя навигация: 5 вкладок, активная помечена, внутри окна; заголовки экранов; без overflow (3.0s)
+  ✓  523 [parity] › scenarios/parity/visual-shell.spec.ts:63:7 › Visual shell @320px dark › Главная: заголовки секций, горизонтальные ряды, sticky-поиск остаётся при прокрутке (824ms)
+  ✓  524 [parity] › scenarios/parity/visual-shell.spec.ts:94:7 › Visual shell @320px dark › поверхности: фон страницы и карточки различаются; Workout Detail — 4 действия без overflow (557ms)
+  ✓  525 [parity] › scenarios/parity/visual-shell.spec.ts:35:7 › Visual shell @390px light › нижняя навигация: 5 вкладок, активная помечена, внутри окна; заголовки экранов; без overflow (3.0s)
+  ✓  526 [parity] › scenarios/parity/visual-shell.spec.ts:63:7 › Visual shell @390px light › Главная: заголовки секций, горизонтальные ряды, sticky-поиск остаётся при прокрутке (747ms)
+  ✓  527 [parity] › scenarios/parity/visual-shell.spec.ts:94:7 › Visual shell @390px light › поверхности: фон страницы и карточки различаются; Workout Detail — 4 действия без overflow (517ms)
+  ✓  528 [parity] › scenarios/parity/visual-shell.spec.ts:35:7 › Visual shell @390px dark › нижняя навигация: 5 вкладок, активная помечена, внутри окна; заголовки экранов; без overflow (3.0s)
+  ✓  529 [parity] › scenarios/parity/visual-shell.spec.ts:63:7 › Visual shell @390px dark › Главная: заголовки секций, горизонтальные ряды, sticky-поиск остаётся при прокрутке (769ms)
+  ✓  530 [parity] › scenarios/parity/visual-shell.spec.ts:94:7 › Visual shell @390px dark › поверхности: фон страницы и карточки различаются; Workout Detail — 4 действия без overflow (490ms)
+  ✓  531 [parity] › scenarios/parity/wave13-review.spec.ts:33:5 › Wave 13b review @320px light › Журнал → «Открыть тренировку» → «Начать» → назад → назад: снова Журнал, а не Главная (963ms)
+  ✓  532 [parity] › scenarios/parity/wave13-review.spec.ts:63:5 › Wave 13b review @320px light › R-4: «Начать» на Workout Detail при завершении в очереди — сначала досылка, не ложный конфликт (1.6s)
+  ✓  533 [parity] › scenarios/parity/wave13-review.spec.ts:112:5 › Wave 13b review @320px light › «Добавить в план»: пока запрос в полёте, тап по фону не закрывает лист — ошибка не теряется (744ms)
+  ✓  534 [parity] › scenarios/parity/wave13-review.spec.ts:33:5 › Wave 13b review @390px dark › Журнал → «Открыть тренировку» → «Начать» → назад → назад: снова Журнал, а не Главная (1.1s)
+  ✓  535 [parity] › scenarios/parity/wave13-review.spec.ts:63:5 › Wave 13b review @390px dark › R-4: «Начать» на Workout Detail при завершении в очереди — сначала досылка, не ложный конфликт (1.6s)
+  ✓  536 [parity] › scenarios/parity/wave13-review.spec.ts:112:5 › Wave 13b review @390px dark › «Добавить в план»: пока запрос в полёте, тап по фону не закрывает лист — ошибка не теряется (794ms)
+  ✓  537 [parity] › scenarios/parity/workout-detail-start-log.spec.ts:22:5 › Workout Detail start/log @320px light › «Начать» запускает свободную сессию тренировки (pre → live) без PlanItem (1.4s)
+  ✓  538 [parity] › scenarios/parity/workout-detail-start-log.spec.ts:62:5 › Workout Detail start/log @320px light › «Записать» открывает форму записи задним числом с этой тренировкой (979ms)
+  ✓  539 [parity] › scenarios/parity/workout-detail-start-log.spec.ts:22:5 › Workout Detail start/log @390px dark › «Начать» запускает свободную сессию тренировки (pre → live) без PlanItem (1.6s)
+  ✓  540 [parity] › scenarios/parity/workout-detail-start-log.spec.ts:62:5 › Workout Detail start/log @390px dark › «Записать» открывает форму записи задним числом с этой тренировкой (810ms)
+  ✓  541 [mobile-320] › scenarios/mobile-layout.spec.ts:47:3 › нижняя навигация и экраны без обрезки и overflow — тема light (1.3s)
+  ✓  542 [mobile-320] › scenarios/mobile-layout.spec.ts:47:3 › нижняя навигация и экраны без обрезки и overflow — тема dark (1.2s)
+  ✓  543 [mobile-375] › scenarios/mobile-layout.spec.ts:47:3 › нижняя навигация и экраны без обрезки и overflow — тема light (1.3s)
+  ✓  544 [mobile-375] › scenarios/mobile-layout.spec.ts:47:3 › нижняя навигация и экраны без обрезки и overflow — тема dark (1.1s)
+  ✓  545 [mobile-390] › scenarios/mobile-layout.spec.ts:47:3 › нижняя навигация и экраны без обрезки и overflow — тема light (1.3s)
+  ✓  546 [mobile-390] › scenarios/mobile-layout.spec.ts:47:3 › нижняя навигация и экраны без обрезки и overflow — тема dark (1.1s)
+  ✓  547 [keyboard-320] › scenarios/keyboard-viewport.spec.ts:41:1 › редактор: поля и кнопки достижимы при клавиатуре, после возврата нет смещений (1.4s)
+  ✓  548 [keyboard-390] › scenarios/keyboard-viewport.spec.ts:41:1 › редактор: поля и кнопки достижимы при клавиатуре, после возврата нет смещений (1.3s)
+
+
+  1) [chromium] › scenarios/_scratch_qa.spec.ts:30:1 › phase1: fresh user → course → live (background/reload) → finish → journal 
+
+    Error: browserContext.close: ENOENT: no such file or directory, open '/home/user/wt-feat/webapp-frontend/e2e/test-results/.playwright-artifacts-0/traces/4216b7d00cfa906622c5-a07199c8950471c68545.trace'
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: locator.fill: Timeout 10000ms exceeded.
+    Call log:
+      - waiting for getByLabel('Число подтягиваний')
+
+
+      11 |
+      12 | async function onboard(page: Page) {
+    > 13 |   await page.getByLabel("Число подтягиваний").fill("8");
+         |                                               ^
+      14 |   await page.getByRole("button", { name: "Далее" }).click();
+      15 |   await page.getByRole("button", { name: "Да" }).click();
+      16 |   await page.getByRole("button", { name: "Продолжить" }).click();
+        at onboard (/home/user/wt-feat/webapp-frontend/e2e/scenarios/_scratch_qa.spec.ts:13:47)
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/_scratch_qa.spec.ts:36:9
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/_scratch_qa-phase1-fresh-u-51385-d-reload-→-finish-→-journal-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:72:1 › Просроченный пользователь: курс за подпиской, свои тренировки доступны, grant возвращает курс 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('subscription-required')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByTestId('subscription-required') with timeout 5000ms
+      - waiting for getByTestId('subscription-required')
+
+
+      89 |   await openPlansAndStartCourse(page);
+      90 |   const gate = page.getByTestId("subscription-required");
+    > 91 |   await expect(gate).toBeVisible();
+         |                      ^
+      92 |   await expect(gate).toContainText("подписк");
+      93 |   await expect(page.getByText("Живая тренировка")).toHaveCount(0);
+      94 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts:91:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('subscription-required')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByTestId('subscription-required') with timeout 5000ms
+      - waiting for getByTestId('subscription-required')
+
+
+      89 |   await openPlansAndStartCourse(page);
+      90 |   const gate = page.getByTestId("subscription-required");
+    > 91 |   await expect(gate).toBeVisible();
+         |                      ^
+      92 |   await expect(gate).toContainText("подписк");
+      93 |   await expect(page.getByText("Живая тренировка")).toHaveCount(0);
+      94 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts:91:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fix-wave1-expired-course-g-3d033-тупны-grant-возвращает-курс-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:143:1 › Клиент считает доступ активным, сервер отвечает 402 — тот же экран подписки 
+
+    TimeoutError: page.waitForResponse: Timeout 10000ms exceeded while waiting for event "response"
+
+      157 |
+      158 |   await openPlansAndStartCourse(page);
+    > 159 |   const start = page.waitForResponse((r) => r.url().includes("/api/v2/sessions/live") && r.request().method() === "POST");
+          |                      ^
+      160 |   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen: подсказка «доступ есть»
+      161 |   const response = await start;
+      162 |   expect(response.status()).toBe(402);
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts:159:22
+
+    TimeoutError: locator.click: Timeout 10000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Начать', exact: true })
+
+
+      158 |   await openPlansAndStartCourse(page);
+      159 |   const start = page.waitForResponse((r) => r.url().includes("/api/v2/sessions/live") && r.request().method() === "POST");
+    > 160 |   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen: подсказка «доступ есть»
+          |                                                                   ^
+      161 |   const response = await start;
+      162 |   expect(response.status()).toBe(402);
+      163 |   expect((await response.json()).detail.code).toBe("subscription_required");
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts:160:67
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TimeoutError: page.waitForResponse: Timeout 10000ms exceeded while waiting for event "response"
+
+      157 |
+      158 |   await openPlansAndStartCourse(page);
+    > 159 |   const start = page.waitForResponse((r) => r.url().includes("/api/v2/sessions/live") && r.request().method() === "POST");
+          |                      ^
+      160 |   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen: подсказка «доступ есть»
+      161 |   const response = await start;
+      162 |   expect(response.status()).toBe(402);
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts:159:22
+
+    TimeoutError: locator.click: Timeout 10000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Начать', exact: true })
+
+
+      158 |   await openPlansAndStartCourse(page);
+      159 |   const start = page.waitForResponse((r) => r.url().includes("/api/v2/sessions/live") && r.request().method() === "POST");
+    > 160 |   await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen: подсказка «доступ есть»
+          |                                                                   ^
+      161 |   const response = await start;
+      162 |   expect(response.status()).toBe(402);
+      163 |   expect((await response.json()).detail.code).toBe("subscription_required");
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts:160:67
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fix-wave1-expired-course-g-a7772-402-—-тот-же-экран-подписки-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [chromium] › scenarios/plans-start-session.spec.ts:12:1 › «Планы» → Подтягивания → Начать → live session → Complete, без admin/lab 
+
+    Error: browserContext.close: ENOENT: no such file or directory, open '/home/user/wt-feat/webapp-frontend/e2e/test-results/.playwright-artifacts-7/traces/133ee2c996f5b4c20c9e-9cd45252eb23cc8461aa-recording62.trace'
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('Свободный пул')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByText('Свободный пул') with timeout 5000ms
+      - waiting for getByText('Свободный пул')
+
+
+      14 |
+      15 |   await page.getByRole("button", { name: "Планы" }).click();
+    > 16 |   await expect(page.getByText("Свободный пул")).toBeVisible();
+         |                                                 ^
+      17 |   // #304: одна строка = одно занятие. #305 (V5.6 §1): новая инклюзия V5.6 — 2 основных занятия в неделю
+      18 |   // (A и B), каталог поставляемой программы (3) не меняется — частота заморожена в снимке инклюзии.
+      19 |   await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(2);
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/plans-start-session.spec.ts:16:49
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/plans-start-session-«Планы-c2729-on-→-Complete-без-admin-lab-chromium-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-504a8-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-346d1-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-4e89a-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8) [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 8
+    Received:    7
+
+      221 |       await openTab(page, "Аналитика");
+      222 |       const before = await workoutsStat(page);
+    > 223 |       expect(before).toBeGreaterThanOrEqual(POPULATED_WORKOUTS); // >: повторный прогон на той же БД
+          |                      ^
+      224 |       await shot(page, t, "01b аналитика до");
+      225 |       await openTab(page, "Главная");
+      226 |
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/final-journey.spec.ts:223:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-final-journey-Final-57252-а-→-Планы-→-Тесты-→-Профиль-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  9) [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px light populated › вкладки: непустой контент, без overflow и ошибок 
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-4efdf-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  10) [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px dark populated › вкладки: непустой контент, без overflow и ошибок 
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-cae41-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  11) [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px light populated › вкладки: непустой контент, без overflow и ошибок 
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-cc5e6-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  12) [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px dark populated › вкладки: непустой контент, без overflow и ошибок 
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: Аналитика: состояние «populated»
+
+    expect(locator).toBeVisible() failed
+
+    Locator: getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Аналитика: состояние «populated» getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first() with timeout 5000ms
+      - waiting for getByTestId('analytics-metric-total').filter({ hasText: 'Всего тренировок: 8' }).first()
+
+
+      544 |           await openTab(page, tab.label);
+      545 |           await expect(tab.shell(page).first(), `${tab.label}: экран`).toBeVisible();
+    > 546 |           await expect(tab.state[mode](page).first(), `${tab.label}: состояние «${mode}»`).toBeVisible();
+          |                                                                                            ^
+      547 |           await expectScreenHealthy(page, `${tab.label} (${mode})`);
+      548 |           await expect(tabbar(page)).toBeVisible();
+      549 |         }
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:546:92
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-4d319-нтент-без-overflow-и-ошибок-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  13) [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-25d9a-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  14) [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-a721e-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  15) [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-4653b-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  16) [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 8
+    Received: 7
+
+      602 |       await openTab(page, "Аналитика");
+      603 |       const before = await workoutsStat(page);
+    > 604 |       expect(before).toBe(POPULATED_WORKOUTS);
+          |                      ^
+      605 |       await openTab(page, "Главная");
+      606 |
+      607 |       // Главная → деталь → «Начать» → предэкран → живая сессия.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/full-sweep.spec.ts:604:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-full-sweep-Full-swe-ca250-урнал-→-Аналитика-→-экспорт-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  17) [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @320px light › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+    Expected: 1
+    Received: 3
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' }) with timeout 5000ms
+      - waiting for locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+        3 × locator resolved to 0 elements
+          - unexpected value "0"
+        11 × locator resolved to 3 elements
+           - unexpected value "3"
+
+
+      94 |       // После сохранения — Журнал с новой записью (не деталь).
+      95 |       const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
+    > 96 |       await expect(card).toHaveCount(1);
+         |                          ^
+      97 |       // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
+      98 |       await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      99 |       await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/sweep-defects.spec.ts:96:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+    Expected: 1
+    Received: 3
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' }) with timeout 5000ms
+      - waiting for locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+        3 × locator resolved to 0 elements
+          - unexpected value "0"
+        11 × locator resolved to 3 elements
+           - unexpected value "3"
+
+
+      94 |       // После сохранения — Журнал с новой записью (не деталь).
+      95 |       const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
+    > 96 |       await expect(card).toHaveCount(1);
+         |                          ^
+      97 |       // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
+      98 |       await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      99 |       await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/sweep-defects.spec.ts:96:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-sweep-defects-Sweep-14118-хранение-—-запись-в-Журнале-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  18) [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @390px dark › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+    Expected: 1
+    Received: 3
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' }) with timeout 5000ms
+      - waiting for locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+        3 × locator resolved to 0 elements
+          - unexpected value "0"
+        11 × locator resolved to 3 elements
+           - unexpected value "3"
+
+
+      94 |       // После сохранения — Журнал с новой записью (не деталь).
+      95 |       const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
+    > 96 |       await expect(card).toHaveCount(1);
+         |                          ^
+      97 |       // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
+      98 |       await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      99 |       await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/sweep-defects.spec.ts:96:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+    Expected: 1
+    Received: 3
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' }) with timeout 5000ms
+      - waiting for locator('.history-card-clickable').filter({ hasText: 'Записана задним числом' })
+        3 × locator resolved to 0 elements
+          - unexpected value "0"
+        11 × locator resolved to 3 elements
+           - unexpected value "3"
+
+
+      94 |       // После сохранения — Журнал с новой записью (не деталь).
+      95 |       const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
+    > 96 |       await expect(card).toHaveCount(1);
+         |                          ^
+      97 |       // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
+      98 |       await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      99 |       await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/parity/sweep-defects.spec.ts:96:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity-retry1/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity-retry1/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity-retry1/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/parity-sweep-defects-Sweep-900ea-хранение-—-запись-в-Журнале-parity-retry1/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  19) [chromium] › scenarios/fix-wave1/first-add-to-plan.spec.ts:44:1 › первое «Добавить в план» нового пользователя: строка видна, переживает reload, стартует и считается 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'Ср', exact: true })
+
+
+      62 |   // ПЕРВОЕ «Добавить в план» — плана у пользователя ещё нет.
+      63 |   await page.getByRole("button", { name: "Добавить в план" }).click();
+    > 64 |   await page.getByRole("button", { name: "Ср", exact: true }).click();
+         |                                                               ^
+      65 |   await page.getByRole("button", { name: "Добавить", exact: true }).click();
+      66 |
+      67 |   // Сразу после добавления (caller ведёт на «Планы») и после reload — строка в текущей неделе.
+        at /home/user/wt-feat/webapp-frontend/e2e/scenarios/fix-wave1/first-add-to-plan.spec.ts:64:63
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fix-wave1-first-add-to-pla-a6a88-reload-стартует-и-считается-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fix-wave1-first-add-to-pla-a6a88-reload-стартует-и-считается-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fix-wave1-first-add-to-pla-a6a88-reload-стартует-и-считается-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fix-wave1-first-add-to-pla-a6a88-reload-стартует-и-считается-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  18 failed
+    [chromium] › scenarios/_scratch_qa.spec.ts:30:1 › phase1: fresh user → course → live (background/reload) → finish → journal 
+    [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:72:1 › Просроченный пользователь: курс за подпиской, свои тренировки доступны, grant возвращает курс 
+    [chromium] › scenarios/fix-wave1/expired-course-gate.spec.ts:143:1 › Клиент считает доступ активным, сервер отвечает 402 — тот же экран подписки 
+    [chromium] › scenarios/plans-start-session.spec.ts:12:1 › «Планы» → Подтягивания → Начать → live session → Complete, без admin/lab 
+    [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+    [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @320px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+    [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px light › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+    [parity] › scenarios/parity/final-journey.spec.ts:214:5 › Final journey @390px dark › наполненный пользователь: поиск → деталь → старт → сессия → Журнал → Аналитика → Планы → Тесты → Профиль 
+    [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px light populated › вкладки: непустой контент, без overflow и ошибок 
+    [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @320px dark populated › вкладки: непустой контент, без overflow и ошибок 
+    [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px light populated › вкладки: непустой контент, без overflow и ошибок 
+    [parity] › scenarios/parity/full-sweep.spec.ts:541:7 › Full sweep @390px dark populated › вкладки: непустой контент, без overflow и ошибок 
+    [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+    [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @320px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+    [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px light › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+    [parity] › scenarios/parity/full-sweep.spec.ts:598:5 › Full sweep flows @390px dark › тренировка: Главная → деталь → старт → лог → завершение → Журнал → Аналитика → экспорт 
+    [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @320px light › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале 
+    [parity] › scenarios/parity/sweep-defects.spec.ts:80:5 › Sweep defects @390px dark › D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале 
+  1 flaky
+    [chromium] › scenarios/fix-wave1/first-add-to-plan.spec.ts:44:1 › первое «Добавить в план» нового пользователя: строка видна, переживает reload, стартует и считается 
+  9 skipped
+  501 passed (26.8m)

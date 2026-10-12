@@ -1,0 +1,63 @@
+
+Running 19 tests using 1 worker
+
+  ✓   1 [chromium] › scenarios/builder-execution.spec.ts:20:1 › A. reps standalone: цели из prescription, Summary после последнего блока (4.1s)
+  ✓   2 [chromium] › scenarios/builder-execution.spec.ts:35:1 › B. time standalone: таймер работы от сервера, «Стоп» записывает измеренное (7.2s)
+  ✘   3 [chromium] › scenarios/builder-execution.spec.ts:55:1 › C. max standalone: попытки без выдуманной цели (2.0m)
+  -   4 [chromium] › scenarios/builder-execution.spec.ts:70:1 › D. interval standalone: тот же движок, раунды идут сами до конца
+  -   5 [chromium] › scenarios/builder-execution.spec.ts:85:1 › E. mixed reps -> interval -> max: блоки сменяются сами, reload посреди интервала, Summary
+  -   6 [chromium] › scenarios/builder-execution.spec.ts:128:1 › F. дубли упражнения: подходы второго блока не попадают в первый
+  ✓   7 [chromium] › scenarios/golden-journey.spec.ts:25:1 › Golden Journey: Главная → в план → тренировка → Summary → Аналитика → Журнал → удаление (4.1s)
+  ✓   8 [chromium] › scenarios/live-engine-v2.spec.ts:55:1 › 1. PREP → WORK по дедлайну, без тапа (5.8s)
+  ✓   9 [chromium] › scenarios/live-engine-v2.spec.ts:67:1 › 2. REST → следующий WORK по дедлайну; таймер = сервер ±1 с (12.7s)
+  ✓  10 [chromium] › scenarios/live-engine-v2.spec.ts:85:1 › 3. Отдых блока → следующий блок сам; подход на время засчитывается сам; итог (16.1s)
+  ✓  11 [chromium] › scenarios/live-engine-v2.spec.ts:105:1 › 4. Фон/перезагрузка поперёк дедлайна: на возврате фаза уже переключена (15.1s)
+  ✓  12 [chromium] › scenarios/live-engine-v2.spec.ts:122:1 › 5. Пауза на сервере: переживает перезагрузку и второе устройство; «Продолжить» — тот же остаток (12.0s)
+  ✓  13 [chromium] › scenarios/live-engine-v2.spec.ts:154:1 › 6. Интервал на том же движке: пауза/перезагрузка/продолжение, завершение само (23.3s)
+  ✓  14 [chromium] › scenarios/live-engine-v2.spec.ts:200:1 › 8. #306 B1: «Стоп» подхода на время офлайн, приложение перезапущено после дедлайна — записано измеренное, не цель (23.9s)
+  ✓  15 [chromium] › scenarios/live-engine-v2.spec.ts:224:1 › 9. #306 B1: пауза интервала офлайн, приложение перезапущено позже — на паузе, остаток тот же, не завершилась сама (32.2s)
+  ✓  16 [chromium] › scenarios/live-engine-v2.spec.ts:309:1 › 10. #306 F1: первая досылка при запуске упала (браузер онлайн) — повтор сам, «Стоп» не перекрыт целью (24.1s)
+  ✓  17 [chromium] › scenarios/live-engine-v2.spec.ts:325:1 › 11. #306 F1: Журнал, открытый до успешного повтора, не проецирует дедлайн раньше очереди (27.2s)
+  ✓  18 [chromium] › scenarios/live-engine-v2.spec.ts:342:1 › 12. #306 F1: пауза офлайн, первая досылка упала, перезагрузка при «онлайн» — пауза дошла раньше проекции (31.8s)
+  ✓  19 [chromium] › scenarios/live-engine-v2.spec.ts:371:3 › 320 px › 7. Экран движка без горизонтальной прокрутки на 320 px (5.7s)
+
+
+  1) [chromium] › scenarios/builder-execution.spec.ts:55:1 › C. max standalone: попытки без выдуманной цели 
+
+    Test timeout of 120000ms exceeded.
+
+    Error: locator.fill: Test timeout of 120000ms exceeded.
+    Call log:
+      - waiting for getByLabel('Результат подхода')
+
+
+       at ../fixtures/builderFlow.ts:59
+
+      57 |     }
+      58 |     await expect(phase).toHaveText("Пошёл");
+    > 59 |     await page.getByLabel("Результат подхода").fill(value);
+         |                                                ^
+      60 |     await page.getByTestId("engine-submit").click();
+      61 |     await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
+      62 |   }
+        at playSetsV2 (/home/user/wt-base/webapp-frontend/e2e/fixtures/builderFlow.ts:59:48)
+        at /home/user/wt-base/webapp-frontend/e2e/scenarios/builder-execution.spec.ts:61:3
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/builder-execution-C-max-st-f2c35-попытки-без-выдуманной-цели-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/builder-execution-C-max-st-f2c35-попытки-без-выдуманной-цели-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/builder-execution-C-max-st-f2c35-попытки-без-выдуманной-цели-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/builder-execution-C-max-st-f2c35-попытки-без-выдуманной-цели-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › scenarios/builder-execution.spec.ts:55:1 › C. max standalone: попытки без выдуманной цели 
+  3 did not run
+  15 passed (6.2m)
