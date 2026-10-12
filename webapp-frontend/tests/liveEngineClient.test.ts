@@ -7,7 +7,7 @@ import {
 import { fetchActiveLiveSession, fetchSessions } from "../src/apiV2.ts";
 import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
-  claimQueue, clearQueue, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
+  claimQueue, clearQueue, createSyncRetry, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
   releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, wakeEngineReconciliation, type DrainApi,
   type EngineQueue, type QueueStore,
 } from "../src/liveEngineClient.ts";
@@ -678,4 +678,59 @@ test("N1: запрос в окне выхода сверки не теряетс
     assert.ok(sentBeforeRead, `смещение ${offset}: ${JSON.stringify(order)}`);
   }
   assert.deepEqual(lostAt, []);
+});
+
+// --- Открытый экран: повтор досылки после временного сбоя при браузере «онлайн» ----------------------------
+
+function fakeTimers() {
+  const pending = new Map<number, { run: () => void; ms: number }>();
+  let next = 0;
+  return {
+    pending,
+    timers: {
+      set: (run: () => void, ms: number) => {
+        pending.set(++next, { run, ms });
+        return next;
+      },
+      clear: (handle: unknown) => void pending.delete(handle as number),
+    },
+    fire() {
+      const [[handle, entry]] = [...pending.entries()];
+      pending.delete(handle);
+      entry.run();
+    },
+  };
+}
+
+test("экран: временный сбой — повтор сам с растущей паузой 1, 2, 4, 8, 15, 15 с; не больше одного ожидающего", () => {
+  const clock = fakeTimers();
+  let runs = 0;
+  const retry = createSyncRetry(() => { runs += 1; }, undefined, clock.timers);
+  const delays: number[] = [];
+  for (let i = 0; i < 6; i += 1) {
+    retry.schedule();
+    retry.schedule();  // второй сбой до повтора не ставит второй таймер (нет дублирующих запросов)
+    assert.equal(clock.pending.size, 1);
+    delays.push([...clock.pending.values()][0].ms);
+    clock.fire();
+  }
+  assert.deepEqual(delays, [1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
+  assert.equal(runs, 6);
+});
+
+test("экран: удачная досылка сбрасывает паузу; досылка по действию/online снимает ожидающий повтор; закрытие — тоже", () => {
+  const clock = fakeTimers();
+  let runs = 0;
+  const retry = createSyncRetry(() => { runs += 1; }, undefined, clock.timers);
+  retry.schedule();
+  clock.fire();
+  retry.schedule();
+  assert.equal([...clock.pending.values()][0].ms, 2_000);
+  retry.reset();
+  assert.equal(clock.pending.size, 0);
+  retry.schedule();
+  assert.equal([...clock.pending.values()][0].ms, 1_000);
+  retry.cancel();
+  assert.equal(clock.pending.size, 0);
+  assert.equal(runs, 1);
 });

@@ -1,7 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { answerChecksV2, noWakeLock, openPreScreen, playSetsV2 } from "../fixtures/builderFlow";
+import { buildInitData, getTestBotToken } from "../fixtures/initData";
 import { openAppAs } from "../fixtures/setup";
+
+/** Ложный итог «Тренировка уже была завершена…» (ответ «Сохранить» вместо первого завершения). */
+const FALSE_REPEAT = "Тренировка уже была завершена";
+
+async function completedCard(page: Page, telegramId: number, sessionId: number) {
+  const initData = buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken());
+  const response = await page.request.get("/api/v2/sessions?status=completed", { headers: { "X-Telegram-Init-Data": initData } });
+  const cards = (await response.json()).sessions as { id: number; plan_item_id: number | null; status: string }[];
+  return cards.filter((card) => card.id === sessionId);
+}
 
 // issue #305 × #306 — программа «Подтягивания» V5.6 на Live Engine v2.
 // scripts/e2e_seed.py plan_week_start_session 930501: M = 12 → переходная неделя (A 5/5/5/5+, сила 5×5 масса тела).
@@ -36,7 +47,47 @@ test("V5.6 A: после последнего подхода — подтвер�
   await expect(page.getByTestId("engine-complete")).toBeVisible();
   const saved = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
   await page.getByTestId("engine-save").click();
-  await saved;
+  // «Сохранить» дописывает оценку и прогрессию повторно не считает — сервер так и отвечает.
+  const save = await (await saved).json();
+  expect(save.progression_skipped_reason).toBe("already_completed");
+  expect(save.course_progression ?? null).toBeNull();
+
+  // Summary — фактический итог первого (и единственного) завершения, без ложного «уже была завершена».
+  await expect(page.getByTestId("course-progression")).toBeVisible();
+  await expect(page.getByTestId("course-progression")).toContainText(`Следующая тренировка ${body.course_progression.next_workout_role}`);
+  await expect(page.getByText(FALSE_REPEAT)).toHaveCount(0);
+  const cards = await completedCard(page, 930_501, body.id);
+  expect(cards).toHaveLength(1); // журнал — один раз
+  expect(cards[0].plan_item_id).not.toBeNull(); // занятие плана засчитано
+
+  expect(apiFailures).toEqual([]);
+  expect(noWakeLock(consoleErrors)).toEqual([]);
+});
+
+test("V5.6 A: раннее завершение — итог «досрочно» (без прогрессии), история и кредит занятия есть", async ({ page }) => {
+  const { consoleErrors, apiFailures } = await openAppAs(page, 930_503);
+  await openPreScreen(page, "Подтягивания");
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+  await playSetsV2(page, ["5", "5"]);
+
+  const finished = page.waitForResponse((r) => r.url().includes("/events") && r.status() === 200
+    && r.request().postDataJSON().events.some((e: { type: string }) => e.type === "finish_early"));
+  const saved = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+  await page.getByTestId("engine-finish").click();
+  await page.getByTestId("engine-finish-confirm").click();
+  const first = await (await finished).json();
+  expect(first.status).toBe("completed");
+  expect(first.progression_skipped_reason).toBe("abandoned"); // недоделка — прогрессия не считается (#307)
+  expect(first.course_progression ?? null).toBeNull();
+  expect((await (await saved).json()).progression_skipped_reason).toBe("already_completed");
+
+  await expect(page.getByText("Прогрессия не пересчитана — сессия завершена досрочно.")).toBeVisible();
+  await expect(page.getByText(FALSE_REPEAT)).toHaveCount(0);
+  await expect(page.getByTestId("course-progression")).toHaveCount(0);
+  const cards = await completedCard(page, 930_503, first.id);
+  expect(cards).toHaveLength(1); // в истории
+  expect(cards[0].plan_item_id).not.toBeNull(); // занятие плана засчитано (кредит), прогрессии нет
 
   expect(apiFailures).toEqual([]);
   expect(noWakeLock(consoleErrors)).toEqual([]);

@@ -211,7 +211,14 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     open screen owns its session's queue (`claimQueue`), so the app-level drain skips it. A request (or a
     `releaseQueue`) that arrives while a pass is running marks a rerun: the reconciliation finishes only after a
     complete pass during which no new request arrived, so a queue released mid-pass is always reconsidered before
-    the gate opens. User input made before a
+    the gate opens. The open screen retries its own queue the same way: a transient failure while the browser
+    reports online (no `online` event will come) schedules one retry after 1, 2, 4, 8, 15, 15… s
+    (`createSyncRetry`; at most one pending, cancelled by any other send, reset on success, none while offline) —
+    no manual «Повторить» is needed; the resent events keep their `client_event_id` (server: duplicate). The
+    Summary shows the outcome of the response that actually completed the session (last set, `confirm_blocks`,
+    `finish_early`: progression / V5.6 `course_progression` / `abandoned`), not the `already_completed` of the
+    later «Сохранить» review call (`summaryResult`); only a screen that never saw the completion shows the server's
+    answer as is. User input made before a
     deadline therefore always reaches the server before that deadline is persisted; the server's rules (clamping,
     stale no-op, duplicate) are unchanged. The same drain sends a review queued for a session the server
     already completed by itself (no longer active, so no screen would reopen it). Audio: the engine exposes

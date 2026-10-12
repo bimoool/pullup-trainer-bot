@@ -1,3 +1,5 @@
+import type { LiveSessionCompleteResponse } from "./apiV2.ts";
+
 /**
  * Завершение живой тренировки, поставленное в очередь (#287, HIGH 1/2): чистая машина состояний
  * статуса «завершение в очереди» Live-экрана. Без DOM/React — проверяется юнит-тестами
@@ -82,4 +84,34 @@ export function isFinishedElsewhere(failure: SyncFailure, activeSessionId: numbe
  * локальный снимок вместе с `completeRequested` и оценкой тренировки. */
 export function canStartNextBlock(local: { completeRequested: unknown } | null): boolean {
   return local !== null && local.completeRequested === null;
+}
+
+/** Ответ несёт итог канонического завершения (#307): прогрессию (старую или V5.6) или причину её пропуска.
+ * Ответ событий уже завершённой сессии без нового завершения — нет (все три поля пусты). */
+export function carriesCompletionOutcome(response: LiveSessionCompleteResponse): boolean {
+  return response.status === "completed" && (
+    response.progression_result != null || response.course_progression != null || response.progression_skipped_reason != null
+  );
+}
+
+/**
+ * Итог для Summary движка v2. Тренировку завершает событие (последний подход, `confirm_blocks`, `finish_early`) —
+ * его ответ несёт фактический итог первого завершения; «Сохранить» затем шлёт оценку идемпотентным
+ * POST …/complete, а тот честно отвечает `already_completed` без прогрессии (повторно её не считает). Показывать
+ * этот второй ответ как итог — ложное «уже была завершена» и потерянная прибавка V5.6/«досрочно». Поэтому итог
+ * прогрессии берётся из первого завершения, если экран его видел; сессия (оценка, заметка) — из последнего
+ * ответа. Не видел (сессию завершили раньше — другое устройство, фоновая проекция) — честный ответ сервера.
+ */
+export function summaryResult(
+  first: LiveSessionCompleteResponse | null, last: LiveSessionCompleteResponse,
+): LiveSessionCompleteResponse {
+  if (first === null) {
+    return last;
+  }
+  return {
+    ...last,
+    progression_result: first.progression_result,
+    progression_skipped_reason: first.progression_skipped_reason,
+    course_progression: first.course_progression ?? null,
+  };
 }

@@ -365,6 +365,34 @@ test("12. #306 F1: пауза офлайн, первая досылка упал
   expect(await storedEngineQueues(back)).toBe(0);
 });
 
+test("13. Аудит: на открытом экране досылка упала при «онлайн» — повтор сам, без «Повторить», без дублей", async ({ page }) => {
+  await openAppAs(page, 930_613);
+  await startPlanned(page, "Движок: интервал");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 6_000 });
+  const posted: string[][] = [];
+  let attempt = 0;
+  await page.route("**/api/v2/sessions/live/*/events", async (route) => {
+    posted.push((route.request().postDataJSON().events as { client_event_id: string }[]).map((e) => e.client_event_id));
+    if (attempt++ === 0) {
+      await route.abort("failed"); // временный сбой; браузер всё время онлайн — события online не будет
+    } else {
+      await route.continue();
+    }
+  });
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase(page)).toHaveText("Пошёл · пауза"); // проекция с очередью — сразу
+  await expect(page.getByTestId("engine-sync-error")).toBeVisible(); // сбой виден; «Повторить» не нажимаем
+  // Ни одного клика «Повторить»: очередь уходит сама после первой паузы повтора (1 с) и снимается.
+  await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByTestId("engine-sync-error")).toHaveCount(0);
+  expect(posted.length).toBe(2); // сбой + один повтор, без busy-loop и дублей
+  expect(posted[1]).toEqual(posted[0]); // те же client_event_id (сервер: duplicate — no-op)
+  const state = await serverEngineState(page, 930_613);
+  expect(state.paused_at).not.toBeNull();
+  await sleep(4_000);
+  expect(posted.length).toBe(2); // после успеха — тишина
+});
+
 test.describe("320 px", () => {
   test.use({ viewport: { width: 320, height: 640 } });
 

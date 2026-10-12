@@ -8,13 +8,13 @@ import {
 import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFormat";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
-import { classifySyncError, type SyncFailure } from "./liveFinish";
+import { carriesCompletionOutcome, classifySyncError, summaryResult, type SyncFailure } from "./liveFinish";
 import {
   activeElapsedMs, remainingMs, type CheckAnswer, type EnginePlan, type EngineState, type Phase, type PlanBlock,
 } from "./liveEngine";
 import {
-  claimQueue, clearQueue, displayState, dropAcknowledged, emptyQueue, loadQueue, newEvent, releaseQueue, saveQueue,
-  serverOffsetMs, startEngineReconciliation,
+  claimQueue, clearQueue, createSyncRetry, displayState, dropAcknowledged, emptyQueue, loadQueue, newEvent, releaseQueue,
+  saveQueue, serverOffsetMs, startEngineReconciliation,
   type EngineQueue,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
@@ -91,6 +91,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const resync = useRef(false);
   const firstCompletion = useRef<LiveSessionCompleteResponse | null>(null);
   const closed = useRef(false);
+  // Временный сбой досылки при браузере «онлайн»: повтор сам, с растущей паузой (createSyncRetry).
+  const [retry] = useState(() => createSyncRetry(() => void sync()));
 
   const engine = server.engine;
   const plan = engine?.plan ?? null;
@@ -120,13 +122,11 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       onLeave();
       return;
     }
-    const first = firstCompletion.current;
-    onCompleted(first !== null && first.progression_result !== null
-      ? { ...result, progression_result: first.progression_result, progression_skipped_reason: first.progression_skipped_reason }
-      : result);
+    onCompleted(summaryResult(firstCompletion.current, result));
   }
 
   function sync(): Promise<void> {
+    retry.cancel();  // досылка идёт сейчас — отложенный повтор не нужен (не дублировать запрос)
     if (syncing.current !== null) {
       resync.current = true;
       return syncing.current;
@@ -157,7 +157,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
             client_at: new Date(event.client_at_ms).toISOString(),
           })));
           acceptServer(response, started, Date.now());
-          if (response.status === "completed" && firstCompletion.current === null) {
+          if (firstCompletion.current === null && carriesCompletionOutcome(response)) {
             firstCompletion.current = response;
           }
           const rest = dropAcknowledged(queueRef.current, response.event_results.map((r) => r.client_event_id));
@@ -175,8 +175,13 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           return;
         }
         setFailure(null);
+        retry.reset();
       } catch (error) {
-        setFailure(classifySyncError(error));
+        const failure = classifySyncError(error);
+        setFailure(failure);
+        if (failure.kind === "transient" && !closed.current) {
+          retry.schedule();
+        }
         return;
       }
     } while (resync.current);
@@ -229,6 +234,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     });
     return () => {
       cancelled = true;
+      retry.cancel();
       releaseQueue(initialSession.id);
       // Недосланное (сбой сети перед «Выйти») сверяет App. Старт — здесь, в очистке: React выполняет её раньше
       // эффектов экранов, которые монтируются следом, — их чтения с проекцией уже увидят ворота.
@@ -462,7 +468,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       {online && pendingCount > 0 && <p className="gap-banner" data-testid="engine-pending">Не синхронизировано: {pendingCount}. Досылаю…</p>}
       {failure && (
         <p className="gap-banner" data-testid="engine-sync-error">
-          Не удалось синхронизировать: {failure.message}.{" "}
+          Не удалось синхронизировать: {failure.message}.{failure.kind === "transient" && online ? " Повторю сам." : ""}{" "}
           <button type="button" className="live-link-button" onClick={() => void sync()}>Повторить</button>
         </p>
       )}

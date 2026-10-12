@@ -254,6 +254,64 @@ export function releaseQueue(sessionId: number): void {
 /** Паузы между повторами при временном сбое (сеть/5xx): ограниченный рост, без busy-loop. */
 export const RECONCILE_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 
+/** Таймеры повтора (в тестах — подмена). */
+export interface RetryTimers {
+  set(run: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+const browserTimers: RetryTimers = {
+  set: (run, ms) => setTimeout(run, ms),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export interface SyncRetry {
+  /** Временный сбой досылки: один отложенный повтор (уже запланированный не дублируется), пауза растёт. */
+  schedule(): void;
+  /** Досылка началась по другой причине (действие, online, возврат на экран) или экран закрыт. */
+  cancel(): void;
+  /** Досылка удалась: следующая серия сбоев снова с первой паузы. */
+  reset(): void;
+}
+
+/**
+ * Повтор досылки ОТКРЫТОГО экрана движка после временного сбоя (сеть/5xx/408/429) при браузере «онлайн»:
+ * события `online` не будет, а сверка App очередь экрана пропускает (claimQueue) — без этого очередь стояла
+ * бы до ручного «Повторить». Те же паузы, что у сверки App (1, 2, 4, 8, 15, 15… с), не больше одного
+ * ожидающего повтора; повтор шлёт те же client_event_id (сервер: duplicate — no-op). Офлайн повтор не
+ * планируется — досылку будит `online`.
+ */
+export function createSyncRetry(
+  run: () => void, delaysMs: readonly number[] = RECONCILE_RETRY_DELAYS_MS, timers: RetryTimers = browserTimers,
+): SyncRetry {
+  let attempt = 0;
+  let handle: unknown = null;
+  const cancel = () => {
+    if (handle !== null) {
+      timers.clear(handle);
+      handle = null;
+    }
+  };
+  return {
+    schedule() {
+      if (handle !== null) {
+        return;
+      }
+      const delay = delaysMs[Math.min(attempt, delaysMs.length - 1)];
+      attempt += 1;
+      handle = timers.set(() => {
+        handle = null;
+        run();
+      }, delay);
+    },
+    cancel,
+    reset() {
+      cancel();
+      attempt = 0;
+    },
+  };
+}
+
 export interface ReconcileOptions {
   store?: QueueStore;
   api?: DrainApi;
