@@ -4,10 +4,17 @@
 # Копия для ревью; на VPS ставится вручную владельцем как /home/deploy/deploy-staging-guarded-run.sh и вызывается ТОЛЬКО из
 # deploy-staging-guarded-dispatch.sh (forced command отдельного SSH-ключа). Порядок установки — docs/STAGING_RC_RUNBOOK.md §3.2.
 #
-#   deploy-staging-guarded-run.sh <40-hex-sha> <dry-run|apply> <yes|no>
+#   deploy-staging-guarded-run.sh <40-hex-sha> <preflight|dry-run|apply> <yes|no> [<users>]
 #     sha       точный проверенный коммит (detached checkout, без `git pull` плавающей ветки)
-#     converge  dry-run: сведение только проверяется (ничего не пишет); apply: сведение применяется (после принятого фикса)
+#     converge  preflight: ТОЛЬКО ЧТЕНИЕ — фаза 0 и выход (не останавливает сервисы, не пишет в БД, не собирает, не мигрирует;
+#                          единственная запись — `git fetch` в репозиторий staging и временный каталог /tmp/guarded-deploy.*);
+#               dry-run:   НЕ read-only — останавливает app/web, пишет backup, переключает checkout, собирает образы и ВЫПОЛНЯЕТ МИГРАЦИЮ БД;
+#                          convergence только проверяется (транзакции откатываются);
+#               apply:     то же + применяет convergence ТОЛЬКО к пользователям из <users>
 #     start     yes: запустить app/web после ВСЕХ успешных проверок; no: проверить всё и оставить app/web остановленными
+#     users     `-` (по умолчанию) или список внутренних users.id через запятую, подтверждённый владельцем по выводу dry-run.
+#               `-`: dry-run сводит/читает ВСЕХ пользователей (только чтение, показывает неразрешённые случаи); apply с `-` запрещён.
+#               Список: dry-run и apply ограничены этими пользователями; остальные не меняются ни одним скриптом сведения.
 #
 # Фазы (любая ошибка => app/web остаются ОСТАНОВЛЕННЫМИ; сохранённые образы и backup остаются; авто-отката нет):
 #   0 preflight  1 сохранить текущие образы  2 остановить писателей  3 backup + проверка восстановления + снимок «до»
@@ -34,11 +41,20 @@ else
   CLEANUP_BIN="/usr/local/bin/post-deploy-cleanup.sh"
 fi
 
-if [[ $# -ne 3 || ! "$1" =~ ^[0-9a-f]{40}$ || ! "$2" =~ ^(dry-run|apply)$ || ! "$3" =~ ^(yes|no)$ ]]; then
-  echo "usage: $0 <40-hex-sha> <dry-run|apply> <yes|no>   (got: $*)" >&2
+if [[ $# -lt 3 || $# -gt 4 || ! "$1" =~ ^[0-9a-f]{40}$ || ! "$2" =~ ^(preflight|dry-run|apply)$ || ! "$3" =~ ^(yes|no)$ \
+      || ! "${4:--}" =~ ^(-|[0-9]+(,[0-9]+){0,99})$ ]]; then
+  echo "usage: $0 <40-hex-sha> <preflight|dry-run|apply> <yes|no> [<users.id,users.id,...>|-]   (got: $*)" >&2
   exit 2
 fi
-SHA="$1"; CONVERGE="$2"; START="$3"
+SHA="$1"; CONVERGE="$2"; START="$3"; USERS="${4:--}"
+if [ "$CONVERGE" = "apply" ] && [ "$USERS" = "-" ]; then
+  echo "refusing: converge=apply requires an explicit owner-confirmed users.id list (convergence is never applied to all users)" >&2
+  exit 2
+fi
+if [ "$CONVERGE" = "preflight" ] && [ "$START" = "yes" ]; then
+  echo "refusing: preflight never starts services (use start=no)" >&2
+  exit 2
+fi
 SHA7="${SHA:0:7}"; TS="$(date -u +%Y%m%dT%H%M%SZ)"
 WORK="$(mktemp -d /tmp/guarded-deploy.XXXXXX)"
 PHASE=0; PHASE_NAME="init"; WRITERS_STOPPED=0
@@ -53,7 +69,7 @@ dbq() { bash -c "$STAGING_PSQL" <<<"$1"; }
 
 summary() {
   echo "---- state for rollback (docs/STAGING_RC_RUNBOOK.md §8) ----"
-  echo "target sha      : $SHA   (converge=$CONVERGE start=$START)"
+  echo "target sha      : $SHA   (converge=$CONVERGE start=$START users=$USERS)"
   echo "previous sha    : ${PREV_SHA:-unknown}   previous alembic: ${PREV_REV:-unknown}"
   echo "backup          : ${BACKUP_FILE:-not created yet}"
   echo "rollback images : ${SAVED_TAGS[*]:-none saved yet}"
@@ -102,6 +118,11 @@ PREV_REV="$(dbq "select version_num from alembic_version")"
 log "staging: HEAD=$PREV_SHA alembic=$PREV_REV db-container=$DBC"
 DB_NAME="$(docker exec "$DBC" sh -c 'echo "$POSTGRES_DB"')"
 case "$DB_NAME" in *staging*) ;; *) die "database name '$DB_NAME' does not contain 'staging' — refusing to continue" ;; esac
+
+if [ "$CONVERGE" = "preflight" ]; then
+  log "PREFLIGHT OK (read-only): sha=$SHA is available and ships the guarded files; staging HEAD=$PREV_SHA alembic=$PREV_REV; nothing was stopped, built, migrated or written"
+  exit 0
+fi
 
 # ------------------------------------------------------------------------------------------------ 1 rollback images
 phase 1 "save current app/web images under our own tags (rollback without Alembic)"
@@ -190,31 +211,52 @@ phase 7 "data checks after migration (expected transformations only)"
 "$WORK/tgt/staging_data_check.sh" after-migration "$WORK/data" "$WORK/tgt/staging-allowed-diff.txt"
 
 # ------------------------------------------------------------------------------------------------ 8 convergence
-phase 8 "convergence ($CONVERGE)"
+phase 8 "convergence ($CONVERGE, users=$USERS)"
 conv_json_check() { # <file> <expect_zero_mutations 0|1>
   dc run --rm -T app python -c '
 import json, sys
 d = json.load(sys.stdin)
+if d.get("error"):
+    print("error: %s" % d["error"]); sys.exit(1)
 bad = [u for u in d["users_detail"] if u.get("guard_violations")]
-print("mode=%s total_mutations=%s guard_violations=%d" % (d["mode"], d["total_mutations"], len(bad)))
+print("mode=%s users=%s total_mutations=%s guard_violations=%d" % (d["mode"], d["users"], d["total_mutations"], len(bad)))
 sys.exit(1 if bad or (sys.argv[1] == "1" and d["total_mutations"] != 0) else 0)
 ' "$2" < "$1"
 }
-repair() { dc run --rm -T app python scripts/repair_plan_convergence.py --all "$@"; }
-history() { dc run --rm -T app python scripts/backfill_multi_program.py --converge-history "$@"; }
+# сведение истории: строки счётчиков (до блока «Не разрешено») и сам блок неразрешённых случаев — отдельно
+hist_counts()     { sed '/^Не разрешено/,$d' "$1"; }
+hist_unresolved() { sed -n '/^Не разрешено/,$p' "$1"; }
+SCOPE_REPAIR=(--all); SCOPE_HISTORY=()
+if [ "$USERS" != "-" ]; then SCOPE_REPAIR=(--user-ids "$USERS"); SCOPE_HISTORY=(--user-ids "$USERS"); fi
+repair()  { dc run --rm -T app python scripts/repair_plan_convergence.py "${SCOPE_REPAIR[@]}" "$@"; }
+history() { dc run --rm -T app python scripts/backfill_multi_program.py --converge-history "${SCOPE_HISTORY[@]}" "$@"; }
+REPORT_DIR="$BACKUP_DIR/convergence-${SHA7}-${TS}"
+mkdir -p "$REPORT_DIR"
 repair > "$WORK/conv_dry.json" 2> "$WORK/conv_dry.err"; conv_json_check "$WORK/conv_dry.json" 0
 history > "$WORK/hist_dry.txt" 2> "$WORK/hist_dry.err"
 "$WORK/tgt/staging_data_check.sh" same-as-migration "$WORK/data"
+# неразрешённые факультативы (копия НЕ создана, ничего не привязано) — с user_id и причиной; сохраняются и показываются всегда
+hist_unresolved "$WORK/hist_dry.txt" > "$REPORT_DIR/unresolved-dry-run.txt" || true
+cp "$WORK/conv_dry.json" "$WORK/hist_dry.txt" "$REPORT_DIR/"
+if [ -s "$REPORT_DIR/unresolved-dry-run.txt" ]; then
+  log "UNRESOLVED electives (dry-run, scope users=$USERS) — saved to $REPORT_DIR/unresolved-dry-run.txt:"; cat "$REPORT_DIR/unresolved-dry-run.txt"
+else
+  log "unresolved electives (dry-run, scope users=$USERS): none"
+fi
 if [ "$CONVERGE" = "apply" ]; then
-  "$WORK/tgt/staging_data_check.sh" hold-check
   repair --apply > "$WORK/conv_a1.json" 2> "$WORK/conv_a1.err"; conv_json_check "$WORK/conv_a1.json" 0
   repair --apply > "$WORK/conv_a2.json" 2> "$WORK/conv_a2.err"; conv_json_check "$WORK/conv_a2.json" 1
   history --apply > "$WORK/hist_a1.txt" 2> "$WORK/hist_a1.err"
   history --apply > "$WORK/hist_a2.txt" 2> "$WORK/hist_a2.err"
-  if grep -Eq '(привязано|создано|обновлено|замещено)[^:]*: *[1-9]' "$WORK/hist_a2.txt"; then die "history convergence is not idempotent (second --apply changed something)"; fi
+  if hist_counts "$WORK/hist_a2.txt" | grep -Eq '(привязано|создано|обновлено|замещено)[^:]*: *[1-9]'; then die "history convergence is not idempotent (second --apply changed something)"; fi
+  hist_unresolved "$WORK/hist_a1.txt" > "$REPORT_DIR/unresolved-apply.txt" || true
+  hist_unresolved "$WORK/hist_a2.txt" > "$WORK/unresolved_a2.txt" || true
+  cmp -s "$REPORT_DIR/unresolved-apply.txt" "$WORK/unresolved_a2.txt" || die "unresolved electives changed between the first and second --apply (not stable)"
+  cp "$WORK/conv_a1.json" "$WORK/conv_a2.json" "$WORK/hist_a1.txt" "$WORK/hist_a2.txt" "$REPORT_DIR/"
   "$WORK/tgt/staging_data_check.sh" after-convergence "$WORK/data"
+  log "convergence applied ONLY to users=$USERS; unresolved after apply: $(grep -c 'user_id=' "$REPORT_DIR/unresolved-apply.txt" || true) (kept as is, see $REPORT_DIR/unresolved-apply.txt)"
 else
-  log "convergence NOT applied (dry-run mode): runtime convergence will run on the first GET /plan of the new build"
+  log "convergence NOT applied (mode $CONVERGE): runtime plan convergence will run per user on the first GET /plan of the new build; history convergence has no runtime path"
 fi
 
 # ------------------------------------------------------------------------------------------------ 9 start
@@ -250,4 +292,4 @@ done
 
 if [ -x "$CLEANUP_BIN" ]; then "$CLEANUP_BIN" || true; fi   # как в deploy-run.sh: только после полного успеха, ошибки очистки не валят выкат
 summary
-log "GUARDED DEPLOY OK sha=$SHA alembic=$HEADS converge=$CONVERGE services=started"
+log "GUARDED DEPLOY OK sha=$SHA alembic=$HEADS converge=$CONVERGE users=$USERS services=started"

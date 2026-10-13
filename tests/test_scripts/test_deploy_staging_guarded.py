@@ -61,7 +61,15 @@ if args[0] == "compose":
             st["rev"] = "b5d8e1f3a6c9"; save(); sys.exit(0)
         if "python -c" in cmd: sys.exit(1 if env.get("FAIL_CONV_CHECK") else 0)
         if "repair_plan_convergence" in cmd: out('{"mode": "x", "total_mutations": 0, "users_detail": []}'); sys.exit(0)
-        if "backfill_multi_program" in cmd: out("копий без изменений: 1"); sys.exit(0)
+        if "backfill_multi_program" in cmd:
+            st["hist_calls"] = st.get("hist_calls", 0) + 1; save()
+            out("DRY-RUN" if "--apply" not in cmd else "Прогон завершён")
+            out("копий без изменений: 1")
+            if env.get("UNRESOLVED"):
+                out("Не разрешено (копия НЕ создана, ничего не привязано): 1")
+                extra = " x%d" % st["hist_calls"] if env.get("UNRESOLVED_UNSTABLE") else ""
+                out("  user_id=57 elective_id=9 pushups 2026-01-01 reps=30: nonstandard_copy_history%s" % extra)
+            sys.exit(0)
     sys.exit(0)
 if args[0] == "inspect":
     fmt, cid = args[2], args[3]
@@ -182,7 +190,7 @@ def idx(lines: list[str], needle: str, start: int = 0) -> int:
 
 
 def test_full_success_orders_phases_and_starts_only_at_the_end(sandbox):
-    proc, log, state = sandbox(SHA, "apply", "yes")
+    proc, log, state = sandbox(SHA, "apply", "yes", "12,57")
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "GUARDED DEPLOY OK" in proc.stdout
     order = [
@@ -194,7 +202,6 @@ def test_full_success_orders_phases_and_starts_only_at_the_end(sandbox):
         idx(log, "build web"),
         idx(log, "alembic upgrade head"),
         idx(log, "CHECK after-migration"),
-        idx(log, "CHECK hold-check"),
         idx(log, "--apply"),
         idx(log, "CHECK after-convergence"),
         idx(log, "up -d --no-build app web"),
@@ -209,13 +216,15 @@ def test_full_success_orders_phases_and_starts_only_at_the_end(sandbox):
     assert state["running"] is True and state["head"] == SHA and state["rev"] == NEW_HEAD
 
 
-def test_dry_run_without_start_never_applies_or_starts(sandbox):
+def test_dry_run_without_start_never_applies_or_starts(
+    sandbox,
+):  # dry-run != read-only: миграция выполняется
     proc, log, state = sandbox(SHA, "dry-run", "no")
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "services NOT started" in proc.stdout
     assert (
         idx(log, "--apply") == -1
-        and idx(log, "CHECK hold-check") == -1
+        and idx(log, "--user-ids") == -1
         and idx(log, "CHECK after-convergence") == -1
     )
     assert idx(log, "up -d") == -1 and state["running"] is False
@@ -235,7 +244,10 @@ def test_dry_run_without_start_never_applies_or_starts(sandbox):
         ({"FAIL_MIGRATE": "1"}, "CHECK after-migration"),  # миграция упала
         ({"FAIL_CHECK": "after-migration"}, "--apply"),  # проверка данных после миграции
         ({"FAIL_CHECK": "same-as-migration"}, "--apply"),  # dry-run что-то записал
-        ({"FAIL_CHECK": "hold-check"}, "--apply"),  # рискованные факультативы
+        (
+            {"UNRESOLVED": "1", "UNRESOLVED_UNSTABLE": "1"},
+            "up -d",
+        ),  # неразрешённые не стабильны между прогонами
         ({"FAIL_CONV_CHECK": "1"}, "up -d"),  # guard_violations / идемпотентность convergence
         ({"FAIL_CHECK": "after-convergence"}, "up -d"),  # инварианты после convergence
     ],
@@ -243,7 +255,7 @@ def test_dry_run_without_start_never_applies_or_starts(sandbox):
 def test_any_failure_after_writers_stopped_leaves_app_and_web_stopped(
     sandbox, env, stage_must_not_run
 ):
-    proc, log, state = sandbox(SHA, "apply", "yes", **env)
+    proc, log, state = sandbox(SHA, "apply", "yes", "12,57", **env)
     assert proc.returncode != 0, proc.stdout
     assert state["running"] is False, "app/web must be stopped after a failed deploy"
     assert "app/web are STOPPED" in proc.stderr
@@ -273,7 +285,7 @@ def test_healthcheck_failure_stops_services_again_after_they_were_started(sandbo
     ],
 )
 def test_preflight_failure_changes_nothing(sandbox, env):
-    proc, log, state = sandbox(SHA, "apply", "yes", **env)
+    proc, log, state = sandbox(SHA, "apply", "yes", "12,57", **env)
     assert proc.returncode != 0
     assert "nothing was changed" in proc.stderr
     assert (
@@ -286,7 +298,7 @@ def test_preflight_failure_changes_nothing(sandbox, env):
 
 def test_unknown_alembic_revision_is_refused_before_migrating(sandbox):
     sandbox.preset(rev="unknown999")
-    proc, log, state = sandbox(SHA, "apply", "yes", RESTORED_REV="unknown999")
+    proc, log, state = sandbox(SHA, "apply", "yes", "12,57", RESTORED_REV="unknown999")
     assert proc.returncode != 0
     assert "unexpected alembic revision" in proc.stderr
     assert (
@@ -312,7 +324,11 @@ def test_already_migrated_database_skips_the_upgrade_but_still_checks(sandbox):
         (SHA, "apply", "maybe"),
         (SHA.upper(), "apply", "yes"),
         (SHA, "apply"),
-        (SHA, "apply", "yes", "extra"),
+        (SHA, "apply", "yes", "12,57", "extra"),
+        (SHA, "apply", "yes", "12;57"),
+        (SHA, "apply", "yes", "all"),
+        (SHA, "apply", "yes", "-"),  # apply никогда не применяется ко всем пользователям
+        (SHA, "preflight", "yes"),  # preflight не стартует сервисы
     ],
 )
 def test_bad_arguments_are_rejected_before_anything_runs(sandbox, args):
@@ -327,9 +343,20 @@ def test_dispatcher_accepts_exactly_one_literal_command():
     rx = re.compile(pattern)
     ok = f"./deploy-staging-guarded.sh {SHA} apply yes"
     assert rx.fullmatch(ok) and rx.fullmatch(f"./deploy-staging-guarded.sh {SHA} dry-run no")
+    for good in (
+        f"./deploy-staging-guarded.sh {SHA} preflight no",
+        f"./deploy-staging-guarded.sh {SHA} apply no 12,57",
+        f"./deploy-staging-guarded.sh {SHA} dry-run no -",
+        f"./deploy-staging-guarded.sh {SHA} dry-run no 7",
+    ):
+        assert rx.fullmatch(good), good
     for bad in (
         f"./deploy-staging-guarded.sh {SHA} apply",
         f"./deploy-staging-guarded.sh {SHA} apply yes; rm -rf /",
+        f"./deploy-staging-guarded.sh {SHA} apply yes 12,57; id",
+        f"./deploy-staging-guarded.sh {SHA} apply yes 12,",
+        f"./deploy-staging-guarded.sh {SHA} apply yes ,12",
+        f"./deploy-staging-guarded.sh {SHA} apply yes $(id)",
         f"./deploy-staging-guarded.sh {SHA[:39]} apply yes",
         f"./deploy-staging-guarded.sh {SHA.upper()} apply yes",
         f"./deploy-staging.sh {SHA}",
@@ -353,6 +380,64 @@ def test_dispatcher_accepts_exactly_one_literal_command():
             check=False,
         )
         assert proc.returncode == 1 and "rejected command" in proc.stderr
+
+
+def test_preflight_is_read_only(sandbox):
+    proc, log, state = sandbox(SHA, "preflight", "no")
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "PREFLIGHT OK (read-only)" in proc.stdout
+    for mutating in (
+        "stop",
+        "docker tag",
+        "pg_dump",
+        "checkout",
+        "build",
+        "alembic",
+        "up -d",
+        "run --rm",
+    ):
+        assert idx(log, mutating) == -1, (mutating, log)
+    assert (
+        state["running"] is True and state["rev"] == OLD_REV and state["head"].startswith("4298f8b")
+    )
+
+
+def test_apply_without_confirmed_users_is_refused_before_anything_runs(sandbox):
+    proc, log, _state = sandbox(SHA, "apply", "no", "-")
+    assert proc.returncode == 2 and log == []
+    assert "explicit" in proc.stderr
+
+
+def test_scope_is_passed_to_both_convergence_scripts_and_all_is_never_applied(sandbox):
+    proc, log, _state = sandbox(SHA, "apply", "no", "12,57")
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    conv = [
+        line
+        for line in log
+        if "repair_plan_convergence" in line or "backfill_multi_program" in line
+    ]
+    assert len(conv) == 6  # 2 dry-run + 2 apply на каждый скрипт
+    assert all("--user-ids 12,57" in line for line in conv), conv
+    assert not any("--all" in line and "--apply" in line for line in conv)
+
+
+def test_dry_run_without_scope_reads_everyone_and_writes_nothing(sandbox):
+    proc, log, _state = sandbox(SHA, "dry-run", "no")
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    conv = [line for line in log if "repair_plan_convergence" in line]
+    assert conv and all("--all" in line and "--apply" not in line for line in conv)
+    assert idx(log, "backfill_multi_program") >= 0 and idx(log, "--apply") == -1
+
+
+def test_unresolved_electives_are_shown_and_saved_with_user_id_and_reason(sandbox, tmp_path):
+    proc, _log, _state = sandbox(SHA, "apply", "no", "12,57", UNRESOLVED="1")
+    assert proc.returncode == 0, (
+        proc.stderr + proc.stdout
+    )  # второй --apply: блок «Не разрешено» не считается правкой
+    assert "user_id=57 elective_id=9" in proc.stdout and "nonstandard_copy_history" in proc.stdout
+    saved = sorted((tmp_path / "backups").glob("convergence-*/unresolved-*.txt"))
+    assert [f.name for f in saved] == ["unresolved-apply.txt", "unresolved-dry-run.txt"]
+    assert all("user_id=57" in f.read_text() for f in saved)
 
 
 def test_production_and_existing_staging_deploy_files_are_not_touched():

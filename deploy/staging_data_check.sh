@@ -4,7 +4,6 @@
 #   staging_data_check.sh before            <workdir> <gen_hash_queries.sql>   # снимок ДО миграции (писатели остановлены)
 #   staging_data_check.sh after-migration   <workdir> <allowed-diff-file>      # ожидаемые преобразования 7 миграций
 #   staging_data_check.sh same-as-migration <workdir>                          # dry-run convergence ничего не записал
-#   staging_data_check.sh hold-check                                           # риск дублей факультативов (HOLD §6.2)
 #   staging_data_check.sh after-convergence <workdir>                          # инварианты после --apply
 #
 # Окружение: STAGING_PSQL — команда, читающая SQL со stdin и печатающая невыравненные строки (psql -At), например
@@ -81,12 +80,6 @@ same-as-migration)
   qf "$w/hash_queries.sql" > "$w/hq_dry.txt"
   diff -q <(sort "$w/hq_after.txt") <(sort "$w/hq_dry.txt") >/dev/null || fail "database changed during dry-run convergence"
   echo "same-as-migration: OK (dry-run wrote nothing)"
-  ;;
-
-hold-check)
-  n=$(q "select count(*) from elective_workouts e join training_plans tp on tp.user_id = e.user_id where e.created_at >= tp.created_at and exists (select 1 from training_sessions ts where ts.user_id = e.user_id and ts.origin = 'legacy_elective' and ts.legacy_id is null)")
-  [ "$n" = "0" ] || fail "HOLD: $n elective(s) not older than their plan have an unkeyed legacy_elective copy (duplicate/resurrection risk)"
-  echo "hold-check: OK (0 risky electives)"
   ;;
 
 after-convergence)
