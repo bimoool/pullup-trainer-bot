@@ -34,13 +34,13 @@ const freshTelegramId = () => (nextId += 1);
 
 /** Онбординг глазами пользователя: замер → «Да» → профиль → «Готово». */
 async function onboardThroughUi(page: Page): Promise<void> {
-  await page.getByLabel("Число подтягиваний").fill("8");
+  await page.getByLabel("Сколько подтягиваний вышло?").fill("8");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да", exact: true }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByLabel("Вес, кг").fill("78");
+  await page.getByLabel("Твой вес в кг?").fill("78");
   await page.getByRole("button", { name: "Далее" }).click();
-  await page.getByLabel("Рост, см").fill("180");
+  await page.getByLabel("Рост в см?").fill("180");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();

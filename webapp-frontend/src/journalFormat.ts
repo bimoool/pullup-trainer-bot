@@ -42,8 +42,10 @@ function formatLogValue(unit: string, value: string): string {
   return formatNumber(value);
 }
 
-export function describeJournalBlock(block: SessionBlockResponseV2): JournalBlockView {
-  const name = block.exercise_name;
+/** `fallbackName` — название блока из снимка сессии (основные занятия V5.6: «Объём A», «Сила A (5×5)»), когда у
+ * блока нет имени упражнения (внутренние роли курса его не имеют). Имя упражнения всегда приоритетнее. */
+export function describeJournalBlock(block: SessionBlockResponseV2, fallbackName: string | null = null): JournalBlockView {
+  const name = block.exercise_name ?? fallbackName;
   const logs = block.set_logs;
   const protocolLabel = block.protocol_type !== null ? PROTOCOL_LABELS[block.protocol_type] : null;
 

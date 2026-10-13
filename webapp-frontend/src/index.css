@@ -275,6 +275,28 @@ html {
   margin-top: 0;
 }
 
+/* Видимая подпись поля формы (LabeledField.tsx): переносится, не обрезается ellipsis'ом как header tgui. */
+.labeled-field { padding-bottom: 4px; }
+.labeled-field-caption {
+  display: block;
+  margin: 0;
+  padding: 12px 20px 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--tg-text-color);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.labeled-field-note { padding: 4px 20px 8px; margin: 0; font-size: 13px; line-height: 1.4; }
+.labeled-field-hint {
+  margin: 0;
+  padding: 0 20px 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--tg-subtitle-text-color);
+}
+
 .set-grid {
   display: flex;
   flex-wrap: wrap;

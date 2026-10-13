@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { effortWithWord } from "./effortScale";
+import { courseBlockName } from "./courseV5";
 import { describeJournalBlock, journalEntryTitle } from "./journalFormat";
 import { journalCardStats } from "./journalStats";
 import { Icon } from "./Icon";
@@ -175,7 +176,7 @@ export function JournalV2Detail({
       )}
 
       {session.blocks.map((block) => {
-        const view = describeJournalBlock(block);
+        const view = describeJournalBlock(block, courseBlockName(session.prescription_snapshot, block.order_index));
         return (
           <Section key={block.order_index} className="block-section" header={view.header ?? "Упражнение"}>
             {view.protocolLabel !== null && <p className="block-subtitle journal-detail-line">{view.protocolLabel}</p>}

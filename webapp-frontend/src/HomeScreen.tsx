@@ -12,7 +12,7 @@ import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { HomePromo, type PromoKind } from "./HomePromo";
-import { groupProgramsByCategory, OTHER_CATEGORY } from "./homeDiscovery";
+import { groupProgramsByCategory, OTHER_KEY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { ProgramPendingScreen } from "./ProgramPendingScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
@@ -454,15 +454,15 @@ export function HomeScreen({
       {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row, rowIndex) => (
         <div
           key={row.category}
-          data-testid="program-category" className="home-group"
+          data-testid="program-category" data-category-key={row.category} className="home-group"
           style={{ ["--cat" as string]: `var(--vp-cat-${rowIndex % 6})` }}
         >
           <div className="home-group-header">
             <span className="home-group-badge" aria-hidden="true">
-              <CategoryGlyph category={row.category} index={rowIndex} size={18} />
+              <CategoryGlyph category={row.label} index={rowIndex} size={18} />
             </span>
-            <p className="section-title" data-testid="program-category-title" title={row.category}>{row.category}</p>
-            {row.category !== OTHER_CATEGORY && (
+            <p className="section-title" data-testid="program-category-title" title={row.label}>{row.label}</p>
+            {row.category !== OTHER_KEY && (
               <Button
                 className="home-group-all" size="s" mode="plain" data-testid="program-category-all"
                 onClick={() => openSearch(row.category)}

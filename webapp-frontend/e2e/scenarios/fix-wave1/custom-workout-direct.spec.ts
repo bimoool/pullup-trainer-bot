@@ -20,13 +20,13 @@ const newUserId = () => 7_400_000 + Math.floor(Math.random() * 500_000);
 
 async function onboardViaUi(page: Page, telegramId: number) {
   await openAppAs(page, telegramId);
-  await page.getByLabel("Число подтягиваний").fill("8");
+  await page.getByLabel("Сколько подтягиваний вышло?").fill("8");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да" }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByLabel("Вес, кг").fill("78");
+  await page.getByLabel("Твой вес в кг?").fill("78");
   await page.getByRole("button", { name: "Далее" }).click();
-  await page.getByLabel("Рост, см").fill("180");
+  await page.getByLabel("Рост в см?").fill("180");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();

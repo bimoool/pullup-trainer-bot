@@ -69,12 +69,12 @@ export async function onboardViaUi(T: Trace, reps = "8") {
   const p = T.page;
   await p.goto("/"); await p.waitForTimeout(2500);
   T.log("OPEN Mini App (new user)");
-  await p.getByLabel("Число подтягиваний").fill(reps);
+  await p.getByLabel("Сколько подтягиваний вышло?").fill(reps);
   await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
   await T.tap("Да", p.getByRole("button", { name: "Да" }));
   await T.tap("Продолжить", p.getByRole("button", { name: "Продолжить" }));
-  await p.getByLabel("Вес, кг").fill("78"); await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
-  await p.getByLabel("Рост, см").fill("180"); await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
+  await p.getByLabel("Твой вес в кг?").fill("78"); await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
+  await p.getByLabel("Рост в см?").fill("180"); await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
   await p.getByLabel("Пол").selectOption({ label: "Мужской" }); await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
   await p.getByLabel("Дата рождения").fill("1992-04-15"); await T.tap("Далее", p.getByRole("button", { name: "Далее" }));
   await p.getByLabel("Часовой пояс").selectOption({ label: "Москва (UTC+3)" });
