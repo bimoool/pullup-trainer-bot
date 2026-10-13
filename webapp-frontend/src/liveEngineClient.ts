@@ -59,14 +59,74 @@ const idbStore: QueueStore = {
   keys: async () => (await keys()).filter((key): key is string => typeof key === "string"),
 };
 
+/**
+ * Сохранённая очередь сессии. Сбой чтения (IndexedDB) БРОСАЕТ: «не прочитали» ≠ «пусто» — пустая очередь
+ * на месте непрочитанной означала бы, что следующая запись экрана затрёт недосланные события.
+ */
 export async function loadQueue(sessionId: number, store: QueueStore = idbStore): Promise<EngineQueue> {
-  try {
-    await migrateLegacyQueue(store);
-    const stored = await store.get(storeKey(sessionId));
-    return stored && stored.sessionId === sessionId ? stored : emptyQueue(sessionId);
-  } catch {
-    return emptyQueue(sessionId);
+  await migrateLegacyQueue(store);
+  const stored = await store.get(storeKey(sessionId));
+  return stored && stored.sessionId === sessionId ? stored : emptyQueue(sessionId);
+}
+
+/** Сохранённое + локальное (появившееся, пока сохранённое не было прочитано): сначала сохранённые события в
+ * их порядке, затем локальные, которых там нет (по client_event_id) — без потерь и дублей. */
+export function mergeQueues(stored: EngineQueue, local: EngineQueue): EngineQueue {
+  const known = new Set(stored.events.map((event) => event.client_event_id));
+  return {
+    sessionId: stored.sessionId,
+    events: [...stored.events, ...local.events.filter((event) => !known.has(event.client_event_id))],
+    complete: local.complete ?? stored.complete,
+  };
+}
+
+/**
+ * Очередь сессии во владении открытого экрана: писать (save/clear) можно только после того, как сохранённая
+ * очередь достоверно прочитана. До этого запись отклоняется — непрочитанные недосланные события не будут
+ * перезаписаны и не будут удалены.
+ */
+export interface QueueOwner {
+  loaded(): boolean;
+  /** Прочитать сохранённое и объединить с локальным (mergeQueues); null — прочитать не удалось. */
+  load(local: EngineQueue): Promise<EngineQueue | null>;
+  /** Записать очередь; до успешного load — ошибка (запись не выполняется). */
+  save(queue: EngineQueue): Promise<void>;
+  /** Удалить очередь; до успешного load — ничего не делает (недосланное подхватит сверка App). */
+  clear(): Promise<void>;
+}
+
+export class QueueNotLoadedError extends Error {
+  constructor(sessionId: number) {
+    super(`очередь сессии ${sessionId} ещё не прочитана — запись отклонена`);
   }
+}
+
+export function createQueueOwner(sessionId: number, store: QueueStore = idbStore): QueueOwner {
+  let loaded = false;
+  return {
+    loaded: () => loaded,
+    async load(local) {
+      let stored: EngineQueue;
+      try {
+        stored = await loadQueue(sessionId, store);
+      } catch {
+        return null;
+      }
+      loaded = true;
+      return mergeQueues(stored, local);
+    },
+    async save(queue) {
+      if (!loaded) {
+        throw new QueueNotLoadedError(sessionId);
+      }
+      await saveQueue(queue, store);
+    },
+    async clear() {
+      if (loaded) {
+        await clearQueue(sessionId, store);
+      }
+    },
+  };
 }
 
 export async function saveQueue(queue: EngineQueue, store: QueueStore = idbStore): Promise<void> {
@@ -148,6 +208,9 @@ const httpApi: DrainApi = { postEvents: postLiveEngineEvents, complete: complete
 export interface DrainResult {
   /** Осталось недосланное из-за сети/временной ошибки — сервер ещё не знает часть событий пользователя. */
   pending: boolean;
+  /** Очереди не удалось прочитать (IndexedDB): неизвестно, есть ли недосланное, — это не «очередей нет».
+   * Всегда вместе с `pending: true`. */
+  storeUnreadable?: true;
 }
 
 function httpStatus(error: unknown): number | null {
@@ -188,7 +251,10 @@ export async function drainEngineQueues(
   try {
     queues = await loadAllQueues(store);
   } catch {
-    return { pending: false };  // хранилище недоступно — досылать нечего
+    // Сбой чтения ≠ пустая очередь: сохранённое действие пользователя может там лежать. Считать его
+    // «досылать нечего» значило бы открыть ворота — и GET /active записал бы дедлайн (цель) вместо
+    // измеренного «Стопа». Очередь не трогаем; сверка повторит чтение, ворота держатся.
+    return { pending: true, storeUnreadable: true };
   }
   let pending = false;
   for (const stored of queues) {
@@ -352,6 +418,37 @@ export interface ReconcileOptions {
   delaysMs?: readonly number[];
 }
 
+/** Состояние сверки для UI: `storeUnreadable` — последняя попытка не смогла прочитать очереди (IndexedDB),
+ * чтения с проекцией ждут; повтор идёт сам. */
+export interface ReconcileStatus {
+  storeUnreadable: boolean;
+}
+
+let status: ReconcileStatus = { storeUnreadable: false };
+const statusListeners = new Set<(status: ReconcileStatus) => void>();
+
+function setStatus(next: ReconcileStatus): void {
+  if (next.storeUnreadable === status.storeUnreadable) {
+    return;
+  }
+  status = next;
+  for (const listener of statusListeners) {
+    listener(status);
+  }
+}
+
+export function getEngineReconcileStatus(): ReconcileStatus {
+  return status;
+}
+
+/** Подписка на смену состояния сверки; возвращает отписку. */
+export function subscribeEngineReconcileStatus(listener: (status: ReconcileStatus) => void): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
 let reconciling: Promise<void> | null = null;
 let wakeReconcile: (() => void) | null = null;
 /** Запрос сверки (или освобождение очереди экраном) пришёл, пока шёл проход: этот проход мог не увидеть новое
@@ -364,7 +461,9 @@ let rerunRequested = false;
  * Пока сверка идёт, чтения, которые сервер сопровождает проекцией дедлайнов (GET /sessions/live/active,
  * список сессий), ждут её (engineGate.ts → apiV2.ts): сохранённое действие пользователя, сделанное до
  * дедлайна, всегда доходит раньше этого дедлайна. Временный сбой (сеть, 5xx, 408/429) — очередь цела,
- * повтор через 1, 2, 4, 8, 15, 15… с; ворота держатся. Окончательный ответ (404/409, прочий 4xx) повтор не
+ * повтор через 1, 2, 4, 8, 15, 15… с; ворота держатся. Сбой ЧТЕНИЯ очередей (IndexedDB) — так же: повтор с
+ * теми же паузами, ворота держатся, пока чтение не удастся (тогда досылка → и только потом чтения с
+ * проекцией); UI видит это через `subscribeEngineReconcileStatus` и показывает ошибку с «Повторить». Окончательный ответ (404/409, прочий 4xx) повтор не
  * вызывает. Одна сверка на приложение: повторный вызов будит ждущую паузу и возвращает тот же promise;
  * `wakeEngineReconciliation` — то же по `online`/возврату на экран. Нет очередей — завершается сразу (одно
  * чтение IndexedDB, без сети).
@@ -380,7 +479,8 @@ export function startEngineReconciliation(initDataRaw: string, options: Reconcil
   const run = (async () => {
     for (let attempt = 0; ; ) {
       rerunRequested = false;
-      const { pending } = await drainEngineQueues(initDataRaw, options.store, options.api);
+      const { pending, storeUnreadable } = await drainEngineQueues(initDataRaw, options.store, options.api);
+      setStatus({ storeUnreadable: storeUnreadable === true });
       if (!pending) {
         if (rerunRequested) {
           continue;  // за время прохода пришёл запрос / освободилась очередь — ещё один полный проход
