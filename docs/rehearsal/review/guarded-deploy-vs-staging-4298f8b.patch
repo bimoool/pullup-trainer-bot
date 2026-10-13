@@ -1,0 +1,551 @@
+diff --git a/.github/workflows/deploy-staging-guarded.yml b/.github/workflows/deploy-staging-guarded.yml
+new file mode 100644
+index 0000000..0cff08f
+--- /dev/null
++++ b/.github/workflows/deploy-staging-guarded.yml
+@@ -0,0 +1,75 @@
++name: Deploy Staging (guarded)
++
++# STAGING-ONLY. Отдельный путь рядом с deploy-staging.yml (его и прод-деплой не меняет и не заменяет). Точный SHA, backup,
++# остановленные app/web, последовательная сборка, миграция, проверки данных, convergence, и только потом запуск + healthcheck.
++# При любой ошибке app/web остаются остановленными (deploy/deploy-staging-guarded-run.sh). Отдельный SSH-ключ с forced-command
++# deploy-staging-guarded-dispatch.sh принимает ровно ./deploy-staging-guarded.sh <sha> <preflight|dry-run|apply> <yes|no> [<users>].
++# Установка на сервере и откат — docs/STAGING_RC_RUNBOOK.md §3.2, §8.
++
++on:
++  workflow_dispatch:
++    inputs:
++      sha:
++        description: "Точный 40-символьный SHA проверенного кандидата (не ветка)"
++        required: true
++      converge:
++        description: "preflight — ТОЛЬКО ЧТЕНИЕ (фаза 0). dry-run — НЕ read-only: останавливает app/web, backup, сборка, МИГРАЦИЯ БД; сведение только проверяется. apply — то же + сведение для users"
++        type: choice
++        options: ["preflight", "dry-run", "apply"]
++        default: "preflight"
++      users:
++        description: "users.id через запятую (подтверждённые владельцем) или '-'. apply без списка запрещён; '-' в dry-run = прочитать всех, ничего не менять"
++        required: false
++        default: "-"
++      start:
++        description: "yes — запустить app/web после успешных проверок; no — проверить всё и оставить остановленными"
++        type: choice
++        options: ["no", "yes"]
++        default: "no"
++
++permissions:
++  contents: read
++
++concurrency:
++  group: deploy-staging
++  cancel-in-progress: false
++
++jobs:
++  deploy-staging-guarded:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Validate inputs
++        env:
++          SHA: ${{ inputs.sha }}
++          CONVERGE: ${{ inputs.converge }}
++          START: ${{ inputs.start }}
++          USERS: ${{ inputs.users }}
++        run: |
++          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "sha must be 40 lowercase hex chars"; exit 1; }
++          [[ "$CONVERGE" =~ ^(preflight|dry-run|apply)$ ]] || { echo "bad converge"; exit 1; }
++          [[ "$USERS" =~ ^(-|[0-9]+(,[0-9]+){0,99})$ ]] || { echo "bad users"; exit 1; }
++          [[ "$CONVERGE" != "apply" || "$USERS" != "-" ]] || { echo "apply requires an explicit users list"; exit 1; }
++          [[ "$CONVERGE" != "preflight" || "$START" == "no" ]] || { echo "preflight never starts services"; exit 1; }
++          [[ "$START" =~ ^(yes|no)$ ]] || { echo "bad start"; exit 1; }
++
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - name: The SHA exists in this repository and ships the guarded-deploy files
++        env:
++          SHA: ${{ inputs.sha }}
++        run: |
++          git cat-file -e "${SHA}^{commit}"
++          for f in deploy/staging_data_check.sh deploy/staging-allowed-diff.txt docs/rehearsal/sql/gen_hash_queries.sql; do
++            git cat-file -e "${SHA}:${f}" || { echo "$f missing in $SHA"; exit 1; }
++          done
++
++      - name: Guarded deploy to staging VPS
++        uses: appleboy/ssh-action@v1.0.3
++        with:
++          host: ${{ secrets.VPS_HOST }}
++          username: deploy
++          key: ${{ secrets.VPS_STAGING_GUARDED_SSH_KEY }}
++          command_timeout: 60m
++          script: ./deploy-staging-guarded.sh ${{ inputs.sha }} ${{ inputs.converge }} ${{ inputs.start }} ${{ inputs.users }}
+diff --git a/Dockerfile.web b/Dockerfile.web
+index c9901e9..341b394 100644
+--- a/Dockerfile.web
++++ b/Dockerfile.web
+@@ -4,10 +4,9 @@
+ 
+ FROM node:20-slim AS frontend-build
+ WORKDIR /frontend
+-COPY webapp-frontend/package.json ./
+-# package-lock.json нет (см. CLAUDE.md) — npm install, не npm ci, до
+-# первой генерации лока средой с доступом к npm-реестру.
+-RUN npm install
++COPY webapp-frontend/package.json webapp-frontend/package-lock.json ./
++# Воспроизводимая сборка: ровно версии из package-lock.json (как в CI: `npm ci`), без повторного разрешения диапазонов.
++RUN npm ci
+ COPY webapp-frontend/ ./
+ RUN npm run build
+ 
+diff --git a/deploy/deploy-staging-guarded-dispatch.sh b/deploy/deploy-staging-guarded-dispatch.sh
+new file mode 100755
+index 0000000..1a3e683
+--- /dev/null
++++ b/deploy/deploy-staging-guarded-dispatch.sh
+@@ -0,0 +1,21 @@
++#!/usr/bin/env bash
++# Forced command ОТДЕЛЬНОГО SSH-ключа guarded staging-деплоя (не ключа deploy-staging.yml и не прод-ключа).
++# Копия для ревью; на VPS ставится вручную как /home/deploy/deploy-staging-guarded-dispatch.sh и прописывается в authorized_keys
++# одной строкой (docs/STAGING_RC_RUNBOOK.md §3.2):
++#   command="/home/deploy/deploy-staging-guarded-dispatch.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA… guarded-staging
++#
++# Принимает ровно один литеральный паттерн (как существующие dispatch-скрипты, forced-command не обходится и не расширяется):
++#   ./deploy-staging-guarded.sh <40-hex-sha> <preflight|dry-run|apply> <yes|no> [<users.id,users.id,...>|-]
++# Всё остальное отклоняется. Параллельные запуски исключены блокировкой.
++set -euo pipefail
++
++cmd="${SSH_ORIGINAL_COMMAND:-}"
++re='^\./deploy-staging-guarded\.sh ([0-9a-f]{40}) (preflight|dry-run|apply) (yes|no)( (-|[0-9]+(,[0-9]+){0,99}))?$'
++if [[ ! "$cmd" =~ $re ]]; then
++  echo "rejected command: ${cmd}" >&2
++  exit 1
++fi
++
++exec 9>/home/deploy/.deploy-staging-guarded.lock
++flock -n 9 || { echo "another guarded staging deploy is running" >&2; exit 1; }
++exec /home/deploy/deploy-staging-guarded-run.sh "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[5]:--}"
+diff --git a/deploy/deploy-staging-guarded-run.sh b/deploy/deploy-staging-guarded-run.sh
+new file mode 100755
+index 0000000..b944cf2
+--- /dev/null
++++ b/deploy/deploy-staging-guarded-run.sh
+@@ -0,0 +1,295 @@
++#!/usr/bin/env bash
++# STAGING-ONLY guarded deploy. Не трогает прод (`deploy.yml`, `deploy/deploy-run.sh`) и не заменяет `deploy-staging-run.sh`.
++#
++# Копия для ревью; на VPS ставится вручную владельцем как /home/deploy/deploy-staging-guarded-run.sh и вызывается ТОЛЬКО из
++# deploy-staging-guarded-dispatch.sh (forced command отдельного SSH-ключа). Порядок установки — docs/STAGING_RC_RUNBOOK.md §3.2.
++#
++#   deploy-staging-guarded-run.sh <40-hex-sha> <preflight|dry-run|apply> <yes|no> [<users>]
++#     sha       точный проверенный коммит (detached checkout, без `git pull` плавающей ветки)
++#     converge  preflight: ТОЛЬКО ЧТЕНИЕ — фаза 0 и выход (не останавливает сервисы, не пишет в БД, не собирает, не мигрирует;
++#                          единственная запись — `git fetch` в репозиторий staging и временный каталог /tmp/guarded-deploy.*);
++#               dry-run:   НЕ read-only — останавливает app/web, пишет backup, переключает checkout, собирает образы и ВЫПОЛНЯЕТ МИГРАЦИЮ БД;
++#                          convergence только проверяется (транзакции откатываются);
++#               apply:     то же + применяет convergence ТОЛЬКО к пользователям из <users>
++#     start     yes: запустить app/web после ВСЕХ успешных проверок; no: проверить всё и оставить app/web остановленными
++#     users     `-` (по умолчанию) или список внутренних users.id через запятую, подтверждённый владельцем по выводу dry-run.
++#               `-`: dry-run сводит/читает ВСЕХ пользователей (только чтение, показывает неразрешённые случаи); apply с `-` запрещён.
++#               Список: dry-run и apply ограничены этими пользователями; остальные не меняются ни одним скриптом сведения.
++#
++# Фазы (любая ошибка => app/web остаются ОСТАНОВЛЕННЫМИ; сохранённые образы и backup остаются; авто-отката нет):
++#   0 preflight  1 сохранить текущие образы  2 остановить писателей  3 backup + проверка восстановления + снимок «до»
++#   4 checkout SHA  5 сборка app, затем web (последовательно)  6 миграция  7 проверки данных  8 convergence  9 старт + healthcheck + проверка сборки
++#
++# Переиспользует: docker compose (тот же проект pullup-staging и порт 8002, что в deploy-staging-run.sh), scripts/repair_plan_convergence.py,
++# scripts/backfill_multi_program.py --converge-history, deploy/post-deploy-cleanup.sh, docs/rehearsal/sql/gen_hash_queries.sql,
++# deploy/staging_data_check.sh. Версия Docker Compose на VPS НЕ известна (2.40.3 в labels — версия создания контейнера) —
++# скрипт её логирует и использует только `stop`, `build`, `run --rm -T`, `up -d --no-build`, `ps`, `config --images`.
++set -euo pipefail
++
++PROJECT="pullup-staging"
++EXPECTED_FROM_REV="c3f7a9e2d5b1"          # ревизия staging, на которую рассчитан этот выкат (runbook §1.1)
++
++if [ "${GUARDED_TEST:-0}" = "1" ]; then   # переопределения — только для тестов с заглушками; на VPS игнорируются
++  STAGING_DIR="${STAGING_DIR:?}"; BACKUP_DIR="${BACKUP_DIR:?}"; HEALTH_URL="${HEALTH_URL:?}"
++  PROJECT="${PROJECT_OVERRIDE:-$PROJECT}"
++  QUIESCE_SECONDS="${QUIESCE_SECONDS:-1}"; HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-20}"; MIN_DISK_MB="${MIN_DISK_MB:-1}"
++  CLEANUP_BIN="${CLEANUP_BIN:-/nonexistent}"
++else
++  STAGING_DIR="/home/deploy/pullup-trainer-bot-staging"; BACKUP_DIR="/home/deploy/backups"
++  HEALTH_URL="http://127.0.0.1:8002/health"
++  QUIESCE_SECONDS=15; HEALTH_TIMEOUT=240; MIN_DISK_MB=2048
++  CLEANUP_BIN="/usr/local/bin/post-deploy-cleanup.sh"
++fi
++
++if [[ $# -lt 3 || $# -gt 4 || ! "$1" =~ ^[0-9a-f]{40}$ || ! "$2" =~ ^(preflight|dry-run|apply)$ || ! "$3" =~ ^(yes|no)$ \
++      || ! "${4:--}" =~ ^(-|[0-9]+(,[0-9]+){0,99})$ ]]; then
++  echo "usage: $0 <40-hex-sha> <preflight|dry-run|apply> <yes|no> [<users.id,users.id,...>|-]   (got: $*)" >&2
++  exit 2
++fi
++SHA="$1"; CONVERGE="$2"; START="$3"; USERS="${4:--}"
++if [ "$CONVERGE" = "apply" ] && [ "$USERS" = "-" ]; then
++  echo "refusing: converge=apply requires an explicit owner-confirmed users.id list (convergence is never applied to all users)" >&2
++  exit 2
++fi
++if [ "$CONVERGE" = "preflight" ] && [ "$START" = "yes" ]; then
++  echo "refusing: preflight never starts services (use start=no)" >&2
++  exit 2
++fi
++SHA7="${SHA:0:7}"; TS="$(date -u +%Y%m%dT%H%M%SZ)"
++WORK="$(mktemp -d /tmp/guarded-deploy.XXXXXX)"
++PHASE=0; PHASE_NAME="init"; WRITERS_STOPPED=0
++PREV_SHA=""; PREV_REV=""; BACKUP_FILE=""; SAVED_TAGS=(); DBC=""
++BUILT_ID_app=""; BUILT_ID_web=""
++
++log() { echo "[$(date -u +%H:%M:%S)] $*"; }
++die() { echo "ERROR: $*" >&2; exit 1; }
++phase() { PHASE="$1"; PHASE_NAME="$2"; log "== [$1/9] $2"; }
++dc() { docker compose -p "$PROJECT" "$@"; }
++dbq() { bash -c "$STAGING_PSQL" <<<"$1"; }
++
++summary() {
++  echo "---- state for rollback (docs/STAGING_RC_RUNBOOK.md §8) ----"
++  echo "target sha      : $SHA   (converge=$CONVERGE start=$START users=$USERS)"
++  echo "previous sha    : ${PREV_SHA:-unknown}   previous alembic: ${PREV_REV:-unknown}"
++  echo "backup          : ${BACKUP_FILE:-not created yet}"
++  echo "rollback images : ${SAVED_TAGS[*]:-none saved yet}"
++  echo "work dir (logs) : $WORK"
++}
++
++on_exit() {
++  local rc=$?
++  if [ "$rc" -ne 0 ]; then
++    echo "!! GUARDED DEPLOY FAILED at phase ${PHASE} (${PHASE_NAME}), exit ${rc}" >&2
++    if [ "$WRITERS_STOPPED" = 1 ]; then
++      dc stop app web >/dev/null 2>&1 || true
++      echo "!! app/web are STOPPED and stay stopped (stopped again if they had already been started); nothing was restored automatically." >&2
++    else
++      echo "!! failed before app/web were touched: nothing was changed." >&2
++    fi
++    summary >&2
++  fi
++}
++trap on_exit EXIT
++
++# ------------------------------------------------------------------------------------------------ 0 preflight
++phase 0 "preflight (staging only, exact SHA, free resources)"
++cd "$STAGING_DIR"
++[ -f docker-compose.yml ] && [ -f .env ] || die "docker-compose.yml/.env not found in $STAGING_DIR"
++[ -z "$(git status --porcelain)" ] || die "staging checkout is not clean"
++PREV_SHA="$(git rev-parse HEAD)"
++git fetch --quiet origin
++git cat-file -e "${SHA}^{commit}" 2>/dev/null || die "commit $SHA is not available after fetch"
++mkdir -p "$WORK/tgt" "$WORK/data"
++for f in deploy/staging_data_check.sh docs/rehearsal/sql/gen_hash_queries.sql deploy/staging-allowed-diff.txt; do
++  git show "${SHA}:${f}" > "$WORK/tgt/$(basename "$f")" || die "$f is missing in $SHA (is this the guarded-deploy candidate?)"
++done
++chmod +x "$WORK/tgt/staging_data_check.sh"; bash -n "$WORK/tgt/staging_data_check.sh"
++log "docker compose version: $(docker compose version 2>&1 | head -n1)  (VPS CLI version not verified before this run)"
++avail="$(df -Pm "$STAGING_DIR" | awk 'NR==2{print $4}')"
++[ "${avail:-0}" -ge "$MIN_DISK_MB" ] || die "free disk ${avail} MB < ${MIN_DISK_MB} MB"
++log "free disk ${avail} MB; memory: $(free -m 2>/dev/null | awk 'NR==2{print "available "$7" MB"} NR==3{print ", swap used "$3" MB"}' | tr -d '\n')"
++DBC="$(dc ps -q db | head -n1)"
++[ -n "$DBC" ] || die "db container of project $PROJECT not found"
++[ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$DBC")" = "$PROJECT" ] || die "db container is not in project $PROJECT"
++[ "$(docker inspect -f '{{.State.Running}}' "$DBC")" = "true" ] || die "db container is not running"
++STAGING_PSQL="docker exec -i $DBC sh -c 'psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -At -v ON_ERROR_STOP=1'"
++export STAGING_PSQL
++PREV_REV="$(dbq "select version_num from alembic_version")"
++log "staging: HEAD=$PREV_SHA alembic=$PREV_REV db-container=$DBC"
++DB_NAME="$(docker exec "$DBC" sh -c 'echo "$POSTGRES_DB"')"
++case "$DB_NAME" in *staging*) ;; *) die "database name '$DB_NAME' does not contain 'staging' — refusing to continue" ;; esac
++
++if [ "$CONVERGE" = "preflight" ]; then
++  log "PREFLIGHT OK (read-only): sha=$SHA is available and ships the guarded files; staging HEAD=$PREV_SHA alembic=$PREV_REV; nothing was stopped, built, migrated or written"
++  exit 0
++fi
++
++# ------------------------------------------------------------------------------------------------ 1 rollback images
++phase 1 "save current app/web images under our own tags (rollback without Alembic)"
++for svc in app web; do
++  cid="$(dc ps -aq "$svc" | head -n1)"
++  [ -n "$cid" ] || die "no existing $svc container: cannot save its image for rollback"
++  img="$(docker inspect -f '{{.Image}}' "$cid")"
++  tag="local/staging-$svc:pre-$SHA7-$TS"
++  docker tag "$img" "$tag"
++  SAVED_TAGS+=("$tag")
++  log "saved $svc image ${img:0:19} as $tag"
++done
++
++# ------------------------------------------------------------------------------------------------ 2 stop writers
++phase 2 "stop writers (app = bot+workers, web = Mini App); db and redis stay up"
++WRITERS_STOPPED=1
++dc stop app web
++conns="$(dbq "select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()")"
++[ "$conns" = "0" ] || die "$conns other connection(s) to the database remain after stopping app/web"
++W1="$(dbq "select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables")"
++sleep "$QUIESCE_SECONDS"
++W2="$(dbq "select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables")"
++[ "$W1" = "$W2" ] || die "database is still being written to ($W1 -> $W2)"
++log "no writers: 0 foreign connections, write counter stable at $W2"
++
++# ------------------------------------------------------------------------------------------------ 3 backup
++phase 3 "backup + verified restore + data snapshot (before)"
++umask 077; mkdir -p "$BACKUP_DIR"
++BACKUP_FILE="$BACKUP_DIR/staging-pre-$SHA7-$TS.dump"
++docker exec "$DBC" sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > "$BACKUP_FILE"
++[ -s "$BACKUP_FILE" ] || die "backup file is empty"
++sha256sum "$BACKUP_FILE" > "$BACKUP_FILE.sha256"
++toc="$(docker exec -i "$DBC" pg_restore -l < "$BACKUP_FILE" | wc -l)"
++[ "$toc" -gt 10 ] || die "backup table of contents too short ($toc lines)"
++docker exec "$DBC" sh -c 'dropdb -U "$POSTGRES_USER" --if-exists restore_check && createdb -U "$POSTGRES_USER" restore_check'
++docker exec -i "$DBC" sh -c 'pg_restore -U "$POSTGRES_USER" -d restore_check --no-owner' < "$BACKUP_FILE"
++rq() { docker exec "$DBC" sh -c "psql -U \"\$POSTGRES_USER\" -d restore_check -At -c \"$1\""; }
++[ "$(rq "select version_num from alembic_version")" = "$PREV_REV" ] || die "restored alembic_version differs from live"
++COUNTS_SQL="select (select count(*) from users)||'/'||(select count(*) from subscriptions)||'/'||(select count(*) from program_inclusions)||'/'||(select count(*) from training_sessions)||'/'||(select count(*) from plan_items)"
++[ "$(rq "$COUNTS_SQL")" = "$(dbq "$COUNTS_SQL")" ] || die "restored table counts differ from live"
++docker exec "$DBC" sh -c 'dropdb -U "$POSTGRES_USER" restore_check'
++W3="$(dbq "select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables")"
++[ "$W3" = "$W2" ] || die "database was written to during the backup ($W2 -> $W3)"
++log "backup OK: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1), $toc TOC entries, sha256 in $BACKUP_FILE.sha256); restore check passed"
++"$WORK/tgt/staging_data_check.sh" before "$WORK/data" "$WORK/tgt/gen_hash_queries.sql"
++
++# ------------------------------------------------------------------------------------------------ 4 checkout
++phase 4 "checkout the exact SHA (detached)"
++git checkout --quiet --detach "$SHA"
++[ "$(git rev-parse HEAD)" = "$SHA" ] || die "HEAD != $SHA after checkout"
++[ -z "$(git status --porcelain)" ] || die "working tree is not clean after checkout"
++log "HEAD=$SHA"
++
++# ------------------------------------------------------------------------------------------------ 5 build
++phase 5 "build app, then web — sequentially (limited memory)"
++export COMPOSE_PARALLEL_LIMIT=1
++for svc in app web; do
++  log "memory before build $svc: $(free -m 2>/dev/null | awk 'NR==2{print "available "$7" MB"}')"
++  dc build "$svc"
++done
++imgname() { dc config --images 2>/dev/null | grep -E "[-_]$1\$" | head -n1; }
++for svc in app web; do
++  name="$(imgname "$svc")"; [ -n "$name" ] || die "cannot resolve image name of $svc"
++  id="$(docker image inspect -f '{{.Id}}' "$name")"; [ -n "$id" ] || die "built image $name not found"
++  eval "BUILT_ID_$svc=\$id"
++  log "built $svc: $name ${id:0:19}"
++done
++
++# ------------------------------------------------------------------------------------------------ 6 migration
++phase 6 "migration (single transaction)"
++HEADS="$(dc run --rm -T app alembic heads | grep -E '\(head\)' | awk '{print $1}')"
++[ -n "$HEADS" ] && [ "$(printf '%s\n' "$HEADS" | wc -l)" -eq 1 ] || die "expected exactly one Alembic head, got: $HEADS"
++CUR="$(dbq "select version_num from alembic_version")"
++if [ "$CUR" = "$HEADS" ]; then
++  log "WARNING: database already at head $HEADS (a previous run migrated it); the pre-migration backup is the one from that earlier run"
++elif [ "$CUR" = "$EXPECTED_FROM_REV" ]; then
++  dc run --rm -T app alembic upgrade head
++  [ "$(dbq "select version_num from alembic_version")" = "$HEADS" ] || die "alembic_version != head after upgrade"
++else
++  die "unexpected alembic revision $CUR (expected $EXPECTED_FROM_REV or head $HEADS)"
++fi
++log "alembic_version = $HEADS"
++
++# ------------------------------------------------------------------------------------------------ 7 data checks
++phase 7 "data checks after migration (expected transformations only)"
++"$WORK/tgt/staging_data_check.sh" after-migration "$WORK/data" "$WORK/tgt/staging-allowed-diff.txt"
++
++# ------------------------------------------------------------------------------------------------ 8 convergence
++phase 8 "convergence ($CONVERGE, users=$USERS)"
++conv_json_check() { # <file> <expect_zero_mutations 0|1>
++  dc run --rm -T app python -c '
++import json, sys
++d = json.load(sys.stdin)
++if d.get("error"):
++    print("error: %s" % d["error"]); sys.exit(1)
++bad = [u for u in d["users_detail"] if u.get("guard_violations")]
++print("mode=%s users=%s total_mutations=%s guard_violations=%d" % (d["mode"], d["users"], d["total_mutations"], len(bad)))
++sys.exit(1 if bad or (sys.argv[1] == "1" and d["total_mutations"] != 0) else 0)
++' "$2" < "$1"
++}
++# сведение истории: строки счётчиков (до блока «Не разрешено») и сам блок неразрешённых случаев — отдельно
++hist_counts()     { sed '/^Не разрешено/,$d' "$1"; }
++hist_unresolved() { sed -n '/^Не разрешено/,$p' "$1"; }
++SCOPE_REPAIR=(--all); SCOPE_HISTORY=()
++if [ "$USERS" != "-" ]; then SCOPE_REPAIR=(--user-ids "$USERS"); SCOPE_HISTORY=(--user-ids "$USERS"); fi
++repair()  { dc run --rm -T app python scripts/repair_plan_convergence.py "${SCOPE_REPAIR[@]}" "$@"; }
++history() { dc run --rm -T app python scripts/backfill_multi_program.py --converge-history "${SCOPE_HISTORY[@]}" "$@"; }
++REPORT_DIR="$BACKUP_DIR/convergence-${SHA7}-${TS}"
++mkdir -p "$REPORT_DIR"
++repair > "$WORK/conv_dry.json" 2> "$WORK/conv_dry.err"; conv_json_check "$WORK/conv_dry.json" 0
++history > "$WORK/hist_dry.txt" 2> "$WORK/hist_dry.err"
++"$WORK/tgt/staging_data_check.sh" same-as-migration "$WORK/data"
++# неразрешённые факультативы (копия НЕ создана, ничего не привязано) — с user_id и причиной; сохраняются и показываются всегда
++hist_unresolved "$WORK/hist_dry.txt" > "$REPORT_DIR/unresolved-dry-run.txt" || true
++cp "$WORK/conv_dry.json" "$WORK/hist_dry.txt" "$REPORT_DIR/"
++if [ -s "$REPORT_DIR/unresolved-dry-run.txt" ]; then
++  log "UNRESOLVED electives (dry-run, scope users=$USERS) — saved to $REPORT_DIR/unresolved-dry-run.txt:"; cat "$REPORT_DIR/unresolved-dry-run.txt"
++else
++  log "unresolved electives (dry-run, scope users=$USERS): none"
++fi
++if [ "$CONVERGE" = "apply" ]; then
++  repair --apply > "$WORK/conv_a1.json" 2> "$WORK/conv_a1.err"; conv_json_check "$WORK/conv_a1.json" 0
++  repair --apply > "$WORK/conv_a2.json" 2> "$WORK/conv_a2.err"; conv_json_check "$WORK/conv_a2.json" 1
++  history --apply > "$WORK/hist_a1.txt" 2> "$WORK/hist_a1.err"
++  history --apply > "$WORK/hist_a2.txt" 2> "$WORK/hist_a2.err"
++  if hist_counts "$WORK/hist_a2.txt" | grep -Eq '(привязано|создано|обновлено|замещено)[^:]*: *[1-9]'; then die "history convergence is not idempotent (second --apply changed something)"; fi
++  hist_unresolved "$WORK/hist_a1.txt" > "$REPORT_DIR/unresolved-apply.txt" || true
++  hist_unresolved "$WORK/hist_a2.txt" > "$WORK/unresolved_a2.txt" || true
++  cmp -s "$REPORT_DIR/unresolved-apply.txt" "$WORK/unresolved_a2.txt" || die "unresolved electives changed between the first and second --apply (not stable)"
++  cp "$WORK/conv_a1.json" "$WORK/conv_a2.json" "$WORK/hist_a1.txt" "$WORK/hist_a2.txt" "$REPORT_DIR/"
++  "$WORK/tgt/staging_data_check.sh" after-convergence "$WORK/data"
++  log "convergence applied ONLY to users=$USERS; unresolved after apply: $(grep -c 'user_id=' "$REPORT_DIR/unresolved-apply.txt" || true) (kept as is, see $REPORT_DIR/unresolved-apply.txt)"
++else
++  log "convergence NOT applied (mode $CONVERGE): runtime plan convergence will run per user on the first GET /plan of the new build; history convergence has no runtime path"
++fi
++
++# ------------------------------------------------------------------------------------------------ 9 start
++if [ "$START" = "no" ]; then
++  log "start=no: all checks passed; app/web remain STOPPED by request"
++  summary
++  log "GUARDED DEPLOY VERIFIED (services NOT started) sha=$SHA"
++  exit 0
++fi
++phase 9 "start app/web, healthcheck, verify the running build"
++dc up -d --no-build app web
++deadline=$((SECONDS + HEALTH_TIMEOUT))
++until curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null 2>&1; do
++  [ "$SECONDS" -lt "$deadline" ] || die "healthcheck $HEALTH_URL did not pass within ${HEALTH_TIMEOUT}s"
++  sleep 3
++done
++log "healthcheck OK: $HEALTH_URL"
++for svc in app web; do
++  cid="$(dc ps -q "$svc" | head -n1)"; [ -n "$cid" ] || die "$svc container missing after up"
++  [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = "true" ] || die "$svc is not running"
++  [ "$(docker inspect -f '{{.State.Restarting}}' "$cid")" = "false" ] || die "$svc is restarting"
++  want="BUILT_ID_$svc"; got="$(docker inspect -f '{{.Image}}' "$cid")"
++  [ "$got" = "${!want}" ] || die "$svc runs image ${got:0:19}, not the one built by this run (${!want:0:19})"
++  until [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")" != "starting" ]; do
++    [ "$SECONDS" -lt "$deadline" ] || die "$svc healthcheck still 'starting' after ${HEALTH_TIMEOUT}s"; sleep 3
++  done
++  st="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
++  [ "$st" = "healthy" ] || [ "$st" = "none" ] || die "$svc health status is '$st'"
++  log "running $svc: image ${got:0:19} == built by this run; health=$st"
++done
++[ "$(git rev-parse HEAD)" = "$SHA" ] || die "HEAD != $SHA after start"
++[ "$(dbq "select version_num from alembic_version")" = "$HEADS" ] || die "alembic_version != head after start"
++
++if [ -x "$CLEANUP_BIN" ]; then "$CLEANUP_BIN" || true; fi   # как в deploy-run.sh: только после полного успеха, ошибки очистки не валят выкат
++summary
++log "GUARDED DEPLOY OK sha=$SHA alembic=$HEADS converge=$CONVERGE users=$USERS services=started"
+diff --git a/deploy/staging-allowed-diff.txt b/deploy/staging-allowed-diff.txt
+new file mode 100644
+index 0000000..bbf35da
+--- /dev/null
++++ b/deploy/staging-allowed-diff.txt
+@@ -0,0 +1,4 @@
++# Таблицы, в которых ПРИ МИГРАЦИИ (семь ревизий c3f7a9e2d5b1 -> b5d8e1f3a6c9) допустимо изменение ДО-существовавших данных.
++# Одна таблица в строке. Расширение списка — только ревью-коммитом: deploy/staging_data_check.sh падает на любом ином различии.
++# program_inclusions: e3b9c5d7a2f1 (block_b.work_sets absent/null -> 4; прочее проверяется отдельно предикатами).
++program_inclusions
+diff --git a/deploy/staging_data_check.sh b/deploy/staging_data_check.sh
+new file mode 100755
+index 0000000..cd9904c
+--- /dev/null
++++ b/deploy/staging_data_check.sh
+@@ -0,0 +1,108 @@
++#!/usr/bin/env bash
++# Проверки данных staging-выката (docs/STAGING_RC_RUNBOOK.md §6). Вызывается deploy-staging-guarded-run.sh; ничего не пишет в БД.
++#
++#   staging_data_check.sh before            <workdir> <gen_hash_queries.sql>   # снимок ДО миграции (писатели остановлены)
++#   staging_data_check.sh after-migration   <workdir> <allowed-diff-file>      # ожидаемые преобразования 7 миграций
++#   staging_data_check.sh same-as-migration <workdir>                          # dry-run convergence ничего не записал
++#   staging_data_check.sh after-convergence <workdir>                          # инварианты после --apply
++#
++# Окружение: STAGING_PSQL — команда, читающая SQL со stdin и печатающая невыравненные строки (psql -At), например
++#   docker exec -i <db-container> sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At'
++# Выход 0 — проверка пройдена; иначе ненулевой, причина в stderr. Значения персональных данных не печатаются (id, имена таблиц, хэши).
++set -euo pipefail
++
++: "${STAGING_PSQL:?STAGING_PSQL is required}"
++cmd="${1:?subcommand}"
++shift || true
++
++q()  { bash -c "$STAGING_PSQL" <<<"$1"; }
++qf() { bash -c "$STAGING_PSQL" < "$1"; }
++fail() { echo "DATA-CHECK FAILED: $*" >&2; exit 1; }
++
++# Таблицы, данные которых при convergence меняться МОГУТ (остальные ДО-таблицы обязаны остаться идентичными).
++CONVERGENCE_MAY_CHANGE="plan_items plan_weeks program_inclusions session_blocks set_logs training_sessions"
++# Таблицы, где convergence только ДОБАВЛЯЕТ строки: у ранее существовавших строк ДО-колонки не меняются.
++APPEND_ONLY="training_sessions session_blocks set_logs"
++
++hash_join() { # <before> <after> -> строки "tbl|n_before|h_before|n_after|h_after" для таблиц, присутствующих в обоих
++  join -t'|' -j1 <(sort "$1") <(sort "$2")
++}
++
++case "$cmd" in
++before)
++  w="${1:?workdir}"; gen="${2:?gen_hash_queries.sql}"
++  mkdir -p "$w"
++  qf "$gen" > "$w/hash_queries.sql"
++  [ -s "$w/hash_queries.sql" ] || fail "generated hash_queries.sql is empty"
++  qf "$w/hash_queries.sql" > "$w/hq_before.txt"
++  [ "$(wc -l < "$w/hq_before.txt")" -eq "$(wc -l < "$w/hash_queries.sql")" ] || fail "hash query count mismatch (before)"
++  q "select id||'|'||coalesce(jsonb_typeof(progression_state->'block_b'),'none')||'|'||coalesce((progression_state->'block_b'->'work_sets')::text,'ABSENT') from program_inclusions order by id" > "$w/work_sets_before.txt"
++  q "select coalesce(md5(string_agg(id::text||'|'||(progression_state #- '{block_b,work_sets}')::text, ',' order by id)),'') from program_inclusions" > "$w/state_wo_ws.before"
++  q "select coalesce(md5(string_agg(row(id,training_plan_id,program_id,snapshot,started_at,expires_at,is_active,created_at,initial_progression_state)::text, '|' order by id)),'') from program_inclusions" > "$w/inclusion_other.before"
++  for t in $APPEND_ONLY; do q "select coalesce(max(id),0) from $t" > "$w/max_id.$t"; done
++  echo "before: $(wc -l < "$w/hq_before.txt") tables hashed, $(wc -l < "$w/work_sets_before.txt") inclusions recorded"
++  ;;
++
++after-migration)
++  w="${1:?workdir}"; allow="${2:?allowed-diff file}"
++  qf "$w/hash_queries.sql" > "$w/hq_after.txt"
++  [ "$(wc -l < "$w/hq_after.txt")" -eq "$(wc -l < "$w/hq_before.txt")" ] || fail "number of hashed tables changed (a pre-existing table disappeared?)"
++  hash_join "$w/hq_before.txt" "$w/hq_after.txt" > "$w/hq_joined.txt"
++  [ "$(wc -l < "$w/hq_joined.txt")" -eq "$(wc -l < "$w/hq_before.txt")" ] || fail "table set differs between before and after"
++  count_changed=$(awk -F'|' '$2!=$4{print $1" ("$2"->"$4")"}' "$w/hq_joined.txt")
++  [ -z "$count_changed" ] || fail "row counts of pre-existing tables changed by the migrations: $count_changed"
++  changed=$(awk -F'|' '$3!=$5{print $1}' "$w/hq_joined.txt" | sort)
++  allowed=$(grep -vE '^\s*(#|$)' "$allow" | sort)
++  unexpected=$(comm -23 <(printf '%s\n' "$changed" | sed '/^$/d') <(printf '%s\n' "$allowed" | sed '/^$/d'))
++  [ -z "$unexpected" ] || fail "pre-existing data changed in tables outside the allowed list ($allow): $(echo $unexpected)"
++  echo "after-migration: changed tables = [$(echo $changed)] (allowed: [$(echo $allowed)])"
++  # e3b9c5d7a2f1: block_b.work_sets absent/null -> 4, всё остальное не меняется
++  left=$(q "select count(*) from program_inclusions where jsonb_typeof(progression_state->'block_b')='object' and coalesce(jsonb_typeof(progression_state->'block_b'->'work_sets'),'null')='null'")
++  [ "$left" = "0" ] || fail "$left inclusion(s) still have block_b without a numeric work_sets"
++  [ "$(q "select coalesce(md5(string_agg(id::text||'|'||(progression_state #- '{block_b,work_sets}')::text, ',' order by id)),'') from program_inclusions")" = "$(cat "$w/state_wo_ws.before")" ] \
++    || fail "progression_state changed outside block_b.work_sets"
++  [ "$(q "select coalesce(md5(string_agg(row(id,training_plan_id,program_id,snapshot,started_at,expires_at,is_active,created_at,initial_progression_state)::text, '|' order by id)),'') from program_inclusions")" = "$(cat "$w/inclusion_other.before")" ] \
++    || fail "program_inclusions columns other than progression_state changed"
++  q "select id||'|'||coalesce(jsonb_typeof(progression_state->'block_b'),'none')||'|'||coalesce((progression_state->'block_b'->'work_sets')::text,'ABSENT') from program_inclusions order by id" > "$w/work_sets_after.txt"
++  awk -F'|' 'NR==FNR{bt[$1]=$2; bw[$1]=$3; next}
++    { id=$1; if(!(id in bt)){print "new inclusion row "id; bad=1; next}
++      if($2!=bt[id]){print "id "id": block_b type "bt[id]" -> "$2; bad=1}
++      e=(bt[id]=="object" && (bw[id]=="ABSENT"||bw[id]=="null")) ? "4" : bw[id];
++      if($3!=e){print "id "id": work_sets before="bw[id]" after="$3" expected="e; bad=1} }
++    END{exit bad}' "$w/work_sets_before.txt" "$w/work_sets_after.txt" >&2 || fail "work_sets rule (absent/null -> 4, existing values kept) violated"
++  bad_origin=$(q "select distinct origin from training_sessions where origin is not null and origin not in ('native','legacy_backfill','legacy_elective')")
++  [ -z "$bad_origin" ] || fail "unexpected training_sessions.origin values: $bad_origin"
++  echo "after-migration: OK (work_sets rule holds; no other pre-existing data changed)"
++  ;;
++
++same-as-migration)
++  w="${1:?workdir}"
++  qf "$w/hash_queries.sql" > "$w/hq_dry.txt"
++  diff -q <(sort "$w/hq_after.txt") <(sort "$w/hq_dry.txt") >/dev/null || fail "database changed during dry-run convergence"
++  echo "same-as-migration: OK (dry-run wrote nothing)"
++  ;;
++
++after-convergence)
++  w="${1:?workdir}"
++  qf "$w/hash_queries.sql" > "$w/hq_conv.txt"
++  hash_join "$w/hq_before.txt" "$w/hq_conv.txt" > "$w/hq_joined_conv.txt"
++  [ "$(wc -l < "$w/hq_joined_conv.txt")" -eq "$(wc -l < "$w/hq_before.txt")" ] || fail "table set differs after convergence"
++  changed=$(awk -F'|' '$2!=$4 || $3!=$5{print $1}' "$w/hq_joined_conv.txt" | sort | sed '/^$/d')
++  unexpected=$(comm -23 <(printf '%s\n' "$changed") <(printf '%s\n' $CONVERGENCE_MAY_CHANGE | sort))
++  [ -z "$unexpected" ] || fail "convergence changed tables it must not touch: $(echo $unexpected)"
++  for t in $APPEND_ONLY; do
++    max=$(cat "$w/max_id.$t")
++    line=$(grep -E "^select '$t' as tbl," "$w/hash_queries.sql") || fail "no hash query for $t"
++    restricted=$(printf '%s' "$line" | sed -E "s/ from $t;\$/ from $t where id <= $max;/")
++    [ "$restricted" != "$line" ] || fail "cannot restrict hash query for $t"
++    got=$(q "$restricted")
++    want=$(grep -E "^$t\|" "$w/hq_before.txt")
++    [ "$got" = "$want" ] || fail "pre-existing $t rows changed by convergence (restricted hash differs): got=$got want=$want"
++  done
++  dups=$(q "select origin||':'||legacy_id||' x'||count(*) from training_sessions where legacy_id is not null group by origin, legacy_id having count(*) > 1")
++  [ -z "$dups" ] || fail "duplicate (origin, legacy_id) copies: $dups"
++  echo "after-convergence: OK (changed tables = [$(echo $changed)]; pre-existing rows of $APPEND_ONLY unchanged; no duplicate copies)"
++  ;;
++
++*) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
++esac
