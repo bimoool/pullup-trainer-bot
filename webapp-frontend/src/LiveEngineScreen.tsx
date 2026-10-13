@@ -13,9 +13,9 @@ import {
   activeElapsedMs, remainingMs, type CheckAnswer, type EnginePlan, type EngineState, type Phase, type PlanBlock,
 } from "./liveEngine";
 import {
-  claimQueue, clearQueue, createScreenLifecycle, createSyncRetry, displayState, dropAcknowledged, emptyQueue, loadQueue,
-  newEvent, releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation,
-  type EngineQueue,
+  claimQueue, createQueueOwner, createScreenLifecycle, createSyncRetry, displayState, dropAcknowledged, emptyQueue,
+  newEvent, releaseQueue, serverOffsetMs, startEngineReconciliation,
+  type EngineQueue, type QueueOwner,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { useBackButton } from "./useBackButton";
@@ -95,6 +95,13 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const [retry] = useState(() => createSyncRetry(() => void sync()));
   // Аудит #322: после ухода/unmount/смены сессии поздний ответ старой досылки ничего не планирует и не шлёт.
   const [lifecycle] = useState(createScreenLifecycle);
+  // Очередь сессии пишется только через владельца: до достоверного чтения сохранённой очереди запись
+  // отклоняется (непрочитанные недосланные события не затираются). Сбой чтения — не «пусто»: ввод
+  // заблокирован с объяснением, чтение повторяется само (1, 2, 4, 8, 15 с) и по «Повторить».
+  const owner = useRef<QueueOwner>(createQueueOwner(initialSession.id));  // заменяется в эффекте сессии
+  const [queueUnreadable, setQueueUnreadable] = useState(false);
+  const loadNow = useRef<() => void>(() => undefined);
+  const [loadRetry] = useState(() => createSyncRetry(() => loadNow.current()));
 
   const engine = server.engine;
   const plan = engine?.plan ?? null;
@@ -119,7 +126,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       return;
     }
     closed.current = true;
-    await clearQueue(initialSession.id);
+    await owner.current.clear();
     if (result.progression_skipped_reason === "cancelled" || result.engine_status === "cancelled") {
       onLeave();
       return;
@@ -130,8 +137,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   function sync(): Promise<void> {
     retry.cancel();  // досылка идёт сейчас — отложенный повтор не нужен (не дублировать запрос)
     const token = lifecycle.token();
-    if (token === null) {
-      return Promise.resolve();  // экран ушёл: очередь — у сверки App
+    if (token === null || !owner.current.loaded()) {
+      return Promise.resolve();  // экран ушёл (очередь — у сверки App) или очередь ещё не прочитана
     }
     if (syncing.current !== null) {
       resync.current = true;
@@ -171,7 +178,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           }
           const rest = dropAcknowledged(queueRef.current, response.event_results.map((r) => r.client_event_id));
           setQueue(rest);
-          await saveQueue(rest);
+          await owner.current.save(rest);
           if (!lifecycle.isCurrent(token)) {
             return;
           }
@@ -208,8 +215,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   /** Сверка с сервером: свежая проекция (дедлайны, истёкшие в фоне, уже применены сервером). */
   async function refresh(): Promise<void> {
     const token = lifecycle.token();
-    if (token === null || !navigator.onLine || closed.current || queueRef.current.events.length > 0) {
-      return;
+    if (token === null || !navigator.onLine || closed.current || !owner.current.loaded() || queueRef.current.events.length > 0) {
+      return;  // непрочитанная очередь может нести действие до дедлайна — проекцию не запрашиваем
     }
     try {
       const started = Date.now();
@@ -248,22 +255,47 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     // #306 F1: пока экран открыт, очередью этой сессии владеет он (сверка App её пропускает); после ухода
     // недосланное подхватывает сверка App (startEngineReconciliation).
     claimQueue(initialSession.id);
-    void loadQueue(initialSession.id).then((stored) => {
-      if (cancelled) {
+    const sessionOwner = createQueueOwner(initialSession.id);
+    owner.current = sessionOwner;
+    let loading = false;
+    async function loadStored(): Promise<void> {
+      const token = lifecycle.token();
+      if (token === null || loading || sessionOwner.loaded()) {
         return;
       }
-      setQueue(stored);
+      const local = queueRef.current.sessionId === initialSession.id ? queueRef.current : emptyQueue(initialSession.id);
+      loading = true;
+      const merged = await sessionOwner.load(local).finally(() => {
+        loading = false;
+      });
+      if (cancelled || !lifecycle.isCurrent(token)) {
+        return;
+      }
+      if (merged === null) {
+        setQueueUnreadable(true);  // сохранённое не прочитано: ввод заблокирован, повтор сам
+        loadRetry.schedule();
+        return;
+      }
+      loadRetry.reset();
+      setQueueUnreadable(false);
+      setQueue(merged);
+      if (local.events.length > 0 || local.complete !== null) {
+        await sessionOwner.save(merged);  // локальное (если было) — после сохранённого, без дублей
+      }
       setReady(true);
-      if (stored.events.length > 0 || stored.complete !== null) {
+      if (merged.events.length > 0 || merged.complete !== null) {
         void sync();
       } else {
         void refresh();
       }
-    });
+    }
+    loadNow.current = () => void loadStored();
+    void loadStored();
     return () => {
       cancelled = true;
       lifecycle.unmount();  // до cancel: поздний сбой уже ушедшей досылки не поставит новый таймер
       retry.cancel();
+      loadRetry.cancel();
       releaseQueue(initialSession.id);
       // Недосланное (сбой сети перед «Выйти») сверяет App. Старт — здесь, в очистке: React выполняет её раньше
       // эффектов экранов, которые монтируются следом, — их чтения с проекцией уже увидят ворота.
@@ -377,16 +409,19 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   useClosingConfirmation();
 
   async function enqueue(type: string, payload: Record<string, unknown>): Promise<void> {
+    if (!owner.current.loaded()) {
+      return;  // ввод заблокирован, пока сохранённая очередь не прочитана
+    }
     const event = newEvent(type, payload, Date.now() + offset);
     const next = { ...queueRef.current, events: [...queueRef.current.events, event] };
     setQueue(next);
     setNow(Date.now());
-    await saveQueue(next);
+    await owner.current.save(next);
     void sync();
   }
 
   async function requestFinish(): Promise<void> {
-    if (state === null) {
+    if (state === null || !owner.current.loaded()) {
       return;
     }
     const review = { effort: reviewEffort, comment: reviewComment.trim() || null };
@@ -399,7 +434,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     const next = { ...queueRef.current, events, complete: review };
     setQueue(next);
     setReviewOpen(false);
-    await saveQueue(next);
+    await owner.current.save(next);
     void sync();
   }
 
@@ -411,6 +446,17 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     await enqueue("cancel", {});
   }
 
+  if (!ready && queueUnreadable) {
+    return (
+      <div className="error-banner" role="alert" data-testid="engine-queue-unreadable">
+        <p>Не удалось прочитать сохранённые данные тренировки. Пробуем снова. Не очищайте данные приложения.</p>
+        <p>Пока они не прочитаны, действия тренировки недоступны: новое действие могло бы затереть сохранённое.</p>
+        <button type="button" className="action-button" data-testid="engine-queue-retry" onClick={() => { loadRetry.cancel(); loadNow.current(); }}>
+          Повторить
+        </button>
+      </div>
+    );
+  }
   if (!ready || state === null || plan === null) {
     return <p className="screen-message">Загружаю тренировку…</p>;
   }

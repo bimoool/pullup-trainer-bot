@@ -59,14 +59,74 @@ const idbStore: QueueStore = {
   keys: async () => (await keys()).filter((key): key is string => typeof key === "string"),
 };
 
+/**
+ * Сохранённая очередь сессии. Сбой чтения (IndexedDB) БРОСАЕТ: «не прочитали» ≠ «пусто» — пустая очередь
+ * на месте непрочитанной означала бы, что следующая запись экрана затрёт недосланные события.
+ */
 export async function loadQueue(sessionId: number, store: QueueStore = idbStore): Promise<EngineQueue> {
-  try {
-    await migrateLegacyQueue(store);
-    const stored = await store.get(storeKey(sessionId));
-    return stored && stored.sessionId === sessionId ? stored : emptyQueue(sessionId);
-  } catch {
-    return emptyQueue(sessionId);
+  await migrateLegacyQueue(store);
+  const stored = await store.get(storeKey(sessionId));
+  return stored && stored.sessionId === sessionId ? stored : emptyQueue(sessionId);
+}
+
+/** Сохранённое + локальное (появившееся, пока сохранённое не было прочитано): сначала сохранённые события в
+ * их порядке, затем локальные, которых там нет (по client_event_id) — без потерь и дублей. */
+export function mergeQueues(stored: EngineQueue, local: EngineQueue): EngineQueue {
+  const known = new Set(stored.events.map((event) => event.client_event_id));
+  return {
+    sessionId: stored.sessionId,
+    events: [...stored.events, ...local.events.filter((event) => !known.has(event.client_event_id))],
+    complete: local.complete ?? stored.complete,
+  };
+}
+
+/**
+ * Очередь сессии во владении открытого экрана: писать (save/clear) можно только после того, как сохранённая
+ * очередь достоверно прочитана. До этого запись отклоняется — непрочитанные недосланные события не будут
+ * перезаписаны и не будут удалены.
+ */
+export interface QueueOwner {
+  loaded(): boolean;
+  /** Прочитать сохранённое и объединить с локальным (mergeQueues); null — прочитать не удалось. */
+  load(local: EngineQueue): Promise<EngineQueue | null>;
+  /** Записать очередь; до успешного load — ошибка (запись не выполняется). */
+  save(queue: EngineQueue): Promise<void>;
+  /** Удалить очередь; до успешного load — ничего не делает (недосланное подхватит сверка App). */
+  clear(): Promise<void>;
+}
+
+export class QueueNotLoadedError extends Error {
+  constructor(sessionId: number) {
+    super(`очередь сессии ${sessionId} ещё не прочитана — запись отклонена`);
   }
+}
+
+export function createQueueOwner(sessionId: number, store: QueueStore = idbStore): QueueOwner {
+  let loaded = false;
+  return {
+    loaded: () => loaded,
+    async load(local) {
+      let stored: EngineQueue;
+      try {
+        stored = await loadQueue(sessionId, store);
+      } catch {
+        return null;
+      }
+      loaded = true;
+      return mergeQueues(stored, local);
+    },
+    async save(queue) {
+      if (!loaded) {
+        throw new QueueNotLoadedError(sessionId);
+      }
+      await saveQueue(queue, store);
+    },
+    async clear() {
+      if (loaded) {
+        await clearQueue(sessionId, store);
+      }
+    },
+  };
 }
 
 export async function saveQueue(queue: EngineQueue, store: QueueStore = idbStore): Promise<void> {

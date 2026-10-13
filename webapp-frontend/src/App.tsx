@@ -38,7 +38,7 @@ function EngineStoreBanner() {
   }
   return (
     <div className="error-banner" role="alert" data-testid="engine-store-error">
-      <p>Не удалось прочитать сохранённые на устройстве данные тренировки. Результаты не потеряны — пробуем снова.</p>
+      <p>Не удалось прочитать сохранённые данные тренировки. Пробуем снова. Не очищайте данные приложения.</p>
       <button type="button" className="action-button" data-testid="engine-store-retry" onClick={() => wakeEngineReconciliation()}>
         Повторить
       </button>

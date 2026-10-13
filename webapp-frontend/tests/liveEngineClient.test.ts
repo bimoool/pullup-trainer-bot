@@ -8,7 +8,7 @@ import { fetchActiveLiveSession, fetchSessions } from "../src/apiV2.ts";
 import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
   claimQueue, clearQueue, createScreenLifecycle, createSyncRetry, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
-  getEngineReconcileStatus, releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, subscribeEngineReconcileStatus,
+  createQueueOwner, getEngineReconcileStatus, mergeQueues, QueueNotLoadedError, releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, subscribeEngineReconcileStatus,
   wakeEngineReconciliation, type DrainApi, type EngineQueue, type QueueStore,
 } from "../src/liveEngineClient.ts";
 
@@ -875,6 +875,97 @@ test("IDB: «перезагрузка» во время сбоя — очере�
   wakeEngineReconciliation();
   await Promise.all([firstRun, firstRead]);
   assert.deepEqual(order, [`events:${S}:ok`, "GET /active"]);
+  assert.equal(server.state(S).logs[0].value, 3);
+});
+
+// --- Экран: сбой чтения своей очереди после успешной сверки App ------------------------------------------
+
+test("loadQueue: сбой чтения бросает, а не отдаёт пустую очередь", async () => {
+  const base = memoryStore();
+  await saveQueue({ ...emptyQueue(1101), events: [stop("kept")] }, base);
+  const { store } = faultyStore(base, 1);
+  await assert.rejects(loadQueue(1101, store));
+  assert.deepEqual((await loadQueue(1101, store)).events.map((e) => e.client_event_id), ["kept"]);
+});
+
+test("mergeQueues: сначала сохранённые в их порядке, затем новые локальные; общий client_event_id — один раз", () => {
+  const stored = { ...emptyQueue(5), events: [stop("a", 1), stop("b", 2)], complete: null };
+  const local = { ...emptyQueue(5), events: [stop("b", 2), stop("c", 3)], complete: { effort: "3", comment: null } };
+  const merged = mergeQueues(stored, local);
+  assert.deepEqual(merged.events.map((e) => e.client_event_id), ["a", "b", "c"]);
+  assert.deepEqual(merged.complete, { effort: "3", comment: null });
+  assert.deepEqual(mergeQueues({ ...stored, complete: { effort: "1", comment: null } }, emptyQueue(5)).complete, { effort: "1", comment: null });
+});
+
+/**
+ * Сцена: «Стоп» на 3 с лежит в очереди устройства; сверка App завершилась успешно, но очередь оставила
+ * (иной 4xx — «не ждём»), ворота открыты, экран сессии открыт — и его чтение очереди упало.
+ */
+async function screenAfterSuccessfulReconcile(sessionId: number) {
+  const { server, base } = await stoppedOfflineAt3s(sessionId);
+  server.now = 6_000;  // экран открыт до дедлайна подхода (15 с)
+  const order: string[] = [];
+  const rejected = fakeApi({ events: () => httpError(422) });
+  await startEngineReconciliation("init", { store: base, api: rejected.api });
+  assert.equal(getEngineReconcileStatus().storeUnreadable, false);
+  assert.equal(base.data.size, 1);  // сверка успешна, очередь осталась
+  claimQueue(sessionId);  // экран открыт
+  return { server, base, order };
+}
+
+test("экран: чтение очереди упало после успешной сверки — запись нового действия отклонена, старый «Стоп» не затёрт", async () => {
+  const S = 1102;
+  const { server, base, order } = await screenAfterSuccessfulReconcile(S);
+  const before = JSON.stringify([...base.data.entries()]);
+  const { store, control } = faultyStore(base, 1);
+  const owner = createQueueOwner(S, store);
+  try {
+    assert.equal(await owner.load(emptyQueue(S)), null);  // не «пусто», а «не прочитано»
+    assert.equal(owner.loaded(), false);
+    // новое действие (Стоп ещё раз) — запись отклонена, удаление — тоже нет
+    const action = { ...emptyQueue(S), events: [stop("new-action", 7_000)] };
+    await assert.rejects(owner.save(action), QueueNotLoadedError);
+    await owner.clear();
+    assert.equal(JSON.stringify([...base.data.entries()]), before);
+    assert.equal(control.writesDuringFailure, 0);
+    // восстановление: сначала сохранённое, потом локальное (если появилось), по client_event_id
+    const merged = await owner.load(action);
+    assert.deepEqual(merged?.events.map((e) => e.client_event_id), [`stop-${S}`, "new-action"]);
+    await owner.save(merged!);
+    releaseQueue(S);
+    const { api, posted } = engineApi(server, order);
+    assert.deepEqual(await drainEngineQueues("init", base, api), { pending: false });
+    assert.deepEqual(await drainEngineQueues("init", base, api), { pending: false });  // второй проход — ничего
+    assert.deepEqual(posted, [`stop-${S}`, "new-action"]);  // каждый факт — ровно один раз
+    assert.equal(server.state(S).logs[0].value, 3);  // старый «Стоп» доставлен как измерен
+    assert.equal(base.data.size, 0);
+  } finally {
+    releaseQueue(S);
+  }
+});
+
+test("экран: ушли с экрана (и «перезагрузка») во время сбоя — очередь цела; сверка App держит ворота и досылает после восстановления", async () => {
+  const S = 1103;
+  const { server, base, order } = await screenAfterSuccessfulReconcile(S);
+  const { store, control } = faultyStore(base, Number.POSITIVE_INFINITY);
+  assert.equal(await createQueueOwner(S, store).load(emptyQueue(S)), null);
+  // уход: очистка экрана — releaseQueue + startEngineReconciliation; хранилище всё ещё не читается
+  releaseQueue(S);
+  const { api, posted } = engineApi(server, order);
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [5] });
+  const read = projectingRead(server, S, order);
+  // «перезагрузка»: новый экран (новый владелец) — тоже не прочитал, ничего не записал
+  assert.equal(await createQueueOwner(S, store).load(emptyQueue(S)), null);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(order, []);
+  assert.equal(getEngineReconcileStatus().storeUnreadable, true);
+  assert.equal(control.writesDuringFailure, 0);
+  assert.equal(base.data.size, 1);
+  control.readsFail = 0;
+  wakeEngineReconciliation();
+  await Promise.all([done, read]);
+  assert.deepEqual(order, [`events:${S}:ok`, "GET /active"]);
+  assert.deepEqual(posted, [`stop-${S}`]);
   assert.equal(server.state(S).logs[0].value, 3);
 });
 
