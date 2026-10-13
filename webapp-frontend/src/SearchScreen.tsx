@@ -121,11 +121,12 @@ export function SearchScreen({
             <button
               key={category}
               type="button"
+              data-category-key={category}
               className={category === state.category ? "search-chip search-chip-active" : "search-chip"}
               aria-pressed={category === state.category}
               onClick={() => onStateChange(toggleSearchFilter(state, { kind: "category", category }))}
             >
-              {category}
+              {categoryLabel(category)}
             </button>
           ))}
           {state.category !== null && (
@@ -141,7 +142,7 @@ export function SearchScreen({
 
       {results && (
         <>
-          {state.category !== null && <p className="section-title" data-testid="search-category-title">{state.category}</p>}
+          {state.category !== null && <p className="section-title" data-testid="search-category-title" data-category-key={state.category}>{categoryLabel(state.category)}</p>}
           <p className="hint" data-testid="search-count">Найдено: {results.total}</p>
           {results.total === 0 && <p className="screen-message" data-testid="search-empty">Ничего не найдено</p>}
 

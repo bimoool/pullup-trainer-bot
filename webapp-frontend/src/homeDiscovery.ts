@@ -5,11 +5,15 @@ import type {
 /** Название ряда для программ без категории. */
 export const OTHER_CATEGORY = "Другое";
 
-export type ProgramRow = { category: string; programs: ProgramResponseV2[] };
+/** Ключ категории без значения: у программы нет категории (ряд «Другое»). */
+export const OTHER_KEY = "";
 
-/** Подписи слагов категорий каталога (app/domain/exercise_identity.py::CATEGORY_SEEDS): у программ
- * `category` — слаг сида («pull_ups»), у упражнений — уже подпись («Подтягивания»). Показываем и
- * группируем по подписи, чтобы «pull_ups» и «Подтягивания» были одной категорией. */
+/** `category` — ВНУТРЕННИЙ ключ (группировка, фильтр поиска, действие «Все ›», цвет); `label` — подпись для
+ * показа. Ключ и подпись различаются сознательно: технический слаг не показываем, но и не склеиваем разные ключи. */
+export type ProgramRow = { category: string; label: string; programs: ProgramResponseV2[] };
+
+/** Подписи слагов СИДОВЫХ категорий каталога (app/domain/exercise_identity.py::CATEGORY_SEEDS): у программ
+ * `category` — слаг («pull_ups»), у упражнений — уже подпись («Подтягивания»). */
 const CATEGORY_LABELS: Record<string, string> = {
   pull_ups: "Подтягивания",
   grip: "Хват",
@@ -17,35 +21,48 @@ const CATEGORY_LABELS: Record<string, string> = {
   my_exercises: "Мои упражнения",
   uncategorized: "Без категории",
 };
+const LABEL_TO_KEY: Record<string, string> = Object.fromEntries(
+  Object.entries(CATEGORY_LABELS).map(([key, label]) => [label.toLowerCase(), key]),
+);
 
-/** Человеческая подпись категории: известный слаг — по справочнику, неизвестный технический слаг
- * (`snake_case`/`SCREAMING_CASE`) — слова через пробел с заглавной; обычный текст — как есть. */
-export function categoryLabel(category: string | null | undefined): string {
+/** Внутренний ключ категории. Только ИЗВЕСТНЫЕ сидовые слаг/подпись сводятся к одному ключу (это одна категория
+ * в двух представлениях: слаг программы и подпись упражнения); любые другие значения — как есть (по обрезанным
+ * пробелам, с учётом регистра): разные категории никогда не сливаются. Пусто — `OTHER_KEY`. */
+export function categoryKey(category: string | null | undefined): string {
   const value = (category ?? "").trim();
   if (value === "") {
+    return OTHER_KEY;
+  }
+  const lower = value.toLowerCase();
+  if (lower in CATEGORY_LABELS) {
+    return lower;
+  }
+  return LABEL_TO_KEY[lower] ?? value;
+}
+
+/** Подпись категории для показа (по ключу или сырому значению): сидовый слаг — по справочнику, прочий
+ * технический слаг (`snake_case`) — слова через пробел с заглавной (только показ, ключ не меняется). */
+export function categoryLabel(category: string | null | undefined): string {
+  const key = categoryKey(category);
+  if (key === OTHER_KEY) {
     return OTHER_CATEGORY;
   }
-  const known = CATEGORY_LABELS[value.toLowerCase()];
+  const known = CATEGORY_LABELS[key];
   if (known !== undefined) {
     return known;
   }
-  if (/^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/.test(value)) {
-    const words = value.toLowerCase().split("_").join(" ");
+  if (/^[A-Za-z0-9]+(_[A-Za-z0-9]+)+$/.test(key)) {
+    const words = key.toLowerCase().split("_").join(" ");
     return words.charAt(0).toUpperCase() + words.slice(1);
   }
-  return value;
+  return key;
 }
 
-function normalizedCategory(category: string | null | undefined): string {
-  return categoryLabel(category);
-}
-
-/** Программы по рядам-категориям: порядок рядов — по первому появлению,
- * «Другое» (без категории) всегда последним. */
+/** Программы по рядам-категориям (по КЛЮЧУ): порядок рядов — по первому появлению, «Другое» последним. */
 export function groupProgramsByCategory(programs: ProgramResponseV2[]): ProgramRow[] {
   const rows = new Map<string, ProgramResponseV2[]>();
   for (const program of programs) {
-    const key = normalizedCategory(program.category);
+    const key = categoryKey(program.category);
     const list = rows.get(key);
     if (list) {
       list.push(program);
@@ -53,17 +70,19 @@ export function groupProgramsByCategory(programs: ProgramResponseV2[]): ProgramR
       rows.set(key, [program]);
     }
   }
-  const result = [...rows.entries()].map(([category, list]) => ({ category, programs: list }));
+  const result = [...rows.entries()].map(([category, list]) => ({
+    category, label: categoryLabel(category), programs: list,
+  }));
   return [
-    ...result.filter((row) => row.category !== OTHER_CATEGORY),
-    ...result.filter((row) => row.category === OTHER_CATEGORY),
+    ...result.filter((row) => row.category !== OTHER_KEY),
+    ...result.filter((row) => row.category === OTHER_KEY),
   ];
 }
 
 /** Число цветов категориальной палитры `--vp-cat-0..5` (shell.css). */
 export const CATEGORY_PALETTE_SIZE = 6;
 
-/** Порядок категорий на Главной: ряды групп (`groupProgramsByCategory`), «Другое» последним. */
+/** Порядок категорий на Главной (КЛЮЧИ): ряды групп (`groupProgramsByCategory`), «Другое» последним. */
 export function homeCategoryOrder(programs: ProgramResponseV2[]): string[] {
   return groupProgramsByCategory(programs).map((row) => row.category);
 }
@@ -81,7 +100,7 @@ function hashIndex(name: string): number {
  * и в Аналитике, независимо от порядка сортировки. Категория из рядов Главной получает
  * `--vp-cat-{индекс ряда % 6}`; остальные — стабильный хеш имени. */
 export function categoryColorVar(name: string, homeOrder: string[]): string {
-  const key = normalizedCategory(name);
+  const key = categoryKey(name);
   const index = homeOrder.indexOf(key);
   return `var(--vp-cat-${index >= 0 ? index % CATEGORY_PALETTE_SIZE : hashIndex(key)})`;
 }
@@ -94,21 +113,21 @@ export function categoryInkVar(colorVar: string): string {
 /** Цвет программы = цвет её категории (см. `categoryColorVar`); null — программа не найдена. */
 export function programCategoryColorVar(programs: ProgramResponseV2[], programId: number): string | null {
   const program = programs.find((item) => item.id === programId);
-  return program === undefined ? null : categoryColorVar(normalizedCategory(program.category), homeCategoryOrder(programs));
+  return program === undefined ? null : categoryColorVar(categoryKey(program.category), homeCategoryOrder(programs));
 }
 
-/** Категории, реально присутствующие в загруженных программах и упражнениях. */
+/** КЛЮЧИ категорий, реально присутствующих в загруженных программах и упражнениях (по подписи, ru). */
 export function collectCategories(
   programs: ProgramResponseV2[], exercises: ExerciseResponseV2[],
 ): string[] {
   const seen = new Set<string>();
   for (const item of [...programs, ...exercises]) {
-    const label = normalizedCategory(item.category);
-    if (label !== OTHER_CATEGORY) {
-      seen.add(label);
+    const key = categoryKey(item.category);
+    if (key !== OTHER_KEY) {
+      seen.add(key);
     }
   }
-  return [...seen].sort((a, b) => a.localeCompare(b, "ru"));
+  return [...seen].sort((a, b) => categoryLabel(a).localeCompare(categoryLabel(b), "ru") || a.localeCompare(b));
 }
 
 function matches(text: string, query: string): boolean {
@@ -145,14 +164,14 @@ export function searchContent(
   const query = rawQuery.trim().toLocaleLowerCase("ru");
   const programs = testsOnly ? [] : data.programs.filter(
     (p) => inFavorites("program", p.id)
-      && (category === null || categoryLabel(p.category) === category)
+      && (category === null || categoryKey(p.category) === category)
       && (query === "" || matches(p.name, query) || matches(p.goal ?? "", query)),
   );
   const workouts = category !== null || testsOnly
     ? []
     : data.workouts.filter((w) => inFavorites("workout", w.id) && (query === "" || matches(w.title, query)));
   const exercises = testsOnly ? [] : data.exercises.filter(
-    (e) => favorites === null && (category === null || categoryLabel(e.category) === category)
+    (e) => favorites === null && (category === null || categoryKey(e.category) === category)
       && (query === "" || matches(e.name, query)),
   );
   const tests = category !== null || favorites !== null

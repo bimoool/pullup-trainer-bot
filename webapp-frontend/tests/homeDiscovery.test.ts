@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  categoryColorVar, categoryLabel, collectCategories, groupProgramsByCategory, homeCategoryOrder, programCategoryColorVar,
+  categoryColorVar, categoryKey, categoryLabel, collectCategories, groupProgramsByCategory, homeCategoryOrder, programCategoryColorVar,
   searchContent, toggleSearchFilter,
 } from "../src/homeDiscovery.ts";
 
@@ -20,7 +20,8 @@ const workouts = [workout(1, "Утренняя")];
 
 test("groupProgramsByCategory: ряды по категории, «Другое» последним", () => {
   const rows = groupProgramsByCategory(programs);
-  assert.deepEqual(rows.map((r) => r.category), ["strength", "mobility", "Другое"]);
+  assert.deepEqual(rows.map((r) => r.category), ["strength", "mobility", ""]); // внутренние ключи
+  assert.deepEqual(rows.map((r) => r.label), ["strength", "mobility", "Другое"]); // подписи для показа
   assert.deepEqual(rows[0].programs.map((p) => p.id), [1, 4]);
   assert.deepEqual(rows[2].programs.map((p) => p.id), [2]);
 });
@@ -93,11 +94,11 @@ test("toggleSearchFilter: «Тесты» взаимоисключающе с «�
 
 test("categoryColorVar: цвет — функция имени, Главная и Планы совпадают с порядком рядов", () => {
   const order = homeCategoryOrder(programs);
-  assert.deepEqual(order, ["strength", "mobility", "Другое"]);
+  assert.deepEqual(order, ["strength", "mobility", ""]);
   assert.equal(categoryColorVar("strength", order), "var(--vp-cat-0)");
   assert.equal(categoryColorVar("mobility", order), "var(--vp-cat-1)");
   assert.equal(programCategoryColorVar(programs, 3), categoryColorVar("mobility", order));
-  assert.equal(programCategoryColorVar(programs, 2), categoryColorVar("Другое", order));
+  assert.equal(programCategoryColorVar(programs, 2), categoryColorVar("", order));
   assert.equal(programCategoryColorVar(programs, 99), null);
   // не из рядов Главной: стабильный хеш, не зависит от порядка
   assert.equal(categoryColorVar("unknown", order), categoryColorVar("unknown", [...order].reverse().concat("x")));
@@ -117,11 +118,39 @@ test("categoryLabel: слаги каталога — человеческие п
 test("слаг программы и подпись упражнения — одна категория: ряд, чип, фильтр", () => {
   const slugPrograms = [program(1, "Подтягивания", "pull_ups")];
   const labelled = [exercise(1, "Подтягивания с резиной", "Подтягивания")];
-  assert.deepEqual(groupProgramsByCategory(slugPrograms).map((r) => r.category), ["Подтягивания"]);
-  assert.deepEqual(collectCategories(slugPrograms, labelled), ["Подтягивания"]);
-  const hit = searchContent({ programs: slugPrograms, workouts: [], exercises: labelled }, "", "Подтягивания");
+  assert.deepEqual(groupProgramsByCategory(slugPrograms).map((r) => [r.category, r.label]), [["pull_ups", "Подтягивания"]]);
+  assert.deepEqual(collectCategories(slugPrograms, labelled), ["pull_ups"]); // один ключ, один чип
+  const hit = searchContent({ programs: slugPrograms, workouts: [], exercises: labelled }, "", "pull_ups");
   assert.equal(hit.programs.length, 1);
   assert.equal(hit.exercises.length, 1);
   // цвет категории не зависит от того, слаг пришёл или подпись (Аналитика отдаёт слаг)
   assert.equal(categoryColorVar("pull_ups", homeCategoryOrder(slugPrograms)), categoryColorVar("Подтягивания", homeCategoryOrder(slugPrograms)));
+});
+
+test("ключ ≠ подпись: разные категории не сливаются, каждая со своим рядом, фильтром и ключом «Все ›»", () => {
+  const rows = [
+    program(1, "A", "e2e_sweep"), program(2, "B", "E2E_Sweep"), program(3, "C", "e2e_discovery_strength"),
+    program(4, "D", "e2e_discovery_mobility"), program(5, "E", "pull_ups"), program(6, "F", "Подтягивания"),
+  ];
+  const grouped = groupProgramsByCategory(rows);
+  // e2e_sweep и E2E_Sweep — разные ключи (даже при одинаковой человеческой подписи); pull_ups = Подтягивания (сид)
+  assert.deepEqual(grouped.map((r) => r.category), [
+    "e2e_sweep", "E2E_Sweep", "e2e_discovery_strength", "e2e_discovery_mobility", "pull_ups",
+  ]);
+  assert.deepEqual(grouped.find((r) => r.category === "pull_ups")?.programs.map((p) => p.id), [5, 6]);
+  assert.equal(grouped[0].label, "E2e sweep");
+  assert.equal(grouped[2].label, "E2e discovery strength");
+  // фильтр по ключу показывает только свою категорию
+  const only = searchContent({ programs: rows, workouts: [], exercises: [] }, "", "e2e_sweep");
+  assert.deepEqual(only.programs.map((p) => p.id), [1]);
+  const mobility = searchContent({ programs: rows, workouts: [], exercises: [] }, "", "e2e_discovery_mobility");
+  assert.deepEqual(mobility.programs.map((p) => p.id), [4]);
+  // чипы поиска — ключи, различимы даже при совпавшей подписи
+  assert.deepEqual(collectCategories(rows, []).sort(), ["E2E_Sweep", "e2e_discovery_mobility", "e2e_discovery_strength", "e2e_sweep", "pull_ups"].sort());
+  // в подписи технический слаг не виден
+  for (const row of grouped) {
+    assert.doesNotMatch(row.label, /_/);
+  }
+  assert.equal(categoryKey("  PULL_UPS "), "pull_ups");
+  assert.equal(categoryKey(null), "");
 });
