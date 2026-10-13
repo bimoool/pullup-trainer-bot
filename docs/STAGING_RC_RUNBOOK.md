@@ -2,14 +2,16 @@
 
 **Только подготовка. Ни одна команда этого документа не выполнялась на staging; деплой делает владелец.**
 
-> **Статус готовности: BLOCKER, деплой на staging не разрешён.**
-> 1. Ждём финалы двух исправлений: **(IDB)** ворота drain-before-projection при сбое чтения IndexedDB и **(legacy convergence)**
->    случай отредактированных/удалённых копий факультативов. В этом документе они **не** реализованы. Полный gate — после их объединения.
-> 2. CI E2E на кандидате красный (2 из 2), причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
-> 3. Деплой — только через **guarded staging entrypoint** (§3): точный SHA, проверенный backup, остановленные app/web, последовательная сборка,
+> **Статус готовности: НЕ готов к деплою; staging не трогали.** Кандидат включает оба принятых исправления: **#325** (IDB: `43b9248`) и
+> **#326** (сведение копий факультативов: `a35e1c7`, PASS с условиями — условия ниже). Что остаётся — в §9.
+> 1. Деплой — только через **guarded staging entrypoint** (§3): точный SHA, проверенный backup, остановленные app/web, последовательная сборка,
 >    миграция, проверки данных, запуск только после успеха. **Он не установлен на VPS** (команды владельцу — §3.2) и ни разу не запускался на реальном сервере.
+> 2. **Режимы различаются по тому, что они меняют (таблица §3.1a).** `preflight` — единственный режим «только чтение». `dry-run` **НЕ read-only**:
+>    останавливает app/web, делает backup, собирает образы и **выполняет миграцию БД**; только сведение не записывается.
+> 3. Сведение (`--apply`) **никогда не применяется ко всем пользователям**: только к `users.id`, подтверждённым владельцем по выводу dry-run (§6.2.1);
+>    неразрешённые случаи сохраняются и показываются с `user_id` и причиной.
 > 4. Версия Docker Compose CLI на VPS **неизвестна** (`2.40.3` в labels контейнеров — версия, создавшая контейнеры, а не доказательство текущей CLI).
-> 5. HOLD на `--apply` convergence — §6.2 (скрипт сам проверяет его в режиме `apply`).
+> 5. Старый «HOLD» (SQL pre-check «электив не старше плана») **снят**: с #326 такой случай не создаёт дубль, а попадает в «Не разрешено» (§6.2.1).
 
 ## 1. Что именно выкатывается
 
@@ -87,12 +89,12 @@ run --rm app alembic upgrade head; up -d; healthcheck :8002; /usr/local/bin/post
 | Файл (в ветке кандидата) | Роль |
 |---|---|
 | `deploy/deploy-staging-guarded-run.sh` | сам выкат (9 фаз ниже); ставится на VPS вручную как `/home/deploy/deploy-staging-guarded-run.sh` |
-| `deploy/deploy-staging-guarded-dispatch.sh` | forced command **отдельного** SSH-ключа; принимает ровно `./deploy-staging-guarded.sh <40-hex-sha> <dry-run\|apply> <yes\|no>` и блокировку `flock` |
-| `.github/workflows/deploy-staging-guarded.yml` | `workflow_dispatch`: вход `sha` (точный, не ветка), `converge` (`dry-run`\|`apply`), `start` (`no`\|`yes`); валидирует вход, проверяет, что SHA есть в репозитории и несёт нужные файлы |
+| `deploy/deploy-staging-guarded-dispatch.sh` | forced command **отдельного** SSH-ключа; принимает ровно `./deploy-staging-guarded.sh <40-hex-sha> <preflight\|dry-run\|apply> <yes\|no> [<users.id,…>\|-]` и блокировку `flock` |
+| `.github/workflows/deploy-staging-guarded.yml` | `workflow_dispatch`: вход `sha` (точный, не ветка), `converge` (`preflight`\|`dry-run`\|`apply`), `start` (`no`\|`yes`), `users` (`-` или список `users.id`); `apply` без списка и `preflight`+`start=yes` отклоняются; валидирует вход, проверяет, что SHA есть в репозитории и несёт нужные файлы |
 | `deploy/staging_data_check.sh`, `deploy/staging-allowed-diff.txt`, `docs/rehearsal/sql/gen_hash_queries.sql` | проверки данных (§6); скрипт читает их через `git show <SHA>:…` — из выкатываемого коммита |
 
-Переиспользовано без изменений: `docker compose -p pullup-staging …` (проект, порт 8002, healthcheck URL — как в `deploy-staging-run.sh`), `scripts/repair_plan_convergence.py --all`,
-`scripts/backfill_multi_program.py --converge-history`, `/usr/local/bin/post-deploy-cleanup.sh` (после полного успеха, как в `deploy/deploy-run.sh`). Новых фреймворков нет: один shell-скрипт, один dispatcher, один workflow.
+Переиспользовано без изменений: `docker compose -p pullup-staging …` (проект, порт 8002, healthcheck URL — как в `deploy-staging-run.sh`), `scripts/repair_plan_convergence.py` (`--all` — только dry-run, `--user-ids` — apply),
+`scripts/backfill_multi_program.py --converge-history [--user-ids …]`, `/usr/local/bin/post-deploy-cleanup.sh` (после полного успеха, как в `deploy/deploy-run.sh`). Новых фреймворков нет: один shell-скрипт, один dispatcher, один workflow.
 
 **Фазы** (любая ошибка ⇒ `app`/`web` остаются **остановленными**, сохранённые образы и backup на месте, авто-отката нет):
 
@@ -106,8 +108,25 @@ run --rm app alembic upgrade head; up -d; healthcheck :8002; /usr/local/bin/post
 | 5 | сборка | `COMPOSE_PARALLEL_LIMIT=1`: `build app`, затем `build web` (последовательно, лог памяти); запоминаются ID собранных образов |
 | 6 | миграция | один Alembic head; `alembic_version` должна быть `c3f7a9e2d5b1` (или уже head — тогда предупреждение), иначе стоп; `upgrade head` (одна транзакция); версия = head |
 | 7 | проверки данных | `staging_data_check.sh after-migration`: число строк ДО-таблиц не изменилось, изменённые таблицы ⊆ `staging-allowed-diff.txt`, предикат `work_sets`, `origin` ∈ допустимых |
-| 8 | convergence | dry-run обоих скриптов (`guard_violations` = 0, БД не изменилась). `apply`: `hold-check` (риск дублей факультативов) = 0 → `--apply` → повторный `--apply` без изменений → `after-convergence` (меняться могли только 6 таблиц; ранее существовавшие строки `training_sessions`/`session_blocks`/`set_logs` не изменены; дублей `(origin, legacy_id)` нет) |
+| 8 | convergence | dry-run обоих скриптов в заданной области (`users=-` ⇒ все, только чтение; список ⇒ только они): `guard_violations` = 0, БД не изменилась; **неразрешённые факультативы (`user_id`, `elective_id`, причина, кандидаты) печатаются и сохраняются** в `/home/deploy/backups/convergence-<sha7>-<UTC>/`. `apply` (только со списком): `--apply` обоих скриптов для этих `users.id` → повторный `--apply` без изменений и с тем же списком неразрешённых → `after-convergence` (меняться могли только 6 таблиц; ранее существовавшие строки `training_sessions`/`session_blocks`/`set_logs` не изменены; дублей `(origin, legacy_id)` нет) |
 | 9 | старт | `start=yes`: `up -d --no-build app web`; healthcheck `http://127.0.0.1:8002/health` ≤ 240 с; контейнеры запущены, не перезапускаются, **образ запущенного контейнера = образу, собранному в фазе 5**; health `app`/`web` не `unhealthy`; `HEAD == SHA`; `alembic_version = head`; затем `post-deploy-cleanup.sh`. `start=no`: проверки пройдены, сервисы **остаются остановленными** (код 0, сообщение «NOT started») |
+
+#### 3.1a Что изменяется в каждом режиме и на каждой фазе
+
+| Фаза | `preflight` | `dry-run` (+`start=no`) | `apply` (+`start=no/yes`) |
+|---|---|---|---|
+| 0 preflight | **только чтение**: `git fetch` (меняет только `.git` staging-репозитория), временный каталог `/tmp/guarded-deploy.*`; **выход здесь** | то же | то же |
+| 1 образы | — | `docker tag` (новые теги `local/staging-*:pre-…`; контейнеры не затронуты) | то же |
+| 2 остановка | — | **`stop app web`** (staging недоступен) | то же |
+| 3 backup | — | дамп в `/home/deploy/backups/` + временная БД `restore_check` (удаляется) | то же |
+| 4 checkout | — | **рабочее дерево staging → `<SHA>` (detached)** | то же |
+| 5 сборка | — | **новые образы** `app`/`web` (теги compose `pullup-staging-*` перепривязаны) | то же |
+| 6 миграция | — | **БД → `b5d8e1f3a6c9`, 7 миграций, `UPDATE block_b.work_sets`** (необратимо без `pg_restore`) | то же |
+| 7 проверки | — | чтение | чтение |
+| 8 convergence | — | только чтение (транзакции откатываются); отчёты — в `backups/convergence-*` | **запись для `users` из списка**: план, копии истории; остальные пользователи не меняются скриптами |
+| 9 старт | — | `start=no`: не выполняется | `start=yes`: **`up -d`**, затем cleanup |
+
+Из таблицы: `dry-run` необратимо меняет БД и код на сервере. После него «чистый» откат — только §8.2 (образы, пока сведение не применялось) или §8.3 (`pg_restore`).
 
 Итог «success» (код 0 и строка `GUARDED DEPLOY OK`) — **только** при полном успехе всех фаз при `start=yes`. `start=no` печатает `VERIFIED (services NOT started)`.
 
@@ -136,9 +155,14 @@ forced command, принимающий один литеральный патт�
 
 ### 3.3 Порядок запусков
 
-1. **Предпроверка:** Actions → *Deploy Staging (guarded)* → `sha` = окончательный candidate SHA, `converge` = `dry-run`, `start` = `no`. Результат: backup, миграция, проверки данных, dry-run convergence; `app`/`web` остановлены. Миграция при этом **применяется** (состояние БД = `b5d8e1f3a6c9`); последующий запуск пропустит `upgrade` с предупреждением, а pre-migration backup — файл предыдущего запуска (его не удалять). Если предпроверка не нужна — сразу п. 2.
-2. **Выкат:** тот же SHA, `converge` = `apply` (только после принятого фикса legacy convergence), `start` = `yes`.
-3. После `GUARDED DEPLOY OK`: §3.4 и §7. Ошибка — §3.5 и §8; **сервисы сами не запускаются**.
+1. **Только чтение:** *Deploy Staging (guarded)* → `sha` = окончательный candidate SHA, `converge` = `preflight`, `start` = `no`. Меняется только `.git` (fetch). Проверяет SHA, файлы, контейнеры, диск, ревизию.
+2. **Миграция + разведка (НЕ read-only):** тот же SHA, `converge` = `dry-run`, `start` = `no`, `users` = `-`. Результат: backup, миграция, проверки данных, dry-run сведения **по всем пользователям** (только чтение);
+   `app`/`web` остановлены; в выводе и в `/home/deploy/backups/convergence-<sha7>-<UTC>/unresolved-dry-run.txt` — неразрешённые факультативы с `user_id` и причиной. Последующий запуск пропустит `upgrade`
+   с предупреждением; pre-migration backup — файл этого запуска (не удалять).
+3. **Решение владельца:** по выводу п. 2 владелец перечисляет `users.id`, для которых сведение подтверждено (неразрешённые остаются как есть; разбор — §6.2.1).
+4. **Проверка области (миграция уже применена):** `converge` = `dry-run`, `users` = `<подтверждённый список>`.
+5. **Выкат:** `converge` = `apply`, `users` = тот же список, `start` = `yes` (или сначала `start` = `no`).
+6. После `GUARDED DEPLOY OK`: §3.4 и §7. Ошибка — §3.5 и §8; **сервисы сами не запускаются**.
 
 Деплой-ветка больше не нужна: workflow принимает точный SHA, достаточно, чтобы коммит был на `origin` (`git fetch origin` на сервере). «Заморозка» — это сам SHA; перед запуском сверить, что
 SHA = записанному при принятии gate (`git ls-remote origin <ветка кандидата>` и `git diff --stat <GATE_CODE_SHA> <SHA> -- . ':!docs'` — только принятые фиксы).
@@ -338,39 +362,46 @@ select count(*) from program_inclusions where jsonb_typeof(progression_state->'b
 Дополнительно: `alembic_version = b5d8e1f3a6c9`; `origin` у `training_sessions`: `select origin, count(*) from training_sessions group by 1` — только
 `native`, `legacy_backfill`, `legacy_elective`. Любое иное расхождение — стоп, §8.
 
-**6.2.1 Convergence — только после принятого фикса legacy convergence** (HOLD ниже) и только после dry-run'ов обоих скриптов с
-разбором вывода. Допустимый итоговый diff — §6.3.
+**6.2.1 Convergence — только для подтверждённых владельцем `users.id`**, после dry-run'ов обоих скриптов с разбором вывода. Допустимый итоговый diff — §6.3.
 
-> **HOLD: `--apply` обоих скриптов на staging не выполнять**, пока владелец не решит случай отредактированных копий
-> факультативов (`docs/STAGING_RC_REHEARSAL.md` §8). Разрешены только dry-run'ы и pre-check ниже. Для факультативов, записанных
-> до плана (хронология прода), в репетиции дубль не возникает; граничный случай (электив не старше плана при неключевой копии)
-> создаёт дубль/воскрешает удалённое.
->
-> Pre-check (read-only; после миграции `f4c1a7e9b3d2`, колонка `origin` есть; до неё заменить условие на `ts.source = 'elective'`).
-> Ожидается `0`; `> 0` — HOLD остаётся, нужен фикс или ручное решение по этим пользователям:
-> ```sql
-> select count(*) from elective_workouts e join training_plans tp on tp.user_id = e.user_id
-> where e.created_at >= tp.created_at
->   and exists (select 1 from training_sessions ts where ts.user_id = e.user_id and ts.origin = 'legacy_elective' and ts.legacy_id is null);
-> ```
-> Второй индикатор — dry-run `--converge-history`: «копий факультативов создано: N» при ненулевом «копий факультативов без пары
-> оставлено как есть» — разобрать до `--apply`.
+**Принятое поведение #326 (`docs/STAGING_RC_REHEARSAL.md` §8 «Фикс»)** — оно заменило старый HOLD (SQL pre-check «электив не старше плана» больше не нужен и не выполняется:
+этот случай не создаёт дубль и не воскрешает удалённое):
+* факультатив без копии с ключом, записанный не позже плана пользователя, **копия не создаётся и ничего не привязывается** — строка в блоке «Не разрешено (копия НЕ создана, ничего не привязано): N»
+  с `user_id`, `elective_id`, причиной (`backfilled_copy_edited_or_deleted`, `pre_migration_without_copy`, `exact_copy_predates_elective`, `nonstandard_copy_history` + `evidence`) и кандидатами (копии без ключа того же формата — только для ручной проверки);
+* пользователь с историей, не объяснимой штатными писателями, целиком под guard'ом: ни привязок, ни новых копий факультативов; повторный прогон видит те же следы (стабилен);
+* **неразрешённые не исчезают после `apply`**: они остаются в БД как есть, скрипт сохраняет их список (`unresolved-dry-run.txt`, `unresolved-apply.txt`) и сверяет, что после первого и второго `--apply` список одинаков.
+  Владелец решает по каждой строке отдельно (оставить, ручная правка вне этого выката); автоматического разрешения нет.
+* Условия приёмки #326 (PASS с условиями), не закрытые кодом: (1) область — только подтверждённые пользователи (ниже); (2) **известный пробел**: нештатная история без единого следа (удалены все копии И план) неотличима от
+  «backfill не импортировал»; такому пользователю копии создаются (§8 «Пробел, который без маркера не закрыть») — закрывается только данными владельца (моменты запуска старого backfill на staging, список затронутых ручным SQL/сидами);
+  (3) цена guard'а — ложная блокировка после `alembic downgrade a7e2c5b9d1f4`, не дубль.
+
+**Область (scope).** `--all` — только dry-run (чтение всех, для разведки): `repair_plan_convergence.py --all --apply` CLI отклоняет (код 2), `backfill_multi_program.py --converge-history --apply` без `--user-ids` отклоняется,
+а `converge_history_all(apply=True)` без явного списка бросает `ValueError` — это защита и на уровне функции, не только argparse. `--user-ids` с id без пользователя/плана: `repair_plan_convergence.py` — код 3 и **ничего не пишет**;
+`backfill_multi_program.py` — отказ до записи. Guarded-скрипт не принимает `apply` без списка (код 2 до любых действий).
+**Других путей «раньше CLI» нет** (проверено тестами `tests/test_web/test_convergence_scope.py`): сведение истории (`LegacyHistoryConvergenceService`, `converge_history_all`) не импортируется ни кодом приложения, ни миграциями;
+миграции не вставляют строки в `training_sessions` (меняют `origin`, `kind`, `source_v2`, … существующих строк и `block_b.work_sets`); рантайм пишет копии только для **новых** факультативов/тренировок (dual-write с ключом).
+**Остаётся рантайм-сведение плана:** `GET /plan` нового билда сводит план открывшего приложение пользователя (`converge_user_plan` — тот же код, что в `repair_plan_convergence.py`, существующее поведение), поэтому у **неподтверждённых** пользователей
+план сведётся лениво при первом открытии; область `--user-ids` ограничивает только то, что делает скрипт до старта, а не это. На историю (копии) это не влияет.
+Не запускать `backfill_multi_program.py` без `--converge-history` (полный backfill плана, mutating по всем пользователям) — guarded-скрипт его не вызывает.
 
 Запускать на сервисе `app` (в `web` нет `scripts/`). Для каждого скрипта — dry-run → apply → повторный apply.
 
 ```bash
 C='docker compose -p pullup-staging run --rm app'
-$C python scripts/repair_plan_convergence.py --all                > conv_dry.json   # dry-run; ничего не пишет
-$C python scripts/repair_plan_convergence.py --all --apply        > conv_apply1.json
-$C python scripts/repair_plan_convergence.py --all --apply        > conv_apply2.json   # total_mutations == 0
-$C python scripts/backfill_multi_program.py --converge-history                > hist_dry.txt     # dry-run
-$C python scripts/backfill_multi_program.py --converge-history --apply        > hist_apply1.txt
-$C python scripts/backfill_multi_program.py --converge-history --apply        > hist_apply2.txt  # только «без изменений»
+U=12,57                                                                               # внутренние users.id, подтверждённые владельцем
+$C python scripts/repair_plan_convergence.py --all                > conv_dry_all.json  # разведка по всем: только чтение
+$C python scripts/backfill_multi_program.py --converge-history    > hist_dry_all.txt   # разведка: блок «Не разрешено» с user_id
+$C python scripts/repair_plan_convergence.py --user-ids $U        > conv_dry.json      # dry-run области
+$C python scripts/repair_plan_convergence.py --user-ids $U --apply > conv_apply1.json
+$C python scripts/repair_plan_convergence.py --user-ids $U --apply > conv_apply2.json  # total_mutations == 0
+$C python scripts/backfill_multi_program.py --converge-history --user-ids $U          > hist_dry.txt
+$C python scripts/backfill_multi_program.py --converge-history --user-ids $U --apply  > hist_apply1.txt
+$C python scripts/backfill_multi_program.py --converge-history --user-ids $U --apply  > hist_apply2.txt  # только «без изменений»; блок «Не разрешено» тот же, что в apply1
 ```
 
 Не запускать `backfill_multi_program.py` без `--converge-history` (это полный backfill плана, не сведение истории).
 Критерии остановки: ненулевой `guard_violations` или код выхода 4 у `repair_plan_convergence.py`; `total_mutations != 0`
-в `conv_apply2`; в `hist_apply2` есть «создано»/«привязано».
+в `conv_apply2`; в `hist_apply2` строки счётчиков (до блока «Не разрешено») содержат ненулевые «создано»/«привязано»/«обновлено»/«замещено»; блок «Не разрешено» после apply1 и apply2 различается.
 Счётчики `dry-run` совпадают со счётчиками первого `apply` (числа на реальных данных будут другими). Заметки владельца по одному аккаунту:
 `--telegram-id <ID>` вместо `--all`; BEFORE/AFTER снимок — `scripts/qa_state_snapshot.py --telegram-id <ID>`
 (read-only), порядок и ожидания — `docs/STAGING_CONVERGENCE_RUNBOOK.md`.
@@ -387,7 +418,7 @@ $C python scripts/backfill_multi_program.py --converge-history --apply        > 
 | Новые колонки и таблицы | перечень §6.2.0 | — |
 | `plan_items` | + строки-occurrences; легаси-агрегат **текущей/будущей** недели получает `plan_week_id`, `status='removed'` (не удаляется), у развёрнутого агрегата `count_per_week` уменьшается | изменение или удаление строк **прошлых** недель; уменьшение числа строк |
 | `plan_weeks` | + недели (`past_gap_empty` и т.п.) | удаление |
-| `training_sessions` | + нативные копии legacy-тренировок/факультативов (`origin = legacy_*`, `legacy_id`); у существующих копий `legacy_id` NULL → значение при точном совпадении | изменение ДО-колонок существующих сессий; `superseded_at` у существующих; дубли `(origin, legacy_id)`; новые копии факультативов для электива, у которого уже есть неключевая копия (HOLD §6.2) |
+| `training_sessions` | + нативные копии legacy-тренировок/факультативов (`origin = legacy_*`, `legacy_id`); у существующих копий `legacy_id` NULL → значение при точном совпадении | изменение ДО-колонок существующих сессий; `superseded_at` у существующих; дубли `(origin, legacy_id)`; новые копии факультативов для электива, у которого уже есть неключевая копия (§6.2.1: такие факультативы теперь в «Не разрешено») |
 | `session_blocks`, `set_logs` | + строки копий | изменение ДО-колонок существующих |
 | Таблицы, которые ни одна миграция не меняет (`users`, `subscriptions`, `pending_payments`, `workouts`, `blocks`, `workout_sets`, `baselines`, `elective_workouts`, `*_archive_*`, `achievements`, `coins`, `user_body_metrics`, …) | ДО-хэши и счётчики равны | любое изменение |
 
