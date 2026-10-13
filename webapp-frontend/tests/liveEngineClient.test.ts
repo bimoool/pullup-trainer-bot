@@ -8,8 +8,8 @@ import { fetchActiveLiveSession, fetchSessions } from "../src/apiV2.ts";
 import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
   claimQueue, clearQueue, createScreenLifecycle, createSyncRetry, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
-  releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, wakeEngineReconciliation, type DrainApi,
-  type EngineQueue, type QueueStore,
+  getEngineReconcileStatus, releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, subscribeEngineReconcileStatus,
+  wakeEngineReconciliation, type DrainApi, type EngineQueue, type QueueStore,
 } from "../src/liveEngineClient.ts";
 
 const PLAN: EnginePlan = {
@@ -206,7 +206,7 @@ test("404/409 (сессии нет / не движок v2) — досылать 
   assert.equal(store.data.size, 0);
 });
 
-test("drain никогда не бросает: сбой IndexedDB не ломает запуск приложения", async () => {
+test("drain никогда не бросает: сбой IndexedDB не ломает запуск приложения (но и не открывает ворота)", async () => {
   const broken: QueueStore = {
     get: async () => { throw new Error("IDB closed"); },
     set: async () => { throw new Error("IDB closed"); },
@@ -214,7 +214,8 @@ test("drain никогда не бросает: сбой IndexedDB не лома
     keys: async () => { throw new Error("IDB closed"); },
   };
   const { api, calls } = fakeApi();
-  assert.deepEqual(await drainEngineQueues("init", broken, api), { pending: false });
+  // сбой ЧТЕНИЯ — не «очередей нет»: pending (ворота держатся), а не { pending: false }
+  assert.deepEqual(await drainEngineQueues("init", broken, api), { pending: true, storeUnreadable: true });
   assert.deepEqual(calls, []);
   const store = memoryStore();
   await saveQueue({ ...emptyQueue(71), events: [stop("d1")] }, store);
@@ -678,6 +679,203 @@ test("N1: запрос в окне выхода сверки не теряетс
     assert.ok(sentBeforeRead, `смещение ${offset}: ${JSON.stringify(order)}`);
   }
   assert.deepEqual(lostAt, []);
+});
+
+// --- Сбой чтения IndexedDB при сверке: не «очередей нет» -------------------------------------------------
+
+/**
+ * Хранилище с управляемым сбоем чтения: пока `readsFail > 0`, каждое чтение (keys/get) бросает, как
+ * IndexedDB при «backing store»/UnknownError; запись/удаление во время сбоя фиксируются (их быть не должно).
+ */
+function faultyStore(base: QueueStore & { data: Map<string, EngineQueue> }, readsFail: number) {
+  const control = { readsFail, failedReads: 0, reads: 0, writesDuringFailure: 0 };
+  const failing = () => control.readsFail > 0;
+  const read = <T>(op: () => Promise<T>) => async () => {
+    control.reads += 1;
+    if (failing()) {
+      control.readsFail -= 1;
+      control.failedReads += 1;
+      throw new DOMException("Internal error opening backing store for indexedDB.open.", "UnknownError");
+    }
+    return op();
+  };
+  const store: QueueStore = {
+    keys: () => read(() => base.keys())(),
+    get: (key) => read(() => base.get(key))(),
+    set: async (key, value) => {
+      control.writesDuringFailure += failing() ? 1 : 0;
+      return base.set(key, value);
+    },
+    del: async (key) => {
+      control.writesDuringFailure += failing() ? 1 : 0;
+      return base.del(key);
+    },
+  };
+  return { store, control };
+}
+
+/** Сервер на настоящем движке + API досылки поверх него, с журналом запросов. */
+function engineApi(server: ReturnType<typeof engineServer>, order: string[], failPosts = 0) {
+  let failures = failPosts;
+  const posted: string[] = [];
+  const api: DrainApi = {
+    postEvents: (async (_init: string, id: number, events: Parameters<typeof server.post>[1]) => {
+      posted.push(...events.map((event) => event.client_event_id));
+      const response = server.post(id, events);  // сервер применил…
+      if (failures > 0) {
+        failures -= 1;
+        order.push(`events:${id}:lost`);
+        throw new TypeError("Failed to fetch");  // …а ответ потерян
+      }
+      order.push(`events:${id}:ok`);
+      return response;
+    }) as unknown as DrainApi["postEvents"],
+    complete: (async () => ({ status: "completed" })) as unknown as DrainApi["complete"],
+  };
+  return { api, posted };
+}
+
+/** «Стоп» подхода на время на 3 с из 15 — лежит только в очереди устройства; приложение открыто через 100 с. */
+async function stoppedOfflineAt3s(sessionId: number) {
+  const server = engineServer({ [sessionId]: { plan: TIMED_15, startAt: 0 } });
+  server.now = 100_000;
+  const base = memoryStore();
+  await saveQueue({ ...emptyQueue(sessionId), events: [{
+    client_event_id: `stop-${sessionId}`, type: "stop", payload: { phase_seq: server.state(sessionId).phase_seq }, client_at_ms: 3_000,
+  }] }, base);
+  return { server, base };
+}
+
+/** Чтение с проекцией (GET /active) за воротами: сервер проецирует дедлайн. */
+async function projectingRead(server: ReturnType<typeof engineServer>, sessionId: number, order: string[]) {
+  await awaitEngineReconciliation();
+  order.push("GET /active");
+  server.projectingRead(sessionId);
+}
+
+test("IDB: чтение очередей упало — проекции нет, пока чтение не удалось; затем досылка, затем проекция; записано 3, не 15", async () => {
+  const S = 1001;
+  const { server, base } = await stoppedOfflineAt3s(S);
+  const snapshot = JSON.stringify([...base.data.entries()]);
+  const { store, control } = faultyStore(base, 2);
+  const order: string[] = [];
+  const { api } = engineApi(server, order);
+  const statuses: boolean[] = [];
+  const unsubscribe = subscribeEngineReconcileStatus((status) => statuses.push(status.storeUnreadable));
+  try {
+    const done = startEngineReconciliation("init", { store, api, delaysMs: [20, 20] });
+    const read = projectingRead(server, S, order);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // первая попытка упала: ворота держатся, очередь не тронута, ошибка видна UI
+    assert.deepEqual(order, []);
+    assert.equal(control.failedReads, 1);
+    assert.equal(getEngineReconcileStatus().storeUnreadable, true);
+    assert.equal(JSON.stringify([...base.data.entries()]), snapshot);
+    await Promise.all([done, read]);
+    assert.equal(control.failedReads, 2);
+    assert.equal(control.writesDuringFailure, 0);  // ни удаления, ни перезаписи очереди во время сбоя
+    assert.deepEqual(order, [`events:${S}:ok`, "GET /active"]);
+    assert.equal(server.state(S).logs[0].value, 3);  // измеренное, а не цель 15
+    assert.equal(base.data.size, 0);  // снята только после подтверждения сервером
+    assert.deepEqual(statuses, [true, false]);  // ошибка показана и снята после восстановления
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("IDB: откат (сбой чтения = «очередей нет») воспроизводит дефект — проекция записала бы цель 15", async () => {
+  // Та же сцена, но решение старого кода: при сбое чтения ворота открываются без досылки.
+  const S = 1002;
+  const { server, base } = await stoppedOfflineAt3s(S);
+  const { store } = faultyStore(base, 1);
+  const order: string[] = [];
+  const result = await drainEngineQueues("init", store, engineApi(server, order).api);
+  const oldBehaviourOpensGate = !result.pending;
+  if (oldBehaviourOpensGate) {
+    server.projectingRead(S);
+  }
+  assert.equal(result.pending, true, "сбой чтения IndexedDB трактуется как «досылать нечего»");
+  assert.equal(server.state(S).logs.length, 0);  // дедлайн не спроецирован
+  assert.equal(base.data.size, 1);
+});
+
+test("IDB: повторные сбои — паузы ограничены, без busy-loop; «Повторить» (wake) читает сейчас; один цикл на приложение", async () => {
+  const S = 1003;
+  const { server, base } = await stoppedOfflineAt3s(S);
+  const { store, control } = faultyStore(base, Number.POSITIVE_INFINITY);
+  const order: string[] = [];
+  const { api, posted } = engineApi(server, order);
+  const done = startEngineReconciliation("init", { store, api, delaysMs: [60_000] });
+  const read = projectingRead(server, S, order);
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(control.failedReads, 1);  // ждёт паузу, не крутится
+  for (let i = 0; i < 5; i += 1) {
+    assert.equal(startEngineReconciliation("init", { store, api }), done);  // online/закрытие экрана — тот же цикл
+  }
+  // пачка стартов будит паузу один раз: один повтор сейчас (не пять); сбой не прошёл — снова пауза, ворота держатся
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(control.failedReads, 2);
+  assert.deepEqual(order, []);
+  assert.equal(getEngineReconcileStatus().storeUnreadable, true);
+  control.readsFail = 0;  // хранилище снова читается
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(control.failedReads, 2);  // повтор сам — только по паузе (60 с), без опроса
+  assert.deepEqual(order, []);
+  wakeEngineReconciliation();  // «Повторить» в баннере
+  await Promise.all([done, read]);
+  assert.deepEqual(order, [`events:${S}:ok`, "GET /active"]);
+  assert.deepEqual(posted, [`stop-${S}`]);  // одна отправка, без дублей
+  assert.equal(server.state(S).logs[0].value, 3);
+  assert.equal(getEngineReconcileStatus().storeUnreadable, false);
+});
+
+test("IDB: ответ на досылку потерян, затем чтение упало — повтор шлёт тот же client_event_id (duplicate), «Стоп» записан один раз", async () => {
+  const S = 1004;
+  const { server, base } = await stoppedOfflineAt3s(S);
+  const { store, control } = faultyStore(base, 0);
+  const order: string[] = [];
+  const { api, posted } = engineApi(server, order, 1);
+  const statuses: boolean[] = [];
+  const unsubscribe = subscribeEngineReconcileStatus((status) => statuses.push(status.storeUnreadable));
+  try {
+    const done = startEngineReconciliation("init", { store, api, delaysMs: [10, 10, 10] });
+    await new Promise((resolve) => setTimeout(resolve, 3));
+    control.readsFail = 2;  // следующие два чтения (повторы) падают
+    const read = projectingRead(server, S, order);
+    await Promise.all([done, read]);
+    assert.equal(control.failedReads, 2);
+    assert.deepEqual(posted, [`stop-${S}`, `stop-${S}`]);
+    assert.deepEqual(order, [`events:${S}:lost`, `events:${S}:ok`, "GET /active"]);
+    assert.equal(server.state(S).logs.length, 1);
+    assert.equal(server.state(S).logs[0].value, 3);
+    assert.equal(base.data.size, 0);
+    assert.deepEqual(statuses, [true, false]);
+  } finally {
+    unsubscribe();
+  }
+});
+
+test("IDB: «перезагрузка» во время сбоя — очередь в хранилище цела, следующий запуск досылает её до проекции", async () => {
+  const S = 1005;
+  const { server, base } = await stoppedOfflineAt3s(S);
+  const order: string[] = [];
+  // Первая «жизнь» страницы: хранилище не читается ни разу, пока она жива.
+  const first = faultyStore(base, Number.POSITIVE_INFINITY);
+  const firstRun = startEngineReconciliation("init", { store: first.store, api: engineApi(server, order).api, delaysMs: [5] });
+  const firstRead = projectingRead(server, S, order);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.ok(first.control.failedReads >= 2);
+  assert.deepEqual(order, []);  // ни досылки, ни проекции
+  assert.equal(server.state(S).logs.length, 0);
+  assert.equal(base.data.size, 1);
+  assert.equal(first.control.writesDuringFailure, 0);
+  // «Перезагрузка»: хранилище снова читается (новое соединение IndexedDB). Модуль в тесте общий, поэтому
+  // первая жизнь завершается тем же путём — восстановлением; важно, что до него ничего не ушло и не стёрлось.
+  first.control.readsFail = 0;
+  wakeEngineReconciliation();
+  await Promise.all([firstRun, firstRead]);
+  assert.deepEqual(order, [`events:${S}:ok`, "GET /active"]);
+  assert.equal(server.state(S).logs[0].value, 3);
 });
 
 // --- Открытый экран: повтор досылки после временного сбоя при браузере «онлайн» ----------------------------

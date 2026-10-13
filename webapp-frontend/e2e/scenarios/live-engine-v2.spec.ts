@@ -175,7 +175,9 @@ test("6. Интервал на том же движке: пауза/переза
 /** #306 B1: сохранённые очереди движка v2 в IndexedDB (idb-keyval: keyval-store/keyval), по сессиям. */
 async function storedEngineQueues(page: Page): Promise<number> {
   return page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const open = indexedDB.open("keyval-store");
+    // при инъекции сбоя IndexedDB (failIndexedDbReads) проверка читает в обход неё
+    const realOpen = (window as unknown as { __realIdbOpen?: IDBFactory["open"] }).__realIdbOpen ?? indexedDB.open.bind(indexedDB);
+    const open = realOpen("keyval-store");
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const db = open.result;
@@ -468,6 +470,91 @@ test("16. Аудит #322: ответ запроса, висевшего при 
   expect(posts.filter((t) => t > doneAt)).toEqual([]);
   expect((await serverEngineState(page, 930_616)).paused_at).not.toBeNull(); // событие на сервере ровно одно
   expect(await storedEngineQueues(page)).toBe(0); // поздний ответ не воскресил очередь, снятую сверкой App
+});
+
+/**
+ * Управляемый сбой чтения IndexedDB на странице (как «Internal error opening backing store»): пока
+ * `window.__idbReadFail === true`, каждое indexedDB.open приложения завершается ошибкой. Ставится заново при
+ * каждой загрузке страницы (перезагрузка — тоже со сбоем); снимается `setIndexedDbReadFailure(page, false)`.
+ */
+async function failIndexedDbReads(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __idbReadFail?: boolean; __realIdbOpen?: IDBFactory["open"] };
+    const realOpen = indexedDB.open.bind(indexedDB);
+    w.__realIdbOpen = realOpen;
+    w.__idbReadFail = true;
+    indexedDB.open = ((...args: Parameters<IDBFactory["open"]>) => {
+      const request = realOpen(...args);
+      if (w.__idbReadFail) {
+        let onerror: ((event: Event) => void) | null = null;
+        Object.defineProperty(request, "onsuccess", { set() {}, get: () => null });
+        Object.defineProperty(request, "onerror", { set(handler) { onerror = handler; }, get: () => onerror });
+        request.addEventListener("success", () => {
+          request.result.close();
+          onerror?.(new Event("error"));
+        });
+      }
+      return request;
+    }) as IDBFactory["open"];
+  });
+}
+
+async function setIndexedDbReadFailure(page: Page, failing: boolean) {
+  await page.evaluate((value) => {
+    (window as unknown as { __idbReadFail?: boolean }).__idbReadFail = value;
+  }, failing);
+}
+
+test("17. IndexedDB не читается при запуске — ворота держатся, ошибка видна; хранилище вернулось — досылка, затем проекция", async ({ page, context }) => {
+  await stopOfflineAndCloseAfterDeadline(page, context, 930_617);
+  const back = await context.newPage();
+  const order = trackProjectionOrder(back);
+  await failIndexedDbReads(back);
+  const { apiFailures } = await openAppAs(back, 930_617);
+  await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 }); // приложение загрузилось
+  await sleep(4_000); // несколько повторов чтения (1 + 2 с) — все неудачны
+  expect(order).toEqual([]); // ни досылки, ни GET /active: дедлайн не спроецирован
+  expect(await storedEngineQueues(back)).toBe(1); // сохранённый «Стоп» не удалён
+  await expect(back.getByTestId("engine-store-error")).toBeVisible(); // причина ожидания видна
+  // (состояние сервера здесь не читаем: serverEngineState — тоже GET /active, он сам спроецировал бы дедлайн)
+  await setIndexedDbReadFailure(back, false); // хранилище снова читается; «Повторить» не нажимаем — повтор сам
+  await expect(back.getByTestId("engine-phase")).toHaveText(/Пошёл|Отдых/, { timeout: 20_000 });
+  await expect(back.getByTestId("engine-store-error")).toHaveCount(0);
+  expectNoProjectionBeforeDrain(order);
+  expect(order[0]).toBe("events:ok");
+  const state = await serverEngineState(back, 930_617);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(2);
+  expect(state.logs[0].value).toBeLessThanOrEqual(7); // измеренное, не цель 15
+  expect(await storedEngineQueues(back)).toBe(0);
+  expect(apiFailures).toEqual([]);
+});
+
+test("18. IndexedDB не читается, перезагрузка во время сбоя — очередь цела; «Повторить» после восстановления — одна досылка, затем проекция", async ({ page, context }) => {
+  await stopOfflineAndCloseAfterDeadline(page, context, 930_618);
+  const back = await context.newPage();
+  const order = trackProjectionOrder(back);
+  await failIndexedDbReads(back);
+  const { apiFailures } = await openAppAs(back, 930_618);
+  await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 });
+  await sleep(1_500);
+  expect(order).toEqual([]);
+  await back.reload(); // сбой переживает перезагрузку (init script ставит его заново)
+  await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 });
+  await sleep(3_500); // повторные сбои после перезагрузки
+  expect(order).toEqual([]);
+  expect(await storedEngineQueues(back)).toBe(1);
+  await expect(back.getByTestId("engine-store-error")).toBeVisible();
+  await setIndexedDbReadFailure(back, false);
+  await back.getByTestId("engine-store-retry").click(); // повтор сейчас, не дожидаясь паузы
+  await expect(back.getByTestId("engine-phase")).toHaveText(/Пошёл|Отдых/, { timeout: 10_000 });
+  expectNoProjectionBeforeDrain(order);
+  expect(order.filter((step) => step.startsWith("events:"))).toEqual(["events:ok"]); // одна досылка, без дублей
+  const state = await serverEngineState(back, 930_618);
+  expect(state.logs).toHaveLength(1);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(2);
+  expect(state.logs[0].value).toBeLessThanOrEqual(7);
+  expect(await storedEngineQueues(back)).toBe(0);
+  expect(apiFailures).toEqual([]);
 });
 
 test.describe("320 px", () => {
