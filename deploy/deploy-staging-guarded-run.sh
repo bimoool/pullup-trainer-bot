@@ -66,7 +66,7 @@ on_exit() {
     echo "!! GUARDED DEPLOY FAILED at phase ${PHASE} (${PHASE_NAME}), exit ${rc}" >&2
     if [ "$WRITERS_STOPPED" = 1 ]; then
       dc stop app web >/dev/null 2>&1 || true
-      echo "!! app/web are STOPPED and stay stopped; nothing was started, nothing was restored automatically." >&2
+      echo "!! app/web are STOPPED and stay stopped (stopped again if they had already been started); nothing was restored automatically." >&2
     else
       echo "!! failed before app/web were touched: nothing was changed." >&2
     fi
