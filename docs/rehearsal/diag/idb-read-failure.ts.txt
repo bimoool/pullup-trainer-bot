@@ -1,0 +1,78 @@
+import { expect, test, type Page } from "@playwright/test";
+import { openAppAs } from "../fixtures/setup";
+import { buildInitData, getTestBotToken } from "../fixtures/initData";
+import { appendFileSync } from "node:fs";
+
+test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test.setTimeout(90_000);
+const API_ACTIVE = "/api/v2/sessions/live/active";
+
+async function storedEngineQueues(page: Page): Promise<number> {
+  return page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const open = indexedDB.open("keyval-store");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("keyval")) { resolve(0); return; }
+      const request = db.transaction("keyval").objectStore("keyval").getAllKeys();
+      request.onsuccess = () => resolve(request.result.filter((key) => String(key).startsWith("pullup:v2:live-engine-queue")).length);
+      request.onerror = () => reject(request.error);
+    };
+  }));
+}
+
+test("diag: transient IndexedDB read failure at cold start", async ({ page, context }) => {
+  const out = process.env.DIAG_OUT ?? "/tmp/diag-idb.txt";
+  await openAppAs(page, 930_610);
+  const tabbar = page.locator(".bottom-tabbar");
+  await expect(tabbar.or(page.getByRole("button", { name: /Назад/ }).first()).first()).toBeVisible();
+  await page.getByRole("button", { name: "Планы" }).click();
+  const group = page.locator(".plan-week-day-group").filter({ hasText: /^Движок: стоп/ });
+  await group.getByRole("button", { name: /^Начать: / }).first().click();
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл", { timeout: 8_000 });
+  await context.setOffline(true);
+  await new Promise((r) => setTimeout(r, 3_000));
+  await page.getByTestId("engine-stop").click();
+  await expect(page.getByTestId("engine-phase")).not.toHaveText("Пошёл");
+  expect(await storedEngineQueues(page)).toBe(1);
+  await page.close();
+  await new Promise((r) => setTimeout(r, 15_000));
+  await context.setOffline(false);
+
+  const back = await context.newPage();
+  const order: string[] = [];
+  const t0 = Date.now();
+  const tl: string[] = [];
+  back.on("request", (r) => { const p = new URL(r.url()).pathname; if (/\/sessions\/live\//.test(p)) tl.push(`+${Date.now() - t0}ms REQ ${r.method()} ${p.replace(/\d+/g, "N")}`); });
+  back.on("requestfailed", (r) => { if (/\/sessions\/live\/\d+\/events$/.test(new URL(r.url()).pathname)) order.push("events:fail"); });
+  back.on("response", (r) => {
+    const p = new URL(r.url()).pathname;
+    if (/\/sessions\/live\//.test(p)) tl.push(`+${Date.now() - t0}ms RES ${r.status()} ${p.replace(/\d+/g, "N")}`);
+    if (/\/sessions\/live\/\d+\/events$/.test(p)) order.push(r.ok() ? "events:ok" : `events:${r.status()}`);
+    else if (p === API_ACTIVE) order.push("active");
+  });
+  // Инъекция: чтение IndexedDB в первые 2.5 с жизни страницы «падает» (как при временной недоступности хранилища).
+  await back.addInitScript(() => {
+    const realOpen = indexedDB.open.bind(indexedDB);
+    indexedDB.open = ((...args: Parameters<IDBFactory["open"]>) => {
+      const req = realOpen(...args);
+      if (performance.now() < 2500) {
+        let onerror: ((e: Event) => void) | null = null;
+        Object.defineProperty(req, "onsuccess", { set() {}, get: () => null });
+        Object.defineProperty(req, "onerror", { set(f) { onerror = f; }, get: () => onerror });
+        req.addEventListener("success", () => onerror && onerror(new Event("error")));
+      }
+      return req;
+    }) as IDBFactory["open"];
+  });
+  await openAppAs(back, 930_610);
+  await expect(back.getByTestId("engine-phase")).toHaveText(/Пошёл|Отдых/, { timeout: 15_000 });
+  const orderAtPhase = JSON.stringify(order);
+  await new Promise((r) => setTimeout(r, 12_000)); // инъекция действует только первые 2.5 с жизни страницы
+  const initData = buildInitData({ id: 930_610, firstName: "E2E" }, getTestBotToken());
+  const resp = await back.request.get(API_ACTIVE, { headers: { "X-Telegram-Init-Data": initData } });
+  const state = (await resp.json()).session?.engine?.state;
+  const queuesNow = await storedEngineQueues(back);
+  appendFileSync(out, `order_when_phase_visible=${orderAtPhase} order_after_12s=${JSON.stringify(order)} timeline=${JSON.stringify(tl)} server_first_set_value=${state?.logs?.[0]?.value} queues_in_idb_now=${queuesNow}\n`);
+});

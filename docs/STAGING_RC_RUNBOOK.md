@@ -1,6 +1,10 @@
 # Staging runbook: release candidate #322 + #323 (PR #324)
 
 **Только подготовка. Ни одна команда этого документа не выполнялась на staging; деплой делает владелец.**
+
+> **Статус готовности: BLOCKER, деплой на staging не разрешён.** (1) CI E2E на кандидате красный (2 из 2 прогонов), причина
+> не подтверждена — `docs/STAGING_RC_CI_E2E.md`; (2) HOLD на `converge-history --apply`: случай отредактированных копий
+> факультативов — §6.2 и `docs/STAGING_RC_REHEARSAL.md` §8; (3) состояние staging не прочитано — §2.
 Доказательства репетиции на изолированной БД — `docs/STAGING_RC_REHEARSAL.md`. Команды общего gate —
 `docs/STAGING_RC_GATE.md`.
 
@@ -33,41 +37,44 @@ compose-проект `pullup-staging`; сервисы `db`, `redis`, `app` (бо
 `web` (Mini App, `Dockerfile.web`, **без `scripts/`**); каталог `/home/deploy/pullup-trainer-bot-staging`;
 порт Mini App 8002; домен `staging.app.bimoool.com`. Всё это — **заявленное, не проверенное на живом сервере**.
 
-Фактическое состояние staging — только этими read-only командами (в веб-консоли сервера или по SSH под `deploy`).
-Не печатать `.env`, `~/.staging-secrets.env`, токены. Вывод — владельцу/в чат без секретов и без персональных данных.
+Фактическое состояние staging — только этими read-only командами (в веб-консоли сервера или по SSH под пользователем,
+у которого есть доступ к docker). **Имена проектов, сервисов, контейнеров и каталогов не угадываются — они берутся из
+вывода первой команды.** Не печатать `.env`, `~/.staging-secrets.env`, токены; вывод — без секретов и персональных данных.
+На сервере живёт ещё чужой проект (`reeltrack-*`) и прод — выбирать строки, где имя compose-проекта содержит `staging`.
 
 ```bash
-cd /home/deploy/pullup-trainer-bot-staging
-# 2.1 запущенный код
-git rev-parse HEAD; git log -1 --format='%H %cI %s'; git status -sb | head -n 5
-# 2.2 compose: проект, сервисы, состояние (имена сервисов брать ОТСЮДА, не предполагать)
-docker compose -p pullup-staging config --services
-docker compose -p pullup-staging ps
-docker compose -p pullup-staging images
-# 2.3 текущая ревизия Alembic и имя БД (имя пользователя/БД берутся из окружения контейнера db, не печатаются)
-docker compose -p pullup-staging exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'
-# 2.4 как устроен деплой: делает ли wrapper миграцию/бэкап, принимает ли SHA
-cat ~/deploy-staging-run.sh      # (скрипт не содержит секретов — они в ~/.staging-secrets.env; убедиться и не копировать их)
-cat ~/deploy-staging.sh
-# 2.5 есть ли механизм бэкапа
-ls -la ~/backups ~/*.dump ~/*.sql* 2>/dev/null | head -n 20
-crontab -l 2>/dev/null | grep -iE 'dump|backup' ; systemctl list-timers --all 2>/dev/null | grep -iE 'backup|dump'
-df -h / | tail -n 1
+# 2.1 какие compose-проекты, сервисы и контейнеры запущены (проект / сервис / контейнер / образ / статус)
+docker ps --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}\t{{.Names}}\t{{.Image}}\t{{.Status}}' | sort
+# 2.2 рабочий каталог каждого compose-проекта (из него берётся каталог staging; прод и reeltrack не трогать)
+docker ps --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}' | sort -u
+# 2.3 SHA, на котором лежит код staging (подставить working_dir staging-проекта из 2.2)
+git -C <WORKING_DIR_STAGING> rev-parse HEAD
+git -C <WORKING_DIR_STAGING> log -1 --format='%H %cI %s'
+git -C <WORKING_DIR_STAGING> status -sb | head -n 5
+# 2.4 текущая ревизия Alembic (подставить имя контейнера Postgres staging: в 2.1 строка с образом postgres:*)
+docker exec <DB_CONTAINER_STAGING> sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'
+# 2.5 как устроен деплой: делает ли wrapper миграцию/бэкап, принимает ли SHA (скрипты без секретов; секреты в ~/.staging-secrets.env — не открывать)
+cat ~/deploy-staging.sh ~/deploy-staging-run.sh
+# 2.6 есть ли механизм бэкапа и место на диске
+ls -la ~/backups 2>/dev/null | head -n 20; crontab -l 2>/dev/null | grep -iE 'dump|backup'; systemctl list-timers --all 2>/dev/null | grep -iE 'backup|dump'; df -h / | tail -n 1
 ```
 
-Пока §2.1–2.5 не выполнены, **факты о staging неизвестны**: стартовую ревизию в §4 нельзя считать установленной.
+Дальше в команды §3–§8 подставлять найденные `-p <PROJECT_STAGING>` и имена сервисов из 2.1 (в тексте ниже использованы
+`pullup-staging`, `db`, `app`, `web` из `docker-compose.yml` репозитория — **заменить на найденные**).
+
+Пока §2.1–2.6 не выполнены, **факты о staging неизвестны**: стартовую ревизию в §4 нельзя считать установленной.
 
 ## 3. Деплой (действие владельца; в рамках этой задачи не выполнялось)
 
 1. Бэкап — §5. Без проверенного бэкапа не продолжать.
 2. GitHub → Actions → **Deploy Staging** → `ref` = `claude/vigilant-clarke-xis1u1`.
-3. Порядок на стороне wrapper'а **неизвестен** (§2.4). Правило из `deploy-and-verify`: собрать образ → миграции → поднять
+3. Порядок на стороне wrapper'а **неизвестен** (§2.5). Правило из `deploy-and-verify`: собрать образ → миграции → поднять
    контейнеры. Новый код на старой схеме неработоспособен; старый код на новой схеме работает (§7, доказано на копии).
    Если wrapper не делает миграцию сам:
    ```bash
    docker compose -p pullup-staging run --rm app alembic upgrade head
    ```
-4. После деплоя проверить SHA: §2.1 (`git rev-parse HEAD` в каталоге staging) = SHA из §1.
+4. После деплоя проверить SHA: §2.3 (`git rev-parse HEAD` в каталоге staging) = SHA из §1.
 
 ### 3.1 Проверка факта деплоя
 ```bash
@@ -80,7 +87,7 @@ docker compose -p pullup-staging exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "
 ## 4. Цепочка миграций
 
 Голова кандидата — `b5d8e1f3a6c9`, голова одна, цепочка линейная. Staging находится где-то на ней; **стартовая ревизия
-R0 — из §2.3**. Миграции, которые будут применены (в порядке применения):
+R0 — из §2.4**. Миграции, которые будут применены (в порядке применения):
 
 | # | Ревизия | Что делает | Данные |
 |---|---|---|---|
@@ -109,7 +116,7 @@ docker compose -p pullup-staging run --rm app alembic history -r <R0>:head
 
 ## 5. Бэкап и проверка восстановления (до деплоя)
 
-Механизм бэкапа в репозитории не описан — §2.5 покажет, есть ли он на сервере. Минимум:
+Механизм бэкапа в репозитории не описан — §2.6 покажет, есть ли он на сервере. Минимум:
 
 ```bash
 mkdir -p ~/backups && umask 077
@@ -120,7 +127,7 @@ sha256sum ~/backups/staging-pre-rc-$TS.dump; ls -l ~/backups/staging-pre-rc-$TS.
 docker compose -p pullup-staging exec -T db pg_restore -l < ~/backups/staging-pre-rc-$TS.dump | wc -l
 ```
 
-Проверка восстановления в **отдельную** БД (не трогает рабочую; перед этим убедиться, что хватает диска, §2.5):
+Проверка восстановления в **отдельную** БД (не трогает рабочую; перед этим убедиться, что хватает диска, §2.6):
 
 ```bash
 docker compose -p pullup-staging exec -T db sh -c 'createdb -U "$POSTGRES_USER" restore_check'
@@ -160,6 +167,21 @@ select origin, count(*) as sessions, count(legacy_id) as keyed from training_ses
 ```
 
 ### 6.2 Convergence (после миграции, до того как владелец откроет «Планы» на новом билде)
+
+> **HOLD: `--apply` обоих скриптов на staging не выполнять**, пока владелец не решит случай отредактированных копий
+> факультативов (`docs/STAGING_RC_REHEARSAL.md` §8). Разрешены только dry-run'ы и pre-check ниже. Для факультативов, записанных
+> до плана (хронология прода), в репетиции дубль не возникает; граничный случай (электив не старше плана при неключевой копии)
+> создаёт дубль/воскрешает удалённое.
+>
+> Pre-check (read-only; после миграции `f4c1a7e9b3d2`, колонка `origin` есть; до неё заменить условие на `ts.source = 'elective'`).
+> Ожидается `0`; `> 0` — HOLD остаётся, нужен фикс или ручное решение по этим пользователям:
+> ```sql
+> select count(*) from elective_workouts e join training_plans tp on tp.user_id = e.user_id
+> where e.created_at >= tp.created_at
+>   and exists (select 1 from training_sessions ts where ts.user_id = e.user_id and ts.origin = 'legacy_elective' and ts.legacy_id is null);
+> ```
+> Второй индикатор — dry-run `--converge-history`: «копий факультативов создано: N» при ненулевом «копий факультативов без пары
+> оставлено как есть» — разобрать до `--apply`.
 
 Запускать на сервисе `app` (в `web` нет `scripts/`). Для каждого скрипта — dry-run → apply → повторный apply.
 
@@ -224,10 +246,13 @@ select md5(string_agg(id::text||'|'||initial_progression_state::text||'|'||start
 
 **Три разных пути — не смешивать:**
 
-1. **Код.** Actions → Deploy Staging → `ref` = предыдущий ref/SHA из §2.1. Старый код на обновлённой схеме
-   **проверен на копии** (`docs/STAGING_RC_REHEARSAL.md` §4): 38 GET-эндпоинтов отвечают так же, как на старой схеме;
-   запись сессии старым кодом проходит. Новых NOT NULL колонок без default у существующих таблиц нет. Это **не**
-   проверено на реальных данных staging и не покрывает live-завершение V5.6-сессии старым кодом.
+1. **Код.** Actions → Deploy Staging → `ref` = предыдущий ref/SHA из §2.3. Старый код на обновлённой схеме проверен на
+   копии (`docs/STAGING_RC_REHEARSAL.md` §4, валидные параметры): 20/20 GET → 200; старый код стартует, ведёт и завершает
+   live-сессию, пишет запись в Журнал. **Чисто — только до convergence:** после апгрейда без convergence «Планы» старого
+   кода идентичны исходным; **после convergence старый код показывает задвоенные строки плана** (в репетиции 4→7, 2→5 строк
+   plan-items), потому что не знает `plan_items.status = 'removed'`. Точка невозврата для чистого отката кода — первое
+   открытие «Планов» новым билдом (`GET /plan` сам делает convergence) или `--apply`. После неё откат кода = путь 3.
+   Не проверено: live-прохождение V5.6/STEP-тренировки старым кодом и реальные данные staging.
 2. **Схема (`alembic downgrade <R0>`).** Выполнима (в репетиции exit 0), но **это не восстановление данных**:
    после downgrade остаются +19 `plan_items`, +3 `plan_weeks`, +3 копии в `training_sessions`, `work_sets = 4` и т.д.
    (`docs/STAGING_RC_REHEARSAL.md` §5). Использовать только вместе с восстановлением данных, не вместо него.
