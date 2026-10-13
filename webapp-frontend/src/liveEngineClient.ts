@@ -278,8 +278,9 @@ export interface SyncRetry {
  * Повтор досылки ОТКРЫТОГО экрана движка после временного сбоя (сеть/5xx/408/429) при браузере «онлайн»:
  * события `online` не будет, а сверка App очередь экрана пропускает (claimQueue) — без этого очередь стояла
  * бы до ручного «Повторить». Те же паузы, что у сверки App (1, 2, 4, 8, 15, 15… с), не больше одного
- * ожидающего повтора; повтор шлёт те же client_event_id (сервер: duplicate — no-op). Офлайн повтор не
- * планируется — досылку будит `online`.
+ * ожидающего повтора; повтор шлёт те же client_event_id (сервер: duplicate — no-op). Офлайн повтор ничего
+ * не шлёт (досылка при `navigator.onLine === false` сразу выходит, следующий не планируется) — досылку
+ * будит `online`.
  */
 export function createSyncRetry(
   run: () => void, delaysMs: readonly number[] = RECONCILE_RETRY_DELAYS_MS, timers: RetryTimers = browserTimers,
@@ -309,6 +310,39 @@ export function createSyncRetry(
       cancel();
       attempt = 0;
     },
+  };
+}
+
+/**
+ * Жизненный цикл экрана движка для его асинхронных досылок (аудит #322). Очистка эффекта (уход, unmount,
+ * смена сессии, StrictMode) отменяет не только уже запланированный таймер повтора: запрос, ушедший до неё,
+ * по возвращении видит, что его поколение устарело, и ничего не делает — не планирует повтор, не запускает
+ * новую досылку, не трогает очередь (после ухода её подхватывает сверка App). Поздний ответ или обрыв
+ * отменой серверной записи не считается: сверка App перешлёт те же client_event_id (сервер: duplicate).
+ */
+export interface ScreenLifecycle {
+  mount(): void;
+  /** Очистка эффекта: всё, что начато до неё, устарело. */
+  unmount(): void;
+  /** Поколение для новой досылки; null — экран не смонтирован (досылку не начинать). */
+  token(): number | null;
+  /** Досылка с этим поколением всё ещё принадлежит смонтированному экрану. */
+  isCurrent(token: number): boolean;
+}
+
+export function createScreenLifecycle(): ScreenLifecycle {
+  let generation = 0;
+  let mounted = false;
+  return {
+    mount() {
+      mounted = true;
+    },
+    unmount() {
+      mounted = false;
+      generation += 1;
+    },
+    token: () => (mounted ? generation : null),
+    isCurrent: (token) => mounted && token === generation,
   };
 }
 

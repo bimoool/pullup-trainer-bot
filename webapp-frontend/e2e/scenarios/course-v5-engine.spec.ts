@@ -4,8 +4,9 @@ import { answerChecksV2, noWakeLock, openPreScreen, playSetsV2 } from "../fixtur
 import { buildInitData, getTestBotToken } from "../fixtures/initData";
 import { openAppAs } from "../fixtures/setup";
 
-/** Ложный итог «Тренировка уже была завершена…» (ответ «Сохранить» вместо первого завершения). */
-const FALSE_REPEAT = "Тренировка уже была завершена";
+/** Нейтральный баннер повторного ответа (`already_completed`, итог неизвестен) — не должен заменять известный итог
+ * первого завершения (ответ «Сохранить» вместо первого завершения). */
+const FALSE_REPEAT = "Тренировка сохранена.";
 
 async function completedCard(page: Page, telegramId: number, sessionId: number) {
   const initData = buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken());
@@ -91,6 +92,83 @@ test("V5.6 A: раннее завершение — итог «досрочно�
 
   expect(apiFailures).toEqual([]);
   expect(noWakeLock(consoleErrors)).toEqual([]);
+});
+
+/** Аудит #322: ответ на событие, завершившее тренировку, потерян (сервер его применил, клиент получил обрыв). Автоповтор
+ * получает duplicate без итога, «Сохранить» — already_completed: настоящий итог экрану неизвестен. */
+async function loseCompletingResponse(page: Page, completingType: string) {
+  const seen: { type: string; status: string; skipped: string | null; course: boolean }[] = [];
+  let lost = false;
+  await page.route("**/api/v2/sessions/live/*/events", async (route) => {
+    const types = (route.request().postDataJSON().events as { type: string }[]).map((e) => e.type);
+    const response = await route.fetch();
+    const body = await response.json();
+    seen.push({ type: types.join(","), status: body.status, skipped: body.progression_skipped_reason ?? null, course: body.course_progression != null });
+    if (!lost && types.includes(completingType)) {
+      lost = true;
+      await route.abort("failed"); // запись на сервере есть, ответ до клиента не дошёл
+      return;
+    }
+    await route.fulfill({ response });
+  });
+  return seen;
+}
+
+async function expectNeutralSummary(page: Page) {
+  await expect(page.getByTestId("progression-skipped")).toHaveText("Тренировка сохранена."); // нейтрально
+  await expect(page.getByText(/прогрессия учтена/i)).toHaveCount(0); // не утверждаем того, чего не знаем
+  await expect(page.getByText("Прогрессия не пересчитана — сессия завершена досрочно.")).toHaveCount(0); // и не выдумываем
+  await expect(page.getByTestId("course-progression")).toHaveCount(0);
+}
+
+/** Обрыв ответа в тесте сам пишет в консоль «Failed to load resource» — это сценарий, не ошибка приложения. */
+const appErrors = (errors: string[]) => noWakeLock(errors).filter((e) => !e.includes("Failed to load resource"));
+
+test("Аудит #322: потерян ответ finish_early — Summary без ложного «прогрессия учтена», история и кредит один раз", async ({ page }) => {
+  const { consoleErrors } = await openAppAs(page, 930_504);
+  await openPreScreen(page, "Подтягивания");
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+  await playSetsV2(page, ["5", "5"]);
+  const seen = await loseCompletingResponse(page, "finish_early");
+  const saved = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+  await page.getByTestId("engine-finish").click();
+  await page.getByTestId("engine-finish-confirm").click();
+  const save = await (await saved).json();
+  expect(save.progression_skipped_reason).toBe("already_completed");
+  // Сервер завершил «досрочно» (без прогрессии) — но этот ответ потерян; повтор — duplicate без итога.
+  expect(seen[0]).toEqual({ type: "finish_early", status: "completed", skipped: "abandoned", course: false });
+  expect(seen[1]).toEqual({ type: "finish_early", status: "completed", skipped: null, course: false });
+  await expectNeutralSummary(page);
+  const cards = await completedCard(page, 930_504, save.id);
+  expect(cards).toHaveLength(1);
+  expect(cards[0].plan_item_id).not.toBeNull();
+  expect(appErrors(consoleErrors)).toEqual([]);
+});
+
+test("Аудит #322: потерян ответ confirm_blocks — Summary без выдуманных подробностей, прогрессия не повторена", async ({ page }) => {
+  const { consoleErrors } = await openAppAs(page, 930_505);
+  await openPreScreen(page, "Подтягивания");
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+  await playSetsV2(page, ["7", "7", "7", "8", "5", "5", "5", "5", "5"]);
+  await expect(page.getByTestId("engine-confirm")).toBeVisible();
+  await answerChecksV2(page, "valid");
+  const seen = await loseCompletingResponse(page, "confirm_blocks");
+  await page.getByTestId("engine-confirm-submit").click();
+  await expect(page.getByTestId("engine-complete")).toBeVisible({ timeout: 10_000 });
+  const saved = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+  await page.getByTestId("engine-save").click();
+  const save = await (await saved).json();
+  // Прогрессия посчитана один раз — в потерянном ответе; ни повтор (duplicate), ни «Сохранить» её не считают.
+  expect(seen.filter((s) => s.course)).toEqual([{ type: "confirm_blocks", status: "completed", skipped: null, course: true }]);
+  expect(seen.at(-1)).toEqual({ type: "confirm_blocks", status: "completed", skipped: null, course: false });
+  expect(save.progression_skipped_reason).toBe("already_completed");
+  expect(save.course_progression ?? null).toBeNull();
+  await expectNeutralSummary(page);
+  const cards = await completedCard(page, 930_505, save.id);
+  expect(cards).toHaveLength(1);
+  expect(appErrors(consoleErrors)).toEqual([]);
 });
 
 test("V5.6: нет 1RM — тест проходится в приложении по лестнице, результат открывает тренировку", async ({ page }) => {

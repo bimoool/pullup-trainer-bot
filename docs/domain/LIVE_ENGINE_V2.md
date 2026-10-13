@@ -213,12 +213,18 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     complete pass during which no new request arrived, so a queue released mid-pass is always reconsidered before
     the gate opens. The open screen retries its own queue the same way: a transient failure while the browser
     reports online (no `online` event will come) schedules one retry after 1, 2, 4, 8, 15, 15… s
-    (`createSyncRetry`; at most one pending, cancelled by any other send, reset on success, none while offline) —
+    (`createSyncRetry`; at most one pending, cancelled by any other send, reset on success; a retry that fires
+    while the browser reports offline sends nothing and schedules nothing — the `online` event resumes) —
     no manual «Повторить» is needed; the resent events keep their `client_event_id` (server: duplicate). The
+    screen's sends are bound to its mount (`createScreenLifecycle`): leaving, unmount or a session change invalidates
+    every send already in flight, so a late answer or failure schedules no retry, starts no new send and leaves the
+    stored queue as is — the app reconciliation started by that cleanup owns it (a late or aborted response is not
+    taken as proof that the server did not apply the events: they are resent with the same `client_event_id`). The
     Summary shows the outcome of the response that actually completed the session (last set, `confirm_blocks`,
     `finish_early`: progression / V5.6 `course_progression` / `abandoned`), not the `already_completed` of the
-    later «Сохранить» review call (`summaryResult`); only a screen that never saw the completion shows the server's
-    answer as is. User input made before a
+    later «Сохранить» review call (`summaryResult`); only a screen that never saw the completion (another device,
+    background projection, a lost completing response) shows the server's answer as is — `already_completed` carries
+    no outcome, so the Summary then says only «Тренировка сохранена» and claims nothing about progression. User input made before a
     deadline therefore always reaches the server before that deadline is persisted; the server's rules (clamping,
     stale no-op, duplicate) are unchanged. The same drain sends a review queued for a session the server
     already completed by itself (no longer active, so no screen would reopen it). Audio: the engine exposes

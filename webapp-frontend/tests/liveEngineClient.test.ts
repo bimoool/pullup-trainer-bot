@@ -7,7 +7,7 @@ import {
 import { fetchActiveLiveSession, fetchSessions } from "../src/apiV2.ts";
 import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
-  claimQueue, clearQueue, createSyncRetry, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
+  claimQueue, clearQueue, createScreenLifecycle, createSyncRetry, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
   releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, wakeEngineReconciliation, type DrainApi,
   type EngineQueue, type QueueStore,
 } from "../src/liveEngineClient.ts";
@@ -733,4 +733,52 @@ test("экран: удачная досылка сбрасывает паузу;
   retry.cancel();
   assert.equal(clock.pending.size, 0);
   assert.equal(runs, 1);
+});
+
+// --- Аудит #322: досылки экрана привязаны к его монтированию -------------------------------------------------
+
+test("экран: досылка, ушедшая до ухода/unmount, по возвращении устарела — ни повтора, ни новой досылки", () => {
+  const life = createScreenLifecycle();
+  assert.equal(life.token(), null);  // до монтирования досылку не начинать
+  life.mount();
+  const inFlight = life.token() as number;
+  assert.equal(life.isCurrent(inFlight), true);
+  life.unmount();  // «Выйти»/Back: очистка эффекта
+  assert.equal(life.isCurrent(inFlight), false);  // поздний 503/ответ — устарел
+  assert.equal(life.token(), null);  // и новую досылку (таймер, resync) не начать
+});
+
+test("экран: StrictMode/повторный mount и смена сессии — старое поколение не оживает, новое работает", () => {
+  const life = createScreenLifecycle();
+  life.mount();
+  const first = life.token() as number;
+  life.unmount();
+  life.mount();  // StrictMode (mount → cleanup → mount) или эффект новой сессии
+  const second = life.token() as number;
+  assert.notEqual(first, second);
+  assert.equal(life.isCurrent(first), false);
+  assert.equal(life.isCurrent(second), true);
+  life.unmount();
+  life.mount();
+  assert.equal(life.isCurrent(second), false);
+});
+
+test("экран: поздний сбой ушедшей досылки не ставит повтор — серию шлёт только сверка App", () => {
+  // Та же связка, что у LiveEngineScreen: catch планирует повтор только для текущего поколения.
+  const clock = fakeTimers();
+  const life = createScreenLifecycle();
+  let sends = 0;
+  const retry = createSyncRetry(() => { sends += 1; }, undefined, clock.timers);
+  const onTransientFailure = (token: number) => {
+    if (life.isCurrent(token)) {
+      retry.schedule();
+    }
+  };
+  life.mount();
+  const token = life.token() as number;
+  life.unmount();
+  retry.cancel();  // очистка — до позднего ответа
+  onTransientFailure(token);  // 503 пришёл через 2,5 с после ухода
+  assert.equal(clock.pending.size, 0);
+  assert.equal(sends, 0);
 });

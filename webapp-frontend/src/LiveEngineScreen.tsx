@@ -13,8 +13,8 @@ import {
   activeElapsedMs, remainingMs, type CheckAnswer, type EnginePlan, type EngineState, type Phase, type PlanBlock,
 } from "./liveEngine";
 import {
-  claimQueue, clearQueue, createSyncRetry, displayState, dropAcknowledged, emptyQueue, loadQueue, newEvent, releaseQueue,
-  saveQueue, serverOffsetMs, startEngineReconciliation,
+  claimQueue, clearQueue, createScreenLifecycle, createSyncRetry, displayState, dropAcknowledged, emptyQueue, loadQueue,
+  newEvent, releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation,
   type EngineQueue,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
@@ -93,6 +93,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const closed = useRef(false);
   // Временный сбой досылки при браузере «онлайн»: повтор сам, с растущей паузой (createSyncRetry).
   const [retry] = useState(() => createSyncRetry(() => void sync()));
+  // Аудит #322: после ухода/unmount/смены сессии поздний ответ старой досылки ничего не планирует и не шлёт.
+  const [lifecycle] = useState(createScreenLifecycle);
 
   const engine = server.engine;
   const plan = engine?.plan ?? null;
@@ -127,13 +129,17 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
 
   function sync(): Promise<void> {
     retry.cancel();  // досылка идёт сейчас — отложенный повтор не нужен (не дублировать запрос)
+    const token = lifecycle.token();
+    if (token === null) {
+      return Promise.resolve();  // экран ушёл: очередь — у сверки App
+    }
     if (syncing.current !== null) {
       resync.current = true;
       return syncing.current;
     }
-    const run = runSync().finally(() => {
+    const run = runSync(token).finally(() => {
       syncing.current = null;
-      if (resync.current && !closed.current) {
+      if (resync.current && !closed.current && lifecycle.token() !== null) {
         resync.current = false;
         void sync();
       }
@@ -142,10 +148,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     return run;
   }
 
-  async function runSync(): Promise<void> {
+  async function runSync(token: number): Promise<void> {
     do {
       resync.current = false;
-      if (closed.current || !navigator.onLine) {
+      if (closed.current || !navigator.onLine || !lifecycle.isCurrent(token)) {
         return;
       }
       const pending = queueRef.current;
@@ -156,6 +162,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
             client_event_id: event.client_event_id, type: event.type, payload: event.payload,
             client_at: new Date(event.client_at_ms).toISOString(),
           })));
+          if (!lifecycle.isCurrent(token)) {
+            return;  // поздний ответ ушедшего экрана: очередь не трогаем, App перешлёт (duplicate)
+          }
           acceptServer(response, started, Date.now());
           if (firstCompletion.current === null && carriesCompletionOutcome(response)) {
             firstCompletion.current = response;
@@ -163,6 +172,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           const rest = dropAcknowledged(queueRef.current, response.event_results.map((r) => r.client_event_id));
           setQueue(rest);
           await saveQueue(rest);
+          if (!lifecycle.isCurrent(token)) {
+            return;
+          }
           if (response.engine_status === "cancelled") {
             await finishWith(response);
             return;
@@ -171,12 +183,18 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         if (queueRef.current.complete !== null && queueRef.current.events.length === 0) {
           const review = queueRef.current.complete;
           const result = await completeLiveSession(initDataRaw, pending.sessionId, false, review);
+          if (!lifecycle.isCurrent(token)) {
+            return;  // завершение сохранено сервером; итог ушедшему экрану не показываем
+          }
           await finishWith(result);
           return;
         }
         setFailure(null);
         retry.reset();
       } catch (error) {
+        if (!lifecycle.isCurrent(token)) {
+          return;  // сбой запроса ушедшего экрана: ни повтора, ни новой досылки — очередь у сверки App
+        }
         const failure = classifySyncError(error);
         setFailure(failure);
         if (failure.kind === "transient" && !closed.current) {
@@ -189,12 +207,16 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
 
   /** Сверка с сервером: свежая проекция (дедлайны, истёкшие в фоне, уже применены сервером). */
   async function refresh(): Promise<void> {
-    if (!navigator.onLine || closed.current || queueRef.current.events.length > 0) {
+    const token = lifecycle.token();
+    if (token === null || !navigator.onLine || closed.current || queueRef.current.events.length > 0) {
       return;
     }
     try {
       const started = Date.now();
       const active = await fetchActiveLiveSession(initDataRaw);
+      if (!lifecycle.isCurrent(token)) {
+        return;
+      }
       if (active !== null && active.id === initialSession.id) {
         acceptServer(active, started, Date.now());
         return;
@@ -202,6 +224,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       // Не активна на сервере: завершилась сама (проекция в фоне), на другом устройстве или отменена.
       // Идемпотентный complete отдаёт итог, ничего не повторяя (#307 T).
       const result = await completeLiveSession(initDataRaw, initialSession.id, false);
+      if (!lifecycle.isCurrent(token)) {
+        return;
+      }
       if (result.engine_status === "cancelled" || result.progression_skipped_reason === "cancelled") {
         await finishWith(result);
         return;
@@ -211,12 +236,15 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       }
       setServer(result);
     } catch (error) {
-      setFailure(classifySyncError(error));
+      if (lifecycle.isCurrent(token)) {
+        setFailure(classifySyncError(error));
+      }
     }
   }
 
   useEffect(() => {
     let cancelled = false;
+    lifecycle.mount();
     // #306 F1: пока экран открыт, очередью этой сессии владеет он (сверка App её пропускает); после ухода
     // недосланное подхватывает сверка App (startEngineReconciliation).
     claimQueue(initialSession.id);
@@ -234,6 +262,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     });
     return () => {
       cancelled = true;
+      lifecycle.unmount();  // до cancel: поздний сбой уже ушедшей досылки не поставит новый таймер
       retry.cancel();
       releaseQueue(initialSession.id);
       // Недосланное (сбой сети перед «Выйти») сверяет App. Старт — здесь, в очистке: React выполняет её раньше
