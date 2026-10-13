@@ -1,6 +1,7 @@
 """Authorised API driver for the edited-copy rehearsal (isolated API + DB only, bot token = rehearsal token).
 
     edited_copy_api.py <base> <token> edit <db_dsn>        # старый API: правка E1/E2, удаление копии E4 (оба пользователя)
+    edited_copy_api.py <base> <token> delete-all <db_dsn>  # старый API: удалить ВСЕ копии факультативов (оба пользователя)
     edited_copy_api.py <base> <token> summary <out.json>   # итоги Журнала/Профиля/Аналитики/списка сессий
     edited_copy_api.py diff <a.json> <b.json>
 """
@@ -46,6 +47,14 @@ def edit(base, token, dsn):
         print(tid, "E2 move date -> yesterday:", c, "" if c == 200 else b)
         c, b = call(base, token, tid, "DELETE", f"/api/v2/sessions/{e4}")
         print(tid, "E4 delete copy:", c, "" if c in (200, 204) else b)
+
+
+def delete_all(base, token, dsn):
+    for tid in USERS:
+        rows = psql(dsn, f"select ts.id from training_sessions ts join users u on u.id=ts.user_id where u.telegram_id={tid} "
+                         f"and ts.source='elective' order by ts.id")
+        codes = [call(base, token, tid, "DELETE", f"/api/v2/sessions/{int(x)}")[0] for x in rows]
+        print(tid, "delete all elective copies:", codes)
 
 
 def summary(base, token, out):
@@ -95,5 +104,7 @@ if __name__ == "__main__":
         diff(sys.argv[2], sys.argv[3])
     elif sys.argv[3] == "edit":
         edit(sys.argv[1], sys.argv[2], sys.argv[4])
+    elif sys.argv[3] == "delete-all":
+        delete_all(sys.argv[1], sys.argv[2], sys.argv[4])
     else:
         summary(sys.argv[1], sys.argv[2], sys.argv[4])
