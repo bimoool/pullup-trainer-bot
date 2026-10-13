@@ -239,3 +239,55 @@ dual-write не «закрывает» старый; удалённая не в�
 Пользователь, у которого удалены **все** копии и нет плана не раньше факультатива, неотличим от «копии никогда не было» —
 копия создаётся (следов нет ни в одной таблице: старое API удаляло дерево сессии).
 
+## 9. Репетиция от фактической ревизии staging: `c3f7a9e2d5b1`, старый код `4298f8b`
+
+Владелец сообщил: staging на `4298f8b9727f91d4a150431fd0d9e06131944d27`, Alembic `c3f7a9e2d5b1` (`docs/STAGING_RC_RUNBOOK.md` §1.1).
+Всё из §§1–8 повторено с этим стартом; «старая» БД построена **кодом `4298f8b`** (его Alembic `heads` = `c3f7a9e2d5b1`, те же 14 сидов
+`e2e_seed.py`, те же граничные `work_sets`, электив-копии заменены копиями штатного backfill этого кода). Данные синтетические.
+
+* **Цепочка:** 7 миграций — `b7d2e9f4a1c3 → d8a3c6f1e2b4 → f4c1a7e9b3d2 → a9e6c3d1f5b7 → a7e2c5b9d1f4 → e3b9c5d7a2f1 → b5d8e1f3a6c9`.
+  `alembic upgrade head` exit 0, `alembic current` = `b5d8e1f3a6c9`.
+* **Convergence** (`repair_plan_convergence.py --all`): dry-run 55 мутаций, `guard_violations` 0, снимок после dry-run идентичен;
+  apply 55; повторный apply **0**. `converge-history`: dry-run ничего не пишет; apply — привязано 5, создано 3; повторный apply — только «без изменений».
+* **Diff before → after** — как в §3 (plan_items 24→43, plan_weeks 9→12, training_sessions 230→233, session_blocks 227→233,
+  set_logs 457→484; новые таблицы `custom_plans`, `exercise_categories`, `session_events`, `workout_definition_versions`; `programs.access_level` уже была,
+  новые колонки `slots/frequency/constraints/assessment`). `e3b9c5d7a2f1`: `work_sets` `ABSENT→4` (inclusion 2), `null→4` (3);
+  явные `3` (7) и `5` (8) сохранены; `initial_progression_state`, legacy-таблицы, `subscriptions`, `users` без изменений.
+* **Отредактированные копии факультативов** (`edited_copy_run.sh /tmp/…/hd-4298f8b`, правки штатным API `4298f8b`): результат **тот же**, что в §8 —
+  пользователь A: дублей нет, 3 электива «неоднозначно» (не воскрешены), journal/profile/history идентичны, +1 сессия (post-migration тренировка);
+  пользователь B (граничный): +3 дубля/воскрешение (journal день 13: 6→9, `workouts_count` 7→10).
+* **Откат кода (старый код `4298f8b`)** на трёх состояниях БД, 20 GET с валидными параметрами и записи: 20/20 → 200 на старой схеме и после
+  апгрейда+convergence; live start/sets/complete и запись в Журнал — 200 на обеих. «Планы» старого кода: после апгрейда **без** convergence
+  идентичны (880004: 8/4, 880006: 4/2, 880007: 3/3 строк плана/plan-items); **после convergence** задвоены (11/7, 7/5, 4/4).
+* **`alembic downgrade c3f7a9e2d5b1`** после convergence: exit 0, схема откатилась, данные нет (plan_items +19, plan_weeks +3, training_sessions +3,
+  `work_sets=4`, `plan_week_id` у 12 строк) — **не восстановление данных**.
+* **`pg_dump -Fc` → `pg_restore --no-owner`** в чистую БД: exit 0, 0 строк stderr, 427 записей оглавления, построчный снимок идентичен.
+* **Побочное наблюдение:** старый код `GET /api/v2/plan` сам пишет в БД (создаёт недостающую неделю плана, расставляет `plan_week_id`) — поэтому
+  сравнения «до» нужно брать из снимка, сделанного до любого чтения старым API (так и сделано: `reh_c3/before.json`).
+
+Не доказано: реальные данные staging (размер, форма `progression_state`, состав факультативов), поведение `deploy-staging-run.sh`,
+память VPS при сборке образов, и два ожидаемых исправления (IDB-ворота; случай отредактированных копий) — они в этом
+репозитории не реализованы, проверки с ними не выполнялись.
+
+## 10. Проверки под фактический `deploy-staging-run.sh` (из строк, присланных владельцем)
+
+Скрипт: `git fetch; git checkout "$branch"; git pull --ff-only; docker compose -p pullup-staging build app web;
+docker compose -p pullup-staging run --rm app alembic upgrade head; docker compose -p pullup-staging up -d; healthcheck :8002/health`.
+Скрытые строки скрипта не проверены.
+
+* **Миграция атомарна (инъекция отказа).** На копии БД `c3f7a9e2d5b1` заранее добавлена колонка `session_blocks.technique_valid`, чтобы
+  последняя ревизия `b5d8e1f3a6c9` упала: `alembic upgrade head` → exit 1 (`DuplicateColumnError`), в логе видны «Running upgrade» всех 7
+  ревизий, но `alembic_version` остался `c3f7a9e2d5b1`, таблиц `workout_definition_versions` и `session_events` нет, колонки
+  `plan_items.status` нет — **откатились все шесть предыдущих**. Причина: один `begin_transaction()` в `env.py` и PostgreSQL-транзакционный DDL.
+* **Старый код на уже обновлённой БД не может выполнить свой `alembic upgrade head`.** `4298f8b` на БД `b5d8e1f3a6c9` →
+  `Can't locate revision identified by 'b5d8e1f3a6c9'`, exit 255. На БД после `alembic downgrade c3f7a9e2d5b1` тот же шаг — exit 0
+  (и на БД после `pg_restore`, где `alembic_version = c3f7a9e2d5b1`). Следствие: **откат кода тем же wrapper'ом возможен только после
+  возврата `alembic_version` к `c3f7a9e2d5b1`** (runbook §3.0 п. 8, §8).
+* **Миграция без convergence не меняет счётчики.** Снимок до и сразу после `alembic upgrade head` (reh_c3): ни одна таблица не
+  изменила число строк; появились новые колонки/таблицы (`workout_definition_versions` 10 строк, `exercise_categories` 11 — контент миграций)
+  и изменена `program_inclusions.progression_state` (2 строки, `work_sets`). Это ожидаемое состояние после шага E (runbook §6.2.0).
+* **Дифф конфигурации выката.** `docker-compose.yml`, `Dockerfile`, `Dockerfile.web`, `pyproject.toml`, `alembic.ini` между `4298f8b` и кандидатом
+  не изменились; в `app/config.py` добавлена одна настройка с значением по умолчанию. `webapp-frontend/package.json` изменён (+`vitest`),
+  `package-lock.json` +405 строк, но `Dockerfile.web` копирует только `package.json` и делает `npm install` → слой npm пересобирается,
+  версии резолвятся без lock (в CI — `npm ci` по lock). Это не воспроизводилось и не измерялось (сборка образов в песочнице не выполнялась).
+
