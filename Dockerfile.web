@@ -4,10 +4,9 @@
 
 FROM node:20-slim AS frontend-build
 WORKDIR /frontend
-COPY webapp-frontend/package.json ./
-# package-lock.json нет (см. CLAUDE.md) — npm install, не npm ci, до
-# первой генерации лока средой с доступом к npm-реестру.
-RUN npm install
+COPY webapp-frontend/package.json webapp-frontend/package-lock.json ./
+# Воспроизводимая сборка: ровно версии из package-lock.json (как в CI: `npm ci`), без повторного разрешения диапазонов.
+RUN npm ci
 COPY webapp-frontend/ ./
 RUN npm run build
 
