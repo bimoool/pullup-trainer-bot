@@ -256,6 +256,18 @@ docker compose -p pullup-staging run --rm app alembic upgrade head; docker compo
 * **Подмена `alembic_version` не откат.** На копии после апгрейда `alembic_version` вручную возвращена к `c3f7a9e2d5b1`; `alembic upgrade head` упал на первой ревизии
   `b7d2e9f4a1c3` (`DuplicateTableError: relation "exercise_categories" already exists`), версия осталась `c3f7a9e2d5b1`.
 * **Воспроизводимая сборка фронтенда.** Шаги этапа `Dockerfile.web` с `npm ci` (копируются только `package.json` и `package-lock.json`, затем исходники, `npm run build`) прошли
-  (Node 22, lockfileVersion 3, 193 пакета); патч — `docs/rehearsal/patches/dockerfile-web-npm-ci.patch`, не применён. Образ не собирался (демона нет). Все 15 прямых зависимостей
+  (Node 22, lockfileVersion 3, 193 пакета); исправление применено коммитом `b1d00f2` (§12); этап проверен на Node 22 без образа. Все 15 прямых зависимостей
   в `package.json` — диапазоны `^`/`~`.
 
+
+## 12. Реальный Docker в песочнице: guarded staging entrypoint и `Dockerfile.web`
+
+Изолированный демон (vfs, без iptables), Compose v5.6.0, базовые образы с `mirror.gcr.io` + локальные оболочки с CA/прокси, `apt-get` заглушён (сеть песочницы). Версия Compose на VPS **неизвестна**
+(«2.40.3» в labels — версия, создавшая контейнеры).
+
+* **`Dockerfile.web` (`b1d00f2`, `npm ci` по lock):** реальный `docker build` на `node:20-slim` (Node v20.20.2): `npm ci` и `vite build` прошли, 145 пакетов = lock, имена ассетов совпали с локальной сборкой.
+* **Guarded entrypoint** (`deploy/deploy-staging-guarded-run.sh`, мини-staging `pullup-staging`, код `4298f8b`, схема `c3f7a9e2d5b1`): S1 `apply`+`yes` — все 9 фаз, запущенные образы = собранным;
+  F1 (рискованные факультативы) — стоп на `hold-check`, `app`/`web` остановлены; F2 (неверный health URL) — стоп в фазе 9, сервисы снова остановлены; S2 `dry-run`+`no` — успех, сервисы не запущены.
+* **Откат:** `pg_restore` дампа скрипта → `alembic_version = c3f7a9e2d5b1`, данные = «до»; сохранённые образы → `up -d --no-build` → health OK, образ = сохранённому.
+* **Данные:** `staging_data_check.sh` — позитивный путь и негативные (подмена данных падает) на реальных репетиционных БД.
+* **Не проверено:** VPS целиком (Compose CLI, права, `flock`, sshd, 60-мин. SSH-команда, серверный cleanup, ≈ 704 МиБ), реальные данные, GitHub workflow, настоящий `apt-get`, образ `app` с Telegram.

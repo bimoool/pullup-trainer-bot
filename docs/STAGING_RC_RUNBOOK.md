@@ -4,12 +4,12 @@
 
 > **Статус готовности: BLOCKER, деплой на staging не разрешён.**
 > 1. Ждём финалы двух исправлений: **(IDB)** ворота drain-before-projection при сбое чтения IndexedDB и **(legacy convergence)**
->    случай отредактированных/удалённых копий факультативов. В этом документе они **не** реализованы.
+>    случай отредактированных/удалённых копий факультативов. В этом документе они **не** реализованы. Полный gate — после их объединения.
 > 2. CI E2E на кандидате красный (2 из 2), причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
-> 3. `deploy-staging-run.sh` известен только по строкам, присланным владельцем (§3.0); `/usr/local/bin/post-deploy-cleanup.sh`
->    и остальное в скрипте **не проверены**. Деплой-ветка выбирается после окончательного candidate SHA (сейчас не создаётся).
-> 4. HOLD на `--apply` convergence — §6.2. Staging держится закрытым для записей override'ом до конца проверок — §3.2.
-> 5. Сборка фронтенда на сервере невоспроизводима (`npm install` без lock) — §3.5; решение владельца.
+> 3. Деплой — только через **guarded staging entrypoint** (§3): точный SHA, проверенный backup, остановленные app/web, последовательная сборка,
+>    миграция, проверки данных, запуск только после успеха. **Он не установлен на VPS** (команды владельцу — §3.2) и ни разу не запускался на реальном сервере.
+> 4. Версия Docker Compose CLI на VPS **неизвестна** (`2.40.3` в labels контейнеров — версия, создавшая контейнеры, а не доказательство текущей CLI).
+> 5. HOLD на `--apply` convergence — §6.2 (скрипт сам проверяет его в режиме `apply`).
 
 ## 1. Что именно выкатывается
 
@@ -72,193 +72,119 @@ git -C /home/deploy/pullup-trainer-bot-staging rev-parse HEAD     # 4298f8b9727f
 Не печатать `.env`, `~/.staging-secrets.env`, токены; вывод — без секретов и персональных данных. На сервере живут ещё прод и `reeltrack-*` — все команды
 только для проекта `pullup-staging`.
 
-## 3. Деплой (действие владельца; на VPS ничего не запускалось и не запускается без финального разрешения)
+## 3. Деплой: guarded staging entrypoint (действие владельца; на VPS ничего не устанавливалось и не запускалось)
 
-### 3.0 Что известно о `deploy-staging-run.sh`
+### 3.0 Почему не старый `deploy-staging-run.sh` и не hold-override
 
-Со слов владельца (проверенные факты):
+Старый wrapper (со слов владельца: `set -euo pipefail; git fetch; git checkout "$branch"; git pull --ff-only; docker compose -p pullup-staging build app web;
+run --rm app alembic upgrade head; up -d; healthcheck :8002; /usr/local/bin/post-deploy-cleanup.sh`; остальное и серверный cleanup **не проверены**) принимает ветку, не фиксирует SHA,
+не делает backup и convergence, не останавливает писателей и сам запускает `app`/`web` до любой проверки данных; откат им после миграции невозможен
+(старый `alembic upgrade head` падает на `b5d8e1f3a6c9`, проверено). Вариант `profiles`-override с ожидаемым провалом healthcheck **отвергнут как финальный путь**
+(красный workflow как норма, скрытые строки скрипта). Старый wrapper не меняется и остаётся как есть; прод-деплой не затрагивается.
 
-```
-1: (shebang)
-2: set -euo pipefail
-   git fetch origin
-   git checkout "$branch"
-   git pull --ff-only origin "$branch"
-   docker compose -p pullup-staging build app web
-   docker compose -p pullup-staging run --rm app alembic upgrade head
-   docker compose -p pullup-staging up -d
-   healthcheck http://127.0.0.1:8002/health
-   /usr/local/bin/post-deploy-cleanup.sh        # вызывается после healthcheck, если файл исполняемый
-```
+### 3.1 Что выкатывается и чем
 
-**Не проверено:** остальные строки скрипта; форма и длительность healthcheck; **содержимое `/usr/local/bin/post-deploy-cleanup.sh`**.
-Копия в репозитории (`deploy/post-deploy-cleanup.sh`) делает `docker image prune -f` (только dangling-образы, не `-a`),
-`docker builder prune -f --filter until=168h` и всегда `exit 0`; что установлено на сервере — неизвестно. Повторный полный `cat`
-скрипта не запрашивается.
+| Файл (в ветке кандидата) | Роль |
+|---|---|
+| `deploy/deploy-staging-guarded-run.sh` | сам выкат (9 фаз ниже); ставится на VPS вручную как `/home/deploy/deploy-staging-guarded-run.sh` |
+| `deploy/deploy-staging-guarded-dispatch.sh` | forced command **отдельного** SSH-ключа; принимает ровно `./deploy-staging-guarded.sh <40-hex-sha> <dry-run\|apply> <yes\|no>` и блокировку `flock` |
+| `.github/workflows/deploy-staging-guarded.yml` | `workflow_dispatch`: вход `sha` (точный, не ветка), `converge` (`dry-run`\|`apply`), `start` (`no`\|`yes`); валидирует вход, проверяет, что SHA есть в репозитории и несёт нужные файлы |
+| `deploy/staging_data_check.sh`, `deploy/staging-allowed-diff.txt`, `docs/rehearsal/sql/gen_hash_queries.sql` | проверки данных (§6); скрипт читает их через `git show <SHA>:…` — из выкатываемого коммита |
 
-Следствия (из строк + кода репозитория + репетиции):
+Переиспользовано без изменений: `docker compose -p pullup-staging …` (проект, порт 8002, healthcheck URL — как в `deploy-staging-run.sh`), `scripts/repair_plan_convergence.py --all`,
+`scripts/backfill_multi_program.py --converge-history`, `/usr/local/bin/post-deploy-cleanup.sh` (после полного успеха, как в `deploy/deploy-run.sh`). Новых фреймворков нет: один shell-скрипт, один dispatcher, один workflow.
 
-1. **Ветка, не SHA.** Деплоится `HEAD` ветки на момент `git pull`; SHA скрипт не проверяет и не печатает.
-2. **Нет backup и convergence** — делает владелец вручную (§5, §6).
-3. **`set -euo pipefail`:** упавший `build` или `alembic upgrade head` обрывает скрипт **до** `up -d`; упавший healthcheck (если он возвращает
-   ненулевой код — форма не проверена) обрывает скрипт **до** cleanup. Но к этому моменту `git checkout` и `git pull` уже
-   выполнены: **рабочее дерево staging остаётся на новой ветке/HEAD**, даже если деплой упал.
-4. **Старые app/web работают во время `build` и миграции** (скрипт их не останавливает). Миграция берёт `ACCESS EXCLUSIVE`-блокировки
-   (ALTER TABLE), старый бот/Mini App в это время пишут и/или блокируются → писатели должны быть остановлены заранее (§3.2, шаг A).
-5. **Миграция атомарна.** `env.py` оборачивает все ревизии одной `begin_transaction()`; в 7 ревизиях нет `CONCURRENTLY`,
-   `autocommit_block`, `ADD VALUE`. Проверено на копии: сбой последней ревизии (`b5d8e1f3a6c9`) откатил все шесть предыдущих
-   (`alembic_version` остался `c3f7a9e2d5b1`, новых таблиц и колонок нет). Вместе с `set -e` (п. 3) неудачная миграция не доходит до `up -d`.
-6. **Wrapper запускает `app` и `web` сам (`up -d`) до всякого `--apply`** — окно runtime-convergence (первый `GET /plan` новым билдом
-   выполняет сведение) и записей бота. «Запустить и быстро остановить» защитой не является → §3.2, hold-override.
-7. **`compose`/Dockerfile/`pyproject.toml`/`alembic.ini` между `4298f8b` и кандидатом не менялись** → `up -d` не пересоздаёт `db` и `redis`.
-   Новых обязательных настроек `.env` нет (одна новая — `main_min_days_between_starts`, со значением по умолчанию).
-8. **Сборка при ≈ 704 МиБ available (swap используется).** `Dockerfile.web`: `package.json` изменён (добавлен `vitest`) → слой `npm install`
-   пересобирается, затем `tsc -b && vite build`; в обоих образах `pip install` выполняется заново (слой стоит после `COPY app`);
-   `build app web` по умолчанию параллельный. Пик памяти не измерен — риск OOM/очень долгой сборки. Отдельно — невоспроизводимость
-   `npm install` без lock: §3.5.
-9. **Откат тем же wrapper'ом на старую ветку после успешной миграции не сработает:** `alembic upgrade head` кодом `4298f8b` на БД,
-   уже стоящей на `b5d8e1f3a6c9`, падает — `Can't locate revision identified by 'b5d8e1f3a6c9'` (проверено, exit 255). После
-   `pg_restore` (`alembic_version` = `c3f7a9e2d5b1`) или `alembic downgrade c3f7a9e2d5b1` тот же шаг проходит (exit 0). См. §8.
+**Фазы** (любая ошибка ⇒ `app`/`web` остаются **остановленными**, сохранённые образы и backup на месте, авто-отката нет):
 
-### 3.1 Замороженный HEAD деплой-ветки
-
-* **Деплой-ветка выбирается и создаётся только после окончательного candidate SHA** (код-SHA после обоих фиксов, зелёного CI и решения по §3.5).
-  Сейчас её не создают и не защищают; ветку PR #324 для деплоя не использовать (она будет меняться).
-* Когда ветка создана: владелец ставит её на точный `FROZEN_SHA` и закрывает от push. Перед dispatch (в тот же час, без пауз):
-  ```bash
-  git ls-remote origin refs/heads/<DEPLOY_BRANCH>              # == FROZEN_SHA, записанный при принятии gate
-  git diff --stat <GATE_CODE_SHA> <FROZEN_SHA> -- . ':!docs'   # изменения кода относительно прошедшего gate — только принятые фиксы
-  ```
-* После деплоя (§3.3): `git rev-parse HEAD` в каталоге staging **равен** `FROZEN_SHA`, `git status --short` пуст (кроме override из §3.2, он в
-  `.git/info/exclude`), ветка = деплой-ветка. Образ `.git` не содержит, поэтому «собрано из этого HEAD» подтверждается равенством HEAD в рабочем
-  дереве и временем создания образов (после начала деплоя). `HEAD ≠ FROZEN_SHA` при выполненной миграции — стоп, решение владельца, §8.
-
-### 3.2 Последовательность: staging закрыт для записей до конца проверок
-
-**Почему не «остановить после старта».** `up -d` запускает `app` (бот, воркеры) и `web` (Mini App); пока они подняты, возможны записи и
-runtime-convergence. Нужен механизм, при котором wrapper их **вообще не запускает**.
-
-**Рассмотренные доступные механизмы** (новых флагов в скриптах не придумывается):
-
-| Механизм | Закрывает | Вывод |
+| # | Фаза | Что гарантирует |
 |---|---|---|
-| Остановка `app`/`web` после `up -d` | — (окно между `up -d` и `stop`) | **не защита** |
-| Остановка `app`/`web` до деплоя (шаг A) | писатели до backup и во время `build`/миграции | необходима, но wrapper затем сам их поднимет |
-| `docker-compose.override.yml` с `profiles` у `app` и `web` (штатная возможность Compose; файл подхватывается автоматически) | wrapper'овский `up -d` (без имён сервисов) поднимает только `db`, `redis`; `build app web` и `run --rm app` с явными именами работают | **рекомендуется**; проверка ниже |
-| nginx 503 для `staging.app.bimoool.com` | только Mini App; бот (long polling) не закрывает; нужны права на nginx | недостаточно |
-| `deploy.replicas: 0` в override | то же, что профили | равнозначно, менее наглядно |
-| флаг режима обслуживания/read-only в приложении | — | **в коде нет** (поиск по `app/config.py`: `maintenance`/`readonly`/`disable` — пусто) |
+| 0 | preflight | аргументы строго 40-hex/режимы; `docker-compose.yml`+`.env` на месте; рабочее дерево чистое; `git fetch` и коммит существует; файлы проверок есть **в этом SHA**; db-контейнер принадлежит проекту `pullup-staging`, имя БД содержит `staging`; свободно ≥ 2 ГБ диска; логируются версия Compose и память |
+| 1 | сохранить образы | текущие образы `app`/`web` получают теги `local/staging-{app,web}:pre-<sha7>-<UTC>` (откат без Alembic, §8.2); нет контейнера ⇒ стоп |
+| 2 | остановить писателей | `stop app web`; 0 чужих соединений с БД; счётчик записей `sum(n_tup_ins+n_tup_upd+n_tup_del)` не меняется за 15 с |
+| 3 | backup | `pg_dump -Fc` → `/home/deploy/backups/staging-pre-<sha7>-<UTC>.dump` + `.sha256`; оглавление; **восстановление в `restore_check`**: та же `alembic_version`, те же счётчики; счётчик записей не изменился; снимок «до» (хэши ДО-колонок всех таблиц с `id`) |
+| 4 | checkout | `git checkout --detach <SHA>`; `HEAD == SHA`, дерево чистое |
+| 5 | сборка | `COMPOSE_PARALLEL_LIMIT=1`: `build app`, затем `build web` (последовательно, лог памяти); запоминаются ID собранных образов |
+| 6 | миграция | один Alembic head; `alembic_version` должна быть `c3f7a9e2d5b1` (или уже head — тогда предупреждение), иначе стоп; `upgrade head` (одна транзакция); версия = head |
+| 7 | проверки данных | `staging_data_check.sh after-migration`: число строк ДО-таблиц не изменилось, изменённые таблицы ⊆ `staging-allowed-diff.txt`, предикат `work_sets`, `origin` ∈ допустимых |
+| 8 | convergence | dry-run обоих скриптов (`guard_violations` = 0, БД не изменилась). `apply`: `hold-check` (риск дублей факультативов) = 0 → `--apply` → повторный `--apply` без изменений → `after-convergence` (меняться могли только 6 таблиц; ранее существовавшие строки `training_sessions`/`session_blocks`/`set_logs` не изменены; дублей `(origin, legacy_id)` нет) |
+| 9 | старт | `start=yes`: `up -d --no-build app web`; healthcheck `http://127.0.0.1:8002/health` ≤ 240 с; контейнеры запущены, не перезапускаются, **образ запущенного контейнера = образу, собранному в фазе 5**; health `app`/`web` не `unhealthy`; `HEAD == SHA`; `alembic_version = head`; затем `post-deploy-cleanup.sh`. `start=no`: проверки пройдены, сервисы **остаются остановленными** (код 0, сообщение «NOT started») |
 
-**Что проверено** (Docker Compose v5.6.0 в песочнице, демона нет; версия на VPS не известна): с override `docker compose config --services`
-для `up -d` без аргументов даёт `db redis` (без override — `db redis app web`); `docker compose --dry-run build app web` собирает оба образа,
-несмотря на профили (явно названные службы включают свой профиль); `docker-compose.override.yml` в каталоге проекта подхватывается без `-f`.
-**Не проверено** (нужен демон): `run --rm app …` и `up -d` с профилями на реальном сервере — проверяется read-only командами шага A.
-Допущение (не проверено): скрытые строки wrapper'а не удаляют неотслеживаемый файл (`git clean`) и не перезаписывают compose-файлы.
+Итог «success» (код 0 и строка `GUARDED DEPLOY OK`) — **только** при полном успехе всех фаз при `start=yes`. `start=no` печатает `VERIFIED (services NOT started)`.
 
-**Шаг 0 — подготовка (read-only).** `docker compose version` (нужны профили, Compose ≥ 2), `free -m`, `df -h /home/deploy`,
-`docker compose -p pullup-staging images` (сохранить ID/имена образов app/web — §8), размер БД 10 МБ (получено).
+### 3.2 Установка на VPS (команды владельцу; я их не выполнял и не выполняю)
 
-**Шаг A — остановить писателей и поставить hold.** Это же освобождает память под сборку.
+Делается один раз, до первого запуска, **после** финального candidate SHA (скрипты берутся из него). Каждый шаг — отдельное решение владельца.
+
 ```bash
-cd /home/deploy/pullup-trainer-bot-staging
-docker compose -p pullup-staging stop app web                     # pullup-staging-app-1 (бот), pullup-staging-web-1 (Mini App); db, redis остаются
-cat > docker-compose.override.yml <<'EOF'
-services:
-  app:
-    profiles: ["hold"]
-  web:
-    profiles: ["hold"]
-EOF
-echo docker-compose.override.yml >> .git/info/exclude            # локально; рабочее дерево остаётся «чистым» для git status
-docker compose -p pullup-staging config --services               # ожидается ровно: db, redis
-docker compose -p pullup-staging --dry-run up -d                 # app/web не должны создаваться и стартовать; db/redis — без изменений
-DB=pullup-staging-db-1
-Q='psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc'
-docker exec $DB sh -c "$Q \"select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()\""   # ожидается 0
-docker exec $DB sh -c "$Q \"select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables\""   # записать; через 30 с повторить — равны
+# (a) на машине владельца: ключ для guarded-деплоя (отдельный от существующих)
+ssh-keygen -t ed25519 -N '' -C guarded-staging -f ./guarded_staging_key        # приватный ключ -> GitHub secret VPS_STAGING_GUARDED_SSH_KEY, затем удалить файл
+
+# (b) на VPS под пользователем deploy: скрипты ИЗ КОММИТА КАНДИДАТА (проверить хэши до установки)
+git -C /home/deploy/pullup-trainer-bot-staging fetch origin                       # меняет только .git; рабочее дерево не трогает
+for f in deploy-staging-guarded-run.sh deploy-staging-guarded-dispatch.sh; do
+  git -C /home/deploy/pullup-trainer-bot-staging show <CANDIDATE_SHA>:deploy/$f > /home/deploy/$f.new
+  sha256sum /home/deploy/$f.new                                                   # сверить с хэшем из ревью PR
+  install -m 755 /home/deploy/$f.new /home/deploy/$f && rm /home/deploy/$f.new
+done
+command -v flock curl awk sha256sum docker git df free du mktemp                   # все должны найтись
+
+# (c) forced command в ~/.ssh/authorized_keys — ОДНА новая строка (публичный ключ из (a)); существующие строки не менять
+command="/home/deploy/deploy-staging-guarded-dispatch.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA… guarded-staging
 ```
-Если `--dry-run up -d` намерен создать/запустить `app` или `web` — **стоп**, механизм не работает на этой версии Compose; деплой не начинать.
-Бот офлайн: Telegram хранит необработанные обновления (до ~24 ч), после запуска бот их обработает. Остановленные командой `stop` контейнеры
-не поднимаются после перезагрузки VPS (поведение Docker для `restart: unless-stopped`, не проверено на сервере).
+В GitHub: secret `VPS_STAGING_GUARDED_SSH_KEY` (+ уже существующий `VPS_HOST`). Существующий forced-command, `deploy-staging-dispatch.sh` и прод-ключ **не меняются** и не обходятся: у guarded-ключа свой
+forced command, принимающий один литеральный паттерн. Чтобы выкат шёл обновлённым скриптом, после смены `deploy-staging-guarded-run.sh` его снова ставят вручную (самообновления нет).
 
-**Шаг B — backup и проверка восстановления** — §5 целиком (при остановленных writers), затем «до»-снимок §6.1.
+### 3.3 Порядок запусков
 
-**Шаг C — (опционально, решение владельца) предсборка по одному образу** для снижения пика памяти. Меняет рабочее дерево до dispatch;
-**воспроизводимость сборки не обеспечивает** (§3.5):
-```bash
-cd /home/deploy/pullup-trainer-bot-staging
-git fetch origin && git checkout <DEPLOY_BRANCH> && git pull --ff-only origin <DEPLOY_BRANCH>
-git rev-parse HEAD                                              # == FROZEN_SHA
-COMPOSE_PARALLEL_LIMIT=1 docker compose -p pullup-staging build app
-COMPOSE_PARALLEL_LIMIT=1 docker compose -p pullup-staging build web
-free -m; dmesg 2>/dev/null | grep -i -E 'out of memory|oom' | tail -n 3
-```
+1. **Предпроверка:** Actions → *Deploy Staging (guarded)* → `sha` = окончательный candidate SHA, `converge` = `dry-run`, `start` = `no`. Результат: backup, миграция, проверки данных, dry-run convergence; `app`/`web` остановлены. Миграция при этом **применяется** (состояние БД = `b5d8e1f3a6c9`); последующий запуск пропустит `upgrade` с предупреждением, а pre-migration backup — файл предыдущего запуска (его не удалять). Если предпроверка не нужна — сразу п. 2.
+2. **Выкат:** тот же SHA, `converge` = `apply` (только после принятого фикса legacy convergence), `start` = `yes`.
+3. После `GUARDED DEPLOY OK`: §3.4 и §7. Ошибка — §3.5 и §8; **сервисы сами не запускаются**.
 
-**Шаг D — dispatch.** GitHub → Actions → Deploy Staging → `ref` = `<DEPLOY_BRANCH>`. Ожидаемое поведение при hold: `build` и миграция проходят,
-`up -d` поднимает только `db`/`redis` (уже работают), **healthcheck :8002 не проходит (web не запущен)** → скрипт завершается с ошибкой, workflow красный,
-cleanup не вызывается. Это ожидаемо; отличать от настоящего сбоя — по логу: есть строки «Running upgrade … b5d8e1f3a6c9» и нет traceback.
-Форма healthcheck (бесконечный ли цикл, таймаут) не проверена — следить за `free -m`, при зависании отменить workflow и проверить §3.3. Не запускать повторно
-до разбора лога.
+Деплой-ветка больше не нужна: workflow принимает точный SHA, достаточно, чтобы коммит был на `origin` (`git fetch origin` на сервере). «Заморозка» — это сам SHA; перед запуском сверить, что
+SHA = записанному при принятии gate (`git ls-remote origin <ветка кандидата>` и `git diff --stat <GATE_CODE_SHA> <SHA> -- . ':!docs'` — только принятые фиксы).
 
-**Шаг E — проверка факта выката** — §3.3 (app/web по-прежнему остановлены).
-
-**Шаг F — проверка данных и convergence при остановленных app/web** — §6 (`--apply` — только после принятого фикса legacy convergence и dry-run'ов).
-
-**Шаг G — снять hold и запустить.** Образы уже собраны на шаге D, пересборка не нужна:
-```bash
-cd /home/deploy/pullup-trainer-bot-staging
-rm docker-compose.override.yml && sed -i '/^docker-compose.override.yml$/d' .git/info/exclude
-docker compose -p pullup-staging config --services               # db, redis, app, web
-docker compose -p pullup-staging up -d --no-build
-curl -sf http://127.0.0.1:8002/health
-```
-Затем §7. Первое открытие «Планов» новым билдом — после этого шага, когда convergence уже проверена.
-
-### 3.3 Проверка факта выката
+### 3.4 Проверка факта выката (кроме встроенной в фазу 9)
 
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
-git rev-parse HEAD; git branch --show-current; git status --short            # HEAD == FROZEN_SHA; пусто
+git rev-parse HEAD; git status --short                                         # == SHA; пусто
 docker compose -p pullup-staging ps -a; docker compose -p pullup-staging images
 docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # b5d8e1f3a6c9
+ls -l /home/deploy/backups/                                                    # дамп, .sha256 (переносить копию вне VPS)
+docker images --format '{{.Repository}}:{{.Tag}}' | grep '^local/staging-'     # образы для отката
 ```
-`app`/`web` при активном hold — `Exited`; healthcheck на :8002 не отвечает — это штатно до шага G.
+Образ не несёт SHA (в нём нет `.git`): «запущена эта сборка» подтверждается равенством ID образа запущенного контейнера образу, собранному этим запуском, и `HEAD == SHA` на момент сборки.
 
-### 3.4 Если что-то пошло не так (по этапам)
+### 3.5 Сбой по фазам (во всех случаях `app`/`web` остановлены)
 
-| Сбой | Состояние | Действие |
+| Фаза сбоя | Состояние БД и кода | Что делать |
 |---|---|---|
-| `build` упал/OOM | схема `c3f7a9e2d5b1`; `app`/`web` остановлены (шаг A); рабочее дерево уже на новой ветке (п. 3 §3.0); старые образы целы (сбой сборки теги не переписывает — не проверено на сервере) | оставить hold; разобрать причину. Вернуть старые app/web (схема не менялась): §8.2 — `up -d --no-build app web` после снятия override |
-| `alembic upgrade` упал | атомарно: схема `c3f7a9e2d5b1` (п. 5 §3.0); `up -d` не выполнялся (`set -e`) | оставить hold, проверить `alembic_version`; разобрать лог; старый код запускать только после проверки |
-| healthcheck красный при снятом hold | схема `b5d8e1f3a6c9`, данные не сведены или сведены | `stop app web`; логи `docker logs pullup-staging-app-1 --tail 200`, `…-web-1`; откат — §8 |
-| `HEAD ≠ FROZEN_SHA` после выката | миграция выполнена | не снимать hold; §8 |
+| 0 (preflight) | ничего не менялось, `app`/`web` работают как раньше | исправить причину, повторить |
+| 1–3 (образы, остановка, backup) | `app`/`web` остановлены; БД, образы и дерево не менялись; backup (если дошло) цел | `docker compose -p pullup-staging start app web` (те же контейнеры и образы); разобрать причину |
+| 4–6 (checkout, сборка, миграция) | БД не менялась (при сбое миграции — атомарно `c3f7a9e2d5b1`); рабочее дерево на новом SHA; теги образов `pullup-staging-app/-web` **могли уже указывать на новые образы** | вернуть старые образы под имена compose (§8.2: `docker tag local/staging-{app,web}:pre-… <имя из docker compose images>`), `git checkout --detach <прежний SHA>`, затем `docker compose -p pullup-staging up -d --no-build app web`; разобрать причину |
+| 7–9 | схема `b5d8e1f3a6c9`, данные возможно сведены | §8: код (если convergence не применялась) или данные (если применялась) |
 
-### 3.5 Воспроизводимость сборки фронтенда (риск: `npm install` без lock)
+Логи фаз — `/tmp/guarded-deploy.*` (путь печатается в конце), состояние для отката — в блоке `state for rollback` вывода.
 
-**Факт.** `Dockerfile.web` копирует только `webapp-frontend/package.json` и выполняет `npm install`; `package-lock.json` в образ не попадает
-(он не исключён `.dockerignore`, просто не копируется), хотя в репозитории lock есть (с #306). Все 15 прямых зависимостей заданы диапазонами `^`/`~`:
-каждая сборка на сервере резолвит транзитивные и прямые версии заново — **собранный фронтенд может отличаться от протестированного в CI (`npm ci` по lock)**.
-Кэш Docker-слоя этого не исправляет: на этом деплое слой `npm install` и так будет пересобран (`package.json` изменён).
-Предсборка по одному образу (шаг C) экономит память, но резолвит те же диапазоны — риск не устраняет.
+### 3.6 Воспроизводимая сборка фронтенда — исправлено
 
-**Минимальное решение без изменения серверных скриптов** — правка репозитория (2 строки `Dockerfile.web`):
-`docs/rehearsal/patches/dockerfile-web-npm-ci.patch` (проверено `git apply --check`; **не применена**):
-```diff
--COPY webapp-frontend/package.json ./
--# package-lock.json нет (см. CLAUDE.md) — npm install, не npm ci, до
--# первой генерации лока средой с доступом к npm-реестру.
--RUN npm install
-+COPY webapp-frontend/package.json webapp-frontend/package-lock.json ./
-+# Воспроизводимая сборка: ровно версии из package-lock.json (как в CI: `npm ci`), без повторного разрешения диапазонов.
-+RUN npm ci
-```
-Проверено локально: шаги этапа (`npm ci` только из `package.json` + lock, затем копирование исходников и `npm run build`) завершаются успешно
-(Node 22; в CI `e2e.yml` тот же `npm ci` + `npm run build` на Node 20, как в `node:20-slim`). `npm ci` падает, если lock расходится с `package.json`, — это
-дополнительная защита. Образ в песочнице не собирался (демона нет).
+`Dockerfile.web` копировал только `package.json` и делал `npm install` (диапазоны `^`/`~` резолвились заново на каждой сборке). Исправлено отдельным коммитом (`b1d00f2`): копируются `package.json` и
+`package-lock.json`, команда `npm ci`. **Проверено реальной сборкой Docker** (демон в песочнице, `docker build -f Dockerfile.web`, базовый образ `node:20-slim` = Node v20.20.2 / npm 10.8.2,
+`python:3.12-slim`): `npm ci` и `vite build` прошли; контейнер отдаёт `/health`, `/` и ассет; установленные версии (145 пакетов) совпали с `package-lock.json` (0 расхождений); имена
+собранных ассетов (`index-C7H_6_JJ.js`, `index-CQDMHGK4.css`) совпали с локальной сборкой по lock-файлу. **Условия проверки (непроверенное):** песочница ходит в сеть через прокси,
+поэтому использованы локальные копии базовых образов с корпоративным CA и заглушкой `apt-get install procps` (Debian-зеркала заблокированы); базовые образы взяты с зеркала `mirror.gcr.io`
+(тот же digest, что `node:20-slim`); образ `app` и реальный `apt-get`, а также сборка на VPS (RAM ≈ 704 МиБ, свой Docker/BuildKit) не проверялись.
 
-Это изменение сборки образа, которое CI не исполняет (CI образы не строит): если принято, оно входит в окончательный candidate SHA **до** gate и требует
-перепроверки сборки на сервере (первый реальный `docker build` — на staging). Без патча риск остаётся принятым осознанно; мера смягчения — сравнить собранный
-`dist`/версии (`docker run --rm <web-image> ls /app/webapp-frontend/dist/assets`) и пройти §7 на реальном устройстве.
+### 3.7 Как это проверено без VPS и что осталось непроверенным
+
+* **Реальный Docker/Compose в песочнице** (Compose v5.6.0, изолированный демон): мини-«staging» (проект `pullup-staging`, код `4298f8b`, данные схемы `c3f7`), реальный запуск скрипта на коммите `3f8e919`
+  (отличие от финального — только текст одного сообщения об ошибке): **S1** `apply`+`yes` — все 9 фаз, образы запущенных контейнеров = собранным; **F1** `apply` на данных с рискованными факультативами — стоп на hold-check,
+  `app`/`web` остановлены, backup и образы целы; **F2** неверный health URL — стоп в фазе 9, `app`/`web` остановлены; **S2** `dry-run`+`no` — успех, сервисы остановлены. Откат §8.3+§8.2 теми же командами —
+  данные из дампа, сохранённые образы, `up -d --no-build`: `alembic_version = c3f7a9e2d5b1`, health OK, образы = сохранённым. В песочнице `app`-контейнер подменён простым процессом (нет Telegram), health `app` — заглушка.
+* **Тест потока** `tests/test_scripts/test_deploy_staging_guarded.py` (заглушки docker/git/curl, 30 проверок; мутации «trap не останавливает», «старт до проверок данных», «убрана сверка счётчиков восстановленной копии» ловятся).
+* **Проверки данных** `staging_data_check.sh` на реальных репетиционных БД: позитивный путь и 6 негативных (подмена данных падает).
+* **Не проверено:** запуск на VPS (версия Compose CLI неизвестна; `docker compose run -T`, `up -d --no-build`, `stop`, `config --images` на сервере; права пользователя `deploy`; наличие `flock`/`curl`/`awk`); поведение sshd с `no-pty` и
+  `appleboy/ssh-action` для 60-минутной команды; серверный `post-deploy-cleanup.sh`; сборка при ≈ 704 МиБ (ограничение — последовательные сборки, пик не измерен); реальные данные staging; запуск самого GitHub workflow.
 
 ## 4. Цепочка миграций
 
@@ -292,18 +218,19 @@ alembic history -r c3f7a9e2d5b1:head       # 7 строк, голова b5d8e1f3
 
 ## 5. Бэкап и проверка восстановления (до деплоя; только staging)
 
-Бэкапа на staging нет (§1.1), БД `pullup_staging` — 10 МБ. Ниже — команды **только для проекта `pullup-staging`**, с именами из §1.1
+Бэкапа на staging нет (§1.1), БД `pullup_staging` — 10 МБ. **В guarded-выкате backup делает фаза 3 (§3.1)** с теми же проверками; команды ниже — для ручного повторения/проверки
+и для ситуации, когда нужен ещё один дамп. Это команды **только для проекта `pullup-staging`**, с именами из §1.1
 и защитой: проверка отказывается работать, если контейнер не принадлежит compose-проекту `pullup-staging` (на VPS есть прод и
-`reeltrack-*`). Рабочую БД команды не меняют. **Выполнять только после шага A (§3.2): `app` и `web` остановлены, записей нет**, —
+`reeltrack-*`). Рабочую БД команды не меняют. **Выполнять только при остановленных `app` и `web` (фаза 2, §3.1): записей нет**, —
 иначе дамп и «счётчики до» не соответствуют состоянию на момент миграции. Запускать как скрипт (`bash backup.sh`), а не
 вставлять `set -e` в интерактивную консоль.
 
-**Backup считается проверенным, когда выполнено всё** (без этого переходить к шагу C/D нельзя):
-1. дамп-файл создан, `sha256` записан, размер > 0, `pg_restore -l` показывает оглавление;
+**Backup считается проверенным, когда выполнено всё** (скрипт не идёт к checkout/сборке без этого):
+1. дамп-файл создан, `sha256` записан, размер > 0, `pg_restore -l` показывает оглавление (> 10 записей);
 2. восстановление в `restore_check` прошло без ошибок, `alembic_version` там = `c3f7a9e2d5b1`;
 3. счётчики в `restore_check` равны счётчикам рабочей БД, снятым в той же остановленной системе (§6.1);
-4. после дампа счётчик записей (`sum(n_tup_ins+n_tup_upd+n_tup_del)` из шага A) **не изменился** — за время backup никто не писал;
-5. копия дампа лежит **вне VPS** (на сервере один диск).
+4. после дампа счётчик записей (`sum(n_tup_ins+n_tup_upd+n_tup_del)` из фазы 2) **не изменился** — за время backup никто не писал;
+5. копия дампа лежит **вне VPS** (на сервере один диск; скрипт этого не делает).
 
 ```bash
 set -euo pipefail
@@ -340,7 +267,7 @@ docker exec $DB sh -c 'dropdb -U "$POSTGRES_USER" restore_check'
 
 ## 6. Проверки «старых» данных
 
-### 6.1 До деплоя (только счётчики, без персональных данных; снимать при остановленных `app`/`web`, шаг A §3.2)
+### 6.1 До деплоя (только счётчики, без персональных данных; снимать при остановленных `app`/`web`, фаза 2 §3.1). **Снимок «до» (1) и проверки §6.2.0/§6.2.1/§6.3 выполняет сам guarded-скрипт (фазы 3, 7, 8); ручные запросы ниже — для независимой сверки**
 
 Два набора снимков (сохранить в файлы; значения — без персональных данных):
 
@@ -379,7 +306,7 @@ select origin, count(*) as sessions, count(legacy_id) as keyed from training_ses
 
 ### 6.2 После миграции: проверка данных, затем convergence (после принятого фикса)
 
-Порядок строго такой; `app`/`web` всё это время остановлены (шаг F §3.2).
+Порядок строго такой; `app`/`web` всё это время остановлены (фаза 2 §3.1).
 
 **6.2.0 Проверка сразу после миграции, ДО convergence — по ожидаемым преобразованиям семи миграций, а не по неизменности счётчиков.**
 Выполнить `hash_queries.sql` (тот же файл) → `hq_after.txt` и сравнить с `hq_before.txt` по таблицам:
@@ -488,78 +415,73 @@ select origin, legacy_id, count(*) from training_sessions where legacy_id is not
 
 ## 8. Rollback
 
-Критерии: падение build/миграции (§3.4); `HEAD ≠ FROZEN_SHA`; `guard_violations`/exit 4; нарушение §6.2.0/§6.3; FAIL в §7.
-Первое действие всегда — писатели остановлены и hold на месте (`docker compose -p pullup-staging stop app web`; override не снимать).
+Критерии: сбой любой фазы guarded-скрипта (§3.5), FAIL в §7, решение владельца. **При сбое скрипта `app`/`web` уже остановлены и остаются остановленными**; скрипт сам
+ничего не восстанавливает — он печатает сводку: целевой/предыдущий SHA, путь к дампу, теги сохранённых образов, рабочий каталог.
 
-**Подготовить заранее (до деплоя):**
-* ветка на `4298f8b9727f91d4a150431fd0d9e06131944d27` (напр. `staging/pre-rc-4298f8b`) — wrapper делает `git checkout "$branch"` + `git pull --ff-only
-  origin "$branch"`, с тегом `pull` на detached HEAD не пройдёт. Создаёт владелец; мной не создана;
-* **свои теги на текущие образы** `app`/`web` (имена/ID — шаг 0 §3.2):
-  `docker tag <ID_образа_app> local/staging-app:pre-rc`, `docker tag <ID_образа_web> local/staging-web:pre-rc`. Без тегов старые образы остаются
-  без имени после пересоздания контейнеров и могут быть удалены `docker image prune -f` из cleanup (содержимое серверной версии не проверено;
-  при hold контейнеры `app-1`/`web-1` не пересоздаются, поэтому образы пока держатся ими);
-* проверенный backup (§5).
+Что подготавливает сам скрипт (фазы 1 и 3, до любых изменений): теги `local/staging-app:pre-<sha7>-<UTC>` и `local/staging-web:pre-<sha7>-<UTC>` на запущенные образы
+(их не удалит `docker image prune -f`) и проверенный дамп `/home/deploy/backups/staging-pre-<sha7>-<UTC>.dump` (+ `.sha256`; `pg_restore -l`, пробное восстановление в
+`restore_check`). Ветку отката создавать не нужно: guarded-скрипт принимает SHA.
 
 ### 8.1 Старый wrapper на новой revision — НЕ работает (доказано)
 
-Деплой старой ветки тем же wrapper'ом выполняет `alembic upgrade head` кодом `4298f8b`. Если `alembic_version` = `b5d8e1f3a6c9`, он падает
-(`Can't locate revision identified by 'b5d8e1f3a6c9'`, exit 255), и по `set -e` скрипт обрывается до `up -d`. Проверено на копии БД. Это означает:
-**wrapper можно использовать для отката только когда `alembic_version` снова `c3f7a9e2d5b1`** — после `pg_restore` (8.3) или после `alembic downgrade c3f7a9e2d5b1`
-(схема откатывается, данные нет, см. 8.3). Править одну строку `alembic_version` вручную нельзя — см. 8.3.
+`deploy-staging-run.sh` выполняет `alembic upgrade head` старым кодом `4298f8b`. При `alembic_version = b5d8e1f3a6c9` он падает
+(`Can't locate revision identified by 'b5d8e1f3a6c9'`, exit 255) до `up -d`. Проверено на копии БД. Wrapper пригоден для отката кода только когда `alembic_version`
+снова `c3f7a9e2d5b1` (после `pg_restore`, 8.3). Править строку `alembic_version` вручную нельзя (8.3).
 
-### 8.2 Альтернативный откат кода: сохранённые старые образы, без Alembic
+### 8.2 Откат кода без данных: сохранённые образы, без Alembic
 
-Сценарий: миграция прошла, **convergence не применялась**, нужно вернуть старый код. Старый код не запускает Alembic при старте: репетиция поднимала `4298f8b`
-(`uvicorn app.web.main:app`) против обновлённой схемы — 20/20 GET → 200, старт/подходы/завершение live-сессии и запись в Журнал работают
-(`docs/STAGING_RC_REHEARSAL.md` §4, §9). Бот (`app.main`) в песочнице не запускался (нужен Telegram).
+Сценарий: миграция прошла (схема `b5d8e1f3a6c9`), **convergence не применялась** (скрипт остановился в фазах 6–8 до `--apply`, либо `converge=dry-run`). Старый код Alembic
+при старте не запускает: репетиция — `4298f8b` против новой схемы, 20/20 GET → 200, старт/подходы/завершение live-сессии и запись в Журнал работают
+(`docs/STAGING_RC_REHEARSAL.md` §4, §9). Бот (`app.main`) без Telegram не запускался.
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
 docker compose -p pullup-staging stop app web
-docker tag local/staging-app:pre-rc <ИМЯ_ОБРАЗА_APP_ИЗ_ШАГА_0>      # вернуть имена, под которыми compose ищет образы (docker compose images)
-docker tag local/staging-web:pre-rc <ИМЯ_ОБРАЗА_WEB_ИЗ_ШАГА_0>
-rm -f docker-compose.override.yml && sed -i '/^docker-compose.override.yml$/d' .git/info/exclude
-docker compose -p pullup-staging up -d --no-build app web                # без сборки и без Alembic; схема остаётся b5d8e1f3a6c9
+# вернуть имена, под которыми compose ищет образы (имена — из `docker compose -p pullup-staging config --images`)
+docker tag local/staging-app:pre-<sha7>-<UTC> <ИМЯ_ОБРАЗА_APP>
+docker tag local/staging-web:pre-<sha7>-<UTC> <ИМЯ_ОБРАЗА_WEB>
+git checkout --detach 4298f8b9727f91d4a150431fd0d9e06131944d27         # дерево = образам
+docker compose -p pullup-staging up -d --no-build app web             # без сборки и Alembic
 curl -sf http://127.0.0.1:8002/health
 ```
-Ограничения: (а) только до convergence/первого `GET /plan` новым кодом — иначе в старом интерфейсе задвоенные строки плана (репетиция: 4→7, 2→5); (б) схема остаётся новой —
-следующий деплой старой веткой wrapper'ом всё равно упадёт (8.1); (в) способ не проверен на реальном сервере (демона в песочнице нет), требует, чтобы старые образы существовали
-(теги, шаг «подготовить заранее»); (г) рабочее дерево staging уже на новой ветке — compose-файл тот же (проверено: не менялся), но `git status`/HEAD не соответствуют образам; вернуть
-`git checkout <ветка 4298f8b>` после отката.
+Ограничения: (а) только до convergence — после неё старый интерфейс показывает задвоенные строки плана (репетиция: 4→7, 2→5); (б) схема остаётся новой — следующий деплой
+старой веткой wrapper'ом упадёт (8.1); (в) на реальной VPS не проверено.
+Эта процедура (теги → `up -d --no-build` → запущенный образ = сохранённый) проверена на настоящем Docker/Compose в песочнице
+(`docs/STAGING_RC_REHEARSAL.md` §12), но не на VPS.
 
-### 8.3 После convergence — полноценный откат требует возврата данных
+### 8.3 После convergence — откат требует возврата данных
 
-После `--apply` (или после первого `GET /plan` новым билдом) данные изменены сведением: новые `plan_items`/`plan_weeks`, `status='removed'`, новые копии
-`training_sessions` с `legacy_id`, `work_sets = 4`. **Это не вернуть ни сменой `alembic_version`, ни `alembic downgrade`:**
-* `alembic downgrade c3f7a9e2d5b1` откатывает схему, данные сведения и backfill остаются (репетиция: plan_items +19, plan_weeks +3, training_sessions +3, `work_sets=4`);
-* ручная правка `alembic_version` на `c3f7a9e2d5b1` при новой схеме оставляет состояние рассогласованным: проверено на копии — следующий `alembic upgrade head`
-  падает на первой же ревизии (`DuplicateTableError: relation "exercise_categories" already exists`), `alembic_version` остаётся `c3f7a9e2d5b1`.
+После `--apply` данные изменены: новые `plan_items`/`plan_weeks`, `status='removed'`, новые копии `training_sessions` с `legacy_id`, `work_sets = 4`. **Это не вернуть ни сменой
+`alembic_version`, ни `alembic downgrade`:**
+* `alembic downgrade c3f7a9e2d5b1` откатывает схему; данные сведения и backfill остаются (репетиция: plan_items +19, plan_weeks +3, training_sessions +3, `work_sets=4`);
+* ручная правка `alembic_version` при новой схеме: следующий `alembic upgrade head` падает на первой ревизии (`DuplicateTableError: relation "exercise_categories" already exists`).
 
-Единственный путь — **`pg_restore` из дампа §5** (дамп содержит схему и данные R0 и `alembic_version = c3f7a9e2d5b1`). Теряет всё записанное после дампа
-(на staging в окне выката записей нет — шаг A). Деструктивно: только по решению владельца.
+Единственный путь — **`pg_restore` из дампа** скрипта. Теряет всё записанное после дампа (окно выката записей не содержит — писатели остановлены в фазе 2). Деструктивно:
+только по решению владельца.
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
 docker compose -p pullup-staging stop app web
 docker exec pullup-staging-db-1 sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < /home/deploy/backups/staging-pre-rc-<TS>.dump
+docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < /home/deploy/backups/staging-pre-<sha7>-<UTC>.dump
 docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # = c3f7a9e2d5b1
-# счётчики и ДО-хэши (hash_queries.sql) равны «до» (§6.1); затем код: 8.2 (старые образы) либо wrapper на ветку 4298f8b (8.1: теперь Alembic пройдёт)
+# затем код: 8.2 (сохранённые образы)
 ```
-После отката: §6.1 (хэши и счётчики = «до»), `alembic_version`, `git rev-parse HEAD` = `4298f8b…`, health `http://127.0.0.1:8002/health`. Redis (FSM бота) дамп не затрагивает.
+После отката: счётчики и ДО-хэши равны «до» (§6.1), `alembic_version = c3f7a9e2d5b1`, `git rev-parse HEAD` = `4298f8b…`, health `http://127.0.0.1:8002/health`. Redis (FSM) дамп не затрагивает.
+Проверено в песочнице на настоящем Postgres + Docker: восстановление дампа возвращает данные и `alembic_version`, старые образы поднимаются через `up -d --no-build`.
 
 ## 9. Известные риски и открытые вопросы
 
-- **Два обязательных фикса не готовы** (ждём финалы): (1) IDB — ворота drain-before-projection при сбое чтения IndexedDB
-  (`docs/STAGING_RC_CI_E2E.md`); (2) legacy convergence — отредактированные/удалённые копии факультативов
-  (`docs/STAGING_RC_REHEARSAL.md` §8). Без них деплой не готов. После них — перепрогон: unit-тесты ворот, edited-copy сценарий, CI E2E; затем
-  окончательный candidate SHA → деплой-ветка (§3.1).
-- **Невоспроизводимая сборка фронтенда** (`npm install` без lock, §3.5) — предложен патч, не применён; решение владельца до окончательного SHA.
-- **Сборка при ≈ 704 МиБ** (§3.0 п. 8): вероятный отказ деплоя; пик не измерен.
-- **hold-override проверен только на уровне `config`/`--dry-run build` (Compose v5.6.0, без демона)**; версия Compose и поведение `run`/`up` на VPS не проверены —
-  обязательная проверка шага A (`config --services`, `--dry-run up -d`).
-- **`/usr/local/bin/post-deploy-cleanup.sh` и остальные строки `deploy-staging-run.sh` не проверены** (форма healthcheck, возможные `git clean`/правки compose).
-- **Staging получает скачок на 67 коммитов и 7 миграций за один выкат**; реальные данные (10 МБ) не видела ни одна репетиция (все числа в `docs/STAGING_RC_REHEARSAL.md`
-  — на синтетике и на staging не переносятся).
-- **Неспаренные копии факультативов.** `converge-history` связывает копию с legacy-строкой только по точному совпадению `(performed_at, блоки)`; отредактированная копия не
-  спаривается; при хронологии «электив не старше плана» создаётся дубль/воскрешается удалённое (HOLD §6.2).
-- **Миграция `e3b9c5d7a2f1` неаддитивна** (UPDATE `progression_state`), уже в BASE, не в #322/#323; её `downgrade()` backfill не откатывает.
-- **CI E2E красный** на кандидате (2 из 2); причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
+- **BLOCKER: два обязательных фикса не готовы** (ждём финалы): (1) IDB — ворота drain-before-projection при сбое чтения IndexedDB
+  (`docs/STAGING_RC_CI_E2E.md`); (2) legacy convergence — отредактированные/удалённые копии факультативов (`docs/STAGING_RC_REHEARSAL.md` §8). Без них деплой не готов.
+  После них: перепрогон unit-тестов ворот, edited-copy сценария, CI E2E, полный gate на окончательном SHA; затем деплой по §3 именно этим SHA. Код ветки с тех пор ушёл дальше
+  `ef607c0` (Dockerfile.web, deploy-файлы, тесты) — «gate прошёл на ef607c0» относится только к коду приложения до этих коммитов.
+- **Версия Docker Compose на VPS — НЕИЗВЕСТНА.** «2.40.3» в labels контейнеров — версия, создавшая контейнеры, не доказательство текущей CLI. Скрипт пишет `docker compose version` в лог
+  (фаза 0); поведение `run -T`, `up -d --no-build`, `config --images` на VPS не проверено.
+- **Guarded entrypoint ни разу не запускался на VPS.** Проверен на настоящем Docker/Compose в песочнице и тестами потока управления (§3.7); не проверены: установка по §3.2,
+  `flock`/`curl`/`sha256sum` на VPS, поведение sshd/`appleboy/ssh-action` при команде до 60 мин, серверная копия `post-deploy-cleanup.sh`, реальные данные.
+- **Сборка при ≈ 704 МиБ available:** `COMPOSE_PARALLEL_LIMIT=1` и сборка app → web уменьшают пик, но он не измерен; при OOM скрипт останавливается в фазе 5 (БД не тронута, образы сохранены).
+- **Воспроизводимость фронтенда:** исправлено (`b1d00f2`, `npm ci` по lock), проверено реальной сборкой образа Node (§3.6); версии зависимостей фиксирует lock.
+- **Staging получает скачок на 67 коммитов и 7 миграций за один выкат**; реальные данные (10 МБ) не видела ни одна репетиция (числа в `docs/STAGING_RC_REHEARSAL.md` синтетические).
+- **Неспаренные копии факультативов.** `converge-history` связывает копию с legacy-строкой по точному совпадению `(performed_at, блоки)`; отредактированная не спаривается; при хронологии
+  «электив не старше плана» возможен дубль/воскрешение (`hold-check` в фазе 8 останавливает выкат до исправления).
+- **Миграция `e3b9c5d7a2f1` неаддитивна** (UPDATE `progression_state`), уже в BASE; её `downgrade()` backfill не откатывает.
+- **CI E2E красный** на `ef607c0` (2 из 2); причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
