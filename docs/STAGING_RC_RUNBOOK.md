@@ -2,11 +2,13 @@
 
 **Только подготовка. Ни одна команда этого документа не выполнялась на staging; деплой делает владелец.**
 
-> **Статус готовности: BLOCKER, деплой на staging не разрешён.** (1) CI E2E на кандидате красный (2 из 2 прогонов), причина
-> не подтверждена — `docs/STAGING_RC_CI_E2E.md`; (2) HOLD на `converge-history --apply`: случай отредактированных копий
-> факультативов — §6.2 и `docs/STAGING_RC_REHEARSAL.md` §8; (3) состояние staging не прочитано — §2.
-Доказательства репетиции на изолированной БД — `docs/STAGING_RC_REHEARSAL.md`. Команды общего gate —
-`docs/STAGING_RC_GATE.md`.
+> **Статус готовности: BLOCKER, деплой на staging не разрешён.**
+> 1. Ждём два исправления: **(IDB)** ворота drain-before-projection при сбое чтения IndexedDB и **(legacy convergence)**
+>    случай отредактированных/удалённых копий факультативов. Без них деплой не готов; в этом документе они **не** реализованы.
+> 2. CI E2E на кандидате красный (2 из 2), причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
+> 3. Не прочитано содержимое `deploy-staging-dispatch.sh` / `deploy-staging-run.sh` — неизвестно, принимает ли wrapper SHA,
+>    делает ли миграцию и где собирает образы (§2.5). Бэкапа на staging нет — §5 обязателен.
+> 4. HOLD на `--apply` convergence — §6.2.
 
 ## 1. Что именно выкатывается
 
@@ -29,6 +31,23 @@ git rev-parse origin/claude/vigilant-clarke-xis1u1                              
 репозитории его нет). Из репозитория известно: workflow `deploy-staging.yml` принимает input `ref` («Ветка») и
 вызывает `./deploy-staging.sh <ref>`; прод-контур принимает только 40-hex SHA (`deploy/deploy-run.sh`). Поэтому
 деплоить **именем ветки** и сверить выкаченный SHA по §3.1.
+
+## 1.1 Фактическое состояние staging (получено от владельца с VPS; я его не читал)
+
+| | |
+|---|---|
+| Код на staging | `4298f8b9727f91d4a150431fd0d9e06131944d27` — `feat(access): free-forever «Подтягивания» + 7-day minimum-guarantee trial` (2026-10-07); `git status --short` пуст |
+| Alembic current (**R0**) | `c3f7a9e2d5b1` |
+| Каталог | `/home/deploy/pullup-trainer-bot-staging` |
+| Контейнеры | `pullup-staging-app-1`, `pullup-staging-web-1`, `pullup-staging-db-1`, `pullup-staging-redis-1` (проект `pullup-staging`, сервисы `app`, `web`, `db`, `redis`) |
+| Диск | свободно 17 ГБ |
+| Память | available ≈ 704 МиБ, swap используется |
+| Бэкап | в проверенных каталогах **не найден** |
+| Скрипты деплоя | `/home/deploy/deploy-staging-dispatch.sh`, `/home/deploy/deploy-staging-run.sh` (содержимое не получено) |
+
+Выводы: `4298f8b` — предок BASE (67 коммитов до `608015948`), его единственная миграция сверх `a4c8e1f7b2d9` — `c3f7a9e2d5b1`
+(`alembic heads` на `4298f8b` = `c3f7a9e2d5b1`) → код и схема staging согласованы. До кандидата не хватает **7 миграций** и
+всей работы #303–#308/#305, т.е. staging получит очень большой скачок. Тесты на VPS не запускать (память).
 
 ## 2. Что мне известно из репозитория, а что надо прочитать на сервере
 
@@ -62,7 +81,9 @@ ls -la ~/backups 2>/dev/null | head -n 20; crontab -l 2>/dev/null | grep -iE 'du
 Дальше в команды §3–§8 подставлять найденные `-p <PROJECT_STAGING>` и имена сервисов из 2.1 (в тексте ниже использованы
 `pullup-staging`, `db`, `app`, `web` из `docker-compose.yml` репозитория — **заменить на найденные**).
 
-Пока §2.1–2.6 не выполнены, **факты о staging неизвестны**: стартовую ревизию в §4 нельзя считать установленной.
+Команды 2.1–2.4 владелец уже выполнил (§1.1: проект `pullup-staging`, сервисы, SHA `4298f8b`, Alembic `c3f7a9e2d5b1`). **Остаются 2.5**
+(содержимое `deploy-staging-dispatch.sh` / `deploy-staging-run.sh`: принимает ли SHA или ветку, делает ли `alembic upgrade`,
+где и как собирает образы при ≈ 704 МиБ available) **и размер БД из §5.1**. Бэкапа нет (2.6 проверен в указанных каталогах).
 
 ## 3. Деплой (действие владельца; в рамках этой задачи не выполнялось)
 
@@ -86,55 +107,73 @@ docker compose -p pullup-staging exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "
 
 ## 4. Цепочка миграций
 
-Голова кандидата — `b5d8e1f3a6c9`, голова одна, цепочка линейная. Staging находится где-то на ней; **стартовая ревизия
-R0 — из §2.4**. Миграции, которые будут применены (в порядке применения):
+Голова кандидата — `b5d8e1f3a6c9`, голова одна, цепочка линейная. **R0 staging = `c3f7a9e2d5b1`** (§1.1), поэтому применяются
+ровно **7 миграций** (в порядке применения):
 
 | # | Ревизия | Что делает | Данные |
 |---|---|---|---|
-| 1 | `c3f7a9e2d5b1` | `programs.access_level` (бесплатный курс «Подтягивания») | UPDATE access_level |
-| 2 | `b7d2e9f4a1c3` | WorkoutDefinition v2: версии, идентичность упражнений, переписанный системный контент (#303) | backfill + контент |
-| 3 | `d8a3c6f1e2b4` | Program + Plan v2: occurrences, кредит сессии, констрейнты, custom plans (#304) | backfill |
-| 4 | `f4c1a7e9b3d2` | TrainingSession v2: источники, идентичность, prescription snapshot, длительность (#307) | backfill (kind/origin/…) |
-| 5 | `a9e6c3d1f5b7` | Live Engine v2: колонки состояния движка + `session_events` (#306) | нет |
-| 6 | `a7e2c5b9d1f4` | Единая история: `legacy_id`, `superseded_*`, индексы (#308) | только колонки |
-| 7 | `e3b9c5d7a2f1` | Course prescription (#305): `status` varchar(32), `prescription_provenance`, **backfill `block_b.work_sets`** | UPDATE `progression_state` |
-| 8 | `b5d8e1f3a6c9` | V5.6: `technique_valid`, `rest_within_limit` в `session_blocks` | нет |
+| 1 | `b7d2e9f4a1c3` | WorkoutDefinition v2: версии, идентичность упражнений, переписанный системный контент (#303) | backfill + контент |
+| 2 | `d8a3c6f1e2b4` | Program + Plan v2: occurrences, кредит сессии, констрейнты, custom plans (#304) | backfill |
+| 3 | `f4c1a7e9b3d2` | TrainingSession v2: источники, идентичность, prescription snapshot, длительность (#307) | backfill (kind/origin/…) |
+| 4 | `a9e6c3d1f5b7` | Live Engine v2: колонки состояния движка + `session_events` (#306) | нет |
+| 5 | `a7e2c5b9d1f4` | Единая история: `legacy_id`, `superseded_*`, индексы (#308) | только колонки |
+| 6 | `e3b9c5d7a2f1` | Course prescription (#305): `status` varchar(32), `prescription_provenance`, **backfill `block_b.work_sets`** | UPDATE `progression_state` |
+| 7 | `b5d8e1f3a6c9` | V5.6: `technique_valid`, `rest_within_limit` в `session_blocks` | нет |
 
-Для R0 выше начала таблицы применяется только хвост, начиная со следующей за R0 ревизии. Проверить точный хвост до
-деплоя (БД не нужна):
+(`c3f7a9e2d5b1` — `programs.access_level` — уже применена на staging.) Проверить точный хвост до деплоя можно только
+вне staging (его текущий образ — `4298f8b` — новых ревизий не знает): на машине разработчика, на ветке кандидата, БД не нужна:
 
 ```bash
-docker compose -p pullup-staging run --rm app alembic history -r <R0>:head
+git fetch origin claude/vigilant-clarke-xis1u1 && git checkout --detach origin/claude/vigilant-clarke-xis1u1
+alembic history -r c3f7a9e2d5b1:head       # 7 строк, голова b5d8e1f3a6c9
 ```
 
-Если R0 нет в таблице выше — **стоп**: цепочка staging отличается от рассмотренной, репетицию надо повторить с реальной R0.
+Если вывод отличается от таблицы — **стоп**: цепочка не та, что репетировалась.
 
 `e3b9c5d7a2f1` — единственная миграция, меняющая существующее значение (`program_inclusions.progression_state`):
 **разрешено** только `block_b.work_sets`: отсутствует / `null` → `4` у записей, где `block_b` — объект. Любое другое
 существующее значение (в репетиции: `3`, `5`) сохраняется. Миграция не аддитивна в строгом смысле CLAUDE.md
 (UPDATE существующих данных), её `downgrade()` backfill не откатывает.
 
-## 5. Бэкап и проверка восстановления (до деплоя)
+## 5. Бэкап и проверка восстановления (до деплоя; только staging)
 
-Механизм бэкапа в репозитории не описан — §2.6 покажет, есть ли он на сервере. Минимум:
-
-```bash
-mkdir -p ~/backups && umask 077
-TS=$(date -u +%Y%m%dT%H%M%SZ)
-docker compose -p pullup-staging exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > ~/backups/staging-pre-rc-$TS.dump
-sha256sum ~/backups/staging-pre-rc-$TS.dump; ls -l ~/backups/staging-pre-rc-$TS.dump
-# дамп читается и непустой:
-docker compose -p pullup-staging exec -T db pg_restore -l < ~/backups/staging-pre-rc-$TS.dump | wc -l
-```
-
-Проверка восстановления в **отдельную** БД (не трогает рабочую; перед этим убедиться, что хватает диска, §2.6):
+Бэкапа на staging нет (§1.1). Ниже — команды **только для проекта `pullup-staging`**, с именами из §1.1 и защитой: первая
+строка отказывается работать, если контейнер не принадлежит compose-проекту `pullup-staging` (на VPS есть прод и `reeltrack-*`).
+Ничего здесь не меняет рабочую БД; лёгкая нагрузка (диск 17 ГБ свободно, память ≈ 704 МиБ — `pg_dump` не требует много, но
+не запускать параллельно сборку образов).
 
 ```bash
-docker compose -p pullup-staging exec -T db sh -c 'createdb -U "$POSTGRES_USER" restore_check'
-docker compose -p pullup-staging exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d restore_check --no-owner' < ~/backups/staging-pre-rc-$TS.dump
-docker compose -p pullup-staging exec -T db sh -c 'psql -U "$POSTGRES_USER" -d restore_check -Atc "select version_num from alembic_version"'   # = R0
-docker compose -p pullup-staging exec -T db sh -c 'dropdb -U "$POSTGRES_USER" restore_check'
+set -euo pipefail
+DB=pullup-staging-db-1
+[ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' $DB)" = pullup-staging ] || { echo "NOT STAGING: stop"; exit 1; }
+
+# 5.1 размер БД и имя (не секрет) — убедиться, что дамп поместится на диск
+docker exec $DB sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select current_database(), pg_size_pretty(pg_database_size(current_database()))"'
+df -h /home/deploy | tail -n 1
+
+# 5.2 дамп (custom format, один файл) + контрольная сумма
+umask 077; mkdir -p /home/deploy/backups
+TS=$(date -u +%Y%m%dT%H%M%SZ); F=/home/deploy/backups/staging-pre-rc-$TS.dump
+docker exec $DB sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > "$F"
+sha256sum "$F" | tee "$F.sha256"; ls -l "$F"
+docker exec -i $DB pg_restore -l < "$F" | wc -l          # читается, оглавление непустое
 ```
+
+Проверка восстановления в **отдельную** БД `restore_check` (рабочую не трогает; выполнить до деплоя, затем удалить):
+
+```bash
+docker exec $DB sh -c 'createdb -U "$POSTGRES_USER" restore_check'
+docker exec -i $DB sh -c 'pg_restore -U "$POSTGRES_USER" -d restore_check --no-owner' < "$F"
+docker exec $DB sh -c 'psql -U "$POSTGRES_USER" -d restore_check -Atc "select version_num from alembic_version"'   # ожидается c3f7a9e2d5b1
+docker exec $DB sh -c 'psql -U "$POSTGRES_USER" -d restore_check -Atc "select (select count(*) from users), (select count(*) from training_sessions), (select count(*) from plan_items)"'   # = §6.1 «до»
+docker exec $DB sh -c 'dropdb -U "$POSTGRES_USER" restore_check'
+```
+
+Круговой дамп→восстановление этими командами (в локальном Postgres 16, `-Fc` / `--no-owner`) прошёл с построчно идентичным
+результатом (`docs/STAGING_RC_REHEARSAL.md` §9). Файл дампа хранить вне каталога репозитория и вне томов compose; копию — вне VPS
+(на сервере один диск). Redis (`pullup-staging-redis-1`, FSM бота) в откат данных не входит.
+
+**Реальное восстановление (§8, путь 3) — деструктивно, только по решению владельца.**
 
 ## 6. Проверки «старых» данных
 
@@ -259,10 +298,11 @@ select md5(string_agg(id::text||'|'||initial_progression_state::text||'|'||start
 3. **Данные — `pg_restore` из дампа §5.** Единственный путь вернуть данные в состояние R0; проверен круговой
    дамп→восстановление (идентичность посчитана построчно). Теряет всё записанное после снятия дампа.
    ```bash
-   docker compose -p pullup-staging stop app web
-   docker compose -p pullup-staging exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-   docker compose -p pullup-staging exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < ~/backups/staging-pre-rc-<TS>.dump
-   docker compose -p pullup-staging exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # = R0
+   cd /home/deploy/pullup-trainer-bot-staging
+   docker compose -p pullup-staging stop app web                      # контейнеры pullup-staging-app-1, pullup-staging-web-1
+   docker exec pullup-staging-db-1 sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+   docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < /home/deploy/backups/staging-pre-rc-<TS>.dump
+   docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # = c3f7a9e2d5b1
    # затем деплой предыдущего кода (путь 1) и повтор §6.1 — счётчики равны «до»
    ```
    Деструктивно: выполнять только по решению владельца. Redis (FSM бота) дамп не затрагивает.

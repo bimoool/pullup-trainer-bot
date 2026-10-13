@@ -8,7 +8,7 @@ stop_port() { local pid; pid=$(ps -eo pid,args | grep "uvicorn app.web.main:app 
 api() { # api <checkout> <db> <port> <token>
   (cd $1; PYTHONPATH=$1 BOT_TOKEN=$4 ADMIN_IDS=900010 DATABASE_URL=postgresql+asyncpg://pullup@127.0.0.1:54329/$2 nohup uvicorn app.web.main:app --port $3 > $OUT/api_$3.log 2>&1 &)
   for i in $(seq 1 40); do curl -sf http://127.0.0.1:$3/health >/dev/null && return; sleep 1; done; echo "api $3 did not start"; }
-echo "### 1. fixture (OLD code, schema a4c8e1f7b2d9)"
+echo "### 1. fixture (OLD code, its own Alembic head)"
 psql $H -d postgres -qc "drop database if exists fx_edit with (force)" -c "create database fx_edit" 2>&1 | grep -v NOTICE
 (cd $OLD; export PYTHONPATH=$OLD BOT_TOKEN=x ADMIN_IDS=900010 DATABASE_URL=postgresql+asyncpg://pullup@127.0.0.1:54329/fx_edit; alembic upgrade head >/dev/null 2>&1; python $R/edited_copy_fixture.py | grep fixture) || { echo 'FIXTURE FAILED'; exit 1; }
 echo "### 2. OLD API: baseline, then user edits (PATCH value, PATCH date, DELETE copy)"
