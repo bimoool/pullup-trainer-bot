@@ -7,7 +7,7 @@ import {
 import { fetchActiveLiveSession, fetchSessions } from "../src/apiV2.ts";
 import { awaitEngineReconciliation } from "../src/engineGate.ts";
 import {
-  claimQueue, clearQueue, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
+  claimQueue, clearQueue, createScreenLifecycle, createSyncRetry, displayState, drainEngineQueues, dropAcknowledged, emptyQueue, loadAllQueues, loadQueue,
   releaseQueue, saveQueue, serverOffsetMs, startEngineReconciliation, wakeEngineReconciliation, type DrainApi,
   type EngineQueue, type QueueStore,
 } from "../src/liveEngineClient.ts";
@@ -678,4 +678,107 @@ test("N1: запрос в окне выхода сверки не теряетс
     assert.ok(sentBeforeRead, `смещение ${offset}: ${JSON.stringify(order)}`);
   }
   assert.deepEqual(lostAt, []);
+});
+
+// --- Открытый экран: повтор досылки после временного сбоя при браузере «онлайн» ----------------------------
+
+function fakeTimers() {
+  const pending = new Map<number, { run: () => void; ms: number }>();
+  let next = 0;
+  return {
+    pending,
+    timers: {
+      set: (run: () => void, ms: number) => {
+        pending.set(++next, { run, ms });
+        return next;
+      },
+      clear: (handle: unknown) => void pending.delete(handle as number),
+    },
+    fire() {
+      const [[handle, entry]] = [...pending.entries()];
+      pending.delete(handle);
+      entry.run();
+    },
+  };
+}
+
+test("экран: временный сбой — повтор сам с растущей паузой 1, 2, 4, 8, 15, 15 с; не больше одного ожидающего", () => {
+  const clock = fakeTimers();
+  let runs = 0;
+  const retry = createSyncRetry(() => { runs += 1; }, undefined, clock.timers);
+  const delays: number[] = [];
+  for (let i = 0; i < 6; i += 1) {
+    retry.schedule();
+    retry.schedule();  // второй сбой до повтора не ставит второй таймер (нет дублирующих запросов)
+    assert.equal(clock.pending.size, 1);
+    delays.push([...clock.pending.values()][0].ms);
+    clock.fire();
+  }
+  assert.deepEqual(delays, [1_000, 2_000, 4_000, 8_000, 15_000, 15_000]);
+  assert.equal(runs, 6);
+});
+
+test("экран: удачная досылка сбрасывает паузу; досылка по действию/online снимает ожидающий повтор; закрытие — тоже", () => {
+  const clock = fakeTimers();
+  let runs = 0;
+  const retry = createSyncRetry(() => { runs += 1; }, undefined, clock.timers);
+  retry.schedule();
+  clock.fire();
+  retry.schedule();
+  assert.equal([...clock.pending.values()][0].ms, 2_000);
+  retry.reset();
+  assert.equal(clock.pending.size, 0);
+  retry.schedule();
+  assert.equal([...clock.pending.values()][0].ms, 1_000);
+  retry.cancel();
+  assert.equal(clock.pending.size, 0);
+  assert.equal(runs, 1);
+});
+
+// --- Аудит #322: досылки экрана привязаны к его монтированию -------------------------------------------------
+
+test("экран: досылка, ушедшая до ухода/unmount, по возвращении устарела — ни повтора, ни новой досылки", () => {
+  const life = createScreenLifecycle();
+  assert.equal(life.token(), null);  // до монтирования досылку не начинать
+  life.mount();
+  const inFlight = life.token() as number;
+  assert.equal(life.isCurrent(inFlight), true);
+  life.unmount();  // «Выйти»/Back: очистка эффекта
+  assert.equal(life.isCurrent(inFlight), false);  // поздний 503/ответ — устарел
+  assert.equal(life.token(), null);  // и новую досылку (таймер, resync) не начать
+});
+
+test("экран: StrictMode/повторный mount и смена сессии — старое поколение не оживает, новое работает", () => {
+  const life = createScreenLifecycle();
+  life.mount();
+  const first = life.token() as number;
+  life.unmount();
+  life.mount();  // StrictMode (mount → cleanup → mount) или эффект новой сессии
+  const second = life.token() as number;
+  assert.notEqual(first, second);
+  assert.equal(life.isCurrent(first), false);
+  assert.equal(life.isCurrent(second), true);
+  life.unmount();
+  life.mount();
+  assert.equal(life.isCurrent(second), false);
+});
+
+test("экран: поздний сбой ушедшей досылки не ставит повтор — серию шлёт только сверка App", () => {
+  // Та же связка, что у LiveEngineScreen: catch планирует повтор только для текущего поколения.
+  const clock = fakeTimers();
+  const life = createScreenLifecycle();
+  let sends = 0;
+  const retry = createSyncRetry(() => { sends += 1; }, undefined, clock.timers);
+  const onTransientFailure = (token: number) => {
+    if (life.isCurrent(token)) {
+      retry.schedule();
+    }
+  };
+  life.mount();
+  const token = life.token() as number;
+  life.unmount();
+  retry.cancel();  // очистка — до позднего ответа
+  onTransientFailure(token);  // 503 пришёл через 2,5 с после ухода
+  assert.equal(clock.pending.size, 0);
+  assert.equal(sends, 0);
 });

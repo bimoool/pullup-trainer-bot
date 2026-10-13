@@ -413,3 +413,51 @@ async def test_v5_completion_repeat_replay_and_clone_preserve_existing_rewards_w
         select(func.count(Coin.id)).where(Coin.user_id == user.id, Coin.reason == CoinReason.WORKOUT_COMPLETED),
     )
     assert workout_awards == 1  # только начисление, сделанное до теста
+
+
+async def test_client_early_finish_then_save_credits_history_once_without_progression(session, clock):  # noqa: F811
+    """Аудит (Summary): путь клиента «Завершить» — событие finish_early, затем «Сохранить» (POST …/complete с
+    оценкой). Первое завершение несёт фактический итог (досрочно → прогрессии нет), повторный complete честно
+    отвечает already_completed и прогрессию не запускает; журнал и кредит занятия — по одному разу."""
+    user, inclusion, occurrences, body = await _a_day(session, 305616)
+    await _run(session, user, body, [[17, 17], []], stop_before_last=True)  # один подход A, дальше — выход
+    first = await _event(session, user, body["id"], "finish_early", {"checks": VALID[:1]})
+    assert first["status"] == "completed" and first["engine_status"] == "completed"
+    assert first["progression_skipped_reason"] == "abandoned" and first["course_progression"] is None
+    await session.refresh(inclusion)
+    assert (inclusion.progression_state_rev, inclusion.sequence_cursor) == (0, 0)  # прогрессии нет
+
+    save = await v2_post(session, user.telegram_id, f"{LIVE}/{body['id']}/complete", {"abandoned": False, "effort": 3})
+    assert save.status_code == 200, save.text
+    assert save.json()["progression_skipped_reason"] == "already_completed" and save.json()["course_progression"] is None
+    await session.refresh(inclusion)
+    assert (inclusion.progression_state_rev, inclusion.sequence_cursor) == (0, 0)  # и повтор её не запустил
+    journal = (await v2_get(session, user.telegram_id, "/api/v2/sessions?status=completed")).json()["sessions"]
+    cards = [c for c in journal if c["id"] == body["id"]]
+    assert len(cards) == 1 and cards[0]["plan_item_id"] == occurrences[0]["id"]  # история и кредит занятия
+    assert await _checks(session, body["id"], user) == [(True, True), (None, None)]  # ответ сохранён, второй — неизвестно
+
+
+async def test_cancelled_course_session_frees_resume_and_restart_of_the_same_occurrence(session, clock):  # noqa: F811
+    """Отмена (T5): engine cancelled при status started — архив, не «идущая»: active пуст, журнал пуст, кредит снят,
+    прогрессии нет; то же занятие стартует заново и засчитывается новой сессией; строка отменённой не удалена."""
+    user, inclusion, occurrences, body = await _a_day(session, 305617)
+    await _run(session, user, body, [[17], []], stop_before_last=True)
+    cancelled = await _event(session, user, body["id"], "cancel", {})
+    assert (cancelled["status"], cancelled["engine_status"]) == ("started", "cancelled")
+    assert (await v2_get(session, user.telegram_id, f"{LIVE}/active")).json()["session"] is None
+    assert body["id"] not in [c["id"] for c in (await v2_get(session, user.telegram_id, "/api/v2/sessions")).json()["sessions"]]
+    again = await _start(session, user, occurrences[0]["id"])  # не 409 active_session_exists, не «рано»
+    assert again["id"] != body["id"]
+    repo = TrainingSessionRepository(session)
+    assert (await repo.get_for_user(again["id"], user.id)).plan_item_id == occurrences[0]["id"]
+    assert (await repo.get_for_user(body["id"], user.id)).plan_item_id is None
+    active = (await v2_get(session, user.telegram_id, f"{LIVE}/active")).json()["session"]
+    assert active["id"] == again["id"]  # продолжить предлагается новая, не отменённая
+    repeat = await v2_post(session, user.telegram_id, f"{LIVE}/{body['id']}/complete", {"abandoned": False})
+    assert repeat.json()["progression_skipped_reason"] == "cancelled"  # повторный complete отмену не превращает в итог
+    await session.refresh(inclusion)
+    assert inclusion.progression_state_rev == 0
+    row = await session.get(TrainingSession, body["id"])
+    await session.refresh(row)
+    assert row.engine_status == "cancelled" and row.status.value == "started"  # архив, не удалена

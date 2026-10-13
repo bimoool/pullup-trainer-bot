@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { backButtonAction } from "../src/liveDialog.ts";
+import type { LiveSessionCompleteResponse } from "../src/apiV2.ts";
 import {
-  canStartNextBlock, classifySyncError, finishStatus, isFinishedElsewhere, type SyncFailure,
+  canStartNextBlock, carriesCompletionOutcome, classifySyncError, finishStatus, isFinishedElsewhere, summaryResult,
+  type SyncFailure,
 } from "../src/liveFinish.ts";
 
 const httpError = (status: number, message = "boom") => Object.assign(new Error(message), { status });
@@ -71,4 +73,51 @@ test("backButtonAction: завершение в очереди — Back увод
   assert.equal(backButtonAction({ reviewOpen: false, finishing: true, canLeave: false }), "ignore");
   assert.equal(backButtonAction({ reviewOpen: true, finishing: true, canLeave: true }), "close-review");
   assert.equal(backButtonAction({ reviewOpen: false, finishing: false, canLeave: true }), "confirm-finish");
+});
+
+// --- Summary движка v2: итог первого завершения, а не ответ «Сохранить» -----------------------------------
+
+const COURSE_PROGRESSION = {
+  workout_role: "A", next_workout_role: "B", qualified: true, pending_inputs: [],
+  blocks: [{ block_role: "a_volume", decision: "add_mandatory_rep" }],
+} as unknown as LiveSessionCompleteResponse["course_progression"];
+
+function response(fields: Partial<LiveSessionCompleteResponse>): LiveSessionCompleteResponse {
+  return {
+    id: 7, status: "completed", effort: null, comment: null, progression_result: null, progression_skipped_reason: null,
+    course_progression: null, ...fields,
+  } as LiveSessionCompleteResponse;
+}
+
+/** Ответ «Сохранить» (POST …/complete уже завершённой сессии): оценка записана, прогрессия — нет. */
+const SAVE = response({ effort: "3", comment: "ок", progression_skipped_reason: "already_completed" });
+
+test("Summary: первое штатное завершение V5.6 — прибавка курса, без ложного «уже была завершена»", () => {
+  const first = response({ course_progression: COURSE_PROGRESSION });
+  const shown = summaryResult(first, SAVE);
+  assert.deepEqual(shown.course_progression, COURSE_PROGRESSION);
+  assert.equal(shown.progression_skipped_reason, null);
+  assert.equal(shown.effort, "3");  // оценка/заметка — из последнего ответа
+  assert.equal(shown.comment, "ок");
+});
+
+test("Summary: раннее завершение — «досрочно», не «уже была завершена»", () => {
+  const shown = summaryResult(response({ progression_skipped_reason: "abandoned" }), SAVE);
+  assert.equal(shown.progression_skipped_reason, "abandoned");
+  assert.equal(shown.course_progression, null);
+});
+
+test("Summary: тренировка вне курса — без баннера (not_plan_session), не «уже была завершена»", () => {
+  assert.equal(summaryResult(response({ progression_skipped_reason: "not_plan_session" }), SAVE).progression_skipped_reason, "not_plan_session");
+});
+
+test("Summary: настоящий повтор (экран завершения не видел) — честный ответ сервера", () => {
+  assert.deepEqual(summaryResult(null, SAVE), SAVE);
+});
+
+test("carriesCompletionOutcome: только ответ, завершивший тренировку (а не ответ событий уже завершённой)", () => {
+  assert.equal(carriesCompletionOutcome(response({ course_progression: COURSE_PROGRESSION })), true);
+  assert.equal(carriesCompletionOutcome(response({ progression_skipped_reason: "abandoned" })), true);
+  assert.equal(carriesCompletionOutcome(response({})), false);
+  assert.equal(carriesCompletionOutcome(response({ status: "started" })), false);
 });

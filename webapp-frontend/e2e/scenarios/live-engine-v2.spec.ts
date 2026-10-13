@@ -3,6 +3,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { noWakeLock } from "../fixtures/builderFlow";
 import { buildInitData, getTestBotToken } from "../fixtures/initData";
 import { openAppAs } from "../fixtures/setup";
+import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
 /**
  * issue #306 — Live Engine v2 (docs/domain/LIVE_ENGINE_V2.md, ACCEPTANCE J5). Сид: scripts/e2e_seed.py
@@ -363,6 +364,110 @@ test("12. #306 F1: пауза офлайн, первая досылка упал
   expect(state.paused_at).not.toBeNull();
   expect(Math.abs(state.paused_remaining_ms / 1000 - frozen)).toBeLessThanOrEqual(1.5);
   expect(await storedEngineQueues(back)).toBe(0);
+});
+
+test("13. Аудит: на открытом экране досылка упала при «онлайн» — повтор сам, без «Повторить», без дублей", async ({ page }) => {
+  await openAppAs(page, 930_613);
+  await startPlanned(page, "Движок: интервал");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 6_000 });
+  const posted: string[][] = [];
+  let attempt = 0;
+  await page.route("**/api/v2/sessions/live/*/events", async (route) => {
+    posted.push((route.request().postDataJSON().events as { client_event_id: string }[]).map((e) => e.client_event_id));
+    if (attempt++ === 0) {
+      await route.abort("failed"); // временный сбой; браузер всё время онлайн — события online не будет
+    } else {
+      await route.continue();
+    }
+  });
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase(page)).toHaveText("Пошёл · пауза"); // проекция с очередью — сразу
+  await expect(page.getByTestId("engine-sync-error")).toBeVisible(); // сбой виден; «Повторить» не нажимаем
+  // Ни одного клика «Повторить»: очередь уходит сама после первой паузы повтора (1 с) и снимается.
+  await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByTestId("engine-sync-error")).toHaveCount(0);
+  expect(posted.length).toBe(2); // сбой + один повтор, без busy-loop и дублей
+  expect(posted[1]).toEqual(posted[0]); // те же client_event_id (сервер: duplicate — no-op)
+  const state = await serverEngineState(page, 930_613);
+  expect(state.paused_at).not.toBeNull();
+  await sleep(4_000);
+  expect(posted.length).toBe(2); // после успеха — тишина
+});
+
+/** Аудит #322: досылка «паузы» висит в сети, пользователь уходит (Back) через 0,4 с; `respond` решает, чем ответит
+ * удержанный запрос через 2,5 с, `after` — чем отвечать все следующие. Возвращает моменты всех POST событий
+ * (мс от ухода) и момент ответа на удержанный. */
+async function leaveWithSendInFlight(
+  page: Page, telegramId: number, respond: "503" | "ok", after: "ok" | "503",
+): Promise<{ posts: number[]; heldDoneAt: () => number | null }> {
+  await openAppAs(page, telegramId, { backButton: true });
+  await startPlanned(page, "Движок: подходы");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 8_000 });
+  const posts: number[] = [];
+  let leftAt = 0;
+  let heldDone: number | null = null;
+  let held = false;
+  await page.route("**/api/v2/sessions/live/*/events", async (route) => {
+    posts.push(leftAt ? Date.now() - leftAt : -1);
+    if (!held) {
+      held = true;
+      await sleep(2_500);
+      if (respond === "503") {
+        await route.fulfill({ status: 503, contentType: "application/json", body: "{\"detail\":\"down\"}" });
+      } else {
+        await route.continue();
+      }
+      heldDone = Date.now() - leftAt;
+      return;
+    }
+    if (after === "503") {
+      await route.fulfill({ status: 503, contentType: "application/json", body: "{\"detail\":\"down\"}" });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase(page)).toHaveText("Пошёл · пауза");
+  await sleep(400);
+  leftAt = Date.now();
+  await pressTelegramBackButton(page);
+  await expect(page.getByText("Живая тренировка")).toHaveCount(0);
+  return { posts, heldDoneAt: () => heldDone };
+}
+
+test("14. Аудит #322: запрос висел при уходе и упал (503) после — экран повтор не ставит; очередь досылает App", async ({ page }) => {
+  const { posts, heldDoneAt } = await leaveWithSendInFlight(page, 930_614, "503", "ok");
+  await expect.poll(heldDoneAt, { timeout: 5_000 }).not.toBeNull();
+  await sleep(4_000); // дольше первой паузы повтора экрана (1 с) и второй (2 с)
+  const failedAt = heldDoneAt() as number;
+  expect(posts.filter((t) => t > failedAt)).toEqual([]); // ни одной досылки от ушедшего экрана
+  expect(posts.filter((t) => t >= 0 && t < failedAt).length).toBeGreaterThanOrEqual(1); // досылка сверки App
+  expect((await serverEngineState(page, 930_614)).paused_at).not.toBeNull();
+  expect(await storedEngineQueues(page)).toBe(0);
+});
+
+test("15. Аудит #322: постоянный сбой после ухода — серия экрана прекращена, фоновая сверка App продолжается", async ({ page }) => {
+  const { posts } = await leaveWithSendInFlight(page, 930_615, "503", "503");
+  await sleep(20_000);
+  // Сверка App: 0, 1, 3, 7, 15 с от ухода (паузы 1, 2, 4, 8). Вторая независимая серия ушедшего экрана
+  // (3,1 / 5,1 / 9,1 / 17,1 с) дала бы 9 досылок за то же окно.
+  const inWindow = posts.filter((t) => t >= 0 && t <= 20_000);
+  expect(inWindow.length).toBeGreaterThanOrEqual(4); // фоновая сверка жива
+  expect(inWindow.length).toBeLessThanOrEqual(5);
+  await page.unroute("**/api/v2/sessions/live/*/events");
+  // Сеть вернулась: следующий повтор сверки (через 15 с) досылает очередь.
+  await expect.poll(async () => (await serverEngineState(page, 930_615)).paused_at, { timeout: 25_000 }).not.toBeNull();
+  await expect.poll(() => storedEngineQueues(page), { timeout: 5_000 }).toBe(0);
+});
+
+test("16. Аудит #322: ответ запроса, висевшего при уходе, пришёл позже — ушедший экран ничего не шлёт и очередь не трогает", async ({ page }) => {
+  const { posts, heldDoneAt } = await leaveWithSendInFlight(page, 930_616, "ok", "ok");
+  await expect.poll(heldDoneAt, { timeout: 5_000 }).not.toBeNull();
+  await sleep(3_000);
+  const doneAt = heldDoneAt() as number;
+  expect(posts.filter((t) => t > doneAt)).toEqual([]);
+  expect((await serverEngineState(page, 930_616)).paused_at).not.toBeNull(); // событие на сервере ровно одно
+  expect(await storedEngineQueues(page)).toBe(0); // поздний ответ не воскресил очередь, снятую сверкой App
 });
 
 test.describe("320 px", () => {
