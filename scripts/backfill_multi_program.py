@@ -580,6 +580,9 @@ async def converge_history_all(
     Повторный apply возвращает counts без изменяющих ключей (mutations = 0). unresolved — если передан,
     дополняется неразрешёнными случаями (факультатив без копии, происхождение которой не доказать) с user_id."""
     total: Counter = Counter()
+    if apply and not user_ids:
+        # Защита на уровне функции, не только CLI: запись сведения всегда по явному списку подтверждённых пользователей.
+        raise ValueError("converge_history_all(apply=True) requires an explicit non-empty user_ids list")
     if user_ids is None:
         ids: set[int] = set()
         for column in (Workout.user_id, ElectiveWorkout.user_id):
@@ -775,6 +778,16 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     return report
 
 
+def _parse_user_ids(value: str) -> list[int]:
+    try:
+        ids = sorted({int(part) for part in value.split(",")})
+    except ValueError:
+        raise argparse.ArgumentTypeError("ожидается список целых users.id через запятую") from None
+    if not ids or ids[0] <= 0:
+        raise argparse.ArgumentTypeError("users.id должны быть положительными")
+    return ids
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="только посчитать, ничего не писать")
@@ -794,6 +807,13 @@ async def main() -> None:
         ),
     )
     parser.add_argument("--apply", action="store_true", help="с --converge-history: записать изменения")
+    parser.add_argument(
+        "--user-ids", type=_parse_user_ids, default=None,
+        help=(
+            "с --converge-history: внутренние users.id через запятую (подтверждённые владельцем). Без списка dry-run "
+            "читает ВСЕХ пользователей (ничего не пишет); --apply без списка запрещён"
+        ),
+    )
     args = parser.parse_args()
     if args.dry_run and args.truncate:
         raise SystemExit("--dry-run и --truncate несовместимы")
@@ -801,13 +821,24 @@ async def main() -> None:
         raise SystemExit("--converge-history несовместим с --truncate/--dry-run (dry-run — без --apply)")
     if args.apply and not args.converge_history:
         raise SystemExit("--apply допустим только с --converge-history")
+    if args.user_ids is not None and not args.converge_history:
+        raise SystemExit("--user-ids допустим только с --converge-history")
+    if args.converge_history and args.apply and not args.user_ids:
+        raise SystemExit("--converge-history --apply требует --user-ids: сведение истории не применяется ко всем пользователям")
 
     if args.converge_history:
         async with async_session_factory() as session:
             unresolved: list[dict] = []
-            counts = await converge_history_all(session, apply=args.apply, unresolved=unresolved)
+            if args.user_ids is not None:
+                known = set((await session.execute(select(User.id).where(User.id.in_(args.user_ids)))).scalars().all())
+                if missing := sorted(set(args.user_ids) - known):
+                    raise SystemExit(f"--user-ids: пользователей нет в БД: {missing}")
+            counts = await converge_history_all(
+                session, apply=args.apply, user_ids=args.user_ids, unresolved=unresolved,
+            )
+            scope = f"пользователи {args.user_ids}" if args.user_ids is not None else "ВСЕ пользователи (только чтение)"
             print("\n".join(["Прогон завершён" if args.apply else "DRY-RUN (ничего не записано)",
-                              f"Пользователей: {counts['users']}", *_render_history(counts, dry_run=not args.apply),
+                              f"Область: {scope}", f"Пользователей: {counts['users']}", *_render_history(counts, dry_run=not args.apply),
                               *_render_unresolved(unresolved)]))
         return
 

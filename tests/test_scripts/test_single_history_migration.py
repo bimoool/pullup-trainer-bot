@@ -54,6 +54,9 @@ def _script(dsn: str, *args: str) -> str:
 
     env = {**os.environ, "DATABASE_URL": dsn}
     env.setdefault("BOT_TOKEN", "ci-test-token")
+    if "--apply" in args and "--user-ids" not in args:
+        # запись сведения — только по явному списку подтверждённых пользователей: здесь подтверждены все пользователи фикстуры
+        args = (*args, "--user-ids", _scalar(dsn, "SELECT string_agg(id::text, ',' ORDER BY id) FROM users"))
     result = subprocess.run(
         [sys.executable, "scripts/backfill_multi_program.py", *args], cwd=REPO_ROOT, env=env,
         capture_output=True, text=True, timeout=300, check=False,
