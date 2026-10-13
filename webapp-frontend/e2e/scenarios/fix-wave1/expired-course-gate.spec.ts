@@ -1,3 +1,6 @@
+// Гейт проверяется на ПЛАТНОМ тестовом курсе (scripts/e2e_course_gate.py seed-paid-course, access_level = premium).
+// «Подтягивания» бесплатны навсегда (правило владельца 2026-10-07, app/domain/program_access.py) и гейтом быть не
+// могут — их доступ для истёкшего пользователя закреплён отдельно: expired-free-pullups.spec.ts.
 import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,17 +19,17 @@ const TG = Number(process.env.GATE_TELEGRAM_ID ?? 7_400_000 + (Math.floor(Date.n
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 function harness(args: string): string {
-  return execSync(`python scripts/e2e_course_gate.py ${args}`, { cwd: REPO, env: { ...process.env, PYTHONPATH: REPO } }).toString();
+  return execSync(`"${process.env.PYTHON ?? "python"}" scripts/e2e_course_gate.py ${args}`, { cwd: REPO, env: { ...process.env, PYTHONPATH: REPO } }).toString();
 }
 
 async function onboard(page: Page) {
-  await page.getByLabel("Число подтягиваний").fill("8");
+  await page.getByLabel("Сколько подтягиваний вышло?").fill("8");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да" }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByLabel("Вес, кг").fill("78");
+  await page.getByLabel("Твой вес в кг?").fill("78");
   await page.getByRole("button", { name: "Далее" }).click();
-  await page.getByLabel("Рост, см").fill("180");
+  await page.getByLabel("Рост в см?").fill("180");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();
@@ -41,6 +44,17 @@ test.setTimeout(150_000);
 test.use({ actionTimeout: 10_000 });
 
 const OWN_TITLE = "Моя свободная";
+const PAID_COURSE = "Платный тестовый курс";
+
+test.beforeAll(() => {
+  harness("seed-paid-course"); // идемпотентно: каталог окружения содержит платный курс до всех сценариев
+});
+
+async function addPaidCourseToPlan(page: Page) {
+  await page.getByRole("button", { name: new RegExp(`^${PAID_COURSE}`) }).first().click();
+  await page.getByRole("button", { name: "Добавить в план" }).click();
+  await expect(page.getByRole("button", { name: "В плане" })).toBeVisible();
+}
 
 async function backToTabs(page: Page) {
   const tabbar = page.locator(".bottom-tabbar");
@@ -66,7 +80,7 @@ async function createOwnWorkout(page: Page) {
 
 async function openPlansAndStartCourse(page: Page) {
   await page.getByRole("button", { name: "Планы" }).click();
-  await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
+  await page.getByRole("button", { name: new RegExp(`^Начать: ${PAID_COURSE}`) }).first().click();
 }
 
 test("Просроченный пользователь: курс за подпиской, свои тренировки доступны, grant возвращает курс", async ({ page }) => {
@@ -75,9 +89,7 @@ test("Просроченный пользователь: курс за подп�
   await onboard(page);
 
   // --- активный (trial) пользователь добавляет курс (UI) ---
-  await page.getByRole("button", { name: /^Подтягивания/ }).first().click();
-  await page.getByRole("button", { name: "Добавить в план" }).click();
-  await expect(page.getByRole("button", { name: "В плане" })).toBeVisible();
+  await addPaidCourseToPlan(page);
   await createOwnWorkout(page);
 
   // --- TEST HARNESS INJECTION: trial истёк (реальный пользователь доходит до этого ожиданием); кэш статуса остаётся `trial` ---
@@ -148,9 +160,7 @@ test("Клиент считает доступ активным, сервер о
   });
   await openAppAs(page, TG + 1, { allowedApiStatuses: [402] });
   await onboard(page);
-  await page.getByRole("button", { name: /^Подтягивания/ }).first().click();
-  await page.getByRole("button", { name: "Добавить в план" }).click();
-  await expect(page.getByRole("button", { name: "В плане" })).toBeVisible();
+  await addPaidCourseToPlan(page);
   harness(`expire ${TG + 1}`); // TEST HARNESS INJECTION
   await page.reload();
   await expect(page.getByText("Что потренируем сегодня?")).toBeVisible();

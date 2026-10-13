@@ -42,3 +42,14 @@ def test_block_target_label():
     assert block_target_label(cfg, "block_b") == "старт: 3 повт."
     assert block_target_label(cfg, None) is None
     assert block_target_label({}, "block_a") is None
+
+
+def test_v5_main_schedule_row_is_two_main_sessions_without_invented_start():
+    from app.domain.program_schedule import v5_main_schedule_row
+    from app.domain.pullups_v5 import MAIN_SESSIONS_PER_WEEK
+
+    title, count, count_label, target_label = v5_main_schedule_row()
+    assert count == MAIN_SESSIONS_PER_WEEK == 2
+    assert count_label == "2 раза в неделю"
+    assert title == "Основные тренировки"
+    assert "×" not in target_label and "повт." not in target_label

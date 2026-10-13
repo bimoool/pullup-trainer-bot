@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
 import {
-  captureDownloads, COMBOS, expectScreenHealthy, openJournalEntry, openTab, selectMetric,
+  captureDownloads, categoryRow, COMBOS, expectScreenHealthy, openJournalEntry, openTab, selectMetric,
 } from "../../fixtures/parity";
 import { pickPlanAction, pickRowAction } from "../../fixtures/plans";
 import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
@@ -212,7 +212,7 @@ const FLOWS: Flow[] = [
     // #281: у ряда категории с названием есть «Все ›» → поиск по категории (категория e2e_sweep — сид sweep_populated).
     id: "Главная: «Все ›» у ряда категории → поиск по категории → закрыть", modes: MODES,
     run: async ({ page }) => {
-      const row = page.getByTestId("program-category").filter({ hasText: "e2e_sweep" });
+      const row = categoryRow(page, "e2e_sweep");
       await visit(page, {
         where: "Главная → «Все ›»", open: () => row.getByTestId("program-category-all").click(),
         dest: [page.getByTestId("search-screen"), page.getByTestId("search-category-title")],

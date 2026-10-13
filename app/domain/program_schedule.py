@@ -3,6 +3,8 @@
 
 from datetime import date
 
+from app.domain.pullups_v5 import MAIN_SESSIONS_PER_WEEK
+
 _BLOCK_ROLE_TITLES = {"block_a": "Блок A", "block_b": "Блок Б"}
 
 
@@ -53,3 +55,19 @@ def block_target_label(config: dict | None, subcategory: str | None) -> str | No
     if isinstance(sets, int) and not isinstance(sets, bool):
         return f"старт: {target} повт. × {sets} подх."
     return f"старт: {target} повт."
+
+
+# Подпись цели для основных занятий V5.6: рецепт задаёт вход пользователя (замер, R, 1RM, резина), не каталог.
+V5_MAIN_TARGET_LABEL = "A и B по очереди: объём, затем сила; цели считаются по вашим данным"
+
+
+def v5_main_schedule_row() -> tuple[str, int, str, str]:
+    """(title, count_per_week, count_label, target_label) карточки каталога для НОВОЙ инклюзии V5.6 (§1):
+    два основных занятия в неделю. Стартовых «N повт. × M подх.» нет — прескрипцию определяют входы
+    пользователя, а не `programs.config`; ProgramItem каталога и устаревшие инклюзии это не меняет."""
+    return (
+        "Основные тренировки",
+        MAIN_SESSIONS_PER_WEEK,
+        count_per_week_label(MAIN_SESSIONS_PER_WEEK),
+        V5_MAIN_TARGET_LABEL,
+    )

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../fixtures/builderFlow";
-import { metricSelect, openJournalEntry, selectMetric } from "../fixtures/parity";
+import { categoryChip, categoryRow, metricSelect, openJournalEntry, selectMetric } from "../fixtures/parity";
 import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
@@ -89,8 +89,12 @@ for (const width of WIDTHS) {
         const titles = page.getByTestId("program-category-title");
         await expect(titles.first()).toBeVisible();
         expect(await titles.count()).toBeGreaterThanOrEqual(3);
-        await expect(titles.filter({ hasText: "e2e_discovery_strength" })).toHaveCount(1);
-        await expect(titles.filter({ hasText: "e2e_discovery_mobility" })).toHaveCount(1);
+        // ряд — по внутреннему ключу категории; подпись человеческая, технического слага на экране нет
+        await expect(categoryRow(page, "e2e_discovery_strength")).toHaveCount(1);
+        await expect(categoryRow(page, "e2e_discovery_mobility")).toHaveCount(1);
+        await expect(categoryRow(page, "e2e_discovery_strength").getByTestId("program-category-title")).toHaveText("E2e discovery strength");
+        await expect(categoryRow(page, "e2e_discovery_mobility").getByTestId("program-category-title")).toHaveText("E2e discovery mobility");
+        await expect(page.getByText(/e2e_discovery/)).toHaveCount(0);
         await expect(titles.last()).toHaveText("Другое");
         await expectNoHorizontalOverflow(page, "Главная");
 
@@ -137,7 +141,8 @@ for (const width of WIDTHS) {
         // Чипы категорий из реальных данных; сброс возвращает всё.
         await input.fill("");
         const chips = page.getByTestId("search-chips");
-        await chips.getByRole("button", { name: "e2e_discovery_mobility" }).click();
+        await expect(categoryChip(page, "e2e_discovery_mobility")).toHaveText("E2e discovery mobility");
+        await categoryChip(page, "e2e_discovery_mobility").click();
         await expect(page.getByTestId("search-result-program")).toHaveCount(1);
         await expect(page.getByTestId("search-result-workout")).toHaveCount(0);
         await expectNoHorizontalOverflow(page, "Поиск");
