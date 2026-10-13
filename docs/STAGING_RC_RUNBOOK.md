@@ -340,6 +340,16 @@ select origin, count(*) as sessions, count(legacy_id) as keyed from training_ses
 > ```
 > Второй индикатор — dry-run `--converge-history`: «копий факультативов создано: N» при ненулевом «копий факультативов без пары
 > оставлено как есть» — разобрать до `--apply`.
+>
+> С фиксом (PR #326) — дополнительно read-only: пользователи с нештатной историей копий (их факультативы не получат ни копии,
+> ни привязки — `nonstandard_copy_history` в выводе dry-run). Ожидается `0` для данных, записанных только штатными путями:
+> ```sql
+> select ts.user_id, count(*) from training_sessions ts left join training_plans tp on tp.user_id = ts.user_id
+> where (ts.origin = 'legacy_elective' or (ts.origin is null and ts.source = 'elective')) and ts.legacy_id is null
+>   and (tp.id is null or ts.created_at <> tp.created_at) group by 1;
+> ```
+> Строки здесь (и «из них у пользователей без плана» в dry-run) — разобрать с владельцем до `--apply`: см.
+> `docs/STAGING_RC_REHEARSAL.md` §8 «Фикс», «Пробел, который без маркера не закрыть».
 
 Запускать на сервисе `app` (в `web` нет `scripts/`). Для каждого скрипта — dry-run → apply → повторный apply.
 

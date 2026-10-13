@@ -14,15 +14,21 @@
   строку правили или удалили после backfill — какая именно, неизвестно и не нужно: старая схема остаётся
   источником правды до заморозки, Wave 4); копия без живой строки -> замещается (legacy_deleted /
   legacy_replaced), не удаляется;
-* факультатив без копии создаётся, только если НЕ доказано, что его уже обработал старый backfill (#163).
-  Старый backfill — единственный писатель копий факультативов без ключа: переносил ВСЕ факультативы
-  пользователя, существовавшие на момент прогона, одной транзакцией вместе с TrainingPlan. Поэтому
-  «факультатив уже обработан» = он существовал к моменту прогона: его created_at не позже created_at
-  исторической копии (``_backfill_marks``) или TrainingPlan. Копии у такого факультатива нет (или она не
-  совпадает) — её удалили или отредактировали в Журнале (#279; копия принадлежит Журналу v2): он НЕ
-  воскрешается и НЕ дублируется, а попадает в отчёт ``ambiguous_elective_without_copy`` с доказательством и
-  кандидатами. Кандидат (копия, которую, вероятно, правили) НЕ привязывается: одинаковые время, число
-  повторов или сумма — не доказательство происхождения.
+* факультатив без копии — по инварианту ШТАТНЫХ писателей (проверено на коде 1735cad и 4298f8b, где у
+  staging/прода жил старый backfill; docs/STAGING_RC_REHEARSAL.md §8 «Фикс»): старый backfill (#163)
+  переносит ВСЕ факультативы пользователя одной транзакцией вместе с его TrainingPlan (created_at копий =
+  created_at плана) и только пользователям без плана; план уникален и не удаляется ни одним путём кода.
+  Отсюда для пользователя со «штатной» историей: факультатив не позже плана — уже перенесён (копии нет —
+  её удалили/правили в Журнале #279: НЕ воскрешаем, НЕ дублируем, в отчёт); позже плана или плана нет —
+  не переносился никогда, копия создаётся (первый импорт).
+* история пользователя не объяснима штатными писателями (уцелевшая историческая копия вне транзакции плана
+  или при отсутствии плана — ручной SQL, сиды, ручной фикс) — вывод «никогда не переносился» недоказуем:
+  у пользователя НИ ОДИН факультатив без копии не получает копию и привязку, всё — в отчёт
+  ``ambiguous_elective_without_copy`` с причиной и кандидатами. Guard ничего не меняет — повторный прогон
+  видит те же следы (стабилен). Если и следов не осталось, удаление неотличимо от «не импортировалось» без
+  маркера прогона backfill — это известный пробел (§8 «Фикс»), а не доказательство.
+* кандидат (копия, которую, вероятно, правили) НЕ привязывается: одинаковые время, число повторов или сумма —
+  не доказательство происхождения.
 """
 
 from collections import Counter, defaultdict
@@ -30,7 +36,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BlockType, ElectiveWorkout, Workout, WorkoutStatus
@@ -133,6 +139,11 @@ class LegacyHistoryConvergenceService:
     async def converge_user(self, user_id: int, *, apply: bool) -> UserConvergenceReport:
         report = UserConvergenceReport(user_id)
         repo = self._repo
+        plan_created_at = (
+            await self._session.execute(select(TrainingPlan.created_at).where(TrainingPlan.user_id == user_id))
+        ).scalar_one_or_none()
+        # до любых записей прогона: копии, созданные сведением сейчас, следом нештатной истории не считаются
+        nonstandard = await self._nonstandard_history(user_id, plan_created_at)
         await self._classify_unlabelled(user_id, apply=apply, report=report)
         exercise_a_id, exercise_b_id = await repo.course_exercise_ids()
 
@@ -188,7 +199,9 @@ class LegacyHistoryConvergenceService:
             if copy is not None and copy.superseded_at is not None:
                 report.counts["superseded_but_alive"] += 1
 
-        await self._converge_electives(user_id, apply=apply, report=report)
+        await self._converge_electives(
+            user_id, apply=apply, report=report, nonstandard=nonstandard, plan_created_at=plan_created_at,
+        )
         return report
 
     async def _workouts(self, user_id: int) -> list[Workout]:
@@ -221,14 +234,78 @@ class LegacyHistoryConvergenceService:
         )
         return list(result.scalars().all())
 
-    async def _converge_electives(self, user_id: int, *, apply: bool, report: UserConvergenceReport) -> None:
+    async def _nonstandard_history(self, user_id: int, plan_created_at: datetime | None) -> str | None:
+        """Следы, которые штатные писатели оставить не могли (None — история объяснима штатными путями).
+        Читается ДО любых записей этого прогона (копии, созданные сведением сейчас, следом не считаются).
+
+        Штатные писатели копий факультативов: старый backfill — без ключа, в транзакции плана (created_at
+        равны); сведение/новый backfill/dual-write — с ключом, не раньше своего факультатива (dual-write — в
+        одной транзакции с ним); факультативу не позже плана сведение копию не создаёт. Ключ теряется только
+        при ``alembic downgrade`` a7e2c5b9d1f4 — такая копия остаётся точной копией своего факультатива. След:
+
+        * план есть: копия без ключа вне транзакции плана, которая не является точной копией факультатива,
+          записанного после плана и не позже неё;
+        * плана нет: любая копия без ключа, кроме точной копии факультатива не позже неё, и любая копия с
+          ключом, созданная позже своей legacy-строки (прогон импорта) — backfill без плана копий не пишет, а
+          план не удаляется ни одним путём кода. Копия dual-write (created_at равен строке) следом не является.
+        Привязка ключа (её делает только этот же сервис) след не стирает: без плана «с ключом и позже своей
+        строки» покрывает и привязанную; с планом у пользователя под guard'ом привязки нет."""
+        rows = (await self._session.execute(text("""
+            SELECT ts.id, ts.origin, ts.source, ts.legacy_id, ts.created_at, ts.performed_at,
+                   coalesce(w.created_at, e.created_at) AS own_created_at
+            FROM training_sessions ts
+            LEFT JOIN workouts w ON ts.origin = 'legacy_backfill' AND w.id = ts.legacy_id
+            LEFT JOIN elective_workouts e ON ts.origin = 'legacy_elective' AND e.id = ts.legacy_id
+            WHERE ts.user_id = :user_id
+              AND (ts.origin IN ('legacy_backfill', 'legacy_elective')
+                   OR (ts.origin IS NULL AND ts.source = 'elective' AND ts.status = 'completed'))
+              AND ts.created_at < now()
+            ORDER BY ts.id
+        """), {"user_id": user_id})).all()
+        unkeyed_electives = [
+            r for r in rows if r.legacy_id is None and r.origin != SessionOrigin.LEGACY_BACKFILL.value
+            and (plan_created_at is None or r.created_at != plan_created_at)
+        ]
+        stray = [r.id for r in unkeyed_electives if not await self._is_exact_later_import_copy(user_id, r, plan_created_at)]
+        if plan_created_at is not None:
+            return f"unkeyed_elective_copy_outside_plan_transaction:{stray}" if stray else None
+        stray += [
+            r.id for r in rows
+            if (r.legacy_id is None and r.origin == SessionOrigin.LEGACY_BACKFILL.value)
+            or (r.legacy_id is not None and r.own_created_at is not None and r.created_at > r.own_created_at)
+        ]
+        return f"import_copy_without_plan:{sorted(stray)}" if stray else None
+
+    async def _is_exact_later_import_copy(self, user_id: int, row, plan_created_at: datetime | None) -> bool:
+        """Копия без ключа — точная копия факультатива, которому штатный импорт копию создаёт (после плана или
+        без плана), и не старше его: копия сведения/dual-write, потерявшая ключ при downgrade."""
+        blocks = await self._repo.existing_blocks(row.id)
+        if len(blocks) != 1:
+            return False
+        electives = (await self._session.execute(
+            select(ElectiveWorkout).where(
+                ElectiveWorkout.user_id == user_id, ElectiveWorkout.performed_at == row.performed_at,
+                ElectiveWorkout.created_at <= row.created_at,
+            ),
+        )).scalars().all()
+        for elective in electives:
+            if plan_created_at is not None and elective.created_at <= plan_created_at:
+                continue
+            exercise_id = await self._repo.elective_exercise_id(elective.elective_type)
+            if blocks == (BlockSpec(0, exercise_id, _elective_sets(elective)),):
+                return True
+        return False
+
+    async def _converge_electives(
+        self, user_id: int, *, apply: bool, report: UserConvergenceReport, nonstandard: str | None,
+        plan_created_at: datetime | None,
+    ) -> None:
         repo = self._repo
         electives = list((
             await self._session.execute(
                 select(ElectiveWorkout).where(ElectiveWorkout.user_id == user_id).order_by(ElectiveWorkout.id),
             )
         ).scalars().all())
-        created_at_of = {e.id: e.created_at for e in electives}
         copies = await self._elective_copies(user_id)
         keyed_ids = {c.legacy_id for c in copies if c.legacy_id is not None}
         unkeyed = [c for c in copies if c.legacy_id is None]
@@ -236,15 +313,31 @@ class LegacyHistoryConvergenceService:
         for copy in unkeyed:
             blocks = await repo.existing_blocks(copy.id)
             by_signature[(copy.performed_at, blocks)].append(copy)
-        plan_created_at = (
-            await self._session.execute(select(TrainingPlan.created_at).where(TrainingPlan.user_id == user_id))
-        ).scalar_one_or_none()
-        marks = _backfill_marks(copies, created_at_of)
+        # перенос прогоном backfill доказан уцелевшей копией из транзакции плана (иначе — только планом)
+        run_proven = plan_created_at is not None and any(c.created_at == plan_created_at for c in copies)
+
+        def unresolved(elective: ElectiveWorkout, exercise_id: int, reason: str) -> None:
+            report.counts["ambiguous_elective_without_copy"] += 1
+            report.ambiguous.append({
+                "elective_id": elective.id, "reason": reason,
+                "elective_type": elective.elective_type.value,
+                "performed_at": elective.performed_at.isoformat(), "total_reps": elective.total_reps,
+                # непривязанные копии того же формата, созданные не раньше факультатива — только для ручной
+                # проверки оператором; сведение их не привязывает
+                "candidate_copy_ids": sorted(
+                    c.id for (_, blocks), group in by_signature.items() for c in group
+                    if c.created_at >= elective.created_at and [b.exercise_id for b in blocks] == [exercise_id]
+                ),
+                **({"evidence": nonstandard} if reason == REASON_NONSTANDARD_HISTORY else {}),
+            })
 
         for elective in electives:
             if elective.id in keyed_ids:
                 continue
             exercise_id = await repo.elective_exercise_id(elective.elective_type)
+            if nonstandard is not None:
+                unresolved(elective, exercise_id, REASON_NONSTANDARD_HISTORY)
+                continue
             key = (elective.performed_at, (BlockSpec(0, exercise_id, _elective_sets(elective)),))
             # копия не может быть старше своего факультатива — такая не его, даже при совпадении содержимого
             candidates = [c for c in by_signature.get(key, ()) if c.created_at >= elective.created_at]
@@ -255,73 +348,32 @@ class LegacyHistoryConvergenceService:
                 if apply:
                     await repo.bind_legacy_id(copy, SessionOrigin.LEGACY_ELECTIVE, elective.id)
                 continue
-            evidence = _processed_by_old_backfill(elective, marks, plan_created_at)
-            if evidence is None and by_signature.get(key):
+            if plan_created_at is not None and elective.created_at <= plan_created_at:
+                # Существовал к прогону backfill (равенство — одна транзакция), а точной копии нет: её удалили или
+                # отредактировали в Журнале. Не воскрешаем и не дублируем; какая копия правленая — не угадываем.
+                unresolved(
+                    elective, exercise_id, REASON_BACKFILL_COPY_CHANGED if run_proven else REASON_PRE_PLAN_WITHOUT_COPY,
+                )
+                continue
+            if by_signature.get(key):
                 # Копия того же содержимого есть, но она старше факультатива — не его и не «ничья»: не привязываем
                 # и не создаём вторую такую же.
-                evidence = REASON_EXACT_COPY_PREDATES_ELECTIVE
-            if evidence is not None:
-                # Старый backfill его уже перенёс, а точной копии нет: её удалили или отредактировали в
-                # Журнале. Не воскрешаем и не дублируем; какая из оставшихся копий — правленая, не угадываем.
-                report.counts["ambiguous_elective_without_copy"] += 1
-                report.ambiguous.append({
-                    "elective_id": elective.id, "reason": evidence,
-                    "elective_type": elective.elective_type.value,
-                    "performed_at": elective.performed_at.isoformat(), "total_reps": elective.total_reps,
-                    # непривязанные копии того же формата, созданные не раньше факультатива — только для
-                    # ручной проверки оператором; сведение их не привязывает
-                    "candidate_copy_ids": sorted(
-                        c.id for (_, blocks), group in by_signature.items() for c in group
-                        if c.created_at >= elective.created_at and [b.exercise_id for b in blocks] == [exercise_id]
-                    ),
-                })
+                unresolved(elective, exercise_id, REASON_EXACT_COPY_PREDATES_ELECTIVE)
                 continue
             outcome = await repo.sync_elective(elective, exercise_id=exercise_id, dry_run=not apply)
             if outcome is ConvergenceOutcome.CREATED:
                 report.counts["elective_created"] += 1
+                if plan_created_at is None:
+                    # основание — штатный инвариант «плана нет -> backfill не проходил», не след первого импорта
+                    report.counts["elective_first_import_without_plan"] += 1
         report.counts["elective_unkeyed_copies_kept"] += sum(len(group) for group in by_signature.values())
 
 
 def _elective_sets(elective: ElectiveWorkout):
-
-
     return (SetSpec(1, False, Decimal(elective.total_reps), elective_note(elective)),)
 
 
 REASON_BACKFILL_COPY_CHANGED = "backfilled_copy_edited_or_deleted"
 REASON_PRE_PLAN_WITHOUT_COPY = "pre_migration_without_copy"
 REASON_EXACT_COPY_PREDATES_ELECTIVE = "exact_copy_predates_elective"
-
-
-def _backfill_marks(copies: list[TrainingSession], created_at_of: dict[int, datetime]) -> list[datetime]:
-    """Моменты прогонов, которые переносили ВСЕ существовавшие тогда факультативы пользователя (created_at
-    копии = начало транзакции прогона). Учитываются:
-
-    * копии без ключа — их создавал только старый backfill (#163): новый код пишет ключ при вставке;
-    * копии с ключом, созданные ПОЗЖЕ своего факультатива: историческая копия, которой ключ дало сведение,
-      либо копия, созданная самим сведением/новым backfill-ом — оба прогона тоже обрабатывали всё, что
-      существовало к их началу.
-
-    Не учитывается копия dual-write (ElectiveWorkoutRepository.create): она в одной транзакции со своим
-    факультативом (created_at равны) и прогоном не является — иначе запись нового факультатива «доказала» бы
-    обработку более раннего факультатива, записанного старым кодом без копии (окно отката)."""
-    marks = []
-    for copy in copies:
-        own = created_at_of.get(copy.legacy_id) if copy.legacy_id is not None else None
-        if copy.legacy_id is None or (own is not None and copy.created_at > own):
-            marks.append(copy.created_at)
-    return marks
-
-
-def _processed_by_old_backfill(
-    elective: ElectiveWorkout, marks: list[datetime], plan_created_at: datetime | None,
-) -> str | None:
-    """Причина считать факультатив уже обработанным старым backfill-ом (None — не доказано, копию создаём).
-    Backfill переносил ВСЕ факультативы, существовавшие к прогону, поэтому достаточно created_at факультатива
-    не позже момента прогона (равенство — одна транзакция). Прямое доказательство — историческая копия;
-    TrainingPlan (создавался в той же транзакции) — косвенное: им покрыт случай «удалены все копии»."""
-    if any(mark >= elective.created_at for mark in marks):
-        return REASON_BACKFILL_COPY_CHANGED
-    if plan_created_at is not None and elective.created_at <= plan_created_at:
-        return REASON_PRE_PLAN_WITHOUT_COPY
-    return None
+REASON_NONSTANDARD_HISTORY = "nonstandard_copy_history"

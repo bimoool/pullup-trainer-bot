@@ -512,6 +512,7 @@ _HISTORY_LABELS = (
     ("bound", "копий привязано к legacy-строке (legacy_id)"),
     ("created", "копий создано"),
     ("elective_created", "копий факультативов создано"),
+    ("elective_first_import_without_plan", "  из них у пользователей без плана (по инварианту «нет плана — backfill не проходил»)"),
     ("updated", "копий обновлено"),
     ("superseded", "копий замещено (legacy-строка удалена/заменена)"),
     ("unchanged", "копий без изменений"),
@@ -531,10 +532,12 @@ def _render_history(counts: Counter, *, dry_run: bool) -> list[str]:
 
 
 _UNRESOLVED_REASONS = {
-    "backfilled_copy_edited_or_deleted": "старый backfill его уже перенёс (есть его копия не старше факультатива), "
+    "backfilled_copy_edited_or_deleted": "старый backfill его уже перенёс (записан не позже плана, есть копия из транзакции плана), "
                                          "точной копии нет — правлена или удалена в Журнале",
-    "pre_migration_without_copy": "записан не позже TrainingPlan, копии нет — вероятно удалена в Журнале "
-                                  "(происхождение не доказано копией)",
+    "pre_migration_without_copy": "записан не позже TrainingPlan, копии нет — удалена в Журнале либо план создан "
+                                  "до импорта (уцелевшей копии транзакции плана нет — перенос не доказуем)",
+    "nonstandard_copy_history": "история копий пользователя не объяснима штатными писателями (след в evidence: копия "
+                                "вне транзакции плана / копия без плана) — не создаётся и не привязывается ничего",
     "exact_copy_predates_elective": "есть копия того же содержимого, но она старше факультатива — не привязана, "
                                     "вторая не создана",
 }
@@ -551,7 +554,8 @@ def _render_unresolved(items: list[dict]) -> list[str]:
             f"  user_id={item['user_id']} elective_id={item['elective_id']} {item.get('elective_type', '?')} "
             f"{item.get('performed_at', '?')} reps={item.get('total_reps', '?')}: "
             f"{_UNRESOLVED_REASONS.get(item['reason'], item['reason'])}; "
-            f"кандидаты (копии без ключа): {item.get('candidate_copy_ids') or 'нет'}",
+            f"кандидаты (копии без ключа): {item.get('candidate_copy_ids') or 'нет'}"
+            + (f"; evidence: {item['evidence']}" if item.get("evidence") else ""),
         )
     return lines
 

@@ -6,10 +6,11 @@
 упакованным форматом сохраняется) или performed_at, DELETE удаляет дерево сессии. Хронология created_at задаётся
 явно: тест идёт в одной транзакции, где now() у всех строк одинаков.
 
-Хронологии (created_at факультатива / копий / плана):
-* ``pre_plan`` — прод: факультативы записаны задолго до миграции, копии и план — одна транзакция backfill;
-* ``same_txn`` — фикстура репетиции (пользователь B): всё в одной транзакции;
-* ``post_plan`` — факультатив записан ПОСЛЕ плана, но до прогона, создавшего его копию."""
+Штатные хронологии (created_at факультатива / копий / плана; копии и план старого backfill — одна транзакция, это
+показано запуском самого старого backfill: docs/rehearsal/old_backfill_created_at.py, STAGING_RC_REHEARSAL §8):
+* ``pre_plan`` — прод: факультативы записаны задолго до миграции;
+* ``same_txn`` — фикстура репетиции (пользователь B): всё в одной транзакции.
+Нештатная история (копия вне транзакции плана, копия без плана — ручной SQL/сиды) — отдельные тесты guard'а."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -28,14 +29,13 @@ from app.domain.training_session_v2 import SessionOrigin
 from app.services.legacy_history_convergence import LegacyHistoryConvergenceService
 from scripts.backfill_multi_program import _render_unresolved, converge_history_all
 from tests.test_web.test_canonical_history import _all_totals, _assert_one_number
-from tests.test_web.test_journal_dedupe import BASE, _legacy_user
+from tests.test_web.test_journal_dedupe import BASE, _free_workout, _legacy_user
 
 BACKFILL_AT = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
 CHRONOLOGIES = {
     # (created_at факультатива, created_at плана); копии старого backfill — всегда BACKFILL_AT
     "pre_plan": (BACKFILL_AT - timedelta(days=30), BACKFILL_AT),
     "same_txn": (BACKFILL_AT, BACKFILL_AT),
-    "post_plan": (BACKFILL_AT - timedelta(minutes=30), BACKFILL_AT - timedelta(hours=1)),
 }
 
 
@@ -226,8 +226,9 @@ async def test_elective_recorded_after_the_old_backfill_still_gets_its_copy(sess
 
 
 async def test_dual_write_copy_of_a_new_elective_does_not_mark_an_older_uncopied_one_as_processed(session: AsyncSession):
-    """Окно отката: старый код записал факультатив без копии, потом новый код записал следующий (копия dual-write
-    в той же транзакции). Копия dual-write — не прогон backfill: более ранний факультатив получает копию."""
+    """Окно отката: старый код записал факультатив без копии (после плана — backfill его не переносил), потом
+    новый код записал следующий (копия dual-write в той же транзакции). Копия dual-write — не след нештатной
+    истории и не прогон backfill: более ранний факультатив получает копию (первый импорт)."""
     user, _ = await _legacy_user(session, 991003)
     await _plan(session, user, BACKFILL_AT - timedelta(days=60))
     orphan = await _old_elective(session, user, ElectiveType.W_LADDER, BASE, 12, [4, 4, 4], BACKFILL_AT)
@@ -245,13 +246,13 @@ async def test_dual_write_copy_of_a_new_elective_does_not_mark_an_older_uncopied
 
 
 async def test_deleted_copy_stays_deleted_after_the_untouched_ones_get_their_key(session: AsyncSession):
-    """Доказательство обработки — и копия, которой ключ дало сведение (создана позже факультатива): после первого
-    apply неключевых копий не остаётся, но удалённая копия на втором прогоне не воскресает."""
+    """После первого apply неключевых копий не остаётся (нетронутая получила ключ), но удалённая копия на втором
+    прогоне не воскресает: решение не зависит от того, что сведение само меняет."""
     user, _ = await _legacy_user(session, 991004)
-    await _plan(session, user, BACKFILL_AT - timedelta(hours=1))  # post_plan: план не доказывает ничего
-    kept = await _old_elective(session, user, ElectiveType.W_LADDER, BASE, 12, [4, 4, 4], BACKFILL_AT - timedelta(minutes=30))
+    await _plan(session, user, BACKFILL_AT)
+    kept = await _old_elective(session, user, ElectiveType.W_LADDER, BASE, 12, [4, 4, 4], BACKFILL_AT - timedelta(days=3))
     gone = await _old_elective(
-        session, user, ElectiveType.VOLUME_TARGET, BASE + timedelta(hours=1), 40, None, BACKFILL_AT - timedelta(minutes=30),
+        session, user, ElectiveType.VOLUME_TARGET, BASE + timedelta(hours=1), 40, None, BACKFILL_AT - timedelta(days=3),
     )
     await _old_backfill_copy(session, kept)
     await _old_delete(session, await _old_backfill_copy(session, gone))
@@ -259,10 +260,154 @@ async def test_deleted_copy_stays_deleted_after_the_untouched_ones_get_their_key
 
     first = await _converge(session, user, apply=True)
     assert (first.counts["bound"], first.counts["elective_created"]) == (1, 0)
-    assert [item["elective_id"] for item in first.ambiguous] == [gone.id]
+    assert [(item["elective_id"], item["reason"]) for item in first.ambiguous] == [(gone.id, "backfilled_copy_edited_or_deleted")]
     second = await _converge(session, user, apply=True)
     assert second.mutations == 0 and [item["elective_id"] for item in second.ambiguous] == [gone.id]
     _assert_one_number(await _all_totals(session, user), 1)
+
+
+# --- удалены ВСЕ копии (постоянный regression) ---------------------------------------------------------------
+
+
+async def _old_backfill_workout_copy(session: AsyncSession, user, workout_set) -> int:
+    """Legacy-тренировка + её копия старого backfill в транзакции плана (BACKFILL_AT): запись тренировки идёт через
+    dual-write, затем ключ снимается и created_at выставляется так, как их оставил старый backfill."""
+    workout = await _free_workout(session, user, workout_set, BASE - timedelta(days=5), 12)
+    await session.execute(text("UPDATE workouts SET created_at = :c WHERE id = :i"), {"c": BACKFILL_AT - timedelta(days=5), "i": workout.id})
+    await session.execute(text(
+        "UPDATE training_sessions SET legacy_id = NULL, created_at = :c WHERE origin = 'legacy_backfill' AND legacy_id = :i",
+    ), {"c": BACKFILL_AT, "i": workout.id})
+    return workout.id
+
+
+async def _all_copies_deleted(session: AsyncSession, telegram_id: int, *, with_workout: bool):
+    """Штатный старый backfill (план и копии — одна транзакция) -> старое API удаляет ВСЕ копии факультативов."""
+    user, workout_set = await _legacy_user(session, telegram_id)
+    await _plan(session, user, BACKFILL_AT)
+    if with_workout:
+        await _old_backfill_workout_copy(session, user, workout_set)
+    electives = [
+        await _old_elective(session, user, kind, BASE + timedelta(hours=i), total, seq, BACKFILL_AT - timedelta(days=10))
+        for i, (kind, total, seq) in enumerate(((ElectiveType.THREE_MINUTES, 9, [9]), (ElectiveType.VOLUME_TARGET, 30, None)))
+    ]
+    for elective in electives:
+        await _old_delete(session, await _old_backfill_copy(session, elective))
+    await _reload(session, user, *electives)
+    return user, electives
+
+
+async def _dry_apply_repeat(session: AsyncSession, user):
+    before = await _elective_rows(session, user)
+    dry = await _converge(session, user, apply=False)
+    assert await _elective_rows(session, user) == before, "dry-run ничего не пишет"
+    applied = await _converge(session, user, apply=True)
+    assert applied.counts == dry.counts
+    again = await _converge(session, user, apply=True)
+    assert again.mutations == 0 and again.ambiguous == applied.ambiguous
+    return applied
+
+
+async def test_all_copies_deleted_after_standard_backfill_are_not_recreated(session: AsyncSession):
+    """Штатный путь: старый backfill -> старое API удалило ВСЕ копии факультативов. План остаётся всегда (уникален,
+    создан в транзакции копий, путей удаления нет ни в одной версии кода) -> факультативы не позже плана: копия не
+    создаётся, привязки нет, оба в отчёте; dry-run/apply/повтор согласованы."""
+    user, electives = await _all_copies_deleted(session, 991101, with_workout=False)
+    applied = await _dry_apply_repeat(session, user)
+    assert (applied.counts["bound"], applied.counts["elective_created"]) == (0, 0)
+    # уцелевших копий транзакции плана нет -> перенос доказан только планом: «импорт не доказуем копией»
+    assert [(i["elective_id"], i["reason"]) for i in applied.ambiguous] == [
+        (e.id, "pre_migration_without_copy") for e in electives
+    ]
+    assert await _elective_rows(session, user) == []
+    _assert_one_number(await _all_totals(session, user), 0)
+
+
+async def test_all_copies_and_the_plan_gone_with_a_surviving_backfill_trace_is_guarded(session: AsyncSession):
+    """Косвенного доказательства планом нет (план удалён — только ручным SQL, штатного пути нет), но уцелела копия
+    legacy-тренировки из той же транзакции backfill: история не объяснима штатными писателями -> guard: ни копии,
+    ни привязки по всем факультативам пользователя; повтор стабилен и после того, как сведение дало тренировке ключ."""
+    user, electives = await _all_copies_deleted(session, 991102, with_workout=True)
+    await session.execute(text("DELETE FROM plan_weeks WHERE training_plan_id IN (SELECT id FROM training_plans WHERE user_id = :u)"),
+                          {"u": user.id})
+    await session.execute(text("DELETE FROM training_plans WHERE user_id = :u"), {"u": user.id})
+    await _reload(session, user, *electives)
+
+    applied = await _dry_apply_repeat(session, user)
+    assert (applied.counts["elective_created"], applied.counts["bound"]) == (0, 1)  # bound — копия тренировки
+    assert {i["reason"] for i in applied.ambiguous} == {"nonstandard_copy_history"}
+    assert [i["elective_id"] for i in applied.ambiguous] == [e.id for e in electives]
+    assert all(i["evidence"].startswith("import_copy_without_plan:") for i in applied.ambiguous)
+    assert await _elective_rows(session, user) == []
+    _assert_one_number(await _all_totals(session, user), 1)  # только тренировка
+
+
+async def test_traceless_deleted_copies_are_indistinguishable_from_never_imported(session: AsyncSession):
+    """Известный пробел (STAGING_RC_REHEARSAL §8 «Фикс»): удалены все копии И план (только нештатно) и не осталось
+    ни одного следа прогона. Такой пользователь в БД неотличим от ни разу не импортированного (первый импорт обязан
+    создать копии) — без маркера прогона backfill их не разделить. Оба получают копии по штатному инварианту «плана
+    нет -> backfill не проходил», и отчёт называет это основание, а не выдаёт его за доказательство."""
+    deleted, deleted_electives = await _all_copies_deleted(session, 991103, with_workout=False)
+    await session.execute(text("DELETE FROM training_plans WHERE user_id = :u"), {"u": deleted.id})
+    never, _ = await _legacy_user(session, 991104)
+    for i, (kind, total, seq) in enumerate(((ElectiveType.THREE_MINUTES, 9, [9]), (ElectiveType.VOLUME_TARGET, 30, None))):
+        await _old_elective(session, never, kind, BASE + timedelta(hours=i), total, seq, BACKFILL_AT - timedelta(days=10))
+    await _reload(session, deleted, never, *deleted_electives)
+
+    def shape(report):
+        return {k: v for k, v in report.counts.items() if v}, report.ambiguous
+
+    first_deleted = await _dry_apply_repeat(session, deleted)
+    first_never = await _dry_apply_repeat(session, never)
+    assert shape(first_deleted) == shape(first_never)
+    assert first_never.counts["elective_created"] == 2 and first_never.counts["elective_first_import_without_plan"] == 2
+
+
+async def test_first_import_and_dual_write_are_unaffected(session: AsyncSession):
+    """Доказанно корректный первый импорт: плана нет и нет ни одного следа прогона -> копии создаются; новая запись
+    факультатива (dual-write, ключ сразу) в отчёт не попадает и не меняется."""
+    user, _ = await _legacy_user(session, 991105)
+    old = await _old_elective(session, user, ElectiveType.W_LADDER, BASE, 12, [4, 4, 4], BACKFILL_AT)
+    new = await _old_elective(session, user, ElectiveType.THREE_MINUTES, BASE + timedelta(hours=1), 9, [9], BACKFILL_AT + timedelta(days=1))
+    await LegacyConvergenceRepository(session).sync_elective(new)
+    await session.execute(text("UPDATE training_sessions SET created_at = :c WHERE origin = 'legacy_elective' AND legacy_id = :i"),
+                          {"c": new.created_at, "i": new.id})
+    await _reload(session, user, old, new)
+    applied = await _dry_apply_repeat(session, user)
+    assert (applied.counts["elective_created"], applied.ambiguous) == (1, [])
+    rows = await _elective_rows(session, user)
+    assert sorted(r[2] for r in rows) == sorted([old.id, new.id]) and all(r[6] == 0 for r in rows)
+
+
+# --- нештатная история: поздняя копия (форма прежней фикстуры test_single_history_migration) ---------------------
+
+
+async def test_copy_outside_the_plan_transaction_guards_the_whole_user(session: AsyncSession):
+    """Копия без ключа, созданная НЕ в транзакции плана (так её штатный backfill не пишет — см.
+    docs/rehearsal/old_backfill_created_at.py; именно такой была копия 9005 в фикстуре test_single_history_migration
+    до исправления created_at). Вывод «факультатив после плана никогда не переносился» недоказуем: у пользователя
+    ни привязки (даже точной), ни новой копии; нативная/dual-write запись не затронута; повтор стабилен."""
+    user, _ = await _legacy_user(session, 991201)
+    await _plan(session, user, datetime(2026, 9, 14, 9, 0, tzinfo=UTC))
+    early = await _old_elective(session, user, ElectiveType.THREE_MINUTES, datetime(2026, 9, 10, 9, 0, tzinfo=UTC), 9, [4, 3, 2],
+                                datetime(2026, 9, 10, 9, 0, tzinfo=UTC))
+    late_copy = await _old_backfill_copy(session, early, created_at=BACKFILL_AT)  # 2026-10-05, план — 2026-09-14
+    after_plan = await _old_elective(session, user, ElectiveType.VOLUME_TARGET, datetime(2026, 9, 25, 9, 0, tzinfo=UTC), 40, None,
+                                     datetime(2026, 9, 25, 9, 0, tzinfo=UTC))
+    native = await _old_elective(session, user, ElectiveType.W_LADDER, BASE + timedelta(days=1), 12, [4, 4, 4], BACKFILL_AT + timedelta(days=1))
+    await LegacyConvergenceRepository(session).sync_elective(native)
+    await session.execute(text("UPDATE training_sessions SET created_at = :c WHERE origin = 'legacy_elective' AND legacy_id = :i"),
+                          {"c": native.created_at, "i": native.id})
+    await _reload(session, user, early, late_copy, after_plan, native)
+    before = await _elective_rows(session, user)
+
+    applied = await _dry_apply_repeat(session, user)
+    assert (applied.counts["bound"], applied.counts["elective_created"], applied.mutations) == (0, 0, 0)
+    assert [(i["elective_id"], i["reason"]) for i in applied.ambiguous] == [
+        (early.id, "nonstandard_copy_history"), (after_plan.id, "nonstandard_copy_history"),
+    ]
+    assert applied.ambiguous[0]["evidence"] == f"unkeyed_elective_copy_outside_plan_transaction:[{late_copy.id}]"
+    assert applied.ambiguous[0]["candidate_copy_ids"] == [late_copy.id]
+    assert await _elective_rows(session, user) == before
 
 
 # --- одинаковые timestamps -------------------------------------------------------------------------------
@@ -309,6 +454,7 @@ async def test_exact_copy_older_than_the_elective_is_neither_bound_nor_duplicate
     """Копия не может быть старше своего факультатива: совпадение времени и содержимого с такой копией — не
     происхождение. Но и «копии нет» не доказано: ничего не привязывается и не создаётся — случай в отчёте."""
     user, _ = await _legacy_user(session, 991007)
+    await _plan(session, user, BACKFILL_AT)
     elective = await _old_elective(session, user, ElectiveType.THREE_MINUTES, BASE, 9, [9], BACKFILL_AT + timedelta(days=1))
     older = await _old_backfill_copy(session, elective, created_at=BACKFILL_AT)
     await _reload(session, user, elective, older)

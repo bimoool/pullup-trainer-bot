@@ -77,6 +77,9 @@ history read by any v2 view.
 `python scripts/backfill_multi_program.py --converge-history [--apply]` (dry-run by default, per-user transaction, apply-again = 0,
 legacy tables never written). Deploy order: `alembic upgrade head` → `--converge-history` (review the dry-run) → `--converge-history --apply`
 → `up -d`. Schema downgrade drops the three columns (copies stay); re-upgrade + `--apply` restores keys and supersessions.
+Exceptions after a downgrade (elective guard, PR #326): an elective copy that lost its key and was edited, and new electives
+of a user **without a plan** whose workout copies lost their keys, are reported as unresolved instead of re-keyed/created
+(no duplicate, no resurrection; `docs/STAGING_RC_REHEARSAL.md` §8 «Фикс»). The runbook rollback is `pg_restore`.
 
 ## 5. Aged-state convergence
 
