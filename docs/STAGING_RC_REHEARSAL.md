@@ -242,3 +242,20 @@ docker compose -p pullup-staging run --rm app alembic upgrade head; docker compo
   `package-lock.json` +405 строк, но `Dockerfile.web` копирует только `package.json` и делает `npm install` → слой npm пересобирается,
   версии резолвятся без lock (в CI — `npm ci` по lock). Это не воспроизводилось и не измерялось (сборка образов в песочнице не выполнялась).
 
+## 11. Проверки механизмов для runbook (без VPS, без деплоя)
+
+Все числа в этом документе — синтетика на локальном Postgres; на staging они не переносятся (runbook проверяет **предикаты**, не числа).
+
+* **Хэши ДО-колонок.** `docs/rehearsal/sql/gen_hash_queries.sql` генерирует по схеме «до» запросы `count(*)` + `md5(string_agg(row(<ДО-колонки>)::text …))` по 47 таблицам с `id`.
+  Один и тот же файл до и после `alembic upgrade head` (7 миграций, старт `c3f7a9e2d5b1`, данные `4298f8b`): **число строк не изменилось ни в одной
+  существующей таблице; данные изменились только в `program_inclusions`** (`block_b.work_sets`). Предикатные запросы: хэш состояния без `work_sets` и хэш прочих колонок
+  `program_inclusions` совпали до/после; объектов `block_b` без числового `work_sets` после — 0.
+* **hold-override (Compose v5.6.0, без демона).** `docker compose config --services`: без override `db redis app web`; с `docker-compose.override.yml`
+  (`profiles: ["hold"]` у `app` и `web`) — `db redis`; `docker-compose.override.yml` подхватывается без `-f`; `--dry-run build app web` собирает оба образа; с `COMPOSE_PROFILES=hold`
+  снова все четыре. `run --rm app …` и `up -d` с профилями на демоне **не проверены** (демона нет).
+* **Подмена `alembic_version` не откат.** На копии после апгрейда `alembic_version` вручную возвращена к `c3f7a9e2d5b1`; `alembic upgrade head` упал на первой ревизии
+  `b7d2e9f4a1c3` (`DuplicateTableError: relation "exercise_categories" already exists`), версия осталась `c3f7a9e2d5b1`.
+* **Воспроизводимая сборка фронтенда.** Шаги этапа `Dockerfile.web` с `npm ci` (копируются только `package.json` и `package-lock.json`, затем исходники, `npm run build`) прошли
+  (Node 22, lockfileVersion 3, 193 пакета); патч — `docs/rehearsal/patches/dockerfile-web-npm-ci.patch`, не применён. Образ не собирался (демона нет). Все 15 прямых зависимостей
+  в `package.json` — диапазоны `^`/`~`.
+

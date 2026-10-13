@@ -3,13 +3,13 @@
 **Только подготовка. Ни одна команда этого документа не выполнялась на staging; деплой делает владелец.**
 
 > **Статус готовности: BLOCKER, деплой на staging не разрешён.**
-> 1. Ждём два исправления: **(IDB)** ворота drain-before-projection при сбое чтения IndexedDB и **(legacy convergence)**
->    случай отредактированных/удалённых копий факультативов. Без них деплой не готов; в этом документе они **не** реализованы.
+> 1. Ждём финалы двух исправлений: **(IDB)** ворота drain-before-projection при сбое чтения IndexedDB и **(legacy convergence)**
+>    случай отредактированных/удалённых копий факультативов. В этом документе они **не** реализованы.
 > 2. CI E2E на кандидате красный (2 из 2), причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
-> 3. `deploy-staging-run.sh` известен только по приведённым владельцем строкам (§3.0); остальные строки скрипта **не считаются
->    проверенными**. Wrapper принимает ветку (не SHA), не делает backup и convergence, старые app/web работают во время миграции —
->    протокол §3 это компенсирует. БД `pullup_staging` — 10 МБ; бэкапа на staging нет — §5 обязателен до любых изменений.
-> 4. HOLD на `--apply` convergence — §6.2.
+> 3. `deploy-staging-run.sh` известен только по строкам, присланным владельцем (§3.0); `/usr/local/bin/post-deploy-cleanup.sh`
+>    и остальное в скрипте **не проверены**. Деплой-ветка выбирается после окончательного candidate SHA (сейчас не создаётся).
+> 4. HOLD на `--apply` convergence — §6.2. Staging держится закрытым для записей override'ом до конца проверок — §3.2.
+> 5. Сборка фронтенда на сервере невоспроизводима (`npm install` без lock) — §3.5; решение владельца.
 
 ## 1. Что именно выкатывается
 
@@ -55,111 +55,136 @@ compose-проект `pullup-staging`; сервисы `db`, `redis`, `app` (бо
 `web` (Mini App, `Dockerfile.web`, **без `scripts/`**); каталог `/home/deploy/pullup-trainer-bot-staging`;
 порт Mini App 8002; домен `staging.app.bimoool.com`. Всё это — **заявленное, не проверенное на живом сервере**.
 
-Фактическое состояние staging — только этими read-only командами (в веб-консоли сервера или по SSH под пользователем,
-у которого есть доступ к docker). **Имена проектов, сервисов, контейнеров и каталогов не угадываются — они берутся из
-вывода первой команды.** Не печатать `.env`, `~/.staging-secrets.env`, токены; вывод — без секретов и персональных данных.
-На сервере живёт ещё чужой проект (`reeltrack-*`) и прод — выбирать строки, где имя compose-проекта содержит `staging`.
+Всё, что нужно было прочитать с сервера, **уже получено от владельца** (§1.1 и §3.0): проект и контейнеры, SHA `4298f8b`, Alembic `c3f7a9e2d5b1`,
+каталог, диск и память, размер БД (10 МБ), отсутствие бэкапа в проверенных каталогах, строки `deploy-staging-run.sh`. Повторный полный `cat` скрипта
+не запрашивается (в нём секреты).
 
+Остаются **не проверенными** и **не запрашиваются повторно**: `/usr/local/bin/post-deploy-cleanup.sh` (что реально делает серверная копия), остальные
+строки скрипта, форма healthcheck, версия Docker Compose. Это учтено в §3 как допущения.
+
+Read-only команды перед деплоем (шаг 0 §3.2; имена брать из вывода, не угадывать; проект `pullup-staging`, контейнеры из §1.1):
 ```bash
-# 2.1 какие compose-проекты, сервисы и контейнеры запущены (проект / сервис / контейнер / образ / статус)
-docker ps --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.service"}}\t{{.Names}}\t{{.Image}}\t{{.Status}}' | sort
-# 2.2 рабочий каталог каждого compose-проекта (из него берётся каталог staging; прод и reeltrack не трогать)
-docker ps --format '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}' | sort -u
-# 2.3 SHA, на котором лежит код staging (подставить working_dir staging-проекта из 2.2)
-git -C <WORKING_DIR_STAGING> rev-parse HEAD
-git -C <WORKING_DIR_STAGING> log -1 --format='%H %cI %s'
-git -C <WORKING_DIR_STAGING> status -sb | head -n 5
-# 2.4 текущая ревизия Alembic (подставить имя контейнера Postgres staging: в 2.1 строка с образом postgres:*)
-docker exec <DB_CONTAINER_STAGING> sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'
-# 2.5 как устроен деплой: делает ли wrapper миграцию/бэкап, принимает ли SHA (скрипты без секретов; секреты в ~/.staging-secrets.env — не открывать)
-cat ~/deploy-staging.sh ~/deploy-staging-run.sh
-# 2.6 есть ли механизм бэкапа и место на диске
-ls -la ~/backups 2>/dev/null | head -n 20; crontab -l 2>/dev/null | grep -iE 'dump|backup'; systemctl list-timers --all 2>/dev/null | grep -iE 'backup|dump'; df -h / | tail -n 1
+docker compose version; free -m; df -h /home/deploy
+docker compose -p pullup-staging images            # имена/ID образов app и web — для §8
+docker compose -p pullup-staging ps -a
+git -C /home/deploy/pullup-trainer-bot-staging rev-parse HEAD     # 4298f8b9727f91d4a150431fd0d9e06131944d27
 ```
-
-Дальше в команды §3–§8 подставлять найденные `-p <PROJECT_STAGING>` и имена сервисов из 2.1 (в тексте ниже использованы
-`pullup-staging`, `db`, `app`, `web` из `docker-compose.yml` репозитория — **заменить на найденные**).
-
-Команды 2.1–2.4 владелец уже выполнил (§1.1: проект `pullup-staging`, сервисы, SHA `4298f8b`, Alembic `c3f7a9e2d5b1`). **Остаются 2.5**
-(содержимое `deploy-staging-dispatch.sh` / `deploy-staging-run.sh`: принимает ли SHA или ветку, делает ли `alembic upgrade`,
-где и как собирает образы при ≈ 704 МиБ available) **и размер БД из §5.1**. Бэкапа нет (2.6 проверен в указанных каталогах).
+Не печатать `.env`, `~/.staging-secrets.env`, токены; вывод — без секретов и персональных данных. На сервере живут ещё прод и `reeltrack-*` — все команды
+только для проекта `pullup-staging`.
 
 ## 3. Деплой (действие владельца; на VPS ничего не запускалось и не запускается без финального разрешения)
 
 ### 3.0 Что известно о `deploy-staging-run.sh`
 
-Проверены **только** строки, присланные владельцем (в таком порядке):
+Со слов владельца (проверенные факты):
 
 ```
-git fetch origin
-git checkout "$branch"
-git pull --ff-only origin "$branch"
-docker compose -p pullup-staging build app web
-docker compose -p pullup-staging run --rm app alembic upgrade head
-docker compose -p pullup-staging up -d
-healthcheck http://127.0.0.1:8002/health
+1: (shebang)
+2: set -euo pipefail
+   git fetch origin
+   git checkout "$branch"
+   git pull --ff-only origin "$branch"
+   docker compose -p pullup-staging build app web
+   docker compose -p pullup-staging run --rm app alembic upgrade head
+   docker compose -p pullup-staging up -d
+   healthcheck http://127.0.0.1:8002/health
+   /usr/local/bin/post-deploy-cleanup.sh        # вызывается после healthcheck, если файл исполняемый
 ```
 
-Не проверено (скрытые строки): `set -e`/реакция на ошибку, чтение секретов, очистка (`docker image prune`, `builder prune` — в
-репозитории `deploy/post-deploy-cleanup.sh` делает именно это), проверка аргумента. Любой вывод ниже, зависящий от них, помечен.
+**Не проверено:** остальные строки скрипта; форма и длительность healthcheck; **содержимое `/usr/local/bin/post-deploy-cleanup.sh`**.
+Копия в репозитории (`deploy/post-deploy-cleanup.sh`) делает `docker image prune -f` (только dangling-образы, не `-a`),
+`docker builder prune -f --filter until=168h` и всегда `exit 0`; что установлено на сервере — неизвестно. Повторный полный `cat`
+скрипта не запрашивается.
 
 Следствия (из строк + кода репозитория + репетиции):
 
 1. **Ветка, не SHA.** Деплоится `HEAD` ветки на момент `git pull`; SHA скрипт не проверяет и не печатает.
 2. **Нет backup и convergence** — делает владелец вручную (§5, §6).
-3. **Старые app/web работают во время `build` и миграции.** Миграция берёт `ACCESS EXCLUSIVE`-блокировки (ALTER TABLE); старый
-   бот/Mini App в это время пишут и/или блокируются. Писатели должны быть остановлены до backup (§3.2, шаг A).
-4. **Миграция атомарна.** `env.py` оборачивает все ревизии одной `begin_transaction()`; в 7 ревизиях нет `CONCURRENTLY`,
+3. **`set -euo pipefail`:** упавший `build` или `alembic upgrade head` обрывает скрипт **до** `up -d`; упавший healthcheck (если он возвращает
+   ненулевой код — форма не проверена) обрывает скрипт **до** cleanup. Но к этому моменту `git checkout` и `git pull` уже
+   выполнены: **рабочее дерево staging остаётся на новой ветке/HEAD**, даже если деплой упал.
+4. **Старые app/web работают во время `build` и миграции** (скрипт их не останавливает). Миграция берёт `ACCESS EXCLUSIVE`-блокировки
+   (ALTER TABLE), старый бот/Mini App в это время пишут и/или блокируются → писатели должны быть остановлены заранее (§3.2, шаг A).
+5. **Миграция атомарна.** `env.py` оборачивает все ревизии одной `begin_transaction()`; в 7 ревизиях нет `CONCURRENTLY`,
    `autocommit_block`, `ADD VALUE`. Проверено на копии: сбой последней ревизии (`b5d8e1f3a6c9`) откатил все шесть предыдущих
-   (`alembic_version` остался `c3f7a9e2d5b1`, таблиц `workout_definition_versions`/`session_events` нет).
-5. **Если `alembic` упал, а в скрипте нет `set -e` (не проверено)**, следующий `up -d` поднимет новый код на старой схеме.
-   После любого ненулевого кода/ошибки в логе — сразу `stop app web` и проверка `alembic_version` (§3.3).
-6. **`compose`/Dockerfile/`pyproject.toml`/`alembic.ini` между `4298f8b` и кандидатом не менялись** → `up -d` не пересоздаёт `db` и `redis`.
+   (`alembic_version` остался `c3f7a9e2d5b1`, новых таблиц и колонок нет). Вместе с `set -e` (п. 3) неудачная миграция не доходит до `up -d`.
+6. **Wrapper запускает `app` и `web` сам (`up -d`) до всякого `--apply`** — окно runtime-convergence (первый `GET /plan` новым билдом
+   выполняет сведение) и записей бота. «Запустить и быстро остановить» защитой не является → §3.2, hold-override.
+7. **`compose`/Dockerfile/`pyproject.toml`/`alembic.ini` между `4298f8b` и кандидатом не менялись** → `up -d` не пересоздаёт `db` и `redis`.
    Новых обязательных настроек `.env` нет (одна новая — `main_min_days_between_starts`, со значением по умолчанию).
-7. **Сборка при ≈ 704 МиБ available (swap используется).** `Dockerfile.web`: `package.json` изменён (добавлен `vitest`) →
-   слой `npm install` пересобирается; `package-lock.json` в образ **не копируется** (`npm install`, не `npm ci`) → версии
-   зависимостей резолвятся заново и могут отличаться от протестированных в CI; затем `tsc -b && vite build`. В обоих образах
-   `pip install` выполняется заново (слой стоит после `COPY app`). `build app web` по умолчанию параллельный. Пик памяти не измерен —
-   риск OOM/очень долгой сборки; это самый вероятный отказ деплоя.
-8. **Откат тем же wrapper'ом на старую ветку после успешной миграции не сработает:** `alembic upgrade head` кодом `4298f8b` на БД,
+8. **Сборка при ≈ 704 МиБ available (swap используется).** `Dockerfile.web`: `package.json` изменён (добавлен `vitest`) → слой `npm install`
+   пересобирается, затем `tsc -b && vite build`; в обоих образах `pip install` выполняется заново (слой стоит после `COPY app`);
+   `build app web` по умолчанию параллельный. Пик памяти не измерен — риск OOM/очень долгой сборки. Отдельно — невоспроизводимость
+   `npm install` без lock: §3.5.
+9. **Откат тем же wrapper'ом на старую ветку после успешной миграции не сработает:** `alembic upgrade head` кодом `4298f8b` на БД,
    уже стоящей на `b5d8e1f3a6c9`, падает — `Can't locate revision identified by 'b5d8e1f3a6c9'` (проверено, exit 255). После
    `pg_restore` (`alembic_version` = `c3f7a9e2d5b1`) или `alembic downgrade c3f7a9e2d5b1` тот же шаг проходит (exit 0). См. §8.
 
 ### 3.1 Замороженный HEAD деплой-ветки
 
-* Деплой-ветка — **отдельная**, только для этого выката (имя на усмотрение владельца, например `staging/rc-322-323`). Владелец
-  создаёт её на точном SHA, принятом после обоих фиксов и зелёного CI, и закрывает от push. Ветку PR #324 для деплоя не
-  использовать. Я эту ветку не создаю (разрешения нет).
-* Перед dispatch (в тот же час, без пауз):
+* **Деплой-ветка выбирается и создаётся только после окончательного candidate SHA** (код-SHA после обоих фиксов, зелёного CI и решения по §3.5).
+  Сейчас её не создают и не защищают; ветку PR #324 для деплоя не использовать (она будет меняться).
+* Когда ветка создана: владелец ставит её на точный `FROZEN_SHA` и закрывает от push. Перед dispatch (в тот же час, без пауз):
   ```bash
   git ls-remote origin refs/heads/<DEPLOY_BRANCH>              # == FROZEN_SHA, записанный при принятии gate
   git diff --stat <GATE_CODE_SHA> <FROZEN_SHA> -- . ':!docs'   # изменения кода относительно прошедшего gate — только принятые фиксы
   ```
-* После деплоя (§3.3): `git rev-parse HEAD` в каталоге staging **равен** `FROZEN_SHA`, `git status --short` пуст, ветка = деплой-ветка.
-  Образ `.git` не содержит, поэтому факт «собрано из этого HEAD» подтверждается только равенством HEAD в рабочем дереве
-  и временем создания образов (после начала деплоя). `HEAD ≠ FROZEN_SHA` при уже выполненной миграции — стоп, решение владельца, §8.
+* После деплоя (§3.3): `git rev-parse HEAD` в каталоге staging **равен** `FROZEN_SHA`, `git status --short` пуст (кроме override из §3.2, он в
+  `.git/info/exclude`), ветка = деплой-ветка. Образ `.git` не содержит, поэтому «собрано из этого HEAD» подтверждается равенством HEAD в рабочем
+  дереве и временем создания образов (после начала деплоя). `HEAD ≠ FROZEN_SHA` при выполненной миграции — стоп, решение владельца, §8.
 
-### 3.2 Последовательность
+### 3.2 Последовательность: staging закрыт для записей до конца проверок
 
-**Шаг 0 — подготовка (read-only).** §2 (остаток), `free -m`, `df -h /home/deploy`, `docker compose -p pullup-staging images`
-(сохранить ID образов app/web — нужны для быстрого отката, §8), размер БД 10 МБ (получено).
+**Почему не «остановить после старта».** `up -d` запускает `app` (бот, воркеры) и `web` (Mini App); пока они подняты, возможны записи и
+runtime-convergence. Нужен механизм, при котором wrapper их **вообще не запускает**.
 
-**Шаг A — остановить писателей.** Это же освобождает память под сборку.
+**Рассмотренные доступные механизмы** (новых флагов в скриптах не придумывается):
+
+| Механизм | Закрывает | Вывод |
+|---|---|---|
+| Остановка `app`/`web` после `up -d` | — (окно между `up -d` и `stop`) | **не защита** |
+| Остановка `app`/`web` до деплоя (шаг A) | писатели до backup и во время `build`/миграции | необходима, но wrapper затем сам их поднимет |
+| `docker-compose.override.yml` с `profiles` у `app` и `web` (штатная возможность Compose; файл подхватывается автоматически) | wrapper'овский `up -d` (без имён сервисов) поднимает только `db`, `redis`; `build app web` и `run --rm app` с явными именами работают | **рекомендуется**; проверка ниже |
+| nginx 503 для `staging.app.bimoool.com` | только Mini App; бот (long polling) не закрывает; нужны права на nginx | недостаточно |
+| `deploy.replicas: 0` в override | то же, что профили | равнозначно, менее наглядно |
+| флаг режима обслуживания/read-only в приложении | — | **в коде нет** (поиск по `app/config.py`: `maintenance`/`readonly`/`disable` — пусто) |
+
+**Что проверено** (Docker Compose v5.6.0 в песочнице, демона нет; версия на VPS не известна): с override `docker compose config --services`
+для `up -d` без аргументов даёт `db redis` (без override — `db redis app web`); `docker compose --dry-run build app web` собирает оба образа,
+несмотря на профили (явно названные службы включают свой профиль); `docker-compose.override.yml` в каталоге проекта подхватывается без `-f`.
+**Не проверено** (нужен демон): `run --rm app …` и `up -d` с профилями на реальном сервере — проверяется read-only командами шага A.
+Допущение (не проверено): скрытые строки wrapper'а не удаляют неотслеживаемый файл (`git clean`) и не перезаписывают compose-файлы.
+
+**Шаг 0 — подготовка (read-only).** `docker compose version` (нужны профили, Compose ≥ 2), `free -m`, `df -h /home/deploy`,
+`docker compose -p pullup-staging images` (сохранить ID/имена образов app/web — §8), размер БД 10 МБ (получено).
+
+**Шаг A — остановить писателей и поставить hold.** Это же освобождает память под сборку.
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
 docker compose -p pullup-staging stop app web                     # pullup-staging-app-1 (бот), pullup-staging-web-1 (Mini App); db, redis остаются
+cat > docker-compose.override.yml <<'EOF'
+services:
+  app:
+    profiles: ["hold"]
+  web:
+    profiles: ["hold"]
+EOF
+echo docker-compose.override.yml >> .git/info/exclude            # локально; рабочее дерево остаётся «чистым» для git status
+docker compose -p pullup-staging config --services               # ожидается ровно: db, redis
+docker compose -p pullup-staging --dry-run up -d                 # app/web не должны создаваться и стартовать; db/redis — без изменений
 DB=pullup-staging-db-1
 Q='psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc'
 docker exec $DB sh -c "$Q \"select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()\""   # ожидается 0
-docker exec $DB sh -c "$Q \"select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables\""   # записать; повторить через 30 с — значения равны
+docker exec $DB sh -c "$Q \"select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables\""   # записать; через 30 с повторить — равны
 ```
-Бот офлайн: Telegram хранит необработанные обновления (до ~24 ч), после запуска бот их обработает. Mini App недоступен.
-До конца выката не включать `app`/`web` вручную и не открывать бота/Mini App.
+Если `--dry-run up -d` намерен создать/запустить `app` или `web` — **стоп**, механизм не работает на этой версии Compose; деплой не начинать.
+Бот офлайн: Telegram хранит необработанные обновления (до ~24 ч), после запуска бот их обработает. Остановленные командой `stop` контейнеры
+не поднимаются после перезагрузки VPS (поведение Docker для `restart: unless-stopped`, не проверено на сервере).
 
-**Шаг B — backup и проверка восстановления** — §5 целиком (при остановленных writers), затем снять счётчики §6.1.
+**Шаг B — backup и проверка восстановления** — §5 целиком (при остановленных writers), затем «до»-снимок §6.1.
 
-**Шаг C — (опционально, решение владельца) предсборка по одному образу** для снижения пика памяти. Меняет рабочее дерево
-staging до dispatch, поэтому — только после финального разрешения:
+**Шаг C — (опционально, решение владельца) предсборка по одному образу** для снижения пика памяти. Меняет рабочее дерево до dispatch;
+**воспроизводимость сборки не обеспечивает** (§3.5):
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
 git fetch origin && git checkout <DEPLOY_BRANCH> && git pull --ff-only origin <DEPLOY_BRANCH>
@@ -168,41 +193,72 @@ COMPOSE_PARALLEL_LIMIT=1 docker compose -p pullup-staging build app
 COMPOSE_PARALLEL_LIMIT=1 docker compose -p pullup-staging build web
 free -m; dmesg 2>/dev/null | grep -i -E 'out of memory|oom' | tail -n 3
 ```
-Wrapper затем соберёт «по кэшу» — **если** скрытые строки не чистят builder-кэш (не проверено).
 
-**Шаг D — dispatch.** GitHub → Actions → Deploy Staging → `ref` = `<DEPLOY_BRANCH>`. Не запускать повторно после сбоя, пока не
-разобран лог (§3.4). Контроль: `watch free -m` на сервере.
+**Шаг D — dispatch.** GitHub → Actions → Deploy Staging → `ref` = `<DEPLOY_BRANCH>`. Ожидаемое поведение при hold: `build` и миграция проходят,
+`up -d` поднимает только `db`/`redis` (уже работают), **healthcheck :8002 не проходит (web не запущен)** → скрипт завершается с ошибкой, workflow красный,
+cleanup не вызывается. Это ожидаемо; отличать от настоящего сбоя — по логу: есть строки «Running upgrade … b5d8e1f3a6c9» и нет traceback.
+Форма healthcheck (бесконечный ли цикл, таймаут) не проверена — следить за `free -m`, при зависании отменить workflow и проверить §3.3. Не запускать повторно
+до разбора лога.
 
-**Шаг E — проверка факта выката** — §3.3.
+**Шаг E — проверка факта выката** — §3.3 (app/web по-прежнему остановлены).
 
-**Шаг F — снова остановить писателей сразу после проверки.** Wrapper запустил `app`/`web`; первое же открытие «Планов» новым
-билдом выполняет runtime-convergence (`GET /plan`), а бот и воркеры могут писать. До завершения §6 держать остановленными:
+**Шаг F — проверка данных и convergence при остановленных app/web** — §6 (`--apply` — только после принятого фикса legacy convergence и dry-run'ов).
+
+**Шаг G — снять hold и запустить.** Образы уже собраны на шаге D, пересборка не нужна:
 ```bash
-docker compose -p pullup-staging stop app web
+cd /home/deploy/pullup-trainer-bot-staging
+rm docker-compose.override.yml && sed -i '/^docker-compose.override.yml$/d' .git/info/exclude
+docker compose -p pullup-staging config --services               # db, redis, app, web
+docker compose -p pullup-staging up -d --no-build
+curl -sf http://127.0.0.1:8002/health
 ```
-Окно между `up -d` и `stop` — секунды; пользователей на staging, кроме владельца/QA, нет (подтвердить).
-
-**Шаг G — данные и convergence** — §6 (convergence `--apply` — только после принятого фикса legacy convergence и dry-run'ов), затем
-`docker compose -p pullup-staging start app web` и проверка продукта (§7).
+Затем §7. Первое открытие «Планов» новым билдом — после этого шага, когда convergence уже проверена.
 
 ### 3.3 Проверка факта выката
 
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
 git rev-parse HEAD; git branch --show-current; git status --short            # HEAD == FROZEN_SHA; пусто
-docker compose -p pullup-staging ps; docker compose -p pullup-staging images
-curl -sf http://127.0.0.1:8002/health
+docker compose -p pullup-staging ps -a; docker compose -p pullup-staging images
 docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # b5d8e1f3a6c9
 ```
+`app`/`web` при активном hold — `Exited`; healthcheck на :8002 не отвечает — это штатно до шага G.
 
 ### 3.4 Если что-то пошло не так (по этапам)
 
 | Сбой | Состояние | Действие |
 |---|---|---|
-| `build` упал/OOM (до миграции) | схема `c3f7a9e2d5b1`; `app`/`web` остановлены (шаг A); старые образы целы (сбой сборки теги не переписывает — не проверено на этом сервере) | `cd` в каталог, `docker compose -p pullup-staging up -d --no-build app web` — старые образы и тот же compose-файл; проверить `alembic_version` = `c3f7…`; разбор причины |
-| `alembic upgrade` упал | атомарно: схема `c3f7a9e2d5b1` (п. 4 §3.0) | **сразу** `stop app web` (п. 5), проверить `alembic_version`; `up -d --no-build app web` на старых образах — только после проверки; разбор лога |
-| `up -d`/healthcheck упал после миграции | схема `b5d8e1f3a6c9`, данные не сведены | `stop app web`; логи `docker logs pullup-staging-app-1 --tail 200`, `…-web-1`; откат — §8 |
-| `HEAD ≠ FROZEN_SHA` после выката | миграция выполнена | `stop app web`; §8 |
+| `build` упал/OOM | схема `c3f7a9e2d5b1`; `app`/`web` остановлены (шаг A); рабочее дерево уже на новой ветке (п. 3 §3.0); старые образы целы (сбой сборки теги не переписывает — не проверено на сервере) | оставить hold; разобрать причину. Вернуть старые app/web (схема не менялась): §8.2 — `up -d --no-build app web` после снятия override |
+| `alembic upgrade` упал | атомарно: схема `c3f7a9e2d5b1` (п. 5 §3.0); `up -d` не выполнялся (`set -e`) | оставить hold, проверить `alembic_version`; разобрать лог; старый код запускать только после проверки |
+| healthcheck красный при снятом hold | схема `b5d8e1f3a6c9`, данные не сведены или сведены | `stop app web`; логи `docker logs pullup-staging-app-1 --tail 200`, `…-web-1`; откат — §8 |
+| `HEAD ≠ FROZEN_SHA` после выката | миграция выполнена | не снимать hold; §8 |
+
+### 3.5 Воспроизводимость сборки фронтенда (риск: `npm install` без lock)
+
+**Факт.** `Dockerfile.web` копирует только `webapp-frontend/package.json` и выполняет `npm install`; `package-lock.json` в образ не попадает
+(он не исключён `.dockerignore`, просто не копируется), хотя в репозитории lock есть (с #306). Все 15 прямых зависимостей заданы диапазонами `^`/`~`:
+каждая сборка на сервере резолвит транзитивные и прямые версии заново — **собранный фронтенд может отличаться от протестированного в CI (`npm ci` по lock)**.
+Кэш Docker-слоя этого не исправляет: на этом деплое слой `npm install` и так будет пересобран (`package.json` изменён).
+Предсборка по одному образу (шаг C) экономит память, но резолвит те же диапазоны — риск не устраняет.
+
+**Минимальное решение без изменения серверных скриптов** — правка репозитория (2 строки `Dockerfile.web`):
+`docs/rehearsal/patches/dockerfile-web-npm-ci.patch` (проверено `git apply --check`; **не применена**):
+```diff
+-COPY webapp-frontend/package.json ./
+-# package-lock.json нет (см. CLAUDE.md) — npm install, не npm ci, до
+-# первой генерации лока средой с доступом к npm-реестру.
+-RUN npm install
++COPY webapp-frontend/package.json webapp-frontend/package-lock.json ./
++# Воспроизводимая сборка: ровно версии из package-lock.json (как в CI: `npm ci`), без повторного разрешения диапазонов.
++RUN npm ci
+```
+Проверено локально: шаги этапа (`npm ci` только из `package.json` + lock, затем копирование исходников и `npm run build`) завершаются успешно
+(Node 22; в CI `e2e.yml` тот же `npm ci` + `npm run build` на Node 20, как в `node:20-slim`). `npm ci` падает, если lock расходится с `package.json`, — это
+дополнительная защита. Образ в песочнице не собирался (демона нет).
+
+Это изменение сборки образа, которое CI не исполняет (CI образы не строит): если принято, оно входит в окончательный candidate SHA **до** gate и требует
+перепроверки сборки на сервере (первый реальный `docker build` — на staging). Без патча риск остаётся принятым осознанно; мера смягчения — сравнить собранный
+`dist`/версии (`docker run --rm <web-image> ls /app/webapp-frontend/dist/assets`) и пройти §7 на реальном устройстве.
 
 ## 4. Цепочка миграций
 
@@ -229,10 +285,10 @@ alembic history -r c3f7a9e2d5b1:head       # 7 строк, голова b5d8e1f3
 
 Если вывод отличается от таблицы — **стоп**: цепочка не та, что репетировалась.
 
-`e3b9c5d7a2f1` — единственная миграция, меняющая существующее значение (`program_inclusions.progression_state`):
-**разрешено** только `block_b.work_sets`: отсутствует / `null` → `4` у записей, где `block_b` — объект. Любое другое
-существующее значение (в репетиции: `3`, `5`) сохраняется. Миграция не аддитивна в строгом смысле CLAUDE.md
-(UPDATE существующих данных), её `downgrade()` backfill не откатывает.
+`e3b9c5d7a2f1` — миграция, меняющая существующее значение (`program_inclusions.progression_state`). Проверяется **предикатом**, а не
+числом строк (на реальных данных количество и состав другие): у каждой записи, где `block_b` — объект, а `work_sets` отсутствует или JSON `null`, после
+миграции `work_sets = 4`; у остальных записей значение `work_sets` и все прочие ключи состояния **не изменились**. Запросы — §6.1/§6.2.0.
+Миграция не аддитивна в строгом смысле CLAUDE.md (UPDATE существующих данных), её `downgrade()` backfill не откатывает.
 
 ## 5. Бэкап и проверка восстановления (до деплоя; только staging)
 
@@ -286,24 +342,33 @@ docker exec $DB sh -c 'dropdb -U "$POSTGRES_USER" restore_check'
 
 ### 6.1 До деплоя (только счётчики, без персональных данных; снимать при остановленных `app`/`web`, шаг A §3.2)
 
+Два набора снимков (сохранить в файлы; значения — без персональных данных):
+
+**(1) Хэши строк по ДО-колонкам для всех таблиц** — единый механизм «до/после», не требующий, чтобы счётчики оставались неизменными:
+```bash
+# генератор берёт список колонок из схемы ДО миграции; файл hash_queries.sql потом выполняется и ДО, и ПОСЛЕ
+docker exec -i pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' < gen_hash_queries.sql > hash_queries.sql
+docker exec -i pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' < hash_queries.sql > hq_before.txt     # строки: таблица|число|хэш
+```
+(Файл `docs/rehearsal/sql/gen_hash_queries.sql` лежит в ветке кандидата; в рабочем дереве staging до деплоя его нет — создать на сервере в консоли
+(`cat > gen_hash_queries.sql <<'EOF' … EOF`, содержимое — из репозитория/PR) и выполнить команды выше как есть;
+хэширует `row(<колонки, существовавшие до>)` по таблицам с колонкой `id`;
+таблицы без `id` перечислены в комментарии файла. Проверено на репетиционной БД: 47 таблиц, после семи миграций изменились данные
+только в `program_inclusions`, число строк не изменилось нигде.)
+
+**(2) Точечные снимки:**
 ```sql
--- снять и сохранить: counts_before.txt
-select 'users', count(*) from users
-union all select 'subscriptions', count(*) from subscriptions
-union all select 'program_inclusions', count(*) from program_inclusions
-union all select 'workouts (legacy)', count(*) from workouts
-union all select 'elective_workouts', count(*) from elective_workouts
-union all select 'training_sessions', count(*) from training_sessions
-union all select 'session_blocks', count(*) from session_blocks
-union all select 'set_logs', count(*) from set_logs
-union all select 'plan_weeks', count(*) from plan_weeks
-union all select 'plan_items', count(*) from plan_items;
--- какие значения work_sets сейчас (что именно изменит e3b9c5d7a2f1):
-select jsonb_typeof(progression_state->'block_b') as block_b,
-       coalesce((progression_state->'block_b'->'work_sets')::text, 'ABSENT') as work_sets, count(*)
-from program_inclusions group by 1, 2 order by 1, 2;
--- хэш неизменяемых данных (должен совпасть после): initial_progression_state и started_at
-select md5(string_agg(id::text||'|'||initial_progression_state::text||'|'||started_at::text, ',' order by id)) from program_inclusions;
+-- (a) что изменит e3b9c5d7a2f1: значения work_sets до (без персональных данных: id и число)
+select id || ':' || coalesce((progression_state->'block_b'->'work_sets')::text, 'ABSENT') from program_inclusions order by id;     -- work_sets_before.txt
+-- (b) части состояния, которые миграции менять НЕ должны (хэш должен совпасть после)
+select md5(string_agg(id::text||'|'||(progression_state #- '{block_b,work_sets}')::text, ',' order by id)) from program_inclusions;   -- state_wo_work_sets
+select md5(string_agg(row(id,training_plan_id,program_id,snapshot,started_at,expires_at,is_active,created_at,initial_progression_state)::text, '|' order by id)) from program_inclusions;   -- inclusion_other_cols
+-- (c) счётчики для сверки с restore_check (§5) и «до»
+select 'users', count(*) from users union all select 'subscriptions', count(*) from subscriptions
+union all select 'program_inclusions', count(*) from program_inclusions union all select 'workouts (legacy)', count(*) from workouts
+union all select 'elective_workouts', count(*) from elective_workouts union all select 'training_sessions', count(*) from training_sessions
+union all select 'session_blocks', count(*) from session_blocks union all select 'set_logs', count(*) from set_logs
+union all select 'plan_weeks', count(*) from plan_weeks union all select 'plan_items', count(*) from plan_items;
 ```
 
 Дополнительно, **если R0 ≥ `a7e2c5b9d1f4`** (есть `legacy_id`): неспаренные копии факультативов — риск дублей, см. §9.
@@ -316,11 +381,35 @@ select origin, count(*) as sessions, count(legacy_id) as keyed from training_ses
 
 Порядок строго такой; `app`/`web` всё это время остановлены (шаг F §3.2).
 
-**6.2.0 Проверка сразу после миграции, ДО convergence** (ожидается состояние «миграция без сведения»; в репетиции — `up_only`):
-счётчики из §6.1 **равны** «до» для всех таблиц, кроме новых (`custom_plans`, `exercise_categories`, `session_events`,
-`workout_definition_versions`); `plan_items`/`plan_weeks` не изменились; `training_sessions` не изменились по числу; изменён только
-`program_inclusions.progression_state` (`block_b.work_sets` absent/null → 4, явные значения сохранены); хэш `initial_progression_state`/`started_at`
-из §6.1 совпадает; `alembic_version = b5d8e1f3a6c9`. Любое иное — стоп, §8.
+**6.2.0 Проверка сразу после миграции, ДО convergence — по ожидаемым преобразованиям семи миграций, а не по неизменности счётчиков.**
+Выполнить `hash_queries.sql` (тот же файл) → `hq_after.txt` и сравнить с `hq_before.txt` по таблицам:
+```bash
+diff <(cut -d'|' -f1,3 hq_before.txt) <(cut -d'|' -f1,3 hq_after.txt)    # хэши ДО-колонок
+diff <(cut -d'|' -f1,2 hq_before.txt) <(cut -d'|' -f1,2 hq_after.txt)    # числа строк
+```
+Что допустимо (сводка по миграциям; проверено на репетиционных данных, на реальных — сверять с этим перечнем):
+
+| Ревизия | Преобразование | Что должно быть в diff |
+|---|---|---|
+| `b7d2e9f4a1c3` | новая `workout_definition_versions` (+триггер неизменяемости), `exercise_categories`; новые колонки `exercises` (`display_name`, `slug`, `category_id`, `subcategory_id`, `visibility`, `analytics_exercise_id`), `complexes.current_version_id`; backfill этих колонок и **версий** (append-only), системный контент пишется новыми версиями; подписки, доступ, планы, включения, сессии не трогает | новые таблицы с числом строк > 0; в ДО-хэшах `exercises`/`complexes`/`complex_items` различий быть **не должно**, а если есть — только строки системного контента (`source_type = 'system'`), разбор построчно |
+| `d8a3c6f1e2b4` | новые колонки `programs`, `program_inclusions`, `plan_items`, `plan_weeks`; `custom_plans`; backfill новых колонок (`programs.slots/frequency/constraints/assessment`, `program_inclusions.status`, `plan_items.source/workout_definition_id`, `training_sessions.plan_item_id` где связь однозначна) | в ДО-хэшах различий нет |
+| `f4c1a7e9b3d2` | новые колонки `training_sessions` (`kind`, `origin`, `source_v2`, `duration_source`, `started_at`, `ended_at`, …) + backfill (`origin`: `legacy_elective` / `legacy_backfill` / `native`) | в ДО-хэшах различий нет; новые `origin` проверяются запросом ниже |
+| `a9e6c3d1f5b7` | колонки состояния движка; новая пустая `session_events` | `session_events` = 0 строк |
+| `a7e2c5b9d1f4` | `legacy_id`, `superseded_*`, индексы (в т.ч. уникальный `(origin, legacy_id)`) | данных не меняет |
+| `e3b9c5d7a2f1` | `status` varchar(32), `prescription_provenance`; **UPDATE** `progression_state`: `block_b.work_sets` absent/`null` → `4` | различие **только** в `program_inclusions` и **только** в этом ключе (проверки ниже) |
+| `b5d8e1f3a6c9` | `technique_valid`, `rest_within_limit` (nullable) в `session_blocks` | данных не меняет |
+
+Итого для существующих таблиц допустимое различие ДО-хэшей: `program_inclusions` (только `work_sets`) и, возможно, строки системного контента (`b7d2`). Числа строк
+существующих таблиц на этой стадии не меняются (сведение ещё не выполнялось). Проверки предиката `e3b9c5d7a2f1` (после; сравнить с «до» (2)(a)/(b)):
+```sql
+-- 1) не осталось объектов block_b без числового work_sets (ожидается 0)
+select count(*) from program_inclusions where jsonb_typeof(progression_state->'block_b')='object'
+  and coalesce(jsonb_typeof(progression_state->'block_b'->'work_sets'),'null')='null';
+-- 2) всё остальное состояние и прочие колонки не изменились: оба хэша из «до» (2)(b) совпадают
+-- 3) построчно: где work_sets был absent/null — теперь 4; где было число — то же число (сравнить work_sets_before.txt с выводом (2)(a) после)
+```
+Дополнительно: `alembic_version = b5d8e1f3a6c9`; `origin` у `training_sessions`: `select origin, count(*) from training_sessions group by 1` — только
+`native`, `legacy_backfill`, `legacy_elective`. Любое иное расхождение — стоп, §8.
 
 **6.2.1 Convergence — только после принятого фикса legacy convergence** (HOLD ниже) и только после dry-run'ов обоих скриптов с
 разбором вывода. Допустимый итоговый diff — §6.3.
@@ -355,31 +444,31 @@ $C python scripts/backfill_multi_program.py --converge-history --apply        > 
 Не запускать `backfill_multi_program.py` без `--converge-history` (это полный backfill плана, не сведение истории).
 Критерии остановки: ненулевой `guard_violations` или код выхода 4 у `repair_plan_convergence.py`; `total_mutations != 0`
 в `conv_apply2`; в `hist_apply2` есть «создано»/«привязано».
-`dry-run` совпадает с первым `apply` по счётчикам (в репетиции: 55 = 55). Заметки владельца по одному аккаунту:
+Счётчики `dry-run` совпадают со счётчиками первого `apply` (числа на реальных данных будут другими). Заметки владельца по одному аккаунту:
 `--telegram-id <ID>` вместо `--all`; BEFORE/AFTER снимок — `scripts/qa_state_snapshot.py --telegram-id <ID>`
 (read-only), порядок и ожидания — `docs/STAGING_CONVERGENCE_RUNBOOK.md`.
 
-### 6.3 Допустимый diff «до → после» (всё остальное должно остаться без изменений)
+### 6.3 Допустимый итоговый diff «до → после» (миграция + convergence)
+
+Основа — ожидаемые преобразования семи миграций (§6.2.0) плюс сведение. Счётчики **не** требуются неизменными: ниже указано, что должно и что не должно меняться.
 
 | Область | Допустимо | Недопустимо |
 |---|---|---|
-| `alembic_version` | R0 → `b5d8e1f3a6c9` | другая голова |
-| `program_inclusions.progression_state` | только `block_b.work_sets`: отсутствует/`null` → `4` | любой другой ключ; изменение явных значений (`3`, `5`, …) |
-| `program_inclusions.initial_progression_state`, `started_at`, `snapshot` | без изменений (хэш из §6.1 совпадает) | любое изменение |
-| `program_inclusions` — новые колонки | `status`, `sequence_cursor`, `completed_main_sessions`, `prescription_provenance`, … | — |
-| `plan_items` | + строки-occurrences; у **текущей/будущей** недели: легаси-агрегат получает `plan_week_id`, `status='removed'` (не удаляется), `count_per_week` развёрнутого агрегата уменьшается | изменение или удаление строк **прошлых** недель; уменьшение числа строк |
+| `alembic_version` | `c3f7a9e2d5b1` → `b5d8e1f3a6c9` | другая голова |
+| `program_inclusions.progression_state` | только `block_b.work_sets`: absent/`null` → `4` (предикат §6.2.0) | любой другой ключ; изменение явных значений `work_sets` |
+| `program_inclusions`: прочие ДО-колонки | без изменений (хэш (2)(b) совпадает) | любое изменение |
+| Новые колонки и таблицы | перечень §6.2.0 | — |
+| `plan_items` | + строки-occurrences; легаси-агрегат **текущей/будущей** недели получает `plan_week_id`, `status='removed'` (не удаляется), у развёрнутого агрегата `count_per_week` уменьшается | изменение или удаление строк **прошлых** недель; уменьшение числа строк |
 | `plan_weeks` | + недели (`past_gap_empty` и т.п.) | удаление |
-| `training_sessions` | + нативные копии legacy-тренировок/факультативов (`origin = legacy_*`, `legacy_id`); у существующих копий `legacy_id` NULL → значение при точном совпадении | изменение существующих колонок; `superseded_at` у существующих; дубли `(origin, legacy_id)` |
-| `session_blocks`, `set_logs` | + строки копий | изменение существующих |
-| `users`, `subscriptions`, `pending_payments`, `workouts`, `blocks`, `workout_sets`, `baselines`, `elective_workouts`, `*_archive_*`, `achievements`, `coins`, `user_body_metrics` | без изменений | любое изменение |
-| Новые таблицы | `custom_plans`, `exercise_categories`, `session_events`, `workout_definition_versions` | — |
+| `training_sessions` | + нативные копии legacy-тренировок/факультативов (`origin = legacy_*`, `legacy_id`); у существующих копий `legacy_id` NULL → значение при точном совпадении | изменение ДО-колонок существующих сессий; `superseded_at` у существующих; дубли `(origin, legacy_id)`; новые копии факультативов для электива, у которого уже есть неключевая копия (HOLD §6.2) |
+| `session_blocks`, `set_logs` | + строки копий | изменение ДО-колонок существующих |
+| Таблицы, которые ни одна миграция не меняет (`users`, `subscriptions`, `pending_payments`, `workouts`, `blocks`, `workout_sets`, `baselines`, `elective_workouts`, `*_archive_*`, `achievements`, `coins`, `user_body_metrics`, …) | ДО-хэши и счётчики равны | любое изменение |
 
 Проверки после (должны быть «0 строк»):
 ```sql
 select origin, legacy_id, count(*) from training_sessions where legacy_id is not null group by 1,2 having count(*) > 1;   -- дубли копий
-select md5(string_agg(id::text||'|'||initial_progression_state::text||'|'||started_at::text, ',' order by id)) from program_inclusions; -- = §6.1
 ```
-И счётчики из §6.1 — ни один не должен уменьшиться; `users`, `subscriptions`, `workouts`, `elective_workouts` — равны.
+Остальное — хэши (1) и точечные снимки (2) против «до»: расхождения допустимы только по таблице выше.
 
 ## 7. Проверка продукта
 
@@ -399,56 +488,78 @@ select md5(string_agg(id::text||'|'||initial_progression_state::text||'|'||start
 
 ## 8. Rollback
 
-Критерии: падение build/миграции/healthcheck (§3.4); `HEAD ≠ FROZEN_SHA`; `guard_violations`/exit 4; нарушение §6.3; FAIL в §7.
-Во всех случаях первое действие — `docker compose -p pullup-staging stop app web` (писатели остановлены).
+Критерии: падение build/миграции (§3.4); `HEAD ≠ FROZEN_SHA`; `guard_violations`/exit 4; нарушение §6.2.0/§6.3; FAIL в §7.
+Первое действие всегда — писатели остановлены и hold на месте (`docker compose -p pullup-staging stop app web`; override не снимать).
 
-**Что нужно подготовить заранее (до деплоя):**
-* ветка (или тег) на `4298f8b9727f91d4a150431fd0d9e06131944d27` для отката кода через wrapper — `git checkout "$branch"` + `git pull --ff-only
-  origin "$branch"` требуют именно **ветку** (с тегом `pull` на detached HEAD не пройдёт). Создаёт владелец (напр. `staging/pre-rc-4298f8b`); мной не создана;
-* ID/теги текущих образов `app`/`web` (шаг 0 §3.2): `docker image inspect -f '{{.Id}}' $(docker inspect -f '{{.Image}}' pullup-staging-app-1)`
-  и то же для `…-web-1`; повесить на них свои теги (`docker tag <id> local/staging-app:pre-rc`, `local/staging-web:pre-rc`), чтобы возможный
-  `image prune` в скрытых строках wrapper'а не удалил их (не проверено, делает ли он это);
+**Подготовить заранее (до деплоя):**
+* ветка на `4298f8b9727f91d4a150431fd0d9e06131944d27` (напр. `staging/pre-rc-4298f8b`) — wrapper делает `git checkout "$branch"` + `git pull --ff-only
+  origin "$branch"`, с тегом `pull` на detached HEAD не пройдёт. Создаёт владелец; мной не создана;
+* **свои теги на текущие образы** `app`/`web` (имена/ID — шаг 0 §3.2):
+  `docker tag <ID_образа_app> local/staging-app:pre-rc`, `docker tag <ID_образа_web> local/staging-web:pre-rc`. Без тегов старые образы остаются
+  без имени после пересоздания контейнеров и могут быть удалены `docker image prune -f` из cleanup (содержимое серверной версии не проверено;
+  при hold контейнеры `app-1`/`web-1` не пересоздаются, поэтому образы пока держатся ими);
 * проверенный backup (§5).
 
-**Ситуации и порядок:**
+### 8.1 Старый wrapper на новой revision — НЕ работает (доказано)
 
-| Ситуация | Что делать |
-|---|---|
-| Миграция не прошла (атомарно, схема `c3f7a9e2d5b1`) | §3.4: `up -d --no-build app web` на старых образах; данные не менялись |
-| Миграция прошла, **convergence не применялась**, нужно вернуть старый код | **Wrapper на старую ветку не сработает** (§3.0 п. 8: старый `alembic upgrade head` падает на `b5d8e1f3a6c9`). Два варианта: (а) данные: путь 3 ниже (restore → `alembic_version = c3f7a9e2d5b1`), затем wrapper на ветку `4298f8b` (снова `build` при ограниченной RAM) или `up -d --no-build` на сохранённых образах; (б) схема: `docker compose -p pullup-staging run --rm app alembic downgrade c3f7a9e2d5b1` **новым** образом (данные при этом остаются изменёнными: `work_sets = 4` и пр.), затем (а)-код. Старый код на такой схеме читает и пишет (репетиция §4 `docs/STAGING_RC_REHEARSAL.md`) |
-| **Convergence применена** (или кто-то открыл «Планы» новым билдом) | Откат кода без данных даёт задвоенные строки плана в старом интерфейсе (репетиция: 4→7, 2→5). **Нужен data restore (путь 3)**, затем код |
+Деплой старой ветки тем же wrapper'ом выполняет `alembic upgrade head` кодом `4298f8b`. Если `alembic_version` = `b5d8e1f3a6c9`, он падает
+(`Can't locate revision identified by 'b5d8e1f3a6c9'`, exit 255), и по `set -e` скрипт обрывается до `up -d`. Проверено на копии БД. Это означает:
+**wrapper можно использовать для отката только когда `alembic_version` снова `c3f7a9e2d5b1`** — после `pg_restore` (8.3) или после `alembic downgrade c3f7a9e2d5b1`
+(схема откатывается, данные нет, см. 8.3). Править одну строку `alembic_version` вручную нельзя — см. 8.3.
 
-**Три разных пути — не смешивать:**
+### 8.2 Альтернативный откат кода: сохранённые старые образы, без Alembic
 
-1. **Код.** Старый код (`4298f8b`) на обновлённой схеме проверен на копии (`docs/STAGING_RC_REHEARSAL.md` §4, §9): 20/20 GET → 200;
-   старт, ведение и завершение live-сессии и запись в Журнал работают. Чисто — только до convergence. Через wrapper возможен
-   только после того, как `alembic_version` стала `c3f7a9e2d5b1` (restore или downgrade). Не проверено: V5.6/STEP-тренировка старым кодом.
-2. **Схема (`alembic downgrade c3f7a9e2d5b1`).** Выполнима (в репетиции exit 0), но **не восстанавливает данные** (остаются +19 `plan_items`,
-   +3 `plan_weeks`, +3 копии в `training_sessions`, `work_sets = 4`). Использовать только как подготовку к запуску старого wrapper'а, не как откат данных.
-3. **Данные — `pg_restore` из дампа §5.** Единственный путь вернуть данные в состояние R0; круговой дамп→восстановление проверен
-   построчно. Теряет всё записанное после дампа (на staging в окне выката записей нет — шаг A). **Обязателен после convergence.**
-   ```bash
-   cd /home/deploy/pullup-trainer-bot-staging
-   docker compose -p pullup-staging stop app web
-   docker exec pullup-staging-db-1 sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-   docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < /home/deploy/backups/staging-pre-rc-<TS>.dump
-   docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # = c3f7a9e2d5b1
-   # счётчики §6.1 равны «до»; затем код: wrapper на ветку 4298f8b или up -d --no-build на сохранённых образах
-   ```
-   Деструктивно: выполнять только по решению владельца. Redis (FSM бота) дамп не затрагивает. После отката — §6.1 (счётчики = «до»),
-   `alembic_version`, `git rev-parse HEAD` = `4298f8b…`, health `http://127.0.0.1:8002/health`, затем `start app web`.
+Сценарий: миграция прошла, **convergence не применялась**, нужно вернуть старый код. Старый код не запускает Alembic при старте: репетиция поднимала `4298f8b`
+(`uvicorn app.web.main:app`) против обновлённой схемы — 20/20 GET → 200, старт/подходы/завершение live-сессии и запись в Журнал работают
+(`docs/STAGING_RC_REHEARSAL.md` §4, §9). Бот (`app.main`) в песочнице не запускался (нужен Telegram).
+```bash
+cd /home/deploy/pullup-trainer-bot-staging
+docker compose -p pullup-staging stop app web
+docker tag local/staging-app:pre-rc <ИМЯ_ОБРАЗА_APP_ИЗ_ШАГА_0>      # вернуть имена, под которыми compose ищет образы (docker compose images)
+docker tag local/staging-web:pre-rc <ИМЯ_ОБРАЗА_WEB_ИЗ_ШАГА_0>
+rm -f docker-compose.override.yml && sed -i '/^docker-compose.override.yml$/d' .git/info/exclude
+docker compose -p pullup-staging up -d --no-build app web                # без сборки и без Alembic; схема остаётся b5d8e1f3a6c9
+curl -sf http://127.0.0.1:8002/health
+```
+Ограничения: (а) только до convergence/первого `GET /plan` новым кодом — иначе в старом интерфейсе задвоенные строки плана (репетиция: 4→7, 2→5); (б) схема остаётся новой —
+следующий деплой старой веткой wrapper'ом всё равно упадёт (8.1); (в) способ не проверен на реальном сервере (демона в песочнице нет), требует, чтобы старые образы существовали
+(теги, шаг «подготовить заранее»); (г) рабочее дерево staging уже на новой ветке — compose-файл тот же (проверено: не менялся), но `git status`/HEAD не соответствуют образам; вернуть
+`git checkout <ветка 4298f8b>` после отката.
+
+### 8.3 После convergence — полноценный откат требует возврата данных
+
+После `--apply` (или после первого `GET /plan` новым билдом) данные изменены сведением: новые `plan_items`/`plan_weeks`, `status='removed'`, новые копии
+`training_sessions` с `legacy_id`, `work_sets = 4`. **Это не вернуть ни сменой `alembic_version`, ни `alembic downgrade`:**
+* `alembic downgrade c3f7a9e2d5b1` откатывает схему, данные сведения и backfill остаются (репетиция: plan_items +19, plan_weeks +3, training_sessions +3, `work_sets=4`);
+* ручная правка `alembic_version` на `c3f7a9e2d5b1` при новой схеме оставляет состояние рассогласованным: проверено на копии — следующий `alembic upgrade head`
+  падает на первой же ревизии (`DuplicateTableError: relation "exercise_categories" already exists`), `alembic_version` остаётся `c3f7a9e2d5b1`.
+
+Единственный путь — **`pg_restore` из дампа §5** (дамп содержит схему и данные R0 и `alembic_version = c3f7a9e2d5b1`). Теряет всё записанное после дампа
+(на staging в окне выката записей нет — шаг A). Деструктивно: только по решению владельца.
+```bash
+cd /home/deploy/pullup-trainer-bot-staging
+docker compose -p pullup-staging stop app web
+docker exec pullup-staging-db-1 sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < /home/deploy/backups/staging-pre-rc-<TS>.dump
+docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # = c3f7a9e2d5b1
+# счётчики и ДО-хэши (hash_queries.sql) равны «до» (§6.1); затем код: 8.2 (старые образы) либо wrapper на ветку 4298f8b (8.1: теперь Alembic пройдёт)
+```
+После отката: §6.1 (хэши и счётчики = «до»), `alembic_version`, `git rev-parse HEAD` = `4298f8b…`, health `http://127.0.0.1:8002/health`. Redis (FSM бота) дамп не затрагивает.
 
 ## 9. Известные риски и открытые вопросы
 
-- **Два обязательных фикса не готовы** (ждём): (1) IDB — ворота drain-before-projection при сбое чтения IndexedDB
+- **Два обязательных фикса не готовы** (ждём финалы): (1) IDB — ворота drain-before-projection при сбое чтения IndexedDB
   (`docs/STAGING_RC_CI_E2E.md`); (2) legacy convergence — отредактированные/удалённые копии факультативов
-  (`docs/STAGING_RC_REHEARSAL.md` §8). Без них деплой не готов. После них — перепрогон: unit-тесты ворот, edited-copy сценарий, CI E2E.
-- **Сборка при ≈ 704 МиБ** (§3.0 п. 7): самый вероятный отказ деплоя; пик не измерен; `npm install` без lock.
-- **Скрытые строки `deploy-staging-run.sh` не проверены** (`set -e`, prune, секреты). Требуется полный текст скрипта, прежде чем считать
-  §3.4 и §8 окончательными.
-- **Staging получит скачок на 67 коммитов и 7 миграций за один выкат**; реальные данные (10 МБ) не видела ни одна репетиция.
-- **Неспаренные копии факультативов.** `converge-history` связывает копию с legacy-строкой только по точному совпадению
-  `(performed_at, блоки)`; отредактированная копия не спаривается; при хронологии «электив не старше плана» создаётся дубль/воскрешается
-  удалённое (HOLD §6.2).
+  (`docs/STAGING_RC_REHEARSAL.md` §8). Без них деплой не готов. После них — перепрогон: unit-тесты ворот, edited-copy сценарий, CI E2E; затем
+  окончательный candidate SHA → деплой-ветка (§3.1).
+- **Невоспроизводимая сборка фронтенда** (`npm install` без lock, §3.5) — предложен патч, не применён; решение владельца до окончательного SHA.
+- **Сборка при ≈ 704 МиБ** (§3.0 п. 8): вероятный отказ деплоя; пик не измерен.
+- **hold-override проверен только на уровне `config`/`--dry-run build` (Compose v5.6.0, без демона)**; версия Compose и поведение `run`/`up` на VPS не проверены —
+  обязательная проверка шага A (`config --services`, `--dry-run up -d`).
+- **`/usr/local/bin/post-deploy-cleanup.sh` и остальные строки `deploy-staging-run.sh` не проверены** (форма healthcheck, возможные `git clean`/правки compose).
+- **Staging получает скачок на 67 коммитов и 7 миграций за один выкат**; реальные данные (10 МБ) не видела ни одна репетиция (все числа в `docs/STAGING_RC_REHEARSAL.md`
+  — на синтетике и на staging не переносятся).
+- **Неспаренные копии факультативов.** `converge-history` связывает копию с legacy-строкой только по точному совпадению `(performed_at, блоки)`; отредактированная копия не
+  спаривается; при хронологии «электив не старше плана» создаётся дубль/воскрешается удалённое (HOLD §6.2).
 - **Миграция `e3b9c5d7a2f1` неаддитивна** (UPDATE `progression_state`), уже в BASE, не в #322/#323; её `downgrade()` backfill не откатывает.
 - **CI E2E красный** на кандидате (2 из 2); причина не подтверждена — `docs/STAGING_RC_CI_E2E.md`.
