@@ -108,8 +108,10 @@ INSERT INTO elective_workouts (id, user_id, elective_type, performed_at, reps_se
  (7001, 1001, 'three_minutes', '2026-09-10 09:00+00', '[4, 3, 2]', 9, 'bodyweight', '2026-09-10 09:00+00'),
  (7002, 1001, 'volume_target', '2026-09-25 09:00+00', NULL, 40, 'bodyweight', '2026-09-25 09:00+00'),
  (7003, 1001, 'w_ladder', '2026-09-12 09:00+00', '[5, 4, 3]', 12, 'bodyweight', '2026-09-12 09:00+00');
-INSERT INTO training_sessions (id, user_id, source, status, performed_at, kind, origin, source_v2, duration_source)
- VALUES (9005, 1001, 'elective', 'completed', '2026-09-10 09:00+00', 'strength', 'legacy_elective', 'manual_existing_workout', 'unknown');
+-- старый backfill писал копии факультативов в одной транзакции с TrainingPlan: created_at копии = created_at плана
+INSERT INTO training_sessions (id, user_id, source, status, performed_at, kind, origin, source_v2, duration_source, created_at)
+ VALUES (9005, 1001, 'elective', 'completed', '2026-09-10 09:00+00', 'strength', 'legacy_elective', 'manual_existing_workout', 'unknown',
+         '2026-09-14 09:00+00');
 INSERT INTO session_blocks (id, session_id, order_index, exercise_id) VALUES
  (90051, 9005, 0, (SELECT id FROM exercises WHERE name = 'Факультатив — 3 минуты подтягиваний' ORDER BY id LIMIT 1));
 INSERT INTO set_logs (session_block_id, set_number, is_max_set, metric_type, value, unit, note) VALUES
