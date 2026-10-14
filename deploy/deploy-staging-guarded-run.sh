@@ -111,19 +111,24 @@ on_exit() {
   [ "$rc" -ne 0 ] || exit 0
   [ -n "$FAIL_REASON" ] || FAIL_REASON="exit $rc"
   # 1) сначала действия — не зависят от stdout
+  # (а) уже существующие one-off контейнеры этого запуска — SIGKILL сразу: процесс в них — PID 1 и SIGTERM игнорирует,
+  #     а клиент compose на TERM ждёт свой контейнер — за это время прерванная миграция успевала закоммититься
+  #     (проверено на настоящем Docker). После kill соединение с БД рвётся, открытая транзакция откатывается;
+  #     уже закоммиченное (например, сведение предыдущих пользователей) остаётся.
+  ids="$(our_oneoffs)"
+  # shellcheck disable=SC2086
+  if [ -n "$ids" ]; then docker kill $ids >/dev/null 2>&1 || true; fi
+  # (б) клиент (docker compose run/build …) должен завершиться ДО повторного поиска: иначе он успевает создать one-off
+  #     контейнер уже после очистки (на настоящем Docker остался контейнер в состоянии created)
   if [ -n "$CHILD" ]; then
-    # клиент (docker compose run/build …) должен завершиться ДО поиска контейнеров: иначе он успевает создать one-off
-    # контейнер уже после очистки (проверено на настоящем Docker: остался контейнер в состоянии created)
     kill -TERM "$CHILD" 2>/dev/null || true
     for _ in $(seq 1 40); do kill -0 "$CHILD" 2>/dev/null || break; sleep 0.25; done
     kill -KILL "$CHILD" 2>/dev/null || true
     wait "$CHILD" 2>/dev/null || true
   fi
-  ids="$(our_oneoffs)"
-  if [ -n "$ids" ]; then
-    # SIGKILL сразу, не `docker stop`: процесс one-off — PID 1 контейнера и SIGTERM игнорирует, а за 10 с «мягкой»
-    # остановки миграция успевала закоммититься (проверено на настоящем Docker). После kill соединение с БД рвётся и
-    # незавершённая транзакция откатывается; уже закоммиченное (например, сведение предыдущих пользователей) остаётся.
+  # (в) всё, что несёт метку этого запуска (в т. ч. созданное умирающим клиентом), — kill и удалить
+  ids="$(printf '%s\n%s\n' "$ids" "$(our_oneoffs)" | sed '/^$/d' | sort -u | tr '\n' ' ')"
+  if [ -n "${ids// /}" ]; then
     # shellcheck disable=SC2086
     docker kill $ids >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
