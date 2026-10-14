@@ -79,7 +79,10 @@ dc() { docker compose -p "$PROJECT" "$@"; }
 dbq() { bash -c "$STAGING_PSQL" <<<"$1"; }
 # Долгие команды — в фоне + wait: wait прерывается сигналом сразу (иначе bash ждёт конца команды), а PID известен очистке.
 # stdin передаётся явно (<&0): фоновой команде без этого достался бы /dev/null.
-bgwait() { local rc=0; "$@" <&0 & CHILD=$!; wait "$CHILD" || rc=$?; CHILD=""; return "$rc"; }
+# setsid: команда — лидер собственной группы процессов (PGID = $CHILD). `docker compose` — плагин, который `docker`
+# запускает дочерним процессом; при сигнале очистка ждёт и завершает ВСЮ группу этой команды (и только её), иначе
+# переживший `docker` плагин успевал создать one-off контейнер уже после очистки (проверено на настоящем Docker).
+bgwait() { local rc=0; setsid "$@" <&0 & CHILD=$!; wait "$CHILD" || rc=$?; CHILD=""; return "$rc"; }
 # One-off контейнеры compose run — с меткой этого запуска, чтобы очистка остановила именно их (а не чужие контейнеры).
 dcrun() { bgwait docker compose -p "$PROJECT" run --rm -T --label "guarded.run=$RUN_ID" "$@"; }
 our_oneoffs() { docker ps -aq --filter "label=guarded.run=$RUN_ID" 2>/dev/null || true; }
@@ -121,10 +124,11 @@ on_exit() {
   # (б) клиент (docker compose run/build …) должен завершиться ДО повторного поиска: иначе он успевает создать one-off
   #     контейнер уже после очистки (на настоящем Docker остался контейнер в состоянии created)
   if [ -n "$CHILD" ]; then
-    kill -TERM "$CHILD" 2>/dev/null || true
-    for _ in $(seq 1 40); do kill -0 "$CHILD" 2>/dev/null || break; sleep 0.25; done
-    kill -KILL "$CHILD" 2>/dev/null || true
+    kill -TERM -- "-$CHILD" 2>/dev/null || true                     # группа этой команды (docker + плагин compose)
+    for _ in $(seq 1 40); do kill -0 -- "-$CHILD" 2>/dev/null || break; sleep 0.25; done
+    kill -KILL -- "-$CHILD" 2>/dev/null || true
     wait "$CHILD" 2>/dev/null || true
+    for _ in $(seq 1 20); do kill -0 -- "-$CHILD" 2>/dev/null || break; sleep 0.25; done
   fi
   # (в) всё, что несёт метку этого запуска (в т. ч. созданное умирающим клиентом), — kill и удалить
   ids="$(printf '%s\n%s\n' "$ids" "$(our_oneoffs)" | sed '/^$/d' | sort -u | tr '\n' ' ')"
@@ -195,6 +199,7 @@ docker compose run --help 2>/dev/null | grep -q -- '--label' \
 leftover="$(docker ps -aq --filter "label=guarded.run" 2>/dev/null || true)"
 [ -z "$leftover" ] || die "one-off containers of an earlier guarded run still exist (killed run?): $(echo $leftover) — inspect and remove them first (runbook §3.5)"
 command -v pgrep >/dev/null || die "pgrep is required (check that the old staging deploy is not running)"
+command -v setsid >/dev/null || die "setsid is required (long commands run in their own process group for a clean stop)"
 if pgrep -f 'deploy-staging-run\.sh' >/dev/null 2>&1; then
   die "the old staging deploy (deploy-staging-run.sh) is running right now — refusing to run in parallel (runbook §3.8)"
 fi

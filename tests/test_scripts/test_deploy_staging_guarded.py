@@ -45,6 +45,16 @@ if env.get("HANG_ON") and env["HANG_ON"] in joined and "--help" not in joined:
         label = next(a.split("=", 1)[1] for a in args if a.startswith("guarded.run="))
         st.setdefault("oneoffs", {})["oneoff-1"] = {"label": label, "running": True}; save()
     L("HANG " + env["HANG_ON"])
+    if env.get("PLUGIN_LATE") and " run " in f" {joined} ":
+        # как `docker` + плагин compose: плагин — отдельный (дочерний) процесс, TERM не останавливает его сразу,
+        # он ещё создаёт контейнер; сам `docker` при этом выходит сразу
+        import subprocess as _sp
+        _sp.Popen([sys.executable, "-c", (
+            "import json, signal, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(1.5); "
+            "p = sys.argv[1]; st = json.loads(open(p).read()); "
+            "st.setdefault('oneoffs', {})['oneoff-plugin'] = {'label': sys.argv[2], 'running': True}; "
+            "open(p, 'w').write(json.dumps(st)); open(sys.argv[3], 'a').write('PLUGIN oneoff-plugin created\\n')"
+        ), str(state_path), label, str(log)])
     if env.get("LATE_CREATE") and " run " in f" {joined} ":
         # как настоящий compose run: на TERM клиент ещё успевает создать one-off контейнер и только потом выходит
         import signal as _signal, time as _t
@@ -596,6 +606,24 @@ def test_oneoff_created_by_the_dying_client_is_also_stopped(sandbox):
     assert state["oneoffs"]["oneoff-late"]["running"] is False, (
         "one-off created during shutdown must be stopped"
     )
+    assert state["running"] is False
+
+
+def test_oneoff_created_by_a_surviving_compose_plugin_process_is_also_stopped(sandbox):
+    # `docker` выходит по TERM сразу, а его дочерний плагин compose ещё создаёт контейнер: очистка ждёт всю группу процессов
+    proc = start_run(
+        sandbox, SHA, "apply", "yes", "12,57", HANG_ON="alembic upgrade head", PLUGIN_LATE="1"
+    )
+    wait_for_log(sandbox.log, "HANG alembic upgrade head")
+    proc.send_signal(signal.SIGTERM)
+    _out, err = proc.communicate(timeout=30)
+    state = json.loads(sandbox.state.read_text())
+    assert proc.returncode == 143, err
+    created = "PLUGIN oneoff-plugin created" in sandbox.log.read_text()
+    assert created, (
+        "the plugin process must have been waited for (it creates its container after TERM)"
+    )
+    assert state["oneoffs"]["oneoff-plugin"]["running"] is False
     assert state["running"] is False
 
 
