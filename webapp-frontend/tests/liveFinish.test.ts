@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { backButtonAction } from "../src/liveDialog.ts";
 import type { LiveSessionCompleteResponse } from "../src/apiV2.ts";
 import {
-  canStartNextBlock, carriesCompletionOutcome, classifySyncError, finishStatus, isFinishedElsewhere, summaryResult,
+  canStartNextBlock, carriesCompletionOutcome, classifySyncError, FINISH_EARLY_HINT, finishStatus, isFinishedElsewhere,
+  summaryResult,
   type SyncFailure,
 } from "../src/liveFinish.ts";
 
@@ -120,4 +121,10 @@ test("carriesCompletionOutcome: только ответ, завершивший 
   assert.equal(carriesCompletionOutcome(response({ progression_skipped_reason: "abandoned" })), true);
   assert.equal(carriesCompletionOutcome(response({})), false);
   assert.equal(carriesCompletionOutcome(response({ status: "started" })), false);
+});
+
+test("подсказка досрочного завершения не обещает «остальное останется в плане» (аудит staging)", () => {
+  assert.doesNotMatch(FINISH_EARLY_HINT, /останется в плане/);
+  assert.match(FINISH_EARLY_HINT, /Прогрессия не пересчитается/);
+  assert.match(FINISH_EARLY_HINT, /оставшиеся подходы не переносятся/);
 });

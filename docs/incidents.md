@@ -120,3 +120,18 @@ var(--tgui--section_bg_color)`, обычно серый на светлой те
 не подскажет об этом ни ошибкой, ни визуальным сигналом сильнее, чем
 "как будто светлый на светлом".
 
+
+## Известный класс бага: `window.confirm` в Telegram Web не показывает диалог (аудит staging `cb1593c`)
+
+Mini App в Telegram Web живёт в `iframe`, где `window.confirm` блокируется и
+сразу возвращает `false`: «Отменить тренировку» в Live Engine v2 молча
+ничего не делала. Исправлено через `telegramPlatform.ts::confirmAction` —
+нативный `WebApp.showConfirm` (Bot API ≥ 6.2), `window.confirm` только как
+запасной вариант вне Telegram/на старых клиентах. Регрессия —
+`e2e/scenarios/live-engine-cancel.spec.ts` (заглушка Telegram Web: `confirm`
+→ `false`, отвечает только `showConfirm`).
+
+**Правило**: подтверждения в Mini App — через `confirmAction`, не
+`window.confirm`. Остальные вызовы `window.confirm` (журнал, история,
+выход со страницы и т. п.) на момент правки ещё не переведены — отдельная
+задача.

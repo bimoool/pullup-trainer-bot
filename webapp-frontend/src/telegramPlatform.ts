@@ -23,6 +23,8 @@ export type WebAppApi = {
   offEvent?: (event: string, handler: () => void) => void;
   openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
   openTelegramLink?: (url: string) => void;
+  /** Bot API 6.2+: нативное подтверждение клиента (в Telegram Web window.confirm внутри iframe не показывается). */
+  showConfirm?: (message: string, callback?: (confirmed: boolean) => void) => void;
   safeAreaInset?: Partial<Insets>;
   contentSafeAreaInset?: Partial<Insets>;
   themeParams?: Record<string, string>;
@@ -37,6 +39,7 @@ export const MIN_VERSION = {
   disableVerticalSwipes: "7.7",
   setBottomBarColor: "7.10",
   safeArea: "8.0", // safeAreaInset / contentSafeAreaInset (+ fullscreen)
+  popups: "6.2", // showConfirm / showPopup
 } as const;
 
 export function getWebApp(): WebAppApi | undefined {
@@ -287,4 +290,24 @@ export function dismissKeyboard(): void {
   if (active instanceof HTMLElement && active.matches("input, textarea, select")) {
     active.blur();
   }
+}
+
+
+/**
+ * Подтверждение действия. В Telegram (Bot API 6.2+) — нативный `WebApp.showConfirm`: в Telegram Web Mini App
+ * живёт в iframe, где `window.confirm` не показывается и сразу возвращает false (аудит staging: «Отменить
+ * тренировку» не срабатывала). Вне Telegram и на старых клиентах — `window.confirm`. Ответ — только явное «OK».
+ */
+export function confirmAction(message: string, webApp: WebAppApi | undefined = getWebApp()): Promise<boolean> {
+  if (webApp && typeof webApp.showConfirm === "function" && isVersionAtLeast(webApp, MIN_VERSION.popups)) {
+    const show = webApp.showConfirm;
+    return new Promise((resolve) => {
+      try {
+        show.call(webApp, message, (confirmed) => resolve(confirmed === true));
+      } catch {
+        resolve(typeof window !== "undefined" && window.confirm(message));
+      }
+    });
+  }
+  return Promise.resolve(typeof window !== "undefined" && window.confirm(message));
 }

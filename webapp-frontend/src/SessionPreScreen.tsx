@@ -1,5 +1,6 @@
 import { type AssistancePending, CourseSetupForm, RecoveryCheckNotice } from "./CourseSetupForm";
 import { describePendingInputs } from "./courseV5";
+import { stepBlockSetsLine } from "./stepBlockSets";
 import { Button, Section, Spinner } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
@@ -140,7 +141,7 @@ function BlockTargetCard({ index, block }: { index: number; block: DashboardBloc
   return (
     <Section className="block-section" header={`Цель ${index}: ${block.target} повторений`}>
       <p className="block-subtitle">
-        {`${block.work_sets} рабочих ${block.work_sets === 1 ? "подход" : "подхода"}`} · {block.equipment.label}
+        {stepBlockSetsLine(block)} · {block.equipment.label}
       </p>
     </Section>
   );

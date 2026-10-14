@@ -28,6 +28,10 @@ class DashboardEquipmentResponse(BaseModel):
 class DashboardBlockResponse(BaseModel):
     target: int
     work_sets: int
+    # Подходы на максимум, которые живой старт добавит ПОСЛЕ рабочих (устаревшая STEP-версия: ровно один, тот же
+    # резолвер resolve_progression_block, что строит SetTarget сессии). Экраны показывают «N рабочих + максимум»,
+    # чтобы число подходов совпадало с Live («1 / N+1») и Summary. У V5.6 — 0 (план блока целиком в display).
+    max_sets: int = 0
     equipment: DashboardEquipmentResponse
     # issue #305 (V5.6): готовая запись плана блока («19/18/18/18+», «15×5», «5/5/5/5/5–8», «5×5 +12.5 кг»)
     # и роль блока. У устаревшей версии — None (план = work_sets × target).

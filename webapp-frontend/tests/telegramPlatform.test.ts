@@ -3,7 +3,7 @@ import { afterEach, test } from "node:test";
 
 import {
   MIN_VERSION, acquireClosingConfirmation, compareVersions, createOwnerToggle, dismissKeyboard, effectiveInsetPx,
-  initTelegramPlatform, insetCssVars, insetsFromEvent, isVersionAtLeast, normalizeInsets,
+  confirmAction, initTelegramPlatform, insetCssVars, insetsFromEvent, isVersionAtLeast, normalizeInsets,
 } from "../src/telegramPlatform.ts";
 
 type G = { window?: unknown; document?: unknown };
@@ -203,4 +203,26 @@ test("dismissKeyboard: снимает фокус только с полей вв
   dismissKeyboard();
   assert.equal(button.blurred, false);
   delete (globalThis as unknown as { HTMLElement?: unknown }).HTMLElement;
+});
+
+test("confirmAction: в Telegram 6.2+ — нативный showConfirm (window.confirm в iframe Telegram Web не показывается)", async () => {
+  const asked: string[] = [];
+  g.window = { confirm: () => false };
+  const webApp = {
+    version: "8.0",
+    showConfirm: (message: string, callback?: (ok: boolean) => void) => { asked.push(message); callback?.(true); },
+  };
+  assert.equal(await confirmAction("Отменить тренировку?", webApp), true);
+  assert.deepEqual(asked, ["Отменить тренировку?"]);
+  const declining = { version: "8.0", showConfirm: (_m: string, callback?: (ok: boolean) => void) => callback?.(false) };
+  assert.equal(await confirmAction("Отменить?", declining), false);
+});
+
+test("confirmAction: вне Telegram и на клиенте до 6.2 — window.confirm", async () => {
+  let shown = 0;
+  g.window = { confirm: () => { shown += 1; return true; } };
+  assert.equal(await confirmAction("Отменить?", undefined), true);
+  const old = { version: "6.1", showConfirm: () => { throw new Error("must not be called"); } };
+  assert.equal(await confirmAction("Отменить?", old), true);
+  assert.equal(shown, 2);
 });

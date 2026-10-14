@@ -2,6 +2,7 @@ import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { fetchDashboardStatus, type DashboardBlockResponse, type DashboardStatusResponse } from "./apiV2";
+import { stepBlockSetsLine } from "./stepBlockSets";
 
 type Props = {
   initDataRaw: string;
@@ -40,7 +41,7 @@ function BlockCard({ letter, block }: { letter: "A" | "Б"; block: DashboardBloc
       <div className="block-header">
         <div className="block-badge">{letter}</div>
         <p className="block-subtitle">
-          {`${block.work_sets} рабочих ${block.work_sets === 1 ? "подход" : "подхода"}`}
+          {stepBlockSetsLine(block)}
           {" · "}
           {block.equipment.label}
         </p>
