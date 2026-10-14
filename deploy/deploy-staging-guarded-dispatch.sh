@@ -16,6 +16,11 @@ if [[ ! "$cmd" =~ $re ]]; then
   exit 1
 fi
 
-exec 9>/home/deploy/.deploy-staging-guarded.lock
-flock -n 9 || { echo "another guarded staging deploy is running" >&2; exit 1; }
-exec /home/deploy/deploy-staging-guarded-run.sh "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[5]:--}"
+# Общая блокировка staging-деплоев: тот же файл берёт и старый staging-контур после правки его forced command
+# (runbook §3.8), поэтому guarded и старый деплой не идут параллельно.
+exec 9>/home/deploy/.deploy-staging.lock
+flock -n 9 || { echo "another staging deploy (guarded or old) is running" >&2; exit 1; }
+# Переопределения для изолированных тестов run-скрипта (GUARDED_TEST и т. п.) в боевом вызове не пропускаются.
+exec env -u GUARDED_TEST -u PROJECT_OVERRIDE -u STAGING_DIR -u BACKUP_DIR -u HEALTH_URL -u QUIESCE_SECONDS \
+  -u HEALTH_TIMEOUT -u MIN_DISK_MB -u CLEANUP_BIN \
+  /home/deploy/deploy-staging-guarded-run.sh "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[5]:--}"

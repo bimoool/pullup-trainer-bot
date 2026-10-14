@@ -113,3 +113,26 @@ def test_history_convergence_has_no_runtime_or_migration_entry_point():
         text_ = path.read_text()
         assert not re.search(r"^\s*(from|import)\s+.*(legacy_history_convergence|backfill_multi_program)", text_, re.MULTILINE), path
         assert not re.search(r"INSERT\s+INTO\s+training_sessions", text_, re.IGNORECASE), path
+
+
+def test_machine_result_counts_every_mutating_key_including_classified():
+    """Guarded deploy проверяет повторный --apply по RESULT-JSON: «origin проставлен» (classified) — тоже изменение."""
+    import json
+    from collections import Counter
+
+    from app.services.legacy_history_convergence import MUTATING_KEYS
+    from scripts.backfill_multi_program import _history_result_line
+
+    for key in MUTATING_KEYS:
+        line = _history_result_line(Counter({"users": 1, key: 2, "unchanged": 5}), [], apply=True, user_ids=[1])
+        assert line.startswith("RESULT-JSON ")
+        result = json.loads(line.removeprefix("RESULT-JSON "))
+        assert result["mutations"] == 2, key
+    quiet = json.loads(_history_result_line(
+        Counter({"users": 1, "unchanged": 5, "ambiguous_elective_without_copy": 1}),
+        [{"user_id": 1, "elective_id": 9, "reason": "pre_migration_without_copy", "candidate_copy_ids": []}],
+        apply=True, user_ids=[1],
+    ).removeprefix("RESULT-JSON "))
+    assert quiet["mutations"] == 0
+    assert quiet["unresolved"] == [{"user_id": 1, "elective_id": 9, "reason": "pre_migration_without_copy"}]
+    assert set(MUTATING_KEYS) >= {"classified", "bound", "created", "updated", "superseded", "elective_created"}

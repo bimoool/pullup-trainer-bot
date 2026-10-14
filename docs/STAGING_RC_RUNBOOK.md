@@ -90,7 +90,7 @@ run --rm app alembic upgrade head; up -d; healthcheck :8002; /usr/local/bin/post
 |---|---|
 | `deploy/deploy-staging-guarded-run.sh` | сам выкат (9 фаз ниже); ставится на VPS вручную как `/home/deploy/deploy-staging-guarded-run.sh` |
 | `deploy/deploy-staging-guarded-dispatch.sh` | forced command **отдельного** SSH-ключа; принимает ровно `./deploy-staging-guarded.sh <40-hex-sha> <preflight\|dry-run\|apply> <yes\|no> [<users.id,…>\|-]` и блокировку `flock` |
-| `.github/workflows/deploy-staging-guarded.yml` | `workflow_dispatch`: вход `sha` (точный, не ветка), `converge` (`preflight`\|`dry-run`\|`apply`), `start` (`no`\|`yes`), `users` (`-` или список `users.id`); `apply` без списка и `preflight`+`start=yes` отклоняются; валидирует вход, проверяет, что SHA есть в репозитории и несёт нужные файлы |
+| `.github/workflows/deploy-staging-guarded.yml` | **не путь выката** (недоступен до регистрации в ветке по умолчанию, §3.3); заготовка: `workflow_dispatch`: вход `sha` (точный, не ветка), `converge` (`preflight`\|`dry-run`\|`apply`), `start` (`no`\|`yes`), `users` (`-` или список `users.id`); `apply` без списка и `preflight`+`start=yes` отклоняются; валидирует вход, проверяет, что SHA есть в репозитории и несёт нужные файлы |
 | `deploy/staging_data_check.sh`, `deploy/staging-allowed-diff.txt`, `docs/rehearsal/sql/gen_hash_queries.sql` | проверки данных (§6); скрипт читает их через `git show <SHA>:…` — из выкатываемого коммита |
 
 Переиспользовано без изменений: `docker compose -p pullup-staging …` (проект, порт 8002, healthcheck URL — как в `deploy-staging-run.sh`), `scripts/repair_plan_convergence.py` (`--all` — только dry-run, `--user-ids` — apply),
@@ -136,7 +136,7 @@ run --rm app alembic upgrade head; up -d; healthcheck :8002; /usr/local/bin/post
 
 ```bash
 # (a) на машине владельца: ключ для guarded-деплоя (отдельный от существующих)
-ssh-keygen -t ed25519 -N '' -C guarded-staging -f ./guarded_staging_key        # приватный ключ -> GitHub secret VPS_STAGING_GUARDED_SSH_KEY, затем удалить файл
+ssh-keygen -t ed25519 -C guarded-staging -f ~/.ssh/guarded_staging_key         # приватный ключ остаётся у владельца (вызов — вручную по SSH, §3.3)
 
 # (b) на VPS под пользователем deploy: скрипты ИЗ КОММИТА КАНДИДАТА (проверить хэши до установки)
 git -C /home/deploy/pullup-trainer-bot-staging fetch origin                       # меняет только .git; рабочее дерево не трогает
@@ -145,26 +145,45 @@ for f in deploy-staging-guarded-run.sh deploy-staging-guarded-dispatch.sh; do
   sha256sum /home/deploy/$f.new                                                   # сверить с хэшем из ревью PR
   install -m 755 /home/deploy/$f.new /home/deploy/$f && rm /home/deploy/$f.new
 done
-command -v flock curl awk sha256sum docker git df free du mktemp                   # все должны найтись
+command -v flock curl awk sha256sum docker git df free du mktemp pgrep             # все должны найтись
+docker compose run --help | grep -- '--label'                                       # нужен `run --label` (метка one-off контейнеров)
 
 # (c) forced command в ~/.ssh/authorized_keys — ОДНА новая строка (публичный ключ из (a)); существующие строки не менять
 command="/home/deploy/deploy-staging-guarded-dispatch.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA… guarded-staging
 ```
-В GitHub: secret `VPS_STAGING_GUARDED_SSH_KEY` (+ уже существующий `VPS_HOST`). Существующий forced-command, `deploy-staging-dispatch.sh` и прод-ключ **не меняются** и не обходятся: у guarded-ключа свой
-forced command, принимающий один литеральный паттерн. Чтобы выкат шёл обновлённым скриптом, после смены `deploy-staging-guarded-run.sh` его снова ставят вручную (самообновления нет).
+Существующий forced command, `deploy-staging-dispatch.sh` и прод-ключ **не меняются** и не обходятся: у guarded-ключа свой forced command, принимающий один литеральный паттерн
+(аргументы передаются run-скрипту только из разобранного regex; переменные тестового режима `GUARDED_TEST`, `PROJECT_OVERRIDE`, `STAGING_DIR`, … диспетчер вычищает `env -u`).
+Блокировка — общий файл `/home/deploy/.deploy-staging.lock` (тот же, что предлагается старому контуру, §3.8). Чтобы выкат шёл обновлённым скриптом, после смены `deploy-staging-guarded-run.sh`
+его снова ставят вручную (самообновления нет).
 
-### 3.3 Порядок запусков
+### 3.3 Порядок запусков — ручной SSH-вызов guarded dispatcher (выбранный способ)
 
-1. **Только чтение:** *Deploy Staging (guarded)* → `sha` = окончательный candidate SHA, `converge` = `preflight`, `start` = `no`. Меняется только `.git` (fetch). Проверяет SHA, файлы, контейнеры, диск, ревизию.
-2. **Миграция + разведка (НЕ read-only):** тот же SHA, `converge` = `dry-run`, `start` = `no`, `users` = `-`. Результат: backup, миграция, проверки данных, dry-run сведения **по всем пользователям** (только чтение);
-   `app`/`web` остановлены; в выводе и в `/home/deploy/backups/convergence-<sha7>-<UTC>/unresolved-dry-run.txt` — неразрешённые факультативы с `user_id` и причиной. Последующий запуск пропустит `upgrade`
-   с предупреждением; pre-migration backup — файл этого запуска (не удалять).
-3. **Решение владельца:** по выводу п. 2 владелец перечисляет `users.id`, для которых сведение подтверждено (неразрешённые остаются как есть; разбор — §6.2.1).
-4. **Проверка области (миграция уже применена):** `converge` = `dry-run`, `users` = `<подтверждённый список>`.
-5. **Выкат:** `converge` = `apply`, `users` = тот же список, `start` = `yes` (или сначала `start` = `no`).
+Вызов — **вручную по SSH** ключом из §3.2 (a). Строка команды должна совпасть с шаблоном диспетчера **буквально**: одиночные пробелы, без кавычек внутри, SHA — 40 строчных hex,
+список `users.id` — через запятую без пробелов (`-` — «без области»). Любое отличие — `rejected command`, ничего не запускается.
+```bash
+K=~/.ssh/guarded_staging_key; H=deploy@<VPS_HOST>; SHA=<CANDIDATE_SHA_40>
+o="-i $K -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4"
+ssh $o $H "./deploy-staging-guarded.sh $SHA preflight no"      2>&1 | tee guarded-1-preflight.log   # только чтение
+ssh $o $H "./deploy-staging-guarded.sh $SHA dry-run no -"      2>&1 | tee guarded-2-dry-all.log    # НЕ read-only: миграция
+ssh $o $H "./deploy-staging-guarded.sh $SHA dry-run no 12,57"  2>&1 | tee guarded-3-dry-scope.log  # пример списка
+ssh $o $H "./deploy-staging-guarded.sh $SHA apply yes 12,57"   2>&1 | tee guarded-4-apply.log
+```
+Запускать с устойчивой машины (например, внутри `tmux` у владельца). **Обрыв SSH во время выката = отказ:** удалённый скрипт получает SIGHUP/SIGPIPE, останавливает свои one-off контейнеры и `app`/`web`
+и завершается ненулевым кодом (§3.5); причина и состояние сохраняются в `/home/deploy/backups/guarded-<sha7>-<UTC>.FAILED.txt`.
+
+**GitHub Actions-вариант (`.github/workflows/deploy-staging-guarded.yml`) недоступен:** `workflow_dispatch` появляется только у workflow из ветки по умолчанию, а переносить его в `main` не делаем.
+Файл остаётся в кандидате как заготовка и **не считается путём выката** до отдельной регистрации владельцем (тогда же — secret с ключом и проверка, что `appleboy/ssh-action` держит команду до 60 мин).
+
+1. **Только чтение:** `preflight no`. Меняется только `.git` (fetch). Проверяет SHA и файлы, контейнеры `app`/`web`/`db`, ревизию Alembic (`c3f7a9e2d5b1` или уже `b5d8e1f3a6c9`), существование `users.id`,
+   поддержку `docker compose run --label`, отсутствие one-off контейнеров прежнего (убитого) запуска и отсутствие работающего старого деплоя.
+2. **Миграция + разведка (НЕ read-only):** `dry-run no -`. Результат: backup, миграция, проверки данных, dry-run сведения **по всем пользователям** (только чтение); `app`/`web` остановлены;
+   неразрешённые факультативы — в выводе и в `/home/deploy/backups/convergence-<sha7>-<UTC>/unresolved-dry-run.txt`. Повторный запуск пропустит `upgrade` с предупреждением; pre-migration backup и
+   before-manifest — файлы этого запуска (не удалять).
+3. **Решение владельца:** список `users.id` для сведения (неразрешённые остаются как есть; §6.2.1).
+4. **Проверка области:** `dry-run no <список>`. 5. **Выкат:** `apply yes <список>` (или сначала `apply no <список>`).
 6. После `GUARDED DEPLOY OK`: §3.4 и §7. Ошибка — §3.5 и §8; **сервисы сами не запускаются**.
 
-Деплой-ветка больше не нужна: workflow принимает точный SHA, достаточно, чтобы коммит был на `origin` (`git fetch origin` на сервере). «Заморозка» — это сам SHA; перед запуском сверить, что
+Деплой-ветка больше не нужна: скрипт принимает точный SHA, достаточно, чтобы коммит был на `origin` (`git fetch origin` на сервере). «Заморозка» — это сам SHA; перед запуском сверить, что
 SHA = записанному при принятии gate (`git ls-remote origin <ветка кандидата>` и `git diff --stat <GATE_CODE_SHA> <SHA> -- . ':!docs'` — только принятые фиксы).
 
 ### 3.4 Проверка факта выката (кроме встроенной в фазу 9)
@@ -174,7 +193,7 @@ cd /home/deploy/pullup-trainer-bot-staging
 git rev-parse HEAD; git status --short                                         # == SHA; пусто
 docker compose -p pullup-staging ps -a; docker compose -p pullup-staging images
 docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # b5d8e1f3a6c9
-ls -l /home/deploy/backups/                                                    # дамп, .sha256 (переносить копию вне VPS)
+ls -l /home/deploy/backups/                                                    # дамп, .sha256, .manifest (переносить копии вне VPS)
 docker images --format '{{.Repository}}:{{.Tag}}' | grep '^local/staging-'     # образы для отката
 ```
 Образ не несёт SHA (в нём нет `.git`): «запущена эта сборка» подтверждается равенством ID образа запущенного контейнера образу, собранному этим запуском, и `HEAD == SHA` на момент сборки.
@@ -185,10 +204,13 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep '^local/staging-'     #
 |---|---|---|
 | 0 (preflight) | ничего не менялось, `app`/`web` работают как раньше | исправить причину, повторить |
 | 1–3 (образы, остановка, backup) | `app`/`web` остановлены; БД, образы и дерево не менялись; backup (если дошло) цел | `docker compose -p pullup-staging start app web` (те же контейнеры и образы); разобрать причину |
-| 4–6 (checkout, сборка, миграция) | БД не менялась (при сбое миграции — атомарно `c3f7a9e2d5b1`); рабочее дерево на новом SHA; теги образов `pullup-staging-app/-web` **могли уже указывать на новые образы** | вернуть старые образы под имена compose (§8.2: `docker tag local/staging-{app,web}:pre-… <имя из docker compose images>`), `git checkout --detach <прежний SHA>`, затем `docker compose -p pullup-staging up -d --no-build app web`; разобрать причину |
+| 4–6 (checkout, сборка, миграция) | БД не менялась (при сбое миграции — атомарно `c3f7a9e2d5b1`); рабочее дерево на новом SHA; теги образов `pullup-staging-app/-web` **могли уже указывать на новые образы** | вернуть старые образы **по ID из before-manifest этого запуска** под имена compose (§8.2), `git checkout --detach <previous_sha из manifest>`, затем `docker compose -p pullup-staging up -d --no-build app web`; разобрать причину |
 | 7–9 | схема `b5d8e1f3a6c9`, данные возможно сведены | §8: код (если convergence не применялась) или данные (если применялась) |
+| сигнал TERM/HUP/INT/PIPE (в т. ч. обрыв SSH) в любой фазе | как у фазы, где пришёл сигнал; код выхода 128+N; one-off контейнеры этого запуска (метка `guarded.run=<sha7>-<UTC>-<pid>`) остановлены и удалены, `app`/`web` остановлены (и после `up`, и во время/после healthcheck) | `/home/deploy/backups/guarded-<sha7>-<UTC>.FAILED.txt` (причина, фаза, состояние для отката); дальше — по строке фазы |
+| **SIGKILL** (`kill -9`, OOM-killer скрипта) — **не перехватывается** | очистка не выполняется: one-off контейнер может продолжать работу, `app`/`web` могли остаться запущенными (если `up` уже был) | следующий запуск откажется в preflight («one-off containers of an earlier guarded run»). Вручную: `docker ps -a --filter label=guarded.run --format '{{.ID}} {{.Label "guarded.run"}} {{.Status}}'`; убедиться, что PID из метки не жив (`ps -p <pid>`), затем `docker stop <ID> && docker rm <ID>` **по ID**; `docker compose -p pullup-staging ps app web` — если запущены непроверенной сборкой, `stop app web`; далее по фазе |
 
-Логи фаз — `/tmp/guarded-deploy.*` (путь печатается в конце), состояние для отката — в блоке `state for rollback` вывода.
+Логи фаз — `/tmp/guarded-deploy.*` (путь печатается в конце), состояние для отката — в блоке `state for rollback` вывода и в `…FAILED.txt` рядом с backup.
+Порядок при отказе: сначала остановка one-off контейнеров этого запуска и `app`/`web`, затем запись отчёта в файл, и только потом вывод (stdout может быть уже закрыт); код и причина — первые.
 
 ### 3.6 Воспроизводимая сборка фронтенда — исправлено
 
@@ -216,6 +238,23 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep '^local/staging-'     #
 * **Не проверено:** запуск на VPS (версия Compose CLI неизвестна; `docker compose run -T`, `up -d --no-build`, `stop`, `config --images` на сервере; права пользователя `deploy`; наличие `flock`/`curl`/`awk`); поведение sshd с `no-pty` и
   `appleboy/ssh-action` для 60-минутной команды; серверный `post-deploy-cleanup.sh`; сборка при ≈ 704 МиБ (ограничение — последовательные сборки, пик не измерен); реальные данные staging; запуск самого GitHub workflow.
   **Откат после области** проверен на настоящем Docker: `pg_restore` дампа запуска S1n (`sha256sum -c` OK) → `alembic_version = c3f7a9e2d5b1`; теги `local/staging-{app,web}:pre-…` возвращены под имена compose; `git checkout 4298f8b`; `up -d --no-build` → `health ok`, ID образов запущенных контейнеров = сохранённым.
+
+### 3.8 Старый staging-workflow не должен идти параллельно (подготовлено; на VPS ничего не менялось)
+
+Старый контур (`Deploy Staging` → `deploy-staging-dispatch.sh` → `deploy-staging-run.sh`) работает с тем же каталогом и тем же compose-проектом. На окно guarded-выката:
+1. **GitHub (обратимо, без VPS):** отключить workflow до начала и включить после: Actions → *Deploy Staging* → ⋯ → *Disable workflow* (или `gh workflow disable deploy-staging.yml -R bimoool/pullup-trainer-bot`,
+   после окна `gh workflow enable …`).
+2. **Встроено в guarded-скрипт:** preflight отказывает, если сейчас работает `deploy-staging-run.sh` (`pgrep -f`).
+3. **Серверная правка для владельца (готова, не применена):** старый ключ получает ту же блокировку, что guarded dispatcher (`/home/deploy/.deploy-staging.lock`), без правки самого
+   `deploy-staging-dispatch.sh` (его содержимое не проверялось) — меняется только forced command его строки в `~/.ssh/authorized_keys`:
+   ```bash
+   cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.bak-$(date -u +%Y%m%dT%H%M%SZ)
+   grep -n 'command="/home/deploy/deploy-staging-dispatch.sh"' ~/.ssh/authorized_keys     # ровно одна строка — старый staging-ключ
+   sed -i 's#command="/home/deploy/deploy-staging-dispatch.sh"#command="/usr/bin/flock -n /home/deploy/.deploy-staging.lock /home/deploy/deploy-staging-dispatch.sh"#' ~/.ssh/authorized_keys
+   grep -n 'deploy-staging-dispatch.sh' ~/.ssh/authorized_keys                               # проверить результат
+   ```
+   `flock` запускает прежний диспетчер с тем же `SSH_ORIGINAL_COMMAND`; при занятой блокировке — немедленный отказ с ненулевым кодом. Путь `flock` сверить (`command -v flock`). Пока правка не
+   применена, действуют пункты 1 и 2.
 
 ## 4. Цепочка миграций
 
@@ -387,8 +426,15 @@ select count(*) from program_inclusions where jsonb_typeof(progression_state->'b
 `backfill_multi_program.py` — отказ до записи. Guarded-скрипт не принимает `apply` без списка (код 2 до любых действий).
 **Других путей «раньше CLI» нет** (проверено тестами `tests/test_web/test_convergence_scope.py`): сведение истории (`LegacyHistoryConvergenceService`, `converge_history_all`) не импортируется ни кодом приложения, ни миграциями;
 миграции не вставляют строки в `training_sessions` (меняют `origin`, `kind`, `source_v2`, … существующих строк и `block_b.work_sets`); рантайм пишет копии только для **новых** факультативов/тренировок (dual-write с ключом).
-**Остаётся рантайм-сведение плана:** `GET /plan` нового билда сводит план открывшего приложение пользователя (`converge_user_plan` — тот же код, что в `repair_plan_convergence.py`, существующее поведение), поэтому у **неподтверждённых** пользователей
-план сведётся лениво при первом открытии; область `--user-ids` ограничивает только то, что делает скрипт до старта, а не это. На историю (копии) это не влияет.
+**Область plan и history — раздельно.** Сведение истории идёт для всего подтверждённого списка; починка плана (`repair_plan_convergence.py --user-ids`) — только для тех из них, у кого **есть**
+`training_plans` (guarded-скрипт сам делит список и печатает обе части). Пользователь без плана получает только сведение истории: план ему **не создаётся** ни скриптом, ни этим выкатом, и его
+отсутствие плана не блокирует сведение истории остальных (раньше один такой id давал код 3 у `repair_plan_convergence.py` на весь список). Неизвестный `users.id` — отказ в preflight, до остановки сервисов.
+
+**Scoped CLI — не глобальная защита.** `--user-ids` ограничивает только то, что делают скрипты сведения до старта. **Рантайм-сведение плана остаётся вне этой области:** `GET /plan` нового билда сводит план
+любого открывшего приложение пользователя (`converge_user_plan` — тот же код, что в `repair_plan_convergence.py`, существующее поведение). Сведение истории (копии) в рантайме не выполняется.
+Поэтому scoped-выкат безопасен как **закрытый staging-тест** при условиях: (1) staging-бот и Mini App доступны только тестировщикам из подтверждённого списка (другие аккаунты staging не открывают приложение
+до решения по ним — иначе их план сведётся рантаймом без проверки скриптом); (2) неподтверждённые пользователи не используются для проверок §7; (3) после окна — решение владельца: расширить список
+следующим scoped-прогоном или откатить данные (§8.3). Новых продуктовых ограничений (флагов, запрета рантайм-сведения) этот выкат не вводит.
 Не запускать `backfill_multi_program.py` без `--converge-history` (полный backfill плана, mutating по всем пользователям) — guarded-скрипт его не вызывает.
 
 Запускать на сервисе `app` (в `web` нет `scripts/`). Для каждого скрипта — dry-run → apply → повторный apply.
@@ -408,7 +454,9 @@ $C python scripts/backfill_multi_program.py --converge-history --user-ids $U --a
 
 Не запускать `backfill_multi_program.py` без `--converge-history` (это полный backfill плана, не сведение истории).
 Критерии остановки: ненулевой `guard_violations` или код выхода 4 у `repair_plan_convergence.py`; `total_mutations != 0`
-в `conv_apply2`; в `hist_apply2` строки счётчиков (до блока «Не разрешено») содержат ненулевые «создано»/«привязано»/«обновлено»/«замещено»; блок «Не разрешено» после apply1 и apply2 различается.
+в `conv_apply2`; в `hist_apply2` машинный результат (последняя строка `RESULT-JSON {...}`) показывает `mutations != 0` — это сумма **всех** изменяющих счётчиков
+(`classified` «origin проставлен…», `bound`, `created`, `updated`, `superseded`, `elective_created`; список — `MUTATING_KEYS` сервиса); блок «Не разрешено» после apply1 и apply2 различается.
+Guarded-скрипт проверяет именно `RESULT-JSON` (нет строки — тоже стоп), текстовые строки остаются для людей.
 Счётчики `dry-run` совпадают со счётчиками первого `apply` (числа на реальных данных будут другими). Заметки владельца по одному аккаунту:
 `--telegram-id <ID>` вместо `--all`; BEFORE/AFTER снимок — `scripts/qa_state_snapshot.py --telegram-id <ID>`
 (read-only), порядок и ожидания — `docs/STAGING_CONVERGENCE_RUNBOOK.md`.
@@ -460,9 +508,15 @@ select origin, legacy_id, count(*) from training_sessions where legacy_id is not
 Критерии: сбой любой фазы guarded-скрипта (§3.5), FAIL в §7, решение владельца. **При сбое скрипта `app`/`web` уже остановлены и остаются остановленными**; скрипт сам
 ничего не восстанавливает — он печатает сводку: целевой/предыдущий SHA, путь к дампу, теги сохранённых образов, рабочий каталог.
 
-Что подготавливает сам скрипт (фазы 1 и 3, до любых изменений): теги `local/staging-app:pre-<sha7>-<UTC>` и `local/staging-web:pre-<sha7>-<UTC>` на запущенные образы
-(их не удалит `docker image prune -f`) и проверенный дамп `/home/deploy/backups/staging-pre-<sha7>-<UTC>.dump` (+ `.sha256`; `pg_restore -l`, пробное восстановление в
-`restore_check`). Ветку отката создавать не нужно: guarded-скрипт принимает SHA.
+Что подготавливает сам скрипт (фазы 1 и 3, до любых изменений):
+* **before-manifest** `/home/deploy/backups/staging-pre-<sha7>-<UTC>.manifest` — источник истины для отката: `previous_sha`, `previous_alembic`, для `app` и `web` — **ID образа** запущенного контейнера
+  (`<svc>_image_id=sha256:…`), имя образа compose (`<svc>_compose_image`) и тег-страховка (`<svc>_saved_tag`), затем `backup=` и `backup_sha256=`;
+* теги `local/staging-{app,web}:pre-<sha7>-<UTC>` на те же ID (их не удалит `docker image prune -f`);
+* дамп `/home/deploy/backups/staging-pre-<sha7>-<UTC>.dump` + `.sha256` (проверяется `sha256sum -c` до пробного восстановления), `pg_restore -l`, восстановление в `restore_check`.
+
+**Какой manifest брать:** тот, что владелец утвердил как «до» для этого окна — от **первого** запуска, который остановил сервисы (обычно `dry-run no -`, §3.3 п. 2): у последующих запусков
+«до» — уже новые образы и мигрированная БД (`previous_alembic=b5d8e1f3a6c9`). Не выбирать «самый ранний тег» по имени: брать ID из утверждённого manifest и проверять, что
+`previous_alembic=c3f7a9e2d5b1` и `previous_sha=4298f8b9727f91d4a150431fd0d9e06131944d27`. Ветку отката создавать не нужно.
 
 ### 8.1 Старый wrapper на новой revision — НЕ работает (доказано)
 
@@ -477,13 +531,17 @@ select origin, legacy_id, count(*) from training_sessions where legacy_id is not
 (`docs/STAGING_RC_REHEARSAL.md` §4, §9). Бот (`app.main`) без Telegram не запускался.
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
+M=/home/deploy/backups/staging-pre-<sha7>-<UTC>.manifest                # УТВЕРЖДЁННЫЙ before-manifest (см. выше)
+grep -E '^previous_(sha|alembic)=' "$M"                                # 4298f8b9727f91d4a150431fd0d9e06131944d27 / c3f7a9e2d5b1
+v() { grep "^$1=" "$M" | cut -d= -f2-; }
+docker image inspect -f '{{.Id}}' "$(v app_image_id)" "$(v web_image_id)" # оба ID существуют
 docker compose -p pullup-staging stop app web
-# вернуть имена, под которыми compose ищет образы (имена — из `docker compose -p pullup-staging config --images`)
-docker tag local/staging-app:pre-<sha7>-<UTC> <ИМЯ_ОБРАЗА_APP>
-docker tag local/staging-web:pre-<sha7>-<UTC> <ИМЯ_ОБРАЗА_WEB>
-git checkout --detach 4298f8b9727f91d4a150431fd0d9e06131944d27         # дерево = образам
+docker tag "$(v app_image_id)" "$(v app_compose_image)"                # имя, под которым compose ищет образ app
+docker tag "$(v web_image_id)" "$(v web_compose_image)"
+git checkout --detach "$(v previous_sha)"                              # дерево = образам
 docker compose -p pullup-staging up -d --no-build app web             # без сборки и Alembic
 curl -sf http://127.0.0.1:8002/health
+for s in app web; do [ "$(docker inspect -f '{{.Image}}' "$(docker compose -p pullup-staging ps -q $s)")" = "$(v ${s}_image_id)" ] && echo "$s OK"; done
 ```
 Ограничения: (а) только до convergence — после неё старый интерфейс показывает задвоенные строки плана (репетиция: 4→7, 2→5); (б) схема остаётся новой — следующий деплой
 старой веткой wrapper'ом упадёт (8.1); (в) на реальной VPS не проверено.
@@ -501,9 +559,12 @@ curl -sf http://127.0.0.1:8002/health
 только по решению владельца.
 ```bash
 cd /home/deploy/pullup-trainer-bot-staging
+M=/home/deploy/backups/staging-pre-<sha7>-<UTC>.manifest; D="$(grep '^backup=' "$M" | cut -d= -f2-)"
+sha256sum -c "$D.sha256"                                                # ДО любого drop: файл цел (иначе стоп)
+[ "$(sha256sum "$D" | cut -d' ' -f1)" = "$(grep '^backup_sha256=' "$M" | cut -d= -f2-)" ] && echo "dump matches manifest"
 docker compose -p pullup-staging stop app web
 docker exec pullup-staging-db-1 sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < /home/deploy/backups/staging-pre-<sha7>-<UTC>.dump
+docker exec -i pullup-staging-db-1 sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < "$D"
 docker exec pullup-staging-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select version_num from alembic_version"'   # = c3f7a9e2d5b1
 # затем код: 8.2 (сохранённые образы)
 ```

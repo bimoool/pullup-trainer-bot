@@ -1,5 +1,9 @@
 name: Deploy Staging (guarded)
 
+# НЕ ПУТЬ ВЫКАТА (решение владельца): выбран ручной SSH-вызов guarded dispatcher (docs/STAGING_RC_RUNBOOK.md §3.3).
+# workflow_dispatch доступен только для workflow из ветки по умолчанию; в main этот файл не переносится, поэтому вариант
+# через Actions недоступен до отдельной регистрации владельцем. Аргументы и проверки — те же, что у ручного вызова.
+
 # STAGING-ONLY. Отдельный путь рядом с deploy-staging.yml (его и прод-деплой не меняет и не заменяет). Точный SHA, backup,
 # остановленные app/web, последовательная сборка, миграция, проверки данных, convergence, и только потом запуск + healthcheck.
 # При любой ошибке app/web остаются остановленными (deploy/deploy-staging-guarded-run.sh). Отдельный SSH-ключ с forced-command

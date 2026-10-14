@@ -57,6 +57,10 @@ from app.domain.journal_dedupe import resolve_legacy_session_source
 from app.domain.multi_program import SessionSource
 from app.domain.training_session_v2 import SessionOrigin
 
+# Счётчики, означающие запись в БД (критерий «повторный apply = 0 изменений»); читаются и машинным результатом
+# scripts/backfill_multi_program.py --converge-history (строка RESULT-JSON).
+MUTATING_KEYS = ("classified", "bound", "created", "updated", "superseded", "elective_created")
+
 
 @dataclass
 class UserConvergenceReport:
@@ -67,10 +71,7 @@ class UserConvergenceReport:
     @property
     def mutations(self) -> int:
         """Сколько записей изменит (изменило) apply — для критерия «apply-again = 0»."""
-        return sum(
-            self.counts[key]
-            for key in ("classified", "bound", "created", "updated", "superseded", "elective_created")
-        )
+        return sum(self.counts[key] for key in MUTATING_KEYS)
 
 
 def _workout_signature(workout: Workout, exercise_a_id: int, exercise_b_id: int) -> tuple:

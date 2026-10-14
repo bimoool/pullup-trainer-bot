@@ -66,6 +66,7 @@ SessionBlock/SetLog не рассчитаны на эти детали — см.
 
 import argparse
 import asyncio
+import json
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -128,7 +129,7 @@ from app.domain.program_access import ProgramAccessLevel
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.training_session_v2 import SessionOrigin
-from app.services.legacy_history_convergence import LegacyHistoryConvergenceService
+from app.services.legacy_history_convergence import MUTATING_KEYS, LegacyHistoryConvergenceService
 from app.services.plan_week import PlanWeekService
 
 _PROGRAM_NAME = "Подтягивания"
@@ -543,6 +544,19 @@ _UNRESOLVED_REASONS = {
 }
 
 
+def _history_result_line(counts: Counter, unresolved: list[dict], *, apply: bool, user_ids: list[int] | None) -> str:
+    """`RESULT-JSON {...}` — счётчики, число изменений (MUTATING_KEYS, в т. ч. classified) и неразрешённые случаи."""
+    return "RESULT-JSON " + json.dumps({
+        "mode": "apply" if apply else "dry-run", "user_ids": user_ids, "users": counts["users"],
+        "mutations": sum(counts[key] for key in MUTATING_KEYS),
+        "counts": {key: value for key, value in sorted(counts.items()) if key != "users"},
+        "unresolved": sorted(
+            ({"user_id": item["user_id"], "elective_id": item["elective_id"], "reason": item["reason"]} for item in unresolved),
+            key=lambda item: (item["user_id"], item["elective_id"]),
+        ),
+    }, ensure_ascii=False, sort_keys=True)
+
+
 def _render_unresolved(items: list[dict]) -> list[str]:
     """Неразрешённые факультативы: копия НЕ создана (не воскрешаем удалённое и не дублируем правленое), ничего не
     привязано. candidates — непривязанные копии того же формата для ручной проверки."""
@@ -840,6 +854,8 @@ async def main() -> None:
             print("\n".join(["Прогон завершён" if args.apply else "DRY-RUN (ничего не записано)",
                               f"Область: {scope}", f"Пользователей: {counts['users']}", *_render_history(counts, dry_run=not args.apply),
                               *_render_unresolved(unresolved)]))
+            # Машинный результат для автоматических проверок (guarded deploy): одна последняя строка JSON.
+            print(_history_result_line(counts, unresolved, apply=args.apply, user_ids=args.user_ids))
         return
 
     async with async_session_factory() as session:

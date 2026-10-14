@@ -9,6 +9,7 @@ Aged-набор на ревизии f4c1a7e9b3d2 (до #308), одним пол�
   elective 7001 с копией 9005; elective 7002 записан ПОСЛЕ миграции пользователя (копии нет);
   elective 7003 записан ДО миграции и копии нет (удалён/правлен в Журнале) — НЕ воскрешается."""
 
+import json
 import subprocess
 import sys
 
@@ -182,6 +183,12 @@ def test_aged_database_converges_idempotently_without_touching_legacy_history(sc
     again = _script(scratch_dsn, "--converge-history", "--apply")
     assert _summary(scratch_dsn) == after  # apply-again = 0 изменений (ни строк, ни ревизий)
     assert "создано" not in again and "обновлено" not in again and "замещено" not in again
+    result = json.loads(again.strip().splitlines()[-1].removeprefix("RESULT-JSON "))  # машинный результат для guarded deploy
+    assert result["mode"] == "apply" and result["mutations"] == 0, result
+    first = json.loads(applied.strip().splitlines()[-1].removeprefix("RESULT-JSON "))
+    assert first["mutations"] > 0 and first["mutations"] == sum(
+        first["counts"].get(key, 0) for key in ("classified", "bound", "created", "updated", "superseded", "elective_created")
+    ), first
     assert _fingerprint(scratch_dsn, LEGACY_GUARD) == legacy_before
 
 
