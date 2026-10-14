@@ -186,9 +186,11 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
    `plan_item_id` is cleared (no plan credit). Active-session lookup and session lists exclude it.
 10. **Plan source.** A v2 start of a Builder workout with a definition version builds `SetTarget` from the
     version's snapshot (the W-ladder executes as 17 sets, J3) and the engine plan 1:1 from it. Synthesized
-    snapshots (STEP course blocks, legacy without a version) carry no rest/prep; the engine plan then uses the
-    contract defaults (WORKOUT §3.2/§3.6/§9.1: rest 90 s or the V1 protocol's rest, block rest 90 s, prep 5 s for
-    the first block and for blocks starting with a timed set or an interval). A V1 interval whose total is not a
+    snapshots (STEP course blocks, legacy without a version) usually carry no rest/prep; the engine plan then uses
+    the contract defaults (WORKOUT §3.2/§3.6/§9.1: rest 90 s or the V1 protocol's rest, block rest 90 s, prep 5 s for
+    the first block and for blocks starting with a timed set or an interval). Rest that a synthesized snapshot does
+    carry — the V5.6 course prescription (#305) writes 240/30 → 900 → 180 into the standard snapshot fields — always
+    wins over these defaults (owner decision 5: defaults only when no explicit value exists). A V1 interval whose total is not a
     multiple of work + rest keeps V1's count of work rounds (`ceil(total / (work + rest))`; V1 15 s at 5/5 = two
     work phases).
 11. **Projection on read (P3).** `GET /sessions/live/active` and the session list project due deadlines (same
@@ -209,7 +211,20 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     open screen owns its session's queue (`claimQueue`), so the app-level drain skips it. A request (or a
     `releaseQueue`) that arrives while a pass is running marks a rerun: the reconciliation finishes only after a
     complete pass during which no new request arrived, so a queue released mid-pass is always reconsidered before
-    the gate opens. User input made before a
+    the gate opens. The open screen retries its own queue the same way: a transient failure while the browser
+    reports online (no `online` event will come) schedules one retry after 1, 2, 4, 8, 15, 15… s
+    (`createSyncRetry`; at most one pending, cancelled by any other send, reset on success; a retry that fires
+    while the browser reports offline sends nothing and schedules nothing — the `online` event resumes) —
+    no manual «Повторить» is needed; the resent events keep their `client_event_id` (server: duplicate). The
+    screen's sends are bound to its mount (`createScreenLifecycle`): leaving, unmount or a session change invalidates
+    every send already in flight, so a late answer or failure schedules no retry, starts no new send and leaves the
+    stored queue as is — the app reconciliation started by that cleanup owns it (a late or aborted response is not
+    taken as proof that the server did not apply the events: they are resent with the same `client_event_id`). The
+    Summary shows the outcome of the response that actually completed the session (last set, `confirm_blocks`,
+    `finish_early`: progression / V5.6 `course_progression` / `abandoned`), not the `already_completed` of the
+    later «Сохранить» review call (`summaryResult`); only a screen that never saw the completion (another device,
+    background projection, a lost completing response) shows the server's answer as is — `already_completed` carries
+    no outcome, so the Summary then says only «Тренировка сохранена» and claims nothing about progression. User input made before a
     deadline therefore always reaches the server before that deadline is persisted; the server's rules (clamping,
     stale no-op, duplicate) are unchanged. The same drain sends a review queued for a session the server
     already completed by itself (no longer active, so no screen would reopen it). Audio: the engine exposes
@@ -219,3 +234,26 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     start new sessions on engine v1 (server unchanged; running v2 sessions keep v2). E2E specs that assert the v1
     screen's own UX (it still serves `engine_version = 1` sessions until W4) pin it per file
     (`useLiveEngineV1(test)`); v2 behaviour is covered by `live-engine-v2.spec.ts` and the converted journeys.
+14. **Block confirmations, stop rule and rest fact (#305 × #306, pull-up program V5.6 §6/§11).** Opt-in per plan
+    block — a plan without these fields has exactly the previous state shape and transitions:
+    * `confirm_checks: true` (both V5.6 blocks): when the last prescribed set of the workout is done and a begun
+      block has no answer yet, the engine enters **`CONFIRM`** instead of `COMPLETE` — no deadline, the workout
+      clock stops (`ended_at` = entry time), pause/skip/result events are no-ops, cancel stays possible. The event
+      `confirm_blocks {checks: [{block_index, technique, rest}]}` (answers `"valid" | "invalid" | null`, null =
+      unknown, never valid) records answers; once every begun block is answered the engine completes — the single
+      canonical completion (`complete_session`, #307) with `block_checks` from the engine state, written before
+      progression. `finish_early` (exit, also the server `finish_early` of `POST …/complete`) carries the same
+      `checks` in its payload and completes with unanswered blocks unknown. Answers are in the append-only event
+      log, so `rebuild` reproduces them; nothing re-applies progression after completion (a `confirm_blocks`
+      after COMPLETE is a no-op).
+    * `stop_at_or_below: n` (V5.6 B volume, n = 2): a `submit_result` with value ≤ n, or with
+      `technique: "invalid"`, is logged and **ends that block** (`stopped_blocks: [{block_index, reason}]`), then
+      the block rest and the next block follow as usual; a stopped block counts as complete for `abandoned`.
+    * Rest fact: a `pause` during a set rest (`REST`/`set`) of a block records it in `rest_paused`. At completion
+      `rest_within_limit` = the user's answer, but `false` when the server saw such a pause; the server never
+      sets it `true` on its own. A block stopped by `technique: "invalid"` stores `technique_valid = false`.
+    * Display only (no transition effect): set `marker`, `min_target` (V5.6 A AMRAP p4 — any actual is accepted,
+      below p4 is a red outcome), `cap` (assisted control set 8 — the actual is stored as entered, progression
+      counts at most 8).
+    CONFIRM mirrors to the v1 phase column as `go` (the workout is not done yet). Shared vectors: `course*`
+    cases in `contracts/live_engine_vectors.json`.

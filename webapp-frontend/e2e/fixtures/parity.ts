@@ -96,3 +96,14 @@ export async function selectMetric(page: Page, label: "Тренировки" | "
   await metricSelect(page).selectOption({ label });
   await expect(metricSelect(page).locator("option:checked")).toHaveText(label);
 }
+
+/**
+ * Ряд категории на Главной по ВНУТРЕННЕМУ ключу (`data-category-key`), а не по видимой подписи: подпись —
+ * человеческая («E2e sweep»), ключ — слаг данных («e2e_sweep»); слаг в интерфейсе не показывается.
+ */
+export const categoryRow = (page: Page, key: string) =>
+  page.locator(`[data-testid="program-category"][data-category-key="${key}"]`);
+
+/** Чип категории в поиске по ключу (подпись у чипа человеческая). */
+export const categoryChip = (page: Page, key: string) =>
+  page.getByTestId("search-chips").locator(`[data-category-key="${key}"]`);

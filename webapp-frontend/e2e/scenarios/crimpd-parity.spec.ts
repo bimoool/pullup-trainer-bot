@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../fixtures/builderFlow";
-import { metricSelect, openJournalEntry, selectMetric } from "../fixtures/parity";
+import { categoryChip, categoryRow, metricSelect, openJournalEntry, selectMetric } from "../fixtures/parity";
 import { openAppAs, useLiveEngineV1 } from "../fixtures/setup";
 import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
@@ -89,8 +89,12 @@ for (const width of WIDTHS) {
         const titles = page.getByTestId("program-category-title");
         await expect(titles.first()).toBeVisible();
         expect(await titles.count()).toBeGreaterThanOrEqual(3);
-        await expect(titles.filter({ hasText: "e2e_discovery_strength" })).toHaveCount(1);
-        await expect(titles.filter({ hasText: "e2e_discovery_mobility" })).toHaveCount(1);
+        // ряд — по внутреннему ключу категории; подпись человеческая, технического слага на экране нет
+        await expect(categoryRow(page, "e2e_discovery_strength")).toHaveCount(1);
+        await expect(categoryRow(page, "e2e_discovery_mobility")).toHaveCount(1);
+        await expect(categoryRow(page, "e2e_discovery_strength").getByTestId("program-category-title")).toHaveText("E2e discovery strength");
+        await expect(categoryRow(page, "e2e_discovery_mobility").getByTestId("program-category-title")).toHaveText("E2e discovery mobility");
+        await expect(page.getByText(/e2e_discovery/)).toHaveCount(0);
         await expect(titles.last()).toHaveText("Другое");
         await expectNoHorizontalOverflow(page, "Главная");
 
@@ -137,7 +141,8 @@ for (const width of WIDTHS) {
         // Чипы категорий из реальных данных; сброс возвращает всё.
         await input.fill("");
         const chips = page.getByTestId("search-chips");
-        await chips.getByRole("button", { name: "e2e_discovery_mobility" }).click();
+        await expect(categoryChip(page, "e2e_discovery_mobility")).toHaveText("E2e discovery mobility");
+        await categoryChip(page, "e2e_discovery_mobility").click();
         await expect(page.getByTestId("search-result-program")).toHaveCount(1);
         await expect(page.getByTestId("search-result-workout")).toHaveCount(0);
         await expectNoHorizontalOverflow(page, "Поиск");
@@ -242,6 +247,20 @@ const FAVORITES_USERS: Record<string, number> = {
   "320-light-error": 960_005, "320-dark-error": 960_006, "390-light-error": 960_007, "390-dark-error": 960_008,
 };
 
+/**
+ * Сердечко — оптимистичный тумблер: aria-pressed меняется до ответа сервера, а ряд «Избранное» на Главной и состояние после
+ * перезагрузки читаются С СЕРВЕРА. Поэтому сценарий дожидается завершённого PUT/DELETE, прежде чем уйти с экрана или
+ * перезагрузить страницу (иначе при медленном ответе запрос обрывается/обгоняется чтением списка и в ряду одна карточка вместо двух).
+ */
+async function toggleFavorite(page: Page, method: "PUT" | "DELETE", pressedAfter: "true" | "false") {
+  const heart = page.getByTestId("favorite-heart");
+  const done = page.waitForResponse((response) =>
+    response.request().method() === method && /\/api\/v2\/favorites\/(workout|program)\/\d+$/.test(new URL(response.url()).pathname));
+  await heart.click();
+  expect((await done).ok()).toBe(true);
+  await expect(heart).toHaveAttribute("aria-pressed", pressedAfter);
+}
+
 for (const width of WIDTHS) {
   for (const theme of ["light", "dark"] as const) {
     test.describe(`Favorites @${width}px ${theme}`, () => {
@@ -260,16 +279,14 @@ for (const width of WIDTHS) {
         await page.getByTestId("my-workout-card").filter({ hasText: LONG_TITLE }).click();
         await expect(heart).toBeEnabled();
         await expect(heart).toHaveAttribute("aria-pressed", "false");
-        await heart.click();
-        await expect(heart).toHaveAttribute("aria-pressed", "true");
+        await toggleFavorite(page, "PUT", "true");
         await expectNoHorizontalOverflow(page, "Workout Detail с ♥");
 
         // Программа: то же на Program Detail.
         await pressTelegramBackButton(page);
         await page.locator(".program-card-button").filter({ hasText: "Дискавери: сила" }).first().click();
         await expect(heart).toBeEnabled();
-        await heart.click();
-        await expect(heart).toHaveAttribute("aria-pressed", "true");
+        await toggleFavorite(page, "PUT", "true");
         await expectNoHorizontalOverflow(page, "Program Detail с ♥");
         await pressTelegramBackButton(page);
 
@@ -304,8 +321,7 @@ for (const width of WIDTHS) {
         for (const card of [LONG_TITLE, /Дискавери: сила/]) {
           await page.getByTestId("favorites-row").getByTestId("favorite-card").filter({ hasText: card }).click();
           await expect(heart).toHaveAttribute("aria-pressed", "true");
-          await heart.click();
-          await expect(heart).toHaveAttribute("aria-pressed", "false");
+          await toggleFavorite(page, "DELETE", "false");
           await pressTelegramBackButton(page);
         }
         await expect(page.getByTestId("favorites-row")).toHaveCount(0);

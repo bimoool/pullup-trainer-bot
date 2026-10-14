@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
-import { expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
+import { categoryChip, categoryRow, expectNoHorizontalOverflow, openJournalEntry, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 import { pressTelegramBackButton } from "../../fixtures/telegramMock";
 
@@ -81,15 +81,16 @@ for (const width of WIDTHS) {
 
     test("Главная: «Все ›» у ряда категории открывает поиск по ней; у «Другое» кнопки нет", async ({ page }, testInfo) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, home + testInfo.retry, { theme });
-      const row = page.getByTestId("program-category").filter({ hasText: "e2e_discovery_mobility" });
+      const row = categoryRow(page, "e2e_discovery_mobility");
       await expect(row).toBeVisible();
       await expect(page.getByTestId("program-category").filter({ hasText: "Другое" }).getByTestId("program-category-all")).toHaveCount(0);
       await expectNoHorizontalOverflow(page, "Главная: ряд с «Все ›»");
 
       await row.getByTestId("program-category-all").click();
       await expect(page.getByTestId("search-screen")).toBeVisible();
-      await expect(page.getByTestId("search-category-title")).toHaveText("e2e_discovery_mobility");
-      await expect(page.getByTestId("search-chips").getByRole("button", { name: "e2e_discovery_mobility" })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByTestId("search-category-title")).toHaveText("E2e discovery mobility");
+      await expect(page.getByTestId("search-category-title")).toHaveAttribute("data-category-key", "e2e_discovery_mobility");
+      await expect(categoryChip(page, "e2e_discovery_mobility")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("search-result-program")).toHaveCount(1);
       await expect(page.getByTestId("search-result-program")).toContainText("Дискавери: гибкость");
       await expect(page.getByTestId("search-result-test")).toHaveCount(0); // у тестов нет категории

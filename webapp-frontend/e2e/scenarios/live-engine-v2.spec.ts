@@ -3,6 +3,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { noWakeLock } from "../fixtures/builderFlow";
 import { buildInitData, getTestBotToken } from "../fixtures/initData";
 import { openAppAs } from "../fixtures/setup";
+import { pressTelegramBackButton } from "../fixtures/telegramMock";
 
 /**
  * issue #306 — Live Engine v2 (docs/domain/LIVE_ENGINE_V2.md, ACCEPTANCE J5). Сид: scripts/e2e_seed.py
@@ -174,7 +175,9 @@ test("6. Интервал на том же движке: пауза/переза
 /** #306 B1: сохранённые очереди движка v2 в IndexedDB (idb-keyval: keyval-store/keyval), по сессиям. */
 async function storedEngineQueues(page: Page): Promise<number> {
   return page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const open = indexedDB.open("keyval-store");
+    // при инъекции сбоя IndexedDB (failIndexedDbReads) проверка читает в обход неё
+    const w = window as unknown as { __realIdbOpen?: IDBFactory["open"]; __realIdbTransaction?: IDBDatabase["transaction"] };
+    const open = (w.__realIdbOpen ?? indexedDB.open.bind(indexedDB))("keyval-store");
     open.onerror = () => reject(open.error);
     open.onsuccess = () => {
       const db = open.result;
@@ -182,11 +185,44 @@ async function storedEngineQueues(page: Page): Promise<number> {
         resolve(0);
         return;
       }
-      const request = db.transaction("keyval").objectStore("keyval").getAllKeys();
+      const request = (w.__realIdbTransaction ?? db.transaction).call(db, "keyval").objectStore("keyval").getAllKeys();
       request.onsuccess = () => resolve(request.result.filter((key) => String(key).startsWith("pullup:v2:live-engine-queue")).length);
       request.onerror = () => reject(request.error);
     };
   }));
+}
+
+/**
+ * Диагностический вариант наблюдателя: отличает «хранилища keyval нет вовсе» от «хранилище есть, очередей в нём
+ * нет» и от ошибки чтения (тогда reject — не 0). Читает в обход инъекции сбоя, как storedEngineQueues.
+ */
+async function storedEngineQueueDetail(page: Page): Promise<{ store: boolean; queues: number; keys: string[] }> {
+  return page.evaluate(() => new Promise<{ store: boolean; queues: number; keys: string[] }>((resolve, reject) => {
+    const w = window as unknown as { __realIdbOpen?: IDBFactory["open"]; __realIdbTransaction?: IDBDatabase["transaction"] };
+    const open = (w.__realIdbOpen ?? indexedDB.open.bind(indexedDB))("keyval-store");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("keyval")) {
+        db.close();
+        resolve({ store: false, queues: 0, keys: [] });
+        return;
+      }
+      const request = (w.__realIdbTransaction ?? db.transaction).call(db, "keyval").objectStore("keyval").getAllKeys();
+      request.onsuccess = () => {
+        const keys = request.result.map(String);
+        db.close();
+        resolve({ store: true, queues: keys.filter((key) => key.startsWith("pullup:v2:live-engine-queue")).length, keys });
+      };
+      request.onerror = () => reject(request.error);
+    };
+  }));
+}
+
+/** Сохранённая очередь на месте — с причиной в сообщении (нет хранилища / нет записи / сколько и какие ключи). */
+async function expectStoredQueues(page: Page, expected: number, stage: string) {
+  const detail = await storedEngineQueueDetail(page);
+  expect(detail.queues, `${stage}: ${JSON.stringify(detail)}`).toBe(expected);
 }
 
 async function serverEngineState(page: Page, telegramId: number) {
@@ -301,6 +337,11 @@ async function stopOfflineAndCloseAfterDeadline(page: Page, context: BrowserCont
   await sleep(3_000);
   await page.getByTestId("engine-stop").click(); // Стоп на ~3 с — только в очереди устройства
   await expect(phase(page)).not.toHaveText("Пошёл");
+  // Экран показывает «Стоп» раньше, чем запись в IndexedDB зафиксирована (setQueue → await save): закрывать страницу
+  // можно только когда очередь уже сохранена, иначе тест проверяет потерю записи при закрытии, а не поведение при запуске.
+  await expect.poll(async () => (await storedEngineQueueDetail(page)).queues, {
+    message: "очередь «Стоп» должна быть сохранена ДО закрытия исходной страницы", timeout: 5_000,
+  }).toBe(1);
   await page.close();
   await sleep(15_000); // дедлайн подхода прошёл, пока приложения не было
   await context.setOffline(false); // дальше браузер всё время «онлайн» — события online не будет
@@ -363,6 +404,350 @@ test("12. #306 F1: пауза офлайн, первая досылка упал
   expect(state.paused_at).not.toBeNull();
   expect(Math.abs(state.paused_remaining_ms / 1000 - frozen)).toBeLessThanOrEqual(1.5);
   expect(await storedEngineQueues(back)).toBe(0);
+});
+
+test("13. Аудит: на открытом экране досылка упала при «онлайн» — повтор сам, без «Повторить», без дублей", async ({ page }) => {
+  await openAppAs(page, 930_613);
+  await startPlanned(page, "Движок: интервал");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 6_000 });
+  const posted: string[][] = [];
+  let attempt = 0;
+  await page.route("**/api/v2/sessions/live/*/events", async (route) => {
+    posted.push((route.request().postDataJSON().events as { client_event_id: string }[]).map((e) => e.client_event_id));
+    if (attempt++ === 0) {
+      await route.abort("failed"); // временный сбой; браузер всё время онлайн — события online не будет
+    } else {
+      await route.continue();
+    }
+  });
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase(page)).toHaveText("Пошёл · пауза"); // проекция с очередью — сразу
+  await expect(page.getByTestId("engine-sync-error")).toBeVisible(); // сбой виден; «Повторить» не нажимаем
+  // Ни одного клика «Повторить»: очередь уходит сама после первой паузы повтора (1 с) и снимается.
+  await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByTestId("engine-sync-error")).toHaveCount(0);
+  expect(posted.length).toBe(2); // сбой + один повтор, без busy-loop и дублей
+  expect(posted[1]).toEqual(posted[0]); // те же client_event_id (сервер: duplicate — no-op)
+  const state = await serverEngineState(page, 930_613);
+  expect(state.paused_at).not.toBeNull();
+  await sleep(4_000);
+  expect(posted.length).toBe(2); // после успеха — тишина
+});
+
+/** Аудит #322: досылка «паузы» висит в сети, пользователь уходит (Back) через 0,4 с; `respond` решает, чем ответит
+ * удержанный запрос через 2,5 с, `after` — чем отвечать все следующие. Возвращает моменты всех POST событий
+ * (мс от ухода) и момент ответа на удержанный. */
+async function leaveWithSendInFlight(
+  page: Page, telegramId: number, respond: "503" | "ok", after: "ok" | "503",
+): Promise<{ posts: number[]; heldDoneAt: () => number | null }> {
+  await openAppAs(page, telegramId, { backButton: true });
+  await startPlanned(page, "Движок: подходы");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 8_000 });
+  const posts: number[] = [];
+  let leftAt = 0;
+  let heldDone: number | null = null;
+  let held = false;
+  await page.route("**/api/v2/sessions/live/*/events", async (route) => {
+    posts.push(leftAt ? Date.now() - leftAt : -1);
+    if (!held) {
+      held = true;
+      await sleep(2_500);
+      if (respond === "503") {
+        await route.fulfill({ status: 503, contentType: "application/json", body: "{\"detail\":\"down\"}" });
+      } else {
+        await route.continue();
+      }
+      heldDone = Date.now() - leftAt;
+      return;
+    }
+    if (after === "503") {
+      await route.fulfill({ status: 503, contentType: "application/json", body: "{\"detail\":\"down\"}" });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.getByTestId("pause-toggle").click();
+  await expect(phase(page)).toHaveText("Пошёл · пауза");
+  await sleep(400);
+  leftAt = Date.now();
+  await pressTelegramBackButton(page);
+  await expect(page.getByText("Живая тренировка")).toHaveCount(0);
+  return { posts, heldDoneAt: () => heldDone };
+}
+
+test("14. Аудит #322: запрос висел при уходе и упал (503) после — экран повтор не ставит; очередь досылает App", async ({ page }) => {
+  const { posts, heldDoneAt } = await leaveWithSendInFlight(page, 930_614, "503", "ok");
+  await expect.poll(heldDoneAt, { timeout: 5_000 }).not.toBeNull();
+  await sleep(4_000); // дольше первой паузы повтора экрана (1 с) и второй (2 с)
+  const failedAt = heldDoneAt() as number;
+  expect(posts.filter((t) => t > failedAt)).toEqual([]); // ни одной досылки от ушедшего экрана
+  expect(posts.filter((t) => t >= 0 && t < failedAt).length).toBeGreaterThanOrEqual(1); // досылка сверки App
+  expect((await serverEngineState(page, 930_614)).paused_at).not.toBeNull();
+  expect(await storedEngineQueues(page)).toBe(0);
+});
+
+test("15. Аудит #322: постоянный сбой после ухода — серия экрана прекращена, фоновая сверка App продолжается", async ({ page }) => {
+  const { posts } = await leaveWithSendInFlight(page, 930_615, "503", "503");
+  await sleep(20_000);
+  // Сверка App: 0, 1, 3, 7, 15 с от ухода (паузы 1, 2, 4, 8). Вторая независимая серия ушедшего экрана
+  // (3,1 / 5,1 / 9,1 / 17,1 с) дала бы 9 досылок за то же окно.
+  const inWindow = posts.filter((t) => t >= 0 && t <= 20_000);
+  expect(inWindow.length).toBeGreaterThanOrEqual(4); // фоновая сверка жива
+  expect(inWindow.length).toBeLessThanOrEqual(5);
+  await page.unroute("**/api/v2/sessions/live/*/events");
+  // Сеть вернулась: следующий повтор сверки (через 15 с) досылает очередь.
+  await expect.poll(async () => (await serverEngineState(page, 930_615)).paused_at, { timeout: 25_000 }).not.toBeNull();
+  await expect.poll(() => storedEngineQueues(page), { timeout: 5_000 }).toBe(0);
+});
+
+test("16. Аудит #322: ответ запроса, висевшего при уходе, пришёл позже — ушедший экран ничего не шлёт и очередь не трогает", async ({ page }) => {
+  const { posts, heldDoneAt } = await leaveWithSendInFlight(page, 930_616, "ok", "ok");
+  await expect.poll(heldDoneAt, { timeout: 5_000 }).not.toBeNull();
+  await sleep(3_000);
+  const doneAt = heldDoneAt() as number;
+  expect(posts.filter((t) => t > doneAt)).toEqual([]);
+  expect((await serverEngineState(page, 930_616)).paused_at).not.toBeNull(); // событие на сервере ровно одно
+  expect(await storedEngineQueues(page)).toBe(0); // поздний ответ не воскресил очередь, снятую сверкой App
+});
+
+/**
+ * Управляемый сбой IndexedDB на странице (как «Internal error opening backing store»): пока сбой включён, каждое
+ * indexedDB.open приложения завершается ошибкой, а транзакция на уже открытом соединении бросает UnknownError.
+ * Состояние — в sessionStorage, поэтому переживает перезагрузку; `from: "start"` — сбой с первой загрузки,
+ * `"first-active-read"` — включается в момент первого GET /sessions/live/active (сверка App уже прошла
+ * успешно, следом открывается экран сессии). Снимается `setIndexedDbReadFailure(page, false)`.
+ */
+async function failIndexedDbReads(page: Page, from: "start" | "first-active-read" = "start") {
+  await page.addInitScript((mode) => {
+    const KEY = "e2e:idb-read-fail";
+    const w = window as unknown as {
+      __idbReadFail?: boolean; __realIdbOpen?: IDBFactory["open"]; __realIdbTransaction?: IDBDatabase["transaction"];
+    };
+    const remembered = sessionStorage.getItem(KEY);
+    w.__idbReadFail = remembered !== null ? remembered === "1" : mode === "start";
+    const enable = () => {
+      w.__idbReadFail = true;
+      sessionStorage.setItem(KEY, "1");
+    };
+    if (mode === "first-active-read" && remembered === null) {
+      const realFetch = window.fetch.bind(window);
+      let armed = true;
+      window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+        if (armed && String(input instanceof Request ? input.url : input).includes("/sessions/live/active")) {
+          armed = false;
+          enable();
+        }
+        return realFetch(input, init);
+      }) as typeof fetch;
+    }
+    const realOpen = indexedDB.open.bind(indexedDB);
+    w.__realIdbOpen = realOpen;
+    indexedDB.open = ((...args: Parameters<IDBFactory["open"]>) => {
+      const request = realOpen(...args);
+      if (w.__idbReadFail) {
+        let onerror: ((event: Event) => void) | null = null;
+        Object.defineProperty(request, "onsuccess", { set() {}, get: () => null });
+        Object.defineProperty(request, "onerror", { set(handler) { onerror = handler; }, get: () => onerror });
+        request.addEventListener("success", () => {
+          request.result.close();
+          onerror?.(new Event("error"));
+        });
+      }
+      return request;
+    }) as IDBFactory["open"];
+    const realTransaction = IDBDatabase.prototype.transaction;
+    w.__realIdbTransaction = realTransaction;
+    IDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args: Parameters<IDBDatabase["transaction"]>) {
+      if (w.__idbReadFail) {
+        throw new DOMException("Internal error (injected)", "UnknownError");
+      }
+      return realTransaction.apply(this, args);
+    } as IDBDatabase["transaction"];
+  }, from);
+}
+
+async function setIndexedDbReadFailure(page: Page, failing: boolean) {
+  await page.evaluate((value) => {
+    (window as unknown as { __idbReadFail?: boolean }).__idbReadFail = value;
+    sessionStorage.setItem("e2e:idb-read-fail", value ? "1" : "0");
+  }, failing);
+}
+
+/** client_event_id событий, сохранённых в очередях движка (в обход инъекции сбоя). */
+async function storedEngineEventIds(page: Page): Promise<string[]> {
+  return page.evaluate(() => new Promise<string[]>((resolve, reject) => {
+    const w = window as unknown as { __realIdbOpen?: IDBFactory["open"]; __realIdbTransaction?: IDBDatabase["transaction"] };
+    const open = (w.__realIdbOpen ?? indexedDB.open.bind(indexedDB))("keyval-store");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("keyval")) {
+        resolve([]);
+        return;
+      }
+      const tx = (w.__realIdbTransaction ?? db.transaction).call(db, "keyval");
+      const store = tx.objectStore("keyval");
+      const keysRequest = store.getAllKeys();
+      const valuesRequest = store.getAll();
+      tx.oncomplete = () => {
+        const ids: string[] = [];
+        keysRequest.result.forEach((key, index) => {
+          if (String(key).startsWith("pullup:v2:live-engine-queue")) {
+            for (const event of (valuesRequest.result[index] as { events?: { client_event_id: string }[] }).events ?? []) {
+              ids.push(event.client_event_id);
+            }
+          }
+        });
+        resolve(ids);
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+  }));
+}
+
+test("17. IndexedDB не читается при запуске — ворота держатся, ошибка видна; хранилище вернулось — досылка, затем проекция", async ({ page, context }) => {
+  await stopOfflineAndCloseAfterDeadline(page, context, 930_617);
+  const back = await context.newPage();
+  const order = trackProjectionOrder(back);
+  await failIndexedDbReads(back);
+  const { apiFailures } = await openAppAs(back, 930_617);
+  await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 }); // приложение загрузилось
+  await expectStoredQueues(back, 1, "17: сразу после запуска со сбоем чтения"); // запись цела до любых повторов
+  await sleep(4_000); // несколько повторов чтения (1 + 2 с) — все неудачны
+  expect(order).toEqual([]); // ни досылки, ни GET /active: дедлайн не спроецирован
+  await expectStoredQueues(back, 1, "17: после повторных сбоев чтения"); // сохранённый «Стоп» не удалён
+  await expect(back.getByTestId("engine-store-error")).toBeVisible(); // причина ожидания видна
+  // (состояние сервера здесь не читаем: serverEngineState — тоже GET /active, он сам спроецировал бы дедлайн)
+  await setIndexedDbReadFailure(back, false); // хранилище снова читается; «Повторить» не нажимаем — повтор сам
+  await expect(back.getByTestId("engine-phase")).toHaveText(/Пошёл|Отдых/, { timeout: 20_000 });
+  await expect(back.getByTestId("engine-store-error")).toHaveCount(0);
+  expectNoProjectionBeforeDrain(order);
+  expect(order[0]).toBe("events:ok");
+  const state = await serverEngineState(back, 930_617);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(2);
+  expect(state.logs[0].value).toBeLessThanOrEqual(7); // измеренное, не цель 15
+  expect(await storedEngineQueues(back)).toBe(0);
+  expect(apiFailures).toEqual([]);
+});
+
+test("18. IndexedDB не читается, перезагрузка во время сбоя — очередь цела; «Повторить» после восстановления — одна досылка, затем проекция", async ({ page, context }) => {
+  await stopOfflineAndCloseAfterDeadline(page, context, 930_618);
+  const back = await context.newPage();
+  const order = trackProjectionOrder(back);
+  await failIndexedDbReads(back);
+  const { apiFailures } = await openAppAs(back, 930_618);
+  await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 });
+  await sleep(1_500);
+  expect(order).toEqual([]);
+  await back.reload(); // сбой переживает перезагрузку (init script ставит его заново)
+  await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 });
+  await sleep(3_500); // повторные сбои после перезагрузки
+  expect(order).toEqual([]);
+  await expectStoredQueues(back, 1, "18: после перезагрузки во время сбоя");
+  await expect(back.getByTestId("engine-store-error")).toBeVisible();
+  await setIndexedDbReadFailure(back, false);
+  await back.getByTestId("engine-store-retry").click(); // повтор сейчас, не дожидаясь паузы
+  await expect(back.getByTestId("engine-phase")).toHaveText(/Пошёл|Отдых/, { timeout: 10_000 });
+  expectNoProjectionBeforeDrain(order);
+  expect(order.filter((step) => step.startsWith("events:"))).toEqual(["events:ok"]); // одна досылка, без дублей
+  const state = await serverEngineState(back, 930_618);
+  expect(state.logs).toHaveLength(1);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(2);
+  expect(state.logs[0].value).toBeLessThanOrEqual(7);
+  expect(await storedEngineQueues(back)).toBe(0);
+  expect(apiFailures).toEqual([]);
+});
+
+/**
+ * Экран сессии открыт после УСПЕШНОЙ сверки App, но чтение его очереди упало. «Стоп» (~2 с) лежит в очереди:
+ * сверка App получила на него окончательный 4xx (очередь оставлена, ворота открыты), экран открыт до
+ * дедлайна подхода (15 с) — сервер ещё считает подход идущим.
+ */
+/** Только отказы 422 сверки App, затем одно GET /active — и ничего больше (ни досылки, ни проекции). */
+function expectRejectedThenActive(order: string[]) {
+  expect(order.length, JSON.stringify(order)).toBeGreaterThanOrEqual(2);
+  expect(order.slice(0, -1).every((step) => step === "events:422"), JSON.stringify(order)).toBe(true);
+  expect(order.at(-1), JSON.stringify(order)).toBe("active");
+}
+
+async function openScreenWithUnreadableQueue(page: Page, context: BrowserContext, telegramId: number) {
+  await openAppAs(page, telegramId);
+  await startPlanned(page, "Движок: стоп");
+  await expect(phase(page)).toHaveText("Пошёл", { timeout: 8_000 });
+  await context.setOffline(true);
+  await sleep(2_000);
+  await page.getByTestId("engine-stop").click(); // «Стоп» на ~2 с — только в очереди устройства
+  await expect(phase(page)).not.toHaveText("Пошёл");
+  const savedIds = await storedEngineEventIds(page);
+  expect(savedIds).toHaveLength(1);
+  await page.close(); // WebView выгружен до дедлайна подхода (15 с)
+  await context.setOffline(false);
+  const back = await context.newPage();
+  const order = trackProjectionOrder(back);
+  // Досылки сверки App (их может быть две: при запуске и при переходе в «ready») до открытия экрана — 422.
+  let screenOpening = false;
+  back.on("request", (request) => {
+    if (new URL(request.url()).pathname === API_ACTIVE) {
+      screenOpening = true;
+    }
+  });
+  await back.route("**/api/v2/sessions/live/*/events", async (route) => {
+    if (!screenOpening) {
+      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "injected" }) });
+    } else {
+      await route.continue();
+    }
+  });
+  await failIndexedDbReads(back, "first-active-read");
+  // запуск: сверка App — 422 → «не ждём», ворота открыты → GET /active → экран сессии, его чтение очереди падает
+  const { apiFailures } = await openAppAs(back, telegramId, { allowedApiStatuses: [422], backButton: true });
+  await expect.poll(() => order.includes("active"), { timeout: 10_000 }).toBe(true); // экран сессии открывается
+  await sleep(1_500); // дольше первой паузы повтора чтения (1 с)
+  expectRejectedThenActive(order); // экран не запросил свою проекцию (refresh) с непрочитанной очередью
+  await expect(back.getByTestId("engine-stop")).toHaveCount(0); // и не принимает новое действие
+  await expect(back.getByTestId("engine-queue-unreadable")).toBeVisible(); // причина показана
+  return { back, order, savedIds, apiFailures };
+}
+
+test("19. Экран: чтение очереди упало после успешной сверки — ввод заблокирован, «Стоп» не затёрт; восстановление — доставлен один раз", async ({ page, context }) => {
+  const { back, order, savedIds, apiFailures } = await openScreenWithUnreadableQueue(page, context, 930_619);
+  await expect(back.getByTestId("pause-toggle")).toHaveCount(0);
+  await sleep(3_500); // повторные сбои чтения (1 + 2 с)
+  expect(await storedEngineEventIds(back)).toEqual(savedIds); // сохранённый «Стоп» не перезаписан и не удалён
+  expectRejectedThenActive(order); // экран не запрашивал проекцию и ничего не слал
+  await setIndexedDbReadFailure(back, false); // «Повторить» не нажимаем — повтор чтения сам
+  await expect(phase(back)).toHaveText(/Отдых|Пошёл/, { timeout: 15_000 });
+  await expect(back.getByTestId("engine-queue-unreadable")).toHaveCount(0);
+  await expect.poll(() => storedEngineEventIds(back), { timeout: 10_000 }).toEqual([]);
+  expect(order.filter((step) => step.startsWith("events:") && step !== "events:422")).toEqual(["events:ok"]); // доставлен ровно один раз
+  const state = await serverEngineState(back, 930_619);
+  expect(state.logs).toHaveLength(1);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(1);
+  expect(state.logs[0].value).toBeLessThanOrEqual(6); // измеренное (~2 с), не цель 15 и не позднее действие
+  expect(apiFailures.filter((failure) => !failure.startsWith("422 "))).toEqual([]);
+});
+
+test("20. Экран: уход и перезагрузка во время сбоя чтения очереди — App держит ворота, «Повторить» после восстановления — доставлен один раз", async ({ page, context }) => {
+  const { back, order, savedIds, apiFailures } = await openScreenWithUnreadableQueue(page, context, 930_620);
+  await pressTelegramBackButton(back); // уход с экрана: очередь переходит к сверке App
+  await expect(back.getByTestId("engine-store-error")).toBeVisible({ timeout: 10_000 }); // App тоже не читает — ворота держит
+  await back.reload(); // перезагрузка во время сбоя
+  await expect(back.getByTestId("engine-store-error")).toBeVisible({ timeout: 10_000 });
+  await sleep(2_000);
+  expectRejectedThenActive(order); // ни досылки, ни новой проекции
+  expect(await storedEngineEventIds(back)).toEqual(savedIds);
+  await setIndexedDbReadFailure(back, false);
+  await back.getByTestId("engine-store-retry").click();
+  await expect(phase(back)).toHaveText(/Отдых|Пошёл/, { timeout: 15_000 }); // App дослал и возобновил сессию
+  await expect(back.getByTestId("engine-store-error")).toHaveCount(0);
+  expect(order.filter((step) => step.startsWith("events:") && step !== "events:422")).toEqual(["events:ok"]);
+  expect(order.indexOf("events:ok")).toBeLessThan(order.lastIndexOf("active")); // досылка раньше новой проекции
+  await expect.poll(() => storedEngineEventIds(back), { timeout: 10_000 }).toEqual([]);
+  const state = await serverEngineState(back, 930_620);
+  expect(state.logs).toHaveLength(1);
+  expect(state.logs[0].value).toBeGreaterThanOrEqual(1);
+  expect(state.logs[0].value).toBeLessThanOrEqual(6);
+  expect(apiFailures.filter((failure) => !failure.startsWith("422 "))).toEqual([]);
 });
 
 test.describe("320 px", () => {

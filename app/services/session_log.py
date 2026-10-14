@@ -18,7 +18,13 @@ from app.db.repositories.training_sessions import (
 from app.domain.constants import EquipmentType
 from app.domain.multi_program import MetricType, SessionSource
 from app.domain.progression_strategy import ProgressionContext, StepProgressionStrategy
+from app.domain.pullups_v5 import is_v5_state
 from app.domain.session import BlockAssignment, BlockLog, WorkoutRecord
+
+# issue #305: инклюзия программы V5.6 (progression_state.program_version = "pullups_v5_6") прогрессирует
+# ТОЛЬКО от рецепта, выданного живым стартом и записанного в снимок сессии (app.services.course_v5).
+# Целиковая запись POST /sessions такого рецепта не несёт — факт пишется, прогрессия не применяется.
+V5_REQUIRES_PRESCRIBED_SESSION = "v5_requires_prescribed_session"
 
 # Роли блока А/Б для StepProgressionStrategy — та же конвенция snapshot
 # ["exercises"], которую строит ProgramInclusionService/
@@ -100,7 +106,11 @@ def _block_assignment(log: BlockLog, block_state: dict) -> BlockAssignment:
 def _apply_step_progression(
     progression_state: dict, *, performed_at: datetime, block_a_sets: list[SetLogInput], block_b_sets: list[SetLogInput],
 ) -> tuple[dict, SessionProgressionResult]:
-    """Единственное место, где новый код волны 3 касается пересчёта
+    """УСТАРЕВШАЯ версия программы (``pullups_legacy_step``, issue #305): инклюзии, созданные до V5.6,
+    исполняются и прогрессируют прежним кодом бот-эпохи (рабочие подходы + подход на максимум,
+    StepProgressionStrategy) — V5.6 их не переписывает. Новые инклюзии — app.services.course_v5.
+
+    Единственное место, где новый код волны 3 касается пересчёта
     прогрессии — целиком через StepProgressionStrategy.apply() (волна 0,
     issue #158), не второй путь расчёта (issue #165, план п. "используй
     ProgressionStrategy... не пиши второй, отдельный путь").
@@ -259,6 +269,8 @@ class TrainingSessionLogService:
             skipped_reason = "no_program_inclusion"
         elif inclusion.snapshot.get("progression_strategy_type") != "step":
             skipped_reason = "not_step_strategy"
+        elif is_v5_state(inclusion.progression_state):
+            skipped_reason = V5_REQUIRES_PRESCRIBED_SESSION
         else:
             matched = _match_step_blocks(inclusion, blocks)
             if matched is None:

@@ -168,7 +168,9 @@ async def test_redrained_completing_queue_never_duplicates_sets_completion_or_cr
     t = _state(body)["started_at"]
     state = _state(body)
     plan = body["engine"]["plan"]
-    for _ in range(4):  # офлайн: подходы считаются той же функцией переходов, что у клиента
+    total = sum(len(b["sets"]) for b in plan["blocks"])  # с #305 legacy-курс — 3 + MAX и 4 + MAX
+    assert total == 9
+    for _ in range(total):  # офлайн: подходы считаются той же функцией переходов, что у клиента
         state, _, _ = engine.project(plan, state, t)
         if state["phase"] != "WORK":
             t = state["phase_deadline_at"]
@@ -183,18 +185,18 @@ async def test_redrained_completing_queue_never_duplicates_sets_completion_or_cr
     assert state["status"] == "completed"
     clock.ms = t + 60_000
     first = await _post_events(session, user, body["id"], *queue)
-    assert [r["outcome"] for r in first["event_results"]] == ["applied"] * 4 and first[
+    assert [r["outcome"] for r in first["event_results"]] == ["applied"] * total and first[
         "status"
     ] == "completed"
     assert first["progression_result"] is not None
     second = await _post_events(session, user, body["id"], *queue)
-    assert [r["outcome"] for r in second["event_results"]] == ["duplicate"] * 4 and second[
+    assert [r["outcome"] for r in second["event_results"]] == ["duplicate"] * total and second[
         "progression_result"
     ] is None
     count = await session.scalar(
         select(func.count(SetLog.id)).where(SetLog.session_id == body["id"])
     )
-    assert count == 4
+    assert count == total
     repo = TrainingSessionRepository(session)
     detail = await repo.get_for_user(body["id"], user.id)
     assert len(await repo.credits_for_plan_items([detail.plan_item_id])) == 1

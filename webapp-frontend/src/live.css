@@ -370,6 +370,26 @@
   gap: 6px;
   margin: 0 0 var(--vp-sp-3);
 }
+/* #305 V5.6 §11: ответы о технике/отдыхе по блоку (да / нет / не знаю). */
+.live-checks {
+  display: grid;
+  gap: var(--vp-sp-3);
+  margin: 0 0 var(--vp-sp-3);
+}
+.live-check-block {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.live-check-row .live-chips {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--vp-sp-2);
+}
+.live-check-label {
+  display: block;
+  margin-bottom: 4px;
+}
 .live-chip {
   display: flex;
   flex-direction: column;

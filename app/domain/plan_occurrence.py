@@ -57,6 +57,8 @@ class OccurrenceState(StrEnum):
     INFEASIBLE = "infeasible"
     AVAILABLE = "available"
     TOO_EARLY = "too_early"
+    # issue #305: main-занятие инклюзии в статусе awaiting_assessment («Сначала тест на максимум»).
+    AWAITING_ASSESSMENT = "awaiting_assessment"
 
 
 class InclusionStatus(StrEnum):
@@ -64,6 +66,9 @@ class InclusionStatus(StrEnum):
     PAUSED = "paused"
     COMPLETED = "completed"
     REMOVED = "removed"
+    # issue #305 (PROGRAM_PLAN_V2 §3): замер обязателен, валидного нет и нет истории основных тренировок —
+    # main-слот не стартует, пока замер не записан. Пользователь с историей сюда никогда не попадает.
+    AWAITING_ASSESSMENT = "awaiting_assessment"
 
 
 class CustomPlanRepeat(StrEnum):

@@ -29,6 +29,10 @@ class DashboardBlockResponse(BaseModel):
     target: int
     work_sets: int
     equipment: DashboardEquipmentResponse
+    # issue #305 (V5.6): готовая запись плана блока («19/18/18/18+», «15×5», «5/5/5/5/5–8», «5×5 +12.5 кг»)
+    # и роль блока. У устаревшей версии — None (план = work_sets × target).
+    display: str | None = None
+    block_role: str | None = None
 
 
 class DashboardStatusResponse(BaseModel):
@@ -57,7 +61,10 @@ class DashboardStatusResponse(BaseModel):
     пробел). Dashboard всегда показывает блок Б как обычную тренировку,
     фронтенд поясняет это статичной сноской, не пытается угадать."""
 
-    status: Literal["not_migrated", "too_early", "gap_retest_required", "multiple_active_inclusions", "ready"]
+    status: Literal[
+        "not_migrated", "too_early", "gap_retest_required", "multiple_active_inclusions", "ready",
+        "course_setup_required",
+    ]
     # issue #304 (K1): при too_early — с какой даты доступна основная тренировка.
     available_from: date | None = None
     program_name: str | None = None
@@ -65,3 +72,14 @@ class DashboardStatusResponse(BaseModel):
     work_sets_growth_reason: Literal["stall", "ceiling"] | None = None
     block_a: DashboardBlockResponse | None = None
     block_b: DashboardBlockResponse | None = None
+    # issue #305 (V5.6): block_a — объёмный блок СЛЕДУЮЩЕГО занятия (A или B), block_b — силовой; course —
+    # полный рецепт; course_setup_required — каких входов не хватает (course_pending_inputs).
+    program_version: str | None = None
+    program_inclusion_id: int | None = None
+    course: dict | None = None
+    course_pending_inputs: list[str] | None = None
+    # Смены помощи, ждущие подтверждения полной записи резины: [{block, intent, proposed}].
+    course_assistance_pending: list[dict] | None = None
+    # §9: новые прибавки на паузе до проверки восстановления — старт НЕ блокирует (не pending input);
+    # фронт показывает подтверждение (PUT …/course/inputs clear_recovery_check).
+    course_recovery_check_required: bool | None = None

@@ -26,6 +26,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   too_early: "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл.",
   gap_retest_required: "Был долгий перерыв — нужен повторный замер (в старой схеме доступно в боте/Тренировке).",
   multiple_active_inclusions: "У аккаунта больше одного активного курса — Dashboard пока не умеет их различать.",
+  course_setup_required: "Для следующей тренировки программы не хватает данных (максимум, резина, 1RM или шаг веса).",
 };
 
 const WORK_SETS_GROWTH_NOTICES: Record<string, string> = {
@@ -35,7 +36,7 @@ const WORK_SETS_GROWTH_NOTICES: Record<string, string> = {
 
 function BlockCard({ letter, block }: { letter: "A" | "Б"; block: DashboardBlockResponse }) {
   return (
-    <Section className="block-section" header={`Блок ${letter} — цель ${block.target}`}>
+    <Section className="block-section" header={block.display ? `Блок ${letter} — ${block.display}` : `Блок ${letter} — цель ${block.target}`}>
       <div className="block-header">
         <div className="block-badge">{letter}</div>
         <p className="block-subtitle">

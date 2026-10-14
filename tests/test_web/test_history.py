@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.db.repositories.baselines import BaselineRepository
@@ -15,6 +16,7 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
 from app.domain.session import BlockLog
+from app.services.training_analytics import resolve_timezone
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.main import app
@@ -76,15 +78,27 @@ async def test_history_for_user_without_workouts(session):
     assert body == {"items": [], "has_more": False}
 
 
-async def test_history_returns_newest_first_with_target_only_on_latest(session):
+# Контракт (#308 A1): дата карточки — ЛОКАЛЬНЫЙ день пользователя (users.timezone, по умолчанию Europe/Moscow), не UTC-дата.
+# Время фиксировано, а не «now − N дней»: иначе результат зависит от часа запуска (21:00–24:00 UTC в Москве уже следующий день).
+# (timezone пользователя, момент новейшей тренировки UTC, ожидаемая локальная дата)
+_LOCAL_DAY_CASES = [
+    pytest.param("Europe/Moscow", datetime(2026, 10, 12, 20, 59, tzinfo=UTC), "2026-10-12", id="moscow-last-minute-of-the-day"),
+    pytest.param("Europe/Moscow", datetime(2026, 10, 12, 21, 0, tzinfo=UTC), "2026-10-13", id="moscow-first-minute-of-next-day"),
+    pytest.param(None, datetime(2026, 10, 12, 22, 30, tzinfo=UTC), "2026-10-13", id="default-timezone-is-moscow"),
+    pytest.param("UTC", datetime(2026, 10, 12, 22, 30, tzinfo=UTC), "2026-10-12", id="utc-user-keeps-the-utc-day"),
+    pytest.param("Asia/Vladivostok", datetime(2026, 10, 12, 14, 30, tzinfo=UTC), "2026-10-13", id="east-of-moscow"),
+]
+
+
+@pytest.mark.parametrize(("timezone", "newer", "expected_newer_date"), _LOCAL_DAY_CASES)
+async def test_history_returns_newest_first_with_target_only_on_latest(session, timezone, newer, expected_newer_date):
     user = await UserRepository(session).create(telegram_id=52003, username="active")
-    baseline = await BaselineRepository(session).create(
-        user_id=user.id, performed_at=datetime.now(UTC) - timedelta(days=10), reps=10,
-    )
+    user.timezone = timezone
+    await session.flush()
+    baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=newer - timedelta(days=10), reps=10)
     workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
 
-    older = datetime.now(UTC) - timedelta(days=5)
-    newer = datetime.now(UTC) - timedelta(days=1)
+    older = newer - timedelta(days=4)
     await _record_workout(session, user.id, workout_set.id, older, working_a=11)
     await _record_workout(session, user.id, workout_set.id, newer, working_a=12)
 
@@ -93,10 +107,11 @@ async def test_history_returns_newest_first_with_target_only_on_latest(session):
     assert body["has_more"] is False
     assert len(body["items"]) == 2
     latest, previous = body["items"]
-    assert latest["performed_at"] == newer.date().isoformat()
+    tz = resolve_timezone(timezone)
+    assert latest["performed_at"] == expected_newer_date == newer.astimezone(tz).date().isoformat()
     assert latest["target_a"] is not None
     assert latest["target_b"] is not None
-    assert previous["performed_at"] == older.date().isoformat()
+    assert previous["performed_at"] == older.astimezone(tz).date().isoformat()
     assert previous["target_a"] is None
     assert previous["target_b"] is None
     assert latest["result_a"] == "12, 12, 12, максимум 13"

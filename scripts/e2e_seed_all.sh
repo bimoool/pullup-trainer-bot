@@ -17,13 +17,23 @@ seed plan_week_ready 900013
 seed plan_week_grouping 900014
 seed plan_week_add_exercise 900015
 seed plan_week_start_session 900016
+# #305 V5.6: подтверждения техники/отдыха в движке (CONFIRM) и тест 1RM в приложении.
+seed plan_week_start_session 930501
+seed plan_week_start_session 930503
+# аудит #322: потерянный ответ завершения (finish_early / confirm_blocks) — Summary без выдуманного итога.
+seed plan_week_start_session 930504
+seed plan_week_start_session 930505
+seed v5_one_rep_max 930502
+# ui-clarity (fix-wave1/ui-clarity.spec.ts): СВОЙ профиль «курс без 1RM» — только чтение (пред-экран, без сохранения);
+# 930502 принадлежит course-v5-engine.spec.ts, который проходит тест 1RM и меняет его состояние.
+seed v5_one_rep_max 930701
 seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed plan_week_stepper 990001
 seed plan_week_stepper 990002
 seed builder_workouts 910001
 # issue #306: Live Engine v2 (автопереходы, пауза, интервал) — по пользователю на сценарий.
-for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612; do seed live_engine "$id"; done
+for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612 930613 930614 930615 930616 930617 930618 930619 930620; do seed live_engine "$id"; done
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002

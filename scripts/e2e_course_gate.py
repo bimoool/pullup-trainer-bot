@@ -1,6 +1,10 @@
 """Harness for webapp-frontend/e2e/scenarios/fix-wave1/expired-course-gate.spec.ts (issue #300).
 
 Subcommands (DATABASE_URL points at the journey DB):
+  seed-paid-course      create the PAID test course «Платный тестовый курс» (programs.access_level = premium, one
+                        real library exercise «Отжимания»; idempotent find-or-create by name). The expired-user
+                        gate is checked against THIS course: «Подтягивания» is free forever (owner rule 2026-10-07,
+                        app/domain/program_access.py), so it can never be the gated course.
   seed-catalog          create the «Подтягивания» course via backfill_multi_program.seed_catalog (environment setup only;
                         no enrolment loop). TODO(director): drop once the course ships with migrations (worker A).
   expire <telegram_id>  TEST HARNESS INJECTION: move subscription_expires_at one day into the past and LEAVE the cached
@@ -26,6 +30,65 @@ async def _seed_catalog() -> None:
         await seed_catalog(session)
         await session.commit()
     print("catalog seeded")
+
+
+PAID_COURSE_NAME = "Платный тестовый курс"
+PAID_COURSE_CATEGORY = "Тестовый курс"
+
+
+async def _seed_paid_course() -> None:
+    from sqlalchemy import select
+
+    from app.db.base import async_session_factory
+    from app.db.models_program import Exercise, Program, ProgramItem
+    from app.domain.multi_program import ProgramStructureType, WeekPhase
+    from app.domain.program_access import ProgramAccessLevel
+
+    async with async_session_factory() as session:
+        existing = (
+            (await session.execute(select(Program).where(Program.name == PAID_COURSE_NAME)))
+            .scalars()
+            .first()
+        )
+        if existing is not None:
+            assert existing.access_level == ProgramAccessLevel.PREMIUM.value
+            print(f"paid course exists: program_id={existing.id}")
+            return
+        exercise = (
+            (
+                await session.execute(
+                    select(Exercise).where(
+                        Exercise.name == "Отжимания", Exercise.owner_user_id.is_(None)
+                    ),
+                )
+            )
+            .scalars()
+            .first()
+        )
+        assert exercise is not None, (
+            "system library exercise «Отжимания» missing — run alembic upgrade head"
+        )
+        program = Program(
+            name=PAID_COURSE_NAME,
+            goal="Проверка платного доступа (E2E)",
+            structure_type=ProgramStructureType.RECURRING,
+            category=PAID_COURSE_CATEGORY,
+            config={},
+            access_level=ProgramAccessLevel.PREMIUM.value,
+        )
+        session.add(program)
+        await session.flush()
+        session.add(
+            ProgramItem(
+                program_id=program.id,
+                week_phase=WeekPhase.BASE,
+                exercise_id=exercise.id,
+                count_per_week=3,
+                day_of_week=None,
+            )
+        )
+        await session.commit()
+        print(f"paid course created: program_id={program.id}")
 
 
 async def _expire(telegram_id: int) -> None:
@@ -72,7 +135,9 @@ async def _grant(telegram_id: int, days: int) -> None:
 
 if __name__ == "__main__":
     command = sys.argv[1]
-    if command == "seed-catalog":
+    if command == "seed-paid-course":
+        asyncio.run(_seed_paid_course())
+    elif command == "seed-catalog":
         asyncio.run(_seed_catalog())
     elif command == "expire":
         asyncio.run(_expire(int(sys.argv[2])))

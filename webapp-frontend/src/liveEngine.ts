@@ -12,7 +12,9 @@
 
 export const ENGINE_VERSION = 2;
 
-export type Phase = "PREP" | "WORK" | "RESULT" | "REST" | "COMPLETE";
+export type Phase = "PREP" | "WORK" | "RESULT" | "REST" | "CONFIRM" | "COMPLETE";
+/** #305: ответ подтверждения техники/отдыха; null — неизвестно (никогда не «валидно»). */
+export type CheckAnswer = "valid" | "invalid" | null;
 export type EngineStatus = "active" | "completed" | "cancelled";
 export type RestKind = "set" | "block" | "round" | null;
 
@@ -22,6 +24,10 @@ export interface PlanSet {
   kind: SetKind;
   target: number | null;
   rest_after_seconds: number | null;
+  /** #305 V5.6 (только отображение, переходы не меняет): маркер, минимальная цель AMRAP p4, потолок. */
+  marker?: string | null;
+  min_target?: number | null;
+  cap?: number | null;
 }
 
 export interface PlanInterval {
@@ -38,6 +44,10 @@ export interface PlanBlock {
   extra_sets_allowed?: boolean;
   sets?: PlanSet[];
   interval?: PlanInterval;
+  /** #305 V5.6: блок ждёт подтверждения техники/отдыха перед завершением тренировки (фаза CONFIRM). */
+  confirm_checks?: boolean;
+  /** #305 V5.6 §6: результат ≤ порога (или техника нарушена) завершает блок. */
+  stop_at_or_below?: number | null;
 }
 
 export interface EnginePlan {
@@ -83,6 +93,10 @@ export interface EngineState {
   last_at: number;
   block_started_at: number | null;
   logs: EngineLog[];
+  /** Только у плана с подтверждениями/стоп-правилом (#305). */
+  checks?: ({ technique: CheckAnswer; rest: CheckAnswer } | null)[];
+  rest_paused?: number[];
+  stopped_blocks?: { block_index: number; reason: "low_reps" | "technique" }[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,6 +139,10 @@ export function validatePlan(plan: EnginePlan): void {
     if (restBlock !== null && restBlock !== undefined && (!isInt(restBlock) || restBlock < 0)) {
       throw new EngineError(`blocks[${index}].rest_after_block_seconds`);
     }
+    const stop = block.stop_at_or_below;
+    if (stop !== null && stop !== undefined && (!isInt(stop) || stop < 0 || block.kind !== "sets")) {
+      throw new EngineError(`blocks[${index}].stop_at_or_below`);
+    }
     if (block.kind === "sets") {
       const sets = block.sets;
       if (!Array.isArray(sets) || sets.length === 0) {
@@ -163,6 +181,16 @@ const blockOf = (plan: EnginePlan, blockIndex: number): PlanBlock => plan.blocks
 const setSpec = (plan: EnginePlan, blockIndex: number, setIndex: number): PlanSet =>
   (plan.blocks[blockIndex].sets as PlanSet[])[setIndex];
 const isIntervalBlock = (plan: EnginePlan, blockIndex: number): boolean => blockOf(plan, blockIndex).kind === "interval";
+
+const confirms = (plan: EnginePlan, blockIndex: number): boolean => Boolean(blockOf(plan, blockIndex).confirm_checks);
+
+const stopAt = (plan: EnginePlan, blockIndex: number): number | null => {
+  const value = blockOf(plan, blockIndex).stop_at_or_below;
+  return value === undefined ? null : value;
+};
+
+const hasCourseRules = (plan: EnginePlan): boolean =>
+  plan.blocks.some((block) => Boolean(block.confirm_checks) || (block.stop_at_or_below !== undefined && block.stop_at_or_below !== null));
 
 function prescribedCount(plan: EnginePlan, blockIndex: number): number {
   const block = blockOf(plan, blockIndex);
@@ -239,6 +267,11 @@ export function start(plan: EnginePlan, at: number): [EngineState, Effect[]] {
     block_started_at: null,
     logs: [],
   };
+  if (hasCourseRules(plan)) {
+    state.checks = plan.blocks.map(() => null);
+    state.rest_paused = [];
+    state.stopped_blocks = [];
+  }
   const effects: Effect[] = [];
   enterBlock(plan, state, 0, at, effects);
   return [state, effects];
@@ -363,7 +396,66 @@ function afterBlock(plan: EnginePlan, state: EngineState, at: number, effects: E
     }
     return;
   }
-  finish(state, at, effects, false);
+  if (unansweredChecks(plan, state)) {
+    enterConfirm(state, at);
+    return;
+  }
+  finish(state, at, effects, !allPrescribedLogged(plan, state));
+}
+
+function unansweredChecks(plan: EnginePlan, state: EngineState): boolean {
+  const checks = state.checks;
+  if (checks === undefined) {
+    return false;
+  }
+  return plan.blocks.some(
+    (_, index) => confirms(plan, index) && checks[index] === null && blockHasLogs(state, index),
+  );
+}
+
+function enterConfirm(state: EngineState, at: number): void {
+  accrue(state, at);
+  state.phase = "CONFIRM";
+  state.rest_kind = null;
+  state.phase_started_at = at;
+  state.phase_duration_ms = null;
+  state.phase_deadline_at = null;
+  state.paused_at = null;
+  state.paused_remaining_ms = null;
+  state.phase_active_ms = 0;
+  state.pending_value = null;
+  state.active_since = null;
+  state.phase_seq += 1;
+}
+
+const CHECK_ANSWERS: unknown[] = ["valid", "invalid", null];
+
+function applyChecks(plan: EnginePlan, state: EngineState, raw: unknown): void {
+  const checks = state.checks;
+  if (checks === undefined || !Array.isArray(raw)) {
+    return;
+  }
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const record = entry as Payload;
+    const index = record.block_index;
+    if (!isInt(index) || index < 0 || index >= plan.blocks.length) {
+      continue;
+    }
+    const technique = opt(record, "technique");
+    const rest = opt(record, "rest");
+    if (!confirms(plan, index) || !CHECK_ANSWERS.includes(technique) || !CHECK_ANSWERS.includes(rest)) {
+      continue;
+    }
+    checks[index] = { technique: technique as CheckAnswer, rest: rest as CheckAnswer };
+  }
+}
+
+function finishFromConfirm(plan: EnginePlan, state: EngineState, at: number, effects: Effect[]): void {
+  state.last_at = Math.max(state.last_at, at);
+  finish(state, state.phase_started_at, effects, !allPrescribedLogged(plan, state));
 }
 
 function finish(state: EngineState, at: number, effects: Effect[], abandoned: boolean): void {
@@ -386,7 +478,11 @@ function finish(state: EngineState, at: number, effects: Effect[], abandoned: bo
 }
 
 function allPrescribedLogged(plan: EnginePlan, state: EngineState): boolean {
+  const stopped = new Set((state.stopped_blocks ?? []).map((entry) => entry.block_index));
   for (let blockIndex = 0; blockIndex < plan.blocks.length; blockIndex += 1) {
+    if (stopped.has(blockIndex)) {
+      continue;
+    }
     const logged = new Set(
       state.logs
         .filter((log) => log.block_index === blockIndex && !log.is_extra)
@@ -524,8 +620,14 @@ export function advance(plan: EnginePlan, state: EngineState, event: EngineEvent
   }
 
   if (kind === "pause") {
-    if (!seqMatches(next, payload) || next.paused_at !== null || next.phase === "COMPLETE") {
+    if (!seqMatches(next, payload) || next.paused_at !== null || next.phase === "COMPLETE" || next.phase === "CONFIRM") {
       return [state, []];
+    }
+    if (next.phase === "REST" && next.rest_kind === "set" && next.rest_paused !== undefined) {
+      const blockIndex = next.cursor.block_index;
+      if (!next.rest_paused.includes(blockIndex)) {
+        next.rest_paused = [...next.rest_paused, blockIndex].sort((a, b) => a - b);
+      }
     }
     accrue(next, at);
     next.active_since = null;
@@ -578,6 +680,11 @@ export function advance(plan: EnginePlan, state: EngineState, event: EngineEvent
   }
 
   if (kind === "finish_early") {
+    applyChecks(plan, next, payload.checks);
+    if (next.phase === "CONFIRM") {
+      finishFromConfirm(plan, next, at, effects);
+      return [next, effects];
+    }
     if (!next.logs.some((log) => !log.is_extra)) {
       cancel(next, at, effects, "zero_work");
       return [next, effects];
@@ -604,6 +711,18 @@ export function advance(plan: EnginePlan, state: EngineState, event: EngineEvent
 
   if (kind === "correct_previous") {
     return correctPrevious(state, next, payload, at);
+  }
+
+  if (kind === "confirm_blocks") {
+    applyChecks(plan, next, payload.checks);
+    if (JSON.stringify(next.checks ?? null) === JSON.stringify(state.checks ?? null)) {
+      return [state, []];
+    }
+    next.last_at = Math.max(next.last_at, at);
+    if (next.phase === "CONFIRM" && !unansweredChecks(plan, next)) {
+      finishFromConfirm(plan, next, at, effects);
+    }
+    return [next, effects];
   }
 
   return [state, []];
@@ -663,6 +782,13 @@ function submitResult(
   accrue(next, at);
   const effects: Effect[] = [];
   appendLog(next, effects, blockIndex, cursor.set_index, null, value, false, at, effort, note);
+  const threshold = stopAt(plan, blockIndex);
+  if (threshold !== null && (value <= threshold || payload.technique === "invalid")) {
+    const reason = payload.technique === "invalid" ? "technique" : "low_reps";
+    next.stopped_blocks = [...(next.stopped_blocks ?? []), { block_index: blockIndex, reason }];
+    afterBlock(plan, next, at, effects);
+    return [next, effects];
+  }
   afterSet(plan, next, at, effects);
   return [next, effects];
 }

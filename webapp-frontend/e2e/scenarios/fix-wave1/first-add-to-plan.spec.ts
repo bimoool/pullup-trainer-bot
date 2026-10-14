@@ -21,16 +21,24 @@ const TELEGRAM_ID = 7_500_000 + (Date.now() % 400_000);
 const WORKOUT = "Моя первая тренировка";
 const EXERCISE = "Подтягивания тест";
 
+// Строка выбранного дня в списке недели помечена днём (`Начать: <название>, среда`); блок «Сегодня» (виден, только если
+// выбранный день — сегодня по Москве) подписан БЕЗ дня. Тест выбирает строку недели по подписи, а не по порядку.
+const DAY_LABEL = "среда";
+const weekRow = (page: Page, action: "Начать" | "Действия") =>
+  page.getByRole("button", { name: `${action}: ${WORKOUT}, ${DAY_LABEL}`, exact: true });
+const todayIsChosenDayInMoscow = () =>
+  new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Moscow", weekday: "long" }).format(new Date()) === "Wednesday";
+
 const nav = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 
 async function onboard(page: Page) {
-  await page.getByLabel("Число подтягиваний").fill("8");
+  await page.getByLabel("Сколько подтягиваний вышло?").fill("8");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да" }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByLabel("Вес, кг").fill("78");
+  await page.getByLabel("Твой вес в кг?").fill("78");
   await page.getByRole("button", { name: "Далее" }).click();
-  await page.getByLabel("Рост, см").fill("180");
+  await page.getByLabel("Рост в см?").fill("180");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();
@@ -70,7 +78,12 @@ test("первое «Добавить в план» нового пользов�
     await expect(page.getByTestId("plan-week-progress")).toContainText("0 из 1");
     await expect(page.getByText("На эту неделю пока ничего не запланировано.")).toHaveCount(0);
     await expect(page.getByText("СРЕДА")).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`^Начать: ${WORKOUT}`) })).toBeVisible();
+    await expect(weekRow(page, "Начать")).toBeVisible();
+    if (todayIsChosenDayInMoscow()) {
+      // выбранный день — сегодня: та же тренировка ещё раз в блоке «Сегодня» (своя подпись, без дня) — ровно одна
+      await expect(page.getByTestId("plans-today-row")).toHaveCount(1);
+      await expect(page.getByTestId("plans-today").getByRole("button", { name: `Начать: ${WORKOUT}`, exact: true })).toBeVisible();
+    }
   };
   await nav(page, "Планы").click();
   await assertRowInCurrentWeek();
@@ -79,12 +92,12 @@ test("первое «Добавить в план» нового пользов�
   await assertRowInCurrentWeek();
 
   // Строкой можно управлять: «Действия» открывает лист с «Убрать из плана» (не нажимаем — дальше стартуем).
-  await page.getByRole("button", { name: new RegExp(`^Действия: ${WORKOUT}`) }).click();
+  await weekRow(page, "Действия").click();
   await expect(page.getByRole("button", { name: "Убрать из плана" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Старт из «Планов» → Live → завершение.
-  await page.getByRole("button", { name: new RegExp(`^Начать: ${WORKOUT}`) }).click();
+  await weekRow(page, "Начать").click();
   await page.getByRole("button", { name: "Начать" }).click();
   // issue #306 (Live Engine v2): без «Готов»/«Пропустить отдых»; после последнего подхода — досрочное завершение с оценкой.
   await playSetsV2(page, ["9"]);

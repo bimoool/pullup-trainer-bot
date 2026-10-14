@@ -149,6 +149,9 @@ class SessionBlockDetail:
     result: dict | None = None
     started_at: datetime | None = None
     block_key: str | None = None
+    # issue #305: подтверждения пользователя (None — неизвестно, не «валидно»).
+    technique_valid: bool | None = None
+    rest_within_limit: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -502,8 +505,20 @@ class TrainingSessionRepository:
             log.set_index: log for log in existing_logs if log.set_index is not None
         }
         count_by_block_id: dict[int, int] = {}
+        planned_count_by_block_id: dict[int, int] = {}
         for log in existing_logs:
             count_by_block_id[log.session_block_id] = count_by_block_id.get(log.session_block_id, 0) + 1
+            if not log.is_extra:
+                planned_count_by_block_id[log.session_block_id] = planned_count_by_block_id.get(log.session_block_id, 0) + 1
+        # issue #305 (TRAINING_SESSION R2, D3): is_max_set — свойство ЦЕЛИ подхода. Новый плановый подход
+        # блока (не «+ Ещё подход») наследует его у цели с тем же порядковым номером среди плановых
+        # подходов — раньше здесь стоял жёсткий False, и результат подхода на максимум терялся для прогрессии.
+        targets_result = await self._session.execute(
+            select(SetTarget).where(SetTarget.session_block_id.in_([block.id for block in blocks])),
+        )
+        max_target_numbers = {
+            (target.session_block_id, target.set_number) for target in targets_result.scalars() if target.is_max_set
+        }
 
         for entry in unique_entries:
             block = self._resolve_batch_block(blocks, entry, current_block_index)
@@ -525,9 +540,13 @@ class TrainingSessionRepository:
                 continue
 
             count_by_block_id[block.id] = count_by_block_id.get(block.id, 0) + 1
+            is_max_set = False
+            if not entry.is_extra:
+                planned_count_by_block_id[block.id] = planned_count_by_block_id.get(block.id, 0) + 1
+                is_max_set = (block.id, planned_count_by_block_id[block.id]) in max_target_numbers
             insert_stmt = pg_insert(SetLog).values(
                 session_block_id=block.id, session_id=session_id, set_index=entry.set_index,
-                set_number=count_by_block_id[block.id], is_max_set=False, metric_type=metric_type,
+                set_number=count_by_block_id[block.id], is_max_set=is_max_set, metric_type=metric_type,
                 value=entry.value, unit=unit, effort=entry.effort, note=entry.note, is_extra=entry.is_extra,
             )
             await self._session.execute(
@@ -768,6 +787,19 @@ class TrainingSessionRepository:
         block.started_at = started_at
         await self._session.flush()
 
+    async def save_block_checks(
+        self, session_id: int, checks: dict[int, tuple[bool | None, bool | None]],
+    ) -> None:
+        """issue #305 (V5.6): подтверждения пользователя по блокам сессии — {order_index: (техника по
+        стандарту, отдых в пределах)}. None оставляет поле неизвестным (не «валидным»)."""
+        blocks = (await self._session.execute(
+            select(SessionBlock).where(SessionBlock.session_id == session_id),
+        )).scalars().all()
+        for block in blocks:
+            if block.order_index in checks:
+                block.technique_valid, block.rest_within_limit = checks[block.order_index]
+        await self._session.flush()
+
     async def save_interval_block_result(self, block_id: int, result: dict) -> None:
         """Phase B1 (issue #215): сохранение result для interval SessionBlock
         после lazy finalization. Вызывается только для interval blocks, не
@@ -834,6 +866,7 @@ class TrainingSessionRepository:
                         for target in set_targets_by_block[block.id]
                     ],
                     result=block.result, started_at=block.started_at, block_key=block.block_key,
+                    technique_valid=block.technique_valid, rest_within_limit=block.rest_within_limit,
                 )
                 for block in blocks_by_session[session_row.id]
             ]
@@ -1336,6 +1369,7 @@ class TrainingSessionRepository:
                 session_id=clone.id, order_index=block.order_index, exercise_id=block.exercise_id,
                 complex_id=block.complex_id, result=block.result, started_at=block.started_at,
                 block_key=block.block_key, status=block.status, ended_at=block.ended_at,
+                technique_valid=block.technique_valid, rest_within_limit=block.rest_within_limit,
             )
             self._session.add(new_block)
             await self._session.flush()

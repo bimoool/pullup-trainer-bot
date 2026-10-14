@@ -1,3 +1,4 @@
+import { describeCourseOutcome } from "./courseV5";
 import { Button } from "@telegram-apps/telegram-ui";
 
 import type { LiveSessionCompleteResponse, SetLogResponseV2 } from "./apiV2";
@@ -34,7 +35,9 @@ const SKIPPED_REASON_LABELS: Record<string, string> = {
   abandoned: "Прогрессия не пересчитана — сессия завершена досрочно.",
   no_program_inclusion: "Прогрессия не пересчитана — нет активного курса со ступенчатой стратегией для этих упражнений.",
   blocks_do_not_match_step_roles: "Прогрессия не пересчитана — выполненные блоки не совпали с ролями блок A/Б курса.",
-  already_completed: "Тренировка уже была завершена — прогрессия учтена при первом завершении.",
+  // Повторный ответ уже завершённой тренировки (повтор, потерянный ответ): итог первого завершения в нём
+  // неизвестен (могло быть и «досрочно»), поэтому о прогрессии ничего не утверждаем (аудит #322).
+  already_completed: "Тренировка сохранена.",
   // «Начать» с Workout Detail: прогрессию курса не трогает — это норма, не причина для баннера.
   not_plan_session: "",
 };
@@ -182,8 +185,16 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
           })()}
         </section>
       )}
+      {result.course_progression && (
+        <section className="live-card live-card-goal" data-testid="course-progression">
+          <h3 className="live-card-title">Следующая тренировка {result.course_progression.next_workout_role}</h3>
+          {result.course_progression.blocks.map((outcome) => (
+            <p key={outcome.block_role} className="live-row">{describeCourseOutcome(outcome)}</p>
+          ))}
+        </section>
+      )}
       {skippedReasonLabel(result.progression_skipped_reason) && (
-        <p className="gap-banner">{skippedReasonLabel(result.progression_skipped_reason)}</p>
+        <p className="gap-banner" data-testid="progression-skipped">{skippedReasonLabel(result.progression_skipped_reason)}</p>
       )}
 
       <div className="live-transport">

@@ -1,0 +1,47 @@
+import { expect, test, type Page } from "@playwright/test";
+import { openAppAs } from "../fixtures/setup";
+import { appendFileSync } from "node:fs";
+
+test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test.setTimeout(90_000);
+
+async function storedEngineQueues(page: Page): Promise<number> {
+  return page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const open = indexedDB.open("keyval-store");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("keyval")) { resolve(0); return; }
+      const request = db.transaction("keyval").objectStore("keyval").getAllKeys();
+      request.onsuccess = () => resolve(request.result.filter((key) => String(key).startsWith("pullup:v2:live-engine-queue")).length);
+      request.onerror = () => reject(request.error);
+    };
+  }));
+}
+
+test("diag: close immediately after Stop (offline) — is the queue durable?", async ({ page, context }) => {
+  const mode = process.env.DIAG_MODE ?? "immediate"; // immediate | after-phase
+  await openAppAs(page, 930_610);
+  const tabbar = page.locator(".bottom-tabbar");
+  await expect(tabbar.or(page.getByRole("button", { name: /Назад/ }).first()).first()).toBeVisible();
+  await page.getByRole("button", { name: "Планы" }).click();
+  const group = page.locator(".plan-week-day-group").filter({ hasText: /^Движок: стоп/ });
+  await group.getByRole("button", { name: /^Начать: / }).first().click();
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await expect(page.getByText("Живая тренировка")).toBeVisible();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл", { timeout: 8_000 });
+  await context.setOffline(true);
+  await new Promise((r) => setTimeout(r, 1_000));
+  await page.getByTestId("engine-stop").click();
+  if (mode === "after-phase") {
+    await expect(page.getByTestId("engine-phase")).not.toHaveText("Пошёл"); // как в stopOfflineAndCloseAfterDeadline
+  }
+  await page.close();
+  await context.setOffline(false);
+  const back = await context.newPage();
+  await back.route("**/api/v2/sessions/live/*/events", (route) => route.abort("failed")); // очередь не уходит -> видно, что сохранено
+  await openAppAs(back, 930_610);
+  await back.waitForLoadState("domcontentloaded");
+  const n = await storedEngineQueues(back);
+  appendFileSync(process.env.DIAG_OUT ?? "/tmp/diag.txt", `${mode} queues_after_close=${n}\n`);
+});

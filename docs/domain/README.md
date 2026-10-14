@@ -38,6 +38,7 @@ Plan ── PlanWeek ── PlanItem (ONE concrete occurrence of ONE workout)
 | [TRAINING_SESSION_V2.md](TRAINING_SESSION_V2.md) | TrainingSession, sources, set logs, editability, external activity, Journal + Analytics invariants |
 | [MIGRATION_V2.md](MIGRATION_V2.md) | Expand → backfill → converge → cutover; aged users; rehearsal/rollback |
 | [ACCEPTANCE_JOURNEYS_V2.md](ACCEPTANCE_JOURNEYS_V2.md) | J1–J12, the executable definition of “done” |
+| [PULLUPS_V5_6.md](PULLUPS_V5_6.md) | The main pull-up program V5.6 (owner decision 2026-10-11): levels, A/B volume, strength, 1RM, prescription snapshot, Live seam |
 
 Each rule lives in exactly one document; others link to it.
 

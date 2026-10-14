@@ -34,12 +34,17 @@ the guards therefore allow (everything else still aborts):
     the explicit credit of a session that was linked to that aggregate in that week. Every other session
     field (status, dates, source, effort, comment, duration, blocks, set logs) must be unchanged;
   * inclusion cache fields: status / sequence_cursor (only from NULL), completed_main_sessions,
-    last_main_session_at. started_at / progression_state / initial_progression_state never change.
+    last_main_session_at. started_at / progression_state / initial_progression_state never change, except
+    the #305 transition awaiting_assessment -> active (assessment logged), which may also re-derive the
+    starting state by the same InitialPrescriptionRule; no inclusion is ever moved back to awaiting_assessment.
   * programs.access_level and users.subscription_* / subscriptions rows: never change.
 
-    # deploy-time rehearsal over EVERY user with a plan (dry run; then --apply; then again: 0 mutations)
+    # deploy-time: dry run over EVERY user with a plan (discovery, writes nothing) ...
     python scripts/repair_plan_convergence.py --all
-    python scripts/repair_plan_convergence.py --all --apply
+    # ... then dry run / apply / apply again (0 mutations) ONLY for owner-confirmed internal users.id.
+    # `--all --apply` is refused by the CLI; `--user-ids` with an id that has no user/plan exits 3 and writes nothing.
+    python scripts/repair_plan_convergence.py --user-ids 12,57
+    python scripts/repair_plan_convergence.py --user-ids 12,57 --apply
 
 Exit codes: 0 ok (or nothing to do), 2 user not found, 3 user has no training plan, 4 guard violated.
 Output: one JSON document on stdout; the runtime's structured WARNING lines go to stderr.
@@ -121,6 +126,7 @@ async def _capture(session: AsyncSession, user: User, plan: TrainingPlan) -> _St
             "expires_at": inc.expires_at, "snapshot": copy.deepcopy(inc.snapshot),
             "progression_state": copy.deepcopy(inc.progression_state),
             "initial_progression_state": copy.deepcopy(inc.initial_progression_state),
+            "status": inc.status, "prescription_provenance": copy.deepcopy(inc.prescription_provenance),
         }
     for week in (await session.execute(select(PlanWeek).where(PlanWeek.training_plan_id == plan.id))).scalars():
         state.weeks[week.id] = {"week_number": week.week_number, "start_date": week.start_date}
@@ -176,8 +182,19 @@ def _diff(before: _State, after: _State, *, current_week_number: int) -> tuple[d
         if a is None:
             violations.append(f"inclusion {inc_id} disappeared")
             continue
-        for key in ("program_id", "is_active", "started_at", "expires_at", "progression_state", "initial_progression_state"):
-            if a[key] != b[key]:
+        # issue #305: единственное разрешённое изменение состояния — переход awaiting_assessment → active
+        # (замер записан): status, провенанс и пересчитанное тем же правилом стартовое состояние.
+        b_status, a_status = b.get("status"), a.get("status")
+        promoted = b_status == "awaiting_assessment" and a_status == "active"
+        if b_status != a_status and b_status is not None and not promoted:
+            violations.append(f"inclusion {inc_id}: status {b_status} -> {a_status} is not allowed")
+        if a_status == "awaiting_assessment" and b_status != "awaiting_assessment":
+            violations.append(f"inclusion {inc_id}: pushed back to awaiting_assessment")
+        guarded = ("program_id", "is_active", "started_at", "expires_at")
+        if not promoted:
+            guarded += ("progression_state", "initial_progression_state", "prescription_provenance")
+        for key in guarded:
+            if a.get(key) != b.get(key):
                 violations.append(f"inclusion {inc_id}: {key} changed")
         b_snap, a_snap = b["snapshot"] or {}, a["snapshot"] or {}
         if a_snap == b_snap:
@@ -358,14 +375,25 @@ async def run_repair(session: AsyncSession, *, telegram_id: int, apply: bool, to
     return (EXIT_GUARD if violations else EXIT_OK), report
 
 
-async def run_all(*, apply: bool, today: date | None = None, session_factory=None) -> tuple[int, dict]:
+async def run_all(
+    *, apply: bool, today: date | None = None, session_factory=None, user_ids: list[int] | None = None,
+) -> tuple[int, dict]:
     """issue #304 — deploy-time convergence of EVERY user with a training plan, one transaction per
-    user (ORDER BY id), same guards. A guard violation rolls back that user only and makes exit 4."""
+    user (ORDER BY id), same guards. A guard violation rolls back that user only and makes exit 4.
+    ``user_ids`` (internal users.id) narrows the run to those users; an id without a user/plan is an error
+    (exit 2/3) and nothing is written for ANY user in that case."""
     factory = session_factory or async_session_factory
     async with factory() as session:
-        telegram_ids = [row[0] for row in await session.execute(
-            select(User.telegram_id).join(TrainingPlan, TrainingPlan.user_id == User.id).order_by(TrainingPlan.id),
-        )]
+        query = select(User.telegram_id).join(TrainingPlan, TrainingPlan.user_id == User.id).order_by(TrainingPlan.id)
+        if user_ids is not None:
+            query = query.where(User.id.in_(user_ids))
+            have = set((await session.execute(
+                select(User.id).join(TrainingPlan, TrainingPlan.user_id == User.id).where(User.id.in_(user_ids)),
+            )).scalars().all())
+            if missing := sorted(set(user_ids) - have):
+                return EXIT_NO_PLAN, {"mode": "apply" if apply else "dry-run", "error": f"user_ids without a user/plan: {missing}",
+                                      "users": 0, "totals": {}, "total_mutations": 0, "users_detail": []}
+        telegram_ids = [row[0] for row in await session.execute(query)]
     reports, worst = [], EXIT_OK
     totals: dict[str, int] = {}
     for telegram_id in telegram_ids:
@@ -385,18 +413,32 @@ async def run_all(*, apply: bool, today: date | None = None, session_factory=Non
     }
 
 
+def _parse_user_ids(value: str) -> list[int]:
+    try:
+        ids = sorted({int(part) for part in value.split(",")})
+    except ValueError:
+        raise argparse.ArgumentTypeError("expected comma-separated integer users.id") from None
+    if not ids or ids[0] <= 0:
+        raise argparse.ArgumentTypeError("users.id must be positive")
+    return ids
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--telegram-id", type=int)
-    target.add_argument("--all", action="store_true", help="every user with a training plan (issue #304)")
+    target.add_argument("--all", action="store_true", help="every user with a training plan (issue #304); DRY-RUN only")
+    target.add_argument("--user-ids", type=_parse_user_ids,
+                        help="internal users.id, comma separated (owner-confirmed scope); the only multi-user --apply")
     parser.add_argument("--apply", action="store_true", help="write the repair (default: dry run, rolled back)")
     parser.add_argument("--today", type=date.fromisoformat, default=None,
                         help="YYYY-MM-DD; default: today in the user's timezone (as GET /plan)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr, format="%(levelname)s %(name)s %(message)s")
-    if args.all:
-        code, report = await run_all(apply=args.apply, today=args.today)
+    if args.all and args.apply:
+        parser.error("--all --apply is not allowed: apply with --user-ids <confirmed ids> or --telegram-id")
+    if args.all or args.user_ids:
+        code, report = await run_all(apply=args.apply, today=args.today, user_ids=args.user_ids)
     else:
         async with async_session_factory() as session:
             code, report = await run_repair(session, telegram_id=args.telegram_id, apply=args.apply, today=args.today)

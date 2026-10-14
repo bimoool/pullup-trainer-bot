@@ -498,9 +498,10 @@ async def test_t_completion_retry_never_duplicates_progression_or_credit(session
     body = await _start(session, user, clock, plan_item_ids=[plan_item_ids["block_a"], plan_item_ids["block_b"]])
     assert body["engine_version"] == 2
     plan = body["engine"]["plan"]
-    assert [len(b["sets"]) for b in plan["blocks"]] == [3, 1]  # цели курса (progression_state), #305 не трогаем
+    # цели курса из progression_state; с #305 legacy-курс — 3 + MAX и 4 + MAX (PROJECT_SPEC, OD-3/D2)
+    assert [len(b["sets"]) for b in plan["blocks"]] == [4, 5]
     t = _state(body)["started_at"]
-    for _ in range(4):
+    for _ in range(sum(len(b["sets"]) for b in plan["blocks"])):
         state = _state(await _active(session, user))
         if state["phase"] != "WORK":
             t = state["phase_deadline_at"]

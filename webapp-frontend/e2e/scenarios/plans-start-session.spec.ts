@@ -14,8 +14,9 @@ test("«Планы» → Подтягивания → Начать → live sess
 
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByText("Свободный пул")).toBeVisible();
-  // #304: «Подтягивания» × 3 в неделю — три строки-занятия.
-  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(3);
+  // #304: одна строка = одно занятие. #305 (V5.6 §1): новая инклюзия V5.6 — 2 основных занятия в неделю
+  // (A и B), каталог поставляемой программы (3) не меняется — частота заморожена в снимке инклюзии.
+  await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(2);
 
   // Обычный пользователь не видит admin-вкладку — подтверждаем прямо в
   // тесте, чтобы Golden Journey нельзя было случайно пройти через lab.
@@ -27,8 +28,10 @@ test("«Планы» → Подтягивания → Начать → live sess
 
   // --- STEP readiness не обойдена: видны реальные цели по блокам, не
   // просто голая кнопка "Начать" без пред-экрана ---
-  await expect(page.getByRole("heading", { name: "Цель 1: 10 повторений" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Цель 2: 3 повторений" })).toBeVisible();
+  // issue #305 (V5.6): сид — M = 12 (замер онбординга) → переходная неделя: объём A 5/5/5/5+, сила 5×5;
+  // E1RM 20 при массе 75 → 0,75·95 − 75 < 0 → собственный вес (scripts/e2e_seed.py::_V5_E2E_INPUTS).
+  await expect(page.getByRole("heading", { name: "Блок 1: 5/5/5/5+" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Блок 2: 5×5 масса тела" })).toBeVisible();
 
   const startResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/api/v2/sessions/live") && response.status() === 200,
@@ -46,8 +49,9 @@ test("«Планы» → Подтягивания → Начать → live sess
   expect(startedSession.engine_version).toBe(2);
   await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл", { timeout: 10_000 });
   await expect(page.getByRole("button", { name: "Готов", exact: true })).toHaveCount(0);
-  await expect(page.getByTestId("engine-target")).toContainText("Цель: 10 повт.");
-  await page.getByLabel("Результат подхода").fill("10");
+  // #305 V5.6 переходная неделя: объём A 5/5/5/5+ — первый подход «5».
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/4 · Цель: 5 повт.");
+  await page.getByLabel("Результат подхода").fill("5");
 
   const setResponsePromise = page.waitForResponse(
     (response) => response.url().includes(`/sessions/live/${sessionId}/events`) && response.status() === 200,
@@ -64,7 +68,7 @@ test("«Планы» → Подтягивания → Начать → live sess
   // сам (fetchActiveLiveSession), без похода через "Планы" заново.
   await expect(page.getByText("Живая тренировка")).toBeVisible();
   await expect(page.getByTestId("engine-phase")).toHaveText(/Отдых|Пошёл/); // фаза — с сервера
-  await expect(page.getByTestId("engine-target")).toContainText(/Подход [12]\/3/);
+  await expect(page.getByTestId("engine-target")).toContainText(/Подход [12]\/4/);
 
   console.log("session id (persisted across reload):", sessionId);
 

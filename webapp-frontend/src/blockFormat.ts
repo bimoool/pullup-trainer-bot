@@ -115,7 +115,8 @@ export function resultInputLabel(
 ): { label: string; hint: string | null } {
   const planText = target !== null ? formatTarget(target) : null;
   const hint = planText !== null ? `Цель: ${planText}` : null;
-  if (protocolType === "max_effort") {
+  // issue #305: подход на максимум курса (свойство цели) — замер, цели «0» у него нет.
+  if (protocolType === "max_effort" || target?.is_max_set === true) {
     return { label: "Повторений", hint: null };
   }
   if (protocolType === "time_sets" || target?.unit === "s") {

@@ -66,6 +66,7 @@ SessionBlock/SetLog не рассчитаны на эти детали — см.
 
 import argparse
 import asyncio
+import json
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -128,7 +129,7 @@ from app.domain.program_access import ProgramAccessLevel
 from app.domain.progression import initial_volume_target, suggest_starting_equipment
 from app.domain.progression_strategy import ProgressionStrategyType
 from app.domain.training_session_v2 import SessionOrigin
-from app.services.legacy_history_convergence import LegacyHistoryConvergenceService
+from app.services.legacy_history_convergence import MUTATING_KEYS, LegacyHistoryConvergenceService
 from app.services.plan_week import PlanWeekService
 
 _PROGRAM_NAME = "Подтягивания"
@@ -403,6 +404,8 @@ async def _build_progression_state(
         "block_b": {
             "target": state_b.target,
             "volume": state_b.volume,
+            # issue #305: каноническая форма — work_sets у обеих ролей (у блока Б он постоянный).
+            "work_sets": STRENGTH_BLOCK.work_sets,
             "weak_streak": weak_streak_b,
             "equipment_type": state_b.equipment_type.value,
             "equipment_value": _decimal_str(state_b.equipment_value),
@@ -510,6 +513,7 @@ _HISTORY_LABELS = (
     ("bound", "копий привязано к legacy-строке (legacy_id)"),
     ("created", "копий создано"),
     ("elective_created", "копий факультативов создано"),
+    ("elective_first_import_without_plan", "  из них у пользователей без плана (по инварианту «нет плана — backfill не проходил»)"),
     ("updated", "копий обновлено"),
     ("superseded", "копий замещено (legacy-строка удалена/заменена)"),
     ("unchanged", "копий без изменений"),
@@ -528,6 +532,48 @@ def _render_history(counts: Counter, *, dry_run: bool) -> list[str]:
     ]
 
 
+_UNRESOLVED_REASONS = {
+    "backfilled_copy_edited_or_deleted": "старый backfill его уже перенёс (записан не позже плана, есть копия из транзакции плана), "
+                                         "точной копии нет — правлена или удалена в Журнале",
+    "pre_migration_without_copy": "записан не позже TrainingPlan, копии нет — удалена в Журнале либо план создан "
+                                  "до импорта (уцелевшей копии транзакции плана нет — перенос не доказуем)",
+    "nonstandard_copy_history": "история копий пользователя не объяснима штатными писателями (след в evidence: копия "
+                                "вне транзакции плана / копия без плана) — не создаётся и не привязывается ничего",
+    "exact_copy_predates_elective": "есть копия того же содержимого, но она старше факультатива — не привязана, "
+                                    "вторая не создана",
+}
+
+
+def _history_result_line(counts: Counter, unresolved: list[dict], *, apply: bool, user_ids: list[int] | None) -> str:
+    """`RESULT-JSON {...}` — счётчики, число изменений (MUTATING_KEYS, в т. ч. classified) и неразрешённые случаи."""
+    return "RESULT-JSON " + json.dumps({
+        "mode": "apply" if apply else "dry-run", "user_ids": user_ids, "users": counts["users"],
+        "mutations": sum(counts[key] for key in MUTATING_KEYS),
+        "counts": {key: value for key, value in sorted(counts.items()) if key != "users"},
+        "unresolved": sorted(
+            ({"user_id": item["user_id"], "elective_id": item["elective_id"], "reason": item["reason"]} for item in unresolved),
+            key=lambda item: (item["user_id"], item["elective_id"]),
+        ),
+    }, ensure_ascii=False, sort_keys=True)
+
+
+def _render_unresolved(items: list[dict]) -> list[str]:
+    """Неразрешённые факультативы: копия НЕ создана (не воскрешаем удалённое и не дублируем правленое), ничего не
+    привязано. candidates — непривязанные копии того же формата для ручной проверки."""
+    if not items:
+        return []
+    lines = [f"Не разрешено (копия НЕ создана, ничего не привязано): {len(items)}"]
+    for item in items:
+        lines.append(
+            f"  user_id={item['user_id']} elective_id={item['elective_id']} {item.get('elective_type', '?')} "
+            f"{item.get('performed_at', '?')} reps={item.get('total_reps', '?')}: "
+            f"{_UNRESOLVED_REASONS.get(item['reason'], item['reason'])}; "
+            f"кандидаты (копии без ключа): {item.get('candidate_copy_ids') or 'нет'}"
+            + (f"; evidence: {item['evidence']}" if item.get("evidence") else ""),
+        )
+    return lines
+
+
 async def _count_missing_copies(session: AsyncSession, origin: SessionOrigin, legacy_ids: list[int]) -> int:
     if not legacy_ids:
         return 0
@@ -539,12 +585,18 @@ async def _count_missing_copies(session: AsyncSession, origin: SessionOrigin, le
     return len(legacy_ids) - int(have or 0)
 
 
-async def converge_history_all(session: AsyncSession, *, apply: bool, user_ids: list[int] | None = None) -> Counter:
+async def converge_history_all(
+    session: AsyncSession, *, apply: bool, user_ids: list[int] | None = None, unresolved: list[dict] | None = None,
+) -> Counter:
     """MIGRATION_V2 §4: у каждой живой строки workouts/elective_workouts — ровно одна нативная копия
     (origin, legacy_id). Идёт по ВСЕМ пользователям с legacy-историей или копиями (не только онбордившимся и не
     только «ещё не смигрированным»), по одному в транзакции; dry-run (apply=False) только читает.
-    Повторный apply возвращает counts без изменяющих ключей (mutations = 0)."""
+    Повторный apply возвращает counts без изменяющих ключей (mutations = 0). unresolved — если передан,
+    дополняется неразрешёнными случаями (факультатив без копии, происхождение которой не доказать) с user_id."""
     total: Counter = Counter()
+    if apply and not user_ids:
+        # Защита на уровне функции, не только CLI: запись сведения всегда по явному списку подтверждённых пользователей.
+        raise ValueError("converge_history_all(apply=True) requires an explicit non-empty user_ids list")
     if user_ids is None:
         ids: set[int] = set()
         for column in (Workout.user_id, ElectiveWorkout.user_id):
@@ -566,6 +618,8 @@ async def converge_history_all(session: AsyncSession, *, apply: bool, user_ids: 
         report = await service.converge_user(user_id, apply=apply)
         total.update(report.counts)
         total["users"] += 1
+        if unresolved is not None:
+            unresolved.extend({"user_id": user_id, **item} for item in report.ambiguous)
         if apply:
             await session.commit()
         else:
@@ -738,6 +792,16 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     return report
 
 
+def _parse_user_ids(value: str) -> list[int]:
+    try:
+        ids = sorted({int(part) for part in value.split(",")})
+    except ValueError:
+        raise argparse.ArgumentTypeError("ожидается список целых users.id через запятую") from None
+    if not ids or ids[0] <= 0:
+        raise argparse.ArgumentTypeError("users.id должны быть положительными")
+    return ids
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="только посчитать, ничего не писать")
@@ -757,6 +821,13 @@ async def main() -> None:
         ),
     )
     parser.add_argument("--apply", action="store_true", help="с --converge-history: записать изменения")
+    parser.add_argument(
+        "--user-ids", type=_parse_user_ids, default=None,
+        help=(
+            "с --converge-history: внутренние users.id через запятую (подтверждённые владельцем). Без списка dry-run "
+            "читает ВСЕХ пользователей (ничего не пишет); --apply без списка запрещён"
+        ),
+    )
     args = parser.parse_args()
     if args.dry_run and args.truncate:
         raise SystemExit("--dry-run и --truncate несовместимы")
@@ -764,12 +835,27 @@ async def main() -> None:
         raise SystemExit("--converge-history несовместим с --truncate/--dry-run (dry-run — без --apply)")
     if args.apply and not args.converge_history:
         raise SystemExit("--apply допустим только с --converge-history")
+    if args.user_ids is not None and not args.converge_history:
+        raise SystemExit("--user-ids допустим только с --converge-history")
+    if args.converge_history and args.apply and not args.user_ids:
+        raise SystemExit("--converge-history --apply требует --user-ids: сведение истории не применяется ко всем пользователям")
 
     if args.converge_history:
         async with async_session_factory() as session:
-            counts = await converge_history_all(session, apply=args.apply)
+            unresolved: list[dict] = []
+            if args.user_ids is not None:
+                known = set((await session.execute(select(User.id).where(User.id.in_(args.user_ids)))).scalars().all())
+                if missing := sorted(set(args.user_ids) - known):
+                    raise SystemExit(f"--user-ids: пользователей нет в БД: {missing}")
+            counts = await converge_history_all(
+                session, apply=args.apply, user_ids=args.user_ids, unresolved=unresolved,
+            )
+            scope = f"пользователи {args.user_ids}" if args.user_ids is not None else "ВСЕ пользователи (только чтение)"
             print("\n".join(["Прогон завершён" if args.apply else "DRY-RUN (ничего не записано)",
-                              f"Пользователей: {counts['users']}", *_render_history(counts, dry_run=not args.apply)]))
+                              f"Область: {scope}", f"Пользователей: {counts['users']}", *_render_history(counts, dry_run=not args.apply),
+                              *_render_unresolved(unresolved)]))
+            # Машинный результат для автоматических проверок (guarded deploy): одна последняя строка JSON.
+            print(_history_result_line(counts, unresolved, apply=args.apply, user_ids=args.user_ids))
         return
 
     async with async_session_factory() as session:

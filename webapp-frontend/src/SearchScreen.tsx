@@ -5,7 +5,7 @@ import {
   type AssessmentProtocolV2, type ExerciseResponseV2, type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { formatLastResult } from "./assessmentsFormat";
-import { collectCategories, searchContent, toggleSearchFilter } from "./homeDiscovery";
+import { categoryLabel, collectCategories, searchContent, toggleSearchFilter } from "./homeDiscovery";
 import { useBackButton } from "./useBackButton";
 
 export type SearchState = { query: string; category: string | null; favoritesOnly: boolean; testsOnly: boolean };
@@ -121,11 +121,12 @@ export function SearchScreen({
             <button
               key={category}
               type="button"
+              data-category-key={category}
               className={category === state.category ? "search-chip search-chip-active" : "search-chip"}
               aria-pressed={category === state.category}
               onClick={() => onStateChange(toggleSearchFilter(state, { kind: "category", category }))}
             >
-              {category}
+              {categoryLabel(category)}
             </button>
           ))}
           {state.category !== null && (
@@ -141,7 +142,7 @@ export function SearchScreen({
 
       {results && (
         <>
-          {state.category !== null && <p className="section-title" data-testid="search-category-title">{state.category}</p>}
+          {state.category !== null && <p className="section-title" data-testid="search-category-title" data-category-key={state.category}>{categoryLabel(state.category)}</p>}
           <p className="hint" data-testid="search-count">Найдено: {results.total}</p>
           {results.total === 0 && <p className="screen-message" data-testid="search-empty">Ничего не найдено</p>}
 
@@ -200,7 +201,7 @@ export function SearchScreen({
                   <li key={`e${exercise.id}`}>
                     <button type="button" className="search-result" data-testid="search-result-exercise" onClick={() => onOpenExercise(exercise.id, exercise.name)}>
                       <span className="home-workout-title">{exercise.name}</span>
-                      <span className="home-workout-meta">{exercise.category}</span>
+                      <span className="home-workout-meta">{categoryLabel(exercise.category)}</span>
                     </button>
                   </li>
                 ))}

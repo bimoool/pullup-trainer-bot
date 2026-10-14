@@ -60,8 +60,8 @@ export async function onboard(s, reps = "8") {
   await p.locator("input").first().fill(reps); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
   await s.tap(p.getByRole("button",{name:"Да",exact:true}),"Да");
   const cont = p.getByRole("button",{name:"Продолжить"}); if (await cont.count()) await s.tap(cont,"Продолжить");
-  await p.getByLabel("Вес, кг").fill("78"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
-  await p.getByLabel("Рост, см").fill("180"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
+  await p.getByLabel("Твой вес в кг?").fill("78"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
+  await p.getByLabel("Рост в см?").fill("180"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
   await p.locator("select").selectOption("male"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
   await p.getByLabel("Дата рождения").fill("1995-05-15"); await s.tap(p.getByRole("button",{name:"Далее"}),"Далее");
   await p.locator("select").selectOption({label:"Москва (UTC+3)"}); s.ev("SELECT tz Москва");

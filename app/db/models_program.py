@@ -454,9 +454,13 @@ class ProgramInclusion(Base):
     baseline_assessment_result_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("assessment_results.id", ondelete="SET NULL"), nullable=True,
     )
-    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # issue #305: + awaiting_assessment (замер обязателен, его нет и нет истории основных тренировок).
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     completed_main_sessions: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_main_session_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # issue #305 (PROGRAM_PLAN_V2 §3): каким правилом стартовой прескрипции (rule_id/version, decided) и из
+    # какого замера получено стартовое состояние. NULL — инклюзия до #305 (правило не записано).
+    prescription_provenance: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class CustomPlan(Base):
@@ -741,6 +745,11 @@ class SessionBlock(Base):
     block_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # issue #305 (программа V5.6): явное подтверждение пользователя — техника по стандарту / отдых не
+    # превышал предписанного. NULL — неизвестно, и правило прогрессии, требующее валидной техники или
+    # отдыха, НЕизвестное значение валидным не считает. Компьютерной оценки техники нет.
+    technique_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rest_within_limit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class SetTarget(Base):

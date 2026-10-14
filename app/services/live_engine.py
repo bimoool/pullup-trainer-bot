@@ -39,6 +39,7 @@ _PHASE_MIRROR = {
     engine.WORK: SessionPhase.GO,
     engine.RESULT: SessionPhase.GO,
     engine.REST: SessionPhase.REST,
+    engine.CONFIRM: SessionPhase.GO,  # #305: ждёт ответа пользователя, тренировка ещё не завершена
     engine.COMPLETE: SessionPhase.DONE,
 }
 _SMALLINT_MAX = 32767
@@ -201,13 +202,17 @@ class LiveEngineService:
 
     async def finish_from_complete(
         self, session_id: int, user_id: int, *, abandoned: bool,
+        block_checks: dict[int, tuple[bool | None, bool | None]] | None = None,
     ) -> SyncResult | None:
-        """HTTP ``POST …/complete`` для сессии v2 (интерфейс #307 сохраняется): активная сессия
-        заканчивается серверным ``finish_early`` (тем же путём, что событие клиента); уже завершённая —
-        ничего не меняет (оценку/заметку затем дописывает идемпотентный complete_session)."""
+        """HTTP ``POST …/complete`` для сессии v2 (интерфейс #307 сохраняется): активная сессия (в т.ч. в
+        фазе CONFIRM) заканчивается серверным ``finish_early`` (тем же путём, что событие клиента); его
+        payload несёт подтверждения запроса (#305 V5.6 §11) — они в журнале событий и воспроизводимы.
+        Уже завершённая — ничего не меняет (оценку/заметку затем дописывает идемпотентный complete_session);
+        подтверждения после завершения прогрессию не пересчитывают."""
         del abandoned  # движок сам решает: недоделанные плановые подходы ⇒ abandoned (T4)
+        payload = {"checks": checks_payload(block_checks)} if block_checks else {}
         return await self.sync(session_id, user_id, [ClientEvent(
-            client_event_id=uuid.uuid4(), type=engine.EV_FINISH_EARLY, payload={}, client_at=None,
+            client_event_id=uuid.uuid4(), type=engine.EV_FINISH_EARLY, payload=payload, client_at=None,
         )])
 
     async def rebuild_state(self, session_id: int) -> dict | None:
@@ -288,12 +293,27 @@ class LiveEngineService:
             LiveSessionService,  # цикл импорта live_session ↔ live_engine
         )
 
-        state = (await self._sessions.get_for_user(session_id, user_id)).engine_state
+        detail = await self._sessions.get_for_user(session_id, user_id)
+        state = detail.engine_state
         result, _ = await LiveSessionService(self._session).complete_session(
             session_id=session_id, user_id=user_id, abandoned=effect["abandoned"],
             active_elapsed_ms=effect["active_elapsed_ms"], ended_at=from_ms(state["ended_at"]),
+            # #305: подтверждения — из состояния движка (ответы пользователя + серверный факт отдыха),
+            # записываются до прогрессии в том же единственном завершении.
+            block_checks=engine.block_check_results(detail.engine_plan, state) or None,
         )
         return result
+
+
+_ANSWER = {True: engine.CHECK_VALID, False: engine.CHECK_INVALID, None: None}
+
+
+def checks_payload(block_checks: dict[int, tuple[bool | None, bool | None]]) -> list[dict]:
+    """``{block_index: (technique_valid, rest_within_limit)}`` (тело POST …/complete) → ответы события движка."""
+    return [
+        {"block_index": index, "technique": _ANSWER[technique], "rest": _ANSWER[rest]}
+        for index, (technique, rest) in sorted(block_checks.items())
+    ]
 
 
 def engine_view(detail: SessionDetail, now: datetime) -> dict | None:

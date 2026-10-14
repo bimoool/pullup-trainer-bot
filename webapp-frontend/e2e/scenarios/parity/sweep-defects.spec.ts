@@ -13,6 +13,17 @@ import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixt
 // v2-сессии (2 и 5 дней назад), ни одной legacy-тренировки. Пользователь = база + 2 * индекс теста + retry.
 const USERS = { 320: { base: 997_501, theme: "light" }, 390: { base: 997_521, theme: "dark" } } as const;
 const WORKOUT = "Золотая тренировка";
+const BACKDATED_BADGE = "Записана задним числом";
+// В сиде sweep_defects уже ДВЕ BACKDATED-сессии (2 и 5 дней назад) — сценарий добавляет третью, поэтому общий бейдж
+// «задним числом» её не идентифицирует. Исходные записи не удаляем: считаем их и ищем новую по дню и содержимому.
+const SEED_BACKDATED = 2;
+const USER_TIME_ZONE = "Europe/Moscow"; // профиль пользователя sweep_defects (_QUESTIONNAIRE_DEFAULTS)
+
+const backdatedCards = (page: Page) =>
+  page.getByTestId("journal-card").filter({ has: page.getByTestId("journal-kind-badge").filter({ hasText: BACKDATED_BADGE }) });
+// День Журнала в поясе профиля (YYYY-MM-DD), как у data-date группы дня: запись «сегодня» — performed_at «сейчас».
+const todayInUserZone = (page: Page) =>
+  page.evaluate((tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()), USER_TIME_ZONE);
 
 async function openDetailFromHome(page: Page) {
   await page.getByTestId("my-workout-card").filter({ hasText: WORKOUT }).click();
@@ -77,8 +88,13 @@ for (const width of WIDTHS) {
       await expect(page.getByText("Мои тренировки", { exact: true })).toBeVisible();
     });
 
-    test("D1: после «← Назад» повторное «Записать» и сохранение — запись в Журнале", async ({ page }, testInfo) => {
+    test("D1: после «← Назад» повторное «Записать» и сохранение — ровно одна новая запись в Журнале", async ({ page }, testInfo) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, base + 6 + testInfo.retry, { theme });
+      // Исходное состояние: только две сидовые BACKDATED-записи, новой ещё нет.
+      await openTab(page, "Журнал");
+      await expect(backdatedCards(page)).toHaveCount(SEED_BACKDATED);
+      await openTab(page, "Главная");
+
       await openDetailFromHome(page);
       await page.getByTestId("workout-detail-log").click();
       await page.getByRole("button", { name: "← Назад" }).click();
@@ -91,13 +107,19 @@ for (const width of WIDTHS) {
       await setInputs.nth(1).fill("6");
       await page.getByTestId("log-save").click();
 
-      // После сохранения — Журнал с новой записью (не деталь).
-      const card = page.locator(".history-card-clickable").filter({ hasText: "Записана задним числом" });
-      await expect(card).toHaveCount(1);
-      // карточка — суммы (#286): 2 подхода, 14 повторов; факт «8 · 6» — в деталях записи
-      await expect(card.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
-      await expect(card.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
+      // После сохранения — Журнал (не деталь): ровно одна новая BACKDATED-запись, без дублирования.
       await expect(page.getByTestId("workout-detail")).toHaveCount(0);
+      await expect(backdatedCards(page)).toHaveCount(SEED_BACKDATED + 1);
+
+      // Новая запись — единственная в сегодняшнем дне (сид: 2 и 5 дней назад), и именно её содержание проверяем.
+      const today = await todayInUserZone(page);
+      const created = page.locator(`.journal-day[data-date="${today}"]`).getByTestId("journal-card");
+      await expect(created).toHaveCount(1);
+      await expect(created.getByTestId("journal-kind-badge")).toHaveText(BACKDATED_BADGE);
+      await expect(created.locator(".journal-card-name")).toHaveText(WORKOUT);
+      // карточка — суммы (#286): 2 подхода, 14 повторов (у сидовых записей 15); факт «8 · 6» — в деталях записи
+      await expect(created.locator('.journal-stat[data-stat="sets"] .journal-stat-value')).toHaveText("2");
+      await expect(created.locator('.journal-stat[data-stat="reps"] .journal-stat-value')).toHaveText("14");
 
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);

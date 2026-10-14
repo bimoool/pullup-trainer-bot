@@ -9,6 +9,7 @@ Aged-набор на ревизии f4c1a7e9b3d2 (до #308), одним пол�
   elective 7001 с копией 9005; elective 7002 записан ПОСЛЕ миграции пользователя (копии нет);
   elective 7003 записан ДО миграции и копии нет (удалён/правлен в Журнале) — НЕ воскрешается."""
 
+import json
 import subprocess
 import sys
 
@@ -25,6 +26,7 @@ from tests.test_scripts.test_system_content_migration import (
 PRE_REVISION = "f4c1a7e9b3d2"
 PARENT_REVISION = "a9e6c3d1f5b7"  # #306 Live Engine v2: a7e2c5b9d1f4 надстраивает его
 HEAD = "a7e2c5b9d1f4"
+CHAIN_HEAD = "b5d8e1f3a6c9"  # #305 (e3b9c5d7a2f1 → b5d8e1f3a6c9) надстраивает a7e2c5b9d1f4
 
 # Содержимое legacy-таблиц и подписок не имеет права измениться ни миграцией, ни сведением.
 LEGACY_GUARD = {
@@ -53,6 +55,9 @@ def _script(dsn: str, *args: str) -> str:
 
     env = {**os.environ, "DATABASE_URL": dsn}
     env.setdefault("BOT_TOKEN", "ci-test-token")
+    if "--apply" in args and "--user-ids" not in args:
+        # запись сведения — только по явному списку подтверждённых пользователей: здесь подтверждены все пользователи фикстуры
+        args = (*args, "--user-ids", _scalar(dsn, "SELECT string_agg(id::text, ',' ORDER BY id) FROM users"))
     result = subprocess.run(
         [sys.executable, "scripts/backfill_multi_program.py", *args], cwd=REPO_ROOT, env=env,
         capture_output=True, text=True, timeout=300, check=False,
@@ -87,7 +92,7 @@ INSERT INTO blocks (workout_id, block_type, working_reps, max_reps, target_befor
 """
 
 
-def _aged(dsn: str) -> None:
+def _aged(dsn: str, *, copy_9005_created_at: str = "'2026-09-14 09:00+00'") -> None:
     sql = """
 INSERT INTO users (id, telegram_id, timezone, subscription_status, subscription_expires_at) VALUES
  (1001, 9101, 'UTC', 'active', '2026-12-31 10:00+00');
@@ -107,8 +112,11 @@ INSERT INTO elective_workouts (id, user_id, elective_type, performed_at, reps_se
  (7001, 1001, 'three_minutes', '2026-09-10 09:00+00', '[4, 3, 2]', 9, 'bodyweight', '2026-09-10 09:00+00'),
  (7002, 1001, 'volume_target', '2026-09-25 09:00+00', NULL, 40, 'bodyweight', '2026-09-25 09:00+00'),
  (7003, 1001, 'w_ladder', '2026-09-12 09:00+00', '[5, 4, 3]', 12, 'bodyweight', '2026-09-12 09:00+00');
-INSERT INTO training_sessions (id, user_id, source, status, performed_at, kind, origin, source_v2, duration_source)
- VALUES (9005, 1001, 'elective', 'completed', '2026-09-10 09:00+00', 'strength', 'legacy_elective', 'manual_existing_workout', 'unknown');
+-- старый backfill писал копии факультативов в одной транзакции с TrainingPlan: created_at копии = created_at плана
+-- (docs/rehearsal/old_backfill_created_at.py на коде 1735cad и 4298f8b); иное — нештатная история (тест ниже)
+INSERT INTO training_sessions (id, user_id, source, status, performed_at, kind, origin, source_v2, duration_source, created_at)
+ VALUES (9005, 1001, 'elective', 'completed', '2026-09-10 09:00+00', 'strength', 'legacy_elective', 'manual_existing_workout', 'unknown',
+         """ + copy_9005_created_at + """);
 INSERT INTO session_blocks (id, session_id, order_index, exercise_id) VALUES
  (90051, 9005, 0, (SELECT id FROM exercises WHERE name = 'Факультатив — 3 минуты подтягиваний' ORDER BY id LIMIT 1));
 INSERT INTO set_logs (session_block_id, set_number, is_max_set, metric_type, value, unit, note) VALUES
@@ -129,12 +137,12 @@ def _summary(dsn: str) -> dict:
 
 def test_fresh_install_has_a_single_head_and_the_unique_copy_key(scratch_dsn):  # noqa: F811
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == HEAD
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == CHAIN_HEAD
     heads = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
         env={**__import__("os").environ, "DATABASE_URL": scratch_dsn, "BOT_TOKEN": "x"},
     ).stdout.strip().splitlines()
-    assert len(heads) == 1 and heads[0].startswith(HEAD)
+    assert len(heads) == 1 and heads[0].startswith(CHAIN_HEAD)
     columns = {r[0] for r in _run(_fetch(scratch_dsn, """
         SELECT column_name FROM information_schema.columns WHERE table_name = 'training_sessions'"""))}
     assert {"legacy_id", "superseded_at", "superseded_reason", "superseded_by_id"} <= columns
@@ -175,6 +183,12 @@ def test_aged_database_converges_idempotently_without_touching_legacy_history(sc
     again = _script(scratch_dsn, "--converge-history", "--apply")
     assert _summary(scratch_dsn) == after  # apply-again = 0 изменений (ни строк, ни ревизий)
     assert "создано" not in again and "обновлено" not in again and "замещено" not in again
+    result = json.loads(again.strip().splitlines()[-1].removeprefix("RESULT-JSON "))  # машинный результат для guarded deploy
+    assert result["mode"] == "apply" and result["mutations"] == 0, result
+    first = json.loads(applied.strip().splitlines()[-1].removeprefix("RESULT-JSON "))
+    assert first["mutations"] > 0 and first["mutations"] == sum(
+        first["counts"].get(key, 0) for key in ("classified", "bound", "created", "updated", "superseded", "elective_created")
+    ), first
     assert _fingerprint(scratch_dsn, LEGACY_GUARD) == legacy_before
 
 
@@ -203,3 +217,27 @@ def test_downgrade_then_upgrade_keeps_sessions_and_reconverges_deterministically
 
     assert shape(again) == shape(converged)
     assert _canonical(scratch_dsn) == 5
+
+
+def test_late_elective_copy_outside_the_plan_transaction_is_left_unresolved(scratch_dsn):  # noqa: F811
+    """Прежняя форма фикстуры: копия 9005 записана НЕ в транзакции плана (created_at = момент вставки, позже плана) —
+    так штатный backfill не пишет. История факультативов не объяснима штатными писателями: 7001 не привязывается,
+    7002 (после плана) и 7003 не получают копий — все трое в «Не разрешено»; тренировки сводятся как обычно."""
+    _alembic(scratch_dsn, "upgrade", PRE_REVISION)
+    _aged(scratch_dsn, copy_9005_created_at="now()")
+    legacy_before = _fingerprint(scratch_dsn, LEGACY_GUARD)
+    _alembic(scratch_dsn, "upgrade", "head")
+
+    dry = _script(scratch_dsn, "--converge-history")
+    applied = _script(scratch_dsn, "--converge-history", "--apply")
+    after = _summary(scratch_dsn)
+    assert after[9005][:2] == ("legacy_elective", None)  # не привязана, хотя совпадает точно
+    assert _scalar(scratch_dsn, "SELECT count(*) FROM training_sessions WHERE origin = 'legacy_elective' AND legacy_id IS NOT NULL") == 0
+    assert after[9001][:2] == ("legacy_backfill", 8001)  # тренировки — без изменений в поведении
+    for out in (dry, applied):
+        assert "Не разрешено (копия НЕ создана, ничего не привязано): 3" in out, out
+        assert out.count("evidence: unkeyed_elective_copy_outside_plan_transaction:[9005]") == 3, out
+    assert "копий факультативов создано" not in applied
+    again = _script(scratch_dsn, "--converge-history", "--apply")
+    assert _summary(scratch_dsn) == after and "создано" not in again
+    assert _fingerprint(scratch_dsn, LEGACY_GUARD) == legacy_before

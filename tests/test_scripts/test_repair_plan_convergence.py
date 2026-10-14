@@ -196,3 +196,27 @@ def test_guard_accepts_exactly_the_allowed_repair():
     assert violations == []
     assert mutation["snapshot_repairs"][0]["reason"] == "missing_program_items_key"
     assert EXIT_GUARD == 4
+
+
+def test_guard_allows_only_awaiting_to_active_and_never_back_to_assessment():
+    """issue #305: единственное разрешённое изменение состояния инклюзии — awaiting_assessment → active (замер
+    записан, стартовое состояние пересчитано тем же правилом). Возврат на замер и чужие переходы — нарушение."""
+    base = _state_with({"program_name": "Подтягивания"}, PROGRESSED)
+    awaiting = copy.deepcopy(base)
+    awaiting.inclusions[1].update(status="awaiting_assessment", prescription_provenance={"rule_id": "x"})
+    promoted = copy.deepcopy(awaiting)
+    promoted.inclusions[1].update(
+        status="active", prescription_provenance={"rule_id": "x", "assessment": {"id": 1}},
+        progression_state={**PROGRESSED, "block_b": {**PROGRESSED.get("block_b", {}), "target": 9}},
+    )
+    assert _diff(awaiting, promoted, current_week_number=4)[1] == []
+
+    active = copy.deepcopy(base)
+    active.inclusions[1]["status"] = "active"
+    demoted = copy.deepcopy(active)
+    demoted.inclusions[1]["status"] = "awaiting_assessment"
+    assert any("awaiting_assessment" in v for v in _diff(active, demoted, current_week_number=4)[1])
+
+    progressed = copy.deepcopy(active)
+    progressed.inclusions[1]["progression_state"] = {**PROGRESSED, "workouts_completed_in_set": 99}
+    assert any("progression_state changed" in v for v in _diff(active, progressed, current_week_number=4)[1])

@@ -85,6 +85,9 @@ export type MockInsets = { top: number; bottom: number; left: number; right: num
 export type TelegramMockOptions = {
   backButton?: boolean;
   version?: string;
+  /** `WebApp.platform` клиента: telegram-ui берёт из него вид формы — ios/macos → «ios», остальное (android,
+   * tdesktop, web…) → «base». По умолчанию "tdesktop" (как раньше). */
+  platform?: string;
   safeAreaInset?: MockInsets;
   contentSafeAreaInset?: MockInsets;
 };
@@ -195,7 +198,7 @@ export async function mockTelegramWebApp(
   await page.route("https://telegram.org/js/telegram-web-app.js", (route) =>
     route.fulfill({ status: 200, contentType: "application/javascript", body: "" }),
   );
-  await page.addInitScript(({ raw, colorScheme, themeParams, tgVersion, safeArea, contentSafeArea }) => {
+  await page.addInitScript(({ raw, colorScheme, themeParams, tgVersion, platform, safeArea, contentSafeArea }) => {
     const w = window as unknown as {
       __tgCalls: string[];
       __tgClosingConfirmation: boolean;
@@ -220,7 +223,7 @@ export async function mockTelegramWebApp(
         initData: raw,
         initDataUnsafe: {},
         version: tgVersion,
-        platform: "tdesktop",
+        platform,
         colorScheme,
         themeParams,
         ...(supports8 && safeArea ? { safeAreaInset: safeArea } : {}),
@@ -259,6 +262,7 @@ export async function mockTelegramWebApp(
     colorScheme: theme,
     themeParams: THEME_PARAMS[theme],
     tgVersion: version,
+    platform: options.platform ?? "tdesktop",
     safeArea: options.safeAreaInset ?? null,
     contentSafeArea: options.contentSafeAreaInset ?? null,
   });

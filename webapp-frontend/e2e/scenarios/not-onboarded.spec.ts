@@ -17,7 +17,7 @@ test("совсем новый пользователь: сразу видит з
   // замера, что и "baseline" (POST /api/onboarding/baseline сам заводит
   // User). Раньше этот тест проверял старую заглушку — issue #126,
   // повторное падение CI после мержа PR 2 issue #124.
-  await expect(page.getByLabel("Число подтягиваний")).toBeVisible();
+  await expect(page.getByLabel("Сколько подтягиваний вышло?")).toBeVisible();
   // Нижнее меню (и пункт "Планы" внутри него) рендерится только при
   // onboarding_step="done" (см. App.tsx) — на этом статусе его не должно
   // быть вообще.

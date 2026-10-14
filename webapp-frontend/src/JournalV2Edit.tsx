@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { BackChevron } from "./BackChevron";
 import { cloneSession, editSession, type SessionResponseV2 } from "./apiV2";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
+import { courseBlockName } from "./courseV5";
 import { describeJournalBlock, journalEntryTitle } from "./journalFormat";
 import {
   buildEditPayload, initialDraft, isDateAllowed, SET_NOTE_MAX, todayKey, type EditDraft, type SetDraft,
@@ -94,7 +95,7 @@ export function JournalV2EditForm({
       />
 
       {session.blocks.map((block) => {
-        const view = describeJournalBlock(block);
+        const view = describeJournalBlock(block, courseBlockName(session.prescription_snapshot, block.order_index));
         const sets = draft.sets.filter((set) => set.blockIndex === block.order_index);
         if (sets.length === 0) {
           return null;

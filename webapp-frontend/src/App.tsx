@@ -10,7 +10,9 @@ import { PlanSessionFlow } from "./PlanSessionFlow";
 import { FaqScreen } from "./FaqScreen";
 import { HistoryScreen, type JournalRestore } from "./HistoryScreen";
 import { HomeScreen } from "./HomeScreen";
-import { startEngineReconciliation, wakeEngineReconciliation } from "./liveEngineClient";
+import {
+  getEngineReconcileStatus, startEngineReconciliation, subscribeEngineReconcileStatus, wakeEngineReconciliation,
+} from "./liveEngineClient";
 import { OnboardingScreen } from "./OnboardingScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { AnalyticsScreen } from "./AnalyticsScreen";
@@ -22,6 +24,27 @@ import { NavIcon } from "./NavIcon";
 import { isSessionExpiredMessage } from "./sessionErrors";
 import { getWebApp } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
+
+/**
+ * Сверка не смогла прочитать сохранённые очереди движка (IndexedDB). Там может лежать действие пользователя
+ * (Стоп, пауза), поэтому чтения с проекцией (активная тренировка, Журнал) ждут — показываем причину;
+ * повтор идёт сам (1, 2, 4, 8, 15 с), «Повторить» — сейчас. После удачного чтения баннер исчезает сам.
+ */
+function EngineStoreBanner() {
+  const [unreadable, setUnreadable] = useState(getEngineReconcileStatus().storeUnreadable);
+  useEffect(() => subscribeEngineReconcileStatus((status) => setUnreadable(status.storeUnreadable)), []);
+  if (!unreadable) {
+    return null;
+  }
+  return (
+    <div className="error-banner" role="alert" data-testid="engine-store-error">
+      <p>Не удалось прочитать сохранённые данные тренировки. Пробуем снова. Не очищайте данные приложения.</p>
+      <button type="button" className="action-button" data-testid="engine-store-retry" onClick={() => wakeEngineReconciliation()}>
+        Повторить
+      </button>
+    </div>
+  );
+}
 
 type LoadState =
   | { status: "loading" }
@@ -439,6 +462,7 @@ export function App() {
   return (
     <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
+      <EngineStoreBanner />
       {/* Замер + анкета (issue #124, PR 2) — раньше единственным путём
           пройти онбординг был бот ("Онбординг ещё не пройден. Начни его в
           боте."), теперь полноценный экран прямо здесь: не нужно закрывать

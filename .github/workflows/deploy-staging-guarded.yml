@@ -1,0 +1,79 @@
+name: Deploy Staging (guarded)
+
+# НЕ ПУТЬ ВЫКАТА (решение владельца): выбран ручной SSH-вызов guarded dispatcher (docs/STAGING_RC_RUNBOOK.md §3.3).
+# workflow_dispatch доступен только для workflow из ветки по умолчанию; в main этот файл не переносится, поэтому вариант
+# через Actions недоступен до отдельной регистрации владельцем. Аргументы и проверки — те же, что у ручного вызова.
+
+# STAGING-ONLY. Отдельный путь рядом с deploy-staging.yml (его и прод-деплой не меняет и не заменяет). Точный SHA, backup,
+# остановленные app/web, последовательная сборка, миграция, проверки данных, convergence, и только потом запуск + healthcheck.
+# При любой ошибке app/web остаются остановленными (deploy/deploy-staging-guarded-run.sh). Отдельный SSH-ключ с forced-command
+# deploy-staging-guarded-dispatch.sh принимает ровно ./deploy-staging-guarded.sh <sha> <preflight|dry-run|apply> <yes|no> [<users>].
+# Установка на сервере и откат — docs/STAGING_RC_RUNBOOK.md §3.2, §8.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Точный 40-символьный SHA проверенного кандидата (не ветка)"
+        required: true
+      converge:
+        description: "preflight — ТОЛЬКО ЧТЕНИЕ (фаза 0). dry-run — НЕ read-only: останавливает app/web, backup, сборка, МИГРАЦИЯ БД; сведение только проверяется. apply — то же + сведение для users"
+        type: choice
+        options: ["preflight", "dry-run", "apply"]
+        default: "preflight"
+      users:
+        description: "users.id через запятую (подтверждённые владельцем) или '-'. apply без списка запрещён; '-' в dry-run = прочитать всех, ничего не менять"
+        required: false
+        default: "-"
+      start:
+        description: "yes — запустить app/web после успешных проверок; no — проверить всё и оставить остановленными"
+        type: choice
+        options: ["no", "yes"]
+        default: "no"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging-guarded:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        env:
+          SHA: ${{ inputs.sha }}
+          CONVERGE: ${{ inputs.converge }}
+          START: ${{ inputs.start }}
+          USERS: ${{ inputs.users }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "sha must be 40 lowercase hex chars"; exit 1; }
+          [[ "$CONVERGE" =~ ^(preflight|dry-run|apply)$ ]] || { echo "bad converge"; exit 1; }
+          [[ "$USERS" =~ ^(-|[0-9]+(,[0-9]+){0,99})$ ]] || { echo "bad users"; exit 1; }
+          [[ "$CONVERGE" != "apply" || "$USERS" != "-" ]] || { echo "apply requires an explicit users list"; exit 1; }
+          [[ "$CONVERGE" != "preflight" || "$START" == "no" ]] || { echo "preflight never starts services"; exit 1; }
+          [[ "$START" =~ ^(yes|no)$ ]] || { echo "bad start"; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The SHA exists in this repository and ships the guarded-deploy files
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          git cat-file -e "${SHA}^{commit}"
+          for f in deploy/staging_data_check.sh deploy/staging-allowed-diff.txt docs/rehearsal/sql/gen_hash_queries.sql; do
+            git cat-file -e "${SHA}:${f}" || { echo "$f missing in $SHA"; exit 1; }
+          done
+
+      - name: Guarded deploy to staging VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.VPS_STAGING_GUARDED_SSH_KEY }}
+          command_timeout: 60m
+          script: ./deploy-staging-guarded.sh ${{ inputs.sha }} ${{ inputs.converge }} ${{ inputs.start }} ${{ inputs.users }}
