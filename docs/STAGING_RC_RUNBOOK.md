@@ -168,7 +168,7 @@ ssh $o $H "./deploy-staging-guarded.sh $SHA dry-run no -"      2>&1 | tee guarde
 ssh $o $H "./deploy-staging-guarded.sh $SHA dry-run no 12,57"  2>&1 | tee guarded-3-dry-scope.log  # пример списка
 ssh $o $H "./deploy-staging-guarded.sh $SHA apply yes 12,57"   2>&1 | tee guarded-4-apply.log
 ```
-Запускать с устойчивой машины (например, внутри `tmux` у владельца). **Обрыв SSH во время выката = отказ:** удалённый скрипт получает SIGHUP/SIGPIPE, останавливает свои one-off контейнеры и `app`/`web`
+Запускать с устойчивой машины (например, внутри `tmux` у владельца), **не через `nohup`** (игнорируемый при запуске SIGHUP перехватить нельзя — скрипт предупредит `WARNING: SIGHUP was ignored…`). **Обрыв SSH во время выката = отказ:** удалённый скрипт получает SIGHUP/SIGPIPE, останавливает свои one-off контейнеры и `app`/`web`
 и завершается ненулевым кодом (§3.5); причина и состояние сохраняются в `/home/deploy/backups/guarded-<sha7>-<UTC>.FAILED.txt`.
 
 **GitHub Actions-вариант (`.github/workflows/deploy-staging-guarded.yml`) недоступен:** `workflow_dispatch` появляется только у workflow из ветки по умолчанию, а переносить его в `main` не делаем.
@@ -237,7 +237,7 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep '^local/staging-'     #
 * **Проверки данных** `staging_data_check.sh` на реальных репетиционных БД: позитивный путь и 6 негативных (подмена данных падает).
 * **Не проверено:** запуск на VPS (версия Compose CLI неизвестна; `docker compose run -T`, `up -d --no-build`, `stop`, `config --images` на сервере; права пользователя `deploy`; наличие `flock`/`curl`/`awk`); поведение sshd с `no-pty` и
   `appleboy/ssh-action` для 60-минутной команды; серверный `post-deploy-cleanup.sh`; сборка при ≈ 704 МиБ (ограничение — последовательные сборки, пик не измерен); реальные данные staging; запуск самого GitHub workflow.
-* **Findings deploy-review (код `57f7899`), настоящий Docker в песочнице:** `preflight` на Compose v5.6.0 (`run --label` есть; область 3,5,12 → план `[3]`, только история `[5,12]`);
+* **Findings deploy-review (код `57f7899`, итог `5afd57e` — плюс предупреждение об игнорируемом сигнале), настоящий Docker в песочнице:** `preflight` на Compose v5.6.0 (`run --label` есть; область 3,5,12 → план `[3]`, только история `[5,12]`);
   TERM во время `alembic upgrade` (после первой строки `Running upgrade`) → код 143, `alembic_version` осталась `c3f7a9e2d5b1`, новых таблиц нет, контейнеров с меткой 0, `app`/`web` остановлены, отчёт `…FAILED.txt`;
   TERM в момент `created` one-off контейнера сведения → 0 контейнеров; полный `apply yes 3,5,12` → `GUARDED DEPLOY OK`, `training_sessions`/`plan_items` у 5 и 12 без плана, повторный history-apply `mutations=0`.
   По ходу найдены и исправлены два реальных дефекта очистки: `docker stop` давал миграции закоммититься (PID 1 игнорирует TERM) → `docker kill`; плагин compose переживал `docker` и создавал контейнер

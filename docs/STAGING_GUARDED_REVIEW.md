@@ -9,11 +9,11 @@
 git diff 4298f8b9727f91d4a150431fd0d9e06131944d27 <CANDIDATE_SHA> -- deploy .github/workflows/deploy-staging-guarded.yml Dockerfile.web
 ```
 `4298f8b…` — код, который сейчас на staging, поэтому diff = ровно то, что появится на сервере (6 файлов: все новые, кроме `Dockerfile.web`).
-Готовые файлы на кодовом коммите `57f7899`: полный diff — `docs/rehearsal/review/guarded-deploy-vs-staging-4298f8b.patch`; только правки после первого ревью (от `3f10ecf`) —
-`docs/rehearsal/review/guarded-deploy-review-fixes-since-3f10ecf.patch`. Хэши установочных файлов на `57f7899` (сверять с `git show <SHA>:<file> | sha256sum` перед `install`, runbook §3.2):
+Готовые файлы на кодовом коммите `5afd57e`: полный diff — `docs/rehearsal/review/guarded-deploy-vs-staging-4298f8b.patch`; только правки после первого ревью (от `3f10ecf`) —
+`docs/rehearsal/review/guarded-deploy-review-fixes-since-3f10ecf.patch`. Хэши установочных файлов на `5afd57e` (сверять с `git show <SHA>:<file> | sha256sum` перед `install`, runbook §3.2):
 
 ```
-5555ce26bea12e43b505a5f0324c2f267e67bde5222274f0cab06223bbcfaa98  deploy/deploy-staging-guarded-run.sh
+5f08f3620b4cd5105bd731ec45dd422e10a30349aa10c124517b511e058ea8b0  deploy/deploy-staging-guarded-run.sh
 e9db113af2dfde95c353bdd8d6babfa5f5c097c6debc6d91d21cba604dcd30c1  deploy/deploy-staging-guarded-dispatch.sh
 430025698a69010cd649987ba2de36fbc5542a1a23afa4b52f70485178186e9c  deploy/staging_data_check.sh        # читается скриптом через `git show <SHA>:…`, на VPS отдельно не ставится
 ```
@@ -26,6 +26,7 @@ e9db113af2dfde95c353bdd8d6babfa5f5c097c6debc6d91d21cba604dcd30c1  deploy/deploy-
 | Сигналы TERM/HUP/INT/PIPE: не было ненулевого выхода и fail-safe; вывод мог идти в закрытый stdout до очистки | `trap` на четыре сигнала → код 128+N, та же очистка, что при ошибке; порядок: kill one-off этого запуска → дождаться и завершить группу процессов команды → снова kill/rm всего с меткой запуска → `stop app web` → отчёт в файл → вывод в исходный stderr (fd 7); первая причина/код сохраняются; повторные сигналы во время очистки игнорируются | стаб-тесты: сигнал во время миграции, сведения, после `up` во время healthcheck, после healthcheck до проверки образов × TERM/HUP/INT; SIGPIPE (закрытый stdout); сигнал во время очистки не меняет причину |
 | Долгая команда откладывала обработку сигнала | долгие команды через `bgwait` (фон + `wait`, своя группа процессов `setsid`) | тест «обработан < 10 с»; мутация «на переднем плане» ловится |
 | One-off контейнер `compose run` мог писать после снятия `flock` | метка `guarded.run=<sha7>-<UTC>-<pid>` на каждом `compose run`; очистка останавливает **только** контейнеры этой метки (по ID; без глобального pkill/stop); `SIGKILL` (не `stop`: PID 1 игнорирует TERM, миграция успевала закоммититься); ожидание всей группы процессов команды (иначе переживший `docker` плагин compose создавал контейнер после очистки); preflight отказывает при оставшихся контейнерах прежнего запуска | настоящий Docker (песочница): TERM в момент `alembic upgrade` → БД осталась `c3f7a9e2d5b1` (откат транзакции), контейнеров с меткой 0; TERM ровно в момент `created` контейнера сведения → 0 контейнеров; стаб-тесты «клиент создаёт контейнер при выходе», «плагин переживает docker» |
+| Сигнал, игнорируемый при запуске (`nohup` → HUP) | bash не может его перехватить — скрипт пишет `WARNING: SIGHUP was ignored…`; обрыв SSH всё равно завершает выкат через SIGPIPE | найдено при прогоне тестов под `nohup`; тест + мутация |
 | SIGKILL | неперехватываем — задокументировано; следующий запуск отказывается в preflight, ручная процедура — runbook §3.5 | тест «оставшиеся контейнеры блокируют следующий запуск» |
 | Entry point | ручной SSH-вызов guarded dispatcher; Actions-вариант недоступен до регистрации (в `main` не переносится) | runbook §3.3 |
 | Идемпотентность history учитывала не все изменения (не было `classified`) | машинный результат `RESULT-JSON` (`mutations` = все `MUTATING_KEYS` сервиса, в т. ч. `classified`); нет строки — стоп | тест «classified=1 на повторе — стоп», «нет RESULT-JSON — стоп»; DB-тест на реальном выводе скрипта |
@@ -37,7 +38,7 @@ e9db113af2dfde95c353bdd8d6babfa5f5c097c6debc6d91d21cba604dcd30c1  deploy/deploy-
 | Старый staging-workflow параллельно | общий lock-файл `/home/deploy/.deploy-staging.lock`; preflight отказывает при работающем `deploy-staging-run.sh`; готовая правка forced command старого ключа (`flock -n …`) и отключение workflow на окно | runbook §3.8 |
 
 Mutation proof (каждая мутация валит свой тест): нет trap TERM; команда на переднем плане вместо `bgwait`; нет очистки one-off; повторный history без проверки; диспетчер без `env -u`;
-нет preflight-проверки ревизии; план для всего списка; нет trap PIPE; нет `sha256sum -c`; нет ожидания умирающего клиента; ожидание только `docker` без группы процессов.
+нет preflight-проверки ревизии; план для всего списка; нет trap PIPE; нет `sha256sum -c`; нет ожидания умирающего клиента; ожидание только `docker` без группы процессов; нет предупреждения об игнорируемом при запуске сигнале.
 
 ## Чек-лист ревью (≈ 15 минут)
 

@@ -32,7 +32,7 @@ index 1a3e683..b97d277 100755
 +  -u HEALTH_TIMEOUT -u MIN_DISK_MB -u CLEANUP_BIN \
 +  /home/deploy/deploy-staging-guarded-run.sh "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" "${BASH_REMATCH[5]:--}"
 diff --git a/deploy/deploy-staging-guarded-run.sh b/deploy/deploy-staging-guarded-run.sh
-index b944cf2..289ffe7 100755
+index b944cf2..44f3920 100755
 --- a/deploy/deploy-staging-guarded-run.sh
 +++ b/deploy/deploy-staging-guarded-run.sh
 @@ -16,6 +16,12 @@
@@ -56,7 +56,7 @@ index b944cf2..289ffe7 100755
  
  if [ "${GUARDED_TEST:-0}" = "1" ]; then   # переопределения — только для тестов с заглушками; на VPS игнорируются
    STAGING_DIR="${STAGING_DIR:?}"; BACKUP_DIR="${BACKUP_DIR:?}"; HEALTH_URL="${HEALTH_URL:?}"
-@@ -57,37 +64,98 @@ if [ "$CONVERGE" = "preflight" ] && [ "$START" = "yes" ]; then
+@@ -57,42 +64,113 @@ if [ "$CONVERGE" = "preflight" ] && [ "$START" = "yes" ]; then
  fi
  SHA7="${SHA:0:7}"; TS="$(date -u +%Y%m%dT%H%M%SZ)"
  WORK="$(mktemp -d /tmp/guarded-deploy.XXXXXX)"
@@ -104,6 +104,9 @@ index b944cf2..289ffe7 100755
 +trap 'on_signal INT 2' INT
 +trap 'on_signal PIPE 13' PIPE
 +trap 'on_signal TERM 15' TERM
++# Сигнал, игнорируемый при запуске (например, `nohup` игнорирует HUP), bash перехватить не может — предупредить.
++# Обрыв SSH при этом всё равно завершает выкат через SIGPIPE при следующей записи в вывод.
++SIG_IGNORED_ON_ENTRY="$(awk '/^SigIgn:/{print $2}' /proc/$$/status 2>/dev/null || true)"
 +
  on_exit() {
 -  local rc=$?
@@ -167,7 +170,19 @@ index b944cf2..289ffe7 100755
  }
  trap on_exit EXIT
  
-@@ -118,6 +186,30 @@ PREV_REV="$(dbq "select version_num from alembic_version")"
+ # ------------------------------------------------------------------------------------------------ 0 preflight
+ phase 0 "preflight (staging only, exact SHA, free resources)"
++if [ -n "$SIG_IGNORED_ON_ENTRY" ]; then
++  for pair in HUP:1 INT:2 PIPE:13 TERM:15; do
++    if (( (16#$SIG_IGNORED_ON_ENTRY >> (${pair#*:} - 1)) & 1 )); then
++      log "WARNING: SIG${pair%%:*} was ignored when this run started (nohup?) and cannot be trapped; other signals and SIGPIPE still stop the run safely"
++    fi
++  done
++fi
+ cd "$STAGING_DIR"
+ [ -f docker-compose.yml ] && [ -f .env ] || die "docker-compose.yml/.env not found in $STAGING_DIR"
+ [ -z "$(git status --porcelain)" ] || die "staging checkout is not clean"
+@@ -118,6 +196,30 @@ PREV_REV="$(dbq "select version_num from alembic_version")"
  log "staging: HEAD=$PREV_SHA alembic=$PREV_REV db-container=$DBC"
  DB_NAME="$(docker exec "$DBC" sh -c 'echo "$POSTGRES_DB"')"
  case "$DB_NAME" in *staging*) ;; *) die "database name '$DB_NAME' does not contain 'staging' — refusing to continue" ;; esac
@@ -198,7 +213,7 @@ index b944cf2..289ffe7 100755
  
  if [ "$CONVERGE" = "preflight" ]; then
    log "PREFLIGHT OK (read-only): sha=$SHA is available and ships the guarded files; staging HEAD=$PREV_SHA alembic=$PREV_REV; nothing was stopped, built, migrated or written"
-@@ -126,14 +218,22 @@ fi
+@@ -126,14 +228,22 @@ fi
  
  # ------------------------------------------------------------------------------------------------ 1 rollback images
  phase 1 "save current app/web images under our own tags (rollback without Alembic)"
@@ -223,7 +238,7 @@ index b944cf2..289ffe7 100755
  done
  
  # ------------------------------------------------------------------------------------------------ 2 stop writers
-@@ -143,22 +243,23 @@ dc stop app web
+@@ -143,22 +253,23 @@ dc stop app web
  conns="$(dbq "select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()")"
  [ "$conns" = "0" ] || die "$conns other connection(s) to the database remain after stopping app/web"
  W1="$(dbq "select coalesce(sum(n_tup_ins+n_tup_upd+n_tup_del),0) from pg_stat_user_tables")"
@@ -251,7 +266,7 @@ index b944cf2..289ffe7 100755
  rq() { docker exec "$DBC" sh -c "psql -U \"\$POSTGRES_USER\" -d restore_check -At -c \"$1\""; }
  [ "$(rq "select version_num from alembic_version")" = "$PREV_REV" ] || die "restored alembic_version differs from live"
  COUNTS_SQL="select (select count(*) from users)||'/'||(select count(*) from subscriptions)||'/'||(select count(*) from program_inclusions)||'/'||(select count(*) from training_sessions)||'/'||(select count(*) from plan_items)"
-@@ -181,7 +282,7 @@ phase 5 "build app, then web — sequentially (limited memory)"
+@@ -181,7 +292,7 @@ phase 5 "build app, then web — sequentially (limited memory)"
  export COMPOSE_PARALLEL_LIMIT=1
  for svc in app web; do
    log "memory before build $svc: $(free -m 2>/dev/null | awk 'NR==2{print "available "$7" MB"}')"
@@ -260,7 +275,7 @@ index b944cf2..289ffe7 100755
  done
  imgname() { dc config --images 2>/dev/null | grep -E "[-_]$1\$" | head -n1; }
  for svc in app web; do
-@@ -193,13 +294,15 @@ done
+@@ -193,13 +304,15 @@ done
  
  # ------------------------------------------------------------------------------------------------ 6 migration
  phase 6 "migration (single transaction)"
@@ -278,7 +293,7 @@ index b944cf2..289ffe7 100755
    [ "$(dbq "select version_num from alembic_version")" = "$HEADS" ] || die "alembic_version != head after upgrade"
  else
    die "unexpected alembic revision $CUR (expected $EXPECTED_FROM_REV or head $HEADS)"
-@@ -213,7 +316,7 @@ phase 7 "data checks after migration (expected transformations only)"
+@@ -213,7 +326,7 @@ phase 7 "data checks after migration (expected transformations only)"
  # ------------------------------------------------------------------------------------------------ 8 convergence
  phase 8 "convergence ($CONVERGE, users=$USERS)"
  conv_json_check() { # <file> <expect_zero_mutations 0|1>
@@ -287,7 +302,7 @@ index b944cf2..289ffe7 100755
  import json, sys
  d = json.load(sys.stdin)
  if d.get("error"):
-@@ -223,17 +326,35 @@ print("mode=%s users=%s total_mutations=%s guard_violations=%d" % (d["mode"], d[
+@@ -223,17 +336,35 @@ print("mode=%s users=%s total_mutations=%s guard_violations=%d" % (d["mode"], d[
  sys.exit(1 if bad or (sys.argv[1] == "1" and d["total_mutations"] != 0) else 0)
  ' "$2" < "$1"
  }
@@ -332,7 +347,7 @@ index b944cf2..289ffe7 100755
  "$WORK/tgt/staging_data_check.sh" same-as-migration "$WORK/data"
  # неразрешённые факультативы (копия НЕ создана, ничего не привязано) — с user_id и причиной; сохраняются и показываются всегда
  hist_unresolved "$WORK/hist_dry.txt" > "$REPORT_DIR/unresolved-dry-run.txt" || true
-@@ -244,15 +365,19 @@ else
+@@ -244,15 +375,19 @@ else
    log "unresolved electives (dry-run, scope users=$USERS): none"
  fi
  if [ "$CONVERGE" = "apply" ]; then
@@ -357,7 +372,7 @@ index b944cf2..289ffe7 100755
    "$WORK/tgt/staging_data_check.sh" after-convergence "$WORK/data"
    log "convergence applied ONLY to users=$USERS; unresolved after apply: $(grep -c 'user_id=' "$REPORT_DIR/unresolved-apply.txt" || true) (kept as is, see $REPORT_DIR/unresolved-apply.txt)"
  else
-@@ -269,9 +394,9 @@ fi
+@@ -269,9 +404,9 @@ fi
  phase 9 "start app/web, healthcheck, verify the running build"
  dc up -d --no-build app web
  deadline=$((SECONDS + HEALTH_TIMEOUT))
@@ -369,7 +384,7 @@ index b944cf2..289ffe7 100755
  done
  log "healthcheck OK: $HEALTH_URL"
  for svc in app web; do
-@@ -281,7 +406,7 @@ for svc in app web; do
+@@ -281,7 +416,7 @@ for svc in app web; do
    want="BUILT_ID_$svc"; got="$(docker inspect -f '{{.Image}}' "$cid")"
    [ "$got" = "${!want}" ] || die "$svc runs image ${got:0:19}, not the one built by this run (${!want:0:19})"
    until [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")" != "starting" ]; do
