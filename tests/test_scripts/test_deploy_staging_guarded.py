@@ -627,6 +627,24 @@ def test_oneoff_created_by_a_surviving_compose_plugin_process_is_also_stopped(sa
     assert state["running"] is False
 
 
+def test_signal_ignored_on_entry_is_reported(sandbox):
+    # nohup и т. п.: игнорируемый при запуске сигнал bash перехватить не может — скрипт об этом предупреждает
+    proc = subprocess.run(
+        ["bash", str(RUN), SHA, "preflight", "no"],
+        capture_output=True,
+        text=True,
+        env=sandbox.env,
+        check=False,
+        cwd=str(sandbox.root),
+        stdin=subprocess.DEVNULL,
+        timeout=60,
+        preexec_fn=lambda: signal.signal(signal.SIGHUP, signal.SIG_IGN),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "WARNING: SIGHUP was ignored when this run started" in proc.stdout
+    assert "WARNING: SIGTERM" not in proc.stdout
+
+
 def test_closed_stdout_sigpipe_is_a_failure_with_fail_safe_stop(sandbox):
     proc = start_run(
         sandbox, SHA, "apply", "yes", "12,57", HANG_ON="alembic upgrade head", HANG_SECONDS="2"

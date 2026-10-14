@@ -106,6 +106,9 @@ trap 'on_signal HUP 1' HUP
 trap 'on_signal INT 2' INT
 trap 'on_signal PIPE 13' PIPE
 trap 'on_signal TERM 15' TERM
+# Сигнал, игнорируемый при запуске (например, `nohup` игнорирует HUP), bash перехватить не может — предупредить.
+# Обрыв SSH при этом всё равно завершает выкат через SIGPIPE при следующей записи в вывод.
+SIG_IGNORED_ON_ENTRY="$(awk '/^SigIgn:/{print $2}' /proc/$$/status 2>/dev/null || true)"
 
 on_exit() {
   local rc=$? ids
@@ -161,6 +164,13 @@ trap on_exit EXIT
 
 # ------------------------------------------------------------------------------------------------ 0 preflight
 phase 0 "preflight (staging only, exact SHA, free resources)"
+if [ -n "$SIG_IGNORED_ON_ENTRY" ]; then
+  for pair in HUP:1 INT:2 PIPE:13 TERM:15; do
+    if (( (16#$SIG_IGNORED_ON_ENTRY >> (${pair#*:} - 1)) & 1 )); then
+      log "WARNING: SIG${pair%%:*} was ignored when this run started (nohup?) and cannot be trapped; other signals and SIGPIPE still stop the run safely"
+    fi
+  done
+fi
 cd "$STAGING_DIR"
 [ -f docker-compose.yml ] && [ -f .env ] || die "docker-compose.yml/.env not found in $STAGING_DIR"
 [ -z "$(git status --porcelain)" ] || die "staging checkout is not clean"
