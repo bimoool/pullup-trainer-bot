@@ -45,6 +45,15 @@ if env.get("HANG_ON") and env["HANG_ON"] in joined and "--help" not in joined:
         label = next(a.split("=", 1)[1] for a in args if a.startswith("guarded.run="))
         st.setdefault("oneoffs", {})["oneoff-1"] = {"label": label, "running": True}; save()
     L("HANG " + env["HANG_ON"])
+    if env.get("LATE_CREATE") and " run " in f" {joined} ":
+        # как настоящий compose run: на TERM клиент ещё успевает создать one-off контейнер и только потом выходит
+        import signal as _signal, time as _t
+        def _late(*_):
+            _t.sleep(1.0)
+            st2 = json.loads(state_path.read_text())
+            st2.setdefault("oneoffs", {})["oneoff-late"] = {"label": label, "running": True}
+            state_path.write_text(json.dumps(st2)); L("LATE oneoff-late created"); sys.exit(143)
+        _signal.signal(_signal.SIGTERM, _late)
     import time; time.sleep(float(env.get("HANG_SECONDS", "60")))
 if args[:2] == ["ps", "-aq"]:
     flt = args[args.index("--filter") + 1] if "--filter" in args else ""
@@ -571,6 +580,23 @@ def test_signal_stops_services_and_this_runs_oneoff_containers(sandbox, hang_on,
     # после сигнала ничего не стартует и не продолжает фазы
     sig_at = max(i for i, line in enumerate(log) if "HANG" in line or "curl" in line)
     assert not any("up -d" in line for line in log[sig_at + 1 :]), log[sig_at:]
+
+
+def test_oneoff_created_by_the_dying_client_is_also_stopped(sandbox):
+    # клиент compose run создаёт контейнер уже после TERM: очистка ждёт выхода клиента и только потом ищет контейнеры
+    proc = start_run(
+        sandbox, SHA, "apply", "yes", "12,57", HANG_ON="alembic upgrade head", LATE_CREATE="1"
+    )
+    wait_for_log(sandbox.log, "HANG alembic upgrade head")
+    proc.send_signal(signal.SIGTERM)
+    _out, err = proc.communicate(timeout=30)
+    state = json.loads(sandbox.state.read_text())
+    assert proc.returncode == 143, err
+    assert "LATE oneoff-late created" in sandbox.log.read_text()
+    assert state["oneoffs"]["oneoff-late"]["running"] is False, (
+        "one-off created during shutdown must be stopped"
+    )
+    assert state["running"] is False
 
 
 def test_closed_stdout_sigpipe_is_a_failure_with_fail_safe_stop(sandbox):

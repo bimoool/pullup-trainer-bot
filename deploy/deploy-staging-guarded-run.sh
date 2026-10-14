@@ -111,7 +111,14 @@ on_exit() {
   [ "$rc" -ne 0 ] || exit 0
   [ -n "$FAIL_REASON" ] || FAIL_REASON="exit $rc"
   # 1) сначала действия — не зависят от stdout
-  if [ -n "$CHILD" ]; then kill -TERM "$CHILD" 2>/dev/null || true; fi
+  if [ -n "$CHILD" ]; then
+    # клиент (docker compose run/build …) должен завершиться ДО поиска контейнеров: иначе он успевает создать one-off
+    # контейнер уже после очистки (проверено на настоящем Docker: остался контейнер в состоянии created)
+    kill -TERM "$CHILD" 2>/dev/null || true
+    for _ in $(seq 1 40); do kill -0 "$CHILD" 2>/dev/null || break; sleep 0.25; done
+    kill -KILL "$CHILD" 2>/dev/null || true
+    wait "$CHILD" 2>/dev/null || true
+  fi
   ids="$(our_oneoffs)"
   if [ -n "$ids" ]; then
     # shellcheck disable=SC2086
