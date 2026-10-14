@@ -272,10 +272,11 @@ def derive_occurrence_states(
 
     * completed — занятие засчитано (явный кредит сессии, PL2/PL4), в любой неделе.
     * missed — неделя закончилась, занятие открыто (PL5). Перенос долга не порождается.
-    * Открытые занятия текущей и будущих недель группы отдыха раскладываются цепочкой по порядку
-      (неделя, scheduled_date, occurrence_index): первое — не раньше max(today, available_from),
-      каждое следующее — не раньше предыдущего + min_days. Не поместившееся до конца своей недели —
-      infeasible («не успеть на этой неделе», K2): не долг и не пропуск, цепочку не сдвигает.
+    * Открытые занятия текущей и будущих недель группы отдыха раскладываются цепочкой ВНУТРИ своей недели
+      по порядку (scheduled_date, occurrence_index): первое — не раньше max(today, available_from, начало
+      недели), каждое следующее — не раньше предыдущего + min_days. Не поместившееся до конца своей недели —
+      infeasible («не успеть на этой неделе», K2): не долг и не пропуск, цепочку не сдвигает. Прогнозные даты
+      прошлой недели в следующую не переносятся (K2 считается для каждой недели от реальных ограничений).
     * Поместившееся: too_early, пока сегодня < available_from группы (K1 решает старт), иначе
       available. Будущие недели видимы и стартуемы (§6) — ограничивает только K1.
     * Без группы отдыха — available (и projected_date = scheduled_date, если задана)."""
@@ -305,12 +306,22 @@ def derive_occurrence_states(
     for group, members in chains.items():
         available = available_from_by_group.get(group)
         min_days = min_days_by_group.get(group, 0)
-        cursor = max(today, available) if available is not None else today
+        # Реальные ограничения — сегодня и available_from (последний фактический старт + отдых). Цепочка
+        # «предыдущее + min_days» идёт ВНУТРИ недели (K2: «for each week … [max(today, available_from), week_end]»);
+        # в следующую неделю переносятся только реальные ограничения, а не прогнозные даты ещё не выполненных
+        # занятий прошлой недели: иначе полностью будущая неделя показывала «не успеть на этой неделе» из-за
+        # гипотезы, что текущие занятия будут сделаны в самые поздние дни (аудит staging, неделя 19–25 октября).
+        # Старт по-прежнему решает K1 (available_from на момент старта).
+        base = max(today, available) if available is not None else today
+        cursor = base
+        chain_week: date | None = None
         ordered = sorted(
             members,
             key=lambda o: (o.week_start, o.scheduled_date or date.max, o.occurrence_index or 0, o.item_id),
         )
         for occ in ordered:
+            if occ.week_start != chain_week:
+                chain_week, cursor = occ.week_start, base
             earliest = max(cursor, occ.week_start)
             projected = occ.scheduled_date if occ.scheduled_date is not None and occ.scheduled_date >= earliest else earliest
             if projected > _week_end(occ.week_start):

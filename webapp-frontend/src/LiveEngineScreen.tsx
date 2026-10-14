@@ -8,7 +8,7 @@ import {
 import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFormat";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
-import { carriesCompletionOutcome, classifySyncError, summaryResult, type SyncFailure } from "./liveFinish";
+import { carriesCompletionOutcome, classifySyncError, FINISH_EARLY_HINT, summaryResult, type SyncFailure } from "./liveFinish";
 import {
   activeElapsedMs, remainingMs, type CheckAnswer, type EnginePlan, type EngineState, type Phase, type PlanBlock,
 } from "./liveEngine";
@@ -18,6 +18,7 @@ import {
   type EngineQueue, type QueueOwner,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
+import { confirmAction } from "./telegramPlatform";
 import { useBackButton } from "./useBackButton";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
@@ -439,7 +440,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   }
 
   async function requestCancel(): Promise<void> {
-    if (!window.confirm("Отменить тренировку? Ничего не сохранится.")) {
+    if (!(await confirmAction("Отменить тренировку? Ничего не сохранится."))) {
       return;
     }
     setReviewOpen(false);
@@ -482,6 +483,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const isBlockRest = state.phase === "REST" && state.rest_kind === "block";
   const nextBlockIndex = isBlockRest ? state.cursor.block_index + 1 : null;
   const lastLog = [...state.logs].reverse().find((log) => !log.is_extra && log.value !== null) ?? null;
+  const lastLogPanel = lastLog !== null && state.phase !== "COMPLETE" && !finishing && (state.phase === "REST" || state.phase === "PREP");
+  // Пока открыта правка подхода, липкая нижняя панель скрыта (как при «Ещё подход»): на узком экране она перекрывала
+  // «Сохранить подход» (аудит staging, 320×568). Фаза сменилась — панель правки исчезает, транспорт возвращается сам.
+  const editPanelOpen = lastLogPanel && editOpen;
   const lastLogKind = lastLog !== null ? plan.blocks[lastLog.block_index]?.sets?.[lastLog.set_index]?.kind : undefined;
   const lastLogLabel = lastLogKind === "time" || lastLogKind === "max_time" ? "Секунды" : "Повторений";
   const timedWork = state.phase === "WORK" && (isInterval || spec?.kind === "time");
@@ -643,7 +648,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         </section>
       )}
 
-      {lastLog !== null && state.phase !== "COMPLETE" && !finishing && (state.phase === "REST" || state.phase === "PREP") && (
+      {lastLogPanel && (
         <section className="live-panel live-log-panel live-log-collapsed" data-testid="engine-last-set">
           {editOpen ? (
             <form onSubmit={(event) => {
@@ -728,7 +733,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         </div>
       )}
 
-      {!finishing && !reviewOpen && !extraOpen && (
+      {!finishing && !reviewOpen && !extraOpen && !editPanelOpen && (
         <div className="live-transport">
           {(workInput || resultInput) && (
             <Button className="live-primary" size="l" stretched type="submit" form="engine-log-form" data-testid="engine-submit" disabled={!isCompleteDecimal(value)}>
@@ -791,7 +796,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           <section className="live-sheet" role="dialog" aria-modal="true" aria-label="Итог тренировки" data-testid="workout-review">
             <div className="live-sheet-handle" aria-hidden="true" />
             <h3 className="live-sheet-title">Как прошла тренировка?</h3>
-            <p className="live-hint">Что сделано — зачтено, остальное останется в плане.</p>
+            <p className="live-hint" data-testid="engine-finish-early-hint">{FINISH_EARLY_HINT}</p>
             {checksForm}
             <EffortChips value={reviewEffort} onPick={(next) => setReviewEffort(reviewEffort === next ? null : next)} />
             <label className="live-field live-note-field">

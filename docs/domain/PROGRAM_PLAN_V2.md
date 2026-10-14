@@ -253,8 +253,11 @@ Where the contract left a choice open, Wave 1b decided as follows (code: `app/do
    and may change (PL6, `status = rescheduled`). `scheduled_date = week start + day_of_week`.
 6. **Volume** = rows: the program materialises exactly `sessions_per_week` occurrences per open week (desired
    volume); placement feasibility is derived on read (K2) — infeasible occurrences stay as rows with state
-   `infeasible`, never silently dropped and never placed in violation of rest. Projection chains across weeks
-   (`max(today, available_from)`, then `+ min_days`); a `scheduled_date` is honoured if not earlier than the chain.
+   `infeasible`, never silently dropped and never placed in violation of rest. Projection chains **within each week**
+   (`max(today, available_from, week_start)`, then `+ min_days`), as K2 states («for each week»): only real constraints
+   (today, `available_from` of the last actual start) carry into later weeks, not projected dates of still-open
+   occurrences of an earlier week (staging audit 2026-10: a fully future week showed «не успеть на этой неделе»
+   because of such a projection). A `scheduled_date` is honoured if not earlier than the chain. K1 decides at start.
 7. **Credit.** `training_sessions.plan_item_id`, set only at live start from the plan (one occurrence per start;
    several → 422). An already-credited occurrence starts again without credit. Old-form rows that convergence
    has not expanded yet (pre-#304 clients/data) credit the first requested row. Direct start and clone never

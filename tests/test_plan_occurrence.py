@@ -121,7 +121,9 @@ def test_three_per_week_infeasible_when_desired_volume_does_not_fit():
     assert (summary.planned, summary.infeasible) == (3, 1)  # «0 из 3», одно — «не успеть», не долг
 
 
-def test_chain_continues_into_future_weeks_without_violating_rest():
+def test_chain_is_per_week_future_week_is_not_infeasible_because_of_projected_dates():
+    """K2 «for each week»: в будущую неделю переносятся только реальные ограничения (today, available_from),
+    а не прогнозные даты ещё не выполненных занятий текущей недели. Внутри недели — отдых между занятиями."""
     this_week = [_occ(1), _occ(2, index=2), _occ(3, index=3)]  # Пн, Чт, Вс
     next_week = [_occ(4, NEXT_MON), _occ(5, NEXT_MON, 2), _occ(6, NEXT_MON, 3)]
     states = derive_occurrence_states(
@@ -129,10 +131,37 @@ def test_chain_continues_into_future_weeks_without_violating_rest():
     )
     projected = [states[i].projected_date for i in range(1, 7)]
     assert projected[:3] == [MON, THU, SUN]
-    assert projected[3:5] == [NEXT_MON + timedelta(days=2), NEXT_MON + timedelta(days=5)]  # Ср, Сб
+    assert projected[3:] == [NEXT_MON, NEXT_MON + timedelta(days=3), NEXT_MON + timedelta(days=6)]  # Пн, Чт, Вс
+    assert all(states[i].state == OccurrenceState.AVAILABLE for i in range(1, 7))
+    for week in (projected[:3], projected[3:]):
+        assert all((b - a).days >= 3 for a, b in pairwise(week))
+
+
+def test_audit_staging_fully_future_week_19_25_october_is_not_infeasible():
+    """Аудит staging (контролируемая дата): сегодня ср 14.10.2026, MAIN 3 раза в неделю, отдых 3 дня.
+    Текущая неделя 12–18: ср, сб — успеть; третье — «не успеть на этой неделе» (верно). Полностью будущая
+    неделя 19–25: все три помещаются (пн, чт, вс) — раньше она показывала «не успеть» из-за прогноза ср/сб."""
+    today, week, future = date(2026, 10, 14), date(2026, 10, 12), date(2026, 10, 19)
+    occurrences = [_occ(1, week), _occ(2, week, 2), _occ(3, week, 3), _occ(4, future), _occ(5, future, 2), _occ(6, future, 3)]
+    states = derive_occurrence_states(occurrences, today=today, available_from_by_group={MAIN: today}, min_days_by_group=DAYS)
+    assert [states[i].state for i in (1, 2, 3)] == [OccurrenceState.AVAILABLE, OccurrenceState.AVAILABLE, OccurrenceState.INFEASIBLE]
+    assert [states[i].state for i in (4, 5, 6)] == [OccurrenceState.AVAILABLE] * 3
+    assert [states[i].projected_date for i in (4, 5, 6)] == [date(2026, 10, 19), date(2026, 10, 22), date(2026, 10, 25)]
+    summary = summarize_week(occurrences[3:], states)
+    assert summary.infeasible == 0
+
+
+def test_real_rest_still_limits_the_next_week():
+    """Реальное ограничение (available_from после фактического старта в сб) переносится: в следующей неделе
+    первое занятие не раньше вт, третье уже не помещается — это не прогноз, а K1."""
+    sat = SAT
+    occurrences = [_occ(4, NEXT_MON), _occ(5, NEXT_MON, 2), _occ(6, NEXT_MON, 3)]
+    states = derive_occurrence_states(
+        occurrences, today=sat, available_from_by_group={MAIN: sat + timedelta(days=3)}, min_days_by_group=DAYS,
+    )
+    assert states[4].projected_date == NEXT_MON + timedelta(days=1)  # вт
+    assert states[5].projected_date == NEXT_MON + timedelta(days=4)  # пт
     assert states[6].state == OccurrenceState.INFEASIBLE
-    dates = [d for d in projected if d is not None]
-    assert all((b - a).days >= 3 for a, b in pairwise(dates))
 
 
 def test_future_week_occurrence_is_available_not_locked():

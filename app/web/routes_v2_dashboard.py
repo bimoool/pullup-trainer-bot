@@ -29,7 +29,7 @@ from app.db.repositories.training_plans import TrainingPlanRepository
 from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
 from app.domain.constants import EquipmentType
-from app.domain.course_prescription import normalize_progression_state
+from app.domain.course_prescription import normalize_progression_state, resolve_progression_block
 from app.domain.progression import rollback_target
 from app.domain.pullups_v5 import (
     PROGRAM_VERSION,
@@ -65,6 +65,15 @@ def _equipment_response(block_state: dict) -> DashboardEquipmentResponse:
         label=format_equipment_label(equipment_type, equipment_value),
         needs_new_equipment=bool(block_state.get("needs_new_equipment", False)),
     )
+
+
+def _step_set_counts(role: str, progression_state) -> dict[str, int]:
+    """Число рабочих подходов и подходов на максимум — из ТОГО ЖЕ резолвера, что строит SetTarget живого старта
+    (app.services.live_session._resolve_step_role_block), а не из одного поля work_sets: иначе пред-экран обещал
+    «3 рабочих подхода», а Live/Summary считали 4 (рабочие + подход на максимум)."""
+    prescriptions = resolve_progression_block(role, progression_state)
+    max_sets = sum(1 for p in prescriptions if p.is_max_set)
+    return {"work_sets": len(prescriptions) - max_sets, "max_sets": max_sets}
 
 
 def _v5_block(block: BlockPrescription) -> DashboardBlockResponse:
@@ -171,10 +180,10 @@ async def get_dashboard_status(
         is_gap_rollback=is_gap_rollback,
         work_sets_growth_reason=block_a_state.get("work_sets_growth_reason"),
         block_a=DashboardBlockResponse(
-            target=target_a, work_sets=block_a_state["work_sets"], equipment=_equipment_response(block_a_state),
+            target=target_a, **_step_set_counts("block_a", progression_state), equipment=_equipment_response(block_a_state),
         ),
         block_b=DashboardBlockResponse(
-            target=block_b_state["target"], work_sets=block_b_state["work_sets"],
+            target=block_b_state["target"], **_step_set_counts("block_b", progression_state),
             equipment=_equipment_response(block_b_state),
         ),
     )

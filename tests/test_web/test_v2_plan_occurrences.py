@@ -214,6 +214,26 @@ async def test_admin_bypasses_rest(session, user: User, clock, monkeypatch):
     assert (await _start(session, user, [occurrences[1]["id"]])).status_code == 200
 
 
+async def test_audit_opening_start_screens_is_not_a_rest_bypass(session, user: User, clock):
+    """Аудит staging cb1593c: после досрочно завершённого MAIN (один подход) каждое другое занятие пула
+    отказывает в старте; открытие экрана старта (GET /api/v2/dashboard/status) ничего не меняет.
+    Обход отдыха на staging объясняется admin-доступом (test_admin_bypasses_rest), не экраном."""
+    await _enrol(session, user, clock)
+    occurrences = _week_items(await _plan(session, user), 1)
+    clock(MON)
+    started = await _start(session, user, [occurrences[0]["id"]])
+    await _finish(session, user, started, performed_at=MON)
+
+    clock(TUE)
+    for occurrence in occurrences[1:]:
+        status = await v2_get(session, user.telegram_id, "/api/v2/dashboard/status")
+        assert status.status_code == 200, status.text
+        rejected = await _start(session, user, [occurrence["id"]])
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["detail"]["code"] == "too_early"
+        assert rejected.json()["detail"]["available_from"] == "2026-10-08"
+
+
 # --- J12: будущие недели видимы и стартуемы ----------------------------------------------------
 
 

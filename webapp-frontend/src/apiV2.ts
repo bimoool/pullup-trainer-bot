@@ -86,6 +86,8 @@ export interface DashboardEquipmentResponse {
 export interface DashboardBlockResponse {
   target: number;
   work_sets: number;
+  /** Подходы на максимум после рабочих (STEP: 1; V5.6: 0) — тот же резолвер, что у живого старта. */
+  max_sets?: number;
   equipment: DashboardEquipmentResponse;
   /** issue #305 (V5.6): готовая запись плана блока («19/18/18/18+», «15×5», «5×5 +12.5 кг»). */
   display?: string | null;

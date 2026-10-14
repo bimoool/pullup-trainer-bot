@@ -151,19 +151,50 @@ async def test_dashboard_status_ready_before_any_session_shows_config_base_targe
     assert body["program_name"] == "Синтетика дашборда"
     assert body["is_gap_rollback"] is False
     assert body["block_a"] == {
-        "target": 10, "work_sets": 3, "display": None, "block_role": None,
+        "target": 10, "work_sets": 3, "max_sets": 1, "display": None, "block_role": None,
         "equipment": {
             "type": "bodyweight", "value": None, "item_id": None,
             "label": "собственный вес", "needs_new_equipment": False,
         },
     }
     assert body["block_b"] == {
-        "target": 3, "work_sets": 4, "display": None, "block_role": None,
+        "target": 3, "work_sets": 4, "max_sets": 1, "display": None, "block_role": None,
         "equipment": {
             "type": "bodyweight", "value": None, "item_id": None,
             "label": "собственный вес", "needs_new_equipment": False,
         },
     }
+
+
+async def test_dashboard_set_counts_equal_what_the_live_start_prescribes(session, user: User):
+    """Аудит staging: пред-экран обещал «3 рабочих подхода», а Live показывал «1 / 4» и Summary «2/4», «0/5».
+    Число подходов блока на экране = рабочие + подходы на максимум из того же резолвера, что строит SetTarget
+    живого старта (resolve_progression_block) — в т. ч. когда объём блока A вырос."""
+    from sqlalchemy import update
+
+    from app.db.models_program import ProgramInclusion
+    from app.domain.course_prescription import (
+        normalize_progression_state,
+        resolve_progression_block,
+    )
+
+    program = await _make_step_program(session)
+    inclusion = await _create_inclusion(session, user.telegram_id, program.id)
+    row = await session.get(ProgramInclusion, inclusion["id"])
+    state = dict(row.progression_state)
+    state["block_a"] = {**state["block_a"], "work_sets": 5}
+    await session.execute(
+        update(ProgramInclusion).where(ProgramInclusion.id == inclusion["id"]).values(progression_state=state),
+    )
+    await session.refresh(row)
+
+    body = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/dashboard/status")).json()
+    normalized = normalize_progression_state(state)
+    for key in ("block_a", "block_b"):
+        live_sets = resolve_progression_block(key, normalized)
+        assert body[key]["work_sets"] + body[key]["max_sets"] == len(live_sets), key
+        assert body[key]["max_sets"] == sum(1 for p in live_sets if p.is_max_set) == 1
+    assert (body["block_a"]["work_sets"], body["block_b"]["work_sets"]) == (5, 4)
 
 
 async def test_dashboard_status_too_early_right_after_a_session(session, user: User):
