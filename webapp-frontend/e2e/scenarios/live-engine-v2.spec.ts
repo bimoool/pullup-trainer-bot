@@ -192,6 +192,39 @@ async function storedEngineQueues(page: Page): Promise<number> {
   }));
 }
 
+/**
+ * Диагностический вариант наблюдателя: отличает «хранилища keyval нет вовсе» от «хранилище есть, очередей в нём
+ * нет» и от ошибки чтения (тогда reject — не 0). Читает в обход инъекции сбоя, как storedEngineQueues.
+ */
+async function storedEngineQueueDetail(page: Page): Promise<{ store: boolean; queues: number; keys: string[] }> {
+  return page.evaluate(() => new Promise<{ store: boolean; queues: number; keys: string[] }>((resolve, reject) => {
+    const w = window as unknown as { __realIdbOpen?: IDBFactory["open"]; __realIdbTransaction?: IDBDatabase["transaction"] };
+    const open = (w.__realIdbOpen ?? indexedDB.open.bind(indexedDB))("keyval-store");
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      if (!db.objectStoreNames.contains("keyval")) {
+        db.close();
+        resolve({ store: false, queues: 0, keys: [] });
+        return;
+      }
+      const request = (w.__realIdbTransaction ?? db.transaction).call(db, "keyval").objectStore("keyval").getAllKeys();
+      request.onsuccess = () => {
+        const keys = request.result.map(String);
+        db.close();
+        resolve({ store: true, queues: keys.filter((key) => key.startsWith("pullup:v2:live-engine-queue")).length, keys });
+      };
+      request.onerror = () => reject(request.error);
+    };
+  }));
+}
+
+/** Сохранённая очередь на месте — с причиной в сообщении (нет хранилища / нет записи / сколько и какие ключи). */
+async function expectStoredQueues(page: Page, expected: number, stage: string) {
+  const detail = await storedEngineQueueDetail(page);
+  expect(detail.queues, `${stage}: ${JSON.stringify(detail)}`).toBe(expected);
+}
+
 async function serverEngineState(page: Page, telegramId: number) {
   const initData = buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken());
   const response = await page.request.get(API_ACTIVE, { headers: { "X-Telegram-Init-Data": initData } });
@@ -304,6 +337,11 @@ async function stopOfflineAndCloseAfterDeadline(page: Page, context: BrowserCont
   await sleep(3_000);
   await page.getByTestId("engine-stop").click(); // Стоп на ~3 с — только в очереди устройства
   await expect(phase(page)).not.toHaveText("Пошёл");
+  // Экран показывает «Стоп» раньше, чем запись в IndexedDB зафиксирована (setQueue → await save): закрывать страницу
+  // можно только когда очередь уже сохранена, иначе тест проверяет потерю записи при закрытии, а не поведение при запуске.
+  await expect.poll(async () => (await storedEngineQueueDetail(page)).queues, {
+    message: "очередь «Стоп» должна быть сохранена ДО закрытия исходной страницы", timeout: 5_000,
+  }).toBe(1);
   await page.close();
   await sleep(15_000); // дедлайн подхода прошёл, пока приложения не было
   await context.setOffline(false); // дальше браузер всё время «онлайн» — события online не будет
@@ -574,9 +612,10 @@ test("17. IndexedDB не читается при запуске — ворота
   await failIndexedDbReads(back);
   const { apiFailures } = await openAppAs(back, 930_617);
   await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 }); // приложение загрузилось
+  await expectStoredQueues(back, 1, "17: сразу после запуска со сбоем чтения"); // запись цела до любых повторов
   await sleep(4_000); // несколько повторов чтения (1 + 2 с) — все неудачны
   expect(order).toEqual([]); // ни досылки, ни GET /active: дедлайн не спроецирован
-  expect(await storedEngineQueues(back)).toBe(1); // сохранённый «Стоп» не удалён
+  await expectStoredQueues(back, 1, "17: после повторных сбоев чтения"); // сохранённый «Стоп» не удалён
   await expect(back.getByTestId("engine-store-error")).toBeVisible(); // причина ожидания видна
   // (состояние сервера здесь не читаем: serverEngineState — тоже GET /active, он сам спроецировал бы дедлайн)
   await setIndexedDbReadFailure(back, false); // хранилище снова читается; «Повторить» не нажимаем — повтор сам
@@ -604,7 +643,7 @@ test("18. IndexedDB не читается, перезагрузка во вре�
   await expect(back.locator(".app-greeting")).toBeVisible({ timeout: 10_000 });
   await sleep(3_500); // повторные сбои после перезагрузки
   expect(order).toEqual([]);
-  expect(await storedEngineQueues(back)).toBe(1);
+  await expectStoredQueues(back, 1, "18: после перезагрузки во время сбоя");
   await expect(back.getByTestId("engine-store-error")).toBeVisible();
   await setIndexedDbReadFailure(back, false);
   await back.getByTestId("engine-store-retry").click(); // повтор сейчас, не дожидаясь паузы
