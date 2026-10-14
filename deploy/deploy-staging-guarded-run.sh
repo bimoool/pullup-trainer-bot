@@ -121,8 +121,11 @@ on_exit() {
   fi
   ids="$(our_oneoffs)"
   if [ -n "$ids" ]; then
+    # SIGKILL сразу, не `docker stop`: процесс one-off — PID 1 контейнера и SIGTERM игнорирует, а за 10 с «мягкой»
+    # остановки миграция успевала закоммититься (проверено на настоящем Docker). После kill соединение с БД рвётся и
+    # незавершённая транзакция откатывается; уже закоммиченное (например, сведение предыдущих пользователей) остаётся.
     # shellcheck disable=SC2086
-    docker stop -t 10 $ids >/dev/null 2>&1 || true
+    docker kill $ids >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
     docker rm -f $ids >/dev/null 2>&1 || true
   fi

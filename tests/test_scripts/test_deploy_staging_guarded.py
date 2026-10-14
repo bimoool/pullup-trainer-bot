@@ -61,7 +61,7 @@ if args[:2] == ["ps", "-aq"]:
     for cid, c in st.get("oneoffs", {}).items():
         if c["running"] and (want is None or c["label"] == want): out(cid)
     sys.exit(0)
-if args[0] in ("stop", "rm") and args[1:2] != ["app"]:
+if args[0] in ("stop", "kill", "rm") and args[1:2] != ["app"]:
     for cid in args[1:]:
         if cid in st.get("oneoffs", {}): st["oneoffs"][cid]["running"] = False
     save(); sys.exit(0)
