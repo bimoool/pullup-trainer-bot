@@ -15,6 +15,7 @@ import {
 import { subscribeSdkEvent } from "./telegramSdkEvents";
 import { bootTelegram } from "./telegramBoot";
 import { applyTelegramChrome } from "./telegramChrome";
+import { reconcileBackButton } from "./useBackButton";
 import "./index.css";
 import "./shell.css";
 import "./live.css";
@@ -216,6 +217,8 @@ try {
 
 // #224: ready/expand/запрет свайпа вниз/safe area + цвета хрома Telegram (src/telegramBoot.ts).
 bootTelegram();
+// Telegram «Назад»: после init() привести кнопку клиента к стеку экранов (на Главной — скрыта), см. backButtonStack.ts.
+reconcileBackButton();
 
 const rootElement = document.getElementById("root")!;
 

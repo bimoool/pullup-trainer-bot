@@ -144,8 +144,9 @@
 .plans-row-text {
   flex: 1 1 auto;
   display: flex;
+  flex-wrap: wrap; /* подпись состояния, не влезшая рядом, уходит строкой ниже, а не под «Начать» (аудит 6475bc0) */
   align-items: center;
-  gap: var(--vp-sp-2);
+  gap: 2px var(--vp-sp-2);
   min-width: 0;
 }
 
@@ -219,11 +220,16 @@
 }
 
 /* #301 — строка курса будущей недели: стартовать нельзя, показываем когда откроется. */
+/* Подпись состояния («Не успеть на этой неделе», «Доступно с …»): сжимается и переносится внутри колонки текста.
+   Раньше nowrap + flex: 0 0 auto выталкивали её под «Начать», а название сжимали до «…» (аудит staging 6475bc0). */
 .plans-row-scheduled {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   font-size: 13px;
-  white-space: nowrap;
+  line-height: 1.25;
+  white-space: normal;
 }
 
 .plans-start:disabled {
@@ -345,4 +351,12 @@
 }
 .plans-row-chip[data-done="true"]::before {
   content: "✓\00a0";
+}
+
+/* Форма «Добавить упражнение» (аудит 6475bc0): прокручивается к началу при открытии, фокус без рамки на контейнере. */
+.plan-add-exercise-form {
+  scroll-margin-top: var(--vp-sp-3);
+}
+.plan-add-exercise-form:focus {
+  outline: none;
 }

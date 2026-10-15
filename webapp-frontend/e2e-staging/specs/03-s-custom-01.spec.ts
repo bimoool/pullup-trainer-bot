@@ -16,7 +16,7 @@ test("S-CUSTOM-01: own workout from scratch to plan, persisted across reloads", 
   const { page } = s;
   await nav(page, "Главная").click();
 
-  await page.getByRole("button", { name: "Баннер: собрать свой комплекс" }).click();
+  await page.getByRole("button", { name: "Баннер: собрать свою тренировку" }).click();
   await page.getByPlaceholder("Например, 3 минуты подтягиваний").fill(WORKOUT);
   await page.getByRole("button", { name: "Создать и добавить упражнения" }).click();
   await expect(page.getByText("Пока пусто. Добавьте первое упражнение")).toBeVisible();

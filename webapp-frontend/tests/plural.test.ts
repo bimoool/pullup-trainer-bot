@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { countNoun, plural } from "../src/plural.ts";
+import { countNoun, plural, repsCount, repsCountGenitive } from "../src/plural.ts";
 import { plural as blockPlural } from "../src/blockFormat.ts";
 import { plural as protocolPlural } from "../src/protocolConfig.ts";
 
@@ -26,4 +26,11 @@ test("countNoun и общий хелпер у всех модулей", () => {
     assert.equal(blockPlural(n, ...W), plural(n, ...W));
     assert.equal(protocolPlural(n, ...W), plural(n, ...W));
   }
+});
+
+test("повторения: им./вин. и родительный падеж (аудит staging 6475bc0: «1 повторений», «не хватает 1 повторений»)", () => {
+  assert.deepEqual([1, 2, 5, 11, 21, 22, 102].map(repsCount), [
+    "1 повторение", "2 повторения", "5 повторений", "11 повторений", "21 повторение", "22 повторения", "102 повторения",
+  ]);
+  assert.deepEqual([1, 2, 5, 21].map(repsCountGenitive), ["1 повторения", "2 повторений", "5 повторений", "21 повторения"]);
 });

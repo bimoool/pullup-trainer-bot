@@ -23,7 +23,7 @@ test("J6 expired user", async ({ browser }, info) => {
     await T.check(`${tab}: paywall / no_access explanation visible for expired user`, await page.getByText(/подписк|доступ/i).first().isVisible(), "F-B-FRESH-CLEAN-05", `expired-${tab}`);
   }
   await page.goto("/"); await page.waitForTimeout(1500);
-  await T.tap("Баннер: собрать свой комплекс", page.getByRole("button", { name: "Баннер: собрать свой комплекс" }));
+  await T.tap("Баннер: собрать свою тренировку", page.getByRole("button", { name: "Баннер: собрать свою тренировку" }));
   await T.check("Expired user can still create a workout (no gate)", await page.getByText("Новая тренировка").isVisible(), "F-B-FRESH-CLEAN-05");
   T.finish();
 });

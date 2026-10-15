@@ -13,6 +13,7 @@ import { formatDurationHm } from "./journalLog";
 import { JOURNAL_DELETE_CONFIRM } from "./journalSheet";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
+import { confirmAction } from "./telegramPlatform";
 
 /** Карточка завершённой TrainingSession (Журнал v2). Каждый блок сессии
  * рендерится независимо — ни один блок не определяет вид всей карточки. */
@@ -128,10 +129,12 @@ export function JournalV2Detail({
     if (deleteInFlight.current) {
       return; // двойной клик
     }
-    if (!window.confirm(JOURNAL_DELETE_CONFIRM)) {
+    // Флаг ставится до асинхронного подтверждения: второй тап не открывает второй диалог.
+    deleteInFlight.current = true;
+    if (!(await confirmAction(JOURNAL_DELETE_CONFIRM))) {
+      deleteInFlight.current = false;
       return;
     }
-    deleteInFlight.current = true;
     setDeleting(true);
     setDeleteError(null);
     try {

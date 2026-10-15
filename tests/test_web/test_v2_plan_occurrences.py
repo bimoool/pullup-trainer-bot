@@ -465,3 +465,35 @@ async def test_reschedule_course_occurrence_keeps_identity_and_completed_does_no
         select(TrainingSession.performed_at).where(TrainingSession.id == started.json()["id"]),
     )).scalar_one()
     assert performed == MON  # историческая сессия не двигается
+
+
+# --- Аудит staging 6475bc0: подпись частоты курса = частота занятий плана ---------------------------
+
+
+async def _schedule_rows(session, user: User, program_id: int) -> list[tuple[int, str, str | None]]:
+    response = await v2_get(session, user.telegram_id, f"/api/v2/programs/{program_id}/schedule")
+    assert response.status_code == 200, response.text
+    return [(i["count_per_week"], i["count_label"], i["target_label"]) for i in response.json()["items"]]
+
+
+async def test_audit_schedule_label_follows_the_users_inclusion_not_the_new_v5_default(session, user: User, clock):
+    """Legacy-инклюзия STEP (снимок 3 занятия): план — 3 занятия в неделе, «Расписание недели» говорило «2 раза в
+    неделю» (частота НОВОЙ инклюзии V5.6). Теперь — из снимка своей инклюзии, и после снятия курса тоже (повторное
+    «Добавить в план» его возобновит). Без инклюзии — по-прежнему 2 (что получит новая инклюзия V5.6)."""
+    enrolled = await _enrol(session, user, clock)
+    program_id = enrolled["program_id"]
+    assert len(_week_items(await _plan(session, user), 1)) == 3
+    assert await _schedule_rows(session, user, program_id) == [(3, "3 раза в неделю", None)]
+
+    removed = await v2_post(session, user.telegram_id, f"/api/v2/program-inclusions/{enrolled['id']}/deactivate", {})
+    assert removed.status_code == 200, removed.text
+    assert await _schedule_rows(session, user, program_id) == [(3, "3 раза в неделю", None)]
+    resumed = await v2_post(session, user.telegram_id, "/api/v2/program-inclusions", {"program_id": program_id})
+    assert resumed.status_code == 200 and resumed.json()["id"] == enrolled["id"]
+    assert len(_week_items(await _plan(session, user), 1)) == 3
+
+    newcomer = User(telegram_id=user.telegram_id + 1, username="newcomer")
+    session.add(newcomer)
+    await session.flush()
+    rows = await _schedule_rows(session, newcomer, program_id)
+    assert [(count, label) for count, label, _ in rows] == [(2, "2 раза в неделю")]

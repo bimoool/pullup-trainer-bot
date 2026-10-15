@@ -7,6 +7,7 @@ import {
   JOURNAL_DELETE_CONFIRM, JOURNAL_SHEET_LABELS, journalSheetActions, type JournalSheetAction,
 } from "./journalSheet";
 import { useBackButton } from "./useBackButton";
+import { confirmAction } from "./telegramPlatform";
 
 const FOCUSABLE = "button:not([disabled])";
 
@@ -104,10 +105,11 @@ export function JournalEntrySheet({
     if (deleteInFlight.current) {
       return;
     }
-    if (!window.confirm(JOURNAL_DELETE_CONFIRM)) {
+    deleteInFlight.current = true; // до асинхронного подтверждения: второй тап не открывает второй диалог
+    if (!(await confirmAction(JOURNAL_DELETE_CONFIRM))) {
+      deleteInFlight.current = false;
       return;
     }
-    deleteInFlight.current = true;
     setDeleting(true);
     setDeleteError(null);
     try {

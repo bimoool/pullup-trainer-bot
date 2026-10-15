@@ -8,7 +8,7 @@ test("J2/J3/J7 custom workout from nothing -> run -> journal -> analytics -> pla
   const T = new Trace("J2", page, info);
   await onboardViaUi(T, "10");
 
-  await T.tap("Баннер: собрать свой комплекс", page.getByRole("button", { name: "Баннер: собрать свой комплекс" }));
+  await T.tap("Баннер: собрать свою тренировку", page.getByRole("button", { name: "Баннер: собрать свою тренировку" }));
   await page.getByPlaceholder("Например, 3 минуты подтягиваний").fill("Мои подтягивания");
   await T.tap("Создать и добавить упражнения", page.getByRole("button", { name: "Создать и добавить упражнения" }));
   await T.check("Editor 'Редактировать тренировку' with empty list and a way forward", await page.getByText("Пока пусто. Добавьте первое упражнение").isVisible(), "UNFILED", "editor-empty");

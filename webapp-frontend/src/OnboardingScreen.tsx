@@ -12,6 +12,7 @@ import { parseOptionalWeight } from "./WorkoutScreen";
 import { sanitizeDecimalInput } from "./decimalInput";
 import { describeBaselineQualification } from "./courseV5";
 import { LabeledInput, LabeledSelect } from "./LabeledField";
+import { repsCount } from "./plural";
 
 type Props = {
   initDataRaw: string;
@@ -237,7 +238,7 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
     return (
       <div>
         <p className="plan-title">Всё верно?</p>
-        <p className="screen-message">Записал: {state.reps} повторений. Всё верно?</p>
+        <p className="screen-message">Записал: {repsCount(state.reps)}. Всё верно?</p>
         {formError && <p className="error-banner">{formError}</p>}
         <Button
           className="action-button"

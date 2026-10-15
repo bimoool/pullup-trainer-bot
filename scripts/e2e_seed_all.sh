@@ -33,7 +33,7 @@ seed plan_week_stepper 990001
 seed plan_week_stepper 990002
 seed builder_workouts 910001
 # issue #306: Live Engine v2 (автопереходы, пауза, интервал) — по пользователю на сценарий.
-for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612 930613 930614 930615 930616 930617 930618 930619 930620 930621 930622; do seed live_engine "$id"; done
+for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612 930613 930614 930615 930616 930617 930618 930619 930620 930621 930622 930623 930624 930625 930626; do seed live_engine "$id"; done
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002
@@ -212,3 +212,7 @@ for id in 993341 993342 993351 993352; do seed session_recovery "$id"; done
 # R-4 follow-up (#293 N2/N3, parity/r4-followup.spec.ts): 99360x/99361x — завершение в очереди + медленный /complete
 # (session_recovery, мутирует), 99362x/99363x — пред-экран «Начать» офлайн (session_recovery, мутирует); id + retry.
 for id in 993601 993602 993611 993612 993621 993622 993631 993632; do seed session_recovery "$id"; done
+# Аудит staging 6475bc0: подтверждения в Telegram Web (telegram-web-confirm.spec.ts) — удаляют данные, свои пользователи.
+seed journal_dedupe 999621
+seed body_metrics 999221
+seed tests_hub 996021

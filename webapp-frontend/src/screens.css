@@ -380,6 +380,11 @@
   line-height: 1;
   color: var(--tg-hint-color);
 }
+/* В плоском списке Профиля шеврон — ::after выше; иконка chevronRight карточки (TestsScreen.tsx) давала вторую
+   стрелку рядом (аудит staging 6475bc0). */
+.profile-group .history-list > .test-card .test-card-chevron {
+  display: none;
+}
 
 .profile-group .test-card-text {
   flex: 1 1 auto;

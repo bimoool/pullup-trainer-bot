@@ -19,3 +19,13 @@ export function plural(count: number, one: string, few: string, many: string): s
 export function countNoun(count: number, one: string, few: string, many: string): string {
   return `${count} ${plural(count, one, few, many)}`;
 }
+
+/** «1 повторение», «3 повторения», «5 повторений» (им./вин. падеж: «Записал: …», «Цель 1: …», «лучший подход …»). */
+export function repsCount(count: number): string {
+  return countNoun(count, "повторение", "повторения", "повторений");
+}
+
+/** После «не хватает»/«нет» (родительный): «1 повторения», «3 повторений», «5 повторений». */
+export function repsCountGenitive(count: number): string {
+  return countNoun(count, "повторения", "повторений", "повторений");
+}

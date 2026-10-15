@@ -22,7 +22,7 @@ import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 import { NavIcon } from "./NavIcon";
 import { isSessionExpiredMessage } from "./sessionErrors";
-import { getWebApp } from "./telegramPlatform";
+import { confirmAction, getWebApp } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 
 /**
@@ -198,11 +198,20 @@ export function App() {
     if (key === tab) {
       return;
     }
-    if (liveWorkoutActive && !window.confirm("Прогресс тренировки будет потерян — уйти?")) {
+    const leave = () => {
+      setJournalRestore(null);
+      setTab(key);
+    };
+    if (!liveWorkoutActive) {
+      leave();
       return;
     }
-    setJournalRestore(null);
-    setTab(key);
+    // Telegram Web: window.confirm в iframe не показывается и сразу «нет» — нативное подтверждение (confirmAction).
+    void confirmAction("Прогресс тренировки будет потерян — уйти?").then((confirmed) => {
+      if (confirmed) {
+        leave();
+      }
+    });
   }
 
   // Переиспользуется и начальной загрузкой, и завершением онбординга

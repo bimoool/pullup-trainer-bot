@@ -29,6 +29,7 @@ import { formatExerciseCount } from "./workoutCardFormat";
 import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
 import { itemPrescriptionLine } from "./prescriptionFormat";
 import { nextOccurrenceId, shortDateLabel } from "./planWeekNav";
+import { repsCount } from "./plural";
 
 /** Потолок ожидания досылки старого завершения перед стартом (R-4): зависший запрос не должен вешать «Начать». */
 const DRAIN_BEFORE_START_TIMEOUT_MS = 5_000;
@@ -139,7 +140,7 @@ function BlockTargetCard({ index, block }: { index: number; block: DashboardBloc
     );
   }
   return (
-    <Section className="block-section" header={`Цель ${index}: ${block.target} повторений`}>
+    <Section className="block-section" header={`Цель ${index}: ${repsCount(block.target)}`}>
       <p className="block-subtitle">
         {stepBlockSetsLine(block)} · {block.equipment.label}
       </p>

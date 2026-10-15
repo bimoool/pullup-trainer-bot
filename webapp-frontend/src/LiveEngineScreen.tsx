@@ -55,6 +55,10 @@ function blocksToConfirm(plan: EnginePlan, state: EngineState): number[] {
 /** Серверные факты: блок остановлен «техника нарушена»; в отдыхе между подходами была пауза. */
 const techniqueStopped = (state: EngineState, index: number): boolean =>
   (state.stopped_blocks ?? []).some((entry) => entry.block_index === index && entry.reason === "technique");
+/** Открытая правка записанного подхода: адрес лога фиксируется при открытии, а не берётся из «последнего» на момент
+ * сохранения — после смены фазы последним может стать уже другой подход. */
+type SetEdit = { block_index: number; set_index: number; round_index: number | null; value: string };
+
 const restPaused = (state: EngineState, index: number): boolean => (state.rest_paused ?? []).includes(index);
 
 function checksPayload(indexes: number[], answers: Record<number, BlockAnswers>) {
@@ -82,8 +86,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const [value, setValue] = useState("");
   const [extraOpen, setExtraOpen] = useState(false);
   const [extraValue, setExtraValue] = useState("");
-  const [editOpen, setEditOpen] = useState(false);
-  const [editValue, setEditValue] = useState("");
+  // Правка записанного подхода живёт отдельно от фазы: переход отдыха в работу её не закрывает и не теряет введённое
+  // (аудит staging 6475bc0). Закрывают только «Сохранить подход» и «Отменить правку».
+  const [edit, setEdit] = useState<SetEdit | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
@@ -396,7 +401,6 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     } else {
       setValue("");
     }
-    setEditOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorKey]);
 
@@ -484,11 +488,14 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const nextBlockIndex = isBlockRest ? state.cursor.block_index + 1 : null;
   const lastLog = [...state.logs].reverse().find((log) => !log.is_extra && log.value !== null) ?? null;
   const lastLogPanel = lastLog !== null && state.phase !== "COMPLETE" && !finishing && (state.phase === "REST" || state.phase === "PREP");
-  // Пока открыта правка подхода, липкая нижняя панель скрыта (как при «Ещё подход»): на узком экране она перекрывала
-  // «Сохранить подход» (аудит staging, 320×568). Фаза сменилась — панель правки исчезает, транспорт возвращается сам.
-  const editPanelOpen = lastLogPanel && editOpen;
-  const lastLogKind = lastLog !== null ? plan.blocks[lastLog.block_index]?.sets?.[lastLog.set_index]?.kind : undefined;
-  const lastLogLabel = lastLogKind === "time" || lastLogKind === "max_time" ? "Секунды" : "Повторений";
+  // Открытая правка видна в любой фазе, пока тренировка не завершается. Нижняя панель на это время не липнет к низу
+  // (как при фокусе поля): на узком экране она перекрывала «Сохранить подход» (аудит staging, 320×568), но скрывать её
+  // целиком нельзя — «Пауза» должна оставаться доступной.
+  const editPanelOpen = edit !== null && !finishing;
+  const logLabel = (log: { block_index: number; set_index: number }): string => {
+    const kind = plan.blocks[log.block_index]?.sets?.[log.set_index]?.kind;
+    return kind === "time" || kind === "max_time" ? "Секунды" : "Повторений";
+  };
   const timedWork = state.phase === "WORK" && (isInterval || spec?.kind === "time");
   const countUp = state.phase === "WORK" && spec?.kind === "max_time";
   const workInput = state.phase === "WORK" && !isInterval && (spec?.kind === "reps" || spec?.kind === "max_reps");
@@ -532,7 +539,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   );
 
   return (
-    <div className="live-screen" data-phase={PHASE_CSS[state.phase]} data-engine-phase={state.phase} data-paused={paused ? "true" : undefined}>
+    <div
+      className="live-screen" data-phase={PHASE_CSS[state.phase]} data-engine-phase={state.phase}
+      data-paused={paused ? "true" : undefined} data-set-edit={editPanelOpen ? "true" : undefined}
+    >
       <header className="live-header">
         <div className="live-header-text">
           <p className="live-eyebrow">Живая тренировка</p>
@@ -648,38 +658,50 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         </section>
       )}
 
-      {lastLogPanel && (
+      {(editPanelOpen || lastLogPanel) && (
         <section className="live-panel live-log-panel live-log-collapsed" data-testid="engine-last-set">
-          {editOpen ? (
-            <form onSubmit={(event) => {
+          {editPanelOpen && edit !== null ? (
+            <form data-testid="engine-edit-form" onSubmit={(event) => {
               event.preventDefault();
-              if (isCompleteDecimal(editValue)) {
+              if (isCompleteDecimal(edit.value)) {
                 void enqueue("correct_previous", {
-                  block_index: lastLog.block_index, set_index: lastLog.set_index, round_index: lastLog.round_index,
-                  value: Number(editValue),
+                  block_index: edit.block_index, set_index: edit.set_index, round_index: edit.round_index,
+                  value: Number(edit.value),
                 });
-                setEditOpen(false);
+                setEdit(null);
               }
             }}>
               <label className="live-field">
-                <span className="live-field-label">{`Подход ${lastLog.set_index + 1}`}</span>
+                <span className="live-field-label">{`Подход ${edit.set_index + 1}`}</span>
                 <input
                   className="live-field-input live-value-input" aria-label="Исправить подход" type="text" inputMode="decimal"
-                  value={editValue} onChange={(e) => setEditValue(sanitizeDecimalInput(e.target.value))}
+                  value={edit.value} onChange={(e) => setEdit({ ...edit, value: sanitizeDecimalInput(e.target.value) })}
                 />
               </label>
-              <Button className="live-save" size="m" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(editValue)}>
+              {state.phase !== "REST" && state.phase !== "PREP" && (
+                <p className="live-hint" data-testid="engine-edit-pending">Правка ещё не сохранена.</p>
+              )}
+              <Button className="live-save" size="m" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(edit.value)}>
                 Сохранить подход
               </Button>
+              <Button
+                className="live-save" size="m" stretched mode="outline" type="button" data-testid="engine-edit-cancel"
+                onClick={() => setEdit(null)}
+              >
+                Отменить правку
+              </Button>
             </form>
-          ) : (
+          ) : lastLog !== null && (
             <div className="live-summary-row">
               <p className="live-summary-line" data-testid="log-panel-summary">
-                {formatLoggedSetSummary(lastLog.set_index + 1, String(lastLog.value ?? ""), lastLogLabel)}
+                {formatLoggedSetSummary(lastLog.set_index + 1, String(lastLog.value ?? ""), logLabel(lastLog))}
               </p>
               <button
                 type="button" className="live-link-button live-edit-button" data-testid="engine-edit-last"
-                onClick={() => { setEditValue(String(lastLog.value ?? "")); setEditOpen(true); }}
+                onClick={() => setEdit({
+                  block_index: lastLog.block_index, set_index: lastLog.set_index, round_index: lastLog.round_index,
+                  value: String(lastLog.value ?? ""),
+                })}
               >
                 Изменить
               </button>
@@ -733,7 +755,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         </div>
       )}
 
-      {!finishing && !reviewOpen && !extraOpen && !editPanelOpen && (
+      {!finishing && !reviewOpen && !extraOpen && (
         <div className="live-transport">
           {(workInput || resultInput) && (
             <Button className="live-primary" size="l" stretched type="submit" form="engine-log-form" data-testid="engine-submit" disabled={!isCompleteDecimal(value)}>

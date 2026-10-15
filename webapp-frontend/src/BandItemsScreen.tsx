@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { deleteBandItem, fetchBandItems, updateBandItem, type BandItemInfo } from "./api";
 import { useBackButton } from "./useBackButton";
+import { confirmAction } from "./telegramPlatform";
 
 type Props = { initDataRaw: string; onBack: () => void };
 
@@ -79,7 +80,7 @@ export function BandItemsScreen({ initDataRaw, onBack }: Props) {
   }
 
   async function handleDelete(item: BandItemInfo) {
-    if (!window.confirm(`Удалить резину «${item.name}»? Записи о прошлых тренировках сохранят её название.`)) {
+    if (!(await confirmAction(`Удалить резину «${item.name}»? Записи о прошлых тренировках сохранят её название.`))) {
       return;
     }
     setError(null);
