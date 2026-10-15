@@ -12,6 +12,8 @@
 Код: чистый домен `app/domain/pullups_v5.py` (без aiogram/SQLAlchemy, вес — `Decimal`), оркестрация
 `app/services/course_v5.py`, HTTP `app/web/routes_v2_course.py`. Золотые тесты — `tests/test_pullups_v5.py`
 (каждый пример документа владельца с точными числами), API — `tests/test_web/test_v2_course_v5.py`.
+Сквозной путь на свежем обычном профиле (онбординг → A по рецепту → итог → Журнал → прогрессия → рецепт B и
+отдых между занятиями) — E2E `webapp-frontend/e2e/scenarios/program-journey-v56.spec.ts`.
 
 ## 1. Версии программы
 

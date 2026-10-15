@@ -901,6 +901,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
                 maxLength={WORKOUT_COMMENT_MAX} value={reviewComment} onChange={(e) => setReviewComment(e.target.value)}
               />
             </label>
+            {saving && <p className="gap-banner" role="status" data-testid="engine-finish-saving">Сохраняю на устройстве…</p>}
             {saveErrorBanner}
             <Button className="live-primary" size="l" stretched data-testid="engine-finish-confirm" disabled={busy} onClick={() => void requestFinish()}>
               Сохранить и завершить
