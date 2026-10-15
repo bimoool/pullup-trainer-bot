@@ -216,3 +216,10 @@ for id in 993601 993602 993611 993612 993621 993622 993631 993632; do seed sessi
 seed journal_dedupe 999621
 seed body_metrics 999221
 seed tests_hub 996021
+# аудит staging 7500c37: своё упражнение в плане с параметрами / явный выбор для старой строки без параметров,
+# поле результата на 320 px, причина «удалить нельзя» у записи каталожной тренировки.
+seed plan_week_add_exercise 931001
+seed plan_week_add_exercise 931002
+seed plan_week_add_exercise 931003
+seed live_engine 931004
+seed journal_catalog_session 931005

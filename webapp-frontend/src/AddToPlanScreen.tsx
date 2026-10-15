@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 
 import { createPlanItem, fetchPlan } from "./apiV2";
 import { DayPicker } from "./DayPicker";
+import { addExerciseWithProtocolToPlan } from "./exercisePlan";
+import { ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
 import { localToday, resolveCurrentWeekId } from "./planWeekNav";
 import { FormSheet } from "./FormSheet";
 import { useBackButton } from "./useBackButton";
@@ -50,6 +52,9 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
   const [selectedDay, setSelectedDay] = useState<number | "free_pool" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Аудит staging 7500c37: упражнение без параметров стартовало заглушкой «3 попытки на максимум». Для упражнения
+  // после выбора дня — шаг «Как выполнять» (ProtocolForm), и в план встаёт своя тренировка из одного упражнения.
+  const [configuring, setConfiguring] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,13 +89,25 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
   };
   useBackButton(close, [onBack]);
 
-  async function handleSubmit() {
+  async function handleSubmit(protocol?: ProtocolFormValue) {
     if (loadState.phase !== "ready" || selectedDay === null || submitting) {
+      return;
+    }
+    if (exerciseId !== undefined && protocol === undefined) {
+      setConfiguring(true);
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     try {
+      if (exerciseId !== undefined && protocol !== undefined) {
+        await addExerciseWithProtocolToPlan(initDataRaw, {
+          exerciseId, exerciseName: workoutTitle, protocol, planWeekId: loadState.planWeekId,
+          dayOfWeek: selectedDay === "free_pool" ? null : selectedDay,
+        });
+        onSuccess();
+        return;
+      }
       await createPlanItem(initDataRaw, {
         ...(exerciseId !== undefined ? { exercise_id: exerciseId } : { complex_id: workoutId }),
         // #297: у пользователя без плана недели ещё нет (planWeekId === null) — поле НЕ шлём
@@ -103,6 +120,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
       setSubmitting(false);
+      setConfiguring(false);
     }
   }
 
@@ -114,6 +132,22 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
     return (
       <FormSheet title="Добавить в план" onClose={close}>
         <p className="gap-banner">Не удалось загрузить: {loadState.message}</p>
+      </FormSheet>
+    );
+  }
+
+  if (configuring && exerciseId !== undefined) {
+    return (
+      <FormSheet title="Как выполнять" onClose={close}>
+        <p className="block-subtitle" data-testid="add-to-plan-protocol-hint">
+          Задайте подходы и повторения — так упражнение и пройдёт в тренировке.
+        </p>
+        {submitting ? <Spinner size="m" /> : (
+          <ProtocolForm
+            initialExerciseName={workoutTitle} initialProtocol={null} submitLabel="Добавить в план"
+            onCancel={() => setConfiguring(false)} onSubmit={(protocol) => void handleSubmit(protocol)}
+          />
+        )}
       </FormSheet>
     );
   }
@@ -132,7 +166,7 @@ export function AddToPlanScreen({ initDataRaw, workoutId, exerciseId, workoutTit
         disabled={selectedDay === null || submitting}
         onClick={() => void handleSubmit()}
       >
-        {submitting ? <Spinner size="s" /> : "Добавить"}
+        {submitting ? <Spinner size="s" /> : exerciseId !== undefined ? "Далее" : "Добавить"}
       </Button>
     </FormSheet>
   );

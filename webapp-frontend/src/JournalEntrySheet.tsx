@@ -148,6 +148,11 @@ export function JournalEntrySheet({
             {action === "delete" && deleting ? "Удаляю…" : JOURNAL_SHEET_LABELS[action]}
           </button>
         ))}
+        {!session.can_delete && session.delete_reason && (
+          <p className="journal-sheet-note" data-testid="journal-sheet-delete-reason">
+            {session.delete_reason}
+          </p>
+        )}
         <button
           type="button" className="home-sheet-action home-sheet-cancel" disabled={deleting}
           data-testid="journal-sheet-cancel" onClick={() => closeRef.current()}

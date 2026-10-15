@@ -310,9 +310,11 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       });
       // Из Планов — старт плановой тренировки и «Назад» из предэкрана возвращает в Планы.
       await page.getByRole("button", { name: /^Начать: / }).first().click();
-      await expect(byName(page, "Начать")).toBeVisible(); // предэкран плановой сессии
+      // Аудит staging 7500c37: у строки «только упражнение» пред-экран вместо «Начать» даёт явный выбор параметров.
+      const preStart = byName(page, "Начать").or(page.getByTestId("session-pre-start-max"));
+      await expect(preStart).toBeVisible(); // предэкран плановой сессии
       await shot(page, t, "12b старт из плана");
-      await expectReachable(page, byName(page, "Начать"), "Предэкран плана: «Начать»");
+      await expectReachable(page, preStart, "Предэкран плана: «Начать»");
       await pressTelegramBackButton(page); // назад с предэкрана — в Планы, не на Главную
       await expect(page.getByText("Текущий план", { exact: true })).toBeVisible();
 
@@ -320,7 +322,7 @@ COMBOS.forEach(({ width, theme }, comboIndex) => {
       const pushups = page.locator('[data-testid="plans-row"]').filter({ hasText: "Отжимания" });
       await expect(pushups.getByTestId("plan-item-counter")).toHaveText("0/1");
       await page.getByRole("button", { name: /^Начать: Отжимания/ }).first().click();
-      await byName(page, "Начать").click();
+      await byName(page, "Начать").or(page.getByTestId("session-pre-start-max")).click();
       await expect(page.getByText("Живая тренировка")).toBeVisible();
       await shot(page, t, "12c плановая сессия");
       await playSets(page, ["12"]);

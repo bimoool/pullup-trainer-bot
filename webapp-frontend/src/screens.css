@@ -968,3 +968,5 @@
     overflow-wrap: anywhere;
   }
 }
+/* Аудит staging 7500c37: причина, почему запись Журнала удалить нельзя (вердикт сервера) — вместо пропавшей кнопки */
+.journal-sheet .journal-sheet-note { margin: 4px 16px 8px; font-size: 13px; line-height: 18px; color: var(--tg-hint-color, #8a8a8a); }

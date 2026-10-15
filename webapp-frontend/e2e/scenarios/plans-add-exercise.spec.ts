@@ -33,7 +33,10 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   const planResponsePromise1 = page.waitForResponse(
     (response) => response.url().includes("/api/v2/plan") && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  // Аудит staging 7500c37: после выбора дня — шаг «Как выполнять»; без него упражнение уходило в план без параметров.
+  await page.getByRole("button", { name: "Далее", exact: true }).click();
+  await expect(page.getByRole("radiogroup", { name: "Тип работы" })).toBeVisible();
+  await page.getByRole("button", { name: "Добавить в план", exact: true }).click();
   await planResponsePromise1;
 
   // picker закрылся после успешного добавления
@@ -49,7 +52,8 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   const planResponsePromise2 = page.waitForResponse(
     (response) => response.url().includes("/api/v2/plan") && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  await page.getByRole("button", { name: "Далее", exact: true }).click();
+  await page.getByRole("button", { name: "Добавить в план", exact: true }).click();
   await planResponsePromise2;
 
   await expect(page.getByText("Пятница")).toBeVisible();
