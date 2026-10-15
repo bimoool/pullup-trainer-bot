@@ -267,3 +267,28 @@ export async function mockTelegramWebApp(
     contentSafeArea: options.contentSafeAreaInset ?? null,
   });
 }
+
+/**
+ * Как в Telegram Web (аудиты staging cb1593c/6475bc0): Mini App в iframe, `window.confirm` не показывает диалог и сразу
+ * возвращает false; ответ даёт только нативный `WebApp.showConfirm`. Ответы — по очереди из `answers` (последний
+ * повторяется). Вызывать после openAppAs. Заданные вопросы — `confirmQuestions(page)`.
+ */
+export async function mockTelegramWebConfirm(page: Page, answers: boolean[]): Promise<void> {
+  await page.evaluate((queue) => {
+    const w = window as unknown as {
+      confirm: () => boolean; __asked: string[];
+      Telegram: { WebApp: Record<string, unknown> };
+    };
+    w.__asked = [];
+    w.confirm = () => false;
+    w.Telegram.WebApp.showConfirm = (message: string, callback: (confirmed: boolean) => void) => {
+      w.__asked.push(message);
+      const answer = queue.length > 1 ? queue.shift()! : queue[0];
+      setTimeout(() => callback(answer), 0);
+    };
+  }, answers);
+}
+
+export async function confirmQuestions(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __asked?: string[] }).__asked ?? []);
+}

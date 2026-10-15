@@ -16,7 +16,10 @@ type Entry = { handler: () => void };
 
 export function createBackButtonStack(adapter: BackButtonAdapter, schedule: (task: () => void) => void = queueMicrotask) {
   const entries: Entry[] = [];
-  let visible = false;
+  // null — состояние кнопки у клиента неизвестно (старт приложения). Раньше стартовало с false: если клиент оставил
+  // кнопку видимой (перезагрузка с вложенного экрана), стек считал её скрытой и не прятал — на Главной висела
+  // «Назад» без обработчика (аудит staging 6475bc0). Первая синхронизация приводит кнопку к состоянию стека.
+  let visible: boolean | null = null;
   let unsubscribe: (() => void) | null = null;
   let pending = false;
 
@@ -34,7 +37,9 @@ export function createBackButtonStack(adapter: BackButtonAdapter, schedule: (tas
       unsubscribe();
       unsubscribe = null;
     }
-    if (wanted !== visible && (wanted ? adapter.available() : true)) {
+    // Показать или привести неизвестное состояние — только при доступном SDK; спрятать показанную нами — всегда.
+    const canApply = wanted || visible === null ? adapter.available() : true;
+    if (wanted !== visible && canApply) {
       visible = wanted;
       adapter.setVisible(wanted);
     }
@@ -64,7 +69,9 @@ export function createBackButtonStack(adapter: BackButtonAdapter, schedule: (tas
       };
     },
     size: () => entries.length,
-    isVisible: () => visible,
+    isVisible: () => visible === true,
+    /** Запросить синхронизацию без смены стека — при старте приложения, когда состояние клиента неизвестно. */
+    reconcile: requestSync,
     /** Синхронно применить отложенное (для тестов). */
     flush: sync,
   };

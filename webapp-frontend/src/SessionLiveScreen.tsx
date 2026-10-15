@@ -43,10 +43,10 @@ import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { EFFORT_SCALE, reviewPayload, SET_EFFORT_PROMPT, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { backButtonAction, FOCUSABLE_SELECTOR, nextTrapIndex } from "./liveDialog";
-import { canStartNextBlock, classifySyncError, finishStatus, type SyncFailure } from "./liveFinish";
+import { V1_FINISH_HINT, canStartNextBlock, classifySyncError, finishStatus, type SyncFailure } from "./liveFinish";
 import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
-import { dismissKeyboard } from "./telegramPlatform";
+import { confirmAction, dismissKeyboard } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
@@ -493,7 +493,7 @@ export function SessionLiveScreen({
     if (action === "close-review") {
       setReviewOpen(false);
     } else if (action === "confirm-finish") {
-      handleFinish();
+      void handleFinish();
     } else if (action === "leave") {
       onLeave?.();
     }
@@ -682,11 +682,11 @@ export function SessionLiveScreen({
     });
   }
 
-  function handleFinish() {
+  async function handleFinish() {
     if (local === null) {
       return;
     }
-    if (!window.confirm("Закончить сессию? Что сделано — зачтено, остальное останется в плане.")) {
+    if (!(await confirmAction(`Закончить сессию? ${V1_FINISH_HINT}`))) {
       return;
     }
     void guardedAction(async () => {
@@ -1126,7 +1126,7 @@ export function SessionLiveScreen({
           >
             <div className="live-sheet-handle" aria-hidden="true" />
             <h3 className="live-sheet-title">Как прошла тренировка?</h3>
-            <p className="live-hint">Что сделано — зачтено, остальное останется в плане.</p>
+            <p className="live-hint" data-testid="session-finish-hint">{V1_FINISH_HINT}</p>
             <EffortChips
               testId="workout-effort" value={reviewEffort}
               onPick={(next) => setReviewEffort(reviewEffort === next ? null : next)}

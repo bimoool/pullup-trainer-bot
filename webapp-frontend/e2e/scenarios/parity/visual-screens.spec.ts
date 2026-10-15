@@ -173,7 +173,7 @@ for (const width of WIDTHS) {
         const { consoleErrors, apiFailures } = await open(page, USERS.home, theme);
         await page.getByTestId("my-workouts").waitFor();
         // «план дня» у пользователя без плана (#298) называется «план дня пуст» — тот же слот и testid.
-        const names: Array<string | RegExp> = [/^Баннер: (открыть план дня|план дня пуст)$/, "Баннер: внести активность", "Баннер: собрать свой комплекс"];
+        const names: Array<string | RegExp> = [/^Баннер: (открыть план дня|план дня пуст)$/, "Баннер: внести активность", "Баннер: собрать свою тренировку"];
         for (const name of names) {
           await expect(page.getByRole("button", { name, exact: typeof name === "string" })).toHaveCount(1);
         }

@@ -373,13 +373,8 @@
   border-top: 1px solid var(--vp-divider);
 }
 
-.profile-group .history-list > .test-card::after {
-  content: "›";
-  flex: 0 0 auto;
-  font-size: 24px;
-  line-height: 1;
-  color: var(--tg-hint-color);
-}
+/* Шеврон карточки теста — иконка chevronRight в самой карточке (TestsScreen.tsx); второй «›» из ::after давал
+   двойную стрелку в Профиле (аудит staging 6475bc0). */
 
 .profile-group .test-card-text {
   flex: 1 1 auto;

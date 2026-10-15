@@ -13,6 +13,7 @@ import { BackChevron } from "./BackChevron";
 import { useBackButton } from "./useBackButton";
 import { useProfileToday } from "./useProfileToday";
 import { sanitizeDecimalInput } from "./decimalInput";
+import { confirmAction } from "./telegramPlatform";
 
 type Props = { initDataRaw: string; protocolId: number; onBack: () => void };
 
@@ -125,7 +126,7 @@ export function TestDetailScreen({ initDataRaw, protocolId, onBack }: Props) {
 
   async function remove(result: AssessmentResultV2) {
     const label = `${formatValue(result.value, result.unit)} от ${formatIsoDate(result.performed_on)}`;
-    if (!window.confirm(`Удалить результат ${label}?`)) {
+    if (!(await confirmAction(`Удалить результат ${label}?`))) {
       return;
     }
     try {

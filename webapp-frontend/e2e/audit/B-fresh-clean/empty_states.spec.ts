@@ -19,7 +19,7 @@ for (const [theme, id] of [["light", 16], ["dark", 17]] as const) {
     await T.tap("Тесты", page.getByRole("button", { name: /^Тесты/ }));
     await T.tap("Максимум подтягиваний", page.getByText("Максимум подтягиваний").first()); await T.check("E7 no assessment results", true, "-", "E7");
     await page.goto("/"); await page.waitForTimeout(1500);
-    await T.tap("Баннер: собрать свой комплекс", page.getByRole("button", { name: "Баннер: собрать свой комплекс" }));
+    await T.tap("Баннер: собрать свою тренировку", page.getByRole("button", { name: "Баннер: собрать свою тренировку" }));
     await page.getByPlaceholder("Например, 3 минуты подтягиваний").fill("Пустая");
     await T.tap("Создать и добавить упражнения", page.getByRole("button", { name: "Создать и добавить упражнения" }));
     await T.check("E12 custom workout with zero exercises (editor)", true, "-", "E12-editor");

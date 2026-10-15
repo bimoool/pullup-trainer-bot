@@ -46,7 +46,7 @@ async function apiGet<T>(page: Page, telegramId: number, path: string): Promise<
 }
 
 async function startCreateWorkout(page: Page, title: string) {
-  await page.getByRole("button", { name: "Баннер: собрать свой комплекс" }).click();
+  await page.getByRole("button", { name: "Баннер: собрать свою тренировку" }).click();
   await page.getByPlaceholder("Например, 3 минуты подтягиваний").fill(title);
   await page.getByRole("button", { name: "Создать и добавить упражнения" }).click();
   await expect(page.getByText("Пока пусто. Добавьте первое упражнение")).toBeVisible();

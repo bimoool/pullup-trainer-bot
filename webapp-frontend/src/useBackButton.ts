@@ -4,6 +4,7 @@ import {
   hideBackButton,
   onBackButtonClick,
   offBackButtonClick,
+  postEvent,
 } from "@telegram-apps/sdk";
 import { useEffect, useRef } from "react";
 
@@ -41,6 +42,9 @@ const sdkAdapter: BackButtonAdapter = {
         }
       } else if (hideBackButton.isAvailable?.()) {
         hideBackButton();
+        // SDK шлёт web_app_setup_back_button только при смене СВОЕГО сигнала (после старта он false), поэтому кнопку,
+        // оставленную клиентом видимой, hide() не прячет — говорим клиенту явно (повтор «скрыть» безвреден).
+        postEvent("web_app_setup_back_button", { is_visible: false });
       }
     } catch (error) {
       console.error("BackButton toggle failed", error);
@@ -58,6 +62,11 @@ const sdkAdapter: BackButtonAdapter = {
 };
 
 const stack = createBackButtonStack(sdkAdapter);
+
+/** Вызывать один раз после init() SDK (main.tsx): на корневом экране кнопка, оставленная клиентом видимой, прячется. */
+export function reconcileBackButton(): void {
+  stack.reconcile();
+}
 
 // Нижняя навигация скрыта на всех «pushed»-экранах (деталь, форма, поиск …) — как в эталоне; «назад»
 // остаётся в шапке экрана и в Telegram BackButton. Счётчик, а не флаг: вложенные экраны не мешают друг другу.

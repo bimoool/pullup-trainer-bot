@@ -445,7 +445,10 @@
    ставит useLiveFieldFocus), транспорт не липнет к низу окна — иначе он перекрывает сфокусированное
    поле (Android) или уезжает под клавиатуру (iOS). Он встаёт обычным блоком под полем и
    прокручивается вместе с контентом; «Готово» достижимо прокруткой или Enter в поле. */
-.live-screen[data-field-focus="true"] .live-transport {
+.live-screen[data-field-focus="true"] .live-transport,
+/* открыта правка записанного подхода: та же логика — «Сохранить подход» не перекрывается, «Пауза» остаётся
+   в транспорте под формой (аудит staging 6475bc0) */
+.live-screen[data-set-edit="true"] .live-transport {
   position: static;
   box-shadow: none;
 }
@@ -771,7 +774,12 @@ html:has(.live-screen) {
 .live-screen .live-set-nav[disabled] {
   opacity: 0.45;
 }
+/* Кнопки ряда по ширине текста: три кнопки («Начать сейчас», «Пауза», «+ Ещё подход») на 320 px не помещались и
+   обрезались до «Начат…» (аудит staging 6475bc0) — не влезшая кнопка переносится строкой ниже и растягивается. */
+.live-secondary-row {
+  flex-wrap: wrap;
+}
 .live-secondary-row > .live-secondary:not(.live-set-nav) {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-width: 0;
 }

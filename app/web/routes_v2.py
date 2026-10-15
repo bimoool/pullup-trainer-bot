@@ -54,7 +54,7 @@ from app.domain.multi_program import (
     is_plannable_week_number,
     plan_week_number,
 )
-from app.domain.plan_occurrence import InclusionStatus
+from app.domain.plan_occurrence import MAIN_SLOT_KEY, InclusionStatus, derive_slots
 from app.domain.program_access import ProgramAccessLevel
 from app.domain.program_schedule import (
     block_role_title,
@@ -65,6 +65,7 @@ from app.domain.program_schedule import (
     v5_main_schedule_row,
 )
 from app.domain.progression_strategy import ProgressionStrategyType
+from app.domain.pullups_v5 import is_v5_state
 from app.domain.training_session_v2 import effective_duration_seconds
 from app.domain.workout_definition import WorkoutContentError, content_hash, normalize, to_dict
 from app.domain.workout_protocol import UserWorkoutProtocol
@@ -387,6 +388,17 @@ async def list_programs(
     return ProgramListResponse(programs=responses)
 
 
+async def _schedule_source_inclusion(session: AsyncSession, user_id: int, program_id: int) -> ProgramInclusion | None:
+    """Инклюзия программы, чьё расписание увидит пользователь: активная, иначе последняя снятая — её
+    возобновляет POST /program-inclusions без restart (ProgramInclusionService._resume_previous)."""
+    plans = TrainingPlanRepository(session)
+    plan = await plans.get_for_user(user_id)
+    if plan is None:
+        return None
+    own = [i for i in await plans.list_inclusions(plan.id) if i.program_id == program_id]
+    return next((i for i in own if i.is_active), own[-1] if own else None)
+
+
 @router_v2.get("/programs/{program_id}/schedule", response_model=ProgramScheduleResponse)
 async def get_program_schedule(
     program_id: int,
@@ -395,7 +407,7 @@ async def get_program_schedule(
 ) -> ProgramScheduleResponse:
     """Превью структуры программы до добавления в план (issue #266). Каталог виден
     всем; только реальные ProgramItem/config — у программы без строк items пуст."""
-    await _require_user(session, init_data)
+    user = await _require_user(session, init_data)
     programs = ProgramRepository(session)
     program = await programs.get_by_id(program_id)
     if program is None:
@@ -429,6 +441,19 @@ async def get_program_schedule(
         and program_items
     ):
         title, count, count_label, target_label = v5_main_schedule_row()
+        # Аудит staging 6475bc0: «2 раза в неделю» показывалось и тем, у кого курс уже подключён прежней (legacy
+        # STEP) инклюзией с 3 занятиями — план показывал 3. Есть инклюзия этой программы (активная или та, что
+        # «Добавить в план» возобновит) — частота из ЕЁ снимка, тем же derive_slots, что строит занятия плана.
+        own = await _schedule_source_inclusion(session, user.id, program.id)
+        if own is not None:
+            main = next(
+                (slot for slot in derive_slots(own.snapshot, program_slots=program.slots, program_frequency=program.frequency)
+                 if slot.key == MAIN_SLOT_KEY),
+                None,
+            )
+            if main is not None and main.sessions_per_week > 0:
+                count, count_label = main.sessions_per_week, count_per_week_label(main.sessions_per_week)
+                target_label = target_label if is_v5_state(own.progression_state) else None
         phase = min({i.week_phase for i in program_items}, key=lambda p: p.value)
         return ProgramScheduleResponse(
             program_id=program.id,

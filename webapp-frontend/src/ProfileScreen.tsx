@@ -1,4 +1,4 @@
-import { plural } from "./plural.ts";
+import { plural, repsCount, repsCountGenitive } from "./plural.ts";
 import { useEffect, useState } from "react";
 
 import { AchievementsScreen } from "./AchievementsScreen";
@@ -103,7 +103,7 @@ function GtoCard({ gto }: { gto: GtoStatus }) {
       <RankLine rank={gto.rank} label={rankLabel} />
       <p>{`Бронза от ${gto.bronze_threshold}, серебро от ${gto.silver_threshold}, золото от ${gto.gold_threshold}.`}</p>
       {gto.next_rank && gto.reps_to_next_rank !== null && (
-        <p>{`До разряда "${GTO_RANK_LABEL[gto.next_rank] ?? gto.next_rank}" не хватает ${gto.reps_to_next_rank} повторений.`}</p>
+        <p>{`До разряда "${GTO_RANK_LABEL[gto.next_rank] ?? gto.next_rank}" не хватает ${repsCountGenitive(gto.reps_to_next_rank)}.`}</p>
       )}
     </div>
   );
@@ -181,12 +181,12 @@ function WsfCard({ wsf }: { wsf: WsfStatus }) {
     <div className="profile-card">
       <p className="section-title">Разряд WSF (подтягивания с отягощением)</p>
       <p>{summaryText}</p>
-      <p>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps} повторений на ${stepKg} кг`}</p>
+      <p>{`Категория ${weightCategoryLabel(wsf.weight_category ?? "")} · лучший подход ${wsf.best_reps === null ? "—" : repsCount(wsf.best_reps)} на ${stepKg} кг`}</p>
       <RankLine rank={wsf.rank} label={rankLabel} trophy={wsf.rank === "elite"} />
       {weightCaveat && <p>{weightCaveat}</p>}
       {bonusPct !== null && <p>{`Учтён возрастной коэффициент +${bonusPct}%.`}</p>}
       {wsf.next_rank && wsf.reps_to_next_rank !== null && (
-        <p>{`До разряда "${WSF_RANK_LABEL[wsf.next_rank] ?? wsf.next_rank}" не хватает ${wsf.reps_to_next_rank} повторений на той же ступени.`}</p>
+        <p>{`До разряда "${WSF_RANK_LABEL[wsf.next_rank] ?? wsf.next_rank}" не хватает ${repsCountGenitive(wsf.reps_to_next_rank)} на той же ступени.`}</p>
       )}
     </div>
   );

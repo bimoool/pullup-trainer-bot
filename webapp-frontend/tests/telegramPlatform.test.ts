@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   MIN_VERSION, acquireClosingConfirmation, compareVersions, createOwnerToggle, dismissKeyboard, effectiveInsetPx,
@@ -225,4 +227,12 @@ test("confirmAction: вне Telegram и на клиенте до 6.2 — window.
   const old = { version: "6.1", showConfirm: () => { throw new Error("must not be called"); } };
   assert.equal(await confirmAction("Отменить?", old), true);
   assert.equal(shown, 2);
+});
+
+test("пользовательские подтверждения только через confirmAction: window.confirm вне telegramPlatform.ts нет (аудит 6475bc0)", () => {
+  const srcDir = fileURLToPath(new URL("../src/", import.meta.url));
+  const offenders = readdirSync(srcDir)
+    .filter((name) => /\.(ts|tsx)$/.test(name) && name !== "telegramPlatform.ts")
+    .filter((name) => /window\.confirm\s*\(|\bconfirm\s*\(\s*["'`]/.test(readFileSync(srcDir + name, "utf8")));
+  assert.deepEqual(offenders, []);
 });

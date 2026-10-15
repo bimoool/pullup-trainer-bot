@@ -35,6 +35,7 @@ import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
   occurrenceStateLabel, todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
+import { confirmAction } from "./telegramPlatform";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
 // (Python date.weekday()), тот же порядок, что и остальной код проекта
@@ -344,6 +345,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const [sheetOpener, setSheetOpener] = useState<HTMLElement | null>(null);
   const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
   const copyConfirmRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   function openSheet(next: PlansSheetState, opener: HTMLElement) {
     setSheetOpener(opener);
     setSheet(next);
@@ -424,7 +426,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
 
   // issue #304 (B3) — «Остановить план»: свой план больше не добавляет занятия, история остаётся.
   async function handleStopCustomPlan(customPlanId: number, name: string) {
-    if (!window.confirm(`Остановить план «${name}»? Выполненные тренировки останутся в истории.`)) {
+    if (!(await confirmAction(`Остановить план «${name}»? Выполненные тренировки останутся в истории.`))) {
       return;
     }
     setStoppingCustomPlanId(customPlanId);
@@ -552,6 +554,17 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       confirmBlock.querySelector<HTMLElement>("[data-confirm-first]")?.focus({ preventScroll: true });
     }
   }, [copyConfirm]);
+
+  // Форма «Добавить упражнение» рисуется под всеми неделями — на телефоне ниже экрана, и нажатие выглядело как
+  // «ничего не произошло» (аудит staging 6475bc0): при открытии прокручиваем к форме и переводим на неё фокус.
+  const pickerOpen = picker.phase !== "closed";
+  useEffect(() => {
+    const form = pickerRef.current;
+    if (pickerOpen && form !== null) {
+      form.scrollIntoView({ block: "start" });
+      form.focus({ preventScroll: true });
+    }
+  }, [pickerOpen]);
 
   // «Отмена» подтверждения возвращает фокус на «⋯» (она снова в DOM к этому эффекту).
   useEffect(() => {
@@ -1320,6 +1333,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       {renderSheet()}
 
       {picker.phase !== "closed" && (
+        <div ref={pickerRef} tabIndex={-1} className="plan-add-exercise-form" data-testid="plan-add-exercise-form" aria-label="Добавить упражнение">
         <Section className="block-section" header="Добавить упражнение">
           {exercisesState.phase === "loading" && <p className="screen-message">Загружаю библиотеку…</p>}
           {exercisesState.phase === "error" && (
@@ -1391,6 +1405,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
             Отмена
           </Button>
         </Section>
+        </div>
       )}
     </div>
   );

@@ -31,6 +31,24 @@ test("пустой стек: кнопка скрыта, подписки нет 
   assert.deepEqual(log, []);
 });
 
+test("старт на корневом экране: reconcile прячет кнопку, оставленную клиентом видимой (аудит 6475bc0)", () => {
+  const { stack, log, flush } = setup();
+  stack.reconcile();
+  flush();
+  assert.deepEqual(log, ["hide"]); // состояние клиента неизвестно — приводим к пустому стеку
+  assert.equal(stack.isVisible(), false);
+  stack.reconcile();
+  flush();
+  assert.deepEqual(log, ["hide"]); // дальше состояние известно — лишних вызовов нет
+});
+
+test("reconcile вне Telegram (SDK недоступен) — no-op, без вызовов адаптера", () => {
+  const { stack, log, flush } = setup(false);
+  stack.reconcile();
+  flush();
+  assert.deepEqual(log, []);
+});
+
 test("первый экран показывает кнопку и подписывается один раз; клик — его обработчик", () => {
   const { stack, log, flush, click } = setup();
   const clicks: string[] = [];

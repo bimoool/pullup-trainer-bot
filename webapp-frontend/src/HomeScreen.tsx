@@ -449,7 +449,7 @@ export function HomeScreen({
       {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
       {catalog.phase === "error" && <p className="screen-message">Не удалось загрузить каталог: {catalog.message}</p>}
       {catalog.phase === "ready" && catalog.programs.length === 0 && (
-        <p className="screen-message" data-testid="catalog-empty">Курсов для подключения пока нет. Пока можно собрать свою тренировку — «Своя программа» ниже.</p>
+        <p className="screen-message" data-testid="catalog-empty">Курсов для подключения пока нет. Пока можно собрать свою тренировку — «Своя тренировка» ниже.</p>
       )}
       {catalog.phase === "ready" && groupProgramsByCategory(catalog.programs).map((row, rowIndex) => (
         <div

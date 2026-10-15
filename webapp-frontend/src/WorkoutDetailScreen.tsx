@@ -125,7 +125,9 @@ export function WorkoutDetailScreen({ initDataRaw, workoutId, onBack, onEdit, on
 
       <h1 className="plan-title wd-title" data-testid="workout-detail-title" title={workout.title}>{workout.title}</h1>
       <div className="wd-meta-row">
-        <p className="hint" data-testid="workout-detail-subtitle">Своя тренировка</p>
+        <p className="hint" data-testid="workout-detail-subtitle">
+          {workout.source_type === "user" ? "Своя тренировка" : "Готовая тренировка"}
+        </p>
         <p className="hint wd-duration-pill" data-testid="workout-detail-meta">
           {estimate && <ClockIcon />}
           {items.length === 0 ? "Пока без упражнений" : formatExerciseCount(items.length)}

@@ -11,7 +11,7 @@ test("J4 plan lifecycle from empty", async ({ browser }, info) => {
   await T.check("E1 empty Планы has a CTA that resolves (add program)", false, "F-B-FRESH-CLEAN-02", "E1-plans-empty");
   // create a workout through UI so that manual plan content is possible
   await T.tap("Главная", nav(page, "Главная"));
-  await T.tap("Баннер: собрать свой комплекс", page.getByRole("button", { name: "Баннер: собрать свой комплекс" }));
+  await T.tap("Баннер: собрать свою тренировку", page.getByRole("button", { name: "Баннер: собрать свою тренировку" }));
   await page.getByPlaceholder("Например, 3 минуты подтягиваний").fill("План-тест");
   await T.tap("Создать и добавить упражнения", page.getByRole("button", { name: "Создать и добавить упражнения" }));
   await T.tap("+ Добавить упражнение", page.getByRole("button", { name: "+ Добавить упражнение" }));

@@ -2,7 +2,7 @@ import { Sess } from "./lib.mjs";
 const s = await new Sess("empty", 7200003).start(); const p = s.page; const tab=n=>p.getByText(n,{exact:true}).last();
 await s.open("/");
 await s.tap(p.getByText("Все ›"),"Все ›"); await s.dump("E-ALL-PROGRAMS"); await s.shot("E-all");
-await s.open("/"); await s.tap(p.getByText("Своя программа").first(),"Своя программа"); await s.dump("E-OWN-PROGRAM"); await s.shot("E-own-program"); s.ev("buttons "+JSON.stringify(await p.getByRole("button").allInnerTexts()));
+await s.open("/"); await s.tap(p.getByText("Своя тренировка").first(),"Своя тренировка"); await s.dump("E-OWN-PROGRAM"); await s.shot("E-own-program"); s.ev("buttons "+JSON.stringify(await p.getByRole("button").allInnerTexts()));
 await s.open("/"); await s.tap(p.getByText("Готовы заниматься?").first(),"Готовы заниматься?"); await s.dump("E-PLAN-OF-DAY"); await s.shot("E-plan-of-day"); s.ev("buttons "+JSON.stringify(await p.getByRole("button").allInnerTexts()));
 await s.open("/"); await s.tap(p.getByText("Тесты").first(),"Тесты"); await s.dump("E-TESTS"); await s.shot("E-tests");
 await s.open("/"); await s.tap(p.getByText("Что потренируем сегодня?").first(),"search"); await s.dump("E-SEARCH"); await s.shot("E-search");

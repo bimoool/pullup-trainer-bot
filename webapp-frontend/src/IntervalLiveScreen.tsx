@@ -10,6 +10,7 @@ import { computeClockOffsetMs, computeIntervalState, type IntervalPhase } from "
 import { useBackButton } from "./useBackButton";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
+import { confirmAction } from "./telegramPlatform";
 
 type Props = {
   initDataRaw: string;
@@ -138,13 +139,13 @@ export function IntervalLiveScreen({ initDataRaw, initialSession, onCompleted, o
 
   useClosingConfirmation(); // #224: закрытие Mini App посреди интервальной тренировки — с подтверждением
   useBackButton(() => {
-    if (window.confirm("Закончить тренировку раньше времени? Прогресс будет зачтён по факту.")) {
-      if (!completionRequestedRef.current) {
+    void confirmAction("Закончить тренировку раньше времени? Прогресс будет зачтён по факту.").then((confirmed) => {
+      if (confirmed && !completionRequestedRef.current) {
         completionRequestedRef.current = true;
         setCompleting(true);
         void completeLiveSession(initDataRaw, initialSession.id, true).then(onCompleted);
       }
-    }
+    });
   }, [initialSession.id], true, false);
 
   if (interval === null) {
