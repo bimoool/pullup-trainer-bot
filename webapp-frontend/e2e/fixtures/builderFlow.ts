@@ -62,7 +62,14 @@ export async function playSetsV2(page: Page, values: string[]) {
     }
     await expect(phase).toHaveText("Пошёл");
     await page.getByLabel("Результат подхода").fill(value);
+    const target = page.getByTestId("engine-target");
+    const before = await target.textContent();
     await page.getByTestId("engine-submit").click();
+    // MVP «сохранность результата»: подход подтверждается после записи на устройство — пока «Сохраняю…», событие
+    // ещё не в очереди (engine-pending пуст). Ждём само подтверждение: фаза ушла из «Пошёл» или сменился подход.
+    await expect.poll(async () => (await phase.textContent())?.trim() !== "Пошёл"
+      || (await target.count()) === 0 || (await target.textContent()) !== before, { timeout: 10_000 }).toBe(true);
+    await expect(page.getByTestId("engine-saving")).toHaveCount(0, { timeout: 10_000 });
     await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
   }
 }
