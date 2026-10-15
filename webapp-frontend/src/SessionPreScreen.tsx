@@ -15,6 +15,7 @@ import {
   tooEarlyAvailableFrom,
   type DashboardBlockResponse,
   type LiveSessionResponse,
+  type PlanItemResponseV2,
   type ProgramInclusionResponseV2,
   type TrainingPlanResponseV2,
 } from "./apiV2";
@@ -30,6 +31,8 @@ import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
 import { itemPrescriptionLine } from "./prescriptionFormat";
 import { nextOccurrenceId, shortDateLabel } from "./planWeekNav";
 import { repsCount } from "./plural";
+import { isExerciseOnlyPlanItem, replaceExerciseOnlyPlanItem } from "./exercisePlan";
+import { ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
 
 /** Потолок ожидания досылки старого завершения перед стартом (R-4): зависший запрос не должен вешать «Начать». */
 const DRAIN_BEFORE_START_TIMEOUT_MS = 5_000;
@@ -194,6 +197,11 @@ export function SessionPreScreen({
   const [reloadKey, setReloadKey] = useState(0);
   // Сводка — необязательная подсказка: любой сбой молча оставляет экран без неё.
   const [summary, setSummary] = useState<PreSummary | null>(null);
+  // Аудит staging 7500c37: старая строка «только упражнение» не хранит подходов/повторений — старт подставлял
+  // заглушку «3 попытки на максимум» молча. Теперь такой план показывает это явно и даёт выбор перед стартом.
+  const [paramsMissing, setParamsMissing] = useState<PlanItemResponseV2 | null>(null);
+  const [paramsStep, setParamsStep] = useState<"choice" | "form" | "saving">("choice");
+  const [paramsError, setParamsError] = useState<string | null>(null);
 
   // issue #202: Telegram BackButton — переиспользует существующий onGoToWorkout
   // (тот же хендлер, что у кнопок "Перейти в обычную Тренировку" в blocked/
@@ -336,7 +344,12 @@ export function SessionPreScreen({
           complexId = workoutId;
         } else if (manual && explicitPlanItemIds !== undefined && explicitPlanItemIds.length > 0) {
           const plan = await fetchPlan(initDataRaw);
-          complexId = plan?.plan_items.find((item) => explicitPlanItemIds.includes(item.id) && item.complex_id !== null)?.complex_id ?? null;
+          const items = plan?.plan_items.filter((item) => explicitPlanItemIds.includes(item.id)) ?? [];
+          complexId = items.find((item) => item.complex_id !== null)?.complex_id ?? null;
+          const exerciseOnly = items.length === 1 && isExerciseOnlyPlanItem(items[0]) ? items[0] : null;
+          if (!cancelled && exerciseOnly !== null) {
+            setParamsMissing(exerciseOnly);
+          }
         }
         if (complexId === null) {
           return;
@@ -361,6 +374,22 @@ export function SessionPreScreen({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- те же стабильные пропсы, что и у загрузки готовности выше
   }, [initDataRaw, manual, workoutId]);
+
+  async function handleParamsSubmit(protocol: ProtocolFormValue, currentTitle: string) {
+    if (paramsMissing === null) {
+      return;
+    }
+    setParamsStep("saving");
+    setParamsError(null);
+    try {
+      const created = await replaceExerciseOnlyPlanItem(initDataRaw, paramsMissing, currentTitle, protocol);
+      setParamsMissing(null);
+      await handleStart([created.id], currentTitle);
+    } catch (error) {
+      setParamsStep("form");
+      setParamsError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   async function handleStart(planItemIds: number[], currentTitle?: string) {
     setActiveConflict(null);
@@ -614,14 +643,52 @@ export function SessionPreScreen({
           )}
         </>
       )}
-      <div className="pre-transport">
-        <Button
-          className="action-button vs-primary" size="l" stretched disabled={isStarting}
-          onClick={() => void handleStart(planItemIds, displayTitle)}
-        >
-          {isStarting ? <Spinner size="s" /> : "Начать"}
-        </Button>
-      </div>
+      {manualReady !== null && paramsMissing !== null && paramsStep !== "choice" ? (
+        <section className="pre-params" data-testid="session-pre-params-form">
+          {paramsError !== null && <p className="gap-banner">Не удалось сохранить: {paramsError}</p>}
+          {paramsStep === "saving" ? <Spinner size="m" /> : (
+            <ProtocolForm
+              initialExerciseName={displayTitle} initialProtocol={null} submitLabel="Сохранить и начать"
+              onCancel={() => setParamsStep("choice")}
+              onSubmit={(protocol) => void handleParamsSubmit(protocol, displayTitle)}
+            />
+          )}
+        </section>
+      ) : manualReady !== null && paramsMissing !== null ? (
+        <>
+          <section className="pre-params" data-testid="session-pre-params-missing">
+            <p className="block-subtitle"><strong>Параметры не заданы</strong></p>
+            <p className="block-subtitle">
+              Для этого упражнения в плане не указаны подходы и повторения. Задайте их — или начните без них:
+              тогда будет 3 подхода на максимум, в каждом запишите, сколько получилось.
+            </p>
+          </section>
+          <div className="pre-transport">
+            <Button
+              className="action-button vs-primary" size="l" stretched disabled={isStarting}
+              data-testid="session-pre-set-params" onClick={() => setParamsStep("form")}
+            >
+              Задать подходы
+            </Button>
+            <Button
+              className="action-button vs-plain" size="l" stretched mode="plain" disabled={isStarting}
+              data-testid="session-pre-start-max" onClick={() => void handleStart(planItemIds, displayTitle)}
+            >
+              {/* Короткие подписи: на 320 px кнопка обрезала «…подхода на мак…» (живая проверка 352fd15). */}
+              {isStarting ? <Spinner size="s" /> : "Начать: 3 × максимум"}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div className="pre-transport">
+          <Button
+            className="action-button vs-primary" size="l" stretched disabled={isStarting}
+            onClick={() => void handleStart(planItemIds, displayTitle)}
+          >
+            {isStarting ? <Spinner size="s" /> : "Начать"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

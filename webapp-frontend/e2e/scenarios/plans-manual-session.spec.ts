@@ -33,7 +33,10 @@ test("«Планы» → manual «Планка»/«Отжимания» → Star
   const startResponsePromise = page.waitForResponse(
     (response) => response.url().includes("/api/v2/sessions/live") && response.status() === 200,
   );
-  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  // Аудит staging 7500c37: у строки «только упражнение» нет параметров — пред-экран говорит об этом и даёт выбор;
+  // этот сценарий проверяет явный старт заглушкой «3 подхода на максимум» (задать параметры — audit-7500c37-fixes).
+  await expect(page.getByTestId("session-pre-params-missing")).toContainText("Параметры не заданы");
+  await page.getByTestId("session-pre-start-max").click();
   const started = await startResponsePromise.then((r) => r.json());
   expect(started.blocks).toHaveLength(1);
   const plankSessionId = started.id;

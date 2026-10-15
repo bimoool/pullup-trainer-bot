@@ -1358,6 +1358,29 @@ async def seed_workout_detail(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+async def seed_journal_catalog_session(session: AsyncSession, telegram_id: int) -> None:
+    """Аудит staging 7500c37: завершённая свободная запись по ГОТОВОЙ тренировке каталога (Complex.source_type=
+    'system', снимок с её workout_id) — правило безопасного удаления её не пропускает, Журнал должен объяснить почему,
+    а не молча прятать «Удалить». Каталожная тренировка создаётся с уникальным именем этого сида (system-строки общие
+    для всех пользователей e2e-базы)."""
+    user = await _onboard(session, telegram_id)
+    push = Exercise(name="Отжимания (каталог e2e)", metric_type=MetricType.REPS, category="e2e_catalog_journal", source_type="system")
+    session.add(push)
+    await session.flush()
+    catalog = Complex(name=f"Каталог e2e {telegram_id}", source_type="system", owner_user_id=None)
+    session.add(catalog)
+    await session.flush()
+    training = await TrainingSessionRepository(session).create_session(
+        user_id=user.id, source=SessionSource.FREEFORM, performed_at=datetime.now(UTC) - timedelta(hours=2),
+        effort=None, comment=None,
+        blocks=[SessionBlockInput(exercise_id=push.id, sets=[
+            SetLogInput(set_number=n, metric_type=MetricType.REPS, value=Decimal(8), unit="reps") for n in (1, 2)
+        ])],
+    )
+    training.workout_snapshot = {"workout_id": catalog.id, "title": catalog.name, "items": []}
+    await session.flush()
+
+
 async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     """GJ — Golden Journey: вернувшийся пользователь с одной своей Workout
     («Золотая тренировка», reps 2 x 8) и пустой текущей неделей плана — её ещё
@@ -1751,6 +1774,7 @@ SCENARIOS = {
     "home_workouts": seed_home_workouts,
     "home_discovery": seed_home_discovery,
     "workout_detail": seed_workout_detail,
+    "journal_catalog_session": seed_journal_catalog_session,
     "analytics_v2": seed_analytics_v2,
     "analytics_metric": seed_analytics_metric,
     "tests_hub": seed_tests_hub,

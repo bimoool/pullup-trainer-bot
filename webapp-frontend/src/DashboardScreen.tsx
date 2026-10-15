@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { fetchDashboard, type DashboardResponse } from "./api";
 import {
   copyPlanWeekToNext,
-  createPlanItem,
   createPlanWeek,
   type ExerciseResponseV2,
   fetchExercises,
@@ -36,6 +35,8 @@ import {
   occurrenceStateLabel, todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 import { confirmAction } from "./telegramPlatform";
+import { addExerciseWithProtocolToPlan } from "./exercisePlan";
+import { ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
 
 // issue #193 (WORKER B) — соглашение 0=понедельник..6=воскресенье
 // (Python date.weekday()), тот же порядок, что и остальной код проекта
@@ -261,9 +262,12 @@ type ExercisesState =
 // PlanWeek. day: null означает "Свободный пул" — валидный выбор, не
 // "не выбрано". exerciseId: null означает "не выбрано" — кнопка "Добавить"
 // неактивна до выбора.
+// Аудит staging 7500c37: «configuring» — шаг «Как выполнять» (ProtocolForm) после выбора упражнения и дня; без него
+// строка «только упражнение» стартовала заглушкой «3 попытки на максимум» (см. exercisePlan.ts).
 type PickerState =
   | { phase: "closed" }
   | { phase: "picking"; weekId: number; exerciseId: number | null; day: number | null }
+  | { phase: "configuring"; weekId: number; exerciseId: number; day: number | null }
   | { phase: "adding"; weekId: number; exerciseId: number; day: number | null }
   | { phase: "add-error"; weekId: number; exerciseId: number; day: number | null; message: string };
 
@@ -463,14 +467,23 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     if (picker.phase === "adding") {
       return;
     }
-    if (picker.phase !== "picking" || picker.exerciseId === null) {
+    if ((picker.phase !== "picking" && picker.phase !== "add-error") || picker.exerciseId === null) {
       return;
     }
     const { weekId, exerciseId, day } = picker;
+    setPicker({ phase: "configuring", weekId, exerciseId, day });
+  }
+
+  function handleProtocolSubmit(protocol: ProtocolFormValue) {
+    if (picker.phase !== "configuring") {
+      return;
+    }
+    const { weekId, exerciseId, day } = picker;
+    const exerciseName = exercisesState.phase === "ready"
+      ? exercisesState.exercises.find((exercise) => exercise.id === exerciseId)?.name ?? "Упражнение"
+      : "Упражнение";
     setPicker({ phase: "adding", weekId, exerciseId, day });
-    createPlanItem(initDataRaw, {
-      exercise_id: exerciseId, plan_week_id: weekId, day_of_week: day, count_per_week: 1,
-    })
+    addExerciseWithProtocolToPlan(initDataRaw, { exerciseId, exerciseName, protocol, planWeekId: weekId, dayOfWeek: day })
       .then(() => reloadPlan())
       .then(() => {
         // Checkpoint 3 (issue #188, раздел 5): не добавлять строку локально
@@ -1334,6 +1347,20 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
 
       {picker.phase !== "closed" && (
         <div ref={pickerRef} tabIndex={-1} className="plan-add-exercise-form" data-testid="plan-add-exercise-form" aria-label="Добавить упражнение">
+        {picker.phase === "configuring" ? (
+          <Section className="block-section" header="Как выполнять">
+            <ProtocolForm
+              initialExerciseName={
+                exercisesState.phase === "ready"
+                  ? exercisesState.exercises.find((exercise) => exercise.id === picker.exerciseId)?.name ?? "Упражнение"
+                  : "Упражнение"
+              }
+              initialProtocol={null} submitLabel="Добавить в план"
+              onCancel={() => setPicker({ phase: "picking", weekId: picker.weekId, exerciseId: picker.exerciseId, day: picker.day })}
+              onSubmit={handleProtocolSubmit}
+            />
+          </Section>
+        ) : (
         <Section className="block-section" header="Добавить упражнение">
           {exercisesState.phase === "loading" && <p className="screen-message">Загружаю библиотеку…</p>}
           {exercisesState.phase === "error" && (
@@ -1399,12 +1426,13 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
             disabled={picker.exerciseId === null || picker.phase === "adding"}
             onClick={handleConfirmAdd}
           >
-            {picker.phase === "adding" ? "Добавляю…" : "Добавить"}
+            {picker.phase === "adding" ? "Добавляю…" : "Далее"}
           </Button>
           <Button mode="outline" size="s" disabled={picker.phase === "adding"} onClick={() => setPicker({ phase: "closed" })}>
             Отмена
           </Button>
         </Section>
+        )}
         </div>
       )}
     </div>

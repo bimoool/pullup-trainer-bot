@@ -20,6 +20,7 @@ import {
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { confirmAction } from "./telegramPlatform";
 import { useBackButton } from "./useBackButton";
+import { isTextEntryTarget, useLiveFieldFocus } from "./liveFieldFocus";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
@@ -89,6 +90,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   // Правка записанного подхода живёт отдельно от фазы: переход отдыха в работу её не закрывает и не теряет введённое
   // (аудит staging 6475bc0). Закрывают только «Сохранить подход» и «Отменить правку».
   const [edit, setEdit] = useState<SetEdit | null>(null);
+  // Аудит staging 7500c37 (320×640): как у движка v1 (M1, #285) — пока поле в фокусе, транспорт не липнет к низу и
+  // не закрывает поле под экранной клавиатурой.
+  const fieldFocused = useLiveFieldFocus();
+  const logPanelRef = useRef<HTMLElement | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
@@ -401,6 +406,24 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     } else {
       setValue("");
     }
+    // Аудит staging 7500c37: на 320×640 поле результата оказывалось под липким транспортом — видна только подпись,
+    // «Готово» неактивно, пока не прокрутишь. На входе в фазу ввода панель прокручивается в видимую область
+    // (с учётом scroll-padding-bottom под транспорт, live.css); фокус не ставится — клавиатура не открывается сама.
+    // Только когда панель действительно закрыта транспортом и пользователь ещё не вводит: иначе прокрутка сдвигает
+    // «Готово» прямо под пальцем, и нажатие промахивается (локальная перепроверка plans-manual-session, ветка 352fd15).
+    if (state.phase === "WORK" || state.phase === "RESULT") {
+      requestAnimationFrame(() => {
+        const panel = logPanelRef.current;
+        if (panel === null || isTextEntryTarget(document.activeElement as HTMLElement | null)) {
+          return;
+        }
+        const transport = document.querySelector(".live-transport");
+        const visibleBottom = transport !== null ? transport.getBoundingClientRect().top : window.innerHeight;
+        if (panel.getBoundingClientRect().bottom > visibleBottom) {
+          panel.scrollIntoView?.({ block: "nearest" });
+        }
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorKey]);
 
@@ -542,6 +565,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     <div
       className="live-screen" data-phase={PHASE_CSS[state.phase]} data-engine-phase={state.phase}
       data-paused={paused ? "true" : undefined} data-set-edit={editPanelOpen ? "true" : undefined}
+      data-field-focus={fieldFocused ? "true" : undefined}
     >
       <header className="live-header">
         <div className="live-header-text">
@@ -624,7 +648,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       </div>
 
       {(workInput || resultInput) && !finishing && (
-        <section className="live-panel live-log-panel" data-testid="log-panel">
+        <section className="live-panel live-log-panel" data-testid="log-panel" ref={logPanelRef}>
           <h3 className="live-panel-title">{resultInput && isInterval ? "Сколько повторов в раунде" : "Внести подход"}</h3>
           <form id="engine-log-form" onSubmit={submit}>
             <label className="live-field">

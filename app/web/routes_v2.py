@@ -311,6 +311,7 @@ def _session_response(
         performed_at=detail.performed_at, effort=str(detail.effort) if detail.effort is not None else None,
         comment=detail.comment, title=activity_label(detail.activity_type) or title,
         can_delete=verdicts is not None and verdicts.delete.can_delete,
+        delete_reason=verdicts.delete.reason if verdicts is not None and not verdicts.delete.can_delete else None,
         # can_edit — прежний смысл для экрана правки: правится целиком (у внешней активности — без подходов).
         can_edit=edit is not None and (edit.can_edit_sets or detail.kind == "external_activity"),
         activity_type=detail.activity_type,

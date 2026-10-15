@@ -225,6 +225,9 @@ export function JournalV2Detail({
           <Icon name="trash" size={18} className="vp-icon-lead" />Удалить
         </Button>
       )}
+      {!session.can_delete && session.delete_reason && (
+        <p className="hint" data-testid="journal-delete-reason">{session.delete_reason}</p>
+      )}
     </div>
   );
 }

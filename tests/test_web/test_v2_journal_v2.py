@@ -194,3 +194,34 @@ async def test_builder_session_touching_step_roles_is_protected(session: AsyncSe
 
     response = await v2_delete(session, telegram_id=user.telegram_id, path=f"/api/v2/sessions/{body['id']}")
     assert response.status_code == 409
+
+
+async def test_catalog_workout_session_explains_why_it_cannot_be_deleted(session: AsyncSession):
+    """Аудит staging 7500c37: запись готовой тренировки каталога (Complex.source_type='system') правило безопасного
+    удаления не пропускает — это не меняется, но Журнал получает понятную причину (delete_reason) вместо молча
+    пропавшей кнопки; DELETE отвечает 409 тем же текстом. Своя тренировка — без причины и удаляется как раньше."""
+    from app.services.session_deletion import REASON_CATALOG, REASON_UNPROVEN
+
+    user = await _user(session, 940031)
+    session_id, workout = await _finished_mixed_session(session, user)
+    own = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/sessions?status=completed")).json()["sessions"][0]
+    assert own["can_delete"] is True and own["delete_reason"] is None
+
+    await session.execute(update(Complex).where(Complex.id == workout.id).values(source_type="system", owner_user_id=None))
+    await session.commit()
+    listed = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/sessions?status=completed")).json()["sessions"]
+    entry = next(s for s in listed if s["id"] == session_id)
+    assert entry["can_delete"] is False
+    assert entry["delete_reason"] == REASON_CATALOG
+    refused = await v2_delete(session, telegram_id=user.telegram_id, path=f"/api/v2/sessions/{session_id}")
+    assert refused.status_code == 409 and refused.json()["detail"] == REASON_CATALOG
+    assert await session.scalar(select(func.count()).select_from(TrainingSession)) == 1
+
+    # Недоказанная запись без снимка и без связи — прежняя общая причина, не «каталог».
+    await session.execute(update(TrainingSession).where(TrainingSession.id == session_id).values(
+        workout_snapshot=None, plan_item_id=None, workout_definition_id=None, prescription_snapshot=None,
+    ))
+    await session.execute(delete(SessionPlanItem).where(SessionPlanItem.session_id == session_id))
+    await session.commit()
+    listed = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/sessions?status=completed")).json()["sessions"]
+    assert next(s for s in listed if s["id"] == session_id)["delete_reason"] == REASON_UNPROVEN

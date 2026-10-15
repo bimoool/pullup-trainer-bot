@@ -48,6 +48,9 @@ REASON_ACTIVE = "Активную тренировку нельзя удалит
 REASON_PROGRAM = "Тренировка относится к курсу — её нельзя удалить, чтобы не нарушить прогрессию и историю."
 REASON_STEP = "Эта тренировка учтена в прогрессии курса — удалить её нельзя."
 REASON_UNPROVEN = "Не удалось убедиться, что эту тренировку можно удалить без последствий для прогрессии."
+# Аудит staging 7500c37: свободная запись по готовой тренировке каталога (Complex.source_type='system') — правило
+# прежнее (удалять можно только записи своих тренировок), но причина отказа названа прямо и с выходом.
+REASON_CATALOG = "Это запись готовой тренировки из каталога — такие записи не удаляются. Исправить подходы можно через «Изменить»."
 
 
 @dataclass(frozen=True)
@@ -174,6 +177,10 @@ class SessionDeletionService:
                 for item in linked
             )
         if not proven:
+            source_workout_id = snapshot_workout_id if detail.workout_snapshot is not None else detail.workout_definition_id
+            source_workout = complexes.get(source_workout_id) if source_workout_id is not None else None
+            if source_workout is not None and source_workout.source_type == "system":
+                return DeleteVerdict(False, REASON_CATALOG)
             return DeleteVerdict(False, REASON_UNPROVEN)
 
         session_blocks = [_session_block_input_from_detail(b) for b in detail.blocks]
