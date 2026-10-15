@@ -48,7 +48,8 @@ test("Планы → Подтягивания/Планка → Complete → Жу
   await page.locator(".plan-week-day-group", { hasText: "Планка" })
     .getByRole("button", { name: /^Начать: / }).click();
   await expect(page.getByText("Планка")).toBeVisible();
-  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  // Аудит staging 7500c37: строка «только упражнение» без параметров — явный выбор на пред-экране.
+  await page.getByTestId("session-pre-start-max").click();
   await logMaxTimeV2(page, "30");
   await finishV2(page, { early: true });
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
