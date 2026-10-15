@@ -53,16 +53,44 @@ export const noWakeLock = (errors: string[]) => errors.filter((e) => !e.includes
 /** issue #306 — Live Engine v2: подход за подходом без «Готов»/«Пропустить отдых». Ожидание (подготовка/отдых)
  * сокращается необязательным «Начать сейчас» (skip_wait) — сам переход по дедлайну проверяет
  * live-engine-v2.spec.ts реальным временем. После последнего подхода ничего не трогает. */
+/** MVP «сохранность результата»: действие подтверждается после записи на устройство. Пока «Сохраняю…», фаза на
+ * экране ещё прежняя — решать по ней (например, жать «Начать сейчас») рано. */
+export async function settledV2(page: Page) {
+  await expect(page.getByTestId("engine-saving")).toHaveCount(0, { timeout: 10_000 });
+}
+
+/** Фаза и текущий подход (упражнение + цель) одним чтением DOM, без автоожидания локаторов. */
+async function currentSetKey(page: Page): Promise<{ phase: string | null; key: string | null }> {
+  return page.evaluate(() => {
+    const text = (selector: string) => document.querySelector(selector)?.textContent?.trim() ?? null;
+    const target = text('[data-testid="engine-target"]');
+    return {
+      phase: text('[data-testid="engine-phase"]'),
+      key: target === null ? null : `${text(".live-exercise") ?? ""}|${target}`,
+    };
+  });
+}
+
 export async function playSetsV2(page: Page, values: string[]) {
   for (const value of values) {
     const phase = page.getByTestId("engine-phase");
+    await settledV2(page);
     await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
     if ((await phase.textContent())?.trim() !== "Пошёл") {
       await page.getByTestId("engine-skip").click();
     }
     await expect(phase).toHaveText("Пошёл");
     await page.getByLabel("Результат подхода").fill(value);
+    const before = await currentSetKey(page);
     await page.getByTestId("engine-submit").click();
+    // MVP «сохранность результата»: подход подтверждается после записи на устройство — пока «Сохраняю…», событие
+    // ещё не в очереди (engine-pending пуст). Ждём само подтверждение: фаза ушла из «Пошёл» или сменился подход
+    // (упражнение + цель). Чтение DOM без автоожидания: элементы исчезают на переходе к итогу.
+    await expect.poll(async () => {
+      const now = await currentSetKey(page);
+      return now.phase !== "Пошёл" || now.key !== before.key;
+    }, { timeout: 10_000 }).toBe(true);
+    await expect(page.getByTestId("engine-saving")).toHaveCount(0, { timeout: 10_000 });
     await expect(page.getByTestId("engine-pending")).toHaveCount(0, { timeout: 10_000 });
   }
 }
@@ -75,6 +103,7 @@ export async function finishV2(
   page: Page, { early = false, checks = "unknown" }: { early?: boolean; checks?: "valid" | "unknown" } = {},
 ) {
   const completed = page.waitForResponse((r) => r.url().includes("/complete") && r.status() === 200);
+  await settledV2(page);
   if (early) {
     await page.getByTestId("engine-finish").click();
     await page.getByTestId("engine-finish-confirm").click();
@@ -103,6 +132,7 @@ export async function answerChecksV2(page: Page, checks: "valid" | "unknown") {
 /** issue #306 — подход «на максимум по времени» (секундомер): «Стоп» → поле с измеренным → своё значение → «Готово». */
 export async function logMaxTimeV2(page: Page, value: string) {
   const phase = page.getByTestId("engine-phase");
+  await settledV2(page);
   await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
   if ((await phase.textContent())?.trim() !== "Пошёл") {
     await page.getByTestId("engine-skip").click();
@@ -117,6 +147,7 @@ export async function logMaxTimeV2(page: Page, value: string) {
 /** issue #306 — подход на время: «Стоп» записывает измеренные секунды (цель — по дедлайну сама). */
 export async function stopTimedSetV2(page: Page) {
   const phase = page.getByTestId("engine-phase");
+  await settledV2(page);
   await expect(phase).toHaveText(/Приготовься|Отдых|Пошёл/);
   if ((await phase.textContent())?.trim() !== "Пошёл") {
     await page.getByTestId("engine-skip").click();

@@ -15,7 +15,7 @@ import {
 import {
   claimQueue, createQueueOwner, createScreenLifecycle, createSyncRetry, displayState, dropAcknowledged, emptyQueue,
   newEvent, releaseQueue, serverOffsetMs, startEngineReconciliation,
-  type EngineQueue, type QueueOwner,
+  type EngineQueue, type QueueOwner, type QueuedEngineEvent,
 } from "./liveEngineClient";
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { confirmAction } from "./telegramPlatform";
@@ -113,6 +113,15 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const [queueUnreadable, setQueueUnreadable] = useState(false);
   const loadNow = useRef<() => void>(() => undefined);
   const [loadRetry] = useState(() => createSyncRetry(() => loadNow.current()));
+  // MVP «сохранность результата»: действие (подход, пауза, завершение…) экран подтверждает — новая фаза, «Подход N: …»
+  // — только ПОСЛЕ записи очереди на устройство. Раньше экран обновлялся до записи: закрыли приложение в этом окне —
+  // подтверждённый результат пропадал. Все записи очереди идут по одной, в порядке вызова, и каждая пишет актуальную
+  // очередь — поздняя запись не затирает более новую. Пока запись идёт — «Сохраняю…» и действия недоступны; сбой
+  // записи — введённое остаётся, «Повторить» пишет то же событие (тот же client_event_id и время нажатия).
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  const savingRef = useRef(0);
+  const [saving, setSaving] = useState(false);
+  const [saveFailure, setSaveFailure] = useState<{ retry: () => void } | null>(null);
 
   const engine = server.engine;
   const plan = engine?.plan ?? null;
@@ -122,6 +131,44 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   function setQueue(next: EngineQueue) {
     queueRef.current = next;
     setQueueState(next);
+  }
+
+  /** Запись очереди в общем порядке записей (ошибка предыдущей не блокирует следующую). */
+  function chainWrite<T>(write: () => Promise<T>): Promise<T> {
+    const run = writes.current.catch(() => undefined).then(write);
+    writes.current = run;
+    return run;
+  }
+
+  /**
+   * Добавить события (и/или завершение) в очередь: сначала запись на устройство, потом экран. Повторная запись тех же
+   * событий (после сбоя) не дублирует их: события с известным client_event_id не добавляются.
+   */
+  async function commit(events: QueuedEngineEvent[], complete: EngineQueue["complete"] | undefined, onSaved?: () => void): Promise<boolean> {
+    const add = (base: EngineQueue): EngineQueue => ({
+      ...base,
+      events: [...base.events, ...events.filter((event) => !base.events.some((known) => known.client_event_id === event.client_event_id))],
+      complete: complete !== undefined ? complete : base.complete,
+    });
+    savingRef.current += 1;
+    setSaving(true);
+    setSaveFailure(null);
+    try {
+      await chainWrite(async () => {
+        await owner.current.save(add(queueRef.current));
+        setQueue(add(queueRef.current));  // записано — теперь экран может подтвердить
+      });
+    } catch {
+      setSaveFailure({ retry: () => void commit(events, complete, onSaved) });
+      return false;
+    } finally {
+      savingRef.current -= 1;
+      setSaving(savingRef.current > 0);
+    }
+    setNow(Date.now());
+    onSaved?.();
+    void sync();
+    return true;
   }
 
   function acceptServer(response: LiveSessionResponse, startedMs: number, receivedMs: number) {
@@ -137,7 +184,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       return;
     }
     closed.current = true;
-    await owner.current.clear();
+    await chainWrite(() => owner.current.clear());  // после уже начатых записей: поздняя запись не вернёт очередь
     if (result.progression_skipped_reason === "cancelled" || result.engine_status === "cancelled") {
       onLeave();
       return;
@@ -189,7 +236,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           }
           const rest = dropAcknowledged(queueRef.current, response.event_results.map((r) => r.client_event_id));
           setQueue(rest);
-          await owner.current.save(rest);
+          await chainWrite(() => owner.current.save(queueRef.current));
           if (!lifecycle.isCurrent(token)) {
             return;
           }
@@ -291,7 +338,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       setQueueUnreadable(false);
       setQueue(merged);
       if (local.events.length > 0 || local.complete !== null) {
-        await sessionOwner.save(merged);  // локальное (если было) — после сохранённого, без дублей
+        await chainWrite(() => sessionOwner.save(queueRef.current));  // локальное (если было) — после сохранённого, без дублей
       }
       setReady(true);
       if (merged.events.length > 0 || merged.complete !== null) {
@@ -436,34 +483,27 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   }, [reviewOpen], true, false);
   useClosingConfirmation();
 
-  async function enqueue(type: string, payload: Record<string, unknown>): Promise<void> {
-    if (!owner.current.loaded()) {
-      return;  // ввод заблокирован, пока сохранённая очередь не прочитана
+  /** Действие можно начать: очередь прочитана, предыдущая запись завершена и не упала (порядок событий). */
+  const canAct = (): boolean => owner.current.loaded() && savingRef.current === 0 && saveFailure === null;
+
+  async function enqueue(type: string, payload: Record<string, unknown>, onSaved?: () => void): Promise<boolean> {
+    if (!canAct()) {
+      return false;  // очередь не прочитана, запись ещё идёт или ждёт «Повторить»
     }
-    const event = newEvent(type, payload, Date.now() + offset);
-    const next = { ...queueRef.current, events: [...queueRef.current.events, event] };
-    setQueue(next);
-    setNow(Date.now());
-    await owner.current.save(next);
-    void sync();
+    // Время события — момент нажатия (дедлайны), а не момент записи.
+    return commit([newEvent(type, payload, Date.now() + offset)], undefined, onSaved);
   }
 
   async function requestFinish(): Promise<void> {
-    if (state === null || !owner.current.loaded()) {
+    if (state === null || !canAct()) {
       return;
     }
     const review = { effort: reviewEffort, comment: reviewComment.trim() || null };
     // #305: ответы о технике/отдыхе (неотвеченное = неизвестно) — в payload finish_early, в журнал событий.
     const confirmIndexes = plan ? blocksToConfirm(plan, state) : [];
     const finishPayload = confirmIndexes.length > 0 ? { checks: checksPayload(confirmIndexes, answers) } : {};
-    const events = state.status === "active"
-      ? [...queueRef.current.events, newEvent("finish_early", finishPayload, Date.now() + offset)]
-      : queueRef.current.events;
-    const next = { ...queueRef.current, events, complete: review };
-    setQueue(next);
-    setReviewOpen(false);
-    await owner.current.save(next);
-    void sync();
+    const events = state.status === "active" ? [newEvent("finish_early", finishPayload, Date.now() + offset)] : [];
+    await commit(events, review, () => setReviewOpen(false));
   }
 
   async function requestCancel(): Promise<void> {
@@ -530,6 +570,13 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const extraAllowed = extraBlockIndex !== null && plan.blocks[extraBlockIndex].kind === "sets"
     && (plan.blocks[extraBlockIndex].extra_sets_allowed ?? true);
   const pendingCount = queue.events.length + (finishing ? 1 : 0);
+  const busy = saving || saveFailure !== null;  // запись идёт или ждёт «Повторить»: новые действия нарушили бы порядок
+  const saveErrorBanner = saveFailure !== null && (
+    <div className="error-banner" role="alert" data-testid="engine-save-error">
+      <p>Не удалось сохранить действие на устройстве. Введённое не потеряно — нажмите «Повторить».</p>
+      <button type="button" className="action-button" onClick={saveFailure.retry}>Повторить</button>
+    </div>
+  );
   const phaseLabel = state.phase === "PREP" ? "Приготовься"
     : state.phase === "WORK" ? "Пошёл"
       : state.phase === "RESULT" ? (isInterval ? "Повторы раунда" : "Результат")
@@ -579,6 +626,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         )}
       </header>
       {!online && <p className="gap-banner">Нет сети — действия сохраняются на устройстве и уйдут при подключении.</p>}
+      {saving && <p className="gap-banner" role="status" data-testid="engine-saving">Сохраняю на устройстве…</p>}
+      {saveErrorBanner}
       {online && pendingCount > 0 && <p className="gap-banner" data-testid="engine-pending">Не синхронизировано: {pendingCount}. Досылаю…</p>}
       {failure && (
         <p className="gap-banner" data-testid="engine-sync-error">
@@ -674,7 +723,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           <p className="live-hint">«Не знаю» не считается подтверждением: тренировка сохранится, но прибавки не будет.</p>
           {checksForm}
           <Button
-            className="live-primary" size="l" stretched data-testid="engine-confirm-submit"
+            className="live-primary" size="l" stretched data-testid="engine-confirm-submit" disabled={busy}
             onClick={() => void enqueue("confirm_blocks", { checks: checksPayload(confirmIndexes, answers) })}
           >
             Подтвердить и завершить
@@ -691,8 +740,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
                 void enqueue("correct_previous", {
                   block_index: edit.block_index, set_index: edit.set_index, round_index: edit.round_index,
                   value: Number(edit.value),
-                });
-                setEdit(null);
+                }, () => setEdit(null));  // правка закрывается, только когда сохранена
               }
             }}>
               <label className="live-field">
@@ -705,7 +753,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
               {state.phase !== "REST" && state.phase !== "PREP" && (
                 <p className="live-hint" data-testid="engine-edit-pending">Правка ещё не сохранена.</p>
               )}
-              <Button className="live-save" size="m" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(edit.value)}>
+              <Button className="live-save" size="m" stretched mode="bezeled" type="submit" disabled={busy || !isCompleteDecimal(edit.value)}>
                 Сохранить подход
               </Button>
               <Button
@@ -740,9 +788,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           <form data-testid="extra-set-form" onSubmit={(event) => {
             event.preventDefault();
             if (isCompleteDecimal(extraValue)) {
-              void enqueue("add_extra_set", { block_index: extraBlockIndex, value: Number(extraValue) });
-              setExtraValue("");
-              setExtraOpen(false);
+              void enqueue("add_extra_set", { block_index: extraBlockIndex, value: Number(extraValue) }, () => {
+                setExtraValue("");
+                setExtraOpen(false);
+              });
             }
           }}>
             <label className="live-field">
@@ -752,7 +801,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
                 value={extraValue} onChange={(e) => setExtraValue(sanitizeDecimalInput(e.target.value))}
               />
             </label>
-            <Button className="live-save" size="l" stretched type="submit" disabled={!isCompleteDecimal(extraValue)}>Записать</Button>
+            <Button className="live-save" size="l" stretched type="submit" disabled={busy || !isCompleteDecimal(extraValue)}>Записать</Button>
             <Button className="live-save" size="l" stretched mode="outline" type="button" onClick={() => setExtraOpen(false)}>Отмена</Button>
           </form>
         </section>
@@ -782,14 +831,14 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       {!finishing && !reviewOpen && !extraOpen && (
         <div className="live-transport">
           {(workInput || resultInput) && (
-            <Button className="live-primary" size="l" stretched type="submit" form="engine-log-form" data-testid="engine-submit" disabled={!isCompleteDecimal(value)}>
+            <Button className="live-primary" size="l" stretched type="submit" form="engine-log-form" data-testid="engine-submit" disabled={busy || !isCompleteDecimal(value)}>
               Готово
             </Button>
           )}
           {workInput && stopRule !== null && (
             <Button
               className="live-secondary" size="m" stretched mode="bezeled" data-testid="engine-submit-technique-broken"
-              disabled={!isCompleteDecimal(value)} onClick={() => submit(undefined, "invalid")}
+              disabled={busy || !isCompleteDecimal(value)} onClick={() => submit(undefined, "invalid")}
             >
               Готово · техника нарушена (конец блока)
             </Button>
@@ -797,20 +846,20 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           {(countUp || (timedWork && spec?.kind === "time")) && (
             <Button
               className={countUp ? "live-primary" : "live-secondary"} size={countUp ? "l" : "m"} stretched mode={countUp ? undefined : "bezeled"}
-              data-testid="engine-stop" onClick={() => void enqueue("stop", { phase_seq: state.phase_seq })}
+              data-testid="engine-stop" disabled={busy} onClick={() => void enqueue("stop", { phase_seq: state.phase_seq })}
             >
               Стоп
             </Button>
           )}
           {state.phase === "COMPLETE" && state.status === "completed" && (
-            <Button className="live-primary" size="l" stretched data-testid="engine-save" onClick={() => void requestFinish()}>
+            <Button className="live-primary" size="l" stretched data-testid="engine-save" disabled={busy} onClick={() => void requestFinish()}>
               Сохранить
             </Button>
           )}
           <div className="live-secondary-row">
             {showSkip && (
               <Button
-                className="live-secondary" size="m" stretched mode="bezeled" data-testid="engine-skip"
+                className="live-secondary" size="m" stretched mode="bezeled" data-testid="engine-skip" disabled={busy}
                 onClick={() => void enqueue("skip_wait", { phase_seq: state.phase_seq })}
               >
                 Начать сейчас
@@ -818,7 +867,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
             )}
             {state.status === "active" && state.phase !== "CONFIRM" && (
               <Button
-                className="live-secondary" size="m" stretched mode="bezeled" data-testid="pause-toggle"
+                className="live-secondary" size="m" stretched mode="bezeled" data-testid="pause-toggle" disabled={busy}
                 onClick={() => void enqueue(paused ? "resume" : "pause", { phase_seq: state.phase_seq })}
               >
                 {paused ? "Продолжить" : "Пауза"}
@@ -852,13 +901,15 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
                 maxLength={WORKOUT_COMMENT_MAX} value={reviewComment} onChange={(e) => setReviewComment(e.target.value)}
               />
             </label>
-            <Button className="live-primary" size="l" stretched data-testid="engine-finish-confirm" onClick={() => void requestFinish()}>
+            {saving && <p className="gap-banner" role="status" data-testid="engine-finish-saving">Сохраняю на устройстве…</p>}
+            {saveErrorBanner}
+            <Button className="live-primary" size="l" stretched data-testid="engine-finish-confirm" disabled={busy} onClick={() => void requestFinish()}>
               Сохранить и завершить
             </Button>
             <Button className="live-secondary live-sheet-back" size="m" stretched mode="plain" onClick={() => setReviewOpen(false)}>
               Назад
             </Button>
-            <button type="button" className="live-link-button" data-testid="engine-cancel" onClick={() => void requestCancel()}>
+            <button type="button" className="live-link-button" data-testid="engine-cancel" disabled={busy} onClick={() => void requestCancel()}>
               Отменить тренировку
             </button>
           </section>

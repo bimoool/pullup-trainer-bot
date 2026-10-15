@@ -55,8 +55,11 @@ test("«Планы» → manual «Планка»/«Отжимания» → Star
   await page.getByTestId("engine-stop").click();
   await expect(page.getByTestId("engine-phase")).toHaveText("Результат");
   await page.getByLabel("Результат подхода").fill("30");
+  // Именно ответ с submit_result: ответ на «Стоп» (досылка ещё в пути) раньше удовлетворял ожидание, и reload
+  // успевал до записи подхода — проверка «подход сохранён» проходила по чужому событию.
   const setResponsePromise = page.waitForResponse(
-    (response) => response.url().includes(`/sessions/live/${plankSessionId}/events`) && response.status() === 200,
+    (response) => response.url().includes(`/sessions/live/${plankSessionId}/events`) && response.status() === 200
+      && (response.request().postData() ?? "").includes("\"submit_result\""),
   );
   await page.getByTestId("engine-submit").click();
   await setResponsePromise;

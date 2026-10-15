@@ -110,6 +110,8 @@ test("новый пользователь: своя тренировка с ну
   await page.getByTestId("engine-finish").click(); // досрочно: план длиннее двух подходов
   await page.getByRole("button", { name: /3 Средне/ }).click();
   await page.getByTestId("engine-finish-confirm").click();
+  // Завершение подтверждено экраном итога (после записи на устройство), и только потом — перезагрузка.
+  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
   await expect(page.getByText("Подход 2: 6 повт.")).toBeVisible();
 
   await page.reload();
