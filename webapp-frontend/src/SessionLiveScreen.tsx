@@ -46,7 +46,7 @@ import { backButtonAction, FOCUSABLE_SELECTOR, nextTrapIndex } from "./liveDialo
 import { canStartNextBlock, classifySyncError, finishStatus, type SyncFailure } from "./liveFinish";
 import { useLiveFieldFocus } from "./liveFieldFocus";
 import { useBackButton } from "./useBackButton";
-import { dismissKeyboard } from "./telegramPlatform";
+import { confirmAction, dismissKeyboard } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
@@ -493,7 +493,7 @@ export function SessionLiveScreen({
     if (action === "close-review") {
       setReviewOpen(false);
     } else if (action === "confirm-finish") {
-      handleFinish();
+      void handleFinish();
     } else if (action === "leave") {
       onLeave?.();
     }
@@ -682,11 +682,11 @@ export function SessionLiveScreen({
     });
   }
 
-  function handleFinish() {
+  async function handleFinish() {
     if (local === null) {
       return;
     }
-    if (!window.confirm("Закончить сессию? Что сделано — зачтено, остальное останется в плане.")) {
+    if (!(await confirmAction("Закончить сессию? Что сделано — зачтено, остальное останется в плане."))) {
       return;
     }
     void guardedAction(async () => {

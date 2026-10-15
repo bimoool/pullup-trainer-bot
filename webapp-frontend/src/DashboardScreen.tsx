@@ -31,6 +31,8 @@ import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
+import { confirmAction } from "./telegramPlatform";
+import { showToast } from "./toast";
 import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
   occurrenceStateLabel, todayDayIndexInWeek, weekProgress, weekRangeLabel,
@@ -424,13 +426,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
 
   // issue #304 (B3) — «Остановить план»: свой план больше не добавляет занятия, история остаётся.
   async function handleStopCustomPlan(customPlanId: number, name: string) {
-    if (!window.confirm(`Остановить план «${name}»? Выполненные тренировки останутся в истории.`)) {
+    if (!(await confirmAction(`Остановить план «${name}»? Выполненные тренировки останутся в истории.`))) {
       return;
     }
     setStoppingCustomPlanId(customPlanId);
     setCustomPlanError(null);
     try {
       await deactivateCustomPlan(initDataRaw, customPlanId);
+      showToast(`План «${name}» остановлен`);
       await reloadPlan();
     } catch (error) {
       setCustomPlanError(error instanceof Error ? error.message : String(error));

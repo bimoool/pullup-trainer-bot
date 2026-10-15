@@ -22,7 +22,8 @@ import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 import { NavIcon } from "./NavIcon";
 import { isSessionExpiredMessage } from "./sessionErrors";
-import { getWebApp } from "./telegramPlatform";
+import { confirmAction, getWebApp } from "./telegramPlatform";
+import { ToastHost } from "./ToastHost";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 
 /**
@@ -194,11 +195,11 @@ export function App() {
     setTab("faq");
   }
 
-  function handleTabClick(key: Tab) {
+  async function handleTabClick(key: Tab) {
     if (key === tab) {
       return;
     }
-    if (liveWorkoutActive && !window.confirm("Прогресс тренировки будет потерян — уйти?")) {
+    if (liveWorkoutActive && !(await confirmAction("Прогресс тренировки будет потерян — уйти?"))) {
       return;
     }
     setJournalRestore(null);
@@ -412,6 +413,7 @@ export function App() {
   if (v2Session !== null) {
     return (
       <div className="app-shell">
+        <ToastHost />
         <PlanSessionFlow
           initDataRaw={state.initDataRaw}
           planItemIds={"planItemIds" in v2Session ? v2Session.planItemIds : []}
@@ -463,6 +465,7 @@ export function App() {
     <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
       <EngineStoreBanner />
+      <ToastHost />
       {/* Замер + анкета (issue #124, PR 2) — раньше единственным путём
           пройти онбординг был бот ("Онбординг ещё не пройден. Начни его в
           боте."), теперь полноценный экран прямо здесь: не нужно закрывать

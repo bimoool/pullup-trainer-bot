@@ -13,6 +13,8 @@ import { formatDurationHm } from "./journalLog";
 import { JOURNAL_DELETE_CONFIRM } from "./journalSheet";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
+import { confirmAction } from "./telegramPlatform";
+import { showToast } from "./toast";
 
 /** Карточка завершённой TrainingSession (Журнал v2). Каждый блок сессии
  * рендерится независимо — ни один блок не определяет вид всей карточки. */
@@ -128,7 +130,7 @@ export function JournalV2Detail({
     if (deleteInFlight.current) {
       return; // двойной клик
     }
-    if (!window.confirm(JOURNAL_DELETE_CONFIRM)) {
+    if (!(await confirmAction(JOURNAL_DELETE_CONFIRM))) {
       return;
     }
     deleteInFlight.current = true;
@@ -136,6 +138,7 @@ export function JournalV2Detail({
     setDeleteError(null);
     try {
       await deleteSession(initDataRaw, session.id);
+      showToast("Тренировка удалена");
       onDeleted(session.id);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : String(error));

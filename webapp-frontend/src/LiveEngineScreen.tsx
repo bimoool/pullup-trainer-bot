@@ -7,6 +7,7 @@ import {
 } from "./apiV2";
 import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFormat";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
+import { autosavedEditMessage, pendingCorrection, type EditTarget } from "./liveEditDraft";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { carriesCompletionOutcome, classifySyncError, FINISH_EARLY_HINT, summaryResult, type SyncFailure } from "./liveFinish";
 import {
@@ -23,6 +24,7 @@ import { useBackButton } from "./useBackButton";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
+import { showToast } from "./toast";
 
 type Props = {
   initDataRaw: string;
@@ -84,6 +86,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const [extraValue, setExtraValue] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [editValue, setEditValue] = useState("");
+  // Какой подход правится (фиксируется при «Изменить»): при смене фазы черновик сохраняется именно в него (H2).
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewEffort, setReviewEffort] = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState("");
@@ -129,6 +133,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     closed.current = true;
     await owner.current.clear();
     if (result.progression_skipped_reason === "cancelled" || result.engine_status === "cancelled") {
+      showToast("Тренировка отменена");
       onLeave();
       return;
     }
@@ -396,6 +401,13 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     } else {
       setValue("");
     }
+    // Аудит staging 6475bc0 (H2): отдых закончился, пока был открыт редактор подхода, — введённое не теряется молча,
+    // а сохраняется (correct_previous движок принимает в любой фазе) с сообщением об этом.
+    const draft = editOpen ? pendingCorrection(editTarget, editValue) : null;
+    if (draft !== null && editTarget !== null) {
+      void enqueue("correct_previous", draft);
+      showToast(autosavedEditMessage(editTarget, draft.value));
+    }
     setEditOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorKey]);
@@ -651,7 +663,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       {lastLogPanel && (
         <section className="live-panel live-log-panel live-log-collapsed" data-testid="engine-last-set">
           {editOpen ? (
-            <form onSubmit={(event) => {
+            <form data-testid="engine-edit-form" onSubmit={(event) => {
               event.preventDefault();
               if (isCompleteDecimal(editValue)) {
                 void enqueue("correct_previous", {
@@ -671,6 +683,23 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
               <Button className="live-save" size="m" stretched mode="bezeled" type="submit" disabled={!isCompleteDecimal(editValue)}>
                 Сохранить подход
               </Button>
+              {/* H3: нижняя панель на время правки скрыта (узкий экран), поэтому пауза и отмена правки — здесь. */}
+              <div className="live-secondary-row">
+                {state.status === "active" && (
+                  <Button
+                    className="live-secondary" size="m" stretched mode="bezeled" type="button" data-testid="engine-edit-pause"
+                    onClick={() => void enqueue(paused ? "resume" : "pause", { phase_seq: state.phase_seq })}
+                  >
+                    {paused ? "Продолжить" : "Пауза"}
+                  </Button>
+                )}
+                <Button
+                  className="live-secondary" size="m" stretched mode="outline" type="button" data-testid="engine-edit-cancel"
+                  onClick={() => setEditOpen(false)}
+                >
+                  Отмена
+                </Button>
+              </div>
             </form>
           ) : (
             <div className="live-summary-row">
@@ -679,7 +708,13 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
               </p>
               <button
                 type="button" className="live-link-button live-edit-button" data-testid="engine-edit-last"
-                onClick={() => { setEditValue(String(lastLog.value ?? "")); setEditOpen(true); }}
+                onClick={() => {
+                  setEditTarget({
+                    block_index: lastLog.block_index, set_index: lastLog.set_index, round_index: lastLog.round_index, value: lastLog.value,
+                  });
+                  setEditValue(String(lastLog.value ?? ""));
+                  setEditOpen(true);
+                }}
               >
                 Изменить
               </button>
