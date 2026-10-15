@@ -9,7 +9,7 @@ import { pressTelegramBackButton } from "../fixtures/telegramMock";
  * системный контент миграций). 320 и 375 px.
  *  - деталь ГОТОВОЙ тренировки подписывалась «Своя тренировка» (строка была зашита для всех);
  *  - баннер Главной создаёт тренировку, а назывался «Своя программа» / «собрать свой комплекс»;
- *  - карточки тестов в Профиле показывали два шеврона (иконка chevronRight + CSS ::after «›»).
+ *  - карточки тестов в Профиле показывали два шеврона (иконка chevronRight + CSS ::after «›»); остаётся ::after.
  */
 for (const width of [320, 375]) {
   test.describe(`${width}px`, () => {
@@ -31,8 +31,9 @@ for (const width of [320, 375]) {
 
       await openTab(page, "Профиль");
       const card = page.getByTestId("profile-tests").getByTestId("test-card").first();
-      await expect(card.locator(".test-card-chevron")).toHaveCount(1);
-      expect(await card.evaluate((element) => getComputedStyle(element, "::after").content)).toMatch(/^(none|normal)$/);
+      // Ровно одна видимая стрелка: ::after «›» плоского списка Профиля, иконка карточки скрыта.
+      expect(await card.evaluate((element) => getComputedStyle(element, "::after").content)).toContain("›");
+      await expect(card.locator(".test-card-chevron")).toBeHidden();
       expect(apiFailures).toEqual([]);
     });
   });

@@ -774,12 +774,17 @@ html:has(.live-screen) {
 .live-screen .live-set-nav[disabled] {
   opacity: 0.45;
 }
-/* Кнопки ряда по ширине текста: три кнопки («Начать сейчас», «Пауза», «+ Ещё подход») на 320 px не помещались и
-   обрезались до «Начат…» (аудит staging 6475bc0) — не влезшая кнопка переносится строкой ниже и растягивается. */
-.live-secondary-row {
+/* Три кнопки («Начать сейчас», «Пауза», «+ Ещё подход») на 320 px не помещались и обрезались до «Начат…» (аудит
+   staging 6475bc0) — в Live Engine v2 не влезшая кнопка переносится строкой ниже и растягивается (правило ниже). */
+.live-secondary-row > .live-secondary:not(.live-set-nav) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Live Engine v2 (data-engine-phase): кнопки ряда по ширине текста с переносом. Экран v1 (SessionLiveScreen) не
+   трогаем — его вёрстка закреплена parity/visual-live (главное действие без прокрутки). */
+.live-screen[data-engine-phase] .live-secondary-row {
   flex-wrap: wrap;
 }
-.live-secondary-row > .live-secondary:not(.live-set-nav) {
+.live-screen[data-engine-phase] .live-secondary-row > .live-secondary:not(.live-set-nav) {
   flex: 1 1 auto;
-  min-width: 0;
 }
