@@ -215,5 +215,7 @@ for id in 993601 993602 993611 993612 993621 993622 993631 993632; do seed sessi
 # Аудит staging 6475bc0: H1 (telegram-web-confirm.spec.ts — удаление через WebApp.showConfirm; мутирует) и
 # H2/H3 (live-engine-edit-phase.spec.ts — правка подхода при смене фазы, пауза/отмена в правке); id + retry.
 for id in 998191 998192; do seed journal_edit "$id"; done
-for id in 998193 998194; do seed tests_hub "$id"; done
+# peer_empty (без результатов): тест сам пишет результат в протокол вне peer-insights.spec.ts и удаляет его —
+# лишние результаты «Максимум подтягиваний» подняли бы общую когорту до ≥20 и сломали бы «мало данных».
+for id in 998193 998194; do seed peer_empty "$id"; done
 for id in 930623 930624 930625 930626; do seed live_engine "$id"; done

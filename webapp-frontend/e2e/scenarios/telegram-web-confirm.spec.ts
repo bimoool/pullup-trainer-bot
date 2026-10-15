@@ -7,7 +7,8 @@ import { openAppAs } from "../fixtures/setup";
  * Аудит staging 6475bc0 (H1): в Telegram Web Mini App живёт в iframe, где window.confirm не показывается и сразу
  * возвращает false, — «Удалить» в Журнале и в Тестах молча ничего не делало. Подтверждение идёт через нативный
  * WebApp.showConfirm (confirmAction); после удаления — сообщение «… удалена/удалён».
- * Сиды: journal_edit (Builder-запись «Моя силовая» удаляемая), tests_hub (у теста два результата: 10 и 12).
+ * Сиды: journal_edit (Builder-запись «Моя силовая» удаляемая), peer_empty (без результатов: тест сам записывает 999,
+ * как в аудите, в протокол, которого не касается peer-insights.spec.ts, и удаляет его).
  * Мутирует данные — по пользователю на тест и retry.
  */
 test.use({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
@@ -59,23 +60,27 @@ test("Журнал: «Удалить» в Telegram Web спрашивает на
 test("Тест: «Удалить результат» в Telegram Web спрашивает нативно и удаляет с сообщением", async ({ page }, testInfo) => {
   const { apiFailures } = await openAppAs(page, 998_193 + testInfo.retry);
   await openTab(page, "Профиль");
-  await page.getByTestId("test-card").first().click();
+  // Не «Максимум подтягиваний» / «Подтягивания с весом»: их когорты проверяет peer-insights.spec.ts.
+  await page.getByTestId("test-card").filter({ hasNotText: /Максимум подтягиваний|Подтягивания с весом/ }).first().click();
   await expect(page.getByTestId("test-detail")).toBeVisible();
   const rows = page.getByTestId("test-history-row");
-  await expect(rows).toHaveCount(2);
+  await expect(page.getByTestId("test-history-empty")).toBeVisible();
+  await page.locator("#test-value").fill("999");
+  await page.getByRole("button", { name: "Записать результат" }).click();
+  await expect(rows).toHaveCount(1);
   const remove = rows.first().getByRole("button", { name: /^Удалить результат/ });
 
   await telegramWebConfirm(page, false);
   await remove.click();
   await expect.poll(() => asked(page)).toHaveLength(1);
-  expect((await asked(page))[0]).toMatch(/^Удалить результат 12 повт\. от /);
+  expect((await asked(page))[0]).toMatch(/^Удалить результат 999\b.* от /);
   await page.waitForTimeout(500);
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(1);
 
   await telegramWebConfirm(page, true);
   await remove.click();
   await expect(page.getByTestId("app-toast")).toHaveText("Результат удалён");
-  await expect(rows).toHaveCount(1);
-  await expect(rows.first()).not.toContainText("12");
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByTestId("test-history-empty")).toBeVisible();
   expect(apiFailures).toEqual([]);
 });
