@@ -20,7 +20,7 @@ import {
 import { cancelScheduledPhaseEndSound, phaseEndCueDelaySeconds, schedulePhaseEndSound } from "./phaseAudio";
 import { confirmAction } from "./telegramPlatform";
 import { useBackButton } from "./useBackButton";
-import { useLiveFieldFocus } from "./liveFieldFocus";
+import { isTextEntryTarget, useLiveFieldFocus } from "./liveFieldFocus";
 import { useClosingConfirmation } from "./useClosingConfirmation";
 import { vibratePhaseEnd, vibrationDelayMs } from "./vibration";
 import { disableWakeLock, enableWakeLock } from "./wakeLock";
@@ -409,8 +409,20 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     // Аудит staging 7500c37: на 320×640 поле результата оказывалось под липким транспортом — видна только подпись,
     // «Готово» неактивно, пока не прокрутишь. На входе в фазу ввода панель прокручивается в видимую область
     // (с учётом scroll-padding-bottom под транспорт, live.css); фокус не ставится — клавиатура не открывается сама.
+    // Только когда панель действительно закрыта транспортом и пользователь ещё не вводит: иначе прокрутка сдвигает
+    // «Готово» прямо под пальцем, и нажатие промахивается (локальная перепроверка plans-manual-session, ветка 352fd15).
     if (state.phase === "WORK" || state.phase === "RESULT") {
-      requestAnimationFrame(() => logPanelRef.current?.scrollIntoView?.({ block: "nearest" }));
+      requestAnimationFrame(() => {
+        const panel = logPanelRef.current;
+        if (panel === null || isTextEntryTarget(document.activeElement as HTMLElement | null)) {
+          return;
+        }
+        const transport = document.querySelector(".live-transport");
+        const visibleBottom = transport !== null ? transport.getBoundingClientRect().top : window.innerHeight;
+        if (panel.getBoundingClientRect().bottom > visibleBottom) {
+          panel.scrollIntoView?.({ block: "nearest" });
+        }
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorKey]);
