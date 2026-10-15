@@ -16,6 +16,8 @@ import { convertHeightText, convertWeightText, formatHeight, formatWeight, unitT
 import { useBackButton } from "./useBackButton";
 import { sanitizeDecimalInput } from "./decimalInput";
 import { Icon } from "./Icon";
+import { confirmAction } from "./telegramPlatform";
+import { showToast } from "./toast";
 
 type Props = {
   initDataRaw: string;
@@ -132,10 +134,12 @@ export function BodyMetricsScreen({ initDataRaw, metric, onChanged, onBack }: Pr
   }
 
   async function handleDelete(entry: BodyMetricEntry) {
-    if (!window.confirm(`Удалить замер ${show(entry.value)} от ${formatMeasuredDate(entry.measured_at)}?`)) {
+    if (!(await confirmAction(`Удалить замер ${show(entry.value)} от ${formatMeasuredDate(entry.measured_at)}?`))) {
       return;
     }
-    await run(() => deleteBodyMetric(initDataRaw, entry.id));
+    if (await run(() => deleteBodyMetric(initDataRaw, entry.id))) {
+      showToast("Замер удалён");
+    }
   }
 
   if (loadError !== null) {

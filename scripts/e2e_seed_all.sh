@@ -212,3 +212,10 @@ for id in 993341 993342 993351 993352; do seed session_recovery "$id"; done
 # R-4 follow-up (#293 N2/N3, parity/r4-followup.spec.ts): 99360x/99361x — завершение в очереди + медленный /complete
 # (session_recovery, мутирует), 99362x/99363x — пред-экран «Начать» офлайн (session_recovery, мутирует); id + retry.
 for id in 993601 993602 993611 993612 993621 993622 993631 993632; do seed session_recovery "$id"; done
+# Аудит staging 6475bc0: H1 (telegram-web-confirm.spec.ts — удаление через WebApp.showConfirm; мутирует) и
+# H2/H3 (live-engine-edit-phase.spec.ts — правка подхода при смене фазы, пауза/отмена в правке); id + retry.
+for id in 998191 998192; do seed journal_edit "$id"; done
+# peer_empty (без результатов): тест сам пишет результат в протокол вне peer-insights.spec.ts и удаляет его —
+# лишние результаты «Максимум подтягиваний» подняли бы общую когорту до ≥20 и сломали бы «мало данных».
+for id in 998193 998194; do seed peer_empty "$id"; done
+for id in 930623 930624 930625 930626; do seed live_engine "$id"; done

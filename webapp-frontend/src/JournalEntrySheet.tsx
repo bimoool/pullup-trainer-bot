@@ -7,6 +7,8 @@ import {
   JOURNAL_DELETE_CONFIRM, JOURNAL_SHEET_LABELS, journalSheetActions, type JournalSheetAction,
 } from "./journalSheet";
 import { useBackButton } from "./useBackButton";
+import { confirmAction } from "./telegramPlatform";
+import { showToast } from "./toast";
 
 const FOCUSABLE = "button:not([disabled])";
 
@@ -104,7 +106,7 @@ export function JournalEntrySheet({
     if (deleteInFlight.current) {
       return;
     }
-    if (!window.confirm(JOURNAL_DELETE_CONFIRM)) {
+    if (!(await confirmAction(JOURNAL_DELETE_CONFIRM))) {
       return;
     }
     deleteInFlight.current = true;
@@ -112,6 +114,7 @@ export function JournalEntrySheet({
     setDeleteError(null);
     try {
       await deleteSession(initDataRaw, session.id);
+      showToast("Тренировка удалена");
       onDeleted(session.id);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : String(error));

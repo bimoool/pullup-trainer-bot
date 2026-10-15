@@ -63,6 +63,7 @@ test("отмена тренировки в Telegram Web: нативное под
   const events = page.waitForResponse((r) => r.url().includes("/events") && r.request().method() === "POST");
   await cancel.click();
   expect((await events).status()).toBe(200);
+  await expect(page.getByTestId("app-toast")).toHaveText("Тренировка отменена"); // аудит 6475bc0: отмена подтверждена сообщением
   await expect.poll(async () => (await activeSession(page))?.id ?? null, { timeout: 10_000 }).toBeNull();
   expect(apiFailures).toEqual([]);
 });

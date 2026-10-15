@@ -11,6 +11,8 @@ import { JournalSessionCard, JournalV2Detail, JournalV2Footer } from "./JournalV
 import { JournalTimeline } from "./JournalTimeline";
 import { BackdatedWorkoutForm, FreeActivityForm, LogActivitySheet, type LogKind } from "./LogActivitySheet";
 import { useJournalV2 } from "./useJournalV2";
+import { confirmAction } from "./telegramPlatform";
+import { showToast } from "./toast";
 
 type Props = {
   initDataRaw: string;
@@ -135,13 +137,14 @@ export function HistoryScreen({ initDataRaw, logRequest = 0, logWorkoutId = null
     const message = isBackdated
       ? "Удалить эту тренировку из истории? Отменить это будет нельзя."
       : "Удалить эту тренировку? Это пересчитает цели всех следующих тренировок. Отменить это будет нельзя.";
-    if (!window.confirm(message)) {
+    if (!(await confirmAction(message))) {
       return;
     }
     setDeleteError(null);
     setDeletingWorkoutId(workoutId);
     try {
       await deleteHistoryWorkout(initDataRaw, workoutId);
+      showToast("Тренировка удалена");
       await reloadFirstPage();
       journal.refreshDays();
     } catch (error) {
