@@ -668,13 +668,14 @@ export function SessionPreScreen({
               className="action-button vs-primary" size="l" stretched disabled={isStarting}
               data-testid="session-pre-set-params" onClick={() => setParamsStep("form")}
             >
-              Задать подходы и повторения
+              Задать подходы
             </Button>
             <Button
               className="action-button vs-plain" size="l" stretched mode="plain" disabled={isStarting}
               data-testid="session-pre-start-max" onClick={() => void handleStart(planItemIds, displayTitle)}
             >
-              {isStarting ? <Spinner size="s" /> : "Начать: 3 подхода на максимум"}
+              {/* Короткие подписи: на 320 px кнопка обрезала «…подхода на мак…» (живая проверка 352fd15). */}
+              {isStarting ? <Spinner size="s" /> : "Начать: 3 × максимум"}
             </Button>
           </div>
         </>

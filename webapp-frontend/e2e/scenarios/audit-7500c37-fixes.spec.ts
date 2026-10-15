@@ -98,6 +98,12 @@ test("1b: старая строка без параметров — «Парам
   await expect(missing).toContainText("3 подхода на максимум");
   await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0); // нет молчаливого старта
   expect(starts).toEqual([]);
+  // 320 px: подписи кнопок выбора не обрезаются многоточием (живая проверка 352fd15 — «Задать подходы и повто…»).
+  for (const testId of ["session-pre-set-params", "session-pre-start-max"]) {
+    const clipped = await page.getByTestId(testId).evaluate((button) =>
+      [button, ...button.querySelectorAll("*")].some((element) => element.scrollWidth > element.clientWidth + 1));
+    expect(clipped, `подпись ${testId} обрезана`).toBe(false);
+  }
 
   await page.getByTestId("session-pre-set-params").click();
   await expect(page.getByTestId("session-pre-params-form")).toBeVisible();
