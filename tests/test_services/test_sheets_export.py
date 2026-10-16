@@ -5,6 +5,7 @@ Google API (та же схема, что и RobokassaService/RobokassaClientProt
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 import requests
 from gspread.exceptions import APIError
 
@@ -57,6 +58,14 @@ from app.services.sheets_export import (
     user_to_row,
     workout_to_rows,
 )
+
+
+@pytest.fixture(autouse=True)
+def _sheets_export_enabled_for_logic_tests(monkeypatch):
+    """В релизе выгрузка выключена (SHEETS_EXPORT_ENABLED=False, см.
+    test_sheets_export_disabled.py) — здесь проверяется сама логика
+    экспорта на случай осознанного включения, сеть не трогается (фейки)."""
+    monkeypatch.setattr(sheets_export_module, "SHEETS_EXPORT_ENABLED", True)
 
 
 class FakeSheetsClient:

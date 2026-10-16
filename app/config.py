@@ -25,7 +25,9 @@ class Settings(BaseSettings):
 
     # Выгрузка событий/пользователей в Google Sheets (ROADMAP Часть 6,
     # app/workers/sheets_sync.py) — оба поля пустые -> воркер тихо
-    # ничего не делает (см. sync_sheets), фича опциональна.
+    # ничего не делает (см. sync_sheets), фича опциональна. В релизе выгрузка
+    # отключена в коде (app/services/sheets_export.py::SHEETS_EXPORT_ENABLED) —
+    # заполненные поля её не включают.
     google_sheets_spreadsheet_id: str = ""
     google_sheets_credentials_path: str = ""
 

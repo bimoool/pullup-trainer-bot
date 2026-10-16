@@ -26,6 +26,34 @@ from app.db.repositories.workouts import WorkoutRepository
 
 logger = logging.getLogger(__name__)
 
+# Выгрузка в Google Sheets ОТКЛЮЧЕНА в релизе (решение владельца, 2026-10-16):
+# она отправляет telegram_id, username, свободный текст (комментарии, обращения
+# в поддержку — events.payload) и платёжные ссылки (subscriptions) в таблицу
+# Google — стороннему иностранному обработчику, а политики конфиденциальности
+# и согласия пользователя пока нет. Это константа в коде, а НЕ поле Settings:
+# заполненные GOOGLE_SHEETS_* в .env (они остались на сервере со времён, когда
+# экспорт работал) не должны иметь возможности включить отправку случайно —
+# включение только осознанной правкой кода с ревью. Пока False: воркер не
+# планируется (app/workers/sheets_sync.py::register), SheetsExportService.sync()
+# и GspreadSheetsClient отказываются работать (SheetsExportDisabledError).
+# Константы/форматтеры строк ниже остаются импортируемыми (scripts/*).
+SHEETS_EXPORT_ENABLED = False
+
+
+class SheetsExportDisabledError(RuntimeError):
+    """Попытка отправить данные в Google Sheets при SHEETS_EXPORT_ENABLED=False."""
+
+
+def ensure_sheets_export_enabled() -> None:
+    """Последний рубеж перед любой отправкой в Google: читает флаг модуля в
+    момент вызова, поэтому покрывает и воркер, и разовые скрипты."""
+    if not SHEETS_EXPORT_ENABLED:
+        raise SheetsExportDisabledError(
+            "Выгрузка в Google Sheets отключена в релизе (SHEETS_EXPORT_ENABLED=False, "
+            "app/services/sheets_export.py) — данные не отправляются.",
+        )
+
+
 EVENTS_SHEET_TITLE = "events"
 USERS_SHEET_TITLE = "users"
 WORKOUTS_SHEET_TITLE = "workouts"
@@ -266,6 +294,7 @@ class GspreadSheetsClient:
     объект и думать про истечение токена)."""
 
     def __init__(self, *, credentials_path: str, spreadsheet_id: str) -> None:
+        ensure_sheets_export_enabled()
         self._credentials_path = credentials_path
         self._spreadsheet_id = spreadsheet_id
 
@@ -463,6 +492,7 @@ class SheetsExportService:
         self._client = client
 
     async def sync(self, *, page_size: int = 1000) -> SyncResult:
+        ensure_sheets_export_enabled()
         all_users = await self._users.list_all()
         telegram_id_by_user_id = {user.id: user.telegram_id for user in all_users}
         username_by_user_id = {user.id: user.username for user in all_users}
