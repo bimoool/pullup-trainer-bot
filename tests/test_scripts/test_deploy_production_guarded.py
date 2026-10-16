@@ -702,7 +702,7 @@ def failed_deploy(sandbox, **env) -> Path:
 
 
 def run_id(manifest: Path) -> str:
-    return re.search(r"^run_id=(.+)$", manifest.read_text(), re.M).group(1)
+    return re.search(r"^run_id=(.+)$", manifest.read_text(), re.MULTILINE).group(1)
 
 
 def test_rollback_arguments_and_tokens_are_validated_before_anything_runs(sandbox):
