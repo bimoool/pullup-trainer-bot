@@ -109,7 +109,7 @@ def _validate_value(protocol: AssessmentProtocol, value: Decimal) -> None:
 @router_v2_assessments.get("", response_model=AssessmentsListResponse)
 async def list_assessments(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> AssessmentsListResponse:
     user = await _current_user(init_data, session)
     repo = AssessmentRepository(session)
@@ -125,7 +125,7 @@ async def list_assessments(
 async def get_assessment(
     protocol_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> AssessmentDetailResponse:
     user = await _current_user(init_data, session)
     repo = AssessmentRepository(session)
@@ -140,7 +140,7 @@ async def get_assessment(
 async def get_peer_insights(
     protocol_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PeerInsightsResponse:
     """«Сравнение с похожими» (#276): последний результат пользователя против когорты (пол +
     возрастная ступень → пол → все), только агрегаты; процентиль — 10-пунктовая полоса, медиана и
@@ -192,7 +192,7 @@ async def create_assessment_result(
     protocol_id: int,
     payload: AssessmentResultCreate,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> AssessmentResultResponse:
     user = await _current_user(init_data, session)
     repo = AssessmentRepository(session)
@@ -214,7 +214,7 @@ async def update_assessment_result(
     result_id: int,
     payload: AssessmentResultUpdate,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> AssessmentResultResponse:
     user = await _current_user(init_data, session)
     repo = AssessmentRepository(session)
@@ -244,7 +244,7 @@ async def update_assessment_result(
 async def delete_assessment_result(
     result_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     user = await _current_user(init_data, session)
     if not await AssessmentRepository(session).delete_result(user.id, result_id):

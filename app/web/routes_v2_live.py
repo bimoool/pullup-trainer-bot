@@ -227,7 +227,7 @@ def _block_checks(body: LiveSessionCompleteRequest) -> dict[int, tuple[bool | No
 async def start_live_session(
     body: LiveSessionStartRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionResponse:
     user = await _require_user(session, init_data)
     try:
@@ -276,7 +276,7 @@ async def start_live_session(
 @router_v2_live.get("/sessions/live/active", response_model=LiveSessionActiveResponse)
 async def get_active_live_session(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionActiveResponse:
     user = await _require_user(session, init_data)
     result = await LiveSessionService(session).get_active(user_id=user.id)
@@ -295,7 +295,7 @@ async def advance_live_session_phase(
     session_id: int,
     body: LiveSessionPhaseNextRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionResponse:
     user = await _require_user(session, init_data)
     try:
@@ -314,7 +314,7 @@ async def back_live_session_phase(
     session_id: int,
     body: LiveSessionPhaseBackRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionResponse:
     """#292 — «Предыдущий подход»: фаза переоткрывает предыдущий подход
     (SetLog не удаляется). 409 — нет предыдущего подхода / сессия не
@@ -338,7 +338,7 @@ async def start_live_session_block(
     session_id: int,
     body: LiveSessionBlockRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionResponse:
     """R1 — явный "Начать" следующего блока после interstitial. Идемпотентен
     (двойной клик стартует блок один раз)."""
@@ -359,7 +359,7 @@ async def finish_live_session_interval_block(
     session_id: int,
     body: LiveSessionBlockRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionCompleteResponse:
     """R1 — клиент дошёл до дедлайна interval-блока. Середина тренировки —
     сессия остаётся STARTED и ждёт следующий блок; последний блок —
@@ -381,7 +381,7 @@ async def batch_live_session_sets(
     session_id: int,
     body: LiveSetBatchRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionResponse:
     user = await _require_user(session, init_data)
     entries = [
@@ -413,7 +413,7 @@ async def complete_live_session(
     session_id: int,
     body: LiveSessionCompleteRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveSessionCompleteResponse:
     user = await _require_user(session, init_data)
     live = LiveSessionService(session)
@@ -468,7 +468,7 @@ async def post_live_session_events(
     session_id: int,
     body: LiveEngineEventsRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LiveEngineEventsResponse:
     """issue #306 (LIVE_ENGINE_V2 §2 C4): события движка v2 — по одному или офлайн-очередью в порядке
     возникновения. Повтор client_event_id — no-op (outcome=duplicate), устаревшее событие — no-op

@@ -42,7 +42,7 @@ async def _require_user(session: AsyncSession, init_data: InitData) -> None:
 @router_v2_collections.get("", response_model=CollectionListResponse)
 async def list_collections(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CollectionListResponse:
     await _require_user(session, init_data)
     visible = await CollectionRepository(session).list_visible()
@@ -53,7 +53,7 @@ async def list_collections(
 async def get_collection(
     collection_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CollectionDetailResponse:
     await _require_user(session, init_data)
     visible = await CollectionRepository(session).get_visible(collection_id)

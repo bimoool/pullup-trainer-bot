@@ -32,7 +32,7 @@ dev = [
 # (Dockerfile.web), не тянется в основной образ бота (Dockerfile). httpx —
 # только для тестов эндпоинтов (FastAPI TestClient), не рантайм-зависимость.
 web = [
-    "fastapi>=0.115",
+    "fastapi>=0.121",
     "uvicorn[standard]>=0.30",
     # Валидация подписи Telegram initData (HMAC-SHA256 по спеке Telegram) —
     # готовая, тестируемая библиотека вместо самодельной реализации (issue

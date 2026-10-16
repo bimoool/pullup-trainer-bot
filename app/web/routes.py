@@ -165,7 +165,7 @@ router = APIRouter(prefix="/api")
 @router.get("/hello", response_model=HelloResponse)
 async def hello(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> HelloResponse:
     """Единственный эндпойнт Этапа 0 — не содержательная фича, а
     доказательство, что вся цепочка работает целиком: initData (Telegram)
@@ -224,7 +224,7 @@ async def hello(
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> DashboardResponse:
     """Стартовый экран Mini App (issue #175) — App.tsx открывает этот
     экран первым вместо WorkoutScreen (см. docs/architecture-multicourse.md
@@ -262,7 +262,7 @@ async def get_dashboard(
 async def submit_onboarding_baseline(
     body: OnboardingBaselineRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> OnboardingBaselineResponse:
     """Замер (issue #124, PR 2) — тот же OnboardingService.record_baseline_and_start,
     что handle_baseline_confirm бота вызывает по нажатию "Да" (app/bot/handlers/
@@ -304,7 +304,7 @@ async def submit_onboarding_baseline(
 async def submit_onboarding_questionnaire(
     body: OnboardingQuestionnaireRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> OnboardingQuestionnaireResponse:
     """Анкета (issue #124, PR 2) — тот же OnboardingService.
     complete_questionnaire_and_start_trial, что handle_timezone бота вызывает
@@ -344,7 +344,7 @@ async def submit_onboarding_questionnaire(
 @router.get("/equipment/band-items", response_model=BandItemListResponse)
 async def list_band_items(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BandItemListResponse:
     """Личный список резин вне контекста конкретного плана тренировки —
     GET /api/workout/plan/GET /api/workout/backdate/plan/GET /api/free-workout/plan
@@ -365,7 +365,7 @@ async def list_band_items(
 async def create_band_item(
     body: BandItemCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BandItemInfo:
     """Заведение новой резины (issue #124, PR 3) — тот же
     EquipmentItemRepository.create, что _create_band_item_and_advance/
@@ -389,7 +389,7 @@ async def update_band_item(
     item_id: int,
     body: BandItemUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BandItemInfo:
     """Переименование резины (issue #148) — правит только name на самой
     EquipmentItem. Уже записанные тренировки/факультативы не меняются
@@ -411,7 +411,7 @@ async def update_band_item(
 async def delete_band_item(
     item_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BandItemInfo:
     """Удаление резины (issue #148) — настоящий DELETE, не архивация (это
     личный справочник, не история тренировок). Разрешено безусловно, даже
@@ -443,7 +443,7 @@ async def delete_band_item(
 @router.get("/profile", response_model=ProfileResponse)
 async def get_profile(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProfileResponse:
     """Вкладка "Профиль" Mini App (issue #45, часть 3) — сознательно узкий
     срез app.bot.handlers.menu.render_profile: тот же format_subscription_status
@@ -506,7 +506,7 @@ async def get_profile(
 async def update_profile(
     body: ProfileUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProfileResponse:
     """Правка уже заполненных полей профиля (issue #125) — тот же
     UserRepository.update_profile, что app.bot.handlers.profile_edit
@@ -553,7 +553,7 @@ async def get_timezone_options() -> TimezoneOptionsResponse:
 @router.get("/gto", response_model=GtoResponse)
 async def get_gto(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> GtoResponse:
     """Разряд ГТО по подтягиванию (issue #71) — отдельная концепция от
     обычных ачивок (app.domain.gto, не AchievementRepository): статус
@@ -603,7 +603,7 @@ def _wsf_thresholds_response(thresholds: tuple[WsfRankThreshold, ...]) -> list[W
 @router.get("/wsf", response_model=WsfResponse)
 async def get_wsf(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WsfResponse:
     """Разряд WSF по многоповторным подтягиваниям с отягощением (issue #104)
     — вторая система оценки в профиле, РЯДОМ с ГТО (get_gto выше), не
@@ -856,7 +856,7 @@ def _equipment_info(
 @router.get("/workout/plan", response_model=WorkoutPlanResponse)
 async def get_workout_plan(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutPlanResponse:
     """Экран плана Mini App (issue #36, Этап 1) — та же цель/снаряд, что
     видно в тексте бота (CURRENT_PLAN/WORKOUT_PLAN), тем же путём. Статус
@@ -902,7 +902,7 @@ async def get_workout_plan(
 async def submit_workout(
     body: WorkoutSubmitRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutSubmitResponse:
     """Записывает результаты через WorkoutLogService.record_workout — тот же
     сервис, что _finalize_workout бота (app/bot/handlers/workout.py) вызывает
@@ -1065,7 +1065,7 @@ def _draft_response(draft) -> WorkoutDraftResponse:
 async def save_workout_draft(
     body: WorkoutDraftRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutDraftResponse:
     """Сохраняет накопленный прогресс живой тренировки (issue #61) — по
     завершении каждого подхода (LiveWorkoutScreen.tsx), не только при
@@ -1095,7 +1095,7 @@ async def save_workout_draft(
 @router.get("/workout/draft", response_model=WorkoutDraftResponse)
 async def get_workout_draft(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutDraftResponse:
     """Опрашивается при заходе на LiveWorkoutScreen вместе с планом (issue
     #61) — если есть незавершённый черновик, экран восстанавливается на
@@ -1110,7 +1110,7 @@ async def get_workout_draft(
 @router.delete("/workout/draft", response_model=WorkoutDraftResponse)
 async def delete_workout_draft(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutDraftResponse:
     """Явная отмена тренировки ("Отмена" на LiveWorkoutScreen, issue #61) —
     идемпотентна, тот же принцип, что cancel_timer ниже."""
@@ -1127,7 +1127,7 @@ async def get_history(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> HistoryResponse:
     """Вкладка "История" Mini App (issue #50, волна 1) — те же факты, что
     печатает app.bot.handlers.history.handle_show_history (тот же
@@ -1233,7 +1233,7 @@ def _progress_value(block: BlockAssignment, metric: str, *, block_letter: str) -
 async def get_progress(
     metric: Literal["max_reps", "volume", "strength"] = Query(default="max_reps"),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgressResponse:
     """Данные для графика вкладки "Прогресс" (issue #82: переделано с плана
     на факт — см. история issue #50, волна 2, там строился по target_after).
@@ -1283,7 +1283,7 @@ def _epley_progress_response(progress: EpleyProgress | None) -> EpleyProgressRes
 @router.get("/analytics", response_model=AnalyticsResponse)
 async def get_analytics(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> AnalyticsResponse:
     """Аналитический блок вкладки "Прогресс" Mini App (issue #66, п.2) —
     те же вызовы app.domain.reports с теми же входными данными, что кнопки
@@ -1334,7 +1334,7 @@ async def get_analytics(
 @router.get("/subscription", response_model=SubscriptionResponse)
 async def get_subscription(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> SubscriptionResponse:
     """Раздел подписки/оплаты Mini App (issue #53, волна 1) — расширяет
     статус, уже частично показанный во вкладке "Профиль" (get_profile
@@ -1379,7 +1379,7 @@ async def get_subscription(
 @router.post("/subscription/pay", response_model=PaymentLinkResponse)
 async def pay_subscription(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PaymentLinkResponse:
     """Создаёт ссылку на оплату обычной подписки — тот же
     RobokassaService.create_payment_link, что handle_pay_robokassa бота
@@ -1468,7 +1468,7 @@ def _history_is_editable(workout) -> bool:
 async def get_history_workout(
     workout_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> HistoryEditDetailResponse:
     """Детали одной тренировки для формы редактирования (issue #52) — те же
     факты, что app.bot.handlers.workout_edit::_start_editing кладёт в FSM
@@ -1500,7 +1500,7 @@ async def edit_history_workout(
     workout_id: int,
     body: HistoryEditRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutSubmitResponse:
     """Правит уже введённые повторения прошлой тренировки.
 
@@ -1642,7 +1642,7 @@ async def edit_history_workout(
 async def delete_history_workout(
     workout_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> HistoryDeleteResponse:
     """Удаляет запись истории (issue #146). Два пути в зависимости от
     participates_in_cascade:
@@ -1769,7 +1769,7 @@ async def _resolve_backdate_context(session: AsyncSession, telegram_id: int, *, 
 @router.get("/workout/backdate/plan", response_model=WorkoutPlanResponse)
 async def get_backdate_plan(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutPlanResponse:
     """Контекст для формы "Добавить за дату" — те же цель/снаряд-пример, что
     GET /api/workout/plan, но band_items отдаётся всегда (не только когда
@@ -1840,7 +1840,7 @@ async def _resolve_explicit_equipment(
 async def submit_backdated_workout(
     body: BackdateSubmitRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutSubmitResponse:
     """Записывает тренировку задним числом через
     WorkoutLogService.record_backdated_workout — тот же сервис, что
@@ -1937,7 +1937,7 @@ async def submit_backdated_workout(
 @router.get("/free-workout/plan", response_model=FreeWorkoutPlanResponse)
 async def get_free_workout_plan(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> FreeWorkoutPlanResponse:
     """Контекст для формы "Внести свободные подтягивания" (issue #109) —
     тот же вход, что handle_free_workout_start бота
@@ -1963,7 +1963,7 @@ async def get_free_workout_plan(
 async def submit_free_workout(
     body: FreeWorkoutSubmitRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> FreeWorkoutSubmitResponse:
     """Записывает свободные подтягивания через
     WorkoutLogService.record_free_workout — тот же сервис, что
@@ -2044,7 +2044,7 @@ def _timer_status_response(timer, *, now: datetime) -> TimerStatusResponse:
 async def start_timer(
     body: TimerStartRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> TimerStatusResponse:
     """Стартует (или заменяет уже идущий, см. ActiveTimerRepository.start)
     персистентный таймер отдыха/большого перерыва режима тренировки в
@@ -2071,7 +2071,7 @@ async def start_timer(
 @router.get("/timer/status", response_model=TimerStatusResponse)
 async def get_timer_status(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> TimerStatusResponse:
     """Опрашивается фронтендом при каждом открытии/возврате в приложение
     (visibilitychange/focus, issue #59, Волна 2) — не полагается на
@@ -2090,7 +2090,7 @@ async def get_timer_status(
 @router.delete("/timer", response_model=TimerStatusResponse)
 async def cancel_timer(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> TimerStatusResponse:
     """Досрочная отмена — идемпотентна: отсутствие активного таймера (или
     неонбордившийся пользователь) не считается ошибкой, просто нечего
@@ -2122,7 +2122,7 @@ def _resolve_timer_preferences(user) -> TimerPreferencesResponse:
 @router.get("/timer/preferences", response_model=TimerPreferencesResponse)
 async def get_timer_preferences(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> TimerPreferencesResponse:
     """Значения уже резолвлены дефолтом — NULL на users (никогда не
     настраивал) отдаётся как DEFAULT_REST_SECONDS_BLOCK_A/B/
@@ -2138,7 +2138,7 @@ async def get_timer_preferences(
 async def update_timer_preferences(
     body: TimerPreferencesUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> TimerPreferencesResponse:
     """Сохраняет ровно одну настройку за раз (issue #59, волна 2: "для
     единообразия" — все настройки персистентны одинаково). Либо одну из трёх
@@ -2177,7 +2177,7 @@ def _resolve_display_preferences(user) -> DisplayPreferencesResponse:
 @router.get("/profile/prefs", response_model=DisplayPreferencesResponse)
 async def get_display_preferences(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> DisplayPreferencesResponse:
     """Единицы веса/роста и тема с дефолтами (kg/cm/auto). Хранение веса/роста
     остаётся метрическим — единицы влияют только на показ и ввод."""
@@ -2191,7 +2191,7 @@ async def get_display_preferences(
 async def update_display_preferences(
     body: DisplayPreferencesUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> DisplayPreferencesResponse:
     users = UserRepository(session)
     user = await users.get_by_telegram_id(init_data.user.id)
@@ -2225,7 +2225,7 @@ async def _current_user_id(init_data: InitData, session: AsyncSession) -> int:
 async def get_body_metrics(
     metric: Literal["weight_kg", "height_cm"] = Query(...),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BodyMetricHistoryResponse:
     """История веса/роста (issue #270), новые сверху. Только свои замеры."""
     user_id = await _current_user_id(init_data, session)
@@ -2236,7 +2236,7 @@ async def get_body_metrics(
 async def add_body_metric(
     body: BodyMetricCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BodyMetricHistoryResponse:
     """«Добавить замер»: последний замер зеркалится в User.weight_kg/height_cm."""
     user_id = await _current_user_id(init_data, session)
@@ -2250,7 +2250,7 @@ async def update_body_metric(
     entry_id: int,
     body: BodyMetricUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BodyMetricHistoryResponse:
     user_id = await _current_user_id(init_data, session)
     history = BodyMetricRepository(session)
@@ -2271,7 +2271,7 @@ async def update_body_metric(
 async def delete_body_metric(
     entry_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> BodyMetricHistoryResponse:
     """Удаление замера; если он был последним — User откатывается к предыдущему.
     Единственный замер удалить нельзя (409): GTO/WSF/лидерборд читают User.weight_kg."""
@@ -2300,7 +2300,7 @@ async def get_leaderboard(
     age_bucket: str = Query(default="all"),
     period: Literal["week", "month", "all"] = Query(default="all"),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LeaderboardResponse:
     """Вкладка "Лидерборд" Mini App (issue #67) — три метрики (переключаются
     значением metric на одном и том же экране, не отдельными эндпойнтами),
@@ -2349,7 +2349,7 @@ async def get_leaderboard(
 async def update_leaderboard_display_name(
     body: LeaderboardDisplayNameUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> LeaderboardDisplayNameResponse:
     """Пустая строка нормализуется в None здесь же — тот же результат, что
     явный null от клиента: "анонимно" (issue #67)."""
@@ -2385,7 +2385,7 @@ _ELECTIVE_LABELS: dict[ElectiveType, str] = {
 @router.get("/elective/plan", response_model=ElectivePlanResponse)
 async def get_elective_plan(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ElectivePlanResponse:
     """Экран факультатива Mini App (issue #94) — тот же путь, что
     handle_electives_start бота (app/bot/handlers/electives.py): доступность
@@ -2483,7 +2483,7 @@ async def get_elective_plan(
 async def submit_elective(
     body: ElectiveSubmitRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ElectiveSubmitResponse:
     """Записывает факультатив через ElectiveLogService.record — тот же
     сервис, что _finalize_elective бота (app/bot/handlers/electives.py), не
