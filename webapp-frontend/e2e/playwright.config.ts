@@ -14,6 +14,12 @@ const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:8001";
 const MOBILE_SPEC = /mobile-layout\.spec\.ts$/;
 // crimpd-parity.spec.ts (baseline + first blocks) and one file per parity task in scenarios/parity/.
 const PARITY_SPEC = /(crimpd-parity|parity\/[^/]+)\.spec\.ts$/;
+// Peer insights (#276) читает ОБЩУЮ когорту «Максимум подтягиваний» всей e2e-БД: «мало данных» верно, только пока
+// результатов меньше 20 человек. Другие спеки пишут такие результаты (тесты, ретраи), и к моменту parity-прогона
+// когорта набирала ≥ 20 (CI 38863710119, 4 из 4 с ретраями; ранее 38758045584 a2). В CI этот спек идёт отдельным
+// шагом ДО остальных (e2e.yml, E2E_SKIP_PEER_PROJECT=1 у основного шага) — читает когорту до чужих записей.
+const PEER_SPEC = /parity\/peer-insights\.spec\.ts$/;
+const SKIP_PEER_PROJECT = process.env.E2E_SKIP_PEER_PROJECT === "1";
 const MOBILE_WIDTHS = [320, 375, 390];
 // Экранная клавиатура в редакторе тренировки (issue #250): только 320 и 390.
 const KEYBOARD_SPEC = /keyboard-viewport\.spec\.ts$/;
@@ -34,7 +40,10 @@ export default defineConfig({
     { name: "chromium", testIgnore: [MOBILE_SPEC, KEYBOARD_SPEC, PARITY_SPEC], use: { ...devices["Desktop Chrome"] } },
     // Crimpd parity suite (docs/CRIMPD_FULL_PARITY_8_5.md): its blocks reuse seeded users across
     // widths/themes and some mutate state (favorites, logs) — run them in order, not in parallel.
-    { name: "parity", testMatch: PARITY_SPEC, fullyParallel: false, use: { ...devices["Desktop Chrome"] } },
+    { name: "parity", testMatch: PARITY_SPEC, testIgnore: PEER_SPEC, fullyParallel: false, use: { ...devices["Desktop Chrome"] } },
+    ...(SKIP_PEER_PROJECT ? [] : [
+      { name: "peer-insights", testMatch: PEER_SPEC, fullyParallel: false, use: { ...devices["Desktop Chrome"] } },
+    ]),
     // Узкий набор критичных мобильных проверок (issue #244): только
     // mobile-layout.spec.ts, а не весь десктопный набор на каждой ширине.
     ...MOBILE_WIDTHS.map((width) => ({
