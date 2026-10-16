@@ -413,6 +413,21 @@ async def test_dry_run_does_not_write_anything(session, user: User):
     assert (await session.execute(select(Program))).scalars().all() == []
 
 
+async def test_dry_run_after_apply_with_several_users_does_not_crash(session, user: User):
+    """Репетиция прод-миграции (2026-10-16): контрольный dry-run ПОСЛЕ apply падал MissingGreenlet — rollback в ветке
+    уже смигрированного пользователя expire-ил загруженные User, следующее `user.id` шло в ленивую загрузку."""
+    await _onboard(session, user)
+    second_user = await UserRepository(session).create(telegram_id=1002, username="second")
+    await _onboard(session, second_user)
+    await backfill_all(session, now=NOW)
+
+    report = await backfill_all(session, now=NOW, dry_run=True)
+
+    assert report.users_onboarded == 2
+    assert report.users_already_migrated == 2
+    assert report.users_migrated_this_run == 0
+
+
 # --- Legacy snapshot normalization (Кирилл, checkpoint 1.1 — контрактный баг) -----------
 #
 # ProgramInclusion, созданные ДО checkpoint 1.1, имеют snapshot без ключа

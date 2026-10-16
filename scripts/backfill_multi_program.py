@@ -666,6 +666,10 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     вообще, перезапуск просто обработает его заново, без дублей)."""
     users = await UserRepository(session).list_onboarded()
     report = BackfillReport(dry_run=dry_run, users_onboarded=len(users))
+    # Только id, собранные заранее: dry-run делает session.rollback() после каждого уже смигрированного
+    # пользователя — это expire всех загруженных User, и следующее `user.id` из ORM-объекта в async-сессии падало
+    # MissingGreenlet (репетиция прод-миграции 2026-10-16: контрольный dry-run после apply, exit 1).
+    user_ids = [user.id for user in users]
 
     seed = None if dry_run else await seed_catalog(session)
     if seed is not None:
@@ -680,8 +684,8 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     program_repo = ProgramRepository(session)
     plans_repo = TrainingPlanRepository(session)
 
-    for user in users:
-        if await _is_already_migrated(session, user.id):
+    for user_id in user_ids:
+        if await _is_already_migrated(session, user_id):
             report.users_already_migrated += 1
             if not dry_run:
                 # Checkpoint 1 (issue #188): пользователи, смигрированные
@@ -692,7 +696,7 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
                 # plan_week.py) и просто привязывает — не создаёт дублей,
                 # не трогает progression_state/историю. Тот же метод, что
                 # использует routes_v2.py для обычных пользователей.
-                plan = await plans_repo.get_for_user(user.id)
+                plan = await plans_repo.get_for_user(user_id)
                 if plan is not None:
                     await PlanWeekService(session).ensure_current_plan_week(
                         training_plan_id=plan.id, today=now.date(),
@@ -701,7 +705,7 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
             # #308: legacy-история уже мигрированного пользователя сводится в нативные копии
             # (привязка, недостающие, обновлённые, замещённые); dry-run только считает.
             history_report = await LegacyHistoryConvergenceService(session).converge_user(
-                user.id, apply=not dry_run,
+                user_id, apply=not dry_run,
             )
             report.history.update(history_report.counts)
             if dry_run:
@@ -710,8 +714,8 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
                 await session.commit()
             continue
 
-        history = await workout_repo.list_for_user(user.id)
-        electives = await _list_all_electives_for_user(session, user.id)
+        history = await workout_repo.list_for_user(user_id)
+        electives = await _list_all_electives_for_user(session, user_id)
 
         if dry_run:
             report.users_migrated_this_run += 1
@@ -733,8 +737,8 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
                 session, elective, exercise_id=seed.elective_exercise_ids[elective.elective_type],
             )
 
-        progression_state = await _build_progression_state(session, workout_repo, user.id, now=now, history=history)
-        training_plan = TrainingPlan(user_id=user.id)
+        progression_state = await _build_progression_state(session, workout_repo, user_id, now=now, history=history)
+        training_plan = TrainingPlan(user_id=user_id)
         session.add(training_plan)
         await session.flush()
         inclusion = ProgramInclusion(
