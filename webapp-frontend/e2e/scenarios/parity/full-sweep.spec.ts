@@ -351,7 +351,9 @@ const FLOWS: Flow[] = [
       });
       await visit(page, {
         where: "Планы → Начать", open: () => byName(page, /^Начать: /).first().click(),
-        dest: [byName(page, "Начать")], exit: "telegram", origin: plansMarker(page), minChars: 15, // предэкран: название + «Начать»
+        // Предэкран: название + «Начать»; у строки «только упражнение» (пятница в сиде) вместо «Начать» — явный выбор
+        // (аудит 7500c37). Раньше шаг проходил по мелькнувшему до проверки обычному «Начать» — это и был дефект.
+        dest: [byName(page, "Начать").or(page.getByTestId("session-pre-start-max"))], exit: "telegram", origin: plansMarker(page), minChars: 15,
       });
     },
   },
