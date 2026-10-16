@@ -200,7 +200,7 @@ export async function putCourseInputs(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage("PUT", path, response));
+    throw await courseError("PUT", path, response);
   }
   return (await response.json()) as { pending_inputs: string[]; level: string | null };
 }
@@ -218,6 +218,37 @@ export interface OneRmNextSetV2 {
   rest_seconds: number;
 }
 
+/**
+ * Ошибка запроса курса V5.6 с доменным кодом `{"detail": {"code", "missing"?}}`. У `course_setup_required` нет
+ * message — без кода экран показывал «POST /api/… failed: 409» (первый обычный пользователь на staging застрял
+ * в тесте 1RM); теперь экран объясняет причину по коду и списку недостающего.
+ */
+export class CourseApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly missing: string[];
+
+  constructor(message: string, status: number, code: string | null, missing: string[]) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.missing = missing;
+  }
+}
+
+async function courseError(method: string, path: string, response: Response): Promise<CourseApiError> {
+  let code: string | null = null;
+  let missing: string[] = [];
+  try {
+    const detail = (await response.clone().json())?.detail;
+    code = typeof detail?.code === "string" ? detail.code : null;
+    missing = Array.isArray(detail?.missing) ? detail.missing.filter((item: unknown) => typeof item === "string") : [];
+  } catch {
+    // не JSON — остаётся общий текст
+  }
+  return new CourseApiError(await extractErrorMessage(method, path, response), response.status, code, missing);
+}
+
 async function postCourse<T>(initDataRaw: string, path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
@@ -225,7 +256,7 @@ async function postCourse<T>(initDataRaw: string, path: string, body: unknown): 
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await extractErrorMessage("POST", path, response));
+    throw await courseError("POST", path, response);
   }
   return (await response.json()) as T;
 }

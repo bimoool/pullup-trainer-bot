@@ -12,8 +12,8 @@ import { useState } from "react";
 import { LabeledInput } from "./LabeledField";
 import { postOneRepMax, postOneRepMaxNextSet, putCourseInputs, type OneRmAttemptV2, type OneRmNextSetV2 } from "./apiV2";
 import {
-  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describeOneRepMaxOutcome,
-  describePendingInputs, describeSetupNeeds,
+  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describeCourseError,
+  describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, loadStepWarning, ONE_RM_REQUIRED_INPUTS,
 } from "./courseV5";
 
 export interface AssistancePending {
@@ -80,7 +80,12 @@ const SPEEDS: { value: "fast" | "normal" | "slow"; label: string }[] = [
  * отклоняет сразу.
  */
 export function OneRepMaxTest(
-  { initDataRaw, inclusionId, onSaved }: { initDataRaw: string; inclusionId: number; onSaved: () => void },
+  { initDataRaw, inclusionId, onSaved, missing = [], typed = {} }:
+  {
+    initDataRaw: string; inclusionId: number; onSaved: () => void;
+    /** Недостающие входы по серверу и введённое в форме, но ещё не сохранённое (масса тела, шаг веса). */
+    missing?: string[]; typed?: Record<string, string>;
+  },
 ) {
   const [attempts, setAttempts] = useState<OneRmAttemptV2[]>([]);
   const [next, setNext] = useState<OneRmNextSetV2 | null>(null);
@@ -98,10 +103,40 @@ export function OneRepMaxTest(
       setNext(response);
       setRunning(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeCourseError(e, "начать тест"));
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * «Начать тест» раньше не отправлял форму: сервер проверял СОХРАНЁННЫЕ входы и отвечал 409 course_setup_required,
+   * хотя шаг веса был введён. Теперь введённые масса тела и шаг веса сначала сохраняются (тем же PUT, что «Сохранить»),
+   * а чего нет ни на сервере, ни в форме — называется словами, и фокус ставится на это поле. Правило не меняется:
+   * без массы тела и шага лестница не начинается.
+   */
+  async function start() {
+    const required = ONE_RM_REQUIRED_INPUTS.filter(({ item }) => missing.includes(item));
+    const absent = required.filter(({ key }) => (typed[key] ?? "").trim() === "");
+    if (absent.length > 0) {
+      setError(`Чтобы начать тест, не хватает: ${describePendingInputs(absent.map(({ item }) => item))}. Заполните поле выше.`);
+      (document.querySelector(`[data-testid="course-input-${absent[0].key}"]`) as HTMLElement | null)?.focus();
+      return;
+    }
+    if (required.length > 0) {
+      setBusy(true);
+      setError(null);
+      try {
+        await putCourseInputs(
+          initDataRaw, inclusionId, courseInputsPayload(Object.fromEntries(required.map(({ key }) => [key, typed[key]])), {}, false),
+        );
+      } catch (e) {
+        setError(describeCourseError(e, "начать тест"));
+        setBusy(false);
+        return;
+      }
+    }
+    await step([]);
   }
 
   async function record(stopped = false) {
@@ -112,7 +147,7 @@ export function OneRepMaxTest(
       setResult(describeOneRepMaxOutcome(saved.one_rep_max));
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeCourseError(e, "сохранить тест"));
     } finally {
       setBusy(false);
     }
@@ -135,7 +170,7 @@ export function OneRepMaxTest(
             теста 1RM. До 8 подходов, отдых 3 мин, стоп после первой неудачной попытки. Остановиться можно и
             раньше — тогда результат сохранится, но не будет подтверждённым 1RM.
           </p>
-          <Button size="m" stretched mode="bezeled" disabled={busy} data-testid="one-rm-start" onClick={() => void step([])}>
+          <Button size="m" stretched mode="bezeled" disabled={busy} data-testid="one-rm-start" onClick={() => void start()}>
             Начать тест
           </Button>
         </>
@@ -229,7 +264,7 @@ export function CourseSetupForm(
       }
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(describeCourseError(e, "сохранить"));
     } finally {
       setSaving(false);
     }
@@ -244,17 +279,25 @@ export function CourseSetupForm(
       )}
       {fields.length > 0 && (
         <Section header="Данные для расчёта программы">
-          {fields.map((field) => (
-            <LabeledInput
-              key={field.key} label={field.unit ? `${field.label}, ${field.unit}` : field.label} inputMode="decimal"
-              data-testid={`course-input-${field.key}`} value={numbers[field.key] ?? ""}
-              onChange={(e) => setNumbers({ ...numbers, [field.key]: e.target.value })}
-            />
-          ))}
+          {fields.map((field) => {
+            const warning = field.key === "load_step_kg" ? loadStepWarning(numbers[field.key] ?? "") : null;
+            return (
+              <div key={field.key}>
+                <LabeledInput
+                  label={field.unit ? `${field.label}, ${field.unit}` : field.label} inputMode="decimal"
+                  data-testid={`course-input-${field.key}`} value={numbers[field.key] ?? ""}
+                  onChange={(e) => setNumbers({ ...numbers, [field.key]: e.target.value })}
+                />
+                {warning !== null && (
+                  <p className="live-hint labeled-field-note" role="status" data-testid="course-load-step-warning">{warning}</p>
+                )}
+              </div>
+            );
+          })}
         </Section>
       )}
       {missing.includes("one_rep_max") && (
-        <OneRepMaxTest initDataRaw={initDataRaw} inclusionId={inclusionId} onSaved={onSaved} />
+        <OneRepMaxTest initDataRaw={initDataRaw} inclusionId={inclusionId} onSaved={onSaved} missing={missing} typed={numbers} />
       )}
       {missing.includes("volume_assistance") && (
         <BandSection title="Объёмная резина" value={volumeBand} onChange={setVolumeBand} allowBodyweight={false} testId="course-volume-band" />

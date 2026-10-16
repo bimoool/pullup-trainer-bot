@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseBlockName, courseInputsPayload, courseTargetText, describeCourseOutcome,
   describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, describeBaselineQualification,
+  describeCourseError, loadStepWarning,
 } from "../src/courseV5.ts";
 
 test("courseTargetText: маркеры V5.6", () => {
@@ -159,4 +160,21 @@ test("describeBaselineQualification: помощь/вес сразу после �
     assert.doesNotMatch(text, /\d+(?:[.,]\d+)?\s?кг/); // ни килограммов, ни конкретной резины
     assert.match(view.nextStep, /«Добавить в план»/);
   }
+});
+
+test("describeCourseError: course_setup_required — недостающее словами, не адрес запроса", () => {
+  const error = Object.assign(new Error("POST /api/v2/program-inclusions/4/course/one-rep-max/next-set failed: 409"), {
+    code: "course_setup_required", missing: ["load_step"],
+  });
+  assert.equal(describeCourseError(error, "начать тест"), "Чтобы начать тест, не хватает: шаг дополнительного веса. Заполните поле выше.");
+  const tooSoon = Object.assign(new Error("Тест 1RM — не раньше чем через 48 часов…"), { code: "one_rep_max_too_soon", missing: [] });
+  assert.equal(describeCourseError(tooSoon), "Тест 1RM — не раньше чем через 48 часов…");
+});
+
+test("loadStepWarning: шаг > 2,5 кг — прибавок не будет (V5.6 §9); обычные шаги без предупреждения", () => {
+  for (const ok of ["", "0,5", "1.25", "2,5", "abc"]) {
+    assert.equal(loadStepWarning(ok), null, ok);
+  }
+  assert.match(loadStepWarning("16") ?? "", /больше 2,5 кг.*не масса тела/);
+  assert.match(loadStepWarning("2,75") ?? "", /больше 2,5 кг/);
 });

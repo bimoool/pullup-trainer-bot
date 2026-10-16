@@ -139,6 +139,32 @@ export function describePendingInputs(missing: string[]): string {
   return missing.map((item) => PENDING_TEXT[item] ?? item).join(", ");
 }
 
+/** Без массы тела и шага веса лестницу 1RM не построить: сервер отвечает 409 course_setup_required (V5.6 §10). */
+export const ONE_RM_REQUIRED_INPUTS: { item: string; key: string }[] = [
+  { item: "body_mass", key: "body_mass_kg" }, { item: "load_step", key: "load_step_kg" },
+];
+
+/** V5.6 §9: прибавка веса — ближайший шаг в пределах 0,5–2,5 кг; шаг больше 2,5 кг прибавок не даст. */
+export const LOAD_STEP_MAX_INCREMENT_KG = 2.5;
+
+export function loadStepWarning(raw: string): string | null {
+  const value = Number(raw.trim().replace(",", "."));
+  if (!Number.isFinite(value) || value <= LOAD_STEP_MAX_INCREMENT_KG) {
+    return null;
+  }
+  return "Шаг больше 2,5 кг: программа прибавляет вес шагами от 0,5 до 2,5 кг, с таким шагом прибавок веса не будет. "
+    + "Шаг — это самый маленький диск или гантель, на который можно увеличить вес, а не масса тела и не вес отягощения.";
+}
+
+/** Текст ошибки курса для экрана: недостающие входы — по-русски, а не адресом запроса. */
+export function describeCourseError(error: unknown, action = "продолжить"): string {
+  const coded = error as { code?: unknown; missing?: unknown; message?: unknown } | null;
+  if (coded && coded.code === "course_setup_required" && Array.isArray(coded.missing) && coded.missing.length > 0) {
+    return `Чтобы ${action}, не хватает: ${describePendingInputs(coded.missing as string[])}. Заполните поле выше.`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Зачем программе помощь/вес — по ПРАВИЛАМ ДОПУСКА V5.6 (§8.2, docs/domain/PULLUPS_V5_6.md), а не по придуманным
  * порогам: свежий максимум M < 10 — уровень 1, объём и сила начинаются с помощью (резина); M ≥ 10 — допуск к
@@ -247,7 +273,7 @@ export const COURSE_INPUT_FIELDS: Record<string, { key: string; label: string; u
     { key: "known_strength_a_kg", label: "Или: вы недавно закрыли 5×5 (сила A) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
     { key: "known_strength_b_kg", label: "Или: вы недавно закрыли 5×3 (сила B) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
   ],
-  load_step: [{ key: "load_step_kg", label: "Шаг дополнительного веса (самый маленький диск)", unit: "кг" }],
+  load_step: [{ key: "load_step_kg", label: "Шаг дополнительного веса (самый маленький диск, обычно 1,25 или 2,5)", unit: "кг" }],
 };
 
 export interface BandFields {
