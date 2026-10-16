@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import { deleteSession, type SessionResponseV2 } from "./apiV2";
 import { journalEntryTitle } from "./journalFormat";
@@ -47,13 +48,6 @@ export function JournalEntrySheet({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useBackButton(() => closeRef.current(), [], true, false);
-
-  // Во время удаления кнопки disabled → браузер роняет фокус на body; возвращаем его на шторку.
-  useEffect(() => {
-    if (deleting && !dialogRef.current?.contains(document.activeElement)) {
-      dialogRef.current?.focus();
-    }
-  }, [deleting]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -110,8 +104,15 @@ export function JournalEntrySheet({
       deleteInFlight.current = false;
       return;
     }
-    setDeleting(true);
-    setDeleteError(null);
+    // Во время удаления все кнопки disabled, и браузер снимает фокус с нажатой — в Chrome 153 не сразу, а при
+    // следующей отрисовке, уже после эффектов (проверка «фокус ещё в шторке?» после коммита его не ловила).
+    // Поэтому фокус переводим на шторку ДО блокировки, и блокируем синхронно (flushSync): между ними не
+    // проскочит второй mousedown двойного тапа, который вернул бы фокус на ещё активную кнопку.
+    dialogRef.current?.focus();
+    flushSync(() => {
+      setDeleting(true);
+      setDeleteError(null);
+    });
     try {
       await deleteSession(initDataRaw, session.id);
       onDeleted(session.id);
