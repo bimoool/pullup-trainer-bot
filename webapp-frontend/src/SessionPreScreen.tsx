@@ -200,6 +200,10 @@ export function SessionPreScreen({
   // Аудит staging 7500c37: старая строка «только упражнение» не хранит подходов/повторений — старт подставлял
   // заглушку «3 попытки на максимум» молча. Теперь такой план показывает это явно и даёт выбор перед стартом.
   const [paramsMissing, setParamsMissing] = useState<PlanItemResponseV2 | null>(null);
+  // Старт из плана: пока не проверено, не «только упражнение» ли строка, кнопок старта нет. Иначе обычное «Начать»
+  // успевало появиться раньше выбора параметров и тут же исчезало — нажатие в этом окне молча стартовало заглушку
+  // «3 × максимум» (CI 16.10, parity/final-journey: пятничная строка «Отжимания»).
+  const [paramsChecked, setParamsChecked] = useState(() => !(manual && (explicitPlanItemIds?.length ?? 0) > 0));
   const [paramsStep, setParamsStep] = useState<"choice" | "form" | "saving">("choice");
   const [paramsError, setParamsError] = useState<string | null>(null);
 
@@ -350,6 +354,9 @@ export function SessionPreScreen({
           if (!cancelled && exerciseOnly !== null) {
             setParamsMissing(exerciseOnly);
           }
+          if (!cancelled) {
+            setParamsChecked(true);
+          }
         }
         if (complexId === null) {
           return;
@@ -365,7 +372,10 @@ export function SessionPreScreen({
           rows: items.map((item) => ({ id: item.id, name: item.exercise_name, line: itemPrescriptionLine(workout, item) ?? summarizeProtocol(item.protocol).lines[0] })),
         });
       } catch {
-        // без сводки экран остаётся рабочим
+        // без сводки экран остаётся рабочим (проверку строки не повторяем — старт как раньше)
+        if (!cancelled) {
+          setParamsChecked(true);
+        }
       }
     }
     void loadSummary();
@@ -679,6 +689,10 @@ export function SessionPreScreen({
             </Button>
           </div>
         </>
+      ) : manualReady !== null && !paramsChecked ? (
+        <div className="pre-transport" data-testid="session-pre-checking">
+          <Spinner size="m" />
+        </div>
       ) : (
         <div className="pre-transport">
           <Button

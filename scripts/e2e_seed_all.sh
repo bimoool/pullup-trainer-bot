@@ -221,5 +221,6 @@ seed tests_hub 996021
 seed plan_week_add_exercise 931001
 seed plan_week_add_exercise 931002
 seed plan_week_add_exercise 931003
+seed plan_week_add_exercise 931006
 seed live_engine 931004
 seed journal_catalog_session 931005
