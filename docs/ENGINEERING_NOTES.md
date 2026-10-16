@@ -3063,3 +3063,12 @@ POST …/995/complete: `refresh()` LiveEngineScreen не нашёл новую �
 **Peer insights.** «Мало данных» верно, пока у «Максимум подтягиваний» меньше 20 человек во ВСЕЙ e2e-БД; другие спеки
 (и их ретраи) пишут такие результаты, и к parity-прогону когорта набирала ≥ 20 (4 из 4 с ретраями). Спек вынесен в
 проект `peer-insights` и в CI идёт отдельным шагом ДО остальных (`E2E_SKIP_PEER_PROJECT=1` у основного шага).
+
+## Google Sheets: экспорт выключен в коде, а не в env (2026-10-16)
+
+Флаг `SHEETS_EXPORT_ENABLED` — константа модуля `app/services/sheets_export.py`, намеренно не поле `Settings`: на проде
+`GOOGLE_SHEETS_*` остались заполненными, и раньше единственной защитой был пустой env (`sync_sheets`). Отказ продублирован
+на трёх уровнях: `register()` (задача не планируется, одна строка лога), `SheetsExportService.sync()` и
+`GspreadSheetsClient.__init__` (`SheetsExportDisabledError`). Флаг читается в момент вызова и покрывает `scripts/*`.
+Регрессии — `tests/test_services/test_sheets_export_disabled.py`, `tests/test_workers/test_sheets_sync.py` (при
+заполненном env). Включать обратно только после политики конфиденциальности и согласия, с ревью.
