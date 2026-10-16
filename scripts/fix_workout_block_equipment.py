@@ -39,6 +39,7 @@ from app.db.models import BlockType
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
+from app.services import sheets_export
 from app.services.sheets_export import WORKOUTS_HEADER, WORKOUTS_SHEET_TITLE, workout_to_rows
 
 
@@ -70,6 +71,12 @@ async def main() -> None:
             )
         }
         corrected_row = corrected_rows[block_type.value]
+
+    # Экспорт в Google Sheets отключён в релизе (см. sheets_export.SHEETS_EXPORT_ENABLED) —
+    # правка БД выше сделана, строку таблицы не трогаем и в Google ничего не отправляем.
+    if not sheets_export.SHEETS_EXPORT_ENABLED:
+        print("Sheets: выгрузка отключена в релизе (SHEETS_EXPORT_ENABLED=False) — таблица не патчится.")
+        return
 
     client = gspread.service_account(filename=settings.google_sheets_credentials_path)
     spreadsheet = client.open_by_key(settings.google_sheets_spreadsheet_id)

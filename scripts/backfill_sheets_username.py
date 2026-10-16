@@ -75,9 +75,11 @@ from app.services.sheets_export import (
     WORKOUTS_HEADER,
     WORKOUTS_SHEET_TITLE,
     GspreadSheetsClient,
+    SheetsExportDisabledError,
     SheetsExportService,
     achievement_to_row,
     coin_to_row,
+    ensure_sheets_export_enabled,
     event_to_row,
     subscription_to_row,
     workout_to_rows,
@@ -208,6 +210,12 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="реально перезаписать листы (по умолчанию — только отчёт)")
     args = parser.parse_args()
+
+    # Экспорт в Google Sheets отключён в релизе (см. sheets_export.SHEETS_EXPORT_ENABLED).
+    try:
+        ensure_sheets_export_enabled()
+    except SheetsExportDisabledError as exc:
+        raise SystemExit(str(exc)) from exc
 
     if not settings.google_sheets_spreadsheet_id or not settings.google_sheets_credentials_path:
         raise SystemExit("GOOGLE_SHEETS_SPREADSHEET_ID/GOOGLE_SHEETS_CREDENTIALS_PATH не настроены — нечего чинить.")
