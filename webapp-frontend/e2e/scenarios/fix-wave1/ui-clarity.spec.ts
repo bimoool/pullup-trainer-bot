@@ -155,9 +155,9 @@ for (const { name: platformName, platform } of PLATFORMS) {
           await page.getByRole("button", { name: "Планы" }).click();
           await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
           await expect(page.getByTestId("course-setup-required")).toBeVisible();
-          const base = "в том же стандарте и месте, после объёма — доп. вес, кг";
-          await expectCaption(page, `Или: вы недавно закрыли 5×5 (сила A) ${base}`, "input");
-          await expectCaption(page, `Или: вы недавно закрыли 5×3 (сила B) ${base}`, "input");
+          // Первый вход: 5×5 / 5×3 — «Вариант 2» после теста 1RM, подпись короткая, пример — в подсказке.
+          await expectCaption(page, "Недавний 5×5 (сила A): дополнительный вес, кг", "input", "course-setup-known-strength");
+          await expectCaption(page, "Недавний 5×3 (сила B): дополнительный вес, кг", "input", "course-setup-known-strength");
           const why = page.getByTestId("course-setup-why");
           await expect(why).toContainText("5×5 / 5×3");
           await expect(why).toContainText("Вес не назначается");

@@ -128,7 +128,7 @@ const PENDING_TEXT: Record<string, string> = {
   volume_capacity: "сколько повторений с объёмной резиной (≈8–12)",
   volume_assistance: "объёмная резина",
   strength_assistance: "помощь в силовом блоке",
-  body_mass: "масса тела",
+  body_mass: "ваш вес (масса тела)",
   one_rep_max: "тест 1RM (или ваш недавний результат 5×5 / 5×3)",
   load_step: "шаг дополнительного веса",
   volume_reference: "объём первой тренировки A",
@@ -262,19 +262,76 @@ export function describeBaselineQualification(reps: number): BaselineQualificati
   };
 }
 
-/** Поля формы входов V5.6 — какие показать для списка недостающих входов (порядок — порядок формы). */
-export const COURSE_INPUT_FIELDS: Record<string, { key: string; label: string; unit?: string }[]> = {
+/**
+ * Поля формы входов V5.6 — какие показать для списка недостающих входов (порядок — порядок формы). `hint` — что
+ * именно вписать, с примером: первый обычный пользователь вписал в шаг веса 16 (принял его за массу тела / вес на
+ * поясе), а «Или: 5×5…» стояло раньше самого теста, альтернативой которому оно было.
+ */
+export const COURSE_INPUT_FIELDS: Record<string, { key: string; label: string; unit?: string; hint?: string }[]> = {
   fresh_max: [{ key: "fresh_max", label: "Свежий максимум строгих подтягиваний", unit: "повт." }],
   volume_capacity: [{ key: "volume_capacity", label: "Строгих повторений с объёмной резиной (≈8–12)", unit: "повт." }],
-  body_mass: [{ key: "body_mass_kg", label: "Масса тела", unit: "кг" }],
+  body_mass: [{
+    key: "body_mass_kg", label: "Ваш вес (масса тела)", unit: "кг",
+    hint: "Обязательно. Тот же вес, что в анкете («Твой вес в кг?»), например 78.",
+  }],
   one_rep_max: [
     // E1RM вручную не вводится: он — только результат теста 1RM в приложении (OneRepMaxTest, сервер проверяет
     // лестницу). Альтернатива — недавний результат 5×5 / 5×3 со слов пользователя (V5.6 §8; сервер его не сверяет).
-    { key: "known_strength_a_kg", label: "Или: вы недавно закрыли 5×5 (сила A) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
-    { key: "known_strength_b_kg", label: "Или: вы недавно закрыли 5×3 (сила B) в том же стандарте и месте, после объёма — доп. вес", unit: "кг" },
+    {
+      key: "known_strength_a_kg", label: "Недавний 5×5 (сила A): дополнительный вес", unit: "кг",
+      hint: "Только вес на поясе или в руках сверх своего веса, не масса тела: закрыли 5×5 с +10 кг — впишите 10. "
+        + "Тот же стандарт и место, после объёма.",
+    },
+    {
+      key: "known_strength_b_kg", label: "Недавний 5×3 (сила B): дополнительный вес", unit: "кг",
+      hint: "Так же: закрыли 5×3 с +12,5 кг — впишите 12,5.",
+    },
   ],
-  load_step: [{ key: "load_step_kg", label: "Шаг дополнительного веса (самый маленький диск, обычно 1,25 или 2,5)", unit: "кг" }],
+  load_step: [{
+    key: "load_step_kg", label: "Шаг дополнительного веса", unit: "кг",
+    hint: "Обязательно. Самый маленький диск или гантель, на который вы можете увеличить вес на поясе, — обычно 1,25 "
+      + "или 2,5. Это не ваш вес и не вес на поясе.",
+  }],
 };
+
+/** Подсказка к «Твой вес в кг?» в анкете: та же величина, что «Ваш вес (масса тела)» на экране входов курса. */
+export const ONBOARDING_WEIGHT_HINT =
+  "Это масса тела, без отягощения. По ней программа «Подтягивания» считает вес в силовых подходах.";
+
+/**
+ * Раскладка формы входов: «Данные» (вес, шаг и т. п.) идут сразу перед тестом 1RM — тесту без них не начаться;
+ * недавний 5×5 / 5×3 — отдельный вариант ПОСЛЕ теста, а не поля «Или: …» до него.
+ */
+export function courseSetupLayout(missing: string[]): { dataKeys: string[]; alternativeKeys: string[] } {
+  const dataKeys = missing.filter((item) => item !== "one_rep_max")
+    .flatMap((item) => (COURSE_INPUT_FIELDS[item] ?? []).map((field) => field.key));
+  const alternativeKeys = missing.includes("one_rep_max") ? COURSE_INPUT_FIELDS.one_rep_max.map((field) => field.key) : [];
+  return { dataKeys, alternativeKeys };
+}
+
+/**
+ * «Что сделать сейчас» на экране входов — следующий шаг словами: что обязательно, что на выбор и что сохраняет
+ * «Сохранить». Только для веса (тест 1RM / 5×5 / 5×3); для резины объяснение — в «Зачем это нужно». Правила не
+ * меняются: без массы тела и шага тест не начинается; нагрузку силы даёт тест или недавний 5×5 / 5×3 (V5.6 §8, §10).
+ */
+export function describeSetupSteps(missing: string[]): string[] {
+  if (!missing.includes("one_rep_max")) {
+    return [];
+  }
+  const steps: string[] = [];
+  const required = [
+    missing.includes("body_mass") ? "ваш вес" : null, missing.includes("load_step") ? "шаг дополнительного веса" : null,
+  ].filter((item): item is string => item !== null);
+  if (required.length > 0) {
+    steps.push(`Обязательно впишите ${required.join(" и ")} — без этого не начать ни тест, ни тренировку.`);
+  }
+  steps.push(
+    "Затем одно из двух: пройдите тест 1RM ниже — отдельным свежим днём, не после объёма; или впишите недавний "
+    + "5×5 / 5×3 и нажмите «Сохранить».",
+  );
+  steps.push("«Сохранить» записывает числа из полей; результат теста сохраняется в самом тесте. После этого экран покажет первую тренировку.");
+  return steps;
+}
 
 export interface BandFields {
   bodyweight: boolean;
