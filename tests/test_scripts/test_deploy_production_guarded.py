@@ -752,7 +752,7 @@ def test_r1_after_failed_migration_restores_previous_images_without_touching_the
 def test_r1_is_refused_once_the_schema_or_data_changed(sandbox, failure):
     manifest = failed_deploy(sandbox, **failure)
     open(sandbox.log, "w").close()
-    proc, log, state = sandbox("R1", str(manifest), "apply", f"ROLLBACK-R1-{run_id(manifest)}", script=ROLLBACK)
+    proc, log, _state = sandbox("R1", str(manifest), "apply", f"ROLLBACK-R1-{run_id(manifest)}", script=ROLLBACK)
     assert proc.returncode == 1
     assert "R1 is not valid" in proc.stderr and "use R3" in proc.stderr
     assert "nothing was stopped or changed" in proc.stderr
