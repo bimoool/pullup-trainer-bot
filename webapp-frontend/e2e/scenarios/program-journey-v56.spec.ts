@@ -13,7 +13,8 @@ import { openAppAs } from "../fixtures/setup";
  *   Факт A 7/7/7/9 (AMRAP ≥ p4 + 2, техника «Да») → зелёный: +1 в подход с наименьшей целью → «8/7/7/7+».
  *   V_ref = 7+7+7+9 = 30 → B: S = min(20, max(10, ⌊30/5⌋+1)) = 10, q = 5 → «10×5», отдых 30 с.
  *   Пятый подход силы 6 (5–7) → помощь та же.
- * Между основными занятиями — минимальный отдых 3 дня (`main_min_days_between_starts`): «Доступно с …».
+ * Между основными занятиями — минимальный отдых 3 дня (`main_min_days_between_starts`): «Доступно с …» или, если
+ *   это за пределами недели, «Не успеть на этой неделе».
  *
  * Тренировку B сегодня начать нельзя (тот самый отдых). Второй тест — только локально и по явному запросу:
  * продолжает пользователя первого прогона (`E2E_JOURNEY_TG`) после того, как прошедшие 3 дня смоделированы в
@@ -175,8 +176,23 @@ test("V5.6 на свежем профиле: онбординг → програ
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByTestId("plan-week-progress").first()).toHaveText(/Текущая неделя · 1 из 2/);
   await expect(page.getByText("Ещё рано для следующей тренировки", { exact: false })).toBeVisible();
-  await expect(page.getByText(/Доступно с \d+/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
+  // Отдых 3 дня от сегодняшнего старта (пояс пользователя — Москва): попадает в эту неделю — «Доступно с <день>»,
+  // за воскресенье — «Не успеть на этой неделе» (PROGRAM_PLAN §4, J11). Ожидание считается от даты, а не от дня недели
+  // прогона (CI 16.10, пятница: следующая — понедельник уже другой недели).
+  const moscow = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+  const daysToSunday = (7 - moscow.getDay()) % 7;
+  const available = new Date(moscow.getFullYear(), moscow.getMonth(), moscow.getDate() + 3);
+  const nextWeek = 3 > daysToSunday;
+  await expect(page.getByText(nextWeek ? "Не успеть на этой неделе" : `Доступно с ${available.getDate()} `, { exact: false })).toBeVisible();
+  if (nextWeek) {
+    // Строка «Не успеть на этой неделе» сохраняет кнопку «Начать», но старт раньше отдыха всё равно отказан:
+    // пред-экран объясняет, с какого дня можно (правило отдыха не обходится).
+    await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
+    await expect(page.getByTestId("pre-screen-too-early")).toContainText(`доступна с ${available.getDate()} `);
+    await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
+  } else {
+    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
+  }
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);

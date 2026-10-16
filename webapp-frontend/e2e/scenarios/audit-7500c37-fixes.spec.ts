@@ -131,6 +131,30 @@ test("1c: старая строка без параметров — явный �
   expect(apiFailures).toEqual([]);
 });
 
+test("1d: пока не проверено, что строка «только упражнение», кнопок старта нет — обычное «Начать» не мелькает", async ({ page }) => {
+  // CI 16.10 (parity/final-journey, пятничная строка «Отжимания»): «Начать» появлялось раньше выбора параметров и
+  // исчезало под пальцем; нажатие в этом окне молча стартовало бы «3 × максимум». План держим, пока тест не отпустит.
+  const telegramId = 931_006;
+  const { apiFailures } = await openAppAs(page, telegramId);
+  await addLegacyExerciseItem(page, telegramId, "Отжимания");
+  await page.getByRole("button", { name: "Планы" }).click();
+  const start = page.getByRole("button", { name: "Начать: Отжимания" }).first();
+  await start.scrollIntoViewIfNeeded();
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/v2/plan", async (route) => { await held; await route.continue(); });
+  await start.click();
+  await expect(page.getByText("Готовы к старту")).toBeVisible();  // пред-экран открыт, план ещё не ответил
+  await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("session-pre-start-max")).toHaveCount(0);
+  await expect(page.getByTestId("session-pre-checking")).toBeVisible();
+  release();
+  await expect(page.getByTestId("session-pre-params-missing")).toContainText("Параметры не заданы");
+  await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("session-pre-checking")).toHaveCount(0);
+  expect(apiFailures).toEqual([]);
+});
+
 test.describe("320×480", () => {
   test.use({ viewport: { width: 320, height: 480 }, isMobile: true, hasTouch: true });
 
