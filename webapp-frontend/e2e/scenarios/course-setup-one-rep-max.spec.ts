@@ -21,6 +21,8 @@ async function onboardAndOpenSetup(page: Page, telegramId: number) {
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да" }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
+  // Анкета называет вес так же, как экран входов курса: «масса тела, без отягощения».
+  await expect(page.getByText("Это масса тела, без отягощения.")).toBeVisible();
   await page.getByLabel("Твой вес в кг?").fill("80");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Рост в см?").fill("180");
@@ -30,7 +32,12 @@ async function onboardAndOpenSetup(page: Page, telegramId: number) {
   await page.getByLabel("Дата рождения").fill("1992-04-15");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Часовой пояс").selectOption({ label: "Москва (UTC+3)" });
+  // CI 9fbab6f: POST анкеты иногда дольше 5 с — ждём сам ответ, а не Главную по таймауту по умолчанию.
+  const questionnaire = page.waitForResponse(
+    (r) => r.url().includes("/api/onboarding/questionnaire") && r.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Готово" }).click();
+  expect((await questionnaire).ok()).toBe(true);
   await expect(page.getByText("Что потренируем сегодня?")).toBeVisible();
   await page.getByRole("button", { name: /^Подтягивания/ }).first().click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
@@ -99,6 +106,58 @@ test("сервер ответил course_setup_required — показан сп�
   await page.getByTestId("course-input-load_step_kg").fill("2,5");
   await page.getByTestId("one-rm-start").click();
   const error = page.getByTestId("one-rm-error");
-  await expect(error).toContainText("не хватает: масса тела, шаг дополнительного веса");
+  await expect(error).toContainText("не хватает: ваш вес (масса тела), шаг дополнительного веса");
   await expect(error).not.toContainText("/api/");
+});
+
+/**
+ * Первый вход, понятность формы (тот же staging-отзыв: в шаг веса вписали 16). Раньше: поля «Или: вы недавно
+ * закрыли 5×5…» стояли ДО теста 1RM, альтернативой которому были, у шага веса не было примера, а что обязательно и
+ * что делает «Сохранить» — не говорилось.
+ */
+test("форма входов: что обязательно, тест ИЛИ 5×5 / 5×3, шаг веса с примером рядом с тестом", async ({ page }) => {
+  await onboardAndOpenSetup(page, freshId());
+  const steps = page.getByTestId("course-setup-steps");
+  await expect(steps).toContainText("Обязательно впишите шаг дополнительного веса");
+  await expect(steps).toContainText("одно из двух: пройдите тест 1RM ниже — отдельным свежим днём");
+  await expect(steps).toContainText("«Сохранить» записывает числа из полей");
+  const data = page.getByTestId("course-setup-data");
+  await expect(data).toContainText("Самый маленький диск или гантель");
+  await expect(data).toContainText("обычно 1,25 или 2,5");
+  await expect(data).toContainText("Это не ваш вес и не вес на поясе");
+  await expect(data.getByTestId("course-input-known_strength_a_kg")).toHaveCount(0);
+  const known = page.getByTestId("course-setup-known-strength");
+  await expect(known).toContainText("Вариант 2: недавний 5×5 / 5×3 вместо теста");
+  await expect(known).toContainText("закрыли 5×5 с +10 кг — впишите 10");
+  await expect(page.getByTestId("one-rm-test")).toContainText("Вариант 1: тест 1RM в приложении");
+  // Порядок на экране: шаг веса → тест 1RM → недавний 5×5 / 5×3.
+  const top = async (testId: string) => (await page.getByTestId(testId).boundingBox())?.y ?? Number.NaN;
+  const [stepY, testY, knownY] = [
+    await top("course-input-load_step_kg"), await top("one-rm-test"), await top("course-setup-known-strength"),
+  ];
+  expect(stepY).toBeLessThan(testY);
+  expect(testY).toBeLessThan(knownY);
+});
+
+test("«Сохранить» с нечисловым шагом: сервер 422 — текст для человека, не «PUT /api/… failed: 422»", async ({ page }) => {
+  await onboardAndOpenSetup(page, freshId());
+  const put = page.waitForResponse((r) => r.url().includes("/course/inputs") && r.request().method() === "PUT");
+  await page.getByTestId("course-input-load_step_kg").fill("abc");
+  await page.getByTestId("course-setup-save").click();
+  expect((await put).status()).toBe(422);
+  const error = page.getByTestId("course-setup-error");
+  await expect(error).toContainText("Сервер не принял введённые данные — проверьте числа");
+  await expect(error).toContainText("Код 422.");
+  await expect(error).not.toContainText("/api/");
+  await expect(error).not.toContainText("failed");
+});
+
+test("вариант 2: шаг веса + недавний 5×5 и «Сохранить» — форма закрывается, теста 1RM не нужно", async ({ page }) => {
+  await onboardAndOpenSetup(page, freshId());
+  await page.getByTestId("course-input-load_step_kg").fill("2,5");
+  await page.getByTestId("course-input-known_strength_a_kg").fill("10");
+  await page.getByTestId("course-setup-save").click();
+  await expect(page.getByTestId("course-setup-required")).toHaveCount(0);
+  await expect(page.getByTestId("one-rm-test")).toHaveCount(0);
+  await expect(page.getByText(/^Блок 2: 5×5/)).toBeVisible();
 });

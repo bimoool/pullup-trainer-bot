@@ -12,8 +12,9 @@ import { useState } from "react";
 import { LabeledInput } from "./LabeledField";
 import { postOneRepMax, postOneRepMaxNextSet, putCourseInputs, type OneRmAttemptV2, type OneRmNextSetV2 } from "./apiV2";
 import {
-  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, describeCourseError,
-  describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, loadStepWarning, ONE_RM_REQUIRED_INPUTS,
+  assistanceConfirmations, type BandFields, COURSE_INPUT_FIELDS, courseInputsPayload, courseSetupLayout, describeCourseError,
+  describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, describeSetupSteps, loadStepWarning,
+  ONE_RM_REQUIRED_INPUTS,
 } from "./courseV5";
 
 export interface AssistancePending {
@@ -162,7 +163,7 @@ export function OneRepMaxTest(
   };
 
   return (
-    <Section header="Тест 1RM в приложении" data-testid="one-rm-test">
+    <Section header="Вариант 1: тест 1RM в приложении" data-testid="one-rm-test">
       {!running && (
         <>
           <p className="live-hint">
@@ -234,8 +235,30 @@ export function CourseSetupForm(
   ));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fields = missing.flatMap((item) => COURSE_INPUT_FIELDS[item] ?? []);
+  // Данные (вес, шаг…) — сразу перед тестом 1RM, которому они нужны; недавний 5×5 / 5×3 — вариант 2 после теста.
+  const layout = courseSetupLayout(missing);
+  const allFields = Object.values(COURSE_INPUT_FIELDS).flat();
+  const byKey = (keys: string[]) => keys.flatMap((key) => allFields.filter((field) => field.key === key));
+  const fields = byKey(layout.dataKeys);
+  const alternativeFields = byKey(layout.alternativeKeys);
   const needs = describeSetupNeeds(missing, assistancePending);
+  const steps = describeSetupSteps(missing);
+
+  const renderField = (field: { key: string; label: string; unit?: string; hint?: string }) => {
+    const warning = field.key === "load_step_kg" ? loadStepWarning(numbers[field.key] ?? "") : null;
+    return (
+      <div key={field.key}>
+        <LabeledInput
+          label={field.unit ? `${field.label}, ${field.unit}` : field.label} hint={field.hint} inputMode="decimal"
+          data-testid={`course-input-${field.key}`} value={numbers[field.key] ?? ""}
+          onChange={(e) => setNumbers({ ...numbers, [field.key]: e.target.value })}
+        />
+        {warning !== null && (
+          <p className="live-hint labeled-field-note" role="status" data-testid="course-load-step-warning">{warning}</p>
+        )}
+      </div>
+    );
+  };
 
   async function save() {
     setSaving(true);
@@ -277,27 +300,27 @@ export function CourseSetupForm(
           {needs.map((line) => <p key={line} className="live-hint labeled-field-note">{line}</p>)}
         </Section>
       )}
+      {steps.length > 0 && (
+        <Section header="Что сделать сейчас" data-testid="course-setup-steps">
+          {steps.map((line) => <p key={line} className="live-hint labeled-field-note">{line}</p>)}
+        </Section>
+      )}
       {fields.length > 0 && (
-        <Section header="Данные для расчёта программы">
-          {fields.map((field) => {
-            const warning = field.key === "load_step_kg" ? loadStepWarning(numbers[field.key] ?? "") : null;
-            return (
-              <div key={field.key}>
-                <LabeledInput
-                  label={field.unit ? `${field.label}, ${field.unit}` : field.label} inputMode="decimal"
-                  data-testid={`course-input-${field.key}`} value={numbers[field.key] ?? ""}
-                  onChange={(e) => setNumbers({ ...numbers, [field.key]: e.target.value })}
-                />
-                {warning !== null && (
-                  <p className="live-hint labeled-field-note" role="status" data-testid="course-load-step-warning">{warning}</p>
-                )}
-              </div>
-            );
-          })}
+        <Section header="Данные для расчёта программы" data-testid="course-setup-data">
+          {fields.map(renderField)}
         </Section>
       )}
       {missing.includes("one_rep_max") && (
         <OneRepMaxTest initDataRaw={initDataRaw} inclusionId={inclusionId} onSaved={onSaved} missing={missing} typed={numbers} />
+      )}
+      {alternativeFields.length > 0 && (
+        <Section header="Вариант 2: недавний 5×5 / 5×3 вместо теста" data-testid="course-setup-known-strength">
+          <p className="live-hint labeled-field-note">
+            Если вы недавно закрыли 5×5 или 5×3 с дополнительным весом — впишите его (хватит одного из двух) и
+            нажмите «Сохранить». Тогда тест 1RM не нужен.
+          </p>
+          {alternativeFields.map(renderField)}
+        </Section>
       )}
       {missing.includes("volume_assistance") && (
         <BandSection title="Объёмная резина" value={volumeBand} onChange={setVolumeBand} allowBodyweight={false} testId="course-volume-band" />
@@ -315,7 +338,7 @@ export function CourseSetupForm(
           allowBodyweight={entry.block.startsWith("strength")} testId={`course-confirm-${entry.block}`}
         />
       ))}
-      {error !== null && <p className="live-hint" role="alert">{error}</p>}
+      {error !== null && <p className="live-hint" role="alert" data-testid="course-setup-error">{error}</p>}
       <div className="pre-transport">
         <Button className="action-button vs-primary" size="l" stretched disabled={saving} onClick={() => void save()} data-testid="course-setup-save">
           Сохранить
