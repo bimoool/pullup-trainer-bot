@@ -10,6 +10,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      # Релиз MVP-1 (domain v2): 26 миграций + перенос legacy-пользователей, который ОБЯЗАН пройти до старта нового
+      # кода (backfill пропускает пользователей с уже созданным планом, а новый код создаёт пустой план на первом
+      # GET). Этот workflow (checkout → build → alembic → up, без бэкапа и переноса) такой порядок не обеспечивает.
+      # Production обновляется только guarded-скриптом по docs/PRODUCTION_RUNBOOK.md. Снять блок — отдельным
+      # решением владельца после выката.
+      - name: Refuse unguarded production deploy
+        run: |
+          echo "::error::Production обновляется только guarded-скриптом (docs/PRODUCTION_RUNBOOK.md). Этот workflow заблокирован."
+          exit 1
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
