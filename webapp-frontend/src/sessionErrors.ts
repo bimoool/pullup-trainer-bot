@@ -10,7 +10,7 @@ export function isSessionExpiredMessage(message: string): boolean {
 
 /**
  * Запасной текст ошибки запроса, когда у ответа нет строкового `detail` / `detail.message` (422 Pydantic — массив,
- * 409 `course_setup_required` — только код). Раньше на экран попадало «PUT /api/v2/… failed: 422» (первый обычный
+ * 409 `course_setup_required` — только код). Раньше на экран попадало «PUT /api/…/course/inputs failed: 422» (первый обычный
  * пользователь на staging). Код ответа остаётся в тексте и в полях ошибки (`status`/`code`) — классификация по ним
  * не меняется; адрес запроса пользователю не показывается.
  */

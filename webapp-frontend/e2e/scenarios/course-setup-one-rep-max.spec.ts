@@ -145,7 +145,7 @@ test("«Сохранить» с нечисловым шагом: сервер 42
   await page.getByTestId("course-input-load_step_kg").fill("abc");
   await page.getByTestId("course-setup-save").click();
   expect((await put).status()).toBe(422);
-  const error = page.getByTestId("course-setup-error");
+  const error = page.getByTestId("course-setup-form").getByRole("alert");
   await expect(error).toContainText("Сервер не принял введённые данные — проверьте числа");
   await expect(error).toContainText("Код 422.");
   await expect(error).not.toContainText("/api/");
