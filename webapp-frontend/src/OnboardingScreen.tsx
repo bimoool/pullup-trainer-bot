@@ -10,7 +10,7 @@ import {
 } from "./api";
 import { parseOptionalWeight } from "./WorkoutScreen";
 import { sanitizeDecimalInput } from "./decimalInput";
-import { describeBaselineQualification } from "./courseV5";
+import { describeBaselineQualification, ONBOARDING_WEIGHT_HINT } from "./courseV5";
 import { LabeledInput, LabeledSelect } from "./LabeledField";
 import { repsCount } from "./plural";
 
@@ -297,6 +297,7 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
         {current === "weight" && (
           <LabeledInput
             label="Твой вес в кг?"
+            hint={ONBOARDING_WEIGHT_HINT}
             type="text"
             inputMode="decimal"
             placeholder="Например: 78"

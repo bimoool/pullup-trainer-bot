@@ -59,7 +59,7 @@ async def get_training_analytics(
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> TrainingAnalyticsResponse:
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:

@@ -163,7 +163,7 @@ def _invalid_test(exc: OneRmTestError) -> HTTPException:
 async def get_course_state(
     inclusion_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CourseStateResponse:
     _user, inclusion = await _require_course(session, init_data, inclusion_id)
     return _course_response(v5_state(inclusion))
@@ -174,7 +174,7 @@ async def put_course_inputs(
     inclusion_id: int,
     body: CourseInputsRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CourseStateResponse:
     _user, inclusion = await _require_course(session, init_data, inclusion_id)
     try:
@@ -193,7 +193,7 @@ async def one_rep_max_next_set(
     inclusion_id: int,
     body: OneRmNextSetRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> OneRmNextSetResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
     state = v5_state(inclusion)
@@ -222,7 +222,7 @@ async def record_course_one_rep_max(
     inclusion_id: int,
     body: OneRmRecordRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CourseStateResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
     _require_one_rep_max_eligible(v5_state(inclusion))

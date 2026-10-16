@@ -33,7 +33,7 @@ class ExportLinkResponse(BaseModel):
 
 @router_v2_export.post("/link", response_model=ExportLinkResponse)
 async def create_export_link(
-    init_data: InitData = Depends(get_validated_init_data), session: AsyncSession = Depends(get_session),
+    init_data: InitData = Depends(get_validated_init_data), session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ExportLinkResponse:
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
@@ -67,7 +67,7 @@ async def _resolve_user(session: AsyncSession, token: str | None, init_data: Ini
 async def export_sessions_csv(
     token: str | None = Query(None),
     init_data: InitData | None = Depends(get_optional_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> StreamingResponse:
     user = await _resolve_user(session, token, init_data)
     rows = await build_rows(session, user_id=user.id, timezone=user.timezone)

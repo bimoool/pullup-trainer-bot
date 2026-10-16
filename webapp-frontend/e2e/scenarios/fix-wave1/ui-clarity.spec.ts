@@ -39,9 +39,9 @@ const THEMES: TelegramTheme[] = ["light", "dark"];
 /** Посев v5_one_rep_max (только чтение), зарегистрирован в scripts/e2e_seed_all.sh. */
 const ONE_RM_USER = 930_701;
 
-const BASE_ID = 7_300_000 + (Math.floor(Date.now() / 1000) % 600_000);
-let counter = 0;
-const nextId = () => BASE_ID + 10 * ++counter;
+// Случайные id (кратные 10): база от секунд загрузки модуля совпадала у воркеров, загрузившихся в одну секунду, —
+// «новый» пользователь оказывался уже онбординговым (ретрай в CI 38863710119: нет «Сколько подтягиваний вышло?»).
+const nextId = () => 7_300_000 + 10 * Math.floor(Math.random() * 60_000);
 
 /** Подпись видима целиком: внутри окна, не обрезана ellipsis/overflow, связана с полем. */
 async function expectCaption(page: Page, text: string, control?: "input" | "select", scope?: string) {
@@ -103,7 +103,12 @@ async function fillOnboarding(page: Page, tag: string, labels: { baseline: boole
   await expectCaption(page, "Часовой пояс?", "select");
   await shot(page, `${tag}-onb-3-timezone`);
   await page.getByLabel("Часовой пояс").selectOption({ label: "Москва (UTC+3)" });
+  // Ждём сам ответ анкеты, а не 5 с по умолчанию: в CI «Готово» оставалось disabled — запрос ещё шёл (CI 38863710119).
+  const questionnaire = page.waitForResponse(
+    (r) => r.url().includes("/api/onboarding/questionnaire") && r.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Готово" }).click();
+  expect((await questionnaire).ok()).toBe(true);
   await expect(page.getByText("Что потренируем сегодня?")).toBeVisible();
 }
 
@@ -155,9 +160,9 @@ for (const { name: platformName, platform } of PLATFORMS) {
           await page.getByRole("button", { name: "Планы" }).click();
           await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
           await expect(page.getByTestId("course-setup-required")).toBeVisible();
-          const base = "в том же стандарте и месте, после объёма — доп. вес, кг";
-          await expectCaption(page, `Или: вы недавно закрыли 5×5 (сила A) ${base}`, "input");
-          await expectCaption(page, `Или: вы недавно закрыли 5×3 (сила B) ${base}`, "input");
+          // Первый вход: 5×5 / 5×3 — «Вариант 2» после теста 1RM, подпись короткая, пример — в подсказке.
+          await expectCaption(page, "Недавний 5×5 (сила A): дополнительный вес, кг", "input", "course-setup-known-strength");
+          await expectCaption(page, "Недавний 5×3 (сила B): дополнительный вес, кг", "input", "course-setup-known-strength");
           const why = page.getByTestId("course-setup-why");
           await expect(why).toContainText("5×5 / 5×3");
           await expect(why).toContainText("Вес не назначается");

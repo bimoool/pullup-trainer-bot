@@ -11,21 +11,22 @@ import type { EnginePlan, EngineState, TimelineCue } from "./liveEngine";
 import type { BlockCheck, CourseBlockOutcome, OneRepMaxOutcomeV2 } from "./courseV5";
 import type { SessionCreatePayload } from "./journalLog";
 import { awaitEngineReconciliation } from "./engineGate.ts";
-import { SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
+import { httpFailureMessage, SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
 import type { PeerInsights } from "./peerInsightsFormat";
 import type { ProgramAccessLevel } from "./programAccess";
 
 /**
  * Извлекает human-readable сообщение ошибки из FastAPI response (issue #212).
  * FastAPI возвращает `{"detail": "message"}` — берём detail, если это строка.
- * Для 422 (Pydantic validation) detail — массив объектов, не строка — fallback.
+ * Для 422 (Pydantic validation) detail — массив объектов, не строка — fallback: человеческий текст с кодом
+ * ответа (httpFailureMessage), не «METHOD /api/… failed: N». method/path остаются в сигнатуре для вызывающих.
  */
 async function extractErrorMessage(
-  method: string,
-  path: string,
+  _method: string,
+  _path: string,
   response: Response,
 ): Promise<string> {
-  const fallback = `${method} ${path} failed: ${response.status}`;
+  const fallback = httpFailureMessage(response.status);
   if (response.status === 401) {
     // initData просрочен/невалиден — понятная подсказка вместо «Invalid Telegram initData» (#224).
     return SESSION_EXPIRED_MESSAGE;

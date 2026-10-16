@@ -128,7 +128,7 @@ async def _v5_status(session: AsyncSession, user, inclusion, *, is_admin: bool) 
 @router_v2_dashboard.get("/status", response_model=DashboardStatusResponse)
 async def get_dashboard_status(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> DashboardStatusResponse:
     """404 для неизвестного telegram_id — тот же принцип, что
     _require_user в routes_v2.py (не молчаливое "not_migrated": в этом

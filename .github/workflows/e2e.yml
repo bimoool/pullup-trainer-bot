@@ -78,10 +78,21 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Run Playwright tests
+      # Peer insights читает общую когорту всей e2e-БД — отдельным шагом до спеков, которые пишут результаты тестов
+      # (playwright.config.ts, PEER_SPEC). Основной шаг идёт и при его падении; итог job — красный, если упал любой.
+      - name: Run Playwright peer-insights (before other specs write results)
+        id: peer
         working-directory: webapp-frontend/e2e
         env:
           E2E_BASE_URL: http://127.0.0.1:8001
+        run: npx playwright test --project=peer-insights --reporter=list --output=test-results-peer
+
+      - name: Run Playwright tests
+        if: success() || failure()
+        working-directory: webapp-frontend/e2e
+        env:
+          E2E_BASE_URL: http://127.0.0.1:8001
+          E2E_SKIP_PEER_PROJECT: "1"
         run: npm test
 
       - name: Upload Playwright report

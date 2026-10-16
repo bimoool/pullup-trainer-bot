@@ -4,7 +4,7 @@ import { test } from "node:test";
 import {
   assistanceConfirmations, blockChecks, COURSE_INPUT_FIELDS, courseBlockName, courseInputsPayload, courseTargetText, describeCourseOutcome,
   describeOneRepMaxOutcome, describePendingInputs, describeSetupNeeds, describeBaselineQualification,
-  describeCourseError, loadStepWarning,
+  describeCourseError, loadStepWarning, courseSetupLayout, describeSetupSteps, ONBOARDING_WEIGHT_HINT,
 } from "../src/courseV5.ts";
 
 test("courseTargetText: маркеры V5.6", () => {
@@ -177,4 +177,45 @@ test("loadStepWarning: шаг > 2,5 кг — прибавок не будет (V
   }
   assert.match(loadStepWarning("16") ?? "", /больше 2,5 кг.*не масса тела/);
   assert.match(loadStepWarning("2,75") ?? "", /больше 2,5 кг/);
+});
+
+// Первый обычный пользователь (staging) вписал 16 в «Шаг дополнительного веса»: смысл поля был неясен
+// (масса тела? вес на поясе?), а «Или: 5×5…» стояло раньше теста, альтернативой которому было.
+test("поля входов: шаг веса и недавний 5×5 / 5×3 — что вписать, с примером; масса тела = вес из анкеты", () => {
+  const field = (key: string) => Object.values(COURSE_INPUT_FIELDS).flat().find((item) => item.key === key);
+  const step = field("load_step_kg");
+  assert.equal(step?.label, "Шаг дополнительного веса");
+  assert.match(step?.hint ?? "", /^Обязательно\./);
+  assert.match(step?.hint ?? "", /самый маленький диск или гантель/i);
+  assert.match(step?.hint ?? "", /1,25 или 2,5/);
+  assert.match(step?.hint ?? "", /не ваш вес и не вес на поясе/);
+  for (const key of ["known_strength_a_kg", "known_strength_b_kg"]) {
+    assert.doesNotMatch(field(key)?.label ?? "", /^Или/, key);
+    assert.match(field(key)?.label ?? "", /дополнительный вес/, key);
+    assert.match(field(key)?.hint ?? "", /впишите \d/, key);
+  }
+  assert.match(field("known_strength_a_kg")?.hint ?? "", /не масса тела/);
+  assert.equal(field("body_mass_kg")?.label, "Ваш вес (масса тела)");
+  assert.match(field("body_mass_kg")?.hint ?? "", /«Твой вес в кг\?»/);
+  assert.match(ONBOARDING_WEIGHT_HINT, /масса тела/);
+  assert.equal(describePendingInputs(["body_mass", "load_step"]), "ваш вес (масса тела), шаг дополнительного веса");
+});
+
+test("courseSetupLayout: данные для теста — до теста; недавний 5×5 / 5×3 — отдельный вариант после", () => {
+  assert.deepEqual(courseSetupLayout(["one_rep_max", "load_step"]), {
+    dataKeys: ["load_step_kg"], alternativeKeys: ["known_strength_a_kg", "known_strength_b_kg"],
+  });
+  assert.deepEqual(courseSetupLayout(["body_mass", "one_rep_max", "load_step"]).dataKeys, ["body_mass_kg", "load_step_kg"]);
+  assert.deepEqual(courseSetupLayout(["fresh_max", "volume_capacity"]), { dataKeys: ["fresh_max", "volume_capacity"], alternativeKeys: [] });
+});
+
+test("describeSetupSteps: обязательное, выбор «тест ИЛИ 5×5 / 5×3», отдельный свежий день, что сохраняет «Сохранить»", () => {
+  const steps = describeSetupSteps(["one_rep_max", "load_step"]);
+  assert.equal(steps.length, 3);
+  assert.match(steps[0], /^Обязательно впишите шаг дополнительного веса/);
+  assert.match(steps[1], /одно из двух: пройдите тест 1RM.*отдельным свежим днём.*или впишите недавний 5×5 \/ 5×3 и нажмите «Сохранить»/);
+  assert.match(steps[2], /«Сохранить» записывает числа из полей/);
+  assert.match(describeSetupSteps(["body_mass", "one_rep_max", "load_step"])[0], /ваш вес и шаг дополнительного веса/);
+  assert.equal(describeSetupSteps(["one_rep_max"]).length, 2); // шаг и вес уже есть — только выбор
+  assert.deepEqual(describeSetupSteps(["volume_assistance", "strength_assistance"]), []);
 });

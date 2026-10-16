@@ -373,7 +373,7 @@ async def _catalog_exercise_names(session: AsyncSession, details: list[SessionDe
 @router_v2.get("/programs", response_model=ProgramListResponse)
 async def list_programs(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgramListResponse:
     await _require_user(session, init_data)
     programs_repo = ProgramRepository(session)
@@ -404,7 +404,7 @@ async def _schedule_source_inclusion(session: AsyncSession, user_id: int, progra
 async def get_program_schedule(
     program_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgramScheduleResponse:
     """Превью структуры программы до добавления в план (issue #266). Каталог виден
     всем; только реальные ProgramItem/config — у программы без строк items пуст."""
@@ -511,7 +511,7 @@ async def _favorite_target_exists(session: AsyncSession, user_id: int, target_ty
 @router_v2.get("/favorites", response_model=FavoriteListResponse)
 async def list_favorites(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> FavoriteListResponse:
     """Избранное, новые первыми. Удалённые/ставшие недоступными цели в список
     не попадают (строки не удаляются — просто фильтруются)."""
@@ -541,7 +541,7 @@ async def add_favorite(
     target_type: str,
     target_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """Идемпотентно. Недоступная/несуществующая цель или неизвестный тип — 404."""
     user = await _require_user(session, init_data)
@@ -556,7 +556,7 @@ async def remove_favorite(
     target_type: str,
     target_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """Идемпотентно: снять можно и то, чего нет. Неизвестный тип — 404."""
     user = await _require_user(session, init_data)
@@ -569,7 +569,7 @@ async def remove_favorite(
 @router_v2.get("/exercises", response_model=ExerciseListResponse)
 async def list_exercises(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ExerciseListResponse:
     """Checkpoint 3A (issue #196) — минимальная Exercise Library без UI.
     Не требует admin-доступа (обычный пользователь должен пользоваться
@@ -610,7 +610,7 @@ async def list_exercises(
 async def create_exercise(
     body: ExerciseCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ExerciseResponse:
     """Phase C1 (issue #188) — минимальный CREATE для пользовательского
     Exercise (Workout Builder foundation). System Exercise через этот путь
@@ -666,7 +666,7 @@ async def _build_workout_item_responses(
 async def create_workout(
     body: WorkoutCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutResponse:
     """Phase C2 (issue #188) — минимальный CREATE для Workout (продуктовое
     имя; техническое хранилище — Complex, без rename, см. ADR
@@ -704,7 +704,7 @@ async def _workout_list_response(programs: ProgramRepository, session: AsyncSess
 @router_v2.get("/workouts", response_model=WorkoutListResponse)
 async def list_my_workouts(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutListResponse:
     """Phase C2 (issue #188) — только user Workout текущего владельца
     (source_type == user AND owner_user_id == текущий пользователь), для
@@ -723,7 +723,7 @@ def _is_db_id(value: object) -> bool:
 async def preview_workout_content(
     body: WorkoutPreviewRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutPreviewResponse:
     """Issue #303 — превью/проверка содержимого v2 (WORKOUT_DOMAIN_V2 §3) для Builder'а: тот же
     normalize() (W1–W8, W6 — видимость упражнений текущему пользователю) и тот же describe(), что у
@@ -759,7 +759,7 @@ async def preview_workout_content(
 @router_v2.get("/workouts/catalog", response_model=WorkoutListResponse)
 async def list_system_workouts(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutListResponse:
     """Каталог готовых тренировок (issue #296, D2): системные Workout (source_type='system'),
     видимые любому пользователю, только для чтения. Открыть деталь/«Начать»/«Добавить в план» можно
@@ -773,7 +773,7 @@ async def list_system_workouts(
 async def get_workout_detail(
     workout_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutResponse:
     """Видим: system (любому) или свой user Workout. Чужой user Workout —
     404, не 403 (существующая конвенция проекта). Phase C3 — теперь
@@ -793,7 +793,7 @@ async def get_workout_detail(
 async def list_workout_sessions(
     workout_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutSessionsResponse:
     """История одной тренировки: завершённые v2-сессии текущего пользователя,
     чей замороженный workout_snapshot ссылается на этот Workout, новые первыми.
@@ -818,7 +818,7 @@ async def add_workout_item(
     workout_id: int,
     body: WorkoutItemCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutItemResponse:
     """Phase C3 (issue #188) — только editable (свой user) Workout, не
     system, не чужой. Exercise должен быть visible current_user (system
@@ -853,7 +853,7 @@ async def update_workout_item(
     item_id: int,
     body: WorkoutItemUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutItemResponse:
     """order_index через этот endpoint никогда не меняется (см. move)."""
     user = await _require_user(session, init_data)
@@ -890,7 +890,7 @@ async def delete_workout_item(
     workout_id: int,
     item_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """Удаляет item из editable Workout, нормализует order_index
     оставшихся (0, 1, 2, ... без дырок)."""
@@ -913,7 +913,7 @@ async def move_workout_item(
     item_id: int,
     body: WorkoutItemMoveRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutResponse:
     """Простой swap с соседом. На границе (первый+up, последний+down) —
     idempotent no-op, не ошибка (см. репозиторный докстринг)."""
@@ -938,7 +938,7 @@ async def update_workout_title(
     workout_id: int,
     body: WorkoutUpdateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutResponse:
     """Редактируем: только свой user Workout. System Workout — read-only
     для всех обычных пользователей, тоже 404 при попытке PATCH (не
@@ -959,7 +959,7 @@ async def update_workout_title(
 async def delete_workout(
     workout_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """Issue #261 — мягкое удаление своего user Workout (чужой/system/уже
     удалённый — 404). Определение Complex/ComplexItem не уничтожается: на него
@@ -984,7 +984,7 @@ async def delete_workout(
 async def duplicate_workout(
     workout_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> WorkoutResponse:
     """Issue #261 — «<название> (копия)» со скопированным составом и протоколами,
     тот же владелец. Только свой user Workout (иначе 404)."""
@@ -1019,7 +1019,7 @@ def _plan_today(user) -> date:
 @router_v2.get("/plan", response_model=PlanResponse)
 async def get_plan(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PlanResponse:
     user = await _require_user(session, init_data)
     plans = TrainingPlanRepository(session)
@@ -1107,7 +1107,7 @@ async def _create_inclusion(session: AsyncSession, user_id: int, body: ProgramIn
 async def create_program_inclusion(
     body: ProgramInclusionCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgramInclusionResponse:
     user = await _require_user(session, init_data)
     try:
@@ -1130,7 +1130,7 @@ async def create_program_inclusion(
 async def deactivate_program_inclusion(
     inclusion_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgramInclusionResponse:
     """«Убрать курс из плана» (issue #266): is_active=false, строки истории
     (PlanItem/сессии/снимок) не удаляются; expires_at фиксирует дату окончания.
@@ -1161,7 +1161,7 @@ async def deactivate_program_inclusion(
 async def create_plan_week(
     body: PlanWeekCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PlanWeekResponse:
     """issue #275 — идемпотентно создаёт неделю плана вперёд (текущая .. +4).
     Вне окна — 422. Программные PlanItem сюда не материализуются."""
@@ -1180,7 +1180,7 @@ async def create_plan_week(
 async def copy_plan_week_to_next(
     plan_week_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PlanWeekCopyResponse:
     """issue #275 — копирует ручные PlanItem недели в следующую (дубликаты
     пропускаются, программные строки не копируются). Чужая неделя — 404;
@@ -1206,7 +1206,7 @@ async def copy_plan_week_to_next(
 async def list_plan_items(
     program_inclusion_id: int | None = Query(default=None),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PlanItemListResponse:
     user = await _require_user(session, init_data)
     plans = TrainingPlanRepository(session)
@@ -1222,7 +1222,7 @@ async def list_plan_items(
 async def create_plan_item(
     body: PlanItemCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PlanItemResponse:
     """program_inclusion_id всегда NULL на этом пути — по докстрингу
     PlanItem "добавлено вручную" (app/db/models_program.py). Строки из
@@ -1293,7 +1293,7 @@ async def move_plan_item(
     plan_item_id: int,
     body: PlanItemMoveRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> PlanItemResponse:
     """Перенос занятия (issue #304, PL6): ЛЮБОЙ источник — курс, свой план, ручное; неделя
     (plan_week_id), день (day_of_week, null = свободный пул) или дата (scheduled_date). Идентичность
@@ -1321,7 +1321,7 @@ async def move_plan_item(
 async def remove_plan_item(
     plan_item_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """«Убрать из плана» (issue #188 D2; #304 B1, PROGRAM_PLAN_V2 §5 PL8). Засчитанное занятие — 422
     {code: credited_plan_item}, кредит не меняется. Занятие своего плана снимается мягко (status =
@@ -1443,7 +1443,7 @@ async def list_sessions(
     exclude_legacy_cards: bool = Query(default=False),
     exclude_backfilled: bool = Query(default=False, description="deprecated alias of exclude_legacy_cards"),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> SessionListResponse:
     """status (Checkpoint 4C) — опциональный фильтр, без параметра ведёт
     себя как раньше (и STARTED, и COMPLETED) — SessionV2Lab.tsx/
@@ -1511,7 +1511,7 @@ async def list_sessions(
 async def journal_days(
     month: str = Query(..., description="YYYY-MM"),
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> JournalDaysResponse:
     """Календарь Журнала (#256): сколько завершённых тренировок в каждый день месяца. Считается по
     canonical_sessions (#308, A1) — тому же множеству, что список Журнала, Профиль и Аналитика: одна
@@ -1547,7 +1547,7 @@ async def journal_days(
 async def delete_session(
     session_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> None:
     """R2 — консервативное удаление завершённой Builder-сессии. Чужая/
     несуществующая — 404 (не раскрывает существование); небезопасная или
@@ -1587,7 +1587,7 @@ async def edit_session(
     session_id: int,
     body: SessionEditRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> SessionResponse:
     """#262 — правка завершённой Builder-сессии (значения/усилие/заметки
     подходов, усилие и комментарий тренировки, дата). Предикат безопасности —
@@ -1615,7 +1615,7 @@ async def clone_session(
     session_id: int,
     body: SessionCloneRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> SessionResponse:
     """#262 — «Повторить»: новая завершённая сессия (source=backdated) с теми же
     блоками/целями/фактом. Те же 404/409, что у правки; без прогрессии."""
@@ -1644,7 +1644,7 @@ def _block_input(block: SessionBlockInputSchema) -> SessionBlockInput:
 async def create_session(
     body: SessionCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> SessionResponse:
     user = await _require_user(session, init_data)
     if (
@@ -1776,7 +1776,7 @@ async def preview_progression_cascade(
     inclusion_id: int,
     body: ProgressionPreviewRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgressionPreviewResponse:
     user = await _require_user(session, init_data)
     deltas, not_applicable = await ProgressionCascadeService(session).preview(
@@ -1797,7 +1797,7 @@ async def apply_progression_cascade(
     inclusion_id: int,
     body: ProgressionPreviewRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgressionPreviewResponse:
     user = await _require_user(session, init_data)
     deltas, not_applicable = await ProgressionCascadeService(session).apply(

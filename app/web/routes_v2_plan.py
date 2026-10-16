@@ -52,7 +52,7 @@ def custom_plan_response(custom_plan: CustomPlan) -> CustomPlanResponse:
 @router_v2_plan.get("/custom-plans", response_model=CustomPlanListResponse)
 async def list_custom_plans(
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CustomPlanListResponse:
     from app.web.routes_v2 import _require_user
 
@@ -65,7 +65,7 @@ async def list_custom_plans(
 async def create_custom_plan(
     body: CustomPlanCreateRequest,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CustomPlanResponse:
     from app.web.routes_v2 import _plan_today, _require_user
 
@@ -107,7 +107,7 @@ async def create_custom_plan(
 async def deactivate_custom_plan(
     custom_plan_id: int,
     init_data: InitData = Depends(get_validated_init_data),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CustomPlanResponse:
     """«Остановить план» (#304 B3): is_active = false, новые занятия не материализуются; незасчитанные
     занятия текущей/будущих недель снимаются мягко; засчитанные и история — без изменений. Повтор —
