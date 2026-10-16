@@ -15,6 +15,10 @@ const ACTIONS_USERS = { 320: { id: 998_101, theme: "light" }, 390: { id: 998_111
 // Тест типов создаёт запись «Бег» — свой пользователь, чтобы остальные видели ровно две записи.
 const TYPES_USERS = { 320: 998_161, 390: 998_171 } as const;
 const DELETE_USERS = { 320: 998_121, 390: 998_131 } as const;
+// Фокус во время удаления (один клик / Enter): каждый тест удаляет запись — свой пользователь.
+const FOCUS_DELETE_USERS = {
+  320: { click: 998_181, keyboard: 998_201 }, 390: { click: 998_191, keyboard: 998_211 },
+} as const;
 const ELECTIVE_USERS = { 320: 998_141, 390: 998_151 } as const;
 
 type Action = "open" | "edit" | "clone" | "workout" | "delete";
@@ -256,6 +260,58 @@ for (const width of WIDTHS) {
       expect(noWakeLock(consoleErrors)).toEqual([]);
       expect(apiFailures).toEqual([]);
     });
+
+    // Регрессия (флак CI run 38791871587): Chrome 153 снимает фокус с кнопки, ставшей disabled, не сразу, а при
+    // следующем обновлении отрисовки. Эффект «фокус ещё в шторке?» после коммита видел ещё сфокусированную
+    // «Удалить» и ничего не делал; через кадр фокус падал на body. Двойной клик выше это маскировал: второй
+    // mousedown по уже заблокированной кнопке сам переводит фокус на шторку. Здесь — один клик и Enter, а DELETE
+    // держим, пока не проверим фокус (без таймингов).
+    for (const via of ["click", "keyboard"] as const) {
+      test(`пока идёт удаление (${via}), фокус остаётся на шторке`, async ({ page }, testInfo) => {
+        const userId = FOCUS_DELETE_USERS[width as 320 | 390][via];
+        const { consoleErrors, apiFailures } = await openAppAs(page, userId + testInfo.retry, { theme, backButton: true });
+        await openTab(page, "Журнал");
+        const cards = page.locator(".history-card-clickable");
+        await expect(cards).toHaveCount(2);
+        const sheet = page.getByTestId("journal-entry-sheet");
+        const remove = page.getByTestId("journal-sheet-delete");
+
+        let release = () => {};
+        const held = new Promise<void>((resolve) => { release = resolve; });
+        await page.route("**/api/v2/sessions/*", async (route) => {
+          if (route.request().method() === "DELETE") {
+            await held;
+          }
+          await route.continue();
+        });
+        page.on("dialog", (dialog) => void dialog.accept());
+
+        await cards.filter({ hasText: "Моя силовая" }).click();
+        await expect(sheet).toBeFocused();
+        if (via === "click") {
+          await remove.click();
+        } else {
+          await remove.focus();
+          await page.keyboard.press("Enter");
+        }
+        await expect(remove).toHaveText("Удаляю…");
+        await expect(remove).toBeDisabled();
+        // Дать браузеру отложенно снять фокус с заблокированной кнопки (два кадра), затем — проверка без ретраев.
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid ?? document.activeElement?.tagName))
+          .toBe("journal-entry-sheet");
+        await page.keyboard.press("Tab");
+        await expect(sheet).toBeFocused();
+
+        release();
+        await expect(sheet).toHaveCount(0);
+        await expect(cards).toHaveCount(1);
+        await expect(cards.filter({ hasText: "Моя силовая" })).toHaveCount(0);
+
+        expect(noWakeLock(consoleErrors)).toEqual([]);
+        expect(apiFailures).toEqual([]);
+      });
+    }
   });
 
   test.describe(`Journal entry sheet: elective @${width}px ${theme}`, () => {
