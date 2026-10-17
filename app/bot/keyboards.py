@@ -529,6 +529,25 @@ def admin_menu_keyboard(sheet_url: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def admin_broadcast_collect_keyboard() -> InlineKeyboardMarkup:
+    """Шаг 1 "📢 Рассылка всем": статья пересылается одним или несколькими
+    сообщениями, потом — предпросмотр (копия только админу)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👁 Предпросмотр", callback_data="admin_broadcast_preview")
+    builder.button(text="❌ Отмена", callback_data="admin_broadcast_cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_broadcast_confirm_keyboard(recipients: int) -> InlineKeyboardMarkup:
+    """Шаг 2: отдельное подтверждение массовой отправки после предпросмотра."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"✅ Отправить всем ({recipients})", callback_data="admin_broadcast_send")
+    builder.button(text="❌ Отмена", callback_data="admin_broadcast_cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 ADMIN_USERS_PAGE_SIZE = 20
 
 

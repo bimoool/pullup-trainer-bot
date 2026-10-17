@@ -1,8 +1,10 @@
+import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InputMediaPhoto, Message
@@ -13,6 +15,8 @@ from app.bot.formatting import format_subscription_status
 from app.bot.handlers.subscription import _robokassa_available
 from app.bot.keyboards import (
     BOTTOM_MENU_ADMIN,
+    admin_broadcast_collect_keyboard,
+    admin_broadcast_confirm_keyboard,
     admin_dm_prompt_keyboard,
     admin_menu_keyboard,
     admin_reset_confirm_keyboard,
@@ -144,13 +148,30 @@ async def handle_admin_user_card(callback: CallbackQuery, session: AsyncSession)
     await callback.answer()
 
 
+#: Telegram copyMessages принимает 1–100 id за вызов — больше в одну рассылку не берём.
+BROADCAST_MAX_MESSAGES = 100
+#: Пауза между получателями: лимит Telegram ~30 сообщений/с на бота.
+BROADCAST_SEND_INTERVAL_SECONDS = 0.05
+
+# Один процесс бота (long polling), апдейты обрабатываются конкурентными
+# задачами: части пересланной статьи приходят почти одновременно, а кнопку
+# «Отправить всем» можно нажать дважды. Чтение-изменение-запись FSM-данных
+# (Redis) и переход preview → sending делаются только под этой блокировкой —
+# иначе id сообщений терялись бы, а второе нажатие запустило бы вторую рассылку.
+_broadcast_lock = asyncio.Lock()
+
+
 @router.callback_query(F.data == "admin_broadcast")
 async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContext) -> None:
+    """Шаг 1 "📢 Рассылка всем": приём статьи. Ничего никому не отправляется,
+    пока админ не посмотрит копию и отдельно не подтвердит отправку."""
     if not _is_admin(callback.from_user.id):
         await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
         return
-    await state.set_state(AdminStates.waiting_for_broadcast_text)
-    await callback.message.answer(texts.ADMIN_BROADCAST_PROMPT, reply_markup=cancel_keyboard())
+    async with _broadcast_lock:
+        await state.set_state(AdminStates.waiting_for_broadcast_text)
+        await state.set_data({"broadcast_chat_id": callback.from_user.id, "broadcast_message_ids": []})
+    await callback.message.answer(texts.ADMIN_BROADCAST_PROMPT, reply_markup=admin_broadcast_collect_keyboard())
     await callback.answer()
 
 
@@ -177,11 +198,11 @@ def _album_caption(album: list[Message]) -> str | None:
 
 
 async def _broadcast(bot: Bot, message: Message, users: list[User], album: list[Message] | None = None) -> tuple[int, int]:
-    """Общий механизм рассылки — используется и ручной "📢 Рассылка всем"
-    (handle_admin_broadcast_text, только завершившие онбординг), и
-    еженедельным дайджестом (handle_weekly_digest_reply, весь список
-    пользователей — issue #84). Список адресатов выбирает вызывающий
-    (_broadcast_to_onboarded_users/_broadcast_to_all_users), эта функция
+    """Механизм отправки еженедельного дайджеста (handle_weekly_digest_reply,
+    весь список пользователей — issue #84). Ручная "📢 Рассылка всем" сюда
+    больше не ходит: она копирует исходные сообщения (_copy_to_users) после
+    предпросмотра и подтверждения. Список адресатов выбирает вызывающий
+    (_broadcast_to_all_users), эта функция
     только знает, КАК отправить, не КОМУ. parse_mode=None: текст набирает
     человек (админ), не наш HTML-шаблон — случайные "<"/"&" не должны
     ронять рассылку ошибкой парсинга сущностей.
@@ -216,16 +237,6 @@ async def _broadcast(bot: Bot, message: Message, users: list[User], album: list[
     return sent, len(users)
 
 
-async def _broadcast_to_onboarded_users(
-    bot: Bot, session: AsyncSession, message: Message, album: list[Message] | None = None,
-) -> tuple[int, int]:
-    """Ручная "📢 Рассылка всем" — только завершившие онбординг. Сознательно
-    не расширена на всех пользователей (issue #84) — этот охват не трогать
-    без явной отдельной просьбы, в отличие от _broadcast_to_all_users."""
-    users = await UserRepository(session).list_onboarded()
-    return await _broadcast(bot, message, users, album=album)
-
-
 async def _broadcast_to_all_users(
     bot: Bot, session: AsyncSession, message: Message, album: list[Message] | None = None,
 ) -> tuple[int, int]:
@@ -238,13 +249,151 @@ async def _broadcast_to_all_users(
 
 @router.message(AdminStates.waiting_for_broadcast_text)
 async def handle_admin_broadcast_text(
-    message: Message, state: FSMContext, session: AsyncSession, album: list[Message] | None = None,
+    message: Message, state: FSMContext, album: list[Message] | None = None,
 ) -> None:
-    sent, total = await _broadcast_to_onboarded_users(message.bot, session, message, album=album)
+    """Сохраняет только id исходных сообщений (текст/медиа/альбом, в т.ч.
+    пересланные) — содержимое не пересобирается, а копируется как есть
+    (copyMessages), поэтому оформление, ссылки и медиа сохраняются."""
+    if not _is_admin(message.from_user.id):
+        return
+    incoming = [m.message_id for m in album] if album else [message.message_id]
+    async with _broadcast_lock:
+        if await state.get_state() != AdminStates.waiting_for_broadcast_text.state:
+            return
+        data = await state.get_data()
+        ids: list[int] = list(data.get("broadcast_message_ids", []))
+        if len(ids) + len(incoming) > BROADCAST_MAX_MESSAGES:
+            await message.answer(texts.ADMIN_BROADCAST_TOO_MANY.format(limit=BROADCAST_MAX_MESSAGES))
+            return
+        ids = sorted(set(ids) | set(incoming))
+        await state.update_data(broadcast_chat_id=message.chat.id, broadcast_message_ids=ids)
+    await message.answer(
+        texts.ADMIN_BROADCAST_COLLECTED.format(count=len(ids)), reply_markup=admin_broadcast_collect_keyboard(),
+    )
 
-    await state.clear()
-    await message.answer(texts.ADMIN_BROADCAST_DONE.format(sent=sent, total=total))
-    await message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
+
+async def _broadcast_recipients(session: AsyncSession, admin_telegram_id: int) -> list[User]:
+    """Все зарегистрированные пользователи, кроме администратора, который
+    запускает рассылку (он уже получил копию на предпросмотре)."""
+    users = await UserRepository(session).list_all()
+    return [u for u in users if u.telegram_id != admin_telegram_id]
+
+
+@router.callback_query(F.data == "admin_broadcast_preview")
+async def handle_admin_broadcast_preview(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Шаг 2: копия статьи — ТОЛЬКО нажавшему админу, затем отдельный вопрос
+    «Отправить всем / Отмена». Больше никому на этом шаге не уходит ничего."""
+    admin_id = callback.from_user.id
+    if not _is_admin(admin_id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    async with _broadcast_lock:
+        if await state.get_state() != AdminStates.waiting_for_broadcast_text.state:
+            await callback.answer(texts.ADMIN_BROADCAST_STALE, show_alert=True)
+            return
+        data = await state.get_data()
+        ids = data.get("broadcast_message_ids") or []
+        if not ids:
+            await callback.answer(texts.ADMIN_BROADCAST_EMPTY, show_alert=True)
+            return
+        await state.set_state(AdminStates.broadcast_preview)
+    await callback.answer()
+    try:
+        await callback.bot.copy_messages(chat_id=admin_id, from_chat_id=data["broadcast_chat_id"], message_ids=ids)
+    except TelegramAPIError:
+        logger.warning("broadcast: preview copy failed", exc_info=True)
+        await state.clear()
+        await callback.message.answer(texts.ADMIN_BROADCAST_PREVIEW_FAILED)
+        return
+    recipients = await _broadcast_recipients(session, admin_id)
+    await callback.message.answer(
+        texts.ADMIN_BROADCAST_CONFIRM.format(recipients=len(recipients)),
+        reply_markup=admin_broadcast_confirm_keyboard(len(recipients)),
+    )
+
+
+@router.callback_query(F.data == "admin_broadcast_cancel")
+async def handle_admin_broadcast_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    async with _broadcast_lock:
+        current = await state.get_state()
+        if current not in (AdminStates.waiting_for_broadcast_text.state, AdminStates.broadcast_preview.state):
+            await callback.answer(texts.ADMIN_BROADCAST_STALE, show_alert=True)
+            return
+        await state.clear()
+    await callback.answer()
+    await callback.message.answer(texts.ADMIN_BROADCAST_CANCELLED)
+    await callback.message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
+
+
+@dataclass
+class BroadcastReport:
+    total: int
+    sent: int = 0
+    blocked: int = 0
+    failed: int = 0
+
+
+async def _copy_to_users(bot: Bot, from_chat_id: int, message_ids: list[int], users: list[User]) -> BroadcastReport:
+    """Копирует сохранённые сообщения каждому получателю (copyMessages: без
+    шапки «переслано из», альбомы остаются альбомами). Ошибка одного
+    получателя не останавливает рассылку — она попадает в счётчики."""
+    report = BroadcastReport(total=len(users))
+    for user in users:
+        for attempt in range(2):
+            try:
+                await bot.copy_messages(chat_id=user.telegram_id, from_chat_id=from_chat_id, message_ids=message_ids)
+                report.sent += 1
+            except TelegramRetryAfter as exc:
+                if attempt == 0:
+                    await asyncio.sleep(exc.retry_after)
+                    continue
+                report.failed += 1
+            except TelegramForbiddenError:
+                report.blocked += 1
+            except TelegramAPIError:
+                logger.warning("broadcast: failed to copy to user %s", user.telegram_id, exc_info=True)
+                report.failed += 1
+            break
+        await asyncio.sleep(BROADCAST_SEND_INTERVAL_SECONDS)
+    return report
+
+
+@router.callback_query(F.data == "admin_broadcast_send")
+async def handle_admin_broadcast_send(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    """Шаг 3: массовая отправка — только из состояния предпросмотра.
+    Переход в broadcast_sending под блокировкой: второе нажатие (или старая
+    кнопка после отмены/рестарта) видит другое состояние и ничего не шлёт."""
+    admin_id = callback.from_user.id
+    if not _is_admin(admin_id):
+        await callback.answer(texts.ADMIN_ACCESS_DENIED, show_alert=True)
+        return
+    async with _broadcast_lock:
+        if await state.get_state() != AdminStates.broadcast_preview.state:
+            await callback.answer(texts.ADMIN_BROADCAST_STALE, show_alert=True)
+            return
+        data = await state.get_data()
+        await state.set_state(AdminStates.broadcast_sending)
+
+    recipients = await _broadcast_recipients(session, admin_id)
+    await callback.answer()
+    await callback.message.answer(texts.ADMIN_BROADCAST_STARTED.format(recipients=len(recipients)))
+    logger.info("broadcast: started by %s, %s recipients, messages %s", admin_id, len(recipients), data["broadcast_message_ids"])
+    report = await _copy_to_users(callback.bot, data["broadcast_chat_id"], data["broadcast_message_ids"], recipients)
+    logger.info("broadcast: finished %s", report)
+
+    # Админ мог за время отправки начать новый черновик — его не стираем.
+    async with _broadcast_lock:
+        if await state.get_state() == AdminStates.broadcast_sending.state:
+            await state.clear()
+    await callback.message.answer(
+        texts.ADMIN_BROADCAST_REPORT.format(
+            sent=report.sent, total=report.total, blocked=report.blocked, failed=report.failed,
+        ),
+    )
+    await callback.message.answer(texts.ADMIN_MENU_HEADER, reply_markup=admin_menu_keyboard(settings.admin_sheet_url))
 
 
 @router.callback_query(F.data == "admin_weekly_digest_now")
@@ -591,10 +740,10 @@ async def handle_weekly_digest_reply(
         await message.answer(texts.ADMIN_WEEKLY_DIGEST_EXPIRED.format(expires_at=deadline.strftime("%d.%m %H:%M")))
         return
 
-    # _broadcast_to_all_users, не _broadcast_to_onboarded_users — дайджест
-    # охватывает и не прошедших онбординг (issue #84), цель — вернуть тех,
-    # кто начал, но не закончил анкету. Обычная ручная рассылка (/admin →
-    # "📢 Рассылка всем") этот охват не расширяет, см. её докстринг.
+    # _broadcast_to_all_users — дайджест охватывает и не прошедших онбординг
+    # (issue #84), цель — вернуть тех, кто начал, но не закончил анкету.
+    # Ручная "📢 Рассылка всем" устроена иначе (предпросмотр + подтверждение,
+    # копирование исходных сообщений), см. handle_admin_broadcast_send.
     sent, total = await _broadcast_to_all_users(message.bot, session, message, album=album)
     # Только при реальной рассылке — просроченный ответ (ветка above) сюда
     # не доходит, иначе last_digest_sent_at сдвигался бы неделя за неделей

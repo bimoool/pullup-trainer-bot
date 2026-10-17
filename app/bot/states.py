@@ -133,7 +133,13 @@ class FeedbackStates(StatesGroup):
 
 
 class AdminStates(StatesGroup):
+    # "📢 Рассылка всем": waiting_for_broadcast_text — копим id сообщений
+    # статьи (FSM-data broadcast_message_ids), broadcast_preview — копия
+    # показана только админу и ждёт отдельного подтверждения, broadcast_sending
+    # — подтверждение принято, повторное нажатие уже ничего не отправит.
     waiting_for_broadcast_text = State()
+    broadcast_preview = State()
+    broadcast_sending = State()
     waiting_for_dm_text = State()
     waiting_for_grant_days = State()
     waiting_for_grant_coins = State()
