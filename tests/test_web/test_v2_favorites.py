@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.db.models import User
 from app.db.models_program import Complex, Program, ProgramStructureType, UserFavorite
-from app.db.repositories.users import UserRepository
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_delete, v2_get, v2_post, v2_put
 
 
@@ -57,7 +57,7 @@ async def test_delete_is_idempotent(session, user: User):
 
 
 async def test_other_users_workout_and_missing_targets_are_404(session, user: User):
-    other = await UserRepository(session).create(telegram_id=2002, username="other")
+    other = await create_premium_user(session, telegram_id=2002, username="other")
     foreign_id = await _workout(session, other)
     assert (await v2_put(session, user.telegram_id, f"/api/v2/favorites/workout/{foreign_id}")).status_code == 404
     assert (await v2_put(session, user.telegram_id, "/api/v2/favorites/workout/999999")).status_code == 404
@@ -81,7 +81,7 @@ async def test_catalogue_system_workout_is_favoritable_but_system_with_owner_is_
 
 
 async def test_favorites_are_per_user(session, user: User):
-    other = await UserRepository(session).create(telegram_id=2002, username="other")
+    other = await create_premium_user(session, telegram_id=2002, username="other")
     program_id = await _program(session)
     await v2_put(session, user.telegram_id, f"/api/v2/favorites/program/{program_id}")
     assert await _list(session, other) == []

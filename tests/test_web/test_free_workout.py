@@ -18,7 +18,6 @@ from httpx import ASGITransport, AsyncClient
 
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.equipment_items import EquipmentItemRepository
-from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
@@ -26,6 +25,7 @@ from app.domain.session import BlockLog
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
 from app.web.main import app
+from tests.test_web._premium import create_premium_user
 
 
 @dataclass
@@ -82,7 +82,7 @@ async def _make_user_with_baseline(session, *, telegram_id: int) -> int:
     структурированной тренировки. Без SubscriptionService.start_trial
     намеренно — свободные подтягивания не за паивеллом (см. докстринг
     модуля)."""
-    user = await UserRepository(session).create(telegram_id=telegram_id, username="tester")
+    user = await create_premium_user(session, telegram_id=telegram_id, username="tester")
     baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=10)
     await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
     return user.id
@@ -97,7 +97,7 @@ async def test_free_workout_plan_for_unknown_telegram_id_is_not_onboarded(sessio
 
 
 async def test_free_workout_plan_without_baseline_is_no_active_set(session):
-    user = await UserRepository(session).create(telegram_id=56002, username="nobaseline")
+    user = await create_premium_user(session, telegram_id=56002, username="nobaseline")
     body = await _get_free_workout_plan(session, telegram_id=user.telegram_id)
     assert body["status"] == "no_active_set"
 

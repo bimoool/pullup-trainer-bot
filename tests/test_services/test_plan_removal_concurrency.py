@@ -29,6 +29,7 @@ from app.domain.multi_program import MetricType
 from app.services.live_session import LiveSessionService
 from app.services.plan_convergence import PlanConvergenceService
 from app.services.plan_removal import CreditedPlanItemError, PlanRemovalService
+from tests.test_web._premium import grant_premium
 
 MON = date(2026, 10, 5)
 HOLD = 0.3  # держим транзакцию открытой — окно гонки
@@ -45,6 +46,7 @@ async def _own_session(dsn: str):
 
 
 async def _seed(session, user: User, *, weeks: list[int], until_week: int = 1) -> tuple[int, int]:
+    await grant_premium(session, user)  # свой план — Premium (решение 2026-10-17); тест — про гонки, не подписку
     user.timezone = "UTC"
     plan = TrainingPlan(user_id=user.id, created_at=datetime(2026, 10, 5, 8, tzinfo=UTC))
     session.add(plan)

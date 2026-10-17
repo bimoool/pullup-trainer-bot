@@ -9,14 +9,14 @@ from sqlalchemy import func, select
 
 from app.db.models import User
 from app.db.models_program import Exercise
-from app.db.repositories.users import UserRepository
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_post
 
 PROTOCOL = {"type": "reps_sets", "prescription": {"source": "static", "sets": 3, "reps": 10}, "rest_seconds": 90}
 
 
 async def _second_user(session, telegram_id: int) -> User:
-    return await UserRepository(session).create(telegram_id=telegram_id, username="user_b")
+    return await create_premium_user(session, telegram_id=telegram_id, username="user_b")
 
 
 async def _workout(session, telegram_id: int, title: str) -> int:

@@ -179,6 +179,14 @@ async def _require_user(session: AsyncSession, init_data: InitData):
     return user
 
 
+def _require_premium_feature(user) -> None:
+    """Решение владельца 2026-10-17: Premium-функция вне бесплатной программы «Подтягивания» (свой контент,
+    добавление в план, доп. тренировка, «Повторить») без действующей подписки — 402 subscription_required.
+    Решение — ProgramAccessService (единый путь); вызывается ДО любой записи — при отказе ничего не создаётся."""
+    if not ProgramAccessService.premium_feature_allowed(user, now=datetime.now(UTC)):
+        raise _subscription_required()
+
+
 def _program_response(program: Program, strategy_type_value: str | None) -> ProgramResponse:
     return ProgramResponse(
         id=program.id, name=program.name, goal=program.goal,
@@ -619,6 +627,7 @@ async def create_exercise(
     принимает эти значения снаружи). rename/delete/update — явно вне
     scope этой волны (см. issue #188, Phase C1)."""
     user = await _require_user(session, init_data)
+    _require_premium_feature(user)
     exercise = await ProgramRepository(session).create_user_exercise(name=body.name, owner_user_id=user.id)
     await session.commit()
     return (await exercise_responses(session, [exercise]))[0]
@@ -674,6 +683,7 @@ async def create_workout(
     owner_user_id=текущий пользователь — system Workout через этот путь
     создать нельзя (create_complex не получает эти значения снаружи)."""
     user = await _require_user(session, init_data)
+    _require_premium_feature(user)
     workout = await ProgramRepository(session).create_complex(
         name=body.title, source_type="user", owner_user_id=user.id,
     )
@@ -831,6 +841,7 @@ async def add_workout_item(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    _require_premium_feature(user)
     exercise = await program_repo.get_visible_exercise_for_user(body.exercise_id, user.id)
     if exercise is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Exercise not found")
@@ -861,6 +872,7 @@ async def update_workout_item(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    _require_premium_feature(user)
     item = await program_repo.get_complex_item(item_id)
     if item is None or item.complex_id != workout_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
@@ -899,6 +911,7 @@ async def delete_workout_item(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    _require_premium_feature(user)
     item = await program_repo.get_complex_item(item_id)
     if item is None or item.complex_id != workout_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
@@ -922,6 +935,7 @@ async def move_workout_item(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    _require_premium_feature(user)
     item = await program_repo.get_complex_item(item_id)
     if item is None or item.complex_id != workout_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout item not found")
@@ -948,6 +962,7 @@ async def update_workout_title(
     workout = await ProgramRepository(session).get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    _require_premium_feature(user)
     await ProgramRepository(session).update_complex_title(workout_id, body.title)
     await _sync_definition_head(session, workout_id)
     await session.commit()
@@ -993,6 +1008,7 @@ async def duplicate_workout(
     workout = await program_repo.get_editable_workout_for_user(workout_id, user.id)
     if workout is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Workout not found")
+    _require_premium_feature(user)
     name = f"{workout.name} (копия)"[:255]
     copy = await program_repo.duplicate_workout(workout, owner_user_id=user.id, name=name)
     await _sync_definition_head(session, copy.id)
@@ -1110,6 +1126,12 @@ async def create_program_inclusion(
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> ProgramInclusionResponse:
     user = await _require_user(session, init_data)
+    # Решение 2026-10-17: «другие программы» — Premium, в том числе добавление в план; бесплатная «Подтягивания» —
+    # всегда. Проверка до создания инклюзии (при отказе план не меняется). Неизвестная программа — 404 ниже.
+    if await ProgramRepository(session).get_by_id(body.program_id) is not None and not await ProgramAccessService(
+        session,
+    ).program_allowed(user, body.program_id, now=datetime.now(UTC)):
+        raise _subscription_required()
     try:
         inclusion = await _create_inclusion(session, user.id, body)
     except UnknownProgramVersionError as exc:
@@ -1166,6 +1188,7 @@ async def create_plan_week(
     """issue #275 — идемпотентно создаёт неделю плана вперёд (текущая .. +4).
     Вне окна — 422. Программные PlanItem сюда не материализуются."""
     user = await _require_user(session, init_data)
+    _require_premium_feature(user)
     plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
     week = await PlanWeekService(session).ensure_plannable_week(
         training_plan_id=plan.id, week_number=body.week_number, today=_plan_today(user),
@@ -1186,6 +1209,7 @@ async def copy_plan_week_to_next(
     пропускаются, программные строки не копируются). Чужая неделя — 404;
     следующая неделя вне окна планирования — 422."""
     user = await _require_user(session, init_data)
+    _require_premium_feature(user)
     plans = TrainingPlanRepository(session)
     source = await plans.get_plan_week_for_user(plan_week_id, user.id)
     if source is None:
@@ -1229,6 +1253,7 @@ async def create_plan_item(
     инклюзии заводит только POST /program-inclusions (копирование
     ProgramItem -> PlanItem), не этот эндпоинт."""
     user = await _require_user(session, init_data)
+    _require_premium_feature(user)
     plans = TrainingPlanRepository(session)
     programs = ProgramRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
@@ -1620,6 +1645,8 @@ async def clone_session(
     """#262 — «Повторить»: новая завершённая сессия (source=backdated) с теми же
     блоками/целями/фактом. Те же 404/409, что у правки; без прогрессии."""
     user = await _require_user(session, init_data)
+    # Решение 2026-10-17: копия — новая доп. тренировка без кредита плана и инклюзии (D10) — Premium.
+    _require_premium_feature(user)
     outcome = await SessionEditingService(session).clone(
         session_id, user.id, resolve_timezone(user.timezone), performed_on=body.performed_on, now=datetime.now(UTC),
     )
@@ -1647,11 +1674,21 @@ async def create_session(
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> SessionResponse:
     user = await _require_user(session, init_data)
-    if (
-        body.source == "plan" and body.program_inclusion_id is not None
-        and not await ProgramAccessService(session).inclusions_training_allowed(
-            user, [body.program_inclusion_id], now=datetime.now(UTC),
-        )
+    # Решения 2026-10-07 / 2026-10-17: бесплатна только запись занятия бесплатной программы (source=plan +
+    # инклюзия «Подтягиваний»); всё остальное — ручная запись в Журнал, свободная активность, тренировка вне курса,
+    # source=elective с произвольными блоками, платная программа — Premium (факультатив программы пишется
+    # бесплатно своим путём: POST /api/elective/submit, бот). Повтор уже записанного (тот же client_session_id) —
+    # не новая запись: идемпотентный ответ не гейтится (запись, сделанная до истечения, досылается безопасно).
+    inclusion_part = body.program_inclusion_id if body.source == "plan" else None
+    already_recorded = body.client_session_id is not None and await TrainingSessionRepository(
+        session,
+    ).get_by_client_session_id(user.id, body.client_session_id) is not None
+    # Запись «Подтягиваний» без подписки — только с предписанным снимком инклюзии содержимым (чужой блок = доп.).
+    if not already_recorded and not await ProgramAccessService(session).plan_record_allowed(
+        user, inclusion_part, now=datetime.now(UTC),
+        exercise_ids=[b.exercise_id for b in body.blocks if b.exercise_id is not None],
+        complex_ids=[b.complex_id for b in body.blocks if b.complex_id is not None],
+        workout_definition_id=body.workout_definition_id,
     ):
         raise _subscription_required()
     # #263: Журнал пишет прошедшие события — будущая дата отклоняется (небольшой
@@ -1738,12 +1775,15 @@ async def create_session(
 
 
 def _subscription_required() -> HTTPException:
-    """#300 / D6: тренировка платной (Premium) программы без действующей подписки — 402 с кодом, который Mini App
-    переводит на экран подписки. Бесплатная программа («Подтягивания», ProgramAccessService) и свободные/свои
-    пути этим кодом не отвечают."""
+    """#300 / D6 + решение 2026-10-17: Premium-функция (платная программа, доп./своя тренировка, экспорт, свой
+    контент) без действующей подписки — 402 с кодом, который Mini App переводит на экран подписки, не теряя
+    введённого. Бесплатная программа «Подтягивания» (ProgramAccessService) этим кодом не отвечает."""
     return HTTPException(
         status.HTTP_402_PAYMENT_REQUIRED,
-        {"code": "subscription_required", "message": "Для тренировок по курсу нужна действующая подписка."},
+        {
+            "code": "subscription_required",
+            "message": "Эта функция доступна с подпиской. Программа «Подтягивания» остаётся бесплатной.",
+        },
     )
 
 

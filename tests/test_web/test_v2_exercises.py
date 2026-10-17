@@ -25,6 +25,7 @@ from app.db.models import User
 from app.db.models_program import Exercise
 from app.domain.multi_program import MetricType
 from scripts.seed_exercise_library import seed_exercise_library
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_post
 
 
@@ -151,10 +152,7 @@ async def test_internal_step_role_exercises_are_excluded_from_library(session, u
 async def _create_second_user(session, telegram_id: int) -> User:
     """Второй, независимый пользователь для isolation-тестов — user из
     conftest.py фикстуры один, для User A/User B нужен ещё один."""
-    from app.db.repositories.users import UserRepository
-
-    users = UserRepository(session)
-    second_user = await users.create(telegram_id=telegram_id, username="second_user")
+    second_user = await create_premium_user(session, telegram_id=telegram_id, username="second_user")
     return second_user
 
 

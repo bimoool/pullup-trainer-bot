@@ -22,6 +22,7 @@ from app.services.history_export import (
 )
 from app.web.auth import get_validated_init_data
 from app.web.db import get_session
+from app.web.routes_v2 import _require_premium_feature
 
 router_v2_export = APIRouter(prefix="/api/v2/export")
 
@@ -38,6 +39,8 @@ async def create_export_link(
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    # Решение владельца 2026-10-17 (уточнение): экспорт истории — по подписке; просмотр истории — бесплатно.
+    _require_premium_feature(user)
     token = sign_link(settings.bot_token, user.id)
     return ExportLinkResponse(url=f"/api/v2/export/sessions.csv?token={token}", expires_in=LINK_TTL_SECONDS)
 
@@ -70,6 +73,8 @@ async def export_sessions_csv(
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> StreamingResponse:
     user = await _resolve_user(session, token, init_data)
+    # Тот же гейт и у скачивания: ссылка, выпущенная при подписке, после её истечения файл не отдаёт (прямой запрос).
+    _require_premium_feature(user)
     rows = await build_rows(session, user_id=user.id, timezone=user.timezone)
     filename = f"training-history-{datetime.now(UTC).date().isoformat()}.csv"
     return StreamingResponse(

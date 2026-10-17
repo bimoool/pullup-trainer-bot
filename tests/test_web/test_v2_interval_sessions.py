@@ -22,6 +22,7 @@ from app.db.models_program import (
 )
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_post
 
 
@@ -63,7 +64,7 @@ async def _make_interval_plan_item(session: AsyncSession, user: User, *, title: 
 async def test_concrete_api_json_and_persisted_snapshot_result(session: AsyncSession):
     """Gate 6 — реальный serialized API contract, не описание словами."""
     users = UserRepository(session)
-    user = await users.create(telegram_id=910001, username="api_proof")
+    user = await create_premium_user(session, telegram_id=910001, username="api_proof")
     await users.complete_onboarding(user.id, datetime.now(UTC))
     plan_item_id = await _make_interval_plan_item(session, user)
 
@@ -102,7 +103,7 @@ async def test_http_golden_journey_full_interval_lifecycle(session: AsyncSession
     deadline → active возвращает None → sessions?status=completed
     показывает завершённую с полным result."""
     users = UserRepository(session)
-    user = await users.create(telegram_id=910002, username="golden_journey")
+    user = await create_premium_user(session, telegram_id=910002, username="golden_journey")
     await users.complete_onboarding(user.id, datetime.now(UTC))
     plan_item_id = await _make_interval_plan_item(session, user)
 
@@ -168,9 +169,9 @@ async def test_list_sessions_user_isolation(session: AsyncSession):
     вызывает GET /sessions?status=completed: финализируется ТОЛЬКО его
     сессия, User B не тронут, в response нет данных User B."""
     users = UserRepository(session)
-    user_a = await users.create(telegram_id=910003, username="isolation_a")
+    user_a = await create_premium_user(session, telegram_id=910003, username="isolation_a")
     await users.complete_onboarding(user_a.id, datetime.now(UTC))
-    user_b = await users.create(telegram_id=910004, username="isolation_b")
+    user_b = await create_premium_user(session, telegram_id=910004, username="isolation_b")
     await users.complete_onboarding(user_b.id, datetime.now(UTC))
 
     plan_item_a = await _make_interval_plan_item(session, user_a, title="Workout A")

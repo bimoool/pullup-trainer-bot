@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 
 from app.db.models import User
 from app.db.models_program import SessionStatus, TrainingSession
-from app.db.repositories.users import UserRepository
 from app.domain.multi_program import SessionSource
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_delete, v2_get, v2_post
 
 
@@ -42,7 +42,7 @@ async def test_workout_id_is_set_for_own_live_workout_only(session, user: User):
 
 
 async def test_workout_id_hidden_for_foreign_and_deleted_workouts(session, user: User):
-    other = await UserRepository(session).create(telegram_id=777_281, username="other281")
+    other = await create_premium_user(session, telegram_id=777_281, username="other281")
     foreign_workout = await _workout(session, other)
     foreign_ref = await _completed(session, user, foreign_workout)
     deleted_workout = await _workout(session, user, "Удалю")

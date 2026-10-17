@@ -28,7 +28,6 @@ from app.db.repositories.training_sessions import (
     SetLogInput,
     TrainingSessionRepository,
 )
-from app.db.repositories.users import UserRepository
 from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
@@ -42,6 +41,7 @@ from scripts.backfill_multi_program import (
     _create_training_session_for_workout,
     _get_or_create_exercise,
 )
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_delete, v2_get, v2_patch
 
 BASE = datetime(2026, 10, 2, 9, 0, tzinfo=UTC)
@@ -49,7 +49,7 @@ FROM_TO = "date_from=2026-10-01&date_to=2026-10-31"
 
 
 async def _legacy_user(session: AsyncSession, telegram_id: int):
-    user = await UserRepository(session).create(telegram_id=telegram_id, username=f"u{telegram_id}")
+    user = await create_premium_user(session, telegram_id=telegram_id, username=f"u{telegram_id}")
     baseline = await BaselineRepository(session).create(user_id=user.id, performed_at=BASE - timedelta(days=30), reps=10)
     workout_set = await WorkoutSetRepository(session).create(user_id=user.id, started_from_baseline_id=baseline.id)
     return user, workout_set

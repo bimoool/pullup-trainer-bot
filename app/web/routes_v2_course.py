@@ -129,6 +129,16 @@ async def _require_course(session: AsyncSession, init_data: InitData, inclusion_
     return user, inclusion
 
 
+async def _require_course_access(session: AsyncSession, user, inclusion) -> None:
+    """Решения 2026-10-07 / 2026-10-17: запись входов/теста курса — по тому же единому правилу, что старт: программа
+    «Подтягивания» (V5.6) бесплатна, платная — только с подпиской (402). Чтение состояния курса не гейтится."""
+    from app.services.program_access import ProgramAccessService
+    from app.web.routes_v2 import _subscription_required
+
+    if not await ProgramAccessService(session).inclusions_training_allowed(user, [inclusion.id], now=datetime.now(UTC)):
+        raise _subscription_required()
+
+
 def _too_soon() -> HTTPException:
     return HTTPException(
         status.HTTP_409_CONFLICT,
@@ -176,7 +186,8 @@ async def put_course_inputs(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CourseStateResponse:
-    _user, inclusion = await _require_course(session, init_data, inclusion_id)
+    user, inclusion = await _require_course(session, init_data, inclusion_id)
+    await _require_course_access(session, user, inclusion)
     try:
         state = await update_inputs(
             session, inclusion, body.to_domain(), clear_recovery=body.clear_recovery_check,
@@ -196,6 +207,7 @@ async def one_rep_max_next_set(
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> OneRmNextSetResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
+    await _require_course_access(session, user, inclusion)
     state = v5_state(inclusion)
     _require_one_rep_max_eligible(state)
     # «Отдельный свежий день, ≥ 48 ч после тяжёлой тяговой работы» (§10) — на КАЖДОМ шаге по серверному
@@ -225,6 +237,7 @@ async def record_course_one_rep_max(
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CourseStateResponse:
     user, inclusion = await _require_course(session, init_data, inclusion_id)
+    await _require_course_access(session, user, inclusion)
     _require_one_rep_max_eligible(v5_state(inclusion))
     try:
         state, result = await record_one_rep_max(

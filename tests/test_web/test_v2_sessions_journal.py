@@ -15,8 +15,8 @@ import uuid
 from app.db.models import User
 from app.db.models_program import Exercise, PlanItem
 from app.db.repositories.training_plans import TrainingPlanRepository
-from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_post
 from tests.test_web.test_v2_live_session import _setup_step_session
 
@@ -159,7 +159,7 @@ async def test_session_without_session_plan_item_has_null_title(session, user: U
 
 
 async def test_journal_never_leaks_foreign_users_session(session, user: User):
-    other = await UserRepository(session).create(telegram_id=user.telegram_id + 1, username="other4c")
+    other = await create_premium_user(session, telegram_id=user.telegram_id + 1, username="other4c")
     plank_id = await _make_manual_plan_item(session, other, name="Чужая планка", metric_type=MetricType.TIME)
     plan = await TrainingPlanRepository(session).get_for_user(other.id)
     items = await TrainingPlanRepository(session).list_plan_items(plan.id)

@@ -904,15 +904,15 @@ class FreeWorkoutPlanResponse(BaseModel):
     здесь не от чего (эти числа для основной программы, свободный вход в
     неё не входит).
 
-    Нет статуса "no_access" — свободные подтягивания не за паивеллом, ни в
-    боте (handle_free_workout_start не проверяет подписку), ни здесь, тот
-    же принцип, что у ElectivePlanResponse. "ready" — только workout_set_id
-    (нужен для последующего submit) и band_items (личный список резин для
-    выбора снаряда)."""
+    Решение 2026-10-17: свободные подтягивания — доп. тренировка вне программы, Premium. Форма остаётся видимой
+    (status не меняется), subscription_required=True — подсказка экрану показать объяснение и путь к подписке
+    сразу; истина — 402 на submit. "ready" — workout_set_id (нужен для последующего submit) и band_items (личный
+    список резин для выбора снаряда)."""
 
     status: str
     workout_set_id: int | None = None
     band_items: list[BandItemInfo] = Field(default_factory=list)
+    subscription_required: bool = False
 
 
 class FreeWorkoutSubmitRequest(BaseModel):
@@ -1011,9 +1011,9 @@ class ElectivePlanResponse(BaseModel):
 
     status: "not_onboarded"/"needs_first_workout" — форма не показывается,
     тот же принцип, что и у остальных *PlanResponse (см. WorkoutPlanResponse).
-    Нет статуса "no_access" — факультатив не за паивеллом, ни в боте
-    (handle_electives_start не проверяет подписку), ни здесь. "ready" —
-    остальные поля заполнены.
+    Нет статуса "no_access" — факультатив, предусмотренный программой «Подтягивания», бесплатен (решение
+    владельца 2026-10-17, уточнение), ни в боте (handle_electives_start), ни здесь. "ready" — остальные поля
+    заполнены.
 
     elective_allowed=False — недельный лимит (elective_limit,
     entries_this_week) уже исчерпан — фронтенд обязан показать явный текст

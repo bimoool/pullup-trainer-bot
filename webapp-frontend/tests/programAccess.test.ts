@@ -19,7 +19,11 @@ const plan = {
 
 test("free program rows do not need Premium (Подтягивания free forever)", () => {
   assert.equal(courseRequiresPremium(plan, [10]), false);
-  assert.equal(courseRequiresPremium(plan, [10, 40]), false);
+});
+
+test("2026-10-17: a row without a program is an extra workout — Premium, also mixed with the free course", () => {
+  assert.equal(courseRequiresPremium(plan, [40]), true);
+  assert.equal(courseRequiresPremium(plan, [10, 40]), true);
 });
 
 test("premium program rows, or a missing access_level, need Premium", () => {
