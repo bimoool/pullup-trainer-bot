@@ -8,13 +8,16 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import User
+from app.db.models_program import ProgramInclusion
 from app.db.repositories.programs import ProgramRepository
 from app.domain.program_access import (
     EXTRA_TRAINING_ACCESS_LEVEL,
     LEGACY_PULLUP_CASCADE_ACCESS_LEVEL,
+    ProgramAccessLevel,
     premium_feature_allowed,
     program_training_allowed,
     programs_training_allowed,
+    record_within_free_inclusion,
 )
 from app.services.subscription import SubscriptionService
 
@@ -30,6 +33,7 @@ class SubscriptionRequiredError(Exception):
 
 class ProgramAccessService:
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._programs = ProgramRepository(session)
 
     async def inclusions_training_allowed(self, user: User, inclusion_ids: list[int], *, now: datetime) -> bool:
@@ -60,6 +64,26 @@ class ProgramAccessService:
     ) -> None:
         if not await self.training_parts_allowed(user, inclusion_ids, now=now):
             raise SubscriptionRequiredError
+
+    async def plan_record_allowed(
+        self, user: User, inclusion_id: int | None, *, exercise_ids: list[int], complex_ids: list[int],
+        workout_definition_id: int | None, now: datetime,
+    ) -> bool:
+        """POST /api/v2/sessions source=plan: запись занятия программы. С подпиской — как раньше; без неё — только
+        бесплатная программа И только её предписанное содержимое (снимок инклюзии). Чужое упражнение/тренировка в
+        записи «Подтягиваний» — доп. часть, Premium (иначе прямой запрос записал бы любую тренировку бесплатно)."""
+        if not await self.training_parts_allowed(user, [inclusion_id], now=now):
+            return False
+        if SubscriptionService.is_entitled(user, now=now) or inclusion_id is None:
+            return True
+        inclusion = await self._session.get(ProgramInclusion, inclusion_id)
+        levels = await self._programs.access_levels_for_inclusions([inclusion_id])
+        if inclusion is None or levels.get(inclusion_id) != ProgramAccessLevel.FREE.value:
+            return inclusion is None  # несуществующая — 404 у вызывающего, не 402
+        return record_within_free_inclusion(
+            inclusion.snapshot, exercise_ids=exercise_ids, complex_ids=complex_ids,
+            workout_definition_id=workout_definition_id,
+        )
 
     async def program_allowed(self, user: User, program_id: int, *, now: datetime) -> bool:
         """Добавить программу в план / тренироваться по ней (решение 2026-10-17: «другие программы» — Premium).

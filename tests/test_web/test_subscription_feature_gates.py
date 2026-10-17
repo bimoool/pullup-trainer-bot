@@ -411,3 +411,61 @@ async def test_never_subscribed_user_goes_through_free_pullups_without_any_402(s
     assert (await v2_get(session, tg, "/api/profile")).status_code == 200
     subscription = await v2_get(session, tg, "/api/subscription")
     assert subscription.status_code == 200 and subscription.json()["has_access"] is False
+
+
+# --- 5. Запись «Подтягиваний» (source=plan) не протаскивает чужие упражнения без подписки -------------------
+
+
+def _plan_record(inclusion_id: int, blocks: list[dict], **extra) -> dict:
+    return {
+        "source": "plan", "program_inclusion_id": inclusion_id,
+        "performed_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(), "blocks": blocks, **extra,
+    }
+
+
+def _block(exercise_id: int, value: str = "8") -> dict:
+    return {"exercise_id": exercise_id, "sets": [{"set_number": 1, "metric_type": "reps", "value": value, "unit": "reps"}]}
+
+
+async def test_free_course_record_cannot_smuggle_foreign_exercises_without_subscription(session, user: User):
+    free = await _free_program(session)
+    inclusion = (await v2_post(
+        session, user.telegram_id, "/api/v2/program-inclusions",
+        {"program_id": free.id, "program_version": "pullups_legacy_step"},
+    )).json()
+    roles = {e["role"]: e["exercise_id"] for e in inclusion["snapshot"]["exercises"]}
+    foreign = await _system_exercise(session)
+    workout, _ = await _own_workout(session, user, foreign)
+    user = await _no_subscription(session, user)
+    tg = user.telegram_id
+    before = await _count(session, TrainingSession, user_id=user.id)
+
+    _assert_402(await v2_post(session, tg, "/api/v2/sessions", _plan_record(inclusion["id"], [_block(foreign.id)])))
+    _assert_402(await v2_post(session, tg, "/api/v2/sessions", _plan_record(
+        inclusion["id"], [_block(roles["block_a"]), _block(foreign.id)],
+    )))
+    _assert_402(await v2_post(session, tg, "/api/v2/sessions", _plan_record(
+        inclusion["id"], [_block(roles["block_a"]), {**_block(foreign.id), "exercise_id": None, "complex_id": workout.id}],
+    )))
+    assert await _count(session, TrainingSession, user_id=user.id) == before
+
+    # чистое содержимое курса — по-прежнему бесплатно
+    pure = await v2_post(session, tg, "/api/v2/sessions", _plan_record(
+        inclusion["id"], [_block(roles["block_a"], "11"), _block(roles["block_b"], "4")],
+    ))
+    assert pure.status_code == 200, pure.text
+    assert await _count(session, TrainingSession, user_id=user.id) == before + 1
+
+
+async def test_subscribed_user_plan_record_with_extra_exercise_is_unchanged(session, user: User):
+    free = await _free_program(session)
+    inclusion = (await v2_post(
+        session, user.telegram_id, "/api/v2/program-inclusions",
+        {"program_id": free.id, "program_version": "pullups_legacy_step"},
+    )).json()
+    roles = {e["role"]: e["exercise_id"] for e in inclusion["snapshot"]["exercises"]}
+    foreign = await _system_exercise(session)
+    response = await v2_post(session, user.telegram_id, "/api/v2/sessions", _plan_record(
+        inclusion["id"], [_block(roles["block_a"]), _block(foreign.id)],
+    ))
+    assert response.status_code == 200, response.text

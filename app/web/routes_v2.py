@@ -1682,8 +1682,12 @@ async def create_session(
     already_recorded = body.client_session_id is not None and await TrainingSessionRepository(
         session,
     ).get_by_client_session_id(user.id, body.client_session_id) is not None
-    if not already_recorded and not await ProgramAccessService(session).training_parts_allowed(
-        user, [inclusion_part], now=datetime.now(UTC),
+    # Запись «Подтягиваний» без подписки — только с предписанным снимком инклюзии содержимым (чужой блок = доп.).
+    if not already_recorded and not await ProgramAccessService(session).plan_record_allowed(
+        user, inclusion_part, now=datetime.now(UTC),
+        exercise_ids=[b.exercise_id for b in body.blocks if b.exercise_id is not None],
+        complex_ids=[b.complex_id for b in body.blocks if b.complex_id is not None],
+        workout_definition_id=body.workout_definition_id,
     ):
         raise _subscription_required()
     # #263: Журнал пишет прошедшие события — будущая дата отклоняется (небольшой

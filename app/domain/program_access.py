@@ -61,3 +61,39 @@ def premium_feature_allowed(*, entitled: bool) -> bool:
     """Premium-функция вне бесплатной программы (факультатив, доп. тренировка, свой контент, добавление в план) —
     то же решение, что для части тренировки уровня EXTRA_TRAINING_ACCESS_LEVEL."""
     return program_training_allowed(EXTRA_TRAINING_ACCESS_LEVEL, entitled=entitled)
+
+
+def _ids(values) -> frozenset[int]:
+    return frozenset(int(value) for value in values if isinstance(value, int) and not isinstance(value, bool))
+
+
+def free_inclusion_content(snapshot: dict | None) -> tuple[frozenset[int], frozenset[int]]:
+    """(exercise_ids, complex_ids) — что предписывает ЗАМОРОЖЕННЫЙ снимок инклюзии: роли курса (`exercises`),
+    строки программы (`program_items`) и участники/тренировки слотов (`slots`). Только это — «занятие бесплатной
+    программы»; всё прочее в той же записи — доп. часть (решение 2026-10-17)."""
+    snapshot = snapshot or {}
+    exercises = [item.get("exercise_id") for item in snapshot.get("exercises") or [] if isinstance(item, dict)]
+    complexes: list = []
+    for item in snapshot.get("program_items") or []:
+        if isinstance(item, dict):
+            exercises.append(item.get("exercise_id"))
+            complexes.append(item.get("complex_id"))
+    for slot in snapshot.get("slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        complexes.append(slot.get("workout_definition_id"))
+        for member in slot.get("members") or []:
+            if isinstance(member, dict):
+                exercises.append(member.get("exercise_id"))
+                complexes.append(member.get("complex_id"))
+    return _ids(exercises), _ids(complexes)
+
+
+def record_within_free_inclusion(
+    snapshot: dict | None, *, exercise_ids: list[int], complex_ids: list[int], workout_definition_id: int | None,
+) -> bool:
+    """Запись сессии «Подтягиваний» без подписки бесплатна, только если КАЖДЫЙ блок — из предписанного снимком
+    инклюзии (смешанная запись с чужим упражнением/тренировкой = доп. часть = Premium, как смешанный старт)."""
+    allowed_exercises, allowed_complexes = free_inclusion_content(snapshot)
+    wanted_complexes = [*complex_ids, *([workout_definition_id] if workout_definition_id is not None else [])]
+    return set(exercise_ids) <= allowed_exercises and set(wanted_complexes) <= allowed_complexes

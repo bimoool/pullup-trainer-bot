@@ -45,3 +45,19 @@ def test_extra_training_and_premium_features_need_entitlement_2026_10_17():
     assert premium_feature_allowed(entitled=False) is False
     assert programs_training_allowed(["free", EXTRA_TRAINING_ACCESS_LEVEL], entitled=False) is False
     assert programs_training_allowed(["free", EXTRA_TRAINING_ACCESS_LEVEL], entitled=True) is True
+
+
+def test_record_within_free_inclusion_only_covers_the_frozen_snapshot():
+    from app.domain.program_access import record_within_free_inclusion
+
+    snapshot = {
+        "exercises": [{"role": "block_a", "exercise_id": 1}, {"role": "block_b", "exercise_id": 2}],
+        "program_items": [{"exercise_id": 3, "complex_id": None}],
+        "slots": [{"workout_definition_id": 40, "members": [{"exercise_id": 4, "complex_id": 41}]}],
+    }
+    ok = record_within_free_inclusion
+    assert ok(snapshot, exercise_ids=[1, 2, 3, 4], complex_ids=[41], workout_definition_id=40)
+    assert not ok(snapshot, exercise_ids=[1, 99], complex_ids=[], workout_definition_id=None)
+    assert not ok(snapshot, exercise_ids=[1], complex_ids=[77], workout_definition_id=None)
+    assert not ok(snapshot, exercise_ids=[1], complex_ids=[], workout_definition_id=77)
+    assert not ok(None, exercise_ids=[1], complex_ids=[], workout_definition_id=None)
