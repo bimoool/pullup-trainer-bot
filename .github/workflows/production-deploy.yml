@@ -1,0 +1,120 @@
+name: Production deploy (guarded)
+
+# Постоянный ручной путь выката production. Вызывает ТОЛЬКО проверенный guarded-скрипт
+# (/root/bin/deploy-production-guarded-run.sh: бэкапы до и при остановке, миграция, backfill, инварианты, healthcheck,
+# fail-safe и точные команды отката R1/R3) через отдельный SSH-ключ с forced command deploy/prod-guarded-dispatch.sh.
+# Старый deploy.yml (без бэкапа и переноса данных) остаётся заблокированным и сюда не вызывается.
+# Настройка доступа — один раз: deploy/install-prod-actions-access.sh (docs/PRODUCTION_RUNBOOK.md §9).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Точный 40-символьный SHA (не ветка). Должен содержать текущий main и иметь зелёный CI."
+        required: true
+      mode:
+        description: "preflight — только чтение. apply — выкат."
+        type: choice
+        options: ["preflight", "apply"]
+        default: "preflight"
+      confirm:
+        description: "Для apply: PRODUCTION-APPLY-<первые 12 символов sha>. Для preflight — пусто."
+        required: false
+        default: ""
+      from_rev:
+        description: "Ожидаемая текущая ревизия Alembic прода (guarded-скрипт сверит с БД)"
+        required: true
+        default: "b5d8e1f3a6c9"
+      to_rev:
+        description: "Единственный Alembic head выкатываемого SHA (guarded-скрипт сверит с образом)"
+        required: true
+        default: "b5d8e1f3a6c9"
+
+permissions:
+  contents: read
+  checks: read
+
+# Один production-запуск за раз (и выкат, и откат); очередной ждёт, текущий не отменяется.
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 120
+    steps:
+      - name: Validate inputs
+        env:
+          SHA: ${{ inputs.sha }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          FROM_REV: ${{ inputs.from_rev }}
+          TO_REV: ${{ inputs.to_rev }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be 40 lowercase hex chars"; exit 1; }
+          [[ "$MODE" =~ ^(preflight|apply)$ ]] || { echo "::error::bad mode"; exit 1; }
+          [[ "$FROM_REV" =~ ^[0-9a-f]{12}$ && "$TO_REV" =~ ^[0-9a-f]{12}$ ]] || { echo "::error::revisions must be 12 hex"; exit 1; }
+          if [ "$MODE" = "apply" ]; then
+            [ "$CONFIRM" = "PRODUCTION-APPLY-${SHA:0:12}" ] || { echo "::error::apply requires confirm = PRODUCTION-APPLY-${SHA:0:12}"; exit 1; }
+          else
+            [ -z "$CONFIRM" ] || { echo "::error::confirm is accepted only with apply"; exit 1; }
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SHA exists and contains current main
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          git cat-file -e "${SHA}^{commit}" || { echo "::error::$SHA not found in the repository"; exit 1; }
+          git fetch -q origin main
+          git merge-base --is-ancestor origin/main "$SHA" \
+            || { echo "::error::$SHA does not contain origin/main — deploying it would drop code that is on main"; exit 1; }
+          for f in deploy/deploy-production-guarded-run.sh deploy/rollback-production-guarded.sh deploy/prod-guarded-dispatch.sh; do
+            git diff --quiet "$SHA" HEAD -- "$f" || echo "::warning::$f differs between $SHA and this workflow's ref; the server runs the copy installed in /root/bin"
+          done
+
+      - name: CI is green on exactly this SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name, .status, (.conclusion // "none")] | @tsv' > runs.tsv
+          cat runs.tsv
+          for required in pytest ruff "frontend build"; do
+            awk -F'\t' -v n="$required" '$1==n && $2=="completed" && $3=="success" {ok=1} END {exit !ok}' runs.tsv \
+              || { echo "::error::required check '$required' is not green on $SHA"; exit 1; }
+          done
+          bad="$(awk -F'\t' '$2!="completed" || ($3!="success" && $3!="skipped" && $3!="neutral")' runs.tsv)"
+          [ -z "$bad" ] || { echo "::error::checks on $SHA are not all green:"; echo "$bad"; exit 1; }
+
+      - name: Guarded ${{ inputs.mode }} on production
+        env:
+          KEY: ${{ secrets.PROD_GUARDED_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          SHA: ${{ inputs.sha }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          FROM_REV: ${{ inputs.from_rev }}
+          TO_REV: ${{ inputs.to_rev }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::secret PROD_GUARDED_SSH_KEY is not set (docs/PRODUCTION_RUNBOOK.md §9)"; exit 1; }
+          [ -n "$HOST" ] || { echo "::error::secret VPS_HOST is not set"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/prod_guarded && chmod 600 ~/.ssh/prod_guarded
+          ssh-keyscan -T 20 -t ed25519 "$HOST" > ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "::error::cannot read the host key of VPS_HOST"; exit 1; }
+          cmd="prod-guarded $SHA $MODE $FROM_REV $TO_REV"
+          [ "$MODE" = "apply" ] && cmd="$cmd $CONFIRM"
+          # Обрыв соединения во время apply — fail-safe guarded-скрипта (app/web остаются остановленными, печатается откат).
+          ssh -i ~/.ssh/prod_guarded -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "root@$HOST" "$cmd"
+
+      - name: Remove key
+        if: always()
+        run: rm -f ~/.ssh/prod_guarded

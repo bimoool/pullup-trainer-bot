@@ -279,3 +279,35 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 * `pg_restore --single-transaction` R3 на прод-дампе и атомарная перестановка БД — проверены только на пустой
   `postgres:16` локально; на прод-дампе — на репетиции §4 п. 7.
 * Выкатываемый SHA должен содержать `628144f`; `aa9270e` его не содержит (§1).
+
+## 10. Выкат из GitHub Actions (постоянный ручной путь)
+
+Тот же guarded-скрипт, запуск — кнопкой в Actions вместо ручного SSH. `deploy.yml` остаётся заблокированным.
+
+* **Workflow:** `production-deploy.yml` (preflight / apply) и `production-rollback.yml` (R1 / R3, check / apply). Оба запускаются только
+  вручную (`workflow_dispatch`), в одной группе `concurrency: production` — второй запуск ждёт, текущий не отменяется.
+* **Проверки до SSH:** точный 40-hex SHA; SHA содержит текущий `origin/main`; на этом SHA зелёные `pytest`, `ruff`, `frontend build`
+  и нет красных или незавершённых проверок; для apply — токен `PRODUCTION-APPLY-<первые 12 символов SHA>`.
+  `tests.yml` запускается только на PR, поэтому выкатывается ровно головной SHA release-PR, а `main` после выката
+  сдвигается на него fast-forward.
+* **Ревизии Alembic** (`from_rev`, `to_rev`) задаются явно; guarded-скрипт сверяет их с живой БД и с образом. Без миграций
+  в релизе обе равны текущему head (`b5d8e1f3a6c9` на 17.10.2026) — это штатный «повторный» прогон скрипта (§6).
+* **Доступ:** отдельный ключ, секрет `PROD_GUARDED_SSH_KEY`, на сервере строка
+  `restrict,command="/root/bin/prod-guarded-dispatch.sh" … gh-actions-prod-guarded` в `/root/.ssh/authorized_keys`.
+  Диспетчер принимает только `prod-guarded <sha> preflight|apply <from> <to> [token]` и
+  `prod-rollback R1|R3 /root/backups/<…>.manifest check|apply [token]`, окружение вызывающего не пропускает (`env -i`),
+  второй параллельный запуск отклоняет (`flock`). Ключи `deploy.yml` и staging не меняются.
+* **Настройка — один раз, от root на VPS** (веб-консоль DigitalOcean подходит), из проверенного коммита `<SHA>`:
+  ```bash
+  git -C /root/pullup-trainer-bot fetch -q origin <SHA> && git -C /root/pullup-trainer-bot show <SHA>:deploy/install-prod-actions-access.sh | bash -s -- <SHA>
+  ```
+  Скрипт ставит в `/root/bin` guarded-скрипты и диспетчер из этого коммита (печатает sha256), выпускает ключ, прописывает
+  forced command, печатает приватный ключ один раз и удаляет его с сервера. Напечатанный ключ — в секрет
+  `PROD_GUARDED_SSH_KEY`. Повторный запуск выпускает новый ключ и отзывает старый. После изменения guarded-скриптов в
+  репозитории установщик запускают снова (самообновления нет; workflow предупреждает о расхождении).
+* **Хост-ключ** берётся `ssh-keyscan` при каждом запуске (как и в прежних workflow через `appleboy/ssh-action`). Поддельный
+  хост не получает ничего полезного: ключ ed25519 не переиспользуется для входа на настоящий сервер. Закрепить хост-ключ
+  секретом можно позже отдельным изменением.
+* **Порядок:** preflight → прочитать вывод → apply с токеном. Обрыв соединения во время apply — fail-safe скрипта
+  (§6): `app`/`web` остаются остановленными, в логе Actions — точная команда отката, её параметры вводятся в
+  `production-rollback.yml`.
