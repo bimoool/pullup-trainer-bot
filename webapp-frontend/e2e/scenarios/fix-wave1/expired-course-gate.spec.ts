@@ -7,8 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { clickAndSync, noWakeLock, playSets } from "../../fixtures/builderFlow";
-import { openJournalEntry } from "../../fixtures/parity";
+import { clickAndSync, noWakeLock } from "../../fixtures/builderFlow";
 import { openAppAs, useLiveEngineV1 } from "../../fixtures/setup";
 
 // issue #306: сценарий экрана движка v1 (сессии engine_version = 1) — новые старты здесь на v1.
@@ -83,7 +82,7 @@ async function openPlansAndStartCourse(page: Page) {
   await page.getByRole("button", { name: new RegExp(`^Начать: ${PAID_COURSE}`) }).first().click();
 }
 
-test("Просроченный пользователь: курс за подпиской, свои тренировки доступны, grant возвращает курс", async ({ page }) => {
+test("Просроченный пользователь: курс и свои тренировки за подпиской, grant возвращает курс", async ({ page }) => {
   page.on("dialog", (dialog) => void dialog.accept());
   const { consoleErrors, apiFailures } = await openAppAs(page, TG, { allowedApiStatuses: [402] });
   await onboard(page);
@@ -114,25 +113,14 @@ test("Просроченный пользователь: курс за подп�
   await expect(page.getByTestId("subscription-required")).toBeVisible();
   await page.getByTestId("subscription-required").getByRole("button", { name: "Назад" }).click();
 
-  // --- своя тренировка стартует без подписки ---
+  // --- своя тренировка (доп. тренировка вне курса) — тоже по подписке (решение владельца 2026-10-17): карточка
+  // видна, «Начать» ведёт на тот же экран подписки, сессия не создаётся ---
   await page.getByRole("button", { name: "Главная" }).click();
   await page.getByTestId("my-workout-card").filter({ hasText: OWN_TITLE }).click();
   await page.getByRole("button", { name: "Начать", exact: true }).click();
-  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen
-  await expect(page.getByText("Живая тренировка")).toBeVisible();
-  await playSets(page, ["8", "8", "8"]);
-  await page.getByRole("button", { name: "Завершить", exact: true }).click();
-  await clickAndSync(page, "Сохранить и завершить", "/complete");
-  await expect(page.getByText("Тренировка завершена")).toBeVisible();
-  await page.getByRole("button", { name: "Закрыть" }).click();
-
-  // Свободная тренировка сегодня включила бы «ещё рано» (отдых между тренировками) для курса — убираем её из Журнала,
-  // чтобы финальный старт курса проверял именно подписку (удаление свободной сессии прогрессию курса не трогает).
-  await page.getByRole("button", { name: "Журнал" }).click();
-  const entry = page.locator(".history-card").filter({ hasText: OWN_TITLE });
-  await openJournalEntry(page, entry);
-  await page.getByRole("button", { name: /Удалить/ }).click();
-  await expect(page.locator(".history-card").filter({ hasText: OWN_TITLE })).toHaveCount(0);
+  await page.getByRole("button", { name: "Начать", exact: true }).click(); // SessionPreScreen -> 402
+  await expect(page.getByTestId("subscription-required")).toBeVisible();
+  await expect(page.getByText("Живая тренировка")).toHaveCount(0);
 
   // --- TEST HARNESS: админ выдаёт 30 дней через реальный бот-хендлер admin_grant_days ---
   harness(`grant ${TG} 30`);
@@ -148,7 +136,10 @@ test("Просроченный пользователь: курс за подп�
   await clickAndSync(page, "Сохранить и завершить", "/complete");
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
 
-  expect(noWakeLock(consoleErrors)).toEqual([]);
+  // Старт своей тренировки без подписки — настоящий ответ 402 сервера (курс гейтится на клиенте до запроса). Браузер
+  // пишет любой 4xx в консоль как «Failed to load resource»; этот 402 сценарий ждёт намеренно (allowedApiStatuses).
+  const expected402 = "the server responded with a status of 402";
+  expect(noWakeLock(consoleErrors).filter((e) => !e.includes(expected402))).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
 

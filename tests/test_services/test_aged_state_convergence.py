@@ -46,6 +46,7 @@ from app.services.plan_week import PlanWeekService
 from app.services.session_log import TrainingSessionLogService
 from app.web import routes_v2
 from scripts.backfill_multi_program import normalize_legacy_snapshots
+from tests.test_web._premium import grant_premium
 from tests.test_web._v2_client import v2_get, v2_post
 
 TG = 1001
@@ -104,6 +105,7 @@ async def _add_program_items(session, program: Program) -> list[ProgramItem]:
 
 
 async def _plan_created_in_september(session, user: User) -> TrainingPlan:
+    await grant_premium(session, user)  # синтетическая программа — premium (решение 2026-10-17); тест — не о подписке
     plan = TrainingPlan(user_id=user.id, created_at=PLAN_CREATED)
     session.add(plan)
     await session.commit()

@@ -6,14 +6,12 @@ from sqlalchemy import select
 
 from app.db.models import User
 from app.db.models_program import Complex
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
 
 
 async def _create_second_user(session, telegram_id: int) -> User:
-    from app.db.repositories.users import UserRepository
-
-    users = UserRepository(session)
-    return await users.create(telegram_id=telegram_id, username="second_user")
+    return await create_premium_user(session, telegram_id=telegram_id, username="second_user")
 
 
 async def test_user_a_creates_workout_sees_it_opens_detail_updates_title(session, user: User):

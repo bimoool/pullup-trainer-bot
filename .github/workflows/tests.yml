@@ -23,6 +23,12 @@ on:
       - "alembic.ini"
       - "pyproject.toml"
       - ".github/workflows/tests.yml"
+      # Выкатываемый SHA обязан иметь зелёный CI (production-deploy.yml) — изменения deploy-скриптов и
+      # workflow выката тоже прогоняют тесты (tests/test_scripts проверяет guarded-скрипты и диспетчер).
+      - "deploy/**"
+      - "docker-compose*.yml"
+      - "Dockerfile"
+      - ".github/workflows/production-*.yml"
 
 permissions:
   contents: read

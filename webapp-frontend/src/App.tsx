@@ -1,5 +1,5 @@
 import { retrieveLaunchParams } from "@telegram-apps/sdk";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
 import { setDisplayPrefs } from "./displayPrefs";
@@ -18,6 +18,8 @@ import { ProfileScreen } from "./ProfileScreen";
 import { AnalyticsScreen } from "./AnalyticsScreen";
 import { SessionV2Lab } from "./SessionV2Lab";
 import { SubscriptionScreen } from "./SubscriptionScreen";
+import { SubscriptionRequiredSheet } from "./SubscriptionRequiredSheet";
+import { subscribeSubscriptionRequired } from "./paywall";
 import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
 import { NavIcon } from "./NavIcon";
@@ -184,6 +186,18 @@ export function App() {
   // FAQ (issue #102) открывается и с "Профиля", и сноской у выбора резины
   // на "Тренировке" — запоминаем, откуда пришли, чтобы "Назад" вёл туда же.
   const [faqReturnTab, setFaqReturnTab] = useState<Tab>("profile");
+  // Решение 2026-10-17: 402 subscription_required с любого экрана (paywall.ts) — лист «Нужна подписка», затем экран
+  // подписки ПОВЕРХ текущей вкладки: вкладка остаётся смонтированной (скрыта), введённое в форму не теряется.
+  // Поток тренировки (PlanSessionFlow) показывает свой экран подписки — там лист не нужен.
+  const [paywall, setPaywall] = useState<{ phase: "notice"; message: string | null } | { phase: "screen" } | null>(null);
+  const v2SessionOpen = useRef(false);
+  v2SessionOpen.current = v2Session !== null;
+  useEffect(() => subscribeSubscriptionRequired(({ message, openScreen }) => {
+    if (v2SessionOpen.current) {
+      return;
+    }
+    setPaywall((current) => (openScreen || current?.phase === "screen" ? { phase: "screen" } : { phase: "notice", message }));
+  }), []);
 
   // Старая живая тренировка (WorkoutScreen) держит ввод только в состоянии экрана — как и новая
   // (SessionLiveScreen), просит подтверждение при закрытии приложения (Bot API 6.2+, #224).
@@ -470,6 +484,17 @@ export function App() {
 
   return (
     <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
+      {isOnboarded && paywall?.phase === "screen" && (
+        <SubscriptionScreen initDataRaw={state.initDataRaw} onBack={() => setPaywall(null)} />
+      )}
+      {isOnboarded && paywall?.phase === "notice" && (
+        <SubscriptionRequiredSheet
+          message={paywall.message}
+          onOpenSubscription={() => setPaywall({ phase: "screen" })}
+          onClose={() => setPaywall(null)}
+        />
+      )}
+      <div className="app-tab-host" hidden={isOnboarded && paywall?.phase === "screen"}>
       <p className="app-greeting">Привет, {state.data.name}!</p>
       <EngineStoreBanner />
       {/* Замер + анкета (issue #124, PR 2) — раньше единственным путём
@@ -557,6 +582,7 @@ export function App() {
           ))}
         </nav>
       )}
+      </div>
     </div>
   );
 }

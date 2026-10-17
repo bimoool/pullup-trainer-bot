@@ -11,6 +11,7 @@ import type { EnginePlan, EngineState, TimelineCue } from "./liveEngine";
 import type { BlockCheck, CourseBlockOutcome, OneRepMaxOutcomeV2 } from "./courseV5";
 import type { SessionCreatePayload } from "./journalLog";
 import { awaitEngineReconciliation } from "./engineGate.ts";
+import { reportIfSubscriptionRequired } from "./paywall.ts";
 import { httpFailureMessage, SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
 import type { PeerInsights } from "./peerInsightsFormat";
 import type { ProgramAccessLevel } from "./programAccess";
@@ -31,6 +32,8 @@ async function extractErrorMessage(
     // initData просрочен/невалиден — понятная подсказка вместо «Invalid Telegram initData» (#224).
     return SESSION_EXPIRED_MESSAGE;
   }
+  // Решение 2026-10-17: 402 subscription_required → объяснение и путь к подписке поверх экрана (paywall.ts).
+  await reportIfSubscriptionRequired(response);
   try {
     const data = await response.json();
     if (data && typeof data.detail === "string") {

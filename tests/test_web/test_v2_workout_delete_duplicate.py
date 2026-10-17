@@ -15,8 +15,8 @@ from app.db.models_program import (
     UserFavorite,
 )
 from app.db.repositories.training_plans import TrainingPlanRepository
-from app.db.repositories.users import UserRepository
 from app.domain.multi_program import MetricType, SessionSource
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_delete, v2_get, v2_post, v2_put
 
 REPS = {"type": "reps_sets", "prescription": {"source": "static", "sets": 3, "reps": 8}, "rest_seconds": 90}
@@ -61,7 +61,7 @@ async def test_delete_hides_workout_everywhere_but_keeps_definition(session, use
 
 
 async def test_delete_foreign_system_and_missing_are_404(session, user: User):
-    other = await UserRepository(session).create(telegram_id=2002, username="other")
+    other = await create_premium_user(session, telegram_id=2002, username="other")
     foreign_id, _ = await _workout_with_item(session, other, "Чужая")
     system = Complex(name="Системная", source_type="system")
     session.add(system)

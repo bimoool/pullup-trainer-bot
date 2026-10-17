@@ -358,6 +358,9 @@ class LiveSessionService:
             raise ValueError("Не выбрано занятие плана")
         if len(plan_items) > 1 and any(item.occurrence_index is not None for item in plan_items):
             raise ValueError("Одна тренировка засчитывает одно занятие плана")
+        # Гейт доступа — до резолва блоков (резолв курса может продвинуть инклюзию): каждая строка — занятие
+        # своей программы или доп. часть (None) без программы; смешанный запрос без подписки — отказ целиком.
+        await self._require_program_access(user_id, [item.program_inclusion_id for item in plan_items])
 
         resolved_blocks: list[SessionBlockInput] = []
         resolved_targets: list[list[SetTargetInput]] = []
@@ -532,14 +535,14 @@ class LiveSessionService:
         exercises = await self._programs.list_exercises_by_ids(exercise_ids)
         return any(exercise.subcategory in INTERNAL_ROLE_SUBCATEGORIES for exercise in exercises)
 
-    async def _require_program_access(self, user_id: int, inclusion_ids: list[int]) -> None:
-        """#300 / D6 + правило 2026-10-07: курсовая строка плана (program_inclusion_id) стартует, если её программа
-        бесплатна («Подтягивания») или есть действующая подписка (trial/active и срок не истёк — считается из
-        subscription_expires_at, кэш статуса не доверяем). Решение — ProgramAccessService (единый путь). Запрос
-        со строкой платной программы без подписки отклоняется целиком (вместе со своими строками). Свои/ручные
-        строки, Workout (workout_id) и факультатив не гейтятся."""
+    async def _require_program_access(self, user_id: int, inclusion_ids: list[int | None]) -> None:
+        """#300 / D6 + правила 2026-10-07 / 2026-10-17: строка плана стартует, если это занятие бесплатной программы
+        («Подтягивания») или есть действующая подписка (trial/active и срок не истёк — считается из
+        subscription_expires_at, кэш статуса не доверяем). None — доп. часть без программы (ручная строка, свой
+        план) — Premium. Решение — ProgramAccessService (единый путь). Запрос с платной/доп. строкой без подписки
+        отклоняется целиком (вместе со строкой «Подтягиваний»). Только старт: идущая сессия завершается без гейта."""
         user = await UserRepository(self._session).get_by_id(user_id)
-        await ProgramAccessService(self._session).require_inclusions_training_access(
+        await ProgramAccessService(self._session).require_training_parts_access(
             user, inclusion_ids, now=datetime.now(UTC),
         )
 
@@ -551,6 +554,8 @@ class LiveSessionService:
         FREEFORM, SessionPlanItem не создаётся)."""
         if await self._programs.get_visible_workout_for_user(workout_id, user_id) is None:
             return None
+        # Решение 2026-10-17: тренировка вне курса (своя или готовая из каталога) — доп. тренировка, Premium.
+        await self._require_program_access(user_id, [None])
         active = await self._sessions.get_active_for_user(user_id)
         if active is not None:
             raise ActiveSessionConflictError(active.id)
@@ -1265,7 +1270,7 @@ def engine_plan_for(detail: SessionDetail) -> dict:
         return finalize_plan([plan_block_from_snapshot(block) for block in snapshot["blocks"]])
     items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
     # Синтезированный снимок по позиции блоков сессии: явный отдых, если он там записан (рецепт V5.6, #305:
-    # 240/30 → 900 → 180), важнее умолчаний движка; у остальных синтезированных снимков его нет (None).
+    # 240/60 → 900 → 180), важнее умолчаний движка; у остальных синтезированных снимков его нет (None).
     snapshot_blocks = (snapshot or {}).get("blocks") or []
     snapshot_blocks = snapshot_blocks if len(snapshot_blocks) == len(detail.blocks) else [{}] * len(detail.blocks)
     blocks = []

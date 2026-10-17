@@ -22,6 +22,7 @@ from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.users import UserRepository
 from app.domain.multi_program import is_internal_exercise_subcategory
 from app.domain.workout_protocol import UserWorkoutProtocol
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post, v2_put
 
 _MIGRATION = (
@@ -50,7 +51,7 @@ async def ship_system_content(session: AsyncSession) -> None:
 
 async def _user(session: AsyncSession, telegram_id: int = 940001) -> User:
     users = UserRepository(session)
-    user = await users.create(telegram_id=telegram_id, username=f"u{telegram_id}")
+    user = await create_premium_user(session, telegram_id=telegram_id, username=f"u{telegram_id}")
     await users.complete_onboarding(user.id, datetime.now(UTC))
     return user
 

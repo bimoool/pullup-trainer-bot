@@ -35,11 +35,13 @@ from tests.test_services.test_plan_removal_concurrency import (
     _drop_week_rows,
     _own_session,
 )
+from tests.test_web._premium import grant_premium
 
 MON = date(2026, 10, 5)
 
 
 async def _seed(session, user: User, *, names: list[str], weeks: list[int], until_week: int) -> tuple[int, int, list[int]]:
+    await grant_premium(session, user)  # свой план — Premium (решение 2026-10-17); тест — про гонки, не подписку
     user.timezone = "UTC"
     plan = TrainingPlan(user_id=user.id, created_at=datetime(2026, 10, 5, 8, tzinfo=UTC))
     session.add(plan)

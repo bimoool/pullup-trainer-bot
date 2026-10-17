@@ -6,6 +6,7 @@ from decimal import Decimal
 from app.db.models import User
 from app.db.models_program import Exercise, SessionBlock, SessionStatus, SetLog, TrainingSession
 from app.domain.multi_program import MetricType, SessionSource
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_post
 
 
@@ -66,9 +67,8 @@ async def test_lists_only_completed_sessions_of_this_workout_newest_first(sessio
 
 
 async def test_foreign_workout_is_404_and_foreign_sessions_hidden(session, user: User):
-    from app.db.repositories.users import UserRepository
 
-    other = await UserRepository(session).create(telegram_id=777_001, username="other")
+    other = await create_premium_user(session, telegram_id=777_001, username="other")
     foreign_workout = await _workout(session, other)
     await _session(session, other, foreign_workout, days_ago=1)
     response = await v2_get(session, user.telegram_id, f"/api/v2/workouts/{foreign_workout}/sessions")

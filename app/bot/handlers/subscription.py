@@ -29,6 +29,14 @@ async def send_paywall(message: Message, user: User) -> None:
     )
 
 
+async def send_premium_feature_paywall(message: Message, feature: str) -> None:
+    """Решение 2026-10-17: Premium-функция вне бесплатной «Подтягиваний» без подписки — объяснение + оплата."""
+    await message.answer(
+        texts.PREMIUM_FEATURE_REQUIRED.format(feature=feature, price=SUBSCRIPTION_PRICE_RUB, days=SUBSCRIPTION_DAYS),
+        reply_markup=paywall_keyboard(robokassa_available=_robokassa_available()),
+    )
+
+
 @router.callback_query(F.data == "pay_robokassa")
 async def handle_pay_robokassa(callback: CallbackQuery, session: AsyncSession) -> None:
     users = UserRepository(session)

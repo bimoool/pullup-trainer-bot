@@ -1,6 +1,7 @@
 """#300 / PROJECT_SPEC §5 «Подписка и доступ к курсам» (решение владельца D6): старт курсовой тренировки
 (plan item с program_inclusion_id) требует действующей подписки, считанной СЕРВЕРОМ из
-subscription_expires_at; свободные/свои тренировки и факультатив — без подписки."""
+subscription_expires_at. Решение владельца 2026-10-17: свои/доп. тренировки и ручные строки плана — тоже по подписке
+(подробно — test_subscription_feature_gates.py)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -99,7 +100,9 @@ async def test_denied_start_creates_no_session(session, user: User):
     assert active.json()["session"] is None
 
 
-async def test_expired_user_can_start_own_workout_and_manual_plan_item(session, user: User):
+async def test_expired_user_cannot_start_own_workout_or_manual_plan_item(session, user: User):
+    """Решение 2026-10-17 (было: «свои тренировки без подписки»): своя тренировка и ручная строка плана — доп.
+    тренировки, Premium."""
     await _set_subscription(session, user, SubscriptionStatus.EXPIRED, timedelta(days=-1))
     workout = Complex(name="Моя", source_type="user", owner_user_id=user.id)
     session.add(workout)
@@ -116,11 +119,8 @@ async def test_expired_user_can_start_own_workout_and_manual_plan_item(session, 
         session, telegram_id=user.telegram_id, path=LIVE,
         payload={"client_session_id": str(uuid.uuid4()), "workout_id": workout.id},
     )
-    assert own.status_code == 200
-    await v2_post(
-        session, telegram_id=user.telegram_id, path=f"{LIVE}/{own.json()['id']}/complete", payload={"abandoned": True},
-    )
-    assert (await _start(session, user, [manual_id])).status_code == 200
+    _assert_subscription_required(own)
+    _assert_subscription_required(await _start(session, user, [manual_id]))
 
 
 async def test_mixed_course_and_own_items_are_denied_for_expired_user(session, user: User):

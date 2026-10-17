@@ -1,6 +1,6 @@
 """Программа V5.6 (#305) исполняется Live Engine v2 (#306): интеграционные пути на реальном Postgres.
 
-* План: явный отдых рецепта (240/30 → 900 → 180, решение владельца #306 п. 5), подтверждения у обоих блоков,
+* План: явный отдых рецепта (240/60 → 900 → 180, решение владельца #306 п. 5), подтверждения у обоих блоков,
   стоп-правило объёма B, минимум AMRAP p4 и потолок контрольного подхода — в плане движка.
 * Подтверждения (V5.6 §11) — внутри движка ДО канонического завершения: последний подход → CONFIRM,
   ``confirm_blocks`` → complete_session #307 ровно один раз; «не знаю» завершает, но прибавку не даёт; пауза в
@@ -129,7 +129,7 @@ async def test_engine_plan_carries_v5_rules_rests_and_display(session, clock):  
     b_day = await _start(session, user, occurrences[1]["id"])
     b_plan = b_day["engine"]["plan"]
     b_sets, b_blocks = _rests(b_plan)
-    assert set(b_sets[0][:-1]) == {30} and b_sets[0][-1] is None  # объём B: 30 с между подходами
+    assert set(b_sets[0][:-1]) == {60} and b_sets[0][-1] is None  # объём B: 60 с (решение владельца 17.10.2026)
     assert b_sets[1] == [180, 180, 180, 180, None] and b_blocks == [900, None]
     assert [b.get("stop_at_or_below") for b in b_plan["blocks"]] == [2, None]
     assert {s["marker"] for s in b_plan["blocks"][0]["sets"]} == {"dynamic"}
@@ -461,3 +461,80 @@ async def test_cancelled_course_session_frees_resume_and_restart_of_the_same_occ
     row = await session.get(TrainingSession, body["id"])
     await session.refresh(row)
     assert row.engine_status == "cancelled" and row.status.value == "started"  # архив, не удалена
+
+
+async def _b_rest(session, user, b_day: dict) -> dict:
+    """Длительность первого отдыха между подходами объёма B, как её отсчитывает таймер движка."""
+    state = b_day["engine"]["state"]
+    if state["phase"] == "PREP":
+        state = (await _event(session, user, b_day["id"], "skip_wait", {"phase_seq": state["phase_seq"]}))["engine"]["state"]
+    q = b_day["engine"]["plan"]["blocks"][0]["sets"][0]["target"]
+    rest = (await _event(session, user, b_day["id"], "submit_result", {
+        "block_index": 0, "set_index": 0, "round_index": None, "value": q,
+    }))["engine"]["state"]
+    assert (rest["phase"], rest["rest_kind"]) == ("REST", "set")
+    return rest
+
+
+async def test_new_b_session_times_60_second_volume_rest(session, clock):  # noqa: F811
+    """Решение владельца 17.10.2026: новый старт B — 60 с в рецепте, снимке, плане движка и таймере отдыха."""
+    user, _, occurrences, at = await _b_day(session, 305611)
+    clock(at)
+    b_day = await _start(session, user, occurrences[1]["id"])
+    assert b_day["course_program"]["blocks"][0]["rest_seconds"] == 60
+    b_sets, b_blocks = _rests(b_day["engine"]["plan"])
+    assert set(b_sets[0][:-1]) == {60} and b_sets[1] == [180, 180, 180, 180, None] and b_blocks == [900, None]
+    row = await session.get(TrainingSession, b_day["id"])
+    snap_sets = row.prescription_snapshot["blocks"][0]["sets"]
+    assert {s["rest_after_seconds"] for s in snap_sets[:-1]} == {60} and snap_sets[-1]["rest_after_seconds"] is None
+    assert (await _b_rest(session, user, b_day))["phase_duration_ms"] == 60_000
+
+
+async def test_b_session_started_before_the_change_keeps_30_seconds_and_finishes(session, clock, monkeypatch):  # noqa: F811
+    """Занятие B, начатое до решения (рецепт со старым значением 30 с), исполняется из своего снимка: план
+    движка, таймер и реплей журнала событий остаются на 30 с; завершение и прогрессия проходят один раз."""
+    import app.domain.pullups_v5 as v5
+
+    user, inclusion, occurrences, at = await _b_day(session, 305612)
+    clock(at)
+    monkeypatch.setattr(v5, "B_VOLUME_REST_SECONDS", 30)  # код до решения владельца
+    b_day = await _start(session, user, occurrences[1]["id"])
+    monkeypatch.undo()
+    assert v5.B_VOLUME_REST_SECONDS == 60
+
+    row = await session.get(TrainingSession, b_day["id"])
+    snapshot_before = dict(row.prescription_snapshot)
+    assert {s["rest_after_seconds"] for s in snapshot_before["blocks"][0]["sets"][:-1]} == {30}
+    assert {s["rest_after_seconds"] for s in row.engine_plan["blocks"][0]["sets"][:-1]} == {30}
+    assert snapshot_before["provenance"]["course_program"]["blocks"][0]["rest_seconds"] == 30
+
+    rest = await _b_rest(session, user, b_day)
+    assert rest["phase_duration_ms"] == 30_000  # таймер — из снимка, не из нового кода
+    q = b_day["engine"]["plan"]["blocks"][0]["sets"][0]["target"]
+    sets_b = len(b_day["engine"]["plan"]["blocks"][0]["sets"])
+    done = await _run(session, user, {"id": b_day["id"], "engine": {"state": rest}}, [[q] * (sets_b - 1), [3] * 5])
+    assert done["engine"]["state"]["phase"] == "CONFIRM"
+    final = await _event(session, user, b_day["id"], "confirm_blocks", {"checks": VALID})
+    assert final["status"] == "completed"
+    assert final["course_progression"]["blocks"][0]["block_role"] == "b_volume"
+    await session.refresh(row)
+    assert row.prescription_snapshot == snapshot_before  # снимок не переписан
+    assert {s["rest_after_seconds"] for s in row.engine_plan["blocks"][0]["sets"][:-1]} == {30}
+    assert await LiveEngineService(session).rebuild_state(b_day["id"]) == row.engine_state
+    await session.refresh(inclusion)
+    assert inclusion.progression_state_rev == 2  # A и эта B — по одной прогрессии
+
+
+async def test_legacy_program_rests_unchanged_by_v5_b_rest_change(session, clock):  # noqa: F811
+    """Устаревшая версия (`pullups_legacy_step`) не мигрирует: её занятия A и B не получают отдых V5.6 —
+    ни 60 с объёма B, ни явного рецепта курса (отдых — из протокола упражнений, как до изменения)."""
+    user = await _user(session, 305613)
+    await _enrol(session, user, await _pullups(session), program_version="pullups_legacy_step")
+    occurrences = await _main_occurrences(session, user)
+    for occurrence in occurrences[:2]:
+        body = await _start(session, user, occurrence["id"])
+        assert body["course_program"] is None
+        row = await session.get(TrainingSession, body["id"])
+        assert "course_program" not in (row.prescription_snapshot or {}).get("provenance", {})
+        assert _rests(body["engine"]["plan"]) == ([[90, 90, 90, None], [90, 90, 90, 90, None]], [90, None])
+        await v2_post(session, user.telegram_id, f"{LIVE}/{body['id']}/complete", {"abandoned": True})

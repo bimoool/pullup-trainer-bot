@@ -189,7 +189,7 @@ Shared vectors: `contracts/live_engine_vectors.json` (pytest `tests/test_live_en
     snapshots (STEP course blocks, legacy without a version) usually carry no rest/prep; the engine plan then uses
     the contract defaults (WORKOUT §3.2/§3.6/§9.1: rest 90 s or the V1 protocol's rest, block rest 90 s, prep 5 s for
     the first block and for blocks starting with a timed set or an interval). Rest that a synthesized snapshot does
-    carry — the V5.6 course prescription (#305) writes 240/30 → 900 → 180 into the standard snapshot fields — always
+    carry — the V5.6 course prescription (#305) writes 240/60 → 900 → 180 into the standard snapshot fields — always
     wins over these defaults (owner decision 5: defaults only when no explicit value exists). A V1 interval whose total is not a
     multiple of work + rest keeps V1's count of work rounds (`ceil(total / (work + rest))`; V1 15 s at 5/5 = two
     work phases).

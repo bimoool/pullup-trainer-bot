@@ -8,6 +8,7 @@ import {
   type FreeWorkoutSubmitResponse,
 } from "./api";
 import { EquipmentTypeFields, type EquipmentChoice } from "./BackdateForm";
+import { PremiumFeatureNotice } from "./SubscriptionRequiredSheet";
 import { AnomalyLines, SetInputGrid, parseSetValue, parseSetValues, replaceAt } from "./WorkoutScreen";
 
 type Props = {
@@ -196,6 +197,7 @@ export function FreeWorkoutScreen({ initDataRaw, onDone, onCancel }: Props) {
   return (
     <div>
       <p className="plan-title">Внести свободные подтягивания</p>
+      {plan.subscription_required && <PremiumFeatureNotice feature="Свободные подтягивания вне программы" />}
 
       <Section className="block-section" header="Рабочие подходы">
         <SetInputGrid

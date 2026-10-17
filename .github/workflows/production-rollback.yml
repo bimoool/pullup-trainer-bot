@@ -1,0 +1,79 @@
+name: Production rollback (guarded)
+
+# Откат guarded-выката R1/R3 через тот же ключ и forced command, что production-deploy.yml.
+# Сам откат — /root/bin/rollback-production-guarded.sh (docs/PRODUCTION_RUNBOOK.md §7): все факты из manifest выката,
+# check — только чтение, apply — только с точным токеном. Manifest и точная команда печатаются guarded-выкатом при сбое.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: "R1 — прежние образы, БД не меняется. R3 — восстановление дампа до выката."
+        type: choice
+        options: ["R1", "R3"]
+        default: "R1"
+      manifest:
+        description: "Путь manifest из вывода выката, например /root/backups/prod-pre-abc1234-20261017T120000Z.manifest"
+        required: true
+      mode:
+        description: "check — только чтение. apply — откат."
+        type: choice
+        options: ["check", "apply"]
+        default: "check"
+      confirm:
+        description: "Для apply: ROLLBACK-<R1|R3>-<run_id из manifest>. Для check — пусто."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - name: Validate inputs
+        env:
+          KIND: ${{ inputs.kind }}
+          MANIFEST: ${{ inputs.manifest }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [[ "$KIND" =~ ^R[13]$ ]] || { echo "::error::bad kind"; exit 1; }
+          [[ "$MANIFEST" =~ ^/root/backups/[A-Za-z0-9._-]+\.manifest$ && "$MANIFEST" != *..* ]] || { echo "::error::bad manifest path"; exit 1; }
+          [[ "$MODE" =~ ^(check|apply)$ ]] || { echo "::error::bad mode"; exit 1; }
+          if [ "$MODE" = "apply" ]; then
+            [[ "$CONFIRM" =~ ^ROLLBACK-${KIND}-prod-[0-9a-f]{7}-[0-9TZ]+-[0-9]+$ ]] || { echo "::error::apply requires confirm = ROLLBACK-${KIND}-<run_id>"; exit 1; }
+          else
+            [ -z "$CONFIRM" ] || { echo "::error::confirm is accepted only with apply"; exit 1; }
+          fi
+
+      - name: Guarded rollback ${{ inputs.kind }} ${{ inputs.mode }}
+        env:
+          KEY: ${{ secrets.PROD_GUARDED_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          KIND: ${{ inputs.kind }}
+          MANIFEST: ${{ inputs.manifest }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::secret PROD_GUARDED_SSH_KEY is not set (docs/PRODUCTION_RUNBOOK.md §9)"; exit 1; }
+          [ -n "$HOST" ] || { echo "::error::secret VPS_HOST is not set"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/prod_guarded && chmod 600 ~/.ssh/prod_guarded
+          ssh-keyscan -T 20 -t ed25519 "$HOST" > ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "::error::cannot read the host key of VPS_HOST"; exit 1; }
+          cmd="prod-rollback $KIND $MANIFEST $MODE"
+          [ "$MODE" = "apply" ] && cmd="$cmd $CONFIRM"
+          ssh -i ~/.ssh/prod_guarded -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "root@$HOST" "$cmd"
+
+      - name: Remove key
+        if: always()
+        run: rm -f ~/.ssh/prod_guarded

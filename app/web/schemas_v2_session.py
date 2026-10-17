@@ -216,7 +216,7 @@ class LiveSessionResponse(BaseModel):
     # interstitial "Готово ✓ / Следующее упражнение / Начать".
     awaiting_block_start: bool = False
     # issue #305: рецепт основного занятия программы V5.6 из снимка сессии (роль A/B, уровень, отдых
-    # 240/30 → 900 → 180, маркеры, входы расчёта) — источник для движка #306. None вне V5.6.
+    # 240/60 → 900 → 180, маркеры, входы расчёта) — источник для движка #306. None вне V5.6.
     course_program: dict | None = None
     # Phase B2 gate fix (issue #215) — найдено живым reload-прогоном:
     # /sessions/live/active не резолвил title вообще, App.tsx's resumedSession

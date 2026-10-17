@@ -33,6 +33,7 @@ from scripts.repair_plan_convergence import (
     _State,
     run_repair,
 )
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_post
 
 PLAN_CREATED = datetime(2026, 9, 14, 10, tzinfo=UTC)  # week 1; 2026-10-06 is week 4
@@ -67,7 +68,7 @@ async def _program(session) -> Program:
 
 
 async def _aged_legacy_user(session, clock, program: Program, telegram_id: int) -> ProgramInclusion:
-    user = await UserRepository(session).create(telegram_id=telegram_id, username=None)
+    user = await create_premium_user(session, telegram_id=telegram_id)  # синтетическая программа — premium
     session.add(TrainingPlan(user_id=user.id, created_at=PLAN_CREATED))
     await session.commit()
     clock(PLAN_CREATED)

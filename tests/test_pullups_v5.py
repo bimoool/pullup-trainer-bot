@@ -153,7 +153,7 @@ def test_m0_assisted_example():
     b = _session(after_a)
     assert b.role is WorkoutRole.B
     assert (len(b.volume.sets), b.volume.sets[0].target_reps) == (10, 5)
-    assert b.volume.display == "10×5" and b.volume.rest_seconds == 30
+    assert b.volume.display == "10×5" and b.volume.rest_seconds == 60
     assert b.volume.assistance == VOLUME_BAND
     assert b.strength.display == "5/5/5/5/5–8"  # до допуска силовые дни одинаковы
 
@@ -912,3 +912,62 @@ def test_step_assistance_without_ladder_never_guesses():
 def test_strength_state_rejects_unknown_mode():
     with pytest.raises(ValueError):
         StrengthState.from_dict({"mode": "max_only"})
+
+
+# --- Отдых объёма B: 60 с (решение владельца 17.10.2026) -------------------------------------------
+
+
+def _rests(block) -> list[int | None]:
+    return [s.rest_after_seconds for s in block.sets]
+
+
+@pytest.mark.parametrize(
+    ("label", "state"),
+    [
+        ("assisted", _run(_assisted(), (7, 7, 7, 9), (5, 5, 5, 5, 6)).state),
+        ("transition", _run(_weighted(m=10), (5, 5, 5, 7), (5, 5, 5, 5, 5)).state),
+        ("weighted", _run(_weighted(m=25), (17, 17, 17, 19), (5, 5, 5, 5, 5)).state),
+        ("weighted_standard", _b_state(13, 5)),
+    ],
+)
+def test_b_volume_rest_is_60_seconds_at_every_level(label, state):
+    """Решение владельца 17.10.2026: отдых между подходами объёма B — 60 с (было 30) на всех уровнях."""
+    b = _session(state)
+    assert b.role is WorkoutRole.B and b.volume.block_role is BlockRole.B_VOLUME, label
+    assert b.volume.rest_seconds == 60
+    assert _rests(b.volume) == [60] * (len(b.volume.sets) - 1) + [None]
+    data = b.to_dict()["blocks"][0]
+    assert data["rest_seconds"] == 60 and {s["rest_after_seconds"] for s in data["sets"][:-1]} == {60}
+    # Остальные интервалы не меняются: сила 180, объём → сила 900.
+    assert _rests(b.strength) == [180] * (len(b.strength.sets) - 1) + [None]
+    assert b.strength.rest_seconds == 180 and b.inter_block_rest_seconds == 900
+
+
+@pytest.mark.parametrize("state", [_assisted(), _weighted(m=10), _weighted(m=25)])
+def test_other_v5_intervals_unchanged_by_b_rest_change(state):
+    a = _session(state)
+    assert a.role is WorkoutRole.A
+    assert a.volume.rest_seconds == 240 and _rests(a.volume) == [240, 240, 240, None]
+    assert a.strength.rest_seconds == 180 and _rests(a.strength) == [180] * 4 + [None]
+    assert a.inter_block_rest_seconds == 900
+
+
+def test_b_progression_does_not_depend_on_the_rest_seconds_value():
+    """Прогрессия B читает подтверждение «отдых в пределах» (да/нет/не знаю), а не число секунд: снимок
+    старого занятия с 30 с и новый с 60 с при одинаковом факте дают одно и то же решение."""
+    state = _b_state(13, 5)
+    new = _session(state).to_dict()
+    old = {**new, "blocks": [
+        {**new["blocks"][0], "rest_seconds": 30, "sets": [
+            {**s, "rest_after_seconds": 30 if s["rest_after_seconds"] is not None else None} for s in new["blocks"][0]["sets"]
+        ]},
+        new["blocks"][1],
+    ]}
+    result = SessionResult(
+        volume=BlockResult(reps=(5,) * 13, technique_valid=True, rest_within_limit=True),
+        strength=BlockResult(reps=(3,) * 5, technique_valid=True, rest_within_limit=True),
+    )
+    after_new = advance_session(state, new, result, body_mass=D("70"), ladder=LADDER)
+    after_old = advance_session(state, old, result, body_mass=D("70"), ladder=LADDER)
+    assert after_new.state.volume_b == after_old.state.volume_b
+    assert (after_new.state.volume_b.sets, after_new.state.volume_b.reps) == (14, 5)

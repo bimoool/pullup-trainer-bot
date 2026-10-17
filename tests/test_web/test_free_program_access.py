@@ -134,13 +134,14 @@ async def test_free_program_session_record_is_not_gated_for_expired_user(session
 
 
 async def test_premium_program_still_rejects_expired_user_while_free_one_works(session, user: User):
-    """15: Premium-программа по-прежнему 402 для истёкшего; смешанный запрос с платной строкой — 402 целиком."""
-    await _expire(session, user)
-    free_inclusion = await _add_to_plan(session, user, (await _free_program(session)).id)
+    """15: Premium-программа по-прежнему 402 для истёкшего; смешанный запрос с платной строкой — 402 целиком.
+    Решение 2026-10-17: добавить платную программу в план без подписки нельзя — она добавлена при подписке."""
     premium_program = await _make_step_program(session)
     assert premium_program.access_level == ProgramAccessLevel.PREMIUM.value  # по умолчанию — premium
     premium_inclusion = await _add_to_plan(session, user, premium_program.id)
     assert premium_inclusion["access_level"] == "premium"
+    await _expire(session, user)
+    free_inclusion = await _add_to_plan(session, user, (await _free_program(session)).id)
     free_items = await _current_course_items(session, user, free_inclusion["id"])
 
     from app.db.models_program import PlanItem

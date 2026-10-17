@@ -1,55 +1,55 @@
-""""📢 Рассылка всем" (handle_admin_broadcast_text) — прод-инцидент issue #69:
-админ разослал сообщение с картинкой, рассылка упала на
-`SendMessage.text=None`. У сообщения с фото Telegram кладёт подпись в
-message.caption, а message.text остаётся None — код брал message.text
-напрямую и передавал None в send_message. Реальным aiogram-роутингом, как
-test_admin_dm.py.
+""""📢 Рассылка всем" — приём статьи → копия только админу → отдельное
+подтверждение → копирование всем зарегистрированным, кроме админа.
 
-test_broadcast_with_album_delivers_via_send_media_group_not_per_photo —
-issue #72: несколько фото в одной рассылке Telegram доставляет боту не
-одним апдейтом, а несколькими Update с общим media_group_id, и aiogram
-polling обрабатывает их конкурентными задачами (handle_as_tasks=True по
-умолчанию) — без буферизации (MediaGroupMiddleware, app/bot/middlewares.py)
-каждое фото по отдельности ловило waiting_for_broadcast_text и запускало
-рассылку само по себе. asyncio.gather имитирует именно эту конкурентность,
-а не последовательный feed_update, как в остальных тестах файла."""
+История: раньше рассылка уходила ВСЕМ сразу по первому же сообщению админа
+и пересобиралась заново (send_message/send_photo/send_media_group с
+parse_mode=None) — у пересланной статьи терялись форматирование, ссылки и
+видео/документы, предпросмотра и защиты от повтора не было (прод-инциденты
+issue #69 и #72 были про эту пересборку). Теперь сохраняются id исходных
+сообщений, а доставка — copyMessages (Telegram копирует их как есть).
+
+Реальным aiogram-роутингом (dispatcher.feed_update), как test_admin_dm.py.
+asyncio.gather имитирует конкурентную обработку апдейтов aiogram polling
+(handle_as_tasks=True): части статьи и двойное нажатие кнопки приходят
+параллельно, а не по очереди."""
 
 import asyncio
 from datetime import UTC, datetime
 
+import pytest
 from aiogram import Bot, Dispatcher
-from aiogram.methods import SendMediaGroup, SendMessage, SendPhoto
-from aiogram.types import Chat, Message, PhotoSize, Update
+from aiogram.exceptions import TelegramForbiddenError
+from aiogram.methods import CopyMessages, SendMediaGroup, SendMessage, SendPhoto
+from aiogram.types import Chat, Message, MessageEntity, PhotoSize, Update
 from aiogram.types import User as TgUser
 
 from app.bot import texts
+from app.bot.handlers import admin as admin_handlers
 from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
 from tests.test_bot.conftest import make_callback_update as _callback_update
 
 
-def _text_update(*, telegram_id: int, text: str) -> Update:
+@pytest.fixture(autouse=True)
+def _no_send_interval(monkeypatch):
+    monkeypatch.setattr(admin_handlers, "BROADCAST_SEND_INTERVAL_SECONDS", 0, raising=False)
+    monkeypatch.setattr("app.bot.middlewares.ALBUM_DEBOUNCE_SECONDS", 0.05)
+
+
+def _forwarded_text_update(*, telegram_id: int, message_id: int, text: str) -> Update:
+    """Пересланный пост канала с разметкой (жирный + ссылка)."""
     return Update(
-        update_id=1,
+        update_id=message_id,
         message=Message(
-            message_id=101, date=datetime.now(UTC),
+            message_id=message_id, date=datetime.now(UTC),
             chat=Chat(id=telegram_id, type="private"),
             from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
             text=text,
-        ),
-    )
-
-
-def _photo_update(*, telegram_id: int, caption: str) -> Update:
-    return Update(
-        update_id=1,
-        message=Message(
-            message_id=101, date=datetime.now(UTC),
-            chat=Chat(id=telegram_id, type="private"),
-            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
-            photo=[PhotoSize(file_id="photo1", file_unique_id="u1", width=100, height=100)],
-            caption=caption,
+            entities=[
+                MessageEntity(type="bold", offset=0, length=5),
+                MessageEntity(type="text_link", offset=6, length=4, url="https://example.com"),
+            ],
         ),
     )
 
@@ -70,119 +70,179 @@ def _album_photo_update(
     )
 
 
-async def _make_admin(session, telegram_id: int) -> User:
-    return await UserRepository(session).create(telegram_id=telegram_id, username="the_admin")
-
-
-async def test_broadcast_delivers_text_message(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
-    admin = await _make_admin(session, 8201)
+async def _setup(session, monkeypatch, admin_tg: int) -> tuple[User, User, User]:
+    """Админ + прошедший онбординг + НЕ прошедший онбординг: аудитория —
+    все зарегистрированные, кроме админа, независимо от онбординга."""
+    repo = UserRepository(session)
+    admin = await repo.create(telegram_id=admin_tg, username="the_admin")
     monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
-    onboarded = await UserRepository(session).create(telegram_id=8202, username="onboarded_user")
-    await UserRepository(session).complete_onboarding(onboarded.id, datetime.now(UTC))
+    onboarded = await repo.create(telegram_id=admin_tg + 1, username="onboarded")
+    await repo.complete_onboarding(onboarded.id, datetime.now(UTC))
+    fresh = await repo.create(telegram_id=admin_tg + 2, username="fresh")
+    return admin, onboarded, fresh
 
-    await dispatcher.feed_update(bot, _callback_update(telegram_id=admin.telegram_id, data="admin_broadcast"), session=session)
-    await dispatcher.feed_update(bot, _text_update(telegram_id=admin.telegram_id, text="Запустили Mini App!"), session=session)
 
-    delivered = [
+async def _press(dispatcher, bot, session, admin_tg: int, data: str) -> None:
+    await dispatcher.feed_update(bot, _callback_update(telegram_id=admin_tg, data=data), session=session)
+
+
+def _content_to_others(bot: Bot, admin_tg: int) -> list:
+    """Всё, что могло донести контент до кого-то, кроме админа."""
+    return [
         m for m in bot.session.sent_methods
-        if isinstance(m, SendMessage) and m.chat_id == onboarded.telegram_id and m.text == "Запустили Mini App!"
+        if isinstance(m, CopyMessages | SendMessage | SendPhoto | SendMediaGroup)
+        and getattr(m, "chat_id", admin_tg) != admin_tg
     ]
-    assert len(delivered) == 1
 
 
-async def test_broadcast_with_photo_delivers_via_send_photo_not_send_message(
-    session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
-):
-    """Раньше это падало: message.text is None для сообщения с картинкой,
-    а _broadcast_to_onboarded_users передавал его напрямую в
-    bot.send_message(..., text=None) — pydantic-валидация SendMessage
-    отклоняет None. Теперь фото пересылается через send_photo(caption=...)."""
-    admin = await _make_admin(session, 8203)
-    monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
-    onboarded = await UserRepository(session).create(telegram_id=8204, username="onboarded_user_2")
-    await UserRepository(session).complete_onboarding(onboarded.id, datetime.now(UTC))
-
-    await dispatcher.feed_update(bot, _callback_update(telegram_id=admin.telegram_id, data="admin_broadcast"), session=session)
+async def _collect_and_preview(dispatcher, bot, session, admin_tg: int) -> None:
+    await _press(dispatcher, bot, session, admin_tg, "admin_broadcast")
     await dispatcher.feed_update(
-        bot, _photo_update(telegram_id=admin.telegram_id, caption="Запустили Mini App! 🚀"), session=session,
+        bot, _forwarded_text_update(telegram_id=admin_tg, message_id=301, text="Новое тест статьи"), session=session,
+    )
+    await dispatcher.feed_update(
+        bot, _forwarded_text_update(telegram_id=admin_tg, message_id=302, text="Часть второй статьи"), session=session,
+    )
+    await _press(dispatcher, bot, session, admin_tg, "admin_broadcast_preview")
+
+
+async def test_receiving_article_sends_nothing_to_anyone(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    """Старое поведение: первое же сообщение админа уходило всем сразу."""
+    admin, _, _ = await _setup(session, monkeypatch, 8301)
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast")
+    await dispatcher.feed_update(
+        bot, _forwarded_text_update(telegram_id=admin.telegram_id, message_id=301, text="Новое тест статьи"),
+        session=session,
     )
 
-    delivered = [
+    assert _content_to_others(bot, admin.telegram_id) == []
+    assert not [m for m in bot.session.sent_methods if isinstance(m, CopyMessages)]
+
+
+async def test_preview_copies_original_messages_only_to_admin(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    admin, _, _ = await _setup(session, monkeypatch, 8311)
+    await _collect_and_preview(dispatcher, bot, session, admin.telegram_id)
+
+    [preview] = [m for m in bot.session.sent_methods if isinstance(m, CopyMessages)]
+    # Копия исходных сообщений (оформление/медиа не пересобираются) и только админу.
+    assert preview.chat_id == admin.telegram_id
+    assert preview.from_chat_id == admin.telegram_id
+    assert list(preview.message_ids) == [301, 302]
+    assert _content_to_others(bot, admin.telegram_id) == []
+
+    [confirm] = [
         m for m in bot.session.sent_methods
-        if isinstance(m, SendPhoto) and m.chat_id == onboarded.telegram_id
+        if isinstance(m, SendMessage) and m.text == texts.ADMIN_BROADCAST_CONFIRM.format(recipients=2)
     ]
-    assert len(delivered) == 1
-    assert delivered[0].caption == "Запустили Mini App! 🚀"
-    assert delivered[0].photo == "photo1"
-
-    # Ни один SendMessage с text=None не мог случиться — pydantic бы уже
-    # упал при его конструировании, но явная проверка documents intent.
-    broken = [m for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.chat_id == onboarded.telegram_id]
-    assert broken == []
-
-    [confirmation] = [
-        m for m in bot.session.sent_methods
-        if isinstance(m, SendMessage) and m.chat_id == admin.telegram_id
-        and m.text == texts.ADMIN_BROADCAST_DONE.format(sent=1, total=1)
-    ]
-    assert confirmation is not None
+    callbacks = [b.callback_data for row in confirm.reply_markup.inline_keyboard for b in row]
+    assert callbacks == ["admin_broadcast_send", "admin_broadcast_cancel"]
 
 
-async def test_broadcast_with_album_delivers_via_send_media_group_not_per_photo(
-    session, bot: Bot, dispatcher: Dispatcher, monkeypatch,
-):
-    """issue #72: раньше альбом из нескольких фото уходил как одно фото с
-    подписью (первый Update отработал полную рассылку до прихода второго) и
-    остальные фото — отдельными сообщениями без текста (каждый следующий
-    Update своей конкурентной задачей ловил то же FSM-состояние и запускал
-    рассылку заново). Debounce MediaGroupMiddleware укорочен монкипатчем,
-    чтобы не ждать боевые 0.7с в каждом прогоне теста."""
-    monkeypatch.setattr("app.bot.middlewares.ALBUM_DEBOUNCE_SECONDS", 0.05)
+async def test_confirm_copies_to_all_registered_except_admin(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    admin, onboarded, fresh = await _setup(session, monkeypatch, 8321)
+    await _collect_and_preview(dispatcher, bot, session, admin.telegram_id)
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_send")
 
-    admin = await _make_admin(session, 8205)
-    monkeypatch.setattr(settings, "admin_ids", str(admin.telegram_id))
-    onboarded = await UserRepository(session).create(telegram_id=8206, username="onboarded_user_3")
-    await UserRepository(session).complete_onboarding(onboarded.id, datetime.now(UTC))
+    copies = [m for m in bot.session.sent_methods if isinstance(m, CopyMessages)]
+    by_chat = {m.chat_id: list(m.message_ids) for m in copies}
+    assert by_chat == {admin.telegram_id: [301, 302], onboarded.telegram_id: [301, 302], fresh.telegram_id: [301, 302]}
+    # Админу — ровно одна копия (предпросмотр), на массовом шаге его нет.
+    assert sum(1 for m in copies if m.chat_id == admin.telegram_id) == 1
 
-    await dispatcher.feed_update(bot, _callback_update(telegram_id=admin.telegram_id, data="admin_broadcast"), session=session)
+    report = texts.ADMIN_BROADCAST_REPORT.format(sent=2, total=2, blocked=0, failed=0)
+    assert [m for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text == report]
 
-    media_group_id = "album-72"
-    # Подпись — на ВТОРОМ сообщении альбома, не на первом по порядку
-    # получения: в реальном Telegram она может оказаться на любой части, и
-    # _album_caption обязана найти её независимо от порядка (см. admin.py).
+
+async def test_double_confirm_sends_only_once(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    admin, onboarded, _ = await _setup(session, monkeypatch, 8331)
+    await _collect_and_preview(dispatcher, bot, session, admin.telegram_id)
+
+    await asyncio.gather(
+        _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_send"),
+        _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_send"),
+    )
+    # И ещё раз — старая кнопка после завершения.
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_send")
+
+    to_user = [m for m in bot.session.sent_methods if isinstance(m, CopyMessages) and m.chat_id == onboarded.telegram_id]
+    assert len(to_user) == 1
+
+
+async def test_send_without_preview_sends_nothing(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    admin, _, _ = await _setup(session, monkeypatch, 8341)
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast")
+    await dispatcher.feed_update(
+        bot, _forwarded_text_update(telegram_id=admin.telegram_id, message_id=301, text="Новое тест статьи"),
+        session=session,
+    )
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_send")
+
+    assert not [m for m in bot.session.sent_methods if isinstance(m, CopyMessages)]
+    assert _content_to_others(bot, admin.telegram_id) == []
+
+
+async def test_cancel_after_preview_sends_nothing(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    admin, _, _ = await _setup(session, monkeypatch, 8351)
+    await _collect_and_preview(dispatcher, bot, session, admin.telegram_id)
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_cancel")
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_send")
+
+    assert _content_to_others(bot, admin.telegram_id) == []
+    assert [m for m in bot.session.sent_methods if isinstance(m, SendMessage) and m.text == texts.ADMIN_BROADCAST_CANCELLED]
+
+
+async def test_non_admin_cannot_preview_or_send(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    admin, onboarded, _ = await _setup(session, monkeypatch, 8361)
+    await _collect_and_preview(dispatcher, bot, session, admin.telegram_id)
+    bot.session.sent_methods.clear()
+
+    await _press(dispatcher, bot, session, onboarded.telegram_id, "admin_broadcast_send")
+    await _press(dispatcher, bot, session, onboarded.telegram_id, "admin_broadcast_preview")
+
+    assert not [m for m in bot.session.sent_methods if isinstance(m, CopyMessages)]
+
+
+async def test_album_parts_arriving_concurrently_are_all_kept(session, bot: Bot, dispatcher: Dispatcher, monkeypatch):
+    """Части альбома и отдельные сообщения статьи приходят параллельными
+    задачами — ни один id не должен потеряться при записи в FSM."""
+    admin, _, _ = await _setup(session, monkeypatch, 8371)
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast")
+
     updates = [
-        _album_photo_update(telegram_id=admin.telegram_id, message_id=201, media_group_id=media_group_id, file_id="album_photo_1"),
-        _album_photo_update(
-            telegram_id=admin.telegram_id, message_id=202, media_group_id=media_group_id,
-            file_id="album_photo_2", caption="Новый релиз! 🎉",
-        ),
+        _forwarded_text_update(telegram_id=admin.telegram_id, message_id=400, text="Новое тест статьи"),
+        _album_photo_update(telegram_id=admin.telegram_id, message_id=401, media_group_id="g", file_id="p1"),
+        _album_photo_update(telegram_id=admin.telegram_id, message_id=402, media_group_id="g", file_id="p2", caption="x"),
+        _forwarded_text_update(telegram_id=admin.telegram_id, message_id=403, text="Часть второй статьи"),
     ]
-    # asyncio.gather — не последовательные await, именно так aiogram polling
-    # реально диспетчеризует части одного альбома (handle_as_tasks=True):
-    # конкурентными задачами, не дожидаясь друг друга.
     await asyncio.gather(*(dispatcher.feed_update(bot, u, session=session) for u in updates))
+    await _press(dispatcher, bot, session, admin.telegram_id, "admin_broadcast_preview")
 
-    delivered_groups = [
-        m for m in bot.session.sent_methods
-        if isinstance(m, SendMediaGroup) and m.chat_id == onboarded.telegram_id
-    ]
-    assert len(delivered_groups) == 1
-    [group] = delivered_groups
-    assert [item.media for item in group.media] == ["album_photo_1", "album_photo_2"]
-    assert group.media[0].caption == "Новый релиз! 🎉"
-    assert group.media[1].caption is None
+    [preview] = [m for m in bot.session.sent_methods if isinstance(m, CopyMessages)]
+    assert list(preview.message_ids) == [400, 401, 402, 403]
+    assert _content_to_others(bot, admin.telegram_id) == []
 
-    # Ни одного SendPhoto по отдельности каждому фото — старый баг ровно это
-    # и делал (одно фото с подписью, второе без текста отдельным сообщением).
-    per_photo = [m for m in bot.session.sent_methods if isinstance(m, SendPhoto) and m.chat_id == onboarded.telegram_id]
-    assert per_photo == []
 
-    # Хендлер рассылки отработал ровно один раз на весь альбом, не дважды —
-    # без буферизации второй Update запустил бы вторую полную рассылку и
-    # вторую сессию с state.clear() поверх первой.
-    confirmations = [
-        m for m in bot.session.sent_methods
-        if isinstance(m, SendMessage) and m.chat_id == admin.telegram_id
-        and m.text == texts.ADMIN_BROADCAST_DONE.format(sent=1, total=1)
-    ]
-    assert len(confirmations) == 1
+class _FlakyBot:
+    """copy_messages: один получатель заблокировал бота, у другого — иная ошибка."""
+
+    def __init__(self, blocked: int, broken: int) -> None:
+        self.blocked, self.broken, self.calls = blocked, broken, []
+
+    async def copy_messages(self, *, chat_id, from_chat_id, message_ids):
+        self.calls.append(chat_id)
+        if chat_id == self.blocked:
+            raise TelegramForbiddenError(method=None, message="Forbidden: bot was blocked by the user")
+        if chat_id == self.broken:
+            from aiogram.exceptions import TelegramBadRequest
+            raise TelegramBadRequest(method=None, message="Bad Request: chat not found")
+        return []
+
+
+async def test_copy_to_users_counts_blocked_and_failed():
+    users = [User(telegram_id=i) for i in (1, 2, 3, 4)]
+    bot = _FlakyBot(blocked=2, broken=3)
+
+    report = await admin_handlers._copy_to_users(bot, from_chat_id=99, message_ids=[5], users=users)
+
+    assert bot.calls == [1, 2, 3, 4]  # ошибка одного получателя не останавливает рассылку
+    assert (report.total, report.sent, report.blocked, report.failed) == (4, 2, 1, 1)
