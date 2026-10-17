@@ -11,7 +11,7 @@ import { openAppAs } from "../fixtures/setup";
  *   M = 8 (< 10) → уровень 1 (с помощью); R = 10 → A: a = min(20, max(3, ⌊0,7·10⌋)) = 7 → «7/7/7/7+», отдых 240 с;
  *   объём → сила 900 с; сила уровня 1 «5/5/5/5/5–8», отдых 180 с; 2 основных занятия в неделю; A/B по очереди.
  *   Факт A 7/7/7/9 (AMRAP ≥ p4 + 2, техника «Да») → зелёный: +1 в подход с наименьшей целью → «8/7/7/7+».
- *   V_ref = 7+7+7+9 = 30 → B: S = min(20, max(10, ⌊30/5⌋+1)) = 10, q = 5 → «10×5», отдых 30 с.
+ *   V_ref = 7+7+7+9 = 30 → B: S = min(20, max(10, ⌊30/5⌋+1)) = 10, q = 5 → «10×5», отдых 60 с.
  *   Пятый подход силы 6 (5–7) → помощь та же.
  * Между основными занятиями — минимальный отдых 3 дня (`main_min_days_between_starts`): «Доступно с …» или, если
  *   это за пределами недели, «Не успеть на этой неделе».
@@ -80,7 +80,7 @@ async function playSets(page: Page, sets: { target: string; value: string; restA
 }
 
 const rest = (minutes: number) => new RegExp(`^(${minutes}:00|${minutes - 1}:5\\d)$`);
-const REST_30 = /^(0:30|0:2\d)$/;
+const REST_60 = /^(1:00|0:5\d)$/; // объём B: 60 с (решение владельца 17.10.2026)
 
 test("V5.6 на свежем профиле: онбординг → программа → A по рецепту → итог → Журнал → прогрессия и следующая B", async ({ page }) => {
   test.skip(CONTINUE_TG !== null, "продолжение прогона: первая часть уже пройдена этим пользователем");
@@ -167,7 +167,7 @@ test("V5.6 на свежем профиле: онбординг → програ
   const [bVolume, bStrength] = course.next_workout.blocks;
   expect(bVolume.block_role).toBe("b_volume");
   expect(bVolume.sets.map((s: { target_reps: number }) => s.target_reps)).toEqual(Array(10).fill(5));
-  expect(bVolume.sets.slice(0, 9).every((s: { rest_after_seconds: number }) => s.rest_after_seconds === 30)).toBe(true);
+  expect(bVolume.sets.slice(0, 9).every((s: { rest_after_seconds: number }) => s.rest_after_seconds === 60)).toBe(true);
   expect(bStrength.block_role).toBe("assisted_strength");
   expect(bStrength.sets.map((s: { marker: string }) => s.marker)).toEqual(["working", "working", "working", "working", "control"]);
 
@@ -213,7 +213,7 @@ test("V5.6 следующая тренировка B исполняется по
   const B = "Подтягивания — объём";
   const S = "Подтягивания — сила";
   const volume = Array.from({ length: 10 }, (_, i) => ({
-    exercise: B, target: `Подход ${i + 1}/10 · Цель: 5 повт.`, value: "5", restAfter: i < 9 ? REST_30 : rest(15),
+    exercise: B, target: `Подход ${i + 1}/10 · Цель: 5 повт.`, value: "5", restAfter: i < 9 ? REST_60 : rest(15),
   }));
   await playSets(page, [
     ...volume,
@@ -223,7 +223,7 @@ test("V5.6 следующая тренировка B исполняется по
     { exercise: S, target: "Подход 4/5 · Цель: 5 повт.", value: "5", restAfter: rest(3) },
     { exercise: S, target: "Подход 5/5 · Цель: 5–8 повт. (потолок 8)", value: "7", restAfter: null },
   ]);
-  await expect(page.getByTestId("engine-confirm")).toContainText("Отдых не дольше 0:30");
+  await expect(page.getByTestId("engine-confirm")).toContainText("Отдых не дольше 1:00");
   await answerChecksV2(page, "valid");
   await page.getByTestId("engine-confirm-submit").click();
   await expect(page.getByTestId("engine-complete")).toBeVisible();
@@ -231,7 +231,7 @@ test("V5.6 следующая тренировка B исполняется по
   await expect(page.getByTestId("course-progression")).toContainText("Следующая тренировка A");
   await page.getByRole("button", { name: "Закрыть" }).click();
 
-  // B закрыта полностью (10×5, техника и отдых 30 с подтверждены) → S < 20 → 11×5; A не тронута (8/7/7/7+).
+  // B закрыта полностью (10×5, техника и отдых 60 с подтверждены) → S < 20 → 11×5; A не тронута (8/7/7/7+).
   const course = await api(page, `/api/v2/program-inclusions/${inclusionId}/course`);
   expect(course.next_workout_role).toBe("A");
   expect([course.state.volume_b.sets, course.state.volume_b.reps]).toEqual([11, 5]);
