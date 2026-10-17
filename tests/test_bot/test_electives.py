@@ -21,7 +21,6 @@ from app.db.repositories.workouts import WorkoutRepository
 from app.domain.constants import EquipmentType
 from app.domain.electives import ElectiveType
 from app.domain.session import BlockLog
-from tests.test_bot._premium import _premium_user  # noqa: F401 — autouse: действующий триал
 from tests.test_bot.conftest import make_callback_update as _callback_update
 
 

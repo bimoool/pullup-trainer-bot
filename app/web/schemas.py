@@ -1011,9 +1011,9 @@ class ElectivePlanResponse(BaseModel):
 
     status: "not_onboarded"/"needs_first_workout" — форма не показывается,
     тот же принцип, что и у остальных *PlanResponse (см. WorkoutPlanResponse).
-    Решение 2026-10-17: факультатив — Premium. Предложение остаётся видимым (status не меняется),
-    subscription_required=True — подсказка экрану показать объяснение и путь к подписке сразу; истина — 402 на
-    submit. "ready" — остальные поля заполнены.
+    Нет статуса "no_access" — факультатив, предусмотренный программой «Подтягивания», бесплатен (решение
+    владельца 2026-10-17, уточнение), ни в боте (handle_electives_start), ни здесь. "ready" — остальные поля
+    заполнены.
 
     elective_allowed=False — недельный лимит (elective_limit,
     entries_this_week) уже исчерпан — фронтенд обязан показать явный текст
@@ -1029,7 +1029,6 @@ class ElectivePlanResponse(BaseModel):
     entries_this_week: int = 0
     available_types: list[ElectiveTypeInfo] = Field(default_factory=list)
     equipment_label: str | None = None
-    subscription_required: bool = False
 
 
 class ElectiveSubmitRequest(BaseModel):

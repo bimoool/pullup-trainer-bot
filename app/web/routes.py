@@ -1942,10 +1942,8 @@ async def get_free_workout_plan(
 ) -> FreeWorkoutPlanResponse:
     """Контекст для формы "Внести свободные подтягивания" (issue #109) —
     тот же вход, что handle_free_workout_start бота
-    (app/bot/handlers/free_workout.py): нет проверки подписки (свободные
-    подтягивания не за паивеллом, как и факультатив — см. докстринг
-    get_elective_plan) и нет target/work_sets/унаследованного снаряда (вне
-    цикла программы, сравнивать не с чем).
+    (app/bot/handlers/free_workout.py): нет target/work_sets/унаследованного
+    снаряда (вне цикла программы, сравнивать не с чем).
 
     Решение 2026-10-17: свободные подтягивания — доп. тренировка, Premium; форма видна всем,
     subscription_required подсказывает экрану объяснить это сразу, отказ — 402 на submit."""
@@ -2412,15 +2410,14 @@ async def get_elective_plan(
     resolve_rest_day_notice, но без текста/клавиатуры бота — Mini App
     рисует свой экран.
 
-    Решение владельца 2026-10-17: факультатив — Premium (прежнее «не за паивеллом» отменено). Предложение
-    видно всем (ответ не меняется), subscription_required подсказывает экрану сразу объяснить это и дать путь
-    к подписке; отказ — 402 на submit, как у бота (handle_electives_start)."""
+    Нет проверки подписки: факультативы — часть бесплатной программы «Подтягивания» (решение владельца
+    2026-10-17, уточнение: «предусмотренные программой подтягиваний факультативы оставляем бесплатными»), как и в
+    боте (handle_electives_start). Произвольные доп. занятия — по подписке (свободные подтягивания, свои тренировки)."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return ElectivePlanResponse(status="not_onboarded")
 
     now = datetime.now(UTC)
-    subscription_required = not ProgramAccessService.premium_feature_allowed(user, now=now)
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)
     if not history:
@@ -2487,7 +2484,6 @@ async def get_elective_plan(
         entries_this_week=entries_this_week,
         available_types=available_types,
         equipment_label=equipment_label,
-        subscription_required=subscription_required,
     )
 
 
@@ -2502,12 +2498,11 @@ async def submit_elective(
     отдельная реализация. Все проверки статуса/лимита повторяются заново на
     сервере (не доверяем клиенту ответу предыдущего GET /elective/plan —
     например, если факультатив уже был записан параллельно из бота, лимит
-    здесь пересчитается сам). Решение 2026-10-17: факультатив — Premium, без подписки 402 до любой записи
-    (тот же гейт, что у бота; введённое остаётся на экране клиента)."""
+    здесь пересчитается сам). Нет проверки подписки — факультатив программы «Подтягивания» бесплатен (см.
+    докстринг get_elective_plan выше, тот же принцип, что и у бота)."""
     user = await UserRepository(session).get_by_telegram_id(init_data.user.id)
     if user is None:
         return ElectiveSubmitResponse(status="not_onboarded")
-    _require_premium_feature(user)
 
     now = datetime.now(UTC)
     workouts = WorkoutRepository(session)

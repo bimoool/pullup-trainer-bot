@@ -37,6 +37,7 @@ from tests.test_web.test_free_program_access import (
     _free_program,
     _run_workout,
 )
+from tests.test_web.test_v2_export import v2_get as export_get
 from tests.test_web.test_v2_live_session import _make_step_program
 
 LIVE = "/api/v2/sessions/live"
@@ -252,7 +253,9 @@ async def _legacy_history(session, user: User) -> None:
     )
 
 
-async def test_unsubscribed_user_sees_elective_and_free_workout_offers_but_cannot_submit(session, user: User):
+async def test_unsubscribed_user_keeps_program_electives_free_but_not_free_pullups(session, user: User):
+    """Уточнение владельца 2026-10-17: факультативы, предусмотренные программой «Подтягивания», — бесплатны;
+    произвольные доп. занятия (свободные подтягивания) — по подписке."""
     await UserRepository(session).complete_onboarding(user.id, datetime.now(UTC))
     await _legacy_history(session, user)
     user = await _expire(session, user)
@@ -260,10 +263,11 @@ async def test_unsubscribed_user_sees_elective_and_free_workout_offers_but_canno
 
     elective_plan = await v2_get(session, tg, "/api/elective/plan")
     assert elective_plan.status_code == 200
-    assert elective_plan.json()["status"] == "ready" and elective_plan.json()["subscription_required"] is True
-    assert elective_plan.json()["available_types"]  # предложение остаётся видимым
-    _assert_402(await v2_post(session, tg, "/api/elective/submit", {"elective_type": "volume_target", "total_reps": 50}))
-    assert await ElectiveWorkoutRepository(session).count_since(user.id, datetime.now(UTC) - timedelta(days=7)) == 0
+    assert elective_plan.json()["status"] == "ready" and elective_plan.json()["available_types"]
+    assert "subscription_required" not in elective_plan.json()
+    submitted = await v2_post(session, tg, "/api/elective/submit", {"elective_type": "volume_target", "total_reps": 50})
+    assert submitted.status_code == 200 and submitted.json()["status"] == "ok", submitted.text
+    assert await ElectiveWorkoutRepository(session).count_since(user.id, datetime.now(UTC) - timedelta(days=7)) == 1
 
     free_plan = await v2_get(session, tg, "/api/free-workout/plan")
     assert free_plan.status_code == 200 and free_plan.json()["subscription_required"] is True
@@ -289,8 +293,7 @@ async def test_subscribed_user_keeps_all_premium_features(session, user: User):
     assert (await v2_post(session, tg, "/api/v2/plan-items", {"complex_id": workout_id, "count_per_week": 1})).status_code == 200
     assert (await v2_post(session, tg, "/api/v2/program-inclusions", {"program_id": (await _make_step_program(session)).id})).status_code == 200
     assert (await v2_post(session, tg, "/api/v2/sessions", await _backdated_payload(exercise))).status_code == 200
-    elective_plan = (await v2_get(session, tg, "/api/elective/plan")).json()
-    assert elective_plan["subscription_required"] is False
+    assert (await v2_post(session, tg, "/api/v2/export/link", {})).status_code == 200
     assert (await v2_post(session, tg, "/api/elective/submit", {"elective_type": "volume_target", "total_reps": 50})).json()["status"] == "ok"
     live = await _start_live(session, user, workout_id=workout_id)
     assert live.status_code == 200, live.text
@@ -469,3 +472,24 @@ async def test_subscribed_user_plan_record_with_extra_exercise_is_unchanged(sess
         inclusion["id"], [_block(roles["block_a"]), _block(foreign.id)],
     ))
     assert response.status_code == 200, response.text
+
+
+# --- 6. Экспорт истории — по подписке; просмотр истории и аналитика — бесплатно (уточнение 2026-10-17) ------
+
+
+async def test_history_export_needs_subscription_but_viewing_history_does_not(session, user: User):
+    exercise = await _system_exercise(session)
+    recorded = (await v2_post(session, user.telegram_id, "/api/v2/sessions", await _backdated_payload(exercise))).json()
+    link = await v2_post(session, user.telegram_id, "/api/v2/export/link", {})  # выпущена при подписке
+    assert link.status_code == 200, link.text
+    user = await _expire(session, user)
+    tg = user.telegram_id
+
+    _assert_402(await v2_post(session, tg, "/api/v2/export/link", {}))
+    _assert_402(await export_get(session, tg, "/api/v2/export/sessions.csv"))
+    _assert_402(await export_get(session, tg, link.json()["url"]))  # старая подписанная ссылка тоже не отдаёт файл
+
+    journal = (await v2_get(session, tg, "/api/v2/sessions?status=completed")).json()["sessions"]
+    assert recorded["id"] in [s["id"] for s in journal]
+    assert (await v2_get(session, tg, "/api/v2/analytics/training")).status_code == 200
+    assert (await v2_get(session, tg, "/api/history")).status_code == 200

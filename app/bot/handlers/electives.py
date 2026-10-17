@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot import texts
 from app.bot.formatting import format_elective_result, format_equipment_label
-from app.bot.handlers.subscription import send_premium_feature_paywall
 from app.bot.keyboards import bottom_menu_keyboard, cancel_keyboard, elective_type_keyboard
 from app.bot.parsing import ParseError, parse_int_sequence
 from app.bot.states import ElectiveStates
@@ -35,7 +34,6 @@ from app.domain.electives import (
     volume_target_goal,
 )
 from app.services.elective_log import ElectiveLogService
-from app.services.program_access import ProgramAccessService
 
 router = Router()
 
@@ -64,13 +62,6 @@ _SEQUENCE_LIMITS: dict[ElectiveType, tuple[int, int]] = {
 async def handle_electives_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
-
-    # Решение 2026-10-17: факультатив — Premium (кнопка видна всем; гейт — у входа, как у Mini App 402). Уже
-    # начатый ввод (выбран формат) дописывается и сохраняется без повторной проверки.
-    if not ProgramAccessService.premium_feature_allowed(user, now=datetime.now(UTC)):
-        await send_premium_feature_paywall(callback.message, texts.PREMIUM_FEATURE_ELECTIVE)
-        await callback.answer()
-        return
 
     workouts = WorkoutRepository(session)
     history = await workouts.list_for_user(user.id)

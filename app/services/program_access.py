@@ -94,7 +94,7 @@ class ProgramAccessService:
 
     @staticmethod
     def premium_feature_allowed(user: User, *, now: datetime) -> bool:
-        """Premium-функция вне бесплатной программы: факультатив, доп./свободная тренировка, своё упражнение /
+        """Premium-функция вне бесплатной программы: доп./свободная тренировка, экспорт истории, своё упражнение /
         тренировка / план, добавление в план, «Повторить» в Журнале."""
         return premium_feature_allowed(entitled=SubscriptionService.is_entitled(user, now=now))
 

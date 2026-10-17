@@ -1048,8 +1048,6 @@ export interface ElectivePlan {
   entries_this_week: number;
   available_types: ElectiveTypeInfo[];
   equipment_label: string | null;
-  /** Решение 2026-10-17: факультатив — по подписке; предложение видно, отказ — 402 на submit. */
-  subscription_required?: boolean;
 }
 
 export async function fetchElectivePlan(initDataRaw: string): Promise<ElectivePlan> {

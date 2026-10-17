@@ -10,6 +10,7 @@ from app.bot.formatting import (
     format_progress_report,
     format_recommendations,
 )
+from app.bot.handlers.subscription import send_premium_feature_paywall
 from app.bot.keyboards import progress_section_keyboard
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
@@ -22,6 +23,7 @@ from app.domain.reports import (
     weekly_summary,
 )
 from app.services.export import build_export_workbook
+from app.services.program_access import ProgramAccessService
 
 router = Router()
 
@@ -88,6 +90,11 @@ async def handle_show_all_cycles_analytics(callback: CallbackQuery, session: Asy
 async def handle_export_xlsx(callback: CallbackQuery, session: AsyncSession) -> None:
     users = UserRepository(session)
     user = await users.get_by_telegram_id(callback.from_user.id)
+    # Решение владельца 2026-10-17 (уточнение): экспорт истории — по подписке (кнопка видна; просмотр — бесплатно).
+    if not ProgramAccessService.premium_feature_allowed(user, now=datetime.now(UTC)):
+        await send_premium_feature_paywall(callback.message, texts.PREMIUM_FEATURE_EXPORT)
+        await callback.answer()
+        return
 
     workouts = WorkoutRepository(session)
     records = await workouts.list_records_for_user(user.id)

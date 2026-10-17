@@ -8,7 +8,6 @@ import {
   type ElectiveSubmitResponse,
   type ElectiveTypeInfo,
 } from "./api";
-import { PremiumFeatureNotice } from "./SubscriptionRequiredSheet";
 import { SetInputGrid, parseSetValue, parseSetValues, replaceAt } from "./WorkoutScreen";
 
 type Props = {
@@ -180,7 +179,6 @@ export function ElectiveScreen({ initDataRaw, onCancel, onDone }: Props) {
     return (
       <div>
         <p className="plan-title">{type.label}</p>
-        {plan.subscription_required && <PremiumFeatureNotice feature="Факультатив" />}
         {plan.is_rest_day && <p className="gap-banner">Сегодня как раз день отдыха — хороший момент для этого.</p>}
 
         {type.input_kind === "total" ? (
@@ -254,7 +252,6 @@ export function ElectiveScreen({ initDataRaw, onCancel, onDone }: Props) {
   return (
     <div>
       <p className="plan-title">Факультатив</p>
-      {plan.subscription_required && <PremiumFeatureNotice feature="Факультатив" />}
       {plan.is_rest_day && (
         <p className="gap-banner">
           Сегодня день отдыха{plan.ready_at ? ` — обычная тренировка снова доступна ${plan.ready_at}` : ""}. Можешь
