@@ -3,7 +3,7 @@
 * ``prescribe_main`` — рецепт следующего основного занятия (A или B) при живом старте. Нет нужных
   входов — ``CourseSetupRequiredError`` (роут → 409 ``course_setup_required``): ничего не угадывается.
 * ``targets_for`` — SetTarget блоков занятия: объём (упражнение роли ``block_a`` снимка инклюзии) и сила
-  (упражнение роли ``block_b``). Полный рецепт (роль A/B, уровень, отдых 240/30/900/180, маркеры AMRAP /
+  (упражнение роли ``block_b``). Полный рецепт (роль A/B, уровень, отдых 240/60/900/180, маркеры AMRAP /
   контрольного подхода / стоп-правила B, помощь, вес, входы расчёта) пишется ОДИН раз в снимок сессии
   (``prescription_snapshot.provenance.course_program``, WORKOUT_DOMAIN_V2 S1) — его исполняет движок
   #306 и его же читает прогрессия при завершении.
@@ -135,7 +135,7 @@ def targets_for(prescription: SessionPrescription) -> tuple[list[SetTargetInput]
 
 
 def course_snapshot_patch(snapshot: dict, prescription: dict, *, progression_state_rev: int) -> dict:
-    """Дописывает в синтезированный снимок сессии рецепт V5.6: отдых подходов и блоков (240/30 → 900 →
+    """Дописывает в синтезированный снимок сессии рецепт V5.6: отдых подходов и блоков (240/60 → 900 →
     180) в стандартные поля снимка и полный рецепт в provenance.course_program. Вызывается один раз при
     создании сессии (S1)."""
     blocks = snapshot.get("blocks") or []

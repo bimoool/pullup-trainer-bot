@@ -1265,7 +1265,7 @@ def engine_plan_for(detail: SessionDetail) -> dict:
         return finalize_plan([plan_block_from_snapshot(block) for block in snapshot["blocks"]])
     items = positional_snapshot_items(detail.workout_snapshot, len(detail.blocks))
     # Синтезированный снимок по позиции блоков сессии: явный отдых, если он там записан (рецепт V5.6, #305:
-    # 240/30 → 900 → 180), важнее умолчаний движка; у остальных синтезированных снимков его нет (None).
+    # 240/60 → 900 → 180), важнее умолчаний движка; у остальных синтезированных снимков его нет (None).
     snapshot_blocks = (snapshot or {}).get("blocks") or []
     snapshot_blocks = snapshot_blocks if len(snapshot_blocks) == len(detail.blocks) else [{}] * len(detail.blocks)
     blocks = []

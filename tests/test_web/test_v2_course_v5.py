@@ -2,7 +2,7 @@
 
 Сквозной путь: подключение (правило pullups_v5_6@1, провенанс) → недостающие входы (409
 course_setup_required, PUT /course/inputs) → живой старт занятия A/B (SetTarget + рецепт в снимке
-сессии: роль, уровень, отдых 240/30 → 900 → 180, маркеры) → завершение с подтверждениями техники/отдыха
+сессии: роль, уровень, отдых 240/60 → 900 → 180, маркеры) → завершение с подтверждениями техники/отдыха
 → типизированная прогрессия по блокам → следующее занятие. Плюс: только вперёд (правка истории и
 снимки не меняются, каскад неприменим), повторное завершение без второй прогрессии, копия сессии без
 кредита, устаревшая версия программы читается и исполняется прежним кодом, тест 1RM."""
@@ -336,7 +336,7 @@ async def test_a_then_b_sequence_progresses_each_block_by_its_own_signal(session
     b, done_b = await _cycle(session, user, clock, 1, [[5] * 13 + [2], [3, 3, 3, 3, 3]])
     assert [Decimal(t["value"]) for t in b["blocks"][0]["targets"]] == [5] * 15  # V_ref 70 → 15×5
     assert {t["marker"] for t in b["blocks"][0]["targets"]} == {"dynamic"}
-    assert b["course_program"]["blocks"][0]["rest_seconds"] == 30
+    assert b["course_program"]["blocks"][0]["rest_seconds"] == 60  # решение владельца 17.10.2026
     assert b["blocks"][1]["course_block"]["external_load_kg"] == "10"
     volume, strength = done_b["course_progression"]["blocks"]
     assert (volume["block_role"], volume["decision"], volume["fact_volume"]) == ("b_volume", "hold", 67)
