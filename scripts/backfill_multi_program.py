@@ -121,7 +121,6 @@ from app.domain.electives import ElectiveType
 from app.domain.multi_program import (
     MetricType,
     ProgramStructureType,
-    SessionSource,
     WeekPhase,
     snapshot_program_items_gap,
 )
@@ -456,6 +455,31 @@ async def _count_onboarded_electives(session: AsyncSession) -> int:
     return result.scalar_one()
 
 
+def _onboarded_completed_workout_ids():
+    return (
+        select(Workout.id)
+        .join(User, Workout.user_id == User.id)
+        .where(Workout.status == WorkoutStatus.COMPLETED, User.onboarding_completed_at.is_not(None))
+    )
+
+
+def _onboarded_elective_ids():
+    return (
+        select(ElectiveWorkout.id)
+        .join(User, ElectiveWorkout.user_id == User.id)
+        .where(User.onboarding_completed_at.is_not(None))
+    )
+
+
+async def _count_legacy_copies(session: AsyncSession, origin: SessionOrigin, legacy_ids) -> int:
+    """Копии legacy-строк, которые сверяются с ожидаемым числом: origin копии и legacy_id из того же множества,
+    что считает ожидаемое (_count_onboarded_workouts / _count_onboarded_electives). (origin, legacy_id) уникальна
+    в БД, поэтому одна legacy-строка даёт не больше одной копии."""
+    return await _count(
+        session, TrainingSession, TrainingSession.origin == origin.value, TrainingSession.legacy_id.in_(legacy_ids),
+    )
+
+
 @dataclass
 class BackfillReport:
     dry_run: bool
@@ -467,6 +491,9 @@ class BackfillReport:
     training_sessions_elective_total: int = 0
     workouts_completed_expected: int = 0
     electives_expected: int = 0
+    # Сессии, которые не являются копиями сверяемых legacy-строк: самостоятельные сессии Mini App (origin native или
+    # NULL до #307), копии строк не онбордившихся пользователей или незавершённых тренировок. Показываются, не сверяются.
+    training_sessions_not_reconciled: int = 0
     legacy_snapshots_normalized: int = 0
     # #308: сведение legacy-истории уже мигрированных пользователей (HistoryConvergenceReport)
     history: Counter = field(default_factory=Counter)
@@ -484,6 +511,7 @@ class BackfillReport:
         if self.dry_run:
             lines.append(f"Будет создано TrainingSession (обычных): {self.training_sessions_regular_total}")
             lines.append(f"Будет создано TrainingSession (elective): {self.training_sessions_elective_total}")
+            lines.append(self._not_reconciled_line())
             lines += _render_history(self.history, dry_run=True)
             return "\n".join(lines)
 
@@ -502,10 +530,17 @@ class BackfillReport:
                 f"TrainingSession elective всего: {self.training_sessions_elective_total} "
                 f"(ожидается {self.electives_expected}) [{elective_ok}]"
             ),
+            self._not_reconciled_line(),
             f"Нормализовано legacy-снимков (program_items добавлен): {self.legacy_snapshots_normalized}",
             *_render_history(self.history, dry_run=False),
         ]
         return "\n".join(lines)
+
+    def _not_reconciled_line(self) -> str:
+        return (
+            "TrainingSession вне сверки (сессии Mini App и строки без пары в сверяемой legacy-истории), "
+            f"не сверяются: {self.training_sessions_not_reconciled}"
+        )
 
 
 _HISTORY_LABELS = (
@@ -770,6 +805,12 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
         await session.commit()
         report.users_migrated_this_run += 1
 
+    # Сверяются только копии legacy-строк (origin + legacy_id) с теми же legacy-строками, что считает ожидаемое
+    # число. Раньше «фактическое» брало ВСЕ сессии source != elective: самостоятельная сессия Mini App давала
+    # ложное РАСХОЖДЕНИЕ (прод-выкат 2026-10-17, фаза 8: «74 (ожидается 73)»), а при потерянной копии — ложное OK.
+    regular_copies = await _count_legacy_copies(session, SessionOrigin.LEGACY_BACKFILL, _onboarded_completed_workout_ids())
+    elective_copies = await _count_legacy_copies(session, SessionOrigin.LEGACY_ELECTIVE, _onboarded_elective_ids())
+    report.training_sessions_not_reconciled = await _count(session, TrainingSession) - regular_copies - elective_copies
     if dry_run:
         # Проекция поверх уже реально существующего в БД (для уже
         # мигрированных прошлым прогоном пользователей) — dry-run ничего не
@@ -777,20 +818,12 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
         report.training_plans_total = (
             await _count(session, TrainingPlan) + report.users_migrated_this_run
         )
-        report.training_sessions_regular_total += await _count(
-            session, TrainingSession, TrainingSession.source != SessionSource.ELECTIVE,
-        )
-        report.training_sessions_elective_total += await _count(
-            session, TrainingSession, TrainingSession.source == SessionSource.ELECTIVE,
-        )
+        report.training_sessions_regular_total += regular_copies
+        report.training_sessions_elective_total += elective_copies
     else:
         report.training_plans_total = await _count(session, TrainingPlan)
-        report.training_sessions_regular_total = await _count(
-            session, TrainingSession, TrainingSession.source != SessionSource.ELECTIVE,
-        )
-        report.training_sessions_elective_total = await _count(
-            session, TrainingSession, TrainingSession.source == SessionSource.ELECTIVE,
-        )
+        report.training_sessions_regular_total = regular_copies
+        report.training_sessions_elective_total = elective_copies
     report.workouts_completed_expected = await _count_onboarded_workouts(session)
     report.electives_expected = await _count_onboarded_electives(session)
     return report
