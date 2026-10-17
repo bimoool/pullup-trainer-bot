@@ -1,3 +1,4 @@
+import { reportIfSubscriptionRequired } from "./paywall.ts";
 import { httpFailureMessage, SESSION_EXPIRED_MESSAGE } from "./sessionErrors.ts";
 
 /** onboarding_step (issue #124, PR 2) — четыре состояния вместо булева
@@ -225,10 +226,15 @@ async function extractErrorMessage(
     // initData просрочен/невалиден — понятная подсказка вместо «Invalid Telegram initData» (#224).
     return SESSION_EXPIRED_MESSAGE;
   }
+  // Решение 2026-10-17: 402 subscription_required → объяснение и путь к подписке поверх экрана (paywall.ts).
+  await reportIfSubscriptionRequired(response);
   try {
     const data = await response.json();
     if (data && typeof data.detail === "string") {
       return data.detail;
+    }
+    if (data && typeof data.detail?.message === "string") {
+      return data.detail.message;
     }
   } catch {
     // JSON parsing failed or response already consumed — use fallback
@@ -771,6 +777,8 @@ export interface FreeWorkoutPlan {
   status: string;
   workout_set_id: number | null;
   band_items: BandItemInfo[];
+  /** Решение 2026-10-17: свободные подтягивания — по подписке; форма видна, отказ — 402 на submit. */
+  subscription_required?: boolean;
 }
 
 export async function fetchFreeWorkoutPlan(initDataRaw: string): Promise<FreeWorkoutPlan> {
@@ -1040,6 +1048,8 @@ export interface ElectivePlan {
   entries_this_week: number;
   available_types: ElectiveTypeInfo[];
   equipment_label: string | null;
+  /** Решение 2026-10-17: факультатив — по подписке; предложение видно, отказ — 402 на submit. */
+  subscription_required?: boolean;
 }
 
 export async function fetchElectivePlan(initDataRaw: string): Promise<ElectivePlan> {

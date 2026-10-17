@@ -17,6 +17,7 @@ from app.bot.formatting import (
     format_equipment_from_result,
     format_equipment_label,
 )
+from app.bot.handlers.subscription import send_premium_feature_paywall
 from app.bot.keyboards import (
     anomaly_confirm_keyboard,
     back_cancel_keyboard,
@@ -37,6 +38,7 @@ from app.db.repositories.workouts import WorkoutRepository
 from app.domain.anomalies import detect_anomalies
 from app.domain.constants import EquipmentType
 from app.domain.session import BlockLog
+from app.services.program_access import ProgramAccessService
 from app.services.workout_log import WorkoutLogService, ensure_active_workout_set
 
 router = Router()
@@ -49,7 +51,14 @@ router = Router()
 
 
 @router.callback_query(F.data == "free_workout_start")
-async def handle_free_workout_start(callback: CallbackQuery, state: FSMContext) -> None:
+async def handle_free_workout_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
+    # Решение 2026-10-17: свободные подтягивания — доп. тренировка вне программы, Premium (кнопка видна всем;
+    # гейт — у входа). Уже начатый ввод дописывается и сохраняется без повторной проверки.
+    user = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+    if user is None or not ProgramAccessService.premium_feature_allowed(user, now=datetime.now(UTC)):
+        await send_premium_feature_paywall(callback.message, texts.PREMIUM_FEATURE_FREE_WORKOUT)
+        await callback.answer()
+        return
     await state.set_state(FreeWorkoutStates.waiting_for_equipment_type)
     await callback.message.answer(texts.FREE_WORKOUT_EQUIPMENT_PROMPT, reply_markup=equipment_type_keyboard())
     await callback.answer()

@@ -67,9 +67,11 @@ async def create_custom_plan(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> CustomPlanResponse:
-    from app.web.routes_v2 import _plan_today, _require_user
+    from app.web.routes_v2 import _plan_today, _require_premium_feature, _require_user
 
     user = await _require_user(session, init_data)
+    # Решение 2026-10-17: свой план — Premium (остановка своего плана — нет, deactivate ниже не гейтится).
+    _require_premium_feature(user)
     try:
         validate_custom_plan(
             workout_count=len(body.workout_ids), weeks=body.weeks, preferred_weekdays=body.preferred_weekdays,

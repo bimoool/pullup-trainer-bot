@@ -23,6 +23,7 @@ from app.domain.multi_program import (
     plan_week_number,
     plan_week_start_date,
 )
+from tests.test_web._premium import create_premium_user
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
 
 TG = 1001
@@ -182,13 +183,12 @@ async def test_copy_beyond_window_is_422(session, user):
 
 
 async def test_ownership_foreign_week_is_404(session, user):
-    from app.db.repositories.users import UserRepository
 
     plan, exercise, number, weeks = await _setup(session, user)
     item = _manual(plan, exercise, weeks[number], 0)
     session.add(item)
     await session.commit()
-    other = await UserRepository(session).create(telegram_id=2002, username="other")
+    other = await create_premium_user(session, telegram_id=2002, username="other")
     session.add(TrainingPlan(user_id=other.id))
     await session.commit()
 
