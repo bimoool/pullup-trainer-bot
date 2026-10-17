@@ -47,7 +47,7 @@ printf 'restrict,command="%s/prod-guarded-dispatch.sh" %s\n' "$BIN" "$(cat "$TMP
 cat "$TMP/auth" > "$AUTH"
 echo "authorized_keys: $(grep -c " ${COMMENT}\$" "$AUTH") line(s) for $COMMENT, $(wc -l < "$AUTH") total"
 
-prl="$(sshd -T 2>/dev/null | awk '$1=="permitrootlogin"{print $2}')"
+prl="$( { sshd -T 2>/dev/null || /usr/sbin/sshd -T 2>/dev/null || true; } | awk '$1=="permitrootlogin"{print $2}')"
 case "$prl" in
   yes|prohibit-password|without-password|forced-commands-only) echo "sshd PermitRootLogin=$prl: key login with forced command allowed" ;;
   *) echo "WARNING: sshd PermitRootLogin=${prl:-unknown} — root key login may be refused; nothing was changed in sshd" ;;
