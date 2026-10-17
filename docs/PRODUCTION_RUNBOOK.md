@@ -286,10 +286,11 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 
 * **Workflow:** `production-deploy.yml` (preflight / apply) и `production-rollback.yml` (R1 / R3, check / apply). Оба запускаются только
   вручную (`workflow_dispatch`), в одной группе `concurrency: production` — второй запуск ждёт, текущий не отменяется.
-* **Проверки до SSH:** точный 40-hex SHA; SHA содержит текущий `origin/main`; на этом SHA зелёные `pytest`, `ruff`, `frontend build`
-  и нет красных или незавершённых проверок; для apply — токен `PRODUCTION-APPLY-<первые 12 символов SHA>`.
-  `tests.yml` запускается только на PR, поэтому выкатывается ровно головной SHA release-PR, а `main` после выката
-  сдвигается на него fast-forward.
+* **Проверки до SSH:** точный 40-hex SHA; SHA содержит текущий `origin/main` **или** уже влит кнопкой merge (main содержит
+  SHA и дерево файлов main с ним совпадает); на этом SHA зелёные `pytest`, `ruff`, `frontend build` и нет красных или
+  незавершённых проверок; для apply — токен `PRODUCTION-APPLY-<первые 12 символов SHA>`.
+  `tests.yml` запускается только на PR (в т.ч. на изменения `deploy/**` и workflow выката), поэтому выкатывается
+  головной SHA release-PR — до или после его мержа в `main`, но не merge-коммит.
 * **Ревизии Alembic** (`from_rev`, `to_rev`) задаются явно; guarded-скрипт сверяет их с живой БД и с образом. Без миграций
   в релизе обе равны текущему head (`b5d8e1f3a6c9` на 17.10.2026) — это штатный «повторный» прогон скрипта (§6).
 * **Доступ:** отдельный ключ, секрет `PROD_GUARDED_SSH_KEY`, на сервере строка

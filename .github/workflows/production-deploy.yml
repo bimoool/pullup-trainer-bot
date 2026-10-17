@@ -66,14 +66,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: SHA exists and contains current main
+      - name: SHA exists and matches main
         env:
           SHA: ${{ inputs.sha }}
         run: |
           git cat-file -e "${SHA}^{commit}" || { echo "::error::$SHA not found in the repository"; exit 1; }
           git fetch -q origin main
-          git merge-base --is-ancestor origin/main "$SHA" \
-            || { echo "::error::$SHA does not contain origin/main — deploying it would drop code that is on main"; exit 1; }
+          # Допустимо: (а) SHA содержит origin/main (кандидат ещё не влит или влит fast-forward); (б) кандидат влит
+          # кнопкой merge — main содержит SHA и дерево файлов main совпадает с SHA (merge-коммит без своих изменений;
+          # CI на push в main не запускается, поэтому выкатывается проверенный SHA кандидата).
+          if git merge-base --is-ancestor origin/main "$SHA"; then
+            echo "$SHA contains origin/main"
+          elif git merge-base --is-ancestor "$SHA" origin/main && git diff --quiet "$SHA" origin/main; then
+            echo "origin/main contains $SHA with an identical tree"
+          else
+            echo "::error::$SHA neither contains origin/main nor equals its tree — deploying it would drop or skip code on main"; exit 1
+          fi
           for f in deploy/deploy-production-guarded-run.sh deploy/rollback-production-guarded.sh deploy/prod-guarded-dispatch.sh; do
             git diff --quiet "$SHA" HEAD -- "$f" || echo "::warning::$f differs between $SHA and this workflow's ref; the server runs the copy installed in /root/bin"
           done
