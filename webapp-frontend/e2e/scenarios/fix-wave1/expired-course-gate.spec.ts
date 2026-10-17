@@ -136,7 +136,10 @@ test("Просроченный пользователь: курс и свои т
   await clickAndSync(page, "Сохранить и завершить", "/complete");
   await expect(page.getByText("Тренировка завершена")).toBeVisible();
 
-  expect(noWakeLock(consoleErrors)).toEqual([]);
+  // Старт своей тренировки без подписки — настоящий ответ 402 сервера (курс гейтится на клиенте до запроса). Браузер
+  // пишет любой 4xx в консоль как «Failed to load resource»; этот 402 сценарий ждёт намеренно (allowedApiStatuses).
+  const expected402 = "the server responded with a status of 402";
+  expect(noWakeLock(consoleErrors).filter((e) => !e.includes(expected402))).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
 
