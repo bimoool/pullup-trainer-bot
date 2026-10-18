@@ -1,0 +1,5 @@
+[0,0][1080,2400] 'Crimpd'
+[0,0][1080,2400] 'Are you sure you want to delete this training plan?'
+[21,1884][1063,2000] 'Are you sure you want to delete this training plan?'
+[21,1995][1063,2147] 'Delete Training Plan'
+[21,2163][1063,2315] 'Cancel'
