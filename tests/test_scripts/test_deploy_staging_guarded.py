@@ -23,7 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "deploy" / "deploy-staging-guarded-run.sh"
 DISPATCH = ROOT / "deploy" / "deploy-staging-guarded-dispatch.sh"
 SHA = "a" * 40
-NEW_HEAD = "b5d8e1f3a6c9"
+NEW_HEAD = "d4b7e1a9c3f5"  # WEB-кампания: c7e2a9d4b1f8 (вход из браузера) -> d4b7e1a9c3f5 (редактор плана)
+PREV_HEAD = "b5d8e1f3a6c9"  # голова staging после выката MVP-кандидата
 OLD_REV = "c3f7a9e2d5b1"
 
 DOCKER_STUB = r"""#!/usr/bin/env python3
@@ -96,10 +97,10 @@ if args[0] == "compose":
     if sub == "up": st["running"] = True; st["up_done"] = True; save(); sys.exit(0)
     if sub == "run":
         cmd = " ".join(rest)
-        if "alembic heads" in cmd: out(NEW := "b5d8e1f3a6c9 (head)"); sys.exit(0)
+        if "alembic heads" in cmd: out("d4b7e1a9c3f5 (head)"); sys.exit(0)
         if "alembic upgrade head" in cmd:
             if env.get("FAIL_MIGRATE"): sys.exit(1)
-            st["rev"] = "b5d8e1f3a6c9"; save(); sys.exit(0)
+            st["rev"] = "d4b7e1a9c3f5"; save(); sys.exit(0)
         if "python -c" in cmd:
             if env.get("FAIL_CONV_CHECK"): sys.exit(1)
             import subprocess
@@ -293,6 +294,26 @@ def test_full_success_orders_phases_and_starts_only_at_the_end(sandbox):
     )  # снимок «до» снят до смены кода
     assert idx(log, "build app") < idx(log, "build web")  # последовательно
     assert state["running"] is True and state["head"] == SHA and state["rev"] == NEW_HEAD
+
+
+def test_upgrades_from_the_previous_head_to_the_new_head(sandbox):
+    """WEB-кампания: staging стоит на голове MVP-кандидата (b5d8e1f3a6c9); выкат поднимает его до новой головы
+    (две аддитивные ревизии). Режим dry-run + start=yes применяет миграцию, сведение не применяет, сервисы стартуют."""
+    sandbox.preset(rev=PREV_HEAD)
+    proc, log, state = sandbox(SHA, "dry-run", "yes", "-")
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "GUARDED DEPLOY OK" in proc.stdout
+    assert idx(log, "alembic upgrade head") >= 0, log
+    assert "--apply" not in "\n".join(log)  # сведение не применялось
+    assert idx(log, "alembic upgrade head") < idx(log, "up -d --no-build app web")
+    assert state["running"] is True and state["rev"] == NEW_HEAD
+
+
+def test_unknown_alembic_revision_is_refused_before_anything_stops(sandbox):
+    sandbox.preset(rev="0" * 12)
+    proc, log, state = sandbox(SHA, "preflight", "no")
+    assert proc.returncode != 0 and "unexpected alembic revision" in (proc.stderr + proc.stdout)
+    assert state["running"] is True and idx(log, "stop app web") < 0
 
 
 def test_dry_run_without_start_never_applies_or_starts(

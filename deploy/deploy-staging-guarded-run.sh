@@ -34,7 +34,10 @@ set -euo pipefail
 
 PROJECT="pullup-staging"
 EXPECTED_FROM_REV="c3f7a9e2d5b1"          # ревизия staging, на которую рассчитан этот выкат (runbook §1.1)
-EXPECTED_TO_REV="b5d8e1f3a6c9"            # единственный Alembic head кандидата (runbook §4); иной head — стоп
+# Промежуточная голова: после выката MVP-кандидата (V5.6) staging стоит на ней. Дальнейший выкат (вход из браузера c7e2a9d4b1f8 +
+# редактор плана d4b7e1a9c3f5, WEB-кампания) поднимает её до новой головы (две аддитивные ревизии: новые таблицы и одна nullable-колонка).
+PREV_HEAD_REV="b5d8e1f3a6c9"
+EXPECTED_TO_REV="d4b7e1a9c3f5"            # единственный Alembic head кандидата (runbook §4); иной head — стоп
 
 if [ "${GUARDED_TEST:-0}" = "1" ]; then   # переопределения — только для тестов с заглушками; на VPS игнорируются
   STAGING_DIR="${STAGING_DIR:?}"; BACKUP_DIR="${BACKUP_DIR:?}"; HEALTH_URL="${HEALTH_URL:?}"
@@ -198,8 +201,8 @@ DB_NAME="$(docker exec "$DBC" sh -c 'echo "$POSTGRES_DB"')"
 case "$DB_NAME" in *staging*) ;; *) die "database name '$DB_NAME' does not contain 'staging' — refusing to continue" ;; esac
 # --- всё ниже проверяется ДО любой остановки/записи
 case "$PREV_REV" in
-  "$EXPECTED_FROM_REV"|"$EXPECTED_TO_REV") ;;
-  *) die "unexpected alembic revision $PREV_REV (expected $EXPECTED_FROM_REV, or $EXPECTED_TO_REV after an earlier run)" ;;
+  "$EXPECTED_FROM_REV"|"$PREV_HEAD_REV"|"$EXPECTED_TO_REV") ;;
+  *) die "unexpected alembic revision $PREV_REV (expected $EXPECTED_FROM_REV, $PREV_HEAD_REV, or $EXPECTED_TO_REV after an earlier run)" ;;
 esac
 for svc in app web; do
   [ -n "$(dc ps -aq "$svc" | head -n1)" ] || die "no existing $svc container: cannot save its image for rollback"
@@ -311,11 +314,11 @@ HEADS="$(grep -E '\(head\)' "$WORK/heads.txt" | awk '{print $1}')"
 CUR="$(dbq "select version_num from alembic_version")"
 if [ "$CUR" = "$HEADS" ]; then
   log "WARNING: database already at head $HEADS (a previous run migrated it); the pre-migration backup is the one from that earlier run"
-elif [ "$CUR" = "$EXPECTED_FROM_REV" ]; then
+elif [ "$CUR" = "$EXPECTED_FROM_REV" ] || [ "$CUR" = "$PREV_HEAD_REV" ]; then
   dcrun app alembic upgrade head
   [ "$(dbq "select version_num from alembic_version")" = "$HEADS" ] || die "alembic_version != head after upgrade"
 else
-  die "unexpected alembic revision $CUR (expected $EXPECTED_FROM_REV or head $HEADS)"
+  die "unexpected alembic revision $CUR (expected $EXPECTED_FROM_REV, $PREV_HEAD_REV or head $HEADS)"
 fi
 log "alembic_version = $HEADS"
 
