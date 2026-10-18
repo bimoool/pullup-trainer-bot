@@ -1,0 +1,22 @@
+07:49:23 OPEN /
+07:49:23 TAP TAB Планы
+07:49:23 TAP Начать
+07:49:24 FIELDS [{"tag":"INPUT","type":"text","name":"","label":"Строгих повторений с объёмной резиной (≈8–12), повт."},{"tag":"INPUT","type":"text","name":"","label":"Резина (модель/название)"},{"tag":"INPUT","type":"text","name":"","label":"Цвет резины"},{"tag":"INPUT","type":"text","name":"","label":"Крепление"},{"tag":"INPUT","type":"text","name":"","label":"Положение: стопа или колено"},{"tag":"INPUT","type":"checkbox","name":"","label":"Без помощи (собственный вес)"},{"tag":"INPUT","type":"text","name":"","label":"Резина (модель/название)"},{"tag":"INPUT","type":"text","name":"","label":"Цвет резины"},{"tag":"INPUT","type":"text","name":"","label":"Крепление"},{"tag":"INPUT","type":"text","name":"","label":"Положение: стопа или колено"}]
+07:49:36 OPEN /
+07:49:36 TAP TAB Планы
+07:49:37 TAP Начать
+07:49:38 TAP Сохранить
+07:49:38 NET PUT /api/v2/program-inclusions/1/course/inputs -> 200 
+07:49:39 VISIBLE[after-save] ГОТОВЫ К СТАРТУ | Подтягивания | БЛОК 1: 7/7/7/7+ | Audit band 25 | БЛОК 2: 5/5/5/5/5–8 | Audit band 35 | Начать
+07:49:39 BUTTONS[after-save] ["Начать"]
+07:49:39 SHOT p1-j1c-01-after-save.png
+07:49:39 TAP Начать
+07:49:39 NET POST /api/v2/sessions/live -> 200 
+07:49:40 VISIBLE[start-0] ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | Подтягивания — объём | 1 / 4 | ПОДХОД | 7 | ПОВТ | Подход 1/4 · Цель: 7 повт. | ПРИГОТОВЬСЯ | 0:05 | Начать сейчас | Пауза
+07:49:40 BUTTONS[start-0] ["Завершить","Начать сейчас","Пауза"]
+07:49:40 SHOT p1-j1c-02-start-0.png
+07:49:40 TAP Начать сейчас
+07:49:40 NET POST /api/v2/sessions/live/1/events -> 200 
+07:49:41 VISIBLE[start-1] ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | Подтягивания — объём | 1 / 4 | ПОДХОД | 7 | ПОВТ | Подход 1/4 · Цель: 7 повт. | ПОШЁЛ | ВНЕСТИ ПОДХОД | Повторений | Готово | Пауза
+07:49:41 BUTTONS[start-1] ["Завершить","Готово","Пауза"]
+07:49:41 SHOT p1-j1c-03-start-1.png
