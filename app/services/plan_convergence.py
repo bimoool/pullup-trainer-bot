@@ -70,6 +70,7 @@ from app.domain.plan_occurrence import (
     custom_week_occurrences,
     derive_slots,
 )
+from app.domain.plan_spec import spec_from_json
 from app.services.course_assessment import promote_if_assessed
 from app.services.plan_removal import retire_open_custom_rows, stop_custom_plan
 from app.services.plan_spacing import MainSpacingService
@@ -464,6 +465,9 @@ class PlanConvergenceService:
         if stale:
             report.custom_rows_retired += await retire_open_custom_rows(self._session, plan, stale, today=today)
         offset = week.week_number - custom_plan.start_week_number
+        if custom_plan.spec is not None:
+            await self._reconcile_spec_week(custom_plan, week, live, rows, offset=offset, report=report)
+            return
         specs = custom_week_occurrences(
             workout_ids=list(custom_plan.workouts), weeks=list(custom_plan.weeks),
             repeat=CustomPlanRepeat(custom_plan.repeat), week_offset=offset,
@@ -488,6 +492,50 @@ class PlanConvergenceService:
                 scheduled_date=_scheduled(week, spec.day_of_week), status=PlanItemStatus.OPEN.value,
             ))
             report.occurrences_created += 1
+
+    async def _reconcile_spec_week(
+        self, custom_plan: CustomPlan, week: PlanWeek, live: set[int], rows: list[PlanItem], *, offset: int,
+        report: ConvergenceReport,
+    ) -> None:
+        """План с матрицей (custom_plans.spec, UX-EDITOR): сверка ПО КОЛИЧЕСТВУ занятий каждой тренировки
+        недели, не по occurrence_index. Нехватка — новые занятия без дня (occurrence_index = max+1, включая
+        снятые); излишек — снимаются открытые незасчитанные: сначала без дня, затем с самым поздним днём.
+        Засчитанные не трогаются никогда. Строки ищутся по origin-неделе (идентичность занятия, PL6)."""
+        spec = spec_from_json(custom_plan.workouts, custom_plan.spec, custom_plan.repeat)
+        expected = {wid: n for wid, n in spec.expected_counts(offset).items() if wid in live}
+        active = [row for row in rows if row.status != PlanItemStatus.REMOVED]
+        by_workout: dict[int, list[PlanItem]] = {}
+        for row in active:
+            by_workout.setdefault(row.workout_definition_id, []).append(row)
+        credited = await self._sessions.credited_plan_item_ids([row.id for row in active])
+        next_index = max([row.occurrence_index or 0 for row in rows], default=0)
+        for workout_id in sorted(set(expected) | set(by_workout)):
+            have = by_workout.get(workout_id, [])
+            want = expected.get(workout_id, 0)
+            if len(have) < want:
+                exercise_id = await self._plans.first_complex_exercise_id(workout_id)
+                if exercise_id is None:
+                    report.gaps.append(f"custom plan {custom_plan.id}: workout {workout_id} has no items")
+                    continue
+                for _ in range(want - len(have)):
+                    next_index += 1
+                    await self._plans.add_plan_item(PlanItem(
+                        training_plan_id=custom_plan.training_plan_id, exercise_id=exercise_id,
+                        complex_id=workout_id, count_per_week=1, day_of_week=None,
+                        week_phase=None, program_inclusion_id=None, plan_week_id=week.id,
+                        origin_plan_week_id=week.id, source=OccurrenceSource.CUSTOM_PLAN.value,
+                        workout_definition_id=workout_id, occurrence_index=next_index,
+                        custom_plan_id=custom_plan.id, scheduled_date=None, status=PlanItemStatus.OPEN.value,
+                    ))
+                    report.occurrences_created += 1
+            elif len(have) > want:
+                candidates = sorted(
+                    (row for row in have if row.id not in credited),
+                    key=lambda r: (r.day_of_week is not None, -(r.day_of_week or 0), -(r.occurrence_index or 0)),
+                )
+                for row in candidates[: len(have) - want]:
+                    row.status = PlanItemStatus.REMOVED.value
+                    report.custom_rows_retired += 1
 
     # --- Инклюзия ---------------------------------------------------------------------------
 

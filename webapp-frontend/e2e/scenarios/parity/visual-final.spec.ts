@@ -68,10 +68,10 @@ for (const width of WIDTHS) {
         expect(Math.round(box.y + box.height), "лист прижат к низу окна").toBe(vh);
         expect(box.y, "лист не на весь экран").toBeGreaterThan(0);
         await snap(page, width, theme, "add_to_plan_sheet");
-        const free = page.getByRole("button", { name: "Свободный пул" });
+        const free = page.getByRole("button", { name: "Без дня" });
         const freeBox = (await free.boundingBox())!;
-        expect(freeBox.x, "«Свободный пул»: отступ слева от края листа").toBeGreaterThanOrEqual(box.x + 8);
-        expect(freeBox.x + freeBox.width, "«Свободный пул» внутри листа").toBeLessThanOrEqual(box.x + box.width - 8);
+        expect(freeBox.x, "«Без дня»: отступ слева от края листа").toBeGreaterThanOrEqual(box.x + 8);
+        expect(freeBox.x + freeBox.width, "«Без дня» внутри листа").toBeLessThanOrEqual(box.x + box.width - 8);
         await expectNoHorizontalOverflow(page, "лист «Добавить в план»");
         await page.getByTestId("form-sheet-backdrop").click({ position: { x: 5, y: 5 } });
         await expect(page.getByTestId("workout-detail")).toBeVisible();

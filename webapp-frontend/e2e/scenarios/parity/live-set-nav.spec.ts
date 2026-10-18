@@ -23,7 +23,7 @@ const PREV = "Предыдущий подход";
 async function startLive(page: Page) {
   await page.getByTestId("my-workout-card").filter({ hasText: TITLE }).click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
-  await page.getByRole("button", { name: "Свободный пул" }).click();
+  await page.getByRole("button", { name: "Без дня" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
   await group.getByRole("button", { name: /^Начать: / }).click();

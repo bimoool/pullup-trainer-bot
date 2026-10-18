@@ -78,6 +78,7 @@ from app.db.models_program import (
     AssessmentResult,
     Complex,
     ComplexItem,
+    CustomPlan,
     Exercise,
     PlanItem,
     Program,
@@ -1825,6 +1826,56 @@ async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
+# --- ux-editor (UX-EDITOR, id-диапазон 941000–941099) ------------------------------------------------------
+
+
+async def _ux_editor_base(session: AsyncSession, telegram_id: int) -> tuple[User, list[Complex], TrainingPlan]:
+    """Онбординг пройден (триал = Premium), план создан сегодня, три свои тренировки «Тяга UX …»."""
+    user = await _onboard(session, telegram_id)
+    plan = TrainingPlan(user_id=user.id)
+    session.add(plan)
+    await session.flush()
+    exercise = Exercise(
+        name=f"Тяга UX {telegram_id}", metric_type=MetricType.REPS, category="e2e_ux_editor",
+        source_type="user", owner_user_id=user.id,
+    )
+    session.add(exercise)
+    await session.flush()
+    workouts = []
+    for title in ("Тяга UX-А", "Тяга UX-Б", "Тяга UX-В"):
+        workout = Complex(name=title, source_type="user", owner_user_id=user.id)
+        session.add(workout)
+        await session.flush()
+        session.add(ComplexItem(complex_id=workout.id, exercise_id=exercise.id, order_index=0, sets=3, target_value=8))
+        workouts.append(workout)
+    await session.flush()
+    return user, workouts, plan
+
+
+async def seed_ux_editor_fresh(session: AsyncSession, telegram_id: int) -> None:
+    """Редактор плана: пользователь с тремя тренировками и без своих планов — тест создаёт план сам."""
+    await _ux_editor_base(session, telegram_id)
+
+
+async def seed_ux_editor_legacy(session: AsyncSession, telegram_id: int) -> None:
+    """Редактор плана: «старый» свой план в прежней форме (spec = NULL): ротация [А, Б], объём по неделям
+    [2, 2, 0, 2], старт с текущей недели; занятия текущей недели и окна материализованы прежним путём."""
+    from app.services.plan_convergence import PlanConvergenceService
+
+    user, workouts, plan = await _ux_editor_base(session, telegram_id)
+    today = datetime.now(UTC).astimezone(ZoneInfo(user.timezone)).date()
+    start = plan_week_number(plan.created_at.date(), today)
+    session.add(CustomPlan(
+        user_id=user.id, training_plan_id=plan.id, display_name="Старый план", start_week_number=start,
+        workouts=[workouts[0].id, workouts[1].id], weeks=[2, 2, 0, 2], repeat="once", preferred_weekdays=None,
+        is_active=True,
+    ))
+    await session.flush()
+    await PlanConvergenceService(session).converge_user_plan(
+        training_plan_id=plan.id, today=today, create_until_week=start + 3,
+    )
+
+
 SCENARIOS = {
     "sweep_empty": seed_sweep_empty,
     "sweep_populated": seed_sweep_populated,
@@ -1872,6 +1923,8 @@ SCENARIOS = {
     "journal_combined": seed_journal_combined,
     "plan_week_stepper": seed_plan_week_stepper,
     "plans_overview": seed_plans_overview,
+    "ux_editor_fresh": seed_ux_editor_fresh,
+    "ux_editor_legacy": seed_ux_editor_legacy,
 }
 
 

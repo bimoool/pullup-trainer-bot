@@ -10,6 +10,8 @@ export const DAY_LABELS: { value: number; label: string }[] = [
 type Props = {
   selectedDay: number | "free_pool" | null;
   onSelect: (day: number | "free_pool") => void;
+  /** UX-31: дни раньше этого индекса (0 = Пн) недоступны — они уже прошли в текущей неделе. */
+  disabledBefore?: number;
 };
 
 /**
@@ -20,13 +22,14 @@ type Props = {
  * большой refactor" — минимальное извлечение, сама разметка/стили
  * не изменены).
  */
-export function DayPicker({ selectedDay, onSelect }: Props) {
+export function DayPicker({ selectedDay, onSelect, disabledBefore = 0 }: Props) {
   return (
     <Section className="block-section" header="День">
       <div className="week-day-picker">
         {DAY_LABELS.map(({ value, label }) => (
           <Button
-            key={value} size="s"
+            key={value} size="s" disabled={value < disabledBefore}
+            aria-label={value < disabledBefore ? `${label}: день прошёл` : undefined}
             mode={selectedDay === value ? "filled" : "outline"}
             onClick={() => onSelect(value)}
           >
@@ -39,7 +42,7 @@ export function DayPicker({ selectedDay, onSelect }: Props) {
         mode={selectedDay === "free_pool" ? "filled" : "outline"}
         onClick={() => onSelect("free_pool")}
       >
-        Свободный пул
+        Без дня
       </Button>
     </Section>
   );

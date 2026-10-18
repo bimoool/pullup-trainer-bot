@@ -26,6 +26,8 @@ import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { ActionSheet, MoreButton, PlanProgressBar, type SheetAction } from "./ActionSheet";
 import { AddToPlanScreen } from "./AddToPlanScreen";
 import { CustomPlanScreen } from "./CustomPlanScreen";
+import { PlanEditorScreen } from "./PlanEditorScreen";
+import { WeekScheduleScreen } from "./WeekScheduleScreen";
 import { MovePlanItemScreen } from "./MovePlanItemScreen";
 import { MyWorkoutsScreen } from "./MyWorkoutsScreen";
 import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
@@ -240,6 +242,8 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
 type MyWorkoutsView =
   | { kind: "closed" }
   | { kind: "custom-plan" }
+  | { kind: "plan-editor"; planId: number }
+  | { kind: "plan-schedule"; planId: number; index: number }
   | { kind: "list" }
   | { kind: "create" }
   | { kind: "detail"; workoutId: number }
@@ -659,7 +663,26 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       <CustomPlanScreen
         initDataRaw={initDataRaw}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
-        onCreated={() => { setMyWorkoutsView({ kind: "closed" }); reloadPlan(); }}
+        onCreated={(planId) => { setMyWorkoutsView({ kind: "plan-editor", planId }); reloadPlan(); }}
+      />
+    );
+  }
+  if (myWorkoutsView.kind === "plan-editor") {
+    const editorPlanId = myWorkoutsView.planId;
+    return (
+      <PlanEditorScreen
+        initDataRaw={initDataRaw} planId={editorPlanId}
+        onBack={() => { setMyWorkoutsView({ kind: "closed" }); reloadPlan(); }}
+        onOpenSchedule={(index) => setMyWorkoutsView({ kind: "plan-schedule", planId: editorPlanId, index })}
+      />
+    );
+  }
+  if (myWorkoutsView.kind === "plan-schedule") {
+    const schedulePlanId = myWorkoutsView.planId;
+    return (
+      <WeekScheduleScreen
+        initDataRaw={initDataRaw} planId={schedulePlanId} index={myWorkoutsView.index}
+        onBack={() => setMyWorkoutsView({ kind: "plan-editor", planId: schedulePlanId })}
       />
     );
   }
@@ -707,6 +730,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
         currentDayOfWeek={myWorkoutsView.currentDayOfWeek}
         weeks={plan.weeks.filter((_, index) => isEditableWeek(index, resolveCurrentWeekIndex(plan.weeks, plan.currentWeekId, plan.today ?? localToday())))}
         currentWeekId={myWorkoutsView.planWeekId}
+        todayWeekId={plan.currentWeekId}
+        todayDayIndex={(new Date(`${plan.today ?? localToday()}T00:00:00`).getDay() + 6) % 7}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onSuccess={() => {
           setMyWorkoutsView({ kind: "closed" });
@@ -932,6 +957,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                 {custom.repeat === "cycle" ? " · по кругу" : ""}
                 {custom.is_active ? "" : " · остановлен"}
               </p>
+              {custom.is_active && (
+                <Button
+                  size="s" mode="outline" data-testid="plans-custom-plan-edit"
+                  onClick={() => setMyWorkoutsView({ kind: "plan-editor", planId: custom.id })}
+                >
+                  Настроить
+                </Button>
+              )}
               {custom.is_active && (
                 <Button
                   size="s" mode="outline" data-testid="plans-custom-plan-stop"
@@ -1346,7 +1379,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                 ))}
                 {freePool.length > 0 && (
                   <div className="plan-week-day-group">
-                    <p className="block-subtitle">Свободный пул</p>
+                    <p className="block-subtitle">Без дня</p>
                     {groupPlanItems(freePool, plan.inclusions, libraryExercises).map(renderGroupRow)}
                   </div>
                 )}

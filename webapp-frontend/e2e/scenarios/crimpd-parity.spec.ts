@@ -471,7 +471,7 @@ for (const width of WIDTHS) {
       // В план → старт.
       await page.getByTestId("my-workout-card").filter({ hasText: EFFORT_TITLE }).click();
       await page.getByRole("button", { name: "Добавить в план" }).click();
-      await page.getByRole("button", { name: "Свободный пул" }).click();
+      await page.getByRole("button", { name: "Без дня" }).click();
       await page.getByRole("button", { name: "Добавить", exact: true }).click();
       const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
       await group.getByRole("button", { name: /^Начать: / }).click();
@@ -1007,7 +1007,7 @@ for (const width of WIDTHS) {
 
       await page.getByTestId("my-workout-card").filter({ hasText: EFFORT_TITLE }).click();
       await page.getByRole("button", { name: "Добавить в план" }).click();
-      await page.getByRole("button", { name: "Свободный пул" }).click();
+      await page.getByRole("button", { name: "Без дня" }).click();
       await page.getByRole("button", { name: "Добавить", exact: true }).click();
       const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${EFFORT_TITLE}`) });
       await group.getByRole("button", { name: /^Начать: / }).click();
@@ -1083,7 +1083,7 @@ const PANEL_USERS = {
 async function startFromFreePool(page: Page, title: string) {
   await page.getByTestId("my-workout-card").filter({ hasText: title }).click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
-  await page.getByRole("button", { name: "Свободный пул" }).click();
+  await page.getByRole("button", { name: "Без дня" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${title}`) });
   await group.getByRole("button", { name: /^Начать: / }).click();

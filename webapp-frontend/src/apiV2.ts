@@ -594,16 +594,113 @@ export interface CustomPlanCreateV2 {
   display_name: string;
   workout_ids: number[];
   /** Объём по неделям: [2, 2, 0, 2, 2, 0] — 0 допустим (пустая неделя). */
-  weeks: number[];
+  weeks?: number[];
   repeat?: "once" | "cycle";
   /** Подсказка размещения (0 = Пн … 6 = Вс), не объём. */
   preferred_weekdays?: number[] | null;
   start_week_number?: number | null;
+  /** UX-EDITOR: матрица [тренировка][неделя]; если задана, `weeks` выводится на сервере. */
+  quantities?: number[][];
+  phases?: PlanPhaseV2[];
 }
 
 /** issue #304 (§7) — свой план с объёмом по неделям. */
 export async function createCustomPlan(initDataRaw: string, body: CustomPlanCreateV2): Promise<CustomPlanV2> {
   return apiV2Post("/api/v2/custom-plans", initDataRaw, body);
+}
+
+// --- UX-EDITOR: редактор своего плана и расписание недели (contract §3) ---------------------------------
+
+export type PlanPhaseV2 = "base" | "rest" | "peak";
+
+export interface EditorWeekV2 {
+  index: number;
+  week_number: number;
+  start_date: string;
+  state: "past" | "current" | "future";
+  phase: PlanPhaseV2;
+  total: number;
+  quantities: Record<string, number>;
+  done: Record<string, number>;
+  placed: number;
+}
+
+export interface CustomPlanEditorV2 {
+  id: number;
+  display_name: string;
+  repeat: "once" | "cycle";
+  start_week_number: number;
+  is_active: boolean;
+  current_week_index: number | null;
+  converted: boolean;
+  notice: string | null;
+  workouts: { workout_id: number; title: string }[];
+  weeks: EditorWeekV2[];
+  removed_sessions: number;
+}
+
+export interface ScheduleItemV2 { plan_item_id: number; day: number | null; done: boolean; missed: boolean }
+export interface ScheduleWorkoutV2 {
+  workout_id: number;
+  title: string;
+  quantity: number;
+  placed_by_day: number[];
+  remaining: number;
+  items: ScheduleItemV2[];
+}
+export interface WeekScheduleV2 {
+  index: number;
+  week_number: number;
+  start_date: string;
+  state: "past" | "current" | "future";
+  days: { day: number; date: string; state: "past" | "today" | "future"; total: number }[];
+  workouts: ScheduleWorkoutV2[];
+}
+
+const plansBase = (id: number) => `/api/v2/custom-plans/${id}`;
+
+export async function fetchPlanEditor(initDataRaw: string, id: number): Promise<CustomPlanEditorV2> {
+  return apiV2Get(`${plansBase(id)}/editor`, initDataRaw);
+}
+export async function setWeekQuantities(
+  initDataRaw: string, id: number, index: number, quantities: Record<string, number>,
+): Promise<CustomPlanEditorV2> {
+  return apiV2Patch(`${plansBase(id)}/weeks/${index}/quantities`, initDataRaw, { quantities });
+}
+export async function setWeekPhase(
+  initDataRaw: string, id: number, index: number, phase: PlanPhaseV2,
+): Promise<CustomPlanEditorV2> {
+  return apiV2Patch(`${plansBase(id)}/weeks/${index}`, initDataRaw, { phase });
+}
+export async function insertPlanWeek(initDataRaw: string, id: number, afterIndex: number): Promise<CustomPlanEditorV2> {
+  return apiV2Post(`${plansBase(id)}/weeks`, initDataRaw, { after_index: afterIndex });
+}
+async function apiV2DeleteJson<T>(path: string, initDataRaw: string): Promise<T> {
+  const response = await fetch(path, { method: "DELETE", headers: { "X-Telegram-Init-Data": initDataRaw } });
+  if (!response.ok) {
+    const message = await extractErrorMessage("DELETE", path, response);
+    throw new Error(message);
+  }
+  return (await response.json()) as T;
+}
+export async function deletePlanWeek(initDataRaw: string, id: number, index: number): Promise<CustomPlanEditorV2> {
+  return apiV2DeleteJson(`${plansBase(id)}/weeks/${index}`, initDataRaw);
+}
+export async function addPlanWorkout(initDataRaw: string, id: number, workoutId: number): Promise<CustomPlanEditorV2> {
+  return apiV2Post(`${plansBase(id)}/workouts`, initDataRaw, { workout_id: workoutId });
+}
+export async function removePlanWorkout(initDataRaw: string, id: number, workoutId: number): Promise<CustomPlanEditorV2> {
+  return apiV2DeleteJson(`${plansBase(id)}/workouts/${workoutId}`, initDataRaw);
+}
+export async function fetchWeekSchedule(initDataRaw: string, id: number, index: number): Promise<WeekScheduleV2> {
+  return apiV2Get(`${plansBase(id)}/weeks/${index}/schedule`, initDataRaw);
+}
+export async function placeOnDay(
+  initDataRaw: string, id: number, index: number, workoutId: number, day: number, unplace: boolean,
+): Promise<WeekScheduleV2> {
+  return apiV2Post(`${plansBase(id)}/weeks/${index}/${unplace ? "unplace" : "place"}`, initDataRaw, {
+    workout_id: workoutId, day_of_week: day,
+  });
 }
 
 /** issue #304 (B3) — «Остановить план»: is_active=false, незасчитанные занятия текущей/будущих недель снимаются,
