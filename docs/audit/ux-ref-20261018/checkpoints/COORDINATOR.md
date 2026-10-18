@@ -27,3 +27,33 @@ Rules for all: `impl/COMMON.md` (no main merge, no deploy, 3→2 transition NOT 
 **Timing ledger (coordinator):** start of implementation = 2026-10-18T11:06Z. Active/CI/rework per worker are recorded in each `checkpoints/<X>.md`; coordinator totals at the end.
 
 **Open access risk (staging):** staging SSH host is not discoverable from this machine (placeholder `<VPS_HOST>` in the runbook; `staging.app.bimoool.com` DNS timed out once; `192.168.1.139` in known_hosts is unreachable). The guarded dispatcher key exists (`~/.ssh/pullup_staging_guarded`). Will re-test at integration; if still unreachable → exact missing input reported as the blocker for the staging step, integrated candidate still delivered on a pushed branch.
+
+## Result · 2026-10-18 13:28Z · integrated candidate on staging
+
+**Candidate:** `campaign/ux-ref-20261018` @ `079022141d6aa1db8065c2549d9e890fa455fd08` (= gated `7c4416e` + removal of one generated file; code identical).
+Base code: `origin/main` e2ed40e. A `9d9bf58`, B `3a79da0`, C `dd3cbf9` merged without textual conflicts; 6 integration fixes by the coordinator (below).
+**Staging:** https://staging.app.bimoool.com — guarded deploy `dry-run yes -` OK 13:27:52Z (backup `/home/deploy/backups/staging-pre-0790221-20261018T132038Z.dump`, alembic unchanged `b5d8e1f3a6c9`, app/web healthy, images built by this run). Served bundle `assets/index-BtY_8oWy.js` = the bundle of the gated build; contains the new copy (checked by string search). Production untouched.
+
+### Gate
+- pytest (host): 2755 passed, 86 skipped, 4 failed = `test_prod_guarded_dispatch.py` (`flock` missing on macOS) — the same file passes 105/105 in a Linux container on main and on the candidate; `test_deploy_staging_guarded.py` (21 tests) excluded on host, passes in Linux on both trees.
+- Playwright (full, `CI=1` as `e2e.yml`): 594 passed, 13 skipped, 0 failed, 1 flaky (`a11y-review` @390 dark: one 500 from `asyncpg … rejected SSL upgrade` in the local container; passed on retry). `peer-insights` 8/8.
+- Baseline (clean main, same order/env): 589 passed, 9 skipped, 0 failed.
+- Known unstable, also on main: `fix-wave1/first-add-to-plan` (add-to-plan sheet button «not stable / detached»; fails 4/4 in directory runs on main, 1/4 on candidate; passed in the CI-config run). Root cause not found.
+
+### Failures found and fixed (name · cause · baseline · fix)
+| Failure | Cause | Baseline | Fix |
+|---|---|---|---|
+| expired-course-gate ×2 | `no_access` rows lost «Начать» (leads to the subscription sheet) | green | button kept for `no_access` (`planRows.ts`) |
+| ux-c-metrics ×2, `test_spec_telegram_ids_are_seeded` | C's users 930643/44 absent from `e2e_seed_all.sh` | n/a | added to seed-all |
+| parity «Итог» ×12 @320 | «без длительности» at 28 px widened the tiles (scrollWidth 437) | green | smaller wrapping text style |
+| parity Journal card ×4 | third child added to `.journal-card-body` (layout is two parts) | green | duration moved into the title row |
+| plans-row-narrow ×2 | mock set only `state`; UI reads `start_allowed`/`blocked_reason` | green | mock sets both |
+| expired-free-pullups, expired-gate (2nd run) | my run lacked `PYTHON`/DB env | green | env fixed, no code change |
+| 21+4 deploy-script tests on macOS | no `flock`/`setsid` | n/a | verified in Linux |
+Integration fix outside the executors' scope: legacy-schedule consequence text now also fires from the week's actual `infeasible` rows (A's real `weekly_capacity` for the legacy shape is 3, B's mock assumed 2).
+
+### Timing (measured, not an estimate)
+- Harness-measured executor runs: A 11.2 min, C 11.3 min, B 34.7 min (parallel). Their self-reported active minutes (A ≈ 80, B ≈ 140, C ≈ 90) do not match the harness durations; treat the harness numbers as the measured ones and the self-reports as unreliable.
+- Coordinator: preparation (base/writers check, contract, briefs, worktrees) ≈ 25 min; integration + gate + fixes ≈ 1 h 40 min wall, of which waiting for runs ≈ 1 h (5 full E2E runs × ≈ 5.3 min, host pytest 7.6 min + one aborted, Linux containers 2 × ≈ 4.5 min, one invalid baseline attempt ×2); staging deploy 7.5 min.
+- Rework: two invalid baseline runs (missing Playwright install; wrong command quoting), one hung pytest on a macOS-only test, one false signal from `--repeat-each` (shared telegram id), four fix rounds on regressions, one ssh option quoting slip.
+- Launch (11:06Z) → staging OK (13:27Z): 2 h 21 min wall. Not comparable with the 25–35 engineer-day estimate (different unit: the work was done by parallel agents).
