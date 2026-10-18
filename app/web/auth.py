@@ -1,7 +1,8 @@
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from init_data_py import InitData
 
 from app.config import settings
+from app.web.web_auth import SESSION_SENTINEL, WebInitData, resolve_web_session
 
 # Telegram переоткрывает Mini App с новым initData/hash при каждом запуске
 # (кнопка в чате) — initData старше этого возраста не может быть свежим
@@ -23,7 +24,10 @@ from app.config import settings
 INIT_DATA_MAX_AGE_SECONDS = 12 * 3600
 
 
-def get_validated_init_data(x_telegram_init_data: str = Header(...)) -> InitData:
+def get_validated_init_data(
+    x_telegram_init_data: str = Header(...),
+    web_session: WebInitData | None = Depends(resolve_web_session),
+) -> InitData:
     """FastAPI-зависимость: заголовок X-Telegram-Init-Data — это ровно то,
     что Telegram.WebApp.initData отдаёт на фронтенде (см.
     webapp-frontend/src/api.ts) — сырая query-string, не распарсенная на
@@ -37,6 +41,12 @@ def get_validated_init_data(x_telegram_init_data: str = Header(...)) -> InitData
     бросает исключение при неверной подписи/просроченном auth_date;
     здесь любая ошибка библиотеки превращается в 401, а не в 500 — сам
     факт "подпись не сошлась" не повод для стектрейса в проде."""
+    if x_telegram_init_data == SESSION_SENTINEL:
+        # Браузерная сессия (WEB-AUTH): маркер действует ТОЛЬКО вместе с действующей cookie. При прямом вызове
+        # функции (тесты) web_session — объект Depends, не WebInitData -> 401.
+        if isinstance(web_session, WebInitData):
+            return web_session  # type: ignore[return-value]  # совместим по .user.id / .user.first_name
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Telegram initData")
     try:
         init_data = InitData.parse(x_telegram_init_data)
         init_data.validate(settings.bot_token, lifetime=INIT_DATA_MAX_AGE_SECONDS)

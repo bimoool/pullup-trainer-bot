@@ -13,6 +13,7 @@ from app.web.routes_v2_dashboard import router_v2_dashboard
 from app.web.routes_v2_export import router_v2_export
 from app.web.routes_v2_live import router_v2_live
 from app.web.routes_v2_plan import router_v2_plan
+from app.web.web_auth import register_web_auth
 
 # Dockerfile.web собирает webapp-frontend/ в статику и кладёт её сюда —
 # тот же процесс FastAPI отдаёт и /api/*, и статику одним origin'ом, без
@@ -43,6 +44,9 @@ app.include_router(router_v2_export)
 app.include_router(router_v2_collections)
 # issue #305 — программа «Подтягивания» V5.6: состояние, входы, тест 1RM.
 app.include_router(router_v2_course)
+
+# WEB-AUTH — вход в браузере через бота (+ закрытый тестовый вход только при WEB_AUTH_TEST_LOGIN=1 и e2e-токене).
+register_web_auth(app)
 
 
 @app.get("/health")

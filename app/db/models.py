@@ -652,3 +652,47 @@ class UserBodyMetric(Base):
     value: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     measured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class WebLoginRequest(Base):
+    """Запрос на вход в браузере через бота (WEB-AUTH, device-code). request_id публичен (идёт в ссылку t.me),
+    браузерный секрет в БД хранится только как SHA-256. Один запрос — одно использование (status -> consumed)."""
+
+    __tablename__ = "web_login_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    code: Mapped[str] = mapped_column(String(4), nullable=False)
+    # pending | approved | denied | consumed | locked
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
+    # Кто первым открыл ссылку в боте (привязка: подтвердить может только он же).
+    opened_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    first_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    ip_prefix: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    bad_secret_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    poll_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebSession(Base):
+    """Браузерная сессия (WEB-AUTH). В БД — только SHA-256 токена из cookie pullup_web_session."""
+
+    __tablename__ = "web_sessions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    first_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    user_agent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip_prefix: Mapped[str | None] = mapped_column(String(64), nullable=True)
