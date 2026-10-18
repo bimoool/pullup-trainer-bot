@@ -88,3 +88,9 @@ Bot handler tests, frontend (`authBootstrap`, `LoginScreen`, `session.ts`, `webA
   E2E: `WEB_AUTH_COOKIE_SECURE=0 WEB_AUTH_TEST_LOGIN=1 WEB_AUTH_IP_REQUEST_LIMIT=1000 WEB_AUTH_IP_POLL_LIMIT=100000 WEB_AUTH_IP_BAD_POLL_LIMIT=100000 bash /tmp/ux_stack.sh <wt> 8081 web_auth`, then in `webapp-frontend/e2e`:
   `BOT_TOKEN=e2e-test-token PYTHON=<venv>/python DATABASE_URL=<stack db url> POSTGRES_*=... E2E_BASE_URL=http://127.0.0.1:8081 CI=1 WEB_AUTH_TEST_LOGIN=1 npx playwright test scenarios/web/auth-login.spec.ts scenarios/web/auth-miniapp.spec.ts --project=web-desktop --project=web-mobile`.
   Specs need `PYTHON`, `DATABASE_URL` (they shell out to `scripts/e2e_web_login.py`) and the stack flags above.
+
+- Existing tests changed (minimally, intended behaviour change = one new alembic head): `tests/test_scripts/test_course_prescription_migration.py::test_e_single_head_follows_training_session_v2`
+  and `tests/test_scripts/test_single_history_migration.py` (`CHAIN_HEAD`) pinned the head to `b5d8e1f3a6c9`; they now expect `c7e2a9d4b1f8` whose parent is `b5d8e1f3a6c9` (chain assertions kept). Both pass.
+- Not clean on this macOS box and unrelated to this work: `tests/test_scripts/test_deploy_*_guarded.py` fail in preflight (`free memory:` empty — Linux `free`/meminfo missing); the full `tests/test_scripts` run is very slow here (migration scratch DBs), so I ran only the head-pinning files + `test_e2e_seed_integrity.py` (green).
+- Final verification run on branch: ruff clean; `tests/test_web/test_web_auth.py` + `tests/test_bot/test_web_login.py` + auth/qa_mint/commit_scope/hello = 76 passed; node unit 376 passed; `tsc -b && vite build` clean; Playwright web-desktop+web-mobile auth specs 18/18, `home-discovery` + `not-onboarded` (chromium) 4/4.
+- Stack on :8081 stopped, `docker compose down` done.
