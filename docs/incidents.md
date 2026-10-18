@@ -135,3 +135,18 @@ Mini App в Telegram Web живёт в `iframe`, где `window.confirm` бло�
 `window.confirm`. Остальные вызовы `window.confirm` (журнал, история,
 выход со страницы и т. п.) на момент правки ещё не переведены — отдельная
 задача.
+
+## Сверка backfill смешивала копии legacy-истории и сессии Mini App (прод-выкат 2026-10-17)
+
+Guarded-выкат `c03deff` остановился на фазе 8: отчёт `scripts/backfill_multi_program.py` выдал
+«TrainingSession обычные всего: 74 (ожидается 73) [РАСХОЖДЕНИЕ]». Прод восстановлен откатом R3.
+Причина в самой сверке: ожидаемое число — завершённые legacy-тренировки (`workouts`) онбордившихся
+пользователей, а фактическое считало **все** `training_sessions` с `source != elective`, то есть и
+самостоятельные сессии Mini App (`origin = native` или `NULL` до #307), в том числе незавершённые.
+Пока сессий Mini App не было, числа совпадали; любая такая сессия даёт ложное `РАСХОЖДЕНИЕ`, а при потерянной
+копии — ложное `OK`.
+
+**Правило**: сверка переноса сравнивает только копии (`origin = legacy_backfill|legacy_elective`,
+`legacy_id` из того же множества legacy-строк, что и ожидаемое число); остальные сессии показываются отдельной
+строкой «вне сверки» и не сверяются. Тесты: `tests/test_scripts/test_backfill_multi_program.py`
+(`test_native_mini_app_sessions_do_not_break_legacy_reconciliation`, `test_missing_legacy_copy_is_still_reported`).

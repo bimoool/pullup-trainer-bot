@@ -484,3 +484,67 @@ async def test_legacy_snapshot_without_program_items_gets_normalized(session, us
     assert report3.legacy_snapshots_normalized == 0
     await session.refresh(legacy_inclusion)
     assert legacy_inclusion.snapshot == snapshot_before
+
+
+# --- Сверка «обычных» TrainingSession с legacy-тренировками (прод-выкат 2026-10-17, фаза 8: «74 (ожидается 73)») ----
+#
+# Сверка проверяет перенос legacy-истории: у каждой завершённой legacy-тренировки онбордившегося пользователя —
+# ровно одна копия (origin = legacy_backfill, legacy_id = workouts.id). Самостоятельные сессии Mini App
+# (origin = native или NULL до #307) копиями не являются и в ожидаемое число не входят, поэтому в «фактическое»
+# тоже не должны входить — раньше фактическое считало ВСЕ сессии с source != elective.
+
+
+async def _record_legacy_workout(session, user: User) -> None:
+    workout_set = await _make_workout_set(session, user)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=NOW - timedelta(days=5),
+        block_a_reps=BlockLog(working_reps=(10, 10, 9), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+
+
+def _native_session(user: User, *, source: SessionSource, origin: str | None = "native", status: str = "completed"):
+    return TrainingSession(
+        user_id=user.id, source=source, status=status, origin=origin,
+        performed_at=NOW - timedelta(days=1), completed_at=NOW - timedelta(days=1) if status == "completed" else None,
+    )
+
+
+async def test_native_mini_app_sessions_do_not_break_legacy_reconciliation(session, user: User):
+    await _onboard(session, user)
+    await _record_legacy_workout(session, user)  # dual-write (#308) создаёт копию legacy_backfill
+    session.add(_native_session(user, source=SessionSource.FREEFORM))
+    session.add(_native_session(user, source=SessionSource.PLAN, origin=None, status="started"))
+    session.add(_native_session(user, source=SessionSource.ELECTIVE))
+    await session.flush()
+
+    for dry_run in (True, False, False):  # dry-run, apply, повтор — как фаза 8 guarded-выката
+        report = await backfill_all(session, now=NOW, dry_run=dry_run)
+        rendered = report.render()
+
+        assert report.training_sessions_regular_total == report.workouts_completed_expected == 1, rendered
+        assert report.training_sessions_elective_total == report.electives_expected == 0, rendered
+        assert "РАСХОЖДЕНИЕ" not in rendered
+        # Нативные сессии не прячутся — показываются отдельной строкой, без сверки.
+        assert report.training_sessions_not_reconciled == 3
+        assert "не сверяются: 3" in rendered
+
+
+async def test_missing_legacy_copy_is_still_reported(session, user: User):
+    await _onboard(session, user)
+    await _record_legacy_workout(session, user)
+    await backfill_all(session, now=NOW)
+    copy = (await session.execute(select(TrainingSession).where(TrainingSession.origin == "legacy_backfill"))).scalar_one()
+    # Копия «потеряла» связь с legacy-строкой и выглядит как нативная сессия — сверка обязана это поймать, а не
+    # засчитать её. dry-run: apply сам восстановил бы копию сведением (#308), здесь проверяется именно отчёт.
+    copy.origin, copy.legacy_id = "native", None
+    await session.commit()  # dry-run откатывает свою транзакцию — правка теста должна быть зафиксирована
+
+    report = await backfill_all(session, now=NOW, dry_run=True)
+
+    # До исправления нативная сессия «закрывала» потерянную копию: 1 == 1, OK.
+    assert report.training_sessions_regular_total == 0
+    assert report.workouts_completed_expected == 1
+    assert report.training_sessions_not_reconciled == 1
