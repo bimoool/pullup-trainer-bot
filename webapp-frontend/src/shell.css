@@ -984,6 +984,16 @@ html[data-vp-runtime="browser"] {
   --tg-destructive-text-color: #c62828;
   --web-nav-w: 232px;
   --web-col-max: 760px;
+  --tg-theme-bg-color: var(--tg-bg-color);
+  --tg-theme-text-color: var(--tg-text-color);
+  --tg-theme-hint-color: var(--tg-hint-color);
+  --tg-theme-link-color: var(--tg-link-color);
+  --tg-theme-button-color: var(--tg-button-color);
+  --tg-theme-button-text-color: var(--tg-button-text-color);
+  --tg-theme-secondary-bg-color: var(--tg-secondary-bg-color);
+  --tg-theme-section-bg-color: var(--tg-section-bg-color);
+  --tg-theme-subtitle-text-color: var(--tg-subtitle-text-color);
+  --tg-theme-destructive-text-color: var(--tg-destructive-text-color);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -999,7 +1009,17 @@ html[data-vp-runtime="browser"] {
     --tg-subtitle-text-color: #9aa9ba;
     --tg-destructive-text-color: #ff6b6b;
     color-scheme: dark;
-  }
+    --tg-theme-bg-color: var(--tg-bg-color);
+  --tg-theme-text-color: var(--tg-text-color);
+  --tg-theme-hint-color: var(--tg-hint-color);
+  --tg-theme-link-color: var(--tg-link-color);
+  --tg-theme-button-color: var(--tg-button-color);
+  --tg-theme-button-text-color: var(--tg-button-text-color);
+  --tg-theme-secondary-bg-color: var(--tg-secondary-bg-color);
+  --tg-theme-section-bg-color: var(--tg-section-bg-color);
+  --tg-theme-subtitle-text-color: var(--tg-subtitle-text-color);
+  --tg-theme-destructive-text-color: var(--tg-destructive-text-color);
+}
 }
 
 html[data-vp-runtime="browser"] :focus-visible {
@@ -1037,13 +1057,10 @@ html[data-vp-runtime="browser"] body {
 .web-back {
   margin-left: calc(-1 * var(--vp-sp-3));
 }
-.web-signout-top {
+.web-signout {
   margin-left: auto;
   margin-right: calc(-1 * var(--vp-sp-3));
   color: var(--vp-hint);
-}
-.web-signout-nav {
-  display: none;
 }
 
 /* шторка подтверждения */
@@ -1111,11 +1128,13 @@ html[data-vp-runtime="browser"] body {
   html[data-vp-runtime="browser"] body {
     padding-left: var(--web-nav-w);
   }
-  html[data-vp-runtime="browser"] .app-shell.app-shell-web {
+  html[data-vp-runtime="browser"] .app-shell {
     max-width: var(--web-col-max);
     margin: 0 auto;
     padding-left: var(--vp-sp-6);
     padding-right: var(--vp-sp-6);
+  }
+  html[data-vp-runtime="browser"] .app-shell.app-shell-web {
     padding-bottom: 48px;
   }
   html[data-vp-runtime="browser"]:root {
@@ -1166,14 +1185,15 @@ html[data-vp-runtime="browser"] body {
   .bottom-tabbar-web .bottom-tabbar-item:hover {
     background: color-mix(in srgb, var(--tg-hint-color) 14%, transparent);
   }
-  .web-signout-nav {
-    display: block;
-    margin-top: auto;
+  /* десктоп: та же кнопка закреплена внизу боковой навигации */
+  .web-signout {
+    position: fixed;
+    left: var(--vp-sp-3);
+    bottom: var(--vp-sp-4);
+    z-index: 31;
+    width: calc(var(--web-nav-w) - 2 * var(--vp-sp-3));
+    margin: 0;
     text-align: left;
-    color: var(--vp-hint);
-  }
-  .web-signout-top {
-    display: none;
   }
   html[data-vp-runtime="browser"] .home-sheet-backdrop {
     justify-content: center;

@@ -6,7 +6,7 @@ import { usePlatform } from "./mode";
 export type NavTab = { key: string; label: string };
 
 export function NavBar({ tabs, active, onSelect }: { tabs: NavTab[]; active: string; onSelect: (key: never) => void }) {
-  const { mode, signOut } = usePlatform();
+  const { mode } = usePlatform();
   return (
     <nav className={mode === "browser" ? "bottom-tabbar bottom-tabbar-web" : "bottom-tabbar"} aria-label="Основная навигация">
       {tabs.map(({ key, label }) => (
@@ -21,11 +21,6 @@ export function NavBar({ tabs, active, onSelect }: { tabs: NavTab[]; active: str
           <span>{label}</span>
         </button>
       ))}
-      {mode === "browser" && signOut && (
-        <button type="button" className="web-signout web-signout-nav" data-testid="web-signout-nav" onClick={signOut}>
-          Выйти
-        </button>
-      )}
     </nav>
   );
 }

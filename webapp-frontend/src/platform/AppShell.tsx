@@ -7,6 +7,7 @@ import { BackControl } from "./BackBridge";
 import { handleEscape } from "./backStore";
 import { ConfirmHost } from "./ConfirmHost";
 import { usePlatform } from "./mode";
+import { SignOutButton } from "./SignOutButton";
 import { setBrowserRuntime } from "./runtime";
 
 export function AppShell({ withNav, children }: { withNav: boolean; children: ReactNode }) {
@@ -36,11 +37,8 @@ export function AppShell({ withNav, children }: { withNav: boolean; children: Re
     <div className={`${base} app-shell-web`}>
       <div className="web-topbar">
         <BackControl />
-        {signOut && withNav && (
-          <button type="button" className="web-signout web-signout-top" data-testid="web-signout-top" onClick={signOut}>
-            Выйти
-          </button>
-        )}
+        {/* одна кнопка: на телефоне справа в верхней полосе, на десктопе (CSS) — внизу боковой навигации */}
+        {signOut && <SignOutButton className="web-signout" />}
       </div>
       {children}
       <ConfirmHost />
