@@ -45,7 +45,7 @@ test("journalCardStats: пустая запись — прочерки", () => {
 
 test("journalCardStats: активность — длительность ч:мм, дистанция «—»", () => {
   const stats = s([], "3", { activity_type: "swimming", duration_seconds: 4500 });
-  assert.deepEqual(flat(stats), ["Длительность=1:15", "Дистанция=—", "Усилие=3"]);
+  assert.deepEqual(flat(stats), ["Длительность=75 мин", "Дистанция=—", "Усилие=3"]);
   assert.deepEqual(flat(s([], null, { activity_type: "yoga", duration_seconds: null })), ["Длительность=—", "Дистанция=—", "Усилие=—"]);
 });
 

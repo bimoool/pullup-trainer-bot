@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.repositories.training_sessions import BatchSetLogInput, SessionDetail
 from app.domain.block_execution import interval_protocol, rest_seconds_for_protocol
+from app.domain.training_session_v2 import effective_duration_seconds
 from app.domain.workout_snapshot import positional_snapshot_items
 from app.services.course_assessment import AssessmentRequiredError
 from app.services.course_v5 import CourseSetupRequiredError, course_prescription_of
@@ -177,6 +178,10 @@ def _live_session_response_fields(detail: SessionDetail, *, title: str | None = 
         "engine": LiveEngineView(**view) if view is not None else None,
         "engine_status": detail.engine_status,
         "course_program": course_program,
+        "duration_seconds": effective_duration_seconds(
+            duration_seconds=detail.duration_seconds, duration_source=detail.duration_source,
+            performed_at=detail.performed_at, completed_at=detail.completed_at,
+        ),
     }
 
 

@@ -205,6 +205,7 @@ def _sets_panel(
 def _max_panel(exercise_id: int, name: str, entries: list[tuple[datetime, AnalyticsBlock]]) -> ProtocolPanel:
     points: list[TrendPoint] = []
     attempts = 0
+    total = Decimal(0)
     cumulative: Decimal | None = None
     unit = "reps"
     for at, block in entries:
@@ -213,6 +214,7 @@ def _max_panel(exercise_id: int, name: str, entries: list[tuple[datetime, Analyt
             continue
         unit = block.set_logs[-1].unit
         attempts += len(values)
+        total += sum(values, Decimal(0))
         session_best = max(values)
         # Новый рекорд — строго лучше всего, что было ДО этой сессии; первая
         # запись — точка отсчёта, не "рекорд".
@@ -224,6 +226,9 @@ def _max_panel(exercise_id: int, name: str, entries: list[tuple[datetime, Analyt
     return ProtocolPanel(
         exercise_id=exercise_id, exercise_name=name, protocol_type="max_effort", session_count=len(points),
         unit=unit, attempt_count=attempts, best=cumulative, points=_bounded(points), points_total=len(points),
+        # UX-04: сумма по подходам на максимум — чтобы «рабочие + на максимум» сходились с карточкой Журнала.
+        # Только для повторений (у времени суммировать попытки на максимум не нужно).
+        total_reps=total if unit == "reps" else None,
     )
 
 

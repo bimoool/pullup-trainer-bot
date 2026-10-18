@@ -743,6 +743,8 @@ export interface LiveSessionResponse {
   engine?: LiveEngineView | null;
   /** «cancelled» — сессия v2 отменена (архив, не идёт и не засчитана). */
   engine_status?: string | null;
+  /** UX-03: активное время занятия (с); null — «без длительности». Тот же показатель, что в Журнале и Аналитике. */
+  duration_seconds?: number | null;
   /** issue #305 (V5.6): рецепт основного занятия из снимка (роль A/B, уровень, отдых, маркеры). */
   course_program?: Record<string, unknown> | null;
 }

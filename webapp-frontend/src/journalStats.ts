@@ -1,6 +1,6 @@
 import type { SessionResponseV2 } from "./apiV2";
 import { formatDuration } from "./blockFormat.ts";
-import { formatDurationHm } from "./journalLog.ts";
+import { formatSessionDuration } from "./sessionMetrics.ts";
 
 /** Сетка из трёх подписанных показателей на карточке Журнала (#286, референс Crimpd: «Intensity / Completion / …»).
  * Чистая агрегация по всей записи: у многоблочной сессии показываются суммы, а факты по блокам остаются в деталях. */
@@ -78,7 +78,7 @@ export function journalCardStats(session: StatSession): [JournalStat, JournalSta
     return [
       {
         key: "duration", label: "Длительность", effort: null,
-        value: session.duration_seconds != null ? formatDurationHm(session.duration_seconds) : NO_VALUE,
+        value: session.duration_seconds ? formatSessionDuration(session.duration_seconds) : NO_VALUE,
       },
       { key: "distance", label: "Дистанция", value: NO_VALUE, effort: null },
       effort,

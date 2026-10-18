@@ -70,7 +70,7 @@ for (const width of WIDTHS) {
       // Карточка: тип и длительность; календарь показывает день с точкой.
       const activityCard = cards.filter({ hasText: "Плавание" });
       await expect(activityCard).toHaveCount(1);
-      await expect(activityCard.getByTestId("journal-activity-duration")).toHaveText("1:15");
+      await expect(activityCard.getByTestId("journal-activity-duration")).toHaveText("75 мин"); // UX-03: одна запись длительности («N мин»), ввод остаётся ч:мм
       await expect(activityCard.locator(".journal-stat[data-stat=\"duration\"] .journal-stat-label")).toHaveText("Длительность");
       await expect(activityCard.locator(".journal-stat[data-stat=\"distance\"] .journal-stat-value")).toHaveText("—");
       await expect(activityCard.getByTestId("journal-card-effort")).toHaveText("3");

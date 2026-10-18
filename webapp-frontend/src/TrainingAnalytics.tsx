@@ -19,7 +19,8 @@ import {
   type MetricKey,
   type RangeKey,
 } from "./analyticsMetric";
-import { formatDuration, formatLongDuration, formatNumber } from "./blockFormat";
+import { formatDuration, formatLongDuration, formatNumber, plural } from "./blockFormat";
+import { repsSplit, type RepsSplit } from "./sessionMetrics";
 import { DistributionDonut, DistributionTable } from "./AnalyticsDistribution";
 import { homeCategoryOrder } from "./homeDiscovery";
 import { useModalSheet } from "./useModalSheet";
@@ -231,7 +232,7 @@ function MetricsBlocks({ data, metric, homeOrder, ...header }: MetricsProps) {
       </div>
       <DistributionTable dist={data.distribution} homeOrder={homeOrder} />
       <p className="hint analytics-footnote">
-        Смешанная тренировка делится между категориями поровну по блокам; минуты — по длительности тренировки.
+        Смешанная тренировка делится между категориями поровну по блокам; минуты — активное время тренировки (паузы не входят), суммарно округляются до минуты.
       </p>
       {infoOpen && <MetricInfoSheet onClose={() => setInfoOpen(false)} />}
     </div>
@@ -293,7 +294,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Panel({ panel }: { panel: AnalyticsPanelV2 }) {
+function Panel({ panel, split }: { panel: AnalyticsPanelV2; split: RepsSplit | null }) {
   const isTimeMax = panel.protocol_type === "max_effort" && panel.unit === "s";
   const title = panel.protocol_type === "max_effort"
     ? (isTimeMax ? "Максимум времени" : "Максимум повторений")
@@ -314,8 +315,8 @@ function Panel({ panel }: { panel: AnalyticsPanelV2 }) {
       <div className="analytics-stat-grid">
         {panel.protocol_type === "reps_sets" && (
           <>
-            <Stat label="Всего повторений" value={formatNumber(panel.total_reps ?? "0")} />
-            <Stat label="Подходов" value={String(panel.set_count ?? 0)} />
+            <Stat label={split !== null ? "Повторений в рабочих подходах" : "Всего повторений"} value={formatNumber(panel.total_reps ?? "0")} />
+            <Stat label={split !== null ? "Рабочих подходов" : "Подходов"} value={String(panel.set_count ?? 0)} />
             <Stat label="Лучший подход" value={formatNumber(panel.best_set ?? "0")} />
           </>
         )}
@@ -341,6 +342,12 @@ function Panel({ panel }: { panel: AnalyticsPanelV2 }) {
           </>
         )}
       </div>
+      {panel.protocol_type === "reps_sets" && split !== null && (
+        <p className="hint" data-testid="analytics-reps-split">
+          Подходы на максимум считаются отдельно (ниже): {formatNumber(split.maxReps)} повт., {split.maxAttempts} {plural(split.maxAttempts, "попытка", "попытки", "попыток")}.
+          Вместе с ними: {formatNumber(split.totalReps)} повт., {split.totalSets} {plural(split.totalSets, "подход", "подхода", "подходов")} — как в Журнале.
+        </p>
+      )}
       <p className="hint">{trendLabel}</p>
       <TrendChart points={chartPoints} ariaLabel={`${title}: ${trendLabel}`} />
       {hiddenNote !== null && <p className="hint">{hiddenNote}</p>}
@@ -349,10 +356,11 @@ function Panel({ panel }: { panel: AnalyticsPanelV2 }) {
 }
 
 function ExerciseSection({ exercise }: { exercise: AnalyticsExerciseV2 }) {
+  const split = repsSplit(exercise.panels);
   return (
     <div>
       {exercise.panels.map((panel) => (
-        <Panel key={panel.protocol_type} panel={panel} />
+        <Panel key={panel.protocol_type} panel={panel} split={split} />
       ))}
     </div>
   );

@@ -6,6 +6,7 @@ import {
   type LiveSessionCompleteResponse, type LiveSessionResponse,
 } from "./apiV2";
 import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFormat";
+import { activeSecondsFromMs, formatSessionDuration } from "./sessionMetrics";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { carriesCompletionOutcome, classifySyncError, FINISH_EARLY_HINT, summaryResult, type SyncFailure } from "./liveFinish";
@@ -691,7 +692,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         )}
         {state.phase === "COMPLETE" && (
           <p className="live-done-note" data-testid="engine-complete">
-            Тренировка завершена · {formatDuration(Math.floor(activeElapsedMs(state, nowServer) / 1000))} в работе
+            Тренировка завершена · {formatSessionDuration(activeSecondsFromMs(activeElapsedMs(state, nowServer)))}
           </p>
         )}
       </div>
