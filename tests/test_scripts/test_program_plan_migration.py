@@ -176,6 +176,9 @@ def test_b_c_aged_db_upgrade_and_converge_preserve_access_and_history(scratch_ds
     # прогона (как _todays_orm_columns.py).
     _alembic(scratch_dsn, "upgrade", "a7e2c5b9d1f4")
     _run(_exec(scratch_dsn, "ALTER TABLE program_inclusions ADD COLUMN prescription_provenance jsonb"))
+    # Редактор плана (UX-EDITOR, d4b7e1a9c3f5): сегодняшний ORM читает custom_plans.spec — та же приём, что и выше:
+    # аддитивную колонку головы добавляем только на время прогона runtime-converge.
+    _run(_exec(scratch_dsn, "ALTER TABLE custom_plans ADD COLUMN spec jsonb"))
     code, dry = asyncio.run(converge(False))
     assert code == 0 and dry["total_mutations"] > 0, dry
     assert _fingerprint(scratch_dsn) == before  # dry-run ничего не пишет

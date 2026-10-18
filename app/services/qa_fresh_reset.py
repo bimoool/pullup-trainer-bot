@@ -83,7 +83,8 @@ RESET_STEPS: tuple[tuple[str, str, str], ...] = (
 # Legacy tables archived (not only deleted) before the delete — existing archive tables (b41882a0e3e8).
 ARCHIVED_BEFORE_DELETE = ("blocks", "workouts", "workout_sets", "baselines", "equipment_items")
 # Kept for the caller (identity/entitlement/payments) — never touched.
-PRESERVED_USER_TABLES = frozenset({"users", "subscriptions", "pending_payments"})
+# web_login_requests / web_sessions (вход из браузера, WEB-AUTH): идентичность вызывающего — QA-сброс сессию не разлогинивает.
+PRESERVED_USER_TABLES = frozenset({"users", "subscriptions", "pending_payments", "web_login_requests", "web_sessions"})
 # System / shared content and global state — never touched; counted before/after.
 SYSTEM_TABLES = frozenset({
     "programs", "program_items", "assessment_protocols", "collections", "collection_items", "media_assets",
