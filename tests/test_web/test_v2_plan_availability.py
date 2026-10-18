@@ -6,7 +6,6 @@
 (5–11), неделя 2 — 12–18, неделя 3 — 19–25. Отдых между стартами MAIN = 3 дня (OD-2). Ожидаемые состояния
 посчитаны вручную (комментарии у каждого теста), не выведены из тестируемого кода."""
 
-from datetime import date
 
 import pytest
 from sqlalchemy import select
@@ -121,8 +120,11 @@ async def test_future_weeks_carry_correct_available_from_and_become_startable(se
     assert [r["start_allowed"] for r in rows] == [True, True, True]
     started = await start(session, user, rows[0]["id"])
     assert started.status_code == 200, started.text
-    credited = (await session.execute(select(PlanItem.id).where(PlanItem.id == rows[0]["id"]))).scalar_one()
-    assert credited == rows[0]["id"]
+    from app.db.models_program import TrainingSession
+    credited = (await session.execute(
+        select(TrainingSession.plan_item_id).where(TrainingSession.id == started.json()["id"]),
+    )).scalar_one()
+    assert credited == rows[0]["id"]  # засчитано именно занятие 1 недели 3 (J12)
 
 
 async def test_main_on_sunday_next_week_first_occurrence_available_wednesday(session, user: User, clock):
@@ -187,7 +189,7 @@ async def test_legacy_inclusion_exposes_three_per_week_as_fact(session, user: Us
         "min_days_between_starts": 3, "weekly_capacity": 3,
     }
     rows = week_items(plan, 1)
-    assert len(rows) == 3 and [r["state"] for r in rows][0] == "completed"
+    assert len(rows) == 3 and rows[0]["state"] == "completed"
     assert (week_summary(plan, 1)["planned"], week_summary(plan, 1)["completed"]) == (3, 1)
 
 
@@ -214,27 +216,67 @@ async def test_week_summaries_match_row_states(session, user: User, clock):
     for week in plan["plan_weeks"]:
         rows = [i for i in plan["plan_items"] if i["plan_week_id"] == week["id"]]
         summary = week_summary(plan, week["week_number"])
-        count = lambda state: sum(1 for r in rows if r["state"] == state)  # noqa: E731
+        states = [r["state"] for r in rows]
         assert summary["planned"] == len(rows)
         assert (summary["completed"], summary["infeasible"], summary["missed"]) == (
-            count("completed"), count("infeasible"), count("missed"),
+            states.count("completed"), states.count("infeasible"), states.count("missed"),
         )
 
 
 # --- Регрессия: сходимость идемпотентна, история и прогрессия не тронуты ----------------------------------
 
 
-async def test_convergence_is_idempotent_and_history_untouched_for_legacy(session, user: User, clock):
+@pytest.mark.parametrize("strip_snapshot", [True, False], ids=["owner_shape_no_slots", "frozen_slots"])
+async def test_convergence_is_idempotent_and_history_untouched_for_aged_legacy(
+    session, user: User, clock, strip_snapshot,
+):
+    """Состаренные данные: основное в пн 5 и сб 10 окт, прошло три недели, созданы недели 2–4. Повторная сходимость —
+    0 изменений; id строк, число занятий (3 в каждой неделе), progression_state и сессии не меняются."""
+    from sqlalchemy import func
+
+    from app.db.models_program import ProgramInclusion, TrainingSession
     from app.services.plan_convergence import PlanConvergenceService
-    body = await enrol_legacy_pre_v56(session, user, clock)
-    first = week_items(await get_plan(session, user), 1)[0]
-    await do_main(session, user, clock, first["id"], at=MON)
-    from app.db.models_program import ProgramInclusion
-    before = (await session.get(ProgramInclusion, body["id"])).progression_state
-    await get_plan(session, user)
+
+    body = await enrol_legacy_pre_v56(session, user, clock, strip_snapshot=strip_snapshot)
+    rows = week_items(await get_plan(session, user), 1)
+    await do_main(session, user, clock, rows[0]["id"], at=MON)
+    await do_main(session, user, clock, rows[1]["id"], at=day(5))
+    clock(day(16))  # ср 21 окт, неделя 3
+    for number in (3, 4):
+        await ensure_week(session, user, number)
+    plan = await get_plan(session, user)
+    inclusion = await session.get(ProgramInclusion, body["id"])
+    state_before = dict(inclusion.progression_state)
     ids = sorted((await session.execute(select(PlanItem.id))).scalars().all())
-    again = await get_plan(session, user)
+    sessions_before = (await session.execute(
+        select(TrainingSession.id, TrainingSession.performed_at, TrainingSession.plan_item_id).order_by(TrainingSession.id),
+    )).all()
+
+    _, again = await PlanConvergenceService(session).converge_user_plan(
+        training_plan_id=inclusion.training_plan_id, today=day(16).date(),
+    )
+    assert again.mutations == 0, again.as_dict()
     assert sorted((await session.execute(select(PlanItem.id))).scalars().all()) == ids
-    assert len(week_items(again, 1)) == 3
-    assert (await session.get(ProgramInclusion, body["id"])).progression_state == before
-    assert PlanConvergenceService is not None
+    assert (await session.get(ProgramInclusion, body["id"])).progression_state == state_before
+    assert (await session.execute(
+        select(TrainingSession.id, TrainingSession.performed_at, TrainingSession.plan_item_id).order_by(TrainingSession.id),
+    )).all() == sessions_before
+    for number in (1, 3, 4):
+        assert len(week_items(plan, number)) == 3, number  # материализация для legacy не изменилась (3 в неделю)
+    assert (await session.execute(select(func.count()).select_from(TrainingSession))).scalar_one() == 2
+
+
+async def test_convergence_is_idempotent_for_v56(session, user: User, clock):
+    from app.services.plan_convergence import PlanConvergenceService
+    from tests.test_web.test_v2_course_v5 import WEIGHTED_INPUTS, _enrol, _pullups
+    clock(MON)
+    inclusion = await _enrol(session, user, await _pullups(session), course_inputs=WEIGHTED_INPUTS)
+    await ensure_week(session, user, 2)
+    plan = await get_plan(session, user)
+    assert [len(week_items(plan, n)) for n in (1, 2)] == [2, 2]
+    state_before = dict(inclusion.progression_state)
+    _, again = await PlanConvergenceService(session).converge_user_plan(
+        training_plan_id=inclusion.training_plan_id, today=MON.date(),
+    )
+    assert again.mutations == 0, again.as_dict()
+    assert inclusion.progression_state == state_before

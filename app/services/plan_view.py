@@ -9,8 +9,9 @@ PlanScheduleService — перенос занятия (PL6): неделя и/и�
 (историческое) занятие не двигается."""
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import User
@@ -21,6 +22,7 @@ from app.db.models_program import (
     ProgramInclusion,
     SessionStatus,
     TrainingPlan,
+    TrainingSession,
 )
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
@@ -43,9 +45,12 @@ from app.domain.plan_occurrence import (
     derive_occurrence_states,
     derive_slots,
     summarize_week,
+    weekly_capacity,
 )
+from app.domain.pullups_v5 import PROGRAM_VERSION, WorkoutRole, is_v5_state
 from app.services.plan_spacing import MainSpacingService
 from app.services.plan_week import PlanWeekService
+from app.services.program_access import ProgramAccessService
 from app.services.training_analytics import resolve_timezone
 
 
@@ -64,6 +69,30 @@ class PlanItemView:
     state: OccurrenceStateResult | None
     spacing_group: str | None
     credited_session_id: int | None
+    # UX-01 (CONTRACT_A_B §1): единственный источник «Начать» — тем же правилом, что проверяет старт.
+    start_allowed: bool = False
+    blocked_reason: str | None = None
+    # UX-08: какое это занятие курса (А/Б по последовательности прогрессии).
+    session_variant: str | None = None
+    session_variant_basis: str | None = None
+    session_ordinal: int | None = None
+
+
+@dataclass(frozen=True)
+class InclusionSchedule:
+    """UX-32: фактическое расписание main-слота подключения (что план реально материализует).
+
+    sessions_per_week — занятий main в неделю (derive_slots, тот же вызов, что строит занятия плана и сходимость);
+    source — snapshot (в снимке есть замороженные slots) | catalogue (слотов нет: выведены из program_items +
+    каталожной частоты); is_legacy — подключение не V5.6 (в снимке нет schedule с программой pullups_v5_6);
+    min_days_between_starts — отдых группы main; weekly_capacity — domain.weekly_capacity(min_days): сколько
+    стартов main влезает в неделю Пн–Вс при этом отдыхе с чистой недели (3 дня → 3: Пн, Чт, Вс)."""
+
+    sessions_per_week: int
+    source: str
+    is_legacy: bool
+    min_days_between_starts: int
+    weekly_capacity: int
 
 
 @dataclass(frozen=True)
@@ -72,6 +101,30 @@ class PlanView:
     week_summaries: list[tuple[int, WeekSummary]]
     spacing: list[SpacingView]
     custom_plans: list[CustomPlan]
+    schedules: dict[int, InclusionSchedule]
+
+
+def _start_availability(
+    item: PlanItem, state: OccurrenceStateResult | None, *, access_allowed: bool, bypass_spacing: bool,
+) -> tuple[bool, str | None]:
+    """UX-01: можно ли сейчас начать строку и, если нет, почему. Порядок как у старта: доступ (подписка) →
+    ожидание замера → отдых K1 (админ обходит, `bypass_spacing`). completed / missed / infeasible не
+    стартуются никогда (infeasible — «не успеть на этой неделе»: контракт, не только K1)."""
+    if state is not None and state.state in (OccurrenceState.COMPLETED, OccurrenceState.MISSED):
+        return False, state.state.value
+    if item.legacy_aggregate:
+        return False, "missed"  # замороженная агрегатная строка прошлого: старт — 422 «план обновился»
+    if not access_allowed:
+        return False, "no_access"
+    if state is None:
+        return True, None
+    if state.state == OccurrenceState.AWAITING_ASSESSMENT:
+        return False, state.state.value
+    if state.state == OccurrenceState.INFEASIBLE:
+        return False, state.state.value
+    if state.state == OccurrenceState.TOO_EARLY and not bypass_spacing:
+        return False, state.state.value
+    return True, None
 
 
 class PlanViewService:
@@ -81,10 +134,37 @@ class PlanViewService:
         self._sessions = TrainingSessionRepository(session)
         self._programs = ProgramRepository(session)
 
+    async def inclusion_schedule(
+        self, inclusion: ProgramInclusion, *, min_days: int | None = None, user_id: int | None = None,
+    ) -> InclusionSchedule | None:
+        """Расписание main-слота подключения; None — у программы нет main-слота (не курс «Подтягиваний»)."""
+        program = await self._programs.get_by_id(inclusion.program_id)
+        slots = derive_slots(
+            inclusion.snapshot, program_slots=program.slots if program else None,
+            program_frequency=program.frequency if program else None,
+        )
+        main = next((slot for slot in slots if slot.key == MAIN_SLOT_KEY), None)
+        if main is None:
+            return None
+        if min_days is None:
+            min_days = await MainSpacingService(self._session).min_days_between_starts(user_id) if user_id else 3
+        snapshot = inclusion.snapshot or {}
+        frozen = snapshot.get("slots")
+        return InclusionSchedule(
+            sessions_per_week=main.sessions_per_week,
+            source="snapshot" if isinstance(frozen, list) and frozen else "catalogue",
+            is_legacy=(snapshot.get("schedule") or {}).get("program_version") != PROGRAM_VERSION,
+            min_days_between_starts=min_days, weekly_capacity=weekly_capacity(min_days),
+        )
+
     async def build(
         self, *, plan: TrainingPlan, user: User, today: date, plan_weeks: list[PlanWeek],
-        plan_items: list[PlanItem], inclusions: list[ProgramInclusion],
+        plan_items: list[PlanItem], inclusions: list[ProgramInclusion], now: datetime | None = None,
+        bypass_spacing: bool = False,
     ) -> PlanView:
+        """now / bypass_spacing — те же входы, что у старта (`_utcnow`, `settings.is_admin`): `start_allowed`
+        считается ЕГО правилами, а не копией."""
+        now = now or datetime.now(UTC)
         tz = resolve_timezone(user.timezone)
         week_by_id = {week.id: week for week in plan_weeks}
         visible = await self._actionable_rows(plan_items, inclusions, week_by_id, today, user_id=user.id)
@@ -148,26 +228,105 @@ class PlanViewService:
             for week in plan_weeks
         ]
 
-        views = [
-            PlanItemView(
+        variants = await self._session_variants(visible, inclusions, week_by_id, states, credited)
+        access = ProgramAccessService(self._session)
+        access_cache: dict[int | None, bool] = {}
+        views = []
+        for item in visible:
+            state = states.get(item.id)
+            if item.program_inclusion_id not in access_cache:
+                access_cache[item.program_inclusion_id] = await access.training_parts_allowed(
+                    user, [item.program_inclusion_id], now=now,
+                )
+            allowed, reason = _start_availability(
+                item, state, access_allowed=access_cache[item.program_inclusion_id], bypass_spacing=bypass_spacing,
+            )
+            variant, basis, ordinal = variants.get(item.id, (None, None, None))
+            views.append(PlanItemView(
                 item=item,
                 done_count=(1 if item.id in credited else 0) if item.occurrence_index is not None
                 else aggregate_done.get(item.id, 0),
-                state=states.get(item.id), spacing_group=spacing_group_by_item.get(item.id),
-                credited_session_id=credited.get(item.id),
-            )
-            for item in visible
-        ]
+                state=state, spacing_group=spacing_group_by_item.get(item.id),
+                credited_session_id=credited.get(item.id), start_allowed=allowed, blocked_reason=reason,
+                session_variant=variant, session_variant_basis=basis, session_ordinal=ordinal,
+            ))
         spacing = [
             SpacingView(
                 spacing_group=MAIN_SPACING_GROUP, min_days_between_starts=min_days_by_group[MAIN_SPACING_GROUP],
                 last_start_date=last_date, available_from=available_by_group[MAIN_SPACING_GROUP],
             ),
         ]
+        schedules: dict[int, InclusionSchedule] = {}
+        for inclusion in inclusions:
+            schedule = await self.inclusion_schedule(
+                inclusion, min_days=min_days_by_group.get(MAIN_SPACING_GROUP, 3),
+            )
+            if schedule is not None:
+                schedules[inclusion.id] = schedule
         return PlanView(
             items=views, week_summaries=summaries, spacing=spacing,
-            custom_plans=await self._plans.list_custom_plans(plan.id),
+            custom_plans=await self._plans.list_custom_plans(plan.id), schedules=schedules,
         )
+
+    async def _session_variants(
+        self, visible: list[PlanItem], inclusions: list[ProgramInclusion], week_by_id: dict[int, PlanWeek],
+        states: dict[int, OccurrenceStateResult], credited: dict[int, int],
+    ) -> dict[int, tuple[str | None, str | None, int | None]]:
+        """UX-08: (session_variant, basis, session_ordinal) занятий main-слота.
+
+        ordinal — место занятия среди main-занятий СВОЕЙ недели своего подключения (по occurrence_index).
+        variant — только для V5.6 (state.next_role; в устаревшем подключении у каждого занятия оба блока,
+        А/Б там нет): первое открытое занятие (не засчитано, не пропущено, по неделе и индексу) — next_role
+        (actual, тот же источник, что «Следующая тренировка B» итога), каждое следующее — чередование от него
+        (projected). Засчитанное занятие — роль из рецепта его сессии (actual), если сохранена."""
+        by_inclusion = {inclusion.id: inclusion for inclusion in inclusions}
+        main_rows: dict[int, list[PlanItem]] = {}
+        for item in visible:
+            if (
+                item.program_slot_key == MAIN_SLOT_KEY and item.program_inclusion_id in by_inclusion
+                and item.occurrence_index is not None and item.plan_week_id in week_by_id
+            ):
+                main_rows.setdefault(item.program_inclusion_id, []).append(item)
+        result: dict[int, tuple[str | None, str | None, int | None]] = {}
+        session_ids = [credited[item.id] for rows in main_rows.values() for item in rows if item.id in credited]
+        roles = await self._credited_roles(session_ids)
+        for inclusion_id, rows in main_rows.items():
+            inclusion = by_inclusion[inclusion_id]
+            ordered = sorted(rows, key=lambda r: (week_by_id[r.plan_week_id].start_date, r.occurrence_index, r.id))
+            ordinals: dict[int, int] = {}
+            per_week: dict[int, int] = {}
+            for item in ordered:
+                per_week[item.plan_week_id] = per_week.get(item.plan_week_id, 0) + 1
+                ordinals[item.id] = per_week[item.plan_week_id]
+            is_v5 = is_v5_state(inclusion.progression_state or {})
+            cursor = WorkoutRole(inclusion.progression_state["next_role"]) if is_v5 else None
+            first_open = True
+            for item in ordered:
+                if is_v5 and item.id in credited:
+                    role = roles.get(credited[item.id])
+                    result[item.id] = (role, "actual" if role else None, ordinals[item.id])
+                    continue
+                state = states.get(item.id)
+                open_row = state is not None and state.state != OccurrenceState.MISSED and item.id not in credited
+                if is_v5 and open_row and inclusion.is_active:
+                    result[item.id] = (cursor.value, "actual" if first_open else "projected", ordinals[item.id])
+                    cursor, first_open = cursor.other, False
+                else:
+                    result[item.id] = (None, None, ordinals[item.id])
+        return result
+
+    async def _credited_roles(self, session_ids: list[int]) -> dict[int, str]:
+        if not session_ids:
+            return {}
+        rows = await self._session.execute(
+            select(TrainingSession.id, TrainingSession.prescription_snapshot).where(TrainingSession.id.in_(session_ids)),
+        )
+        roles: dict[int, str] = {}
+        for session_id, snapshot in rows.all():
+            program = ((snapshot or {}).get("provenance") or {}).get("course_program") or {}
+            if program.get("workout_role") in ("A", "B"):
+                roles[session_id] = program["workout_role"]
+        return roles
 
     async def _actionable_rows(
         self, plan_items: list[PlanItem], inclusions: list[ProgramInclusion], week_by_id: dict[int, PlanWeek],

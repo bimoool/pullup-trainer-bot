@@ -252,6 +252,16 @@ class WorkoutItemMoveRequest(BaseModel):
 # --- План пользователя --------------------------------------------------------------
 
 
+class InclusionScheduleResponse(BaseModel):
+    """UX-32 (CONTRACT_A_B §2): фактическое расписание main-слота подключения — факты, без текста."""
+
+    sessions_per_week: int
+    source: Literal["snapshot", "catalogue"]
+    is_legacy: bool
+    min_days_between_starts: int
+    weekly_capacity: int
+
+
 class ProgramInclusionResponse(BaseModel):
     id: int
     program_id: int
@@ -266,6 +276,8 @@ class ProgramInclusionResponse(BaseModel):
     current_week: int | None = None
     # access_level программы инклюзии (живое свойство каталога, не снимок) — подсказка предэкрану старта.
     access_level: str = "premium"
+    # UX-32: что план реально материализует для этого подключения; None — у программы нет main-слота.
+    schedule: InclusionScheduleResponse | None = None
 
 
 class ProgramScheduleItemResponse(BaseModel):
@@ -333,6 +345,15 @@ class PlanItemResponse(BaseModel):
     available_from: date | None = None
     projected_date: date | None = None
     credited_session_id: int | None = None
+    # --- UX-01/UX-08 (CONTRACT_A_B §1), аддитивно ---
+    # Единственный источник «Начать»: true, только если старт этой строки сейчас сработает.
+    start_allowed: bool = False
+    blocked_reason: Literal[
+        "too_early", "infeasible", "completed", "missed", "no_access", "awaiting_assessment",
+    ] | None = None
+    session_variant: Literal["A", "B"] | None = None
+    session_variant_basis: Literal["actual", "projected"] | None = None
+    session_ordinal: int | None = None
 
 
 class PlanWeekResponse(BaseModel):
