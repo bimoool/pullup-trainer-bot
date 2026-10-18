@@ -3,7 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { openAppAs } from "../fixtures/setup";
 
 /**
- * Аудит staging 6475bc0: в «Свободном пуле» подпись состояния занятия («Не успеть на этой неделе», «Доступно с …»)
+ * Аудит staging 6475bc0: в «Свободном пуле» подпись состояния занятия («Не уместится на этой неделе», «Доступно с …»)
  * не сжималась (nowrap, flex: 0 0 auto) и заезжала под «Начать», а название сжималось до «…». Состояния подставлены
  * в ответ /api/v2/plan (правила плана не трогаем — проверяется только вёрстка строки). Сид: plan_week_start_session
  * 900016 (только чтение). 320 и 375 px.
@@ -38,7 +38,7 @@ for (const width of [320, 375]) {
       await page.getByRole("button", { name: "Планы" }).click();
       const states = page.getByTestId("plans-row-state");
       await expect(states).toHaveCount(2);
-      await expect(states.filter({ hasText: "Не успеть на этой неделе" })).toHaveCount(1);
+      await expect(states.filter({ hasText: "Не уместится на этой неделе" })).toHaveCount(1);
 
       const rows = page.getByTestId("plans-row").filter({ has: page.getByTestId("plans-row-state") });
       for (let i = 0; i < 2; i += 1) {

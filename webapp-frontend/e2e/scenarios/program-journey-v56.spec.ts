@@ -90,7 +90,7 @@ test("V5.6 на свежем профиле: онбординг → програ
 
   // Подключение программы.
   await page.getByRole("button", { name: /^Подтягивания/ }).first().click();
-  await expect(page.getByText("Основные тренировки — 2 раза в неделю (A и B по очереди", { exact: false })).toBeVisible();
+  await expect(page.getByText("Основные тренировки — 2 раза в неделю (А и Б по очереди", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Добавить в план" }).click();
   await expect(page.getByRole("button", { name: "В плане" })).toBeVisible();
 
@@ -98,7 +98,9 @@ test("V5.6 на свежем профиле: онбординг → програ
   await page.reload();
   await page.getByRole("button", { name: "Планы" }).click();
   await expect(page.getByTestId("plan-week-progress").first()).toHaveText(/Текущая неделя · 0 из 2/);
-  await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(2);
+  // UX-01: «Начать» только у занятий, которые можно начать (в конце недели второе уже не уместится — без кнопки).
+  await expect(page.getByTestId("plans-row")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ }).first()).toBeVisible();
 
   // Недостающие входы (M < 10 → уровень 1): ничего не угадывается.
   await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
@@ -183,16 +185,9 @@ test("V5.6 на свежем профиле: онбординг → програ
   const daysToSunday = (7 - moscow.getDay()) % 7;
   const available = new Date(moscow.getFullYear(), moscow.getMonth(), moscow.getDate() + 3);
   const nextWeek = 3 > daysToSunday;
-  await expect(page.getByText(nextWeek ? "Не успеть на этой неделе" : `Доступно с ${available.getDate()} `, { exact: false })).toBeVisible();
-  if (nextWeek) {
-    // Строка «Не успеть на этой неделе» сохраняет кнопку «Начать», но старт раньше отдыха всё равно отказан:
-    // пред-экран объясняет, с какого дня можно (правило отдыха не обходится).
-    await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
-    await expect(page.getByTestId("pre-screen-too-early")).toContainText(`доступна с ${available.getDate()} `);
-    await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
-  } else {
-    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
-  }
+  await expect(page.getByText(nextWeek ? "Не уместится на этой неделе" : `Доступно с ${available.getDate()} `, { exact: false })).toBeVisible();
+  // UX-01: строка, которую нельзя начать, не предлагает «Начать» вовсе (не уводит на экран «нельзя»).
+  await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);

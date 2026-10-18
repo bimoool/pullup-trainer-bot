@@ -81,6 +81,7 @@ from app.db.models_program import (
     Exercise,
     PlanItem,
     Program,
+    ProgramInclusion,
     ProgramItem,
     ProgressionStrategyProfile,
     SessionBlock,
@@ -550,6 +551,71 @@ async def seed_plan_week_add_exercise(session: AsyncSession, telegram_id: int) -
     await ProgramInclusionService(session).create_inclusion(
         user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
+
+
+async def _onboard_with_history(session: AsyncSession, telegram_id: int) -> User:
+    """ux-b (кампания ux-ref-20261018): онбординг + одна старая тренировка обычной программы 20 дней назад
+    (без неё факультатив отвечает needs_first_workout). Не влияет на отдых основной программы (v2-сессии)."""
+    user = await UserRepository(session).create(telegram_id=telegram_id, username="e2e")
+    now = datetime.now(UTC)
+    onboarding = OnboardingService(session)
+    _baseline, workout_set, _user = await onboarding.record_baseline_and_start(
+        user_id=user.id, performed_at=now - timedelta(days=21), reps=12,
+    )
+    await onboarding.complete_questionnaire_and_start_trial(user_id=user.id, now=now, **_QUESTIONNAIRE_DEFAULTS)
+    band_item = await EquipmentItemRepository(session).create(user_id=user.id, name="Резина 15кг", resistance_kg=BAND_VALUE)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=now - timedelta(days=20),
+        block_a_reps=BlockLog(working_reps=(10, 10, 10), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+        block_a_equipment_item_id=band_item.id, block_b_equipment_item_id=band_item.id,
+    )
+    return user
+
+
+async def seed_ux_b_no_course(session: AsyncSession, telegram_id: int) -> None:
+    """ux-b (a): свежий профиль — онбординг пройден, курс ещё не подключён (подключает сам тест из карточки)."""
+    await _onboard_with_history(session, telegram_id)
+
+
+async def seed_ux_b_legacy(session: AsyncSession, telegram_id: int) -> None:
+    """ux-b (b)/(c), CONTRACT_A_B §5: форма подключения владельца (UX-32). Курс «Подтягивания» с УСТАРЕВШИМ
+    снимком — без `slots` и без `schedule` (до V5.6), каталог `frequency.sessions_per_week = 3`; на текущей
+    неделе материализовано 3 основных занятия, первое уже выполнено сегодня (завершённая сессия привязана к нему),
+    так что остальные — «рано» (отдых 3 дня) / «не уместится»."""
+    from app.services.plan_convergence import PlanConvergenceService
+
+    user = await _onboard_with_history(session, telegram_id)
+    program = await _shipped_pull_ups_program(session)
+    inclusion = await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
+    )
+    row = await session.get(ProgramInclusion, inclusion.id)
+    legacy_snapshot = dict(row.snapshot)
+    legacy_snapshot.pop("slots", None)
+    legacy_snapshot.pop("schedule", None)
+    for item in legacy_snapshot.get("program_items") or []:
+        item["count_per_week"] = 3
+        item["day_of_week"] = None
+    row.snapshot = legacy_snapshot
+    await session.flush()
+
+    tz = ZoneInfo(user.timezone)
+    now = datetime.now(UTC)
+    today = now.astimezone(tz).date()
+    await PlanConvergenceService(session).converge_user_plan(training_plan_id=row.training_plan_id, today=today)
+    first = (await session.execute(
+        select(PlanItem).where(
+            PlanItem.program_inclusion_id == row.id, PlanItem.occurrence_index == 1, PlanItem.legacy_aggregate.is_(False),
+        ),
+    )).scalars().first()
+    session.add(TrainingSession(
+        user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED, performed_at=now,
+        plan_item_id=first.id, program_inclusion_id=row.id,
+    ))
+    await session.flush()
 
 
 async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) -> None:
@@ -1799,6 +1865,8 @@ SCENARIOS = {
     "plan_week_grouping": seed_plan_week_grouping,
     "plan_week_add_exercise": seed_plan_week_add_exercise,
     "plan_week_start_session": seed_plan_week_start_session,
+    "ux_b_no_course": seed_ux_b_no_course,
+    "ux_b_legacy": seed_ux_b_legacy,
     "v5_one_rep_max": seed_v5_one_rep_max,
     "plan_week_manual_session": seed_plan_week_manual_session,
     "journal_combined": seed_journal_combined,
