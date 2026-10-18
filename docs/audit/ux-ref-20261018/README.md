@@ -1,7 +1,7 @@
 # UX reference audit — 2026-10-18
 
 Gate: `docs/AGENT_EXECUTION_MODEL.md` § *Reference audit to implementation gate* (PR #340).
-Status: **in progress — pass 1 on our product.** Reference side blocked (see INVENTORY.md).
+Status: **our side — pass 1 + pass 2 done; reference side BLOCKED** (no access, `INVENTORY.md`). Sprint plan awaits owner review; no implementation started.
 
 | File | Content |
 |---|---|

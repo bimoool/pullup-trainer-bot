@@ -1,0 +1,43 @@
+08:01:53 OPEN /
+08:01:53 TAP Далее
+08:01:54 TAP Да
+08:01:54 NET POST /api/onboarding/baseline -> 200 
+08:01:55 TAP next
+08:01:55 TAP Далее
+08:01:56 TAP Далее
+08:01:57 TAP Далее
+08:01:58 TAP Далее
+08:01:59 TAP Готово
+08:01:59 NET POST /api/onboarding/questionnaire -> 200 
+08:02:00 TAP TAB Профиль
+08:02:01 VISIBLE[UX-05 profile before workout] Привет, Audit! | Профиль | A | Audit | мужской · 31 год | 0 | Тренировок | 1 | Ачивка › | 50 | Монет | Тренировок пока не было. | ЛИЧНЫЕ ДАННЫЕ | ВЕС | : | 78 кг | РОСТ | : | 180 см | Часовой пояс | : | Москва (UTC+3) | Изменить | ТЕСТЫ | Максимум подтягиваний | Ещё не проходили | Вис на перекладине, сек | Ещё не проходили | Подтягивания с весом, кг | Ещё не проходили | Результаты тестов не влияют на прогрессию и стартовый замер. | АККАУНТ | Подписка | : | пробный период (осталось 7 дн., до 25.10.2026) | Справка | : | Как выбрать резину | Мои резины | : | Переименовать или удалить | Разряд ГТО (подтягивание) | Внеси первую тренировку, чтобы узнать свой разряд ГТО. | Разряд WSF (подтягивания с отягощением) | Внеси тренировку блока Б на отягощении или собственном весе, чтобы узнать свой разряд WSF. | Главная | Планы | Журнал | Аналитика | Профиль
+08:02:01 TAP TAB Главная
+08:02:01 TAP Подтягивания
+08:02:02 TAP Добавить в план
+08:02:02 NET POST /api/v2/program-inclusions -> 200 
+08:02:03 VISIBLE[UX-06 after add] Привет, Audit! | ПОДТЯГИВАНИЯ | Подтягивания | Рост числа подтягиваний: объём (блок A) + сила (блок Б) | Повторяющаяся программа (по неделям) | РАСПИСАНИЕ НЕДЕЛИ | База | Основные тренировки — 2 раза в неделю (A и B по очереди: объём, затем сила; цели считаются по вашим данным) | В плане
+08:02:03 BUTTONS[UX-06 after add] ["В плане"]
+08:02:03 SHOT p2-recheck-01-UX-06 after add.png
+08:02:03 TAP Назад
+08:02:04 TAP TAB Планы
+08:02:05 TAP Начать
+08:02:06 TAP Сохранить
+08:02:06 NET PUT /api/v2/program-inclusions/2/course/inputs -> 200 
+08:02:07 TAP Начать
+08:02:07 NET POST /api/v2/sessions/live -> 200 
+08:02:08 TAP Начать сейчас
+08:02:08 NET POST /api/v2/sessions/live/5/events -> 200 
+08:02:08 TAP Готово (set 1)
+08:02:09 NET POST /api/v2/sessions/live/5/events -> 200 
+08:02:10 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:10 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:10 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:10 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:11 RELOAD
+08:02:11 VISIBLE[STATE reload mid-live] ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | Подтягивания — объём | 1 / 4 | ПОДХОД | 7 | ПОВТ | Подход 1/4 · Цель: 7 повт. | ОТДЫХ | 3:58 | Подход 1: 7 повт. | Изменить | Начать сейчас | Пауза
+08:02:11 BUTTONS[STATE reload mid-live] ["Завершить","Изменить","Начать сейчас","Пауза"]
+08:02:11 SHOT p2-recheck-02-STATE reload mid-live.png
+08:02:11 TAP Завершить (early)
+08:02:12 VISIBLE[STATE early finish dialog] ЖИВАЯ ТРЕНИРОВКА | Подтягивания | Завершить | Подтягивания — объём | 1 / 4 | ПОДХОД | 7 | ПОВТ | Подход 1/4 · Цель: 7 повт. | ОТДЫХ | 3:57 | Подход 1: 7 повт. | Изменить | Как прошла тренировка? | Сделанное сохранится в журнале; если тренировка из плана — занятие засчитается. Прогрессия не пересчитается, оставшиеся подходы не переносятся. | Подтягивания — объём | Техника соблюдена | Да | Нет | Не знаю | Отдых не дольше 4:00 | Да | Нет | Не знаю | 1 | Очень легко | 2 | Легко | 3 | Средне | 4 | Тяжело | 5 | Предел | Заметка | Сохранить и завершить | Назад | Отменить тренировку
+08:02:12 BUTTONS[STATE early finish dialog] ["Завершить","Изменить","Да","Нет","Не знаю","Да","Нет","Не знаю","1 Очень легко","2 Легко","3 Средне","4 Тяжело","5 Предел","Сохранить и завершить","Назад","Отменить тренировку"]
+08:02:12 SHOT p2-recheck-03-STATE early finish dialog.png

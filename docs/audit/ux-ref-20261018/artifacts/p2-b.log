@@ -1,0 +1,32 @@
+08:02:25 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:25 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:25 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:25 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:27 OPEN /
+08:02:40 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:40 CONSOLE warning The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+08:02:47 TAP Завершить
+08:02:48 TAP Сохранить и завершить
+08:02:48 NET POST /api/v2/sessions/live/5/events -> 200 
+08:02:48 NET POST /api/v2/sessions/live/5/complete -> 200 
+08:02:49 VISIBLE[UX-03 summary] Тренировка завершена | Подтягивания | 1 | Подходов | 2 | Упражнений | Подтягивания — объём — 1/4 | , не выполнено | Подход 1: 7 повт. | Подтягивания — сила — 0/5 | , не выполнено | Не выполнено — осталось в плане. | Прогрессия не пересчитана — сессия завершена досрочно. | Закрыть
+08:02:49 BUTTONS[UX-03 summary] ["Закрыть"]
+08:02:49 SHOT p2-b-01-UX-03 summary.png
+08:02:49 TAP Закрыть
+08:02:50 TAP TAB Журнал
+08:02:51 TAP card
+08:02:52 TAP Открыть
+08:02:53 VISIBLE[UX-03 detail] Привет, Audit! | Подтягивания | 18.10.2026, 11:02 | Длительность: 0:00 | ОБЪЁМ A | План: 7 · 7 · 7 · 7 | Факт: 7 | СИЛА С ПОМОЩЬЮ | План: 5 · 5 · 5 · 5 · 5 | Факт: Не выполнено | Изменить | Повторить (клонировать) | Тренировка относится к курсу — её нельзя удалить, чтобы не нарушить прогрессию и историю.
+08:02:53 BUTTONS[UX-03 detail] ["Изменить","Повторить (клонировать)"]
+08:02:53 SHOT p2-b-02-UX-03 detail.png
+08:02:53 TAP Назад
+08:02:53 TAP TAB Планы
+08:02:54 VISIBLE[UX-01 plan row] Привет, Audit! | Планы | Мои тренировки | Свой план по неделям | Сейчас | Завершённые | Текущий план | Подтягивания | На этой неделе: 1 из 2 | ‹ | Неделя 1 · 12 окт – 18 окт | База | › | Текущая неделя · 1 из 2 | Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл. | СВОБОДНЫЙ ПУЛ | Подтягивания | 1/1 | Ещё раз | Подтягивания | 0/1 | Не успеть на этой неделе | Начать | + Добавить упражнение | Главная | Планы | Журнал | Аналитика | Профиль
+08:02:54 BUTTONS[UX-01 plan row] ["Мои тренировки","Свой план по неделям","‹","›","Ещё раз","Начать","+ Добавить упражнение","Главная","Планы","Журнал","Аналитика","Профиль"]
+08:02:54 SHOT p2-b-03-UX-01 plan row.png
+08:02:54 TAP TAB Журнал
+08:02:55 TAP + Записать
+08:02:56 TAP Тренировку из моих
+08:02:57 VISIBLE[J8 picker] Привет, Audit! | ← Назад | Тренировка из моих | Тренировка | У тебя пока нет своих тренировок — создай её на Главной. | Дата | Как прошла тренировка? | 1 Очень легко | 2 Легко | 3 Средне | 4 Тяжело | 5 Предел | Заметка | Сохранить
+08:02:57 BUTTONS[J8 picker] ["← Назад","1 Очень легко","2 Легко","3 Средне","4 Тяжело","5 Предел","Сохранить"]
+08:02:57 SHOT p2-b-04-J8 picker.png
