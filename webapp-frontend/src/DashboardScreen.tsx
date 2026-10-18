@@ -1477,7 +1477,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               }
               onClick={() => updatePickerSelection({ day: null })}
             >
-              Свободный пул
+              Без дня
             </button>
             {DAY_NAMES.map((name, dayIndex) => (
               <button

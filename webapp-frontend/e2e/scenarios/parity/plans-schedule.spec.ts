@@ -67,6 +67,9 @@ for (const width of WIDTHS) {
       await expect(picker).toBeVisible();
       await expectNoHorizontalOverflow(page, "Plans schedule: перенос");
       await picker.getByRole("button").first().click();
+      // UX-EDITOR/UX-31: в текущую неделю нельзя перенести на уже прошедший день (past_day) — выбираем «Без дня», он допустим
+      // в любой день недели (раньше день сохранялся, и результат зависел от дня недели, в который идёт прогон).
+      await page.getByRole("button", { name: "Без дня", exact: true }).click();
       await page.getByRole("button", { name: "Сохранить" }).click();
       await expect(counters).toHaveCount(1);
       await prev.click();
