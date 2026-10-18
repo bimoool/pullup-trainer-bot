@@ -64,3 +64,30 @@ Integration fix outside the executors' scope: legacy-schedule consequence text n
 **Executors (new contexts, Sonnet, own branch+worktree, pushed):** UX-EDITOR `ux/editor` (phase 1 = data contract + numeric examples, then stop for review), WEB-AUTH `web/auth`, WEB-LAYOUT `web/layout`. `App.tsx` is coordinator-only; seam requests go through `checkpoints/<worker>-seam-request.md`.
 **Login scheme chosen: bot deep-link (device-code style)** — browser creates a request (public id + secret held only by the browser + 4-digit code, 5 min TTL), the user confirms in the bot (`from_user` of the callback, same account, no new user), the browser's poll consumes the request and receives an HttpOnly/Secure/SameSite=Lax session cookie; API calls keep the existing header with the sentinel `web-session` + cookie, so no route changes. Why not the Telegram Login Widget: it needs BotFather `/setdomain` (owner action) — documented as an alternative.
 **Access check:** staging deploy path verified earlier (guarded dispatcher, host 192.241.141.47); the staging bot token/username are not available to me — the real-bot login on staging can be exercised only through the staging bot itself (owner's Telegram), automated verification uses the bot stub + test-login helper locally.
+
+## Wave 2 · result · 2026-10-19 19:25Z · integrated candidate (Mini App + browser version), staging deploy BLOCKED on an owner step
+
+**Candidate:** `campaign/ux-ref-20261018` code identical to `536d06b`; tip `2d3e3a4d4a0a96f9cbd98f5757870ee24572e621` (= + staging guarded script update + owner install block, no app/frontend change). Merged: WEB-AUTH `59b1cd3`, UX-EDITOR `6942e71`, WEB-LAYOUT `b2cf50a`; integration fixes by the coordinator below. Alembic: single head `d4b7e1a9c3f5` (`c7e2a9d4b1f8` web_login_requests/web_sessions → `d4b7e1a9c3f5` custom_plans.spec).
+
+### Gate on `536d06b`
+- pytest (host): **2817 passed, 86 skipped, 0 failed** (excluded on the host: `test_deploy_staging_guarded.py`, `test_prod_guarded_dispatch.py` — macOS lacks `flock`/`setsid`; in a Linux container the two + `test_deploy_production_guarded.py` pass: 170 passed, 1 skipped on 424e7c4; the updated staging-script file 67 passed, 1 skipped).
+- Playwright (full, `CI=1`, projects chromium/parity/mobile/keyboard/web-desktop/web-mobile): **640 passed, 15 skipped, 0 failed**, peer-insights 8/8.
+### Integration fixes (name · cause · fix)
+| | cause | fix |
+|---|---|---|
+| duplicate migration id `c7e2a9d4b1f8` (two executors) | both picked the same id | plan-spec migration renamed `d4b7e1a9c3f5`, parent = web-auth; head-pinning tests updated |
+| `test_c_second_upgrade_and_converge_are_noop`, `test_b_c_aged_db_upgrade_and_converge…` | converge ran app code on an intermediate schema lacking `custom_plans.spec` | upgrade to head before converge (equality kept) / add the column for the run (existing pattern) |
+| `test_qa_fresh_reset*` ×12 | new tables `web_login_requests`/`web_sessions` not classified | classified as preserved caller identity in `qa_fresh_reset.py` |
+| 12 editor tests 402 in some argv orders | pytest 9.1.1 loses `tests/test_web/conftest.py` fixtures for web files re-entered after a root-level file (UX-EDITOR root cause) | explicit trial `user` fixture in the editor test file |
+| parity full-sweep ×4 | «Свободный пул» not renamed in the add-exercise picker | renamed «Без дня» |
+| parity plans-schedule ×2 | move kept the row's day; new `past_day` rule refuses already-passed days (weekday-dependent) | spec picks «Без дня» |
+| Wave-1 style: raw `app-shell` wrappers bypassed the shell (WEB-LAYOUT seam) | — | all full-screen branches use `AppShell`; «Войти заново» button in browser mode (WEB-AUTH seam) |
+Known unstable on main too: `fix-wave1/first-add-to-plan`, `journal-sheet`/`a11y-review` (one 500 `rejected SSL upgrade` from the local Postgres container) — passed on retry or not seen in the final runs.
+
+### Staging deploy — blocker found BEFORE touching staging
+The installed guarded run-script (`/home/deploy/deploy-staging-guarded-run.sh`, owner-installed, no self-update) pins `EXPECTED_TO_REV=b5d8e1f3a6c9` and accepts only `c3f7a9e2d5b1` as the source. Staging is at `b5d8e1f3a6c9`; the candidate head is `d4b7e1a9c3f5`. A run would stop app/web, back up, build, then die in phase 6 (head check) — staging down. Preflight is read-only and does not catch it. Fixed in the repo (`deploy/deploy-staging-guarded-run.sh` accepts the previous head as source, targets the new head; tests `test_upgrades_from_the_previous_head_to_the_new_head`, `test_unknown_alembic_revision_is_refused_before_anything_stops`, Linux 67 passed). **Needs the owner to install it** (`owner-commands/install-guarded-script.txt`, sha256 `af8d2b8a56ddf39a50009e83ba4af21a1a875b95b9b247c9bd8855185bb334b0`). Mode to run afterwards: `dry-run yes -` (backup + checksum + trial restore, build, `alembic upgrade head` = both revisions in one transaction, history convergence not applied, start, health). Recovery: dump + before-manifest + saved images; code-only rollback per runbook §8.2 while convergence was not applied.
+
+### Timing (measured)
+- Harness-measured executor runs: UX-EDITOR contract 3.9 min + phase 2 ≈ 25.7 min + 16.4 min debug; WEB-AUTH ≈ 33.7 min; WEB-LAYOUT ≈ 43.7 min (parallel).
+- Coordinator wave 2: seams + docs ≈ 50 min before launch; integration + gate ≈ 1 h 25 min wall (waiting on runs ≈ 55 min: 4 full E2E ≈ 5.5 min each, host pytest ≈ 11 min ×2, Linux container runs ≈ 3–4.5 min ×3).
+- Rework: duplicate migration id, two test-pinned-head updates, QA-reset classification, rename/past-day spec fixes, one misdiagnosed order dependence (needed an executor), `zsh` argument splitting slips in my bisect scripts.
