@@ -231,3 +231,11 @@ seed plan_week_add_exercise 931003
 seed plan_week_add_exercise 931006
 seed live_engine 931004
 seed journal_catalog_session 931005
+# ux-ref-20261018 (UX-EDITOR, диапазон 941000–941099): редактор плана и расписание недели.
+seed ux_editor_fresh 941001
+seed ux_editor_fresh 941002
+seed ux_editor_fresh 941003
+seed ux_editor_fresh 941004
+seed ux_editor_fresh 941005
+seed ux_editor_legacy 941010
+seed ux_editor_legacy 941011

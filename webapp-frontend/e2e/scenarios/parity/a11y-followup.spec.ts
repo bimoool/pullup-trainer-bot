@@ -195,7 +195,7 @@ for (const width of WIDTHS) {
         await fresh(page, LIVE_BASE[width][theme] + testInfo.retry, theme);
         await page.getByTestId("my-workout-card").filter({ hasText: "Тренировка восстановления" }).click();
         await page.getByRole("button", { name: "Добавить в план" }).click();
-        await page.getByRole("button", { name: "Свободный пул" }).click();
+        await page.getByRole("button", { name: "Без дня" }).click();
         await page.getByRole("button", { name: "Добавить", exact: true }).click();
         const group = page.locator(".plan-week-day-group").filter({ hasText: /^Тренировка восстановления/ }).first();
         await group.getByRole("button", { name: /^Начать: / }).click();

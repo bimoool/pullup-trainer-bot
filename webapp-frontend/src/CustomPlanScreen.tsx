@@ -2,28 +2,22 @@ import { Button, Section } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { createCustomPlan, listSystemWorkouts, listWorkouts, type WorkoutResponseV2 } from "./apiV2";
-import { parseWeekVolumes } from "./customPlanFormat";
 import { useBackButton } from "./useBackButton";
 
 // issue #304 (PROGRAM_PLAN_V2 §7) — минимальный экран «Свой план»: ротация тренировок + ИСТИННЫЙ
-// объём по неделям («2 2 0 2 2 0» — 0 = пустая неделя), необязательные дни недели — подсказка
-// размещения, не объём. Полировка редактора — отдельная задача (P2).
-
-const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+// объём по неделям задаётся в редакторе (PlanEditorScreen, UX-EDITOR), здесь — состав и длина плана.
 
 type Props = {
   initDataRaw: string;
   onBack: () => void;
-  onCreated: () => void;
+  onCreated: (planId: number) => void;
 };
 
 export function CustomPlanScreen({ initDataRaw, onBack, onCreated }: Props) {
   const [workouts, setWorkouts] = useState<WorkoutResponseV2[] | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
   const [name, setName] = useState("Свой план");
-  const [weeksText, setWeeksText] = useState("2 2 0 2 2 0");
-  const [weekdays, setWeekdays] = useState<number[]>([]);
-  const [cycle, setCycle] = useState(false);
+  const [weekCount, setWeekCount] = useState(4);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -48,23 +42,20 @@ export function CustomPlanScreen({ initDataRaw, onBack, onCreated }: Props) {
     };
   }, [initDataRaw]);
 
-  const parsed = parseWeekVolumes(weeksText);
-
   async function handleSave() {
-    if (parsed.error !== null || selected.length === 0) {
+    if (selected.length === 0) {
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await createCustomPlan(initDataRaw, {
+      // Старт: по одному занятию каждой тренировки в неделю; точные количества и фазы — в редакторе.
+      const created = await createCustomPlan(initDataRaw, {
         display_name: name.trim() || "Свой план",
         workout_ids: selected,
-        weeks: parsed.weeks,
-        repeat: cycle ? "cycle" : "once",
-        preferred_weekdays: weekdays.length > 0 ? [...weekdays].sort((a, b) => a - b) : null,
+        quantities: selected.map(() => Array.from({ length: weekCount }, () => 1)),
       });
-      onCreated();
+      onCreated(created.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setSaving(false);
@@ -93,36 +84,21 @@ export function CustomPlanScreen({ initDataRaw, onBack, onCreated }: Props) {
           </label>
         ))}
       </Section>
-      <Section className="block-section" header="Тренировок по неделям">
-        <input
-          className="text-input" value={weeksText} aria-label="Тренировок по неделям" data-testid="custom-plan-weeks"
-          onChange={(event) => setWeeksText(event.target.value)}
-        />
-        <p className="block-subtitle" data-testid="custom-plan-weeks-preview">
-          {parsed.error ?? parsed.weeks.map((count, index) => `Н${index + 1}: ${count}`).join(" · ")}
-        </p>
-        <label className="plans-row-main">
-          <input type="checkbox" checked={cycle} onChange={(event) => setCycle(event.target.checked)} />
-          <span className="block-subtitle">Повторять по кругу</span>
-        </label>
-      </Section>
-      <Section className="block-section" header="Дни недели (подсказка, не обязательно)">
-        <div className="plans-confirm-actions">
-          {WEEKDAYS.map((label, index) => (
-            <Button
-              key={label} size="s" mode={weekdays.includes(index) ? "filled" : "outline"}
-              onClick={() => setWeekdays((prev) => prev.includes(index) ? prev.filter((d) => d !== index) : [...prev, index])}
-            >
-              {label}
-            </Button>
-          ))}
+      <Section className="block-section" header="Недель в плане">
+        <div className="plans-row-main editor-qty-row">
+          <Button size="s" mode="outline" aria-label="Меньше недель" disabled={weekCount <= 1}
+            onClick={() => setWeekCount((n) => n - 1)}>−</Button>
+          <span className="plans-row-chip" data-testid="custom-plan-weeks">{weekCount}</span>
+          <Button size="s" mode="outline" aria-label="Больше недель" disabled={weekCount >= 52}
+            onClick={() => setWeekCount((n) => n + 1)}>+</Button>
         </div>
+        <p className="block-subtitle">Сначала по одному занятию каждой тренировки в неделю — дальше настроите по неделям.</p>
       </Section>
       {error !== null && <p className="gap-banner">{error}</p>}
       <div className="pre-transport">
         <Button
           className="action-button vs-primary" size="l" stretched data-testid="custom-plan-save"
-          disabled={saving || parsed.error !== null || selected.length === 0} onClick={() => void handleSave()}
+          disabled={saving || selected.length === 0} onClick={() => void handleSave()}
         >
           {saving ? "Сохраняю…" : "Создать план"}
         </Button>

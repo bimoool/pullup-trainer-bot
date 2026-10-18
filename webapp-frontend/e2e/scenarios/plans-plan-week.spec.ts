@@ -59,7 +59,7 @@ test("«Планы»: видна текущая неделя плана, эле�
     .filter({ has: page.getByTestId("plan-item-counter").filter({ hasText: new RegExp(`^${counter}$`) }) });
   await expect(weekRow("0/1")).toHaveCount(4);
   await expect(weekRow("0/1").first()).toContainText("Расписание недели (E2E)");
-  await expect(page.getByText("Свободный пул")).toBeVisible();
+  await expect(page.getByText("Без дня")).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
   expect(apiFailures).toEqual([]);

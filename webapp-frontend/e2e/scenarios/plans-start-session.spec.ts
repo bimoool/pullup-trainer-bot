@@ -13,7 +13,7 @@ test("«Планы» → Подтягивания → Начать → live sess
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   await page.getByRole("button", { name: "Планы" }).click();
-  await expect(page.getByText("Свободный пул")).toBeVisible();
+  await expect(page.getByText("Без дня")).toBeVisible();
   // #304: одна строка = одно занятие. #305 (V5.6 §1): новая инклюзия V5.6 — 2 основных занятия в неделю
   // (A и B), каталог поставляемой программы (3) не меняется — частота заморожена в снимке инклюзии.
   await expect(page.getByTestId("plans-row").getByText("Подтягивания", { exact: true })).toHaveCount(2);

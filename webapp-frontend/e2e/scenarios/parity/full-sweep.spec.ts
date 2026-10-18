@@ -347,7 +347,7 @@ const FLOWS: Flow[] = [
       });
       await visit(page, {
         where: "Планы → Добавить упражнение", open: () => byName(page, "+ Добавить упражнение").click(),
-        dest: [page.getByText("День", { exact: true }), byName(page, "Свободный пул")], exit: { tab: "Планы" }, origin: plansMarker(page),
+        dest: [page.getByText("День", { exact: true }), byName(page, "Без дня")], exit: { tab: "Планы" }, origin: plansMarker(page),
       });
       await visit(page, {
         where: "Планы → Начать", open: () => byName(page, /^Начать: /).first().click(),

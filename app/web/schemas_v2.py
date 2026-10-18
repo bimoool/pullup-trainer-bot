@@ -406,7 +406,7 @@ class CustomPlanCreateRequest(BaseModel):
 
     display_name: str = Field(min_length=1, max_length=255)
     workout_ids: list[int] = Field(min_length=1, max_length=20)
-    weeks: list[int] = Field(min_length=1, max_length=52)
+    weeks: list[int] = Field(default_factory=list, max_length=52)  # пусто допустимо, если задан quantities
     repeat: Literal["once", "cycle"] = "once"
     preferred_weekdays: list[int] | None = None
     start_week_number: int | None = None

@@ -35,7 +35,7 @@ test("«Планы»: курс A+Б одного дня — занятия-ст�
   expect(new Set(course.map((item) => item.day_of_week))).toEqual(new Set([null]));
 
   const weekRow = (name: string) => page.getByTestId("plans-row").filter({ hasText: name });
-  await expect(page.getByText("Свободный пул")).toBeVisible();
+  await expect(page.getByText("Без дня")).toBeVisible();
   await expect(weekRow("Подтягивания (E2E group)")).toHaveCount(3);
   await expect(page.getByText("Блок A", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Блок Б", { exact: true })).toHaveCount(0);
