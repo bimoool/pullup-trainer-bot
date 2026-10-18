@@ -27,3 +27,12 @@ The wave-1 list in `docs/audit/wave1/A-reference/COVERAGE.md` § «Observations 
 (items 1–13) remains the exact capture plan; add for this audit: plan row states when a workout cannot be done
 this week, future-week start, duration shown in Logbook/Analytics, how total reps are counted, timed-exercise
 Logbook cards, deletion of logged plan workouts.
+
+
+## Local pass — reference column now OBSERVED
+
+See `REFERENCE.md` (R-1…R-6) and `COMPARISON.md`. Scenario ids from the cloud pass map as: S-J6 → R-1…R-4,
+S-J10/S-J8 → R-6, S-J12 → R-4/«future weeks», S-L → R-5 (kill mid-set), S-E → empty states in `PASS2-LOCAL.md`.
+New scenarios added by the local pass: **S-R1 same workout twice in one day**, **S-R2 move a session**,
+**S-R3 delete a session / week / plan**, **S-R4 plan credit after logging and after deleting a log**,
+**S-R5 reopen after leaving the editor**. Our-side runs: `artifacts-local/l1…l7`.

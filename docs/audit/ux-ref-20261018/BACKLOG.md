@@ -1,13 +1,39 @@
-# Evidence backlog — UX reference audit 2026-10-18
+# Evidence backlog — UX reference audit 2026-10-18 (cloud pass + local reference pass)
 
-One list, stable IDs. Evidence = files in `artifacts/` (screenshot + `<script>.log` with the visible text and
-network calls of every step); scripts in `harness/` reproduce them. **Ref** is the reference status: no item
-has OBSERVED reference evidence (access blocked); HISTORICAL = secondhand note, to verify.
-Status after pass 2: **CONFIRMED** (reproduced independently) · **OBSERVED** (seen once) · **WITHDRAWN** ·
-**NEEDS-OWNER** (product/spec decision before any fix).
+One list, stable IDs (UX-01…UX-23 unchanged from the cloud pass; UX-24… added by the local pass). Evidence = files in
+`artifacts/` (ours, cloud), `artifacts-local/` (ours, local pass), `reference/` (real Crimpd 8.5.3).
+Scripts in `harness/`, `harness-local/` reproduce our-side artifacts; reference steps are in `reference/notes-raw.md`.
+Item bodies below are the cloud-pass text; the **local pass adds a «Ref» status for every item** in the table
+right after this header and the new items at the end.
+Status: **CONFIRMED** (reproduced independently) · **OBSERVED** (seen once) · **WITHDRAWN** ·
+**NEEDS-OWNER** (product/spec decision before any fix) · **DECIDED** (answered by an existing requirement — see `DECISIONS.md`).
 
 Priority: P1 = blocks or misleads a core journey · P2 = wrong/inconsistent information or avoidable friction ·
 P3 = polish/copy/a11y.
+
+## Reference status of every item (local pass)
+
+| ID | Ref | What the real Crimpd shows (evidence) | Effect on the item |
+|---|---|---|---|
+| UX-01 | n/a (our rule) | no min-rest rule exists; every action offered is startable (R-5) | stays P1, reference-independent |
+| UX-02 | **OBSERVED** supports | future weeks open and schedulable; future-dated slots start/log from detail (`p2_09`, `p1_47`) | stays P1 |
+| UX-03 | **OBSERVED** | no 0:00; but durations are **estimates** of the prescription (`p1_72`) — contradicts our spec | stays P1; **DECIDED**: spec = active engine time, 0 = «без длительности» |
+| UX-04 | OBSERVED supports | metrics are named and separate (Workouts Logged / Duration / TUT / Estimated Workload, `p1_82`) | label the tile, as proposed |
+| UX-05 | UNKNOWN (no onboarding in ref) | — | **DECIDED** by spec + default in `DECISIONS.md` (Q1) |
+| UX-06 | partly | Add to Plan = 2-step plan chooser; result screen UNKNOWN (`p2_10`) | stays P2 |
+| UX-07 | n/a | ref player asks only grade/effort per set | **DECIDED**: record must stay complete (V5.6 §8); UX = pickers + reuse |
+| UX-08, 09 | n/a | — | unchanged |
+| UX-10 | **OBSERVED** supports | Plans = one plan object with In Progress / Upcoming / Completed (`p1_01`) | stays P2 → UX-27 |
+| UX-11 | **OBSERVED** | «Today» block exists on the plans list («No workouts scheduled for today»), not inside the week view | **downgrade to P3 / intended**; remove only the duplicate inside the week view |
+| UX-12 | **OBSERVED** strongly supports | weekly quantity steppers (0.5 step), per-week totals + hours, per-week phase (`p1_15`, `p1_18`) | stays P2 → implemented through UX-24 |
+| UX-13 | **OBSERVED** | unscheduled bucket is called «THIS WEEK» (`p2_07`) | rename «Свободный пул» |
+| UX-14 | **OBSERVED** supports | every card always shows TUT and Est. Duration (`p1_72`) | stays P2 |
+| UX-15 | **OBSERVED** | any log can be deleted with an action sheet, plan reverts at once (`p1_60`–`p1_62`) | **DECIDED**: ours differs by domain rule (spec §safe delete); remaining defect = `window.confirm` + card format |
+| UX-16 | OBSERVED supports | search heading «FOUND 263 WORKOUTS» (neutral) | stays P3 |
+| UX-17 | UNKNOWN | — | unchanged |
+| UX-18 | UNKNOWN | — | unchanged (verify in Telegram client) |
+| UX-19, 20, 21 | n/a | — | unchanged |
+| UX-23 | **OBSERVED** supports | «Log Workout» opens from any workout's detail, catalogue included (`p1_48`) | list catalogue workouts too |
 
 ---
 
@@ -136,3 +162,55 @@ P3 = polish/copy/a11y.
 
 ### Passing journeys (no backlog item)
 J5 interval auto-transitions · J7 direct start does not credit the plan · J9 external activity · J10 date and set edit converge · reload mid-live resumes · early-finish dialog · 320 px layout without overflow · empty states on all five tabs for a fresh user.
+
+---
+
+## New items from the local reference pass
+
+### UX-24 · P1 · OBSERVED (ref + ours-L) — No weekly plan editor: quantity per workout per week, phases, totals, week operations
+- **Reference (O):** plan form (name, duration, start week, goal); per-workout `−/+` quantity per week; per-week phase (Base/Build/Rest/Peak); totals «sessions per week» + hours; insert/delete week; plan-level menu (`REFERENCE.md` R-1, R-3).
+- **Ours (O cloud + ours-L):** one text field «2 2 0 2» for the whole plan, workouts rotate «по очереди», same day pattern every week, no duration/start/goal, no week insert/delete, phase fixed; «Добавить в план» from a workout adds one item to the current week only.
+- **Impact:** weekly distribution — the core of plan building — is not controllable per workout/week; two unrelated entry points.
+- **Recommendation:** one editor reachable from both entries: per-workout weekly quantity (integers first, see DECISIONS Q2), week phases, totals, insert/delete week with confirmation (UX-28).
+- **Evidence:** `reference/screens/p1_15…p1_24`; `artifacts-local/l5-01-form.png`, `l3-02-after-add-Ср.png`, `l3-03-next-week.png`.
+- **AC:** E2E: create 4-week plan, set 2/2/0/1 for workout A and 1/1/1/1 for B, totals row matches, insert and delete a week with confirmation, reload → identical. **Deps:** plan-before-code (data model for per-workout weekly quantity; CLAUDE.md schema rule). **Confidence:** high.
+
+### UX-25 · P1 · OBSERVED (ref + ours-L) — Day placement per week and repeating a workout in one day are hidden
+- **Reference (O):** «Week N Schedule»: «+ N» pill = sessions still to place, 7 day circles, per-day totals; tapping the same day again adds another session (cycle 0→N→0); quota spent → silent ignore (`p1_27`, `p1_43`, `p1_44`).
+- **Ours-L (O):** the same workout can be put twice on one day only by running «Добавить в план» twice (two identical rows «L Тяга 0/1» under ПОНЕДЕЛЬНИК); no «×2», no per-day total; also accepted for a past day (see UX-31).
+- **Impact:** a supported capability (repeat in one day) cannot be found or verified; no overview of load per day.
+- **Recommendation:** week schedule view with remaining-count pill, per-day totals and explicit stepper (+/−) per day instead of tap-cycling; when the quota is spent show «все занятия размещены» (do not copy the silent ignore).
+- **Evidence:** `reference/screens/p1_27_schedule.png`, `p1_44_after3.png`; `artifacts-local/l3-01-after-add-Пн.png`.
+- **AC:** E2E: workout with quantity 2 placed twice on Tuesday, shows «×2» and day total 2; moving one to Thursday updates both totals. **Deps:** UX-24. **Confidence:** high.
+
+### UX-26 · P3 · OBSERVED — Plan progress is shown as a bare counter
+- **Reference (O):** per-category rings (done/planned) and green «1/1 ✓» on the card; credit derived from logs by date + workout; deleting a log reverts at once (`p1_51`, `p1_52`, `p1_62`).
+- **Ours:** «Текущая неделя · 0 из 3» and «0/1» per row. **Credit rule stays as specified** (J7: a direct start does not credit a course occurrence) — only the presentation is a gap.
+- **AC:** card shows a done state; week header shows progress per category; consistent after deleting a Journal entry.
+
+### UX-27 · P2 · OBSERVED — Plan lifecycle: Upcoming plans, start date, clone, delete, empty states
+- **Reference (O):** In Progress / Upcoming / Completed; start-week calendar with overlapping days disabled; Change Start Date; Clone; Delete with confirm; empty Upcoming text (`p1_01`, `p1_38`, `p1_41`, `p1_79`, `p1_80`).
+- **Ours:** «Сейчас / Завершённые», «Остановить план»; no future plan, no start date, no clone.
+- **Recommendation:** adopt Upcoming + start date + clone; overlapping start dates disabled **with a visible reason** (the reference gives none).
+- **AC:** create a plan starting next week → appears under «Предстоящие»; picker blocks days of the active plan with a message; clone creates an identical draft.
+
+### UX-28 · P2 · OBSERVED — Destructive plan edits must confirm (intentional difference from the reference)
+- **Reference (O):** Delete Week (with its volume), Remove From Plan, un-scheduling are immediate and unconfirmed (`p1_23`, `p1_24`, `p1_77`).
+- **Ours:** remove already confirms inline; the future week/plan operations of UX-24/27 must do the same.
+- **Documented reason for the difference:** irreversible loss of user-entered data; Telegram WebView.
+- **AC:** every delete of a week/workout/plan has an in-app confirmation naming what is lost; Cancel restores nothing to change.
+
+### UX-29 · P3 · OBSERVED — Per-week notes
+- **Reference (O):** «Week N Notes» sheet (`p2_06`). Ours: none. Candidate feature; low priority.
+
+### UX-30 · P3 · OBSERVED (ref) / INFERRED (ours) — Analytics metric switch
+- **Reference (O):** dropdown {Workouts Logged, Duration (min), Time Under Tension (min), Estimated Workload}, periods 1 Mo./3 Mo./Custom (`p1_82`). Ours: fixed tiles (O cloud). Depends on UX-03/04 (what «Duration» means).
+
+### UX-31 · P2 · OBSERVED (ours-L) — Row actions inconsistent; move into the past accepted silently; Move screen without in-page Back
+- **Actual:** in the current week rows only have «Начать»; in future weeks rows have «⋯» (Перенести / Редактировать тренировку / Убрать из плана). Moving a session to Mon 12 Oct when today is 18 Oct succeeds with no message and the row keeps «Начать» (four Monday sessions in the past). Move screen shows only week/day pickers and «Сохранить»; Escape does nothing (Telegram BackButton not rendered in the harness — UNKNOWN in the real client).
+- **Evidence:** `artifacts-local/l4-01-week1.png`, `l5-03-week2.png`, `l6-01-row-sheet.png`, `l6-02-move-screen.png`, `l7.log` (`after-move-to-past`, `week1-after`).
+- **Recommendation:** same «⋯» on every row of an editable week; past days disabled or marked «пропущено»; visible «Отмена» on the sheet.
+- **AC:** E2E: a past day cannot be chosen (or is labelled), current-week rows expose the same actions, Cancel leaves the plan unchanged. **Deps:** none. **Confidence:** high for the observed behaviour, medium for «real client».
+
+### Not to copy (documented in `REFERENCE.md`)
+Estimated durations (spec: active time) · future-dated logs mis-filed in the current month (spec: 422) · silent tap-ignore when the quota is spent · no confirmation on destructive plan edits · no resume after a killed player.

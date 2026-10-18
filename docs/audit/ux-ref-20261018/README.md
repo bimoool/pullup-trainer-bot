@@ -1,11 +1,17 @@
 # UX reference audit — 2026-10-18
 
 Gate: `docs/AGENT_EXECUTION_MODEL.md` § *Reference audit to implementation gate* (PR #340).
-Status: **our side — pass 1 + pass 2 done; reference side BLOCKED** (no access, `INVENTORY.md`). Sprint plan awaits owner review; no implementation started.
+Status: **both sides observed, two passes done** (cloud pass: our side; local pass: real Crimpd 8.5.3 on an Android emulator + ours on an isolated stand). Backlog UX-01…UX-31, sprint plan v2 awaits owner review; no implementation started.
 
 | File | Content |
 |---|---|
-| `INVENTORY.md` | access inventory (reference, ours), environment, limits |
+| `INVENTORY.md` | access inventory (cloud blocker + local resolution), environment, limits |
+| `REFERENCE.md` | **real Crimpd** observed journeys (create plan, add workouts, weeks, day placement, same-day repeat, move/delete, execute, history) |
+| `COMPARISON.md` | reference vs ours per journey |
+| `DECISIONS.md` | cloud questions checked against requirements + the one open list (Q1, Q2) |
+| `PASS2-LOCAL.md` | second pass of the local session |
+| `reference/` | reference evidence: screens (downscaled), full-text dumps, raw step log, test-data ledger, adb helpers |
+| `artifacts-local/`, `harness-local/` | our-side local-pass evidence and scripts (isolated Docker stand, port 8012) |
 | `SCENARIOS.md` | scenario map (reference journeys ↔ ours) |
 | `BACKLOG.md` | single evidence backlog (stable IDs `UX-NN`) |
 | `PASS2.md` | second pass: rechecks, missing states, dedupe |

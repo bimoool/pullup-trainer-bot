@@ -1,0 +1,6 @@
+[0,0][1080,2400] 'Crimpd'
+[490,1225][590,1241] 'Activate to adjust the size of the dialog overlaying the screen'
+[0,1344][1080,1942] '1 / 2'
+[55,1480][1036,1614] 'Add To New Plan'
+[55,1674][1036,1806] 'Add To Existing Plan'
+[1078,1344][1080,1929] '2 / 2'
