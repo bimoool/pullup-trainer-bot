@@ -87,8 +87,8 @@ class SlidingWindowLimiter:
         self._hits.clear()
 
 
-poll_limiter = SlidingWindowLimiter(limit=240, window_seconds=60)
-bad_poll_limiter = SlidingWindowLimiter(limit=30, window_seconds=600)
+poll_limiter = SlidingWindowLimiter(limit=settings.web_auth_ip_poll_limit, window_seconds=60)
+bad_poll_limiter = SlidingWindowLimiter(limit=settings.web_auth_ip_bad_poll_limit, window_seconds=600)
 
 
 def client_ip_prefix(request: Request) -> str | None:

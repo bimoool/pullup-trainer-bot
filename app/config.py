@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     web_auth_cookie_secure: bool = True
     # Доверять X-Real-IP от reverse proxy (nginx) при определении IP для лимитов.
     web_auth_trusted_proxy: bool = False
+    # Лимиты входа на один IP-префикс (/24, /64): запросов входа за 10 мин, опросов в минуту, неверных опросов за 10 мин.
+    # Значения по умолчанию — для прода; E2E-стенд, где все запросы с 127.0.0.1, поднимает их.
+    web_auth_ip_request_limit: int = 10
+    web_auth_ip_poll_limit: int = 240
+    web_auth_ip_bad_poll_limit: int = 30
     # Тестовый вход (POST /api/web-auth/test-login) — действует ТОЛЬКО вместе с BOT_TOKEN == "e2e-test-token".
     web_auth_test_login: bool = False
 

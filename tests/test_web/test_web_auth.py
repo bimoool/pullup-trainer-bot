@@ -87,7 +87,7 @@ async def test_create_returns_code_secret_and_link_and_stores_only_hash(client, 
 
 
 async def test_create_rate_limited_per_ip(client):
-    for _ in range(web_login.MAX_REQUESTS_PER_IP_WINDOW):
+    for _ in range(settings.web_auth_ip_request_limit):
         assert (await client.post("/api/web-auth/login-requests")).status_code == 200
     assert (await client.post("/api/web-auth/login-requests")).status_code == 429
 

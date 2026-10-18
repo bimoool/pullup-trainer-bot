@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models import User, WebLoginRequest, WebSession
 from app.db.repositories.users import UserRepository
 
@@ -26,7 +27,6 @@ SESSION_TOUCH_INTERVAL = timedelta(seconds=60)
 
 MAX_BAD_SECRETS_PER_REQUEST = 5
 MAX_POLLS_PER_REQUEST = 400
-MAX_REQUESTS_PER_IP_WINDOW = 10
 IP_WINDOW = timedelta(minutes=10)
 
 START_PAYLOAD_PREFIX = "weblogin_"
@@ -61,9 +61,9 @@ async def create_login_request(
         recent = (await session.execute(
             select(WebLoginRequest.id).where(
                 WebLoginRequest.ip_prefix == ip_prefix, WebLoginRequest.created_at >= now - IP_WINDOW,
-            ).limit(MAX_REQUESTS_PER_IP_WINDOW)
+            ).limit(settings.web_auth_ip_request_limit)
         )).all()
-        if len(recent) >= MAX_REQUESTS_PER_IP_WINDOW:
+        if len(recent) >= settings.web_auth_ip_request_limit:
             raise RateLimited
     request_id = secrets.token_hex(16)
     browser_secret = secrets.token_urlsafe(32)
