@@ -1,12 +1,14 @@
 // Навигация. Владелец — WEB-LAYOUT (до его работы — прежняя нижняя панель Mini App, #280).
 // Контракт e2e: контейнер .bottom-tabbar, внутри <button> с подписью-<span> прямым потомком; aria-current="page" у активной.
 import { NavIcon } from "../NavIcon";
+import { usePlatform } from "./mode";
 
 export type NavTab = { key: string; label: string };
 
 export function NavBar({ tabs, active, onSelect }: { tabs: NavTab[]; active: string; onSelect: (key: never) => void }) {
+  const { mode, signOut } = usePlatform();
   return (
-    <nav className="bottom-tabbar" aria-label="Основная навигация">
+    <nav className={mode === "browser" ? "bottom-tabbar bottom-tabbar-web" : "bottom-tabbar"} aria-label="Основная навигация">
       {tabs.map(({ key, label }) => (
         <button
           key={key}
@@ -19,6 +21,11 @@ export function NavBar({ tabs, active, onSelect }: { tabs: NavTab[]; active: str
           <span>{label}</span>
         </button>
       ))}
+      {mode === "browser" && signOut && (
+        <button type="button" className="web-signout web-signout-nav" data-testid="web-signout-nav" onClick={signOut}>
+          Выйти
+        </button>
+      )}
     </nav>
   );
 }

@@ -3,6 +3,8 @@
 // математика отступов, счётчик «подтверждения закрытия») и тонкой обвязки над window.Telegram.WebApp.
 // Любой вызов защищён: вне Telegram (обычный браузер) и на старых клиентах всё превращается в no-op.
 // Чистая часть без импортов из SDK/React — её проверяют юнит-тесты (tests/telegramPlatform.test.ts).
+import { requestConfirm } from "./platform/confirmStore.ts";
+import { isBrowserRuntime } from "./platform/runtime.ts";
 
 export type Insets = { top: number; bottom: number; left: number; right: number };
 
@@ -164,14 +166,28 @@ export function createOwnerToggle(adapter: ToggleAdapter) {
   };
 }
 
+// Браузер: пока идёт живая тренировка — штатный диалог «Покинуть страницу?» (beforeunload).
+function beforeUnloadGuard(event: BeforeUnloadEvent) {
+  event.preventDefault();
+  event.returnValue = "";
+}
+
 const closingConfirmation = createOwnerToggle({
   enable: () => {
+    if (isBrowserRuntime()) {
+      window.addEventListener("beforeunload", beforeUnloadGuard);
+      return;
+    }
     const webApp = getWebApp();
     if (isVersionAtLeast(webApp, MIN_VERSION.closingConfirmation) && typeof webApp?.enableClosingConfirmation === "function") {
       webApp.enableClosingConfirmation();
     }
   },
   disable: () => {
+    if (isBrowserRuntime()) {
+      window.removeEventListener("beforeunload", beforeUnloadGuard);
+      return;
+    }
     const webApp = getWebApp();
     if (isVersionAtLeast(webApp, MIN_VERSION.closingConfirmation) && typeof webApp?.disableClosingConfirmation === "function") {
       webApp.disableClosingConfirmation();
@@ -299,6 +315,10 @@ export function dismissKeyboard(): void {
  * тренировку» не срабатывала). Вне Telegram и на старых клиентах — `window.confirm`. Ответ — только явное «OK».
  */
 export function confirmAction(message: string, webApp: WebAppApi | undefined = getWebApp()): Promise<boolean> {
+  // Браузер: шторка в странице (window.confirm блокирует поток, не стилизуется и в iframe/PWA часто подавлен).
+  if (isBrowserRuntime()) {
+    return requestConfirm(message);
+  }
   if (webApp && typeof webApp.showConfirm === "function" && isVersionAtLeast(webApp, MIN_VERSION.popups)) {
     const show = webApp.showConfirm;
     return new Promise((resolve) => {

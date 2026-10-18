@@ -8,6 +8,8 @@ import {
 } from "@telegram-apps/sdk";
 import { useEffect, useRef } from "react";
 
+import { browserBackAdapter, adjustOverlayCount } from "./platform/backStore";
+import { isBrowserRuntime } from "./platform/runtime";
 import { createBackButtonStack, type BackButtonAdapter } from "./backButtonStack";
 
 /**
@@ -32,8 +34,12 @@ import { createBackButtonStack, type BackButtonAdapter } from "./backButtonStack
  * @param enabled false — экран временно не претендует на кнопку (например, корневой шаг мастера)
  */
 const sdkAdapter: BackButtonAdapter = {
-  available: () => Boolean(mountBackButton.isAvailable?.()),
+  available: () => isBrowserRuntime() || Boolean(mountBackButton.isAvailable?.()),
   setVisible: (visible) => {
+    if (isBrowserRuntime()) {
+      browserBackAdapter.setVisible(visible);
+      return;
+    }
     try {
       mountBackButton();
       if (visible) {
@@ -51,6 +57,9 @@ const sdkAdapter: BackButtonAdapter = {
     }
   },
   subscribe: (listener) => {
+    if (isBrowserRuntime()) {
+      return browserBackAdapter.subscribe(listener);
+    }
     const remove = onBackButtonClick.isAvailable?.() ? onBackButtonClick(listener) : undefined;
     return () => {
       remove?.();
@@ -86,6 +95,13 @@ export function useBackButton(onClickHandler: () => void, _deps: React.Dependenc
     }
     setNavHidden(1);
     return () => setNavHidden(-1);
+  }, [enabled, hideNav]);
+  useEffect(() => {
+    if (!enabled || hideNav) {
+      return;
+    }
+    adjustOverlayCount(1);
+    return () => adjustOverlayCount(-1);
   }, [enabled, hideNav]);
   const handlerRef = useRef(onClickHandler);
   useEffect(() => {
