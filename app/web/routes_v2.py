@@ -6,6 +6,7 @@ app/web/routes.py (старая pull-up-специфичная схема, не 
 принципом, что app/domain/ проверяется на отсутствие aiogram/sqlalchemy
 (CLAUDE.md)."""
 
+from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -16,6 +17,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models_program import (
     Complex,
     ComplexItem,
@@ -85,6 +87,7 @@ from app.services.plan_removal import (
     PlanRemovalService,
 )
 from app.services.plan_view import (
+    InclusionSchedule,
     PlanItemView,
     PlanScheduleService,
     PlanViewService,
@@ -117,6 +120,7 @@ from app.web.schemas_v2 import (
     ExerciseResponse,
     FavoriteListResponse,
     FavoriteResponse,
+    InclusionScheduleResponse,
     JournalDayResponse,
     JournalDaysResponse,
     PlanItemCreateRequest,
@@ -196,7 +200,7 @@ def _program_response(program: Program, strategy_type_value: str | None) -> Prog
 
 
 def _program_inclusion_response(
-    inclusion: ProgramInclusion, user, access_level: str | None,
+    inclusion: ProgramInclusion, user, access_level: str | None, schedule: InclusionSchedule | None = None,
 ) -> ProgramInclusionResponse:
     """current_week считается в поясе пользователя, как недели плана (#285 L1): и «сегодня»
     (_plan_today), и дата старта курса — локальные (started_at хранится в UTC, `.date()` без
@@ -211,6 +215,7 @@ def _program_inclusion_response(
         is_active=inclusion.is_active, started_at=inclusion.started_at, expires_at=inclusion.expires_at,
         snapshot=inclusion.snapshot, progression_state=inclusion.progression_state,
         access_level=access_level or ProgramAccessLevel.PREMIUM.value,
+        schedule=InclusionScheduleResponse(**asdict(schedule)) if schedule is not None else None,
     )
 
 
@@ -234,6 +239,11 @@ def _plan_item_response(
         available_from=state.available_from if state is not None else None,
         projected_date=state.projected_date if state is not None else None,
         credited_session_id=view.credited_session_id if view is not None else None,
+        start_allowed=view.start_allowed if view is not None else False,
+        blocked_reason=view.blocked_reason if view is not None else None,
+        session_variant=view.session_variant if view is not None else None,
+        session_variant_basis=view.session_variant_basis if view is not None else None,
+        session_ordinal=view.session_ordinal if view is not None else None,
         id=item.id, exercise_id=item.exercise_id, complex_id=item.complex_id,
         count_per_week=item.count_per_week, day_of_week=item.day_of_week,
         week_phase=item.week_phase.value if item.week_phase is not None else None,
@@ -1067,14 +1077,16 @@ async def get_plan(
     # занятиям, отдых MAIN. Счётчик старых агрегатных строк прошлых недель — прежний (#258).
     view = await PlanViewService(session).build(
         plan=plan, user=user, today=plan_today, plan_weeks=plan_weeks, plan_items=plan_items,
-        inclusions=inclusions,
+        inclusions=inclusions, now=_utcnow(), bypass_spacing=settings.is_admin(init_data.user.id),
     )
     access_levels = await _inclusion_access_levels(session, inclusions)
     return PlanResponse(
         plan=TrainingPlanResponse(
             id=plan.id, created_at=plan.created_at,
             program_inclusions=[
-                _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id))
+                _program_inclusion_response(
+                    inclusion, user, access_levels.get(inclusion.id), view.schedules.get(inclusion.id),
+                )
                 for inclusion in inclusions
             ],
             plan_items=[
@@ -1145,7 +1157,8 @@ async def create_program_inclusion(
         training_plan_id=inclusion.training_plan_id, today=_plan_today(user),
     )
     access_levels = await _inclusion_access_levels(session, [inclusion])
-    return _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id))
+    schedule = await PlanViewService(session).inclusion_schedule(inclusion, user_id=user.id)
+    return _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id), schedule)
 
 
 @router_v2.post("/program-inclusions/{inclusion_id}/deactivate", response_model=ProgramInclusionResponse)
@@ -1173,7 +1186,8 @@ async def deactivate_program_inclusion(
         )
         await session.commit()
     access_levels = await _inclusion_access_levels(session, [inclusion])
-    return _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id))
+    schedule = await PlanViewService(session).inclusion_schedule(inclusion, user_id=user.id)
+    return _program_inclusion_response(inclusion, user, access_levels.get(inclusion.id), schedule)
 
 
 # --- Строки недельной матрицы -----------------------------------------------------------
