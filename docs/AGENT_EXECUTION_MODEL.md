@@ -2,7 +2,67 @@
 
 This document specifies how Claude agents interact with this codebase — context isolation, model selection, parallel work boundaries, and safety practices for checkpoints and implementation.
 
-## Fresh Context Policy
+## Navigator brief gate (owner clarification, 2026-10-18)
+
+Applies to every task brief, including research, audits, documentation and prompts handed to
+the owner for another session. The navigator reads this document before issuing a brief;
+remembering these rules or appending them only after an owner complaint is not compliance.
+
+Every brief starts with a completed header (no unresolved placeholders handed to the owner):
+
+```
+RUN MODE: LOCAL CODE | CLOUD CODE | CHAT
+MODEL: FAST / HAIKU | STANDARD / SONNET | STRONG / OPUS
+MODEL REASON: <task-specific complexity; do not guess a version number>
+SESSION: NEW | CONTINUE <identified existing session>
+TASK TYPE: RESEARCH | AUDIT | IMPLEMENTATION | DOCUMENTATION | RELEASE
+BASE SHA: <verified SHA, or N/A with reason>
+BRANCH / WORKTREE: <exact target, or read-only/no checkout>
+ACCESS: <verified available inputs/tools; explicitly list unverified dependencies>
+DELIVERABLE: <reviewable result and acceptance evidence>
+TIMEBOX: <estimated work range with assumptions>
+NEXT STATUS: <concrete time and timezone or bounded first checkpoint>
+AUTHORIZED ACTIONS: <reads, edits, push, merge, deployment; use existing authorization>
+```
+
+- Select LOCAL/CLOUD from actual capability, not habit. A cloud session is not assumed to have
+  local reference files, an Android emulator, SSH or workflow dispatch. A local session is not
+  assumed reachable when the owner is away. First verify inputs in the selected environment.
+- Model choice follows the routing below. Reference capture/automation normally uses Sonnet;
+  cross-product synthesis with ambiguous domain mappings may use Opus with an explicit reason.
+- State NEW vs CONTINUE separately from LOCAL vs CLOUD. Continue an active release/incident in
+  its existing capable session; a new independent implementation block gets fresh context.
+  Do not create duplicate branches or tell the owner to find an unspecified “main session”.
+- Read current GitHub refs, task state and deployment evidence. A generated status page with
+  an old date is historical, not current authority. Do not silently reset orchestration state
+  to match a manual release; report the discrepancy and reconcile against current issues.
+- If a capability is denied, report the exact missing permission and complete unaffected work.
+  Do not promise to dispatch, merge or deploy before confirming that capability.
+- Estimates distinguish active work, external CI and access blockers. A control time is a
+  status deadline, not an invented completion promise. Do not promise background monitoring
+  without a working mechanism. Scope growth requires a revised estimate and checkpoint.
+
+### Reference audit to implementation gate
+
+1. Inventory and verify reference access/version. Existing notes and DONE labels are hypotheses
+   until supported by observable evidence; owner screenshots seed the audit, not its boundary.
+2. First pass: observe complete reference journeys, then reproduce equivalent journeys in ours.
+   Record OBSERVED / INFERRED / UNKNOWN and evidence for both sides.
+3. Maintain one durable backlog as findings appear: stable ID, scenario/preconditions, reference,
+   actual behavior, impact, evidence, recommendation, acceptance criteria, priority, dependencies,
+   and confidence/status. Product/domain differences need a documented reason, not a backend excuse.
+4. Second pass: recheck findings, missing states, data/access conditions, cancellation/reload,
+   narrow/wide layouts and cross-screen dependencies; deduplicate and correct the backlog.
+5. Review the whole backlog and propose short, demonstrable scenario-based sprints with estimates
+   and acceptance evidence. Owner review of this plan precedes implementation for this audit campaign.
+6. Implement approved slices, verify behavior and visual usability, then seek release authorization
+   only if not already given. CI green is engineering verification, not UX acceptance or deployment.
+
+No app implementation during the audit. Durable evidence/backlog commits are allowed.
+Functional layout (visible actions, readable controls, scrolling, weekly scheduling) is part of
+the audit; final visual styling follows agreed interaction structure.
+
+## Fresh Context Policy (implementation checkpoints)
 
 Every accepted implementation checkpoint ends the current session context.
 
@@ -102,7 +162,11 @@ See `docs/RESOURCE_LIFECYCLE.md` for thresholds, monitoring and the VPS side.
 
 ## Long-Running Tasks
 
-Prefer **coherent multi-hour implementation blocks** when scope is clear (e.g., "implement Analytics v2" as one continuous session, not broken into five tiny prompts).
+Prefer coherent scenario-based work, with bounded checkpoints. A multi-hour campaign is a plan
+of independently reviewable blocks, not one unbounded worker run. For worker briefs estimated
+above 10–15 minutes, split the scope or declare intermediate pushed checkpoints as required by
+`.claude/skills/worker-task-template`. This rule supersedes the former recommendation to prefer
+continuous multi-hour implementation blocks.
 
 Avoid unnecessary micromanagement prompts unless:
 - A checkpoint is accepted and needs explicit validation before the next phase.
