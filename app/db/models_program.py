@@ -486,6 +486,10 @@ class CustomPlan(Base):
     preferred_weekdays: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    # UX-EDITOR: {"v": 2, "quantities": [[по неделям] на запись workouts], "phases": [...]} — количество каждой
+    # тренировки по неделям и фаза недели (app.domain.plan_spec). NULL — план в старой форме: матрица выводится
+    # из workouts + weeks на чтении, записывается при первой правке. weeks всегда равен недельным суммам.
+    spec: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class PlanItem(Base):

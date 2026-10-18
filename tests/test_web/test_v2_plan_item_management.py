@@ -125,7 +125,18 @@ async def _create_step_plan_item(session, user: User) -> PlanItem:
 # ============================================================================
 
 
-async def test_move_manual_exercise_monday_to_wednesday(session, user: User):
+def _freeze_monday(monkeypatch) -> None:
+    """UX-31: перенос в уже прошедший день текущей недели отклоняется (past_day), поэтому тесты переноса
+    «вперёд» не должны зависеть от реального дня недели — «сегодня» фиксируется на понедельнике."""
+    from datetime import UTC, datetime
+
+    from app.web import routes_v2
+
+    monkeypatch.setattr(routes_v2, "_utcnow", lambda: datetime(2026, 10, 5, 10, tzinfo=UTC))
+
+
+async def test_move_manual_exercise_monday_to_wednesday(session, user: User, monkeypatch):
+    _freeze_monday(monkeypatch)
     item, _ = await _create_manual_plan_item(session, user, day_of_week=0)
     response = await v2_patch(session, telegram_id=user.telegram_id, path=f"/api/v2/plan-items/{item.id}", payload={"day_of_week": 2})
     assert response.status_code == 200
@@ -149,14 +160,16 @@ async def test_move_manual_exercise_free_pool_to_sunday(session, user: User):
     assert response.json()["day_of_week"] == 6
 
 
-async def test_move_user_workout_plan_item(session, user: User):
+async def test_move_user_workout_plan_item(session, user: User, monkeypatch):
+    _freeze_monday(monkeypatch)
     item, _, _ = await _create_workout_plan_item(session, user, source_type="user", owner_user_id=user.id)
     response = await v2_patch(session, telegram_id=user.telegram_id, path=f"/api/v2/plan-items/{item.id}", payload={"day_of_week": 3})
     assert response.status_code == 200
     assert response.json()["day_of_week"] == 3
 
 
-async def test_move_system_workout_plan_item(session, user: User):
+async def test_move_system_workout_plan_item(session, user: User, monkeypatch):
+    _freeze_monday(monkeypatch)
     item, _, _ = await _create_workout_plan_item(session, user, source_type="system", owner_user_id=None)
     response = await v2_patch(session, telegram_id=user.telegram_id, path=f"/api/v2/plan-items/{item.id}", payload={"day_of_week": 4})
     assert response.status_code == 200
