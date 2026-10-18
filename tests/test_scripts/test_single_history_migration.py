@@ -26,7 +26,7 @@ from tests.test_scripts.test_system_content_migration import (
 PRE_REVISION = "f4c1a7e9b3d2"
 PARENT_REVISION = "a9e6c3d1f5b7"  # #306 Live Engine v2: a7e2c5b9d1f4 надстраивает его
 HEAD = "a7e2c5b9d1f4"
-CHAIN_HEAD = "c7e2a9d4b1f8"  # WEB-AUTH (b5d8e1f3a6c9 → c7e2a9d4b1f8, только новые таблицы) надстраивает #305 (e3b9c5d7a2f1 → b5d8e1f3a6c9)
+CHAIN_HEAD = "d4b7e1a9c3f5"  # редактор плана (c7e2a9d4b1f8 → d4b7e1a9c3f5, одна nullable-колонка) за WEB-AUTH (b5d8e1f3a6c9 → c7e2a9d4b1f8, только новые таблицы), надстраивает #305 (e3b9c5d7a2f1 → b5d8e1f3a6c9)
 
 # Содержимое legacy-таблиц и подписок не имеет права измениться ни миграцией, ни сведением.
 LEGACY_GUARD = {
