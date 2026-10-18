@@ -115,3 +115,22 @@ def test_trend_is_bounded_but_totals_cover_everything():
     assert len(panel.points) == MAX_TREND_POINTS
     assert panel.total_reps == Decimal(5 * (MAX_TREND_POINTS + 25))  # агрегаты — по всем сессиям
     assert panel.points[0].at < panel.points[-1].at  # хронологически, самые свежие сохранены
+
+
+def test_amrap_session_totals_match_journal_card():
+    """UX-04. Занятие из аудита: 8 рабочих подходов + 1 подход на максимум.
+    Рабочие: 7+7+7+7+7+6+6+6 = 53 повт., 8 подходов. Максимум: 7 повт., 1 попытка.
+    Журнал считает всё: 53 + 7 = 60 повт., 8 + 1 = 9 подходов.
+    Аналитика обязана отдать обе части, чтобы сумма сходилась с журналом (53 + 7 = 60, 8 + 1 = 9)."""
+    block = AnalyticsBlock(
+        exercise_id=1, exercise_name="Подтягивания", protocol_type="reps_sets",
+        set_logs=[AnalyticsSetLog(Decimal(v), "reps") for v in (7, 7, 7, 7, 7, 6, 6, 6)],
+        max_set_logs=[AnalyticsSetLog(Decimal(7), "reps")],
+    )
+    analytics = compute_training_analytics([_session(NOW - timedelta(days=1), block)], NOW, MSK)
+
+    reps, max_ = analytics.panels
+    assert (reps.total_reps, reps.set_count) == (Decimal(53), 8)
+    assert (max_.attempt_count, max_.total_reps) == (1, Decimal(7))
+    assert reps.total_reps + max_.total_reps == Decimal(60)
+    assert reps.set_count + max_.attempt_count == 9
