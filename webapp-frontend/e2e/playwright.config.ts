@@ -18,6 +18,8 @@ const PARITY_SPEC = /(crimpd-parity|parity\/[^/]+)\.spec\.ts$/;
 // результатов меньше 20 человек. Другие спеки пишут такие результаты (тесты, ретраи), и к моменту parity-прогона
 // когорта набирала ≥ 20 (CI 38863710119, 4 из 4 с ретраями; ранее 38758045584 a2). В CI этот спек идёт отдельным
 // шагом ДО остальных (e2e.yml, E2E_SKIP_PEER_PROJECT=1 у основного шага) — читает когорту до чужих записей.
+// Браузерная версия (WEB-кампания): спеки только в scenarios/web/ — вне Telegram, десктоп и мобильная ширина.
+const WEB_SPEC = /scenarios\/web\/[^/]+\.spec\.ts$/;
 const PEER_SPEC = /parity\/peer-insights\.spec\.ts$/;
 const SKIP_PEER_PROJECT = process.env.E2E_SKIP_PEER_PROJECT === "1";
 const MOBILE_WIDTHS = [320, 375, 390];
@@ -37,10 +39,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "chromium", testIgnore: [MOBILE_SPEC, KEYBOARD_SPEC, PARITY_SPEC], use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", testIgnore: [MOBILE_SPEC, KEYBOARD_SPEC, PARITY_SPEC, WEB_SPEC], use: { ...devices["Desktop Chrome"] } },
     // Crimpd parity suite (docs/CRIMPD_FULL_PARITY_8_5.md): its blocks reuse seeded users across
     // widths/themes and some mutate state (favorites, logs) — run them in order, not in parallel.
     { name: "parity", testMatch: PARITY_SPEC, testIgnore: PEER_SPEC, fullyParallel: false, use: { ...devices["Desktop Chrome"] } },
+    { name: "web-desktop", testMatch: WEB_SPEC, use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } },
+    { name: "web-mobile", testMatch: WEB_SPEC, use: { ...devices["Pixel 5"], viewport: { width: 390, height: 844 } } },
     ...(SKIP_PEER_PROJECT ? [] : [
       { name: "peer-insights", testMatch: PEER_SPEC, fullyParallel: false, use: { ...devices["Desktop Chrome"] } },
     ]),

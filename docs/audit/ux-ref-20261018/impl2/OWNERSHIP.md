@@ -1,0 +1,15 @@
+# File ownership — UX-EDITOR · WEB-AUTH · WEB-LAYOUT · coordinator
+
+Base: `campaign/ux-ref-20261018` at the seam commit (recorded in `checkpoints/COORDINATOR.md`). Seams already in place:
+`src/platform/{mode.tsx, authBootstrap.ts, LoginScreen.tsx, session.ts, AppShell.tsx, NavBar.tsx}`; `App.tsx` calls them; Playwright projects
+`web-desktop` (1280×800) / `web-mobile` (390×844) run `scenarios/web/*.spec.ts`; seed helper script `/tmp/ux_stack.sh` pattern in COMMON2.
+
+| Area | Owner | Notes |
+|---|---|---|
+| `webapp-frontend/src/App.tsx`, `platform/mode.tsx`, `playwright.config.ts`, `.github/workflows/*`, `docs/audit/**/OWNERSHIP.md`, `CONTRACT_*.md` | **coordinator** | Nobody else edits. Need a change? write `checkpoints/<worker>-seam-request.md` (what, why, exact lines) and keep working; the coordinator applies it. |
+| plan/custom-plan backend (`app/domain/plan_*`, `app/services/plan_*`, `app/services/custom_plan*`, plan/custom hunks of `app/web/routes_v2.py` & `schemas_v2.py`, plan models/repos), `DashboardScreen.tsx`, `CustomPlanScreen.tsx`, `AddToPlanScreen.tsx`, `MovePlanItemScreen.tsx`, `DayPicker.tsx`, `plans.css`, new editor/schedule screens, plan/custom types in `apiV2.ts`, `e2e/scenarios/ux-editor-*.spec.ts`, e2e seed additions for plan scenarios | **UX-EDITOR** | Must not edit `App.tsx`; navigation stays inside Dashboard's own state. |
+| `app/web/auth.py`, new `app/web/web_auth.py` (+ the single router-registration line in `app/web/main.py`), new tables + their Alembic migration, `app/config.py` (new settings only), `app/bot/handlers/web_login.py` (+ one registration line where bot routers are included), `platform/authBootstrap.ts`, `platform/LoginScreen.tsx`, `platform/session.ts`, `platform/webAuthApi.ts`, auth hunks in `api.ts`/`apiV2.ts` header helpers (only if unavoidable), `tests/test_web/test_web_auth*.py`, `tests/test_bot/test_web_login*.py`, `e2e/scenarios/web/auth-*.spec.ts` | **WEB-AUTH** | Never edits shell/nav/theme files. |
+| `platform/AppShell.tsx`, `platform/NavBar.tsx`, `platform/BackBridge.tsx` (new), `useBackButton.ts`, `useClosingConfirmation.ts`, `main.tsx`, `telegramPlatform.ts` (browser fallbacks only), `shell.css`, `index.css`/`screens-secondary.css`/`live.css` **only for layout/theme rules**, `e2e/scenarios/web/layout-*.spec.ts` | **WEB-LAYOUT** | Never edits auth files, `App.tsx`, plan screens' logic. |
+| `e2e/scenarios/web/*` | AUTH: `auth-*`; LAYOUT: `layout-*`; UX-EDITOR: none (its specs are `ux-editor-*` in the normal project) | |
+| `scripts/e2e_seed.py`, `scripts/e2e_seed_all.sh` | additive only, each worker adds its own scenario functions/ids in its **own id range** (UX-EDITOR 941000–941099, WEB-AUTH 942000–942099, WEB-LAYOUT 943000–943099); `tests/test_scripts/test_e2e_seed_integrity.py` must stay green | |
+| Migrations | Only WEB-AUTH may add one (new tables only: `web_login_requests`, `web_sessions`); UX-EDITOR avoids a migration unless its data-contract checkpoint proves one is needed and then asks the coordinator first via a contract request | single alembic head must remain |

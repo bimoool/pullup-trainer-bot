@@ -1,4 +1,3 @@
-import { retrieveLaunchParams } from "@telegram-apps/sdk";
 import { useEffect, useRef, useState } from "react";
 
 import { fetchDisplayPreferences, fetchHello, type HelloResponse } from "./api";
@@ -22,10 +21,15 @@ import { SubscriptionRequiredSheet } from "./SubscriptionRequiredSheet";
 import { subscribeSubscriptionRequired } from "./paywall";
 import { WarmupScreen } from "./WarmupScreen";
 import { WorkoutScreen } from "./WorkoutScreen";
-import { NavIcon } from "./NavIcon";
 import { isSessionExpiredMessage } from "./sessionErrors";
 import { confirmAction, getWebApp } from "./telegramPlatform";
 import { useClosingConfirmation } from "./useClosingConfirmation";
+import { resolveAuth } from "./platform/authBootstrap";
+import { LoginScreen } from "./platform/LoginScreen";
+import { AppShell } from "./platform/AppShell";
+import { NavBar } from "./platform/NavBar";
+import { PlatformProvider, usePlatformSetter } from "./platform/mode";
+import { signOutBrowser } from "./platform/session";
 
 /**
  * Сверка не смогла прочитать сохранённые очереди движка (IndexedDB). Там может лежать действие пользователя
@@ -50,6 +54,7 @@ function EngineStoreBanner() {
 
 type LoadState =
   | { status: "loading" }
+  | { status: "login" }
   | { status: "error"; message: string }
   | { status: "ready"; data: HelloResponse; initDataRaw: string };
 
@@ -114,37 +119,20 @@ const DASHBOARD_V2_NAV_TAB: { key: Tab; label: string } = {
   key: "dashboardV2", label: "Dashboard",
 };
 
-type TelegramWebApp = { initData?: string; version?: string; platform?: string };
-
-/**
- * issue #28 — предыдущий текст ошибки ("initDataRaw is empty — открыто не
- * из Telegram?") был одинаков и для реального бага (initData не долетел),
- * и для заведомо ожидаемого случая (страница открыта напрямую в обычном
- * браузере — там initData не появится никогда, ни при какой конфигурации
- * кнопки). Со стороны пользователя оба выглядят идентично, что и породило
- * ложный след в issue: кнопка в app/bot/keyboards.py уже
- * KeyboardButton(web_app=WebAppInfo(...)), не обычная url= ссылка — код
- * это подтверждает, а сам факт "то же самое в браузере" ничего не
- * доказывает. Раз ошибка внутри настоящего Telegram-клиента всё равно
- * повторяется — точку отказа даёт только больше сырых данных с места
- * (что вернул retrieveLaunchParams, есть ли вообще window.Telegram.WebApp,
- * какой у него version/platform), не гадание по одной фразе.
- */
-function describeInitDataFailure(retrieveError: string | undefined, telegramWebApp: TelegramWebApp | undefined) {
-  const parts = [
-    `retrieveLaunchParams: ${retrieveError ?? "вернул пустой initDataRaw без исключения"}`,
-    telegramWebApp
-      ? `window.Telegram.WebApp: есть (version=${telegramWebApp.version ?? "?"}, platform=${telegramWebApp.platform ?? "?"})`
-      : "window.Telegram.WebApp: отсутствует",
-    `location.href: ${window.location.href}`,
-  ];
-  return parts.join(" | ");
-}
-
 /** Workout Detail, с которого ушли в «Начать»/«Записать»: куда вернуть «назад». */
 type WorkoutOrigin = { tab: "home" | "plans"; workoutId: number; fromJournal?: boolean };
 
+/** Корень: режим платформы и выход живут в контексте (platform/mode.tsx), App ниже — прежнее приложение. */
 export function App() {
+  return (
+    <PlatformProvider signOut={signOutBrowser}>
+      <AppInner />
+    </PlatformProvider>
+  );
+}
+
+function AppInner() {
+  const setPlatformMode = usePlatformSetter();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [tab, setTab] = useState<Tab>("home");
   // «+» на Главной → «Записать в журнал» (#263): счётчик запросов, 0 — шторку не открывать.
@@ -253,39 +241,19 @@ export function App() {
 
     async function load() {
       try {
-        // Этап 0 (issue #15) — доказательство цепочки целиком: initData
-        // (Telegram) → HTTPS → FastAPI → проверка подписи → те же
-        // repositories/domain, что у бота. retrieveLaunchParams — из
-        // @telegram-apps/sdk (issue #15: не парсить window.Telegram.WebApp
-        // руками), initDataRaw — то же самое, что видит app/web/auth.py.
-        //
-        // issue #23: на живом Telegram Desktop retrieveLaunchParams()
-        // отдавал initDataRaw пустым, хотя Mini App открыт кнопкой
-        // KeyboardButton(web_app=...) — правильным способом (initData
-        // передаётся по документации Bot API, см. app/bot/keyboards.py).
-        // retrieveLaunchParams() читает launch params из URL (hash/query),
-        // куда их вписывает клиент при открытии; window.Telegram.WebApp.initData
-        // — тот же самый initData, но из моста telegram-web-app.js
-        // (грузится напрямую в index.html), не зависящего от разбора URL —
-        // если клиент не положил launch params в URL, но мост всё равно
-        // получил initData, это не даёт финального "не в Telegram", а
-        // просто означает, что нужен запасной источник.
-        let initDataRaw: string | undefined;
-        let retrieveError: string | undefined;
-        try {
-          initDataRaw = retrieveLaunchParams().initDataRaw;
-        } catch (error) {
-          retrieveError = error instanceof Error ? error.message : String(error);
+        // Способ входа определяет platform/authBootstrap.ts (Mini App: initData Telegram; браузер: сессия/вход).
+        const auth = await resolveAuth();
+        if (auth.kind === "error") {
+          throw new Error(auth.message);
         }
-        const telegramWebApp = (window as unknown as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
-        if (!initDataRaw) {
-          initDataRaw = telegramWebApp?.initData;
+        if (auth.kind === "login") {
+          if (!cancelled) {
+            setState({ status: "login" });
+          }
+          return;
         }
-        if (!initDataRaw) {
-          throw new Error(
-            `initDataRaw is empty — открыто не из Telegram? [${describeInitDataFailure(retrieveError, telegramWebApp)}]`,
-          );
-        }
+        const initDataRaw = auth.initDataRaw;
+        setPlatformMode(auth.kind === "telegram" ? "telegram" : "browser");
         // #306 B1/F1: недосланные офлайн-события движка v2 (Стоп, пауза, оценка) должны дойти до сервера
         // раньше любого чтения, которое проецирует дедлайны сессии (GET /sessions/live/active, список сессий
         // Журнала): иначе действие пользователя, сделанное до дедлайна, сервер счёл бы устаревшим. Сверка
@@ -404,6 +372,13 @@ export function App() {
       </div>
     );
   }
+  if (state.status === "login") {
+    return (
+      <AppShell withNav={false}>
+        <LoginScreen onSignedIn={() => window.location.reload()} />
+      </AppShell>
+    );
+  }
   if (state.status === "error") {
     return (
       <div className="app-shell">
@@ -483,7 +458,7 @@ export function App() {
   const navTabs = state.data.is_admin ? [...NAV_TABS, DASHBOARD_V2_NAV_TAB] : NAV_TABS;
 
   return (
-    <div className={isOnboarded ? "app-shell app-shell-with-nav" : "app-shell"}>
+    <AppShell withNav={isOnboarded}>
       {isOnboarded && paywall?.phase === "screen" && (
         <SubscriptionScreen initDataRaw={state.initDataRaw} onBack={() => setPaywall(null)} />
       )}
@@ -563,26 +538,10 @@ export function App() {
       )}
 
       {isOnboarded && (
-        // Нижняя навигация (#280): собственный <nav> вместо Tabbar из tgui — иконка-контур
-        // + подпись, активная вкладка акцентным цветом, safe-area снизу (shell.css).
-        // Контракт для e2e: контейнер .bottom-tabbar, внутри <button> с подписью-<span>
-        // прямым потомком; aria-current="page" у активной вкладки.
-        <nav className="bottom-tabbar" aria-label="Основная навигация">
-          {navTabs.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              className={tab === key ? "bottom-tabbar-item bottom-tabbar-item-active" : "bottom-tabbar-item"}
-              aria-current={tab === key ? "page" : undefined}
-              onClick={() => handleTabClick(key)}
-            >
-              <NavIcon name={key} active={tab === key} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
+        // Навигация (#280): разметка и контракт для e2e (.bottom-tabbar, aria-current) — в platform/NavBar.tsx.
+        <NavBar tabs={navTabs} active={tab} onSelect={handleTabClick} />
       )}
       </div>
-    </div>
+    </AppShell>
   );
 }

@@ -1,4 +1,16 @@
-# Execution plan v3 — four large blocks (for owner review; nothing implemented)
+# Execution plan v4 — state after the first candidate, plus the parallel browser direction
+
+> **State (2026-10-18, after candidate `0790221` on staging):** Block 1 (course → plan → А/Б → availability, electives) and Block 3's
+> numbers part (UX-03/04/14/17) are implemented, gated and deployed to staging — **user acceptance is NOT finished** (see `ACCEPTANCE.md`;
+> UX-34 still needs the owner's screenshot). Everything below that says «Block N» is the v3 plan; estimates in **engineer-days are
+> effort units, not calendar time** (the first candidate: 3 parallel agents, 2 h 21 min wall clock, `checkpoints/COORDINATOR.md`).
+> **New, owner-approved, runs in parallel with the UX tasks:** the **browser version** (Mini App + a self-standing browser app from the same
+> screens). Three independent executors, separate branches/worktrees: **UX-EDITOR** (Block 2 below, checked against the observed Crimpd),
+> **WEB-AUTH** (Telegram login from a plain browser + protected browser session), **WEB-LAYOUT** (responsive shell, navigation, «Назад», theme without
+> the Telegram SDK). The coordinator owns `App.tsx` and integration; the seams (`src/platform/*`, Playwright projects `web-desktop`/`web-mobile`)
+> are fixed before any parallel edit — see `impl2/OWNERSHIP.md`.
+
+## v3 plan (kept for reference)
 
 Replaces sprint plan v2. Built on the full backlog **UX-01…UX-34**, including the three original owner complaints
 (`COMPLAINTS.md`). Gate: `docs/AGENT_EXECUTION_MODEL.md` § Reference audit to implementation gate (PR #340).
