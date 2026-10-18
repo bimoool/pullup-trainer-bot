@@ -9,7 +9,7 @@ import { journalCardStats } from "./journalStats";
 import { Icon } from "./Icon";
 import { formatSessionDateTime, formatSessionTime } from "./journalTime";
 import { JOURNAL_KIND_LABELS, journalKind } from "./journalKind";
-import { formatDurationHm } from "./journalLog";
+import { courseBlockEquipment, formatSessionDuration } from "./sessionMetrics";
 import { JOURNAL_DELETE_CONFIRM } from "./journalSheet";
 import { JournalV2CloneForm, JournalV2EditForm } from "./JournalV2Edit";
 import { useBackButton } from "./useBackButton";
@@ -69,6 +69,11 @@ export function JournalSessionCard({
             </div>
           ))}
         </dl>
+        {/* UX-03: длительность занятия (активное время) — то же число, что в Итоге, деталях и минутах Аналитики.
+            У активности она уже в сетке; без длительности строку не рисуем (не «0 мин»). */}
+        {session.activity_type == null && session.duration_seconds ? (
+          <p className="hint journal-card-duration" data-testid="journal-card-duration">{formatSessionDuration(session.duration_seconds)}</p>
+        ) : null}
       </div>
     </div>
   );
@@ -174,15 +179,16 @@ export function JournalV2Detail({
       </button>
       <p className="plan-title">{journalEntryTitle(session)}</p>
       <p className="history-date">{formatSessionDateTime(session.performed_at, timeZone)}</p>
-      {session.duration_seconds != null && (
-        <p className="block-subtitle" data-testid="journal-activity-duration">Длительность: {formatDurationHm(session.duration_seconds)}</p>
-      )}
+      {/* UX-03: одна длительность с Итогом и Аналитикой (активное время). Нет значения — не пишем «0:00». */}
+      <p className="block-subtitle" data-testid="journal-activity-duration">{session.duration_seconds ? `Длительность: ${formatSessionDuration(session.duration_seconds)}` : "Без длительности"}</p>
 
       {session.blocks.map((block) => {
         const view = describeJournalBlock(block, courseBlockName(session.prescription_snapshot, block.order_index));
+        const equipment = courseBlockEquipment(session.prescription_snapshot, block.order_index);
         return (
           <Section key={block.order_index} className="block-section" header={view.header ?? "Упражнение"}>
             {view.protocolLabel !== null && <p className="block-subtitle journal-detail-line">{view.protocolLabel}</p>}
+            {equipment !== null && <p className="journal-detail-line" data-testid="journal-block-equipment">{equipment}</p>}
             {view.plan !== null && <p className="journal-detail-line">План: {view.plan}</p>}
             <p className="journal-detail-line">Факт: {view.fact}</p>
             {block.set_logs.filter((log) => log.effort !== null || log.note).map((log) => (

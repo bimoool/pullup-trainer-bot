@@ -4,6 +4,7 @@ import { Button } from "@telegram-apps/telegram-ui";
 import type { LiveSessionCompleteResponse, SetLogResponseV2 } from "./apiV2";
 import { formatDuration, formatIntervalsCount, formatNumber } from "./blockFormat";
 import { Icon } from "./Icon";
+import { countExercises, formatSessionDuration } from "./sessionMetrics";
 
 type Props = {
   result: LiveSessionCompleteResponse;
@@ -87,6 +88,7 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
   const totalDone = result.blocks.reduce(
     (sum, block) => sum + (isIntervalResult(block.result) ? block.result.completed_cycles : block.set_logs.length), 0,
   );
+  const exerciseCount = countExercises(result.blocks); // UX-17: упражнения, не блоки
   const hasInterval = result.blocks.some((block) => isIntervalResult(block.result));
   return (
     <div className="live-screen live-summary-screen">
@@ -104,8 +106,13 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
             <span className="live-stat-label">{hasInterval ? "Подходов и циклов" : "Подходов"}</span>
           </div>
           <div className="live-stat">
-            <span className="live-stat-value">{result.blocks.length}</span>
-            <span className="live-stat-label">{result.blocks.length === 1 ? "Упражнение" : "Упражнений"}</span>
+            <span className="live-stat-value">{exerciseCount}</span>
+            <span className="live-stat-label">{exerciseCount === 1 ? "Упражнение" : "Упражнений"}</span>
+          </div>
+          <div className="live-stat">
+            {/* UX-03: та же длительность (активное время), что в деталях Журнала и в минутах Аналитики. */}
+            <span className="live-stat-value" data-testid="summary-duration">{formatSessionDuration(result.duration_seconds)}</span>
+            <span className="live-stat-label">Время</span>
           </div>
         </div>
       </div>

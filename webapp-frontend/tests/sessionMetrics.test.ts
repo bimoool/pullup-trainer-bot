@@ -44,3 +44,34 @@ test("journalCardStats: подходы по времени (unit=s) — «Вре
   const stats = journalCardStats({ blocks: [{ order_index: 0, set_logs: [log(1, "30"), log(2, "25")], result: null, protocol_type: null }] as any, effort: null });
   assert.deepEqual(stats.map((s) => s.value), ["2", "0:55", "—"]);
 });
+
+// UX-17: в деталях видно, какая резина/вес использованы в блоке.
+test("courseBlockEquipment: резина, без помощи, вес, нет данных", async () => {
+  const { courseBlockEquipment } = await import("../src/sessionMetrics.ts");
+  const snapshot = {
+    provenance: {
+      course_program: {
+        blocks: [
+          { assistance: { kind: "band", name: "Красная 15–35", colour: "красная", attachment: "петля" }, external_load_kg: null },
+          { assistance: { kind: "bodyweight" }, external_load_kg: "0" },
+          { assistance: { kind: "bodyweight" }, external_load_kg: "5.0" },
+        ],
+      },
+    },
+  };
+  assert.equal(courseBlockEquipment(snapshot, 0), "Резина: Красная 15–35, красная, петля");
+  assert.equal(courseBlockEquipment(snapshot, 1), "Без помощи");
+  assert.equal(courseBlockEquipment(snapshot, 2), "Вес: +5 кг");
+  assert.equal(courseBlockEquipment(snapshot, 3), null);
+  assert.equal(courseBlockEquipment(null, 0), null);
+});
+
+// UX-04: занятие из аудита. Рабочие 53 повт./8 подходов + максимум 7 повт./1 попытка = Журнал «9 · 60».
+test("repsSplit: 53/8 + 7/1 = 60/9; без подходов на максимум — null", async () => {
+  const { repsSplit } = await import("../src/sessionMetrics.ts");
+  const work = { protocol_type: "reps_sets", unit: "reps", total_reps: "53", set_count: 8, attempt_count: null };
+  const max = { protocol_type: "max_effort", unit: "reps", total_reps: "7", set_count: null, attempt_count: 1 };
+  assert.deepEqual(repsSplit([work, max]), { workReps: 53, workSets: 8, maxReps: 7, maxAttempts: 1, totalReps: 60, totalSets: 9 });
+  assert.equal(repsSplit([work]), null);
+  assert.equal(repsSplit([max]), null);
+});

@@ -231,6 +231,9 @@ class LiveSessionResponse(BaseModel):
     engine: "LiveEngineView | None" = None
     # Отменена (T5): сессия хранится архивом, не идёт и не засчитана.
     engine_status: str | None = None
+    # UX-03: длительность занятия — активное время движка (паузы исключены), тот же effective_duration_seconds, что у
+    # Журнала и Аналитики; None — «без длительности» (никогда не 0). Итог тренировки показывает её отсюда.
+    duration_seconds: int | None = None
 
 
 class LiveEngineView(BaseModel):
