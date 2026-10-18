@@ -1,0 +1,16 @@
+# Установка обновлённого guarded-скрипта на staging (runbook docs/STAGING_RC_RUNBOOK.md §3.2 (b)). Только run-скрипт; dispatch не менялся.
+# Зачем: установленная копия рассчитана на голову Alembic b5d8e1f3a6c9 и остановила бы выкат на новых ревизиях
+# c7e2a9d4b1f8 (вход из браузера) и d4b7e1a9c3f5 (редактор плана) уже после остановки app/web. Новая копия: голова d4b7e1a9c3f5,
+# источник b5d8e1f3a6c9 или c3f7a9e2d5b1; миграции аддитивны (две новые таблицы + одна nullable-колонка).
+# Кандидат (код): a6d383db6591255466483ed9c2544d8dbddbf588   (ветка campaign/ux-ref-20261018)
+# sha256 deploy/deploy-staging-guarded-run.sh = af8d2b8a56ddf39a50009e83ba4af21a1a875b95b9b247c9bd8855185bb334b0
+# sha256 deploy/deploy-staging-guarded-dispatch.sh (без изменений) = e9db113af2dfde95c353bdd8d6babfa5f5c097c6debc6d91d21cba604dcd30c1
+# На VPS под пользователем deploy:
+git -C /home/deploy/pullup-trainer-bot-staging fetch origin
+git -C /home/deploy/pullup-trainer-bot-staging show a6d383db6591255466483ed9c2544d8dbddbf588:deploy/deploy-staging-guarded-run.sh > /home/deploy/deploy-staging-guarded-run.sh.new
+sha256sum /home/deploy/deploy-staging-guarded-run.sh.new          # должно совпасть с af8d2b8a56ddf39a50009e83ba4af21a1a875b95b9b247c9bd8855185bb334b0
+grep -n 'EXPECTED_TO_REV=' /home/deploy/deploy-staging-guarded-run.sh.new   # EXPECTED_TO_REV="d4b7e1a9c3f5"
+install -m 755 /home/deploy/deploy-staging-guarded-run.sh.new /home/deploy/deploy-staging-guarded-run.sh && rm /home/deploy/deploy-staging-guarded-run.sh.new
+# Затем выкат (с вашей машины, ключ guarded; режим dry-run + start=yes: бэкап, сборка, ОБЕ миграции, сведение истории НЕ применяется, старт):
+#   ssh -i ~/.ssh/pullup_staging_guarded -o IdentitiesOnly=yes deploy@192.241.141.47 "./deploy-staging-guarded.sh a6d383db6591255466483ed9c2544d8dbddbf588 dry-run yes -"
+# Откат кода без данных (до сведения): runbook §8.2, before-manifest: /home/deploy/backups/staging-pre-<sha7>-<UTC>.manifest.
