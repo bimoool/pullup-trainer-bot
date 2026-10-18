@@ -196,6 +196,9 @@ Accepted implementation checkpoint:
 
 ## Prompt Header Convention
 
+For any task brief the full header of § *Navigator brief gate* is mandatory and supersedes the
+shorter header below; the short form remains only as the minimal subset for implementation prompts.
+
 Canonical technical prompts (for complex implementation tasks) explicitly state:
 
 ```
