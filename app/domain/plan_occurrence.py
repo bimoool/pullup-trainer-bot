@@ -233,6 +233,16 @@ def available_from(last_start_local_date: date | None, min_days_between_starts: 
     return last_start_local_date + timedelta(days=min_days_between_starts)
 
 
+def weekly_capacity(min_days_between_starts: int) -> int:
+    """Сколько стартов группы физически помещается в неделю Пн–Вс при отдыхе `min_days_between_starts`,
+    считая с чистой недели (первый старт в понедельник, каждый следующий — ровно через min_days):
+    1 + (7 - 1) // min_days. Пример: 3 → 3 (Пн, Чт, Вс); 2 → 4; 4 → 2; 7 и больше → 1; отдыха нет (≤ 0) → 7.
+    Это ёмкость при идеальном графике: реальная неделя вмещает меньше, если первый старт позже (K2)."""
+    if min_days_between_starts <= 0:
+        return 7
+    return 1 + 6 // min_days_between_starts
+
+
 def is_too_early(today: date, available: date | None) -> bool:
     return available is not None and today < available
 
