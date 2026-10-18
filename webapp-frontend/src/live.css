@@ -613,6 +613,14 @@ html:has(.live-screen) {
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
+.live-stat { min-width: 0; }
+/* «без длительности» — текст, не число: мельче и с переносом, иначе три плитки шире 320 px (parity: overflow на «Итог»). */
+.live-stat-value-text {
+  font-size: var(--vp-fs-card);
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
 .live-stat-label {
   font-size: var(--vp-fs-meta);
   color: var(--vp-hint);

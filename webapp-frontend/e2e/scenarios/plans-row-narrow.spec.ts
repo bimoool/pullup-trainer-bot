@@ -17,10 +17,10 @@ async function withOccurrenceStates(page: Page) {
     const course = (body.plan.plan_items as Array<Record<string, unknown>>)
       .filter((item) => item.program_inclusion_id !== null && item.occurrence_index != null);
     if (course[0]) {
-      Object.assign(course[0], { state: "too_early", available_from: "2026-12-17" });
+      Object.assign(course[0], { state: "too_early", blocked_reason: "too_early", start_allowed: false, available_from: "2026-12-17" });
     }
     if (course[1]) {
-      Object.assign(course[1], { state: "infeasible" });
+      Object.assign(course[1], { state: "infeasible", blocked_reason: "infeasible", start_allowed: false });
     }
     await route.fulfill({ response, json: body });
   });

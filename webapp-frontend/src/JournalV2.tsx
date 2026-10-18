@@ -51,6 +51,13 @@ export function JournalSessionCard({
           <span className="journal-kind-label" data-testid="journal-kind-badge">{JOURNAL_KIND_LABELS[kind]}</span>
           <span className="journal-card-name">{journalEntryTitle(session)}</span>
           <span className="journal-card-time">{formatSessionTime(session.performed_at, timeZone)}</span>
+          {/* UX-03: длительность (активное время) — то же число, что в Итоге, деталях и минутах Аналитики; живёт в строке
+              заголовка (макет карточки — две части, parity visual-screens). У активности она уже в сетке; 0/нет — не рисуем. */}
+          {session.activity_type == null && session.duration_seconds ? (
+            <span className="journal-card-time journal-card-duration" data-testid="journal-card-duration">
+              {formatSessionDuration(session.duration_seconds)}
+            </span>
+          ) : null}
         </p>
         <dl className="journal-stat-grid" data-testid="journal-stat-grid">
           {journalCardStats(session).map((stat) => (
@@ -69,11 +76,6 @@ export function JournalSessionCard({
             </div>
           ))}
         </dl>
-        {/* UX-03: длительность занятия (активное время) — то же число, что в Итоге, деталях и минутах Аналитики.
-            У активности она уже в сетке; без длительности строку не рисуем (не «0 мин»). */}
-        {session.activity_type == null && session.duration_seconds ? (
-          <p className="hint journal-card-duration" data-testid="journal-card-duration">{formatSessionDuration(session.duration_seconds)}</p>
-        ) : null}
       </div>
     </div>
   );

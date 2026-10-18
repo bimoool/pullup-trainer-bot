@@ -111,7 +111,10 @@ export function SessionSummaryScreen({ result, onClose, resolveExerciseName, tit
           </div>
           <div className="live-stat">
             {/* UX-03: та же длительность (активное время), что в деталях Журнала и в минутах Аналитики. */}
-            <span className="live-stat-value" data-testid="summary-duration">{formatSessionDuration(result.duration_seconds)}</span>
+            <span
+              className={result.duration_seconds ? "live-stat-value" : "live-stat-value live-stat-value-text"}
+              data-testid="summary-duration"
+            >{formatSessionDuration(result.duration_seconds)}</span>
             <span className="live-stat-label">Время</span>
           </div>
         </div>

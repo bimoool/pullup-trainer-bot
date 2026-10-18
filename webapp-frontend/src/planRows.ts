@@ -35,6 +35,11 @@ export function isStartAllowed(item: RowFacts): boolean {
  * сохраняют прежнее поведение: «рано» не стартуем, завершённую можно повторить («Ещё раз», #277), остальное —
  * по серверному start_allowed, если он есть. */
 export function isRowStartable(item: RowFacts & Pick<PlanItemResponseV2, "program_inclusion_id">): boolean {
+  // Нет доступа (просроченная подписка): «Начать» остаётся и ведёт на лист «Нужна подписка» (SubscriptionRequiredSheet) —
+  // это путь к оплате, а не гарантированный отказ (expired-course-gate.spec). Скрывать кнопку нельзя.
+  if (item.blocked_reason === "no_access") {
+    return true;
+  }
   if (item.program_inclusion_id !== null && item.program_inclusion_id !== undefined) {
     return isStartAllowed(item);
   }
