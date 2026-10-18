@@ -31,8 +31,8 @@ const STATUS_MESSAGES: Record<string, string> = {
 };
 
 const WORK_SETS_GROWTH_NOTICES: Record<string, string> = {
-  stall: "Объём блока A подрос — несколько тренировок подряд без роста цели.",
-  ceiling: "Объём блока A подрос — цель уже у потолка одного подхода.",
+  stall: "Объём блока А подрос — несколько тренировок подряд без роста цели.",
+  ceiling: "Объём блока А подрос — цель уже у потолка одного подхода.",
 };
 
 function BlockCard({ letter, block }: { letter: "A" | "Б"; block: DashboardBlockResponse }) {

@@ -32,8 +32,11 @@ import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
-  occurrenceStateLabel, todayDayIndexInWeek, weekProgress, weekRangeLabel,
+  todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
+import { describeSchedule, isRowStartable, rowStatusLabel, rowSubtitle, weekOccurrenceTotal } from "./planRows";
+import { CourseScheduleNote, ElectiveCourseLine, ElectiveRestDayBanner, useElectiveSummary } from "./ElectiveEntry";
+import { ElectiveScreen } from "./ElectiveScreen";
 import { confirmAction } from "./telegramPlatform";
 import { addExerciseWithProtocolToPlan } from "./exercisePlan";
 import { ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
@@ -308,6 +311,10 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // здесь не может провалиться сам по себе (это не API-вызов), при успехе
   // компонент размонтируется вместе с переходом на PlanSessionFlow.
   const [startingGroupKey, setStartingGroupKey] = useState<string | null>(null);
+  // UX-33: факультативы открываются из карточки курса и из состояния «Сегодня отдых» (тот же ElectiveScreen).
+  const [electiveOpen, setElectiveOpen] = useState(false);
+  const [electiveReloadKey, setElectiveReloadKey] = useState(0);
+  const electiveSummary = useElectiveSummary(initDataRaw, electiveReloadKey);
   // Phase C4a (issue #188) — «Мои тренировки», локальный swap-state внутри
   // Планов, тот же принцип, что HomeScreen.tsx уже использует для
   // ProgramDetailScreen (selectedProgramId), не отдельный App.tsx Tab.
@@ -641,6 +648,10 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   // Phase C4a (issue #188) — «Мои тренировки» swap, до loading/error
   // ранних return'ов выше: не зависит от Plans-данных вообще, доступен
   // даже если /api/v2/dashboard ещё грузится/упал.
+  if (electiveOpen) {
+    const closeElective = () => { setElectiveOpen(false); setElectiveReloadKey((key) => key + 1); };
+    return <ElectiveScreen initDataRaw={initDataRaw} onCancel={closeElective} onDone={closeElective} />;
+  }
   if (myWorkoutsView.kind === "custom-plan") {
     return (
       <CustomPlanScreen
@@ -1034,6 +1045,13 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   done={progress.done} total={progress.total} percent={progressPercent(progress.done, progress.total)}
                   label={`Прогресс недели: ${inclusion.program_name}`} testId="plans-now-progressbar"
                 />
+                {(() => {
+                  const explanation = describeSchedule(inclusion.schedule);
+                  return explanation === null
+                    ? null
+                    : <CourseScheduleNote headline={explanation.headline} consequence={explanation.consequence} />;
+                })()}
+                <ElectiveCourseLine plan={electiveSummary} onOpen={() => setElectiveOpen(true)} />
                 {confirming && (
                   <div className="plans-confirm">
                     <p className="block-subtitle">
@@ -1071,6 +1089,9 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           {todayGroups.map((group) => {
             const counter = groupCounter(group.items);
             const todayDone = counter.planned > 0 && counter.done >= counter.planned;
+            const todayOccurrence = group.items.length === 1 && group.items[0].occurrence_index != null ? group.items[0] : null;
+            const todayStartAllowed = todayOccurrence === null || isRowStartable(todayOccurrence);
+            const todayLabel = todayOccurrence === null ? null : rowStatusLabel(todayOccurrence);
             return (
               <div key={group.key} className="plans-row-main" data-testid="plans-today-row" data-done={todayDone} style={groupTint(group)}>
                 <span className="plans-row-bar" aria-hidden="true" />
@@ -1079,8 +1100,11 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   <span className="plans-row-chip" data-done={todayDone}>
                     {`${counter.done}/${counter.planned}`}
                   </span>
+                  {todayLabel !== null && (
+                    <span className="plans-row-scheduled block-subtitle" data-testid="plans-today-state">{todayLabel}</span>
+                  )}
                 </div>
-                {todayDone ? (
+                {!todayStartAllowed ? null : todayDone ? (
                   <button
                     type="button" className="plans-start plans-start-again" aria-label={`Повторить: ${group.title}`}
                     disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
@@ -1142,10 +1166,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               const occurrence = group.items.length === 1 && group.items[0].occurrence_index != null ? group.items[0] : null;
               const movableCourseItem = isProgramBacked && occurrence !== null && occurrence.state !== "completed"
                 ? occurrence : null;
-              const stateLabel = occurrence === null ? null : occurrenceStateLabel(occurrence);
-              // §6: будущие недели видимы И стартуемы; K1 (отдых) решает сервер — «рано» не стартуем.
+              const stateLabel = occurrence === null ? null : rowStatusLabel(occurrence);
+              const variantLine = occurrence === null ? null : rowSubtitle(
+                occurrence, weekOccurrenceTotal(weekItems, occurrence.program_inclusion_id, week.id),
+              );
+              // UX-01/02: «Начать» только если сервер разрешил (start_allowed; без поля — вывод из state).
+              // Будущие недели видимы и стартуемы, когда сервер разрешает; «рано/не уместится» кнопки не имеют.
               const canStart = (isCurrent || selectedIndex > currentIndex) && !(occurrence?.legacy_aggregate)
-                && occurrence?.state !== "too_early";
+                && (occurrence === null || isRowStartable(occurrence));
               const isRemoveConfirming = mutableItem !== null && removeConfirmPlanItemId === mutableItem.id;
               const isRemoving = mutableItem !== null && removingPlanItemId === mutableItem.id;
               const canEditWorkout = mutableItem !== null
@@ -1164,6 +1192,11 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                       <span className="plans-row-chip" data-done={rowDone} data-testid="plan-item-counter">
                         {`${counter.done}/${counter.planned}`}
                       </span>
+                      {variantLine !== null && (
+                        <span className="plans-row-scheduled block-subtitle plans-row-variant" data-testid="plans-row-variant">
+                          {variantLine}
+                        </span>
+                      )}
                       {stateLabel !== null && (
                         <span className="plans-row-scheduled block-subtitle" data-testid="plans-row-state" data-state={occurrence?.state ?? ""}>
                           {stateLabel}
@@ -1280,9 +1313,18 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   percent={progressPercent(weekProgressValue.done, weekProgressValue.total)}
                   label="Прогресс недели" testId="plan-week-progressbar"
                 />
+                {isCurrent && activeInclusions.map((inclusion) => {
+                  const explanation = describeSchedule(inclusion.schedule);
+                  return explanation === null ? null : (
+                    <p key={inclusion.id} className="block-subtitle" data-testid="plan-week-schedule">
+                      {`${inclusion.program_name}: ${explanation.headline.replace(/^Расписание (вашей версии )?курса: /, "")}`}
+                    </p>
+                  );
+                })}
                 {isCurrent && !isReady && (
                   <p className="block-subtitle" style={{ marginBottom: "12px" }}>{statusText}</p>
                 )}
+                {isCurrent && <ElectiveRestDayBanner plan={electiveSummary} onOpen={() => setElectiveOpen(true)} />}
                 {weekItems.length === 0 && (
                   <p className="block-subtitle">
                     {isRestWeek

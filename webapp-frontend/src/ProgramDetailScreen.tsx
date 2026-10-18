@@ -3,8 +3,11 @@ import { Button } from "@telegram-apps/telegram-ui";
 import { useEffect, useState } from "react";
 
 import { Icon } from "./Icon";
-import { fetchProgramSchedule, type ProgramResponseV2, type ProgramScheduleV2 } from "./apiV2";
+import { fetchProgramSchedule, type InclusionScheduleV2, type ProgramResponseV2, type ProgramScheduleV2 } from "./apiV2";
 import { BackChevron } from "./BackChevron";
+import type { ElectivePlan } from "./api";
+import { CourseScheduleNote, ElectiveCourseLine } from "./ElectiveEntry";
+import { describeSchedule, normalizeBlockLetters } from "./planRows";
 import { FavoriteHeart } from "./FavoriteHeart";
 import { categoryLabel } from "./homeDiscovery";
 import { DAY_NAMES_RU, groupScheduleByPhase, PHASE_LABELS_RU } from "./plansOverview";
@@ -18,6 +21,11 @@ type Props = {
   addError: string | null;
   onAdd: () => void;
   onBack: () => void;
+  /** UX-06/32/33: после «Добавить в план» — следующий шаг, расписание словами и вход в факультативы. */
+  schedule?: InclusionScheduleV2 | null;
+  electivePlan?: ElectivePlan | null;
+  onOpenPlan?: () => void;
+  onOpenElective?: () => void;
 };
 
 /** `ProgramStructureType` (`app/domain/multi_program.py`) человеческим
@@ -58,7 +66,10 @@ function categoryIndex(category: string | null | undefined): number {
   return hash;
 }
 
-export function ProgramDetailScreen({ initDataRaw, program, included, adding, addError, onAdd, onBack }: Props) {
+export function ProgramDetailScreen({
+  initDataRaw, program, included, adding, addError, onAdd, onBack,
+  schedule: inclusionSchedule = null, electivePlan = null, onOpenPlan, onOpenElective,
+}: Props) {
   const structureLabel = STRUCTURE_TYPE_LABELS[program.structure_type] ?? program.structure_type;
 
   // issue #266: превью структуры из реальных ProgramItem; сбой/пусто — только описание.
@@ -110,10 +121,10 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
               {rows.map((row, index) => (
                 <p key={index} className="plan-item-row" data-testid="program-schedule-row">
                   {row.day_of_week !== null ? `${DAY_NAMES_RU[row.day_of_week] ?? `День ${row.day_of_week}`} · ` : ""}
-                  {row.title}
+                  {normalizeBlockLetters(row.title)}
                   {" — "}
                   {row.count_label}
-                  {row.target_label ? ` (${row.target_label})` : ""}
+                  {row.target_label ? ` (${normalizeBlockLetters(row.target_label)})` : ""}
                 </p>
               ))}
             </div>
@@ -130,6 +141,23 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
       >
         {included ? <><Icon name="check" size={18} strokeWidth={2.4} className="vp-icon-lead" />В плане</> : adding ? "Добавляю…" : "Добавить в план"}
       </Button>
+      {included && (
+        <div className="profile-card" data-testid="program-included-card">
+          <p className="block-subtitle">Курс добавлен в ваш план</p>
+          {(() => {
+            const explanation = describeSchedule(inclusionSchedule);
+            return explanation === null
+              ? null
+              : <CourseScheduleNote headline={explanation.headline} consequence={explanation.consequence} />;
+          })()}
+          {onOpenPlan !== undefined && (
+            <Button className="action-button" size="l" stretched onClick={onOpenPlan} data-testid="program-open-plan">
+              Открыть мой план
+            </Button>
+          )}
+          {onOpenElective !== undefined && <ElectiveCourseLine plan={electivePlan} onOpen={onOpenElective} />}
+        </div>
+      )}
       {addError && <p className="screen-message">Не удалось добавить курс: {addError}</p>}
     </div>
   );

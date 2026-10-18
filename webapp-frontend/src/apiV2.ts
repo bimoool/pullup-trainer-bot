@@ -498,7 +498,7 @@ export interface ProgramInclusionResponseV2 {
   /** Правило 2026-10-07: "free" — программа без Premium («Подтягивания»), "premium" — нужна подписка. */
   access_level?: ProgramAccessLevel;
   /** CONTRACT_A_B v1 §2 — необязательно, пока бэкенд не отдаёт. */
-  schedule?: ProgramScheduleV2 | null;
+  schedule?: InclusionScheduleV2 | null;
 }
 
 export interface PlanItemResponseV2 {
@@ -555,7 +555,7 @@ export type PlanOccurrenceState =
   "completed" | "missed" | "infeasible" | "available" | "too_early" | "awaiting_assessment";
 
 /** CONTRACT_A_B v1 §2 — расписание подключения курса (то, что план реально материализует на открытую неделю). */
-export interface ProgramScheduleV2 {
+export interface InclusionScheduleV2 {
   sessions_per_week: number;
   source: "snapshot" | "catalogue";
   is_legacy: boolean;

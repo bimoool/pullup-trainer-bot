@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Icon } from "./Icon";
 import {
-  createProgramInclusion, fetchPlan, fetchPrograms, listFavorites, listSystemWorkouts, listWorkouts,
+  createProgramInclusion, fetchPlan, type InclusionScheduleV2, fetchPrograms, listFavorites, listSystemWorkouts, listWorkouts,
   type FavoriteV2, type ProgramResponseV2, type WorkoutResponseV2,
 } from "./apiV2";
 import { AddToPlanScreen } from "./AddToPlanScreen";
@@ -13,6 +13,8 @@ import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { HomePromo, type PromoKind } from "./HomePromo";
 import { groupProgramsByCategory, OTHER_KEY } from "./homeDiscovery";
+import { ElectiveScreen } from "./ElectiveScreen";
+import { useElectiveSummary } from "./ElectiveEntry";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { ProgramPendingScreen } from "./ProgramPendingScreen";
 import { SearchScreen, type SearchState } from "./SearchScreen";
@@ -62,13 +64,27 @@ type WorkoutView =
 type CatalogState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number>; hasPlanItems: boolean };
+  | {
+    phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number>; hasPlanItems: boolean;
+    /** program_id → расписание активного подключения (CONTRACT_A_B §2); нет поля у сервера — нет записи. */
+    schedules: Map<number, InclusionScheduleV2>;
+  };
 
 type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
 
+function activeSchedules(inclusions: { program_id: number; is_active: boolean; schedule?: InclusionScheduleV2 | null }[]) {
+  const map = new Map<number, InclusionScheduleV2>();
+  for (const inclusion of inclusions) {
+    if (inclusion.is_active && inclusion.schedule) {
+      map.set(inclusion.program_id, inclusion.schedule);
+    }
+  }
+  return map;
+}
+
 /** «+»-шторка Главной: модальный диалог (#290) — фокус внутрь, Tab-ловушка, Escape/BackButton, возврат фокуса. */
-function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
-  onClose: () => void; onCreate: () => void; onToday: () => void; onLog: () => void;
+function HomeQuickSheet({ onClose, onCreate, onToday, onLog, onElective }: {
+  onClose: () => void; onCreate: () => void; onToday: () => void; onLog: () => void; onElective: () => void;
 }) {
   const dialogRef = useModalSheet(onClose);
   return (
@@ -80,6 +96,7 @@ function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
         <button type="button" className="home-sheet-action" onClick={onCreate}>Создать тренировку</button>
         <button type="button" className="home-sheet-action" onClick={onToday}>Тренировка на сегодня</button>
         <button type="button" className="home-sheet-action" data-testid="home-sheet-log" onClick={onLog}>Записать в журнал</button>
+        <button type="button" className="home-sheet-action" data-testid="home-sheet-elective" onClick={onElective}>Факультатив</button>
         <button type="button" className="home-sheet-action home-sheet-cancel" onClick={onClose}>Отмена</button>
       </div>
     </div>
@@ -129,6 +146,10 @@ export function HomeScreen({
   // Тест, открытый из результатов поиска (#281, D6): «назад» возвращает в поиск.
   const [searchTestId, setSearchTestId] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // UX-33: факультатив — из «+», карточки курса и плана; тот же ElectiveScreen, без подписочного шлюза.
+  const [electiveOpen, setElectiveOpen] = useState(false);
+  const [electiveReloadKey, setElectiveReloadKey] = useState(0);
+  const electiveSummary = useElectiveSummary(initDataRaw, electiveReloadKey);
   // Хаб «Тесты» (#260) — локальный swap внутри вкладки, как Program/Workout Detail.
   const [showTests, setShowTests] = useState(false);
   // Подборка (#271): открытая подборка остаётся «под» Program Detail / «Добавить в план».
@@ -247,7 +268,10 @@ export function HomeScreen({
         const includedProgramIds = new Set(
           (plan?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id),
         );
-        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0 });
+        setCatalog({
+          phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0,
+          schedules: activeSchedules(plan?.program_inclusions ?? []),
+        });
       })
       .catch((error) => {
         if (!cancelled) {
@@ -270,15 +294,26 @@ export function HomeScreen({
     setAddState({ phase: "adding", programId });
     try {
       await createProgramInclusion(initDataRaw, programId);
+      // Расписание нового подключения нужно карточке сразу («2 занятия в неделю»); сбой чтения не отменяет добавление.
+      const refreshed = await fetchPlan(initDataRaw).catch(() => null);
       setCatalog((prev) =>
         prev.phase === "ready"
-          ? { ...prev, includedProgramIds: new Set(prev.includedProgramIds).add(programId) }
+          ? {
+            ...prev,
+            includedProgramIds: new Set(prev.includedProgramIds).add(programId),
+            schedules: refreshed === null ? prev.schedules : activeSchedules(refreshed.program_inclusions),
+          }
           : prev,
       );
       setAddState({ phase: "idle" });
     } catch (error) {
       setAddState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
     }
+  }
+
+  if (electiveOpen) {
+    const closeElective = () => { setElectiveOpen(false); setElectiveReloadKey((key) => key + 1); };
+    return <ElectiveScreen initDataRaw={initDataRaw} onCancel={closeElective} onDone={closeElective} />;
   }
 
   if (workoutView.kind === "create") {
@@ -371,6 +406,10 @@ export function HomeScreen({
           included={included}
           adding={adding}
           addError={addState.phase === "error" ? addState.message : null}
+          schedule={catalog.schedules.get(program.id) ?? null}
+          electivePlan={electiveSummary}
+          onOpenPlan={onOpenPlans}
+          onOpenElective={() => setElectiveOpen(true)}
           onAdd={() => void handleAddToPlan(program.id)}
           onBack={closeProgramDetail}
         />
@@ -438,6 +477,7 @@ export function HomeScreen({
           onCreate={() => { setSheetOpen(false); setWorkoutView({ kind: "create" }); }}
           onToday={() => { setSheetOpen(false); onOpenPlans(); }}
           onLog={() => { setSheetOpen(false); onOpenJournalLog(); }}
+          onElective={() => { setSheetOpen(false); setElectiveOpen(true); }}
         />
       )}
 

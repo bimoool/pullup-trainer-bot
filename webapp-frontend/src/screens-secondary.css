@@ -1186,3 +1186,10 @@
   .test-card .test-card-text { overflow-wrap: break-word; }
   .test-card-spark { width: 44px; height: 18px; margin-right: 0; }
 }
+
+/* ux-b (UX-06/32/33): расписание курса и вход в факультативы на карточке/в плане. Только добавленные классы. */
+.ux-b-schedule, .ux-b-elective, .ux-b-rest-day { margin-top: 8px; min-width: 0; }
+.ux-b-schedule p, .ux-b-elective p, .ux-b-rest-day p { overflow-wrap: anywhere; }
+.ux-b-rest-day { padding: 10px 12px; border-radius: 12px; background: var(--tg-theme-secondary-bg-color, rgba(127, 127, 127, 0.12)); margin-bottom: 12px; }
+.ux-b-rest-day .hint, .ux-b-elective .hint { margin: 2px 0 8px; }
+.plans-row-variant { display: block; }

@@ -17,6 +17,11 @@ seed plan_week_ready 900013
 seed plan_week_grouping 900014
 seed plan_week_add_exercise 900015
 seed plan_week_start_session 900016
+# ux-ref-20261018 (исполнитель B): план/факультативы — свежий профиль и форма подключения владельца (устаревший снимок).
+seed ux_b_no_course 940201
+seed ux_b_legacy 940202
+seed ux_b_legacy 940203
+seed ux_b_legacy 940204
 # #305 V5.6: подтверждения техники/отдыха в движке (CONFIRM) и тест 1RM в приложении.
 seed plan_week_start_session 930501
 seed plan_week_start_session 930503

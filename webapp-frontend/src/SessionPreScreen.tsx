@@ -29,6 +29,7 @@ import { useBackButton } from "./useBackButton";
 import { formatExerciseCount } from "./workoutCardFormat";
 import { estimateWorkoutSeconds, formatEstimate } from "./workoutDetailFormat";
 import { itemPrescriptionLine } from "./prescriptionFormat";
+import { ElectiveScreen } from "./ElectiveScreen";
 import { nextOccurrenceId, shortDateLabel } from "./planWeekNav";
 import { repsCount } from "./plural";
 import { isExerciseOnlyPlanItem, replaceExerciseOnlyPlanItem } from "./exercisePlan";
@@ -195,6 +196,8 @@ export function SessionPreScreen({
   const [conflictKind, setConflictKind] = useState<ActiveConflictKind>("continue");
   // N3 (#293): «Повторить» в фазе error без старта — перезапуск загрузки готовности.
   const [reloadKey, setReloadKey] = useState(0);
+  // UX-33: из «рано» ведём к бесплатному факультативу (тот же ElectiveScreen), а не в тупик.
+  const [electiveOpen, setElectiveOpen] = useState(false);
   // Сводка — необязательная подсказка: любой сбой молча оставляет экран без неё.
   const [summary, setSummary] = useState<PreSummary | null>(null);
   // Аудит staging 7500c37: старая строка «только упражнение» не хранит подходов/повторений — старт подставлял
@@ -506,6 +509,9 @@ export function SessionPreScreen({
       </div>
     );
   }
+  if (state.phase === "blocked" && electiveOpen) {
+    return <ElectiveScreen initDataRaw={initDataRaw} onCancel={() => setElectiveOpen(false)} onDone={onGoToWorkout} />;
+  }
   if (state.phase === "blocked") {
     const displayTitle = state.title ?? title ?? "Сессия";
     return (
@@ -513,12 +519,18 @@ export function SessionPreScreen({
         <PreHeader title={displayTitle} eyebrow="Тренировка" />
         <p className="screen-message" data-testid="pre-screen-too-early">
           {state.availableFrom
-            ? `Нужно два полных дня отдыха между основными тренировками — следующая доступна с ${shortDateLabel(state.availableFrom)}.`
-            : "Ещё рано для следующей тренировки — минимальный отдых между тренировками не прошёл."}
+            ? `Следующая основная тренировка откроется ${shortDateLabel(state.availableFrom)}: между ними нужен отдых.`
+            : "Следующая основная тренировка откроется после отдыха между тренировками."}
+        </p>
+        <p className="hint" data-testid="pre-screen-elective-hint">
+          Пока можно сделать факультатив: он бесплатный, до 2 в неделю и не влияет на прогрессию курса.
         </p>
         <div className="pre-transport">
-          <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>
-            Перейти в обычную "Тренировку"
+          <Button className="action-button vs-primary" size="l" stretched onClick={() => setElectiveOpen(true)} data-testid="pre-screen-elective">
+            Сделать факультатив
+          </Button>
+          <Button className="action-button vs-plain" size="l" stretched mode="plain" onClick={onGoToWorkout} data-testid="pre-screen-back-to-plan">
+            Вернуться в план
           </Button>
         </div>
       </div>
@@ -532,7 +544,7 @@ export function SessionPreScreen({
         <p className="screen-message">Был долгий перерыв — сначала нужен повторный замер.</p>
         <div className="pre-transport">
           <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>
-            Пройти замер в обычной "Тренировке"
+            Вернуться в план
           </Button>
         </div>
       </div>
@@ -569,7 +581,7 @@ export function SessionPreScreen({
         <p className="screen-message">Нет активного курса для этого экрана (или их больше одного).</p>
         <div className="pre-transport">
           <Button className="action-button vs-primary" size="l" stretched onClick={onGoToWorkout}>
-            Перейти в обычную "Тренировку"
+            Вернуться в план
           </Button>
         </div>
       </div>

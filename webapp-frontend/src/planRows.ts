@@ -4,7 +4,7 @@
 // Правило: «Начать» показываем тогда и только тогда, когда сервер сказал start_allowed. Пока бэкенд не отдаёт
 // поле (старый ответ), выводим то же самое из `state` — те же причины, что у сервера, ничего нового.
 
-import type { PlanBlockedReason, PlanItemResponseV2, ProgramScheduleV2 } from "./apiV2";
+import type { InclusionScheduleV2, PlanBlockedReason, PlanItemResponseV2 } from "./apiV2";
 import { shortDateLabel } from "./planWeekNav.ts";
 
 /** Единое написание блоков курса: кириллические «А» и «Б» (UX-09). */
@@ -31,6 +31,19 @@ export function isStartAllowed(item: RowFacts): boolean {
   return !(["too_early", "infeasible", "completed", "missed"] as const).some((state) => state === item.state);
 }
 
+/** Кнопка старта на строке плана. Занятия курса — строго по start_allowed. Свои/ручные строки (без курса)
+ * сохраняют прежнее поведение: «рано» не стартуем, завершённую можно повторить («Ещё раз», #277), остальное —
+ * по серверному start_allowed, если он есть. */
+export function isRowStartable(item: RowFacts & Pick<PlanItemResponseV2, "program_inclusion_id">): boolean {
+  if (item.program_inclusion_id !== null && item.program_inclusion_id !== undefined) {
+    return isStartAllowed(item);
+  }
+  if (item.state === "completed") {
+    return true;
+  }
+  return isStartAllowed(item);
+}
+
 /** Почему «Начать» нет (null — можно начать). */
 export function blockedReason(item: RowFacts): PlanBlockedReason | null {
   if (isStartAllowed(item)) {
@@ -44,7 +57,10 @@ export function blockedReason(item: RowFacts): PlanBlockedReason | null {
 }
 
 /** Подпись состояния строки; у разрешённой к старту строки — null (подпись не нужна, есть кнопка). */
-export function rowStatusLabel(item: RowFacts): string | null {
+export function rowStatusLabel(item: RowFacts & Partial<Pick<PlanItemResponseV2, "program_inclusion_id">>): string | null {
+  if (item.state === "completed" && (item.program_inclusion_id === null || item.program_inclusion_id === undefined)) {
+    return null; // своя строка: счётчик «1/1» и «Ещё раз» уже говорят о выполнении
+  }
   switch (blockedReason(item)) {
     case "too_early":
       return item.available_from ? `Доступно с ${shortDateLabel(item.available_from)}` : "Откроется после отдыха между тренировками";
@@ -108,7 +124,7 @@ export interface ScheduleExplanation {
 }
 
 /** UX-06/32: расписание словами. Для не-устаревшего 2/неделю тоже коротко говорим, сколько занятий. */
-export function describeSchedule(schedule: ProgramScheduleV2 | null | undefined): ScheduleExplanation | null {
+export function describeSchedule(schedule: InclusionScheduleV2 | null | undefined): ScheduleExplanation | null {
   if (!schedule || !(schedule.sessions_per_week > 0)) {
     return null;
   }

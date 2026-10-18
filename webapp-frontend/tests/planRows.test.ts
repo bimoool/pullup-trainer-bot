@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  blockedReason, describeSchedule, electiveCounterLabel, isStartAllowed, normalizeBlockLetters, ordinalLabel,
+  blockedReason, describeSchedule, isRowStartable, electiveCounterLabel, isStartAllowed, normalizeBlockLetters, ordinalLabel,
   rowStatusLabel, rowSubtitle, weekOccurrenceTotal,
 } from "../src/planRows.ts";
 
@@ -23,7 +23,8 @@ test("without start_allowed the state decides (old backend)", () => {
 test("status labels, hand-written", () => {
   assert.equal(rowStatusLabel({ state: "too_early", available_from: "2026-10-21" }), "Доступно с 21 окт");
   assert.equal(rowStatusLabel({ state: "infeasible", start_allowed: false }), "Не уместится на этой неделе");
-  assert.equal(rowStatusLabel({ state: "completed" }), "Выполнено");
+  assert.equal(rowStatusLabel({ state: "completed", program_inclusion_id: 3 }), "Выполнено");
+  assert.equal(rowStatusLabel({ state: "completed", program_inclusion_id: null }), null); // своя строка: «Ещё раз»
   assert.equal(rowStatusLabel({ state: "available", start_allowed: true }), null);
   assert.equal(rowStatusLabel({ state: "available", start_allowed: false, blocked_reason: "no_access" }), "Нужна подписка");
   assert.equal(blockedReason({ state: "available", start_allowed: true }), null);
@@ -63,4 +64,13 @@ test("occurrence total and elective counter", () => {
   ];
   assert.equal(weekOccurrenceTotal(items, 1, 5), 2);
   assert.equal(electiveCounterLabel(1, 2), "Факультативы: 1 из 2 на этой неделе");
+});
+
+test("course rows follow start_allowed; own rows keep «Ещё раз» for completed and no start when too early", () => {
+  assert.equal(isRowStartable({ program_inclusion_id: 3, state: "completed" }), false);
+  assert.equal(isRowStartable({ program_inclusion_id: 3, state: "available", start_allowed: true }), true);
+  assert.equal(isRowStartable({ program_inclusion_id: 3, state: "infeasible" }), false);
+  assert.equal(isRowStartable({ program_inclusion_id: null, state: "completed" }), true);
+  assert.equal(isRowStartable({ program_inclusion_id: null, state: "too_early" }), false);
+  assert.equal(isRowStartable({ program_inclusion_id: null, state: "available" }), true);
 });
