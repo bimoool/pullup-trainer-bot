@@ -44,3 +44,9 @@ The cloud blocker is **resolved**: the reference is available locally.
 
 Safety: the emulator account holds pre-existing owner data — additive-only, `REF TEST` prefix, ledger, own objects deleted; the Docker stand shares nothing with the owner's compose stack (separate containers `pullup-audit-*`, removed after the session). Not touched: `main`, production, staging, VPS.
 Limits that remain: reference first-run (account already onboarded), Telegram chrome, real WebView behaviour of our side.
+
+## Update — final audit step (production, read-only)
+
+Production (`192.241.141.47`, revision `bd80bc9`, ancestor of the audited `main@e2ed40e`) was **reachable** with the existing deploy key and
+queried with `default_transaction_read_only=on`: SELECT only, no Mini App session, no bot message. Used for the owner's account (UX-32) and for the
+catalogue content (UX-34). Not available: a real Telegram client rendering (UX-34) — see `COMPLAINTS.md` §3.

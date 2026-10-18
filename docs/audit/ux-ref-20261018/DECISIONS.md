@@ -11,15 +11,18 @@ Rule: nothing already recorded is re-asked. Sources: `docs/PROJECT_SPEC.md`, `do
 | **Duration** (UX-03) | `PROJECT_SPEC` §Live: «Длительность — активное время движка (паузы исключены); 0 секунд — «без длительности», а не «0 мин»»; Analytics minutes from `duration_seconds`; «не выдумываем длительность». | Label decision is closed: active engine time. «0:00» next to a session with logged sets is a **defect**. The reference's estimated durations are not copied. |
 | **Band / assistance recording** (UX-07) | `PULLUPS_V5_6` §8: a setup is ready only when complete — model/name, colour, attachment, foot/knee position; no kilograms for bands; order from the personal list. | The completeness rule is decided. The input control (free text vs pickers, reuse from «Мои резины»/previous block) is a design choice with a recommended default (pickers + prefill), not an owner question. |
 | **Starting measurement** (UX-05) | `PROJECT_SPEC` §tests: test results are out of progression and do **not** change the onboarding baseline; the Tests card says so. Baseline feeds the level (`PULLUPS_V5_6` §entry inputs). | Semantics decided: baseline ≠ test result. Only the presentation is open → Q1 with a default. |
+| Where the owner's «3 instead of 2» comes from | Same spec line, version-scoped schedule (`PULLUPS_V5_6`); evidence in `COMPLAINTS.md` | Explained; only Q3 (opt-in) is a proposal |
+| Are electives free? | Owner decision 2026-10-17 (`routes.py::get_elective_plan`): free, no subscription gate | Not asked; the gap is discoverability (UX-33) |
 | Min rest, future weeks | J11/J12 in `ACCEPTANCE_JOURNEYS_V2`, OD-2 resolved = 3 | Defects UX-01/02, nothing to decide. |
 | Direct start credits the plan? | J7 + spec: it does not for a course occurrence | Reference credits by date; we keep ours. |
 | Replace our plan UX by the reference model? | Owner mandate 2026-10-02 (`crimpd-reference`): Crimpd 8.5.x is the functional reference, differences need a documented domain/platform reason | Default = replicate the weekly-quantity + per-week schedule model (UX-24/25/27); intentional differences are listed in `REFERENCE.md` §Not to copy. |
 
-## Genuinely open — one list
+## Open proposals — one list (work proceeds on the defaults)
 
 | # | Question | Default used in the sprint plan | If you disagree |
 |---|---|---|---|
 | **Q1** | Where does the onboarding «Замер» show in Profile → Tests? | A labelled read-only line «Стартовый замер: 6 (из анкеты)» on the Tests card; it is **not** a test result and never enters the test history (keeps the spec rule). | Say «as first test result» — then the spec line about the baseline must be amended and `BodyMetric`/test storage touched (+0.5 d). |
 | **Q2** | Weekly quantity per workout: whole sessions only, or also 0.5 (the reference steps by 0.5)? | Whole sessions only. The meaning of 0.5 (every other week? half session?) was **not observable** — the stepper accepted it, the week credit semantics are UNKNOWN. | Say «0.5 needed» — then one more reference observation (credit of a 0.5 slot) and a numeric column instead of integer (migration + archive-table check). |
+| **Q3** | Older course connections (before V5.6) keep 3 sessions per week by spec (version-scoped). Offer an explicit opt-in to 2 per week? (complaint UX-32) | Yes: opt-in per user, future weeks only; history, progression state and counters untouched; the card explains the schedule. No automatic migration; no production change in the audit. | Say «keep 3, explanation only» — UX-32 shrinks to explanation + row states (−1 d). |
 
 Not asked (design defaults, veto allowed): past days in a current week are disabled or labelled «пропущено» (reference behaviour UNKNOWN); overlapping plan start dates are disabled with a visible reason; confirmations on every destructive plan edit.
