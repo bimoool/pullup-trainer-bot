@@ -16,6 +16,7 @@ from app.bot.handlers.reports import router as reports_router
 from app.bot.handlers.start import router as start_router
 from app.bot.handlers.subscription import router as subscription_router
 from app.bot.handlers.training_reminder import router as training_reminder_router
+from app.bot.handlers.web_login import router as web_login_router
 from app.bot.handlers.workout import router as workout_router
 from app.bot.handlers.workout_edit import router as workout_edit_router
 
@@ -24,6 +25,8 @@ from app.bot.handlers.workout_edit import router as workout_edit_router
 # перехватывали апдейт раньше хендлеров, завязанных на FSM-состояние (см.
 # комментарии в start.py и menu.py).
 router = Router()
+# web_login — раньше start: /start weblogin_<id> не должен попасть в обычный handle_start.
+router.include_router(web_login_router)
 router.include_router(start_router)
 router.include_router(menu_router)
 router.include_router(onboarding_router)

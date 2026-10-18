@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # того, как для него готов реальный домен.
     mini_app_url: str = ""
 
+    # Вход в браузере через бота (WEB-AUTH). BOT_USERNAME — без @; пусто -> ссылка t.me строится из getMe (кэш).
+    bot_username: str = ""
+    # Secure-флаг cookie сессии; выключается только для локального http (разработка/E2E).
+    web_auth_cookie_secure: bool = True
+    # Доверять X-Real-IP от reverse proxy (nginx) при определении IP для лимитов.
+    web_auth_trusted_proxy: bool = False
+    # Тестовый вход (POST /api/web-auth/test-login) — действует ТОЛЬКО вместе с BOT_TOKEN == "e2e-test-token".
+    web_auth_test_login: bool = False
+
     @property
     def admin_id_list(self) -> list[int]:
         return [int(x) for x in self.admin_ids.split(",") if x.strip()]
