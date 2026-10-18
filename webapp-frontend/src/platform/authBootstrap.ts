@@ -2,6 +2,10 @@
 // Результат: Telegram (initData от клиента), browser (защищённая браузерная сессия), login (нужен вход),
 // error (не удалось определить / открыто не из Telegram, браузерный вход отключён).
 import { retrieveLaunchParams } from "@telegram-apps/sdk";
+import { fetchSessionInfo } from "./webAuthApi";
+
+/** Маркер в X-Telegram-Init-Data для браузерной сессии: сервер принимает его только вместе с cookie (app/web/auth.py). */
+export const WEB_SESSION_SENTINEL = "web-session";
 
 export type AuthResult =
   | { kind: "telegram"; initDataRaw: string }
@@ -50,10 +54,17 @@ export async function resolveAuth(): Promise<AuthResult> {
     initDataRaw = telegramWebApp?.initData;
   }
   if (!initDataRaw) {
-    return {
-      kind: "error",
-      message: `initDataRaw is empty — открыто не из Telegram? [${describeInitDataFailure(retrieveError, telegramWebApp)}]`,
-    };
+    // Не Telegram (или initData не долетел): браузерный вход через бота. Диагностика прежней ошибки сохраняется.
+    try {
+      const info = await fetchSessionInfo();
+      return info.authenticated ? { kind: "browser", initDataRaw: WEB_SESSION_SENTINEL } : { kind: "login" };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        kind: "error",
+        message: `initDataRaw is empty, браузерная сессия недоступна (${reason}) [${describeInitDataFailure(retrieveError, telegramWebApp)}]`,
+      };
+    }
   }
   return { kind: "telegram", initDataRaw };
 }

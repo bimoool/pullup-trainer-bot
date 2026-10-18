@@ -17,6 +17,9 @@ type Props = {
   /** issue #275 — недели, доступные для переноса (текущая и будущие), и неделя item'а. */
   weeks: PlanWeekResponseV2[];
   currentWeekId: number | null;
+  /** UX-31: неделя «сегодня» и индекс сегодняшнего дня (0 = Пн) — в ней прошедшие дни недоступны. */
+  todayWeekId?: number | null;
+  todayDayIndex?: number;
   onBack: () => void;
   onSuccess: () => void;
 };
@@ -28,7 +31,7 @@ type Props = {
  * plan_week_id не меняется в этой волне — PlanItem остаётся в той же
  * current PlanWeek (по заданию).
  */
-export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayOfWeek, weeks, currentWeekId, onBack, onSuccess }: Props) {
+export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayOfWeek, weeks, currentWeekId, todayWeekId = null, todayDayIndex = 0, onBack, onSuccess }: Props) {
   const [targetWeekId, setTargetWeekId] = useState<number | null>(currentWeekId);
   const [selectedDay, setSelectedDay] = useState<number | "free_pool" | null>(
     currentDayOfWeek === null ? "free_pool" : currentDayOfWeek,
@@ -86,7 +89,10 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
         </div>
       )}
 
-      <DayPicker selectedDay={selectedDay} onSelect={setSelectedDay} />
+      <DayPicker
+        selectedDay={selectedDay} onSelect={setSelectedDay}
+        disabledBefore={targetWeekId !== null && targetWeekId === todayWeekId ? todayDayIndex : 0}
+      />
 
       {submitError && <p className="gap-banner">Не удалось перенести: {submitError}</p>}
 
@@ -96,6 +102,9 @@ export function MovePlanItemScreen({ initDataRaw, planItemId, title, currentDayO
         onClick={() => void handleSubmit()}
       >
         {submitting ? <Spinner size="s" /> : "Сохранить"}
+      </Button>
+      <Button size="l" mode="outline" stretched disabled={submitting} data-testid="move-cancel" onClick={close}>
+        Отмена
       </Button>
     </FormSheet>
   );

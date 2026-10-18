@@ -406,10 +406,104 @@ class CustomPlanCreateRequest(BaseModel):
 
     display_name: str = Field(min_length=1, max_length=255)
     workout_ids: list[int] = Field(min_length=1, max_length=20)
-    weeks: list[int] = Field(min_length=1, max_length=52)
+    weeks: list[int] = Field(default_factory=list, max_length=52)  # пусто допустимо, если задан quantities
     repeat: Literal["once", "cycle"] = "once"
     preferred_weekdays: list[int] | None = None
     start_week_number: int | None = None
+    # UX-EDITOR (additive): матрица [тренировка][неделя] и фазы недель. Если quantities задан — weeks
+    # игнорируется (выводится как недельные суммы), workout_ids должны быть уникальны.
+    quantities: list[list[int]] | None = None
+    phases: list[Literal["base", "rest", "peak"]] | None = None
+
+
+# --- UX-EDITOR: редактор своего плана (contract §3) — начало блока ------------------------------------
+
+
+class EditorWorkoutResponse(BaseModel):
+    workout_id: int
+    title: str
+
+
+class EditorWeekResponse(BaseModel):
+    index: int
+    week_number: int
+    start_date: date
+    state: Literal["past", "current", "future"]
+    phase: Literal["base", "rest", "peak"]
+    total: int
+    quantities: dict[str, int]
+    done: dict[str, int]
+    placed: int
+
+
+class CustomPlanEditorResponse(BaseModel):
+    id: int
+    display_name: str
+    repeat: str
+    start_week_number: int
+    is_active: bool
+    current_week_index: int | None
+    converted: bool
+    notice: str | None
+    workouts: list[EditorWorkoutResponse]
+    weeks: list[EditorWeekResponse]
+    removed_sessions: int = 0
+
+
+class EditorQuantitiesRequest(BaseModel):
+    quantities: dict[str, int] = Field(min_length=1)
+
+
+class EditorPhaseRequest(BaseModel):
+    phase: Literal["base", "rest", "peak"]
+
+
+class EditorInsertWeekRequest(BaseModel):
+    after_index: int = Field(ge=0, le=52)
+
+
+class EditorAddWorkoutRequest(BaseModel):
+    workout_id: int
+
+
+class ScheduleDayResponse(BaseModel):
+    day: int
+    date: date
+    state: Literal["past", "today", "future"]
+    total: int
+
+
+class ScheduleItemResponse(BaseModel):
+    plan_item_id: int
+    day: int | None
+    done: bool
+    missed: bool
+
+
+class ScheduleWorkoutResponse(BaseModel):
+    workout_id: int
+    title: str
+    quantity: int
+    placed_by_day: list[int]
+    remaining: int
+    items: list[ScheduleItemResponse]
+
+
+class WeekScheduleResponse(BaseModel):
+    index: int
+    week_number: int
+    start_date: date
+    state: Literal["past", "current", "future"]
+    days: list[ScheduleDayResponse]
+    workouts: list[ScheduleWorkoutResponse]
+
+
+class SchedulePlaceRequest(BaseModel):
+    workout_id: int
+    day_of_week: int = Field(ge=0, le=6)
+
+
+# --- UX-EDITOR — конец блока ---------------------------------------------------------------------------
 
 
 class CustomPlanListResponse(BaseModel):

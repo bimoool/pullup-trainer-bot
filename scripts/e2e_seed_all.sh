@@ -231,3 +231,16 @@ seed plan_week_add_exercise 931003
 seed plan_week_add_exercise 931006
 seed live_engine 931004
 seed journal_catalog_session 931005
+# WEB-AUTH (ux-ref-20261018): вход в браузере — свой диапазон 942000–942099; только чтение (сессии не меняют данные).
+for n in 0 1 2 3 4 5 6 7 8; do
+  seed home_workouts $((942010 + n))
+  seed home_workouts $((942020 + n))
+done
+# ux-ref-20261018 (UX-EDITOR, диапазон 941000–941099): редактор плана и расписание недели.
+seed ux_editor_fresh 941001
+seed ux_editor_fresh 941002
+seed ux_editor_fresh 941003
+seed ux_editor_fresh 941004
+seed ux_editor_fresh 941005
+seed ux_editor_legacy 941010
+seed ux_editor_legacy 941011

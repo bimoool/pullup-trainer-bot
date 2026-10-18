@@ -18,7 +18,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   const { consoleErrors, apiFailures } = await openAppAs(page, TELEGRAM_ID);
 
   await page.getByRole("button", { name: "Планы" }).click();
-  await expect(page.getByText("Свободный пул")).toBeVisible();
+  await expect(page.getByText("Без дня")).toBeVisible();
   // #266: имя курса есть и в карточке плана, и в строке недели — проверяем строку недели.
   // #304: одна строка = одно занятие. #305 (V5.6 §1): новая инклюзия V5.6 — 2 занятия в неделю (A/B).
   await expect(rowTitle(page, "Подтягивания").first()).toBeVisible();
@@ -87,7 +87,7 @@ test("«Планы»: добавить Планку в Среду и Отжим�
   };
 
   await page.getByRole("button", { name: "Планы" }).click();
-  await expect(page.getByText("Свободный пул")).toBeVisible();
+  await expect(page.getByText("Без дня")).toBeVisible();
   // issue #258 — к названию группы теперь добавлен счётчик «сделано/план».
   await expect(rowTitle(page, "Подтягивания")).toHaveCount(2);  // #305 (V5.6): два занятия-строки курса в неделю
   await expect(page.getByText("Среда")).toBeVisible();

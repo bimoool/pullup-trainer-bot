@@ -28,7 +28,7 @@ import { resolveAuth } from "./platform/authBootstrap";
 import { LoginScreen } from "./platform/LoginScreen";
 import { AppShell } from "./platform/AppShell";
 import { NavBar } from "./platform/NavBar";
-import { PlatformProvider, usePlatformSetter } from "./platform/mode";
+import { PlatformProvider, usePlatform, usePlatformSetter } from "./platform/mode";
 import { signOutBrowser } from "./platform/session";
 
 /**
@@ -133,6 +133,7 @@ export function App() {
 
 function AppInner() {
   const setPlatformMode = usePlatformSetter();
+  const { mode: platformMode } = usePlatform();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [tab, setTab] = useState<Tab>("home");
   // «+» на Главной → «Записать в журнал» (#263): счётчик запросов, 0 — шторку не открывать.
@@ -385,12 +386,17 @@ function AppInner() {
         <p className="screen-message">
           {isSessionExpiredMessage(state.message) ? state.message : `Не удалось загрузить: ${state.message}`}
         </p>
-        {isSessionExpiredMessage(state.message) && (
+        {isSessionExpiredMessage(state.message) && (platformMode === "browser" ? (
+          // Браузер: сессия потеряна — перезагрузка заново проходит resolveAuth() и показывает вход (WEB-AUTH seam request 2).
+          <button type="button" className="action-button" data-testid="session-expired-relogin" onClick={() => window.location.reload()}>
+            Войти заново
+          </button>
+        ) : (
           // initData не обновить изнутри открытого Mini App — только закрыть и открыть из бота (#224).
           <button type="button" className="action-button" data-testid="session-expired-close" onClick={() => getWebApp()?.close?.()}>
             Закрыть
           </button>
-        )}
+        ))}
       </div>
     );
   }

@@ -37,7 +37,7 @@ test("Golden Journey: Главная → в план → тренировка �
   // --- Мою тренировку в план (свободный пул текущей недели) ---
   await card.click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
-  await page.getByRole("button", { name: "Свободный пул" }).click();
+  await page.getByRole("button", { name: "Без дня" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
   await expect(group).toBeVisible(); // приземлились на «Планах»

@@ -38,6 +38,8 @@ AGED_REVISION = "d8a3c6f1e2b4"
 PRE_REVISION = "a7e2c5b9d1f4"  # голова integration/domain-v2 (#307 → #306 → #308)
 REVISION = "e3b9c5d7a2f1"
 V5_REVISION = "b5d8e1f3a6c9"
+WEB_AUTH_REVISION = "c7e2a9d4b1f8"  # вход в браузере: только новые таблицы, за V5.6
+PLAN_SPEC_REVISION = "d4b7e1a9c3f5"  # редактор плана: одна nullable-колонка custom_plans.spec, за входом в браузере
 
 _BAND_STATE_B = {
     "target": 5, "volume": 21, "weak_streak": 1, "equipment_type": "band", "equipment_value": "25",
@@ -178,11 +180,13 @@ def test_e_single_head_follows_training_session_v2(scratch_dsn):  # noqa: F811
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == [V5_REVISION]
+    assert script.get_heads() == [PLAN_SPEC_REVISION]
     assert script.get_revision(REVISION).down_revision == PRE_REVISION
     assert script.get_revision(V5_REVISION).down_revision == REVISION
+    assert script.get_revision(WEB_AUTH_REVISION).down_revision == V5_REVISION
+    assert script.get_revision(PLAN_SPEC_REVISION).down_revision == WEB_AUTH_REVISION
     _alembic(scratch_dsn, "upgrade", "head")
-    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == V5_REVISION
+    assert _scalar(scratch_dsn, "SELECT version_num FROM alembic_version") == PLAN_SPEC_REVISION
 
 
 _SESSION_BLOCK_FACTS = (

@@ -31,7 +31,7 @@ test("Summary: BackButton не воскрешает сессию, «Закрыт
 
   await page.getByTestId("my-workout-card").filter({ hasText: TITLE }).click();
   await page.getByRole("button", { name: "Добавить в план" }).click();
-  await page.getByRole("button", { name: "Свободный пул" }).click();
+  await page.getByRole("button", { name: "Без дня" }).click();
   await page.getByRole("button", { name: "Добавить", exact: true }).click();
   const startGroup = () => page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${TITLE}`) });
   await startGroup().getByRole("button", { name: /^Начать: / }).click();
@@ -64,7 +64,7 @@ test("Summary: BackButton не воскрешает сессию, «Закрыт
   await expect(page.getByRole("button", { name: "Планы" })).toBeVisible();
   await expect(page.getByText(/ошибка/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Планы" }).click();
-  await expect(page.getByText("Свободный пул")).toBeVisible();
+  await expect(page.getByText("Без дня")).toBeVisible();
 
   // Повторное открытие — завершённая сессия не оживает как активная.
   if ((await startGroup().count()) > 0) {

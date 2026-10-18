@@ -1,0 +1,55 @@
+/* Экран входа в браузере (WEB-AUTH). Только токены темы Telegram/Mini App (--tg-*), без своих цветов. */
+.login-screen {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--tg-text-color);
+}
+.login-title { font-size: 24px; font-weight: 700; margin: 0 0 8px; }
+.login-subtitle { font-size: 16px; font-weight: 600; margin: 16px 0 4px; }
+.login-lead, .login-hint, .login-safety, .login-status {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--tg-subtitle-text-color);
+  margin: 0 0 16px;
+}
+.login-safety { font-size: 13px; }
+.login-code {
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  margin: 8px 0 12px;
+  padding-left: 0.25em; /* визуально центрирует из-за letter-spacing */
+  font-variant-numeric: tabular-nums;
+}
+.login-code:focus-visible, .login-button:focus-visible, .login-link-button:focus-visible {
+  outline: 2px solid var(--tg-button-color);
+  outline-offset: 2px;
+}
+.login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--tg-button-color);
+  color: var(--tg-button-text-color);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.login-link-button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--tg-link-color, var(--tg-button-color));
+  font-size: 15px;
+  cursor: pointer;
+}
+.login-error { color: var(--tg-destructive-text-color, #d14343); font-size: 15px; margin: 0 0 16px; }
+.login-waiting code { word-break: break-all; font-size: 13px; }

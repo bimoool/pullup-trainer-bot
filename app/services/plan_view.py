@@ -375,6 +375,14 @@ class PlanViewService:
 class RescheduleError(ValueError):
     """Перенос невозможен (роут → 422 с текстом)."""
 
+    code = "reschedule_refused"
+
+
+class PastDayError(RescheduleError):
+    """UX-31: день текущей недели уже прошёл — занятие туда не ставится."""
+
+    code = "past_day"
+
 
 class PlanScheduleService:
     def __init__(self, session: AsyncSession) -> None:
@@ -424,6 +432,12 @@ class PlanScheduleService:
         if target is None:
             raise RescheduleError("Неделя недоступна для планирования")
 
+        if (
+            day_of_week is not None and target.week_number == current_number
+            and (target.id != item.plan_week_id or day_of_week != item.day_of_week)
+            and day_of_week < (today - target.start_date).days
+        ):
+            raise PastDayError("Этот день уже прошёл")
         item.plan_week_id = target.id
         item.day_of_week = day_of_week
         item.scheduled_date = target.start_date + timedelta(days=day_of_week) if day_of_week is not None else None
