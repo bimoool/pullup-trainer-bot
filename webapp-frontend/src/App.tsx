@@ -368,9 +368,9 @@ function AppInner() {
 
   if (state.status === "loading") {
     return (
-      <div className="app-shell">
+      <AppShell withNav={false}>
         <p className="screen-message">Загрузка…</p>
-      </div>
+      </AppShell>
     );
   }
   if (state.status === "login") {
@@ -382,7 +382,7 @@ function AppInner() {
   }
   if (state.status === "error") {
     return (
-      <div className="app-shell">
+      <AppShell withNav={false}>
         <p className="screen-message">
           {isSessionExpiredMessage(state.message) ? state.message : `Не удалось загрузить: ${state.message}`}
         </p>
@@ -397,7 +397,7 @@ function AppInner() {
             Закрыть
           </button>
         ))}
-      </div>
+      </AppShell>
     );
   }
 
@@ -415,7 +415,7 @@ function AppInner() {
 
   if (v2Session !== null) {
     return (
-      <div className="app-shell">
+      <AppShell withNav={false}>
         <PlanSessionFlow
           initDataRaw={state.initDataRaw}
           planItemIds={"planItemIds" in v2Session ? v2Session.planItemIds : []}
@@ -434,7 +434,7 @@ function AppInner() {
             }
           }}
         />
-      </div>
+      </AppShell>
     );
   }
 
