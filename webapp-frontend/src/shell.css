@@ -963,3 +963,248 @@ button.action-button {
 button.action-button:disabled {
   opacity: 0.5;
 }
+
+/* =====================================================================================================
+ * Браузерный режим (WEB-LAYOUT). Всё ниже действует только при html[data-vp-runtime="browser"]
+ * (platform/runtime.ts); в Mini App ни одно правило не срабатывает.
+ * ===================================================================================================== */
+
+/* палитра без Telegram: светлая (AA для кнопки/ссылки) и тёмная по prefers-color-scheme. Явный выбор
+   «Светлая»/«Тёмная» в настройках перекрывает эти значения inline-переменными (main.tsx). */
+html[data-vp-runtime="browser"] {
+  --tg-bg-color: #ffffff;
+  --tg-text-color: #111111;
+  --tg-hint-color: #6b7075;
+  --tg-link-color: #1a6db5;
+  --tg-button-color: #1a6db5;
+  --tg-button-text-color: #ffffff;
+  --tg-secondary-bg-color: #f2f2f7;
+  --tg-section-bg-color: #ffffff;
+  --tg-subtitle-text-color: #5f6368;
+  --tg-destructive-text-color: #c62828;
+  --web-nav-w: 232px;
+  --web-col-max: 760px;
+  --tg-theme-bg-color: var(--tg-bg-color);
+  --tg-theme-text-color: var(--tg-text-color);
+  --tg-theme-hint-color: var(--tg-hint-color);
+  --tg-theme-link-color: var(--tg-link-color);
+  --tg-theme-button-color: var(--tg-button-color);
+  --tg-theme-button-text-color: var(--tg-button-text-color);
+  --tg-theme-secondary-bg-color: var(--tg-secondary-bg-color);
+  --tg-theme-section-bg-color: var(--tg-section-bg-color);
+  --tg-theme-subtitle-text-color: var(--tg-subtitle-text-color);
+  --tg-theme-destructive-text-color: var(--tg-destructive-text-color);
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-vp-runtime="browser"] {
+    --tg-bg-color: #17212b;
+    --tg-text-color: #f5f5f5;
+    --tg-hint-color: #9aa9ba;
+    --tg-link-color: #8ab4e8;
+    --tg-button-color: #3a78bd;
+    --tg-button-text-color: #ffffff;
+    --tg-secondary-bg-color: #232e3c;
+    --tg-section-bg-color: #17212b;
+    --tg-subtitle-text-color: #9aa9ba;
+    --tg-destructive-text-color: #ff6b6b;
+    color-scheme: dark;
+    --tg-theme-bg-color: var(--tg-bg-color);
+  --tg-theme-text-color: var(--tg-text-color);
+  --tg-theme-hint-color: var(--tg-hint-color);
+  --tg-theme-link-color: var(--tg-link-color);
+  --tg-theme-button-color: var(--tg-button-color);
+  --tg-theme-button-text-color: var(--tg-button-text-color);
+  --tg-theme-secondary-bg-color: var(--tg-secondary-bg-color);
+  --tg-theme-section-bg-color: var(--tg-section-bg-color);
+  --tg-theme-subtitle-text-color: var(--tg-subtitle-text-color);
+  --tg-theme-destructive-text-color: var(--tg-destructive-text-color);
+}
+}
+
+html[data-vp-runtime="browser"] :focus-visible {
+  outline: 2px solid var(--vp-accent);
+  outline-offset: 2px;
+}
+
+html[data-vp-runtime="browser"] body {
+  overflow-x: hidden;
+}
+
+.web-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-2);
+  min-height: 44px;
+}
+.web-topbar:empty {
+  display: none;
+}
+.web-back,
+.web-signout {
+  min-height: 44px;
+  padding: 0 var(--vp-sp-3);
+  border: 0;
+  border-radius: var(--vp-radius-inner);
+  background: none;
+  font: inherit;
+  font-size: var(--vp-fs-body);
+  font-weight: 600;
+  color: var(--vp-accent-ink);
+  cursor: pointer;
+}
+.web-back {
+  margin-left: calc(-1 * var(--vp-sp-3));
+}
+.web-signout {
+  margin-left: auto;
+  margin-right: calc(-1 * var(--vp-sp-3));
+  color: var(--vp-hint);
+}
+
+/* шторка подтверждения */
+.web-confirm-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.web-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+.web-confirm-sheet {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 420px;
+  padding: var(--vp-sp-5) var(--vp-sp-4) calc(var(--vp-sp-4) + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--vp-radius-card) var(--vp-radius-card) 0 0;
+  background: var(--vp-card-bg);
+  color: var(--tg-text-color);
+}
+.web-confirm-text {
+  margin: 0 0 var(--vp-sp-4);
+  font-size: var(--vp-fs-card);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.web-confirm-actions {
+  display: flex;
+  gap: var(--vp-sp-2);
+}
+.web-confirm-btn {
+  flex: 1 1 0;
+  min-height: 46px;
+  border: 1px solid var(--vp-divider);
+  border-radius: var(--vp-radius-inner);
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--tg-text-color);
+  cursor: pointer;
+}
+.web-confirm-btn-primary {
+  border-color: transparent;
+  background: var(--tg-button-color);
+  color: var(--tg-button-text-color);
+}
+@media (min-width: 768px) {
+  .web-confirm-layer {
+    align-items: center;
+  }
+  .web-confirm-sheet {
+    border-radius: var(--vp-radius-card);
+    padding-bottom: var(--vp-sp-4);
+  }
+}
+
+/* планшет / десктоп: боковая навигация и центральная колонка */
+@media (min-width: 768px) {
+  html[data-vp-runtime="browser"] body {
+    padding-left: var(--web-nav-w);
+  }
+  html[data-vp-runtime="browser"] .app-shell {
+    max-width: var(--web-col-max);
+    margin: 0 auto;
+    padding-left: var(--vp-sp-6);
+    padding-right: var(--vp-sp-6);
+  }
+  html[data-vp-runtime="browser"] .app-shell.app-shell-web {
+    padding-bottom: 48px;
+  }
+  html[data-vp-runtime="browser"]:root {
+    scroll-padding-bottom: 96px;
+  }
+  html[data-vp-runtime="browser"] .app-shell-web .live-transport,
+  html[data-vp-runtime="browser"] .app-shell-with-nav .live-transport {
+    bottom: 0;
+    margin-left: calc(-1 * var(--vp-sp-6));
+    margin-right: calc(-1 * var(--vp-sp-6));
+    padding-left: var(--vp-sp-6);
+    padding-right: var(--vp-sp-6);
+  }
+  html[data-vp-runtime="browser"] .home-sticky-header {
+    margin-left: calc(-1 * var(--vp-sp-6));
+    margin-right: calc(-1 * var(--vp-sp-6));
+  }
+
+  .bottom-tabbar.bottom-tabbar-web,
+  html.vp-nav-hidden .bottom-tabbar.bottom-tabbar-web {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    width: var(--web-nav-w);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: var(--vp-sp-1);
+    padding: var(--vp-sp-6) var(--vp-sp-3) var(--vp-sp-4);
+    border-top: 0;
+    border-right: 1px solid var(--vp-divider);
+    overflow-y: auto;
+  }
+  .bottom-tabbar-web .bottom-tabbar-item {
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--vp-sp-3);
+    min-height: 44px;
+    padding: 0 var(--vp-sp-3);
+    border-radius: var(--vp-radius-inner);
+  }
+  .bottom-tabbar.bottom-tabbar-web .bottom-tabbar-item > span {
+    font-size: var(--vp-fs-body);
+  }
+  .bottom-tabbar-web .bottom-tabbar-item-active {
+    background: var(--vp-accent-soft);
+  }
+  .bottom-tabbar-web .bottom-tabbar-item:hover {
+    background: color-mix(in srgb, var(--tg-hint-color) 14%, transparent);
+  }
+  /* десктоп: та же кнопка закреплена внизу боковой навигации */
+  .web-signout {
+    position: fixed;
+    left: var(--vp-sp-3);
+    bottom: var(--vp-sp-4);
+    z-index: 31;
+    width: calc(var(--web-nav-w) - 2 * var(--vp-sp-3));
+    margin: 0;
+    text-align: left;
+  }
+  html[data-vp-runtime="browser"] .home-sheet-backdrop {
+    justify-content: center;
+    align-items: center;
+  }
+  html[data-vp-runtime="browser"] .home-sheet {
+    max-width: 480px;
+    border-radius: var(--vp-radius-card);
+  }
+  html[data-vp-runtime="browser"] .live-sheet {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+}

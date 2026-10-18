@@ -16,6 +16,7 @@ import { subscribeSdkEvent } from "./telegramSdkEvents";
 import { bootTelegram } from "./telegramBoot";
 import { applyTelegramChrome } from "./telegramChrome";
 import { reconcileBackButton } from "./useBackButton";
+import { isBrowserRuntime, setBrowserRuntime } from "./platform/runtime";
 import "./index.css";
 import "./shell.css";
 import "./live.css";
@@ -134,8 +135,16 @@ function applySchemeAttribute() {
   const raw = getComputedStyle(document.documentElement).getPropertyValue("--tg-bg-color");
   document.documentElement.dataset.vpScheme = isDarkBackground(raw) ? "dark" : "light";
 }
+// Браузер (не Mini App): атрибут data-vp-runtime включает палитру по prefers-color-scheme и раскладку с боковой
+// навигацией (shell.css). Реальный режим позже уточняет AppShell.
+const browserRuntime = isBrowserRuntime();
+setBrowserRuntime(browserRuntime);
 applyThemePref(getDisplayPrefs().theme);
 applySchemeAttribute();
+if (browserRuntime && typeof window.matchMedia === "function") {
+  // Системная тема сменилась на лету: data-vp-scheme (shell.css) следует за палитрой CSS.
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applySchemeAttribute());
+}
 subscribeDisplayPrefs(() => {
   applyThemePref(getDisplayPrefs().theme);
   applySchemeAttribute();
@@ -216,7 +225,9 @@ try {
 }
 
 // #224: ready/expand/запрет свайпа вниз/safe area + цвета хрома Telegram (src/telegramBoot.ts).
-bootTelegram();
+if (!browserRuntime) {
+  bootTelegram();
+}
 // Telegram «Назад»: после init() привести кнопку клиента к стеку экранов (на Главной — скрыта), см. backButtonStack.ts.
 reconcileBackButton();
 

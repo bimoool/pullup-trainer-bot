@@ -1,5 +1,7 @@
 import { openLink } from "@telegram-apps/sdk";
 
+import { isBrowserRuntime } from "./platform/runtime";
+
 /** Открывает ссылку вне Mini App (issue #53, волна 2; переиспользуется для
  * оферты — issue #57, п.2) — двойной фолбэк, тот же приём, что уже
  * применён в App.tsx для initData: сначала openLink() из
@@ -11,6 +13,11 @@ import { openLink } from "@telegram-apps/sdk";
  * подтверждение приходит отдельным воркером sync_robokassa_payments, для
  * оферты закрывать вовсе не нужно (просто открывает PDF в браузере). */
 export function openExternalLink(url: string) {
+  // Браузер: обычная новая вкладка без доступа к opener (SDK/мост Telegram тут не нужны).
+  if (isBrowserRuntime()) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
   try {
     if (openLink.isAvailable()) {
       openLink(url);

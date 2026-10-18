@@ -244,3 +244,11 @@ seed ux_editor_fresh 941004
 seed ux_editor_fresh 941005
 seed ux_editor_legacy 941010
 seed ux_editor_legacy 941011
+# WEB-LAYOUT (ux-ref-20261018, диапазон 943000–943099): 943001/943002 — удаление через шторку подтверждения (desktop/mobile),
+# 943010/943011 — чтение для вёрстки (desktop/mobile).
+seed journal_dedupe 943001
+seed journal_dedupe 943002
+seed home_workouts 943010
+seed home_workouts 943011
+seed session_recovery 943020
+seed session_recovery 943021
