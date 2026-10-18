@@ -124,7 +124,9 @@ export interface ScheduleExplanation {
 }
 
 /** UX-06/32: расписание словами. Для не-устаревшего 2/неделю тоже коротко говорим, сколько занятий. */
-export function describeSchedule(schedule: InclusionScheduleV2 | null | undefined): ScheduleExplanation | null {
+export function describeSchedule(
+  schedule: InclusionScheduleV2 | null | undefined, weekInfeasible = 0,
+): ScheduleExplanation | null {
   if (!schedule || !(schedule.sessions_per_week > 0)) {
     return null;
   }
@@ -133,10 +135,23 @@ export function describeSchedule(schedule: InclusionScheduleV2 | null | undefine
   const headline = schedule.is_legacy
     ? `Расписание вашей версии курса: ${count} ${sessionsWord(count)} в неделю`
     : `Расписание курса: ${count} ${sessionsWord(count)} в неделю`;
+  // Два источника правды: ёмкость «с нуля» (weekly_capacity) и факт этой недели (строки infeasible):
+  // по факту последнее выполненное занятие уже могло сдвинуть окно (интеграционная правка по реальным полям A).
   const consequence = schedule.weekly_capacity < count
     ? `Не все занятия уместятся: между тренировками нужен отдых (${schedule.min_days_between_starts} дня), поэтому за неделю получится не больше ${schedule.weekly_capacity}.`
-    : null;
+    : weekInfeasible > 0
+      ? `На этой неделе не все занятия уместятся: между тренировками нужен отдых (${schedule.min_days_between_starts} дня).`
+      : null;
   return { headline, consequence, isLegacyThree };
+}
+
+/** Сколько занятий курса в неделе помечено «не уместится» (state/blocked_reason = infeasible). */
+export function weekInfeasibleCount(
+  items: Pick<PlanItemResponseV2, "program_inclusion_id" | "plan_week_id" | "state" | "blocked_reason">[],
+  inclusionId: number | null, weekId: number | null,
+): number {
+  return items.filter((item) => item.program_inclusion_id === inclusionId && item.plan_week_id === weekId
+    && (item.state === "infeasible" || item.blocked_reason === "infeasible")).length;
 }
 
 /** Число основных занятий курса в неделе — знаменатель «занятие N из M». */

@@ -34,7 +34,9 @@ import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
   todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
-import { describeSchedule, isRowStartable, rowStatusLabel, rowSubtitle, weekOccurrenceTotal } from "./planRows";
+import {
+  describeSchedule, isRowStartable, rowStatusLabel, rowSubtitle, weekInfeasibleCount, weekOccurrenceTotal,
+} from "./planRows";
 import { CourseScheduleNote, ElectiveCourseLine, ElectiveRestDayBanner, useElectiveSummary } from "./ElectiveEntry";
 import { ElectiveScreen } from "./ElectiveScreen";
 import { confirmAction } from "./telegramPlatform";
@@ -1046,7 +1048,9 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                   label={`Прогресс недели: ${inclusion.program_name}`} testId="plans-now-progressbar"
                 />
                 {(() => {
-                  const explanation = describeSchedule(inclusion.schedule);
+                  const explanation = describeSchedule(
+                    inclusion.schedule, weekInfeasibleCount(plan.items, inclusion.id, plan.currentWeekId ?? null),
+                  );
                   return explanation === null
                     ? null
                     : <CourseScheduleNote headline={explanation.headline} consequence={explanation.consequence} />;

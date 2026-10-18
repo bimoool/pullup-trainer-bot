@@ -72,7 +72,7 @@ test.describe("ux-b: план и факультативы", () => {
     await expect(page.getByTestId("plans-now-progress")).toHaveText("На этой неделе: 1 из 3");
     const schedule = page.getByTestId("plans-now-card").getByTestId("course-schedule");
     await expect(schedule.getByTestId("course-schedule-headline")).toHaveText("Расписание вашей версии курса: 3 занятия в неделю");
-    await expect(schedule.getByTestId("course-schedule-consequence")).toContainText("Не все занятия уместятся");
+    await expect(schedule.getByTestId("course-schedule-consequence")).toContainText(/не все занятия уместятся/i);
     // Нет кнопки «перейти на 2» (вне объёма кампании).
     await expect(page.getByText(/Перейти на 2/)).toHaveCount(0);
 
@@ -84,8 +84,10 @@ test.describe("ux-b: план и факультативы", () => {
       await expect(rows.nth(index).getByTestId("plans-row-state")).toHaveText(BLOCKED_LABEL);
       await expect(rows.nth(index).getByRole("button", { name: /^Начать:/ })).toHaveCount(0);
     }
-    await expect(rows.nth(0).getByTestId("plans-row-variant")).toHaveText(/^Объём \(А\) · занятие 1 из 3$/);
-    await expect(rows.nth(1).getByTestId("plans-row-variant")).toHaveText(/^Сила \(Б\) · занятие 2 из 3$/);
+    // Устаревшее подключение (не V5.6): занятие = блоки А+Б вместе, чередования А/Б нет — A отдаёт session_variant=null,
+    // строки различаются только номером занятия (интеграция с реальными полями A; в mock-режиме был А/Б).
+    await expect(rows.nth(0).getByTestId("plans-row-variant")).toHaveText(/занятие 1 из 3$/);
+    await expect(rows.nth(1).getByTestId("plans-row-variant")).toHaveText(/занятие 2 из 3$/);
     expect(apiFailures).toEqual([]);
   });
 
