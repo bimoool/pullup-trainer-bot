@@ -497,6 +497,8 @@ export interface ProgramInclusionResponseV2 {
   current_week?: number | null;
   /** Правило 2026-10-07: "free" — программа без Premium («Подтягивания»), "premium" — нужна подписка. */
   access_level?: ProgramAccessLevel;
+  /** CONTRACT_A_B v1 §2 — необязательно, пока бэкенд не отдаёт. */
+  schedule?: ProgramScheduleV2 | null;
 }
 
 export interface PlanItemResponseV2 {
@@ -535,10 +537,32 @@ export interface PlanItemResponseV2 {
   available_from?: string | null;
   projected_date?: string | null;
   credited_session_id?: number | null;
+  // --- CONTRACT_A_B v1 (UX-01/02/08): необязательные, пока бэкенд (исполнитель A) не отдаёт их; без них UI
+  // выводит то же из `state` (см. planRows.ts) ---
+  /** Единственный источник «Начать»: true только если старт этой строки сейчас может удаться. */
+  start_allowed?: boolean;
+  blocked_reason?: PlanBlockedReason | null;
+  /** Какое занятие курса (объём / сила); null — не курсовая строка или не удалось спроецировать. */
+  session_variant?: "A" | "B" | null;
+  session_variant_basis?: "actual" | "projected" | null;
+  /** 1-based номер среди основных занятий курса этой недели («занятие 2 из 3»). */
+  session_ordinal?: number | null;
 }
+
+export type PlanBlockedReason = "too_early" | "infeasible" | "completed" | "missed" | "no_access";
 
 export type PlanOccurrenceState =
   "completed" | "missed" | "infeasible" | "available" | "too_early" | "awaiting_assessment";
+
+/** CONTRACT_A_B v1 §2 — расписание подключения курса (то, что план реально материализует на открытую неделю). */
+export interface ProgramScheduleV2 {
+  sessions_per_week: number;
+  source: "snapshot" | "catalogue";
+  is_legacy: boolean;
+  min_days_between_starts: number;
+  /** Сколько основных стартов физически умещается в неделю при таком интервале. */
+  weekly_capacity: number;
+}
 
 export interface PlanWeekSummaryV2 {
   plan_week_id: number;
