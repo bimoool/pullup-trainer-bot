@@ -7,10 +7,12 @@ checkpoints/UX-EDITOR-contract.md §4 (примеры a–e), а не вывед
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 
-from app.db.models import User
+from app.db.models import SubscriptionStatus, User
 from app.db.models_program import PlanItem, PlanWeek, TrainingPlan, TrainingSession
+from app.db.repositories.users import UserRepository
 from app.services import live_session
 from app.web import routes_v2
 from tests.test_web._v2_client import v2_delete, v2_get, v2_patch, v2_post
@@ -19,6 +21,20 @@ from tests.test_web.test_v2_plan_occurrences import _finish, _start, _user_worko
 MON = datetime(2026, 10, 5, 10, tzinfo=UTC)
 THU = MON + timedelta(days=3)
 BASE = "/api/v2/custom-plans"
+
+
+@pytest_asyncio.fixture
+async def user(session) -> User:
+    """Пользователь с действующим триалом (создание/правка своего плана — Premium, 402 без подписки).
+    Объявлен здесь явно, а не берётся из tests/test_web/conftest.py: при порядке аргументов CLI
+    «файл test_web → файл из корня tests/ → ещё файл test_web» pytest 9 теряет фикстуры conftest.py
+    каталога test_web для последнего файла и подставляет корневой `user` (без подписки) — те же 402 у
+    существующих test_v2_plan_occurrences.py в том же порядке. Полный прогон каталога не затронут."""
+    repo = UserRepository(session)
+    created = await repo.create(telegram_id=1001, username="tester")
+    return await repo.update_subscription_cache(
+        created.id, status=SubscriptionStatus.TRIAL, expires_at=datetime.now(UTC) + timedelta(days=14),
+    )
 
 
 @pytest.fixture
