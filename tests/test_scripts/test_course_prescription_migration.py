@@ -156,6 +156,10 @@ def test_c_second_upgrade_and_converge_are_noop(scratch_dsn):  # noqa: F811
         finally:
             await engine.dispose()
 
+    # Сведение — код приложения текущей версии: ему нужна схема головы (custom_plans.spec и др. более поздние аддитивные
+    # колонки). Проверка идемпотентности самой ревизии выше уже сделана на REVISION; здесь поднимаем БД до головы.
+    _alembic(scratch_dsn, "upgrade", "head")
+    assert _states(scratch_dsn) == first  # подъём по аддитивным ревизиям состояние прогрессии не меняет
     code, applied = asyncio.run(converge(True))
     assert code == 0, applied
     assert _states(scratch_dsn) == first  # convergence состояния прогрессии не трогает
