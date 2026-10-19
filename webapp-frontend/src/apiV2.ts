@@ -602,6 +602,8 @@ export interface CustomPlanCreateV2 {
   /** UX-EDITOR: матрица [тренировка][неделя]; если задана, `weeks` выводится на сервере. */
   quantities?: number[][];
   phases?: PlanPhaseV2[];
+  /** Заменить активный свой план: остановка старого + создание нового одной операцией на сервере. */
+  replace_custom_plan_id?: number;
 }
 
 /** issue #304 (§7) — свой план с объёмом по неделям. */
@@ -701,6 +703,12 @@ export async function placeOnDay(
   return apiV2Post(`${plansBase(id)}/weeks/${index}/${unplace ? "unplace" : "place"}`, initDataRaw, {
     workout_id: workoutId, day_of_week: day,
   });
+}
+
+/** Все свои планы пользователя (активные и остановленные). */
+export async function listCustomPlans(initDataRaw: string): Promise<CustomPlanV2[]> {
+  const data = await apiV2Get<{ items: CustomPlanV2[] }>("/api/v2/custom-plans", initDataRaw);
+  return data.items;
 }
 
 /** issue #304 (B3) — «Остановить план»: is_active=false, незасчитанные занятия текущей/будущих недель снимаются,

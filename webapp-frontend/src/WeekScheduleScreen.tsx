@@ -64,20 +64,23 @@ export function WeekScheduleScreen({ initDataRaw, planId, index, onBack }: Props
       {notice !== null && <p className="block-subtitle" data-testid="schedule-notice">{notice}</p>}
 
       <Section className="block-section" header="Всего занятий в день">
-        <div className="week-day-picker">
+<div className="plan-section-body">
+        <div className="schedule-day-totals">
           {view.days.map((day) => (
             <span key={day.day} className="plans-row-chip" data-testid={`schedule-day-total-${day.day}`} data-state={day.state}>
               {`${DAY_LABELS[day.day].label} ${day.total}`}
             </span>
           ))}
         </div>
-      </Section>
+      </div>
+</Section>
 
       {view.workouts.length === 0 && <p className="block-subtitle">В этой неделе нет занятий.</p>}
       {view.workouts.map((workout) => {
         const exhausted = workout.remaining === 0;
         return (
           <Section key={workout.workout_id} className="block-section" header={workout.title}>
+<div className="plan-section-body">
             <p className="block-subtitle" data-testid={`schedule-remaining-${workout.workout_id}`}>
               {workout.quantity === 0 ? "В этой неделе не запланировано" : remainingLabel(workout.remaining)}
             </p>
@@ -109,7 +112,8 @@ export function WeekScheduleScreen({ initDataRaw, planId, index, onBack }: Props
                 </div>
               );
             })}
-          </Section>
+          </div>
+</Section>
         );
       })}
 

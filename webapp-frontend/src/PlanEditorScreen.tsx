@@ -99,6 +99,7 @@ export function PlanEditorScreen({ initDataRaw, planId, onBack, onOpenSchedule }
       {error !== null && <p className="gap-banner" data-testid="plan-editor-error">{error}</p>}
 
       <Section className="block-section" header="Тренировки в плане">
+<div className="plan-section-body">
         {plan.workouts.map((workout) => (
           <div key={workout.workout_id} className="plans-row-main">
             <span className="plans-row-title">{workout.title}</span>
@@ -113,7 +114,8 @@ export function PlanEditorScreen({ initDataRaw, planId, onBack, onOpenSchedule }
         <Button size="s" mode="outline" data-testid="editor-add-workout" disabled={busy} onClick={() => void openAdd()}>
           + Добавить тренировку
         </Button>
-      </Section>
+      </div>
+</Section>
 
       {planWeeks.map((week) => {
         const note = weekEmptyNote(week.total);
@@ -122,8 +124,9 @@ export function PlanEditorScreen({ initDataRaw, planId, onBack, onOpenSchedule }
           <Section
             key={week.index} className={past ? "block-section plans-week-card plan-week-past" : "block-section plans-week-card"}
           >
-            <div className="plan-week-stepper" data-testid={`editor-week-${week.index}`} data-state={week.state}>
-              <div className="plan-week-stepper-label">
+<div className="plan-section-body">
+            <div className="editor-week-head" data-testid={`editor-week-${week.index}`} data-state={week.state}>
+              <div className="editor-week-head-main">
                 <span>{`Неделя ${week.index} · ${weekRangeLabel(week.start_date)}`}</span>
                 <button
                   type="button" className="plan-week-chip" data-testid={`editor-phase-${week.index}`}
@@ -171,7 +174,8 @@ export function PlanEditorScreen({ initDataRaw, planId, onBack, onOpenSchedule }
                 </Button>
               )}
             </div>
-          </Section>
+          </div>
+</Section>
         );
       })}
 

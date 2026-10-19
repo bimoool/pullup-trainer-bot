@@ -414,6 +414,9 @@ class CustomPlanCreateRequest(BaseModel):
     # игнорируется (выводится как недельные суммы), workout_ids должны быть уникальны.
     quantities: list[list[int]] | None = None
     phases: list[Literal["base", "rest", "peak"]] | None = None
+    # Заменить активный свой план: остановка старого + создание нового в ОДНОЙ транзакции (любая ошибка —
+    # старый план не тронут). История и засчитанные занятия остаются.
+    replace_custom_plan_id: int | None = None
 
 
 # --- UX-EDITOR: редактор своего плана (contract §3) — начало блока ------------------------------------

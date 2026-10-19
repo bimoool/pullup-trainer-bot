@@ -12,7 +12,8 @@ test("UX-28: удаление недели и тренировки с подтв
   await page.getByTestId("plans-custom-plan").click();
   await page.getByText("Тяга UX-А").click();
   await page.getByText("Тяга UX-Б").click();
-  await page.getByTestId("custom-plan-save").click();
+  await page.getByTestId("plan-create-next").click();
+  await page.getByTestId("plan-create-save").click();
   await expect(page.getByTestId("plan-editor-screen")).toBeVisible();
   for (const week of [1, 2, 3, 4]) {
     await expect(page.getByTestId(`editor-total-${week}`)).toHaveText("Всего 2");

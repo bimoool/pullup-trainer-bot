@@ -372,3 +372,56 @@ async def test_history_untouched_after_edit_sequence(session, user: User, clock)
         select(TrainingSession.plan_item_id, TrainingSession.status).where(TrainingSession.id == session_id),
     )).one()
     assert credit == a_week1[0] and status.value == "completed"
+
+
+# --- Замена активного плана: остановка старого + создание нового в одной операции -----------------------
+
+
+async def test_replace_active_plan_stops_old_keeps_done_and_creates_new(session, user: User, clock):
+    a, b, _ = await _setup(session, user, clock)
+    old_id = await _create_matrix(session, user, a, b)  # 9 занятий: недели 3/3/1/2
+    rows = await _rows(session, old_id)
+    done_row = next(r for r in rows if r[1] == 1 and r[3] == a.id)
+    await _credit(session, user, done_row[0])
+
+    created = await v2_post(session, user.telegram_id, BASE, {
+        "display_name": "Новый", "workout_ids": [a.id], "quantities": [[1, 1]], "replace_custom_plan_id": old_id,
+    })
+    assert created.status_code == 200, created.text
+    new_id = created.json()["id"]
+    plans = {p["id"]: p for p in (await v2_get(session, user.telegram_id, BASE)).json()["items"]}
+    assert plans[old_id]["is_active"] is False and plans[new_id]["is_active"] is True
+    old_rows = await _rows(session, old_id)
+    assert [r for r in old_rows if r[5] != "removed"] == [r for r in old_rows if r[0] == done_row[0]]  # только засчитанное
+    assert len([r for r in old_rows if r[5] == "removed"]) == 8  # 9 − 1 выполненное
+    assert _per_week(await _rows(session, new_id)) == {1: 1, 2: 1}
+    credit = (await session.execute(
+        select(TrainingSession.plan_item_id).where(TrainingSession.user_id == user.id),
+    )).scalar_one()
+    assert credit == done_row[0]
+
+
+async def test_replace_failure_leaves_old_plan_untouched(session, user: User, clock):
+    a, b, _ = await _setup(session, user, clock)
+    old_id = await _create_matrix(session, user, a, b)
+    before = await _rows(session, old_id)
+    other = User(telegram_id=5050, username="other")
+    session.add(other)
+    await session.flush()
+    foreign = await _user_workout(session, other)
+
+    bad_workout = await v2_post(session, user.telegram_id, BASE, {
+        "display_name": "X", "workout_ids": [foreign.id], "quantities": [[1]], "replace_custom_plan_id": old_id,
+    })
+    assert bad_workout.status_code == 404
+    bad_plan = await v2_post(session, user.telegram_id, BASE, {
+        "display_name": "X", "workout_ids": [a.id], "quantities": [[1]], "replace_custom_plan_id": old_id + 999,
+    })
+    assert bad_plan.status_code == 404
+    bad_matrix = await v2_post(session, user.telegram_id, BASE, {
+        "display_name": "X", "workout_ids": [a.id], "quantities": [[99]], "replace_custom_plan_id": old_id,
+    })
+    assert bad_matrix.status_code == 422
+    plans = (await v2_get(session, user.telegram_id, BASE)).json()["items"]
+    assert [(p["id"], p["is_active"]) for p in plans] == [(old_id, True)]
+    assert await _rows(session, old_id) == before

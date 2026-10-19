@@ -17,8 +17,9 @@ test("UX-24: план на 4 недели с количествами по не�
 
   await page.getByText("Тяга UX-А").click();
   await page.getByText("Тяга UX-Б").click();
-  await expect(page.getByTestId("custom-plan-weeks")).toHaveText("4");
-  await page.getByTestId("custom-plan-save").click();
+  await expect(page.getByTestId("plan-create-weeks")).toHaveText("4");
+  await page.getByTestId("plan-create-next").click();
+  await page.getByTestId("plan-create-save").click();
 
   await expect(page.getByTestId("plan-editor-screen")).toBeVisible();
   // старт: по одному занятию каждой тренировки в неделю → итоги 2/2/2/2

@@ -128,6 +128,14 @@ async def create_custom_plan(
     if not is_plannable_week_number(start, current_number):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Неделя недоступна для планирования")
 
+    if body.replace_custom_plan_id is not None:
+        # Все проверки выше пройдены; остановка и создание — в одной транзакции (коммит ниже, откат при ошибке).
+        stopped = await PlanRemovalService(session).deactivate_custom_plan(
+            user_id=user.id, custom_plan_id=body.replace_custom_plan_id, today=today,
+        )
+        if stopped is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Custom plan not found")
+
     custom_plan = await plans.create_custom_plan(CustomPlan(
         user_id=user.id, training_plan_id=plan.id, display_name=body.display_name.strip(),
         start_week_number=start, workouts=list(body.workout_ids), weeks=weeks,
