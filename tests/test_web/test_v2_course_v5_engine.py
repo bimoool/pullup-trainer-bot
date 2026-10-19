@@ -527,7 +527,8 @@ async def test_b_session_started_before_the_change_keeps_30_seconds_and_finishes
 
 async def test_legacy_program_rests_unchanged_by_v5_b_rest_change(session, clock):  # noqa: F811
     """Устаревшая версия (`pullups_legacy_step`) не мигрирует: её занятия A и B не получают отдых V5.6 —
-    ни 60 с объёма B, ни явного рецепта курса (отдых — из протокола упражнений, как до изменения)."""
+    ни 60 с объёма B, ни явного рецепта курса. Отдых нового старта — личные настройки прежнего плеера, заморожённые
+    в снимке (умолчания A=240, Б=180, межблочный=900), а не общие 90 с (P0 legacy-rest, docs/incidents)."""
     user = await _user(session, 305613)
     await _enrol(session, user, await _pullups(session), program_version="pullups_legacy_step")
     occurrences = await _main_occurrences(session, user)
@@ -536,5 +537,5 @@ async def test_legacy_program_rests_unchanged_by_v5_b_rest_change(session, clock
         assert body["course_program"] is None
         row = await session.get(TrainingSession, body["id"])
         assert "course_program" not in (row.prescription_snapshot or {}).get("provenance", {})
-        assert _rests(body["engine"]["plan"]) == ([[90, 90, 90, None], [90, 90, 90, 90, None]], [90, None])
+        assert _rests(body["engine"]["plan"]) == ([[240, 240, 240, None], [180, 180, 180, 180, None]], [900, None])
         await v2_post(session, user.telegram_id, f"{LIVE}/{body['id']}/complete", {"abandoned": True})

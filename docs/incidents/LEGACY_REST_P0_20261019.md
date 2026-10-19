@@ -39,7 +39,10 @@ Real PostgreSQL: `tests/test_web/test_v2_live_engine.py::test_legacy_step_new_st
 (defaults 240/180/900 and custom 300/210/600, frozen after a later preference change) plus
 `tests/test_legacy_rest_hotfix.py`. The original patch version (freeze after stamp) passed its mocked
 unit tests but FAILED these API tests (90 != 240): `set_prescription_snapshot` is write-once. Reverting
-the fix again makes both API tests fail. V5.6, free-workout and full-suite results: see the PR.
+the fix again makes both API tests fail. Full suite on PostgreSQL: 2891 passed, 1 skipped, 1 failed — `test_legacy_program_rests_unchanged_by_v5_b_rest_change`,
+which pinned the defect itself (legacy 90 s); its expectation is now 240/180/900. Targeted V5.6 / free-workout /
+engine-plan run: 235 passed. Frontend build and `ruff check` green; repo-wide `ruff format --check` is not clean on
+base (431 files) and was deliberately not touched.
 
 ## Read-only production inspection (run by capable release session)
 
