@@ -72,7 +72,14 @@ test.describe("ux-b: план и факультативы", () => {
     await expect(page.getByTestId("plans-now-progress")).toHaveText("На этой неделе: 1 из 3");
     const schedule = page.getByTestId("plans-now-card").getByTestId("course-schedule");
     await expect(schedule.getByTestId("course-schedule-headline")).toHaveText("Расписание вашей версии курса: 3 занятия в неделю");
-    await expect(schedule.getByTestId("course-schedule-consequence")).toContainText(/не все занятия уместятся/i);
+    // Следствие про отдых показывается РОВНО когда на этой неделе есть строка «Не уместится…» (зависит от дня недели прогона:
+    // в воскресенье выполненное сегодня занятие оставляет остальные без места, в понедельник Чт/Вс ещё помещаются).
+    const noFitRows = await page.getByTestId("plans-row-state").filter({ hasText: "Не уместится на этой неделе" }).count();
+    if (noFitRows > 0) {
+      await expect(schedule.getByTestId("course-schedule-consequence")).toContainText(/не все занятия уместятся/i);
+    } else {
+      await expect(schedule.getByTestId("course-schedule-consequence")).toHaveCount(0);
+    }
     // Нет кнопки «перейти на 2» (вне объёма кампании).
     await expect(page.getByText(/Перейти на 2/)).toHaveCount(0);
 
