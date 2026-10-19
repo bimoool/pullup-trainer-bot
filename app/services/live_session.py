@@ -18,6 +18,7 @@ POST /sessions/live (старт) + /phase/next (переход фазы) + /sets
 намеренно НЕзакрытый последний путь (см. _resolve_plain_exercise_block)."""
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -27,6 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import User
 from app.db.models_program import PlanItem, ProgramInclusion, SessionPhase, SessionStatus
 from app.db.repositories.programs import ProgramRepository
 from app.db.repositories.training_plans import TrainingPlanRepository
@@ -43,6 +45,11 @@ from app.domain.block_execution import (
     is_interval_protocol,
     rest_seconds_for_protocol,
     targets_for_protocol,
+)
+from app.domain.constants import (
+    DEFAULT_BIG_BREAK_SECONDS,
+    DEFAULT_REST_SECONDS_BLOCK_A,
+    DEFAULT_REST_SECONDS_BLOCK_B,
 )
 from app.domain.course_prescription import (
     normalize_progression_state,
@@ -444,9 +451,40 @@ class LiveSessionService:
             started_at=performed_at, timezone=user.timezone if user is not None else None,
             engine_version=self._engine_version,
             course_prescription=course_prescription, progression_state_rev=progression_state_rev,
+            snapshot_patch=await self._legacy_step_rest_patch(program_inclusion_id, user),
         )
         if self._engine_version == ENGINE_V2:
             await self._initialize_engine_v2(session_id, user_id, performed_at)
+
+    async def _legacy_step_rest_patch(
+        self, inclusion_id: int | None, user: User | None,
+    ) -> Callable[[dict], dict] | None:
+        """New legacy STEP starts retain the old player's A/B preferences, frozen once into the snapshot.
+
+        The snapshot is write-once (S1), so the patch is applied by stamp_new while the snapshot is
+        built — never afterwards, never to historical/active sessions, never to V5.6 (own prescription).
+        """
+        if inclusion_id is None or user is None:
+            return None
+        inclusion = await self._plans.get_inclusion_by_id(inclusion_id)
+        if inclusion is None or is_v5_state(inclusion.progression_state):
+            return None
+        if (inclusion.snapshot or {}).get("progression_strategy_type") != ProgressionStrategyType.STEP.value:
+            return None
+        roles = {
+            item["exercise_id"]: item.get("role")
+            for item in (inclusion.snapshot or {}).get("exercises", [])
+        }
+        rests = {
+            "block_a": user.rest_seconds_block_a or DEFAULT_REST_SECONDS_BLOCK_A,
+            "block_b": user.rest_seconds_block_b or DEFAULT_REST_SECONDS_BLOCK_B,
+        }
+        big_break = user.big_break_seconds or DEFAULT_BIG_BREAK_SECONDS
+
+        def patch(snapshot: dict) -> dict:
+            return freeze_legacy_step_rest(snapshot, roles, rests, big_break)
+
+        return patch
 
     async def _initialize_engine_v2(self, session_id: int, user_id: int, at: datetime) -> None:
         """issue #306: план движка из PrescriptionSnapshot сессии (#307 записал его этим же стартом) и
@@ -825,9 +863,12 @@ class LiveSessionService:
             blocks = [
                 BlockPlan(
                     sets_count=len(block.set_targets),
-                    rest_seconds=rest_seconds_for_protocol(protocol.protocol if protocol else None),
+                    rest_seconds=(
+                        rest_seconds_for_protocol(protocol.protocol) if protocol
+                        else _snapshot_block_rest(detail.prescription_snapshot, index)
+                    ),
                 )
-                for block, protocol in zip(detail.blocks, protocols, strict=True)
+                for index, (block, protocol) in enumerate(zip(detail.blocks, protocols, strict=True))
             ]
             current = PhaseState(
                 phase_name=_domain_phase(detail.phase_name), block_index=detail.current_block_index,
@@ -1257,6 +1298,36 @@ class LiveSessionService:
         if detail is None:
             return None
         return LiveSessionResult(session=detail)
+
+
+def freeze_legacy_step_rest(snapshot: dict, roles: dict, rests: dict, big_break: int) -> dict:
+    """Synthesized snapshot only; explicit (non-None) rests are retained. Mutates and returns snapshot."""
+    if not snapshot.get("synthesized"):
+        return snapshot
+    blocks = snapshot.get("blocks") or []
+    for index, block in enumerate(blocks):
+        role = roles.get(block.get("exercise_id"))
+        if role not in rests:
+            continue
+        sets = block.get("sets") or []
+        for set_index, set_ in enumerate(sets):
+            if set_index < len(sets) - 1 and set_.get("rest_after_seconds") is None:
+                set_["rest_after_seconds"] = rests[role]
+        if (
+            role == "block_a" and index < len(blocks) - 1
+            and roles.get(blocks[index + 1].get("exercise_id")) == "block_b"
+            and block.get("rest_after_block_seconds") is None
+        ):
+            block["rest_after_block_seconds"] = big_break
+    return snapshot
+
+
+def _snapshot_block_rest(snapshot: dict | None, index: int) -> int | None:
+    blocks = (snapshot or {}).get("blocks") or []
+    if index >= len(blocks):
+        return None
+    sets = blocks[index].get("sets") or []
+    return sets[0].get("rest_after_seconds") if sets else None
 
 
 def engine_plan_for(detail: SessionDetail) -> dict:
