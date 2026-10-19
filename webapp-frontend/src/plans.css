@@ -360,3 +360,126 @@
 .plan-add-exercise-form:focus {
   outline: none;
 }
+
+/* ---------- UX-EDITOR: формы создания/редактора плана и расписания недели ---------- */
+.plan-form .ux-text-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+}
+
+.plan-form-check {
+  display: flex;
+  align-items: center;
+  gap: var(--vp-sp-3);
+  min-height: 44px;
+}
+
+.plan-form-check input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+}
+
+.editor-qty-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--vp-sp-2);
+  padding: var(--vp-sp-1) 0;
+}
+
+.editor-qty-row .plans-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.editor-qty-row button {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.editor-qty-row .plans-row-chip {
+  flex: 0 0 auto;
+  min-width: 28px;
+  text-align: center;
+}
+
+.plan-form,
+[data-testid="plan-editor-screen"],
+[data-testid="week-schedule-screen"] {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* кнопки действий — в потоке страницы (не липкие): контент под панелью навигации уже имеет нижний отступ */
+.plan-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vp-sp-2);
+  margin-top: var(--vp-sp-4);
+  padding-bottom: var(--vp-sp-4);
+}
+
+.plans-custom-plan-card {
+  padding: var(--vp-sp-2) var(--vp-sp-4) var(--vp-sp-3);
+}
+
+.plans-custom-plan-entry {
+  margin: 0 0 var(--vp-sp-2);
+}
+
+/* Содержимое секций телеграм-UI идёт от края до края (оно рассчитано на Cell-списки) — свои поля формы
+   получают то же боковое поле, что у заголовка секции. */
+.plan-section-body {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 var(--vp-sp-4) var(--vp-sp-3);
+}
+
+.plan-section-body > .plan-week-stepper {
+  margin-bottom: var(--vp-sp-2);
+}
+
+/* шапка недели в редакторе/создании: название слева, итог справа, фаза — строкой ниже */
+.editor-week-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--vp-sp-1) var(--vp-sp-3);
+  margin-bottom: var(--vp-sp-2);
+}
+
+.editor-week-head-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--vp-sp-1);
+  min-width: 0;
+  font-weight: 600;
+}
+
+.editor-week-head-main .plan-week-chip {
+  align-self: flex-start;
+}
+
+/* итоги по дням недели — семь равных колонок, без переноса «по месту» */
+.schedule-day-totals {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--vp-sp-1);
+  text-align: center;
+}
+
+.schedule-day-totals .plans-row-chip {
+  min-width: 0;
+  padding-left: 2px;
+  padding-right: 2px;
+  white-space: nowrap;
+  font-size: 12px;
+}

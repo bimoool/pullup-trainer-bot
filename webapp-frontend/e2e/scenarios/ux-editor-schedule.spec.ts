@@ -13,7 +13,8 @@ test("UX-25: ×2 в один день, итог дня, перенос, пере
   await page.getByRole("button", { name: "Планы" }).click();
   await page.getByTestId("plans-custom-plan").click();
   await page.getByText(A).click();
-  await page.getByTestId("custom-plan-save").click();
+  await page.getByTestId("plan-create-next").click();
+  await page.getByTestId("plan-create-save").click();
   await expect(page.getByTestId("plan-editor-screen")).toBeVisible();
 
   // неделя 2: A = 2 (старт 1)

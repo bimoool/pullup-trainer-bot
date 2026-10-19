@@ -12,7 +12,8 @@ test("UX-31: «⋯» в текущей неделе, Отмена не меня�
   await page.getByRole("button", { name: "Планы" }).click();
   await page.getByTestId("plans-custom-plan").click();
   await page.getByText("Тяга UX-А").click();
-  await page.getByTestId("custom-plan-save").click();
+  await page.getByTestId("plan-create-next").click();
+  await page.getByTestId("plan-create-save").click();
   await expect(page.getByTestId("plan-editor-screen")).toBeVisible();
   await page.getByRole("button", { name: "Готово" }).click();
 

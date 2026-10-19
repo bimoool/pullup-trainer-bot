@@ -1829,12 +1829,13 @@ async def seed_journal_dedupe(session: AsyncSession, telegram_id: int) -> None:
 # --- ux-editor (UX-EDITOR, id-диапазон 941000–941099) ------------------------------------------------------
 
 
-async def _ux_editor_base(session: AsyncSession, telegram_id: int) -> tuple[User, list[Complex], TrainingPlan]:
-    """Онбординг пройден (триал = Premium), план создан сегодня, три свои тренировки «Тяга UX …»."""
-    user = await _onboard(session, telegram_id)
-    plan = TrainingPlan(user_id=user.id)
-    session.add(plan)
-    await session.flush()
+async def _ux_editor_base(
+    session: AsyncSession, telegram_id: int, *, history: bool = False,
+) -> tuple[User, list[Complex], TrainingPlan]:
+    """Онбординг пройден (триал = Premium), план создан сегодня, три свои тренировки «Тяга UX …».
+    history=True — ещё и старая тренировка обычной программы 20 дней назад (видна в Журнале)."""
+    user = await (_onboard_with_history if history else _onboard)(session, telegram_id)
+    plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
     exercise = Exercise(
         name=f"Тяга UX {telegram_id}", metric_type=MetricType.REPS, category="e2e_ux_editor",
         source_type="user", owner_user_id=user.id,
@@ -1855,6 +1856,48 @@ async def _ux_editor_base(session: AsyncSession, telegram_id: int) -> tuple[User
 async def seed_ux_editor_fresh(session: AsyncSession, telegram_id: int) -> None:
     """Редактор плана: пользователь с тремя тренировками и без своих планов — тест создаёт план сам."""
     await _ux_editor_base(session, telegram_id)
+
+
+async def _ux_editor_legacy_plan(session: AsyncSession, user: User, workouts: list[Complex], plan: TrainingPlan) -> list[PlanItem]:
+    from app.services.plan_convergence import PlanConvergenceService
+
+    today = datetime.now(UTC).astimezone(ZoneInfo(user.timezone)).date()
+    start = plan_week_number(plan.created_at.date(), today)
+    custom = CustomPlan(
+        user_id=user.id, training_plan_id=plan.id, display_name="Старый план", start_week_number=start,
+        workouts=[workouts[0].id, workouts[1].id], weeks=[2, 2, 0, 2], repeat="once", preferred_weekdays=None,
+        is_active=True,
+    )
+    session.add(custom)
+    await session.flush()
+    await PlanConvergenceService(session).converge_user_plan(
+        training_plan_id=plan.id, today=today, create_until_week=start + 3,
+    )
+    return list((await session.execute(
+        select(PlanItem).where(PlanItem.custom_plan_id == custom.id).order_by(PlanItem.id),
+    )).scalars())
+
+
+async def seed_ux_editor_journey(session: AsyncSession, telegram_id: int) -> None:
+    """Сквозной сценарий: старый свой план [А, Б] × [2, 2, 0, 2] (spec = NULL), одно занятие недели 1 уже ВЫПОЛНЕНО
+    (завершённая сессия привязана к строке плана) и старая тренировка в Журнале; курса нет."""
+    user, workouts, plan = await _ux_editor_base(session, telegram_id, history=True)
+    rows = await _ux_editor_legacy_plan(session, user, workouts, plan)
+    session.add(TrainingSession(
+        user_id=user.id, source=SessionSource.PLAN, status=SessionStatus.COMPLETED,
+        performed_at=datetime.now(UTC), plan_item_id=rows[0].id, workout_definition_id=workouts[0].id,
+    ))
+    await session.flush()
+
+
+async def seed_ux_editor_course(session: AsyncSession, telegram_id: int) -> None:
+    """Формулировки: подключённый курс «Подтягивания» И свой план одновременно (разные карточки)."""
+    user, workouts, plan = await _ux_editor_base(session, telegram_id, history=True)
+    await _ux_editor_legacy_plan(session, user, workouts, plan)
+    program = await _shipped_pull_ups_program(session)
+    await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
+    )
 
 
 async def seed_ux_editor_legacy(session: AsyncSession, telegram_id: int) -> None:
@@ -1925,6 +1968,8 @@ SCENARIOS = {
     "plans_overview": seed_plans_overview,
     "ux_editor_fresh": seed_ux_editor_fresh,
     "ux_editor_legacy": seed_ux_editor_legacy,
+    "ux_editor_journey": seed_ux_editor_journey,
+    "ux_editor_course": seed_ux_editor_course,
 }
 
 

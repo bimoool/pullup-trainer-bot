@@ -252,3 +252,16 @@ seed home_workouts 943010
 seed home_workouts 943011
 seed session_recovery 943020
 seed session_recovery 943021
+# UX-EDITOR wave 3: сквозной сценарий (старый план + выполненное занятие + история), курс + свой план.
+seed ux_editor_journey 941020
+seed ux_editor_journey 941021
+seed ux_editor_journey 941022
+seed ux_editor_journey 941023
+seed ux_editor_journey 941024
+seed ux_editor_journey 941025
+seed ux_editor_course 941030
+seed ux_editor_course 941031
+seed ux_editor_course 941032
+seed ux_editor_fresh 941040
+seed ux_editor_fresh 941041
+seed ux_editor_fresh 941042

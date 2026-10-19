@@ -25,7 +25,7 @@ import { completedInclusions, inclusionDateRange, inclusionWeekLabel } from "./p
 import { STATUS_MESSAGES } from "./WorkoutScreen";
 import { ActionSheet, MoreButton, PlanProgressBar, type SheetAction } from "./ActionSheet";
 import { AddToPlanScreen } from "./AddToPlanScreen";
-import { CustomPlanScreen } from "./CustomPlanScreen";
+import { PlanCreateScreen } from "./PlanCreateScreen";
 import { PlanEditorScreen } from "./PlanEditorScreen";
 import { WeekScheduleScreen } from "./WeekScheduleScreen";
 import { MovePlanItemScreen } from "./MovePlanItemScreen";
@@ -41,7 +41,7 @@ import {
 } from "./planRows";
 import { CourseScheduleNote, ElectiveCourseLine, ElectiveRestDayBanner, useElectiveSummary } from "./ElectiveEntry";
 import { ElectiveScreen } from "./ElectiveScreen";
-import { confirmAction } from "./telegramPlatform";
+import { FormSheet } from "./FormSheet";
 import { addExerciseWithProtocolToPlan } from "./exercisePlan";
 import { ProtocolForm, type ProtocolFormValue } from "./ProtocolForm";
 
@@ -346,6 +346,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   const [removeInclusionConfirmId, setRemoveInclusionConfirmId] = useState<number | null>(null);
   const [removingInclusionId, setRemovingInclusionId] = useState<number | null>(null);
   const [stoppingCustomPlanId, setStoppingCustomPlanId] = useState<number | null>(null);
+  const [stopSheet, setStopSheet] = useState<{ id: number; name: string } | null>(null);
   const [customPlanError, setCustomPlanError] = useState<string | null>(null);
   const [inclusionError, setInclusionError] = useState<string | null>(null);
 
@@ -441,15 +442,14 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
     }
   }
 
-  // issue #304 (B3) — «Остановить план»: свой план больше не добавляет занятия, история остаётся.
-  async function handleStopCustomPlan(customPlanId: number, name: string) {
-    if (!(await confirmAction(`Остановить план «${name}»? Выполненные тренировки останутся в истории.`))) {
-      return;
-    }
+  // issue #304 (B3) — «Остановить план»: СТОП, не удаление. Подтверждение — лист в странице (одинаково в Telegram и в
+  // браузере): что снимается и что остаётся. Ошибка остаётся внутри листа, «Останавливаю…» всегда сбрасывается.
+  async function handleStopCustomPlan(customPlanId: number) {
     setStoppingCustomPlanId(customPlanId);
     setCustomPlanError(null);
     try {
       await deactivateCustomPlan(initDataRaw, customPlanId);
+      setStopSheet(null);
       await reloadPlan();
     } catch (error) {
       setCustomPlanError(error instanceof Error ? error.message : String(error));
@@ -660,8 +660,9 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
   }
   if (myWorkoutsView.kind === "custom-plan") {
     return (
-      <CustomPlanScreen
+      <PlanCreateScreen
         initDataRaw={initDataRaw}
+        currentWeekNumber={plan.weeks.find((week) => week.id === plan.currentWeekId)?.week_number ?? null}
         onBack={() => setMyWorkoutsView({ kind: "closed" })}
         onCreated={(planId) => { setMyWorkoutsView({ kind: "plan-editor", planId }); reloadPlan(); }}
       />
@@ -948,36 +949,52 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           Свой план по неделям
         </Button>
       </div>
-      {plan.customPlans.length > 0 && (
-        <Section className="block-section" header="Свои планы">
-          {plan.customPlans.map((custom) => (
-            <div key={custom.id} className="plans-row-main" data-testid="plans-custom-plan-row" data-active={custom.is_active}>
+      {plan.customPlans.some((custom) => custom.is_active) && (
+        <Section className="block-section" header="Мой план по неделям" data-testid="plans-custom-section">
+          {plan.customPlans.filter((custom) => custom.is_active).map((custom) => (
+            <div key={custom.id} className="plans-custom-plan-card" data-testid="plans-custom-plan-row" data-active={custom.is_active}>
+              <p className="plan-item-row">{custom.display_name}</p>
               <p className="block-subtitle">
-                {`${custom.display_name}: ${custom.weeks.map((count, index) => `Н${index + 1} ${count}`).join(" · ")}`}
-                {custom.repeat === "cycle" ? " · по кругу" : ""}
-                {custom.is_active ? "" : " · остановлен"}
+                {`Занятий по неделям: ${custom.weeks.join(" · ")}`}
               </p>
-              {custom.is_active && (
+              <div className="plans-confirm-actions">
                 <Button
                   size="s" mode="outline" data-testid="plans-custom-plan-edit"
                   onClick={() => setMyWorkoutsView({ kind: "plan-editor", planId: custom.id })}
                 >
                   Настроить
                 </Button>
-              )}
-              {custom.is_active && (
                 <Button
                   size="s" mode="outline" data-testid="plans-custom-plan-stop"
                   disabled={stoppingCustomPlanId !== null}
-                  onClick={() => void handleStopCustomPlan(custom.id, custom.display_name)}
+                  onClick={() => { setCustomPlanError(null); setStopSheet({ id: custom.id, name: custom.display_name }); }}
                 >
                   {stoppingCustomPlanId === custom.id ? "Останавливаю…" : "Остановить план"}
                 </Button>
-              )}
+              </div>
             </div>
           ))}
-          {customPlanError && <p className="gap-banner">{customPlanError}</p>}
         </Section>
+      )}
+      {stopSheet !== null && (
+        <FormSheet title="Остановить план" onClose={() => { if (stoppingCustomPlanId === null) { setStopSheet(null); } }}>
+          <div data-testid="plans-stop-confirm">
+            <p className="plan-title">{`Остановить план «${stopSheet.name}»?`}</p>
+            <p className="block-subtitle" data-testid="plans-stop-text">
+              Это остановка, а не удаление. Будущие невыполненные занятия этого плана будут убраны из плана.
+              Выполненные занятия, история в Журнале и сами тренировки останутся.
+            </p>
+            {customPlanError && <p className="gap-banner" data-testid="plans-stop-error">{customPlanError}</p>}
+            <div className="plans-confirm-actions">
+              <Button size="m" data-testid="plans-stop-ok" disabled={stoppingCustomPlanId !== null}
+                onClick={() => void handleStopCustomPlan(stopSheet.id)}>
+                {stoppingCustomPlanId === stopSheet.id ? "Останавливаю…" : "Остановить план"}
+              </Button>
+              <Button size="m" mode="outline" data-testid="plans-stop-cancel" disabled={stoppingCustomPlanId !== null}
+                onClick={() => setStopSheet(null)}>Отмена</Button>
+            </div>
+          </div>
+        </FormSheet>
       )}
       <div className="workout-mode-buttons vp-tabs plans-tabs" role="tablist" aria-label="Обзор плана">
         {([["now", "Сейчас"], ["completed", "Завершённые"]] as const).map(([key, label]) => (
@@ -992,11 +1009,17 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
       </div>
       {overviewTab === "completed" && (
         <div className="profile-card" data-testid="plans-completed">
-          {finishedInclusions.length === 0 && (
+          {finishedInclusions.length === 0 && plan.customPlans.every((custom) => custom.is_active) && (
             <p className="block-subtitle" data-testid="plans-completed-empty">
               Завершённых курсов пока нет. Убранные из плана курсы появятся здесь.
             </p>
           )}
+          {plan.customPlans.filter((custom) => !custom.is_active).map((custom) => (
+            <div key={`custom-${custom.id}`} className="plan-week-day-group" data-testid="plans-completed-custom-row">
+              <p className="plan-item-row">{custom.display_name}</p>
+              <p className="block-subtitle">Свой план остановлен. Выполненные занятия сохранены в Журнале.</p>
+            </div>
+          ))}
           {finishedInclusions.map((inclusion) => (
             <div
               key={inclusion.id} className="plan-week-day-group plans-course" data-testid="plans-completed-row"
@@ -1092,7 +1115,8 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                 {confirming && (
                   <div className="plans-confirm">
                     <p className="block-subtitle">
-                      Убрать курс «{inclusion.program_name}» из плана? История сохранится.
+                      Убрать курс «{inclusion.program_name}» из плана? Будущие занятия курса будут убраны из плана.
+                      История, выполненные занятия и ваш уровень в курсе сохранятся.
                     </p>
                     {inclusionError && <p className="gap-banner">{inclusionError}</p>}
                     <div className="plans-confirm-actions">
