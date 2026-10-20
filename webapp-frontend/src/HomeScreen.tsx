@@ -12,6 +12,7 @@ import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { HomePromo, type PromoKind } from "./HomePromo";
+import { pickHomeTraining, type HomeTraining } from "./homeTraining";
 import { groupProgramsByCategory, OTHER_KEY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { ProgramPendingScreen } from "./ProgramPendingScreen";
@@ -29,6 +30,8 @@ type Props = {
   /** После «Добавить в план» из карточки Workout — переход на вкладку «Планы»
    * (тот же результат, что у добавления из «Планов»). */
   onOpenPlans: () => void;
+  /** «Начать тренировку» на Главной — тот же поток, что «Начать» на «Планах» (PlanSessionFlow). */
+  onStartSession: (planItemIds: number[], options: { manual: boolean; title: string }) => void;
   /** «+» → «Записать в журнал»: открыть Журнал со шторкой записи (#263). */
   onOpenJournalLog: () => void;
   /** «Начать» на Workout Detail — живая сессия своей тренировки вне плана. */
@@ -62,9 +65,31 @@ type WorkoutView =
 type CatalogState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number>; hasPlanItems: boolean };
+  | { phase: "ready"; programs: ProgramResponseV2[]; includedProgramIds: Set<number>; hasPlanItems: boolean; training: HomeTraining };
 
 type AddState = { phase: "idle" } | { phase: "adding"; programId: number } | { phase: "error"; message: string };
+
+/** Прямой вход в тренировку с Главной: «Начать» ведёт в тот же поток, что и на «Планах». */
+function HomeTrainingCard({ training, onStart, onOpenPlans }: {
+  training: HomeTraining; onStart: (planItemIds: number[], title: string) => void; onOpenPlans: () => void;
+}) {
+  if (training.kind === "start") {
+    return (
+      <div className="home-group" data-testid="home-training">
+        <Button className="action-button vs-primary" size="l" stretched data-testid="home-training-start"
+          onClick={() => onStart(training.planItemIds, training.title)}>
+          Начать тренировку
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="home-group" data-testid="home-training-wait">
+      <p className="screen-message">Сегодня отдых между тренировками{training.kind === "wait" && training.availableFrom ? ` — следующая с ${training.availableFrom}` : ""}.</p>
+      <Button className="action-button" size="l" stretched mode="plain" onClick={onOpenPlans}>Открыть план</Button>
+    </div>
+  );
+}
 
 /** «+»-шторка Главной: модальный диалог (#290) — фокус внутрь, Tab-ловушка, Escape/BackButton, возврат фокуса. */
 function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
@@ -94,7 +119,7 @@ function HomeQuickSheet({ onClose, onCreate, onToday, onLog }: {
  * кнопка "Начать тренировку") на "Планах" (DashboardScreen.tsx).
  */
 export function HomeScreen({
-  initDataRaw, onOpenPlans, onOpenJournalLog, onStartWorkout, onLogWorkout,
+  initDataRaw, onOpenPlans, onStartSession, onOpenJournalLog, onStartWorkout, onLogWorkout,
   initialWorkoutId = null, onInitialWorkoutShown, initialWorkoutFromJournal = true, onExitInitialWorkout,
 }: Props) {
   const [catalog, setCatalog] = useState<CatalogState>({ phase: "loading" });
@@ -247,7 +272,7 @@ export function HomeScreen({
         const includedProgramIds = new Set(
           (plan?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id),
         );
-        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0 });
+        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0, training: pickHomeTraining(plan) });
       })
       .catch((error) => {
         if (!cancelled) {
@@ -444,6 +469,13 @@ export function HomeScreen({
       {/* Заголовок экрана остаётся для скринридеров/тестов, визуально его заменяет строка поиска (как в эталоне). */}
       <h1 className="plan-title home-title-sr">Главная</h1>
 
+      {catalog.phase === "ready" && catalog.training.kind !== "none" && (
+        <HomeTrainingCard
+          training={catalog.training}
+          onStart={(ids, title) => onStartSession(ids, { manual: false, title })}
+          onOpenPlans={onOpenPlans}
+        />
+      )}
       {/* Порядок секций как в эталоне: категории → подборки → баннер → мои тренировки → баннер →
           избранное (скрыто, пока пусто) → баннер → тесты. Баннеры: сборка / запись / план дня. */}
       {catalog.phase === "loading" && <p className="screen-message">Загружаю каталог…</p>}
