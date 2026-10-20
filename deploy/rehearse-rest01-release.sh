@@ -43,7 +43,7 @@ WEB_PORT="${REHEARSE_WEB_PORT:-18781}"
 # своими mem_limit; превышение убивает ТОЛЬКО сборку/контейнер репетиции, а не хост.
 BUILD_MEM_MB="${REHEARSE_BUILD_MEM_MB:-1024}"; BUILD_CPUS="${REHEARSE_BUILD_CPUS:-0.5}"
 DB_MEM_MB="${REHEARSE_DB_MEM_MB:-256}"; REDIS_MEM_MB="${REHEARSE_REDIS_MEM_MB:-48}"
-APP_MEM_MB="${REHEARSE_APP_MEM_MB:-256}"; WEB_MEM_MB="${REHEARSE_WEB_MEM_MB:-256}"; CONTAINER_CPUS="${REHEARSE_CONTAINER_CPUS:-0.5}"
+APP_MEM_MB="${REHEARSE_APP_MEM_MB:-256}"; WEB_MEM_MB="${REHEARSE_WEB_MEM_MB:-384}"; CONTAINER_CPUS="${REHEARSE_CONTAINER_CPUS:-0.5}"
 PROD_FLOOR_MB="${REHEARSE_PROD_FLOOR_MB:-400}"  # запас, который должен остаться хосту (прод-раннер сам требует 400)
 # Старт только если доступной памяти хватает на ВСЕ потолки сразу (билдер + db + redis) плюс запас хоста; на VPS с 1 ГБ
 # рядом с production это условие не выполняется — тогда запуск на отдельном хосте (REHEARSE_DUMP).
