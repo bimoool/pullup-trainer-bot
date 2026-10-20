@@ -357,3 +357,16 @@ Before using it on production:
 The candidate has no schema changes. This mode fixes deployment preservation;
 it does not patch active session `engine_plan` or historical prescriptions. Keep
 active-session recovery separate, preserving plan/snapshot/event replay consistency.
+
+## Репетиция REST01 одним скриптом (`deploy/rehearse-rest01-release.sh`)
+
+Заменяет ручной §4 для релиза #342: клонирует публичный репозиторий в `/srv/rehearsal-*` (не из production-каталога),
+поднимает отдельный compose-проект с фейковым `BOT_TOKEN` и заблокированным `api.telegram.org`, восстанавливает КОПИЮ
+дампа (читается только файл), прогоняет контрольно прежний раннер (должен воспроизвести отказ фазы 8 и дать построчный
+diff `plan_weeks/plan_items/program_inclusions`), затем новый раннер в `rehearse-check`, сверяет отпечатки всех таблиц
+до/после, запускает независимый `--verify-only` и считает незавершённые legacy-занятия с неверным отдыхом (только по
+копии, занятия не меняются). По умолчанию удаляет копию данных, оставляет отчёты в `/srv/rehearsal-*/reports/`.
+Скрипт отказывается стартовать, если на хосте меньше 700 МБ доступной памяти (сторож прерывает прогон при <300 МБ):
+production-VPS 1 ГБ может оказаться слишком мал — тогда тот же скрипт запускают на другом Linux-хосте с Docker
+(`REHEARSE_DUMP=<путь к копии дампа>`, рядом должен лежать `.sha256`).
+Успешная репетиция не разрешает apply: apply остаётся отдельным явным шагом.
