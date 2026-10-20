@@ -12,7 +12,7 @@ import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { HomePromo, type PromoKind } from "./HomePromo";
-import { pickHomeTraining, type HomeTraining } from "./homeTraining";
+import { formatAvailableFrom, pickHomeTraining, type HomeTraining } from "./homeTraining";
 import { groupProgramsByCategory, OTHER_KEY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
 import { ProgramPendingScreen } from "./ProgramPendingScreen";
@@ -83,9 +83,10 @@ function HomeTrainingCard({ training, onStart, onOpenPlans }: {
       </div>
     );
   }
+  const from = training.kind === "wait" ? formatAvailableFrom(training.availableFrom) : null;
   return (
     <div className="home-group" data-testid="home-training-wait">
-      <p className="screen-message">Сегодня отдых между тренировками{training.kind === "wait" && training.availableFrom ? ` — следующая с ${training.availableFrom}` : ""}.</p>
+      <p className="screen-message">Сегодня отдых между тренировками{from !== null ? ` — следующая с ${from}` : ""}.</p>
       <Button className="action-button" size="l" stretched mode="plain" onClick={onOpenPlans}>Открыть план</Button>
     </div>
   );

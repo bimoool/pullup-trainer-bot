@@ -31,3 +31,11 @@ export function pickHomeTraining(plan: PlanLike | null): HomeTraining {
   const waiting = candidates.find((item) => item.state === "too_early" || item.state === "awaiting_assessment");
   return waiting !== undefined ? { kind: "wait", availableFrom: waiting.available_from ?? null } : { kind: "none" };
 }
+
+const MONTHS_GEN = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+
+/** «2026-10-22» → «22 окт» (без часовых поясов: дата уже календарная, пользовательская). */
+export function formatAvailableFrom(iso: string | null): string | null {
+  const match = iso === null ? null : /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return match === null ? null : `${Number(match[3])} ${MONTHS_GEN[Number(match[2]) - 1]}`;
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { pickHomeTraining } from "../src/homeTraining.ts";
+import { formatAvailableFrom, pickHomeTraining } from "../src/homeTraining.ts";
 
 const inclusion = (id: number, active = true) => ({ id, program_name: "Подтягивания", is_active: active });
 const item = (id: number, occurrence: number, state: string, extra: Record<string, unknown> = {}) => ({
@@ -34,4 +34,11 @@ test("нет плана, нет текущей недели или курс не
   assert.deepEqual(pickHomeTraining(null), { kind: "none" });
   assert.deepEqual(pickHomeTraining(plan([item(1, 1, "available")], [inclusion(13)], null)), { kind: "none" });
   assert.deepEqual(pickHomeTraining(plan([item(1, 1, "available")], [inclusion(13, false)])), { kind: "none" });
+});
+
+test("formatAvailableFrom: календарная дата без сдвига часового пояса", () => {
+  assert.equal(formatAvailableFrom("2026-10-22"), "22 окт");
+  assert.equal(formatAvailableFrom("2026-01-05"), "5 янв");
+  assert.equal(formatAvailableFrom(null), null);
+  assert.equal(formatAvailableFrom("мусор"), null);
 });
