@@ -106,6 +106,12 @@ if args[0] == "compose":
             bad = [{"user_id": 7, "guard_violations": ["x"]}] if env.get("REPAIR_GUARD") else []
             out(json.dumps({"mode": "dry-run", "users": 3, "total_mutations": 2, "users_detail": bad})); sys.exit(0)
         if "backfill_multi_program" in cmd:
+            if "--verify-only" in cmd:
+                if env.get("VERIFY_ONLY_WRITES") and not st.get("running", {}).get("app"):
+                    st["v2_version"] += 1; save()
+                if env.get("VERIFY_ONLY_FAIL"): sys.stderr.write("incomplete history coverage\n"); sys.exit(1)
+                out("RESULT-JSON " + json.dumps({"mode": "verify-only", "verified": True, "errors": []}))
+                sys.exit(0)
             if "--converge-history" in cmd:
                 out("DRY-RUN (ничего не записано)")
                 out("RESULT-JSON " + json.dumps({"mode": "dry-run", "users": 3, "mutations": int(env.get("CONVERGE_MUTATIONS", "0")),
@@ -201,6 +207,7 @@ if args[0] == "exec":
                 h = "N%d" % st["v2_version"]
             out("%s|5|%s" % (t, h))
         sys.exit(0)
+    if "verify:missing-plans" in sql: out(env.get("VERIFY_MISSING_PLANS", "0")); sys.exit(0)
     if "inv:noplan" in sql: out(env.get("INV_NOPLAN", "0")); sys.exit(0)
     if "inv:inclusion" in sql or "inv:dups" in sql: out("0"); sys.exit(0)
     if "inv:plans" in sql: out(env.get("INV_PLANS", "3")); sys.exit(0)
@@ -825,3 +832,39 @@ def test_production_scripts_do_not_touch_the_staging_or_plain_deploy_files():
     assert "deploy-staging-guarded-run.sh" not in text.replace("deploy-staging(-guarded)?-run", "")
     assert "post-deploy-cleanup.sh" not in RUN.read_text().split("set -euo pipefail", 1)[1]
     assert "staging_data_check.sh" not in text
+
+
+def test_fully_migrated_database_uses_verified_read_only_path(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert len([line for line in log if line.endswith("backfill_multi_program.py --verify-only")]) == 3
+    assert idx(log, "--verify-only") < idx(log, "compose -p pullup-trainer-bot stop")
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["backfill_applied"] == 1 and state["v2_version"] == 1
+    assert state["running"] == {"app": True, "web": True}
+
+
+def test_verify_only_incomplete_history_aborts_before_stop(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
+    assert proc.returncode == 1 and "verify-only failed" in proc.stderr
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["running"] == {"app": True, "web": True}
+
+
+def test_verify_only_hash_guard_still_refuses_a_mutating_verifier(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_WRITES="1")
+    assert proc.returncode == 1 and "verify-only wrote to the database" in proc.stderr
+    assert state["running"] == {"app": False, "web": False}
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+
+
+def test_missing_plan_does_not_select_verified_existing_path(sandbox):
+    # Initial migration is still the original full backfill path, not a silent skip.
+    proc, log, state = sandbox(SHA, "apply", TOKEN, VERIFY_MISSING_PLANS="1")
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert idx(log, "--verify-only") == -1
+    assert state["backfill_applied"] == 2

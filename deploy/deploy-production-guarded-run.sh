@@ -372,6 +372,32 @@ for svc in app web; do
 done
 log "build took $((SECONDS - t0))s"
 
+# Existing fully migrated deployments have no migration work to apply. Verify the
+# historical contract using the candidate BEFORE downtime; this does not materialize
+# the calendar. Missing user plans retain the initial migration flow below.
+VERIFY_EXISTING=0
+verify_existing() {
+  local label="$1"
+  dcrun app python scripts/backfill_multi_program.py --verify-only > "$WORK/verify_$label.txt" 2> "$WORK/verify_$label.err" || die "verify-only failed ($label); see $WORK/verify_$label.err and .txt"
+  dcrun app python -c '
+import json, sys
+rows = [line.removeprefix("RESULT-JSON ") for line in sys.stdin if line.startswith("RESULT-JSON ")]
+if len(rows) != 1:
+    raise SystemExit("expected exactly one verify-only result")
+d = json.loads(rows[0])
+if d.get("mode") != "verify-only" or d.get("verified") is not True or d.get("errors") != []:
+    raise SystemExit("verify-only did not verify migration coverage")
+' < "$WORK/verify_$label.txt" || die "invalid verify-only machine result ($label)"
+}
+if [ "$PREV_REV" = "$EXPECTED_TO_REV" ]; then
+  missing_plans="$(dbq "select /*verify:missing-plans*/ count(*) from users u where u.onboarding_completed_at is not null and not exists (select 1 from training_plans p where p.user_id=u.id)")"
+  if [ "$missing_plans" = "0" ]; then
+    verify_existing before-stop
+    VERIFY_EXISTING=1
+    log "existing migration coverage verified read-only before stopping writers"
+  fi
+fi
+
 # ------------------------------------------------------------------------------------------------ backup helper
 COUNTS_SQL="select /*q:legacy-counts*/ (select count(*) from users)||'/'||(select count(*) from workouts)||'/'||(select count(*) from elective_workouts)||'/'||(select count(*) from subscriptions)"
 RCHK="${DB_NAME}_restore_check"
@@ -485,6 +511,20 @@ hash_all dry-run
 cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_dry-run.txt" || die "backfill --dry-run wrote to the database"
 log "backfill dry-run: onboarded=$ONB will_migrate=$WILL already_migrated=$ALREADY (report $REPORT_DIR/1-dry-run.txt); database unchanged"
 sed 's/^/    /' "$WORK/backfill_dry.txt"
+if [ "$VERIFY_EXISTING" = "1" ] && [ "$WILL" = "0" ] && [ "$ALREADY" = "$ONB" ]; then
+  # Reverify under stopped writers: the pre-stop read cannot rule out later writes.
+  verify_existing stopped
+  cp "$WORK/verify_stopped.txt" "$REPORT_DIR/2-verify-only.txt"
+  hash_all apply1
+  cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_apply1.txt" || die "verify-only wrote to the database"
+  same_legacy after-backfill
+  verify_existing repeat
+  cp "$WORK/verify_repeat.txt" "$REPORT_DIR/3-verify-only-repeat.txt"
+  hash_all apply2
+  cmp -s "$WORK/hq_all_apply1.txt" "$WORK/hq_all_apply2.txt" || die "verify-only repeat changed the database"
+  mf backfill_mode verify-only
+  log "already-migrated database verified without applying backfill/calendar convergence"
+else
 BACKFILL_STARTED=1; mf backfill_started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 t0=$SECONDS
 backfill > "$WORK/backfill_a1.txt" 2> "$WORK/backfill_a1.err" || die "backfill (apply) failed (see $WORK/backfill_a1.err); committed users stay migrated — R3 or re-run"
@@ -503,6 +543,7 @@ cp "$WORK/backfill_a2.txt" "$REPORT_DIR/3-reapply.txt"
 hash_all apply2
 cmp -s "$WORK/hq_all_apply1.txt" "$WORK/hq_all_apply2.txt" || die "backfill re-run changed the database (not idempotent)"
 mf backfill_done_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
 # контрольный dry-run после apply: все онбордившиеся уже смигрированы, мигрировать нечего, БД не меняется
 backfill --dry-run > "$WORK/backfill_dry2.txt" 2> "$WORK/backfill_dry2.err" || die "post-apply backfill --dry-run failed (see $WORK/backfill_dry2.err; needs 628144f)"
 cp "$WORK/backfill_dry2.txt" "$REPORT_DIR/3b-post-apply-dry-run.txt"

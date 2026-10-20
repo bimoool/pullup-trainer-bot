@@ -312,3 +312,48 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 * **Порядок:** preflight → прочитать вывод → apply с токеном. Обрыв соединения во время apply — fail-safe скрипта
   (§6): `app`/`web` остаются остановленными, в логе Actions — точная команда отката, её параметры вводятся в
   `production-rollback.yml`.
+
+## Already-migrated no-schema hotfix: verified read-only backfill path
+
+For a candidate with the same Alembic head as the live database, the guarded
+production runner now checks for onboarded users lacking a plan. If none are
+missing, it runs the candidate's `scripts/backfill_multi_program.py --verify-only`
+**before stopping app/web**. Verification failure aborts before downtime; it does
+not fall back to a mutating repair. Initial migrations with missing plans retain
+the existing full backfill flow and its strict guards.
+
+`--verify-only` requires its own fresh transaction and uses PostgreSQL
+`REPEATABLE READ, READ ONLY`. It checks plan/user/inclusion consistency, duplicate
+keys, keyed coverage for every completed legacy workout and elective (including
+users not in the onboarded count), existing catalog, and the existing history
+convergence semantics. Missing/changed copies, unknown ownership states, history
+mutations or ambiguity reject release. It never calls seed/normalization/calendar
+materialization. Normal runtime may later advance the current calendar; release
+verification deliberately does not require calendar convergence mutations to be zero.
+
+After writers stop, phase 8 reruns verification twice. It still checks full database
+fingerprints, `same_legacy`, post-apply dry-run/no-write controls, plan guards and
+all existing final invariants. This is not a whitelist of mutable plan tables.
+The verifier is only selected if pre-stop verification passed and the stopped
+backfill dry-run still sees all onboarded users migrated. No plan/calendar or
+historical repair is silently permitted by this mode.
+
+Before using it on production:
+
+1. Apply the implementation patch to the actual reviewed hotfix/main SHA; it does
+   not include the REST fix itself. Require PostgreSQL tests and existing CI green
+   on that combined SHA. Source files at bd80bc9 and d1b2375 were independently
+   confirmed identical for the production runner/backfill; recheck newer bases.
+2. On an isolated fresh production DB copy, disable outbound Telegram and rehearse
+   the exact runner/candidate. Save verifier JSON, table fingerprints, rollback
+   rehearsal and plan dry-run report. Inspect the row diff from the prior failed
+   backfill separately; synthetic tests do not reproduce that database.
+3. Review/install the production runner from the exact tested commit at the path
+   used by the forced-command dispatcher. Record its sha256. Do not substitute
+   a candidate without `--verify-only` support; it will safely refuse before stop.
+4. Run read-only preflight, then only the previously authorized guarded operation
+   with the exact candidate SHA. Existing rollback/runbook restrictions remain.
+
+The candidate has no schema changes. This mode fixes deployment preservation;
+it does not patch active session `engine_plan` or historical prescriptions. Keep
+active-session recovery separate, preserving plan/snapshot/event replay consistency.
