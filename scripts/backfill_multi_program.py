@@ -829,6 +829,71 @@ async def backfill_all(session: AsyncSession, *, now: datetime, dry_run: bool = 
     return report
 
 
+async def verify_migrated_database(session: AsyncSession) -> dict:
+    """Verify existing migration coverage without calendar materialization or any writes.
+
+    Requires a fresh session: the server-enforced repeatable-read/read-only transaction
+    protects this mode even if a future dry-run implementation accidentally writes.
+    """
+    if session.in_transaction():
+        raise ValueError("verify-only requires a fresh session")
+    await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+    errors: list[str] = []
+    onboarded = int(await session.scalar(text(
+        "SELECT count(*) FROM users WHERE onboarding_completed_at IS NOT NULL"
+    )))
+    checks = {
+        "onboarded_without_plan": """SELECT count(*) FROM users u
+            WHERE u.onboarding_completed_at IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM training_plans p WHERE p.user_id=u.id)""",
+        "plans_without_onboarded_user": """SELECT count(*) FROM training_plans p
+            JOIN users u ON u.id=p.user_id WHERE u.onboarding_completed_at IS NULL""",
+        "plans_without_one_active_inclusion": """SELECT count(*) FROM training_plans p
+            WHERE (SELECT count(*) FROM program_inclusions i
+                   WHERE i.training_plan_id=p.id AND i.is_active) <> 1""",
+        "duplicate_legacy_copies": """SELECT count(*) FROM (SELECT 1 FROM training_sessions
+            WHERE legacy_id IS NOT NULL GROUP BY origin,legacy_id HAVING count(*)>1) d""",
+        "workouts_without_copy": """SELECT count(*) FROM workouts w WHERE w.status='completed'
+            AND NOT EXISTS (SELECT 1 FROM training_sessions s WHERE s.origin='legacy_backfill'
+                AND s.legacy_id=w.id AND s.user_id=w.user_id AND s.status='completed')""",
+        "electives_without_copy": """SELECT count(*) FROM elective_workouts e
+            WHERE NOT EXISTS (SELECT 1 FROM training_sessions s WHERE s.origin='legacy_elective'
+                AND s.legacy_id=e.id AND s.user_id=e.user_id AND s.status='completed')""",
+    }
+    for name, sql in checks.items():
+        count = int(await session.scalar(text(sql)))
+        if count:
+            errors.append(f"{name}={count}")
+    # Use the SAME historical reconciliation semantics as migration, without row locks.
+    # Calendar convergence is deliberately excluded: legitimate next-week work belongs
+    # to runtime, not to this no-schema release's preservation check.
+    user_ids = list((await session.execute(select(User.id).order_by(User.id))).scalars().all())
+    required_names = {EXERCISE_BLOCK_A_NAME, EXERCISE_BLOCK_B_NAME, *ELECTIVE_EXERCISE_NAMES.values()}
+    names = set((await session.execute(select(Exercise.name).where(Exercise.name.in_(required_names)))).scalars().all())
+    missing_names = sorted(required_names - names)
+    if missing_names:
+        errors.append("missing_legacy_catalog:" + ",".join(missing_names))
+    service = LegacyHistoryConvergenceService(session, read_only=True)
+    mutations = 0
+    unresolved = 0
+    for user_id in user_ids if not missing_names else []:
+        report = await service.converge_user(user_id, apply=False)
+        mutations += report.mutations
+        unresolved += len(report.ambiguous)
+        if report.counts["superseded_but_alive"]:
+            errors.append(f"superseded_live_copy:user_id={user_id}")
+    if mutations:
+        errors.append(f"history_mutations={mutations}")
+    if unresolved:
+        errors.append(f"unresolved_history={unresolved}")
+    result = {
+        "mode": "verify-only", "verified": not errors, "users_onboarded": onboarded,
+        "history_mutations": mutations, "unresolved": unresolved, "errors": errors,
+    }
+    await session.rollback()
+    return result
+
+
 def _parse_user_ids(value: str) -> list[int]:
     try:
         ids = sorted({int(part) for part in value.split(",")})
@@ -841,6 +906,7 @@ def _parse_user_ids(value: str) -> list[int]:
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--verify-only", action="store_true", help="verify fully migrated DB in a read-only transaction")
     parser.add_argument("--dry-run", action="store_true", help="только посчитать, ничего не писать")
     parser.add_argument(
         "--truncate", action="store_true",
@@ -866,6 +932,15 @@ async def main() -> None:
         ),
     )
     args = parser.parse_args()
+    if args.verify_only:
+        if args.dry_run or args.truncate or args.converge_history or args.apply or args.user_ids is not None:
+            raise SystemExit("--verify-only cannot be combined with other modes")
+        async with async_session_factory() as session:
+            result = await verify_migrated_database(session)
+            print("RESULT-JSON " + json.dumps(result, sort_keys=True))
+            if not result["verified"]:
+                raise SystemExit(1)
+        return
     if args.dry_run and args.truncate:
         raise SystemExit("--dry-run и --truncate несовместимы")
     if args.converge_history and (args.truncate or args.dry_run):

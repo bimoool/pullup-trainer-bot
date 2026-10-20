@@ -2,7 +2,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, text
+import pytest
+from sqlalchemy import func, select, text
 
 from app.db.models import EquipmentType, User
 from app.db.models_program import (
@@ -548,3 +549,125 @@ async def test_missing_legacy_copy_is_still_reported(session, user: User):
     assert report.training_sessions_regular_total == 0
     assert report.workouts_completed_expected == 1
     assert report.training_sessions_not_reconciled == 1
+
+
+async def _verify_with_fresh_session(session):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from scripts.backfill_multi_program import verify_migrated_database
+
+    await session.commit()
+    async with AsyncSession(bind=session.bind, expire_on_commit=False) as verifier:
+        return await verify_migrated_database(verifier)
+
+
+async def _migration_table_rows(session):
+    return {
+        name: list((await session.execute(text(f'SELECT row_to_json(t)::text FROM {name} t ORDER BY id'))).scalars())
+        for name in ('plan_items', 'plan_weeks', 'program_inclusions', 'training_sessions', 'set_logs')
+    }
+
+
+async def test_verify_only_preserves_calendar_at_next_week(session, user):
+    await _onboard(session, user)
+    await backfill_all(session, now=NOW)
+    # Aged calendar need not be materialized to release a no-schema hotfix.
+    await session.execute(text("UPDATE plan_weeks SET start_date=start_date-7"))
+    before = await _migration_table_rows(session)
+    result = await _verify_with_fresh_session(session)
+    assert result['verified'] is True and result['errors'] == []
+    assert await _migration_table_rows(session) == before
+
+
+async def test_verify_only_rejects_onboarded_without_plan(session, user):
+    await _onboard(session, user)
+    result = await _verify_with_fresh_session(session)
+    assert result['verified'] is False
+    assert 'onboarded_without_plan=1' in result['errors']
+
+
+async def test_verify_only_rejects_missing_catalog_without_creating_it(session, user):
+    await _onboard(session, user)
+    await backfill_all(session, now=NOW)
+    await session.execute(text("UPDATE exercises SET name='missing catalog' WHERE name='Подтягивания — сила'"))
+    count = await session.scalar(select(func.count()).select_from(Exercise))
+    result = await _verify_with_fresh_session(session)
+    assert result['verified'] is False
+    assert any(error.startswith('missing_legacy_catalog:') for error in result['errors'])
+    assert await session.scalar(select(func.count()).select_from(Exercise)) == count
+
+
+async def test_verify_only_rejects_missing_legacy_copy(session, user):
+    await _onboard(session, user)
+    workout_set = await _make_workout_set(session, user)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=NOW,
+        block_a_reps=BlockLog(working_reps=(10, 10, 9), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    await backfill_all(session, now=NOW)
+    await session.execute(text("DELETE FROM training_sessions WHERE origin='legacy_backfill'"))
+    before = await _migration_table_rows(session)
+    result = await _verify_with_fresh_session(session)
+    assert result['verified'] is False
+    assert 'workouts_without_copy=1' in result['errors']
+    assert await _migration_table_rows(session) == before
+
+
+async def test_verify_only_server_rejects_accidental_write(session, user, monkeypatch):
+    from sqlalchemy.exc import DBAPIError
+
+    from app.services.legacy_history_convergence import LegacyHistoryConvergenceService
+
+    await _onboard(session, user)
+    await backfill_all(session, now=NOW)
+
+    async def accidental_writer(self, user_id, *, apply):
+        await self._session.execute(text("UPDATE users SET username='must not write' WHERE id=:id"), {'id': user_id})
+
+    monkeypatch.setattr(LegacyHistoryConvergenceService, 'converge_user', accidental_writer)
+    with pytest.raises(DBAPIError, match='read-only'):
+        await _verify_with_fresh_session(session)
+
+
+async def test_verify_only_accepts_migrated_history_without_writes(session, user):
+    """Production shape: a completed legacy workout with its migrated copy verifies, and no row moves."""
+    await _onboard(session, user)
+    workout_set = await _make_workout_set(session, user)
+    await WorkoutRepository(session).record_workout(
+        user_id=user.id, workout_set_id=workout_set.id, performed_at=NOW,
+        block_a_reps=BlockLog(working_reps=(10, 10, 9), max_reps=11),
+        block_b_reps=BlockLog(working_reps=(3, 3, 3, 3), max_reps=3),
+        block_a_equipment_type=EquipmentType.BAND, block_a_equipment_value=BAND_VALUE,
+        block_b_equipment_type=EquipmentType.BAND, block_b_equipment_value=BAND_VALUE,
+    )
+    await backfill_all(session, now=NOW)
+    copies = await session.scalar(select(func.count()).select_from(TrainingSession).where(TrainingSession.origin == 'legacy_backfill'))
+    assert copies == 1
+    before = await _migration_table_rows(session)
+    result = await _verify_with_fresh_session(session)
+    assert result['verified'] is True and result['errors'] == [], result
+    assert await _migration_table_rows(session) == before
+
+
+async def test_reapply_on_next_monday_moves_calendar_but_verify_only_does_not(session, user):
+    """Root cause of the phase-8 abort (REST01): re-running backfill on an already migrated DB after the ISO
+    week rolled over materializes the new PlanWeek/PlanItems, which the guarded runner reads as 'legacy data
+    changed'. verify-only must stay silent on the same data."""
+    await _onboard(session, user)
+    await backfill_all(session, now=NOW)
+    next_monday = NOW + timedelta(days=(7 - NOW.weekday()))
+    before = await _migration_table_rows(session)
+    dry = await backfill_all(session, now=next_monday, dry_run=True)
+    assert dry.users_migrated_this_run == 0
+    assert await _migration_table_rows(session) == before  # dry-run is silent
+    verified = await _verify_with_fresh_session(session)
+    assert verified['verified'] is True
+    assert await _migration_table_rows(session) == before  # verify-only is silent
+    await backfill_all(session, now=next_monday)
+    after = await _migration_table_rows(session)
+    changed = sorted(name for name in before if before[name] != after[name])
+    assert 'plan_weeks' in changed and 'plan_items' in changed  # what the old guard read as legacy drift
+    assert 'training_sessions' not in changed and 'set_logs' not in changed  # history is untouched

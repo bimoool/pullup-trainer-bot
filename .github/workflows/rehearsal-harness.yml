@@ -1,0 +1,71 @@
+name: rehearsal-harness
+
+# Полный Docker-прогон скрипта репетиции релиза (deploy/rehearse-rest01-release.sh) на ЧИСТОМ раннере GitHub с СИНТЕТИЧЕСКИМ
+# дампом (не production-данные: PII на GitHub не уходят). Проверяет оркестрацию целиком: изолированный проект, жёсткие лимиты
+# памяти, сборки раннера в отдельном билдере, контрольный прогон прежнего раннера (должен воспроизвести отказ фазы 8),
+# целевой прогон нового, verify-only, неизменность данных, подсчёт, очистку. Production не затрагивается: секреты не используются.
+
+on:
+  pull_request:
+    paths:
+      - deploy/rehearse-rest01-release.sh
+      - deploy/rehearsal/**
+      - deploy/deploy-production-guarded-run.sh
+      - .github/workflows/rehearsal-harness.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rehearsal-harness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      CANDIDATE: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install app
+        run: pip install -e ".[dev,web]"
+      - name: Build the synthetic production-shaped dump
+        env:
+          BOT_TOKEN: ci-rehearsal-token
+          DATABASE_URL: postgresql+asyncpg://pullup:pullup@127.0.0.1:55432/pullup
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          docker run -d --name synthetic-pg -e POSTGRES_USER=pullup -e POSTGRES_PASSWORD=pullup -e POSTGRES_DB=pullup -p 127.0.0.1:55432:5432 postgres:16
+          for i in $(seq 1 30); do docker exec synthetic-pg pg_isready -U pullup -d pullup && break; sleep 2; done
+          alembic upgrade head
+          python deploy/rehearsal/make_synthetic_dump.py
+          mkdir -p /tmp/synthetic
+          docker exec synthetic-pg pg_dump -U pullup -Fc pullup > /tmp/synthetic/prod-like.dump
+          sha256sum /tmp/synthetic/prod-like.dump > /tmp/synthetic/prod-like.dump.sha256
+          docker rm -f synthetic-pg
+          ls -l /tmp/synthetic
+      - name: Rehearsal (full Docker run, root, isolated project)
+        run: |
+          sudo mkdir -p /srv
+          set -o pipefail
+          sudo env REHEARSE_DUMP=/tmp/synthetic/prod-like.dump bash deploy/rehearse-rest01-release.sh "$CANDIDATE" 2>&1 | tee /tmp/rehearsal-console.log
+      - name: Collect reports
+        if: always()
+        run: |
+          mkdir -p /tmp/rehearsal-artifacts
+          sudo cp -r /srv/rehearsal-rest01/reports/. /tmp/rehearsal-artifacts/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" /tmp/rehearsal-artifacts 2>/dev/null || true
+          cp /tmp/rehearsal-console.log /tmp/rehearsal-artifacts/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-reports
+          path: /tmp/rehearsal-artifacts
+          if-no-files-found: warn
