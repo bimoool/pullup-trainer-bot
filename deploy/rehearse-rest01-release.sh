@@ -18,6 +18,14 @@
 #      до/после (должен совпасть), собственный verify-only и подсчёт незавершённых legacy-занятий с неверным отдыхом.
 #   6. по умолчанию удаляет копию данных (тома, дамп-копию, построчные выгрузки); сохраняет только отчёты без данных.
 #
+# Ресурсы: ВСЕ сборки (репетиции и самого раннера) идут в отдельном контейнерном билдере BuildKit с жёстким cgroup-потолком памяти без
+# swap (REHEARSE_BUILD_MEM_MB, по умолчанию 768), контейнеры проекта — со своими mem_limit/memswap_limit/cpus/pids_limit; при превышении
+# погибает только сборка/контейнер репетиции. Старт разрешён лишь если доступной памяти хватает на сумму потолков плюс запас хоста
+# (REHEARSE_PROD_FLOOR_MB, 400) — на production-VPS 1 ГБ это не выполняется, поэтому там репетиция отказывается стартовать
+# и запускается на отдельном хосте. Авария (сторож памяти, TERM/INT/HUP): вся группа процессов шага убивается (TERM, затем KILL),
+# билдер уничтожается вместе с идущей сборкой, контейнеры проекта останавливаются. Откатные теги образов раннера удаляются
+# ТОЛЬКО по manifest'ам собственного каталога репетиции (никакого общего списка тегов Docker).
+#
 # Ничего не пишет в production: единственное обращение к проду — чтение файла дампа. Активные занятия не меняются
 # (подсчёт идёт по копии). Рассылку не запускает.
 set -euo pipefail
@@ -31,38 +39,93 @@ CONTROL_SHA="${REHEARSE_CONTROL_SHA:-d1b237567d732d4d670232d8a060f9849c3132a8}" 
 NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-37d6c627e072aae7fbbdb8e07ba97c4b8a69087d627359a6f9aa90f94f6f656d}"
 FROM_REV="${REHEARSE_FROM_REV:-b5d8e1f3a6c9}"
 WEB_PORT="${REHEARSE_WEB_PORT:-18781}"
-MIN_MEM_MB="${REHEARSE_MIN_MEM_MB:-700}"        # на старте; прод-раннер сам требует 400
-ABORT_MEM_MB="${REHEARSE_ABORT_MEM_MB:-300}"    # сторож: ниже — немедленно снести репетицию, чтобы не задеть прод
+# Жёсткие потолки памяти (cgroup, БЕЗ swap): сборки идут в ОТДЕЛЬНОМ контейнерном билдере BuildKit, контейнеры проекта — со
+# своими mem_limit; превышение убивает ТОЛЬКО сборку/контейнер репетиции, а не хост.
+BUILD_MEM_MB="${REHEARSE_BUILD_MEM_MB:-768}"; BUILD_CPUS="${REHEARSE_BUILD_CPUS:-0.5}"
+DB_MEM_MB="${REHEARSE_DB_MEM_MB:-256}"; REDIS_MEM_MB="${REHEARSE_REDIS_MEM_MB:-48}"
+APP_MEM_MB="${REHEARSE_APP_MEM_MB:-256}"; WEB_MEM_MB="${REHEARSE_WEB_MEM_MB:-256}"; CONTAINER_CPUS="${REHEARSE_CONTAINER_CPUS:-0.5}"
+PROD_FLOOR_MB="${REHEARSE_PROD_FLOOR_MB:-400}"  # запас, который должен остаться хосту (прод-раннер сам требует 400)
+# Старт только если доступной памяти хватает на ВСЕ потолки сразу (билдер + db + redis) плюс запас хоста; на VPS с 1 ГБ
+# рядом с production это условие не выполняется — тогда запуск на отдельном хосте (REHEARSE_DUMP).
+MIN_MEM_MB="${REHEARSE_MIN_MEM_MB:-$((BUILD_MEM_MB + DB_MEM_MB + REDIS_MEM_MB + PROD_FLOOR_MB))}"
+ABORT_MEM_MB="${REHEARSE_ABORT_MEM_MB:-300}"    # сторож: ниже — немедленно остановить сборку и репетицию, чтобы не задеть прод
 MIN_DISK_MB="${REHEARSE_MIN_DISK_MB:-6144}"
 CONTROL="${REHEARSE_CONTROL:-1}"
 KEEP="${REHEARSE_KEEP:-0}"                       # 1 — не удалять копию данных после репетиции
 CANON_PROD_DIR="/root/pullup-trainer-bot"; CANON_PROD_PROJECT="pullup-trainer-bot"
 
+BUILDER="${PROJECT}-builder"
 CLONE="$BASE/pullup-trainer-bot"; BIN="$BASE/bin"; REPORTS="$BASE/reports"; BACKUPS="$BASE/backups"; SQLD="$BASE/sql"; SNAP="$BASE/snap"
 log() { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() { printf '[%s] REHEARSAL REFUSED/FAILED: %s\n' "$(date -u +%H:%M:%S)" "$*" >&2; exit 1; }
 dc() { (cd "$CLONE" && docker compose -p "$PROJECT" "$@"); }
-lowprio() { if command -v ionice >/dev/null 2>&1; then nice -n 19 ionice -c3 "$@"; else nice -n 19 "$@"; fi; }
-
-# --------------------------------------------------------------------------------------------- cleanup
+# --------------------------------------------------------------------------------------------- process control
+# Каждый долгий шаг (сборка, раннер) идёт в СВОЕЙ группе процессов; её PGID лежит в $BASE/.jobpgid. Аварийная остановка
+# убивает всю группу (TERM, затем KILL), уничтожает билдер BuildKit (вместе с идущей сборкой) и останавливает контейнеры проекта.
+run_job() { # <log> <cmd...>: возвращает код команды
+  local log_file="$1"; shift
+  setsid "$@" > "$log_file" 2>&1 < /dev/null &
+  local pid=$!; echo "$pid" > "$BASE/.jobpgid"
+  local rc=0; wait "$pid" || rc=$?
+  rm -f "$BASE/.jobpgid"
+  return "$rc"
+}
+stop_job_group() {
+  local pg=""; [ -f "$BASE/.jobpgid" ] && pg="$(cat "$BASE/.jobpgid" 2>/dev/null || true)"
+  [[ "$pg" =~ ^[0-9]+$ ]] || return 0
+  kill -TERM -- "-$pg" 2>/dev/null || true
+  local i; for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 -- "-$pg" 2>/dev/null || break; sleep 1; done
+  kill -KILL -- "-$pg" 2>/dev/null || true
+  rm -f "$BASE/.jobpgid"
+}
+emergency_stop() {
+  [ "$PROJECT" != "$CANON_PROD_PROJECT" ] || return 0
+  stop_job_group
+  docker buildx rm --force "$BUILDER" >/dev/null 2>&1 || true      # убивает идущую сборку: билдер — отдельный контейнер репетиции
+  local ids; ids="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true)"
+  [ -z "$ids" ] || docker kill $ids >/dev/null 2>&1 || true
+}
+make_builder() { # отдельный контейнерный билдер с ЖЁСТКИМ лимитом памяти (без swap) и CPU; им собирают и репетиция, и раннер
+  docker buildx rm --force "$BUILDER" >/dev/null 2>&1 || true
+  docker buildx create --name "$BUILDER" --driver docker-container --driver-opt default-load=true --bootstrap >/dev/null \
+    || die "cannot create the dedicated BuildKit builder $BUILDER"
+  local c; c="$(docker ps -aq --filter "name=^buildx_buildkit_${BUILDER}0$")"
+  [ -n "$c" ] || die "builder container of $BUILDER not found"
+  docker update --memory="${BUILD_MEM_MB}m" --memory-swap="${BUILD_MEM_MB}m" --cpus="$BUILD_CPUS" "$c" >/dev/null \
+    || die "cannot apply the memory/CPU limit to the builder (refusing to build without a hard cap)"
+  local want=$((BUILD_MEM_MB * 1024 * 1024))
+  [ "$(docker inspect -f '{{.HostConfig.Memory}}' "$c")" = "$want" ] && [ "$(docker inspect -f '{{.HostConfig.MemorySwap}}' "$c")" = "$want" ] \
+    || die "builder memory limit was not applied (Memory/MemorySwap != ${BUILD_MEM_MB} MB)"
+  export BUILDX_BUILDER="$BUILDER"
+  log "builder $BUILDER: hard cap ${BUILD_MEM_MB} MB (no swap), ${BUILD_CPUS} CPU; every build of this rehearsal and of the runner uses it"
+}
+remove_rollback_tags() { # ТОЛЬКО теги из manifest'ов этой репетиции ($BACKUPS), с проверкой проекта/каталога и формата имени
+  local m tag
+  for m in "$BACKUPS"/prod-pre-*.manifest; do
+    [ -f "$m" ] || continue
+    grep -qx "project=$PROJECT" "$m" || continue
+    grep -qx "dir=$CLONE" "$m" || continue
+    while IFS= read -r tag; do
+      [[ "$tag" =~ ^local/prod-(app|web):pre-[0-9a-f]{7}-[0-9]{8}T[0-9]{6}Z$ ]] || continue
+      docker rmi "$tag" >/dev/null 2>&1 || true
+    done < <(sed -n 's/^\(app\|web\)_saved_tag=//p' "$m")
+  done
+}
 project_cleanup() {
   [ "$PROJECT" != "$CANON_PROD_PROJECT" ] || die "refusing to touch the production compose project"
   if [ -d "$CLONE" ]; then
     # одноразовые контейнеры раннера ЭТОГО проекта (метка guarded.run + проект репетиции); чужие/прод не трогаем
     local ids; ids="$(docker ps -aq --filter label=guarded.run --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true)"
     [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
-    dc down -v --remove-orphans >/dev/null 2>&1 || true
+    dc down -v --rmi local --remove-orphans >/dev/null 2>&1 || true   # контейнеры, тома и образы, собранные ЭТИМ проектом
   fi
-  # образы репетиции (теги проекта и откатные теги раннера local/prod-*:pre-<sha7>-<ts> от ЭТОГО проекта не отличить по метке — не трогаем)
-  docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${PROJECT}-(app|web):" | xargs -r docker rmi >/dev/null 2>&1 || true
-  # откатные теги local/prod-*:pre-*, созданные раннером ЭТОЙ репетиции (список «до» записан при старте)
-  if [ -f "$BASE/.tags-before" ]; then
-    docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^local/prod-(app|web):pre-' | sort | comm -13 "$BASE/.tags-before" - | xargs -r docker rmi >/dev/null 2>&1 || true
-  fi
+  remove_rollback_tags
+  docker buildx rm --force "$BUILDER" >/dev/null 2>&1 || true
 }
+if [ "${REHEARSE_SOURCE_ONLY:-0}" = 1 ]; then return 0 2>/dev/null || exit 0; fi   # для тестов: определения без выполнения
 if [ "${1:-}" = "cleanup" ]; then
   [ "$BASE" != "$CANON_PROD_DIR" ] && [[ "$BASE" == /srv/rehearsal-* ]] || die "cleanup only for a /srv/rehearsal-* base (got $BASE)"
-  project_cleanup; rm -rf -- "$CLONE" "$BIN" "$BACKUPS" "$SQLD" "$SNAP"; log "cleanup done (reports kept in $REPORTS)"; exit 0
+  stop_job_group; project_cleanup; rm -rf -- "$CLONE" "$BIN" "$BACKUPS" "$SQLD" "$SNAP"; log "cleanup done (reports kept in $REPORTS)"; exit 0
 fi
 
 [[ $# -eq 1 && "$1" =~ ^[0-9a-f]{40}$ ]] || { echo "usage: $0 <40-hex candidate sha> | cleanup" >&2; exit 2; }
@@ -85,38 +148,55 @@ existing="$(docker ps -a --format '{{.Label "com.docker.compose.project"}}' | gr
 [ ! -e "$CLONE" ] || die "$CLONE already exists: run '$0 cleanup' first"
 if pgrep -f 'deploy-production-guarded-run\.sh|rollback-production-guarded\.sh' >/dev/null 2>&1; then die "a production guarded run/rollback is active — never rehearse alongside it"; fi
 mem="$(free -m | awk 'NR==2{print $7}')"; avail="$(df -Pm /srv | awk 'NR==2{print $4}')"
-log "host: memory available ${mem} MB (need ${MIN_MEM_MB}), free disk on /srv ${avail} MB (need ${MIN_DISK_MB}), swap used $(free -m | awk 'NR==3{print $3}') MB"
-[ "$mem" -ge "$MIN_MEM_MB" ] || die "available memory ${mem} MB < ${MIN_MEM_MB} MB: this host is too small to rehearse next to production. Run the same script on another Linux host with Docker (copy the dump and its .sha256 there; set REHEARSE_DUMP)"
+for v in BUILD_MEM_MB DB_MEM_MB REDIS_MEM_MB APP_MEM_MB WEB_MEM_MB PROD_FLOOR_MB MIN_MEM_MB ABORT_MEM_MB; do [[ "${!v}" =~ ^[0-9]{1,6}$ ]] || die "$v must be an integer (MB)"; done
+log "host: memory available ${mem} MB (need ${MIN_MEM_MB} = builder ${BUILD_MEM_MB} + db ${DB_MEM_MB} + redis ${REDIS_MEM_MB} + host reserve ${PROD_FLOOR_MB}), free disk on /srv ${avail} MB (need ${MIN_DISK_MB}), swap used $(free -m | awk 'NR==3{print $3}') MB"
+[ "$mem" -ge "$MIN_MEM_MB" ] || die "available memory ${mem} MB < ${MIN_MEM_MB} MB: a hard-capped rehearsal does not fit next to production on this host (a 1 GB production VPS cannot host it safely). Run the same script on a separate Linux host with Docker: copy the dump and its .sha256 there and set REHEARSE_DUMP"
+docker buildx version >/dev/null 2>&1 || die "docker buildx is required (dedicated memory-capped builder)"
 [ "$avail" -ge "$MIN_DISK_MB" ] || die "free disk ${avail} MB < ${MIN_DISK_MB} MB"
 
 mkdir -p "$BASE" "$BIN" "$REPORTS" "$BACKUPS" "$SQLD" "$SNAP"; chmod 700 "$BASE"
 RUN_REPORT="$REPORTS/rehearsal-$SHA7-$TS"; mkdir -p "$RUN_REPORT"
-docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^local/prod-(app|web):pre-' | sort > "$BASE/.tags-before" || true
 exec > >(tee -a "$RUN_REPORT/rehearsal.log") 2>&1
 log "REHEARSAL REST01 candidate=$SHA project=$PROJECT base=$BASE dump=$DUMP (read-only) control=$CONTROL"
 
 MAIN_PID=$$
+# Сторож: каждые ~3 с замеряет доступную память хоста и память контейнеров репетиции (пики -> mem-peaks); при падении доступной
+# памяти ниже ABORT_MEM_MB немедленно останавливает сборку/раннер/контейнеры и завершает репетицию.
 ( while true; do
     m="$(free -m | awk 'NR==2{print $7}')"
-    if [ "${m:-9999}" -lt "$ABORT_MEM_MB" ]; then echo "[watchdog] memory available ${m} MB < ${ABORT_MEM_MB} MB: aborting the rehearsal to protect production" >&2
-      pkill -TERM -f "docker.*compose.* -p $PROJECT " 2>/dev/null || true
-      docker ps -q --filter "label=com.docker.compose.project=$PROJECT" | xargs -r docker kill >/dev/null 2>&1 || true
-      kill -TERM "$MAIN_PID" 2>/dev/null; exit 0; fi
-    sleep 5
+    echo "host_available_mb ${m:-0}" >> "$BASE/.mem-samples"
+    docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null | grep -E "^(${PROJECT}-|buildx_buildkit_${BUILDER})" >> "$BASE/.mem-samples" || true
+    if [ "${m:-9999}" -lt "$ABORT_MEM_MB" ]; then
+      echo "[watchdog] memory available ${m} MB < ${ABORT_MEM_MB} MB: stopping the build/runner/containers and aborting the rehearsal to protect production" >&2
+      emergency_stop; kill -TERM "$MAIN_PID" 2>/dev/null; exit 0
+    fi
+    sleep 2
   done ) &
 WATCHDOG=$!
+mem_peaks() { # пики по контейнерам репетиции и минимум доступной памяти хоста -> stdout и mem-peaks.txt
+  [ -f "$BASE/.mem-samples" ] || return 0
+  awk '
+    function mib(x,   n, u) { n = x + 0; u = x; gsub(/[0-9.]/, "", u); if (u ~ /^GiB/) return n * 1024; if (u ~ /^KiB|^kB/) return n / 1024; if (u ~ /^B/) return n / 1048576; return n }
+    $1 == "host_available_mb" { if (min == "" || $2 + 0 < min + 0) min = $2; next }
+    { name = $1; used = mib($2); if (used > peak[name]) peak[name] = used }
+    END { for (k in peak) printf "peak_container_mib %s %.0f\n", k, peak[k]; if (min != "") printf "min_host_available_mb %s\n", min }
+  ' "$BASE/.mem-samples" | sort | tee "$RUN_REPORT/mem-peaks.txt"
+}
 finish() {
   rc=$?; kill "$WATCHDOG" 2>/dev/null || true
+  emergency_stop || true
+  log "memory peaks during the rehearsal (hard caps: builder ${BUILD_MEM_MB} MB, db ${DB_MEM_MB}, redis ${REDIS_MEM_MB}, app ${APP_MEM_MB}, web ${WEB_MEM_MB}):"
+  mem_peaks | sed 's/^/    /' || true
   if [ "$KEEP" = 1 ]; then log "REHEARSE_KEEP=1: data copy kept ($PROJECT, $BASE); remove with: $0 cleanup"
   else
-    log "removing the data copy (compose project volumes, dump copy, row-level exports)"
-    project_cleanup || true; rm -rf -- "$CLONE" "$SNAP" "$BACKUPS" "$SQLD" 2>/dev/null || true
+    log "removing the data copy (compose project volumes and images, rollback tags of this run, dump copy, row-level exports)"
+    project_cleanup || true; rm -rf -- "$CLONE" "$SNAP" "$BACKUPS" "$SQLD" "$BASE/.mem-samples" 2>/dev/null || true
   fi
   [ "$rc" = 0 ] && log "RESULT: rehearsal passed. Report: $RUN_REPORT" || log "RESULT: rehearsal FAILED (exit $rc). Report/logs: $RUN_REPORT"
   exit "$rc"
 }
 trap finish EXIT
-trap 'exit 143' TERM INT
+trap 'exit 143' TERM INT HUP
 
 # --------------------------------------------------------------------------------------------- 1 code and runners
 log "== [1] clone (public repo, not the production directory) and pin the tools"
@@ -160,18 +240,37 @@ GOOGLE_SHEETS_CREDENTIALS_PATH=
 GITHUB_TOKEN=
 ENV
 chmod 600 .env
-cat > docker-compose.override.yml <<'YML'
+cat > docker-compose.override.yml <<YML
 services:
+  db:
+    mem_limit: ${DB_MEM_MB}m
+    memswap_limit: ${DB_MEM_MB}m
+    cpus: ${CONTAINER_CPUS}
+    pids_limit: 200
+  redis:
+    mem_limit: ${REDIS_MEM_MB}m
+    memswap_limit: ${REDIS_MEM_MB}m
+    cpus: ${CONTAINER_CPUS}
+    pids_limit: 100
   app:
     restart: "no"
+    mem_limit: ${APP_MEM_MB}m
+    memswap_limit: ${APP_MEM_MB}m
+    cpus: ${CONTAINER_CPUS}
+    pids_limit: 200
     extra_hosts: ["api.telegram.org:127.0.0.1"]
   web:
     restart: "no"
+    mem_limit: ${WEB_MEM_MB}m
+    memswap_limit: ${WEB_MEM_MB}m
+    cpus: ${CONTAINER_CPUS}
+    pids_limit: 200
     extra_hosts: ["api.telegram.org:127.0.0.1"]
 YML
 mkdir -p secrets
 printf '.env\ndocker-compose.override.yml\nsecrets/\n' >> .git/info/exclude
 CF="$CLONE/docker-compose.yml,$CLONE/docker-compose.override.yml"
+make_builder
 
 mkdir -p "$SQLD"
 cat > "$SQLD/fingerprint.sql" <<'SQL'
@@ -245,7 +344,8 @@ psql_db() { dc exec -T db sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -
 prepare_state() { # прежний код (prod HEAD) + восстановленная копия дампа; app/web только СОЗДАНЫ (бот и Telegram не стартуют)
   log "-- prepare: prior code $OLD_CODE_SHA (prod HEAD), restored copy of the dump"
   git checkout --quiet --detach "$OLD_CODE_SHA"
-  COMPOSE_PARALLEL_LIMIT=1 lowprio docker compose -p "$PROJECT" build app web
+  run_job "$RUN_REPORT/build-prior-code.log" env COMPOSE_PARALLEL_LIMIT=1 nice -n 19 docker compose -p "$PROJECT" build app web \
+    || { tail -n 15 "$RUN_REPORT/build-prior-code.log" | sed 's/^/    build| /'; die "build of the prior code failed (a memory-capped OOM shows as exit 137 / 'killed')"; }
   dc up -d db redis
   local i; for i in $(seq 1 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$(dc ps -q db)" 2>/dev/null || true)" = healthy ] && break; sleep 2; done
   [ "$(docker inspect -f '{{.State.Health.Status}}' "$(dc ps -q db)")" = healthy ] || die "rehearsal db did not become healthy"
@@ -271,12 +371,11 @@ snapshot() { # <label>: отпечатки ВСЕХ таблиц + постро�
   done
   log "snapshot $1: $(wc -l < "$SNAP/fp_$1.txt") tables fingerprinted"
 }
-run_runner() { # <runner> <candidate sha> <logfile>; возвращает код выхода раннера
-  local rc=0
-  ( cd "$CLONE" && PROD_DIR="$CLONE" PROD_PROJECT="$PROJECT" PROD_BACKUP_DIR="$BACKUPS" PROD_COMPOSE_FILES="$CF" \
-      PROD_EXPECTED_FROM_REV="$FROM_REV" PROD_EXPECTED_TO_REV="$FROM_REV" PROD_HEALTH_TIMEOUT=360 PROD_MIN_MEM_MB=400 \
-      COMPOSE_PARALLEL_LIMIT=1 lowprio "$1" "$2" rehearse-check ) > "$3" 2>&1 || rc=$?
-  return "$rc"
+run_runner() { # <runner> <candidate sha> <logfile>; возвращает код раннера; в своей группе процессов (аварийно убивается целиком)
+  run_job "$3" env PROD_DIR="$CLONE" PROD_PROJECT="$PROJECT" PROD_BACKUP_DIR="$BACKUPS" PROD_COMPOSE_FILES="$CF" \
+    PROD_EXPECTED_FROM_REV="$FROM_REV" PROD_EXPECTED_TO_REV="$FROM_REV" PROD_HEALTH_TIMEOUT=360 PROD_MIN_MEM_MB="$PROD_FLOOR_MB" \
+    COMPOSE_PARALLEL_LIMIT=1 BUILDX_BUILDER="$BUILDER" \
+    bash -c 'cd "$1" && shift && exec nice -n 19 "$@"' _ "$CLONE" "$1" "$2" rehearse-check
 }
 
 # --------------------------------------------------------------------------------------------- 3 control run (old runner)
