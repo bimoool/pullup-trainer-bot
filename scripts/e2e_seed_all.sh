@@ -27,6 +27,8 @@ seed v5_one_rep_max 930502
 # ui-clarity (fix-wave1/ui-clarity.spec.ts): СВОЙ профиль «курс без 1RM» — только чтение (пред-экран, без сохранения);
 # 930502 принадлежит course-v5-engine.spec.ts, который проходит тест 1RM и меняет его состояние.
 seed v5_one_rep_max 930701
+# вход в тренировку с Главной (home-start-training.spec.ts): СВОЙ профиль — спек стартует сессию.
+seed plan_week_start_session 930801
 seed plan_week_manual_session 900017
 seed journal_combined 900018
 seed plan_week_stepper 990001
