@@ -47,3 +47,68 @@ Mac (`~/pullup-private/rest01`), not in git. Copy of the data removed afterwards
 3. Rehearsal artefacts on the owner's Mac (`~/pullup-private/rest01`: dump copy + reports) contain personal data; delete
    after the retention period.
 4. Sessions already persisted with 90 s before the fix are a separate decision (none found in the copy).
+
+---
+
+# Home → workout entry release (2026-10-20, evening)
+
+Model: Claude Sonnet 5.5. Production now runs **`9f5cc234b1456925f6b2dff25a3607740bc0ef44`** (PR #344, tree identical to the
+CI-green and staged `87f1548`); staging runs the same SHA. REST01 (`1804a62`) is contained in it.
+
+## Actual versions found (nothing assumed)
+
+* production `1804a62` (main), alembic `b5d8e1f3a6c9`;
+* staging was **not newer**: `/home/deploy/pullup-trainer-bot-staging` ran `8263763` = `campaign/ux-ref-20261018`
+  (54 commits ahead of base `e2ed40e`, 9 behind main: no REST01 fix, hence the old short rest) with two extra additive
+  migrations `c7e2a9d4b1f8` (web auth tables) and `d4b7e1a9c3f5` (`custom_plans.spec`). The old clone in
+  `/root/pullup-trainer-bot-staging` (`cbb5f46`, 785 behind) is a stale leftover, not the running staging.
+
+## Root cause of "no entry from the main screen"
+
+The Mini App Home tab is a program catalog (`HomeScreen.tsx`); the only route into a workout was a banner at the very bottom
+("Готовы заниматься?") that merely switched to Plans, then "Начать" -> "Начать". Production logs show the owner starting
+through `/dashboard/status` (Plans), never from Home. Not a config/URL problem: both bots open the same Mini App, the
+menu button is `MINI_APP_URL` (prod `https://app.bimoool.com`, staging `https://staging.app.bimoool.com`). Reproduced
+locally with main + a restored copy of the production dump (browser, signed initData): Home had no start path; Plans start
+worked. Staging "worked" only because its owner-visible entry/rest state differed (old code), not because it was newer.
+
+## Fix (PR #344, limited to the entry)
+
+`pickHomeTraining` (`webapp-frontend/src/homeTraining.ts`) selects the first `available`, uncredited program occurrence of the
+current week; Home shows a primary **"Начать тренировку"** that opens the same `PlanSessionFlow` as Plans (rest/prescription
+logic untouched). If the plan says rest, Home says so with the date ("следующая с 22 окт") and links to the plan.
+Tests: 5 unit tests (mutation: dropping the credited filter fails one), e2e `home-start-training.spec.ts` (V5.6, own seed
+930801). The campaign branch was NOT merged and no old test version was put over REST01.
+
+## Verification
+
+* local (main + prod-dump copy, owner's legacy account): Home -> "Начать тренировку" -> pre-start -> start; the created
+  session's engine plan has rest **240/180/900** (A/B/big break);
+* CI on `87f1548`: pytest, e2e, frontend build, ruff, security, review all green; merge commit `9f5cc23` has the identical tree;
+* staging (own DB `pullup_staging`, own bot `@fittest111_bot`, own token): 3 users, all V5.6; rolled-back start probe for
+  the V5.6 user = 240/180/900; Home shows the rest-day notice for a user inside the spacing window; alembic
+  `b5d8e1f3a6c9`, users/sessions 3/18 unchanged. No legacy-program user exists on staging, so the legacy rest check was done on the
+  production copy (above and in the REST01 rehearsal), not on staging;
+* production: preflight OK (`PROD_EXPECTED_FROM_REV=TO=b5d8e1f3a6c9`), guarded apply exit 0 (verify-only path, backfill
+  migrated 0/skipped 61, invariants OK), downtime 18:53:56 -> 18:57:13 UTC. After: HEAD `9f5cc23`, `/health` ok locally and
+  public, bundle contains the new button, `freeze_legacy_step_rest` in the running container, no log errors, data identical
+  (99/61/74/0/81, sessions started 1 / completed 77 = +1 owner test session).
+
+## Staging changes (separate DB and tokens kept)
+
+Backup `/home/deploy/backups/staging-pre-home-release-20261020T180359Z.dump` (+ `.sha256`), rollback image tags
+`local/staging-{app,web}:pre-home-release-20261020`. Alembic downgraded `d4b7e1a9c3f5 -> b5d8e1f3a6c9` (only dropped the empty
+`web_*` tables and an all-NULL `custom_plans.spec`), images built on the Mac for linux/amd64 (not on the 1 GB-class VPS
+next to production) and loaded, checkout `9f5cc23`.
+
+## Leftovers
+
+1. The UX/auth campaign (`campaign/ux-ref-20261018`) is no longer on staging; it is intact on GitHub and needs its own
+   rebase onto main + its two migrations if it is to be released.
+2. Staging images were built off-server; the next staging deploy through the guarded staging script expects different
+   revisions (`EXPECTED_FROM/TO_REV` in `/home/deploy/deploy-staging-guarded-run.sh` still point at the campaign line) and will
+   refuse until updated.
+3. Owner to confirm on a phone: Home shows "Начать тренировку" (or the rest-day notice) in the production bot. I did not
+   impersonate the owner on production or start a production workout.
+4. Rollback points on prod: manifest `prod-pre-9f5cc23-*.manifest`; post-deploy cleanup not run. Local artefacts with personal data
+   (`~/pullup-private/rest01`) to be deleted by the owner when no longer needed.
