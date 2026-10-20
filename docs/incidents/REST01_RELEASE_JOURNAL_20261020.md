@@ -92,7 +92,7 @@ Tests: 5 unit tests (mutation: dropping the credited filter fails one), e2e `hom
 * production: preflight OK (`PROD_EXPECTED_FROM_REV=TO=b5d8e1f3a6c9`), guarded apply exit 0 (verify-only path, backfill
   migrated 0/skipped 61, invariants OK), downtime 18:53:56 -> 18:57:13 UTC. After: HEAD `9f5cc23`, `/health` ok locally and
   public, bundle contains the new button, `freeze_legacy_step_rest` in the running container, no log errors, data identical
-  (99/61/74/0/81, sessions started 1 / completed 77 = +1 owner test session).
+  (99/61/74/0/81, sessions started 1 / completed 77, same as at preflight; the owner's own test workouts earlier today account for 74 -> 77).
 
 ## Staging changes (separate DB and tokens kept)
 
