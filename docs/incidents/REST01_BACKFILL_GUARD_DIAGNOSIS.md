@@ -31,3 +31,8 @@ migrations (a user without a plan) keep the original full backfill path. Active-
 
 PostgreSQL tests for the verifier and the runner's shell flow pass in CI-equivalent runs. NOT done: rehearsal of the
 exact runner on a restored copy of the production database (required before the next production apply).
+
+## Update 2026-10-20
+
+Rehearsal on a restored production copy done and the fix released (`1804a62`); the row diff is established
+and the verify-only path ran in production. See `REST01_RELEASE_JOURNAL_20261020.md`.
