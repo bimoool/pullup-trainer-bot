@@ -19,7 +19,7 @@
 #   6. по умолчанию удаляет копию данных (тома, дамп-копию, построчные выгрузки); сохраняет только отчёты без данных.
 #
 # Ресурсы: ВСЕ сборки (репетиции и самого раннера) идут в отдельном контейнерном билдере BuildKit с жёстким cgroup-потолком памяти без
-# swap (REHEARSE_BUILD_MEM_MB, по умолчанию 768), контейнеры проекта — со своими mem_limit/memswap_limit/cpus/pids_limit; при превышении
+# swap (REHEARSE_BUILD_MEM_MB, по умолчанию 1024: измеренный пик сборки web — 710 МиБ), контейнеры проекта — со своими mem_limit/memswap_limit/cpus/pids_limit; при превышении
 # погибает только сборка/контейнер репетиции. Старт разрешён лишь если доступной памяти хватает на сумму потолков плюс запас хоста
 # (REHEARSE_PROD_FLOOR_MB, 400) — на production-VPS 1 ГБ это не выполняется, поэтому там репетиция отказывается стартовать
 # и запускается на отдельном хосте. Авария (сторож памяти, TERM/INT/HUP): вся группа процессов шага убивается (TERM, затем KILL),
@@ -41,7 +41,7 @@ FROM_REV="${REHEARSE_FROM_REV:-b5d8e1f3a6c9}"
 WEB_PORT="${REHEARSE_WEB_PORT:-18781}"
 # Жёсткие потолки памяти (cgroup, БЕЗ swap): сборки идут в ОТДЕЛЬНОМ контейнерном билдере BuildKit, контейнеры проекта — со
 # своими mem_limit; превышение убивает ТОЛЬКО сборку/контейнер репетиции, а не хост.
-BUILD_MEM_MB="${REHEARSE_BUILD_MEM_MB:-768}"; BUILD_CPUS="${REHEARSE_BUILD_CPUS:-0.5}"
+BUILD_MEM_MB="${REHEARSE_BUILD_MEM_MB:-1024}"; BUILD_CPUS="${REHEARSE_BUILD_CPUS:-0.5}"
 DB_MEM_MB="${REHEARSE_DB_MEM_MB:-256}"; REDIS_MEM_MB="${REHEARSE_REDIS_MEM_MB:-48}"
 APP_MEM_MB="${REHEARSE_APP_MEM_MB:-256}"; WEB_MEM_MB="${REHEARSE_WEB_MEM_MB:-256}"; CONTAINER_CPUS="${REHEARSE_CONTAINER_CPUS:-0.5}"
 PROD_FLOOR_MB="${REHEARSE_PROD_FLOOR_MB:-400}"  # запас, который должен остаться хосту (прод-раннер сам требует 400)
@@ -373,7 +373,8 @@ snapshot() { # <label>: отпечатки ВСЕХ таблиц + постро�
 }
 run_runner() { # <runner> <candidate sha> <logfile>; возвращает код раннера; в своей группе процессов (аварийно убивается целиком)
   run_job "$3" env PROD_DIR="$CLONE" PROD_PROJECT="$PROJECT" PROD_BACKUP_DIR="$BACKUPS" PROD_COMPOSE_FILES="$CF" \
-    PROD_EXPECTED_FROM_REV="$FROM_REV" PROD_EXPECTED_TO_REV="$FROM_REV" PROD_HEALTH_TIMEOUT=360 PROD_MIN_MEM_MB="$PROD_FLOOR_MB" \
+    PROD_EXPECTED_FROM_REV="$FROM_REV" PROD_EXPECTED_TO_REV="$FROM_REV" PROD_HEALTH_TIMEOUT=360 \
+    PROD_HEALTH_URL="http://127.0.0.1:${WEB_PORT}/health" PROD_MIN_MEM_MB="$PROD_FLOOR_MB" \
     COMPOSE_PARALLEL_LIMIT=1 BUILDX_BUILDER="$BUILDER" \
     bash -c 'cd "$1" && shift && exec nice -n 19 "$@"' _ "$CLONE" "$1" "$2" rehearse-check
 }

@@ -122,7 +122,7 @@ def test_every_container_has_a_hard_memory_cap_without_swap_and_the_builder_is_c
     assert "MIN_MEM_MB=\"${REHEARSE_MIN_MEM_MB:-$((BUILD_MEM_MB + DB_MEM_MB + REDIS_MEM_MB + PROD_FLOOR_MB))}\"" in SRC
 
 
-@pytest.mark.parametrize("runner_env", ["BUILDX_BUILDER=\"$BUILDER\"", "PROD_PROJECT=\"$PROJECT\""])
+@pytest.mark.parametrize("runner_env", ["BUILDX_BUILDER=\"$BUILDER\"", "PROD_PROJECT=\"$PROJECT\"", "PROD_HEALTH_URL=\"http://127.0.0.1:${WEB_PORT}/health\""])
 def test_runner_builds_with_the_capped_builder_and_in_the_rehearsal_project(runner_env):
     block = SRC.split("run_runner() {", 1)[1].split("\n}\n", 1)[0]
     assert runner_env in block and "run_job" in block
