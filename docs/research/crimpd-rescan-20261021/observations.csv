@@ -1,1 +1,2 @@
 obs_id,scenario_id,date,crimpd_version,platform,status,action,result,evidence
+OBS-0001,CR-A01,2026-10-21,8.5.3 (8050300),Android 15 AVD Pixel6,OBSERVED,"force-stop + am start MainActivity","Открылась Главная: категории Endurance/Power Endurance/Strength & Power, поиск, + и меню; нижняя навигация Home/Training Plans/Logbook/Analytics/Profile; без лицензионного диалога",~/android-ref-lab/screens/rescan_000_launch.png
