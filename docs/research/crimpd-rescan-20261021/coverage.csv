@@ -60,19 +60,19 @@ CR-F08,F,Упражнение в нескольких местах,NOT_STARTED,U
 CR-F09,F,Область: подход/сессия/будущие/шаблон,PARTIAL,OBSERVED,OBS-0016,scopes: only two exist — template (future) vs log of the past
 CR-F10,F,Сохранность истории A→B,OBSERVED,OBSERVED,OBS-0014;OBS-0017,A=3/4 kg preserved after template change
 CR-F11,F,Правка программы посередине,PARTIAL,OBSERVED,OBS-0017,mid-program edit within a plan not tested
-CR-F12,F,Правка исторической записи,NOT_STARTED,UNKNOWN,,
+CR-F12,F,Правка исторической записи,PARTIAL,OBSERVED,OBS-0014;OBS-0017;OBS-0023,"A→B on template, history snapshot kept; Edit Log of past entry also checked"
 CR-G01,G,Предстарт/запуск/работа/отдых,PARTIAL,OBSERVED,OBS-0013,"GET READY, rep, rest"
 CR-G02,G,Фактический ввод vs план,PARTIAL,OBSERVED,OBS-0007;OBS-0014,actual vs plan in log sheet
 CR-G03,G,Пауза/назад/пропуск/досрочно,NOT_STARTED,UNKNOWN,,
-CR-G04,G,Отмена/случайный выход/перезапуск,NOT_STARTED,UNKNOWN,,
+CR-G04,G,Отмена/случайный выход/перезапуск,PARTIAL,OBSERVED,OBS-0024,accidental exit variants observed
 CR-G05,G,Двойной тап,NOT_STARTED,UNKNOWN,,
-CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009,minimise and force-stop observed; Android only
+CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009;OBS-0024,in-app/background/recents/force-stop checked on Android emulator only; iPhone BLOCKED; tab switch inside app not checked
 CR-G07,G,Итог/следующий шаг,NOT_STARTED,UNKNOWN,,
 CR-G08,G,Заметки/RPE/самочувствие,NOT_STARTED,UNKNOWN,,
 CR-H01,H,Звук внутри приложения,NOT_STARTED,UNKNOWN,,
 CR-H02,H,Беззвучный режим,NOT_STARTED,UNKNOWN,,
 CR-H03,H,Вибрация/визуальный сигнал,NOT_STARTED,UNKNOWN,,
-CR-H04,H,Экран погашен/фон,NOT_STARTED,UNKNOWN,,
+CR-H04,H,Экран погашен/фон,PARTIAL,OBSERVED,OBS-0024,timer keeps counting in background (visual only; audio/notification not checked: emulator -no-audio)
 CR-H05,H,Наушники/музыка,NOT_STARTED,UNKNOWN,,
 CR-H06,H,Часы,NOT_STARTED,UNKNOWN,,
 CR-H07,H,Разрешения ОС,NOT_STARTED,UNKNOWN,,
