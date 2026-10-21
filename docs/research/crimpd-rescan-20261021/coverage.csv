@@ -4,8 +4,8 @@ CR-A02,A,Выбор цели/уровня/программы/оборудова�
 CR-A03,A,Что объясняется до подключения программы,NOT_STARTED,UNKNOWN,,
 CR-A04,A,Первый обязательный шаг после подключения,PARTIAL,OBSERVED,OBS-0004,after adding template: no mandatory step seen up to Save form
 CR-A05,A,Программы с замерами и без,PARTIAL,INFERRED,OBS-0003,template seen has no assessment; other templates unchecked
-CR-A06,A,Замеры вне программы,NOT_STARTED,UNKNOWN,,
-CR-A07,A,Использование имеющегося результата,NOT_STARTED,UNKNOWN,,
+CR-A06,A,Замеры вне программы,PARTIAL,OBSERVED,OBS-0018;OBS-0019;OBS-0020,tests→load link observed for pull-up family; other families not yet
+CR-A07,A,Использование имеющегося результата,PARTIAL,OBSERVED,OBS-0019,load computed from stored result
 CR-A08,A,Повторный замер,NOT_STARTED,UNKNOWN,,
 CR-A09,A,Несколько обязательных замеров,NOT_STARTED,UNKNOWN,,
 CR-A10,A,Путь замер→первая тренировка,NOT_STARTED,UNKNOWN,,
@@ -15,10 +15,10 @@ CR-B01,B,Объяснение смысла/единиц/техники заме�
 CR-B02,B,Подготовка/разминка/подбор нагрузки/отдых,PARTIAL,OBSERVED,OBS-0006;OBS-0007,start/execution observed; save of result not done (would write to owner's logbook)
 CR-B03,B,Успех/неудача/остановка/повтор/исправление,NOT_STARTED,UNKNOWN,,
 CR-B04,B,Подтверждённые результаты,NOT_STARTED,UNKNOWN,,
-CR-B05,B,Итог замера и влияние на программу,NOT_STARTED,UNKNOWN,,
-CR-B06,B,История замеров и срок актуальности,NOT_STARTED,UNKNOWN,,
-CR-B07,B,Ручной ввод vs тест,NOT_STARTED,UNKNOWN,,
-CR-B08,B,Изменение результата в середине программы,NOT_STARTED,UNKNOWN,,
+CR-B05,B,Итог замера и влияние на программу,PARTIAL,OBSERVED,OBS-0018;OBS-0020,result updates load immediately; shown in Profile
+CR-B06,B,История замеров и срок актуальности,PARTIAL,OBSERVED,OBS-0020,history of tests only via logs; Profile shows latest
+CR-B07,B,Ручной ввод vs тест,PARTIAL,OBSERVED,OBS-0020,result = max set of a test log
+CR-B08,B,Изменение результата в середине программы,PARTIAL,OBSERVED,OBS-0020;OBS-0021,"change/delete of result changes the computed load, no warning"
 CR-C01,C,Главная после подключения,NOT_STARTED,UNKNOWN,,
 CR-C02,C,Главная после тренировки,NOT_STARTED,UNKNOWN,,
 CR-C03,C,Кратчайший путь к следующей тренировке,PARTIAL,OBSERVED,OBS-0010,route and tap count observed on owner's real plan; rest/skip/unfinished not yet
@@ -80,11 +80,11 @@ CR-I01,I,Запись вне приложения,NOT_STARTED,UNKNOWN,,
 CR-I02,I,Свободная активность/каталог/своя,NOT_STARTED,UNKNOWN,,
 CR-I03,I,Задним числом,NOT_STARTED,UNKNOWN,,
 CR-I04,I,Просмотр/правка/дубль/удаление,PARTIAL,OBSERVED,OBS-0014,"log card seen; Edit/Clone/Delete exist, not exercised"
-CR-I05,I,Влияние на программу/аналитику,NOT_STARTED,UNKNOWN,,
+CR-I05,I,Влияние на программу/аналитику,PARTIAL,OBSERVED,OBS-0023,Edit Log affects analytics via Completion %
 CR-I06,I,План vs факт,NOT_STARTED,UNKNOWN,,
 CR-I07,I,Неполные/прерванные/удалённые,NOT_STARTED,UNKNOWN,,
 CR-I08,I,Экспорт/фильтры/поиск,NOT_STARTED,UNKNOWN,,
-CR-J01,J,Периоды/объём/категории/регулярность,NOT_STARTED,UNKNOWN,,
+CR-J01,J,Периоды/объём/категории/регулярность,PARTIAL,OBSERVED,OBS-0023,"summary table seen; periods 1/3 Mo, Custom not exercised"
 CR-J02,J,План/факт/прогресс,NOT_STARTED,UNKNOWN,,
 CR-J03,J,Замеры и динамика,NOT_STARTED,UNKNOWN,,
 CR-J04,J,Сводки/дайджесты/серии/цели,NOT_STARTED,UNKNOWN,,
