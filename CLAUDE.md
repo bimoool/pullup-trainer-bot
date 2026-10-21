@@ -25,6 +25,12 @@ GitHub Issues с метками `status:*`. Чат/сессия одноразо
 правило чекпойнта commit → push → комментарий → статус: `docs/AGENT_EXECUTION_MODEL.md`
 § Orchestration, `docs/PLANNER_AGENT.md`, `docs/WORKER_AGENT.md`.
 
+**Перед выдачей любого задания** (владельцу, worker'у, другой сессии — включая исследование, аудит,
+документацию и промпты) обязательно прочитать `docs/AGENT_EXECUTION_MODEL.md` § «Navigator brief gate»
+и начать задание полностью заполненным заголовком оттуда. Для UX по референсу действует там же
+«Reference audit to implementation gate»: две проходки аудита → проверенный бэклог → рассмотрение
+спринтов владельцем → только затем реализация.
+
 ## Приоритет источников
 
 `.specify/memory/constitution.md` > `docs/PROJECT_SPEC.md` > `docs/IMPLEMENTATION_PLAN.md` >
