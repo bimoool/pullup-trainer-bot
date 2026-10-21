@@ -184,15 +184,12 @@ test("V5.6 на свежем профиле: онбординг → програ
   const available = new Date(moscow.getFullYear(), moscow.getMonth(), moscow.getDate() + 3);
   const nextWeek = 3 > daysToSunday;
   await expect(page.getByText(nextWeek ? "Не успеть на этой неделе" : `Доступно с ${available.getDate()} `, { exact: false })).toBeVisible();
+  // Пока отдых K1 не закончился, кнопки старта нет ни у одного занятия группы — в том числе у «не успеть»:
+  // сервер всё равно отказал бы 409, а выбором другого занятия отдых не обходится. Подпись называет день старта.
   if (nextWeek) {
-    // Строка «Не успеть на этой неделе» сохраняет кнопку «Начать», но старт раньше отдыха всё равно отказан:
-    // пред-экран объясняет, с какого дня можно (правило отдыха не обходится).
-    await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
-    await expect(page.getByTestId("pre-screen-too-early")).toContainText(`доступна с ${available.getDate()} `);
-    await expect(page.getByRole("button", { name: "Начать", exact: true })).toHaveCount(0);
-  } else {
-    await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
+    await expect(page.getByText(`старт с ${available.getDate()} `, { exact: false })).toBeVisible();
   }
+  await expect(page.getByRole("button", { name: /^Начать: Подтягивания/ })).toHaveCount(0);
 
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);

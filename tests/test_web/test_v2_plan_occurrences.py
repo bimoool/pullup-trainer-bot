@@ -497,3 +497,30 @@ async def test_audit_schedule_label_follows_the_users_inclusion_not_the_new_v5_d
     await session.flush()
     rows = await _schedule_rows(session, newcomer, program_id)
     assert [(count, label) for count, label, _ in rows] == [(2, "2 раза в неделю")]
+
+
+async def test_infeasible_occurrence_under_rest_carries_the_rest_date_and_cannot_be_started(session, user: User, clock):
+    """Регрессия (неделя 19–25 окт владельца): под действующим отдыхом MAIN «не успеть» показывалось с активной
+    кнопкой «Начать». Контракт для клиента: ответ плана отдаёт `spacing[main].available_from`, а у infeasible-занятия
+    тот же `available_from`; старт ЛЮБОГО занятия группы до этой даты отклоняется 409 (нельзя обойти отдых выбором
+    другого занятия), с этой даты — разрешён."""
+    await _enrol(session, user, clock, now=WED)
+    clock(WED)
+    occurrences = _week_items(await _plan(session, user), 1)
+    first = await _start(session, user, [occurrences[0]["id"]])
+    assert first.status_code == 200, first.text
+    await _finish(session, user, first, performed_at=WED)
+
+    clock(THU)
+    plan = await _plan(session, user)
+    # Ср 7 окт + 3 = сб 10 окт: 2-е занятие укладывается в субботу, 3-е (вт 13 окт) уже за неделей (конец — вс 11 окт).
+    assert [s["available_from"] for s in plan["spacing"] if s["spacing_group"] == "main"] == ["2026-10-10"]
+    by_index = {i["occurrence_index"]: i for i in _week_items(plan, 1)}
+    assert (by_index[2]["state"], by_index[2]["available_from"]) == ("too_early", "2026-10-10")
+    assert (by_index[3]["state"], by_index[3]["available_from"]) == ("infeasible", "2026-10-10")
+    for index in (2, 3):
+        rejected = await _start(session, user, [by_index[index]["id"]])
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["detail"] == {**rejected.json()["detail"], "code": "too_early", "available_from": "2026-10-10"}
+    clock(MON + timedelta(days=5))  # суббота 10 окт — отдых закончился
+    assert (await _start(session, user, [by_index[3]["id"]])).status_code == 200

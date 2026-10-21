@@ -264,3 +264,28 @@ async def test_dashboard_status_ready_reflects_last_recorded_progression(session
     # не замороженную стартовую цель 10 (та же формула, что и в тесте выше,
     # без отката - здесь не gap_rollback).
     assert body["block_a"]["target"] == _expected_target_a_after_one_session()
+
+
+async def test_gap_retest_counts_native_sessions_not_only_legacy_history(session, user: User):
+    """Регрессия (неделя 19–25 окт владельца): «повторный замер» считался от последней записи legacy-таблицы
+    `workouts` (13 сентября → «38 дней»), хотя человек тренировался в Mini App 17 и 20 октября. Перерыв
+    считается от того же «последнего старта MAIN» (legacy + нативные), что и отдых K1."""
+    from tests.test_web.test_dashboard import _record_workout
+
+    program = await _make_step_program(session)
+    inclusion = await _create_inclusion(session, user.telegram_id, program.id)
+    now = datetime.now(UTC)
+    # Рассчитано руками: GAP_RETEST_DAYS = 35; legacy 40 дней назад — за порогом, нативная сессия 4 дня назад — нет
+    # (и отдых K1 = 3 дня уже прошёл, поэтому «too_early» не перекрывает проверку перерыва).
+    await _record_workout(session, user, performed_at=now - timedelta(days=40))
+    await _record_session_days_ago(session, user.telegram_id, inclusion, days_ago=4)
+
+    dashboard = (await v2_get(session, telegram_id=user.telegram_id, path="/api/dashboard")).json()
+    assert dashboard["status"] != "gap_retest_required"
+    assert dashboard["days_since_last_workout"] == 4
+    status = (await v2_get(session, telegram_id=user.telegram_id, path="/api/v2/dashboard/status")).json()
+    assert status["status"] != "gap_retest_required"
+    user.onboarding_completed_at = now  # /api/hello отдаёт готовность только прошедшему онбординг
+    await session.flush()
+    hello = (await v2_get(session, telegram_id=user.telegram_id, path="/api/hello")).json()
+    assert hello["readiness_status"] != "gap_retest_required" and hello["days_since_last_workout"] == 4
