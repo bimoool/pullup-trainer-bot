@@ -2,8 +2,8 @@ id,area,scenario,status,evidence_status,obs_ids,notes
 CR-A01,A,Первый запуск и пустой аккаунт,NOT_STARTED,UNKNOWN,,
 CR-A02,A,Выбор цели/уровня/программы/оборудования,NOT_STARTED,UNKNOWN,,
 CR-A03,A,Что объясняется до подключения программы,NOT_STARTED,UNKNOWN,,
-CR-A04,A,Первый обязательный шаг после подключения,NOT_STARTED,UNKNOWN,,
-CR-A05,A,Программы с замерами и без,NOT_STARTED,UNKNOWN,,
+CR-A04,A,Первый обязательный шаг после подключения,PARTIAL,OBSERVED,OBS-0004,after adding template: no mandatory step seen up to Save form
+CR-A05,A,Программы с замерами и без,PARTIAL,INFERRED,OBS-0003,template seen has no assessment; other templates unchecked
 CR-A06,A,Замеры вне программы,NOT_STARTED,UNKNOWN,,
 CR-A07,A,Использование имеющегося результата,NOT_STARTED,UNKNOWN,,
 CR-A08,A,Повторный замер,NOT_STARTED,UNKNOWN,,
@@ -11,8 +11,8 @@ CR-A09,A,Несколько обязательных замеров,NOT_STARTED,
 CR-A10,A,Путь замер→первая тренировка,NOT_STARTED,UNKNOWN,,
 CR-A11,A,Замер пропущен/отменён/не завершён,NOT_STARTED,UNKNOWN,,
 CR-A12,A,Нет оборудования/результатов,NOT_STARTED,UNKNOWN,,
-CR-B01,B,Объяснение смысла/единиц/техники замера,NOT_STARTED,UNKNOWN,,
-CR-B02,B,Подготовка/разминка/подбор нагрузки/отдых,NOT_STARTED,UNKNOWN,,
+CR-B01,B,Объяснение смысла/единиц/техники замера,PARTIAL,OBSERVED,OBS-0005,one assessment (Edge Lift) read; other assessments not opened
+CR-B02,B,Подготовка/разминка/подбор нагрузки/отдых,PARTIAL,OBSERVED,OBS-0006;OBS-0007,start/execution observed; save of result not done (would write to owner's logbook)
 CR-B03,B,Успех/неудача/остановка/повтор/исправление,NOT_STARTED,UNKNOWN,,
 CR-B04,B,Подтверждённые результаты,NOT_STARTED,UNKNOWN,,
 CR-B05,B,Итог замера и влияние на программу,NOT_STARTED,UNKNOWN,,
@@ -28,8 +28,8 @@ CR-C06,C,Несколько программ,NOT_STARTED,UNKNOWN,,
 CR-C07,C,Завершена/пауза/удалена/повторно подключена,NOT_STARTED,UNKNOWN,,
 CR-C08,C,Возврат из каталога/журнала,NOT_STARTED,UNKNOWN,,
 CR-C09,C,Блокировка следующего занятия,NOT_STARTED,UNKNOWN,,
-CR-D01,D,Каталог/подбор/фильтры/уровни,NOT_STARTED,UNKNOWN,,
-CR-D02,D,Подключение/дата старта/фазы,NOT_STARTED,UNKNOWN,,
+CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVED,OBS-0002,catalog of templates seen; filters/levels not exhausted
+CR-D02,D,Подключение/дата старта/фазы,PARTIAL,OBSERVED,OBS-0003;OBS-0004,Add to plan up to form; not saved (owner has an active real plan)
 CR-D03,D,Создание своей программы,NOT_STARTED,UNKNOWN,,
 CR-D04,D,Копирование шаблона,NOT_STARTED,UNKNOWN,,
 CR-D05,D,Добавление/замена/удаление тренировки,NOT_STARTED,UNKNOWN,,
@@ -66,7 +66,7 @@ CR-G02,G,Фактический ввод vs план,NOT_STARTED,UNKNOWN,,
 CR-G03,G,Пауза/назад/пропуск/досрочно,NOT_STARTED,UNKNOWN,,
 CR-G04,G,Отмена/случайный выход/перезапуск,NOT_STARTED,UNKNOWN,,
 CR-G05,G,Двойной тап,NOT_STARTED,UNKNOWN,,
-CR-G06,G,Незавершённое при старте другого,NOT_STARTED,UNKNOWN,,
+CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009,minimise and force-stop observed; Android only
 CR-G07,G,Итог/следующий шаг,NOT_STARTED,UNKNOWN,,
 CR-G08,G,Заметки/RPE/самочувствие,NOT_STARTED,UNKNOWN,,
 CR-H01,H,Звук внутри приложения,NOT_STARTED,UNKNOWN,,
