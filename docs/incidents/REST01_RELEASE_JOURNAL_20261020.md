@@ -112,3 +112,66 @@ next to production) and loaded, checkout `9f5cc23`.
    impersonate the owner on production or start a production workout.
 4. Rollback points on prod: manifest `prod-pre-9f5cc23-*.manifest`; post-deploy cleanup not run. Local artefacts with personal data
    (`~/pullup-private/rest01`) to be deleted by the owner when no longer needed.
+
+---
+
+# Weekly plan availability release (2026-10-21)
+
+Model: Claude Sonnet 5.5. Production and staging run **`4deb6457c4672fdb9c8b3146d6a40fddc75a1684`** (PR #345, tree identical
+to the CI-green and staged `5038a71`). Contains REST01 (240/180/900) and the Home entry (#344).
+
+## Owner's screen, week 19-25 Oct (reproduced on a fresh read-only copy of the production DB)
+
+API for the owner: items `[completed, too_early (from 23 Oct), infeasible (from 23 Oct)]`, `/api/dashboard` =
+`gap_retest_required, days_since_last_workout = 38`, `/api/v2/dashboard/status` = `ready` (two dashboards disagreed).
+
+## Causes (not a rules change; contract = PROJECT_SPEC "Планы v2", K1/K2)
+
+1. **Buttons vs server availability.** `DashboardScreen.canStart` excluded only `too_early`; `infeasible` ("не успеть") kept an
+   active "Начать" although the server rejects ANY main start under K1 (409 `too_early`, rule is user-level, not per item).
+   The same hole existed for "Ещё раз" on a done row and for the "Сегодня" block, and `program-journey-v56.spec.ts` had pinned
+   the buggy button as expected behaviour.
+2. **Stale "повторный замер".** The gap/retest (`GAP_RETEST_DAYS = 35`) was measured from the last row of the legacy `workouts` table
+   (13 Sep) while K1 uses legacy + native sessions (17 and 20 Oct). v2 completions do not write `workouts`, so every user who
+   trains only in the Mini App would eventually get a false retest banner (bot too: `handle_start_workout` sent them into the
+   re-measure flow). The v2 status used yet another source (latest session of any kind).
+3. Server rest rule itself is correct and was not changed: starting any other occurrence is rejected 409 before the rest
+   ends (existing tests `test_audit_opening_start_screens_is_not_a_rest_bypass`, J11; admins bypass by design, which explains
+   the owner's open session 79 of 20 Oct 19:38 UTC - `ADMIN_IDS`).
+
+## Fix
+
+* `plan_spacing.gap_readiness(spacing)`: one "last MAIN start" (legacy + native, user timezone) for gap/retest in
+  `/api/dashboard`, `/api/hello`, legacy plan context, `/api/v2/dashboard/status`, bot start.
+* `planWeekNav.restBlockedUntil/canStartOccurrence` (from `plan.spacing`): while the rest runs no occurrence of the group is
+  startable (row, "Ещё раз", "Сегодня"); label "Не успеть на этой неделе · старт с 23 окт". Home (`pickHomeTraining`) uses the same
+  predicate and offers the same occurrence as Plans (infeasible without a rest block is startable on both, per spec section 6).
+* Regressions: `test_gap_retest_counts_native_sessions_not_only_legacy_history` (fails with the fix reverted),
+  `test_infeasible_occurrence_under_rest_carries_the_rest_date_and_cannot_be_started` (API contract + 409 before / 200 after the date),
+  8 unit tests incl. the owner's exact week (mutation of `canStartOccurrence` fails one), e2e updated.
+* After the fix on the same copy: no buttons under the rest, labels "Доступно с 23 окт" / "Не успеть ... старт с 23 окт", Home
+  "Сегодня отдых ... следующая с 23 окт", `/api/dashboard` = `ready, 1 day`. REST01 4 min unchanged (engine/recipes untouched).
+
+## Release
+
+* CI on `5038a71`: pytest, e2e, frontend build, ruff, security, review green. Staging (own DB/bot/token, alembic `b5d8e1f3a6c9`):
+  plan/spacing/dashboard consistent for the staging user (rest until 22 Oct -> `too_early`, no stale retest).
+* Production: preflight OK, guarded apply `4deb645` ran phases 0-9 cleanly (verify-only path, backfill 0 migrated/61 skipped,
+  invariants OK) and **failed at phase 10**: after the health URL answered, the runner read the docker health of `web` as
+  `unhealthy` (the container's own healthcheck fails for ~30 s while uvicorn warms up on the 2 GB VPS under memory pressure) and
+  stopped app/web as designed. Data were untouched (alembic unchanged, no restore needed). I started the already built images
+  with `docker compose up -d --no-build app web` (what phase 10 does): both healthy from 06:32, public `/health` 200.
+  Downtime 06:26:59 -> 06:31:07 UTC (about 4 min). Verified: HEAD `4deb645`, running image ids = the ones built by the run,
+  `gap_readiness` in the container, new label in the live bundle, alembic `b5d8e1f3a6c9`, counts users 100 (one new
+  registration) / onboarded 61 / workouts 74 / electives 0 / subscriptions 81 / sessions 79 unchanged.
+* Staging moved to the same SHA. Rollback points: `/root/backups/prod-pre-4deb645-20261021T061833Z.manifest`, previous
+  images `local/prod-{app,web}:pre-4deb645-*`; staging `local/staging-{app,web}:pre-weekly-20261021`.
+
+## Leftovers
+
+1. Runner phase 10 is racy on this VPS (reads container health ~1 min after `up`): same candidate passed yesterday, failed today.
+   Needs a wait-for-healthy loop in `deploy/deploy-production-guarded-run.sh` (reinstall on the server + rehearsal) - not done here.
+2. Admin accounts bypass K1 on the server (by design) but the UI now hides starts under the rest for them too.
+3. Bot cascade (legacy `workouts`) and v2 history remain two stores; only the readiness date was unified.
+4. Owner to confirm on a phone: Plans week 19-25 Oct shows no start under the rest and no re-measure banner.
+5. Local artefacts with personal data (`~/pullup-private/rest01/prod-20261021.dump`) - delete when not needed.
