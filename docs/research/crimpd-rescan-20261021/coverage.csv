@@ -21,7 +21,7 @@ CR-B07,B,Ручной ввод vs тест,NOT_STARTED,UNKNOWN,,
 CR-B08,B,Изменение результата в середине программы,NOT_STARTED,UNKNOWN,,
 CR-C01,C,Главная после подключения,NOT_STARTED,UNKNOWN,,
 CR-C02,C,Главная после тренировки,NOT_STARTED,UNKNOWN,,
-CR-C03,C,Кратчайший путь к следующей тренировке,NOT_STARTED,UNKNOWN,,
+CR-C03,C,Кратчайший путь к следующей тренировке,PARTIAL,OBSERVED,OBS-0010,route and tap count observed on owner's real plan; rest/skip/unfinished not yet
 CR-C04,C,День отдыха/пропуск/перерыв,NOT_STARTED,UNKNOWN,,
 CR-C05,C,Начатая тренировка и продолжение,NOT_STARTED,UNKNOWN,,
 CR-C06,C,Несколько программ,NOT_STARTED,UNKNOWN,,
@@ -32,8 +32,8 @@ CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVE
 CR-D02,D,Подключение/дата старта/фазы,PARTIAL,OBSERVED,OBS-0003;OBS-0004,Add to plan up to form; not saved (owner has an active real plan)
 CR-D03,D,Создание своей программы,NOT_STARTED,UNKNOWN,,
 CR-D04,D,Копирование шаблона,NOT_STARTED,UNKNOWN,,
-CR-D05,D,Добавление/замена/удаление тренировки,NOT_STARTED,UNKNOWN,,
-CR-D06,D,Порядок/дни недели/свободное расписание,NOT_STARTED,UNKNOWN,,
+CR-D05,D,Добавление/замена/удаление тренировки,PARTIAL,INFERRED,OBS-0010;OBS-0011,workouts shown per week with quantities; add/remove not yet exercised
+CR-D06,D,Порядок/дни недели/свободное расписание,PARTIAL,OBSERVED,OBS-0011,"week schedule editor observed, not saved"
 CR-D07,D,Перенос тренировки и расписания,NOT_STARTED,UNKNOWN,,
 CR-D08,D,Пропуски и недели,NOT_STARTED,UNKNOWN,,
 CR-D09,D,Изменение частоты/даты/длительности,NOT_STARTED,UNKNOWN,,
