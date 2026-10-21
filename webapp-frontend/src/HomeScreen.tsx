@@ -12,6 +12,7 @@ import { CollectionScreen } from "./CollectionScreen";
 import { CollectionsRow } from "./CollectionsRow";
 import { favoritesRowMode, markFavoritesSeen, readFavoritesSeen } from "./favorites";
 import { HomePromo, type PromoKind } from "./HomePromo";
+import { localToday } from "./planWeekNav";
 import { formatAvailableFrom, pickHomeTraining, type HomeTraining } from "./homeTraining";
 import { groupProgramsByCategory, OTHER_KEY } from "./homeDiscovery";
 import { ProgramDetailScreen } from "./ProgramDetailScreen";
@@ -273,7 +274,7 @@ export function HomeScreen({
         const includedProgramIds = new Set(
           (plan?.program_inclusions ?? []).filter((i) => i.is_active).map((i) => i.program_id),
         );
-        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0, training: pickHomeTraining(plan) });
+        setCatalog({ phase: "ready", programs, includedProgramIds, hasPlanItems: (plan?.plan_items ?? []).length > 0, training: pickHomeTraining(plan, localToday()) });
       })
       .catch((error) => {
         if (!cancelled) {

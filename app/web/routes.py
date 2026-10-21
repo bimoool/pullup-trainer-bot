@@ -83,7 +83,7 @@ from app.domain.training_session_v2 import SessionOrigin
 from app.domain.wsf import WsfRankThreshold, calculate_wsf_status
 from app.services.elective_log import ElectiveLogService
 from app.services.onboarding import OnboardingService
-from app.services.plan_spacing import MainSpacingService
+from app.services.plan_spacing import MainSpacingService, gap_readiness
 from app.services.program_access import ProgramAccessService
 from app.services.robokassa import RobokassaClient, RobokassaService
 from app.services.subscription import SubscriptionService
@@ -213,7 +213,9 @@ async def hello(
             is_admin=is_admin,
         )
 
-    readiness = check_training_readiness(history[-1].performed_at.date(), datetime.now(UTC).date())
+    now = datetime.now(UTC)
+    spacing = await MainSpacingService(session).status(user, now=now)
+    readiness = gap_readiness(spacing) or check_training_readiness(history[-1].performed_at.date(), now.date())
     return HelloResponse(
         name=name, onboarding_step="done",
         readiness_status=readiness.status.value,
@@ -247,7 +249,11 @@ async def get_dashboard(
 
     history = await WorkoutRepository(session).list_for_user(user.id)
     streak = consecutive_streak_length([record.performed_at.date() for record in history])
-    days_since_last_workout = (now.date() - history[-1].performed_at.date()).days if history else None
+    # Та же точка отсчёта, что у перерыва/отдыха (legacy + нативные сессии), не только legacy-таблица.
+    spacing = await MainSpacingService(session).status(user, now=now)
+    days_since_last_workout = (
+        (spacing.today - spacing.last_start_date).days if spacing.last_start_date is not None else None
+    )
 
     return DashboardResponse(
         status=context.status,
@@ -777,7 +783,7 @@ async def _resolve_plan_context(
         )
 
     is_admin = settings.is_admin(telegram_id)
-    readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
+    readiness = gap_readiness(spacing) or check_training_readiness(history[-1].performed_at.date(), now.date())
     if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
         return _PlanContext(status="gap_retest_required")
 

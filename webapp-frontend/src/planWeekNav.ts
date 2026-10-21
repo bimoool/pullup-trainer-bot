@@ -40,12 +40,13 @@ export interface OccurrenceLike {
   available_from?: string | null;
 }
 
-export function occurrenceStateLabel(item: OccurrenceLike): string | null {
+export function occurrenceStateLabel(item: OccurrenceLike, restUntil: string | null = null): string | null {
   switch (item.state) {
     case "too_early":
       return item.available_from ? `Доступно с ${shortDateLabel(item.available_from)}` : "Ещё рано";
     case "infeasible":
-      return "Не успеть на этой неделе";
+      // Обязательный отдых ещё идёт — говорим, с какого дня старт вообще возможен (K1), а не только «не успеть».
+      return restUntil !== null ? `Не успеть на этой неделе · старт с ${shortDateLabel(restUntil)}` : "Не успеть на этой неделе";
     case "missed":
       return "Пропущено";
     case "awaiting_assessment":
@@ -176,4 +177,32 @@ export function daysBetween(a: string, b: string): number {
 export function todayDayIndexInWeek(weekStartDate: string, today: string): number | null {
   const index = daysBetween(weekStartDate, today);
   return index >= 0 && index <= 6 ? index : null;
+}
+
+export interface SpacingLike {
+  spacing_group: string;
+  available_from: string | null;
+}
+
+/**
+ * Серверный отдых K1 (между стартами MAIN, PROJECT_SPEC «Планы v2»): дата, РАНЬШЕ которой старт занятия этой
+ * группы сервер отклонит (409 too_early) — у ЛЮБОГО занятия группы, а не только у «следующего». null — отдыха нет.
+ * Даты — YYYY-MM-DD (today — «сегодня» пользователя из ответа плана), сравнение строк корректно.
+ */
+export function restBlockedUntil(
+  item: { spacing_group?: string | null },
+  spacing: SpacingLike[] | undefined,
+  today: string,
+): string | null {
+  if (!item.spacing_group) {
+    return null;
+  }
+  const from = spacing?.find((entry) => entry.spacing_group === item.spacing_group)?.available_from ?? null;
+  return from !== null && today < from ? from : null;
+}
+
+/** Показывать ли «Начать»/«Ещё раз» на занятии: не «рано» и не под действующим отдыхом группы (нельзя обойти отдых
+ * выбором другого занятия — сервер всё равно ответит 409). */
+export function canStartOccurrence(item: { state?: string | null }, restUntil: string | null): boolean {
+  return item.state !== "too_early" && restUntil === null;
 }

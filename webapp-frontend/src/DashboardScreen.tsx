@@ -18,6 +18,7 @@ import {
   removePlanItem,
   deactivateCustomPlan,
   deactivateProgramInclusion,
+  type PlanSpacingV2,
   type TrainingPlanResponseV2,
 } from "./apiV2";
 import { categoryInkVar, programCategoryColorVar } from "./homeDiscovery";
@@ -32,7 +33,7 @@ import { WorkoutDetailScreen } from "./WorkoutDetailScreen";
 import { WorkoutEditorScreen } from "./WorkoutEditorScreen";
 import {
   canAdvanceWeek, groupCounter, isEditableWeek, localToday, progressPercent, resolveCurrentWeekIndex, stepWeek,
-  occurrenceStateLabel, todayDayIndexInWeek, weekProgress, weekRangeLabel,
+  occurrenceStateLabel, restBlockedUntil, canStartOccurrence, todayDayIndexInWeek, weekProgress, weekRangeLabel,
 } from "./planWeekNav";
 import { confirmAction } from "./telegramPlatform";
 import { addExerciseWithProtocolToPlan } from "./exercisePlan";
@@ -202,11 +203,13 @@ type PlanState = {
   currentWeekId: number | null;
   /** plan.today с сервера (YYYY-MM-DD, часовой пояс пользователя); null — старый ответ, тогда localToday(). */
   today: string | null;
+  /** issue #304 (K1) — отдых между стартами MAIN по группам: кнопки старта считаются от него. */
+  spacing: PlanSpacingV2[];
   /** issue #304 — свои планы с объёмом по неделям. */
   customPlans: CustomPlanV2[];
 };
 
-const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null, today: null, customPlans: [] };
+const EMPTY_PLAN: PlanState = { inclusions: [], items: [], weeks: [], currentWeekId: null, today: null, spacing: [], customPlans: [] };
 
 /** #288 — план старше этого (мс) перечитывается при возврате в приложение: «Сегодня» не залипает на вчера. */
 const PLAN_STALE_MS = 60_000;
@@ -226,6 +229,7 @@ function toPlanState(data: TrainingPlanResponseV2 | null): PlanState {
     weeks: data.plan_weeks,
     currentWeekId: data.current_week_id ?? null,
     today: data.today ?? null,
+    spacing: data.spacing ?? [],
     customPlans: data.custom_plans ?? [],
   };
 }
@@ -1071,6 +1075,9 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
           {todayGroups.map((group) => {
             const counter = groupCounter(group.items);
             const todayDone = counter.planned > 0 && counter.done >= counter.planned;
+            const todayOccurrence = group.items.length === 1 && group.items[0].occurrence_index != null ? group.items[0] : null;
+            const todayRestUntil = todayOccurrence === null ? null : restBlockedUntil(todayOccurrence, plan.spacing, plan.today ?? localToday());
+            const todayStartable = todayOccurrence === null || canStartOccurrence(todayOccurrence, todayRestUntil);
             return (
               <div key={group.key} className="plans-row-main" data-testid="plans-today-row" data-done={todayDone} style={groupTint(group)}>
                 <span className="plans-row-bar" aria-hidden="true" />
@@ -1080,7 +1087,7 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
                     {`${counter.done}/${counter.planned}`}
                   </span>
                 </div>
-                {todayDone ? (
+                {!todayStartable ? null : todayDone ? (
                   <button
                     type="button" className="plans-start plans-start-again" aria-label={`Повторить: ${group.title}`}
                     disabled={startingGroupKey !== null} onClick={() => startGroup(group)}
@@ -1142,10 +1149,13 @@ export function DashboardScreen({ initDataRaw, onStartSession, onStartWorkout, o
               const occurrence = group.items.length === 1 && group.items[0].occurrence_index != null ? group.items[0] : null;
               const movableCourseItem = isProgramBacked && occurrence !== null && occurrence.state !== "completed"
                 ? occurrence : null;
-              const stateLabel = occurrence === null ? null : occurrenceStateLabel(occurrence);
-              // §6: будущие недели видимы И стартуемы; K1 (отдых) решает сервер — «рано» не стартуем.
+              // K1 группы отдыха: пока отдых идёт, не стартуется НИ ОДНО занятие группы (иначе отдых обходился бы
+              // выбором другого занятия, например «не успеть»), а подпись говорит, с какого дня старт возможен.
+              const restUntil = occurrence === null ? null : restBlockedUntil(occurrence, plan.spacing, plan.today ?? localToday());
+              const stateLabel = occurrence === null ? null : occurrenceStateLabel(occurrence, restUntil);
+              // §6: будущие недели видимы И стартуемы; K1 (отдых) решает сервер — UI показывает то же самое.
               const canStart = (isCurrent || selectedIndex > currentIndex) && !(occurrence?.legacy_aggregate)
-                && occurrence?.state !== "too_early";
+                && (occurrence === null || canStartOccurrence(occurrence, restUntil));
               const isRemoveConfirming = mutableItem !== null && removeConfirmPlanItemId === mutableItem.id;
               const isRemoving = mutableItem !== null && removingPlanItemId === mutableItem.id;
               const canEditWorkout = mutableItem !== null

@@ -67,7 +67,7 @@ from app.domain.progression import (
 from app.domain.reports import set_close_summary
 from app.domain.rules import TrainingReadiness, check_training_readiness
 from app.domain.session import BlockLog
-from app.services.plan_spacing import MainSpacingService
+from app.services.plan_spacing import MainSpacingService, gap_readiness
 from app.services.program_access import ProgramAccessService
 from app.services.subscription import SubscriptionService
 from app.services.training_analytics import resolve_timezone
@@ -259,7 +259,11 @@ async def handle_start_workout(callback: CallbackQuery, state: FSMContext, sessi
             await callback.answer()
             return
     if history:
-        readiness = check_training_readiness(history[-1].performed_at.date(), now.date())
+        user_for_gap = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+        readiness = (
+            gap_readiness(await MainSpacingService(session).status(user_for_gap, now=now))
+            if user_for_gap is not None else None
+        ) or check_training_readiness(history[-1].performed_at.date(), now.date())
         if readiness.status == TrainingReadiness.GAP_RETEST_REQUIRED:
             await state.set_state(RetestStates.waiting_for_baseline_reps)
             await callback.message.answer(
