@@ -25,21 +25,21 @@ CR-C03,C,Кратчайший путь к следующей тренировк�
 CR-C04,C,День отдыха/пропуск/перерыв,NOT_STARTED,UNKNOWN,,
 CR-C05,C,Начатая тренировка и продолжение,NOT_STARTED,UNKNOWN,,
 CR-C06,C,Несколько программ,NOT_STARTED,UNKNOWN,,
-CR-C07,C,Завершена/пауза/удалена/повторно подключена,NOT_STARTED,UNKNOWN,,
+CR-C07,C,Завершена/пауза/удалена/повторно подключена,PARTIAL,OBSERVED,OBS-0034,plan states In Progress/Upcoming/Completed seen; paused/removed not found
 CR-C08,C,Возврат из каталога/журнала,NOT_STARTED,UNKNOWN,,
 CR-C09,C,Блокировка следующего занятия,NOT_STARTED,UNKNOWN,,
 CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVED,OBS-0002,catalog of templates seen; filters/levels not exhausted
 CR-D02,D,Подключение/дата старта/фазы,PARTIAL,OBSERVED,OBS-0003;OBS-0004,Add to plan up to form; not saved (owner has an active real plan)
-CR-D03,D,Создание своей программы,NOT_STARTED,UNKNOWN,,
-CR-D04,D,Копирование шаблона,NOT_STARTED,UNKNOWN,,
+CR-D03,D,Создание своей программы,PARTIAL,OBSERVED,OBS-0034;OBS-0035,blank plan + skill template flow; pause/archive not seen
+CR-D04,D,Копирование шаблона,PARTIAL,OBSERVED,OBS-0035,blank plan created
 CR-D05,D,Добавление/замена/удаление тренировки,PARTIAL,INFERRED,OBS-0010;OBS-0011,workouts shown per week with quantities; add/remove not yet exercised
 CR-D06,D,Порядок/дни недели/свободное расписание,PARTIAL,OBSERVED,OBS-0011,"week schedule editor observed, not saved"
-CR-D07,D,Перенос тренировки и расписания,NOT_STARTED,UNKNOWN,,
+CR-D07,D,Перенос тренировки и расписания,PARTIAL,OBSERVED,OBS-0036,"editor for workouts, weekly volume and phases"
 CR-D08,D,Пропуски и недели,NOT_STARTED,UNKNOWN,,
-CR-D09,D,Изменение частоты/даты/длительности,NOT_STARTED,UNKNOWN,,
-CR-D10,D,Пауза/возобновление/завершение/архив,NOT_STARTED,UNKNOWN,,
-CR-D11,D,Пересечение программ,NOT_STARTED,UNKNOWN,,
-CR-D12,D,Влияние правок на выполненное,NOT_STARTED,UNKNOWN,,
+CR-D09,D,Изменение частоты/даты/длительности,PARTIAL,OBSERVED,OBS-0036;OBS-0037,start-date change observed (blocked by active plan)
+CR-D10,D,Пауза/возобновление/завершение/архив,PARTIAL,OBSERVED,OBS-0036,delete plan with confirm; no pause/resume found in the plan menu
+CR-D11,D,Пересечение программ,PARTIAL,OBSERVED,OBS-0037,overlap impossible by design (one active plan)
+CR-D12,D,Влияние правок на выполненное,PARTIAL,INFERRED,OBS-0036,after-edit effect on completed part not tested (test plan had no completed sessions)
 CR-E01,E,Каталог/категории/оборудование/поиск/избранное,NOT_STARTED,UNKNOWN,,
 CR-E02,E,Инструкция/видео/замены,NOT_STARTED,UNKNOWN,,
 CR-E03,E,Своё упражнение,NOT_STARTED,UNKNOWN,,
