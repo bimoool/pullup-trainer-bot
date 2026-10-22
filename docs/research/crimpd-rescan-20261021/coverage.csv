@@ -62,13 +62,13 @@ CR-F10,F,Сохранность истории A→B,OBSERVED,OBSERVED,OBS-0014;
 CR-F11,F,Правка программы посередине,PARTIAL,OBSERVED,OBS-0017,mid-program edit within a plan not tested
 CR-F12,F,Правка исторической записи,PARTIAL,OBSERVED,OBS-0014;OBS-0017;OBS-0023,"A→B on template, history snapshot kept; Edit Log of past entry also checked"
 CR-G01,G,Предстарт/запуск/работа/отдых,PARTIAL,OBSERVED,OBS-0013,"GET READY, rep, rest"
-CR-G02,G,Фактический ввод vs план,PARTIAL,OBSERVED,OBS-0007;OBS-0014,actual vs plan in log sheet
-CR-G03,G,Пауза/назад/пропуск/досрочно,NOT_STARTED,UNKNOWN,,
+CR-G02,G,Фактический ввод vs план,PARTIAL,OBSERVED,OBS-0007;OBS-0014;OBS-0044,plan vs actual: skipped sets are logged as done
+CR-G03,G,Пауза/назад/пропуск/досрочно,PARTIAL,OBSERVED,OBS-0044;OBS-0024,pause/skip/back controls observed; early finish only via SET>>
 CR-G04,G,Отмена/случайный выход/перезапуск,PARTIAL,OBSERVED,OBS-0024,accidental exit variants observed
 CR-G05,G,Двойной тап,PARTIAL,OBSERVED,OBS-0028,discard confirm exists for open climbing; strength player has no cancel
 CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009;OBS-0024,in-app/background/recents/force-stop checked on Android emulator only; iPhone BLOCKED; tab switch inside app not checked
-CR-G07,G,Итог/следующий шаг,NOT_STARTED,UNKNOWN,,
-CR-G08,G,Заметки/RPE/самочувствие,NOT_STARTED,UNKNOWN,,
+CR-G07,G,Итог/следующий шаг,OBSERVED,OBSERVED,OBS-0045,double-submit creates duplicates
+CR-G08,G,Заметки/RPE/самочувствие,PARTIAL,OBSERVED,OBS-0044,summary = Log sheet; no separate 'next step' screen
 CR-H01,H,Звук внутри приложения,PARTIAL,OBSERVED,OBS-0032,settings exist; effect not testable (emulator no audio)
 CR-H02,H,Беззвучный режим,BLOCKED,UNKNOWN,OBS-0032,device silent mode/vibration/haptics not observable on emulator; needs physical Android
 CR-H03,H,Вибрация/визуальный сигнал,NOT_STARTED,UNKNOWN,,
@@ -90,7 +90,7 @@ CR-J03,J,Замеры и динамика,NOT_STARTED,UNKNOWN,,
 CR-J04,J,Сводки/дайджесты/серии/цели,NOT_STARTED,UNKNOWN,,
 CR-J05,J,Пустые/малые данные,NOT_STARTED,UNKNOWN,,
 CR-J06,J,Подборки: поиск/состав/добавить/запуск,NOT_STARTED,UNKNOWN,,
-CR-J07,J,Рекомендации/персонализация,NOT_STARTED,UNKNOWN,,
+CR-J07,J,Рекомендации/персонализация,PARTIAL,OBSERVED,OBS-0046,peer insights percentile on assessment detail
 CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0018,free/paid: Crimpd+ banner on Plans; a 'Premium Workout' opened and was loggable on this account — real gating rules UNKNOWN (tier of account not confirmed)
 CR-K02,K,Истечение доступа,NOT_STARTED,UNKNOWN,,
 CR-K03,K,Тема/узкий экран/текст,PARTIAL,OBSERVED,OBS-0031,font scale 1.5 observed; dark theme rendering not observed
