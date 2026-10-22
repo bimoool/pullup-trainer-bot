@@ -1,0 +1,11 @@
+# scan-status
+- Время: 2026-10-22 12:26 (локальное, Mac)
+- Статус: RUNNING
+- Последний законченный сценарий: первичный обход реестра (PR #361)
+- Текущая проверка: разбор 87 PARTIAL + 2 UNKNOWN завершён (coverage-triage.csv)
+- Следующее конкретное действие: создать тестовый план в прошлом (Aug 31, 3 нед.) и проверить зачёт лога в пункт плана
+- Покрытие (99): OBSERVED 4 · PARTIAL 87 · BLOCKED 6 · UNKNOWN 2 · NOT_STARTED 0
+- Наблюдений: 51
+- Ошибки инструментов: uiautomator отдаёт устаревший/пустой дамп сразу после больших изменений DOM (лечится перезапуском приложения)
+- Разбор остатков: coverage-triage.csv (по каждому PARTIAL/UNKNOWN)
+- Эмулятор: source ~/android-ref-lab/env.sh; emulator -avd ref_pixel6_play -dns-server 8.8.8.8,1.1.1.1 -no-audio; хелперы ~/android-ref-lab/{rs.sh,tt.sh,snap.sh}
