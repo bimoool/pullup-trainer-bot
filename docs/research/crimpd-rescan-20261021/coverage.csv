@@ -14,7 +14,7 @@ CR-A12,A,Нет оборудования/результатов,PARTIAL,OBSERVED
 CR-B01,B,Объяснение смысла/единиц/техники замера,PARTIAL,OBSERVED,OBS-0005,one assessment (Edge Lift) read; other assessments not opened
 CR-B02,B,Подготовка/разминка/подбор нагрузки/отдых,PARTIAL,OBSERVED,OBS-0006;OBS-0007,start/execution observed; save of result not done (would write to owner's logbook)
 CR-B03,B,Успех/неудача/остановка/повтор/исправление,PARTIAL,OBSERVED,OBS-0023;OBS-0046,correction via Edit Log; failure/stop → Completion %; no explicit 'fail' state
-CR-B04,B,Подтверждённые результаты,PARTIAL,INFERRED,OBS-0020,no confirmation concept: newest test log is the result
+CR-B04,B,Подтверждённые результаты,PARTIAL,OBSERVED,OBS-0020;OBS-0055,current result = latest by workout date; same-day duplicates untested
 CR-B05,B,Итог замера и влияние на программу,PARTIAL,OBSERVED,OBS-0018;OBS-0020,result updates load immediately; shown in Profile
 CR-B06,B,История замеров и срок актуальности,PARTIAL,OBSERVED,OBS-0020,history of tests only via logs; Profile shows latest
 CR-B07,B,Ручной ввод vs тест,PARTIAL,OBSERVED,OBS-0020,result = max set of a test log
@@ -22,7 +22,7 @@ CR-B08,B,Изменение результата в середине прогр�
 CR-C01,C,Главная после подключения,PARTIAL,OBSERVED,OBS-0010;OBS-0051,Home has no plan widget; plan only under Training Plans
 CR-C02,C,Главная после тренировки,PARTIAL,OBSERVED,OBS-0014,after saving a log Home is unchanged; log appears in Logbook/Analytics only
 CR-C03,C,Кратчайший путь к следующей тренировке,PARTIAL,OBSERVED,OBS-0010,route and tap count observed on owner's real plan; rest/skip/unfinished not yet
-CR-C04,C,День отдыха/пропуск/перерыв,PARTIAL,OBSERVED,OBS-0010,'No workouts scheduled for today' only; no rest-day or skip logic observed
+CR-C04,C,День отдыха/пропуск/перерыв,PARTIAL,OBSERVED,OBS-0010;OBS-0054,missed marker (red ⊗) in a past week; rest-day logic not found
 CR-C05,C,Начатая тренировка и продолжение,PARTIAL,OBSERVED,OBS-0008;OBS-0024,resume only while the app process lives
 CR-C06,C,Несколько программ,PARTIAL,OBSERVED,OBS-0037,one active plan; others upcoming/completed
 CR-C07,C,Завершена/пауза/удалена/повторно подключена,PARTIAL,OBSERVED,OBS-0034,plan states In Progress/Upcoming/Completed seen; paused/removed not found
@@ -37,7 +37,7 @@ CR-D06,D,Порядок/дни недели/свободное расписан�
 CR-D07,D,Перенос тренировки и расписания,PARTIAL,OBSERVED,OBS-0036,"editor for workouts, weekly volume and phases"
 CR-D08,D,Пропуски и недели,PARTIAL,OBSERVED,OBS-0010,past weeks show 0/N progress; no catch-up logic observed
 CR-D09,D,Изменение частоты/даты/длительности,PARTIAL,OBSERVED,OBS-0036;OBS-0037,start-date change observed (blocked by active plan)
-CR-D10,D,Пауза/возобновление/завершение/архив,PARTIAL,OBSERVED,OBS-0036,delete plan with confirm; no pause/resume found in the plan menu
+CR-D10,D,Пауза/возобновление/завершение/архив,PARTIAL,OBSERVED,OBS-0036;OBS-0054,past plan lands in Completed directly; archive/pause not found
 CR-D11,D,Пересечение программ,PARTIAL,OBSERVED,OBS-0037,overlap impossible by design (one active plan)
 CR-D12,D,Влияние правок на выполненное,PARTIAL,INFERRED,OBS-0036,after-edit effect on completed part not tested (test plan had no completed sessions)
 CR-E01,E,Каталог/категории/оборудование/поиск/избранное,PARTIAL,OBSERVED,OBS-0036;OBS-0048,"catalog categories, search with filters Category/Equipment/Favorites, picker with My Workouts, playlists"
@@ -48,7 +48,7 @@ CR-E05,E,Параметры подхода,PARTIAL,OBSERVED,OBS-0012;OBS-0039,pa
 CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,PARTIAL,OBSERVED,OBS-0012;OBS-0040,add/delete exercise seen; reorder/duplicate not found
 CR-E07,E,Смешанные протоколы,UNKNOWN,UNKNOWN,,mixed protocols/same exercise repeated not tested
 CR-E08,E,Сохранение/отмена/повторное редактирование,PARTIAL,OBSERVED,OBS-0012;OBS-0016,save/edit observed; cancel behaviour partly
-CR-E09,E,Тренировка отдельно и в программе,PARTIAL,OBSERVED,OBS-0040,same workout standalone vs in plan: plan item counts shown 0/N; effect of a library log on a plan item not tested (would modify the owner's real plan)
+CR-E09,E,Тренировка отдельно и в программе,OBSERVED,OBSERVED,OBS-0053,library log counted for the plan item by workout+date; shown in week/category/item
 CR-F01,F,Изменить нагрузку перед упражнением,PARTIAL,OBSERVED,OBS-0013,load edit happens only in the log sheet/player (weight stepper); no pre-exercise load edit seen
 CR-F02,F,Вес/повторы/подходы/отдых,OBSERVED,OBSERVED,OBS-0014;OBS-0015,step 1 kg; no memory of last weight
 CR-F03,F,Замена упражнения,PARTIAL,INFERRED,OBS-0039,no replace action; delete + add
@@ -78,10 +78,10 @@ CR-H06,H,Часы,BLOCKED,UNKNOWN,,watch notifications: no watch available
 CR-H07,H,Разрешения ОС,PARTIAL,OBSERVED,OBS-0024;OBS-0032,notification permission asked once by OS; other OS permissions not mapped
 CR-I01,I,Запись вне приложения,OBSERVED,OBSERVED,OBS-0026,"cross-training log created, appears in Logbook and Analytics"
 CR-I02,I,Свободная активность/каталог/своя,PARTIAL,OBSERVED,OBS-0026;OBS-0027,free activity and open-climbing forms; open-climbing log not saved
-CR-I03,I,Задним числом,PARTIAL,OBSERVED,OBS-0027,date field editable in forms (default today); past-date picking not exercised
+CR-I03,I,Задним числом,PARTIAL,OBSERVED,OBS-0053;OBS-0056,backdated log saved and counted; future-date save untested
 CR-I04,I,Просмотр/правка/дубль/удаление,PARTIAL,OBSERVED,OBS-0026,card actions View Workout/Edit/Clone/Delete
 CR-I05,I,Влияние на программу/аналитику,PARTIAL,OBSERVED,OBS-0023,Edit Log affects analytics via Completion %
-CR-I06,I,План vs факт,PARTIAL,OBSERVED,OBS-0010,plan items show done/planned counters; effect of a library log on plan counters not tested
+CR-I06,I,План vs факт,PARTIAL,OBSERVED,OBS-0010;OBS-0053,planned vs done in plan: confirmed; external activity (cross-training) vs plan not yet
 CR-I07,I,Неполные/прерванные/удалённые,PARTIAL,OBSERVED,OBS-0023;OBS-0033;OBS-0050,"completion 25–100%, delete log with confirm, delete workout without"
 CR-I08,I,Экспорт/фильтры/поиск,PARTIAL,OBSERVED,OBS-0029,export CSV button seen; file not downloaded (not requested)
 CR-J01,J,Периоды/объём/категории/регулярность,PARTIAL,OBSERVED,OBS-0023,"summary table seen; periods 1/3 Mo, Custom not exercised"
