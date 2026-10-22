@@ -31,15 +31,15 @@ CR-C09,C,Блокировка следующего занятия,PARTIAL,INFERR
 CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVED,OBS-0002,catalog of templates seen; filters/levels not exhausted
 CR-D02,D,Подключение/дата старта/фазы,PARTIAL,OBSERVED,OBS-0003;OBS-0004,Add to plan up to form; not saved (owner has an active real plan)
 CR-D03,D,Создание своей программы,PARTIAL,OBSERVED,OBS-0034;OBS-0035,blank plan + skill template flow; pause/archive not seen
-CR-D04,D,Копирование шаблона,PARTIAL,OBSERVED,OBS-0035,blank plan created
+CR-D04,D,Копирование шаблона,OBSERVED,OBSERVED,OBS-0035;OBS-0057,blank plan and clone (Copy Schedule toggle); skill-template-based plan creation observed up to form (OBS-0004)
 CR-D05,D,Добавление/замена/удаление тренировки,PARTIAL,INFERRED,OBS-0010;OBS-0011,workouts shown per week with quantities; add/remove not yet exercised
-CR-D06,D,Порядок/дни недели/свободное расписание,PARTIAL,OBSERVED,OBS-0011,"week schedule editor observed, not saved"
+CR-D06,D,Порядок/дни недели/свободное расписание,OBSERVED,OBSERVED,OBS-0011;OBS-0058,week schedule editor: day assignment saved and re-displayed; completion unaffected
 CR-D07,D,Перенос тренировки и расписания,PARTIAL,OBSERVED,OBS-0036,"editor for workouts, weekly volume and phases"
 CR-D08,D,Пропуски и недели,PARTIAL,OBSERVED,OBS-0010,past weeks show 0/N progress; no catch-up logic observed
-CR-D09,D,Изменение частоты/даты/длительности,PARTIAL,OBSERVED,OBS-0036;OBS-0037,start-date change observed (blocked by active plan)
+CR-D09,D,Изменение частоты/даты/длительности,PARTIAL,OBSERVED,OBS-0037;OBS-0059,start-date shift recomputes progress; duration/frequency edit not tested
 CR-D10,D,Пауза/возобновление/завершение/архив,PARTIAL,OBSERVED,OBS-0036;OBS-0054,past plan lands in Completed directly; archive/pause not found
-CR-D11,D,Пересечение программ,PARTIAL,OBSERVED,OBS-0037,overlap impossible by design (one active plan)
-CR-D12,D,Влияние правок на выполненное,PARTIAL,INFERRED,OBS-0036,after-edit effect on completed part not tested (test plan had no completed sessions)
+CR-D11,D,Пересечение программ,OBSERVED,OBSERVED,OBS-0037;OBS-0060,overlap prevented by disabled dates incl. past plans; explanatory text generic
+CR-D12,D,Влияние правок на выполненное,PARTIAL,OBSERVED,OBS-0053;OBS-0058;OBS-0059,reschedule keeps completion; start shift un-completes; volume/removal edits on a completed plan not available in the menu (Add Workouts absent for Completed plans)
 CR-E01,E,Каталог/категории/оборудование/поиск/избранное,PARTIAL,OBSERVED,OBS-0036;OBS-0048,"catalog categories, search with filters Category/Equipment/Favorites, picker with My Workouts, playlists"
 CR-E02,E,Инструкция/видео/замены,PARTIAL,OBSERVED,OBS-0047,instruction = Focus Points sheet + media; replacements/variants only via level tabs A/B/C
 CR-E03,E,Своё упражнение,PARTIAL,OBSERVED,OBS-0038,own exercise creation observed; reuse in other workouts not yet checked
@@ -59,7 +59,7 @@ CR-F07,F,Изменить шаблон программы,PARTIAL,OBSERVED,OBS-0
 CR-F08,F,Упражнение в нескольких местах,PARTIAL,OBSERVED,OBS-0049,custom exercises are workout-local (not shared)
 CR-F09,F,Область: подход/сессия/будущие/шаблон,PARTIAL,OBSERVED,OBS-0016,scopes: only two exist — template (future) vs log of the past
 CR-F10,F,Сохранность истории A→B,OBSERVED,OBSERVED,OBS-0014;OBS-0017,A=3/4 kg preserved after template change
-CR-F11,F,Правка программы посередине,PARTIAL,OBSERVED,OBS-0017,mid-program edit within a plan not tested
+CR-F11,F,Правка программы посередине,PARTIAL,OBSERVED,OBS-0058;OBS-0059,mid-plan edits: schedule and start shifts tested; content removal not possible for completed plan
 CR-F12,F,Правка исторической записи,PARTIAL,OBSERVED,OBS-0014;OBS-0017;OBS-0023,"A→B on template, history snapshot kept; Edit Log of past entry also checked"
 CR-G01,G,Предстарт/запуск/работа/отдых,PARTIAL,OBSERVED,OBS-0013,"GET READY, rep, rest"
 CR-G02,G,Фактический ввод vs план,PARTIAL,OBSERVED,OBS-0007;OBS-0014;OBS-0044,plan vs actual: skipped sets are logged as done
