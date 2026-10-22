@@ -3,11 +3,11 @@ CR-A01,A,Первый запуск и пустой аккаунт,BLOCKED,UNKNOW
 CR-A02,A,Выбор цели/уровня/программы/оборудования,PARTIAL,OBSERVED,OBS-0003,"template card: level tabs A/B/C, hours/week, Overview, weekly schedule; no goal/equipment questionnaire seen (owner's existing account)"
 CR-A03,A,Что объясняется до подключения программы,PARTIAL,OBSERVED,OBS-0003;OBS-0036,"duration, hours/week, per-week schedule visible before adding; equipment/test needs only in free text"
 CR-A04,A,Первый обязательный шаг после подключения,PARTIAL,OBSERVED,OBS-0004,after adding template: no mandatory step seen up to Save form
-CR-A05,A,Программы с замерами и без,PARTIAL,INFERRED,OBS-0003,template seen has no assessment; other templates unchecked
+CR-A05,A,Программы с замерами и без,PARTIAL,OBSERVED,OBS-0003;OBS-0052;OBS-0067,programs with test in week 1: 3 of 10 read; 6 templates' schedules unread (UNKNOWN); Base Endurance has none
 CR-A06,A,Замеры вне программы,PARTIAL,OBSERVED,OBS-0018;OBS-0019;OBS-0041;OBS-0043,"two test families (pull-ups, finger strength) + RPE-only workouts; other families/test types not exhausted"
 CR-A07,A,Использование имеющегося результата,PARTIAL,OBSERVED,OBS-0019;OBS-0041;OBS-0043,calculated load prefilled in log for %-of-test workouts; RPE workouts have no computed load
 CR-A08,A,Повторный замер,PARTIAL,INFERRED,OBS-0005;OBS-0046,retest: protocol text says repeat before/after training blocks; no reminder/expiry observed
-CR-A09,A,Несколько обязательных замеров,UNKNOWN,UNKNOWN,OBS-0003,no mandatory-test concept observed in the templates opened; several-required-tests order not observable
+CR-A09,A,Несколько обязательных замеров,PARTIAL,OBSERVED,OBS-0067,one template (Bouldering Mastery) assesses two things in week 1 (finger strength + max pull-ups): order/progress UI not observable without a plan
 CR-A10,A,Путь замер→первая тренировка,PARTIAL,OBSERVED,OBS-0020;OBS-0041,test log → computed load in related workouts; no guided 'next step' after the test
 CR-A11,A,Замер пропущен/отменён/не завершён,PARTIAL,OBSERVED,OBS-0024;OBS-0028,test interrupted = nothing saved (recents/force-stop); no required-test state exists
 CR-A12,A,Нет оборудования/результатов,PARTIAL,OBSERVED,OBS-0042,"missing test result: no value, no inline CTA; equipment-less alternative not found"
@@ -28,7 +28,7 @@ CR-C06,C,Несколько программ,PARTIAL,OBSERVED,OBS-0037,one activ
 CR-C07,C,Завершена/пауза/удалена/повторно подключена,PARTIAL,OBSERVED,OBS-0034,plan states In Progress/Upcoming/Completed seen; paused/removed not found
 CR-C08,C,Возврат из каталога/журнала,PARTIAL,OBSERVED,OBS-0051,back navigation observed incl. exits app from Home
 CR-C09,C,Блокировка следующего занятия,PARTIAL,INFERRED,OBS-0019,no rest/availability blocking observed: premium workout and tests startable any time on this account
-CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVED,OBS-0002,catalog of templates seen; filters/levels not exhausted
+CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVED,OBS-0067,11 templates + level tabs A/B/C; no filters on templates
 CR-D02,D,Подключение/дата старта/фазы,PARTIAL,OBSERVED,OBS-0003;OBS-0004,Add to plan up to form; not saved (owner has an active real plan)
 CR-D03,D,Создание своей программы,PARTIAL,OBSERVED,OBS-0034;OBS-0035,blank plan + skill template flow; pause/archive not seen
 CR-D04,D,Копирование шаблона,OBSERVED,OBSERVED,OBS-0035;OBS-0057,blank plan and clone (Copy Schedule toggle); skill-template-based plan creation observed up to form (OBS-0004)
@@ -40,7 +40,7 @@ CR-D09,D,Изменение частоты/даты/длительности,PAR
 CR-D10,D,Пауза/возобновление/завершение/архив,PARTIAL,OBSERVED,OBS-0036;OBS-0054,past plan lands in Completed directly; archive/pause not found
 CR-D11,D,Пересечение программ,OBSERVED,OBSERVED,OBS-0037;OBS-0060,overlap prevented by disabled dates incl. past plans; explanatory text generic
 CR-D12,D,Влияние правок на выполненное,PARTIAL,OBSERVED,OBS-0053;OBS-0058;OBS-0059,reschedule keeps completion; start shift un-completes; volume/removal edits on a completed plan not available in the menu (Add Workouts absent for Completed plans)
-CR-E01,E,Каталог/категории/оборудование/поиск/избранное,PARTIAL,OBSERVED,OBS-0036;OBS-0048,"catalog categories, search with filters Category/Equipment/Favorites, picker with My Workouts, playlists"
+CR-E01,E,Каталог/категории/оборудование/поиск/избранное,PARTIAL,OBSERVED,OBS-0036;OBS-0048;OBS-0068,category/equipment filters observed; Favorites filter and favoriting need login
 CR-E02,E,Инструкция/видео/замены,PARTIAL,OBSERVED,OBS-0047,instruction = Focus Points sheet + media; replacements/variants only via level tabs A/B/C
 CR-E03,E,Своё упражнение,PARTIAL,OBSERVED,OBS-0038,own exercise creation observed; reuse in other workouts not yet checked
 CR-E04,E,Тренировка из своих и каталожных,PARTIAL,OBSERVED,OBS-0012,custom workout from catalog exercise; own exercise not created
@@ -94,7 +94,7 @@ CR-J07,J,Рекомендации/персонализация,PARTIAL,OBSERVED,
 CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0034;OBS-0062,logged-in account opened Premium; logged-out shows paywall per workout; free-tier rules for plan creation UNKNOWN (second account needed)
 CR-K02,K,Истечение доступа,PARTIAL,OBSERVED,OBS-0061;OBS-0062,access LOSS observed as a logout (not a subscription expiry mid-plan): effects on screens recorded; behaviour of an active plan after real expiry UNKNOWN
 CR-K03,K,Тема/узкий экран/текст,PARTIAL,OBSERVED,OBS-0031,font scale 1.5 observed; dark theme rendering not observed
-CR-K04,K,Клавиатура/safe area,PARTIAL,OBSERVED,OBS-0012;OBS-0026,keyboard in wizard/notes observed (no overlap of Save seen); safe-area not measured
-CR-K05,K,Сеть/перезапуск,PARTIAL,OBSERVED,OBS-0030,relaunch observed in recovery matrix
+CR-K04,K,Клавиатура/safe area,PARTIAL,OBSERVED,OBS-0012;OBS-0026;OBS-0070,Home at narrow width OK; forms+keyboard at narrow width untested
+CR-K05,K,Сеть/перезапуск,PARTIAL,OBSERVED,OBS-0030;OBS-0069,offline cold start of Home OK; offline with logged-in data untested
 CR-K06,K,Дата/часовой пояс,BLOCKED,UNKNOWN,,date/timezone change: not done to avoid corrupting the owner's logs; needs a throw-away account
 CR-K07,K,Неуспешный запрос и повтор,PARTIAL,OBSERVED,OBS-0030,network loss on save observed; loss before/after partial send not separable
