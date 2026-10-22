@@ -69,13 +69,13 @@ CR-G05,G,Двойной тап,PARTIAL,OBSERVED,OBS-0028,discard confirm exists 
 CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009;OBS-0024,in-app/background/recents/force-stop checked on Android emulator only; iPhone BLOCKED; tab switch inside app not checked
 CR-G07,G,Итог/следующий шаг,NOT_STARTED,UNKNOWN,,
 CR-G08,G,Заметки/RPE/самочувствие,NOT_STARTED,UNKNOWN,,
-CR-H01,H,Звук внутри приложения,NOT_STARTED,UNKNOWN,,
-CR-H02,H,Беззвучный режим,NOT_STARTED,UNKNOWN,,
+CR-H01,H,Звук внутри приложения,PARTIAL,OBSERVED,OBS-0032,settings exist; effect not testable (emulator no audio)
+CR-H02,H,Беззвучный режим,BLOCKED,UNKNOWN,OBS-0032,device silent mode/vibration/haptics not observable on emulator; needs physical Android
 CR-H03,H,Вибрация/визуальный сигнал,NOT_STARTED,UNKNOWN,,
 CR-H04,H,Экран погашен/фон,PARTIAL,OBSERVED,OBS-0024,timer keeps counting in background (visual only; audio/notification not checked: emulator -no-audio)
-CR-H05,H,Наушники/музыка,NOT_STARTED,UNKNOWN,,
-CR-H06,H,Часы,NOT_STARTED,UNKNOWN,,
-CR-H07,H,Разрешения ОС,NOT_STARTED,UNKNOWN,,
+CR-H05,H,Наушники/музыка,BLOCKED,UNKNOWN,,headphones/music need physical device
+CR-H06,H,Часы,BLOCKED,UNKNOWN,,watch notifications: no watch available
+CR-H07,H,Разрешения ОС,PARTIAL,OBSERVED,OBS-0024;OBS-0032,notification permission asked once by OS; other OS permissions not mapped
 CR-I01,I,Запись вне приложения,OBSERVED,OBSERVED,OBS-0026,"cross-training log created, appears in Logbook and Analytics"
 CR-I02,I,Свободная активность/каталог/своя,PARTIAL,OBSERVED,OBS-0026;OBS-0027,free activity and open-climbing forms; open-climbing log not saved
 CR-I03,I,Задним числом,PARTIAL,OBSERVED,OBS-0027,date field editable in forms (default today); past-date picking not exercised
@@ -91,10 +91,10 @@ CR-J04,J,Сводки/дайджесты/серии/цели,NOT_STARTED,UNKNOWN
 CR-J05,J,Пустые/малые данные,NOT_STARTED,UNKNOWN,,
 CR-J06,J,Подборки: поиск/состав/добавить/запуск,NOT_STARTED,UNKNOWN,,
 CR-J07,J,Рекомендации/персонализация,NOT_STARTED,UNKNOWN,,
-CR-K01,K,Free/Paid и ограничения,NOT_STARTED,UNKNOWN,,
+CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0018,free/paid: Crimpd+ banner on Plans; a 'Premium Workout' opened and was loggable on this account — real gating rules UNKNOWN (tier of account not confirmed)
 CR-K02,K,Истечение доступа,NOT_STARTED,UNKNOWN,,
-CR-K03,K,Тема/узкий экран/текст,NOT_STARTED,UNKNOWN,,
+CR-K03,K,Тема/узкий экран/текст,PARTIAL,OBSERVED,OBS-0031,font scale 1.5 observed; dark theme rendering not observed
 CR-K04,K,Клавиатура/safe area,NOT_STARTED,UNKNOWN,,
-CR-K05,K,Сеть/перезапуск,NOT_STARTED,UNKNOWN,,
+CR-K05,K,Сеть/перезапуск,PARTIAL,OBSERVED,OBS-0030,relaunch observed in recovery matrix
 CR-K06,K,Дата/часовой пояс,NOT_STARTED,UNKNOWN,,
-CR-K07,K,Неуспешный запрос и повтор,NOT_STARTED,UNKNOWN,,
+CR-K07,K,Неуспешный запрос и повтор,PARTIAL,OBSERVED,OBS-0030,network loss on save observed; loss before/after partial send not separable
