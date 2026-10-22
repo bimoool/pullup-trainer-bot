@@ -42,13 +42,13 @@ CR-D11,D,Пересечение программ,PARTIAL,OBSERVED,OBS-0037,overl
 CR-D12,D,Влияние правок на выполненное,PARTIAL,INFERRED,OBS-0036,after-edit effect on completed part not tested (test plan had no completed sessions)
 CR-E01,E,Каталог/категории/оборудование/поиск/избранное,NOT_STARTED,UNKNOWN,,
 CR-E02,E,Инструкция/видео/замены,NOT_STARTED,UNKNOWN,,
-CR-E03,E,Своё упражнение,NOT_STARTED,UNKNOWN,,
+CR-E03,E,Своё упражнение,PARTIAL,OBSERVED,OBS-0038,own exercise creation observed; reuse in other workouts not yet checked
 CR-E04,E,Тренировка из своих и каталожных,PARTIAL,OBSERVED,OBS-0012,custom workout from catalog exercise; own exercise not created
-CR-E05,E,Параметры подхода,PARTIAL,OBSERVED,OBS-0012,sets/rest/reps/rep timer/notes only; tempo/sides not seen
-CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,NOT_STARTED,UNKNOWN,,
-CR-E07,E,Смешанные протоколы,NOT_STARTED,UNKNOWN,,
+CR-E05,E,Параметры подхода,PARTIAL,OBSERVED,OBS-0012;OBS-0039,parameters: sets/rest/reps/rep timer/notes/resistance logging
+CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,PARTIAL,OBSERVED,OBS-0012;OBS-0040,add/delete exercise seen; reorder/duplicate not found
+CR-E07,E,Смешанные протоколы,UNKNOWN,UNKNOWN,,mixed protocols/same exercise repeated not tested
 CR-E08,E,Сохранение/отмена/повторное редактирование,PARTIAL,OBSERVED,OBS-0012;OBS-0016,save/edit observed; cancel behaviour partly
-CR-E09,E,Тренировка отдельно и в программе,NOT_STARTED,UNKNOWN,,
+CR-E09,E,Тренировка отдельно и в программе,PARTIAL,OBSERVED,OBS-0040,same workout standalone vs in plan: plan item counts shown 0/N; effect of a library log on a plan item not tested (would modify the owner's real plan)
 CR-F01,F,Изменить нагрузку перед упражнением,PARTIAL,OBSERVED,OBS-0013,load edit happens only in the log sheet/player (weight stepper); no pre-exercise load edit seen
 CR-F02,F,Вес/повторы/подходы/отдых,OBSERVED,OBSERVED,OBS-0014;OBS-0015,step 1 kg; no memory of last weight
 CR-F03,F,Замена упражнения,NOT_STARTED,UNKNOWN,,
