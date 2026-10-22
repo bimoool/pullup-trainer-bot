@@ -69,13 +69,13 @@ CR-G05,G,Двойной тап,PARTIAL,OBSERVED,OBS-0028,discard confirm exists 
 CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009;OBS-0024,in-app/background/recents/force-stop checked on Android emulator only; iPhone BLOCKED; tab switch inside app not checked
 CR-G07,G,Итог/следующий шаг,OBSERVED,OBSERVED,OBS-0045,double-submit creates duplicates
 CR-G08,G,Заметки/RPE/самочувствие,PARTIAL,OBSERVED,OBS-0044,summary = Log sheet; no separate 'next step' screen
-CR-H01,H,Звук внутри приложения,PARTIAL,OBSERVED,OBS-0032,settings exist; effect not testable (emulator no audio)
+CR-H01,H,Звук внутри приложения,PARTIAL,OBSERVED,OBS-0032;OBS-0063,cue events emitted incl. screen off; audibility/volume setting effect unverifiable (emulator no audio)
 CR-H02,H,Беззвучный режим,BLOCKED,UNKNOWN,OBS-0032,device silent mode/vibration/haptics not observable on emulator; needs physical Android
-CR-H03,H,Вибрация/визуальный сигнал,PARTIAL,OBSERVED,OBS-0013;OBS-0024,visual cue: GET READY (orange) / GO (green) / REST (blue) states; vibration BLOCKED
-CR-H04,H,Экран погашен/фон,PARTIAL,OBSERVED,OBS-0024,timer keeps counting in background (visual only; audio/notification not checked: emulator -no-audio)
+CR-H03,H,Вибрация/визуальный сигнал,PARTIAL,OBSERVED,OBS-0013;OBS-0064,visual cues observed; no timer vibration seen logged-out; setting unreadable
+CR-H04,H,Экран погашен/фон,PARTIAL,OBSERVED,OBS-0024;OBS-0063;OBS-0065,"screen off/HOME: timer wall-clock correct, cue events emitted; no notification/foreground service (permission declined); real-phone behaviour UNKNOWN"
 CR-H05,H,Наушники/музыка,BLOCKED,UNKNOWN,,headphones/music need physical device
 CR-H06,H,Часы,BLOCKED,UNKNOWN,,watch notifications: no watch available
-CR-H07,H,Разрешения ОС,PARTIAL,OBSERVED,OBS-0024;OBS-0032,notification permission asked once by OS; other OS permissions not mapped
+CR-H07,H,Разрешения ОС,PARTIAL,OBSERVED,OBS-0065,permission list and states known; granted-notification behaviour untested
 CR-I01,I,Запись вне приложения,OBSERVED,OBSERVED,OBS-0026,"cross-training log created, appears in Logbook and Analytics"
 CR-I02,I,Свободная активность/каталог/своя,PARTIAL,OBSERVED,OBS-0026;OBS-0027,free activity and open-climbing forms; open-climbing log not saved
 CR-I03,I,Задним числом,PARTIAL,OBSERVED,OBS-0053;OBS-0056,backdated log saved and counted; future-date save untested
