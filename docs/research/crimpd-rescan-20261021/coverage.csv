@@ -91,8 +91,8 @@ CR-J04,J,Сводки/дайджесты/серии/цели,PARTIAL,INFERRED,OB
 CR-J05,J,Пустые/малые данные,PARTIAL,OBSERVED,OBS-0042;OBS-0034,"empty states: 'No assessments logged', 'You do not have any upcoming…', 'No workouts scheduled for today'"
 CR-J06,J,Подборки: поиск/состав/добавить/запуск,PARTIAL,OBSERVED,OBS-0048,playlist screen with author and workouts; adding a playlist to a plan not tested
 CR-J07,J,Рекомендации/персонализация,PARTIAL,OBSERVED,OBS-0046,peer insights percentile on assessment detail
-CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0018,free/paid: Crimpd+ banner on Plans; a 'Premium Workout' opened and was loggable on this account — real gating rules UNKNOWN (tier of account not confirmed)
-CR-K02,K,Истечение доступа,BLOCKED,UNKNOWN,OBS-0034,access expiry during a plan: needs subscription change; purchases forbidden by the task
+CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0034;OBS-0062,logged-in account opened Premium; logged-out shows paywall per workout; free-tier rules for plan creation UNKNOWN (second account needed)
+CR-K02,K,Истечение доступа,PARTIAL,OBSERVED,OBS-0061;OBS-0062,access LOSS observed as a logout (not a subscription expiry mid-plan): effects on screens recorded; behaviour of an active plan after real expiry UNKNOWN
 CR-K03,K,Тема/узкий экран/текст,PARTIAL,OBSERVED,OBS-0031,font scale 1.5 observed; dark theme rendering not observed
 CR-K04,K,Клавиатура/safe area,PARTIAL,OBSERVED,OBS-0012;OBS-0026,keyboard in wizard/notes observed (no overlap of Save seen); safe-area not measured
 CR-K05,K,Сеть/перезапуск,PARTIAL,OBSERVED,OBS-0030,relaunch observed in recovery matrix
