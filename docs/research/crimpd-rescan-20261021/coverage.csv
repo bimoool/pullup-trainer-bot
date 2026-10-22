@@ -4,13 +4,13 @@ CR-A02,A,Выбор цели/уровня/программы/оборудова�
 CR-A03,A,Что объясняется до подключения программы,NOT_STARTED,UNKNOWN,,
 CR-A04,A,Первый обязательный шаг после подключения,PARTIAL,OBSERVED,OBS-0004,after adding template: no mandatory step seen up to Save form
 CR-A05,A,Программы с замерами и без,PARTIAL,INFERRED,OBS-0003,template seen has no assessment; other templates unchecked
-CR-A06,A,Замеры вне программы,PARTIAL,OBSERVED,OBS-0018;OBS-0019;OBS-0020,tests→load link observed for pull-up family; other families not yet
-CR-A07,A,Использование имеющегося результата,PARTIAL,OBSERVED,OBS-0019,load computed from stored result
+CR-A06,A,Замеры вне программы,PARTIAL,OBSERVED,OBS-0018;OBS-0019;OBS-0041;OBS-0043,"two test families (pull-ups, finger strength) + RPE-only workouts; other families/test types not exhausted"
+CR-A07,A,Использование имеющегося результата,PARTIAL,OBSERVED,OBS-0019;OBS-0041;OBS-0043,calculated load prefilled in log for %-of-test workouts; RPE workouts have no computed load
 CR-A08,A,Повторный замер,NOT_STARTED,UNKNOWN,,
 CR-A09,A,Несколько обязательных замеров,NOT_STARTED,UNKNOWN,,
 CR-A10,A,Путь замер→первая тренировка,NOT_STARTED,UNKNOWN,,
 CR-A11,A,Замер пропущен/отменён/не завершён,NOT_STARTED,UNKNOWN,,
-CR-A12,A,Нет оборудования/результатов,NOT_STARTED,UNKNOWN,,
+CR-A12,A,Нет оборудования/результатов,PARTIAL,OBSERVED,OBS-0042,"missing test result: no value, no inline CTA; equipment-less alternative not found"
 CR-B01,B,Объяснение смысла/единиц/техники замера,PARTIAL,OBSERVED,OBS-0005,one assessment (Edge Lift) read; other assessments not opened
 CR-B02,B,Подготовка/разминка/подбор нагрузки/отдых,PARTIAL,OBSERVED,OBS-0006;OBS-0007,start/execution observed; save of result not done (would write to owner's logbook)
 CR-B03,B,Успех/неудача/остановка/повтор/исправление,NOT_STARTED,UNKNOWN,,
