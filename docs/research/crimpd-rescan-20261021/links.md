@@ -1,5 +1,5 @@
 # Ссылки
 - Umbrella-issue: https://github.com/bimoool/pullup-trainer-bot/issues/347 (дочерние A–M: #348–#360)
-- Таблица 1 «Crimpd — исследование и сравнение с Турникмэном»: НЕ СОЗДАНА (см. checkpoint.md, блокер)
-- Таблица 2 «Турникмэн — пользовательские пути и согласование»: НЕ СОЗДАНА
-- Research PR: TBD
+- Research PR: https://github.com/bimoool/pullup-trainer-bot/pull/361
+- Таблица путей (ведёт навигатор): https://docs.google.com/spreadsheets/d/1MWPj3ThSCNDu8XYyVWYdOVNdYeepp3saS8TYxu2vBRM/edit
+- Таблица сравнения: ведёт навигатор; источник — comparison.csv в этой папке
