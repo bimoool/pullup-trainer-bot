@@ -65,7 +65,7 @@ CR-G01,G,Предстарт/запуск/работа/отдых,PARTIAL,OBSERVE
 CR-G02,G,Фактический ввод vs план,PARTIAL,OBSERVED,OBS-0007;OBS-0014,actual vs plan in log sheet
 CR-G03,G,Пауза/назад/пропуск/досрочно,NOT_STARTED,UNKNOWN,,
 CR-G04,G,Отмена/случайный выход/перезапуск,PARTIAL,OBSERVED,OBS-0024,accidental exit variants observed
-CR-G05,G,Двойной тап,NOT_STARTED,UNKNOWN,,
+CR-G05,G,Двойной тап,PARTIAL,OBSERVED,OBS-0028,discard confirm exists for open climbing; strength player has no cancel
 CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009;OBS-0024,in-app/background/recents/force-stop checked on Android emulator only; iPhone BLOCKED; tab switch inside app not checked
 CR-G07,G,Итог/следующий шаг,NOT_STARTED,UNKNOWN,,
 CR-G08,G,Заметки/RPE/самочувствие,NOT_STARTED,UNKNOWN,,
@@ -76,16 +76,16 @@ CR-H04,H,Экран погашен/фон,PARTIAL,OBSERVED,OBS-0024,timer keeps 
 CR-H05,H,Наушники/музыка,NOT_STARTED,UNKNOWN,,
 CR-H06,H,Часы,NOT_STARTED,UNKNOWN,,
 CR-H07,H,Разрешения ОС,NOT_STARTED,UNKNOWN,,
-CR-I01,I,Запись вне приложения,NOT_STARTED,UNKNOWN,,
-CR-I02,I,Свободная активность/каталог/своя,NOT_STARTED,UNKNOWN,,
-CR-I03,I,Задним числом,NOT_STARTED,UNKNOWN,,
-CR-I04,I,Просмотр/правка/дубль/удаление,PARTIAL,OBSERVED,OBS-0014,"log card seen; Edit/Clone/Delete exist, not exercised"
+CR-I01,I,Запись вне приложения,OBSERVED,OBSERVED,OBS-0026,"cross-training log created, appears in Logbook and Analytics"
+CR-I02,I,Свободная активность/каталог/своя,PARTIAL,OBSERVED,OBS-0026;OBS-0027,free activity and open-climbing forms; open-climbing log not saved
+CR-I03,I,Задним числом,PARTIAL,OBSERVED,OBS-0027,date field editable in forms (default today); past-date picking not exercised
+CR-I04,I,Просмотр/правка/дубль/удаление,PARTIAL,OBSERVED,OBS-0026,card actions View Workout/Edit/Clone/Delete
 CR-I05,I,Влияние на программу/аналитику,PARTIAL,OBSERVED,OBS-0023,Edit Log affects analytics via Completion %
 CR-I06,I,План vs факт,NOT_STARTED,UNKNOWN,,
 CR-I07,I,Неполные/прерванные/удалённые,NOT_STARTED,UNKNOWN,,
-CR-I08,I,Экспорт/фильтры/поиск,NOT_STARTED,UNKNOWN,,
+CR-I08,I,Экспорт/фильтры/поиск,PARTIAL,OBSERVED,OBS-0029,export CSV button seen; file not downloaded (not requested)
 CR-J01,J,Периоды/объём/категории/регулярность,PARTIAL,OBSERVED,OBS-0023,"summary table seen; periods 1/3 Mo, Custom not exercised"
-CR-J02,J,План/факт/прогресс,NOT_STARTED,UNKNOWN,,
+CR-J02,J,План/факт/прогресс,PARTIAL,OBSERVED,OBS-0029,plan vs actual not observed separately
 CR-J03,J,Замеры и динамика,NOT_STARTED,UNKNOWN,,
 CR-J04,J,Сводки/дайджесты/серии/цели,NOT_STARTED,UNKNOWN,,
 CR-J05,J,Пустые/малые данные,NOT_STARTED,UNKNOWN,,
