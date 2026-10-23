@@ -6,6 +6,6 @@
 - Следующее конкретное действие: владельцу: решить вопросы из findings.md; при желании — второй тестовый аккаунт/телефон для real-phone-checks.md (A01/A02, K01, K02, K03, K06, H*, K04)
 - Покрытие (99): OBSERVED 84 · PARTIAL 7 · BLOCKED 8 · UNKNOWN 0 · NOT_STARTED 0
 - Наблюдений: 110
-- Ошибки инструментов: uiautomator-дамп WebView иногда устаревает (вне таймера — перепроверять через скриншот); вход после разлога выполнил владелец
+- Ошибки инструментов: uiautomator-дамп WebView иногда устаревает (проверять скриншотом); вход после разлога выполнил владелец
 - Разбор остатков: coverage-triage.csv (по каждому PARTIAL/UNKNOWN)
 - Эмулятор: source ~/android-ref-lab/env.sh; emulator -avd ref_pixel6_play -dns-server 8.8.8.8,1.1.1.1 -no-audio; хелперы ~/android-ref-lab/{rs.sh,tt.sh,snap.sh}
