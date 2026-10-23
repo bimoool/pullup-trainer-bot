@@ -44,3 +44,4 @@
 Удалены (каждая — после сверки по названию/дате/значениям): T-010 план «RESCAN TEST - Template» (Completed), T-011 лог Finger Strength Test (Aug 4 2026, +10 кг, ранее Jan 6), T-012 лог Weighted Pull-up Test (Jan 7 2026, +3 кг), T-013 тренировка «RESCAN TEST - W2», T-014 лог W2 от 23 Oct (25%), T-016 лог W2 с датой 28 Oct (будущей), T-015 лог Open Climbing (23 Oct 12:00 PM, grade 5, 1 problem; заметка «RESCAN climb note» в карточке не отображается — идентификация по дефолтам формы и времени, единственная запись Indoor Bouldering за день).
 Финальная проверка: см. блок «Итоговая проверка 2» ниже.
 | T-017 | 2026-10-23 | Лог «Finger Strength Test – One Arm» от 6 Jan 2026, +8 кг | Logbook/Profile | DELETED 2026-10-23 (единственный лог теста; +8 кг, Jan 6 сверены) |
+| T-018 | 2026-10-23 | Plan «RESCAN TEST - Edit» (blank, 6 нед., Jan 5 2026) | Training Plans → Completed | DELETED 2026-10-23 |
