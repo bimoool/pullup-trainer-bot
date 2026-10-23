@@ -91,10 +91,16 @@ CR-J04,J,Сводки/дайджесты/серии/цели,OBSERVED,OBSERVED,O
 CR-J05,J,Пустые/малые данные,OBSERVED,OBSERVED,OBS-0042;OBS-0034;OBS-0083,empty states recorded incl. analytics 'No data to display'
 CR-J06,J,Подборки: поиск/состав/добавить/запуск,PARTIAL,OBSERVED,OBS-0048;OBS-0107,playlist screen seen; adding to plan via Add to Plan sheet whose selector defaults to the REAL plan — not pressed for safety (BLOCKED sub-check)
 CR-J07,J,Рекомендации/персонализация,OBSERVED,OBSERVED,OBS-0046;OBS-0090,percentile and explanation
-CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0034;OBS-0062;OBS-0072,owner's account has Premium; free-tier rules UNKNOWN — need a free second account (BLOCKED sub-check)
+CR-K01,K,Free/Paid и ограничения,PARTIAL,OBSERVED,OBS-0034;OBS-0062;OBS-0072,"[ИСПРАВЛЕНО 2026-10-23] Тип аккаунта НЕ установлен: вкладка планов показывает баннер «Use Crimpd+…» (OBS-0002, как у бесплатного), но Premium-тренировки и создание/правка планов доступны. Тариф можно определить только в Settings → Crimpd+ Subscription (не открывалось, чтобы не попасть в покупку). Правила бесплатного уровня — UNKNOWN; нужен второй бесплатный аккаунт"
 CR-K02,K,Истечение доступа,BLOCKED,UNKNOWN,OBS-0061;OBS-0062,real access expiry cannot be reproduced without changing subscription (forbidden); logged-out analogue recorded
 CR-K03,K,Тема/узкий экран/текст,PARTIAL,OBSERVED,OBS-0031;OBS-0066;OBS-0070;OBS-0084,font 1.5 and narrow width observed; dark theme BLOCKED (would change the owner's Theme setting)
 CR-K04,K,Клавиатура/safe area,BLOCKED,UNKNOWN,OBS-0070,keyboard/safe area: emulator shows only the floating IME toolbar (hardware-keyboard mode); needs a real device or a soft-keyboard AVD
 CR-K05,K,Сеть/перезапуск,OBSERVED,OBSERVED,OBS-0069;OBS-0098,offline cold start logged out and in
 CR-K06,K,Дата/часовой пояс,BLOCKED,UNKNOWN,,date/timezone change: not done to avoid corrupting the owner's logs; needs a throw-away account
 CR-K07,K,Неуспешный запрос и повтор,OBSERVED,OBSERVED,OBS-0030;OBS-0099,"failure message, not queued, retry creates a new entry"
+CR-E10,E,Поиск тренировок и фильтры (Search Workouts),OBSERVED,OBSERVED,OBS-0111;OBS-0112;OBS-0113,"поиск по тексту, фильтры Category/Equipment/Home/Favorites; нет фильтров по уровню/длительности/наличию замера; фильтр при введённом тексте даёт расхождение строка/результат"
+CR-I09,I,Календарный вид журнала,OBSERVED,OBSERVED,OBS-0114,месячный календарь с точками по числу тренировок; фильтров/поиска нет; скриншот не сохранён (реальные данные)
+CR-K08,K,"Настройки: единицы, локаль, тема, таймер",OBSERVED,OBSERVED,OBS-0032;OBS-0066;OBS-0084,"единицы (Imperial/Metric, length unit), Locale/Monday start, Time Zone, Theme, Timer Settings (vibration, volume); не менялись"
+CR-K09,K,"Доступность для ассистивных технологий (TalkBack, подписи элементов)",BLOCKED,BLOCKED,,"экраны Crimpd — WebView, uiautomator возвращает пустое дерево (accessibility-узлов нет); TalkBack-проверка вживую не выполнялась. Условие снятия: включить TalkBack на эмуляторе и пройти основные экраны; не выполнено в этом проходе"
+CR-J08,J,Список тестов (Primary Assessments) в Profile и блок Assessment Tests на Home,OBSERVED,OBSERVED,OBS-0046;OBS-0115;OBS-0116,тесты видны на Home и в Profile с датой и результатом; Primary Assessments показывает последний результат или «No assessments logged»
+CR-C10,C,Баннер Open Climbing Session на Home,OBSERVED,OBSERVED,OBS-0116,отдельная точка входа в живую сессию свободной активности

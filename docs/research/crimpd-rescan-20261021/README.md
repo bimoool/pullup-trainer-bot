@@ -43,7 +43,7 @@ OBSERVED — проверено непосредственно; INFERRED — п�
 ## Ссылки
 Заполняются по мере создания: umbrella-issue, Google-таблицы, research PR — см. `links.md`.
 
-## Итог состояния (2026-10-22)
-Покрытие (99 позиций): проверено 4, частично 87, недоступно 6 (BLOCKED), неизвестно 2, не начато 0 — подробности и причины в `coverage.csv`.
-Наблюдений: 51 (`observations.csv`), сравнение: 18 строк (`comparison.csv`), предложения к таблице путей: `proposals-for-paths.md`.
-Тестовые данные удалены и проверены (`test-data-ledger.md`). Ничего не выкачено, продуктовый код не менялся.
+## Итог состояния (2026-10-23, пакет на приёмку)
+Статус: READY_FOR_NAVIGATOR_REVIEW (ACCEPTED не выставлен). Пакет: `acceptance-report.md`.
+Покрытие (105 позиций): OBSERVED 89 · PARTIAL 7 · BLOCKED 9 (`coverage.csv`). Наблюдений: 117 (`observations.csv`). Матрица требований: 26 строк (`acceptance-matrix.csv`: 13 выполнено · 10 частично · 3 недоступно). Карта экранов и действий: 33 строки (`screen-action-map.csv`). Аудит доказательств: `evidence-audit.csv`. Исправления выводов: `correction-log.md`. Сравнение с нашим приложением: `comparison.csv` (28 строк, колонки UI/API/код), `feature-gap-backlog.csv`, `our-app/`.
+Продуктовый код не менялся; ничего не выкачено; тестовые данные Crimpd удалены (`test-data-ledger.md`); стенд нашего приложения удалён.
