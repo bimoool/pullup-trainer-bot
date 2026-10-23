@@ -45,3 +45,18 @@
 Финальная проверка: см. блок «Итоговая проверка 2» ниже.
 | T-017 | 2026-10-23 | Лог «Finger Strength Test – One Arm» от 6 Jan 2026, +8 кг | Logbook/Profile | DELETED 2026-10-23 (единственный лог теста; +8 кг, Jan 6 сверены) |
 | T-018 | 2026-10-23 | Plan «RESCAN TEST - Edit» (blank, 6 нед., Jan 5 2026) | Training Plans → Completed | DELETED 2026-10-23 |
+| T-019 | 2026-10-23 | Cross-Training «Running 15m» note «RESCAN K07» (тест офлайн-Save) | Logbook | DELETED 2026-10-23 (2 записи: оригинал и клон, сверены по времени 12:50–12:51 PM) |
+| T-020 | 2026-10-23 | Plan «RESCAN TEST - Duration» (blank, 6 нед., Jan 5 2026) | Training Plans → Completed | DELETED 2026-10-23 |
+| T-021 | 2026-10-23 | Лог «7:3s 30%» от 3 Feb 2026 (неделя 5 плана T-020) | Logbook | DELETED 2026-10-23 |
+| T-022 | 2026-10-23 | Лог «Finger Strength Test» от 5 Aug 2026 +5 кг, заметка упражнения «RESCAN G08 note» | Logbook/Profile | DELETED 2026-10-23 |
+| T-023 | 2026-10-23 | Второй лог «Finger Strength Test» от 5 Aug 2026 +15 кг (тест «два лога в один день») | Logbook/Profile | DELETED 2026-10-23 |
+| T-024 | 2026-10-23 | Третий лог «Finger Strength Test» от 5 Aug 2026 +10 кг | Logbook/Profile | DELETED 2026-10-23 |
+| T-025 | 2026-10-23 | Custom workout «RESCAN TEST - XA» (Back Squat) | Home → My Workouts | DELETED 2026-10-23 |
+| T-026 | 2026-10-23 | Custom workout «RESCAN TEST - XB» (Back Squat) | Home → My Workouts | DELETED 2026-10-23 |
+
+## Итоговая проверка 2 (2026-10-23, конец прохода)
+- Все T-001…T-026 удалены (каждая — после сверки названия/даты/значений). Поиск «RESCAN» на Home: FOUND 0.
+- Profile: Finger Strength Test — Jul 23 2026, +40 кг; Weighted Pull-up Test — Jul 20 2026, +60 кг (исходные). Реальный план «In Progress» на месте (Week 5 of 6, 0/7); Upcoming пуст; в Completed только планы владельца.
+- Кратковременные ложные пустые состояния списков (после удаления плана/офлайн) НЕ означали потерю данных — после перезапуска всё на месте (OBS-0098, OBS-0106).
+- Системные настройки эмулятора возвращены: сеть включена, wm size/density сброшены (1080x2400/420), font_scale 1.0, night mode no. Chrome (открывался из «Help») без входа, уведомления/cookies отклонены, процесс остановлен.
+- Изменения аккаунта владельца: ни одна настройка (Theme, Vibrations, Volume, единицы, профиль) не менялась. Favorite на Edge Lift Test включён и выключен (исходное состояние восстановлено).
