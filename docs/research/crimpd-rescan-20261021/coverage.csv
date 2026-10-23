@@ -87,7 +87,7 @@ CR-I08,I,Экспорт/фильтры/поиск,OBSERVED,OBSERVED,OBS-0029;OBS
 CR-J01,J,Периоды/объём/категории/регулярность,OBSERVED,OBSERVED,OBS-0029;OBS-0083,1 Mo/3 Mo/Custom and 4 metrics observed with numbers
 CR-J02,J,План/факт/прогресс,OBSERVED,OBSERVED,OBS-0053;OBS-0083,plan vs actual only inside the plan view; analytics = actual
 CR-J03,J,Замеры и динамика,OBSERVED,OBSERVED,OBS-0046,test trend chart in assessment detail
-CR-J04,J,Сводки/дайджесты/серии/цели,PARTIAL,OBSERVED,OBS-0029;OBS-0051;OBS-0109,no digests/streaks/goals in app screens; Help = external docs site (opened; only 'Getting Started' read); remaining: other docs pages (outside the app UX)
+CR-J04,J,Сводки/дайджесты/серии/цели,OBSERVED,OBSERVED,OBS-0029;OBS-0051;OBS-0109;OBS-0110,no streaks/goals/digests in app surfaces or the docs site menu (negative finding within visited surfaces)
 CR-J05,J,Пустые/малые данные,OBSERVED,OBSERVED,OBS-0042;OBS-0034;OBS-0083,empty states recorded incl. analytics 'No data to display'
 CR-J06,J,Подборки: поиск/состав/добавить/запуск,PARTIAL,OBSERVED,OBS-0048;OBS-0107,playlist screen seen; adding to plan via Add to Plan sheet whose selector defaults to the REAL plan — not pressed for safety (BLOCKED sub-check)
 CR-J07,J,Рекомендации/персонализация,OBSERVED,OBSERVED,OBS-0046;OBS-0090,percentile and explanation
