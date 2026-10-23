@@ -32,3 +32,6 @@
 - Удалены: T-009 план «RESCAN TEST - Past (Copy)» (Upcoming, Nov 2), T-007 план «RESCAN TEST - Past» (Completed, Jan 5 – Feb 9), T-008 лог Weighted Pull-up Test от 6 Jan 2026 (+5 кг). Каждое — после сверки названия/дат; у лога единственная запись на 6 января.
 - Проверено: Profile «Weighted Pull-up Test» снова Jul 20 2026, +60 кг; Finger Strength Test Jul 23, +40 кг; реальный план «In Progress» (Week 5 of 6, 0/7) на месте; Upcoming пуст; Completed содержит только планы владельца.
 - Наблюдение: удаление плана T-007 не удалило лог T-008 (лог пережил удаление плана) — перепроверено в Logbook до удаления лога.
+| T-010 | 2026-10-23 | Plan «RESCAN TEST - Template» (из шаблона Bouldering Mastery, старт Mon Jan 5 2026) | Training Plans → Completed | (создаётся) |
+| T-011 | 2026-10-23 | Лог «Finger Strength Test» от 6 Jan 2026, +10 кг, 8×1 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
+| T-012 | 2026-10-23 | Лог «Weighted Pull-up Test» от 7 Jan 2026, +3 кг, 8×2 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
