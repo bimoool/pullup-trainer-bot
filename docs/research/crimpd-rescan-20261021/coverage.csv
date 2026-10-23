@@ -7,11 +7,11 @@ CR-A05,A,Программы с замерами и без,OBSERVED,OBSERVED,OBS-
 CR-A06,A,Замеры вне программы,OBSERVED,OBSERVED,OBS-0018;OBS-0041;OBS-0043;OBS-0091;OBS-0093,"3 load-linked tests (pull-up, finger, one-arm) + RPE-only workouts; Core/Flex/Edge tests have no %-linked workouts found"
 CR-A07,A,Использование имеющегося результата,OBSERVED,OBSERVED,OBS-0019;OBS-0041;OBS-0091,stored result → computed load prefilled; no result → empty value
 CR-A08,A,Повторный замер,OBSERVED,OBSERVED,OBS-0005;OBS-0046;OBS-0108,"retest only recommended in protocol text; Profile shows last date, no expiry/reminder in visited screens"
-CR-A09,A,Несколько обязательных замеров,OBSERVED,OBSERVED,OBS-0072,two tests scheduled in week 1 of Bouldering Mastery as plain workouts; no enforcement/progress UI for 'preparation' exists
+CR-A09,A,Несколько обязательных замеров,PARTIAL,OBSERVED,OBS-0072,two tests scheduled in week 1 of Bouldering Mastery as plain workouts; no enforcement/progress UI for 'preparation' exists [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
 CR-A10,A,Путь замер→первая тренировка,OBSERVED,OBSERVED,OBS-0020;OBS-0074,test log Save returns to the workout page; no guided next step; effects visible in Profile/loads/plan
 CR-A11,A,Замер пропущен/отменён/не завершён,OBSERVED,OBSERVED,OBS-0024;OBS-0028;OBS-0075,interrupted test saves nothing; 25–75% completion is the only 'incomplete' state; no required-test state
 CR-A12,A,Нет оборудования/результатов,OBSERVED,OBSERVED,OBS-0042;OBS-0091,"no result → blank load value, no CTA; equipment filter + Home Workouts chip exist; no 'no equipment' alternative flow"
-CR-B01,B,Объяснение смысла/единиц/техники замера,OBSERVED,OBSERVED,OBS-0005;OBS-0108,"protocols of Edge Lift, Weighted Pull-up, Finger Strength read (what/when/rules/safety/result formula)"
+CR-B01,B,Объяснение смысла/единиц/техники замера,PARTIAL,OBSERVED,OBS-0005;OBS-0108,"protocols of Edge Lift, Weighted Pull-up, Finger Strength read (what/when/rules/safety/result formula) [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]"
 CR-B02,B,Подготовка/разминка/подбор нагрузки/отдых,OBSERVED,OBSERVED,OBS-0005;OBS-0006;OBS-0007;OBS-0086,warm-up only in protocol text; manual load per set; rest from workout config
 CR-B03,B,Успех/неудача/остановка/повтор/исправление,OBSERVED,OBSERVED,OBS-0023;OBS-0046;OBS-0081,"fail/stop = Completion %, repeat = new log, correction = Edit Log"
 CR-B04,B,Подтверждённые результаты,OBSERVED,OBSERVED,OBS-0020;OBS-0055;OBS-0103,current result = latest by date; equal date → max
@@ -26,9 +26,9 @@ CR-C04,C,День отдыха/пропуск/перерыв,OBSERVED,OBSERVED,O
 CR-C05,C,Начатая тренировка и продолжение,OBSERVED,OBSERVED,OBS-0008;OBS-0080;OBS-0101,mini-player while process alive; replaced silently by a new start; no resume after kill
 CR-C06,C,Несколько программ,OBSERVED,OBSERVED,OBS-0037;OBS-0060,one-active and no-overlap rules
 CR-C07,C,Завершена/пауза/удалена/повторно подключена,OBSERVED,OBSERVED,OBS-0034;OBS-0036;OBS-0057;OBS-0059,states by date: In Progress/Upcoming/Completed; no pause; delete + clone
-CR-C08,C,Возврат из каталога/журнала,OBSERVED,OBSERVED,OBS-0051,Back navigation incl. app exit from Home
+CR-C08,C,Возврат из каталога/журнала,PARTIAL,OBSERVED,OBS-0051,Back navigation incl. app exit from Home [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
 CR-C09,C,Блокировка следующего занятия,OBSERVED,OBSERVED,OBS-0019;OBS-0080,no availability/rest blocking observed
-CR-D01,D,Каталог/подбор/фильтры/уровни,OBSERVED,OBSERVED,OBS-0067;OBS-0092,"11 templates, levels A–C(+D) with hours, no filters"
+CR-D01,D,Каталог/подбор/фильтры/уровни,PARTIAL,OBSERVED,OBS-0067;OBS-0092,"11 templates, levels A–C(+D) with hours, no filters [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт] [ИСПРАВЛЕНО: шаблонов 10, не 11 (+плитка «Create your own»); уровни: 3/3/3/3(Power: Intermediate–Elite)/2(One-arm)/4(Core)/3/3/3/4(Finger) — templates-matrix.csv]"
 CR-D02,D,Подключение/дата старта/фазы,OBSERVED,OBSERVED,OBS-0004;OBS-0073,template → new plan: name + start; phases fixed by template
 CR-D03,D,Создание своей программы,OBSERVED,OBSERVED,OBS-0035;OBS-0036;OBS-0095,blank plan + add workouts + volumes + notes; no pause/archive
 CR-D04,D,Копирование шаблона,OBSERVED,OBSERVED,OBS-0035;OBS-0057,blank plan and clone (Copy Schedule toggle); skill-template-based plan creation observed up to form (OBS-0004)
@@ -46,7 +46,7 @@ CR-E03,E,Своё упражнение,OBSERVED,OBSERVED,OBS-0038;OBS-0049,own e
 CR-E04,E,Тренировка из своих и каталожных,OBSERVED,OBSERVED,OBS-0012;OBS-0077;OBS-0078,catalog + own exercises mixed in one workout
 CR-E05,E,Параметры подхода,OBSERVED,OBSERVED,OBS-0012;OBS-0039;OBS-0079,sets/rest/reps/rep timer/rep duration/notes/resistance; no tempo/sides
 CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,OBSERVED,OBSERVED,OBS-0012;OBS-0040;OBS-0077,"add, delete, reorder (drag + Save) observed; duplicate/replace actions do not exist in the exercise menu"
-CR-E07,E,Смешанные протоколы,OBSERVED,OBSERVED,OBS-0078,same exercise twice in one workout allowed
+CR-E07,E,Смешанные протоколы,PARTIAL,OBSERVED,OBS-0078,same exercise twice in one workout allowed [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
 CR-E08,E,Сохранение/отмена/повторное редактирование,OBSERVED,OBSERVED,OBS-0012;OBS-0016;OBS-0040,wizard cancel exits on step 1; edits save instantly
 CR-E09,E,Тренировка отдельно и в программе,OBSERVED,OBSERVED,OBS-0053;OBS-0075,confirmed twice with different workouts/dates
 CR-F01,F,Изменить нагрузку перед упражнением,OBSERVED,OBSERVED,OBS-0013;OBS-0086,load editable per set in player panel before/after set; not before the exercise in the template
@@ -56,7 +56,7 @@ CR-F04,F,Добавить/пропустить упражнение,OBSERVED,OBS
 CR-F05,F,Только сегодня,OBSERVED,OBSERVED,OBS-0014;OBS-0022;OBS-0086,'this session only' = edits in player/log sheet
 CR-F06,F,Сохранить для следующих,OBSERVED,OBSERVED,OBS-0015;OBS-0016,no 'save for next sessions' for loads; template edits only
 CR-F07,F,Изменить шаблон программы,OBSERVED,OBSERVED,OBS-0095;OBS-0096,plan content editable via Edit Training Plan
-CR-F08,F,Упражнение в нескольких местах,OBSERVED,OBSERVED,OBS-0049;OBS-0087;OBS-0105,instances independent in and across workouts; own exercises workout-local
+CR-F08,F,Упражнение в нескольких местах,PARTIAL,OBSERVED,OBS-0049;OBS-0087;OBS-0105,instances independent in and across workouts; own exercises workout-local [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
 CR-F09,F,Область: подход/сессия/будущие/шаблон,OBSERVED,OBSERVED,OBS-0016;OBS-0017;OBS-0074;OBS-0086,"scopes: set/session (log), template, plan structure; no explicit chooser"
 CR-F10,F,Сохранность истории A→B,OBSERVED,OBSERVED,OBS-0014;OBS-0017,A=3/4 kg preserved after template change
 CR-F11,F,Правка программы посередине,OBSERVED,OBSERVED,OBS-0058;OBS-0059;OBS-0096,mid-plan edits recompute progress; no warning
@@ -87,7 +87,7 @@ CR-I08,I,Экспорт/фильтры/поиск,OBSERVED,OBSERVED,OBS-0029;OBS
 CR-J01,J,Периоды/объём/категории/регулярность,OBSERVED,OBSERVED,OBS-0029;OBS-0083,1 Mo/3 Mo/Custom and 4 metrics observed with numbers
 CR-J02,J,План/факт/прогресс,OBSERVED,OBSERVED,OBS-0053;OBS-0083,plan vs actual only inside the plan view; analytics = actual
 CR-J03,J,Замеры и динамика,OBSERVED,OBSERVED,OBS-0046,test trend chart in assessment detail
-CR-J04,J,Сводки/дайджесты/серии/цели,OBSERVED,OBSERVED,OBS-0029;OBS-0051;OBS-0109;OBS-0110,no streaks/goals/digests in app surfaces or the docs site menu (negative finding within visited surfaces)
+CR-J04,J,Сводки/дайджесты/серии/цели,PARTIAL,OBSERVED,OBS-0029;OBS-0051;OBS-0109;OBS-0110,no streaks/goals/digests in app surfaces or the docs site menu (negative finding within visited surfaces) [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
 CR-J05,J,Пустые/малые данные,OBSERVED,OBSERVED,OBS-0042;OBS-0034;OBS-0083,empty states recorded incl. analytics 'No data to display'
 CR-J06,J,Подборки: поиск/состав/добавить/запуск,PARTIAL,OBSERVED,OBS-0048;OBS-0107,playlist screen seen; adding to plan via Add to Plan sheet whose selector defaults to the REAL plan — not pressed for safety (BLOCKED sub-check)
 CR-J07,J,Рекомендации/персонализация,OBSERVED,OBSERVED,OBS-0046;OBS-0090,percentile and explanation
@@ -99,8 +99,8 @@ CR-K05,K,Сеть/перезапуск,OBSERVED,OBSERVED,OBS-0069;OBS-0098,offli
 CR-K06,K,Дата/часовой пояс,BLOCKED,UNKNOWN,,date/timezone change: not done to avoid corrupting the owner's logs; needs a throw-away account
 CR-K07,K,Неуспешный запрос и повтор,OBSERVED,OBSERVED,OBS-0030;OBS-0099,"failure message, not queued, retry creates a new entry"
 CR-E10,E,Поиск тренировок и фильтры (Search Workouts),OBSERVED,OBSERVED,OBS-0111;OBS-0112;OBS-0113,"поиск по тексту, фильтры Category/Equipment/Home/Favorites; нет фильтров по уровню/длительности/наличию замера; фильтр при введённом тексте даёт расхождение строка/результат"
-CR-I09,I,Календарный вид журнала,OBSERVED,OBSERVED,OBS-0114,месячный календарь с точками по числу тренировок; фильтров/поиска нет; скриншот не сохранён (реальные данные)
+CR-I09,I,Календарный вид журнала,PARTIAL,OBSERVED,OBS-0114,месячный календарь с точками по числу тренировок; фильтров/поиска нет; скриншот не сохранён (реальные данные) [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
 CR-K08,K,"Настройки: единицы, локаль, тема, таймер",OBSERVED,OBSERVED,OBS-0032;OBS-0066;OBS-0084,"единицы (Imperial/Metric, length unit), Locale/Monday start, Time Zone, Theme, Timer Settings (vibration, volume); не менялись"
-CR-K09,K,"Доступность для ассистивных технологий (TalkBack, подписи элементов)",BLOCKED,BLOCKED,,"экраны Crimpd — WebView, uiautomator возвращает пустое дерево (accessibility-узлов нет); TalkBack-проверка вживую не выполнялась. Условие снятия: включить TalkBack на эмуляторе и пройти основные экраны; не выполнено в этом проходе"
+CR-K09,K,"Доступность для ассистивных технологий (TalkBack, подписи элементов)",PARTIAL,OBSERVED,OBS-0118,"[ИСПРАВЛЕНО] Дерево доступности есть (uiautomator: 165 узлов, 62 текстовых, 0 content-desc, 7 кликабельных; сырые hex-ID шаблонов читаются как текст). TalkBack включался с восстановлением настроек; живой проход жестами не выполнен"
 CR-J08,J,Список тестов (Primary Assessments) в Profile и блок Assessment Tests на Home,OBSERVED,OBSERVED,OBS-0046;OBS-0115;OBS-0116,тесты видны на Home и в Profile с датой и результатом; Primary Assessments показывает последний результат или «No assessments logged»
 CR-C10,C,Баннер Open Climbing Session на Home,OBSERVED,OBSERVED,OBS-0116,отдельная точка входа в живую сессию свободной активности

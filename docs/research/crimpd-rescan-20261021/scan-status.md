@@ -26,3 +26,7 @@
 ## Фаза 4 — возврат навигатора: пакет на приёмку (2026-10-23)
 - Статус: READY_FOR_NAVIGATOR_REVIEW. Добавлены acceptance-matrix.csv, screen-action-map.csv, evidence-audit.csv, correction-log.md, acceptance-report.md; реестр 99→105; наблюдения 110→117.
 - Недоступное с условиями снятия — в acceptance-report.md §5.
+
+## Фаза 5 — замечания навигатора R01–R07 (2026-10-23)
+- Статус: READY_FOR_NAVIGATOR_REVIEW с остатком. Блокер: аккаунт Crimpd вышел (моя ошибка автоматизации); нужен вход владельца.
+- Результаты: review-resolution.csv, templates-matrix.csv, negatives-audit.csv, evidence-audit.csv (классы A–D), screen-action-map.csv (93 строки), acceptance-matrix.csv (строгие статусы).
