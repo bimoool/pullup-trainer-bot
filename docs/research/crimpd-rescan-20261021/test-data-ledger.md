@@ -35,3 +35,4 @@
 | T-010 | 2026-10-23 | Plan «RESCAN TEST - Template» (из шаблона Bouldering Mastery, старт Mon Jan 5 2026) | Training Plans → Completed | (создаётся) |
 | T-011 | 2026-10-23 | Лог «Finger Strength Test» от 6 Jan 2026, +10 кг, 8×1 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
 | T-012 | 2026-10-23 | Лог «Weighted Pull-up Test» от 7 Jan 2026, +3 кг, 8×2 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
+| T-013 | 2026-10-23 | Custom workout «RESCAN TEST - W2» | Home → My Workouts | (создаётся) |

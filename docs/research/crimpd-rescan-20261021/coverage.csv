@@ -23,7 +23,7 @@ CR-C01,C,Главная после подключения,PARTIAL,OBSERVED,OBS-0
 CR-C02,C,Главная после тренировки,PARTIAL,OBSERVED,OBS-0014,after saving a log Home is unchanged; log appears in Logbook/Analytics only
 CR-C03,C,Кратчайший путь к следующей тренировке,PARTIAL,OBSERVED,OBS-0010,route and tap count observed on owner's real plan; rest/skip/unfinished not yet
 CR-C04,C,День отдыха/пропуск/перерыв,PARTIAL,OBSERVED,OBS-0010;OBS-0054,missed marker (red ⊗) in a past week; rest-day logic not found
-CR-C05,C,Начатая тренировка и продолжение,PARTIAL,OBSERVED,OBS-0008;OBS-0024,resume only while the app process lives
+CR-C05,C,Начатая тренировка и продолжение,PARTIAL,OBSERVED,OBS-0008;OBS-0080,mini-player across pages while process alive; new Start silently replaces; resume after app kill not offered
 CR-C06,C,Несколько программ,PARTIAL,OBSERVED,OBS-0037,one active plan; others upcoming/completed
 CR-C07,C,Завершена/пауза/удалена/повторно подключена,PARTIAL,OBSERVED,OBS-0034,plan states In Progress/Upcoming/Completed seen; paused/removed not found
 CR-C08,C,Возврат из каталога/журнала,PARTIAL,OBSERVED,OBS-0051,back navigation observed incl. exits app from Home
@@ -43,16 +43,16 @@ CR-D12,D,Влияние правок на выполненное,PARTIAL,OBSERVE
 CR-E01,E,Каталог/категории/оборудование/поиск/избранное,PARTIAL,OBSERVED,OBS-0036;OBS-0048;OBS-0068,category/equipment filters observed; Favorites filter and favoriting need login
 CR-E02,E,Инструкция/видео/замены,PARTIAL,OBSERVED,OBS-0047,instruction = Focus Points sheet + media; replacements/variants only via level tabs A/B/C
 CR-E03,E,Своё упражнение,PARTIAL,OBSERVED,OBS-0038,own exercise creation observed; reuse in other workouts not yet checked
-CR-E04,E,Тренировка из своих и каталожных,PARTIAL,OBSERVED,OBS-0012,custom workout from catalog exercise; own exercise not created
+CR-E04,E,Тренировка из своих и каталожных,OBSERVED,OBSERVED,OBS-0012;OBS-0077;OBS-0078,catalog + own exercises mixed in one workout
 CR-E05,E,Параметры подхода,PARTIAL,OBSERVED,OBS-0012;OBS-0039,parameters: sets/rest/reps/rep timer/notes/resistance logging
-CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,PARTIAL,OBSERVED,OBS-0012;OBS-0040,add/delete exercise seen; reorder/duplicate not found
-CR-E07,E,Смешанные протоколы,UNKNOWN,UNKNOWN,,mixed protocols/same exercise repeated not tested
+CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,OBSERVED,OBSERVED,OBS-0012;OBS-0040;OBS-0077,"add, delete, reorder (drag + Save) observed; duplicate/replace actions do not exist in the exercise menu"
+CR-E07,E,Смешанные протоколы,OBSERVED,OBSERVED,OBS-0078,same exercise twice in one workout allowed
 CR-E08,E,Сохранение/отмена/повторное редактирование,PARTIAL,OBSERVED,OBS-0012;OBS-0016,save/edit observed; cancel behaviour partly
 CR-E09,E,Тренировка отдельно и в программе,OBSERVED,OBSERVED,OBS-0053;OBS-0075,confirmed twice with different workouts/dates
 CR-F01,F,Изменить нагрузку перед упражнением,PARTIAL,OBSERVED,OBS-0013,load edit happens only in the log sheet/player (weight stepper); no pre-exercise load edit seen
 CR-F02,F,Вес/повторы/подходы/отдых,OBSERVED,OBSERVED,OBS-0014;OBS-0015,step 1 kg; no memory of last weight
-CR-F03,F,Замена упражнения,PARTIAL,INFERRED,OBS-0039,no replace action; delete + add
-CR-F04,F,Добавить/пропустить упражнение,PARTIAL,OBSERVED,OBS-0012;OBS-0044,Add Set in log; skipping = SET>> (logged as done)
+CR-F03,F,Замена упражнения,PARTIAL,OBSERVED,OBS-0077,no replace action; delete + add + reorder only
+CR-F04,F,Добавить/пропустить упражнение,PARTIAL,OBSERVED,OBS-0044;OBS-0077,"add exercise only to the workout template, not within a running session"
 CR-F05,F,Только сегодня,PARTIAL,OBSERVED,OBS-0016,edit applies to template for future; no 'today only' option seen in the player
 CR-F06,F,Сохранить для следующих,PARTIAL,OBSERVED,OBS-0016,no scope prompt observed
 CR-F07,F,Изменить шаблон программы,PARTIAL,OBSERVED,OBS-0036,"plan editor: weekly volume, phases, start date; no per-session prescription edit"
@@ -61,12 +61,12 @@ CR-F09,F,Область: подход/сессия/будущие/шаблон,P
 CR-F10,F,Сохранность истории A→B,OBSERVED,OBSERVED,OBS-0014;OBS-0017,A=3/4 kg preserved after template change
 CR-F11,F,Правка программы посередине,PARTIAL,OBSERVED,OBS-0058;OBS-0059,mid-plan edits: schedule and start shifts tested; content removal not possible for completed plan
 CR-F12,F,Правка исторической записи,OBSERVED,OBSERVED,OBS-0017;OBS-0023;OBS-0074,"historical log edits (date/weights/completion) propagate to analytics, Profile, loads, plan counters"
-CR-G01,G,Предстарт/запуск/работа/отдых,PARTIAL,OBSERVED,OBS-0013,"GET READY, rep, rest"
+CR-G01,G,Предстарт/запуск/работа/отдых,PARTIAL,OBSERVED,OBS-0013;OBS-0063;OBS-0079,timer and no-timer exercise UIs observed; settings of GET READY duration not found
 CR-G02,G,Фактический ввод vs план,PARTIAL,OBSERVED,OBS-0007;OBS-0014;OBS-0044,plan vs actual: skipped sets are logged as done
 CR-G03,G,Пауза/назад/пропуск/досрочно,PARTIAL,OBSERVED,OBS-0044;OBS-0024,pause/skip/back controls observed; early finish only via SET>>
 CR-G04,G,Отмена/случайный выход/перезапуск,PARTIAL,OBSERVED,OBS-0024,accidental exit variants observed
 CR-G05,G,Двойной тап,PARTIAL,OBSERVED,OBS-0028,discard confirm exists for open climbing; strength player has no cancel
-CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0008;OBS-0009;OBS-0024,in-app/background/recents/force-stop checked on Android emulator only; iPhone BLOCKED; tab switch inside app not checked
+CR-G06,G,Незавершённое при старте другого,PARTIAL,OBSERVED,OBS-0024;OBS-0080,"starting another workout with one unfinished: no prompt, old session replaced (progress case: played set not re-tested)"
 CR-G07,G,Итог/следующий шаг,OBSERVED,OBSERVED,OBS-0045,double-submit creates duplicates
 CR-G08,G,Заметки/RPE/самочувствие,PARTIAL,OBSERVED,OBS-0044,summary = Log sheet; no separate 'next step' screen
 CR-H01,H,Звук внутри приложения,PARTIAL,OBSERVED,OBS-0032;OBS-0063,cue events emitted incl. screen off; audibility/volume setting effect unverifiable (emulator no audio)
