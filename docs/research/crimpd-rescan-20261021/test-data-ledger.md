@@ -32,9 +32,15 @@
 - Удалены: T-009 план «RESCAN TEST - Past (Copy)» (Upcoming, Nov 2), T-007 план «RESCAN TEST - Past» (Completed, Jan 5 – Feb 9), T-008 лог Weighted Pull-up Test от 6 Jan 2026 (+5 кг). Каждое — после сверки названия/дат; у лога единственная запись на 6 января.
 - Проверено: Profile «Weighted Pull-up Test» снова Jul 20 2026, +60 кг; Finger Strength Test Jul 23, +40 кг; реальный план «In Progress» (Week 5 of 6, 0/7) на месте; Upcoming пуст; Completed содержит только планы владельца.
 - Наблюдение: удаление плана T-007 не удалило лог T-008 (лог пережил удаление плана) — перепроверено в Logbook до удаления лога.
-| T-010 | 2026-10-23 | Plan «RESCAN TEST - Template» (из шаблона Bouldering Mastery, старт Mon Jan 5 2026) | Training Plans → Completed | (создаётся) |
-| T-011 | 2026-10-23 | Лог «Finger Strength Test» от 6 Jan 2026, +10 кг, 8×1 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
-| T-012 | 2026-10-23 | Лог «Weighted Pull-up Test» от 7 Jan 2026, +3 кг, 8×2 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
-| T-013 | 2026-10-23 | Custom workout «RESCAN TEST - W2» | Home → My Workouts | (создаётся) |
-| T-014 | 2026-10-23 | Лог «RESCAN TEST - W2» от 23 Oct (reps 2 у первого упражнения, заметки «RESCAN exercise note»/«RESCAN workout note») | Logbook | CREATED (удалить) |
-| T-015 | 2026-10-23 | Open Climbing «Session Review» лог (Indoor/Boulder, 15m, Easy, 1 problem, grade 5) | Logbook | (создаётся) |
+| T-010 | 2026-10-23 | Plan «RESCAN TEST - Template» (из шаблона Bouldering Mastery, старт Mon Jan 5 2026) | Training Plans → Completed | DELETED 2026-10-23 |
+| T-011 | 2026-10-23 | Лог «Finger Strength Test» от 6 Jan 2026, +10 кг, 8×1 (в плане T-010, неделя 1) | Logbook (Jan 2026) | DELETED 2026-10-23 |
+| T-012 | 2026-10-23 | Лог «Weighted Pull-up Test» от 7 Jan 2026, +3 кг, 8×2 (в плане T-010, неделя 1) | Logbook (Jan 2026) | DELETED 2026-10-23 |
+| T-013 | 2026-10-23 | Custom workout «RESCAN TEST - W2» | Home → My Workouts | DELETED 2026-10-23 |
+| T-014 | 2026-10-23 | Лог «RESCAN TEST - W2» от 23 Oct (reps 2 у первого упражнения, заметки «RESCAN exercise note»/«RESCAN workout note») | Logbook | DELETED 2026-10-23 |
+| T-015 | 2026-10-23 | Open Climbing «Session Review» лог (Indoor/Boulder, 15m, Easy, 1 problem, grade 5) | Logbook | DELETED 2026-10-23 |
+| T-016 | 2026-10-23 | Лог «RESCAN TEST - W2» с БУДУЩЕЙ датой (28 Oct 2026) | Logbook | DELETED 2026-10-23 |
+
+## Уборка 2026-10-23 (проход 2, после входа)
+Удалены (каждая — после сверки по названию/дате/значениям): T-010 план «RESCAN TEST - Template» (Completed), T-011 лог Finger Strength Test (Aug 4 2026, +10 кг, ранее Jan 6), T-012 лог Weighted Pull-up Test (Jan 7 2026, +3 кг), T-013 тренировка «RESCAN TEST - W2», T-014 лог W2 от 23 Oct (25%), T-016 лог W2 с датой 28 Oct (будущей), T-015 лог Open Climbing (23 Oct 12:00 PM, grade 5, 1 problem; заметка «RESCAN climb note» в карточке не отображается — идентификация по дефолтам формы и времени, единственная запись Indoor Bouldering за день).
+Финальная проверка: см. блок «Итоговая проверка 2» ниже.
+| T-017 | 2026-10-23 | Лог «Finger Strength Test – One Arm» от 6 Jan 2026, +8 кг | Logbook/Profile | DELETED 2026-10-23 (единственный лог теста; +8 кг, Jan 6 сверены) |
