@@ -36,3 +36,5 @@
 | T-011 | 2026-10-23 | Лог «Finger Strength Test» от 6 Jan 2026, +10 кг, 8×1 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
 | T-012 | 2026-10-23 | Лог «Weighted Pull-up Test» от 7 Jan 2026, +3 кг, 8×2 (в плане T-010, неделя 1) | Logbook (Jan 2026) | CREATED (удалить) |
 | T-013 | 2026-10-23 | Custom workout «RESCAN TEST - W2» | Home → My Workouts | (создаётся) |
+| T-014 | 2026-10-23 | Лог «RESCAN TEST - W2» от 23 Oct (reps 2 у первого упражнения, заметки «RESCAN exercise note»/«RESCAN workout note») | Logbook | CREATED (удалить) |
+| T-015 | 2026-10-23 | Open Climbing «Session Review» лог (Indoor/Boulder, 15m, Easy, 1 problem, grade 5) | Logbook | (создаётся) |
