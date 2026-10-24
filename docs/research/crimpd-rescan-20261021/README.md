@@ -43,5 +43,5 @@ OBSERVED — проверено непосредственно; INFERRED — п�
 ## Ссылки
 Заполняются по мере создания: umbrella-issue, Google-таблицы, research PR — см. `links.md`.
 
-## Итог состояния (2026-10-24, пакет v4)
-READY_FOR_NAVIGATOR_REVIEW с перечисленными блокерами; `acceptance-report.md`, `review-resolution.csv`. Реестр 105: OBSERVED 87 · PARTIAL 10 · BLOCKED 8. Наблюдений 130.
+## Итог состояния (2026-10-24, пакет v5)
+**STOPPED_INCOMPLETE**: аккаунт вышел по ошибке драйвера (см. acceptance-report.md); осталась тестовая тренировка «RESCAN6 XD». Реестр 105: OBSERVED 87 · PARTIAL 10 · BLOCKED 8. Наблюдений 141. Матрица: 9/12/2.

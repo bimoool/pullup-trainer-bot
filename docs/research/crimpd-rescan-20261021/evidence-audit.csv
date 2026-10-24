@@ -3,11 +3,11 @@ OBS-0001,OBSERVED,"~/android-ref-lab/screens/rescan_000_launch.png; rescan2_140_
 OBS-0002,OBSERVED,evidence/rescan_010_plans.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0003,OBSERVED,evidence/rescan_011_template.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0004,OBSERVED,evidence/rescan_014_new_plan.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0005,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0005,OBSERVED,воспроизведено: rescan3_630_edge_lift_test_description.txt,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0006,OBSERVED,evidence/rescan_021_start_assess.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0007,OBSERVED,evidence/rescan_022b.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0008,OBSERVED,evidence/rescan_024_chevron.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0009,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0009,OBSERVED,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0010,OBSERVED,evidence/rescan_030_plan_detail.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0011,OBSERVED,evidence/rescan_031_schedule.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0012,OBSERVED,evidence/rescan_042_wiz3.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
@@ -27,27 +27,27 @@ OBS-0025,OBSERVED,evidence/rescan_101_sheet7.png,A,A файл; B только з
 OBS-0026,OBSERVED,evidence/rescan_123_cross_card.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0027,OBSERVED,evidence/rescan_124_open_climb.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0028,OBSERVED,evidence/rescan_127_close_session.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0029,OBSERVED_TEXT_ONLY,evidence/rescan_131_custom.png [ФАЙЛ ОТСУТСТВУЕТ],B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0029,OBSERVED,evidence/rescan_131_custom.png [ФАЙЛ ОТСУТСТВУЕТ]; воспроизведено: rescan3_640_queue_b_protocols.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0030,OBSERVED,evidence/rescan_160_offline_save.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0031,OBSERVED,evidence/rescan_151_dark_font15.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0032,OBSERVED,воспроизведено: rescan3_300/301 + текст Settings (2026-10-24),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0033,OBSERVED,evidence/rescan_170_del_confirm.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0034,OBSERVED,воспроизведено: rescan3 вкладки планов (текст «You do not have any upcoming training plans…» 2026-10-24),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0035,OBSERVED,evidence/rescan_181_plan_created.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0036,OBSERVED,evidence/rescan_187_volume_edit.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0036,OBSERVED,evidence/rescan_187_volume_edit.png; воспроизведено на тестовом плане: evidence/rescan3_740_r6_r7_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0037,OBSERVED,evidence/rescan_192_oct.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0038,OBSERVED,evidence/rescan_211_create_ex_form.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0039,OBSERVED,evidence/rescan_215_resist_types.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0040,OBSERVED,"воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.1–2, 6",C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0041,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0041,OBSERVED,evidence/rescan4_000_obs0041_obs0091_protocol.md; workout_protocols/*.json,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0042,OBSERVED,evidence/rescan_220_open_grip.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0043,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0043,OBSERVED,воспроизведено: rescan3_621_deadlift_rpe.png,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0044,OBSERVED,evidence/rescan_241_after_last.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0045,OBSERVED,evidence/rescan_245_after_double.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0046,OBSERVED,evidence/rescan_230_assess_detail.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0047,OBSERVED,evidence/rescan_270_info.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0048,OBSERVED,evidence/rescan_260_playlist.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0049,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0049,OBSERVED,воспроизведено: rescan3_760_custom_exercise_search.png,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0050,OBSERVED,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.6,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0051,OBSERVED,"воспроизведено: меню прочитано 2026-10-24 (Home, Training Plans, Training History, Analytics, Profile, Help, Settings, Logout)",C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0052,OBSERVED,evidence/rescan_301_sport_pe.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
@@ -62,13 +62,13 @@ OBS-0060,OBSERVED,evidence/rescan_350_overlap_picker.png,A,A файл; B тол�
 OBS-0061,OBSERVED,evidence/rescan_360_plans_loggedout_upsell.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0062,OBSERVED,evidence/rescan_363_loggedout_workout.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0063,OBSERVED,evidence/rescan_370_timer_state.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0064,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0064,OBSERVED,воспроизведено: rescan3_660_vibrator_crimpd_lines.txt,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0065,OBSERVED,rescan2_140_dumpsys_package_crimpd.txt (список разрешений воспроизведён; состояние POST_NOTIFICATIONS — только по записи),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0066,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0067,OBSERVED,"воспроизведено: templates-schedules.csv (25 уровней, 2026-10-24)",C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0066,BLOCKED,заблокировано: Logout запрещён,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0067,OBSERVED,templates-matrix.csv; templates-schedules.csv,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0068,OBSERVED,воспроизведено: rescan3 шторка фильтров 2026-10-24 (чипы Category/Equipment/Favorites/My Workouts/Assessments/Home Workouts),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0069,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0070,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0069,OBSERVED,воспроизведено: rescan3_770_offline_cold_start_home.png,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0070,OBSERVED,воспроизведено: rescan3_650_narrow_home.png,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0071,OBSERVED,воспроизведено: templates-schedules.csv,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0072,OBSERVED,воспроизведено: evidence/tpl_schedules/BoulderingMastery__*.json (2026-10-24),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0073,OBSERVED,evidence/rescan_400_template_plan_editor.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
@@ -80,37 +80,37 @@ OBS-0078,OBSERVED,воспроизведено 2026-10-24: evidence/rescan3_440_
 OBS-0079,OBSERVED,evidence/rescan_411_player_no_timer_exercise.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0080,OBSERVED,evidence/rescan_412_mini_player.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0081,OBSERVED,evidence/rescan_420_logbook_today_cards.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0082,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0082,OBSERVED,воспроизведено: rescan3_750_reps_wheel_propagation.png,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0083,OBSERVED,evidence/rescan_421_analytics_empty_custom.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0084,OBSERVED,evidence/rescan_422_settings_theme_timer.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0085,OBSERVED,evidence/rescan_420_logbook_today_cards.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0086,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0086,OBSERVED,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0087,OBSERVED,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.3,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0088,OBSERVED,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.4,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0089,OBSERVED,evidence/rescan_431_export_share_sheet.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0090,OBSERVED,evidence/rescan_430_peer_insights_info.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0091,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0092,OBSERVED,воспроизведено: templates-matrix.csv,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0093,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0094,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0091,OBSERVED,evidence/rescan4_000_obs0041_obs0091_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0092,OBSERVED,templates-matrix.csv,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0093,OBSERVED,templates-matrix.csv; evidence/tpl_schedules_v2/,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0094,OBSERVED,воспроизведено: evidence/rescan3_740_r6_r7_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0095,OBSERVED,evidence/rescan_400_template_plan_editor.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0096,OBSERVED,evidence/rescan_451_week5_after_volume_zero.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0097,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0097,OBSERVED,воспроизведено: evidence/rescan3_740_r6_r7_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0098,OBSERVED,evidence/rescan_440_offline_plans_false_empty.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0099,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0099,OBSERVED,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0100,OBSERVED,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.5,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0101,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0101,OBSERVED,воспроизведено: evidence/rescan3_600_neg08_neg09_offline_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0102,OBSERVED,воспроизведено: rescan3_210_favorites_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0103,OBSERVED_TEXT_ONLY,"; опровергнуто/уточнено rescan3_430 (E2,E4)",B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0103,REFUTED,rescan3_430_current_result_rule_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0104,OBSERVED,evidence/rescan_452_log_card_exercise_note.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0105,OBSERVED,воспроизведено 2026-10-24: evidence/rescan3_440_custom_workout_protocol.md п.3 (в одной тренировке; между двумя тренировками не повторялось),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0105,OBSERVED,evidence/rescan4_900_blocks_protocol.md (OBS-0139),C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0106,OBSERVED,evidence/rescan_450_plans_after_reload.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0107,OBSERVED,"воспроизведено: rescan3_223 + протокол R02 (список планов в Add To Existing Plan, без выбора)",C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0108,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0108,OBSERVED,воспроизведено: rescan3_631_finger_strength_test_description.txt,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0109,DOCUMENTARY,evidence/rescan_460_docs_getting_started.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0110,OBSERVED_TEXT_ONLY,,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0110,OBSERVED,воспроизведено: rescan3_830_docs_nav_menu.png,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0111,OBSERVED,evidence/rescan2_100_search_open.png; rescan2_101_search_pull.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0112,OBSERVED,evidence/rescan2_103_filter_sheet.png; rescan2_104_filter_sheet_scrolled.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0112,OBSERVED,evidence/rescan2_103_filter_sheet.png; rescan2_104_filter_sheet_scrolled.png; evidence/rescan3_740_r6_r7_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0113,OBSERVED,evidence/rescan2_105_filter_pullupbar_applied.png; rescan2_106_filter_only.png; rescan2_107_filter_plus_text.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0114,OBSERVED_NO_FILE_PRIVATE,— (не сохранено: реальные данные),D,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0115,OBSERVED_NO_FILE_PRIVATE,— (не сохранено: личные данные),D,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
@@ -126,6 +126,17 @@ OBS-0124,OBSERVED,evidence/rescan3_235_delete_dialog.png,A,A файл; B тол�
 OBS-0125,OBSERVED,evidence/rescan3_420_test_log_consequences_protocol.md; rescan3_400/401/402/410,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0126,OBSERVED,evidence/rescan3_300_theme_dark_selected_unsaved.png; rescan3_301_vibration_on_unsaved.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0127,OBSERVED,evidence/rescan3_301_vibration_on_unsaved.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
-OBS-0128,OBSERVED,—,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0128,BLOCKED,—; заблокировано: устройство,B,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0129,OBSERVED,evidence/rescan3_430_current_result_rule_protocol.md,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0130,OBSERVED,evidence/rescan3_440_custom_workout_protocol.md,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0131,OBSERVED,rescan4_*; evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0132,OBSERVED,evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0133,OBSERVED,evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0134,OBSERVED,evidence/rescan4_100/101; rescan4_900,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0135,OBSERVED,evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0136,OBSERVED,evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0137,OBSERVED_NO_FILE_PRIVATE,evidence/rescan4_900_blocks_protocol.md (скриншоты с реальными данными не сохранены),D,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0138,OBSERVED,rescan4_120_combo_filter_text.png,A,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0139,OBSERVED,evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0140,OBSERVED,templates-matrix.csv; evidence/tpl_schedules_v2/,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0141,OBSERVED,workout-protocols.csv; evidence/workout_protocols/,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
