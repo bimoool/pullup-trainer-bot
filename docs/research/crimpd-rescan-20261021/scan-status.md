@@ -30,3 +30,6 @@
 ## Фаза 5 — замечания навигатора R01–R07 (2026-10-23)
 - Статус: READY_FOR_NAVIGATOR_REVIEW с остатком. Блокер: аккаунт Crimpd вышел (моя ошибка автоматизации); нужен вход владельца.
 - Результаты: review-resolution.csv, templates-matrix.csv, negatives-audit.csv, evidence-audit.csv (классы A–D), screen-action-map.csv (93 строки), acceptance-matrix.csv (строгие статусы).
+
+## Фаза 6 — второй проход замечаний (2026-10-24)
+- Статус: READY_FOR_NAVIGATOR_REVIEW с остатком (см. acceptance-report.md). Автоматизация на селекторах; R02, R01, R03 (кроме жестов TalkBack) выполнены на текущем аккаунте; R04/R05 частично.
