@@ -46,7 +46,7 @@ CR-E03,E,Своё упражнение,OBSERVED,OBSERVED,OBS-0038;OBS-0049,own e
 CR-E04,E,Тренировка из своих и каталожных,OBSERVED,OBSERVED,OBS-0012;OBS-0077;OBS-0078,catalog + own exercises mixed in one workout
 CR-E05,E,Параметры подхода,OBSERVED,OBSERVED,OBS-0012;OBS-0039;OBS-0079,sets/rest/reps/rep timer/rep duration/notes/resistance; no tempo/sides
 CR-E06,E,Добавить/удалить/заменить/переставить/дублировать,OBSERVED,OBSERVED,OBS-0012;OBS-0040;OBS-0077,"add, delete, reorder (drag + Save) observed; duplicate/replace actions do not exist in the exercise menu"
-CR-E07,E,Смешанные протоколы,PARTIAL,OBSERVED,OBS-0078,same exercise twice in one workout allowed [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
+CR-E07,E,Смешанные протоколы,OBSERVED,OBSERVED,OBS-0078,same exercise twice in one workout allowed [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт] [восстановлено 2026-10-24]
 CR-E08,E,Сохранение/отмена/повторное редактирование,OBSERVED,OBSERVED,OBS-0012;OBS-0016;OBS-0040,wizard cancel exits on step 1; edits save instantly
 CR-E09,E,Тренировка отдельно и в программе,OBSERVED,OBSERVED,OBS-0053;OBS-0075,confirmed twice with different workouts/dates
 CR-F01,F,Изменить нагрузку перед упражнением,OBSERVED,OBSERVED,OBS-0013;OBS-0086,load editable per set in player panel before/after set; not before the exercise in the template
@@ -56,7 +56,7 @@ CR-F04,F,Добавить/пропустить упражнение,OBSERVED,OBS
 CR-F05,F,Только сегодня,OBSERVED,OBSERVED,OBS-0014;OBS-0022;OBS-0086,'this session only' = edits in player/log sheet
 CR-F06,F,Сохранить для следующих,OBSERVED,OBSERVED,OBS-0015;OBS-0016,no 'save for next sessions' for loads; template edits only
 CR-F07,F,Изменить шаблон программы,OBSERVED,OBSERVED,OBS-0095;OBS-0096,plan content editable via Edit Training Plan
-CR-F08,F,Упражнение в нескольких местах,PARTIAL,OBSERVED,OBS-0049;OBS-0087;OBS-0105,instances independent in and across workouts; own exercises workout-local [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт]
+CR-F08,F,Упражнение в нескольких местах,OBSERVED,OBSERVED,OBS-0049;OBS-0087;OBS-0105,instances independent in and across workouts; own exercises workout-local [ПОНИЖЕНО 2026-10-23: все наблюдения — только запись журнала без файла/воспроизведения; нужна повторная проверка при входе в аккаунт] [восстановлено 2026-10-24]
 CR-F09,F,Область: подход/сессия/будущие/шаблон,OBSERVED,OBSERVED,OBS-0016;OBS-0017;OBS-0074;OBS-0086,"scopes: set/session (log), template, plan structure; no explicit chooser"
 CR-F10,F,Сохранность истории A→B,OBSERVED,OBSERVED,OBS-0014;OBS-0017,A=3/4 kg preserved after template change
 CR-F11,F,Правка программы посередине,OBSERVED,OBSERVED,OBS-0058;OBS-0059;OBS-0096,mid-plan edits recompute progress; no warning

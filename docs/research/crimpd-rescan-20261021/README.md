@@ -44,4 +44,4 @@ OBSERVED — проверено непосредственно; INFERRED — п�
 Заполняются по мере создания: umbrella-issue, Google-таблицы, research PR — см. `links.md`.
 
 ## Итог состояния (2026-10-24, пакет v3)
-READY_FOR_NAVIGATOR_REVIEW; детали — `acceptance-report.md`, замечания — `review-resolution.csv`. Реестр 105: OBSERVED 85 · PARTIAL 12 · BLOCKED 8. Наблюдений 129. Новые файлы: templates-schedules.csv, evidence/tpl_schedules/.
+READY_FOR_NAVIGATOR_REVIEW; детали — `acceptance-report.md`, замечания — `review-resolution.csv`. Реестр 105: OBSERVED 87 · PARTIAL 10 · BLOCKED 8. Наблюдений 130. Новые файлы: templates-schedules.csv, evidence/tpl_schedules/.
