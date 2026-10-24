@@ -33,3 +33,6 @@
 
 ## Фаза 6 — второй проход замечаний (2026-10-24)
 - Статус: READY_FOR_NAVIGATOR_REVIEW с остатком (см. acceptance-report.md). Автоматизация на селекторах; R02, R01, R03 (кроме жестов TalkBack) выполнены на текущем аккаунте; R04/R05 частично.
+
+## Фаза 7 — NAVIGATOR REVIEW c589ebf (2026-10-24)
+- Статус: READY_FOR_NAVIGATOR_REVIEW; очередь блоков 1–7 выполнена; блокеры в acceptance-report.md.
