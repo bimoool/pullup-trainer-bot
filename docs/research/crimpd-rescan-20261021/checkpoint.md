@@ -1,6 +1,2 @@
-# Checkpoint 2 — 2026-10-22
-Покрытие 99: проверено 4 · частично 87 · недоступно 6 · неизвестно 2 · не начато 0. Наблюдений 51.
-Сделано: все области A–K пройдены на реальном Crimpd 8.5.3 (Android AVD), тестовые данные удалены и проверены (test-data-ledger.md).
-Не сделано (BLOCKED): A01 пустой аккаунт, iPhone, часы, наушники/звук/вибрация, K02 истечение доступа, K06 дата/часовой пояс.
-Следующее: перепроверить прежние DONE нашего приложения на SHA e3dd640 (сравнение пока документальное), затем обновить таблицу сравнения; PR docs/research — на ревью владельца.
-Продолжить: ветка research/crimpd-rescan-20261021, worktree ../pullup-crimpd-rescan, эмулятор: source ~/android-ref-lab/env.sh; emulator -avd ref_pixel6_play -dns-server 8.8.8.8,1.1.1.1 -no-audio
+# Checkpoint — 2026-10-25 (v6)
+Статус: READY_FOR_NAVIGATOR_REVIEW. Расписания 31 уровней × 6 недель сверены по скриншотам (schedule-verification.csv): 148 совпало, 38 исправлено. Остаток — acceptance-report.md. Ветка research/crimpd-rescan-20261021.

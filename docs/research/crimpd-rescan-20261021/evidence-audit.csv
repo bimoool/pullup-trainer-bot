@@ -140,3 +140,11 @@ OBS-0138,OBSERVED,rescan4_120_combo_filter_text.png,A,A файл; B только
 OBS-0139,OBSERVED,evidence/rescan4_900_blocks_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0140,OBSERVED,templates-matrix.csv; evidence/tpl_schedules_v2/,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
 OBS-0141,OBSERVED,workout-protocols.csv; evidence/workout_protocols/,C,A файл; B только запись; C воспроизведено 2026-10-24; D приватно
+OBS-0142,OBSERVED,rescan5_000_driver_guard_test.md,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0143,OBSERVED,rescan5_100_testhistory_protocol.md,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0144,OBSERVED,rescan5_100_testhistory_protocol.md; rescan5_100_test_history_stale_after_edit.png,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0145,OBSERVED,rescan5_200_template_add_to_plan.png,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0146,OBSERVED,ledger T2-022+; без файла,B,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0147,OBSERVED,observations (просмотр без сохранения скриншотов с данными владельца),B,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0148,OBSERVED,evidence/tpl_schedules_v4/*.json; evidence/tpl_schedules_v4/_facts_v4.json; diff в correction-log №38,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
+OBS-0149,OBSERVED,evidence/rescan5_210_add_to_existing_test_plan.png,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
