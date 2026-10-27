@@ -148,11 +148,11 @@ OBS-0146,OBSERVED,ledger T2-022+; без файла,B,A файл; B только
 OBS-0147,OBSERVED,observations (просмотр без сохранения скриншотов с данными владельца),B,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
 OBS-0148,OBSERVED,evidence/tpl_schedules_v4/*.json; evidence/tpl_schedules_v4/_facts_v4.json; diff в correction-log №38,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
 OBS-0149,OBSERVED,evidence/rescan5_210_add_to_existing_test_plan.png,C,A файл; B только запись; C воспроизведено 2026-10-25; D приватно
-OBS-150,OBSERVED,rescan6-remainder-checks.md §2,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-151,OBSERVED,rescan6-remainder-checks.md §2; evidence/rescan6_an_*.png,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-152,OBSERVED,rescan6-remainder-checks.md §3,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-153,OBSERVED,rescan6-remainder-checks.md §4,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-154,OBSERVED,rescan6-remainder-checks.md §5,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-155,OBSERVED,rescan6-remainder-checks.md §5,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-156,OBSERVED,template-workouts.csv; template-workouts-mechanics.md,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
-OBS-157,OBSERVED,our-app/rescan6-ladder-and-result-edit.md,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0150,OBSERVED,rescan6-remainder-checks.md §2,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0151,OBSERVED,rescan6-remainder-checks.md §2; evidence/rescan6_an_*.png,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0152,OBSERVED,rescan6-remainder-checks.md §3,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0153,OBSERVED,rescan6-remainder-checks.md §4,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0154,OBSERVED,rescan6-remainder-checks.md §5,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0155,OBSERVED,rescan6-remainder-checks.md §5,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0156,OBSERVED,template-workouts.csv; template-workouts-mechanics.md,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
+OBS-0157,OBSERVED,our-app/rescan6-ladder-and-result-edit.md,C,A файл; B только запись; C воспроизведено 2026-10-26; D приватно
