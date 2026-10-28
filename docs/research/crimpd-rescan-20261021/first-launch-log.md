@@ -26,3 +26,12 @@
 
 Запуск эмулятора: `emulator -avd test_pixel6_play -port 5556 -no-snapshot -no-boot-anim -no-audio -gpu auto -dns-server 192.168.1.1`, затем `adb -s emulator-5556 shell svc wifi disable; svc data enable`. Установщик не подменялся, проверки приложения не обходились, `ref_pixel6_play` не затрагивался.
 Гипотеза (не доказана): медленный IPv6-DNS слежения `fec0::3` — причина задержек на Wi-Fi-сети; подтверждено только то, что при отключённом Wi-Fi имена резолвятся быстро.
+
+## Веб-версия Crimpd вместо Google Play (2026-10-28, только чтение, без ввода данных)
+| Что проверено | Результат |
+|---|---|
+| Официальная веб-версия | Есть: `https://my.crimpd.com` (ссылки «Use it on the Web» на crimpd.com); открывается без входа, показывает каталог (счётчики тренировок 0 без входа), боковое меню Home/Plans/History/Analytics/Profile/Help, плитки Create Custom Workouts (Upgrade), Log Cross-Training, Open Climbing Session, Assessment Tests |
+| Вход | `/login`: вкладки Log In (Email или username + Password, «Forgot your password?») и Sign Up. Входа через Google/Apple на странице нет |
+| Регистрация | Поля **Username, Email, Password**; под кнопкой «By clicking Sign up you agree to accept the terms and conditions and privacy policy» — нажатие кнопки = согласие с условиями. Телефон не запрашивается. Нужен реальный почтовый ящик (подтверждение почты на этом экране не показано) |
+| Граница | Веб-аккаунт закрывает проверки, зависящие от аккаунта (онбординг, free-tier, Upgrade-баннеры, Time Zone, Grade System, Test→назначения, правила future-test-rules), но НЕ доказывает поведение Android-приложения (плеер, звук, жесты, offline, система Android). Для Android-сценариев нужен Google Play (Google-аккаунт, возможно с проверкой телефоном) |
+| Что остановило меня | Создание аккаунта, ввод пароля и согласие с условиями — действия человека; почтовый ящик нужен отдельный, принадлежащий владельцу (временные и чужие не используются) |
