@@ -1,0 +1,33 @@
+BoulderingFitness__C_Advanced w6 OLD-only=['Deadhang repeaters - 7 sec hang, 3 sec rest @80%'] NEW-only=[] phase Peak->Peak
+BoulderingMastery__C_Advanced w2 OLD-only=['Weighted Pull-up Test'] NEW-only=[] phase Base->Base
+BoulderingMastery__C_Advanced w3 OLD-only=['Weighted Pull Ups - 90%'] NEW-only=[] phase Rest->Rest
+CoreConditioning__B_Intermediate w2 OLD-only=['Hollow Body Hold Test'] NEW-only=[] phase Base->Base
+CoreConditioning__C_Advanced w2 OLD-only=['Hollow Body Hold Test'] NEW-only=[] phase Base->Base
+CoreConditioning__D_Elite w2 OLD-only=['Hollow Body Hold Test'] NEW-only=[] phase Base->Base
+FingerStrength__A_Beginner w6 OLD-only=['Deadhangs - 10 second hangs @ 85%', 'Max Hangs - 85%'] NEW-only=[] phase Peak->Peak
+FingerStrength__B_Intermediate w2 OLD-only=['Finger Strength Test'] NEW-only=[] phase Base->Base
+FingerStrength__C_Advanced w2 OLD-only=['Finger Strength Test', 'Small Edges Test'] NEW-only=[] phase Base->Base
+FingerStrength__C_Advanced w4 OLD-only=['Deadhangs - 10 second hangs @ 85%', 'Max Hangs - 85%'] NEW-only=[] phase Build->Build
+FingerStrength__D_Elite w2 OLD-only=['Small Edges Test'] NEW-only=[] phase Base->Base
+FingerStrength__D_Elite w4 OLD-only=['Small Edges 10mm - 80%'] NEW-only=[] phase Build->Build
+OnearmPullupStrength__A_Advanced w2 OLD-only=['Weighted Pull-up Test'] NEW-only=[] phase Base->Base
+OnearmPullupStrength__B_Elite w2 OLD-only=['Weighted Pull-up Test'] NEW-only=[] phase Base->Base
+OnearmPullupStrength__B_Elite w3 OLD-only=['Weighted Pull Ups - 85%'] NEW-only=[] phase Rest->Rest
+Power__A_Intermediate w2 OLD-only=['Weighted Pull-up Test'] NEW-only=[] phase Base->Base
+Power__A_Intermediate w4 OLD-only=['Weighted Pull Ups - 85%'] NEW-only=[] phase Build->Build
+Power__A_Intermediate w5 OLD-only=['Weighted Pull Ups - 85%'] NEW-only=[] phase Build->Build
+Power__B_Advanced w2 OLD-only=['Weighted Pull-up Test'] NEW-only=[] phase Base->Base
+Power__B_Advanced w3 OLD-only=['Weighted Pull Ups - 85%'] NEW-only=[] phase Rest->Rest
+Power__C_Elite w2 OLD-only=['Weighted Pull-up Test'] NEW-only=[] phase Base->Base
+Power__C_Elite w4 OLD-only=['Weighted Pull Ups - 85%'] NEW-only=[] phase Build->Build
+PullupStrength__B_Intermediate w6 OLD-only=['Weighted Pull Ups - 90%'] NEW-only=[] phase Peak->Peak
+SportPowerEndurance__B_Intermediate w2 OLD-only=[] NEW-only=['7:3s 50%'] phase Base->Base
+SportPowerEndurance__B_Intermediate w3 OLD-only=[] NEW-only=['7:3s 50%'] phase Rest->Rest
+SportPowerEndurance__B_Intermediate w4 OLD-only=['Deadhang repeaters - 7 secs hang, 3 rest @50%'] NEW-only=['7:3s 55%'] phase Build->Build
+SportPowerEndurance__B_Intermediate w5 OLD-only=[] NEW-only=['7:3s 55%'] phase Build->Build
+SportPowerEndurance__B_Intermediate w6 OLD-only=['Deadhang repeaters - 7 secs hang, 3 rest @55%'] NEW-only=['7:3s 60%'] phase Peak->Peak
+SportPowerEndurance__C_Advanced w2 OLD-only=[] NEW-only=['7:3s 50%'] phase Base->Base
+SportPowerEndurance__C_Advanced w3 OLD-only=[] NEW-only=['7:3s 50%'] phase Rest->Rest
+SportPowerEndurance__C_Advanced w4 OLD-only=[] NEW-only=['7:3s 55%'] phase Build->Build
+SportPowerEndurance__C_Advanced w5 OLD-only=[] NEW-only=['7:3s 55%'] phase Build->Build
+SportPowerEndurance__C_Advanced w6 OLD-only=['Deadhang repeaters - 7 secs hang, 3 rest @55%'] NEW-only=['7:3s 60%'] phase Peak->Peak

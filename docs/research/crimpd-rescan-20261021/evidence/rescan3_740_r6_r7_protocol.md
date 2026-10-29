@@ -1,0 +1,15 @@
+# Протокол R6 (меню плана vs редактор, OBS-0036) и R7 (каталог/фильтры) — Crimpd 8.5.3, 2026-10-24
+Тестовые сущности: тренировки «RESCAN4 TEST WO», план «RESCAN4 TEST - Plan» (T2-014/T2-015). План владельца не менялся (в селекторе он был второй, не выбирался).
+## R6: два разных меню
+| Где | Пункты |
+|---|---|
+| Просмотр плана (… на экране Week/Plan; для In Progress и Upcoming) | Edit Training Plan / Change Plan Start Date / Clone Training Plan / Delete Training Plan / Cancel (OBS-0124 и rescan3_231/235) |
+| Редактор плана (экран «Edit Training Plan» после открытия, … в шапке) | Edit Plan Settings / Change Plan Start Date / Add Workouts / Adjust Week Phases / Re-order Workouts / Delete Training Plan / Cancel (rescan3_700) |
+Действия внутри редактора (тестовый план, каждое с проверкой после сохранения): Adjust Week Phases (Base/Build/Rest/Peak на неделю; неделя 2 Base→Build, сохранено, видно в плашке — rescan3_701/702); Edit Plan Settings (name, Plan Duration колесо от 1 Week, Starting Week, Training Goal; 6→2 Weeks: недели 3–6 исчезли, фазы 1–2 сохранились, rescan3_703/704); Re-order Workouts (перетаскивание, rescan3_706); Add Workouts (экран с вкладками Workouts / Skill Templates и фильтрами Category/Equipment/My Workouts/Favorites/Assessments/Home Workouts); Change Plan Start Date (пункт виден, не выполнялся: пересчитал бы недели). Вывод: OBS-0036 и OBS-0094 согласуются — «Add Workouts / Adjust Week Phases / Re-order» есть в меню РЕДАКТОРА, а в меню просмотра плана их нет; OBS-0094 («только в одном состоянии») уточняется: редактор доступен из пункта «Edit Training Plan» меню просмотра.
+## R7: Add To Existing Plan
+Страница тренировки → Add to Plan → «Add To Existing Plan» → селектор «Upcoming Plans» (список: тестовый план и план владельца; галочка на тестовом, rescan3_720) → Add To Training Plan → открылся редактор тестового плана с новой строкой «1 On 1 Off» (объём 0 по неделям; добавление само занятий не создаёт).
+## R7: каталог и фильтры (Search Workouts; всего 264 = 263 + тестовая)
+Category (мультивыбор, радиокружки НЕ эксклюзивны — выбор нескольких = объединение): Conditioning & Mobility 87, Cross-Training 14, Endurance 22, Open Climbing 4, Power Endurance 38, Strength & Power 84, Technique 15 (сумма 264). Conditioning+Cross-Training = 101 (87+14). Без Clear выбор накапливается (последовательные Apply давали 87, 101, 123, 127, 165, 249, 264).
+Equipment (15, по одному): Barbell 7, Bouldering Wall 35, Campus Board 7, Dumbbell 20, Edge Lift 4, Fingerboard 91, Floor 36, Gymnastic Rings 9, Lattice Board 3, Lead Wall 14, Pinch Block 0, Pull Up Bar 32, Resistance Bands 9, Top Rope Wall 13, Wrist Wrench 0. Пустой результат: «FOUND 0 WORKOUTS», без текста-подсказки, без кнопки сброса (rescan3_730).
+Сочетание фильтров: Fingerboard (91) + Technique = 4 (пересечение между типами фильтров, объединение внутри типа). Фильтр + текст: см. OBS-0113. Чипы: My Workouts 19, Assessments 14, Home Workouts 209, Favorites 12→(13 при добавлении). Сброс: Clear в листе + Apply → 264; повторное нажатие чипа снимает его.
+Расхождение с прежним OBS-0112: радиокружки Category — не radio-, а мультивыбор.
