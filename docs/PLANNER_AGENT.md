@@ -7,6 +7,18 @@ session acting as planner follows the same rules and uses the same command to ap
 Runs: `orch-planner.yml` (GitHub Actions, `workflow_dispatch` on `develop/current`) — dispatched by
 the owner, or automatically by the worker workflow after each finished task while a batch runs.
 
+## Brief gate (before issuing any brief)
+
+Before issuing any brief — to the owner, a worker or another session, including research,
+audits, documentation and prompts — read `docs/AGENT_EXECUTION_MODEL.md` § *Navigator brief gate*
+and start the brief with its fully completed header (no unresolved placeholders).
+
+**UX driven by a reference** (Crimpd and other external references) follows § *Reference audit to
+implementation gate* in the same document: two audit passes (observe reference journeys and
+reproduce ours, then recheck) → one verified backlog → owner review of the proposed sprints →
+only then implementation. The planner does not select or brief implementation of such UX before
+the owner has reviewed the sprint plan; an issue that skips this goes to `status:needs-owner`.
+
 ## Inputs it reads (every run, fresh — never chat memory)
 
 1. Open issues + labels, recently closed issues (GitHub API).
