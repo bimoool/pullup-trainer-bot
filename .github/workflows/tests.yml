@@ -44,7 +44,7 @@ jobs:
         continue-on-error: true
 
   pytest:
-    needs: changes
+    needs: [changes, python-locks]
     if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: pytest
     runs-on: ubuntu-latest
@@ -73,6 +73,8 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_test
       BOT_TOKEN: ci-test-token
     steps:
+      - name: Require successful dependency matrix
+        run: test '${{ needs.python-locks.result }}' = success
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
