@@ -32,6 +32,10 @@ migration and regression-test requirements apply to Codex too.
 
 ## Cloud mechanisms
 
+Cloud server-control setup and readiness criteria: `docs/CLOUD_OPERATIONS.md`.
+The operator client lives in `tools/cloud_control.py`, outside runtime images.
+Prepared tooling is not proof of a connected server or successful deployment.
+
 Codex repository review can run through the connected GitHub integration.
 The manual `.github/workflows/codex-task.yml` has a `verify` mode without an LLM;
 its `propose` mode is deliberately disabled until an API budget and key are
