@@ -1,3 +1,7 @@
+> Кандидат 2026-11-05: `R-V2` включает регистрацию без веса/роста и с пропуском пола/даты.
+> `qa_signup` (7000000006) при provision оставляется отсутствующим, чтобы профиль создала сама UI.
+> Перед каждым отдельным browser project заново provision все зарезервированные QA identities.
+
 ## Release audit update — 2026-11-05
 
 Current v2 smoke scenarios are `06-release-v2.spec.ts` (grep `R-V2`). Reprovision the
