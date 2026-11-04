@@ -2,8 +2,8 @@
 необработанное исключение в любом хендлере раньше просто гасилось aiogram'ом
 молча (см. диагностику бага "Пропустить" у комментария: тренировка терялась
 без единого сообщения об ошибке, а узнать об этом можно было только вручную
-читая логи VPS в момент падения). Теперь: трассировка в лог (для DBAPIError —
-только класс, SQLSTATE и позиции стека без потенциально приватного текста сервера),
+читая логи VPS в момент падения). Теперь: диагностика в лог (класс и позиции стека, у DBAPIError ещё SQLSTATE;
+без произвольного текста исключения, причин, исходника и локальных значений),
 понятное сообщение пользователю, событие в БД (event_type=
 "unhandled_exception", отдельно от ручных "feedback_reported") и личное
 уведомление админу — тот же канал, что и у "Сообщить о проблеме"."""
@@ -30,26 +30,27 @@ logger = logging.getLogger(__name__)
 
 
 def _exception_diagnostic(exception: BaseException) -> str:
-    """DB server messages can repeat private row values even with hide_parameters."""
+    """Only trusted diagnostic fields: arbitrary error text may repeat user input."""
     if not isinstance(exception, DBAPIError):
-        return repr(exception)
+        return type(exception).__name__
     sqlstate = getattr(exception.orig, "sqlstate", None)
     if not isinstance(sqlstate, str) or not re.fullmatch(r"[A-Z0-9]{5}", sqlstate):
         sqlstate = "unknown"
     return f"{type(exception).__name__} (sqlstate={sqlstate})"
 
 
+def _safe_exception_trace(exception: BaseException) -> str:
+    # Exception messages, causes and source lines can contain user input for any
+    # error class. Keep code locations without arbitrary text, arguments or locals.
+    positions = " -> ".join(
+        f"{Path(frame.f_code.co_filename).name}:{line}:{frame.f_code.co_name}"
+        for frame, line in traceback.walk_tb(exception.__traceback__)
+    )
+    return f"{_exception_diagnostic(exception)}; stack={positions}"
+
+
 def _log_exception(message: str, exception: BaseException) -> None:
-    if isinstance(exception, DBAPIError):
-        # format_exception/format_tb also include driver text or source lines;
-        # retain only code locations, without SQL, parameters, locals or causes.
-        positions = " -> ".join(
-            f"{Path(frame.f_code.co_filename).name}:{line}:{frame.f_code.co_name}"
-            for frame, line in traceback.walk_tb(exception.__traceback__)
-        )
-        logger.error("%s; %s; stack=%s", message, _exception_diagnostic(exception), positions)
-    else:
-        logger.error(message, exc_info=exception)
+    logger.error("%s; %s", message, _safe_exception_trace(exception))
 
 
 def _extract_context(update: Update) -> tuple[int | None, int | None]:
@@ -107,8 +108,8 @@ def register_error_handler(dispatcher: Dispatcher) -> None:
             if chat_id is not None:
                 try:
                     await bot.send_message(chat_id, texts.UNEXPECTED_ERROR_MESSAGE)
-                except TelegramAPIError:
-                    logger.warning("error_handler: не удалось уведомить пользователя", exc_info=True)
+                except TelegramAPIError as exception:
+                    _log_exception("error_handler: не удалось уведомить пользователя", exception)
 
             if telegram_id is not None:
                 # Своя сессия, не data["session"]: DbSessionMiddleware к этому
@@ -123,8 +124,12 @@ def register_error_handler(dispatcher: Dispatcher) -> None:
                         await session.commit()
                     except DBAPIError as exception:
                         _log_exception("error_handler: не удалось записать unhandled_exception в events", exception)
-                    except Exception:
-                        logger.exception("error_handler: не удалось записать unhandled_exception в events")
+                    except Exception as exception:
+                        diagnostic = _safe_exception_trace(exception)
+                        logger.exception(
+                            "error_handler: не удалось записать unhandled_exception в events; %s",
+                            diagnostic, exc_info=False,
+                        )
 
                 notification = texts.ADMIN_UNHANDLED_EXCEPTION_NOTIFICATION.format(
                     telegram_id=telegram_id, update_id=event.update.update_id,
@@ -133,11 +138,15 @@ def register_error_handler(dispatcher: Dispatcher) -> None:
                 for admin_id in settings.admin_id_list:
                     try:
                         await bot.send_message(admin_id, notification, parse_mode=None)
-                    except TelegramAPIError:
-                        logger.warning("error_handler: не удалось уведомить админа %s", admin_id, exc_info=True)
+                    except TelegramAPIError as exception:
+                        _log_exception("error_handler: не удалось уведомить админа", exception)
         except DBAPIError as exception:
             _log_exception("error_handler: внутренний сбой в самом обработчике ошибок", exception)
-        except Exception:
-            logger.exception("error_handler: внутренний сбой в самом обработчике ошибок")
+        except Exception as exception:
+            diagnostic = _safe_exception_trace(exception)
+            logger.exception(
+                "error_handler: внутренний сбой в самом обработчике ошибок; %s",
+                diagnostic, exc_info=False,
+            )
 
         return True
