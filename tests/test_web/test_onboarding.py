@@ -8,8 +8,11 @@ tests/test_web/test_workout.py::test_submit_uses_same_progression_as_direct_repo
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
+from app.db.models import User
 from app.db.repositories.achievements import AchievementRepository
 from app.db.repositories.baselines import BaselineRepository
 from app.db.repositories.users import UserRepository
@@ -22,6 +25,7 @@ from app.web.main import app
 class _FakeWebAppUser:
     id: int
     first_name: str
+    username: str | None = None
 
 
 @dataclass
@@ -29,9 +33,9 @@ class _FakeInitData:
     user: _FakeWebAppUser
 
 
-def _override_dependencies(session, telegram_id: int) -> None:
+def _override_dependencies(session, telegram_id: int, username: str | None = None) -> None:
     app.dependency_overrides[get_validated_init_data] = (
-        lambda: _FakeInitData(user=_FakeWebAppUser(id=telegram_id, first_name="Тест"))
+        lambda: _FakeInitData(user=_FakeWebAppUser(id=telegram_id, first_name="Тест", username=username))
     )
 
     async def _override_session():
@@ -40,8 +44,8 @@ def _override_dependencies(session, telegram_id: int) -> None:
     app.dependency_overrides[get_session] = _override_session
 
 
-async def _post(session, telegram_id: int, path: str, payload: dict):
-    _override_dependencies(session, telegram_id)
+async def _post(session, telegram_id: int, path: str, payload: dict, username: str | None = None):
+    _override_dependencies(session, telegram_id, username)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             return await client.post(path, json=payload)
@@ -186,3 +190,30 @@ async def test_questionnaire_rejects_non_positive_weight(session):
         payload=_questionnaire_payload(weight_kg="0"),
     )
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("legacy_username", [None, "synthetic_old_username"])
+async def test_baseline_does_not_capture_username_and_keeps_history_on_rename(
+    session, legacy_username,
+):
+    users = UserRepository(session)
+    telegram_id = 51901
+    previous = (
+        await users.create(telegram_id=telegram_id, username=legacy_username)
+        if legacy_username is not None else None
+    )
+    for username, reps in (("synthetic_new_username", 8), ("synthetic_renamed_username", 5)):
+        response = await _post(
+            session, telegram_id, "/api/onboarding/baseline", {"reps": reps}, username=username,
+        )
+        assert response.status_code == 200
+        current = await users.get_by_telegram_id(telegram_id)
+        assert current is not None
+        if previous is not None:
+            assert current.id == previous.id
+        stored_username = await session.scalar(select(User.username).where(User.id == current.id))
+        assert stored_username == legacy_username
+        previous = current
+
+    baselines = await BaselineRepository(session).list_for_user(current.id)
+    assert sorted(baseline.reps for baseline in baselines) == [5, 8]
