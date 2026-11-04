@@ -20,8 +20,18 @@ const queryClient = new QueryClient({
   },
 });
 
+// A browser may deny even access to the storage property (SecurityError). The read-cache is
+// optional: unavailable storage must not prevent the server-backed application from mounting.
+function queryCacheStorage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 const persister = createSyncStoragePersister({
-  storage: window.localStorage,
+  storage: queryCacheStorage(),
   key: "pullup-v2-query-cache",
 });
 
