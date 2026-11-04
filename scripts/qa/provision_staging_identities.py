@@ -309,6 +309,8 @@ async def run(args: argparse.Namespace) -> int:
                 await provision_expired(session, telegram_id, now)
             elif name == "qa_legacy_or_partial":
                 await provision_legacy_or_partial(session, telegram_id, now)
+            elif name == "qa_signup":
+                pass  # Leave this reserved identity absent: the UI must create its own profile.
             else:  # pragma: no cover - guarded by argparse choices
                 raise SystemExit(f"no provisioner for {name}")
             await session.commit()

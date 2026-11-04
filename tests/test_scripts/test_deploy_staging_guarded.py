@@ -134,7 +134,12 @@ if args[0] == "inspect":
     if "com.docker.compose.project" in fmt: out(env.get("DB_PROJECT", "pullup-staging"))
     elif ".State.Running" in fmt: out("true" if (cid == "dbc" or st.get("running")) else "false")
     elif ".State.Restarting" in fmt: out("false")
-    elif ".State.Health" in fmt: out("healthy")
+    elif ".State.Health" in fmt:
+        svc = cid.split("-")[0]
+        sequence = env.get("HEALTH_SEQUENCE_" + svc.upper(), "healthy").split(",")
+        reads = st.setdefault("health_reads", {}).get(svc, 0)
+        st["health_reads"][svc] = reads + 1; save()
+        out(sequence[min(reads, len(sequence) - 1)])
     elif ".Config.Image" in fmt: out("pullup-staging-" + cid.split("-")[0])
     elif ".Image" in fmt: out(("sha256:built-" + cid.split("-")[0]) if st.get("up_done") and cid != "dbc" else "sha256:old-" + cid.split("-")[0])
     sys.exit(0)
@@ -846,3 +851,21 @@ def test_existing_staging_workflow_and_legacy_runner_are_not_touched():
         "deploy/deploy-run.sh",
     ):
         assert forbidden not in changed
+
+
+def test_transient_unhealthy_staging_container_recovers_before_deadline(sandbox):
+    proc, _log, state = sandbox(
+        SHA, "dry-run", "yes", HEALTH_SEQUENCE_WEB="unhealthy,unhealthy,healthy", HEALTH_TIMEOUT="20",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert state["health_reads"]["web"] >= 3
+    assert state["running"] is True
+
+
+def test_persistently_unhealthy_staging_container_stops_services(sandbox):
+    proc, log, state = sandbox(SHA, "dry-run", "yes", HEALTH_SEQUENCE_WEB="unhealthy", HEALTH_TIMEOUT="4")
+    assert proc.returncode == 1
+    up = next(i for i, line in enumerate(log) if "up -d --no-build app web" in line)
+    assert any("stop app web" in line for line in log[up + 1:])
+    assert state["running"] is False
+    assert "healthcheck still 'unhealthy'" in proc.stderr

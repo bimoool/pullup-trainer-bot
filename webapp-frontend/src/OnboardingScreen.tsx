@@ -8,9 +8,7 @@ import {
   type OnboardingStep,
   type TimezoneOption,
 } from "./api";
-import { parseOptionalWeight } from "./WorkoutScreen";
-import { sanitizeDecimalInput } from "./decimalInput";
-import { describeBaselineQualification, ONBOARDING_WEIGHT_HINT } from "./courseV5";
+import { describeBaselineQualification } from "./courseV5";
 import { LabeledInput, LabeledSelect } from "./LabeledField";
 import { repsCount } from "./plural";
 
@@ -38,9 +36,9 @@ const BASELINE_GUIDE =
   "Замер простой: сделай максимум подтягиваний со своим весом, один подход. " +
   "Понадобится турник. Если ни одного повторения не получается — это тоже " +
   "результат, просто напиши 0.";
-const WELCOME_AFTER_BASELINE = "Осталась короткая анкета — 5 коротких вопросов.";
+const WELCOME_AFTER_BASELINE = "Выбери часовой пояс. Пол и дату рождения можно не указывать.";
 
-const QUESTIONNAIRE_STEPS = ["weight", "height", "gender", "birth_date", "timezone"] as const;
+const QUESTIONNAIRE_STEPS = ["gender", "birth_date", "timezone"] as const;
 type QuestionnaireStep = (typeof QUESTIONNAIRE_STEPS)[number];
 
 const GENDER_OPTIONS: { value: "male" | "female"; label: string }[] = [
@@ -66,7 +64,7 @@ function BaselineQualification({ reps }: { reps: number }) {
  * шаг с подтверждением (та же защита от опечатки, что
  * waiting_for_baseline_confirm бота, только на фронтенде — в БД ничего не
  * попадает, пока не нажато "Да", см. api.ts::submitOnboardingBaseline),
- * анкета — 5 экранов, один вопрос за раз, с кнопкой "Назад", один POST в
+ * анкета — 3 экрана, один вопрос за раз, с кнопкой "Назад", один POST в
  * конце (не по шагам — см. обоснование в комментарии к issue: анкета
  * дешёвая форма без побочных эффектов до сабмита, в отличие от целой
  * тренировки, которая персистится по шагам, issue #61). */
@@ -75,8 +73,6 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
     startStep === "questionnaire" ? { phase: "questionnaire", step: 0 } : { phase: "baseline_input" },
   );
   const [repsInput, setRepsInput] = useState("");
-  const [weightKg, setWeightKg] = useState("");
-  const [heightCm, setHeightCm] = useState("");
   const [gender, setGender] = useState<"male" | "female" | "">("");
   const [birthDate, setBirthDate] = useState("");
   const [timezone, setTimezone] = useState("");
@@ -85,9 +81,9 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    // Автоопределение часового пояса браузера (согласовано в плане issue
-    // #124 как осознанное расхождение с ботом — там вместо этого свободный
-    // ввод города) — только предзаполняет значение по умолчанию, реальный
+    // Browser detection only prefills the timezone; the user can change it.
+    // The bot also uses an explicit choice, without collecting a city.
+    // The real
     // список для явного выбора — ниже, из fetchTimezoneOptions.
     try {
       const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -139,25 +135,7 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
   }
 
   function validateQuestionnaireStep(step: QuestionnaireStep): string | null {
-    if (step === "weight") {
-      const weight = parseOptionalWeight(weightKg);
-      if (!weight.ok || weight.value === null) {
-        return "Не разобрал число — пришли вес в кг, например: 78";
-      }
-    }
-    if (step === "height") {
-      const height = Number(heightCm.trim());
-      if (!Number.isFinite(height) || height <= 0) {
-        return "Не разобрал число — пришли рост в см, например: 180";
-      }
-    }
-    if (step === "gender" && gender === "") {
-      return "Выбери пол.";
-    }
     if (step === "birth_date") {
-      if (birthDate === "") {
-        return "Укажи дату рождения.";
-      }
       if (new Date(birthDate) > new Date()) {
         return "Эта дата ещё не наступила — пришли настоящую дату рождения.";
       }
@@ -169,24 +147,12 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
   }
 
   async function handleQuestionnaireSubmit() {
-    // Уже провалидировано в validateQuestionnaireStep на каждом шаге — к
-    // моменту вызова этой функции (последний шаг пройден через
-    // handleQuestionnaireNext) weight гарантированно ok со значением.
-    const weight = parseOptionalWeight(weightKg);
-    const weightKgValue = weight.ok ? weight.value : null;
-    if (weightKgValue === null) {
-      setFormError("Не разобрал число — пришли вес в кг, например: 78");
-      return;
-    }
-
     setSubmitting(true);
     setFormError(null);
     try {
       await submitOnboardingQuestionnaire(initDataRaw, {
-        weight_kg: weightKgValue,
-        height_cm: Math.round(Number(heightCm.trim())),
-        gender: gender as "male" | "female",
-        birth_date: birthDate,
+        ...(gender ? { gender } : {}),
+        ...(birthDate ? { birth_date: birthDate } : {}),
         timezone,
       });
       onComplete();
@@ -294,35 +260,14 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
       </p>
 
       <Section className="block-section">
-        {current === "weight" && (
-          <LabeledInput
-            label="Твой вес в кг?"
-            hint={ONBOARDING_WEIGHT_HINT}
-            type="text"
-            inputMode="decimal"
-            placeholder="Например: 78"
-            value={weightKg}
-            onChange={(e) => setWeightKg(sanitizeDecimalInput(e.target.value))}
-          />
-        )}
-        {current === "height" && (
-          <LabeledInput
-            label="Рост в см?"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            placeholder="Например: 180"
-            value={heightCm}
-            onChange={(e) => setHeightCm(e.target.value)}
-          />
-        )}
         {current === "gender" && (
           <LabeledSelect
             label="Пол?"
+            hint="Необязательно. Нужен для нормативов и сравнений."
             value={gender}
             onChange={(e) => setGender(e.target.value as "male" | "female" | "")}
           >
-            <option value="">Выбери</option>
+            <option value="">Не указывать</option>
             {GENDER_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -333,6 +278,7 @@ export function OnboardingScreen({ initDataRaw, startStep, onComplete }: Props) 
         {current === "birth_date" && (
           <LabeledInput
             label="Дата рождения?"
+            hint="Необязательно. Нужна для возрастных нормативов и сравнений."
             type="date"
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value)}

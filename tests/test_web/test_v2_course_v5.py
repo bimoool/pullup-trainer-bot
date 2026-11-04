@@ -823,3 +823,24 @@ async def test_course_endpoints_404_for_legacy_inclusion(session, user: User, cl
     inclusion = await _enrol(session, user, await _pullups(session), program_version="pullups_legacy_step")
     response = await v2_get(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course")
     assert response.status_code == 404
+
+
+async def test_weight_is_requested_for_one_rm_calculation_without_a_profile_default(session, user: User, clock):
+    inclusion = await _enrol(session, user, await _pullups(session), weight=None, course_inputs={"load_step_kg": "0.5"})
+    path = f"/api/v2/program-inclusions/{inclusion.id}/course/one-rep-max/next-set"
+    blocked = await v2_post(session, user.telegram_id, path, {"attempts": []})
+    assert blocked.status_code == 409
+    assert "body_mass" in blocked.json()["detail"]["missing"]
+    assert inclusion.progression_state["inputs"].get("body_mass_kg") is None
+    saved = await v2_put(session, user.telegram_id, f"/api/v2/program-inclusions/{inclusion.id}/course/inputs", {
+        "body_mass_kg": "78.5",
+    })
+    assert saved.status_code == 200, saved.text
+    await session.refresh(inclusion)
+    assert Decimal(inclusion.progression_state["inputs"]["body_mass_kg"]) == Decimal("78.5")
+    await session.refresh(user)
+    assert user.weight_kg is None
+    started = await v2_post(session, user.telegram_id, path, {"attempts": []})
+    assert started.status_code == 200, started.text
+    assert started.json()["next_set"]["reps"] == 5
+    assert Decimal(started.json()["next_set"]["load_kg"]) == Decimal(0)

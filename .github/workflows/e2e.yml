@@ -47,7 +47,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend deps
-        run: pip install -e ".[web,dev]"
+        run: bash scripts/install-python.sh dev
 
       - name: Apply migrations
         run: alembic upgrade head

@@ -10,6 +10,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import SendMessage
@@ -101,13 +102,14 @@ async def test_unhandled_exception_is_caught_logged_and_reported(
     ]
     assert len(admin_notifications) == 1
     assert str(user.telegram_id) in admin_notifications[0].text
-    assert "намеренная ошибка теста" in admin_notifications[0].text
+    assert "RuntimeError" in admin_notifications[0].text
+    assert "намеренная ошибка теста" not in admin_notifications[0].text
 
     events = await EventRepository(session).list_for_user(user.id)
     exception_events = [e for e in events if e.event_type == "unhandled_exception"]
     assert len(exception_events) == 1
     assert exception_events[0].payload["update_id"] == 777
-    assert "намеренная ошибка теста" in exception_events[0].payload["exception"]
+    assert exception_events[0].payload["exception"] == "RuntimeError"
 
 
 async def test_database_driver_detail_is_not_copied_to_logs_events_or_telegram(
@@ -188,3 +190,44 @@ async def test_unhandled_exception_without_known_user_does_not_crash(bot: Bot, m
         if isinstance(m, SendMessage) and m.chat_id == 999_999_999
     ]
     assert len(sent_to_user) == 1
+
+
+@pytest.mark.parametrize("fail_event_write", [False, True])
+async def test_non_database_exception_text_is_not_copied_to_diagnostics(
+    session, user, bot, monkeypatch, test_dsn, caplog, fail_event_write,
+):
+    private_note = "synthetic-private-note-do-not-report"
+    test_engine = create_async_engine(test_dsn)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.bot.error_handler.async_session_factory", factory)
+    monkeypatch.setattr(settings, "admin_ids", "999999")
+    await session.commit()
+
+    if fail_event_write:
+        async def fail_create(self, **kwargs):
+            raise ValueError(private_note)
+        monkeypatch.setattr(EventRepository, "create", fail_create)
+
+    error = RuntimeError(private_note)
+    error.__cause__ = ValueError(private_note)
+    try:
+        dispatcher = _build_isolated_dispatcher(error)
+        await dispatcher.feed_update(bot, _make_boom_update(telegram_id=user.telegram_id))
+    finally:
+        await test_engine.dispose()
+
+    notifications = [m for m in bot.session.sent_methods if isinstance(m, SendMessage)]
+    admin = next(m for m in notifications if m.chat_id == 999999)
+    assert "RuntimeError" in admin.text
+    assert "777" in admin.text
+    assert private_note not in "\n".join(m.text for m in notifications)
+    assert private_note not in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "test_error_handler.py:" in caplog.text
+    events = await EventRepository(session).list_for_user(user.id)
+    assert private_note not in str([event.payload for event in events])
+    if not fail_event_write:
+        assert len(events) == 1
+        assert events[0].payload["exception"] == "RuntimeError"
+    else:
+        assert "ValueError" in caplog.text
