@@ -2,7 +2,8 @@
 # Keep current pins by default. Dependency upgrades are a separate reviewed change.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[[ $(uv --version) == 'uv 0.13.4'* ]] || { echo 'Install uv==0.13.4 before regenerating locks' >&2; exit 1; }
+read -r tool version _ <<< "$(uv --version)"
+[[ $tool == uv && $version == 0.13.4 ]] || { echo 'Install uv==0.13.4 before regenerating locks' >&2; exit 1; }
 constraints=$(mktemp)
 build_constraints=$(mktemp)
 trap 'rm -f "$constraints" "$build_constraints"' EXIT
