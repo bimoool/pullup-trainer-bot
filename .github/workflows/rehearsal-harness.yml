@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install app
-        run: pip install -e ".[dev,web]"
+        run: bash scripts/install-python.sh dev
       - name: Build the synthetic production-shaped dump
         env:
           BOT_TOKEN: ci-rehearsal-token

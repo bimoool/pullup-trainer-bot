@@ -6,7 +6,9 @@ FROM node:20-slim AS frontend-build
 WORKDIR /frontend
 COPY webapp-frontend/package.json webapp-frontend/package-lock.json ./
 # Воспроизводимая сборка: ровно версии из package-lock.json (как в CI: `npm ci`), без повторного разрешения диапазонов.
-RUN npm ci
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
+    npm ci --strict-ssl=true
 COPY webapp-frontend/ ./
 RUN npm run build
 
@@ -18,9 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
+COPY requirements ./requirements
 COPY app ./app
 
-RUN pip install --no-cache-dir .[web]
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
+    pip install --no-cache-dir --require-hashes --only-binary=:all: --no-deps -r requirements/build.txt -r requirements/web.txt \
+    && pip install --no-cache-dir --no-deps --no-build-isolation .[web] \
+    && pip check
 
 # webapp-frontend/dist ожидается по этому пути — app/web/main.py монтирует
 # статику относительно своего файла (parents[2] от app/web/main.py).
