@@ -160,7 +160,7 @@ jobs:
         run: python scripts/codex_patch_guard.py /tmp/codex-candidate/codex-candidate.patch
       - name: Install dependencies
         run: |
-          pip install -e '.[dev,web]'
+          bash scripts/install-python.sh dev
           npm ci --prefix webapp-frontend
           npm ci --prefix webapp-frontend/e2e
           cd webapp-frontend/e2e

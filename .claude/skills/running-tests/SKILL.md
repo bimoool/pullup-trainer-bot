@@ -8,7 +8,7 @@ description: Как прогнать тесты этого репозитори�
 ## Локальный прогон
 
 ```bash
-pip install -e ".[dev,web]"
+bash scripts/install-python.sh dev
 export BOT_TOKEN=ci-test-token
 export TEST_DATABASE_URL="postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_test"
 export DATABASE_URL="$TEST_DATABASE_URL"
