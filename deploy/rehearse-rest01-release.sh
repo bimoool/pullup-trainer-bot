@@ -6,7 +6,7 @@
 #
 # Что делает (docs/PRODUCTION_RUNBOOK.md §4, но без production-каталога/контейнеров/БД/портов):
 #   1. клонирует публичный репозиторий в $BASE (НЕ из /root/pullup-trainer-bot), берёт из него прежний код (prod HEAD),
-#      проверяет sha256 нового раннера (= установленного на сервере) и сохраняет прежний раннер для контроля;
+#      проверяет закреплённый sha256 проверяемого раннера и сохраняет прежний раннер для контроля;
 #   2. поднимает отдельный compose-проект $PROJECT (свой том, свой порт 127.0.0.1:$WEB_PORT) и восстанавливает в него
 #      КОПИЮ дампа $DUMP (файл читается, не меняется). Production-БД и её контейнер не открываются;
 #   3. Telegram отключён трижды: фейковый BOT_TOKEN, api.telegram.org -> 127.0.0.1 в контейнерах, сервис app вообще не
@@ -36,7 +36,9 @@ PROJECT="${REHEARSE_PROJECT:-pullup-rehearsal-rest01}"
 DUMP="${REHEARSE_DUMP:-/root/backups/prod-pre-9fb76da-20261019T203942Z.dump}"
 OLD_CODE_SHA="${REHEARSE_OLD_CODE_SHA:-bd80bc9d5cc3683aa6eccdbba182a8fe4d9571d2}"          # prod HEAD (preflight 2026-10-20)
 CONTROL_SHA="${REHEARSE_CONTROL_SHA:-d1b237567d732d4d670232d8a060f9849c3132a8}"            # кандидат упавшего выката (дерево = 9fb76da)
-NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-37d6c627e072aae7fbbdb8e07ba97c4b8a69087d627359a6f9aa90f94f6f656d}"
+# Pin the reviewed candidate, including bounded recovery from transient unhealthy startup.
+# Rehearsal does not install this runner on the production server.
+NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-7a1d42c1653fc443095b28809b888f110a3110b875eed58ecd5affc4f70d0dde}"
 FROM_REV="${REHEARSE_FROM_REV:-b5d8e1f3a6c9}"
 WEB_PORT="${REHEARSE_WEB_PORT:-18781}"
 # Жёсткие потолки памяти (cgroup, БЕЗ swap): сборки идут в ОТДЕЛЬНОМ контейнерном билдере BuildKit, контейнеры проекта — со
@@ -209,11 +211,11 @@ done
 git merge-base --is-ancestor 628144fa5457c41512db41af214c97a085fcb4b6 "$SHA" || die "candidate does not contain 628144f"
 git show "$SHA:deploy/deploy-production-guarded-run.sh" > "$BIN/runner-new.sh"
 got="$(sha256sum "$BIN/runner-new.sh" | awk '{print $1}')"
-[ "$got" = "$NEW_RUNNER_SHA256" ] || die "runner of $SHA has sha256 $got, expected $NEW_RUNNER_SHA256 (the installed one)"
+[ "$got" = "$NEW_RUNNER_SHA256" ] || die "runner of $SHA has sha256 $got, expected pinned $NEW_RUNNER_SHA256"
 git show "$CONTROL_SHA:deploy/deploy-production-guarded-run.sh" > "$BIN/runner-old.sh"
 git show "$SHA:deploy/rollback-production-guarded.sh" > "$BIN/rollback-production-guarded.sh"
 chmod 700 "$BIN"/*.sh
-log "new runner sha256 $got == installed; old (control) runner sha256 $(sha256sum "$BIN/runner-old.sh" | awk '{print $1}')"
+log "candidate runner sha256 $got == pinned; old (control) runner sha256 $(sha256sum "$BIN/runner-old.sh" | awk '{print $1}')"
 git show "$SHA:scripts/backfill_multi_program.py" > "$BIN/backfill.py.check"; grep -q -- '--verify-only' "$BIN/backfill.py.check" || die "candidate has no --verify-only"; rm -f "$BIN/backfill.py.check"
 
 # --------------------------------------------------------------------------------------------- 2 isolated environment
