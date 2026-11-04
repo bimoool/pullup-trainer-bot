@@ -56,6 +56,9 @@ def changed_files(api, number, expected_sha, expected_base_sha):
         raise ValueError("pagination limit reached; refusing incomplete classification")
     if len(files) != count:
         raise ValueError("PR-files listing is incomplete or changed")
+    names = [item.get("filename") if isinstance(item, dict) else None for item in files]
+    if any(not isinstance(name, str) for name in names) or len(set(names)) != len(names):
+        raise ValueError("invalid or duplicate filenames; refusing incomplete classification")
     after = api(f"pulls/{number}")
     if (
         (after.get("head") or {}).get("sha") != expected_sha

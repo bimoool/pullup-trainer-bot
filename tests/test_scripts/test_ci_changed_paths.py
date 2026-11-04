@@ -177,3 +177,20 @@ def test_thirty_full_pages_refuse_completeness():
 def test_invalid_page_shape_refuses_skip(batch):
     with pytest.raises(ValueError, match="invalid PR-files"):
         collect(API(1, [batch]))
+
+
+def test_duplicate_filenames_refuse_skip_even_when_count_matches():
+    # Stable head/base and count=2 cannot prove completeness if one filename is repeated.
+    with pytest.raises(ValueError, match="duplicate filenames"):
+        collect(API(2, [[file("docs/a.md"), file("docs/a.md")]]))
+
+
+def test_duplicate_across_pages_refuses_skip():
+    docs = [file(f"docs/{n}.md") for n in range(100)]
+    with pytest.raises(ValueError, match="duplicate filenames"):
+        collect(API(101, [docs, [file("docs/0.md")]]))
+
+
+def test_old_e2e_runs_are_cancelled_on_new_push():
+    workflow = (ROOT / ".github/workflows/e2e.yml").read_text()
+    assert "concurrency:\n  group: e2e-${{ github.ref }}\n  cancel-in-progress: true\n" in workflow
