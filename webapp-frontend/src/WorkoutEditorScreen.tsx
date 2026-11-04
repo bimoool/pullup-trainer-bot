@@ -332,7 +332,8 @@ export function WorkoutEditorScreen({ initDataRaw, workoutId, onBack, onSaved, o
       {isEditing && workoutId !== null && (
         <div className="ux-secondary-row">
           <button
-            type="button" className="ux-secondary" disabled={items.length === 0}
+            // A late save callback navigates away: do not open a sheet that it would immediately unmount.
+            type="button" className="ux-secondary" disabled={saving || workoutBusy || items.length === 0}
             title={items.length === 0 ? "Сначала добавьте хотя бы одно упражнение" : undefined}
             onClick={() => onAddToPlan(workoutId, title)}
           >

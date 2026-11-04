@@ -15,6 +15,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import SendMessage
 from aiogram.types import CallbackQuery, Chat, Message, Update
 from aiogram.types import User as TgUser
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.bot.error_handler import register_error_handler
@@ -43,13 +45,15 @@ def _make_boom_update(*, telegram_id: int) -> Update:
     )
 
 
-def _build_isolated_dispatcher() -> Dispatcher:
+def _build_isolated_dispatcher(exception: BaseException | None = None) -> Dispatcher:
     """Собственный Dispatcher+Router с одним намеренно падающим хендлером —
     register_error_handler подключается ровно так же, как в app/main.py."""
     boom_router = Router()
 
     @boom_router.callback_query(F.data == "__test_boom__")
     async def _boom(callback: CallbackQuery) -> None:
+        if exception is not None:
+            raise exception
         raise RuntimeError("намеренная ошибка теста")
 
     dispatcher = Dispatcher(storage=MemoryStorage())
@@ -88,6 +92,7 @@ async def test_unhandled_exception_is_caught_logged_and_reported(
         if isinstance(m, SendMessage) and m.chat_id == user.telegram_id
     ]
     assert len(sent_to_user) == 1
+
     assert "пошло не так" in sent_to_user[0].text
 
     admin_notifications = [
@@ -103,6 +108,49 @@ async def test_unhandled_exception_is_caught_logged_and_reported(
     assert len(exception_events) == 1
     assert exception_events[0].payload["update_id"] == 777
     assert "намеренная ошибка теста" in exception_events[0].payload["exception"]
+
+
+async def test_database_driver_detail_is_not_copied_to_logs_events_or_telegram(
+    session: AsyncSession, user: User, bot: Bot, monkeypatch, test_dsn, caplog,
+):
+    """hide_parameters cannot redact PostgreSQL's own error detail; sanitize at the boundary."""
+    private_note = "private-workout-note-privacy-regression"
+    test_engine = create_async_engine(test_dsn, hide_parameters=True)
+    test_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.bot.error_handler.async_session_factory", test_session_factory)
+    monkeypatch.setattr(settings, "admin_ids", "999999")
+    await session.commit()
+
+    try:
+        async with test_engine.connect() as connection:
+            try:
+                await connection.execute(
+                    text("SELECT CAST(CAST(:private_note AS TEXT) AS INTEGER)"),
+                    {"private_note": private_note},
+                )
+            except DBAPIError as caught:
+                db_error = caught
+            else:
+                raise AssertionError("PostgreSQL should reject the non-integer private note")
+
+        assert private_note in str(db_error.orig)  # Real server error, despite hide_parameters=True.
+        dispatcher = _build_isolated_dispatcher(db_error)
+        await dispatcher.feed_update(bot, _make_boom_update(telegram_id=user.telegram_id))
+    finally:
+        await test_engine.dispose()
+
+    notifications = [m for m in bot.session.sent_methods if isinstance(m, SendMessage)]
+    assert private_note not in "\n".join(message.text for message in notifications)
+    admin = next(message for message in notifications if message.chat_id == 999999)
+    assert "DBAPIError" in admin.text
+    assert "22P02" in admin.text
+    assert "777" in admin.text
+    events = await EventRepository(session).list_for_user(user.id)
+    error_event = next(event for event in events if event.event_type == "unhandled_exception")
+    assert private_note not in str(error_event.payload)
+    assert "22P02" in error_event.payload["exception"]
+    assert private_note not in caplog.text
+    assert "test_error_handler.py:" in caplog.text  # Stack positions survive without source/locals.
 
 
 async def test_unhandled_exception_clears_fsm_state(session: AsyncSession, user: User, bot: Bot, monkeypatch, test_dsn):

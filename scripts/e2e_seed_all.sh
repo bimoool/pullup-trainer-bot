@@ -228,3 +228,6 @@ seed plan_week_add_exercise 931003
 seed plan_week_add_exercise 931006
 seed live_engine 931004
 seed journal_catalog_session 931005
+
+# Workout save/navigation race: independent golden_journey user plus retry.
+for id in 939901 939902; do seed golden_journey "$id"; done

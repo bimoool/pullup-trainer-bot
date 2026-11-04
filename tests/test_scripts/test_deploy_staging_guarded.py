@@ -14,6 +14,7 @@ import re
 import signal
 import stat
 import subprocess
+import textwrap
 import time
 from pathlib import Path
 
@@ -809,7 +810,27 @@ def test_dispatcher_and_old_staging_share_one_lock(tmp_path):
     assert "exec 9>/home/deploy/.deploy-staging.lock" in text and "flock -n 9" in text
 
 
-def test_production_and_existing_staging_deploy_files_are_not_touched():
+def test_legacy_production_workflow_refuses_before_any_ssh():
+    # Production deliberately gained a refusal step in the October guarded release.
+    # Checking that it never changed since September rejects that safety improvement.
+    # Verify the actual refusal even on shallow CI checkouts instead.
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+    assert re.search(r"^on:\n  workflow_dispatch: \{\}\n", workflow, re.MULTILINE)
+    guard = re.search(
+        r"      - name: Refuse unguarded production deploy\n        run: \|\n((?:          .*\n)+)",
+        workflow,
+    )
+    assert guard, "legacy production deployment must refuse before contacting the server"
+    assert guard.start() < workflow.index("uses: appleboy/ssh-action@")
+    refused = subprocess.run(
+        ["bash", "-c", textwrap.dedent(guard.group(1))],
+        capture_output=True, text=True, check=False,
+    )
+    assert refused.returncode == 1, "the refusal must stop the job, not just print a warning"
+    assert "::error::" in refused.stdout
+
+
+def test_existing_staging_workflow_and_legacy_runner_are_not_touched():
     out = subprocess.run(
         ["git", "diff", "--name-only", "4298f8b9727f91d4a150431fd0d9e06131944d27", "HEAD"],
         capture_output=True,
@@ -821,7 +842,6 @@ def test_production_and_existing_staging_deploy_files_are_not_touched():
         pytest.skip("git history unavailable")
     changed = set(out.stdout.split())
     for forbidden in (
-        ".github/workflows/deploy.yml",
         ".github/workflows/deploy-staging.yml",
         "deploy/deploy-run.sh",
     ):

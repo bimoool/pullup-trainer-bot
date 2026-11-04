@@ -8,7 +8,7 @@ M клон считается один раз · N дубль копии и на
 
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -39,7 +39,9 @@ from tests.test_web.test_profile import _get_profile
 
 RAW_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
 RAW_FRAGMENTS = ("pull_ups", "block_a", "block_b", "manual_custom", "elective_", "journal-log")
-FULL_RANGE = "from=2026-01-01&to=2026-12-31"
+RANGE_START = date(2026, 1, 1)
+RANGE_END = date(2026, 12, 31)
+FULL_RANGE = f"from={RANGE_START}&to={RANGE_END}"
 
 
 # --- помощники -------------------------------------------------------------------------------------
@@ -51,24 +53,34 @@ async def _analytics(session: AsyncSession, user, query: str = FULL_RANGE) -> di
     return response.json()
 
 
-async def _calendar_total(session: AsyncSession, user, months: tuple[str, ...] = ("2026-09", "2026-10")) -> int:
+async def _calendar_total(
+    session: AsyncSession, user, date_from: date = RANGE_START, date_to: date = RANGE_END,
+) -> int:
+    # Same interval as analytics and journal, including partial months/year boundaries.
+    # A clone/live session created in November used to disappear from this test's Sep/Oct total.
     total = 0
-    for month in months:
+    for index in range(date_from.year * 12 + date_from.month - 1, date_to.year * 12 + date_to.month):
+        year, month_number = divmod(index, 12)
+        month = f"{year:04d}-{month_number + 1:02d}"
         response = await v2_get(session, telegram_id=user.telegram_id, path=f"/api/v2/journal/days?month={month}")
         assert response.status_code == 200, response.text
-        total += sum(day["count"] for day in response.json()["days"])
+        total += sum(
+            day["count"] for day in response.json()["days"]
+            if date_from <= date.fromisoformat(day["date"]) <= date_to
+        )
     return total
 
 
 async def _journal_list_total(session: AsyncSession, user) -> int:
     """Журнал так, как его собирает экран: карточки legacy + v2-карточки без дублей legacy (exclude_legacy_cards)."""
     legacy = await v2_get(
-        session, telegram_id=user.telegram_id, path="/api/history?date_from=2026-01-01&date_to=2026-12-31&limit=100",
+        session, telegram_id=user.telegram_id,
+        path=f"/api/history?date_from={RANGE_START}&date_to={RANGE_END}&limit=100",
     )
     assert legacy.status_code == 200, legacy.text
     v2 = await v2_get(
         session, telegram_id=user.telegram_id,
-        path="/api/v2/sessions?status=completed&date_from=2026-01-01&date_to=2026-12-31&limit=200&exclude_legacy_cards=true",
+        path=f"/api/v2/sessions?status=completed&date_from={RANGE_START}&date_to={RANGE_END}&limit=200&exclude_legacy_cards=true",
     )
     assert v2.status_code == 200, v2.text
     return len(legacy.json()["items"]) + len(v2.json()["sessions"])
@@ -149,12 +161,31 @@ async def _mixed_history(session: AsyncSession, telegram_id: int):
     await _free_workout(session, user, workout_set, BASE + timedelta(hours=2), 13)
     manual = await _post_backdated(session, user, exercise, BASE + timedelta(days=1), [8, 8], duration=1500)
     await _post_activity(session, user, BASE + timedelta(days=2), 45)
-    clone = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{manual['id']}/clone", {})
+    clone = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{manual['id']}/clone", {
+        "performed_on": (BASE + timedelta(days=3)).date().isoformat(),
+    })
     assert clone.status_code == 201, clone.text
     return user, workout_set, manual, clone.json()
 
 
 # --- A, B, C, D ------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("before", "after"), [
+    (date(2026, 10, 31), date(2026, 11, 1)),
+    (date(2025, 12, 31), date(2026, 1, 1)),
+])
+async def test_calendar_total_includes_both_sides_of_month_boundary_and_only_requested_days(
+    session: AsyncSession, before: date, after: date,
+):
+    user = (await _legacy_user(session, 990014))[0]
+    for day in (before - timedelta(days=1), before, after, after + timedelta(days=1)):
+        await _post_activity(session, user, datetime.combine(day, datetime.min.time(), tzinfo=UTC), 10)
+
+    assert await _calendar_total(session, user, before, after) == 2
+    assert await _calendar_total(session, user, before, before) == 1
+    assert await _calendar_total(session, user, after, after) == 1
+    assert await _calendar_total(session, user, before - timedelta(days=1), after + timedelta(days=1)) == 4
 
 
 async def test_journal_profile_and_analytics_report_the_same_integer_total(session: AsyncSession):
@@ -391,7 +422,9 @@ async def test_clone_counts_as_one_more_global_workout_and_carries_no_plan_credi
     exercise = await _pull_ups(session)
     original = await _post_backdated(session, user, exercise, BASE, [8, 8], duration=900)
     before = (await _analytics(session, user))["metrics"]["total_workouts"]
-    cloned = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{original['id']}/clone", {})
+    cloned = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{original['id']}/clone", {
+        "performed_on": (BASE + timedelta(days=1)).date().isoformat(),
+    })
     assert cloned.status_code == 201, cloned.text
 
     totals = await _all_totals(session, user)
@@ -443,7 +476,9 @@ async def test_exercise_history_is_one_identity_across_legacy_manual_and_clone(s
     # служебные упражнения курса, созданные при первой записи, указывают на публичное «Подтягивания» (E2)
     await WorkoutRepository(session).record_backdated_workout(**_kwargs(user, workout_set, BASE, 11))  # legacy -> блоки A/Б курса
     manual = await _post_backdated(session, user, public, BASE + timedelta(days=1), [9, 9, 9])
-    cloned = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{manual['id']}/clone", {})
+    cloned = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{manual['id']}/clone", {
+        "performed_on": (BASE + timedelta(days=2)).date().isoformat(),
+    })
     assert cloned.status_code == 201
 
     analytics = await _analytics(session, user)
@@ -497,6 +532,12 @@ async def test_course_session_manual_log_clone_and_activity_stay_consistent(sess
     )
     assert done.status_code == 200, done.text
 
+    # This scenario checks analytics of an aged completed live session, not the wall clock.
+    # Keep its historical date deterministic without changing the actual live start/complete flow.
+    live_row = await session.get(TrainingSession, live_id)
+    live_row.performed_at = BASE + timedelta(days=5)
+    await session.flush()
+
     analytics = await _analytics(session, user, FULL_RANGE)
     assert analytics["metrics"]["total_workouts"] == 1 and analytics["metrics"]["total_minutes"] == 25
     categories = {c["name"]: c for c in analytics["distribution"]["categories"] if c["workouts"]}
@@ -504,10 +545,12 @@ async def test_course_session_manual_log_clone_and_activity_stay_consistent(sess
     assert categories["Подтягивания"]["minutes"] == 25
 
     # ручная запись и клон курсовой сессии (клон — обычная тренировка, не старт курса)
-    cloned = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{live_id}/clone", {})
+    cloned = await v2_post(session, user.telegram_id, f"/api/v2/sessions/{live_id}/clone", {
+        "performed_on": (BASE + timedelta(days=6)).date().isoformat(),
+    })
     assert cloned.status_code == 201, cloned.text
-    manual = await _post_backdated(session, user, await _pull_ups(session), datetime.now(UTC) - timedelta(days=3), [7, 7], duration=900)
-    activity = await _post_activity(session, user, datetime.now(UTC) - timedelta(days=2), 45)  # J9
+    manual = await _post_backdated(session, user, await _pull_ups(session), BASE + timedelta(days=2), [7, 7], duration=900)
+    activity = await _post_activity(session, user, BASE + timedelta(days=3), 45)  # J9
 
     analytics = await _analytics(session, user, FULL_RANGE)
     assert analytics["metrics"]["total_workouts"] == 4
