@@ -1,0 +1,109 @@
+"""Skip heavy checks only for a complete, SHA-bound list of known Markdown changes."""
+
+import json
+import os
+import re
+import urllib.request
+
+ROOT_DOCS = {"README.md", "SECURITY.md", "CLAUDE.md", "ROADMAP_tm.md", "TEXTS_AUDIT.md"}
+MAX_FILES = 3000  # GitHub PR-files API cap: at the cap we refuse to infer completeness.
+
+
+def documentation(path):
+    if not isinstance(path, str) or not path or "\\" in path:
+        return False
+    parts = path.split("/")
+    if any(part in ("", ".", "..") or part.startswith(".") for part in parts):
+        return False
+    if any(ord(char) < 32 for char in path):
+        return False
+    return path in ROOT_DOCS or (path.startswith("docs/") and path.endswith(".md"))
+
+
+def run_full(files):
+    if not isinstance(files, list) or not files:
+        return True
+    for item in files:
+        if not isinstance(item, dict) or not documentation(item.get("filename")):
+            return True
+        status = item.get("status")
+        if status == "renamed":
+            if not documentation(item.get("previous_filename")):
+                return True
+        elif status not in {"added", "modified", "removed"}:
+            return True
+    return False
+
+
+def changed_files(api, number, expected_sha, expected_base_sha):
+    before = api(f"pulls/{number}")
+    count = before.get("changed_files")
+    if (before.get("base") or {}).get("sha") != expected_base_sha:
+        raise ValueError("PR base changed before classification")
+    if (before.get("head") or {}).get("sha") != expected_sha:
+        raise ValueError("PR head changed before classification")
+    if type(count) is not int or not 0 < count < MAX_FILES:
+        raise ValueError("missing/empty/at-limit PR file count; refusing to skip checks")
+    files = []
+    for page in range(1, 31):
+        batch = api(f"pulls/{number}/files?per_page=100&page={page}")
+        if not isinstance(batch, list) or len(batch) > 100:
+            raise ValueError("invalid PR-files response")
+        files.extend(batch)
+        if len(batch) < 100:
+            break
+    else:
+        raise ValueError("pagination limit reached; refusing incomplete classification")
+    if len(files) != count:
+        raise ValueError("PR-files listing is incomplete or changed")
+    names = [item.get("filename") if isinstance(item, dict) else None for item in files]
+    if any(not isinstance(name, str) for name in names) or len(set(names)) != len(names):
+        raise ValueError("invalid or duplicate filenames; refusing incomplete classification")
+    after = api(f"pulls/{number}")
+    if (
+        (after.get("head") or {}).get("sha") != expected_sha
+        or after.get("changed_files") != count
+        or (after.get("base") or {}).get("sha") != expected_base_sha
+    ):
+        raise ValueError("PR changed while classifying files")
+    return files
+
+
+def main():
+    repo = os.environ["GITHUB_REPOSITORY"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        raise ValueError("invalid repository")
+    with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
+        pr = json.load(event_file)["pull_request"]
+    number, sha, base_sha = pr["number"], pr["head"]["sha"], pr["base"]["sha"]
+    if (
+        type(number) is not int
+        or number < 1
+        or not re.fullmatch(r"[0-9a-f]{40}", sha)
+        or not re.fullmatch(r"[0-9a-f]{40}", base_sha)
+    ):
+        raise ValueError("invalid PR identity")
+
+    def api(path):
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/{path}",
+            headers={
+                "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "turnikmen-ci-path-classifier",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return json.load(response)
+
+    decision = run_full(changed_files(api, number, sha, base_sha))
+    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+        output.write(f"run_full={'true' if decision else 'false'}\n")
+    print(
+        "Full checks required" if decision else "Verified Markdown-only PR: heavy checks may skip"
+    )
+
+
+if __name__ == "__main__":
+    main()

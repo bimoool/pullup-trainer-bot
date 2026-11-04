@@ -2,18 +2,22 @@ name: E2E (Mini App)
 
 on:
   pull_request:
-    paths:
-      - "webapp-frontend/**"
-      - "app/web/**"
-      - "app/db/**"
-      - "app/domain/**"
-      - "app/services/**"
-      - "scripts/e2e_seed.py"
-      - "scripts/e2e_seed_all.sh"
-      - "alembic.ini"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/ci-changed-paths.yml
+
   e2e:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     runs-on: ubuntu-latest
     services:
       postgres:
