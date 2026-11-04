@@ -9,9 +9,6 @@
 уведомление админу — тот же канал, что и у "Сообщить о проблеме"."""
 
 import logging
-import re
-import traceback
-from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.exceptions import TelegramAPIError
@@ -25,28 +22,10 @@ from app.config import settings
 from app.db.base import async_session_factory
 from app.db.repositories.events import EventRepository
 from app.db.repositories.users import UserRepository
+from app.diagnostics import exception_diagnostic as _exception_diagnostic
+from app.diagnostics import safe_exception_trace as _safe_exception_trace
 
 logger = logging.getLogger(__name__)
-
-
-def _exception_diagnostic(exception: BaseException) -> str:
-    """Only trusted diagnostic fields: arbitrary error text may repeat user input."""
-    if not isinstance(exception, DBAPIError):
-        return type(exception).__name__
-    sqlstate = getattr(exception.orig, "sqlstate", None)
-    if not isinstance(sqlstate, str) or not re.fullmatch(r"[A-Z0-9]{5}", sqlstate):
-        sqlstate = "unknown"
-    return f"{type(exception).__name__} (sqlstate={sqlstate})"
-
-
-def _safe_exception_trace(exception: BaseException) -> str:
-    # Exception messages, causes and source lines can contain user input for any
-    # error class. Keep code locations without arbitrary text, arguments or locals.
-    positions = " -> ".join(
-        f"{Path(frame.f_code.co_filename).name}:{line}:{frame.f_code.co_name}"
-        for frame, line in traceback.walk_tb(exception.__traceback__)
-    )
-    return f"{_exception_diagnostic(exception)}; stack={positions}"
 
 
 def _log_exception(message: str, exception: BaseException) -> None:

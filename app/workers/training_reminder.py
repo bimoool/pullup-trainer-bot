@@ -12,6 +12,7 @@ from app.bot import texts
 from app.db.base import async_session_factory
 from app.db.repositories.users import UserRepository
 from app.db.repositories.workouts import WorkoutRepository
+from app.diagnostics import safe_exception_trace
 from app.domain.constants import DEFAULT_TRAINING_REMINDER_HOUR
 from app.services.plan_spacing import MainSpacingService
 
@@ -65,9 +66,9 @@ async def _send_training_reminders(session: AsyncSession, bot: Bot) -> int:
 
         try:
             await bot.send_message(user.telegram_id, texts.TRAINING_REMINDER_TODAY)
-        except TelegramAPIError:
+        except TelegramAPIError as exception:
             logger.warning(
-                "training_reminder: failed to notify user %s", user.telegram_id, exc_info=True,
+                "training_reminder: failed to notify user %s; %s", user.telegram_id, safe_exception_trace(exception),
             )
             continue
         await users_repo.mark_training_reminder_sent(user.id, local_now.date())

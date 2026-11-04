@@ -13,6 +13,7 @@ from app.bot.states import AdminStates
 from app.config import settings
 from app.db.base import async_session_factory
 from app.db.repositories.weekly_digests import WeeklyDigestRepository
+from app.diagnostics import safe_exception_trace
 from app.services.github import GitHubClient, GitHubClientProtocol, IssueSummary
 
 logger = logging.getLogger(__name__)
@@ -159,8 +160,8 @@ async def send_weekly_digest_reminder(
     for admin_id in settings.admin_id_list:
         try:
             await bot.send_message(admin_id, reminder_text)
-        except TelegramAPIError:
-            logger.warning("weekly_digest: failed to send reminder to admin %s", admin_id, exc_info=True)
+        except TelegramAPIError as exception:
+            logger.warning("weekly_digest: failed to send reminder to admin %s; %s", admin_id, safe_exception_trace(exception))
             continue
 
         fsm = dispatcher.fsm.get_context(bot=bot, chat_id=admin_id, user_id=admin_id)

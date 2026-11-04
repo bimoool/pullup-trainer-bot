@@ -136,3 +136,19 @@ async def test_sync_skips_payment_with_api_error_without_blocking_others(session
     assert confirmed_count == 1
     remaining = await PendingPaymentRepository(session).list_pending()
     assert [p.id for p in remaining] == [broken_id]
+
+
+async def test_provider_error_details_stay_private_and_other_payments_continue(session, user, caplog):
+    private_value = "synthetic-private-payment-detail"
+    client = FakeRobokassaClient()
+    service = RobokassaService(session, client)
+    await service.create_payment_link(user.id)
+    await service.create_payment_link(user.id)
+    pending = await PendingPaymentRepository(session).list_pending()
+    client.statuses[pending[0].id] = RobokassaAPIError(1, private_value)
+    client.statuses[pending[1].id] = "paid"
+    assert await service.sync_pending_payments(now=NOW) == 1
+    assert [p.id for p in await PendingPaymentRepository(session).list_pending()] == [pending[0].id]
+    assert private_value not in caplog.text
+    assert "RobokassaAPIError" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)

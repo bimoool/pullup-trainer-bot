@@ -52,10 +52,8 @@ export async function submitOnboardingBaseline(initDataRaw: string, reps: number
  * timezone — выбор из fetchTimezoneOptions (issue #125), не свободный ввод
  * города, как в боте — осознанное расхождение, согласовано в issue #124. */
 export interface OnboardingQuestionnaireRequest {
-  weight_kg: string;
-  height_cm: number;
-  gender: "male" | "female";
-  birth_date: string;
+  gender?: "male" | "female";
+  birth_date?: string;
   timezone: string;
 }
 

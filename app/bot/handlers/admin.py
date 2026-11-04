@@ -33,6 +33,7 @@ from app.config import settings
 from app.db.models import User
 from app.db.repositories.users import UserRepository
 from app.db.repositories.weekly_digests import WeeklyDigestRepository
+from app.diagnostics import safe_exception_trace
 from app.domain.constants import ADMIN_TEST_PAYMENT_AMOUNT_RUB, WEEKLY_DIGEST_REPLY_DEADLINE_HOURS
 from app.services.admin import FUNNEL_STEPS, AdminService, UserCard
 from app.services.admin_reset import reset_user_progress
@@ -232,8 +233,8 @@ async def _broadcast(bot: Bot, message: Message, users: list[User], album: list[
             else:
                 await bot.send_message(user.telegram_id, text, parse_mode=None)
             sent += 1
-        except TelegramAPIError:
-            logger.warning("broadcast: failed to notify user %s", user.telegram_id, exc_info=True)
+        except TelegramAPIError as exception:
+            logger.warning("broadcast: failed to notify user %s; %s", user.telegram_id, safe_exception_trace(exception))
     return sent, len(users)
 
 
@@ -300,8 +301,8 @@ async def handle_admin_broadcast_preview(callback: CallbackQuery, state: FSMCont
     await callback.answer()
     try:
         await callback.bot.copy_messages(chat_id=admin_id, from_chat_id=data["broadcast_chat_id"], message_ids=ids)
-    except TelegramAPIError:
-        logger.warning("broadcast: preview copy failed", exc_info=True)
+    except TelegramAPIError as exception:
+        logger.warning("broadcast: preview copy failed; %s", safe_exception_trace(exception))
         await state.clear()
         await callback.message.answer(texts.ADMIN_BROADCAST_PREVIEW_FAILED)
         return
@@ -353,8 +354,8 @@ async def _copy_to_users(bot: Bot, from_chat_id: int, message_ids: list[int], us
                 report.failed += 1
             except TelegramForbiddenError:
                 report.blocked += 1
-            except TelegramAPIError:
-                logger.warning("broadcast: failed to copy to user %s", user.telegram_id, exc_info=True)
+            except TelegramAPIError as exception:
+                logger.warning("broadcast: failed to copy to user %s; %s", user.telegram_id, safe_exception_trace(exception))
                 report.failed += 1
             break
         await asyncio.sleep(BROADCAST_SEND_INTERVAL_SECONDS)
@@ -516,8 +517,8 @@ async def handle_admin_grant_days_value(message: Message, state: FSMContext, ses
                 days=days, expires_at=updated.subscription_expires_at.strftime("%d.%m.%Y"),
             ),
         )
-    except TelegramAPIError:
-        logger.warning("admin grant_days: failed to notify user %s about extension", user.telegram_id, exc_info=True)
+    except TelegramAPIError as exception:
+        logger.warning("admin grant_days: failed to notify user %s about extension; %s", user.telegram_id, safe_exception_trace(exception))
 
 
 @router.callback_query(F.data.startswith("admin_grant_coins:"))
@@ -663,7 +664,8 @@ async def handle_qa_fresh_reset_confirm(callback: CallbackQuery, state: FSMConte
     try:
         report = await run_fresh_reset(session, telegram_id=callback.from_user.id, staging=staging, apply=True)
     except Exception as exc:  # сервис уже сделал ROLLBACK; QA-сессии нужен явный ответ, а не тишина
-        logger.exception("qa_fresh_reset: unexpected error, rolled back")
+        diagnostic = safe_exception_trace(exc)
+        logger.exception("qa_fresh_reset: unexpected error, rolled back; %s", diagnostic, exc_info=False)
         await callback.message.answer(texts.QA_FRESH_RESET_FAILED.format(failures=f"• {type(exc).__name__}"))
         await callback.answer()
         return

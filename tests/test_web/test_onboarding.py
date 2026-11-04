@@ -150,8 +150,8 @@ async def test_questionnaire_completes_onboarding_and_starts_trial(session):
 
     updated = await UserRepository(session).get_by_telegram_id(51102)
     assert updated.onboarding_completed_at is not None
-    assert updated.weight_kg == 78.5 or str(updated.weight_kg) == "78.5"
-    assert updated.height_cm == 180
+    assert updated.weight_kg is None
+    assert updated.height_cm is None
     assert updated.gender.value == "male"
     assert updated.birth_date == date(1996, 3, 15)
     assert updated.timezone == "Europe/Moscow"
@@ -217,3 +217,46 @@ async def test_baseline_does_not_capture_username_and_keeps_history_on_rename(
 
     baselines = await BaselineRepository(session).list_for_user(current.id)
     assert sorted(baseline.reps for baseline in baselines) == [5, 8]
+
+
+async def test_minimal_questionnaire_does_not_require_or_collect_body_profile(session):
+    from app.db.models import UserBodyMetric
+
+    user = await UserRepository(session).create(telegram_id=51911)
+    await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=8)
+    response = await _post(session, user.telegram_id, "/api/onboarding/questionnaire", {"timezone": "Asia/Yekaterinburg"})
+    assert response.status_code == 200
+    await session.refresh(user)
+    assert user.onboarding_completed_at is not None
+    assert user.timezone == "Asia/Yekaterinburg"
+    assert (user.weight_kg, user.height_cm, user.gender, user.birth_date) == (None, None, None, None)
+    assert list(await session.scalars(select(UserBodyMetric).where(UserBodyMetric.user_id == user.id))) == []
+
+
+async def test_old_questionnaire_payload_does_not_resume_weight_or_height_collection(session):
+    from app.db.models import UserBodyMetric
+
+    user = await UserRepository(session).create(telegram_id=51912)
+    await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=8)
+    response = await _post(session, user.telegram_id, "/api/onboarding/questionnaire", _questionnaire_payload())
+    assert response.status_code == 200
+    await session.refresh(user)
+    assert user.weight_kg is None and user.height_cm is None
+    assert user.gender.value == "male"
+    assert user.birth_date == date(1996, 3, 15)
+    assert list(await session.scalars(select(UserBodyMetric).where(UserBodyMetric.user_id == user.id))) == []
+
+
+async def test_skipping_demographics_preserves_legacy_profile_and_baseline(session):
+    from decimal import Decimal
+
+    user = await UserRepository(session).create(telegram_id=51913)
+    await UserRepository(session).update_profile(
+        user.id, weight_kg=Decimal("78.5"), height_cm=180, birth_date=date(1996, 3, 15),
+    )
+    await BaselineRepository(session).create(user_id=user.id, performed_at=datetime.now(UTC), reps=8)
+    response = await _post(session, user.telegram_id, "/api/onboarding/questionnaire", {"timezone": "Asia/Yekaterinburg"})
+    assert response.status_code == 200
+    await session.refresh(user)
+    assert (user.weight_kg, user.height_cm, user.birth_date) == (Decimal("78.5"), 180, date(1996, 3, 15))
+    assert [b.reps for b in await BaselineRepository(session).list_for_user(user.id)] == [8]
