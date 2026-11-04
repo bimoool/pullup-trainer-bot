@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
+import { buildInitData, getTestBotToken } from "../../fixtures/initData";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
 
 // #277 «Full sweep» — регрессии трёх найденных дефектов:
@@ -15,7 +16,8 @@ const USERS = { 320: { base: 997_501, theme: "light" }, 390: { base: 997_521, th
 const WORKOUT = "Золотая тренировка";
 const BACKDATED_BADGE = "Записана задним числом";
 // В сиде sweep_defects уже ДВЕ BACKDATED-сессии (2 и 5 дней назад) — сценарий добавляет третью, поэтому общий бейдж
-// «задним числом» её не идентифицирует. Исходные записи не удаляем: считаем их и ищем новую по дню и содержимому.
+// «задним числом» её не идентифицирует. Исходные записи не удаляем: проверяем обе через API без фильтра
+// месяца, а в Журнале считаем только записи открытого месяца (в начале месяца −5 дней — предыдущий).
 const SEED_BACKDATED = 2;
 const USER_TIME_ZONE = "Europe/Moscow"; // профиль пользователя sweep_defects (_QUESTIONNAIRE_DEFAULTS)
 
@@ -24,6 +26,15 @@ const backdatedCards = (page: Page) =>
 // День Журнала в поясе профиля (YYYY-MM-DD), как у data-date группы дня: запись «сегодня» — performed_at «сейчас».
 const todayInUserZone = (page: Page) =>
   page.evaluate((tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()), USER_TIME_ZONE);
+
+type SavedSession = { id: number; performed_at: string };
+async function completedSessions(page: Page, telegramId: number): Promise<SavedSession[]> {
+  const response = await page.request.get("/api/v2/sessions?status=completed&limit=25", {
+    headers: { "X-Telegram-Init-Data": buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken()) },
+  });
+  expect(response.ok()).toBe(true);
+  return (await response.json()).sessions;
+}
 
 async function openDetailFromHome(page: Page) {
   await page.getByTestId("my-workout-card").filter({ hasText: WORKOUT }).click();
@@ -90,10 +101,14 @@ for (const width of WIDTHS) {
 
     test("D1: после «← Назад» повторное «Записать» и сохранение — ровно одна новая запись в Журнале", async ({ page }, testInfo) => {
       const { consoleErrors, apiFailures } = await openAppAs(page, base + 6 + testInfo.retry, { theme });
-      // Исходное состояние: только две сидовые BACKDATED-записи, новой ещё нет.
-      await openTab(page, "Журнал");
-      await expect(backdatedCards(page)).toHaveCount(SEED_BACKDATED);
-      await openTab(page, "Главная");
+      // Проверяем ВСЮ исходную историю: одна из двух записей может быть в предыдущем месяце.
+      const before = await completedSessions(page, base + 6 + testInfo.retry);
+      expect(before).toHaveLength(SEED_BACKDATED);
+      const today = await todayInUserZone(page);
+      const userDate = new Intl.DateTimeFormat("en-CA", { timeZone: USER_TIME_ZONE });
+      const seedInCurrentMonth = before.filter((session) =>
+        userDate.format(new Date(session.performed_at)).slice(0, 7) === today.slice(0, 7),
+      ).length;
 
       await openDetailFromHome(page);
       await page.getByTestId("workout-detail-log").click();
@@ -109,10 +124,12 @@ for (const width of WIDTHS) {
 
       // После сохранения — Журнал (не деталь): ровно одна новая BACKDATED-запись, без дублирования.
       await expect(page.getByTestId("workout-detail")).toHaveCount(0);
-      await expect(backdatedCards(page)).toHaveCount(SEED_BACKDATED + 1);
+      await expect(backdatedCards(page)).toHaveCount(seedInCurrentMonth + 1);
+      const after = await completedSessions(page, base + 6 + testInfo.retry);
+      expect(after).toHaveLength(SEED_BACKDATED + 1);
+      expect(after.map((session) => session.id)).toEqual(expect.arrayContaining(before.map((session) => session.id)));
 
       // Новая запись — единственная в сегодняшнем дне (сид: 2 и 5 дней назад), и именно её содержание проверяем.
-      const today = await todayInUserZone(page);
       const created = page.locator(`.journal-day[data-date="${today}"]`).getByTestId("journal-card");
       await expect(created).toHaveCount(1);
       await expect(created.getByTestId("journal-kind-badge")).toHaveText(BACKDATED_BADGE);
