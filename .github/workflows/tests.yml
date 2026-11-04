@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev,web]"
+      - run: bash scripts/install-python.sh dev
       - run: ruff check app/ tests/ scripts/
       - run: ruff format --check app/ tests/ scripts/
         continue-on-error: true
@@ -78,13 +78,16 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev,web]"
+      - run: bash scripts/install-python.sh dev
       # Миграции отдельным шагом НЕ нужны: tests/conftest.py сам создаёт
       # pullup_test и накатывает на неё `alembic upgrade head`
       # (фикстура test_dsn). Отдельный шаг здесь только падал, потому что
       # целевой базы на тот момент ещё не существует.
       - name: Run tests
-        run: pytest -q --maxfail=20
+        run: |
+          pytest -q --maxfail=20
+          python -m scripts.e2e_seed ready 936600
+          pytest -q --maxfail=20
 
   frontend:
     needs: changes
@@ -110,3 +113,37 @@ jobs:
       - name: Live Engine v2 shared vectors (vitest)
         working-directory: webapp-frontend
         run: npm run test:vectors
+
+  python-locks:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
+    name: Python locks (${{ matrix.os }}, ${{ matrix.mode }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        mode: [runtime, web, dev]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - name: Two clean installations must agree
+        shell: bash
+        run: |
+          for attempt in 1 2; do
+            python -m venv "$RUNNER_TEMP/lock-$attempt"
+            PYTHON="$RUNNER_TEMP/lock-$attempt/bin/python" bash scripts/install-python.sh '${{ matrix.mode }}'
+            "$RUNNER_TEMP/lock-$attempt/bin/python" -m pip freeze --exclude-editable | sort > "$RUNNER_TEMP/freeze-$attempt.txt"
+          done
+          diff -u "$RUNNER_TEMP/freeze-1.txt" "$RUNNER_TEMP/freeze-2.txt"
+          "$RUNNER_TEMP/lock-1/bin/python" -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/wheels" .
+      - name: Regeneration must leave locks unchanged
+        if: matrix.os == 'ubuntu-latest' && matrix.mode == 'dev'
+        run: |
+          python -m pip install uv==0.13.4
+          bash scripts/lock-python.sh
+          git diff --exit-code -- requirements/
