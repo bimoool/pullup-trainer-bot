@@ -291,7 +291,8 @@ async def submit_onboarding_baseline(
     users = UserRepository(session)
     user = await users.get_by_telegram_id(telegram_id)
     if user is None:
-        user = await users.create(telegram_id=telegram_id, username=getattr(init_data.user, "username", None))
+        # Account identity is the Telegram ID; do not collect the optional public handle.
+        user = await users.create(telegram_id=telegram_id)
 
     await OnboardingService(session).record_baseline_and_start(
         user_id=user.id, performed_at=datetime.now(UTC), reps=body.reps,
