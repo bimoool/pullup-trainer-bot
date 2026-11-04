@@ -8,30 +8,14 @@ name: Tests
 # Этот workflow закрывает дыру: любой PR и любой push в main проверяется
 # автоматически, до того как ветку кто-то смержит или задеплоит.
 
-# ВАЖНО про расход минут: репозиторий приватный, минуты GitHub Actions
-# платные. Поэтому только `pull_request` — без дублирующего прогона на push
-# в main (тот же код уже проверен в PR), и с path-фильтрами: правка одной
-# документации не должна поднимать Postgres и ставить зависимости.
+# Every PR reports named checks. Only verified Markdown-only changes skip heavy jobs;
+# incomplete API data or an unknown path runs the full gate. See ci-changed-paths.yml.
 on:
   pull_request:
-    paths:
-      - "app/**"
-      - "tests/**"
-      - "scripts/**"
-      - "webapp-frontend/**"
-      - "contracts/**"
-      - "alembic.ini"
-      - "pyproject.toml"
-      - ".github/workflows/tests.yml"
-      # Выкатываемый SHA обязан иметь зелёный CI (production-deploy.yml) — изменения deploy-скриптов и
-      # workflow выката тоже прогоняют тесты (tests/test_scripts проверяет guarded-скрипты и диспетчер).
-      - "deploy/**"
-      - "docker-compose*.yml"
-      - "Dockerfile"
-      - ".github/workflows/production-*.yml"
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   # Новый push в ту же ветку отменяет предыдущий прогон — не жечь раннеры
@@ -40,7 +24,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/ci-changed-paths.yml
+
   lint:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: ruff
     runs-on: ubuntu-latest
     steps:
@@ -55,6 +44,8 @@ jobs:
         continue-on-error: true
 
   pytest:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: pytest
     runs-on: ubuntu-latest
     services:
@@ -96,6 +87,8 @@ jobs:
         run: pytest -q --maxfail=20
 
   frontend:
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
     name: frontend build
     runs-on: ubuntu-latest
     steps:
