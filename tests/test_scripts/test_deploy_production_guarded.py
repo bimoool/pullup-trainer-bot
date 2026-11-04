@@ -142,7 +142,14 @@ if args[0] == "inspect":
     elif "com.docker.compose.project" in fmt: out(env.get("STUB_DB_PROJECT", project))
     elif ".State.Running" in fmt: out("true" if cid == "dbc" or st["running"].get(cid.split("-")[0]) else "false")
     elif ".State.Restarting" in fmt: out("false")
-    elif ".State.Health" in fmt: out("healthy")
+    elif ".State.Health" in fmt:
+        svc = cid.split("-")[0]
+        if st.get("up_calls"):
+            reads = st.setdefault("health_reads", {})
+            n = reads.get(svc, 0); reads[svc] = n + 1; save()
+            sequence = env.get("HEALTH_SEQUENCE_" + svc.upper(), "healthy").split(",")
+            out(sequence[min(n, len(sequence) - 1)])
+        else: out("healthy")
     elif ".Config.Image" in fmt: out(project + "-" + cid.split("-")[0])
     elif ".Image" in fmt: out(st["container"][cid.split("-")[0]])
     sys.exit(0)
@@ -620,6 +627,25 @@ def test_healthcheck_failure_stops_services_again_and_points_to_r3(sandbox):
     assert up >= 0 and idx(log, "stop app web", up + 1) > up
     assert state["running"] == {"app": False, "web": False}
     assert "healthcheck" in proc.stderr and "rollback-production-guarded.sh R3" in proc.stderr
+
+
+def test_transient_unhealthy_container_recovers_before_deadline(sandbox):
+    proc, _log, state = sandbox(
+        SHA, "apply", TOKEN, HEALTH_SEQUENCE_WEB="unhealthy,unhealthy,healthy",
+        PROD_HEALTH_TIMEOUT="20",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert state["health_reads"]["web"] >= 2
+    assert state["running"] == {"app": True, "web": True}
+
+
+def test_persistently_unhealthy_container_stops_services_and_points_to_r3(sandbox):
+    proc, log, state = sandbox(SHA, "apply", TOKEN, HEALTH_SEQUENCE_WEB="unhealthy")
+    assert proc.returncode == 1
+    up = idx(log, "up -d --no-build app web")
+    assert up >= 0 and idx(log, "stop app web", up + 1) > up
+    assert state["running"] == {"app": False, "web": False}
+    assert "health" in proc.stderr and "rollback-production-guarded.sh R3" in proc.stderr
 
 
 @pytest.mark.parametrize(("sig", "num"), [(signal.SIGTERM, 15), (signal.SIGHUP, 1), (signal.SIGINT, 2)])
