@@ -1,0 +1,1121 @@
+{
+ "BaseEndurance__A_Beginner": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "BaseEndurance__B_Intermediate": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "BaseEndurance__C_Advanced": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "BoulderingFitness__A_Beginner": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "BoulderingFitness__B_Intermediate": {
+  "1": [
+   [
+    "Finger Strength Test",
+    "This 6-week program is designed for bouldering specialists with some experience training structured power endurance that would like to improve their fitness on longer boulder problems.  The template is designed to be split across three training days per week.  The first training day should consist of a warm-up, followed by project bouldering using the Style Triad workout, and then either 6 in 6 (Weeks 1-2) or Boulder Triples (Weeks 4-5) to complete the session.  The second training day will consist of a warm-up, followed by Linked Boulders (except on Weeks 3 & 6).  A third training day should consist of either the Finger Strength Testing Session (Week 1) or the 7:3s 70-80% repeaters (Weeks 2-6). This session can be completed after a max strength fingerboarding workout, but should never be completed in the same day before a strength-focused fingerboard workout. Additional sessions can be added to this plan in order to maintain strength & power."
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "7:3s 70%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @70%",
+    "Finger Strength Test"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "7:3s 70%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @70%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "7:3s 70%",
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @70%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @70%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "7:3s 80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%"
+   ],
+   "Peak"
+  ]
+ },
+ "BoulderingFitness__C_Advanced": {
+  "1": [
+   [
+    "Finger Strength Test",
+    "This 6-week program is designed for bouldering specialists with ample experience training structured power endurance that would like to improve their fitness on longer boulder problems.  The template is designed to be split across three training days per week.  The first training day should consist of a warm-up, followed Style Triads (Weeks 1-3 & 6) or Strength Intervals (Weeks 3-5), followed by either 6 in 6 (Weeks 1 & 2) or Boulder Triples (Weeks 4 & 5) to complete the session. The second training day will consist of a warm-up, followed by Linked Boulders and Drop Intervals (except on Weeks 3 & 6).  A third training day should consist of either the Finger Strength Testing Session (Week 1) or the 7:3s 75-85% repeaters (Weeks 2-6). This session can be completed after a max strength fingerboarding workout, but should never be completed in the same day before a strength-focused fingerboard workout. Additional sessions can be added to this plan in order to maintain strength & power."
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "7:3s 75%",
+    "7:3s 80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "7:3s 80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "7:3s 80%",
+    "7:3s 85%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @85%"
+   ],
+   "Peak"
+  ]
+ },
+ "BoulderingMastery__A_Beginner": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "BoulderingMastery__B_Intermediate": {
+  "1": [
+   [
+    "Finger Strength Test",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Weighted Pull Ups - 85%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Weighted Pull Ups - 85%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "BoulderingMastery__C_Advanced": {
+  "1": [
+   [
+    "Finger Strength Test – One Arm",
+    "Single Arm Finger Strength Testing Session",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Max Hangs - One Arm 90%",
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Max Hangs - One Arm 90%",
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Max Hangs - One Arm 90%",
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "CoreConditioning__A_Beginner": {
+  "1": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Peak"
+  ]
+ },
+ "CoreConditioning__B_Intermediate": {
+  "1": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Peak"
+  ]
+ },
+ "CoreConditioning__C_Advanced": {
+  "1": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Peak"
+  ]
+ },
+ "CoreConditioning__D_Elite": {
+  "1": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [
+    "Hollow Body Hold Test"
+   ],
+   "Peak"
+  ]
+ },
+ "FingerStrength__A_Beginner": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [
+    "Finger Strength Test"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%"
+   ],
+   "Peak"
+  ]
+ },
+ "FingerStrength__B_Intermediate": {
+  "1": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Deadhangs - 10 second hangs @ 95%",
+    "Finger Strength Test",
+    "Max Hangs - 90%",
+    "Max Hangs - 95%"
+   ],
+   "Peak"
+  ]
+ },
+ "FingerStrength__C_Advanced": {
+  "1": [
+   [
+    "Finger Strength Test",
+    "Small Edges Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%",
+    "Small Edges 10mm - 70%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%",
+    "Small Edges 10mm - 80%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 85%",
+    "Max Hangs - 90%",
+    "Small Edges 10mm - 80%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Small Edges 10mm - 80%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Finger Strength Test",
+    "Max Hangs - 90%",
+    "Small Edges 10mm - 80%",
+    "Small Edges 10mm - 90%"
+   ],
+   "Peak"
+  ]
+ },
+ "FingerStrength__D_Elite": {
+  "1": [
+   [
+    "Finger Strength Test – One Arm",
+    "Max Hangs - One Arm 85%",
+    "Single Arm Finger Strength Testing Session",
+    "Small Edges Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Max Hangs - One Arm 85%",
+    "Small Edges 10mm - 80%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Max Hangs - One Arm 90%",
+    "Small Edges 10mm - 80%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Max Hangs - One Arm 85%",
+    "Max Hangs - One Arm 90%",
+    "Small Edges 10mm - 80%",
+    "Small Edges 10mm - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Max Hangs - One Arm 85%",
+    "Max Hangs - One Arm 90%",
+    "Small Edges 10mm - 90%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Finger Strength Test – One Arm",
+    "Max Hangs - One Arm 95%",
+    "Single Arm Finger Strength Testing Session",
+    "Small Edges 10mm - 90%"
+   ],
+   "Peak"
+  ]
+ },
+ "Flexibility__A_Beginner": {
+  "1": [
+   [
+    "Hip Flexibility Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "Flexibility__B_Intermediate": {
+  "1": [
+   [
+    "Hip Flexibility Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "Flexibility__C_Advanced": {
+  "1": [
+   [
+    "Hip Flexibility Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "OnearmPullupStrength__A_Advanced": {
+  "1": [
+   [
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Weighted Pull Ups - 95%"
+   ],
+   "Peak"
+  ]
+ },
+ "OnearmPullupStrength__B_Elite": {
+  "1": [
+   [
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "Power__A_Intermediate": {
+  "1": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Peak"
+  ]
+ },
+ "Power__B_Advanced": {
+  "1": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "Power__C_Elite": {
+  "1": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "PullupStrength__A_Beginner": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [
+    "Weighted Pull-up Test"
+   ],
+   "Peak"
+  ]
+ },
+ "PullupStrength__B_Intermediate": {
+  "1": [
+   [
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 85%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ],
+   "Peak"
+  ]
+ },
+ "PullupStrength__C_Advanced": {
+  "1": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "Weighted Pull Ups - 95%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "Weighted Pull Ups - 95%"
+   ],
+   "Peak"
+  ]
+ },
+ "SportPowerEndurance__A_Beginner": {
+  "1": [
+   [],
+   "Base"
+  ],
+  "2": [
+   [],
+   "Base"
+  ],
+  "3": [
+   [],
+   "Rest"
+  ],
+  "4": [
+   [],
+   "Build"
+  ],
+  "5": [
+   [],
+   "Build"
+  ],
+  "6": [
+   [],
+   "Peak"
+  ]
+ },
+ "SportPowerEndurance__B_Intermediate": {
+  "1": [
+   [
+    "Finger Strength Test",
+    "This 6-week program is designed for sport climbers with some experience with structured training that would like to build a foundation of power endurance to prepare for pumpy sport climbs. The template is designed to be split across three training days per week.  \n\nThe first training day can be completed at a boulder wall and should consist of the Warm Up, followed by either Boulder Intervals (weeks 1 & 2), Style Triad (Weeks 3 & 6), or Broken Quarters (weeks 4 & 5).  \n\nThe second training day will consist of the Route Warm Up Protocol followed by Route Pyramids (except for week 3).  \n\nThe third training day will consist of the Finger Strength Testing Session on week 1 and then on the remaining weeks will consist of 7:3s 50-60% repeaters.  The repeaters workouts can be done after max strength fingerboarding, but should not be done before strength training.  \n\nAdditional sessions can be added to this plan to maintain base endurance or strength & power."
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "7:3s 50%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "7:3s 50%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "7:3s 50%",
+    "7:3s 55%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "7:3s 55%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "7:3s 60%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @60%"
+   ],
+   "Peak"
+  ]
+ },
+ "SportPowerEndurance__C_Advanced": {
+  "1": [
+   [
+    "Finger Strength Test",
+    "This 6-week program is designed for sport climbers with a lot of experience with structured training that would like to prepare for pumpy sport climbs. The template is designed to be split across three training days per week.  \n\nThe first training day can be completed at a boulder wall and should consist of the Warm Up, followed by either Campus Laddering (weeks 1-3), Style Triad (Weeks 3 & 6), or Broken Quarters (weeks 4 & 5).  \n\nThe second training day will consist of the Route Warm Up Protocol followed by Route Pyramids & Capacity Power (except for week 3).  \n\nThe third training day will consist of the Finger Strength Testing Session on week 1 and then on the remaining weeks will consist of 7:3s 50-60% repeaters.  The repeaters workouts can be done after max strength fingerboarding, but should not be done before strength training.  \n\nAdditional sessions can be added to this plan to maintain base endurance or strength & power.\n"
+   ],
+   "Base"
+  ],
+  "2": [
+   [
+    "7:3s 50%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ],
+   "Base"
+  ],
+  "3": [
+   [
+    "7:3s 50%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ],
+   "Rest"
+  ],
+  "4": [
+   [
+    "7:3s 55%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ],
+   "Build"
+  ],
+  "5": [
+   [
+    "7:3s 55%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ],
+   "Build"
+  ],
+  "6": [
+   [
+    "7:3s 60%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @60%"
+   ],
+   "Peak"
+  ]
+ }
+}

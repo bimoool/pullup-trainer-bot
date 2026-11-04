@@ -1,0 +1,1110 @@
+{
+ "BoulderingMastery__A_Beginner": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "BoulderingMastery__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "BoulderingMastery__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test – One Arm",
+    "Single Arm Finger Strength Testing Session",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Max Hangs - One Arm 90%",
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Max Hangs - One Arm 90%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Max Hangs - One Arm 90%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "CoreConditioning__A_Beginner": {
+  "1": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ]
+ },
+ "CoreConditioning__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ]
+ },
+ "CoreConditioning__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ]
+ },
+ "CoreConditioning__D_Elite": {
+  "1": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   [
+    "Hollow Body Hold Test"
+   ]
+  ]
+ },
+ "FingerStrength__A_Beginner": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   [
+    "Finger Strength Test"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%"
+   ]
+  ]
+ },
+ "FingerStrength__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Deadhangs - 10 second hangs @ 95%",
+    "Finger Strength Test",
+    "Max Hangs - 95%"
+   ]
+  ]
+ },
+ "FingerStrength__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test",
+    "Small Edges Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Finger Strength Test",
+    "Max Hangs - 85%",
+    "Small Edges 10mm - 70%",
+    "Small Edges Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Max Hangs - 85%",
+    "Small Edges 10mm - 80%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 85%",
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 85%",
+    "Max Hangs - 90%",
+    "Small Edges 10mm - 80%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Deadhangs - 10 second hangs @ 90%",
+    "Max Hangs - 90%",
+    "Small Edges 10mm - 80%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Finger Strength Test",
+    "Small Edges 10mm - 90%"
+   ]
+  ]
+ },
+ "FingerStrength__D_Elite": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test – One Arm",
+    "Max Hangs - One Arm 85%",
+    "Single Arm Finger Strength Testing Session",
+    "Small Edges Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Max Hangs - One Arm 85%",
+    "Small Edges 10mm - 80%",
+    "Small Edges Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Max Hangs - One Arm 90%",
+    "Small Edges 10mm - 80%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Max Hangs - One Arm 85%",
+    "Max Hangs - One Arm 90%",
+    "Small Edges 10mm - 80%",
+    "Small Edges 10mm - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Max Hangs - One Arm 85%",
+    "Max Hangs - One Arm 90%",
+    "Small Edges 10mm - 90%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Finger Strength Test – One Arm",
+    "Max Hangs - One Arm 95%",
+    "Single Arm Finger Strength Testing Session",
+    "Small Edges 10mm - 90%"
+   ]
+  ]
+ },
+ "Flexibility__A_Beginner": {
+  "1": [
+   "Base",
+   [
+    "Hip Flexibility Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "Flexibility__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Hip Flexibility Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "Flexibility__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Hip Flexibility Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "OnearmPullupStrength__A_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ]
+ },
+ "OnearmPullupStrength__B_Elite": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "Power__A_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "Power__B_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "Power__C_Elite": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "PullupStrength__A_Beginner": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   [
+    "Weighted Pull-up Test"
+   ]
+  ]
+ },
+ "PullupStrength__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 85%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Weighted Pull Ups - 90%",
+    "Weighted Pull Ups - 95%"
+   ]
+  ]
+ },
+ "PullupStrength__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull-up Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Weighted Pull Ups - 85%",
+    "Weighted Pull Ups - 90%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Weighted Pull Ups - 95%"
+   ]
+  ]
+ },
+ "SportPowerEndurance__A_Beginner": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "SportPowerEndurance__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @60%"
+   ]
+  ]
+ },
+ "SportPowerEndurance__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "Deadhang repeaters - 7 secs hang, 3 rest @55%",
+    "Deadhang repeaters - 7 secs hang, 3 rest @60%"
+   ]
+  ]
+ },
+ "BaseEndurance__A_Beginner": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "BaseEndurance__B_Intermediate": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "BaseEndurance__C_Advanced": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "BoulderingFitness__A_Beginner": {
+  "1": [
+   "Base",
+   []
+  ],
+  "2": [
+   "Base",
+   []
+  ],
+  "3": [
+   "Rest",
+   []
+  ],
+  "4": [
+   "Build",
+   []
+  ],
+  "5": [
+   "Build",
+   []
+  ],
+  "6": [
+   "Peak",
+   []
+  ]
+ },
+ "BoulderingFitness__B_Intermediate": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "7:3s 70%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @70%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "7:3s 70%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @70%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "7:3s 80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%"
+   ]
+  ]
+ },
+ "BoulderingFitness__C_Advanced": {
+  "1": [
+   "Base",
+   [
+    "Finger Strength Test"
+   ]
+  ],
+  "2": [
+   "Base",
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ]
+  ],
+  "3": [
+   "Rest",
+   [
+    "7:3s 75%",
+    "Deadhang repeaters – 7 sec hang, 3 sec rest @75%"
+   ]
+  ],
+  "4": [
+   "Build",
+   [
+    "7:3s 80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%"
+   ]
+  ],
+  "5": [
+   "Build",
+   [
+    "7:3s 80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%"
+   ]
+  ],
+  "6": [
+   "Peak",
+   [
+    "7:3s 85%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @80%",
+    "Deadhang repeaters - 7 sec hang, 3 sec rest @85%"
+   ]
+  ]
+ }
+}

@@ -1,0 +1,4774 @@
+[
+ [
+  "BoulderingMastery__A_Beginner",
+  [
+   "1.25 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "No Hands Slab",
+      "qty": "2",
+      "desc": "Hands-free slab climbing to practice foot engagement"
+     },
+     {
+      "name": "Dynamic Climbing",
+      "qty": "2",
+      "desc": "Practice fluid movements by climbing with momentum"
+     },
+     {
+      "name": "Efficiency Training",
+      "qty": "1",
+      "desc": "Boulder repeats with an emphasis on movement optimization"
+     },
+     {
+      "name": "Basic Grip Engagement",
+      "qty": "1",
+      "desc": "Easy fingerboard routine designed to learn quick-fire engagement"
+     },
+     {
+      "name": "Schedule",
+      "qty": null,
+      "desc": "Week 1"
+     },
+     {
+      "name": "Base",
+      "qty": null,
+      "desc": "Qty."
+     },
+     {
+      "name": "Pull-up Negatives - A",
+      "qty": "1",
+      "desc": "Negative pull ups working eccentric movement"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "No Hands Slab",
+      "qty": "2",
+      "desc": "Hands-free slab climbing to practice foot engagement"
+     },
+     {
+      "name": "Dynamic Climbing",
+      "qty": "2",
+      "desc": "Practice fluid movements by climbing with momentum"
+     },
+     {
+      "name": "Efficiency Training",
+      "qty": "1",
+      "desc": "Boulder repeats with an emphasis on movement optimization"
+     },
+     {
+      "name": "Basic Grip Engagement",
+      "qty": "1",
+      "desc": "Easy fingerboard routine designed to learn quick-fire engagement"
+     },
+     {
+      "name": "Pull-up Negatives - A",
+      "qty": "1",
+      "desc": "Negative pull ups working eccentric movement"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "No Hands Slab",
+      "qty": "1",
+      "desc": "Hands-free slab climbing to practice foot engagement"
+     },
+     {
+      "name": "Dynamic Climbing",
+      "qty": "1",
+      "desc": "Practice fluid movements by climbing with momentum"
+     },
+     {
+      "name": "Basic Grip Engagement",
+      "qty": "1",
+      "desc": "Easy fingerboard routine designed to learn quick-fire engagement"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "No Hands Slab",
+      "qty": "2",
+      "desc": "Hands-free slab climbing to practice foot engagement"
+     },
+     {
+      "name": "Dynamic Climbing",
+      "qty": "2",
+      "desc": "Practice fluid movements by climbing with momentum"
+     },
+     {
+      "name": "Practice fluid movements by climbing with momentum",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Basic Grip Engagement",
+      "qty": "1",
+      "desc": "Easy fingerboard routine designed to learn quick-fire engagement"
+     },
+     {
+      "name": "Efficiency Training",
+      "qty": "1",
+      "desc": "Boulder repeats with an emphasis on movement optimization"
+     },
+     {
+      "name": "Pull-up Negatives - A",
+      "qty": "1",
+      "desc": "Negative pull ups working eccentric movement"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "No Hands Slab",
+      "qty": "2",
+      "desc": "Hands-free slab climbing to practice foot engagement"
+     },
+     {
+      "name": "Dynamic Climbing",
+      "qty": "2",
+      "desc": "Practice fluid movements by climbing with momentum"
+     },
+     {
+      "name": "Efficiency Training",
+      "qty": "1",
+      "desc": "Boulder repeats with an emphasis on movement optimization"
+     },
+     {
+      "name": "Basic Grip Engagement",
+      "qty": null,
+      "desc": "Efficiency Training"
+     },
+     {
+      "name": "Boulder repeats with an emphasis on movement optimization",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Basic Grip Engagement",
+      "qty": "1",
+      "desc": "Easy fingerboard routine designed to learn quick-fire engagement"
+     },
+     {
+      "name": "Pull-up Negatives - A",
+      "qty": "1",
+      "desc": "Negative pull ups working eccentric movement"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "No Hands Slab",
+      "qty": "1",
+      "desc": "Hands-free slab climbing to practice foot engagement"
+     },
+     {
+      "name": "Dynamic Climbing",
+      "qty": "1",
+      "desc": "Practice fluid movements by climbing with momentum"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "BoulderingMastery__B_Intermediate",
+  [
+   "1.75 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Dyno Training",
+      "qty": "1",
+      "desc": "Practice dynos by removing holds from easier climbs"
+     },
+     {
+      "name": "This 6-week program is designed for intermediate-level boulderers (V5-V8 or 6C-7B+) that are looking to incorporate a mixture of technique-focused climbing drills and strength work.  This program was built in collaboration with Emil Abrahamsson as part of his 3-part training series on going from V0 to V15 and looks to address the skills that he sees as most important for bouldering specialists.  \n\nThis program is best suited for climbers that wish to train 3 days per week.  During the first week of the program athletes will assess their current finger strength and max pull-ups. \n\nA suggested weekly schedule for the program is:\n\nSession 1: Max Hangs & Lock-off Training\nSession 2: Dyno Training & Weighted Pull-ups\nSession 3: Campus Bouldering",
+      "qty": null,
+      "desc": "Schedule"
+     },
+     {
+      "name": "Lock-off Training",
+      "qty": "1",
+      "desc": "3 sets of lock-off practice on vertical or slightly overhanging terrain"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Dyno Training",
+      "qty": "1",
+      "desc": "Practice dynos by removing holds from easier climbs"
+     },
+     {
+      "name": "Lock-off Training",
+      "qty": "1",
+      "desc": "3 sets of lock-off practice on vertical or slightly overhanging terrain"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": null,
+      "desc": "Week 2"
+     },
+     {
+      "name": "Base",
+      "qty": null,
+      "desc": "Max Hangs - 90%"
+     },
+     {
+      "name": "Deadhangs - 10 second hangs @ 90%",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Dyno Training",
+      "qty": "1",
+      "desc": "Practice dynos by removing holds from easier climbs"
+     },
+     {
+      "name": "Lock-off Training",
+      "qty": "1",
+      "desc": "3 sets of lock-off practice on vertical or slightly overhanging terrain"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Dyno Training",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Lock-off Training",
+      "qty": "1",
+      "desc": "3 sets of lock-off practice on vertical or slightly overhanging terrain"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Dyno Training",
+      "qty": "1",
+      "desc": "Practice dynos by removing holds from easier climbs"
+     },
+     {
+      "name": "Lock-off Training",
+      "qty": "1",
+      "desc": "3 sets of lock-off practice on vertical or slightly overhanging terrain"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Dyno Training",
+      "qty": "1",
+      "desc": "Practice dynos by removing holds from easier climbs"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "BoulderingMastery__C_Advanced",
+  [
+   "4 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Strength Test – One Arm",
+      "qty": "1",
+      "desc": "Single Arm Finger Strength Testing Session"
+     },
+     {
+      "name": "Emil's Sub-max Daily Fingerboard Routine",
+      "qty": "7",
+      "desc": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions &"
+     },
+     {
+      "name": "Hard Projecting",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "This 6-week program is designed for advanced to elite boulders (V8/7B and above).  This program was built in collaboration with Emil Abrahamsson as part of his 3-part training series on going from V0 to V15 and looks to address the skills that he sees as most important for bouldering specialists.  This program is best suited for climbers that wish to train 3 days per week.  During the first week of the program, athletes will assess their current finger strength and max pull-ups. \n\nClimbers that prefer to perform Edge Lifts should use the Edge Lift protocol instead of the One-arm Max Hang.\n\nA suggested weekly schedule for the program is:\n\nSession 1: One-arm Max Hangs & Hard Projecting\nSession 2: Campus Latch & Campus Bouldering\nSession 3: Volume Session & Weighted Pull-ups",
+      "qty": null,
+      "desc": "Schedule"
+     },
+     {
+      "name": "Campus Latches",
+      "qty": "1",
+      "desc": "Jump and latch using campus rungs"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Volume Bouldering",
+      "qty": "1",
+      "desc": "20 moderately difficult boulders in 60 minutes"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Emil's Sub-max Daily Fingerboard Routine",
+      "qty": "7",
+      "desc": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions &"
+     },
+     {
+      "name": "Max Hangs - One Arm 90%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 90%"
+     },
+     {
+      "name": "Hard Projecting",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Volume Bouldering",
+      "qty": "1",
+      "desc": "20 moderately difficult boulders in 60 minutes"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Campus Latches",
+      "qty": "1",
+      "desc": "Jump and latch using campus rungs"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Emil's Sub-max Daily Fingerboard Routine",
+      "qty": "7",
+      "desc": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions &"
+     },
+     {
+      "name": "Hard Projecting",
+      "qty": "1",
+      "desc": "Hard projecting on short boulder problems"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Volume Bouldering",
+      "qty": "1",
+      "desc": "20 moderately difficult boulders in 60 minutes"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Emil's Sub-max Daily Fingerboard Routine",
+      "qty": "7",
+      "desc": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions &"
+     },
+     {
+      "name": "Max Hangs - One Arm 90%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 90%"
+     },
+     {
+      "name": "Hard Projecting",
+      "qty": "1",
+      "desc": "Hard projecting on short boulder problems"
+     },
+     {
+      "name": "Campus Latches",
+      "qty": "1",
+      "desc": "Jump and latch using campus rungs"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Volume Bouldering",
+      "qty": "1",
+      "desc": "20 moderately difficult boulders in 60 minutes"
+     },
+     {
+      "name": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions & feet on the floor at all times",
+      "qty": "7",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Emil's Sub-max Daily Fingerboard Routine",
+      "qty": "7",
+      "desc": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions &"
+     },
+     {
+      "name": "Max Hangs - One Arm 90%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 90%"
+     },
+     {
+      "name": "Hard Projecting",
+      "qty": "1",
+      "desc": "Hard projecting on short boulder problems"
+     },
+     {
+      "name": "Campus Latches",
+      "qty": "1",
+      "desc": "Jump and latch using campus rungs"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Volume Bouldering",
+      "qty": "1",
+      "desc": "20 moderately difficult boulders in 60 minutes"
+     },
+     {
+      "name": "20 moderately difficult boulders in 60 minutes",
+      "qty": null,
+      "desc": "Weighted Pull Ups - 90%"
+     },
+     {
+      "name": "3 pull-ups x 5 sets at 90% of two rep max",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Emil's Sub-max Daily Fingerboard Routine",
+      "qty": "7",
+      "desc": "Sub-maximal isometric hangs - 10 seconds on, 20 off with varied grip positions &"
+     },
+     {
+      "name": "Hard Projecting",
+      "qty": "1",
+      "desc": "Hard projecting on short boulder problems"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "CoreConditioning__A_Beginner",
+  [
+   "20 min / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Floor Core - A",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Floor Core - A",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "A test of core strength endurance",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     },
+     {
+      "name": "Floor Core - B",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     },
+     {
+      "name": "Floor Core - B",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Floor Core - A",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     },
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "CoreConditioning__B_Intermediate",
+  [
+   "35 min / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Extended Core - A",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Floor Core - A",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Extended Core - A",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Floor Core - A",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Extended Core - B",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Floor Core - B",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space"
+     },
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Extended Core - C",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Floor Core - C",
+      "qty": "1",
+      "desc": "A simple core workout which requires nothing but floor space and some small weig"
+     },
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "CoreConditioning__C_Advanced",
+  [
+   "45 min / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "H-Core - A",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Extended Core - A",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "H-Core - A",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Extended Core - B",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Extended Core - A",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "Bar Core - A",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Bar Core - A",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "H-Core - B",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "Static Holds - A",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression A"
+     },
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Bar Core - B",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "H-Core - B",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "CoreConditioning__D_Elite",
+  [
+   "1 hour / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Bar Core - A",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "Extended Core - B",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "H-Core - B",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Bar Core - B",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "Extended Core - B",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "A core workout designed to develop body tension in extended positions",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "H-Core - B",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     },
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Bar Core - B",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "Static Holds - B",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Bar Core - C",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "Extended Core - C",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "H-Core - C",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Static Holds - C",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression C"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Bar Core - C",
+      "qty": "1",
+      "desc": "A challenging core work out using a pull up bar"
+     },
+     {
+      "name": "Extended Core - C",
+      "qty": "1",
+      "desc": "A core workout designed to develop body tension in extended positions"
+     },
+     {
+      "name": "H-Core - C",
+      "qty": "1",
+      "desc": "A harder core workout using weights to develop strength"
+     },
+     {
+      "name": "Static Holds - C",
+      "qty": "1",
+      "desc": "Plank, Side Plank, Hollow Body Hold - Progression C"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "6 Minute Core",
+      "qty": "1",
+      "desc": "An easy to follow 6 minute core workout"
+     },
+     {
+      "name": "Hollow Body Hold Test",
+      "qty": "1",
+      "desc": "A test of core strength endurance"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "FingerStrength__A_Beginner",
+  [
+   "45 min / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Hangboard Isometric Holds",
+      "qty": "1",
+      "desc": "A max hang style workout designed for climbers building up to body weight hangs"
+     },
+     {
+      "name": "Hangboard Isometric Repeaters",
+      "qty": "1",
+      "desc": "A repeater style workout designed for climbers building up to body weight hangs "
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Hangboard Isometric Holds",
+      "qty": null,
+      "desc": "Hangboard Isometric Repeaters"
+     },
+     {
+      "name": "A repeater style workout designed for climbers building up to body weight hangs - Feet on the ground",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Hangboard Isometric Holds",
+      "qty": "1",
+      "desc": "A max hang style workout designed for climbers building up to body weight hangs"
+     },
+     {
+      "name": "Hangboard Isometric Repeaters",
+      "qty": "1",
+      "desc": "A repeater style workout designed for climbers building up to body weight hangs "
+     },
+     {
+      "name": "Finger Care",
+      "qty": "1",
+      "desc": "A simple routine to look after your digits"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Finger Care",
+      "qty": "1",
+      "desc": "A simple routine to look after your digits"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Hangboard Isometric Repeaters",
+      "qty": "1",
+      "desc": "A repeater style workout designed for climbers building up to body weight hangs "
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": null,
+      "desc": "Week 4"
+     },
+     {
+      "name": "Build",
+      "qty": null,
+      "desc": "Hangboard Isometric Repeaters"
+     },
+     {
+      "name": "A repeater style workout designed for climbers building up to body weight hangs - Feet on the ground",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Hangboard Isometric Repeaters",
+      "qty": "1",
+      "desc": "A repeater style workout designed for climbers building up to body weight hangs "
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Finger Care",
+      "qty": "1",
+      "desc": "A simple routine to look after your digits"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Care",
+      "qty": "1",
+      "desc": "A simple routine to look after your digits"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "FingerStrength__B_Intermediate",
+  [
+   "40 min / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Bodyweight Repeaters - A",
+      "qty": "1",
+      "desc": "Deadhangs - 7 on 3 off for 30 seconds at bodyweight only"
+     },
+     {
+      "name": "8 sets of heavy finger curls with minimal rest",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Bodyweight Repeaters - A",
+      "qty": "0.5",
+      "desc": "Deadhangs - 7 on 3 off for 30 seconds at bodyweight only"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "10 sets of heavy flexor curls with minimal rest",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Bodyweight Repeaters - B",
+      "qty": "1",
+      "desc": "Deadhangs - 7 on 3 off for 30 seconds at bodyweight only"
+     },
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "8 sets of heavy finger curls with minimal rest",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Bodyweight Repeaters - B",
+      "qty": "1",
+      "desc": "Deadhangs - 7 on 3 off for 30 seconds at bodyweight only"
+     },
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "Bodyweight Repeaters - B",
+      "qty": "1",
+      "desc": "Deadhangs - 7 on 3 off for 30 seconds at bodyweight only"
+     },
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "FingerStrength__C_Advanced",
+  [
+   "1 hour / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Small Edges Test",
+      "qty": "1",
+      "desc": "Max finger strength testing using a 10mm edge"
+     },
+     {
+      "name": "Varied Grips - B",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Finger Strength Test",
+      "qty": null,
+      "desc": "Small Edges Test"
+     },
+     {
+      "name": "Max finger strength testing using a 10mm edge",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Small Edges 10mm - 70%",
+      "qty": "1",
+      "desc": "7 second hangs using a 10mm edge at 70% max effort"
+     },
+     {
+      "name": "Varied Grips - B",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Small Edges 10mm - 80%",
+      "qty": "0.5",
+      "desc": "7 second hangs using a 10mm edge at 80% max effort"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Max Hangs - 85%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 85%"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Small Edges 10mm - 80%",
+      "qty": "1",
+      "desc": "7 second hangs using a 10mm edge at 80% max effort"
+     },
+     {
+      "name": "Varied Grips - C",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     },
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "10 sets of heavy flexor curls with minimal rest",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Varied Grips - C",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     },
+     {
+      "name": "Max Hangs - 90%",
+      "qty": "1",
+      "desc": "Deadhangs - 10 second hangs @ 90%"
+     },
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Small Edges 10mm - 80%",
+      "qty": "1",
+      "desc": "7 second hangs using a 10mm edge at 80% max effort"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "FingerStrength__D_Elite",
+  [
+   "1.25 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Finger Strength Test – One Arm",
+      "qty": "1",
+      "desc": "Single Arm Finger Strength Testing Session"
+     },
+     {
+      "name": "Max Hangs - One Arm 85%",
+      "qty": "0.5",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 85%"
+     },
+     {
+      "name": "Small Edges Test",
+      "qty": "1",
+      "desc": "Max finger strength testing using a 10mm edge"
+     },
+     {
+      "name": "Varied Grips - B",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Single Arm Finger Strength Testing Session",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Max Hangs - One Arm 85%",
+      "qty": "2",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 85%"
+     },
+     {
+      "name": "Small Edges 10mm - 80%",
+      "qty": "1",
+      "desc": "7 second hangs using a 10mm edge at 80% max effort"
+     },
+     {
+      "name": "Varied Grips - B",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Max Hangs - One Arm 90%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 90%"
+     },
+     {
+      "name": "Small Edges 10mm - 80%",
+      "qty": "0.5",
+      "desc": "7 second hangs using a 10mm edge at 80% max effort"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Single Arm Deadhangs – 10 second hangs at 90%",
+      "qty": "1",
+      "desc": ""
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Max Hangs - One Arm 85%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 85%"
+     },
+     {
+      "name": "Max Hangs - One Arm 90%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 90%"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Small Edges 10mm - 90%",
+      "qty": "1",
+      "desc": "7 second hangs using a 10mm edge at 90% max effort"
+     },
+     {
+      "name": "Varied Grips - C",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Finger Curl Hypertrophy",
+      "qty": "1",
+      "desc": "8 sets of heavy finger curls with minimal rest"
+     },
+     {
+      "name": "Max Hangs - One Arm 85%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 85%"
+     },
+     {
+      "name": "Max Hangs - One Arm 90%",
+      "qty": "1",
+      "desc": "Single Arm Deadhangs – 10 second hangs at 90%"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Small Edges 10mm - 90%",
+      "qty": "1",
+      "desc": "7 second hangs using a 10mm edge at 90% max effort"
+     },
+     {
+      "name": "Varied Grips - C",
+      "qty": "1",
+      "desc": "Deadhangs using different grip positions"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Finger Strength Test – One Arm",
+      "qty": "1",
+      "desc": "Single Arm Finger Strength Testing Session"
+     },
+     {
+      "name": "Wrist Curl Hypertrophy",
+      "qty": "1",
+      "desc": "10 sets of heavy flexor curls with minimal rest"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - FB",
+      "qty": "1",
+      "desc": "Shoulder shrugs whilst dead hanging on a finger board"
+     },
+     {
+      "name": "Small Edges 10mm - 90%",
+      "qty": "0.5",
+      "desc": "7 second hangs using a 10mm edge at 90% max effort"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "Flexibility__A_Beginner",
+  [
+   "1.25 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Hip Flexibility Test",
+      "qty": "1",
+      "desc": "Hip flexibility assessment test"
+     },
+     {
+      "name": "Hip & Leg Flexibility - A",
+      "qty": "2",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Hip & Leg Flexibility - A",
+      "qty": "2",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Box Split, Butterfly, Hip Flexor Stretch, and High Step",
+      "qty": "2",
+      "desc": ""
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Hip & Leg Flexibility - A",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Box Split, Butterfly, Hip Flexor Stretch, and High Step",
+      "qty": null,
+      "desc": "Week 4"
+     },
+     {
+      "name": "Build",
+      "qty": null,
+      "desc": "Hip & Leg Flexibility - B"
+     },
+     {
+      "name": "Box Split, Butterfly, Hip Flexor Stretch, and High Step",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Active Hip Mobility - A",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Hip & Leg Flexibility - A",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Active Hip Mobility - A",
+      "qty": null,
+      "desc": "Hip & Leg Flexibility - B"
+     },
+     {
+      "name": "Box Split, Butterfly, Hip Flexor Stretch, and High Step",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Active Hip Mobility - A",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "Flexibility__B_Intermediate",
+  [
+   "1.75 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Hip Flexibility Test",
+      "qty": "1",
+      "desc": "Hip flexibility assessment test"
+     },
+     {
+      "name": "Active Hip Mobility - A",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Active Hip Mobility - A",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hamstring flexibility training to develop strength in a bigger range of movement",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Active Hip Mobility - B",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - B",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Active Hip Mobility - B",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - B",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "Flexibility__C_Advanced",
+  [
+   "2.25 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Hip Flexibility Test",
+      "qty": "1",
+      "desc": "Hip flexibility assessment test"
+     },
+     {
+      "name": "Active Hip Mobility - B",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - B",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Active Hip Mobility - B",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - B",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - C",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Chest stretch, cat stretch, and bicep stretch",
+      "qty": "1",
+      "desc": ""
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Hip & Leg Flexibility - C",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Active Hip Mobility - C",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - C",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Hip & Leg Flexibility - C",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - B",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, bicep stretch, and QL stretch"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Active Hip Mobility - C",
+      "qty": "1",
+      "desc": "Hip mobility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - C",
+      "qty": null,
+      "desc": "Active Posterior Chain Mobility - A"
+     },
+     {
+      "name": "Hamstring flexibility training to develop strength in a bigger range of movement",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Active Posterior Chain Mobility - C",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Forearm Mobility - B",
+      "qty": "1",
+      "desc": "Forearm flexor and extensor stretches"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Active Posterior Chain Mobility - A",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     },
+     {
+      "name": "Hip & Leg Flexibility - B",
+      "qty": "1",
+      "desc": "Box Split, Butterfly, Hip Flexor Stretch, and High Step"
+     },
+     {
+      "name": "Upper Body Mobility - A",
+      "qty": "1",
+      "desc": "Chest stretch, cat stretch, and bicep stretch"
+     },
+     {
+      "name": "Active Posterior Chain Mobility - C",
+      "qty": "1",
+      "desc": "Hamstring flexibility training to develop strength in a bigger range of movement"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "OnearmPullupStrength__A_Advanced",
+  [
+   "1.75 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - A",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "4 sets of 6 reps on each side",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - A",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - A",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - B",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - B",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - C",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "OnearmPullupStrength__B_Elite",
+  [
+   "2 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "One-arm Pull-ups - A",
+      "qty": "1",
+      "desc": "Assisted one-arm pull-ups and one-arm lock-offs"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - B",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "One-arm Pull-ups - A",
+      "qty": "1",
+      "desc": "Assisted one-arm pull-ups and one-arm lock-offs"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - B",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "One-arm Pull-ups - B",
+      "qty": "1",
+      "desc": "Assisted and negative one-arm pull-ups"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "One-arm Pull-ups - B",
+      "qty": "1",
+      "desc": "Assisted and negative one-arm pull-ups"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - C",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - C",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "One-arm Pull-ups - C",
+      "qty": "1",
+      "desc": "One-arm pull-ups and weighted one-arm negative pull-ups"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "1",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "One-arm Assisted Pull-ups - C",
+      "qty": "1",
+      "desc": "One-arm assisted pull-ups using a resistance band or pulley"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "Power__A_Intermediate",
+  [
+   "1.5 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - A",
+      "qty": "1",
+      "desc": "5 sets of jump pull-ups"
+     },
+     {
+      "name": "Press and Row - A",
+      "qty": "1",
+      "desc": "3 sets of 10 reps per side"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Power Pulls - A",
+      "qty": "1",
+      "desc": "5 sets of jump pull-ups"
+     },
+     {
+      "name": "Press and Row - A",
+      "qty": "1",
+      "desc": "3 sets of 10 reps per side"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - A",
+      "qty": "1",
+      "desc": "5 sets of jump pull-ups"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Power Pulls - B",
+      "qty": "2",
+      "desc": "5 sets of assisted power pull-ups"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": []
+   }
+  }
+ ],
+ [
+  "Power__B_Advanced",
+  [
+   "2 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "2",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Power Pulls - A",
+      "qty": "1",
+      "desc": "5 sets of jump pull-ups"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Power Pulls - A",
+      "qty": "1",
+      "desc": "5 sets of jump pull-ups"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Advanced climbers (7B/V8 & up)",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Intermediate (V5/6C+) climbers",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Advanced climbers (7B/V8 & up)",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - A",
+      "qty": "1",
+      "desc": "5 sets of jump pull-ups"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "Power Pulls - B",
+      "qty": "1",
+      "desc": "5 sets of assisted power pull-ups"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Advanced climbers (7B/V8 & up)",
+      "qty": "2",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - C",
+      "qty": "1",
+      "desc": "Bar based power work for upper body"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Advanced climbers (7B/V8 & up)",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Boulder Campus",
+      "qty": "2",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     },
+     {
+      "name": "Power Pulls - C",
+      "qty": "1",
+      "desc": "Bar based power work for upper body"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": []
+   }
+  }
+ ],
+ [
+  "Power__C_Elite",
+  [
+   "2.5 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Advanced climbers (7B/V8 & up)",
+      "qty": "2",
+      "desc": ""
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "2",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Advanced climbers (7B/V8 & up)",
+      "qty": "2",
+      "desc": ""
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "2",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Elite climbers (8A+/V12 & up)",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - B",
+      "qty": "1",
+      "desc": "5 sets of assisted power pull-ups"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "10 sets of 3 reps on each side",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "2",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Boulder Campus",
+      "qty": "1",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Elite climbers (8A+/V12 & up)",
+      "qty": "2",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - B",
+      "qty": "1",
+      "desc": "5 sets of assisted power pull-ups"
+     },
+     {
+      "name": "Press and Row - C",
+      "qty": "1",
+      "desc": "10 sets of 3 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "Power Pulls - C",
+      "qty": "1",
+      "desc": "Bar based power work for upper body"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": ""
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Boulder Campus",
+      "qty": "2",
+      "desc": "Boulder campus - 4 boulders x 3 reps each"
+     },
+     {
+      "name": "Campus Laddering - Maximal laddering sets for Elite climbers (8A+/V12 & up)",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Power Pulls - C",
+      "qty": "2",
+      "desc": "Bar based power work for upper body"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": []
+   }
+  }
+ ],
+ [
+  "PullupStrength__A_Beginner",
+  [
+   "45 min / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Bicep Curls - A",
+      "qty": "1",
+      "desc": "Bicep Curls - 3 sets of 10 reps"
+     },
+     {
+      "name": "Press and Row - A",
+      "qty": "1",
+      "desc": "3 sets of 10 reps per side"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Pull-up Negatives - A",
+      "qty": "1",
+      "desc": "Negative pull ups working eccentric movement"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Bicep Curls - A",
+      "qty": "1",
+      "desc": "Bicep Curls - 3 sets of 10 reps"
+     },
+     {
+      "name": "Press and Row - A",
+      "qty": "1",
+      "desc": "3 sets of 10 reps per side"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Pull-up Negatives - A",
+      "qty": "1",
+      "desc": "Negative pull ups working eccentric movement"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": null,
+      "desc": "Pull-up Negatives - A"
+     },
+     {
+      "name": "Negative pull ups working eccentric movement",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Bicep Curls - B",
+      "qty": "1",
+      "desc": "Bicep Curls - 4 sets of 6 reps"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "1",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Bicep Curls - B",
+      "qty": "1",
+      "desc": "Bicep Curls - 4 sets of 6 reps"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "PullupStrength__B_Intermediate",
+  [
+   "1 hour / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Press and Row - A",
+      "qty": "1",
+      "desc": "3 sets of 10 reps per side"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "On the Minute - A",
+      "qty": "1",
+      "desc": "3 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Bicep Curls - A",
+      "qty": "1",
+      "desc": "Bicep Curls - 3 sets of 10 reps"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Press and Row - A",
+      "qty": "1",
+      "desc": "3 sets of 10 reps per side"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "On the Minute - A",
+      "qty": "1",
+      "desc": "3 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Bicep Curls - A",
+      "qty": "1",
+      "desc": "Bicep Curls - 3 sets of 10 reps"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "3 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Bicep Curls - A",
+      "qty": "1",
+      "desc": "Bicep Curls - 3 sets of 10 reps"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "On the Minute - A",
+      "qty": "1",
+      "desc": "3 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "On the Minute - B",
+      "qty": "1",
+      "desc": "5 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Bicep Curls - B",
+      "qty": "1",
+      "desc": "Bicep Curls - 4 sets of 6 reps"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "On the Minute - B",
+      "qty": "1",
+      "desc": "5 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Bicep Curls - B",
+      "qty": "1",
+      "desc": "Bicep Curls - 4 sets of 6 reps"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "External Rotations, Standing Y & Tricep Extensions",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Press and Row - B",
+      "qty": "1",
+      "desc": "4 sets of 6 reps on each side"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "On the Minute - B",
+      "qty": "1",
+      "desc": "5 pull ups x 5 sets - on the minute"
+     },
+     {
+      "name": "Bicep Curls - B",
+      "qty": "1",
+      "desc": "Bicep Curls - 4 sets of 6 reps"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "PullupStrength__C_Advanced",
+  [
+   "1.25 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Weighted Pull-up Test",
+      "qty": "1",
+      "desc": "Weighted Pull Up testing session to get 2RM score"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": ""
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Weighted Pull Ups - 85%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 85% of two rep max"
+     },
+     {
+      "name": "Weighted Pull Ups - 90%",
+      "qty": "1",
+      "desc": "3 pull-ups x 5 sets at 90% of two rep max"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Scapular Conditioning",
+      "qty": "1",
+      "desc": "Strength and condition for the shoulders"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     },
+     {
+      "name": "Power Pulls - B",
+      "qty": "1",
+      "desc": "5 sets of assisted power pull-ups"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "One-arm Hang Prep",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs and one arm isometric holds using a pull up bar or jug hold"
+     },
+     {
+      "name": "Shoulder Shrugs - Bar",
+      "qty": "0.5",
+      "desc": "Shoulder shrugs using a pull up bar"
+     },
+     {
+      "name": "Stabilizer Conditioning",
+      "qty": "1",
+      "desc": "External Rotations, Standing Y & Tricep Extensions"
+     },
+     {
+      "name": "Weighted Pull Ups - 95%",
+      "qty": "1",
+      "desc": "3 pull-ups x 4 sets at 95% of two rep max"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "SportPowerEndurance__A_Beginner",
+  [
+   "3 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "6 in 6",
+      "qty": "1",
+      "desc": "6 hard boulder problems in 6 minutes"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Schedule",
+      "qty": null,
+      "desc": "Week 1"
+     },
+     {
+      "name": "Base",
+      "qty": null,
+      "desc": "Qty."
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "6 in 6",
+      "qty": "1",
+      "desc": "6 hard boulder problems in 6 minutes"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Style Triad",
+      "qty": "1",
+      "desc": "Project bouldering"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Style Triad",
+      "qty": "1",
+      "desc": "Project bouldering"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "SportPowerEndurance__B_Intermediate",
+  [
+   "3.5 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "This 6-week program is designed for sport climbers with some experience with structured training that would like to build a foundation of power endurance to prepare for pumpy sport climbs. The template is designed to be split across three training days per week.  \n\nThe first training day can be completed at a boulder wall and should consist of the Warm Up, followed by either Boulder Intervals (weeks 1 & 2), Style Triad (Weeks 3 & 6), or Broken Quarters (weeks 4 & 5).  \n\nThe second training day will consist of the Route Warm Up Protocol followed by Route Pyramids (except for week 3).  \n\nThe third training day will consist of the Finger Strength Testing Session on week 1 and then on the remaining weeks will consist of 7:3s 50-60% repeaters.  The repeaters workouts can be done after max strength fingerboarding, but should not be done before strength training.  \n\nAdditional sessions can be added to this plan to maintain base endurance or strength & power.",
+      "qty": null,
+      "desc": "Schedule"
+     },
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "Boulder Intervals",
+      "qty": "1",
+      "desc": "Boulder circuit - 20 problems in 20 mins"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Boulder Intervals",
+      "qty": "1",
+      "desc": "Boulder circuit - 20 problems in 20 mins"
+     },
+     {
+      "name": "Capacity Power",
+      "qty": "0.5",
+      "desc": "Pumpy climbing - double laps"
+     },
+     {
+      "name": "Route climbing starting on easier climbs, building to max effort and then back down again.",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "7:3s 50%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Style Triad",
+      "qty": "1",
+      "desc": "Project bouldering"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "7:3s 50%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "7:3s 50%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     },
+     {
+      "name": "7:3s 55%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     },
+     {
+      "name": "7:3s 55%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+     },
+     {
+      "name": "Capacity Power",
+      "qty": "0.5",
+      "desc": "Pumpy climbing - double laps"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Style Triad",
+      "qty": "1",
+      "desc": "Project bouldering"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "7:3s 55%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  "SportPowerEndurance__C_Advanced",
+  [
+   "4 hours / week"
+  ],
+  {
+   "1": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Finger Strength Test",
+      "qty": "1",
+      "desc": "Half crimp finger strength testing session"
+     },
+     {
+      "name": "This 6-week program is designed for sport climbers with a lot of experience with structured training that would like to prepare for pumpy sport climbs. The template is designed to be split across three training days per week.  \n\nThe first training day can be completed at a boulder wall and should consist of the Warm Up, followed by either Campus Laddering (weeks 1-3), Style Triad (Weeks 3 & 6), or Broken Quarters (weeks 4 & 5).  \n\nThe second training day will consist of the Route Warm Up Protocol followed by Route Pyramids & Capacity Power (except for week 3).  \n\nThe third training day will consist of the Finger Strength Testing Session on week 1 and then on the remaining weeks will consist of 7:3s 50-60% repeaters.  The repeaters workouts can be done after max strength fingerboarding, but should not be done before strength training.  \n\nAdditional sessions can be added to this plan to maintain base endurance or strength & power.\n",
+      "qty": null,
+      "desc": "Schedule"
+     },
+     {
+      "name": "Capacity Power",
+      "qty": "0.5",
+      "desc": "Pumpy climbing - double laps"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Campus Laddering",
+      "qty": "1",
+      "desc": "Foot on campusing using max time sets"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     }
+    ]
+   },
+   "2": {
+    "phase": "Base",
+    "items": [
+     {
+      "name": "Capacity Power",
+      "qty": "1",
+      "desc": "Pumpy climbing - double laps"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Foot on campusing using max time sets",
+      "qty": null,
+      "desc": "Warm Up Protocol - Route Climbing"
+     },
+     {
+      "name": "An easy to follow warm up routine before route climbing",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Campus Laddering",
+      "qty": "1",
+      "desc": "Foot on campusing using max time sets"
+     },
+     {
+      "name": "7:3s 50%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     }
+    ]
+   },
+   "3": {
+    "phase": "Rest",
+    "items": [
+     {
+      "name": "Style Triad",
+      "qty": "1",
+      "desc": "Project bouldering"
+     },
+     {
+      "name": "Campus Laddering",
+      "qty": "1",
+      "desc": "Foot on campusing using max time sets"
+     },
+     {
+      "name": "7:3s 50%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @50%"
+     },
+     {
+      "name": "An easy to follow warm up routine before route climbing",
+      "qty": "1",
+      "desc": ""
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     }
+    ]
+   },
+   "4": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Capacity Power",
+      "qty": "0.5",
+      "desc": "Pumpy climbing - double laps"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     },
+     {
+      "name": "7:3s 55%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+     }
+    ]
+   },
+   "5": {
+    "phase": "Build",
+    "items": [
+     {
+      "name": "Capacity Power",
+      "qty": "1",
+      "desc": "Pumpy climbing - double laps"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     },
+     {
+      "name": "Broken Quarters",
+      "qty": "1",
+      "desc": "Pumpy climbing - broken into 10 moves sections"
+     },
+     {
+      "name": "7:3s 55%",
+      "qty": "1",
+      "desc": "Deadhang repeaters - 7 secs hang, 3 rest @55%"
+     }
+    ]
+   },
+   "6": {
+    "phase": "Peak",
+    "items": [
+     {
+      "name": "Style Triad",
+      "qty": "1",
+      "desc": "Project bouldering"
+     },
+     {
+      "name": "Route Pyramid",
+      "qty": "1",
+      "desc": "Route climbing starting on easier climbs, building to max effort and then back d"
+     },
+     {
+      "name": "Warm Up Protocol - Route Climbing",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before route climbing"
+     },
+     {
+      "name": "Warm Up Protocol - Bouldering",
+      "qty": "1",
+      "desc": "An easy to follow warm up routine before a bouldering session"
+     }
+    ]
+   }
+  }
+ ]
+]
