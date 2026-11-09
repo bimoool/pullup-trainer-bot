@@ -143,6 +143,15 @@ def successful_run(api, workflow, title, *, latest_deployment=False):
 def unchanged_staging(api, deployed):
     # Both deployment entry points can replace staging, on any dispatch ref.
     # Even a failed/in-progress attempt invalidates evidence: SSH may already have run.
+    # Job start is after workflow concurrency admission; run.created_at includes
+    # time queued behind the preceding deployment. Latest-attempt jobs only.
+    jobs = api("GET", f"actions/runs/{deployed['id']}/jobs?filter=latest&per_page=100")
+    require(
+        jobs.get("total_count") == 1 and len(jobs.get("jobs", [])) == 1,
+        "unexpected staging deployment job topology",
+    )
+    started_at = jobs["jobs"][0].get("started_at")
+    require(isinstance(started_at, str) and bool(started_at), "missing deployment execution time")
     for workflow in (WORKFLOW, "deploy-staging.yml"):
         for page in range(1, 101):
             runs = api(
@@ -160,7 +169,7 @@ def unchanged_staging(api, deployed):
                 # created_at survives reruns. Scan every page, since rerunning an
                 # old run does not move it forward in creation-ordered results.
                 require(
-                    run.get("updated_at", "9999") < deployed["created_at"],
+                    run.get("updated_at", "9999") < started_at,
                     "staging evidence invalidated by another deployment attempt",
                 )
             if len(runs) < 100:

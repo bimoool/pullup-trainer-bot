@@ -140,6 +140,22 @@ class Tests(unittest.TestCase):
             with self.subTest(conclusion=conclusion), self.assertRaises(t.Refused):
                 t.release_gates(api, "staging-deploy", SHA, {})
 
+    def test_queued_candidate_uses_execution_not_dispatch_time(self):
+        deployed = {"id": 5, "created_at": "2026-01-01T10:00:00Z"}
+        previous = {"id": 4, "updated_at": "2026-01-01T10:05:00Z"}
+
+        def api(method, path, body=None):
+            if path.startswith("actions/runs/5/jobs?"):
+                return {"total_count": 1, "jobs": [{"started_at": "2026-01-01T10:06:00Z"}]}
+            if "deploy-staging.yml/runs?" in path:
+                return {"workflow_runs": [previous]}
+            return {"workflow_runs": [deployed]}
+
+        t.unchanged_staging(api, deployed)
+        previous["updated_at"] = "2026-01-01T10:07:00Z"
+        with self.assertRaises(t.Refused):
+            t.unchanged_staging(api, deployed)
+
     def test_production_requires_ordered_fresh_qa_preflight_and_latest_staging(self):
         stamp = datetime.now(UTC).isoformat()
         checks = [
@@ -170,6 +186,8 @@ class Tests(unittest.TestCase):
         runs["deploy-staging.yml"] = []
 
         def api(method, path, body=None):
+            if path.startswith("actions/runs/1/jobs?"):
+                return {"total_count": 1, "jobs": [{"started_at": stamp}]}
             if "/check-runs?" in path:
                 return {"check_runs": checks}
             if path.startswith("git/commits/"):
