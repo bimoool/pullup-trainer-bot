@@ -347,7 +347,13 @@ def main():
     with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
         event = json.load(source)
 
+    api_phase = "not-called"
+
     def api(method, path, body=None):
+        nonlocal api_phase
+        # Fixed route classes only: no URLs, bodies, credentials or user inputs.
+        route = "repository" if not path else path.split("/", 1)[0]
+        api_phase = f"{method} {route if route in {'repository', 'issues', 'pulls', 'actions', 'commits', 'git'} else 'other'}"
         request = urllib.request.Request(
             f"https://api.github.com/repos/{REPO}" + (f"/{path}" if path else ""),
             data=None if body is None else json.dumps(body).encode(),
@@ -372,7 +378,10 @@ def main():
         print(f"Guard refused: {exc}. No automatic retry.")
         raise SystemExit(1) from None
     except urllib.error.HTTPError as exc:
-        print(f"GitHub API HTTP status {exc.code}. No automatic retry; inspect claims and Actions.")
+        print(
+            f"GitHub API HTTP status {exc.code} at {api_phase}. "
+            "No automatic retry; inspect claims and Actions."
+        )
         raise SystemExit(1) from None
     except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
         # No response bodies, request headers, command body or secret values in logs.
