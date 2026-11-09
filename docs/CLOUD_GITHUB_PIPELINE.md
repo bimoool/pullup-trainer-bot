@@ -123,3 +123,10 @@ The owner subsequently confirmed phone-to-primary-chat-to-GitHub readback.
 The complete execution/preflight chain remains unverified. Coding already works
 in the primary chat's cloud runtime; the optional legacy executor is not required
 for that coding path. Release checklist and evidence live in issue #377.
+
+Staging evidence is invalidated by any newer attempt through either staging
+workflow, including failed, running and non-main dispatches. Both staging deploy
+workflows and fixed release QA share the `deploy-staging` concurrency group.
+Do not deploy staging through manual SSH during release validation: Actions cannot
+attest changes made outside its deployment workflows; restart the guarded staging
+and QA sequence after any such intervention.

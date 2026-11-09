@@ -140,6 +140,28 @@ def successful_run(api, workflow, title, *, latest_deployment=False):
     raise Refused("no attributed workflow evidence")
 
 
+def unchanged_staging(api, deployed):
+    # Both deployment entry points can replace staging, on any dispatch ref.
+    # Even a failed/in-progress attempt invalidates evidence: SSH may already have run.
+    for workflow in (WORKFLOW, "deploy-staging.yml"):
+        runs = api(
+            "GET",
+            f"actions/workflows/{workflow}/runs?per_page=100&page=1",
+        )["workflow_runs"]
+        for run in runs:
+            if run.get("id") == deployed.get("id") and workflow == WORKFLOW:
+                continue
+            if workflow == WORKFLOW and re.fullmatch(
+                r"Guarded staging [0-9a-f]{40} preflight (?:yes|no)",
+                run.get("display_title", ""),
+            ):
+                continue
+            require(
+                run["created_at"] < deployed["created_at"],
+                "staging evidence invalidated by another deployment attempt",
+            )
+
+
 def release_gates(api, operation, sha, inputs):
     if operation == "staging-preflight":
         return
@@ -158,6 +180,7 @@ def release_gates(api, operation, sha, inputs):
         deployed = successful_run(
             api, WORKFLOW, f"Guarded staging {sha} dry-run yes", latest_deployment=True
         )
+        unchanged_staging(api, deployed)
         if operation == "production-apply":
             qa = successful_run(api, "release-qa.yml", f"Release QA {sha} full-v2")
             require(qa["created_at"] >= deployed["updated_at"], "QA predates staging deployment")

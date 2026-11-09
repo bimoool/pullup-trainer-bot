@@ -154,6 +154,7 @@ class Tests(unittest.TestCase):
         runs = {
             name: [
                 {
+                    "id": index,
                     "display_title": title,
                     "head_branch": "main",
                     "event": "workflow_dispatch",
@@ -163,8 +164,10 @@ class Tests(unittest.TestCase):
                     "updated_at": stamp,
                 }
             ]
-            for name, title in titles.items()
+            for index, (name, title) in enumerate(titles.items(), 1)
         }
+
+        runs["deploy-staging.yml"] = []
 
         def api(method, path, body=None):
             if "/check-runs?" in path:
@@ -179,6 +182,21 @@ class Tests(unittest.TestCase):
 
         inputs = {"from_rev": "b" * 12, "to_rev": "c" * 12}
         t.release_gates(api, "production-apply", SHA, inputs)
+        for status in ("in_progress", "completed"):
+            runs["deploy-staging.yml"] = [
+                {
+                    "id": 99,
+                    "created_at": stamp,
+                    "head_branch": "codex/other",
+                    "status": status,
+                    "conclusion": "failure",
+                }
+            ]
+            with self.assertRaises(t.Refused):
+                t.release_gates(api, "production-apply", SHA, inputs)
+            with self.assertRaises(t.Refused):
+                t.release_gates(api, "staging-qa", SHA, {})
+        runs["deploy-staging.yml"] = []
         # Diagnostic QA can carry the same candidate SHA while running only one project/journey.
         runs["release-qa.yml"][0]["display_title"] = f"Staging QA {SHA}"
         with self.assertRaises(t.Refused):
