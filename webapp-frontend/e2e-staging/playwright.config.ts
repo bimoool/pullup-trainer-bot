@@ -39,7 +39,9 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }], ["json", { outputFile: "test-results/results.json" }]],
   use: {
     baseURL: BASE_URL,
-    trace: "on",
+    // Live initData is a credential: traces capture launch URLs and request headers.
+    // Keep screenshots and the allowlisted API metadata instead of publishing traces.
+    trace: "off",
     screenshot: "on",
     video: "retain-on-failure",
     actionTimeout: 15_000,

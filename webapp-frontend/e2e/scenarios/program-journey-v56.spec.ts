@@ -43,10 +43,6 @@ async function onboard(page: Page) {
   await expect(page.getByText("Записал: 8 повторений. Всё верно?")).toBeVisible();
   await page.getByRole("button", { name: "Да" }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByLabel("Твой вес в кг?").fill("78");
-  await page.getByRole("button", { name: "Далее" }).click();
-  await page.getByLabel("Рост в см?").fill("180");
-  await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Дата рождения").fill("1992-04-15");

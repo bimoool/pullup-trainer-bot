@@ -24,6 +24,8 @@ seed plan_week_start_session 930503
 seed plan_week_start_session 930504
 seed plan_week_start_session 930505
 seed v5_one_rep_max 930502
+seed v5_weighted_b_live 930506
+seed v5_weighted_b_live 930507
 # ui-clarity (fix-wave1/ui-clarity.spec.ts): СВОЙ профиль «курс без 1RM» — только чтение (пред-экран, без сохранения);
 # 930502 принадлежит course-v5-engine.spec.ts, который проходит тест 1RM и меняет его состояние.
 seed v5_one_rep_max 930701

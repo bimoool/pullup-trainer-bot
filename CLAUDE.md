@@ -50,7 +50,7 @@ GitHub Issues с метками `status:*`. Чат/сессия одноразо
 ## Команды
 
 ```bash
-pip install -e ".[dev,web]"
+bash scripts/install-python.sh dev
 export BOT_TOKEN=ci-test-token TEST_DATABASE_URL="postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_test"
 export DATABASE_URL="$TEST_DATABASE_URL"
 pytest -q && ruff check app/ tests/ scripts/

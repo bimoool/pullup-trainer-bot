@@ -45,7 +45,8 @@ else
   STAGING_DIR="/home/deploy/pullup-trainer-bot-staging"; BACKUP_DIR="/home/deploy/backups"
   HEALTH_URL="http://127.0.0.1:8002/health"
   QUIESCE_SECONDS=15; HEALTH_TIMEOUT=240; MIN_DISK_MB=2048
-  CLEANUP_BIN="/usr/local/bin/post-deploy-cleanup.sh"
+  # Keep rollback images and shared-host build caches until release acceptance.
+  CLEANUP_BIN="/nonexistent"
 fi
 
 if [[ $# -lt 3 || $# -gt 4 || ! "$1" =~ ^[0-9a-f]{40}$ || ! "$2" =~ ^(preflight|dry-run|apply)$ || ! "$3" =~ ^(yes|no)$ \
@@ -415,11 +416,20 @@ for svc in app web; do
   [ "$(docker inspect -f '{{.State.Restarting}}' "$cid")" = "false" ] || die "$svc is restarting"
   want="BUILT_ID_$svc"; got="$(docker inspect -f '{{.Image}}' "$cid")"
   [ "$got" = "${!want}" ] || die "$svc runs image ${got:0:19}, not the one built by this run (${!want:0:19})"
-  until [ "$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")" != "starting" ]; do
-    [ "$SECONDS" -lt "$deadline" ] || die "$svc healthcheck still 'starting' after ${HEALTH_TIMEOUT}s"; bgwait sleep 3
+  # A slow warm-up can exhaust Docker's retries before the HTTP probe succeeds.
+  # `unhealthy` is recoverable too; keep the same bounded startup deadline.
+  while :; do
+    [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = "true" ] || die "$svc stopped while waiting for health"
+    [ "$(docker inspect -f '{{.State.Restarting}}' "$cid")" = "false" ] || die "$svc is restarting"
+    st="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
+    case "$st" in
+      healthy|none) break ;;
+      starting|unhealthy) ;;
+      *) die "$svc health status is '$st'" ;;
+    esac
+    [ "$SECONDS" -lt "$deadline" ] || die "$svc healthcheck still '$st' after ${HEALTH_TIMEOUT}s"
+    bgwait sleep 3
   done
-  st="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
-  [ "$st" = "healthy" ] || [ "$st" = "none" ] || die "$svc health status is '$st'"
   log "running $svc: image ${got:0:19} == built by this run; health=$st"
 done
 [ "$(git rev-parse HEAD)" = "$SHA" ] || die "HEAD != $SHA after start"

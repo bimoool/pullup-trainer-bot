@@ -8,24 +8,27 @@ Mini App (OnboardingScreen.tsx, issue #124) кнопкой, а не в текс�
 
 from datetime import UTC, datetime
 
+import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.methods import SendMessage
 from aiogram.types import Chat, Message, Update
 from aiogram.types import User as TgUser
+from sqlalchemy import select
 
 from app.bot import texts
 from app.bot.states import OnboardingStates
 from app.config import settings
 from app.db.models import User
+from app.db.repositories.users import UserRepository
 
 
-def _start_update(telegram_id: int) -> Update:
+def _start_update(telegram_id: int, username: str | None = None) -> Update:
     return Update(
         update_id=1,
         message=Message(
             message_id=1, date=datetime.now(UTC),
             chat=Chat(id=telegram_id, type="private"),
-            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester"),
+            from_user=TgUser(id=telegram_id, is_bot=False, first_name="Tester", username=username),
             text="/start",
         ),
     )
@@ -63,3 +66,28 @@ async def test_start_falls_back_to_text_flow_when_mini_app_not_configured(
     assert texts.BASELINE_GUIDE in sent_texts
     assert texts.ONBOARDING_OPEN_MINI_APP not in sent_texts
     assert await fsm.get_state() == OnboardingStates.waiting_for_baseline_reps.state
+
+
+@pytest.mark.parametrize("legacy_username", [None, "synthetic_old_username"])
+async def test_start_does_not_capture_username_or_replace_existing_user(
+    session, bot: Bot, dispatcher: Dispatcher, legacy_username,
+):
+    users = UserRepository(session)
+    telegram_id = 61001
+    previous = (
+        await users.create(telegram_id=telegram_id, username=legacy_username)
+        if legacy_username is not None else None
+    )
+
+    for incoming_username in ("synthetic_new_username", "synthetic_renamed_username"):
+        await dispatcher.feed_update(
+            bot, _start_update(telegram_id, username=incoming_username), session=session,
+        )
+        current = await users.get_by_telegram_id(telegram_id)
+        assert current is not None
+        if previous is not None:
+            assert current.id == previous.id
+        # Read the persisted column, rather than relying on the ORM identity cache.
+        stored_username = await session.scalar(select(User.username).where(User.id == current.id))
+        assert stored_username == legacy_username
+        previous = current

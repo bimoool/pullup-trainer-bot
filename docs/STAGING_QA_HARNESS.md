@@ -1,3 +1,20 @@
+> Кандидат 2026-11-05: `R-V2` включает регистрацию без веса/роста и с пропуском пола/даты.
+> `qa_signup` (7000000006) при provision оставляется отсутствующим, чтобы профиль создала сама UI.
+> Перед каждым отдельным browser project заново provision все зарезервированные QA identities.
+
+## Release audit update — 2026-11-05
+
+Current v2 smoke scenarios are `06-release-v2.spec.ts` (grep `R-V2`). Reprovision the
+five reserved QA identities before **each browser project**; run projects separately,
+since the full course journey changes shared state. The older numbered journeys
+still describe v1 controls and are not evidence for current v2 execution.
+
+Staging traces are disabled: they capture signed launch URLs and authentication
+headers even when the bot token itself is never printed. Keep screenshots/video of
+synthetic profiles and the allowlisted API status metadata as evidence. Do not
+upload traces from a live owner account. The native Telegram/iPhone check remains
+separate from WebKit emulation.
+
 # Staging QA harness
 
 Playwright journeys that run against the **actual deployed staging** (`https://staging.app.bimoool.com`) with

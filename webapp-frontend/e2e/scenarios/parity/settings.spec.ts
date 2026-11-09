@@ -47,7 +47,7 @@ for (const width of WIDTHS) {
       await page.getByTestId("settings-weight-unit").getByRole("button", { name: "фунты" }).click();
       await page.getByTestId("settings-height-unit").getByRole("button", { name: "дюймы" }).click();
       await expect(page.getByRole("textbox", { name: "Вес" })).toHaveValue("165.3");
-      await expect(page.getByRole("textbox", { name: "Рост" })).toHaveValue("70.9");
+      await expect(page.getByRole("textbox", { name: "Рост" })).toHaveCount(0);
       await page.getByTestId("settings-save").click();
 
       await expect(page.getByTestId("profile-weight")).toHaveText("Вес: 165.3 фунт.");

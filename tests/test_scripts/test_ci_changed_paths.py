@@ -1,6 +1,8 @@
 """Docs-only optimization must never hide code changes or missing API data."""
 
 import importlib.util
+import re
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -161,7 +163,13 @@ def test_all_required_jobs_report_and_fall_back_to_full_on_classifier_failure():
         assert "    paths:" not in workflow
         assert "uses: ./.github/workflows/ci-changed-paths.yml" in workflow
         for job in jobs:
-            assert f"  {job}:\n    needs: changes\n    {guard}\n" in workflow
+            header = re.search(
+                rf"(?m)^  {job}:\n    needs: (.+)\n    (.+)\n", workflow,
+            )
+            assert header is not None
+            needs = {name.strip() for name in header[1].strip("[]").split(",")}
+            assert "changes" in needs
+            assert header[2] == guard
     checks = (ROOT / ".github/workflows/tests.yml").read_text()
     for check_name in ("ruff", "pytest", "frontend build"):
         assert f"    name: {check_name}\n" in checks
@@ -194,3 +202,19 @@ def test_duplicate_across_pages_refuses_skip():
 def test_old_e2e_runs_are_cancelled_on_new_push():
     workflow = (ROOT / ".github/workflows/e2e.yml").read_text()
     assert "concurrency:\n  group: e2e-${{ github.ref }}\n  cancel-in-progress: true\n" in workflow
+
+
+@pytest.mark.parametrize("matrix_result", ["success", "failure", "cancelled", "skipped"])
+def test_protected_pytest_refuses_unsuccessful_dependency_matrix(matrix_result):
+    workflow = (ROOT / ".github/workflows/tests.yml").read_text()
+    job = re.search(r"(?ms)^  pytest:\n(.*?)(?=^  [\w-]+:\n|\Z)", workflow)[1]
+    needs = re.search(r"(?m)^    needs: (.+)$", job)[1]
+    assert "python-locks" in {name.strip() for name in needs.strip("[]").split(",")}
+    command = re.search(r"(?m)^        run: (.+)$", job)[1]
+    marker = "${{ needs.python-locks.result }}"
+    assert marker in command
+    completed = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", command.replace(marker, matrix_result)],
+        capture_output=True, text=True, check=False,
+    )
+    assert (completed.returncode == 0) == (matrix_result == "success")

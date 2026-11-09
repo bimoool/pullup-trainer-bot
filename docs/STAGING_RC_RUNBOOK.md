@@ -1,3 +1,21 @@
+## Maintenance candidate — 2026-11-05
+
+For the maintenance line in PR #372, use the runner from the exact checked candidate,
+not the server copy left by the October UX campaign (it expects `d4b7e1a9c3f5`).
+The maintenance candidate and current staging both use `b5d8e1f3a6c9`; no schema
+upgrade or history convergence apply is required. Run `preflight no -`, then
+`dry-run yes -` only after the candidate gates pass. This second command stops
+staging writers, saves images/backup, validates restore and data invariants,
+builds sequentially and starts the checked images; it is not read-only.
+Install the reviewed runner with a backup of the previous server file and verify
+its SHA-256. Preserve the existing forced command and SSH permissions.
+
+The startup check waits through transient `unhealthy` as well as `starting`, under
+the same deadline, and still stops services on persistent failure. Automatic
+shared-host image/cache pruning is disabled to retain rollback resources.
+The historical campaign instructions below are retained as history, not current
+revision evidence. Production is outside this staging procedure.
+
 # Staging runbook: release candidate #322 + #323 (PR #324)
 
 **Только подготовка. Ни одна команда этого документа не выполнялась на staging; деплой делает владелец.**
