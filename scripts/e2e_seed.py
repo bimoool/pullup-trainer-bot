@@ -113,7 +113,7 @@ from app.domain.multi_program import (
     plan_week_start_date,
 )
 from app.domain.progression_strategy import ProgressionStrategyType
-from app.domain.pullups_v5 import LEGACY_PROGRAM_VERSION, EntryInputs
+from app.domain.pullups_v5 import LEGACY_PROGRAM_VERSION, EntryInputs, WorkoutRole, initial_state
 from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
@@ -569,6 +569,23 @@ async def seed_plan_week_start_session(session: AsyncSession, telegram_id: int) 
     await ProgramInclusionService(session).create_inclusion(
         user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=_V5_E2E_INPUTS),
     )
+
+
+async def seed_v5_weighted_b_live(session: AsyncSession, telegram_id: int) -> None:
+    """Synthetic 10×5 bodyweight volume B, then 5×3 with +10 kg; no historical user data."""
+    from dataclasses import replace
+
+    user = await _onboard(session, telegram_id)
+    program = await _shipped_pull_ups_program(session)
+    inputs = EntryInputs(
+        fresh_max=20, known_volume=45, known_strength_a_kg=Decimal(5),
+        known_strength_b_kg=Decimal(10), load_step_kg=Decimal(1),
+    )
+    inclusion = await ProgramInclusionService(session).create_inclusion(
+        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id, course_inputs=inputs),
+    )
+    inclusion.progression_state = replace(initial_state(inputs), next_role=WorkoutRole.B, sessions_completed=1).to_dict()
+    await session.flush()
 
 
 async def seed_v5_one_rep_max(session: AsyncSession, telegram_id: int) -> None:
@@ -1800,6 +1817,7 @@ SCENARIOS = {
     "plan_week_add_exercise": seed_plan_week_add_exercise,
     "plan_week_start_session": seed_plan_week_start_session,
     "v5_one_rep_max": seed_v5_one_rep_max,
+    "v5_weighted_b_live": seed_v5_weighted_b_live,
     "plan_week_manual_session": seed_plan_week_manual_session,
     "journal_combined": seed_journal_combined,
     "plan_week_stepper": seed_plan_week_stepper,
