@@ -6,6 +6,8 @@ import {
   type LiveSessionCompleteResponse, type LiveSessionResponse,
 } from "./apiV2";
 import { formatDuration, formatLoggedSetSummary, formatNumber } from "./blockFormat";
+import { courseBlockLoadText } from "./courseV5";
+import { useDisplayPrefs } from "./displayPrefs";
 import { isCompleteDecimal, sanitizeDecimalInput } from "./decimalInput";
 import { EFFORT_SCALE, WORKOUT_COMMENT_MAX } from "./effortScale";
 import { carriesCompletionOutcome, classifySyncError, FINISH_EARLY_HINT, summaryResult, type SyncFailure } from "./liveFinish";
@@ -76,6 +78,7 @@ function checksPayload(indexes: number[], answers: Record<number, BlockAnswers>)
  * Пауза — серверное событие (переживает reload и второе устройство).
  */
 export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onLeave, resolveExerciseName, title }: Props) {
+  const prefs = useDisplayPrefs();
   const [server, setServer] = useState<LiveSessionResponse>(initialSession);
   const [offset, setOffset] = useState(() => (initialSession.engine ? initialSession.engine.server_time_ms - Date.now() : 0));
   const [queue, setQueueState] = useState<EngineQueue>(() => emptyQueue(initialSession.id));
@@ -548,7 +551,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const totalUnits = isInterval ? block.interval?.rounds ?? 0 : block.sets?.length ?? 0;
   const unitNumber = (isInterval ? state.cursor.round_index ?? 0 : state.cursor.set_index) + 1;
   const isBlockRest = state.phase === "REST" && state.rest_kind === "block";
+  const loadText = courseBlockLoadText(server.blocks[state.cursor.block_index]?.course_block, prefs.weight_unit);
   const nextBlockIndex = isBlockRest ? state.cursor.block_index + 1 : null;
+  const stoppedBlock = (state.stopped_blocks ?? []).find((entry) => entry.block_index === state.cursor.block_index);
   const lastLog = [...state.logs].reverse().find((log) => !log.is_extra && log.value !== null) ?? null;
   const lastLogPanel = lastLog !== null && state.phase !== "COMPLETE" && !finishing && (state.phase === "REST" || state.phase === "PREP");
   // Открытая правка видна в любой фазе, пока тренировка не завершается. Нижняя панель на это время не липнет к низу
@@ -639,6 +644,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       {state.phase !== "COMPLETE" && (
         <div className="live-now" data-testid="live-now">
           {blockName(state.cursor.block_index) !== null && <p className="live-exercise">{blockName(state.cursor.block_index)}</p>}
+          {loadText !== null && <p className="live-target" data-testid="engine-load">{loadText}</p>}
           <div className="live-counter" data-testid="live-counter" aria-hidden="true">
             <div className="live-counter-cell">
               <span className="live-counter-num">
@@ -687,7 +693,14 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           </p>
         )}
         {nextBlockIndex !== null && (
-          <p className="live-plan" data-testid="engine-next-block">Дальше: {blockName(nextBlockIndex) ?? "следующее упражнение"}</p>
+          <>
+            <p className="live-plan" data-testid="engine-rest-context">
+              {stoppedBlock?.reason === "technique" ? "Блок завершён: отмечено нарушение техники."
+                : stoppedBlock?.reason === "low_reps" ? "Блок завершён по стоп-правилу повторений."
+                  : "Все плановые подходы блока выполнены."} Отдых перед следующим блоком.
+            </p>
+            <p className="live-plan" data-testid="engine-next-block">Дальше: {blockName(nextBlockIndex) ?? "следующее упражнение"}</p>
+          </>
         )}
         {state.phase === "COMPLETE" && (
           <p className="live-done-note" data-testid="engine-complete">
@@ -838,7 +851,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
           {workInput && stopRule !== null && (
             <Button
               className="live-secondary" size="m" stretched mode="bezeled" data-testid="engine-submit-technique-broken"
-              disabled={busy || !isCompleteDecimal(value)} onClick={() => submit(undefined, "invalid")}
+              disabled={busy || !isCompleteDecimal(value)} onClick={() => {
+                void confirmAction("Завершить весь объёмный блок из-за нарушения техники? Оставшиеся подходы будут пропущены, начнётся отдых перед силовым блоком.")
+                  .then((confirmed) => { if (confirmed) submit(undefined, "invalid"); });
+              }}
             >
               Готово · техника нарушена (конец блока)
             </Button>
