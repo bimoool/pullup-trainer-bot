@@ -367,7 +367,14 @@ def main():
 
     try:
         print(dispatch(event, runtime, api))
-    except (Refused, urllib.error.URLError, TimeoutError, ValueError, KeyError):
+    except Refused as exc:
+        # Refused messages are fixed local guard text, never response bodies or inputs.
+        print(f"Guard refused: {exc}. No automatic retry.")
+        raise SystemExit(1) from None
+    except urllib.error.HTTPError as exc:
+        print(f"GitHub API HTTP status {exc.code}. No automatic retry; inspect claims and Actions.")
+        raise SystemExit(1) from None
+    except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
         # No response bodies, request headers, command body or secret values in logs.
         print(
             "Dispatch refused or interrupted. No automatic retry; inspect the durable claim and Actions."
