@@ -15,8 +15,12 @@ async function submit(page: Page, value: string, expectedSet?: string) {
   await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
   if (expectedSet) await expect(page.getByTestId("engine-target")).toContainText(expectedSet);
   await page.getByRole("textbox", { name: "Результат подхода" }).fill(value);
+  const synced = page.waitForResponse(r => r.url().endsWith("/events") && r.status() === 200
+    && r.request().postDataJSON().events.some((event: { type: string }) => event.type === "submit_result"));
   await page.getByTestId("engine-submit").click();
+  const body = await (await synced).json();
   await expect(page.getByTestId("engine-saving")).toHaveCount(0);
+  return body;
 }
 
 test("R-HOTFIX full 10x5: nine minute rests, then strength +10 kg and one journal entry", async ({ qa }) => {
@@ -24,7 +28,8 @@ test("R-HOTFIX full 10x5: nine minute rests, then strength +10 kg and one journa
   const { page } = session;
   await start(page);
   for (let index = 0; index < 10; index++) {
-    await submit(page, "5", `Подход ${index + 1}/10`);
+    const body = await submit(page, "5", `Подход ${index + 1}/10`);
+    expect(body.engine.state.phase_duration_ms).toBe(index < 9 ? 60_000 : 900_000);
     await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
     await expect(page.getByTestId("engine-timer")).toHaveText(index < 9 ? /^(0:5[0-9]|1:00)$/ : /^1[45]:[0-5][0-9]$/);
     await expect(page.getByTestId("engine-next-block")).toHaveCount(index < 9 ? 0 : 1);
@@ -84,5 +89,10 @@ test("R-HOTFIX finish early: back preserves session, confirmation saves it once"
   await page.getByTestId("engine-finish").click();
   await page.getByTestId("engine-finish-confirm").click();
   await expect(page.getByText("Прогрессия не пересчитана — сессия завершена досрочно.")).toBeVisible();
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await page.reload();
+  await expect(page.locator(".bottom-tabbar")).toBeVisible();
+  await page.getByRole("button", { name: "Журнал", exact: true }).click();
+  await expect(page.locator(".history-card").filter({ hasText: "Подтягивания" })).toHaveCount(1);
   session.assertClean();
 });
