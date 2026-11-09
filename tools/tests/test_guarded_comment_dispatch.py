@@ -92,7 +92,8 @@ class Tests(unittest.TestCase):
             },
         )
         self.assertEqual(t.command(f"/pullup staging-qa {SHA}")[3]["candidate_sha"], SHA)
-        self.assertIs(t.command(f"/pullup staging-qa {SHA}")[3]["reprovision"], True)
+        self.assertEqual(t.command(f"/pullup staging-qa {SHA}")[2], "release-qa.yml")
+        self.assertEqual(t.command(f"/pullup staging-qa {SHA}")[3], {"candidate_sha": SHA})
         self.assertEqual(
             t.command(
                 f"/pullup production-apply {SHA} {'b' * 12} {'c' * 12} PRODUCTION-APPLY-{SHA[:12]}"
@@ -147,7 +148,7 @@ class Tests(unittest.TestCase):
         ]
         titles = {
             t.WORKFLOW: f"Guarded staging {SHA} dry-run yes",
-            "staging-qa.yml": f"Staging QA {SHA}",
+            "release-qa.yml": f"Release QA {SHA} full-v2",
             "production-deploy.yml": f"Guarded production {SHA} preflight {'b' * 12} {'c' * 12}",
         }
         runs = {
@@ -178,10 +179,15 @@ class Tests(unittest.TestCase):
 
         inputs = {"from_rev": "b" * 12, "to_rev": "c" * 12}
         t.release_gates(api, "production-apply", SHA, inputs)
-        runs["staging-qa.yml"][0]["conclusion"] = "failure"
+        # Diagnostic QA can carry the same candidate SHA while running only one project/journey.
+        runs["release-qa.yml"][0]["display_title"] = f"Staging QA {SHA}"
         with self.assertRaises(t.Refused):
             t.release_gates(api, "production-apply", SHA, inputs)
-        runs["staging-qa.yml"][0]["conclusion"] = "success"
+        runs["release-qa.yml"][0]["display_title"] = titles["release-qa.yml"]
+        runs["release-qa.yml"][0]["conclusion"] = "failure"
+        with self.assertRaises(t.Refused):
+            t.release_gates(api, "production-apply", SHA, inputs)
+        runs["release-qa.yml"][0]["conclusion"] = "success"
         runs["production-deploy.yml"][0]["updated_at"] = "2020-01-01T00:00:00Z"
         with self.assertRaises(t.Refused):
             t.release_gates(api, "production-apply", SHA, inputs)

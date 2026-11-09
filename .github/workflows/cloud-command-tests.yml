@@ -8,6 +8,7 @@ on:
       - .github/workflows/cloud-command-tests.yml
       - .github/workflows/deploy-staging-guarded.yml
       - .github/workflows/staging-qa.yml
+      - .github/workflows/release-qa.yml
       - .github/workflows/production-deploy.yml
       - .github/workflows/rehearsal-harness.yml
 permissions:

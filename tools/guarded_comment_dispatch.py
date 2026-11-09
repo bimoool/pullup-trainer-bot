@@ -63,13 +63,8 @@ def command(body):
         return (
             operation,
             sha,
-            "staging-qa.yml",
-            {
-                "candidate_sha": sha,
-                "journeys": "all",
-                "reprovision": True,
-                "projects": "iphone-webkit,chromium-mobile",
-            },
+            "release-qa.yml",
+            {"candidate_sha": sha},
         )
     if operation == "rehearse":
         return operation, sha, "rehearsal-harness.yml", {}
@@ -164,7 +159,7 @@ def release_gates(api, operation, sha, inputs):
             api, WORKFLOW, f"Guarded staging {sha} dry-run yes", latest_deployment=True
         )
         if operation == "production-apply":
-            qa = successful_run(api, "staging-qa.yml", f"Staging QA {sha}")
+            qa = successful_run(api, "release-qa.yml", f"Release QA {sha} full-v2")
             require(qa["created_at"] >= deployed["updated_at"], "QA predates staging deployment")
             preflight = successful_run(
                 api,

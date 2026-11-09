@@ -1,5 +1,4 @@
 name: Staging QA
-run-name: Staging QA ${{ inputs.candidate_sha || github.sha }}
 
 # Playwright journeys against the DEPLOYED staging (https://staging.app.bimoool.com), not a local copy.
 # Design, threat model and owner one-time steps: docs/STAGING_QA_HARNESS.md.
@@ -9,10 +8,6 @@ run-name: Staging QA ${{ inputs.candidate_sha || github.sha }}
 on:
   workflow_dispatch:
     inputs:
-      candidate_sha:
-        description: "Exact reviewed candidate SHA; empty retains the existing main checkout"
-        required: false
-        default: ""
       journeys:
         description: "Journeys to run: 'all' or a Playwright grep, e.g. 'S-OWNER-01|S-FRESH-01'"
         required: true
@@ -29,10 +24,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: deploy-staging
-  cancel-in-progress: false
-
 env:
   STAGING_URL: https://staging.app.bimoool.com
 
@@ -41,10 +32,6 @@ jobs:
     if: ${{ inputs.reprovision }}
     runs-on: ubuntu-latest
     steps:
-      - name: Validate candidate SHA
-        env:
-          CANDIDATE: ${{ inputs.candidate_sha }}
-        run: '[[ -z "$CANDIDATE" || "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]]'
       # The staging SSH key is bound to a forced command (see deploy-and-verify skill). This only works after the
       # owner extended the server wrapper with the literal `./qa-staging.sh provision|snapshot` (docs/STAGING_QA_HARNESS.md);
       # until then the server answers "rejected command" and this job fails loudly — it never runs anything else.
@@ -76,8 +63,6 @@ jobs:
         working-directory: webapp-frontend/e2e-staging
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.candidate_sha || github.sha }}
 
       - name: Pre-check staging reachability from a GitHub-hosted runner
         working-directory: .

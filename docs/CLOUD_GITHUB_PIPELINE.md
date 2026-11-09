@@ -27,7 +27,7 @@ supports these fixed commands, with no arbitrary workflow, URL or shell input:
 | `staging-preflight SHA` | Guarded staging, `preflight`, `start=no`, `users=-` |
 | `rehearse SHA` | Existing synthetic Docker rehearsal on the PR branch; verify the actual run SHA |
 | `staging-deploy SHA` | Guarded staging, `dry-run`, `start=yes`, `users=-` |
-| `staging-qa SHA` | Full Chromium/WebKit QA with reserved synthetic identity reprovisioning and candidate checkout |
+| `staging-qa SHA` | Fixed current-v2 release suite (06/07) in Chromium and WebKit, freshly provisioned per browser |
 | `production-preflight SHA FROM TO` | Existing guarded production workflow, preflight only |
 | `production-apply SHA FROM TO PRODUCTION-APPLY-SHA12` | Existing guarded production apply with its exact confirmation |
 | `rollback-check SHA R1_OR_R3 MANIFEST` | Existing rollback inspection, `mode=check` only |
@@ -48,9 +48,14 @@ Every release operation requires all exact-SHA product checks, plus rehearsal
 (the rehearsal command itself requires the other six checks). Mutating release
 operations also require the candidate tree to equal current trusted main.
 QA requires a successful latest staging deployment of this exact candidate.
-Production apply additionally requires successful full staging QA after that
+Only `release-qa.yml` can supply release evidence: it has no journey/project
+filter inputs, runs both browsers sequentially with separate provisioning,
+and executes complete current-v2 files 06/07 with zero retries. Diagnostic
+`staging-qa.yml` runs cannot satisfy the gate, even with the same candidate SHA.
+The larger functional suite remains independently required by CI `e2e`.
+Production apply additionally requires successful fixed release QA after that
 deployment and a successful matching production preflight after QA and within
-the last hour. Run titles bind the SHA and modes/revisions to reviewed workflow
+the last hour. Run titles bind the SHA, fixed QA suite and modes/revisions to reviewed workflow
 inputs; an older success cannot replace a newer failed matching run. The adapter
 does not substitute these records for actual Telegram/iPhone acceptance or the
 remaining runbook go/no-go items: the coordinator must finish those before
