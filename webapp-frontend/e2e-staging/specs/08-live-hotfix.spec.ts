@@ -9,10 +9,11 @@ async function start(page: Page) {
   await expect(page.getByTestId("engine-load")).toHaveText("Свой вес");
 }
 
-async function submit(page: Page, value: string) {
+async function submit(page: Page, value: string, expectedSet?: string) {
   await expect(page.getByTestId("engine-saving")).toHaveCount(0);
   if (await page.getByTestId("engine-skip").count()) await page.getByTestId("engine-skip").click();
   await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+  if (expectedSet) await expect(page.getByTestId("engine-target")).toContainText(expectedSet);
   await page.getByRole("textbox", { name: "Результат подхода" }).fill(value);
   await page.getByTestId("engine-submit").click();
   await expect(page.getByTestId("engine-saving")).toHaveCount(0);
@@ -23,15 +24,14 @@ test("R-HOTFIX full 10x5: nine minute rests, then strength +10 kg and one journa
   const { page } = session;
   await start(page);
   for (let index = 0; index < 10; index++) {
-    await expect(page.getByTestId("engine-target")).toContainText(`Подход ${index + 1}/10`);
-    await submit(page, "5");
+    await submit(page, "5", `Подход ${index + 1}/10`);
     await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
     await expect(page.getByTestId("engine-timer")).toHaveText(index < 9 ? /^(0:5[0-9]|1:00)$/ : /^1[45]:[0-5][0-9]$/);
     await expect(page.getByTestId("engine-next-block")).toHaveCount(index < 9 ? 0 : 1);
   }
   await page.getByTestId("engine-skip").click();
   await expect(page.getByTestId("engine-load")).toHaveText("+10 кг");
-  for (let index = 0; index < 5; index++) await submit(page, "3");
+  for (let index = 0; index < 5; index++) await submit(page, "3", `Подход ${index + 1}/5`);
   await expect(page.getByTestId("engine-confirm")).toBeVisible();
   for (const group of await page.locator('[data-testid^="check-technique-"], [data-testid^="check-rest-"]').all()) {
     await group.getByRole("button", { name: "Да", exact: true }).click();
