@@ -15,6 +15,7 @@ QA_IDENTITIES: dict[str, int] = {
     "qa_expired": 7_000_000_003,
     "qa_legacy_or_partial": 7_000_000_004,
     "qa_aged_legacy_snapshot": 7_000_000_005,
+    "qa_signup": 7_000_000_006,
 }
 
 

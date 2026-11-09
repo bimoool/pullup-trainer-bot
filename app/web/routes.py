@@ -291,7 +291,8 @@ async def submit_onboarding_baseline(
     users = UserRepository(session)
     user = await users.get_by_telegram_id(telegram_id)
     if user is None:
-        user = await users.create(telegram_id=telegram_id, username=getattr(init_data.user, "username", None))
+        # Account identity is the Telegram ID; do not collect the optional public handle.
+        user = await users.create(telegram_id=telegram_id)
 
     await OnboardingService(session).record_baseline_and_start(
         user_id=user.id, performed_at=datetime.now(UTC), reps=body.reps,
@@ -313,20 +314,12 @@ async def submit_onboarding_questionnaire(
     init_data: InitData = Depends(get_validated_init_data),
     session: AsyncSession = Depends(get_session, scope="function"),
 ) -> OnboardingQuestionnaireResponse:
-    """Анкета (issue #124, PR 2) — тот же OnboardingService.
-    complete_questionnaire_and_start_trial, что handle_timezone бота вызывает
-    последним шагом анкеты (app/bot/handlers/questionnaire.py): пишет профиль,
-    отмечает онбординг завершённым, стартует триал. Таймзона — не свободный
-    ввод города, как в боте (там нераспознанный город молча становится
-    Москвой, см. app/bot/timezones.py — неприемлемо для явного выбора в
-    форме), а выбор из GET /api/profile/timezone-options (issue #125,
-    Intl.DateTimeFormat на фронтенде только предзаполняет значение по
-    умолчанию) — осознанное расхождение с ботом, согласовано в issue.
+    """Complete minimal onboarding through the same service as the bot.
 
-    404, если User ещё нет вообще (baseline не пройден) — в Mini App
-    недостижимо вживую (App.tsx не даст дойти до этого экрана раньше
-    /api/onboarding/baseline), но дешевле проверить на сервере, чем
-    считать чужой ввод валидным."""
+    Timezone is explicit; gender and birth date are voluntary. Old weight/height
+    fields are not persisted even when an older client submits them. Omitting
+    optional fields preserves existing profile/history. No trial rules change.
+    """
     users = UserRepository(session)
     user = await users.get_by_telegram_id(init_data.user.id)
     if user is None:
@@ -335,9 +328,7 @@ async def submit_onboarding_questionnaire(
     now = datetime.now(UTC)
     await OnboardingService(session).complete_questionnaire_and_start_trial(
         user_id=user.id,
-        weight_kg=body.weight_kg,
-        height_cm=body.height_cm,
-        gender=Gender(body.gender),
+        gender=Gender(body.gender) if body.gender is not None else None,
         birth_date=body.birth_date,
         timezone=body.timezone,
         now=now,
@@ -533,10 +524,12 @@ async def update_profile(
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not onboarded")
 
+    if body.height_cm is not None and body.height_cm != user.height_cm:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Новый сбор роста отключён; история сохранена")
+
     await users.update_profile(
         user.id,
         weight_kg=body.weight_kg,
-        height_cm=body.height_cm,
         gender=Gender(body.gender) if body.gender is not None else None,
         birth_date=body.birth_date,
         timezone=body.timezone,
@@ -2256,6 +2249,8 @@ async def add_body_metric(
 ) -> BodyMetricHistoryResponse:
     """«Добавить замер»: последний замер зеркалится в User.weight_kg/height_cm."""
     user_id = await _current_user_id(init_data, session)
+    if body.metric == "height_cm":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Новый сбор роста отключён; история сохранена")
     history = BodyMetricRepository(session)
     await history.add(user_id, BodyMetric(body.metric), body.value, body.measured_at)
     return await _body_metric_history(history, user_id, BodyMetric(body.metric))
@@ -2274,6 +2269,8 @@ async def update_body_metric(
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Body metric not found")
     metric = BodyMetric(entry.metric)
+    if metric is BodyMetric.HEIGHT_CM:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Новый сбор роста отключён; история сохранена")
     if body.value is not None:
         try:
             BodyMetricCreateRequest(metric=metric.value, value=body.value)

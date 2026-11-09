@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import PendingPayment, PendingPaymentProvider, SubscriptionSource
 from app.db.repositories.pending_payments import PendingPaymentRepository
+from app.diagnostics import safe_exception_trace
 from app.domain.constants import SUBSCRIPTION_DAYS, SUBSCRIPTION_DESCRIPTION, SUBSCRIPTION_PRICE_RUB
 from app.services.subscription import SubscriptionService
 
@@ -197,8 +198,8 @@ class RobokassaService:
         for payment in await self._pending_payments.list_pending(PendingPaymentProvider.ROBOKASSA):
             try:
                 status = await self._client.get_operation_state(int(payment.external_order_id))
-            except (RobokassaAPIError, aiohttp.ClientError):
-                logger.warning("robokassa: не удалось проверить статус платежа %s", payment.id, exc_info=True)
+            except (RobokassaAPIError, aiohttp.ClientError) as exception:
+                logger.warning("robokassa: не удалось проверить статус платежа %s; %s", payment.id, safe_exception_trace(exception))
                 continue
             if status == _STATUS_PAID:
                 await self._subscriptions.extend(

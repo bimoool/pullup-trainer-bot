@@ -21,12 +21,6 @@ async function onboardAndOpenSetup(page: Page, telegramId: number) {
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да" }).click();
   await page.getByRole("button", { name: "Продолжить" }).click();
-  // Анкета называет вес так же, как экран входов курса: «масса тела, без отягощения».
-  await expect(page.getByText("Это масса тела, без отягощения.")).toBeVisible();
-  await page.getByLabel("Твой вес в кг?").fill("80");
-  await page.getByRole("button", { name: "Далее" }).click();
-  await page.getByLabel("Рост в см?").fill("180");
-  await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Пол").selectOption({ label: "Мужской" });
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByLabel("Дата рождения").fill("1992-04-15");
@@ -47,6 +41,9 @@ async function onboardAndOpenSetup(page: Page, telegramId: number) {
   await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
   await expect(page.getByTestId("course-setup-required")).toBeVisible();
   await expect(page.getByTestId("one-rm-start")).toBeVisible();
+  // Mass is requested here, for this calculation, rather than during registration.
+  await expect(page.getByTestId("course-input-body_mass_kg")).toBeVisible();
+  await page.getByTestId("course-input-body_mass_kg").fill("80");
 }
 
 function trackNextSet(page: Page) {
@@ -118,7 +115,8 @@ test("сервер ответил course_setup_required — показан сп�
 test("форма входов: что обязательно, тест ИЛИ 5×5 / 5×3, шаг веса с примером рядом с тестом", async ({ page }) => {
   await onboardAndOpenSetup(page, freshId());
   const steps = page.getByTestId("course-setup-steps");
-  await expect(steps).toContainText("Обязательно впишите шаг дополнительного веса");
+  await expect(steps).toContainText("ваш вес");
+  await expect(steps).toContainText("шаг дополнительного веса");
   await expect(steps).toContainText("одно из двух: пройдите тест 1RM ниже — отдельным свежим днём");
   await expect(steps).toContainText("«Сохранить» записывает числа из полей");
   const data = page.getByTestId("course-setup-data");
