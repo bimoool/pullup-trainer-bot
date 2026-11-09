@@ -1,4 +1,5 @@
 name: Production deploy (guarded)
+run-name: Guarded production ${{ inputs.sha }} ${{ inputs.mode }} ${{ inputs.from_rev }} ${{ inputs.to_rev }}
 
 # Постоянный ручной путь выката production. Вызывает ТОЛЬКО проверенный guarded-скрипт
 # (/root/bin/deploy-production-guarded-run.sh: бэкапы до и при остановке, миграция, backfill, инварианты, healthcheck,

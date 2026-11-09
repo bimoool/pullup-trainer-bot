@@ -4,6 +4,14 @@
 
 ## Release audit update — 2026-11-05
 
+For guarded releases, `.github/workflows/release-qa.yml` runs the complete current-v2
+files `06-release-v2.spec.ts` and `07-minimal-signup.spec.ts` in both browser projects.
+It accepts only an exact candidate SHA: no journey/project filter or provisioning
+bypass. Each browser is provisioned separately; deployment and QA serialize.
+Diagnostic runs of the older `staging-qa.yml` do not count as production release
+evidence. Full functional E2E remains a separate mandatory CI check, and real
+Telegram/iPhone acceptance remains separate from browser emulation.
+
 Current v2 smoke scenarios are `06-release-v2.spec.ts` (grep `R-V2`). Reprovision the
 five reserved QA identities before **each browser project**; run projects separately,
 since the full course journey changes shared state. The older numbered journeys

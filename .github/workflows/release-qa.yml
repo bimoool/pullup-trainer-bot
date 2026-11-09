@@ -1,0 +1,105 @@
+name: Release QA (fixed v2 suite)
+run-name: Release QA ${{ inputs.candidate_sha }} full-v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Exact reviewed candidate SHA, identical to trusted main tree"
+        required: true
+
+permissions:
+  contents: read
+  checks: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  release-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        project: [iphone-webkit, chromium-mobile]
+    env:
+      STAGING_URL: https://staging.app.bimoool.com
+    defaults:
+      run:
+        working-directory: webapp-frontend/e2e-staging
+    steps:
+      - name: Validate reviewed SHA and trusted main tree
+        working-directory: .
+        env:
+          CANDIDATE: ${{ inputs.candidate_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          repo=bimoool/pullup-trainer-bot
+          [ "$(gh api "repos/$repo/git/commits/$CANDIDATE" --jq '.tree.sha')" = "$(gh api "repos/$repo/commits/main" --jq '.commit.tree.sha')" ] || exit 1
+          gh api --paginate "repos/$repo/commits/$CANDIDATE/check-runs?filter=latest&per_page=100" \
+            --jq '.check_runs[] | [.name, .status, (.conclusion // "none")] | @tsv' > "$RUNNER_TEMP/checks.tsv"
+          for required in ruff pytest 'frontend build' e2e codex-review security rehearse; do
+            awk -F'\t' -v n="$required" '$1==n && $2=="completed" && $3=="success" {ok=1} END {exit !ok}' "$RUNNER_TEMP/checks.tsv" || exit 1
+          done
+          bad="$(awk -F'\t' '$2!="completed" || ($3!="success" && $3!="skipped" && $3!="neutral")' "$RUNNER_TEMP/checks.tsv")"
+          [ -z "$bad" ] || { echo 'Candidate has a non-green check'; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+
+      # Each browser receives its own fresh reserved QA identities. No shared-state carryover.
+      - name: Reprovision reserved staging QA identities for this browser
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.VPS_STAGING_DEPLOY_SSH_KEY }}
+          command_timeout: 10m
+          script: ./qa-staging.sh provision
+
+      - name: Verify staging health
+        run: curl --fail --silent --show-error --max-time 30 "$STAGING_URL/health" > /dev/null
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: webapp-frontend/e2e-staging/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx tsc --noEmit
+
+      - name: Complete current v2 release suite (no filter or retry input)
+        env:
+          STAGING_BOT_TOKEN: ${{ secrets.STAGING_BOT_TOKEN }}
+          STAGING_PROJECT: ${{ matrix.project }}
+          CI: "true"
+        run: |
+          set -uo pipefail
+          [ -n "${STAGING_BOT_TOKEN:-}" ] || exit 1
+          echo "::add-mask::$STAGING_BOT_TOKEN"
+          # Fixed current v2 suite from docs/STAGING_QA_HARNESS.md. Older v1 scenarios
+          # remain available in staging-qa.yml, but cannot supply release evidence.
+          # Raw browser failure text may contain signed launch URLs: keep it only on
+          # this ephemeral runner, never publish it in logs or artifacts.
+          npx playwright test specs/06-release-v2.spec.ts specs/07-minimal-signup.spec.ts \
+            --retries=0 > "$RUNNER_TEMP/release-qa.log" 2>&1
+          result=$?
+          echo "Release QA browser=$STAGING_PROJECT exit=$result"
+          exit "$result"
+
+      - name: Upload synthetic screenshots only (no traces, raw reports or initData)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-qa-${{ matrix.project }}-${{ github.run_id }}
+          path: webapp-frontend/e2e-staging/test-results/**/*.png
+          retention-days: 7
+          if-no-files-found: ignore
