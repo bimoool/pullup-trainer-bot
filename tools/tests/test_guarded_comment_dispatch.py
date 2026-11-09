@@ -197,6 +197,19 @@ class Tests(unittest.TestCase):
             with self.assertRaises(t.Refused):
                 t.release_gates(api, "staging-qa", SHA, {})
         runs["deploy-staging.yml"] = []
+        # A rerun keeps its old created_at, but executes and changes staging now.
+        runs["deploy-staging.yml"] = [
+            {
+                "id": 99,
+                "created_at": "2020-01-01T00:00:00Z",
+                "updated_at": stamp,
+                "run_started_at": stamp,
+                "run_attempt": 2,
+            }
+        ]
+        with self.assertRaises(t.Refused):
+            t.release_gates(api, "staging-qa", SHA, {})
+        runs["deploy-staging.yml"] = []
         # Diagnostic QA can carry the same candidate SHA while running only one project/journey.
         runs["release-qa.yml"][0]["display_title"] = f"Staging QA {SHA}"
         with self.assertRaises(t.Refused):

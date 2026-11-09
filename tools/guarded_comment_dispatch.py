@@ -144,22 +144,29 @@ def unchanged_staging(api, deployed):
     # Both deployment entry points can replace staging, on any dispatch ref.
     # Even a failed/in-progress attempt invalidates evidence: SSH may already have run.
     for workflow in (WORKFLOW, "deploy-staging.yml"):
-        runs = api(
-            "GET",
-            f"actions/workflows/{workflow}/runs?per_page=100&page=1",
-        )["workflow_runs"]
-        for run in runs:
-            if run.get("id") == deployed.get("id") and workflow == WORKFLOW:
-                continue
-            if workflow == WORKFLOW and re.fullmatch(
-                r"Guarded staging [0-9a-f]{40} preflight (?:yes|no)",
-                run.get("display_title", ""),
-            ):
-                continue
-            require(
-                run["created_at"] < deployed["created_at"],
-                "staging evidence invalidated by another deployment attempt",
-            )
+        for page in range(1, 101):
+            runs = api(
+                "GET",
+                f"actions/workflows/{workflow}/runs?per_page=100&page={page}",
+            )["workflow_runs"]
+            for run in runs:
+                if run.get("id") == deployed.get("id") and workflow == WORKFLOW:
+                    continue
+                if workflow == WORKFLOW and re.fullmatch(
+                    r"Guarded staging [0-9a-f]{40} preflight (?:yes|no)",
+                    run.get("display_title", ""),
+                ):
+                    continue
+                # created_at survives reruns. Scan every page, since rerunning an
+                # old run does not move it forward in creation-ordered results.
+                require(
+                    run.get("updated_at", "9999") < deployed["created_at"],
+                    "staging evidence invalidated by another deployment attempt",
+                )
+            if len(runs) < 100:
+                break
+        else:
+            raise Refused("staging deployment history exceeds evidence scan limit")
 
 
 def release_gates(api, operation, sha, inputs):
