@@ -1,8 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
-import { buildInitData, launchUrl, stagingBotToken } from "../fixtures/initData";
+import type { Page } from "@playwright/test";
+import { expect, test } from "../fixtures/app";
 
-async function start(page: Page, baseURL: string, id: number) {
-  await page.goto(launchUrl(baseURL, buildInitData(id, stagingBotToken())));
+async function start(page: Page) {
   await expect(page.locator(".bottom-tabbar")).toBeVisible();
   await page.getByRole("button", { name: "Планы", exact: true }).click();
   await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
@@ -19,8 +18,10 @@ async function submit(page: Page, value: string) {
   await expect(page.getByTestId("engine-saving")).toHaveCount(0);
 }
 
-test("R-HOTFIX full 10x5: nine minute rests, then strength +10 kg and one journal entry", async ({ page, baseURL }) => {
-  await start(page, baseURL!, 7_000_000_010);
+test("R-HOTFIX full 10x5: nine minute rests, then strength +10 kg and one journal entry", async ({ qa }) => {
+  const session = await qa("qa_hotfix_full");
+  const { page } = session;
+  await start(page);
   for (let index = 0; index < 10; index++) {
     await expect(page.getByTestId("engine-target")).toContainText(`Подход ${index + 1}/10`);
     await submit(page, "5");
@@ -44,10 +45,13 @@ test("R-HOTFIX full 10x5: nine minute rests, then strength +10 kg and one journa
   await expect(page.locator(".bottom-tabbar")).toBeVisible();
   await page.getByRole("button", { name: "Журнал", exact: true }).click();
   await expect(page.locator(".history-card").filter({ hasText: "Подтягивания" })).toHaveCount(1);
+  session.assertClean();
 });
 
-test("R-HOTFIX technique-stop requires explicit confirmation and explains block end", async ({ page, baseURL }) => {
-  await start(page, baseURL!, 7_000_000_011);
+test("R-HOTFIX technique-stop requires explicit confirmation and explains block end", async ({ qa }) => {
+  const session = await qa("qa_hotfix_technique");
+  const { page } = session;
+  await start(page);
   for (let index = 0; index < 3; index++) await submit(page, "5");
   await page.getByTestId("engine-skip").click();
   await expect(page.getByTestId("engine-target")).toContainText("Подход 4/10");
@@ -64,10 +68,13 @@ test("R-HOTFIX technique-stop requires explicit confirmation and explains block 
   await page.getByTestId("engine-submit-technique-broken").click();
   await expect(page.getByTestId("engine-next-block")).toBeVisible();
   await expect(page.getByTestId("engine-rest-context")).toContainText("отмечено нарушение техники");
+  session.assertClean();
 });
 
-test("R-HOTFIX finish early: back preserves session, confirmation saves it once", async ({ page, baseURL }) => {
-  await start(page, baseURL!, 7_000_000_012);
+test("R-HOTFIX finish early: back preserves session, confirmation saves it once", async ({ qa }) => {
+  const session = await qa("qa_hotfix_finish");
+  const { page } = session;
+  await start(page);
   await submit(page, "5");
   await page.getByTestId("engine-finish").click();
   await expect(page.getByTestId("engine-finish-confirm")).toBeVisible();
@@ -77,4 +84,5 @@ test("R-HOTFIX finish early: back preserves session, confirmation saves it once"
   await page.getByTestId("engine-finish").click();
   await page.getByTestId("engine-finish-confirm").click();
   await expect(page.getByText("Прогрессия не пересчитана — сессия завершена досрочно.")).toBeVisible();
+  session.assertClean();
 });

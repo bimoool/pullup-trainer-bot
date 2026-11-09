@@ -16,6 +16,9 @@ export const QA_IDENTITIES = {
   qa_legacy_or_partial: 7_000_000_004,
   qa_aged_legacy_snapshot: 7_000_000_005,
   qa_signup: 7_000_000_006,
+  qa_hotfix_full: 7_000_000_010,
+  qa_hotfix_technique: 7_000_000_011,
+  qa_hotfix_finish: 7_000_000_012,
 } as const;
 export type QaIdentity = keyof typeof QA_IDENTITIES;
 
