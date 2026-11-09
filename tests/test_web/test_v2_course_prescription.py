@@ -38,7 +38,7 @@ from app.db.repositories.workout_sets import WorkoutSetRepository
 from app.domain.constants import STRENGTH_BLOCK
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from app.domain.progression_strategy import ProgressionStrategyType
-from app.services import live_session
+from app.services import live_session, program_inclusion
 from app.services.plan_convergence import PlanConvergenceService
 from app.web import routes_v2
 from tests.test_web._v2_client import v2_get, v2_patch, v2_post
@@ -49,8 +49,14 @@ MON = datetime(2026, 10, 5, 10, tzinfo=UTC)
 @pytest.fixture
 def clock(monkeypatch):
     def _set(now: datetime) -> None:
+        class InclusionDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now.astimezone(tz) if tz is not None else now.replace(tzinfo=None)
+
         monkeypatch.setattr(routes_v2, "_utcnow", lambda: now)
         monkeypatch.setattr(live_session, "_utcnow", lambda: now)
+        monkeypatch.setattr(program_inclusion, "datetime", InclusionDateTime)
     _set(MON)
     return _set
 
@@ -342,8 +348,10 @@ async def test_i_logged_assessment_promotes_to_active_and_main_starts(session, u
     assert [t["is_max_set"] for t in started.json()["blocks"][1]["targets"]] == [False] * 4 + [True]
 
 
-async def test_i_onboarding_baseline_counts_as_valid_assessment(session, user: User, clock):
-    session.add(Baseline(user_id=user.id, performed_at=MON - timedelta(days=3), reps=8))
+@pytest.mark.parametrize("today", [MON, datetime(2026, 11, 1, 10, tzinfo=UTC), datetime(2027, 1, 1, 10, tzinfo=UTC)])
+async def test_i_onboarding_baseline_counts_as_valid_assessment(session, user: User, clock, today):
+    clock(today)
+    session.add(Baseline(user_id=user.id, performed_at=today - timedelta(days=3), reps=8))
     await session.flush()
     inclusion = await _enrol(session, user, await _pullups(session, assessment_required=True))
     assert inclusion.status == "active"
