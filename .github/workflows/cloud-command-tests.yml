@@ -6,6 +6,10 @@ on:
       - tools/tests/test_guarded_comment_dispatch.py
       - .github/workflows/cloud-command-dispatch.yml
       - .github/workflows/cloud-command-tests.yml
+      - .github/workflows/deploy-staging-guarded.yml
+      - .github/workflows/staging-qa.yml
+      - .github/workflows/production-deploy.yml
+      - .github/workflows/rehearsal-harness.yml
 permissions:
   contents: read
 jobs:

@@ -1,11 +1,11 @@
-# One-chat GitHub coordination: prepared, not operational
+# One-chat GitHub coordination: guarded release commands
 
 The coordinator stays in the main chat. GitHub holds service task briefs, PRs,
 executor commits and CI receipts. A GitHub Codex reaction is not completion.
 Do not enable API-backed `codex-task.yml propose`, extra credits or the old
 `develop/current` queue. Server keys remain in GitHub Secrets.
 
-## Fixed read-only server command
+## Fixed server commands
 
 After review and owner-authorized merge to the trusted default branch, the owner
 or the owner's authorized GitHub connection in the main chat can post exactly:
@@ -14,12 +14,52 @@ or the owner's authorized GitHub connection in the main chat can post exactly:
 /pullup staging-preflight <40-character-lowercase-current-PR-head-SHA>
 ```
 
-Only an open same-repository `codex/` PR targeting `main` is eligible. PR372 and
-PR374 are excluded from this setup adapter. Extra arguments, shell syntax,
-production, deployment, migration and QA provisioning are unsupported.
-The only dispatch is existing `deploy-staging-guarded.yml` from trusted `main`,
-with `converge=preflight`, `start=no`, `users=-`. The adapter receives no server
-key or runtime PAT. The existing guarded workflow keeps its forced-command SSH.
+An open or merged same-repository `codex/` PR targeting `main` is eligible.
+Closed unmerged PRs are refused. PR372 and PR374 remain excluded; use the reviewed
+integration PR containing the final release tools and product tree. Commands
+always use that PR's exact head SHA, including after its merge. Keep the branch.
+
+The owner requested the live release in issue #377. The command adapter now
+supports these fixed commands, with no arbitrary workflow, URL or shell input:
+
+| Command after `/pullup ` | Fixed action |
+| --- | --- |
+| `staging-preflight SHA` | Guarded staging, `preflight`, `start=no`, `users=-` |
+| `rehearse SHA` | Existing synthetic Docker rehearsal on the PR branch; verify the actual run SHA |
+| `staging-deploy SHA` | Guarded staging, `dry-run`, `start=yes`, `users=-` |
+| `staging-qa SHA` | Full Chromium/WebKit QA with reserved synthetic identity reprovisioning and candidate checkout |
+| `production-preflight SHA FROM TO` | Existing guarded production workflow, preflight only |
+| `production-apply SHA FROM TO PRODUCTION-APPLY-SHA12` | Existing guarded production apply with its exact confirmation |
+| `rollback-check SHA R1_OR_R3 MANIFEST` | Existing rollback inspection, `mode=check` only |
+
+`SHA` is 40 lowercase hex characters; `FROM` and `TO` are 12-character observed
+Alembic revisions, not invented defaults. `SHA12` is the candidate's first12
+characters. The manifest must be a safe `/root/backups/*.manifest` path from the
+actual guarded deployment. Rollback apply is deliberately not automated here:
+R3 can lose activity since the backup and needs a separate recovery decision.
+
+**staging-deploy is state-changing.** It stops services, backs up, builds,
+upgrades to the existing Alembic head and starts verified services. Its fixed
+`dry-run` mode means convergence is inspected, not applied; this is not a
+read-only deployment. No history-convergence apply or arbitrary user list is
+accepted. QA reprovisioning remains limited by the existing staging identity guard.
+
+Every release operation requires all exact-SHA product checks, plus rehearsal
+(the rehearsal command itself requires the other six checks). Mutating release
+operations also require the candidate tree to equal current trusted main.
+QA requires a successful latest staging deployment of this exact candidate.
+Production apply additionally requires successful full staging QA after that
+deployment and a successful matching production preflight after QA and within
+the last hour. Run titles bind the SHA and modes/revisions to reviewed workflow
+inputs; an older success cannot replace a newer failed matching run. The adapter
+does not substitute these records for actual Telegram/iPhone acceptance or the
+remaining runbook go/no-go items: the coordinator must finish those before
+posting production apply.
+
+All server operations dispatch reviewed workflows at `ref=main`. Only the
+secret-free rehearsal uses the reviewed PR branch to test its exact commit.
+The adapter receives no server key or runtime PAT. Existing forced-command SSH,
+production environment protections, backups, checks and rollback rules remain.
 
 The adapter validates repository name/ID, owner ID/login, sender, association,
 live comment, current PR head, base/head repository and active workflow. It
@@ -30,13 +70,13 @@ workflow filename or credential is accepted.
 ## At-most-once dispatch
 
 All commands on a PR serialize. Before dispatch, a durable GitHub Actions bot
-receipt records PR+SHA. Repeated comments and reruns stop without dispatch.
+receipt records operation+PR+SHA. Repeated comments and reruns stop without dispatch.
 On a timeout/uncertain POST or receipt update failure the claim remains; there
 is no automatic retry. Inspect Actions before operator recovery. Delivery is
 at-most-once, not guaranteed. Keep receipt comments for this guarantee; do not
 delete a claim to force another request without resolving the prior outcome.
 
-Accepted dispatch is not successful preflight. The main-chat coordinator must
+Accepted dispatch is not successful execution. The main-chat coordinator must
 read the actual guarded run, verify exact candidate SHA, fixed inputs and final
 conclusion, then return its URL. Do not infer attribution from the latest run.
 The receipt links the dispatcher run, not an invented child run ID. If the API
@@ -44,7 +84,7 @@ cannot establish attribution, report unconfirmed. A failed check blocks progress
 
 ## Activation and evidence
 
-The `issue_comment` workflow must be on default `main` to run. This PR does not
+The `issue_comment` workflow must be on default `main` to run. Preparing a PR does not
 activate anything; do not run the feature-branch workflow as a shortcut.
 Offline validation: `python -m unittest discover -s tools/tests -v`.
 
@@ -74,4 +114,7 @@ has reviews enabled; it offers no task-execution environment selector. Extra
 review credits are off and were not changed. The already published environment
 for ordinary cloud chats has not proved compatible with this GitHub task path.
 This provider/environment mismatch is a blocker, not a successful smoke test.
-Mobile availability and the complete phone-to-preflight chain remain unverified.
+The owner subsequently confirmed phone-to-primary-chat-to-GitHub readback.
+The complete execution/preflight chain remains unverified. Coding already works
+in the primary chat's cloud runtime; the optional legacy executor is not required
+for that coding path. Release checklist and evidence live in issue #377.

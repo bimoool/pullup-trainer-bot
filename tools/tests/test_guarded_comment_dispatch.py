@@ -3,6 +3,7 @@
 import copy
 import sys
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -54,7 +55,7 @@ class API:
                     pr["head"]["sha"] = self.heads.pop(0)
                 return pr
             if path.startswith("actions/workflows/"):
-                return {"path": f".github/workflows/{t.WORKFLOW}", "state": "active"}
+                return {"path": f".github/workflows/{path.split('/')[2]}", "state": "active"}
             if "/comments?" in path:
                 return copy.deepcopy(self.comments)
         if method == "POST" and path == "issues/400/comments":
@@ -80,6 +81,115 @@ class API:
 
 
 class Tests(unittest.TestCase):
+    def test_fixed_release_commands(self):
+        self.assertEqual(
+            t.command(f"/pullup staging-deploy {SHA}")[3],
+            {
+                "sha": SHA,
+                "converge": "dry-run",
+                "start": "yes",
+                "users": "-",
+            },
+        )
+        self.assertEqual(t.command(f"/pullup staging-qa {SHA}")[3]["candidate_sha"], SHA)
+        self.assertIs(t.command(f"/pullup staging-qa {SHA}")[3]["reprovision"], True)
+        self.assertEqual(
+            t.command(
+                f"/pullup production-apply {SHA} {'b' * 12} {'c' * 12} PRODUCTION-APPLY-{SHA[:12]}"
+            )[3]["mode"],
+            "apply",
+        )
+        for body in (
+            f"/pullup production-apply {SHA}",
+            f"/pullup production-apply {SHA} {'b' * 12} {'c' * 12} PRODUCTION-APPLY-{'d' * 12}",
+            f"/pullup production-preflight {SHA}",
+            f"/pullup staging-deploy {SHA} {'b' * 12} {'c' * 12}",
+            f"/pullup rollback-check {SHA} R3 /root/backups/../secret.manifest",
+            f"/pullup rollback-apply {SHA} R3 /root/backups/a.manifest",
+        ):
+            with self.subTest(body=body), self.assertRaises(t.Refused):
+                t.command(body)
+
+    def test_merged_pr_supported_but_unmerged_closed_pr_refused(self):
+        a = API()
+        a.pr.update(state="closed", merged=True)
+        self.assertIn("accepted", a.run())
+        a.pr["merged"] = False
+        with self.assertRaises(t.Refused):
+            t.validate_pr(a.pr, 400, SHA)
+
+    def test_release_gates_require_complete_ci(self):
+        checks = [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in t.REQUIRED_CHECKS
+        ]
+
+        def api(method, path, body=None):
+            if path.startswith("commits/") and "/check-runs?" in path:
+                return {"check_runs": checks}
+            if path.startswith("git/commits/"):
+                return {"tree": {"sha": "tree"}}
+            if path == "commits/main":
+                return {"commit": {"tree": {"sha": "tree"}}}
+            raise AssertionError(path)
+
+        t.release_gates(api, "staging-deploy", SHA, {})
+        for conclusion in ("failure", "cancelled", "skipped"):
+            checks[0]["conclusion"] = conclusion
+            with self.subTest(conclusion=conclusion), self.assertRaises(t.Refused):
+                t.release_gates(api, "staging-deploy", SHA, {})
+
+    def test_production_requires_ordered_fresh_qa_preflight_and_latest_staging(self):
+        stamp = datetime.now(UTC).isoformat()
+        checks = [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in t.REQUIRED_CHECKS
+        ]
+        titles = {
+            t.WORKFLOW: f"Guarded staging {SHA} dry-run yes",
+            "staging-qa.yml": f"Staging QA {SHA}",
+            "production-deploy.yml": f"Guarded production {SHA} preflight {'b' * 12} {'c' * 12}",
+        }
+        runs = {
+            name: [
+                {
+                    "display_title": title,
+                    "head_branch": "main",
+                    "event": "workflow_dispatch",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "created_at": stamp,
+                    "updated_at": stamp,
+                }
+            ]
+            for name, title in titles.items()
+        }
+
+        def api(method, path, body=None):
+            if "/check-runs?" in path:
+                return {"check_runs": checks}
+            if path.startswith("git/commits/"):
+                return {"tree": {"sha": "tree"}}
+            if path == "commits/main":
+                return {"commit": {"tree": {"sha": "tree"}}}
+            if "/runs?" in path:
+                return {"workflow_runs": runs[path.split("/")[2]]}
+            raise AssertionError(path)
+
+        inputs = {"from_rev": "b" * 12, "to_rev": "c" * 12}
+        t.release_gates(api, "production-apply", SHA, inputs)
+        runs["staging-qa.yml"][0]["conclusion"] = "failure"
+        with self.assertRaises(t.Refused):
+            t.release_gates(api, "production-apply", SHA, inputs)
+        runs["staging-qa.yml"][0]["conclusion"] = "success"
+        runs["production-deploy.yml"][0]["updated_at"] = "2020-01-01T00:00:00Z"
+        with self.assertRaises(t.Refused):
+            t.release_gates(api, "production-apply", SHA, inputs)
+        runs["production-deploy.yml"][0]["updated_at"] = stamp
+        runs[t.WORKFLOW].insert(0, {"display_title": f"Guarded staging {'d' * 40} dry-run yes"})
+        with self.assertRaises(t.Refused):
+            t.release_gates(api, "production-apply", SHA, inputs)
+
     def test_payload_and_duplicate(self):
         a = API()
         self.assertIn("accepted", a.run())

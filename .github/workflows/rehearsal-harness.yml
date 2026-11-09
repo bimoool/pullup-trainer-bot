@@ -1,4 +1,5 @@
 name: rehearsal-harness
+run-name: Rehearsal ${{ github.event.pull_request.head.sha || github.sha }}
 
 # Полный Docker-прогон скрипта репетиции релиза (deploy/rehearse-rest01-release.sh) на ЧИСТОМ раннере GitHub с СИНТЕТИЧЕСКИМ
 # дампом (не production-данные: PII на GitHub не уходят). Проверяет оркестрацию целиком: изолированный проект, жёсткие лимиты
