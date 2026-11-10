@@ -134,3 +134,15 @@ npx playwright test builder-execution journal-v2 analytics-v2 --workers=1
 «Подтягивания», библиотека упражнений, готовые тренировки — `docs/SYSTEM_CONTENT_CONTRACT.md`) виден и
 рабочий. Команда запуска против БД «только миграции» — в шапке самого файла. Каталог из миграций — это
 ровно поставляемый контент; остальные e2e-программы по-прежнему создают сиды.
+
+## Journal clone visibility (#392)
+
+`journal-clone-visibility.spec.ts` uses independent `golden_journey` users 939921/939931
+(and +1 for CI retries), seeded by `scripts/e2e_seed_all.sh`. It creates a real historical
+workout, selects its calendar day, and clones through the UI to another day in the same
+month or across the last-day/first-day boundary. Both months are completed prior months,
+so the test also works on the first day of a month. It checks the visible copy, refreshed
+calendar, cleared day filter, exactly two persisted sessions, unchanged original, copied
+facts and the selected date in the seeded user's Moscow timezone. Backend clone business
+rules remain covered by the existing API contract tests. The functional Telegram fixture
+stubs the SDK bridge; this is not a real Telegram provider/WebView smoke test.
