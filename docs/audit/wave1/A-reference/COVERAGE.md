@@ -1,5 +1,10 @@
 # A-reference — coverage of Crimpd golden traces
 
+New direct evidence: [bounded Android pass, 2026-11-10](../../crimpd-20261110/REPORT.md)
+on Crimpd 8.5.3. It resolves parts of the builder, background, review, journal
+and scheduling gaps below. These historical counts remain secondhand; the new
+report lists its own scoped observations and remaining UNKNOWNs.
+
 Counts are by the **leading tag of each step** in `GOLDEN_TRACES.md` (most OBSERVED steps also carry an embedded `UNKNOWN` sub-detail, listed in the right column). Evidence is secondhand only (no Crimpd lab, no dumps/screenshots in the repo).
 
 | Intent | OBSERVED | INFERRED | UNKNOWN | Main embedded unknowns |
