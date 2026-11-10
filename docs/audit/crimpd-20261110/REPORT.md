@@ -1,85 +1,117 @@
 # Crimpd black-box audit — 2026-11-10
 
-Status: **BLOCKED before UI execution**. This is a new bounded pass, not a
-revalidation of historical DONE rows. No product code or deployment changes.
+Bounded pass executed on **Crimpd 8.5.3 (8050300)**. This supersedes the initial
+blocked checkpoint. Historical DONE rows are not evidence of this pass.
+No product code, deploy or production data changes. Crimpd supplies UX evidence,
+not progression formulas.
 
-## Scope and evidence rules
+## Provenance
 
-Crimpd is the UX reference, not the source of the project's progression formulas.
-OBSERVED means a fact actually checked in this pass; INFERRED means a conclusion
-with its stated basis; UNKNOWN means unexecuted/unavailable behavior. Historical
-secondhand observations retain their historical meaning and are not promoted.
+Read AGENTS.md, CLAUDE.md, constitution, project spec/implementation plan,
+product-reference and crimpd-reference skills, CRIMPD_FULL_PARITY_8_5.md,
+FUNCTIONAL_AUDIT_WAVE_1.md, and wave1/A-reference COVERAGE.md / GOLDEN_TRACES.md.
+All requested files exist. Baseline: `7c89ce622749608fc4c9c27daa0062272f3efccb`.
+Prior pushed work was preserved; separate branch `codex/crimpd-blackbox-20261110`.
 
-Read: AGENTS.md, CLAUDE.md, product-reference and crimpd-reference skills,
-CRIMPD_FULL_PARITY_8_5.md, FUNCTIONAL_AUDIT_WAVE_1.md, and wave1/A-reference
-COVERAGE.md / GOLDEN_TRACES.md. All requested files exist. The prior reference
-lab and its recipe/ledger also exist. The old recipe's initial 8.4.0 installation
-instructions are historical; no installation/reset instructions were executed.
+**OBSERVED** = exercised here; **INFERRED** = interpretation with its basis;
+**UNKNOWN** = not established. Every case below uses **8.5.3 (8050300)**,
+verified through package-manager fields before and after testing. Google Play
+installer; no APK extraction/decompilation.
 
-Repository baseline: `7c89ce622749608fc4c9c27daa0062272f3efccb` (origin/main at
-start). Prior pushed work on codex/cloud-command-dispatch-20261109 was clean and
-preserved; this report uses a separate branch.
+The existing `ref_pixel6_play` AVD was started without wipe/install/data clear.
+Window control returned `Invalid app` twice; the owner explicitly authorized
+ADB input, UI inspection and screenshots. No new environment, account, token,
+subscription or acceptance of terms.
 
-## Observed environment
+Initial emulator DNS failed: cached catalog, unloaded images, workout-type
+wizard spinner. One graceful restart of the same AVD retaining userdata, with
+the host's existing DNS resolver, restored loading. This is an environment
+incident, not an established Crimpd defect. Final device check: connected.
 
-| ID | Initial state and steps | Observed result | Evidence |
-| --- | --- | --- | --- |
-| ENV-1 | Inspect installed tools and list existing AVDs/device connections | Existing ref_pixel6, ref_pixel6_play and test_pixel6_play; no connected emulator initially | Sanitized tool inventory; no account/token inspection |
-| ENV-2 | Start existing ref_pixel6_play, without wipe-data/install/data reset | emulator-5554 becomes available; existing userdata retained | ADB devices reports a connected Android virtual device; vendor emulator37.1.11.0 |
-| ENV-3 | Read only package metadata of com.crimpd.ui | **Crimpd8.5.3, versionCode8050300, installer com.android.vending** | Package-manager version/installer fields only; no APK extraction or decompilation |
-| ENV-4 | Ask computer-use tool for the running emulator executable and process name | Both attempts return **Invalid app** | getApp(executable path); getApp(qemu-system-aarch64) |
+The existing signed-in account was retained. Other workouts, plans, profile
+attributes and history were not edited. Clean-account states remain UNKNOWN
+under the no-reset/no-new-account restriction.
 
-The emulator reported unavailable host DNS resolution at startup. Whether that
-blocks Crimpd itself is **UNKNOWN**: no app screen/network behavior was observed.
-No DNS/host security settings were changed. No new environment, account, token,
-subscription or acceptance of terms. No application data was cleared.
+Published proof is limited to visually reviewed synthetic/public screenshots
+and sanitized observations below. Raw XML, general journal screens,
+account-derived catalog fields and emulator logs remain outside the repository.
+XML sometimes included hidden controls or lagged behind a sheet transition;
+screenshots determined visible state. Reproduce by labels, not coordinates.
 
-Available UI automation cannot select the emulator window. Installed ADB is
-available, but explicit permission to use ADB for UI actions was requested and
-has not yet been received at this checkpoint. No ADB input, UI dump, app launch,
-screenshot or UI scenario has been executed in this pass.
+## Executed scenarios
 
-## Reproducible bounded scenarios, in priority order
+All rows: **8.5.3 (8050300)**. Unique data prefix: `REF TEST - 20261110`.
+Proof links are relative to this report. OBSERVED facts are scoped to this
+account and route, not every Crimpd configuration.
 
-Every case below is **UNKNOWN / NOT RUN** in this pass. Version baseline is
-8.5.3(8050300); recheck it after execution. These are steps to perform, not
-asserted Crimpd behavior. Use only new objects named `REF TEST - 20261110 - <ID>`.
-Leave other workouts, plans, account data and historical logs unchanged. Capture
-only screens containing synthetic objects or public catalogue content; never
-publish raw UI dumps or unrelated history.
+| Case / old gap | Initial state and reproducible steps | OBSERVED result | Sanitized proof | Remaining UNKNOWN |
+| --- | --- | --- | --- | --- |
+| C01 / R-J2 R2,R4; E4,E12 | Home → + → Create Custom Workout → Custom Workout → search `REF TEST - 20261110 - Exercise` → Create Exercise | No-match row reads `Create Exercise: REF TEST - 20261110 - Exercise`. Opens **Adjust Sets/Reps directly**. Defaults: 2 sets, 1 rep, 01:00 between sets; Rep Timer and Log Resistance off. No separate metric-type form on this route. | [Form](evidence/c01-create-exercise.png) | Later library persistence; zero-exercise Save; clean-account library contents; other types |
+| C02 / R-J2 R6 | C01 → enable Rep Timer (00:03) and Log Resistance (Free Weight) → Add Exercise → Conditioning → Upper Body → Edit Workout Details → name `REF TEST - 20261110 - A` → Save → pencil → append ` - Edited` → Save; later reopen from plan/journal | Save lands on **Workout Detail**, with Start / Log / Favorite / Add to Plan. Exercise: 2 sets × 1 rep × 00:03; 01:00 rest per set. Edited name persists across navigation and background return. | [Reopened detail behind mini-player](evidence/c08-back-live.png) | Protocol edit after initial save; process-death persistence |
+| C03 / R-J3 R1 | Home → Aerobic Capacity → Featured → 1 On 1 Off → Start → Play → Pause → Android Back → mini-player X | Starts without a plan prompt. UP NEXT precedes GET READY; pause shows red PAUSED. Back exposes mini-player; X removes it. Catalog trial not saved. | [Home](evidence/c03-home.png), [category](evidence/c03-category.png); player transcription only, to exclude account-derived grade defaults | Entire 20-minute protocol; free/planned distinction in journal |
+| C04a / R-J7/J8 R3; N5 | C02 session after first 3-second work, rest paused 00:59.3 → Android Home → wait 5 s → foreground | Still **PAUSED 00:59.3**, same set panel. | [Before](evidence/c04-pause.png), [after](evidence/c04-paused-return.png) | Lock, process kill, long background intervals |
+| C04b / N5; set retention | Same session → Set 1 Free Weight + once, synthetic 1 kg → resume → screenshot → Home → wait 8 s → foreground → wait 2 s → screenshot → pause | **REST 00:21.7 → REST 00:11.2**, weight 1 kg retained. Displayed reduction 10.5 s includes command/foreground overhead. Short-background advancement observed; implementation not inferred. | [Before](evidence/c04-before-bg.png), [after](evidence/c04-after-bg.png) | Reconciliation mechanism; abnormal-exit retention |
+| C05 / R-J1 R11 | Same session in rest → Next Set (skip remaining rest) → second-set UP NEXT → Play → final 3-second work → Log Workout review → X → player down-chevron → own Logged Workouts | DONE opens review automatically: date, effort, both sets/reps/weight, notes, Save. X returns to DONE without confirmation. Own history then explicitly says no workout logged in this time frame. | [Review](evidence/c05-done.png), [empty own history](evidence/c05-log-area.png) | Server-side drafts; duplicate prevention. Rest was skipped, so this is not an uninterrupted protocol trial |
+| C06 / R-J1 R12; R-J5 R3 | C05 empty own history → Log Workout → Save → own entry → Edit → Cancel → reopen entry → Clone → Cancel → leave detail → Logbook → exact synthetic entry → Home/foreground | Form retains 1 kg after C05 dismissal. Save creates one entry: Easy, 100%, +1 kg, TUT 6 s, Est. Duration 3 m, Workload `-`. Edit exposes date, completion presets 25/50/75/100%, effort, per-set reps/weight/effort, Add Set, exercise/additional notes, Delete. Clone has same values and Save/Cancel; no copy saved. Entry opens from Logbook and remains after background return. | [Own entry](evidence/c06-entry.png), [Edit](evidence/c06-edit-form.png), [Clone](evidence/c06-clone-real.png); general journal screenshot withheld | Clone date default across dates (source/today both Nov 10); Save from automatic DONE review; cold restart; analytics |
+| C07 / R-J4 R1,R7,R8; E2,E10 | Own workout → Add to Plan → Create Training Plan → name `REF TEST - 20261110 - Plan`; retain Nov 16 start and 6 weeks → Save → later open Week 2 | In this state Add to Plan opens creation directly. Defaults: November 2026, 6 Weeks, Nov 16. Text: “Only one training plan may be active concurrently.” Save opens weekly-volume overview, own workout at zero. Week 2 (Nov 23–29) has 0/0 category bars and “No workouts planned for this week. Enjoy the rest!” No Schedule button there; pencil and Plan tab remain. | [Create](evidence/c07-add-plan.png), [empty week](evidence/c07-week2.png) | Truly empty Plans tab; current active week marking; multiple-plan enforcement; plan without any member |
+| C08 / R-J2 R8,R9; R-J4 R3–R5 | C07 → Weekly Volume pencil → first-week + once → Save → leave/reopen Training Plans/Upcoming → Schedule → Monday → Save → Schedule → deselect Monday/select Tuesday → Save → own row → Start → Play → Android Back → mini-player X | One + changes **0 → 0.5**. Schedule opens **Week 1 Schedule**, seven-day grid. Monday gets 0.5; row changes THIS WEEK → MONDAY. Re-selection moves row to TUESDAY. Row opens Workout Detail, then Start opens player. Back leaves running mini-player; X removes it without confirmation. Tuesday verified on return to plan. | [Volume](evidence/c08-volume.png), [Schedule](evidence/c08-schedule.png), [Monday saved](evidence/c08-schedule-save.png), [live Back](evidence/c08-back-live.png) | Completion-to-plan-credit; fraction semantics/limits; repeated allocations/week boundaries |
 
-| Case / old evidence gap | Initial state | Steps | Result/evidence needed |
-| --- | --- | --- | --- |
-| C01 / R-J2 R2,R4; E12 | Existing signed-in session; no new object from this pass | Home create-workout; inspect each wizard step; try progressing without exercises; search a unique synthetic exercise; inspect Create Exercise form without accepting new terms | Step order, exact validation, fields, save/cancel semantics; synthetic-only evidence |
-| C02 / R-J2 R6 | New synthetic workout draft | Configure minimal supported timed/repetition exercise; save; reopen by exact synthetic name; edit name/protocol; save and reopen | Actual landing screen and persistence; no inferred Save behavior |
-| C03 / R-J3 R1,R4 | Public catalogue workout, never added to a plan by this pass | Catalogue/category/search → detail → inspect load/timer → start → pause/resume → complete or cancel | Full route, prompts, phase transitions and whether a plan is required |
-| C04 / R-J7/J8 R2,R3; N5 | New synthetic session in work/rest, record displayed timer and monotonic elapsed time | Pause → background → wait bounded interval → return; then repeat unpaused | Separate paused/unpaused timer behavior; retained inputs; no implementation inference from countdown alone |
-| C05 / R-J1 R11 | Synthetic session reaching review | Dismiss review without Save; inspect only the synthetic log's presence; reopen app | Whether dismissal saves/discards/asks confirmation; duplicate prevention UNKNOWN until tested |
-| C06 / R-J1 R12; R-J5 R3 | Synthetic completed session explicitly saved | Journal → synthetic entry → reopen details → inspect Edit/Clone forms → cancel or save only own entry → reopen app and entry | Actual stored facts, available fields, date defaults and persistence |
-| C07 / R-J4 R1,R7,R8; E10 | Existing Plans, unrelated plans untouched | Create uniquely named synthetic blank plan if available without purchase; inspect zero-workout week and CTA | Exact empty-state wording, validation, actionable next step; stop at paywall |
-| C08 / R-J2 R8,R9; R-J4 R3–R5 | Synthetic workout and synthetic plan | Add to Plan → all sheets/day/week selectors → current/future week → Schedule → move only synthetic row → reopen → start that row → cancel | Day/week semantics, current-week marking, row-to-player route and persistence |
-| C09 / R-J1 R5,R6 | Public skill-template detail | Inspect Add flow; if free and it creates only a uniquely named synthetic plan, continue and inspect resulting list/week | Template start-date/name prompts and resulting state; stop at paywall/terms |
-| C10 / R-J1 R7; R-J3 R5 | Synthetic scheduled row and same synthetic workout | Complete/save from plan, inspect counter; if safe, start same workout from catalogue and compare | Actual plan-credit behavior; do not infer credit merely from presence of counters |
+C01→C02 actual wizard route: **Select Workout Type → Select Exercise → Adjust
+Sets/Reps → Select Category → subcategory → Edit Workout Details → Save**.
+No `n/6` pager was visible on inspected screens. This qualifies the historical
+description; it does not establish every type's flow.
 
-Fresh-install/account-creation observations, subscription purchase/expiry changes,
-deletion of another person's history, account deletion and accepting new terms
-are excluded. Clean-account empty states remain UNKNOWN under this task's
-no-reset/no-new-account restriction. Plan deletion is unnecessary for the first
-bounded pass; do not delete retained synthetic evidence automatically.
+C05 empty-history text: “You have not logged this workout during this time frame.
+Once you have completed this workout, select the 'Log Workout' button to record
+your results.” This is the new synthetic workout's own history, not an empty
+account or proof of server-side deletion.
 
-## Differences and limitations
+In C04 details were collapsed before start and expanded by paused rest; Next
+Set collapsed them again. A catalog-workout pause during GET READY also showed
+an expanded panel. **UNKNOWN:** whether phase, pause or another transition
+triggers expansion. An “only on rest” auto-expansion rule is not established.
+Audible final-ten-second cues were not tested.
 
-No new Crimpd-versus-product behavioral difference is established yet: UI
-execution is blocked and the product was not changed or re-audited. Existing
-matrix DONE rows about our implementation are not fresh reference evidence.
-In particular, background timer/reopen reconciliation, final-10-second cues,
-automatic log-panel expansion, Schedule semantics and Edit/Clone forms must not
-be described as newly observed until the corresponding cases run.
+## Differences from prior assumptions
 
-Synthetic-object ledger for this pass: **none created** at this checkpoint.
-No continuous monitoring has been configured.
+- Save → Detail, plan row → Detail → Start, and saved log → Logbook now have
+  direct observations, scoped to the tested routes.
+- Create Exercise leads directly to set/rep configuration; the old unobserved
+  form description cannot support a separate metric-type dialog.
+- Short native background countdown advancement is observed. Our PWA was not
+  tested; the native result does not establish our app's behavior.
+- Dismissing review differs from saving: no entry appeared, while a later form
+  retained inputs. Backend draft storage and crash recovery remain UNKNOWN.
+- Schedule is a separate day-allocation grid after weekly volume, including
+  an observed 0.5 quantity; this is not evidence for drag-and-drop.
+  [Tuesday after rescheduling](evidence/c08-tue-save.png).
+- Empty-week wording and absence of Schedule are now observed. The old statement
+  that no verbatim empty-state text survives is historical.
 
-Next concrete step: obtain permission for the existing ADB UI-control path,
-then inspect the current app state and run C01–C08 as access/gating permits.
-If the emulator disconnects or a login/license/paywall/terms gate appears, record
-the exact blocker and stop that branch without reinstalling or clearing data.
+These qualify the reference documentation, not a fresh verdict on our product's
+parity. No product comparison run or formula extraction was performed.
+
+## Unexecuted scope and ledger
+
+C09 Skill Template instantiation and C10 completion-to-plan-credit comparison:
+**NOT RUN / UNKNOWN**. Also unknown: zero-exercise Save, exercise-library
+persistence, clean-account onboarding/empty states, subscription expiry, delete
+semantics, process-kill recovery and audio cues. No purchases/new terms or edits
+to old history were used to close gaps. No continuous monitoring configured.
+
+Retained synthetic objects:
+
+- Exercise `REF TEST - 20261110 - Exercise`.
+- Workout `REF TEST - 20261110 - A - Edited`.
+- One explicitly saved log, Nov 10: 2 × 1 at 1 kg. No Clone copy saved.
+- Future six-week plan `REF TEST - 20261110 - Plan`, Nov 16 start, first-week
+  volume 0.5 assigned Tuesday. Trials dismissed/cancelled are not this saved log.
+
+No automatic deletion of retained test evidence. Final state: Home, no
+Return-to-workout mini-player; emulator connected, version unchanged.
+
+Validation: documentation/screenshots only; `git diff --check` and local
+proof-link/PNG checks. Product tests not run: product code untouched.
+Next bounded audit: later-library/zero-exercise validation, explicit DONE-review
+Save plus plan-credit test on retained synthetic objects, then C09 if free of
+purchase/terms gates. None of these should be inferred from this report.
