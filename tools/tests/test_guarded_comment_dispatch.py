@@ -9,6 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import guarded_comment_dispatch as t
 
+from tools.tests.check_fixtures import CheckAPI
+
 SHA = "a" * 40
 
 
@@ -128,14 +130,14 @@ class Tests(unittest.TestCase):
             t.validate_pr(a.pr, 400, SHA)
 
     def test_release_gates_require_complete_ci(self):
-        checks = [
-            {"name": name, "status": "completed", "conclusion": "success"}
-            for name in t.REQUIRED_CHECKS
-        ]
+        evidence = CheckAPI()
+        checks = evidence.checks
 
         def api(method, path, body=None):
-            if path.startswith("commits/") and "/check-runs?" in path:
-                return {"check_runs": checks}
+            if (path.startswith("commits/") and "/check-runs?" in path) or path.startswith(
+                "actions/"
+            ):
+                return evidence(method, path, body)
             if path.startswith("git/commits/"):
                 return {"tree": {"sha": "tree"}}
             if path == "commits/main":
@@ -166,10 +168,7 @@ class Tests(unittest.TestCase):
 
     def test_production_requires_ordered_fresh_qa_preflight_and_latest_staging(self):
         stamp = datetime.now(UTC).isoformat()
-        checks = [
-            {"name": name, "status": "completed", "conclusion": "success"}
-            for name in t.REQUIRED_CHECKS
-        ]
+        evidence = CheckAPI()
         titles = {
             t.WORKFLOW: f"Guarded staging {SHA} dry-run yes",
             "release-qa.yml": f"Release QA {SHA} full-v2",
@@ -197,7 +196,11 @@ class Tests(unittest.TestCase):
             if path.startswith("actions/runs/1/jobs?"):
                 return {"total_count": 1, "jobs": [{"started_at": stamp}]}
             if "/check-runs?" in path:
-                return {"check_runs": checks}
+                return evidence(method, path, body)
+            if path.startswith("actions/runs/") and not path.startswith("actions/runs/1/"):
+                return evidence(method, path, body)
+            if path.startswith("actions/workflows/") and "/runs?" not in path:
+                return evidence(method, path, body)
             if path.startswith("git/commits/"):
                 return {"tree": {"sha": "tree"}}
             if path == "commits/main":

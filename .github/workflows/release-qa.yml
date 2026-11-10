@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   checks: read
+  actions: read
 
 concurrency:
   group: deploy-staging
@@ -31,6 +32,11 @@ jobs:
       run:
         working-directory: webapp-frontend/e2e-staging
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
       - name: Validate reviewed SHA and trusted main tree
         working-directory: .
         env:
@@ -41,13 +47,7 @@ jobs:
           [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]] || exit 1
           repo=bimoool/pullup-trainer-bot
           [ "$(gh api "repos/$repo/git/commits/$CANDIDATE" --jq '.tree.sha')" = "$(gh api "repos/$repo/commits/main" --jq '.commit.tree.sha')" ] || exit 1
-          gh api --paginate "repos/$repo/commits/$CANDIDATE/check-runs?filter=latest&per_page=100" \
-            --jq '.check_runs[] | [.name, .status, (.conclusion // "none")] | @tsv' > "$RUNNER_TEMP/checks.tsv"
-          for required in ruff pytest 'frontend build' e2e codex-review security rehearse; do
-            awk -F'\t' -v n="$required" '$1==n && $2=="completed" && $3=="success" {ok=1} END {exit !ok}' "$RUNNER_TEMP/checks.tsv" || exit 1
-          done
-          bad="$(awk -F'\t' '$2!="completed" || ($3!="success" && $3!="skipped" && $3!="neutral")' "$RUNNER_TEMP/checks.tsv")"
-          [ -z "$bad" ] || { echo 'Candidate has a non-green check'; exit 1; }
+          python3 tools/current_checks.py "$CANDIDATE"
 
       - uses: actions/checkout@v4
         with:

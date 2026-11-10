@@ -7,6 +7,8 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 
+from current_checks import CheckRefused, ensure_green
+
 REPO = "bimoool/pullup-trainer-bot"
 WORKFLOW = "deploy-staging-guarded.yml"
 DISPATCHER = ".github/workflows/cloud-command-dispatch.yml"
@@ -84,33 +86,11 @@ def command(body):
 
 
 def green_checks(api, sha, rehearsal=True):
-    checks = []
-    for page in range(1, 11):
-        rows = api("GET", f"commits/{sha}/check-runs?filter=latest&per_page=100&page={page}")[
-            "check_runs"
-        ]
-        checks.extend(rows)
-        if len(rows) < 100:
-            break
-    else:
-        raise Refused("incomplete check pagination")
     required = REQUIRED_CHECKS if rehearsal else REQUIRED_CHECKS - {"rehearse"}
-    require(
-        required
-        <= {
-            c["name"]
-            for c in checks
-            if c["status"] == "completed" and c.get("conclusion") == "success"
-        },
-        "required checks not green",
-    )
-    require(
-        all(
-            c["status"] == "completed" and c.get("conclusion") in {"success", "skipped", "neutral"}
-            for c in checks
-        ),
-        "non-green check exists",
-    )
+    try:
+        ensure_green(api, sha, required)
+    except CheckRefused as exc:
+        raise Refused(str(exc)) from None
 
 
 def successful_run(api, workflow, title, *, latest_deployment=False):

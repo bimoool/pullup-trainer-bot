@@ -34,6 +34,7 @@ on:
 permissions:
   contents: read
   checks: read
+  actions: read
 
 # Один production-запуск за раз (и выкат, и откат); очередной ждёт, текущий не отменяется.
 concurrency:
@@ -65,6 +66,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
           fetch-depth: 0
 
       - name: SHA exists and matches main
@@ -92,15 +95,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ inputs.sha }}
         run: |
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
-            --jq '.check_runs[] | [.name, .status, (.conclusion // "none")] | @tsv' > runs.tsv
-          cat runs.tsv
-          for required in pytest ruff "frontend build"; do
-            awk -F'\t' -v n="$required" '$1==n && $2=="completed" && $3=="success" {ok=1} END {exit !ok}' runs.tsv \
-              || { echo "::error::required check '$required' is not green on $SHA"; exit 1; }
-          done
-          bad="$(awk -F'\t' '$2!="completed" || ($3!="success" && $3!="skipped" && $3!="neutral")' runs.tsv)"
-          [ -z "$bad" ] || { echo "::error::checks on $SHA are not all green:"; echo "$bad"; exit 1; }
+          python3 tools/current_checks.py "$SHA" --required pytest ruff "frontend build"
 
       - name: Guarded ${{ inputs.mode }} on production
         env:

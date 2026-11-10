@@ -15,7 +15,7 @@ export DATABASE_URL="$TEST_DATABASE_URL"
 pytest -q
 ```
 
-Полный набор — ~1068 тестов, около минуты на нормальной машине.
+Полный backend-набор сейчас содержит более 3000 тестов. Длительность зависит от среды и базы; короткий локальный прогон не заменяет полный CI.
 
 ## Две ловушки с базой (обе стоили красного CI)
 
@@ -31,8 +31,11 @@ pytest -q
 
 ## Что гоняет CI
 
-- `tests.yml` — `ruff check` + `ruff format --check`, `pytest`, сборка фронтенда (`npm run build`,
-  включая `tsc -b`). Триггер: каждый PR и push в `main`.
+- `tests.yml` — `ruff check` + `ruff format --check`, два полных прогона `pytest`
+  с синтетическим seed между ними, сборка фронтенда (`npm run build`, включая `tsc -b`).
+  Триггер: каждый PR и push в `main`. Для release gates актуальная попытка каждого
+  контекста определяется по проверенным app/workflow/job и времени исполнения;
+  отменённая предыдущая попытка не подменяет результат текущей.
 - `e2e.yml` — Playwright против реально поднятого бэкенда с Postgres, сценарии
   `not_onboarded` / `first_workout` / `ready` через `scripts/e2e_seed.py`. Триггер: PR
   с изменениями в `webapp-frontend/**`, `app/web/**`, `app/db/**`, `app/domain/**`, `app/services/**`.
