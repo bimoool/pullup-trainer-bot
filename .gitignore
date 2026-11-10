@@ -20,3 +20,4 @@ graphify-out/
 # Playwright артефакты локальных прогонов
 webapp-frontend/e2e/test-results/
 webapp-frontend/e2e/playwright-report/
+webapp-frontend/e2e-staging/smoke-results/

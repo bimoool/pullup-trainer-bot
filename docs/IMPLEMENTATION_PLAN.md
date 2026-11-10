@@ -1,5 +1,17 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Кандидат isolated browser smoke #383 — 2026-11-10
+
+Отдельный aggregate QA-кандидат включает reviewed #384 (явный launch platform) и
+#386 (account-invariance регрессии), плюс изолированный browser smoke. Workflow
+предлагает cron `*/15` на trusted default `main`, ручной запуск только с `main` и
+PR-валидацию без внешних secrets. До merge расписание не активно; это не release QA.
+Контракт, ограничения и точные локальные результаты —
+[ISOLATED_BROWSER_SMOKE.md](ISOLATED_BROWSER_SMOKE.md). Локальный реальный Chromium
+дошёл до provider-check после успешных auth-границ API, но Telegram script заблокирован
+cloud proxy (CONNECT 403). Нужны успешный GHA smoke и все прежние full CI gates;
+production/staging не изменяются.
+
 ## Кандидат PR #372 — 2026-11-05
 
 В отдельном worktree реализованы минимальная анкета, отключение нового сбора роста,
