@@ -130,3 +130,16 @@ workflows and fixed release QA share the `deploy-staging` concurrency group.
 Do not deploy staging through manual SSH during release validation: Actions cannot
 attest changes made outside its deployment workflows; restart the guarded staging
 and QA sequence after any such intervention.
+
+## Read-only recovery observation
+
+`/pullup staging-snapshot SHA` requests the fixed `staging-snapshot.yml` workflow
+from trusted main. It invokes only the installed literal `./qa-staging.sh snapshot`
+through the restricted staging key. It reads reserved synthetic profile summaries,
+never provisions profiles or touches production. As with preflight, it remains
+available after failed CI/deployments; owner/repository/current-PR-head guards and
+durable claims still apply. The supplied SHA attributes the request; it is not a
+claim about the running build or a successful prior provisioning transaction.
+A failed/uncertain provision must be reconciled before any new state-changing QA.
+A snapshot alone cannot prove which interrupted commands committed: combine it
+with administrative execution receipts and active-process/lock evidence.
