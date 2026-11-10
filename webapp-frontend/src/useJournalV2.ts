@@ -44,6 +44,12 @@ export function useJournalV2(initDataRaw: string, restore?: { month: string; day
   const listEpoch = useRef(0);
   const itemsRef = useRef<SessionResponseV2[]>([]);
   const daysCache = useRef(new Map<string, JournalDaysResponse>());
+  const daysScope = useRef(0);
+
+  // Post-write refreshes may finish after navigation or an identity change.
+  useEffect(() => {
+    return () => { daysScope.current += 1; };
+  }, [initDataRaw, month]);
 
   // 1) Определяем стартовый месяц (пояс пользователя приходит с /journal/days).
   useEffect(() => {
@@ -180,8 +186,12 @@ export function useJournalV2(initDataRaw: string, restore?: { month: string; day
     if (month === null) {
       return;
     }
+    const startedScope = daysScope.current;
     fetchJournalDays(initDataRaw, month)
       .then((info) => {
+        if (startedScope !== daysScope.current) {
+          return;
+        }
         daysCache.current.set(month, info);
         setDaysInfo(info);
       })

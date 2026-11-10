@@ -3103,3 +3103,13 @@ POST …/995/complete: `refresh()` LiveEngineScreen не нашёл новую �
 - **Тесты.** Фикстура веб-`user` уже с триалом (#300); вспомогательные пользователи тестов, которые проверяют не
   подписку, создаются через `tests/test_web/_premium.py::create_premium_user` (бот — autouse
   `tests/test_bot/_premium.py`). Иначе 402 маскирует то, что тест на самом деле проверяет.
+
+### Journal calendar response-race fixture at month boundaries
+
+The response-race browser scenario uses its own `journal_calendar_response_race`
+seed (939951). Its current-month session is timestamped at seed time: subtracting
+five minutes can cross midnight on the first day in Europe/Moscow, causing the
+Journal to fall back to the previous month before the race is exercised. Existing
+`journal_calendar` users retain their timestamps. Frozen-clock PostgreSQL tests
+cover month/year midnight, the first five minutes, and an ordinary date; the
+browser scenario still delays and releases a real API response body.

@@ -41,6 +41,7 @@ for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002
+seed journal_calendar_response_race 939951
 seed journal_edit 997201
 seed journal_edit 997202
 seed analytics_v2 910003
