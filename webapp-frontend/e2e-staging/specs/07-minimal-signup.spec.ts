@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-import { buildInitData, launchUrl, QA_IDENTITIES, stagingBotToken } from "../fixtures/initData";
+import { buildInitData, QA_IDENTITIES, stagingBotToken } from "../fixtures/initData";
+import { projectLaunchUrl } from "../fixtures/projectLaunch";
 
-test("R-V2 minimal signup: optional demographics, no body fields, profile survives reload", async ({ page, baseURL }) => {
+test("R-V2 minimal signup: optional demographics, no body fields, profile survives reload", async ({ page, baseURL }, testInfo) => {
   const telegramId = QA_IDENTITIES.qa_signup;
   const initData = buildInitData(telegramId, stagingBotToken());
-  await page.goto(launchUrl(baseURL!, initData));
+  await page.goto(projectLaunchUrl(baseURL!, initData, testInfo.project.name));
   await page.getByLabel("Сколько подтягиваний вышло?").fill("8");
   await page.getByRole("button", { name: "Далее", exact: true }).click();
   await page.getByRole("button", { name: "Да", exact: true }).click();
