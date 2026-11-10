@@ -22,8 +22,12 @@ async function startPlanned(page: Page, title: string) {
   await page.getByRole("button", { name: "Планы" }).click();
   const group = page.locator(".plan-week-day-group").filter({ hasText: new RegExp(`^${title}`) });
   await group.getByRole("button", { name: /^Начать: / }).first().click();
+  const started = page.waitForResponse((r) => r.url().endsWith("/api/v2/sessions/live") && r.request().method() === "POST");
   await page.getByRole("button", { name: "Начать", exact: true }).click();
+  const session = await (await started).json();
+  expect(session.engine_version).toBe(2);
   await expect(page.getByText("Живая тренировка")).toBeVisible();
+  return session.id as number;
 }
 
 const phase = (page: Page) => page.getByTestId("engine-phase");
@@ -48,6 +52,51 @@ async function serverRemainingSeconds(page: Page, telegramId: number): Promise<n
   return remaining / 1000;
 }
 
+async function readApi(page: Page, telegramId: number, path: string) {
+  const response = await page.request.get(path, { headers: {
+    "X-Telegram-Init-Data": buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken()),
+  } });
+  expect(response.ok(), path).toBe(true);
+  return response.json();
+}
+
+/** #388 / Crimpd C05: our accepted v2 contract saves natural COMPLETE before optional review
+ * (LIVE_ENGINE_V2 §9.7). This is custom Builder content, without a course CONFIRM phase.
+ * The existing Telegram fixture supplies launch data/BackButton; all product API reads/writes are real.
+ */
+async function leaveNaturalCompletion(page: Page, telegramId: number, sessionId: number, title: string, expected: number[][]) {
+  await expect(page.getByTestId("engine-complete")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("engine-pending")).toHaveCount(0);
+  const assertSavedOnce = async () => {
+    const history = await readApi(page, telegramId, "/api/v2/sessions?status=completed&limit=200");
+    expect(history.sessions.map((s: { id: number }) => s.id)).toEqual([sessionId]);
+    const saved = history.sessions[0];
+    expect(saved.blocks.map((b: { set_logs: { value: string }[] }) => b.set_logs.map((log) => Number(log.value)))).toEqual(expected);
+    expect(saved.effort).toBeNull();
+    expect(saved.comment).toBeNull();
+    const plan = (await readApi(page, telegramId, "/api/v2/plan")).plan.plan_items;
+    const item = plan.find((p: { complex_name: string }) => p.complex_name === title);
+    expect(item.done_count).toBe(1);
+    expect(saved.plan_item_id).toBe(item.id);
+    expect(item.credited_session_id).toBe(sessionId);
+    expect((await readApi(page, telegramId, API_ACTIVE)).session).toBeNull();
+    return saved;
+  };
+  const saved = await assertSavedOnce(); // no explicit Save/review request
+  await page.getByLabel("Заметка к тренировке").fill("несохранённая оценка");
+  await pressTelegramBackButton(page); // leave the inline optional review
+  await expect(page.getByTestId("engine-save")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Планы", exact: true })).toBeVisible();
+  expect(await assertSavedOnce()).toEqual(saved); // same results, credit, revision and duration
+  await page.getByRole("button", { name: "Журнал", exact: true }).click();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+  await page.getByText(title, { exact: true }).first().click();
+  await page.getByRole("button", { name: "Открыть", exact: true }).click();
+  await expect(page.getByTestId("engine-save")).toHaveCount(0);
+  expect(await assertSavedOnce()).toEqual(saved);
+}
+
 function parseTimer(text: string): number {
   const [m, s] = text.trim().split(":").map(Number);
   return m * 60 + s;
@@ -65,27 +114,49 @@ test("1. PREP → WORK по дедлайну, без тапа", async ({ page })
   expect(apiFailures).toEqual([]);
 });
 
-test("2. REST → следующий WORK по дедлайну; таймер = сервер ±1 с", async ({ page }) => {
-  const { consoleErrors, apiFailures } = await openAppAs(page, 930_602);
-  await startPlanned(page, "Движок: подходы");
+test("2. REST → следующий WORK по дедлайну; таймер = сервер ±1 с; отмена review и сохранение DONE после выхода", async ({ page }) => {
+  const { consoleErrors, apiFailures } = await openAppAs(page, 930_602, { backButton: true });
+  const sessionId = await startPlanned(page, "Движок: подходы");
   await expect(phase(page)).toHaveText("Пошёл", { timeout: 8_000 });
   await page.getByLabel("Результат подхода").fill("5");
   await page.getByTestId("engine-submit").click();
   await expect(phase(page)).toHaveText("Отдых");
   await expectNoManualTransitions(page);
+  await expect(page.getByTestId("engine-pending")).toHaveCount(0);
   const shown = parseTimer(await page.getByTestId("engine-timer").innerText());
   const server = await serverRemainingSeconds(page, 930_602);
   expect(server).not.toBeNull();
   expect(Math.abs(shown - (server as number))).toBeLessThanOrEqual(1.5); // E: ±1 с (+ округление вверх)
   await expect(phase(page)).toHaveText("Пошёл", { timeout: 10_000 });
   await expect(page.getByTestId("engine-target")).toContainText("Подход 2/2");
+  await page.getByLabel("Результат подхода").fill("4");
+  await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await page.getByLabel("Заметка к тренировке").fill("оставить ввод");
+  await pressTelegramBackButton(page); // early-finish dismissal keeps the active input
+  await expect(page.getByTestId("workout-review")).toHaveCount(0);
+  await expect(page.getByLabel("Результат подхода")).toHaveValue("4");
+  const active = (await readApi(page, 930_602, API_ACTIVE)).session;
+  expect(active.id).toBe(sessionId);
+  expect(active.engine.state.logs.map((log: { value: number }) => log.value)).toEqual([5]);
+  const item = (await readApi(page, 930_602, "/api/v2/plan")).plan.plan_items.find(
+    (p: { complex_name: string }) => p.complex_name === "Движок: подходы",
+  );
+  expect(item.done_count).toBe(0);
+  expect(item.credited_session_id).toBeNull();
+  expect((await readApi(page, 930_602, "/api/v2/sessions?status=completed")).sessions).toEqual([]);
+  await page.getByRole("button", { name: "Завершить", exact: true }).click();
+  await expect(page.getByLabel("Заметка к тренировке")).toHaveValue("оставить ввод");
+  await page.getByLabel("Заметка к тренировке").fill("");
+  await page.getByRole("button", { name: "Назад", exact: true }).click();
+  await page.getByTestId("engine-submit").click();
+  await leaveNaturalCompletion(page, 930_602, sessionId, "Движок: подходы", [[5, 4]]);
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
 
-test("3. Отдых блока → следующий блок сам; подход на время засчитывается сам; итог", async ({ page }) => {
-  const { consoleErrors, apiFailures } = await openAppAs(page, 930_603);
-  await startPlanned(page, "Движок: блоки");
+test("3. Отдых блока → следующий блок сам; подход на время засчитывается сам; итог остаётся после выхода без Save", async ({ page }) => {
+  const { consoleErrors, apiFailures } = await openAppAs(page, 930_603, { backButton: true });
+  const sessionId = await startPlanned(page, "Движок: блоки");
   await expect(phase(page)).toHaveText("Пошёл"); // prep 0
   await page.getByLabel("Результат подхода").fill("3");
   await page.getByTestId("engine-submit").click();
@@ -96,9 +167,9 @@ test("3. Отдых блока → следующий блок сам; подх�
   await expect(phase(page)).toHaveText("Приготовься", { timeout: 10_000 }); // блок B начался сам
   await expect(phase(page)).toHaveText("Пошёл", { timeout: 6_000 });
   await expect(page.getByTestId("engine-complete")).toBeVisible({ timeout: 10_000 }); // 5 с планки — сами
-  await page.getByTestId("engine-save").click();
-  await expect(page.getByText("Тренировка завершена").first()).toBeVisible();
-  await expect(page.getByText("Подход 1: 3 повт.")).toBeVisible();
+  await leaveNaturalCompletion(page, 930_603, sessionId, "Движок: блоки", [[3], [5]]);
+  await expect(page.getByText("Факт: 3", { exact: true })).toBeVisible();
+  await expect(page.getByText("Факт: 0:05", { exact: true })).toBeVisible();
   expect(noWakeLock(consoleErrors)).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
