@@ -108,6 +108,24 @@ class AccessTests(unittest.TestCase):
                 self.assertIn("QA_ALLOW_STAGING=1", r.stdout)
                 self.assertIn("scripts.qa.provision_staging_identities", r.stdout)
                 self.assertEqual("--snapshot" in r.stdout, mode == "snapshot")
+            # Existing authorized_keys may already acquire the same lock with flock.
+            nested = subprocess.run(
+                [
+                    "flock",
+                    "-n",
+                    str(home / ".deploy-staging.lock"),
+                    "bash",
+                    "-c",
+                    text,
+                    "qa",
+                    "provision",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(nested.returncode, 0, nested.stderr)
             r = subprocess.run(
                 check=False,
                 args=["bash", "-c", text, "qa", "provision", "extra"],
