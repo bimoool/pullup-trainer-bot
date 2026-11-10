@@ -13,7 +13,7 @@ evidence. Full functional E2E remains a separate mandatory CI check, and real
 Telegram/iPhone acceptance remains separate from browser emulation.
 
 Current v2 smoke scenarios are `06-release-v2.spec.ts` (grep `R-V2`). Reprovision the
-five reserved QA identities before **each browser project**; run projects separately,
+registered reserved QA identities before **each browser project**; run projects separately,
 since the full course journey changes shared state. The older numbered journeys
 still describe v1 controls and are not evidence for current v2 execution.
 
@@ -60,7 +60,7 @@ tests `tests/test_web/test_qa_mint_init_data.py`, `tests/test_web/test_qa_provis
   path and status only, no headers). Test: `test_cli_reads_token_only_from_env_and_never_prints_it`.
 * `signature` (Ed25519) in real initData is not verified by the app; the frontend SDK requires the field, so a
   placeholder is included and covered by the HMAC. This does not weaken validation.
-* QA identities are a reserved id range (`7_000_000_001..099 (5 in use)`); the provisioner refuses everything else.
+* QA identities are a reserved id range (`7_000_000_001..099 (8 registered identities)`); the provisioner refuses everything else.
 * The provisioner refuses unless: `QA_ALLOW_STAGING=1`, `DATABASE_URL` db name contains `staging` (and is not
   `pullup`/`*prod*`/`*test*`), `POSTGRES_DB` agrees, `MINI_APP_URL` host starts with `staging.`, `BOT_TOKEN` set.
   Only QA ids are purged/recreated. Production is never addressed by any file here.
@@ -79,6 +79,31 @@ Ids cannot collide with `scripts/e2e_seed.py` (900001–997202, 8.1M/8.2M peers,
 asserted in `test_qa_ids_are_reserved_and_do_not_collide_with_e2e_seed_ids`.
 This mimics, it does not clone, the owner's account: if the owner's real data differs (e.g. paused inclusions, other
 weeks visited), reproduce it with `--visited-weeks N` or extend the provisioner, and compare with `./qa-staging.sh snapshot` (per identity: subscription, sessions, plan weeks with item counts, and per inclusion `snapshot_has_program_items` / count).
+
+## B-incident release acceptance
+
+The fixed current-v2 suite also uses `qa_weighted_b` (7000000007) and
+`qa_weighted_b_stop` (7000000008). Both are reset only through the existing
+staging/reserved-identity guards. Real onboarding/enrolment services create the
+fixture; the synthetic step sets `next_role=B` and `sessions_completed=1` to select
+the 10×5 bodyweight volume and 5×3 +10 kg strength prescription. It does not import
+any user's records or invent a completed workout in history.
+
+`06-release-v2.spec.ts` then drives the actual deployed API through UI: all ten
+five-rep volume sets, minute rests and no early block transition, reload at 3/10,
+900-second rest only after the tenth set, visible +10 kg in strength before and
+after reload. Separate exact API integration assertions check the frozen recipe:
+60 seconds after volume sets1..9, 900 seconds between blocks, 180-second strength
+rests and +10 kg. These are synthetic reproduction conditions, not proof of the
+original user's 15-minute-rest root cause.
+
+The second case explicitly launches supported client version6.1 to exercise the
+browser's real confirm fallback: dismiss keeps the first set, ordinary submission
+continues to2/10, accept ends volume with the technique reason. It does not replace
+Telegram SDK/window.confirm/API, and does not prove native8.0 popup behavior.
+Real Telegram/iPhone acceptance remains a separate release gate. Every browser
+project receives fresh profiles; one browser's live state is never reused by the
+other.
 
 ## Journeys (`webapp-frontend/e2e-staging/specs`, run in file order; one worker)
 

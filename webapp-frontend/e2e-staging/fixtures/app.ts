@@ -21,7 +21,9 @@ export interface QaSession {
 // "Failed to load resource": favicon / third-party script blocked; real /api failures are caught via apiLog.
 const NOISE = ["Wake Lock", "Telegram SDK init() failed", "Failed to load resource", "BackButton toggle failed"];
 
-async function openAs(page: Page, identity: QaIdentity, baseURL: string, testInfo: TestInfo): Promise<QaSession> {
+type LaunchOptions = { version?: "8.0" | "6.1" };
+
+async function openAs(page: Page, identity: QaIdentity, baseURL: string, testInfo: TestInfo, options: LaunchOptions = {}): Promise<QaSession> {
   const consoleErrors: string[] = [];
   const apiLog: ApiEntry[] = [];
   let planJson: unknown = null;
@@ -45,7 +47,7 @@ async function openAs(page: Page, identity: QaIdentity, baseURL: string, testInf
 
   const launch = async () => {
     const initData = buildInitData(QA_IDENTITIES[identity], stagingBotToken());
-    await page.goto(launchUrl(baseURL, initData));
+    await page.goto(launchUrl(baseURL, initData, "ios", options.version));
     // Onboarded identity: bottom navigation is the first stable landmark of a loaded app.
     await expect(page.locator(".bottom-tabbar")).toBeVisible({ timeout: 45_000 });
   };
@@ -64,11 +66,11 @@ async function openAs(page: Page, identity: QaIdentity, baseURL: string, testInf
   };
 }
 
-export const test = base.extend<{ qa: (identity: QaIdentity) => Promise<QaSession> }>({
+export const test = base.extend<{ qa: (identity: QaIdentity, options?: LaunchOptions) => Promise<QaSession> }>({
   qa: async ({ page, baseURL }, use, testInfo) => {
     const sessions: QaSession[] = [];
-    await use(async (identity) => {
-      const s = await openAs(page, identity, baseURL!, testInfo);
+    await use(async (identity, options) => {
+      const s = await openAs(page, identity, baseURL!, testInfo, options);
       sessions.push(s);
       return s;
     });

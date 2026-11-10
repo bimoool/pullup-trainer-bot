@@ -52,7 +52,8 @@ def assert_staging_environment(env: dict[str, str] | os._Environ) -> str:
         raise RefusedError(f"{STAGING_FLAG}=1 must be set explicitly")
     try:
         staging = identify_staging(
-            database_url=env.get("DATABASE_URL", ""), mini_app_url=env.get("MINI_APP_URL", ""),
+            database_url=env.get("DATABASE_URL", ""),
+            mini_app_url=env.get("MINI_APP_URL", ""),
             postgres_db=env.get("POSTGRES_DB"),
         )
     except NotStagingError as exc:
@@ -83,13 +84,20 @@ async def _onboard_at(session, telegram_id: int, *, at: datetime, reps: int = 8)
     from app.db.repositories.users import UserRepository
     from app.services.onboarding import OnboardingService
 
-    user = await UserRepository(session).create(telegram_id=telegram_id, username=f"qa{telegram_id}")
+    user = await UserRepository(session).create(
+        telegram_id=telegram_id, username=f"qa{telegram_id}"
+    )
     await session.execute(update(User).where(User.id == user.id).values(created_at=at))
     onboarding = OnboardingService(session)
     await onboarding.record_baseline_and_start(user_id=user.id, performed_at=at, reps=reps)
     await onboarding.complete_questionnaire_and_start_trial(
-        user_id=user.id, now=at, weight_kg=Decimal(78), height_cm=180,
-        gender=Gender.MALE, birth_date=date(1992, 4, 15), timezone="Europe/Moscow",
+        user_id=user.id,
+        now=at,
+        weight_kg=Decimal(78),
+        height_cm=180,
+        gender=Gender.MALE,
+        birth_date=date(1992, 4, 15),
+        timezone="Europe/Moscow",
     )
     await session.refresh(user)
     return user
@@ -114,18 +122,26 @@ async def _include_course_in_past(session, user, *, start: datetime, visited_wee
 
     program = await _shipped_pull_ups_program(session)
     inclusion = await ProgramInclusionService(session).create_inclusion(
-        user_id=user.id, request=ProgramInclusionRequest(program_id=program.id),
+        user_id=user.id,
+        request=ProgramInclusionRequest(program_id=program.id),
     )
     plan = await TrainingPlanRepository(session).get_for_user(user.id)
-    await session.execute(update(TrainingPlan).where(TrainingPlan.id == plan.id).values(created_at=start))
-    await session.execute(update(ProgramInclusion).where(ProgramInclusion.id == inclusion.id).values(created_at=start))
+    await session.execute(
+        update(TrainingPlan).where(TrainingPlan.id == plan.id).values(created_at=start)
+    )
+    await session.execute(
+        update(ProgramInclusion).where(ProgramInclusion.id == inclusion.id).values(created_at=start)
+    )
     await session.flush()
-    await session.refresh(plan)  # core UPDATE bypassed the identity map; ensure created_at is the past value
+    await session.refresh(
+        plan
+    )  # core UPDATE bypassed the identity map; ensure created_at is the past value
     await session.refresh(inclusion)
     weeks = PlanWeekService(session)
     for offset in range(visited_weeks):
         await weeks.ensure_current_plan_week(
-            training_plan_id=plan.id, today=(start + timedelta(weeks=offset)).date(),
+            training_plan_id=plan.id,
+            today=(start + timedelta(weeks=offset)).date(),
         )
     return program, inclusion, plan
 
@@ -141,19 +157,31 @@ async def _record_course_sessions(session, user, inclusion, *, times: list[datet
 
     def block(exercise_id: int, working: list[int], max_value: int) -> SessionBlockInput:
         sets = [
-            SetLogInput(set_number=i + 1, metric_type=MetricType.REPS, value=Decimal(r), unit="reps")
+            SetLogInput(
+                set_number=i + 1, metric_type=MetricType.REPS, value=Decimal(r), unit="reps"
+            )
             for i, r in enumerate(working)
         ]
-        sets.append(SetLogInput(
-            set_number=len(working) + 1, metric_type=MetricType.REPS, value=Decimal(max_value),
-            unit="reps", is_max_set=True,
-        ))
+        sets.append(
+            SetLogInput(
+                set_number=len(working) + 1,
+                metric_type=MetricType.REPS,
+                value=Decimal(max_value),
+                unit="reps",
+                is_max_set=True,
+            )
+        )
         return SessionBlockInput(exercise_id=exercise_id, sets=sets)
 
     for performed_at in times:
         await TrainingSessionLogService(session).record_session(
-            user_id=user.id, source=SessionSource.PLAN, performed_at=performed_at, effort=None, comment=None,
-            program_inclusion_id=inclusion.id, completed_at=performed_at + timedelta(minutes=25),
+            user_id=user.id,
+            source=SessionSource.PLAN,
+            performed_at=performed_at,
+            effort=None,
+            comment=None,
+            program_inclusion_id=inclusion.id,
+            completed_at=performed_at + timedelta(minutes=25),
             blocks=[
                 block(role_to_exercise["block_a"], [8, 8, 7], 9),
                 block(role_to_exercise["block_b"], [3, 3, 3, 3], 3),
@@ -167,20 +195,29 @@ async def provision_fresh_active(session, telegram_id: int, now: datetime) -> No
     await _grant_active(session, user.id, now=now)
 
 
-async def provision_aged_active(session, telegram_id: int, now: datetime, *, aged_days: int, visited_weeks: int) -> None:
+async def provision_aged_active(
+    session, telegram_id: int, now: datetime, *, aged_days: int, visited_weeks: int
+) -> None:
     """Mimics the owner's account: onboarded ~aged_days ago with «Подтягивания» included from day one,
     the plan was created then, Plans was last opened during week 1 (only `visited_weeks` weeks are
     materialised), two sessions were done in week 1. Current week is left to the product."""
     start = now - timedelta(days=aged_days)
     user = await _onboard_at(session, telegram_id, at=start, reps=8)
     await _grant_active(session, user.id, now=now)
-    _program, inclusion, _plan = await _include_course_in_past(session, user, start=start, visited_weeks=visited_weeks)
+    _program, inclusion, _plan = await _include_course_in_past(
+        session, user, start=start, visited_weeks=visited_weeks
+    )
     await _record_course_sessions(
-        session, user, inclusion, times=[start + timedelta(days=2), start + timedelta(days=4)],
+        session,
+        user,
+        inclusion,
+        times=[start + timedelta(days=2), start + timedelta(days=4)],
     )
 
 
-async def provision_aged_legacy_snapshot(session, telegram_id: int, now: datetime, *, visited_weeks: int) -> None:
+async def provision_aged_legacy_snapshot(
+    session, telegram_id: int, now: datetime, *, visited_weeks: int
+) -> None:
     """Same as qa_aged_active (plan ~23 d old, week 1 materialised by the real service, current week left to
     the product) plus ONE synthetic mutation reproducing the historical source shape: the inclusion snapshot
     loses its "program_items" key. That is the shape written by the pre-checkpoint-1.1 backfill
@@ -193,13 +230,20 @@ async def provision_aged_legacy_snapshot(session, telegram_id: int, now: datetim
     start = now - timedelta(days=23)
     user = await _onboard_at(session, telegram_id, at=start, reps=8)
     await _grant_active(session, user.id, now=now)
-    _program, inclusion, _plan = await _include_course_in_past(session, user, start=start, visited_weeks=visited_weeks)
+    _program, inclusion, _plan = await _include_course_in_past(
+        session, user, start=start, visited_weeks=visited_weeks
+    )
     await _record_course_sessions(
-        session, user, inclusion, times=[start + timedelta(days=2), start + timedelta(days=4)],
+        session,
+        user,
+        inclusion,
+        times=[start + timedelta(days=2), start + timedelta(days=4)],
     )
     legacy_snapshot = {k: v for k, v in (inclusion.snapshot or {}).items() if k != "program_items"}
     await session.execute(
-        update(ProgramInclusion).where(ProgramInclusion.id == inclusion.id).values(snapshot=legacy_snapshot),
+        update(ProgramInclusion)
+        .where(ProgramInclusion.id == inclusion.id)
+        .values(snapshot=legacy_snapshot),
     )
     await session.flush()
 
@@ -226,6 +270,21 @@ async def provision_legacy_or_partial(session, telegram_id: int, now: datetime) 
     await _seed_backfilled_electives(session, user)
 
 
+async def provision_weighted_b(session, telegram_id: int) -> None:
+    """Synthetic incident fixture: real enrolment, then explicit B prescription state.
+
+    No historical session is invented. sessions_completed=1 selects B in the same
+    seed used by local engine E2E; actual volume/strength facts are recorded by UI.
+    """
+    from scripts.qa.identities import QA_IDENTITIES
+
+    if telegram_id not in {QA_IDENTITIES["qa_weighted_b"], QA_IDENTITIES["qa_weighted_b_stop"]}:
+        raise RefusedError("weighted B fixture requires its dedicated reserved QA identity")
+    from scripts.e2e_seed import seed_v5_weighted_b_live
+
+    await seed_v5_weighted_b_live(session, telegram_id)
+
+
 async def snapshot(session, telegram_id: int) -> dict:
     """Read-only state summary of one QA identity (no secrets, no PII beyond the QA id)."""
     from sqlalchemy import func, select
@@ -245,24 +304,47 @@ async def snapshot(session, telegram_id: int) -> dict:
     if user is None:
         return {"telegram_id": telegram_id, "exists": False}
     out: dict = {
-        "telegram_id": telegram_id, "exists": True,
+        "telegram_id": telegram_id,
+        "exists": True,
         "onboarded_at": str(user.onboarding_completed_at),
-        "subscription": {"status": str(user.subscription_status), "expires_at": str(user.subscription_expires_at)},
-        "legacy_workouts": (await session.execute(
-            select(func.count()).select_from(Workout).where(Workout.user_id == user.id))).scalar_one(),
-        "training_sessions": (await session.execute(
-            select(func.count()).select_from(TrainingSession).where(TrainingSession.user_id == user.id))).scalar_one(),
+        "subscription": {
+            "status": str(user.subscription_status),
+            "expires_at": str(user.subscription_expires_at),
+        },
+        "legacy_workouts": (
+            await session.execute(
+                select(func.count()).select_from(Workout).where(Workout.user_id == user.id)
+            )
+        ).scalar_one(),
+        "training_sessions": (
+            await session.execute(
+                select(func.count())
+                .select_from(TrainingSession)
+                .where(TrainingSession.user_id == user.id)
+            )
+        ).scalar_one(),
     }
-    plan = (await session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user.id))).scalar_one_or_none()
+    plan = (
+        await session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user.id))
+    ).scalar_one_or_none()
     if plan is None:
         out["plan"] = None
         return out
     today = datetime.now(UTC).date()
-    inclusions = (await session.execute(
-        select(ProgramInclusion).where(ProgramInclusion.training_plan_id == plan.id))).scalars().all()
+    inclusions = (
+        (
+            await session.execute(
+                select(ProgramInclusion).where(ProgramInclusion.training_plan_id == plan.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
     out["inclusions"] = [
         {
-            "id": i.id, "active": i.is_active, "created_at": str(i.created_at),
+            "id": i.id,
+            "active": i.is_active,
+            "created_at": str(i.created_at),
             "snapshot_has_program_items": "program_items" in (i.snapshot or {}),
             "snapshot_program_items_count": len((i.snapshot or {}).get("program_items") or []),
         }
@@ -273,12 +355,23 @@ async def snapshot(session, telegram_id: int) -> dict:
         "current_week_number": plan_week_number(plan.created_at.date(), today),
         "weeks": [
             {
-                "week_number": week.week_number, "start_date": str(week.start_date),
-                "plan_items": (await session.execute(
-                    select(func.count()).select_from(PlanItem).where(PlanItem.plan_week_id == week.id))).scalar_one(),
+                "week_number": week.week_number,
+                "start_date": str(week.start_date),
+                "plan_items": (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(PlanItem)
+                        .where(PlanItem.plan_week_id == week.id)
+                    )
+                ).scalar_one(),
             }
-            for week in (await session.execute(
-                select(PlanWeek).where(PlanWeek.training_plan_id == plan.id).order_by(PlanWeek.week_number))).scalars()
+            for week in (
+                await session.execute(
+                    select(PlanWeek)
+                    .where(PlanWeek.training_plan_id == plan.id)
+                    .order_by(PlanWeek.week_number)
+                )
+            ).scalars()
         ],
     }
     return out
@@ -292,7 +385,13 @@ async def run(args: argparse.Namespace) -> int:
     now = datetime.now(UTC)
     async with async_session_factory() as session:
         if args.snapshot:
-            print(json.dumps([await snapshot(session, QA_IDENTITIES[n]) for n in names], ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    [await snapshot(session, QA_IDENTITIES[n]) for n in names],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
             return 0
         for name in names:
             telegram_id = QA_IDENTITIES[name]
@@ -301,14 +400,22 @@ async def run(args: argparse.Namespace) -> int:
                 await provision_fresh_active(session, telegram_id, now)
             elif name == "qa_aged_active":
                 await provision_aged_active(
-                    session, telegram_id, now, aged_days=args.aged_days, visited_weeks=args.visited_weeks,
+                    session,
+                    telegram_id,
+                    now,
+                    aged_days=args.aged_days,
+                    visited_weeks=args.visited_weeks,
                 )
             elif name == "qa_aged_legacy_snapshot":
-                await provision_aged_legacy_snapshot(session, telegram_id, now, visited_weeks=args.visited_weeks)
+                await provision_aged_legacy_snapshot(
+                    session, telegram_id, now, visited_weeks=args.visited_weeks
+                )
             elif name == "qa_expired":
                 await provision_expired(session, telegram_id, now)
             elif name == "qa_legacy_or_partial":
                 await provision_legacy_or_partial(session, telegram_id, now)
+            elif name in {"qa_weighted_b", "qa_weighted_b_stop"}:
+                await provision_weighted_b(session, telegram_id)
             elif name == "qa_signup":
                 pass  # Leave this reserved identity absent: the UI must create its own profile.
             else:  # pragma: no cover - guarded by argparse choices
@@ -321,12 +428,27 @@ async def run(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     from scripts.qa.identities import QA_IDENTITIES
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only", nargs="+", choices=sorted(QA_IDENTITIES), help="subset of identities")
-    parser.add_argument("--snapshot", action="store_true", help="read-only JSON state dump, no changes")
-    parser.add_argument("--aged-days", type=int, default=26, help="age of qa_aged_active plan (default 26 = ~3.7 weeks)")
-    parser.add_argument("--visited-weeks", type=int, default=1,
-                        help="plan weeks materialised in the past for qa_aged_active (default 1)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--only", nargs="+", choices=sorted(QA_IDENTITIES), help="subset of identities"
+    )
+    parser.add_argument(
+        "--snapshot", action="store_true", help="read-only JSON state dump, no changes"
+    )
+    parser.add_argument(
+        "--aged-days",
+        type=int,
+        default=26,
+        help="age of qa_aged_active plan (default 26 = ~3.7 weeks)",
+    )
+    parser.add_argument(
+        "--visited-weeks",
+        type=int,
+        default=1,
+        help="plan weeks materialised in the past for qa_aged_active (default 1)",
+    )
     args = parser.parse_args(argv)
     try:
         db_name = assert_staging_environment(os.environ)

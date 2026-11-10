@@ -16,6 +16,8 @@ export const QA_IDENTITIES = {
   qa_legacy_or_partial: 7_000_000_004,
   qa_aged_legacy_snapshot: 7_000_000_005,
   qa_signup: 7_000_000_006,
+  qa_weighted_b: 7_000_000_007,
+  qa_weighted_b_stop: 7_000_000_008,
 } as const;
 export type QaIdentity = keyof typeof QA_IDENTITIES;
 
@@ -58,10 +60,10 @@ export function buildInitData(telegramId: number, botToken: string, authDate: nu
  * (tgWebAppData / tgWebAppVersion / tgWebAppPlatform / tgWebAppThemeParams). The frontend reads them
  * through retrieveLaunchParams() (App.tsx) exactly as in a real client; nothing is stubbed.
  */
-export function launchUrl(baseUrl: string, initData: string, platform: "ios" | "android" | "tdesktop" = "ios"): string {
+export function launchUrl(baseUrl: string, initData: string, platform: "ios" | "android" | "tdesktop" = "ios", version: "8.0" | "6.1" = "8.0"): string {
   const params = new URLSearchParams({
     tgWebAppData: initData,
-    tgWebAppVersion: "8.0",
+    tgWebAppVersion: version,
     tgWebAppPlatform: platform,
     tgWebAppThemeParams: JSON.stringify({
       bg_color: "#ffffff", text_color: "#000000", hint_color: "#707579", link_color: "#2481cc",
