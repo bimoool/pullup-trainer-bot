@@ -61,9 +61,16 @@ DATABASE_URL=postgresql+asyncpg://pullup:pullup@localhost:<port>/pullup_e2e \
 # 6. Прогнать Playwright (BOT_TOKEN тот же самый — им подписывается initData)
 cd webapp-frontend/e2e
 npm install
+npm run typecheck
 npx playwright install --with-deps chromium
 BOT_TOKEN=e2e-test-token npm test
 ```
+
+`npm run typecheck` checks every functional E2E TypeScript file with the strict
+`e2e/tsconfig.json`. Install the parent frontend dependencies first: the command
+uses its pinned TypeScript dependency. CI runs this check after E2E dependency
+installation and before launching any Playwright tests; a typecheck failure also
+blocks the main browser step that otherwise continues after peer-insights failures.
 
 `not_onboarded` (telegram_id `900001`) ничего не сеет — статус означает
 отсутствие строки `users`, шаг 5 для него не нужен.

@@ -76,10 +76,18 @@ jobs:
         # отсутствие строки users, см. scripts/e2e_seed.py::seed_not_onboarded.
         run: scripts/e2e_seed_all.sh
 
+      - name: Install E2E dependencies
+        working-directory: webapp-frontend/e2e
+        run: npm ci
+
+      - name: Typecheck functional E2E
+        id: typecheck
+        working-directory: webapp-frontend/e2e
+        run: npm run typecheck
+
       - name: Install Playwright
         working-directory: webapp-frontend/e2e
         run: |
-          npm ci
           npx playwright install --with-deps chromium
 
       # Peer insights читает общую когорту всей e2e-БД — отдельным шагом до спеков, которые пишут результаты тестов
@@ -92,7 +100,7 @@ jobs:
         run: npx playwright test --project=peer-insights --reporter=list --output=test-results-peer
 
       - name: Run Playwright tests
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.typecheck.outcome == 'success' }}
         working-directory: webapp-frontend/e2e
         env:
           E2E_BASE_URL: http://127.0.0.1:8001

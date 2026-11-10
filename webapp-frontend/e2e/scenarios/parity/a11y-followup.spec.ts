@@ -73,7 +73,7 @@ async function worstCoverContrast(page: Page, catIndex: number): Promise<{ title
   });
   const style = await page.addStyleTag({ content: '.home-program-card * { color: transparent !important; text-shadow: none !important; }' });
   const png = await card.screenshot({ animations: "disabled" });
-  await style.evaluate((node) => node.remove());
+  await style.evaluate((node) => node.parentNode?.removeChild(node));
   return page.evaluate(async ({ b64, probe: pr }) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
