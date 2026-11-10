@@ -83,6 +83,14 @@ class API:
 class Tests(unittest.TestCase):
     def test_fixed_release_commands(self):
         self.assertEqual(
+            t.command(f"/pullup staging-snapshot {SHA}")[2:],
+            ("staging-snapshot.yml", {"candidate_sha": SHA}),
+        )
+        # Recovery observation stays available even when CI or a deployment failed.
+        t.release_gates(
+            lambda *_: self.fail("snapshot must not depend on CI"), "staging-snapshot", SHA, {}
+        )
+        self.assertEqual(
             t.command(f"/pullup staging-deploy {SHA}")[3],
             {
                 "sha": SHA,

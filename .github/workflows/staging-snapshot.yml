@@ -1,0 +1,38 @@
+name: Staging QA snapshot (read only)
+run-name: Staging snapshot ${{ inputs.candidate_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "40-hex candidate reference for attribution; not proof of running build"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Validate attribution input
+        env:
+          SHA: ${{ inputs.candidate_sha }}
+        run: '[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1'
+
+      # Uses reviewed default-branch instructions; never checks out or executes PR code.
+      # The installed wrapper selects the fixed staging project and the provisioner
+      # validates staging plus the reserved synthetic identity range independently.
+      - name: Read reserved synthetic QA profiles without reprovisioning
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.VPS_STAGING_DEPLOY_SSH_KEY }}
+          command_timeout: 10m
+          script: ./qa-staging.sh snapshot

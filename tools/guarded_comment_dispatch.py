@@ -25,7 +25,7 @@ REQUIRED_CHECKS = {
 
 def command(body):
     match = re.fullmatch(
-        r"/pullup (staging-preflight|staging-deploy|staging-qa|production-preflight|production-apply|rehearse|rollback-check) "
+        r"/pullup (staging-preflight|staging-snapshot|staging-deploy|staging-qa|production-preflight|production-apply|rehearse|rollback-check) "
         r"([0-9a-f]{40})(?: ([0-9a-f]{12}) ([0-9a-f]{12})(?: (PRODUCTION-APPLY-[0-9a-f]{12}))?"
         r"| (R[13]) (/root/backups/[A-Za-z0-9._-]+\.manifest))?",
         body,
@@ -59,6 +59,8 @@ def command(body):
             {"kind": kind, "manifest": manifest, "mode": "check", "confirm": ""},
         )
     require(from_rev is None and kind is None, "extra arguments forbidden")
+    if operation == "staging-snapshot":
+        return operation, sha, "staging-snapshot.yml", {"candidate_sha": sha}
     if operation == "staging-qa":
         return (
             operation,
@@ -179,7 +181,7 @@ def unchanged_staging(api, deployed):
 
 
 def release_gates(api, operation, sha, inputs):
-    if operation == "staging-preflight":
+    if operation in {"staging-preflight", "staging-snapshot"}:
         return
     if operation == "rollback-check":
         return  # read-only recovery inspection must remain available after a failed deployment
