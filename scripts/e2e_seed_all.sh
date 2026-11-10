@@ -237,3 +237,5 @@ for id in 939901 939902; do seed golden_journey "$id"; done
 
 # Journal clone visibility: independent users per navigation case and retry.
 for id in 939921 939922 939931 939932; do seed golden_journey "$id"; done
+# Journal edit/clone Back during pending API response; one user per case/retry.
+for id in 939961 939962 939963 939964 939965 939966 939967 939968; do seed journal_edit "$id"; done
