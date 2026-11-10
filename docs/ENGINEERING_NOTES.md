@@ -3118,3 +3118,13 @@ not execute. Exact check/job timestamp equality, SHA/app/workflow/suite/job bind
 attempt validation and latest-start ordering remain mandatory. Required checks
 still need `success`; a skipped required context cannot satisfy them. This repair
 does not replay the refused command or establish successful rehearsal evidence.
+
+### Journal calendar response-race fixture at month boundaries
+
+The response-race browser scenario uses its own `journal_calendar_response_race`
+seed (939951). Its current-month session is timestamped at seed time: subtracting
+five minutes can cross midnight on the first day in Europe/Moscow, causing the
+Journal to fall back to the previous month before the race is exercised. Existing
+`journal_calendar` users retain their timestamps. Frozen-clock PostgreSQL tests
+cover month/year midnight, the first five minutes, and an ordinary date; the
+browser scenario still delays and releases a real API response body.
