@@ -77,3 +77,87 @@ for (const identity of ["qa_aged_active", "qa_aged_legacy_snapshot"] as const) {
     s.assertClean();
   });
 }
+
+/** Incident fixture is synthetic; every workout event below goes to the deployed API. */
+test("R-V2 incident B: 10x5 keeps one-minute rests, then +10 kg survives reload", async ({ qa }) => {
+  const s = await qa("qa_weighted_b");
+  const { page } = s;
+  await nav(page, "Планы").click();
+  await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  const phase = page.getByTestId("engine-phase");
+  await expect(page.getByTestId("engine-load")).toHaveText("Свой вес");
+  for (let index = 0; index < 10; index += 1) {
+    await expect(page.getByTestId("engine-saving")).toHaveCount(0);
+    await page.getByTestId("engine-skip").click();
+    await expect(phase).toHaveText("Пошёл");
+    await expect(page.getByTestId("engine-target")).toContainText(`Подход ${index + 1}/10`);
+    await page.getByLabel("Результат подхода").fill("5");
+    await page.getByTestId("engine-submit").click();
+    await expect(phase).toHaveText("Отдых");
+    await expect(page.getByTestId("engine-saving")).toHaveCount(0);
+    await expect(page.getByTestId("engine-pending")).toHaveCount(0);
+    // UI shows elapsed time after network/render; exact 60/900 is asserted in the API fixture test.
+    await expect(page.getByTestId("engine-timer")).toHaveText(
+      index < 9 ? /^(0:5[0-9]|1:00)$/ : /^(14:5[0-9]|15:00)$/,
+    );
+    await expect(page.getByTestId("engine-next-block")).toHaveCount(index < 9 ? 0 : 1);
+    if (index === 2) {
+      await page.reload();
+      await expect(phase).toHaveText("Отдых");
+      await expect(page.getByTestId("engine-target")).toContainText("Подход 3/10");
+      await expect(page.getByTestId("engine-load")).toHaveText("Свой вес");
+      await expect(page.getByTestId("engine-timer")).toHaveText(/^(0:[0-5][0-9]|1:00)$/);
+      await expect(page.getByTestId("engine-next-block")).toHaveCount(0);
+    }
+  }
+  await page.getByTestId("engine-skip").click();
+  await expect(page.getByTestId("engine-load")).toHaveText("+10 кг");
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/5");
+  await page.reload();
+  await expect(page.getByTestId("engine-load")).toHaveText("+10 кг");
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/5");
+  s.assertClean();
+});
+
+test("R-V2 incident B browser fallback 6.1: cancel preserves set; confirm ends block", async ({ qa }) => {
+  const s = await qa("qa_weighted_b_stop", { version: "6.1" });
+  const { page } = s;
+  await nav(page, "Планы").click();
+  await page.getByRole("button", { name: /^Начать: Подтягивания/ }).first().click();
+  await page.getByRole("button", { name: "Начать", exact: true }).click();
+  await page.getByTestId("engine-skip").click();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+  // Exercise the supported pre-6.2 client browser-confirm fallback explicitly.
+  // Launch version selects the production branch; no SDK/window.confirm mocks.
+  // Native Telegram 8.0 popup acceptance remains a separate real-device gate.
+  const cancelled = page.waitForEvent("dialog");
+  const cancelClick = page.getByTestId("engine-submit-technique-broken").click();
+  const cancelDialog = await cancelled;
+  expect(cancelDialog.type()).toBe("confirm");
+  expect(cancelDialog.message()).toContain("Завершить весь объёмный блок");
+  await cancelDialog.dismiss();
+  await cancelClick;
+  await expect(page.getByTestId("engine-phase")).toHaveText("Пошёл");
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 1/10");
+  await expect(page.getByTestId("engine-next-block")).toHaveCount(0);
+  await page.getByLabel("Результат подхода").fill("5");
+  await page.getByTestId("engine-submit").click();
+  await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
+  await expect(page.getByTestId("engine-timer")).toHaveText(/^(0:5[0-9]|1:00)$/);
+  await expect(page.getByTestId("engine-next-block")).toHaveCount(0);
+  await expect(page.getByTestId("engine-saving")).toHaveCount(0);
+  await page.getByTestId("engine-skip").click();
+  await expect(page.getByTestId("engine-target")).toContainText("Подход 2/10");
+  await page.getByLabel("Результат подхода").fill("5");
+  const confirmed = page.waitForEvent("dialog");
+  const confirmClick = page.getByTestId("engine-submit-technique-broken").click();
+  const confirmDialog = await confirmed;
+  expect(confirmDialog.type()).toBe("confirm");
+  await confirmDialog.accept();
+  await confirmClick;
+  await expect(page.getByTestId("engine-next-block")).toBeVisible();
+  await expect(page.getByTestId("engine-rest-context")).toContainText("отмечено нарушение техники");
+  await expect(page.getByTestId("engine-timer")).toHaveText(/^(14:5[0-9]|15:00)$/);
+  s.assertClean();
+});

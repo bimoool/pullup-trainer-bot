@@ -16,6 +16,8 @@ QA_IDENTITIES: dict[str, int] = {
     "qa_legacy_or_partial": 7_000_000_004,
     "qa_aged_legacy_snapshot": 7_000_000_005,
     "qa_signup": 7_000_000_006,
+    "qa_weighted_b": 7_000_000_007,
+    "qa_weighted_b_stop": 7_000_000_008,
 }
 
 
@@ -30,7 +32,9 @@ def resolve(name_or_id: str) -> int:
     try:
         value = int(name_or_id)
     except ValueError as exc:
-        raise ValueError(f"unknown QA identity {name_or_id!r}; known: {sorted(QA_IDENTITIES)}") from exc
+        raise ValueError(
+            f"unknown QA identity {name_or_id!r}; known: {sorted(QA_IDENTITIES)}"
+        ) from exc
     if not is_qa_id(value):
         raise ValueError(f"telegram id {value} is outside the reserved QA range {QA_ID_RANGE}")
     return value
