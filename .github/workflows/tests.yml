@@ -115,6 +115,18 @@ jobs:
       - name: Live Engine v2 shared vectors (vitest)
         working-directory: webapp-frontend
         run: npm run test:vectors
+      - name: Install staging harness test dependencies
+        working-directory: webapp-frontend/e2e-staging
+        run: npm ci
+      - name: Typecheck staging harness
+        working-directory: webapp-frontend/e2e-staging
+        run: npm run typecheck
+      - name: Staging browser platform contracts (no browser or credentials)
+        working-directory: webapp-frontend/e2e-staging
+        env:
+          STAGING_URL: https://staging.example.invalid
+          STAGING_PROJECT: iphone-webkit,chromium-mobile
+        run: npx playwright test 00-platform-contract --reporter=list --output="$RUNNER_TEMP/qa-platform-contract"
 
   python-locks:
     needs: changes

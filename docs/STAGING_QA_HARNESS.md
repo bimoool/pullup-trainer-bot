@@ -31,6 +31,11 @@ suite (fresh DB, seeded users, mocked Telegram bridge) was green.
 
 ## Architecture
 
+The diagram below describes the legacy diagnostic workflow, not the guarded
+release gate. `release-qa.yml` runs only the current v2 files described above and
+uploads synthetic screenshots only; it does not publish raw HTML/JSON reports,
+console bodies, traces or signed launch URLs.
+
 ```
 GitHub Actions (staging-qa.yml)                    VPS (staging only)
  ├─ job provision (optional) ── ssh forced cmd ──► ./qa-staging.sh provision|snapshot   (owner installs, see below)
@@ -40,7 +45,7 @@ GitHub Actions (staging-qa.yml)                    VPS (staging only)
      ├ curl $STAGING_URL/health  (clear failure if runners cannot reach staging)
      ├ webapp-frontend/e2e-staging  (Playwright; iPhone-14 WebKit + Pixel-7 Chromium)
      │    mint initData  = HMAC with STAGING_BOT_TOKEN (secret)  ──►  /#tgWebAppData=…  (Telegram launch URL)
-     └ artifacts: report, trace (always), screenshots (always), video (on failure), /api JSON, console log
+     └ local outputs: raw report, screenshots, video (on failure), /api JSON, console log; traces OFF
 ```
 
 Files: `scripts/qa/identities.py`, `scripts/qa/mint_init_data.py`, `scripts/qa/provision_staging_identities.py`,
@@ -52,12 +57,20 @@ tests `tests/test_web/test_qa_mint_init_data.py`, `tests/test_web/test_qa_provis
 * App auth is **unchanged**: every request still carries `X-Telegram-Init-Data` validated by
   `app/web/auth.py` (HMAC with the bot token, 12 h max age). No debug endpoint, no flag, no test user header.
 * The harness authenticates exactly as Telegram does: it signs initData with the staging bot token and opens
-  the app through the Telegram launch URL (`#tgWebAppData=…&tgWebAppVersion=…&tgWebAppPlatform=ios&…`). The real
+  the app through the Telegram launch URL (`#tgWebAppData=…&tgWebAppVersion=…&tgWebAppPlatform=…`). The real
   `telegram-web-app.js` and the real frontend launch-params code run; nothing is stubbed (the local suite stubs
   `window.Telegram`, which is one reason it cannot see launch-path problems).
+* Launch platform is selected explicitly from the browser project: `iphone-webkit`
+  (iPhone 14 / WebKit) → `ios`; `chromium-mobile` (Pixel 7 / Chromium) → `android`.
+  Both the onboarded fixture (including fresh relaunch) and minimal signup use
+  `fixtures/projectLaunch.ts`; unknown projects fail instead of inheriting iOS.
+  Client versions 8.0 and 6.1 retain that platform. This is browser emulation,
+  not native Telegram acceptance.
 * Only a holder of `STAGING_BOT_TOKEN` can mint initData, same as Telegram. The token lives only in the GitHub
-  secret / server env; it is masked (`::add-mask::`), never echoed, never in artifacts (the API log stores method,
-  path and status only, no headers). Test: `test_cli_reads_token_only_from_env_and_never_prints_it`.
+  secret / server env; it is masked (`::add-mask::`), never echoed. API metadata stores timestamp, method,
+  path and status only, no headers. Signed initData is also a credential: raw
+  Playwright error reports may include the launch URL even with tracing off, so
+  the release workflow uploads only synthetic screenshots. Test: `test_cli_reads_token_only_from_env_and_never_prints_it`.
 * `signature` (Ed25519) in real initData is not verified by the app; the frontend SDK requires the field, so a
   placeholder is included and covered by the HMAC. This does not weaken validation.
 * QA identities are a reserved id range (`7_000_000_001..099 (8 registered identities)`); the provisioner refuses everything else.
@@ -105,7 +118,11 @@ Real Telegram/iPhone acceptance remains a separate release gate. Every browser
 project receives fresh profiles; one browser's live state is never reused by the
 other.
 
-## Journeys (`webapp-frontend/e2e-staging/specs`, run in file order; one worker)
+## Historical v1 diagnostic journeys (`specs/01`–`05`)
+
+These selectors and the reproduction results in this table are historical. They
+do not establish current-v2 release acceptance. One worker and file ordering do
+not isolate browser projects that share mutable identities.
 
 | id | identity | what it proves |
 |---|---|---|
@@ -122,17 +139,42 @@ Console errors, any 5xx and unexpected 4xx fail a journey (`assertClean`); retri
 
 ## Running
 
-GitHub: Actions → **Staging QA** → Run workflow (inputs `journeys`: `all` or a grep like `S-OWNER-01|S-FRESH-01`;
-`reprovision`; `projects`). **`workflow_dispatch` only appears once `staging-qa.yml` is on the default branch**
-(until then run it on the server or locally as below). Artifacts `staging-qa-<run id>` (14 days): `playwright-report/`,
-`test-results/` (trace.zip for every test, screenshots, video on failure, `api-v2-plan-*.json`, `api-log-*.json`).
+For a release, use **Release QA** (`release-qa.yml`) with the exact reviewed
+candidate SHA. It provisions separately for each browser and runs the complete
+`06-release-v2.spec.ts` + `07-minimal-signup.spec.ts`; filters or skipped
+provisioning are not release evidence.
 
-Locally / on the server (needs network to staging):
+**Staging QA** (`staging-qa.yml`) is the older manual diagnostic workflow with
+`journeys`, `reprovision` and `projects` inputs. It still uploads whole
+`playwright-report/` and `test-results/` directories for 14 days; its artifact
+step's mention of traces is stale because tracing is off in the shared config.
+Raw reports can contain signed launch URLs and must not be treated as approved
+release artifacts. Do not use authenticated diagnostic runs until artifact
+handling is made safe. A failed provision is a blocker, not permission to skip it.
+
+The platform contract can be checked locally without credentials, browsers, a
+database or a staging connection (the reserved `.invalid` URL is never opened):
+
 ```bash
-cd webapp-frontend/e2e-staging && npm ci && npx playwright install --with-deps chromium webkit
-STAGING_URL=https://staging.app.bimoool.com STAGING_BOT_TOKEN=… npx playwright test            # all
-STAGING_PROJECT=chromium-mobile … npx playwright test --grep S-OWNER-01
+cd webapp-frontend/e2e-staging
+STAGING_URL=https://staging.example.invalid npx playwright test 00-platform-contract --reporter=list --output=/tmp/qa-platform-contract
+npm run typecheck
 ```
+
+The required PR `frontend build` check also installs the staging harness,
+typechecks both launch callers and runs these contracts in both projects.
+
+Manual current-v2 UI runs require network access to staging, `STAGING_URL` set
+to that deployment and the staging token already loaded securely into the environment. Provision the reserved identities
+before **each** separately invoked browser project; do not run both against one
+shared state:
+
+```bash
+STAGING_PROJECT=iphone-webkit npx playwright test 06-release-v2.spec.ts 07-minimal-signup.spec.ts
+# Reprovision reserved staging QA identities before invoking the other browser.
+STAGING_PROJECT=chromium-mobile npx playwright test 06-release-v2.spec.ts 07-minimal-signup.spec.ts
+```
+
 ### Running on the server
 If GitHub runners cannot reach staging (the pre-check says so), run the same commands on the VPS (or any host that can),
 reading the token from `~/.staging-secrets.env`, never from the command line history.
@@ -142,37 +184,21 @@ Mint a token by hand (e.g. for manual curl): `STAGING_BOT_TOKEN=… python scrip
 ## Owner: one-time actions
 
 1. Secrets in GitHub: `STAGING_BOT_TOKEN` (exists), `VPS_HOST`, `VPS_STAGING_DEPLOY_SSH_KEY` (exist).
-2. Merge `staging-qa.yml` to the default branch (dispatch availability).
-3. Staging must be deployed from a ref that contains `scripts/qa/` (the `app` image copies `scripts/`).
-4. Server wrapper (lives only on the VPS, not in this repo — nothing was changed there). Add one more allowed literal
-   command to the forced-command dispatcher, e.g. in `authorized_keys`' wrapper:
-   ```bash
-   case "$SSH_ORIGINAL_COMMAND" in
-     "./qa-staging.sh provision") exec /home/deploy/qa-staging.sh provision ;;
-     "./qa-staging.sh snapshot")  exec /home/deploy/qa-staging.sh snapshot ;;
-     # existing: ./deploy-staging.sh <branch> …
-   esac
-   ```
-   and `/home/deploy/qa-staging.sh` (mode 755, no arguments from the client are ever passed through):
-   ```bash
-   #!/usr/bin/env bash
-   set -euo pipefail
-   cd /home/deploy/pullup-trainer-bot-staging
-   case "${1:-}" in
-     provision) extra="" ;;
-     snapshot)  extra="--snapshot" ;;
-     *) echo "usage: qa-staging.sh provision|snapshot" >&2; exit 2 ;;
-   esac
-   docker compose -p pullup-staging run --rm -e QA_ALLOW_STAGING=1 app \
-     python scripts/qa/provision_staging_identities.py $extra
-   ```
-   Until this exists the provision job fails with `rejected command`; run it with `reprovision=false` and provision by hand.
+2. Ensure the reviewed release workflow and candidate are available on the expected refs.
+3. The staging candidate must contain `scripts/qa/` (the app image copies `scripts/`).
+4. Verify the exact restricted `./qa-staging.sh provision` and `snapshot` commands.
+   If access is missing, follow **Installing the missing staging QA access** below.
+   Do not replace the forced-command policy or skip failed provisioning.
 5. Confirm GitHub-hosted runners can reach `https://staging.app.bimoool.com/health` (nginx/firewall).
 
 ## Expected artifacts per run
 
-`playwright-report/index.html`; per test: `trace.zip` (always), screenshots (always), `video.webm` (on failure),
-`api-log-<identity>.json`, `console-errors-<identity>.json`, `api-v2-plan-<identity>.json`, `s-*-*.png`.
+The guarded release workflow uploads synthetic PNG screenshots only. Traces are
+disabled. The runner may create local HTML/JSON reports, videos and fixture
+attachments (`api-log-*`, `console-errors-*`, `api-v2-plan-*`); these are not the
+published release artifact set. Do not publish raw reports or live account data.
+The legacy diagnostic workflow's broader uploads are a known separate limitation
+described above, not evidence that raw reports are safe.
 
 ## Release rule
 
@@ -182,9 +208,10 @@ journey** (no DB/API shortcuts); (4) **persistence** checked (reload and fresh l
 (`product-reference`/`crimpd-reference` skills); (6) **the owner's own device check** on the real iPhone. Green CI alone,
 or WebKit emulation alone, is not DONE.
 
-## Validated where, and limits
+## Historical validation (original harness), and limits
 
-Validated in the dev container only against a locally started backend (+built frontend) on a throwaway DB
+The following records the original v1 harness rehearsal, not a current release
+result. It was validated in the dev container only against a locally started backend (+built frontend) on a throwaway DB
 `pullup_staging_harness`: unit tests (initData accepted by the app validator; provisioner guard), provisioner run twice
 (idempotent) with snapshot, all four journeys green in Chromium (S-OWNER-01 green for `qa_aged_active`, red for `qa_aged_legacy_snapshot`). Not validated: real staging, WebKit (browser not installed
 in the container), GitHub runner reachability, the SSH wrapper. The local green is not evidence about staging.
