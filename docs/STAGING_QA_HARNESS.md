@@ -217,3 +217,36 @@ QA-only control in the **staging bot** (`app/services/qa_fresh_reset.py`, handle
   warns about it.
 * Tests: `tests/test_services/test_qa_fresh_reset.py`, `tests/test_services/test_qa_fresh_reset_runtime_imports.py`
   (bot import graph in a fresh interpreter), `tests/test_bot/test_qa_fresh_reset.py`.
+
+## Installing the missing staging QA access
+
+A `rejected command: ./qa-staging.sh provision` result occurs before QA browser
+execution. Do not skip provisioning or reuse a failed command's durable claim.
+The existing deployment SSH key cannot authorize its own server allowlist change.
+
+`deploy/install-staging-qa-access.py` installs the exact `provision` / `snapshot`
+commands through `deploy/staging-qa-access-dispatch.sh` and `deploy/qa-staging.sh`.
+It saves the existing `/home/deploy/deploy-staging-dispatch.sh` as
+`deploy-staging-dispatch.before-qa.sh` and delegates every other command to that
+unchanged policy. It preserves `authorized_keys`, keys, existing services and
+non-QA data. It refuses unknown existing helpers, symlinks or later dispatcher
+modifications. Provisioning itself is a separate guarded QA action.
+
+After reviewing a specific 40-character commit SHA containing these files, use
+an existing administrative session on the VPS (root or the staging home owner):
+
+```bash
+git -C /home/deploy/pullup-trainer-bot-staging fetch origin <REVIEWED_SHA>
+git -C /home/deploy/pullup-trainer-bot-staging show <REVIEWED_SHA>:deploy/install-staging-qa-access.py | python3 - <REVIEWED_SHA>
+```
+
+The installer uses `git show`, never changes the checkout or creates credentials.
+An installation success is not QA acceptance. Afterwards verify the exact two
+literal commands through the existing restricted staging key. Provision only
+reserved synthetic identities and run the fixed two-browser release workflow.
+A previous failed claim must be reconciled before a controlled new execution;
+never delete the claim or weaken deduplication to force a retry.
+
+To undo the access extension, an administrator can atomically restore the saved
+original dispatcher; leave the recovery copy and existing keys intact. This
+removes only the added QA command routes and does not roll back the deployment.
