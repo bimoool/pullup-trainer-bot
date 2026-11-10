@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openAppAs } from "../fixtures/setup";
 
-// Seed: journal_calendar 939951. Delay a real API response, preserving its body.
+// Seed: journal_calendar_response_race 939951 (current-month anchor even at Moscow midnight). Delay a real API response, preserving its body.
 test("late post-write calendar refresh preserves the selected month's dots", async ({ page }) => {
   const { apiFailures, consoleErrors } = await openAppAs(page, 939951);
   await page.getByRole("button", { name: "Журнал", exact: true }).click();
