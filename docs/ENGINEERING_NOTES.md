@@ -3103,3 +3103,18 @@ POST …/995/complete: `refresh()` LiveEngineScreen не нашёл новую �
 - **Тесты.** Фикстура веб-`user` уже с триалом (#300); вспомогательные пользователи тестов, которые проверяют не
   подписку, создаются через `tests/test_web/_premium.py::create_premium_user` (бот — autouse
   `tests/test_bot/_premium.py`). Иначе 402 маскирует то, что тест на самом деле проверяет.
+# Skipped GitHub Actions job timestamps (2026-11-11)
+
+The current-check release guard rejected the rehearsal request in dispatcher run
+`43074641565` before creating a durable claim. On candidate `bf0d55fb`, GitHub's
+check and job APIs both reported skipped `claude` job `130693727248` in run
+`43069619207` with start `2026-11-11T17:35:30Z` and completion
+`2026-11-11T17:35:21Z`. The timestamps matched exactly; the rejected assumption was
+that every completed job has a nonnegative execution interval. Other skipped jobs
+on that candidate also had completion before start.
+
+`tools/current_checks.py` permits that ordering only for `skipped` jobs, which did
+not execute. Exact check/job timestamp equality, SHA/app/workflow/suite/job binding,
+attempt validation and latest-start ordering remain mandatory. Required checks
+still need `success`; a skipped required context cannot satisfy them. This repair
+does not replay the refused command or establish successful rehearsal evidence.

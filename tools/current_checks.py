@@ -161,8 +161,12 @@ def current_checks(api, sha):
         require(timestamp(check.get("started_at")) == started, "check/job execution time mismatch")
         if check.get("status") == "completed":
             completed = timestamp(job.get("completed_at"))
+            # GitHub can record skipped jobs as completed before started: no
+            # execution took place. Still bind both timestamps exactly; only
+            # executed jobs must have a nonnegative execution interval.
             require(
-                timestamp(check.get("completed_at")) == completed and completed >= started,
+                timestamp(check.get("completed_at")) == completed
+                and (check.get("conclusion") == "skipped" or completed >= started),
                 "check/job completion time mismatch",
             )
         key = (app["id"], run["workflow_id"], name)
