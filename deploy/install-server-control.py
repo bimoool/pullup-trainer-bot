@@ -5,6 +5,7 @@ import fcntl
 import hashlib
 import json
 import os
+import pwd
 import re
 import stat
 import subprocess
@@ -115,6 +116,35 @@ def install(root, blobs, *, baseline_hash=BASE_DISPATCH, apply=False):
     }
 
 
+def acquire_install_lock(path, *, staging=False):
+    info = path.lstat()
+    ensure(stat.S_ISREG(info.st_mode))
+    if staging:
+        identity = pwd.getpwnam("deploy")
+        parent = path.parent.lstat()
+        ensure(stat.S_ISDIR(parent.st_mode) and parent.st_uid == identity.pw_uid)
+        ensure(parent.st_gid == identity.pw_gid and not parent.st_mode & 0o002)
+        ensure(info.st_uid == identity.pw_uid and info.st_gid == identity.pw_gid)
+        # This existing shared lock intentionally allows its trusted deploy group.
+        # Never chmod, recreate or unlink it to fit a root-only policy.
+        ensure(not info.st_mode & 0o113 and info.st_mode & 0o600 == 0o600)
+    else:
+        check(path)
+    fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    try:
+        current = os.fstat(fd)
+        ensure(
+            (current.st_dev, current.st_ino, current.st_uid, current.st_gid, current.st_mode)
+            == (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+        )
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        ensure(path.lstat().st_ino == info.st_ino)
+    except (OSError, RuntimeError):
+        os.close(fd)
+        raise
+    return fd
+
+
 def main():
     os.umask(0o077)
     ensure(os.geteuid() == 0)
@@ -143,18 +173,13 @@ def main():
         BACKUPS / ".prod-guarded.lock",
         Path("/home/deploy/.deploy-staging.lock"),
     ]:
-        # Staging lock belongs to deploy; preserve its existing inode and ownership.
-        info = path.lstat()
-        ensure(stat.S_ISREG(info.st_mode) and not info.st_mode & 0o022)
-        if path.parent == BACKUPS:
-            check(path)
-        fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fd = acquire_install_lock(path, staging=path.parent != BACKUPS)
         descriptors.append(fd)
     for pattern in [
         "deploy-production-guarded-run[.]sh",
         "rollback-production-guarded[.]sh",
         "deploy-staging(-guarded)?-run[.]sh",
+        "deploy-run[.]sh",
         "pg_dump",
         "pg_restore",
     ]:
