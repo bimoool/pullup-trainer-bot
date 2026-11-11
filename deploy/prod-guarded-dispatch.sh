@@ -25,9 +25,19 @@ re_rollback='^prod-rollback (R1|R3) (/root/backups/[A-Za-z0-9._-]+\.manifest) (c
 
 clean_env=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8)
 
+re_control='^prod-control (readiness|prepare|restore|receipt) ([0-9a-f]{40}) (ops-[1-9][0-9]{0,19})$'
+# Receipt reads never start work and must remain available while a detached operation holds locks.
+if [[ "$cmd" =~ $re_control ]] && [[ "${BASH_REMATCH[1]}" = receipt ]]; then
+  exec "${clean_env[@]}" python3 "$BIN/server-control.py" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+fi
+
 mkdir -p "$LOCK_DIR"
 exec 9>"$LOCK_DIR/.prod-actions.lock"
 flock -n 9 || { echo "another production run started from GitHub Actions is in progress" >&2; exit 1; }
+
+if [[ "$cmd" =~ $re_control ]]; then
+  exec "${clean_env[@]}" python3 "$BIN/server-control.py" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+fi
 
 if [[ "$cmd" =~ $re_deploy ]]; then
   sha="${BASH_REMATCH[1]}"; mode="${BASH_REMATCH[2]}"; from="${BASH_REMATCH[3]}"; to="${BASH_REMATCH[4]}"; token="${BASH_REMATCH[6]}"

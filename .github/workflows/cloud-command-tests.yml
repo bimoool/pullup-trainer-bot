@@ -2,6 +2,12 @@ name: Cloud command authorization tests
 on:
   pull_request:
     paths:
+      - deploy/server-control.py
+      - deploy/prod-guarded-dispatch.sh
+      - deploy/install-server-control.py
+      - tools/server_control_client.py
+      - tools/tests/test_server_control*.py
+      - .github/workflows/server-control.yml
       - deploy/install-staging-qa-access.py
       - deploy/qa-staging.sh
       - deploy/staging-qa-access-dispatch.sh
