@@ -430,7 +430,8 @@ def restore_worker(sha, operation, store):
     name = "pullup-restore-" + operation
     work = LEDGER / operation
     stage = "resources"
-    created = False
+    creation_attempted = False
+    state, error = "FAILED", None
     facts = {"fresh_backup_created": False, "required_ram_mib": 784}
     try:
         available, disk = resources()
@@ -487,8 +488,8 @@ def restore_worker(sha, operation, store):
             check=False,
         )
         require(exists.returncode != 0, "CONTAINER_EXISTS")
+        creation_attempted = True
         command(restore_container_args(name, image, budget["data_limit_mib"]))
-        created = True
         deadline = time.monotonic() + 60
         while subprocess.run(
             ["docker", "exec", name, "pg_isready", "-U", "postgres", "-d", "verify"],
@@ -542,29 +543,21 @@ def restore_worker(sha, operation, store):
             .splitlines()
         )
         require(answer == [revision, "t", "t", "1"], "RESTORE_INVARIANTS")
-        return finish(
-            store,
-            operation,
-            "restore",
-            sha,
-            "verified",
-            "VERIFIED",
-            {
-                "backup_sha256": digest,
-                "backup_timestamp": now(),
-                "schema_revision": revision,
-                "constraints_valid": True,
-                "indexes_valid": True,
-                "sql_readable": True,
-                "isolated_network": "none",
-                "pg_memory_mib": 256,
-                "single_restore_worker": True,
-                "production_reserve_mib": 400,
-                "external_recovery": "owner-destination-and-access-required",
-            },
+        facts.update(
+            backup_sha256=digest,
+            schema_revision=revision,
+            constraints_valid=True,
+            indexes_valid=True,
+            sql_readable=True,
+            isolated_network="none",
+            pg_memory_mib=256,
+            single_restore_worker=True,
+            production_reserve_mib=400,
+            external_recovery="owner-destination-and-access-required",
         )
+        stage, state = "verified", "VERIFIED"
     except Refused as exc:
-        return finish(store, operation, "restore", sha, stage, "BLOCKED", facts, error=str(exc))
+        state, error = "BLOCKED", str(exc)
     except (
         OSError,
         ValueError,
@@ -573,64 +566,62 @@ def restore_worker(sha, operation, store):
         RuntimeError,
         subprocess.SubprocessError,
     ):
-        return finish(
-            store,
-            operation,
-            "restore",
-            sha,
-            stage,
-            "FAILED",
-            facts,
-            error="INTERNAL_FAILURE_PRIVATE_LOG_ONLY",
+        state, error = "FAILED", "INTERNAL_FAILURE_PRIVATE_LOG_ONLY"
+    # The durable receipt remains RUNNING until cleanup is positively reconciled.
+    # Set this before docker run: a timed-out client may already have created the container.
+    try:
+        if creation_attempted:
+            cleanup_restore_container(name, operation)
+        facts["cleanup_verified"] = True
+    except (
+        Refused,
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        subprocess.SubprocessError,
+    ):
+        stage, state, error = "cleanup", "FAILED", "CLEANUP_UNCONFIRMED_OPERATOR_REVIEW"
+        facts["cleanup_verified"] = False
+    return finish(store, operation, "restore", sha, stage, state, facts, error=error)
+
+
+def cleanup_restore_container(name, operation):
+    def present():
+        # Successful Docker list with an exact name filter proves absence. An inspect
+        # failure alone cannot distinguish absence from a disconnected Docker daemon.
+        return bool(
+            command(
+                [
+                    "docker",
+                    "container",
+                    "ls",
+                    "--all",
+                    "--quiet",
+                    "--filter",
+                    "name=^/" + name + "$",
+                ]
+            ).strip()
         )
-    finally:
-        try:
-            if created:
-                label = (
-                    command(
-                        [
-                            "docker",
-                            "inspect",
-                            "--format",
-                            '{{index .Config.Labels "pullup.control.operation"}}',
-                            name,
-                        ]
-                    )
-                    .decode()
-                    .strip()
-                )
-                require(label == operation, "CLEANUP_OWNERSHIP")
-                command(["docker", "rm", "-f", name])
-                check = subprocess.run(
-                    ["docker", "container", "inspect", name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                require(check.returncode != 0, "CLEANUP_INCOMPLETE")
-            result = store.read(operation)
-            result.setdefault("facts", {})["cleanup_verified"] = True
-            store.write(operation, result)
-        except (
-            Refused,
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            subprocess.SubprocessError,
-        ):
-            finish(
-                store,
-                operation,
-                "restore",
-                sha,
-                "cleanup",
-                "FAILED",
-                facts,
-                error="CLEANUP_UNCONFIRMED_OPERATOR_REVIEW",
+
+    if present():
+        label = (
+            command(
+                [
+                    "docker",
+                    "inspect",
+                    "--format",
+                    '{{index .Config.Labels "pullup.control.operation"}}',
+                    name,
+                ]
             )
-        # Only this operation's standalone instance is removed. Keep its private backup and receipt.
+            .decode()
+            .strip()
+        )
+        require(label == operation, "CLEANUP_OWNERSHIP")
+        command(["docker", "rm", "-f", name])
+    require(not present(), "CLEANUP_INCOMPLETE")
 
 
 def execute(action, sha, operation):

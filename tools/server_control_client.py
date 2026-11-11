@@ -91,6 +91,8 @@ def safe_receipt(raw, sha, operation):
 
     check(value)
     require(value.get("state") in {"RUNNING", "VERIFIED", "BLOCKED", "FAILED"}, "receipt state")
+    if value.get("action") == "restore" and value["state"] == "VERIFIED":
+        require(value.get("facts", {}).get("cleanup_verified") is True, "restore cleanup required")
     return value
 
 

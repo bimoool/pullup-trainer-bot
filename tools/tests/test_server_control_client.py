@@ -87,3 +87,19 @@ class ClientTests(unittest.TestCase):
         ]:
             with self.assertRaises(c.Refused):
                 c.safe_receipt(__import__("json").dumps(bad).encode(), SHA, "ops-10")
+
+    def test_restore_success_without_confirmed_cleanup_is_refused(self):
+        receipt = {
+            "operation_id": "ops-10",
+            "candidate": SHA,
+            "action": "restore",
+            "stage": "verified",
+            "state": "VERIFIED",
+            "facts": {},
+        }
+        with self.assertRaises(c.Refused):
+            c.safe_receipt(__import__("json").dumps(receipt).encode(), SHA, "ops-10")
+        receipt["facts"]["cleanup_verified"] = True
+        self.assertEqual(
+            c.safe_receipt(__import__("json").dumps(receipt).encode(), SHA, "ops-10"), receipt
+        )

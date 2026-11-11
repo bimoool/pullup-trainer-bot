@@ -138,9 +138,16 @@ def main():
             stderr=subprocess.DEVNULL,
         )
     descriptors = []
-    for name in [".prod-actions.lock", ".prod-guarded.lock"]:
-        path = BACKUPS / name
-        check(path)
+    for path in [
+        BACKUPS / ".prod-actions.lock",
+        BACKUPS / ".prod-guarded.lock",
+        Path("/home/deploy/.deploy-staging.lock"),
+    ]:
+        # Staging lock belongs to deploy; preserve its existing inode and ownership.
+        info = path.lstat()
+        ensure(stat.S_ISREG(info.st_mode) and not info.st_mode & 0o022)
+        if path.parent == BACKUPS:
+            check(path)
         fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         descriptors.append(fd)

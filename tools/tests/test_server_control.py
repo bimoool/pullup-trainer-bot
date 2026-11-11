@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("server_control", ROOT / "deploy/server-control.py")
@@ -118,6 +118,95 @@ class ControlTests(unittest.TestCase):
             self.assertEqual(result["error"], "RAM_RESERVE")
             self.assertEqual(result["facts"]["available_ram_mib"], 477)
             self.assertFalse(result["facts"]["fresh_backup_created"])
+
+    def run_restore_fixture(self, *, uncertain_create=False, cleanup_fails=False):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        store = t.Receipts(root)
+        store.claim("ops-123", "restore", "a" * 40)
+        present = False
+        removed = False
+        writes = []
+        original_write = store.write
+
+        def write(operation, receipt):
+            writes.append((receipt["state"], removed))
+            original_write(operation, receipt)
+
+        store.write = write
+
+        def command(args, timeout=25):
+            nonlocal present, removed
+            if args[:3] == ["docker", "image", "inspect"]:
+                return b'["PG_MAJOR=16"]'
+            if args[-3:] == ["id", "-u", "postgres"]:
+                return b"999"
+            if args[:2] == ["docker", "run"]:
+                present = True
+                if uncertain_create:
+                    raise t.Refused("COMMAND_TIMEOUT")
+                return b"synthetic-container"
+            if args[:3] == ["docker", "container", "ls"]:
+                return b"synthetic-container\n" if present else b""
+            if args[:2] == ["docker", "inspect"]:
+                return b"ops-123"
+            if args[:3] == ["docker", "rm", "-f"]:
+                if cleanup_fails:
+                    raise t.Refused("COMMAND_TIMEOUT")
+                present = False
+                removed = True
+                return b""
+            if "psql" in args:
+                return b"b5d8e1f3a6c9\nt\nt\n1\n"
+            raise AssertionError(args)
+
+        def run(args, **kwargs):
+            if "pg_dump" in " ".join(args):
+                kwargs["stdout"].write(b"synthetic-only")
+                kwargs["stdout"].flush()
+            code = int(not present) if args[:3] == ["docker", "container", "inspect"] else 0
+            return Mock(returncode=code)
+
+        process = Mock(returncode=0)
+        process.poll.return_value = 0
+        with (
+            patch.object(t, "LEDGER", root),
+            patch.object(t, "resources", return_value=(1200, 10000)),
+            patch.object(
+                t, "service", return_value=("synthetic-db", {"Image": "sha256:" + "a" * 64})
+            ),
+            patch.object(t, "query", side_effect=[str(5 * 1048576), "b5d8e1f3a6c9"]),
+            patch.object(t, "command", side_effect=command),
+            patch.object(t.subprocess, "run", side_effect=run),
+            patch.object(t.subprocess, "Popen", return_value=process),
+        ):
+            result = t.restore_worker("a" * 40, "ops-123", store)
+        return result, store.read("ops-123"), writes, present
+
+    def test_restore_never_publishes_success_before_cleanup(self):
+        result, durable, writes, present = self.run_restore_fixture()
+        self.assertFalse(present)
+        self.assertEqual(durable["state"], "VERIFIED")
+        self.assertEqual(result, durable)
+        self.assertTrue(durable["facts"]["cleanup_verified"])
+        self.assertTrue(all(removed for state, removed in writes if state == "VERIFIED"))
+
+    def test_uncertain_container_creation_is_reconciled_and_removed(self):
+        result, durable, _, present = self.run_restore_fixture(uncertain_create=True)
+        self.assertFalse(present)
+        self.assertEqual(result, durable)
+        self.assertNotEqual(durable["state"], "VERIFIED")
+        self.assertTrue(durable["facts"]["cleanup_verified"])
+
+    def test_cleanup_failure_never_publishes_success(self):
+        result, durable, writes, present = self.run_restore_fixture(cleanup_fails=True)
+        self.assertTrue(present)
+        self.assertEqual(result, durable)
+        self.assertEqual(durable["state"], "FAILED")
+        self.assertEqual(durable["stage"], "cleanup")
+        self.assertNotIn("VERIFIED", [state for state, _ in writes])
+        self.assertFalse(durable["facts"].get("cleanup_verified", False))
 
     def test_fetch_timeout_reconciles_object_and_never_retries(self):
         calls = []
