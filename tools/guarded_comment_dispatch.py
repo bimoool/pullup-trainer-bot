@@ -26,6 +26,22 @@ REQUIRED_CHECKS = {
 
 
 def command(body):
+    control = re.fullmatch(
+        r"/pullup server-(readiness|prepare|restore|receipt) ([0-9a-f]{40})(?: (ops-[1-9][0-9]{0,19}))?",
+        body,
+    )
+    if control:
+        action, sha, operation_id = control.groups()
+        require(
+            (action == "receipt") == (operation_id is not None),
+            "receipt ID required only for reconciliation",
+        )
+        return (
+            "server-" + action,
+            sha,
+            "server-control.yml",
+            {"operation": action, "candidate_sha": sha, "operation_id": operation_id or ""},
+        )
     match = re.fullmatch(
         r"/pullup (staging-preflight|staging-snapshot|staging-deploy|staging-qa|production-preflight|production-apply|rehearse|rollback-check) "
         r"([0-9a-f]{40})(?: ([0-9a-f]{12}) ([0-9a-f]{12})(?: (PRODUCTION-APPLY-[0-9a-f]{12}))?"
@@ -161,6 +177,10 @@ def unchanged_staging(api, deployed):
 
 
 def release_gates(api, operation, sha, inputs):
+    if operation.startswith("server-"):
+        if operation not in {"server-readiness", "server-receipt"}:
+            green_checks(api, sha)
+        return  # metadata/fetch/isolated restore never execute candidate app code or deploy
     if operation in {"staging-preflight", "staging-snapshot"}:
         return
     if operation == "rollback-check":
@@ -249,6 +269,10 @@ def authorize(event, runtime, api):
         "guarded workflow unavailable",
     )
     release_gates(api, operation, sha, inputs)
+    if operation.startswith("server-"):
+        inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
+        inputs["pr_number"] = str(number)
+        inputs["request_comment_id"] = str(comment["id"])
     return number, operation, sha, workflow_name, inputs
 
 
@@ -270,6 +294,10 @@ def dispatch(event, runtime, api):
     number, operation, sha, workflow_name, inputs = authorize(event, runtime, api)
     marker_kind = "preflight" if operation == "staging-preflight" else operation
     marker = f"<!-- pullup-{marker_kind}-v1:{number}:{sha} -->"
+    if operation.startswith("server-"):
+        marker = (
+            f"<!-- pullup-{marker_kind}-v1:{number}:{sha}:ops-{inputs['request_comment_id']} -->"
+        )
     for page in range(1, 101):
         comments = api("GET", f"issues/{number}/comments?per_page=100&page={page}")
         require(isinstance(comments, list) and len(comments) <= 100, "invalid comment listing")
