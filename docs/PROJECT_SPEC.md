@@ -1351,3 +1351,17 @@ UI: в деталях записи рядом с «Удалить» — «✏️
   «Добавить в план» остаётся главным действием.
 - **Golden Journey** — постоянный полный E2E — отдельная задача (issue #221).
 - **Слияние legacy и v2 Журнала** — не принято.
+
+### Same-operation server prepare recovery
+
+The owner may post `/pullup server-prepare-recover <exact-40-character-sha> <original-comment-id>`
+on the original candidate PR when its original prepare request has no trusted dispatcher claim.
+The original comment must still be the owner's exact `/pullup server-prepare <sha>` on that PR.
+Recovery retains the original prepare action, operation ID and request comment; it requires
+current PR head, existing full CI/rehearsal gates and trusted main workflows. It only prepares
+the Git object, following existing prepare admission, without a deployment tree-equality bypass.
+The durable original prepare marker also records the recovery comment and dispatcher run.
+The child checks both comments and recovery provenance. An existing original claim refuses
+recovery; an interrupted recovery remains claimed and cannot be replayed. A late original
+request deduplicates against the same marker. Concurrent children share the server's exclusive
+same-operation ledger and cannot perform the prepare effect twice. No claim or ledger is deleted.

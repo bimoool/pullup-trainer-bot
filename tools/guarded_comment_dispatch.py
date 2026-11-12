@@ -26,6 +26,23 @@ REQUIRED_CHECKS = {
 
 
 def command(body):
+    recovery = re.fullmatch(
+        r"/pullup server-prepare-recover ([0-9a-f]{40}) ([1-9][0-9]{0,19})", body
+    )
+    if recovery:
+        sha, original = recovery.groups()
+        return (
+            "server-prepare",
+            sha,
+            "server-control.yml",
+            {
+                "operation": "prepare",
+                "candidate_sha": sha,
+                "operation_id": "ops-" + original,
+                "request_comment_id": original,
+                "recovery_comment_id": "",
+            },
+        )
     control = re.fullmatch(
         r"/pullup server-(readiness|prepare|restore|receipt) ([0-9a-f]{40})(?: (ops-[1-9][0-9]{0,19}))?",
         body,
@@ -269,11 +286,33 @@ def authorize(event, runtime, api):
         "guarded workflow unavailable",
     )
     release_gates(api, operation, sha, inputs)
+    if "recovery_comment_id" in inputs:
+        require(
+            live_comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}",
+            "recovery comment PR binding required",
+        )
+        original_id = inputs["request_comment_id"]
+        require(original_id != str(comment["id"]), "original comment required")
+        original = api("GET", f"issues/comments/{original_id}")
+        validate_prepare_comment(original, owner, number, sha)
+        inputs["recovery_comment_id"] = str(comment["id"])
     if operation.startswith("server-"):
         inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
         inputs["pr_number"] = str(number)
-        inputs["request_comment_id"] = str(comment["id"])
+        inputs.setdefault("request_comment_id", str(comment["id"]))
     return number, operation, sha, workflow_name, inputs
+
+
+def validate_prepare_comment(comment, owner, number, sha):
+    require(
+        comment.get("body") == f"/pullup server-prepare {sha}"
+        and comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}"
+        and comment.get("user", {}).get("id") == owner["id"]
+        and comment.get("user", {}).get("login") == owner["login"]
+        and comment.get("user", {}).get("type") == "User"
+        and comment.get("author_association") == "OWNER",
+        "original prepare owner, text and PR binding required",
+    )
 
 
 def validate_pr(pr, number, sha):
@@ -292,6 +331,12 @@ def validate_pr(pr, number, sha):
 
 def dispatch(event, runtime, api):
     number, operation, sha, workflow_name, inputs = authorize(event, runtime, api)
+    recovery_id = inputs.pop("recovery_comment_id", None)
+    provenance = (
+        f"<!-- pullup-prepare-recovery-v1:{inputs['request_comment_id']}:{recovery_id}:{runtime['run_id']} -->\n"
+        if recovery_id
+        else ""
+    )
     marker_kind = "preflight" if operation == "staging-preflight" else operation
     marker = f"<!-- pullup-{marker_kind}-v1:{number}:{sha} -->"
     if operation.startswith("server-"):
@@ -308,6 +353,10 @@ def dispatch(event, runtime, api):
                 and author.get("login") == "github-actions[bot]"
                 and marker in comment.get("body", "")
             ):
+                require(
+                    not recovery_id or provenance.strip() in comment.get("body", ""),
+                    "original prepare already claimed; recovery forbidden",
+                )
                 return "duplicate: existing durable claim; not dispatched again"
         if len(comments) < 100:
             break
@@ -318,7 +367,7 @@ def dispatch(event, runtime, api):
         "POST",
         f"issues/{number}/comments",
         {
-            "body": f"{marker}\n{operation} reserved for `{sha}` by dispatcher run {runtime['run_id']}.\n"
+            "body": f"{marker}\n{provenance}{operation} reserved for `{sha}` by dispatcher run {runtime['run_id']}.\n"
             "No automatic retry: if the next request is interrupted, inspect Actions before any operator recovery."
         },
     )
@@ -340,7 +389,7 @@ def dispatch(event, runtime, api):
         "PATCH",
         f"issues/comments/{receipt['id']}",
         {
-            "body": f"{marker}\nDispatch accepted for {operation} of `{sha}`.\n"
+            "body": f"{marker}\n{provenance}Dispatch accepted for {operation} of `{sha}`.\n"
             f"Dispatcher run: https://github.com/{REPO}/actions/runs/{runtime['run_id']}\n"
             "Acceptance is not completion. Read the guarded workflow run and verify its exact SHA, inputs and successful conclusion."
         },
