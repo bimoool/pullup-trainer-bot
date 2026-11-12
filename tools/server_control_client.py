@@ -17,6 +17,7 @@ from guarded_comment_dispatch import (
     green_checks,
     require,
     validate_pr,
+    validate_prepare_comment,
 )
 
 WORKFLOW = ".github/workflows/server-control.yml"
@@ -147,8 +148,34 @@ def authorize(api, env):
     else:
         raise Refused("claim pagination limit")
     require(claim is not None, "dispatcher claim required")
+    recovery = re.search(
+        r"<!-- pullup-prepare-recovery-v1:([1-9][0-9]{0,19}):([1-9][0-9]{0,19}):([1-9][0-9]*) -->",
+        claim["body"],
+    )
+    if "pullup-prepare-recovery-v1" in claim["body"]:
+        require(recovery is not None and action == "prepare", "invalid recovery provenance")
+        original, recovery_id, dispatcher_id = recovery.groups()
+        require(original == comment_id and recovery_id != original, "recovery original binding")
+        validate_prepare_comment(comment, owner, number, sha)
+        recovery_comment = api("GET", f"issues/comments/{recovery_id}")
+        validate_prepare_comment(
+            dict(
+                recovery_comment,
+                body=(
+                    f"/pullup server-prepare {sha}"
+                    if recovery_comment.get("body")
+                    == f"/pullup server-prepare-recover {sha} {original}"
+                    else ""
+                ),
+            ),
+            owner,
+            number,
+            sha,
+        )
     match = re.search(r"(?:dispatcher run |actions/runs/)([1-9][0-9]*)", claim["body"])
     require(match is not None, "dispatcher origin required")
+    if recovery:
+        require(match[1] == dispatcher_id, "recovery dispatcher binding")
     run = api("GET", "actions/runs/" + match[1])
     require(
         run.get("path") == ".github/workflows/cloud-command-dispatch.yml"
