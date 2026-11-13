@@ -233,3 +233,6 @@ seed journal_catalog_session 931005
 
 # Workout save/navigation race: independent golden_journey user plus retry.
 for id in 939901 939902; do seed golden_journey "$id"; done
+
+# Journal clone visibility: independent users per navigation case and retry.
+for id in 939921 939922 939931 939932; do seed golden_journey "$id"; done
