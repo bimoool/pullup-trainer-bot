@@ -1,7 +1,24 @@
 import { expect, test } from "@playwright/test";
-import type { SessionResponseV2 } from "../../src/apiV2";
 import { buildInitData, getTestBotToken } from "../fixtures/initData";
 import { openAppAs } from "../fixtures/setup";
+
+// Only the response fields compared below; keep browser tests independent of the app's module graph.
+type SessionFactsResponse = {
+  blocks: Array<{
+    order_index: number;
+    exercise_id: number | null;
+    protocol_type: string | null;
+    result: unknown;
+    set_targets: unknown;
+    set_logs: Array<{
+      set_number: number;
+      value: string;
+      unit: string;
+      effort: string | null;
+      note: string | null;
+    }>;
+  }>;
+};
 
 // Independent golden_journey users. Completed prior months also work on the first day of a month.
 for (const [index, crossMonth] of [false, true].entries()) {
@@ -54,7 +71,7 @@ for (const [index, crossMonth] of [false, true].entries()) {
     expect(copy.progression_result).toBeNull();
     expect(copy.id).not.toBe(original.id);
     expect(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date(copy.performed_at))).toBe(copyDate);
-    const facts = (session: SessionResponseV2) => session.blocks.map((block) => ({
+    const facts = (session: SessionFactsResponse) => session.blocks.map((block) => ({
       order: block.order_index, exercise: block.exercise_id, protocol: block.protocol_type,
       result: block.result, targets: block.set_targets,
       logs: block.set_logs.map((log) => ({
