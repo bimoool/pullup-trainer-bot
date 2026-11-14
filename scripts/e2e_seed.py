@@ -956,7 +956,12 @@ async def seed_journal_v2(session: AsyncSession, telegram_id: int) -> None:
     await session.flush()
 
 
-async def seed_journal_calendar(session: AsyncSession, telegram_id: int) -> None:
+async def seed_journal_calendar(
+    session: AsyncSession,
+    telegram_id: int,
+    *,
+    recent_minutes: int = 5,
+) -> None:
     """#256 — календарь Журнала (пояс Europe/Moscow): завершённые сессии без
     снимка в ПРЕДЫДУЩЕМ месяце — 10-го, дважды 15-го и 20-го в 12:00 МСК — и
     одна сессия «только что» в текущем месяце. Остальные дни и месяц до
@@ -988,8 +993,18 @@ async def seed_journal_calendar(session: AsyncSession, telegram_id: int) -> None
     for day, hour, reps in ((10, 12, 8), (15, 12, 9), (15, 18, 10), (20, 12, 11)):
         at = datetime(previous_month_last.year, previous_month_last.month, day, hour, tzinfo=tz)
         await add(at.astimezone(UTC), reps)
-    await add(now - timedelta(minutes=5), 12)
+    await add(now - timedelta(minutes=recent_minutes), 12)
     await session.flush()
+
+
+async def seed_journal_calendar_response_race(session: AsyncSession, telegram_id: int) -> None:
+    """Keep the race fixture's initial card in the current Moscow month.
+
+    At month start even a five-minute offset lands in the previous month and
+    triggers the journal's empty-month fallback before the response race begins.
+    Other calendar scenarios retain their existing historical timestamps.
+    """
+    await seed_journal_calendar(session, telegram_id, recent_minutes=0)
 
 
 async def seed_journal_return(session: AsyncSession, telegram_id: int) -> None:
@@ -1801,6 +1816,7 @@ SCENARIOS = {
     "peer_empty": seed_peer_empty,
     "journal_v2": seed_journal_v2,
     "journal_calendar": seed_journal_calendar,
+    "journal_calendar_response_race": seed_journal_calendar_response_race,
     "journal_return": seed_journal_return,
     "journal_edit": seed_journal_edit,
     "journal_plans_polish": seed_journal_plans_polish,

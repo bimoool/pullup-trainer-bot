@@ -41,6 +41,7 @@ for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002
+seed journal_calendar_response_race 939951
 seed journal_edit 997201
 seed journal_edit 997202
 seed analytics_v2 910003
@@ -233,3 +234,8 @@ seed journal_catalog_session 931005
 
 # Workout save/navigation race: independent golden_journey user plus retry.
 for id in 939901 939902; do seed golden_journey "$id"; done
+
+# Journal clone visibility: independent users per navigation case and retry.
+for id in 939921 939922 939931 939932; do seed golden_journey "$id"; done
+# Journal edit/clone Back during pending API response; one user per case/retry.
+for id in 939961 939962 939963 939964 939965 939966 939967 939968; do seed journal_edit "$id"; done
