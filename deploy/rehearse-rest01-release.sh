@@ -13,9 +13,9 @@
 #      запускается (контейнер только создаётся); режим rehearse-check не стартует бота никогда;
 #   4. КОНТРОЛЬ (CONTROL=1): ПРЕЖНИЙ раннер на кандидате d1b2375 воспроизводит отказ фазы 8 и даёт построчный diff
 #      plan_weeks/plan_items/program_inclusions — это и есть недостающий факт диагноза;
-#   5. ЦЕЛЬ: на свежем восстановлении НОВЫЙ раннер (rehearse-check): verify-only до остановки и дважды после, все хэш-,
+#   5. ЦЕЛЬ: на свежем восстановлении НОВЫЙ раннер (rehearse-check): verify-compatible до остановки и дважды после, все хэш-,
 #      same_legacy-, dry-run-, plan-guard-контроли и инварианты; затем независимо от раннера — отпечаток всех таблиц
-#      до/после (должен совпасть), собственный verify-only и подсчёт незавершённых legacy-занятий с неверным отдыхом.
+#      до/после (должен совпасть), собственный verify-compatible и подсчёт незавершённых legacy-занятий с неверным отдыхом.
 #   6. по умолчанию удаляет копию данных (тома, дамп-копию, построчные выгрузки); сохраняет только отчёты без данных.
 #
 # Ресурсы: ВСЕ сборки (репетиции и самого раннера) идут в отдельном контейнерном билдере BuildKit с жёстким cgroup-потолком памяти без
@@ -36,9 +36,9 @@ PROJECT="${REHEARSE_PROJECT:-pullup-rehearsal-rest01}"
 DUMP="${REHEARSE_DUMP:-/root/backups/prod-pre-9fb76da-20261019T203942Z.dump}"
 OLD_CODE_SHA="${REHEARSE_OLD_CODE_SHA:-bd80bc9d5cc3683aa6eccdbba182a8fe4d9571d2}"          # prod HEAD (preflight 2026-10-20)
 CONTROL_SHA="${REHEARSE_CONTROL_SHA:-d1b237567d732d4d670232d8a060f9849c3132a8}"            # кандидат упавшего выката (дерево = 9fb76da)
-# Pin the reviewed candidate, including bounded recovery from transient unhealthy startup.
+# Pin the reviewed same-schema compatibility runner, including bounded startup recovery.
 # Rehearsal does not install this runner on the production server.
-NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-07380ffbc9edaea70602a9382f9db959b8eece8d0f5a67180008993488335ce2}"
+NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-c97a36be89bbce6782ca181a641327be69b3c27e1d91d1810da7a90b57fe4b35}"
 FROM_REV="${REHEARSE_FROM_REV:-b5d8e1f3a6c9}"
 WEB_PORT="${REHEARSE_WEB_PORT:-18781}"
 # Жёсткие потолки памяти (cgroup, БЕЗ swap): сборки идут в ОТДЕЛЬНОМ контейнерном билдере BuildKit, контейнеры проекта — со
@@ -216,7 +216,7 @@ git show "$CONTROL_SHA:deploy/deploy-production-guarded-run.sh" > "$BIN/runner-o
 git show "$SHA:deploy/rollback-production-guarded.sh" > "$BIN/rollback-production-guarded.sh"
 chmod 700 "$BIN"/*.sh
 log "candidate runner sha256 $got == pinned; old (control) runner sha256 $(sha256sum "$BIN/runner-old.sh" | awk '{print $1}')"
-git show "$SHA:scripts/backfill_multi_program.py" > "$BIN/backfill.py.check"; grep -q -- '--verify-only' "$BIN/backfill.py.check" || die "candidate has no --verify-only"; rm -f "$BIN/backfill.py.check"
+git show "$SHA:scripts/backfill_multi_program.py" > "$BIN/backfill.py.check"; grep -q -- '--verify-compatible' "$BIN/backfill.py.check" || die "candidate has no --verify-compatible"; rm -f "$BIN/backfill.py.check"
 
 # --------------------------------------------------------------------------------------------- 2 isolated environment
 log "== [2] isolated environment: own project, own volume, port 127.0.0.1:$WEB_PORT, Telegram disabled"
@@ -411,11 +411,11 @@ prepare_state; snapshot before
 rc=0; run_runner "$BIN/runner-new.sh" "$SHA" "$RUN_REPORT/target-runner.log" || rc=$?
 tail -n 12 "$RUN_REPORT/target-runner.log" | sed 's/^/    runner| /'
 [ "$rc" = 0 ] || die "new runner failed (exit $rc): see $RUN_REPORT/target-runner.log"
-grep -q 'existing migration coverage verified read-only before stopping writers' "$RUN_REPORT/target-runner.log" || die "verify-only pre-stop step did not run"
-grep -q 'already-migrated database verified without applying backfill/calendar convergence' "$RUN_REPORT/target-runner.log" || die "verify-only branch was not taken"
+grep -q 'existing runtime compatibility verified read-only before stopping writers' "$RUN_REPORT/target-runner.log" || die "verify-compatible pre-stop step did not run"
+grep -q 'runtime-compatible database verified without applying backfill/calendar convergence' "$RUN_REPORT/target-runner.log" || die "verify-compatible branch was not taken"
 grep -q 'REHEARSAL OK' "$RUN_REPORT/target-runner.log" || die "runner did not report REHEARSAL OK"
-! grep -q 'backfill apply took' "$RUN_REPORT/target-runner.log" || die "backfill apply ran in the verify-only path"
-log "runner: verify-only path taken, no backfill apply, REHEARSAL OK"
+! grep -q 'backfill apply took' "$RUN_REPORT/target-runner.log" || die "backfill apply ran in the verify-compatible path"
+log "runner: verify-compatible path taken, no backfill apply, REHEARSAL OK"
 
 snapshot after
 if diff -u "$SNAP/fp_before.txt" "$SNAP/fp_after.txt" > "$RUN_REPORT/fingerprint.diff"; then
@@ -424,24 +424,32 @@ else
   cat "$RUN_REPORT/fingerprint.diff"; die "table fingerprints differ after the release (see $RUN_REPORT/fingerprint.diff)"
 fi
 for t in plan_weeks plan_items program_inclusions; do
-  cmp -s "$SNAP/${t}_before.jsonl" "$SNAP/${t}_after.jsonl" || die "$t changed during the verify-only release"
+  cmp -s "$SNAP/${t}_before.jsonl" "$SNAP/${t}_after.jsonl" || die "$t changed during the verify-compatible release"
 done
 log "plan_weeks / plan_items / program_inclusions identical row by row"
 
-log "== [5] independent verify-only against the rehearsal DB with the candidate image"
+log "== [5] independent verify-compatible against the rehearsal DB with the candidate image"
 git checkout --quiet --detach "$SHA"
-vrc=0; (cd "$CLONE" && docker compose -p "$PROJECT" run --rm -T app python scripts/backfill_multi_program.py --verify-only) > "$RUN_REPORT/verify-only-independent.txt" 2>&1 || vrc=$?
-[ "$vrc" = 0 ] || die "independent verify-only failed (exit $vrc): $(tail -n 3 "$RUN_REPORT/verify-only-independent.txt")"
-python3 -I - "$RUN_REPORT/verify-only-independent.txt" <<'PY' || die "independent verify-only result is not verified"
+vrc=0; (cd "$CLONE" && docker compose -p "$PROJECT" run --rm -T app python scripts/backfill_multi_program.py --verify-compatible) > "$RUN_REPORT/verify-compatible-independent.txt" 2>&1 || vrc=$?
+[ "$vrc" = 0 ] || die "independent verify-compatible failed (exit $vrc): $(tail -n 3 "$RUN_REPORT/verify-compatible-independent.txt")"
+python3 -I - "$RUN_REPORT/verify-compatible-independent.txt" <<'PY' || die "independent verify-compatible result is not verified"
 import json, sys
 rows = [l[len("RESULT-JSON "):] for l in open(sys.argv[1], encoding="utf-8") if l.startswith("RESULT-JSON ")]
 assert len(rows) == 1, "expected exactly one RESULT-JSON"
-d = json.loads(rows[0]); assert d["mode"] == "verify-only" and d["verified"] is True and d["errors"] == [], d
-print("independent verify-only:", json.dumps(d, sort_keys=True))
+d = json.loads(rows[0]); assert d["mode"] == "verify-compatible" and d["verified"] is True and d["errors"] == [], d
+keys = ("users_onboarded", "onboarded_with_plan", "compatible_onboarded_without_plan",
+        "non_onboarded_with_plan", "training_plans_total", "blocked_without_plan",
+        "users_total", "compatible_non_onboarded_without_plan")
+c = d.get("counts")
+assert isinstance(c, dict) and all(type(c.get(k)) is int and c[k] >= 0 for k in keys), d
+n, a, e, p, t, b, u, z = (c[k] for k in keys)
+assert b == 0 and n == a+e and t == a+p and u == n+p+z, d
+assert all(type(d.get(k)) is int and d[k] == 0 for k in ("history_mutations", "unresolved")), d
+print("independent verify-compatible:", json.dumps(d, sort_keys=True))
 PY
 snapshot after-verify
-cmp -s "$SNAP/fp_after.txt" "$SNAP/fp_after-verify.txt" || die "independent verify-only changed the database"
-log "independent verify-only: verified, database unchanged"
+cmp -s "$SNAP/fp_after.txt" "$SNAP/fp_after-verify.txt" || die "independent verify-compatible changed the database"
+log "independent verify-compatible: verified, database unchanged"
 
 log "== [6] unfinished legacy sessions with wrong rest (COPY of the dump: state at $(basename "$DUMP"), NOT live production)"
 psql_db < "$SQLD/active_wrong_rest.sql" > "$RUN_REPORT/active-wrong-rest.txt"
@@ -453,9 +461,9 @@ log "per-session list (ids only): $RUN_REPORT/active-wrong-rest.txt — sessions
   echo "candidate: $SHA"
   echo "dump (read-only copy): $(basename "$DUMP") sha256 $(awk '{print $1}' "$DUMP.sha256")"
   echo "control (previous runner on d1b2375): $CONTROL_RESULT"
-  echo "target (new runner): REHEARSAL OK, verify-only path, no backfill apply"
+  echo "target (new runner): REHEARSAL OK, verify-compatible path, no backfill apply"
   echo "data unchanged: all public tables identical before/after; calendar tables identical row by row"
-  echo "independent verify-only: verified"
+  echo "independent verify-compatible: verified"
 } > "$RUN_REPORT/SUMMARY.txt"
 cat "$RUN_REPORT/SUMMARY.txt"
 log "REHEARSAL PASSED for $SHA. This is NOT permission to apply: apply stays a separate explicit step."

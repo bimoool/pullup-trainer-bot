@@ -107,12 +107,28 @@ if args[0] == "compose":
             bad = [{"user_id": 7, "guard_violations": ["x"]}] if env.get("REPAIR_GUARD") else []
             out(json.dumps({"mode": "dry-run", "users": 3, "total_mutations": 2, "users_detail": bad})); sys.exit(0)
         if "backfill_multi_program" in cmd:
-            if "--verify-only" in cmd:
+            if "--verify-only" in cmd or "--verify-compatible" in cmd:
                 if env.get("VERIFY_ONLY_WRITES") and not st.get("running", {}).get("app"):
                     st["v2_version"] += 1; save()
-                if env.get("VERIFY_ONLY_FAIL") or st.get("missing_plans") or (env.get("VERIFY_ONLY_FAIL_AFTER_STOP") and not st.get("running", {}).get("app")):
+                if env.get("VERIFY_ONLY_FAIL") or (st.get("missing_plans") and not env.get("SAFE_EMPTY_PLANS")) or (env.get("VERIFY_ONLY_FAIL_AFTER_STOP") and not st.get("running", {}).get("app")):
                     sys.stderr.write("incomplete migration coverage\n"); sys.exit(1)
-                out("RESULT-JSON " + json.dumps({"mode": "verify-only", "verified": True, "errors": []}))
+                result = {"mode": "verify-only", "verified": True, "errors": []}
+                if "--verify-compatible" in cmd:
+                    empty = st.get("missing_plans", 0)
+                    other = int(env.get("NON_ONBOARDED_PLANS", "0"))
+                    result.update(mode="verify-compatible", history_mutations=0, unresolved=0, counts={
+                        "users_onboarded": 3, "onboarded_with_plan": 3-empty,
+                        "compatible_onboarded_without_plan": empty, "non_onboarded_with_plan": other,
+                        "training_plans_total": 3-empty+other, "blocked_without_plan": 0,
+                        "users_total": 3+other, "compatible_non_onboarded_without_plan": 0,
+                    })
+                    malformed = env.get("BAD_COMPATIBLE_RESULT")
+                    if malformed == "mode": result["mode"] = "verify-only"
+                    if malformed == "missing": del result["counts"]["blocked_without_plan"]
+                    if malformed == "bool": result["counts"]["blocked_without_plan"] = False
+                    if malformed == "equation": result["counts"]["training_plans_total"] += 1
+                    if malformed == "history": result["history_mutations"] = 1
+                out("RESULT-JSON " + json.dumps(result))
                 sys.exit(0)
             if "--converge-history" in cmd:
                 out("DRY-RUN (ничего не записано)")
@@ -868,8 +884,8 @@ def test_fully_migrated_database_uses_verified_read_only_path(sandbox):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1)
     proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD)
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    assert len([line for line in log if line.endswith("backfill_multi_program.py --verify-only")]) == 3
-    assert idx(log, "--verify-only") < idx(log, "compose -p pullup-trainer-bot stop")
+    assert len([line for line in log if line.endswith("backfill_multi_program.py --verify-compatible")]) == 4
+    assert idx(log, "--verify-compatible") < idx(log, "compose -p pullup-trainer-bot stop")
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
     assert state["backfill_applied"] == 1 and state["v2_version"] == 1
     assert state["running"] == {"app": True, "web": True}
@@ -878,7 +894,7 @@ def test_fully_migrated_database_uses_verified_read_only_path(sandbox):
 def test_verify_only_incomplete_history_aborts_before_stop(sandbox):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
     proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
-    assert proc.returncode == 1 and "verify-only failed" in proc.stderr
+    assert proc.returncode == 1 and "verify-compatible failed" in proc.stderr
     assert idx(log, "compose -p pullup-trainer-bot stop") == -1
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
     assert state["running"] == {"app": True, "web": True}
@@ -887,7 +903,7 @@ def test_verify_only_incomplete_history_aborts_before_stop(sandbox):
 def test_verify_only_hash_guard_still_refuses_a_mutating_verifier(sandbox):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
     proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_WRITES="1")
-    assert proc.returncode == 1 and "verify-only wrote to the database" in proc.stderr
+    assert proc.returncode == 1 and "verify-compatible wrote to the database" in proc.stderr
     assert state["running"] == {"app": False, "web": False}
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
 
@@ -896,15 +912,15 @@ def test_initial_migration_retains_full_backfill_path(sandbox):
     # Initial migration is still the original full backfill path, not a silent skip.
     proc, log, state = sandbox(SHA, "apply", TOKEN)
     assert proc.returncode == 0, proc.stderr + proc.stdout
-    assert idx(log, "--verify-only") == -1
+    assert idx(log, "--verify-compatible") == -1
     assert state["backfill_applied"] == 2
 
 
 def test_same_head_with_mixed_migrated_and_missing_plans_refuses_before_stop(sandbox):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=1)
     proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD)
-    assert proc.returncode == 1 and "verify-only failed" in proc.stderr
-    assert idx(log, "--verify-only") >= 0
+    assert proc.returncode == 1 and "verify-compatible failed" in proc.stderr
+    assert idx(log, "--verify-compatible") >= 0
     assert idx(log, "compose -p pullup-trainer-bot stop") == -1
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
     assert state["missing_plans"] == 1 and state["backfill_applied"] == 1
@@ -913,8 +929,8 @@ def test_same_head_with_mixed_migrated_and_missing_plans_refuses_before_stop(san
 
 
 @pytest.mark.parametrize(("race", "reason"), [
-    ("MISSING_PLAN_AFTER_STOP", "migration coverage changed"),
-    ("VERIFY_ONLY_FAIL_AFTER_STOP", "verify-only failed (stopped)"),
+    ("MISSING_PLAN_AFTER_STOP", "runtime classification changed"),
+    ("VERIFY_ONLY_FAIL_AFTER_STOP", "verify-compatible failed (stopped)"),
 ])
 def test_same_head_coverage_race_refuses_without_applying_backfill(sandbox, race, reason):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=0)
@@ -922,7 +938,7 @@ def test_same_head_coverage_race_refuses_without_applying_backfill(sandbox, race
         SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, **{race: "1"},
     )
     assert proc.returncode == 1 and reason in proc.stderr
-    assert idx(log, "--verify-only") < idx(log, "compose -p pullup-trainer-bot stop")
+    assert idx(log, "--verify-compatible") < idx(log, "compose -p pullup-trainer-bot stop")
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
     assert state["missing_plans"] == (1 if race == "MISSING_PLAN_AFTER_STOP" else 0)
     assert state["backfill_applied"] == 1
@@ -930,3 +946,29 @@ def test_same_head_coverage_race_refuses_without_applying_backfill(sandbox, race
     assert state["running"] == {"app": False, "web": False}
     assert "R1" in proc.stderr
     assert not any("backfill_started_at=" in p.read_text() for p in (sandbox.root / "backups").glob("*.manifest"))
+
+
+@pytest.mark.parametrize(("empty", "other"), [(1, 0), (3, 0), (1, 2), (0, 2)])
+def test_same_schema_runtime_classification_accepts_empty_and_non_onboarded_plans(sandbox, empty, other):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=empty)
+    proc, log, state = sandbox(
+        SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD,
+        SAFE_EMPTY_PLANS="1", NON_ONBOARDED_PLANS=str(other), INV_NOPLAN=str(empty), INV_PLANS=str(3-empty+other),
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert len([line for line in log if line.endswith("backfill_multi_program.py --verify-compatible")]) == 4
+    assert idx(log, "--verify-only") == -1
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["v2_version"] == 1 and state["backfill_applied"] == 1
+    assert state["missing_plans"] == empty
+    assert state["running"] == {"app": True, "web": True}
+    assert not any("backfill_started_at=" in p.read_text() for p in (sandbox.root / "backups").glob("*.manifest"))
+
+
+@pytest.mark.parametrize("malformed", ["mode", "missing", "bool", "equation", "history"])
+def test_same_schema_rejects_invalid_compatibility_machine_results_before_stop(sandbox, malformed):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, BAD_COMPATIBLE_RESULT=malformed)
+    assert proc.returncode == 1 and "invalid verify-compatible machine result" in proc.stderr
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert state["running"] == {"app": True, "web": True}

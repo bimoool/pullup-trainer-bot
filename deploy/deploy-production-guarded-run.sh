@@ -373,26 +373,43 @@ done
 log "build took $((SECONDS - t0))s"
 
 # Same-head deployments must not apply migration work. Verify the
-# historical contract using the candidate BEFORE downtime; this does not materialize
-# the calendar. Missing coverage refuses release rather than selecting a repair.
+# runtime and historical contract using the candidate BEFORE downtime; this does not
+# materialize the calendar. Unsafe history refuses release rather than selecting a repair.
 VERIFY_EXISTING=0
 verify_existing() {
   local label="$1"
-  dcrun app python scripts/backfill_multi_program.py --verify-only > "$WORK/verify_$label.txt" 2> "$WORK/verify_$label.err" || die "verify-only failed ($label); see $WORK/verify_$label.err and .txt"
+  dcrun app python scripts/backfill_multi_program.py --verify-compatible > "$WORK/verify_$label.txt" 2> "$WORK/verify_$label.err" || die "verify-compatible failed ($label); see $WORK/verify_$label.err and .txt"
   dcrun app python -c '
 import json, sys
 rows = [line.removeprefix("RESULT-JSON ") for line in sys.stdin if line.startswith("RESULT-JSON ")]
 if len(rows) != 1:
-    raise SystemExit("expected exactly one verify-only result")
+    raise SystemExit("expected exactly one verify-compatible result")
 d = json.loads(rows[0])
-if d.get("mode") != "verify-only" or d.get("verified") is not True or d.get("errors") != []:
-    raise SystemExit("verify-only did not verify migration coverage")
-' < "$WORK/verify_$label.txt" || die "invalid verify-only machine result ($label)"
+if d.get("mode") != "verify-compatible" or d.get("verified") is not True or d.get("errors") != []:
+    raise SystemExit("verify-compatible did not verify runtime compatibility")
+keys = ("users_onboarded", "onboarded_with_plan", "compatible_onboarded_without_plan",
+        "non_onboarded_with_plan", "training_plans_total", "blocked_without_plan",
+        "users_total", "compatible_non_onboarded_without_plan")
+c = d.get("counts")
+if not isinstance(c, dict) or any(type(c.get(k)) is not int or c[k] < 0 for k in keys):
+    raise SystemExit("invalid compatibility counts")
+for key in ("history_mutations", "unresolved"):
+    if type(d.get(key)) is not int or d[key] != 0:
+        raise SystemExit("history verification was not clean")
+n, a, e, p, t, b, u, z = (c[k] for k in keys)
+if b != 0 or n != a+e or t != a+p or u != n+p+z:
+    raise SystemExit("inconsistent compatibility classification")
+print(" ".join(str(c[k]) for k in keys))
+' < "$WORK/verify_$label.txt" > "$WORK/verify_counts_$label.txt" || die "invalid verify-compatible machine result ($label)"
+  if [ "$label" != "before-stop" ]; then
+    cmp -s "$WORK/verify_counts_before-stop.txt" "$WORK/verify_counts_$label.txt" || die "same-head runtime classification changed ($label); refusing mutating backfill"
+  fi
 }
 if [ "$PREV_REV" = "$EXPECTED_TO_REV" ]; then
   verify_existing before-stop
+  read -r COMPAT_ONB COMPAT_WITH_PLAN COMPAT_EMPTY COMPAT_OTHER_PLAN COMPAT_PLANS COMPAT_BLOCKED COMPAT_USERS COMPAT_OTHER_EMPTY < "$WORK/verify_counts_before-stop.txt"
   VERIFY_EXISTING=1
-  log "existing migration coverage verified read-only before stopping writers"
+  log "existing runtime compatibility verified read-only before stopping writers"
 fi
 
 # ------------------------------------------------------------------------------------------------ backup helper
@@ -509,19 +526,19 @@ cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_dry-run.txt" || die "backfill 
 log "backfill dry-run: onboarded=$ONB will_migrate=$WILL already_migrated=$ALREADY (report $REPORT_DIR/1-dry-run.txt); database unchanged"
 sed 's/^/    /' "$WORK/backfill_dry.txt"
 if [ "$VERIFY_EXISTING" = "1" ]; then
-  { [ "$WILL" = "0" ] && [ "$ALREADY" = "$ONB" ]; } || die "same-head migration coverage changed after pre-stop verification; refusing mutating backfill"
+  { [ "$ONB" = "$COMPAT_ONB" ] && [ "$WILL" = "$COMPAT_EMPTY" ] && [ "$ALREADY" = "$COMPAT_WITH_PLAN" ]; } || die "same-head runtime classification changed after pre-stop verification; refusing mutating backfill"
   # Reverify under stopped writers: the pre-stop read cannot rule out later writes.
   verify_existing stopped
-  cp "$WORK/verify_stopped.txt" "$REPORT_DIR/2-verify-only.txt"
+  cp "$WORK/verify_stopped.txt" "$REPORT_DIR/2-verify-compatible.txt"
   hash_all apply1
-  cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_apply1.txt" || die "verify-only wrote to the database"
+  cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_apply1.txt" || die "verify-compatible wrote to the database"
   same_legacy after-backfill
   verify_existing repeat
-  cp "$WORK/verify_repeat.txt" "$REPORT_DIR/3-verify-only-repeat.txt"
+  cp "$WORK/verify_repeat.txt" "$REPORT_DIR/3-verify-compatible-repeat.txt"
   hash_all apply2
-  cmp -s "$WORK/hq_all_apply1.txt" "$WORK/hq_all_apply2.txt" || die "verify-only repeat changed the database"
-  mf backfill_mode verify-only
-  log "already-migrated database verified without applying backfill/calendar convergence"
+  cmp -s "$WORK/hq_all_apply1.txt" "$WORK/hq_all_apply2.txt" || die "verify-compatible repeat changed the database"
+  mf backfill_mode verify-compatible
+  log "runtime-compatible database verified without applying backfill/calendar convergence"
 else
 BACKFILL_STARTED=1; mf backfill_started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 t0=$SECONDS
@@ -545,11 +562,21 @@ fi
 # контрольный dry-run после apply: все онбордившиеся уже смигрированы, мигрировать нечего, БД не меняется
 backfill --dry-run > "$WORK/backfill_dry2.txt" 2> "$WORK/backfill_dry2.err" || die "post-apply backfill --dry-run failed (see $WORK/backfill_dry2.err; needs 628144f)"
 cp "$WORK/backfill_dry2.txt" "$REPORT_DIR/3b-post-apply-dry-run.txt"
-[ "$(num "$WORK/backfill_dry2.txt" 'будет мигрировано')" = "0" ] || die "post-apply dry-run would still migrate users"
-[ "$(num "$WORK/backfill_dry2.txt" 'уже было мигрировано \(пропущено\)')" = "$ONB" ] || die "post-apply dry-run does not see all $ONB onboarded users as migrated"
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  { [ "$(num "$WORK/backfill_dry2.txt" 'Онбордившихся пользователей')" = "$COMPAT_ONB" ] &&
+    [ "$(num "$WORK/backfill_dry2.txt" 'будет мигрировано')" = "$COMPAT_EMPTY" ] &&
+    [ "$(num "$WORK/backfill_dry2.txt" 'уже было мигрировано \(пропущено\)')" = "$COMPAT_WITH_PLAN" ]; } || die "post-verification dry-run classification changed"
+else
+  [ "$(num "$WORK/backfill_dry2.txt" 'будет мигрировано')" = "0" ] || die "post-apply dry-run would still migrate users"
+  [ "$(num "$WORK/backfill_dry2.txt" 'уже было мигрировано \(пропущено\)')" = "$ONB" ] || die "post-apply dry-run does not see all $ONB onboarded users as migrated"
+fi
 hash_all dry-run2
 cmp -s "$WORK/hq_all_apply2.txt" "$WORK/hq_all_dry-run2.txt" || die "post-apply backfill --dry-run wrote to the database"
-log "backfill idempotent: re-run migrated 0, skipped $ONB; post-apply dry-run: will migrate 0; database unchanged"
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  log "runtime-compatible database unchanged: dry-run proposes $COMPAT_EMPTY empty-user plans; none applied"
+else
+  log "backfill idempotent: re-run migrated 0, skipped $ONB; post-apply dry-run: will migrate 0; database unchanged"
+fi
 # Контроль сведения (только чтение): история — 0 изменений; план — 0 нарушений guard'ов (мутации сделает рантайм на GET /plan)
 backfill --converge-history > "$WORK/converge_dry.txt" 2> "$WORK/converge_dry.err" || die "converge-history dry-run failed"
 cp "$WORK/converge_dry.txt" "$REPORT_DIR/4-converge-history-dry-run.txt"
@@ -580,11 +607,19 @@ inv() { # <name> <sql returning 0 when OK>
   [ "$v" = "0" ] || die "invariant $1 violated ($v)"
   log "invariant $1: OK"
 }
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  verify_existing final
+  cp "$WORK/verify_final.txt" "$REPORT_DIR/6-verify-compatible-final.txt"
+  hash_all final
+  cmp -s "$WORK/hq_all_control.txt" "$WORK/hq_all_final.txt" || die "final verify-compatible wrote to the database"
+  log "runtime compatibility invariants: verified; plans=$COMPAT_PLANS empty_onboarded=$COMPAT_EMPTY non_onboarded_plans=$COMPAT_OTHER_PLAN"
+else
 inv onboarded-without-plan "select /*inv:noplan*/ count(*) from users u where u.onboarding_completed_at is not null and not exists (select 1 from training_plans p where p.user_id = u.id)"
 inv plans-without-one-active-inclusion "select /*inv:inclusion*/ count(*) from training_plans p where (select count(*) from program_inclusions i where i.training_plan_id = p.id and i.is_active) <> 1"
 inv duplicate-legacy-copies "select /*inv:dups*/ count(*) from (select 1 from training_sessions where legacy_id is not null group by origin, legacy_id having count(*) > 1) d"
 [ "$(dbq "select /*inv:plans*/ count(*) from training_plans")" = "$ONB" ] || die "invariant plans == onboarded ($ONB) violated"
 log "invariant plans == onboarded ($ONB): OK"
+fi
 [ "$(dbq "select version_num from alembic_version")" = "$HEADS" ] || die "alembic_version != head"
 log "training_sessions by origin: $(dbq "select /*q:origins*/ coalesce(string_agg(coalesce(origin,'null')||'='||n, ' ' order by origin), '') from (select origin, count(*) n from training_sessions group by origin) s")"
 

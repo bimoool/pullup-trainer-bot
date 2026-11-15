@@ -705,3 +705,83 @@ async def test_reapply_on_next_monday_moves_calendar_but_verify_only_does_not(se
     changed = sorted(name for name in before if before[name] != after[name])
     assert 'plan_weeks' in changed and 'plan_items' in changed  # what the old guard read as legacy drift
     assert 'training_sessions' not in changed and 'set_logs' not in changed  # history is untouched
+
+
+async def _verify_compatible_with_fresh_session(session):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from scripts.backfill_multi_program import verify_compatible_database
+
+    await session.commit()
+    async with AsyncSession(bind=session.bind, expire_on_commit=False) as verifier:
+        return await verify_compatible_database(verifier)
+
+
+@pytest.mark.parametrize('history_kind', [
+    'legacy', 'native', 'unlabelled', 'superseded', 'workout_started', 'elective',
+    'workouts_archive_v1', 'workouts_archive_admin_reset', 'workout_sets',
+    'workout_sets_archive_v1', 'workout_sets_archive_admin_reset',
+])
+async def test_compatible_missing_plan_with_any_history_remains_blocked_and_unchanged(session, user, history_kind):
+    await _onboard(session, user)
+    await seed_catalog(session)
+    if history_kind == 'legacy':
+        await _record_legacy_workout(session, user)
+    elif history_kind in ('native', 'unlabelled', 'superseded'):
+        item = _native_session(user, source=SessionSource.FREEFORM, origin=None if history_kind == 'unlabelled' else 'native')
+        if history_kind == 'superseded':
+            item.superseded_at = NOW
+        session.add(item)
+    elif history_kind == 'elective':
+        await ElectiveWorkoutRepository(session).create(
+            user_id=user.id, elective_type=ElectiveType.MAX_REPS_LADDER, performed_at=NOW,
+            total_reps=5, reps_sequence=[5], equipment_type=EquipmentType.BODYWEIGHT, equipment_value=None,
+        )
+    elif history_kind.startswith('workout_sets'):
+        workout_set = await _make_workout_set(session, user)
+        workout_set.workouts_completed = 1
+        await session.flush()
+        if history_kind != 'workout_sets':
+            await session.execute(text(f'INSERT INTO {history_kind} SELECT * FROM workout_sets WHERE id=:id'), {'id': workout_set.id})
+            workout_set.workouts_completed = 0
+    else:
+        await _record_legacy_workout(session, user)
+        if history_kind == 'workout_started':
+            await session.execute(text("UPDATE workouts SET status='started' WHERE user_id=:id"), {'id': user.id})
+        else:
+            # Archive schemas intentionally retain their historical columns. Populate by intersection.
+            cols = (await session.execute(text("""SELECT string_agg(quote_ident(a.column_name), ',' ORDER BY a.ordinal_position)
+                FROM information_schema.columns a JOIN information_schema.columns b
+                ON b.table_schema=a.table_schema AND b.column_name=a.column_name AND b.table_name='workouts'
+                WHERE a.table_schema='public' AND a.table_name=:table"""), {'table': history_kind})).scalar_one()
+            await session.execute(text(f'INSERT INTO {history_kind} ({cols}) SELECT {cols} FROM workouts WHERE user_id=:id'), {'id': user.id})
+            await session.execute(text('DELETE FROM workouts WHERE user_id=:id'), {'id': user.id})
+            await session.execute(text('DELETE FROM training_sessions WHERE user_id=:id'), {'id': user.id})
+            await session.execute(text('UPDATE workout_sets SET workouts_completed=0 WHERE user_id=:id'), {'id': user.id})
+    await session.flush()
+    # record_workout may create a runtime plan; remove just the synthetic user's plan to model the gap.
+    await session.execute(text('DELETE FROM training_plans WHERE user_id=:id'), {'id': user.id})
+    before = await _guarded_database_hashes(session)
+    try:
+        result = await _verify_compatible_with_fresh_session(session)
+        assert result['verified'] is False, result
+        assert 'history_without_plan=1' in result['errors']
+        assert await _guarded_database_hashes(session) == before
+    finally:
+        # archive_v1 is outside the shared fixture TRUNCATE list; do not leak synthetic records to other tests.
+        if history_kind.endswith('_archive_v1'):
+            await session.execute(text(f'DELETE FROM {history_kind} WHERE user_id=:id'), {'id': user.id})
+            await session.commit()
+
+
+async def test_compatible_existing_plan_still_rejects_missing_copy(session, user):
+    await _onboard(session, user)
+    await _record_legacy_workout(session, user)
+    await backfill_all(session, now=NOW)
+    await session.execute(text("DELETE FROM training_sessions WHERE origin='legacy_backfill'"))
+    before = await _guarded_database_hashes(session)
+    result = await _verify_compatible_with_fresh_session(session)
+    assert result['verified'] is False
+    assert 'workouts_without_copy=1' in result['errors']
+    assert result['history_mutations'] > 0
+    assert await _guarded_database_hashes(session) == before
