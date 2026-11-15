@@ -85,10 +85,11 @@ export type BuildResult = { ok: true; protocol: ProtocolFormValue } | { ok: fals
 export function buildProtocol(d: ProtocolDraft): BuildResult {
   const err = (error: string): BuildResult => ({ ok: false, error });
   const whole = (n: number) => Number.isInteger(n);
+  const validRest = (n: number) => whole(n) && n >= 0;
   if (d.kind === "reps_sets") {
     if (!(d.sets > 0) || !whole(d.sets)) return err("Укажите количество подходов");
     if (!(d.reps > 0) || !whole(d.reps)) return err("Укажите число повторений в подходе");
-    if (d.restSeconds < 0) return err("Отдых не может быть отрицательным");
+    if (!validRest(d.restSeconds)) return err("Укажите отдых в формате мин:сек (например, 01:30)");
     return {
       ok: true,
       protocol: { type: "reps_sets", prescription: { source: "static", sets: d.sets, reps: d.reps }, rest_seconds: d.restSeconds },
@@ -96,8 +97,8 @@ export function buildProtocol(d: ProtocolDraft): BuildResult {
   }
   if (d.kind === "time_sets") {
     if (!(d.sets > 0) || !whole(d.sets)) return err("Укажите количество подходов");
-    if (!(d.durationSeconds > 0)) return err("Укажите длительность подхода");
-    if (d.restSeconds < 0) return err("Отдых не может быть отрицательным");
+    if (!(d.durationSeconds > 0) || !whole(d.durationSeconds)) return err("Укажите длительность подхода");
+    if (!validRest(d.restSeconds)) return err("Укажите отдых в формате мин:сек (например, 01:30)");
     return {
       ok: true,
       protocol: {
@@ -109,15 +110,15 @@ export function buildProtocol(d: ProtocolDraft): BuildResult {
   }
   if (d.kind === "max_effort") {
     if (!(d.attempts > 0) || !whole(d.attempts)) return err("Укажите количество попыток");
-    if (d.maxRestSeconds < 0) return err("Отдых не может быть отрицательным");
+    if (!validRest(d.maxRestSeconds)) return err("Укажите отдых в формате мин:сек (например, 01:30)");
     return {
       ok: true,
       protocol: { type: "max_effort", prescription: { source: "static", attempts: d.attempts }, rest_seconds: d.maxRestSeconds },
     };
   }
-  if (!(d.totalSeconds > 0)) return err("Укажите общее время");
-  if (!(d.workSeconds > 0)) return err("Укажите длительность работы");
-  if (d.intervalRestSeconds < 0) return err("Отдых не может быть отрицательным");
+  if (!(d.totalSeconds > 0) || !whole(d.totalSeconds)) return err("Укажите общее время");
+  if (!(d.workSeconds > 0) || !whole(d.workSeconds)) return err("Укажите длительность работы");
+  if (!validRest(d.intervalRestSeconds)) return err("Укажите отдых в формате мин:сек (например, 01:30)");
   if (d.workSeconds > d.totalSeconds) return err("Работа не может быть длиннее общего времени");
   return {
     ok: true,
