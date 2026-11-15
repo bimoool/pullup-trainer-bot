@@ -3237,3 +3237,31 @@ files, later-phase markers or malformed results yield no diagnostic clearance.
 The runner remains self-contained for existing adoption, with its rehearsal hash
 updated and the control runner unchanged. Reading a historical diagnosis does not
 replace any candidate release gate or authorize another apply.
+
+### Completed saved-workout planless admission (2026-11-15)
+
+The prior journal-only predicate rejected every definition/snapshot and engine
+field. It omitted ordinary `manual_existing_workout` and `direct_live` producers,
+including repeats. Public production-baseline and current producer files are
+byte-identical; the actual private production subtype remains unknown until the
+new aggregate preflight runs. No production row, log, credential or dump is used
+by this change.
+
+Synthetic PostgreSQL/API journeys cover user/system definitions with and without
+a stored version, manual save, direct engine v1/v2 completion and manual repeats.
+They prove frozen identity, read/edit behavior, client UUID/event replay, terminal
+event rebuild and account/trial/progression invariance. All twelve journeys failed
+only admission before the fix (22.22 s); all twelve pass after it (22.91 s).
+The v2 completion route normally appends a no-op event on a fresh repeated request;
+the regression preserves that behavior and checks stable replay of the same event.
+
+`scripts/sql/planless_classification.sql` is the single classification SELECT used
+by both CLI and host preflight. The reviewed guard pins its SHA256, regular Git
+blob mode, maximum size and fixed path at the validated candidate SHA. Host Python
+uses isolated trusted stdlib only to validate bytes and bounded aggregate output;
+it never imports or runs candidate Python. Reasons count affected planless users
+and may overlap across sessions. Subtype counts describe source metadata and never
+grant admission. Planned links, protected STEP, active/cancelled or unknown engine
+state, foreign/inconsistent definitions/snapshots, legacy progress and unproved
+tombstones still block. Historical archives remain untouched. Rehearsal pins the
+new guard bytes; production installation/adoption remains a separate operation.

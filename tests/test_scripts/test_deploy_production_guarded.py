@@ -211,6 +211,11 @@ if args[0] == "exec":
         sys.exit(0)
     restore = target.endswith("_restore_check")
     rb = "_rb_" in target
+    if "planless-candidate-host" in sql:
+        L("planless-candidate-host")
+        if env.get("FAIL_CANDIDATE_DIAGNOSTIC"):
+            sys.stderr.write("PRIVATE-CANDIDATE-ERROR"); sys.exit(1)
+        out(env.get("CANDIDATE_DIAGNOSTIC_ROW", "1|3|3|3|0|0|0|0|3|" + "|".join(["0"] * 15))); sys.exit(0)
     if "planless-source-aggregate" in sql:
         L("planless-source-aggregate")
         if env.get("FAIL_SOURCE_DIAGNOSTIC"):
@@ -265,11 +270,20 @@ if args[0] == "fetch": sys.exit(0)
 if args[0] == "merge-base": sys.exit(1 if os.environ.get("NOT_ANCESTOR") else 0)
 if args[0] == "cat-file":
     obj = args[-1]
+    if args[1] == "-s" and obj.endswith(":scripts/sql/planless_classification.sql"):
+        print(os.environ.get("CANDIDATE_QUERY_SIZE", str(Path(os.environ["STUB_PLANLESS_SQL"]).stat().st_size))); sys.exit(0)
     if os.environ.get("NO_COMMIT") and obj.endswith("^{commit}") and not obj.startswith("37b989c"): sys.exit(1)
     sys.exit(0)
 if args[0] == "checkout":
     st["head"] = args[-1]; st_path.write_text(json.dumps(st)); sys.exit(0)
-if args[0] == "show": print("-- generator: select ... from information_schema.tables ..."); sys.exit(0)
+if args[0] == "ls-tree":
+    print(os.environ.get("CANDIDATE_QUERY_ENTRY", "100644 blob " + "a" * 40 + "\tscripts/sql/planless_classification.sql")); sys.exit(0)
+if args[0] == "show":
+    if args[-1].endswith(":scripts/sql/planless_classification.sql"):
+        if os.environ.get("CANDIDATE_QUERY_BAD_HASH"): print("SELECT private_data FROM users")
+        else: sys.stdout.buffer.write(Path(os.environ["STUB_PLANLESS_SQL"]).read_bytes())
+        sys.exit(0)
+    print("-- generator: select ... from information_schema.tables ..."); sys.exit(0)
 sys.exit(0)
 """
 
@@ -340,6 +354,7 @@ def sandbox(tmp_path: Path):
         "PROD_MIN_MEM_MB": "0",
         "STUB_STATE": str(state),
         "STUB_LOG": str(log),
+        "STUB_PLANLESS_SQL": str(ROOT / "scripts/sql/planless_classification.sql"),
         "TMPDIR": str(tmpdir),
     }
 

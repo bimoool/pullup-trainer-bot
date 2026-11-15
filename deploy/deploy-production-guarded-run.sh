@@ -367,6 +367,78 @@ print("PLANLESS-SOURCES " + json.dumps(result, sort_keys=True, separators=(",", 
 ' 2>/dev/null >&7 || echo 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' >&7
 }
 
+
+# Necessary planless condition only; the full candidate verifier still runs before
+# and after STOP, together with all existing preservation/ownership/hash guards.
+require_candidate_planless_zero() {
+  local entry size classification sql result
+  entry="$(git ls-tree "$SHA" -- scripts/sql/planless_classification.sql 2>/dev/null)" || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  [[ "$entry" =~ ^100644[[:space:]]blob[[:space:]][0-9a-f]{40}[[:space:]]scripts/sql/planless_classification\.sql$ ]] || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  size="$(git cat-file -s "$SHA:scripts/sql/planless_classification.sql" 2>/dev/null)" || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  [[ "$size" =~ ^[0-9]{1,5}$ ]] && [ "$size" -gt 0 ] && [ "$size" -le 32768 ] || {
+    echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1;
+  }
+  classification="$(git show "$SHA:scripts/sql/planless_classification.sql" 2>/dev/null | python3 -I -c '
+import hashlib, sys
+raw = sys.stdin.buffer.read(32769)
+if len(raw) > 32768 or hashlib.sha256(raw).hexdigest() != "8b20bd56ed48b9c93e1d8751adff231982af6d1e9eeeab2b0ba09c09edf0f5ea":
+    raise SystemExit(1)
+sys.stdout.write(raw.decode("ascii"))
+' 2>/dev/null)" || { echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1; }
+  sql="BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '5s';
+SET LOCAL lock_timeout = '1s';
+SET LOCAL idle_in_transaction_session_timeout = '5s';
+SELECT /*planless-candidate-host*/ CASE WHEN current_setting('transaction_read_only')='on' THEN '1' ELSE '0' END
+|| '|' || array_to_string(ARRAY[q.users_total, q.users_onboarded, q.onboarded_with_plan,
+q.compatible_onboarded_without_plan, q.non_onboarded_with_plan, q.compatible_non_onboarded_without_plan,
+q.blocked_without_plan, q.training_plans_total, q.current_legacy, q.active_or_incomplete,
+q.linked, q.superseded, q.unknown_origin, q.unsupported_source, q.block_ownership_or_step,
+q.definition_or_snapshot, q.engine_not_terminal, q.legacy_unproved, q.native_manual_saved,
+q.native_direct_v1, q.native_direct_v2, q.native_with_definition, q.native_with_version], '|')
+FROM ($classification) q;
+ROLLBACK;"
+  result="$(dbq "$sql" 2>/dev/null)" || { echo 'PLANLESS-CANDIDATE {"status":"DIAG_UNAVAILABLE"}' >&7; return 1; }
+  printf '%s\n' "$result" | python3 -I -c '
+import json, re, sys
+keys = ("USERS_TOTAL", "USERS_ONBOARDED", "ONBOARDED_WITH_PLAN", "COMPATIBLE_ONBOARDED_WITHOUT_PLAN",
+        "NON_ONBOARDED_WITH_PLAN", "COMPATIBLE_NON_ONBOARDED_WITHOUT_PLAN", "PLANLESS_BLOCKED",
+        "TRAINING_PLANS_TOTAL", "CURRENT_LEGACY", "ACTIVE_OR_INCOMPLETE", "LINKED", "SUPERSEDED",
+        "UNKNOWN_ORIGIN", "UNSUPPORTED_SOURCE", "BLOCK_OWNERSHIP_OR_STEP", "DEFINITION_OR_SNAPSHOT",
+        "ENGINE_NOT_TERMINAL", "LEGACY_UNPROVED", "NATIVE_MANUAL_SAVED", "NATIVE_DIRECT_V1",
+        "NATIVE_DIRECT_V2", "NATIVE_WITH_DEFINITION", "NATIVE_WITH_VERSION")
+try:
+    raw = sys.stdin.read(4097)
+    rows = [line for line in raw.splitlines() if line not in ("BEGIN", "SET", "ROLLBACK")]
+    if len(raw) > 4096 or len(rows) != 1 or not re.fullmatch(r"1(?:\|[0-9]{1,10}){23}", rows[0]):
+        raise ValueError()
+    values = list(map(int, rows[0].split("|")[1:]))
+    if any(value > 1_000_000_000 for value in values) or any(value > values[0] for value in values[1:]):
+        raise ValueError()
+    total, onboarded, planned, empty, other, other_empty, blocked, plans = values[:8]
+    if planned + empty > onboarded or other + other_empty > total - onboarded:
+        raise ValueError()
+    if total != planned + empty + other + other_empty + blocked or plans != planned + other:
+        raise ValueError()
+    if max(values[8:18]) > blocked or sum(values[8:18]) < blocked:
+        raise ValueError()
+    if max(values[18:]) > total - plans:
+        raise ValueError()
+    result = {"status":"PLANLESS_BLOCKED" if blocked else "PLANLESS_CANDIDATE_ZERO", "counts":dict(zip(keys, values))}
+except Exception:
+    print("PLANLESS-CANDIDATE " + json.dumps({"status":"DIAG_UNAVAILABLE"}, separators=(",", ":")))
+    raise SystemExit(1)
+print("PLANLESS-CANDIDATE " + json.dumps(result, sort_keys=True, separators=(",", ":")))
+raise SystemExit(1 if blocked else 0)
+' 2>/dev/null >&7
+}
+
 summary() {
   echo "---- state for rollback (docs/PRODUCTION_RUNBOOK.md §7) ----"
   echo "mode            : $MODE   target sha: $SHA"
@@ -540,6 +612,10 @@ leftover="$(docker ps -aq --filter "label=guarded.run" 2>/dev/null || true)"
 [ -z "$leftover" ] || die "one-off containers of an earlier guarded run still exist: ${leftover//$'\n'/ } — inspect and remove them first (runbook §6)"
 if pgrep -f 'deploy-run\.sh' >/dev/null 2>&1; then die "the plain production deploy (deploy-run.sh) is running"; fi
 if pgrep -f 'deploy-staging(-guarded)?-run\.sh' >/dev/null 2>&1; then die "a staging deploy is running (shared 1 GB VPS)"; fi
+
+if [ "$PREV_REV" = "$EXPECTED_TO_REV" ]; then
+  require_candidate_planless_zero || die "candidate planless compatibility is blocked or unavailable (before build/stop)"
+fi
 
 if [ "$MODE" = "preflight" ]; then
   safe_compatibility_diagnostic historical
