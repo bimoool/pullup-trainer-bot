@@ -82,8 +82,11 @@ jobs:
         working-directory: webapp-frontend/e2e-staging
         run: |
           set -uo pipefail
-          npx playwright test --config=playwright.local-fresh.config.ts --retries=0 > "$RUNNER_TEMP/local-fresh-playwright.log" 2>&1
-          result=$?
+          if npx playwright test --config=playwright.local-fresh.config.ts --retries=0 > "$RUNNER_TEMP/local-fresh-playwright.log" 2>&1; then
+            result=0
+          else
+            result=$?
+          fi
           echo "Synthetic local WebKit fresh diagnosis exit=$result"
           if [ -f test-results/release-status.json ]; then
             cat test-results/release-status.json
