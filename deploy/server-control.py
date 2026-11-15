@@ -22,7 +22,9 @@ BIN = Path("/root/bin")
 BACKUPS = Path("/root/backups")
 LEDGER = BACKUPS / "cloud-operations"
 STAGING_LOCK = Path("/home/deploy/.deploy-staging.lock")
-ACTIONS = {"readiness", "prepare", "restore", "receipt"}
+ACTIONS = {"readiness", "prepare", "restore", "receipt", "adopt-runner"}
+AUTHORIZED_KEYS = Path("/root/.ssh/authorized_keys")
+INITIAL_RUNNER_HASH = "7a1d42c1653fc443095b28809b888f110a3110b875eed58ecd5affc4f70d0dde"
 SHA_RE = r"[0-9a-f]{40}"
 OP_RE = r"ops-[1-9][0-9]{0,19}"
 RUNNERS = (
@@ -109,6 +111,7 @@ class Receipts:
             )
             target.flush()
             os.fsync(target.fileno())
+        sync_directory(self.root)
         return None
 
     def write(self, operation, data):
@@ -123,9 +126,146 @@ class Receipts:
                 os.fsync(target.fileno())
             regular(path)
             os.replace(name, path)
+            sync_directory(self.root)
         finally:
             if os.path.exists(name):
                 os.unlink(name)
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def private_file(path):
+    info = regular(path)
+    require(not info.st_mode & 0o077, "PRIVATE_FILE_REQUIRED")
+    return info
+
+
+def atomic_private(path, blob, mode=0o600):
+    fd, name = tempfile.mkstemp(prefix=".runner-adopt-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as target:
+            os.fchmod(target.fileno(), mode)
+            target.write(blob)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(name, path)
+        sync_directory(path.parent)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def adopt_runner(sha, operation):
+    # Called only after the durable operation claim, all three locks and busy checks.
+    # Fixed source and destination; no candidate program is executed (bash -n only).
+    runner = BIN / "deploy-production-guarded-run.sh"
+    protected = [
+        BIN / name
+        for name in [
+            "server-control.py",
+            "prod-guarded-dispatch.sh",
+            "rollback-production-guarded.sh",
+        ]
+    ] + [AUTHORIZED_KEYS]
+    before = {}
+    for path in [runner, *protected]:
+        info = private_file(path)
+        before[path] = (info.st_dev, info.st_ino, sha256(path))
+    state_path = LEDGER / "runner-adopted.json"
+    expected = INITIAL_RUNNER_HASH
+    if state_path.exists() or state_path.is_symlink():
+        private_file(state_path)
+        state = json.loads(state_path.read_text())
+        require(state.get("state") == "VERIFIED", "ADOPTION_UNCERTAIN")
+        expected = state.get("runner_sha256")
+        require(
+            isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected), "ADOPTION_STATE"
+        )
+    origin = command(["git", "-C", str(REPO), "remote", "get-url", "origin"]).decode().strip()
+    require(
+        origin
+        in {
+            "https://github.com/bimoool/pullup-trainer-bot.git",
+            "git@github.com:bimoool/pullup-trainer-bot.git",
+        },
+        "ORIGIN",
+    )
+    # Candidate must already exist (execute checks this). Fetch only the fixed trusted
+    # main ref, never a caller-controlled object/ref/URL; no checkout or service change.
+    command(
+        [
+            "git",
+            "-C",
+            str(REPO),
+            "fetch",
+            "--no-tags",
+            "--no-write-fetch-head",
+            "origin",
+            "main:refs/remotes/origin/main",
+        ],
+        timeout=60,
+    )
+    candidate_tree = command(["git", "-C", str(REPO), "rev-parse", sha + "^{tree}"]).strip()
+    trusted_tree = command(
+        ["git", "-C", str(REPO), "rev-parse", "refs/remotes/origin/main^{tree}"]
+    ).strip()
+    require(
+        candidate_tree == trusted_tree and re.fullmatch(rb"[0-9a-f]{40}", candidate_tree),
+        "TRUSTED_MAIN_TREE",
+    )
+    blob = command(
+        ["git", "-C", str(REPO), "show", sha + ":deploy/deploy-production-guarded-run.sh"]
+    )
+    require(0 < len(blob) <= 262144, "RUNNER_SIZE")
+    candidate = hashlib.sha256(blob).hexdigest()
+    old = runner.read_bytes()
+    actual = hashlib.sha256(old).hexdigest()
+    require(actual in {expected, candidate}, "UNKNOWN_RUNNER")
+    # The temp is root-only and discarded without execution.
+    with tempfile.NamedTemporaryFile(prefix=".runner-syntax-", dir=LEDGER) as syntax:
+        syntax.write(blob)
+        syntax.flush()
+        command(["bash", "-n", syntax.name])
+    backup = LEDGER / (operation + ".runner-before")
+    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as target:
+        target.write(old)
+        target.flush()
+        os.fsync(target.fileno())
+    sync_directory(LEDGER)
+    state = {
+        "state": "RUNNING",
+        "operation_id": operation,
+        "candidate": sha,
+        "runner_sha256": candidate,
+        "previous_sha256": actual,
+    }
+    atomic_private(state_path, json.dumps(state, sort_keys=True).encode())
+    # Refuse intervening file changes; locks also serialize every supported entry point.
+    for path, identity in before.items():
+        info = private_file(path)
+        require((info.st_dev, info.st_ino, sha256(path)) == identity, "INSTALLATION_CHANGED")
+    if actual != candidate:
+        atomic_private(runner, blob, 0o700)
+    require(sha256(runner) == candidate, "RUNNER_VERIFY")
+    private_file(runner)
+    for path in protected:
+        info = private_file(path)
+        require((info.st_dev, info.st_ino, sha256(path)) == before[path], "PROTECTED_FILE_CHANGED")
+    state["state"] = "VERIFIED"
+    atomic_private(state_path, json.dumps(state, sort_keys=True).encode())
+    return {
+        "runner_adopted": True,
+        "previous_sha256": actual,
+        "runner_sha256": candidate,
+        "protected_files_unchanged": True,
+    }
 
 
 def restore_budget(available_ram_mib, free_disk_mib, database_mib):
@@ -630,6 +770,7 @@ def execute(action, sha, operation):
     require(os.geteuid() == 0, "ROOT_REQUIRED")
     if not LEDGER.exists():
         LEDGER.mkdir(mode=0o700)
+        sync_directory(BACKUPS)
     store = Receipts(LEDGER)
     if action == "receipt":
         result = store.read(operation)
@@ -648,6 +789,16 @@ def execute(action, sha, operation):
         require(object_present(sha) or action == "prepare", "CANDIDATE_MISSING")
         if action == "prepare":
             return finish(store, operation, action, sha, "object-present", "VERIFIED", prepare(sha))
+        if action == "adopt-runner":
+            return finish(
+                store,
+                operation,
+                action,
+                sha,
+                "runner-adopted",
+                "VERIFIED",
+                adopt_runner(sha, operation),
+            )
         # A detached, bounded worker survives SSH loss; the durable claim is never replayed.
         private_log = LEDGER / (operation + ".worker.log")
         fd = os.open(private_log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -662,7 +813,16 @@ def execute(action, sha, operation):
             )
         return store.read(operation)
     except Refused as exc:
-        return finish(store, operation, action, sha, "guard", "BLOCKED", error=str(exc))
+        return finish(
+            store,
+            operation,
+            action,
+            sha,
+            "guard",
+            "BLOCKED",
+            {"runner_state_unknown": True} if action == "adopt-runner" else None,
+            error=str(exc),
+        )
     except (
         OSError,
         ValueError,
@@ -678,6 +838,7 @@ def execute(action, sha, operation):
             sha,
             "guard",
             "FAILED",
+            facts={"runner_state_unknown": True} if action == "adopt-runner" else None,
             error="INTERNAL_FAILURE_PRIVATE_LOG_ONLY",
         )
     finally:

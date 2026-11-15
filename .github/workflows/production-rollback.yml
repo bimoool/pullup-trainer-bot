@@ -1,4 +1,5 @@
 name: Production rollback (guarded)
+run-name: Guarded rollback ${{ inputs.kind }} ${{ inputs.mode }} ${{ inputs.manifest }}
 
 # Откат guarded-выката R1/R3 через тот же ключ и forced command, что production-deploy.yml.
 # Сам откат — /root/bin/rollback-production-guarded.sh (docs/PRODUCTION_RUNBOOK.md §7): все факты из manifest выката,
@@ -30,6 +31,24 @@ on:
         default: ""
       incident_dispatcher_run_id:
         description: "Trusted owner-command dispatcher run for the fixed incident."
+        required: false
+        default: ""
+      recovery_candidate_sha:
+        required: false
+        default: ""
+      recovery_failed_run_id:
+        required: false
+        default: ""
+      recovery_check_run_id:
+        required: false
+        default: ""
+      recovery_pr_number:
+        required: false
+        default: ""
+      recovery_request_comment_id:
+        required: false
+        default: ""
+      recovery_dispatcher_run_id:
         required: false
         default: ""
 
@@ -80,6 +99,21 @@ jobs:
           INCIDENT_REQUEST_COMMENT_ID: ${{ inputs.incident_request_comment_id }}
           INCIDENT_DISPATCHER_RUN_ID: ${{ inputs.incident_dispatcher_run_id }}
         run: python3 tools/incident_r3_recovery_client.py
+
+      - name: Revalidate R1 owner command and reserve execution before SSH
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIND: ${{ inputs.kind }}
+          MANIFEST: ${{ inputs.manifest }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          RECOVERY_CANDIDATE_SHA: ${{ inputs.recovery_candidate_sha }}
+          RECOVERY_FAILED_RUN_ID: ${{ inputs.recovery_failed_run_id }}
+          RECOVERY_CHECK_RUN_ID: ${{ inputs.recovery_check_run_id }}
+          RECOVERY_PR_NUMBER: ${{ inputs.recovery_pr_number }}
+          RECOVERY_REQUEST_COMMENT_ID: ${{ inputs.recovery_request_comment_id }}
+          RECOVERY_DISPATCHER_RUN_ID: ${{ inputs.recovery_dispatcher_run_id }}
+        run: python3 tools/rollback_r1_recovery_client.py
 
       - name: Guarded rollback ${{ inputs.kind }} ${{ inputs.mode }}
         env:

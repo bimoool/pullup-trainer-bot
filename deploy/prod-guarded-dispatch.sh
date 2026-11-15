@@ -25,7 +25,7 @@ re_rollback='^prod-rollback (R1|R3) (/root/backups/[A-Za-z0-9._-]+\.manifest) (c
 
 clean_env=(env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C.UTF-8)
 
-re_control='^prod-control (readiness|prepare|restore|receipt) ([0-9a-f]{40}) (ops-[1-9][0-9]{0,19})$'
+re_control='^prod-control (readiness|prepare|restore|receipt|adopt-runner) ([0-9a-f]{40}) (ops-[1-9][0-9]{0,19})$'
 # Receipt reads never start work and must remain available while a detached operation holds locks.
 if [[ "$cmd" =~ $re_control ]] && [[ "${BASH_REMATCH[1]}" = receipt ]]; then
   exec "${clean_env[@]}" python3 "$BIN/server-control.py" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"

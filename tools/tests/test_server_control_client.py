@@ -103,3 +103,89 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(
             c.safe_receipt(__import__("json").dumps(receipt).encode(), SHA, "ops-10"), receipt
         )
+
+
+class AdoptionClientTests(unittest.TestCase):
+    def fixture(self):
+
+        from tools.tests.check_fixtures import CheckAPI
+        from tools.tests.test_rollback_r1_recovery import HEAD, RecoveryAPI
+
+        a = RecoveryAPI()
+        checks = CheckAPI()
+        a.event["comment"]["body"] = f"/pullup server-adopt-runner {SHA}"
+        a.runs[500] = {
+            "id": 500,
+            "path": ".github/workflows/cloud-command-dispatch.yml",
+            "event": "issue_comment",
+            "head_branch": "main",
+            "head_sha": HEAD,
+            "run_attempt": 1,
+            "status": "in_progress",
+            "actor": {"id": 1, "login": "bimoool"},
+            "triggering_actor": {"id": 1, "login": "bimoool"},
+        }
+        a.runs[600] = {
+            "id": 600,
+            "path": c.WORKFLOW,
+            "event": "workflow_dispatch",
+            "head_branch": "main",
+            "head_sha": HEAD,
+            "run_attempt": 1,
+            "status": "in_progress",
+            "actor": {"id": c.BOT_ID, "login": "github-actions[bot]"},
+            "triggering_actor": {"id": c.BOT_ID, "login": "github-actions[bot]"},
+        }
+
+        def api(method, path, body=None):
+            if path.startswith("git/commits/"):
+                return {"tree": {"sha": "tree"}}
+            if path == "commits/main":
+                return {"commit": {"tree": {"sha": "tree"}}}
+            if "check-runs?" in path or (
+                path.startswith("actions/")
+                and (
+                    any(f"/{run_id}" in path for run_id in checks.runs)
+                    or "/workflows/" in path
+                    and path.split("/")[2].isdigit()
+                )
+            ):
+                return checks(method, path, body)
+            return a(method, path, body)
+
+        import guarded_comment_dispatch as dispatcher
+
+        dispatcher.dispatch(a.event, a.runtime, api)
+        env = {
+            "GITHUB_REPOSITORY": c.REPO,
+            "GITHUB_WORKFLOW_REF": f"{c.REPO}/{c.WORKFLOW}@refs/heads/main",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_RUN_ID": "600",
+            "GITHUB_SHA": HEAD,
+            "OPERATION": "adopt-runner",
+            "CANDIDATE_SHA": SHA,
+            "OPERATION_ID": "ops-10",
+            "PR_NUMBER": "400",
+            "REQUEST_COMMENT_ID": "10",
+        }
+        return a, checks, api, env
+
+    def test_adoption_child_rechecks_full_ci_and_exact_owner_provenance(self):
+        _a, checks, api, env = self.fixture()
+        self.assertEqual(c.authorize(api, env), (400, "adopt-runner", SHA, "ops-10"))
+        checks.checks[0]["conclusion"] = "failure"
+        with self.assertRaises(c.Refused):
+            c.authorize(api, env)
+
+    def test_edited_owner_rerun_and_manual_child_refused(self):
+        for case in ["edited", "rerun", "actor", "triggering_actor"]:
+            a, _, api, env = self.fixture()
+            if case == "edited":
+                a.event["comment"]["updated_at"] += "edited"
+            elif case == "rerun":
+                env["GITHUB_RUN_ATTEMPT"] = "2"
+            else:
+                a.runs[600][case]["id"] = 1
+            with self.subTest(case=case), self.assertRaises(c.Refused):
+                c.authorize(api, env)

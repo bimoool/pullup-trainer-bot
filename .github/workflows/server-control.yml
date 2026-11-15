@@ -8,7 +8,7 @@ on:
       operation:
         required: true
         type: choice
-        options: [readiness, prepare, restore, receipt]
+        options: [readiness, prepare, restore, receipt, adopt-runner]
       operation_id:
         required: true
       pr_number:

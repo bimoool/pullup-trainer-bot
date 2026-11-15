@@ -8,6 +8,7 @@ import urllib.request
 from datetime import UTC, datetime, timedelta
 
 import incident_r3_recovery as incident
+import rollback_r1_recovery as r1
 from current_checks import CheckRefused, ensure_green
 
 REPO = "bimoool/pullup-trainer-bot"
@@ -27,6 +28,9 @@ REQUIRED_CHECKS = {
 
 
 def command(body):
+    if body.startswith("/pullup rollback-r1-apply "):
+        sha, inputs = r1.parse(body, require)
+        return "rollback-r1-apply", sha, "production-rollback.yml", inputs
     if body == incident.COMMAND:
         return (
             "incident-r3-apply",
@@ -52,7 +56,7 @@ def command(body):
             },
         )
     control = re.fullmatch(
-        r"/pullup server-(readiness|prepare|restore|receipt) ([0-9a-f]{40})(?: (ops-[1-9][0-9]{0,19}))?",
+        r"/pullup server-(readiness|prepare|restore|receipt|adopt-runner) ([0-9a-f]{40})(?: (ops-[1-9][0-9]{0,19}))?",
         body,
     )
     if control:
@@ -202,6 +206,9 @@ def unchanged_staging(api, deployed):
 
 
 def release_gates(api, operation, sha, inputs):
+    if operation == "rollback-r1-apply":
+        r1.verify_evidence(api, sha, inputs, require, BOT_ID)
+        return
     if operation == "incident-r3-apply":
         require(
             sha == incident.CANDIDATE
@@ -213,6 +220,13 @@ def release_gates(api, operation, sha, inputs):
     if operation.startswith("server-"):
         if operation not in {"server-readiness", "server-receipt"}:
             green_checks(api, sha)
+        if operation == "server-adopt-runner":
+            candidate = api("GET", f"git/commits/{sha}")
+            main = api("GET", "commits/main")
+            require(
+                candidate["tree"]["sha"] == main["commit"]["tree"]["sha"],
+                "candidate must equal trusted main tree",
+            )
         return  # metadata/fetch/isolated restore never execute candidate app code or deploy
     if operation in {"staging-preflight", "staging-snapshot"}:
         return
@@ -310,6 +324,14 @@ def authorize(event, runtime, api):
             and live_comment.get("updated_at") == live_comment["created_at"],
             "original unedited incident owner command required",
         )
+    if operation == "rollback-check":
+        require(
+            runtime.get("run_attempt") == "1", "first rollback-check dispatcher attempt required"
+        )
+    if operation in {"rollback-r1-apply", "server-adopt-runner"}:
+        require(runtime.get("run_attempt") == "1", "first dispatcher attempt required")
+        r1.original_comment(live_comment, owner, number, comment["body"], require)
+        require(live_comment.get("id") == comment["id"], "live comment identity")
     validate_pr(api("GET", f"pulls/{number}"), number, sha)
     workflow = api("GET", f"actions/workflows/{workflow_name}")
     require(
@@ -335,6 +357,10 @@ def authorize(event, runtime, api):
     if operation == "incident-r3-apply":
         inputs["incident_request_comment_id"] = str(comment["id"])
         inputs["incident_dispatcher_run_id"] = str(runtime["run_id"])
+    if operation == "rollback-r1-apply":
+        inputs["recovery_pr_number"] = str(number)
+        inputs["recovery_request_comment_id"] = str(comment["id"])
+        inputs["recovery_dispatcher_run_id"] = str(runtime["run_id"])
     return number, operation, sha, workflow_name, inputs
 
 
@@ -376,14 +402,30 @@ def dispatch(event, runtime, api):
         provenance = (
             incident.request_marker(inputs["incident_request_comment_id"], runtime["run_id"]) + "\n"
         )
+    if operation == "rollback-r1-apply":
+        provenance = (
+            r1.request_marker(inputs["recovery_request_comment_id"], runtime["run_id"]) + "\n"
+        )
     marker_kind = "preflight" if operation == "staging-preflight" else operation
     marker = f"<!-- pullup-{marker_kind}-v1:{number}:{sha} -->"
     if operation.startswith("server-"):
         marker = (
             f"<!-- pullup-{marker_kind}-v1:{number}:{sha}:ops-{inputs['request_comment_id']} -->"
         )
+    if operation == "rollback-check":
+        # Read-only evidence may need refreshing after a different check or state change.
+        # A new owner comment is a new check; the same event keeps its durable claim.
+        marker = (
+            f"<!-- pullup-rollback-check-v2:{number}:{sha}:{inputs['kind']}:"
+            f"{inputs['manifest']}:{event['comment']['id']} -->"
+        )
+    if operation == "rollback-r1-apply":
+        marker = r1.marker(inputs)
     for page in range(1, 101):
-        comments = api("GET", f"issues/{number}/comments?per_page=100&page={page}")
+        listing = (
+            "issues/comments" if operation == "rollback-r1-apply" else f"issues/{number}/comments"
+        )
+        comments = api("GET", f"{listing}?per_page=100&page={page}")
         require(isinstance(comments, list) and len(comments) <= 100, "invalid comment listing")
         for comment in comments:
             author = comment.get("user", {})
