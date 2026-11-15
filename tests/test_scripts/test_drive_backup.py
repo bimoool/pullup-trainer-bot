@@ -310,10 +310,13 @@ sys.stdout.buffer.write(b'age-encryption.org/v1\\n' + sys.stdin.buffer.read())
             "sys.stdout.buffer.write(b'PGDMP-synthetic-only')", "sys.exit(2)"
         )
     )
+    horizons = []
+    monkeypatch.setattr(backup, "wait_dump_horizon", horizons.append)
     with pytest.raises(backup.Refused, match="DUMP_FAILED"):
         backup.encrypted_dump(
             tmp_path / "bad.age", tmp_path / "public-recipient", "backup-20261115"
         )
+    assert len(horizons) == 1
 
 
 def test_deadline_is_a_failure(monkeypatch):
@@ -373,9 +376,39 @@ def test_failed_encrypt_kills_live_dump_and_confirms_database_cleanup(tmp_path, 
     )
     age.chmod(0o700)
     started = time.monotonic()
+    horizons = []
+    monkeypatch.setattr(backup, "wait_dump_horizon", horizons.append)
     with pytest.raises(backup.Refused, match="ENCRYPT_FAILED"):
         backup.encrypted_dump(tmp_path / "output.age", tmp_path / "recipient", "backup-20261115")
     assert time.monotonic() - started < 5
     assert cleanup.read_text().splitlines() == ["checked", "checked"]
+    assert len(horizons) == 1  # Even SQL count=0 must hold locks for a delayed remote exec.
     with pytest.raises(ProcessLookupError):
         os.kill(int(marker.read_text()), 0)
+
+
+def test_failed_dump_waits_absolute_horizon_despite_repeated_term(monkeypatch):
+    class Clock:
+        CLOCK_BOOTTIME = 7
+
+        def __init__(self):
+            self.current = 100
+            self.interrupted = False
+            self.sleeps = []
+
+        def clock_gettime(self, which):
+            assert which == self.CLOCK_BOOTTIME
+            return self.current
+
+        def sleep(self, seconds):
+            self.sleeps.append(seconds)
+            if not self.interrupted:
+                self.interrupted = True
+                raise backup.Refused("INTERRUPTED")
+            self.current += seconds
+
+    clock = Clock()
+    monkeypatch.setattr(backup, "time", clock)
+    backup.wait_dump_horizon(700)
+    assert clock.current == 710
+    assert all(0 < seconds <= 1 for seconds in clock.sleeps)

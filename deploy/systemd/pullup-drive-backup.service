@@ -25,4 +25,3 @@ ReadWritePaths=/root/backups /home/deploy/.deploy-staging.lock
 ReadOnlyPaths=/etc/pullup-drive-backup /root/bin /root/pullup-trainer-bot
 StandardOutput=null
 StandardError=null
-

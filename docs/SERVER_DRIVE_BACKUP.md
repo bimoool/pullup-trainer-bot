@@ -137,8 +137,14 @@ The runner deadline is 1100 seconds; systemd bounds start to 20 minutes and allo
 650 seconds for shutdown cleanup. Dump execution has a container-side hard limit
 of 600 seconds and a 30-second lock wait. Failed dump/encryption attempts kill
 local child groups and terminate only the random per-invocation PostgreSQL
-`application_name`, then confirm absence. If that cannot be confirmed, the runner
-holds locks until the container timeout horizon and records cleanup unconfirmed.
+`application_name`, then confirm absence. Every failed pipeline that started an
+exec holds locks through its absolute container deadline plus ten seconds, even
+if SQL reports no backend: an exec may still be starting before its connection
+appears. The remote command checks host boot-clock uptime before starting and
+uses only the remaining part of the 600-second window. PostgreSQL container and
+VPS must share that boot clock (the ordinary Docker setup, to verify at acceptance).
+Repeated TERM does not shorten cleanup waiting. If cleanup cannot be confirmed,
+the runner additionally records cleanup unconfirmed.
 The systemd stop allowance preserves this cleanup window. SIGKILL/power loss can
 only be reported as UNKNOWN; consult the private receipt and database state.
 
@@ -168,7 +174,7 @@ Tests in `tests/test_scripts/test_drive_backup.py` use synthetic bytes, fake
 Drive transport and temporary private files. They cover content corruption even
 when metadata matches, idempotency, ambiguous transfer, interrupted receipt,
 partial dump cleanup, private file permissions/symlinks, shared lock contention,
-and safe error reporting. The focused suite passed **21 tests**. The changed-content
+and safe error reporting. The focused suite passed **22 tests**. The changed-content
 test was also run with download comparison temporarily removed: it failed because
 the corrupted object was incorrectly VERIFIED, then passed with comparison restored.
 No provider success is claimed by those tests.

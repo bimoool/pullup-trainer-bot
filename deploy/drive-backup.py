@@ -359,12 +359,23 @@ def stop_children(children):
     return stopped
 
 
+def wait_dump_horizon(deadline):
+    # /proc/uptime and CLOCK_BOOTTIME share the host boot clock in this Docker setup.
+    # Even a delayed server exec cannot start pg_dump after the absolute deadline.
+    while (left := deadline + 10 - time.clock_gettime(time.CLOCK_BOOTTIME)) > 0:
+        try:
+            time.sleep(min(1, left))
+        except Refused as exc:
+            require(str(exc) == "INTERRUPTED", "CLEANUP_WAIT_FAILED")
+            # Repeated TERM must not shorten the failed-dump lock holding period.
+
+
 def encrypted_dump(path, recipient, operation):
     appname = "pullup-drive-" + operation + "-" + uuid.uuid4().hex
     base = ["docker", "compose", "exec", "-T", "db"]
     # GNU timeout runs INSIDE db, so killing the docker client cannot orphan an unbounded dump.
     command(base + ["timeout", "--version"])
-    started = time.monotonic()
+    deadline = int(time.clock_gettime(time.CLOCK_BOOTTIME)) + 600
     dump = encrypt = None
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
@@ -381,9 +392,13 @@ def encrypted_dump(path, recipient, operation):
                     "sh",
                     "-c",
                     (
-                        'exec timeout --signal=KILL 600s pg_dump -U "$POSTGRES_USER" '
+                        "read -r uptime rest < /proc/uptime; "
+                        'left=$(($1 - ${uptime%.*})); [ "$left" -gt 0 ] || exit 124; '
+                        'exec timeout --signal=KILL "${left}s" pg_dump -U "$POSTGRES_USER" '
                         '-Fc --lock-wait-timeout=30000 "$POSTGRES_DB"'
                     ),
+                    "sh",
+                    str(deadline),
                 ],
                 cwd=REPO,
                 env=ENV,
@@ -409,6 +424,7 @@ def encrypted_dump(path, recipient, operation):
         failed = any(child is not None and child.poll() != 0 for child in (dump, encrypt))
         stopped = stop_children((dump, encrypt))
         if failed and dump is not None:
+            cleanup_confirmed = stopped
             # Only this invocation's random PGAPPNAME. No database-wide cancellation.
             query = (
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -447,9 +463,12 @@ def encrypted_dump(path, recipient, operation):
                 )
                 require(stopped, "LOCAL_CLEANUP")
             except (Refused, OSError, subprocess.SubprocessError):
-                # Keep locks until the container-side hard timeout has elapsed.
-                while time.monotonic() - started < 610:
-                    time.sleep(min(1, 610 - (time.monotonic() - started)))
+                cleanup_confirmed = False
+            finally:
+                # Backend absence cannot exclude an exec that has not connected yet.
+                # Always retain deployment locks through the absolute remote deadline.
+                wait_dump_horizon(deadline)
+            if not cleanup_confirmed:
                 raise Refused("DUMP_CLEANUP_UNCONFIRMED") from None
 
 
