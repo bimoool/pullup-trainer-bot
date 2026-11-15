@@ -237,6 +237,13 @@ Controls, safety boundaries and sandbox proof: [ORCH_OWNER_UI.md](ORCH_OWNER_UI.
 
 ## Cloud release control continuity (2026-11-15)
 
+Follow-up #406 implements stable-supervisor complete bundle adoption and independent
+recorded controller recovery, including subprocess SIGKILL and bootstrap-preservation
+tests. Candidate only: no new bootstrap/install or production operation performed.
+Finish the frozen release first; then require full CI/independent security review,
+reviewed exact-SHA administrative conversion, and actual cloud adopt/status/recover
+acceptance. Drive backup #405 remains a separate sequential writer/integration task.
+
 Candidate controller upgrade adds fixed runner adoption and owner/provenance-bound
 R1 apply to the existing bridge. Product runner, compatibility repair and rehearsal
 pin are unchanged. Offline synthetic admission/filesystem regressions cover the

@@ -200,3 +200,87 @@ R1 admission is not proof of recoverability or recovery. Installed server guards
 still require the unchanged schema revision and no started backfill, restore
 only prior application images, and never overwrite the database. Creating,
 reviewing or merging this change does not authorize any production operation.
+
+## Complete controller bundles (#406)
+
+**Implementation candidate; not installed and not accepted from the cloud.**
+Finish the frozen release before merging this follow-up: advancing main still
+invalidates its exact-tree release gate. No existing release gate is relaxed.
+
+The reviewed one-time conversion installs a small stable supervisor outside
+replaceable bundles. The existing authorized-key forced command path stays
+`/root/bin/prod-guarded-dispatch.sh`; only its contents become the fixed
+`control-plane-entrypoint.sh` launcher. No key, SSH configuration, account,
+package, service or general shell endpoint is introduced.
+
+Each immutable `/root/bin/control-plane/releases/<sha>/` contains exactly the
+reviewed dispatcher, helper, production runner, rollback runner and a generated
+hash manifest. Dispatcher/helper resolve their own bundle directory. One private
+fsynced `active.json` switches the entire bundle; an invocation resolves it once
+while holding the existing Actions lock and passes that open lock to the bundled
+dispatcher. Existing production, guarded and staging locks/inodes remain in use.
+Receipt reads bypass mutation locks. Independent runner adoption refuses inside
+a versioned bundle; future controller and runner changes use complete adoption.
+
+Owner commands, in the original eligible PR conversation:
+
+```text
+/pullup server-adopt-controller <exact-current-pr-head-sha>
+/pullup server-controller-status <adopted-sha> ops-<adoption-comment-id>
+/pullup server-recover-controller <adopted-sha> ops-<adoption-comment-id>
+```
+
+Status may also query `ops-<recovery-comment-id>`. Adoption requires the original
+unedited owner request, live PR/head binding, all seven existing exact-SHA
+CI/rehearsal contexts plus attributed `authorization`, current main-tree equality,
+trusted-main first-attempt dispatcher/child provenance, and a durable execution
+claim before SSH. The server independently fetches only fixed origin/main and
+checks exact tree and regular Git blob modes. No source URL, shell, path, hash or
+arbitrary manifest is accepted from the caller.
+
+The stable supervisor implements its own status and recovery. Their standalone
+`controller-recovery.yml`/client path does not import the ordinary dispatcher;
+broken bundled helper/dispatcher code cannot disable recovery. Recovery binds an
+original adoption owner comment and private operation journal, validates its
+saved previous local bundle, and refuses unrelated activation changes. It does
+not require latest product CI, latest main-tree equality, or an unchanged source
+PR head. It never fetches, reruns adoption, changes app images, starts services
+or restores a database. Each new recovery comment has a separate durable claim.
+An interrupted recovery that already switched is reconciled without switching
+again. Uncertain transport is UNKNOWN: query the same operation; never replay.
+
+Claims publish complete fsynced temporary records with atomic no-replace links;
+partly written final claims are impossible. The prior activation is included
+before staging, and the proposed activation is journaled before switching.
+Incomplete staged directories are never executable. Activation and receipts
+use file fsync, atomic replacement and directory fsync. Referenced releases and
+journals are retained; this implementation performs no automatic garbage collection.
+
+### Exact additional administrative bootstrap
+
+Only after reviewed integration/full gates and current-release completion, the
+existing authorized administrator fetches the exact reviewed merged SHA and uses:
+
+```text
+git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sha> --check
+git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sha> --install
+```
+
+The installer requires fresh local origin/main tree equality and the recorded
+PR404 helper/dispatcher pair plus the cloud-adopted production runner `c97a36…`
+and unchanged rollback runner. Unknown files/modes/symlinks refuse. It writes only
+the new supervisor, complete initial bundle/activation, private controller ledger,
+nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher.
+The bundle's production and rollback runners must equal already installed bytes.
+Legacy helpers/runners retain bytes and inodes; authorized_keys, existing backups,
+locks, production checkout, services and data remain unchanged. Known interrupted
+bootstrap states can resume; unknown activation or supervisor bytes refuse.
+
+Acceptance requires synthetic SIGKILL coverage around claim/staging/activation,
+recovery and launcher publication; provenance/dedup/source/lock refusal tests;
+independent security review and full CI; then an actual cloud adoption, status
+and explicitly requested return of a harmless reviewed bundle. Broken-bundle
+injection is confined to synthetic fixtures. Record exact source/hashes and run
+URLs. Installation or a green dispatch alone is not end-to-end acceptance.
+OS/SSH failure, damaged trusted storage, or a defect in the small stable trust
+anchor can still require an administrator from a trusted device.

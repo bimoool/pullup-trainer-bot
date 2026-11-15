@@ -431,6 +431,12 @@ The owner bridge's exact runner-adoption and R1 recovery grammar, reviewed
 one-time no-key administrative helper/dispatcher upgrade, known installed hashes
 and non-replayable receipt handling are documented in
 [CLOUD_SERVER_CONTROL.md](CLOUD_SERVER_CONTROL.md#continuity-upgrade-runner-adoption-and-r1-admission-2026-11-15).
+
+Controller self-updates and independent controller recovery are specified in
+[complete controller bundles](CLOUD_SERVER_CONTROL.md#complete-controller-bundles-406).
+That additional bootstrap is a reviewed candidate, not installed. Once converted,
+adopt complete bundles rather than changing an individual installed runner; the
+existing product apply/R1/R3 decisions and evidence requirements remain unchanged.
 This upgrade is not installed merely because its PR is merged. R1 apply through
 the workflow now requires original owner-command provenance and an execution
 claim; direct/manual R1 apply dispatch and reruns are refused before SSH. R1 check

@@ -1378,6 +1378,18 @@ same-operation ledger and cannot perform the prepare effect twice. No claim or l
 
 ### Cloud release control continuity
 
+Complete controller upkeep (#406) uses a reviewed one-time stable supervisor and
+complete versioned dispatcher/helper/production/rollback bundles, activated through
+one fsynced record. Adoption requires exact PR/head, trusted-main owner/first-attempt
+provenance, full CI/rehearsal plus controller authorization and main-tree equality.
+Independent cloud status/recovery remain available when the bundled dispatcher or
+helper fails; recovery selects only the prior validated local bundle recorded in
+the adoption journal, with a separate claim and no adoption replay. Recovery does
+not depend on latest product CI/main or the source PR retaining its old head.
+Existing forced SSH/key and deployment/data guards remain in force. Implementation
+does not imply installation, deployment authorization or actual cloud acceptance;
+the exact bootstrap and commands are in `CLOUD_SERVER_CONTROL.md` (#406 section).
+
 The existing owner-command bridge supports exact `server-adopt-runner <sha>`
 and `rollback-r1-apply <failed-sha> <manifest> <token> <failed-run> <check-run>`
 commands after the reviewed no-key administrative controller upgrade. Adoption

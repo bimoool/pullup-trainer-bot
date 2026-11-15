@@ -18,6 +18,7 @@ REQUIRED_WORKFLOWS = {
     "codex-review": "claude-code-review.yml",
     "security": "security-review.yml",
     "rehearse": "rehearsal-harness.yml",
+    "authorization": "cloud-command-tests.yml",
 }
 
 

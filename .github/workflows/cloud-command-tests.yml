@@ -2,6 +2,13 @@ name: Cloud command authorization tests
 on:
   pull_request:
     paths:
+      - deploy/control-plane-*.py
+      - deploy/control-plane-*.sh
+      - deploy/install-control-plane.py
+      - tools/controller_control_client.py
+      - tools/tests/test_control_plane*.py
+      - .github/workflows/controller-control.yml
+      - .github/workflows/controller-recovery.yml
       - deploy/server-control.py
       - deploy/prod-guarded-dispatch.sh
       - deploy/install-server-control.py
