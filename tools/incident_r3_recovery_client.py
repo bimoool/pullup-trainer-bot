@@ -126,6 +126,7 @@ def authorize_execution(api, env):
             "incident workflow provenance changed",
         )
     rows = comments(api)
+    incident.no_manual_execution(rows, owner, require)
     claims = [
         row for row in rows if bot_comment(row) and incident.CLAIM_MARKER in row.get("body", "")
     ]
@@ -158,6 +159,8 @@ def authorize_execution(api, env):
         # Refresh terminal history and the global claim immediately before reservation.
         incident.verify_evidence(api, require)
         incident.verify_recovery(api, require, owner, recovery_id, dispatcher_id)
+    else:
+        incident.no_manual_execution(comments(api), owner, require)
     recovery_provenance = (
         incident.recovery_marker(recovery_id, dispatcher_id) + "\n" if recovery_id else ""
     )

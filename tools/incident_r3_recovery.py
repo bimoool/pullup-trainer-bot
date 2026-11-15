@@ -195,6 +195,7 @@ def verify_recovery(api, require, owner, recovery_id=None, dispatcher_id=None):
         "incident original SSH was not proven skipped",
     )
     rows = comments(api, require)
+    no_manual_execution(rows, owner, require)
     claims = [r for r in rows if bot_comment(r) and CLAIM_MARKER in r.get("body", "")]
     require(len(claims) == 1, "one durable incident dispatch claim required")
     require(
@@ -226,3 +227,27 @@ def verify_recovery(api, require, owner, recovery_id=None, dispatcher_id=None):
             "incident recovery claim binding",
         )
     return rows
+
+
+# Owner-controlled exclusion with an explicit reservation sentence. A proposal,
+# marker alone or a bot/other-user comment cannot reserve manual execution.
+MANUAL_EXECUTION_MARKER = f"<!-- pullup-incident-r3-manual-execution-reserved-v1:{FAILED_RUN} -->"
+MANUAL_EXECUTION_RESERVATION = (
+    f"{MANUAL_EXECUTION_MARKER}\nMANUAL R3 EXECUTION RESERVED {CANDIDATE} "
+    f"{ORIGINAL_REQUEST} {CONFIRM}"
+)
+
+
+def no_manual_execution(rows, owner, require):
+    require(
+        not any(
+            row.get("body") == MANUAL_EXECUTION_RESERVATION
+            and row.get("user", {}).get("id") == owner["id"]
+            and row.get("user", {}).get("login") == owner["login"]
+            and row.get("user", {}).get("type") == "User"
+            and row.get("author_association") == "OWNER"
+            and row.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}"
+            for row in rows
+        ),
+        "incident manual execution reserved; no cloud replay",
+    )

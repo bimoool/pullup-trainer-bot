@@ -255,3 +255,14 @@ only enum stage/guard and numeric HTTP status. Historical cause remains UNKNOWN.
 Server rollback code, schema, applications and existing claims are unchanged.
 Next: independent review and all mandatory CI gates, trusted-main integration,
 then a separate owner decision. Implementation/testing does not execute recovery.
+
+## Fixed R3 execution-claim write follow-up (2026-11-15)
+
+Recovery child 43730752868/job 132862408612 failed before SSH with HTTP 403 at
+CLAIM_WRITE and no global execution reservation. Align rollback's explicit PR
+write permission with the existing comment-writing adapters and add bounded 403
+classification plus owner manual-reservation exclusion. The exact 403 reason is
+UNKNOWN; the first historical failure also remains UNKNOWN. All existing claims
+stay preserved. This minimal patch supplies no second redelivery path: the first
+recovery claim continues to block replay. Next: review and mandatory CI; separately
+decide a reviewed redelivery capability or an owner-approved guarded fallback.

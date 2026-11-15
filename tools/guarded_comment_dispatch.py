@@ -232,6 +232,10 @@ def release_gates(api, operation, sha, inputs):
                 inputs.get("incident_recovery_comment_id"),
                 inputs.get("incident_dispatcher_run_id"),
             )
+        else:
+            incident.no_manual_execution(
+                incident.comments(api, require), api("GET", "")["owner"], require
+            )
         return
     if operation.startswith("server-"):
         if operation not in {"server-readiness", "server-receipt"}:

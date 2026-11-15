@@ -1405,3 +1405,15 @@ changed/unknown evidence or ambiguous write requires reconciliation, without
 replay. The historical admission failure's HTTP/guard cause remains UNKNOWN.
 This adds cloud delivery capability, not a server dedup ledger or a changed
 rollback runner. Existing forced-command locks and manifest/token guards apply.
+
+The guarded rollback token explicitly grants `pull-requests: write` for its
+execution reservation in the PR conversation, matching the established dispatcher
+and server-control adapters. A 403 remains a refused write; diagnostics classify
+only exact allowlisted GitHub messages and bounded numeric rate-limit headers.
+No provider cause is inferred from the permission declaration or a bare 403.
+
+An explicit fixed manual-execution reservation authored by the repository owner
+on PR #399 denies the old incident's cloud dispatch and execution admissions.
+The exact reservation envelope is documented in `CLOUD_SERVER_CONTROL.md`.
+Proposal prose, the marker alone and other authors do not reserve execution.
+This exclusion does not itself authorize or perform a manual operation.

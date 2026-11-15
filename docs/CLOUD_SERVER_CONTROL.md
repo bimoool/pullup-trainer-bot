@@ -238,3 +238,47 @@ change adds at-most-once **cloud** execution admission, without changing the R3
 runner or asserting that recovery completed. Failure diagnostics contain only
 allowlisted stage/guard/failure codes, numeric HTTP status or null, and
 `RECONCILE_NO_REPLAY`; no URL, body, token or exception detail is printed.
+
+### Execution claim permission and manual exclusion
+
+Recovery child 43730752868/job 132862408612 ended at admission before SSH, with
+`failure=HTTP`, `http_status=403`, `stage=CLAIM_WRITE`, and no global execution
+claim. Its owner request is 6896948857 and dispatcher 43730724401. The body/reason
+of that 403 was not retained, so its precise cause remains **UNKNOWN**. The older
+43724053051 failure's cause also remains UNKNOWN.
+
+The rollback workflow now explicitly grants `pull-requests: write`, matching the
+working comment-writing dispatcher/server-control workflows. GitHub documents
+[create issue comment](https://docs.github.com/en/rest/issues/comments#create-an-issue-comment)
+as accepting Issues(write) or Pull requests(write). Aligning the explicit PR
+permission is a compatibility correction; it does not prove the historical 403's
+cause. No content/action permission is broadened. A future 403 diagnostic may
+emit only an allowlisted exact message enum and bounded numeric remaining/limit/
+reset/retry-after values. Unknown, malformed or oversized messages stay UNKNOWN;
+no response body, URL, token, arbitrary header or exception detail is printed.
+
+Both old incident admissions also recognize this exact owner-authored reservation
+on PR #399, **only after a separate owner decision to reserve manual execution**:
+
+```text
+<!-- pullup-incident-r3-manual-execution-reserved-v1:43691971076 -->
+MANUAL R3 EXECUTION RESERVED e9f32dd194aab140f63c445e0c2d2eddf59b2b91 6895994270 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039
+```
+
+The full body must match exactly, and the live author identity/OWNER association
+and PR binding must match the repository owner. It denies cloud admission before
+new dispatch/execution reservations. Preserve this comment permanently, including
+after manual execution; do not edit or delete it. A marker alone, proposal prose,
+quoted proposal or another author cannot reserve execution. Publishing this code
+or proposal does not post a reservation and does not authorize a manual action.
+This exclusion coordinates the separately controlled manual route; GitHub comments
+cannot atomically lock out an already admitted/in-flight SSH operation. Before
+manual reservation/action, reconcile the current runs and execution claims and
+prove no cloud execution is active. The existing server locks remain required.
+
+This minimal follow-up does **not** authorize/replay the exhausted first recovery
+delivery. Both original dispatch claims are retained, and the same global execution
+marker remains the only cloud reservation. A second fixed redelivery capability
+requires separate reviewed code and owner approval; alternatively a guarded manual
+fallback needs the owner's specific authorization. Never delete claims, rerun the
+failed child or substitute a new manifest/incident.
