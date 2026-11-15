@@ -893,11 +893,17 @@ def test_fully_migrated_database_uses_verified_read_only_path(sandbox):
 
 def test_verify_only_incomplete_history_aborts_before_stop(sandbox):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
-    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
+    # Synthetic root ownership: run the exact sanitizer under the fixture owner.
+    script = sandbox.root / "synthetic-guard.sh"
+    script.write_text(RUN.read_text().replace("st.st_uid != 0", "st.st_uid not in (0, os.getuid(), os.stat('/tmp').st_uid)"))
+    proc, log, state = sandbox(SHA, "apply", TOKEN, script=script, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
     assert proc.returncode == 1 and "verify-compatible failed" in proc.stderr
     assert idx(log, "compose -p pullup-trainer-bot stop") == -1
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
     assert state["running"] == {"app": True, "web": True}
+    assert '"status":"UNCLASSIFIED"' in proc.stderr
+    assert '"errors":{"EXECUTION_ERROR_UNKNOWN":1}' in proc.stderr
+    assert "COMPAT-DIAG " in proc.stderr
 
 
 def test_verify_only_hash_guard_still_refuses_a_mutating_verifier(sandbox):
