@@ -12,6 +12,15 @@ on:
       - deploy/rehearse-rest01-release.sh
       - deploy/rehearsal/**
       - deploy/deploy-production-guarded-run.sh
+      - deploy/rollback-production-guarded.sh
+      - deploy/prod-guarded-dispatch.sh
+      - deploy/server-control.py
+      - deploy/control-plane-*.py
+      - deploy/control-plane-*.sh
+      - deploy/install-control-plane.py
+      - tools/controller_control_client.py
+      - .github/workflows/controller-control.yml
+      - .github/workflows/controller-recovery.yml
       - .github/workflows/rehearsal-harness.yml
   workflow_dispatch:
 
