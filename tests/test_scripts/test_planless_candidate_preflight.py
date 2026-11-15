@@ -138,5 +138,3 @@ def test_same_schema_planless_zero_is_read_only_and_only_necessary(sandbox):
     assert '"PLANLESS_BLOCKED":0' in proc.stderr
     assert log.count("planless-candidate-host") == 1
     assert not (sandbox.root / "backups").exists()
-
-

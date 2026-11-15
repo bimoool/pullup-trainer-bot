@@ -3265,3 +3265,14 @@ grant admission. Planned links, protected STEP, active/cancelled or unknown engi
 state, foreign/inconsistent definitions/snapshots, legacy progress and unproved
 tombstones still block. Historical archives remain untouched. Rehearsal pins the
 new guard bytes; production installation/adoption remains a separate operation.
+
+Independent review additionally caught a start-only malformed v2 cache that passed
+admission but failed actual engine view/rebuild. The exact negative was red before
+hardening. Terminal admission now checks the existing reader schema for plan
+blocks/targets/rests, cursor bounds, log entries and terminal state fields, plus
+applied post-start finishing-event evidence. Only the real `static` provenance
+enum is accepted; `unprescribed` is a separate top-level prescription kind.
+These are necessary schema checks, not a claim of full event replay in SQL.
+Final focused safety/host parity checks: 58 passed, including normal time, max,
+interval and post-completion extra-set records. The wider historical regression
+run had 183 passes and one calendar-fixture failure; canonical CI remains required.

@@ -25,7 +25,7 @@ WITH session_facts AS (
                 IS NOT DISTINCT FROM s.workout_definition_version_id::text
             AND jsonb_typeof(s.prescription_snapshot->'blocks')='array'
             AND jsonb_typeof(s.prescription_snapshot->'provenance')='object'
-            AND s.prescription_snapshot#>>'{provenance,kind}' IN ('static','unprescribed')
+            AND s.prescription_snapshot#>>'{provenance,kind}'='static'
             AND s.prescription_snapshot#>>'{provenance,program_inclusion_id}' IS NULL
             AND s.prescription_snapshot#>>'{provenance,course_program}' IS NULL
             AND (s.workout_snapshot IS NULL OR (jsonb_typeof(s.workout_snapshot)='object'
@@ -37,12 +37,97 @@ WITH session_facts AS (
             OR (s.engine_version=2 AND s.engine_status='completed'
                 AND jsonb_typeof(s.engine_plan)='object'
                 AND jsonb_typeof(s.engine_plan->'blocks')='array'
+                AND jsonb_array_length(CASE WHEN jsonb_typeof(s.engine_plan->'blocks')='array'
+                    THEN s.engine_plan->'blocks' ELSE '[]'::jsonb END)>0
+                AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(s.engine_plan->'blocks')='array'
+                        THEN s.engine_plan->'blocks' ELSE '[]'::jsonb END) b
+                    WHERE jsonb_typeof(b) IS DISTINCT FROM 'object'
+                        OR NOT COALESCE(b->>'kind' IN ('sets','interval'), false)
+                        OR jsonb_typeof(b->'prep_seconds') IS DISTINCT FROM 'number'
+                        OR NOT COALESCE(b->>'prep_seconds' ~ '^[0-9]+$', false)
+                        OR (COALESCE(b->'rest_after_block_seconds', 'null'::jsonb)<>'null'::jsonb
+                            AND (jsonb_typeof(b->'rest_after_block_seconds') IS DISTINCT FROM 'number'
+                                OR NOT COALESCE(b->>'rest_after_block_seconds' ~ '^[0-9]+$', false)))
+                        OR (b->>'kind'='sets' AND (jsonb_typeof(b->'sets') IS DISTINCT FROM 'array'
+                            OR jsonb_array_length(CASE WHEN jsonb_typeof(b->'sets')='array'
+                                THEN b->'sets' ELSE '[]'::jsonb END)=0))
+                        OR (b->>'kind'='sets' AND EXISTS (SELECT 1 FROM jsonb_array_elements(
+                            CASE WHEN jsonb_typeof(b->'sets')='array' THEN b->'sets' ELSE '[]'::jsonb END) t
+                            WHERE jsonb_typeof(t) IS DISTINCT FROM 'object'
+                                OR NOT COALESCE(t->>'kind' IN ('reps','max_reps','time','max_time'), false)
+                                OR (t->>'kind'='time' AND (jsonb_typeof(t->'target') IS DISTINCT FROM 'number'
+                                    OR NOT COALESCE(t->>'target' ~ '^[1-9][0-9]*$', false)))
+                                OR (COALESCE(t->'rest_after_seconds', 'null'::jsonb)<>'null'::jsonb
+                                    AND (jsonb_typeof(t->'rest_after_seconds') IS DISTINCT FROM 'number'
+                                        OR NOT COALESCE(t->>'rest_after_seconds' ~ '^[0-9]+$', false)))))
+                        OR (b->>'kind'='interval' AND (jsonb_typeof(b->'interval') IS DISTINCT FROM 'object'
+                            OR EXISTS (SELECT 1 FROM unnest(ARRAY['work_seconds','rest_seconds','rounds']) k
+                                WHERE jsonb_typeof(b->'interval'->k) IS DISTINCT FROM 'number'
+                                    OR NOT COALESCE(b->'interval'->>k ~ '^[0-9]+$', false))
+                            OR NOT COALESCE(b#>>'{interval,work_seconds}' ~ '^[1-9][0-9]*$', false)
+                            OR NOT COALESCE(b#>>'{interval,rounds}' ~ '^[1-9][0-9]*$', false))))
                 AND jsonb_typeof(s.engine_state)='object'
                 AND s.engine_state->>'engine_version'='2'
                 AND s.engine_state->>'status'='completed'
                 AND s.engine_state->>'phase'='COMPLETE'
+                AND jsonb_typeof(s.engine_state->'cursor')='object'
+                AND jsonb_typeof(s.engine_state#>'{cursor,block_index}')='number'
+                AND jsonb_typeof(s.engine_state#>'{cursor,set_index}')='number'
+                AND s.engine_state#>>'{cursor,block_index}' ~ '^[0-9]+$'
+                AND s.engine_state#>>'{cursor,set_index}' ~ '^[0-9]+$'
+                AND s.engine_state#>'{cursor,block_index}' <= '32767'::jsonb
+                AND s.engine_state#>'{cursor,set_index}' <= '32766'::jsonb
+                AND EXISTS (SELECT 1 FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(s.engine_plan->'blocks')='array'
+                        THEN s.engine_plan->'blocks' ELSE '[]'::jsonb END) WITH ORDINALITY b(block,position)
+                    WHERE to_jsonb(b.position-1)=s.engine_state#>'{cursor,block_index}'
+                        AND ((b.block->>'kind'='sets' AND s.engine_state#>'{cursor,set_index}'
+                            < to_jsonb(jsonb_array_length(CASE WHEN jsonb_typeof(b.block->'sets')='array'
+                                THEN b.block->'sets' ELSE '[]'::jsonb END)))
+                            OR (b.block->>'kind'='interval'
+                                AND s.engine_state#>'{cursor,round_index}' < b.block#>'{interval,rounds}'
+                                AND s.engine_state#>'{cursor,set_index}'=s.engine_state#>'{cursor,round_index}')))
+                AND s.engine_state->'cursor' ? 'round_index'
+                AND (s.engine_state#>'{cursor,round_index}'='null'::jsonb
+                    OR (jsonb_typeof(s.engine_state#>'{cursor,round_index}')='number'
+                        AND s.engine_state#>>'{cursor,round_index}' ~ '^[0-9]+$'))
+                AND jsonb_typeof(s.engine_state->'logs')='array'
+                AND jsonb_array_length(CASE WHEN jsonb_typeof(s.engine_state->'logs')='array'
+                    THEN s.engine_state->'logs' ELSE '[]'::jsonb END)>0
+                AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(s.engine_state->'logs')='array'
+                        THEN s.engine_state->'logs' ELSE '[]'::jsonb END) l
+                    WHERE jsonb_typeof(l) IS DISTINCT FROM 'object'
+                        OR NOT (l ?& ARRAY['log_index','block_index','set_index','round_index','is_extra','value','effort','note'])
+                        OR EXISTS (SELECT 1 FROM unnest(ARRAY['log_index','block_index','set_index']) k
+                            WHERE jsonb_typeof(l->k) IS DISTINCT FROM 'number'
+                                OR NOT COALESCE(l->>k ~ '^[0-9]+$', false))
+                        OR l->'block_index' >= to_jsonb(jsonb_array_length(
+                            CASE WHEN jsonb_typeof(s.engine_plan->'blocks')='array'
+                                THEN s.engine_plan->'blocks' ELSE '[]'::jsonb END))
+                        OR NOT COALESCE(l->'round_index'='null'::jsonb
+                            OR (jsonb_typeof(l->'round_index')='number' AND l->>'round_index' ~ '^[0-9]+$'), false)
+                        OR jsonb_typeof(l->'is_extra') IS DISTINCT FROM 'boolean'
+                        OR NOT COALESCE(jsonb_typeof(l->'value') IN ('number','null'), false)
+                        OR NOT COALESCE(jsonb_typeof(l->'effort') IN ('number','null'), false)
+                        OR NOT COALESCE(jsonb_typeof(l->'note') IN ('string','null'), false))
+                AND NOT EXISTS (SELECT 1 FROM unnest(ARRAY['started_at','ended_at','last_at',
+                    'phase_seq','phase_started_at','active_elapsed_ms','phase_active_ms']) k
+                    WHERE jsonb_typeof(s.engine_state->k) IS DISTINCT FROM 'number'
+                        OR NOT COALESCE(s.engine_state->>k ~ '^[0-9]+$', false))
+                AND s.engine_state->'ended_at' >= s.engine_state->'started_at'
+                AND s.engine_state->'last_at' >= s.engine_state->'ended_at'
+                AND s.engine_state->'phase_started_at'=s.engine_state->'ended_at'
+                AND s.engine_state->'phase_deadline_at'='null'::jsonb
+                AND s.engine_state->'paused_at'='null'::jsonb
+                AND s.engine_state->'active_since'='null'::jsonb
                 AND EXISTS (SELECT 1 FROM session_events e WHERE e.session_id=s.id
-                    AND e.seq=0 AND e.type='start' AND e.outcome='applied')), false) AS terminal_direct_engine
+                    AND e.seq=0 AND e.type='start' AND e.outcome='applied')
+                AND EXISTS (SELECT 1 FROM session_events e WHERE e.session_id=s.id
+                    AND e.seq>0 AND e.outcome='applied'
+                    AND to_jsonb((EXTRACT(EPOCH FROM e.server_at)*1000)::bigint) >= s.engine_state->'ended_at'
+                    AND e.type IN ('deadline','skip_wait','submit_result','stop','finish_early','confirm_blocks'))), false) AS terminal_direct_engine
     FROM training_sessions s
 ), classified_sessions AS (
     SELECT s.*, CASE

@@ -8,8 +8,16 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models import SubscriptionStatus
-from app.db.models_program import TrainingPlan, TrainingSession, WorkoutDefinitionVersion
+from app.db.models_program import (
+    SessionEvent,
+    TrainingPlan,
+    TrainingSession,
+    WorkoutDefinitionVersion,
+)
+from app.db.repositories.training_sessions import TrainingSessionRepository
 from app.db.repositories.users import UserRepository
+from app.domain import live_engine as engine_domain
+from app.domain.live_engine import EngineError
 from app.services import live_engine
 from app.services.live_engine import LiveEngineService
 from app.services.workout_definition import WorkoutDefinitionService
@@ -158,6 +166,8 @@ async def test_saved_workout_planless_account_invariance(
     )
     assert edited.status_code == 200, edited.text
     assert edited.json()["prescription_snapshot"] == frozen
+    assert edited.json()["comment"] == "Corrected historical fact"
+    assert edited.json()["blocks"][0]["set_logs"][0]["value"] == "9.00"
     edited_hashes = await _guarded_database_hashes(session)
     assert {table for table in after if after[table] != edited_hashes[table]} <= {
         "training_sessions",
@@ -175,6 +185,9 @@ async def test_saved_workout_planless_account_invariance(
     assert clone.json()["source_v2"] == "manual_existing_workout"
     assert clone.json()["workout_definition_id"] == workout.id
     assert clone.json()["prescription_snapshot"] == frozen
+    reread = await v2_get(session, user.telegram_id, "/api/v2/sessions")
+    original = next(card for card in reread.json()["sessions"] if card["id"] == sid)
+    assert original["blocks"][0]["set_logs"][0]["value"] == "9.00"
     before_verify = await _guarded_database_hashes(session)
     assert {table for table in account if account[table] != before_verify[table]} <= {
         "training_sessions",
@@ -213,6 +226,7 @@ async def test_saved_workout_planless_account_invariance(
         "snapshot_missing",
         "snapshot_blocks",
         "snapshot_progression",
+        "snapshot_unknown_provenance",
         "snapshot_course",
         "workout_snapshot_identity",
         "manual_engine",
@@ -224,6 +238,7 @@ async def test_saved_workout_planless_account_invariance(
         "direct_v2_active",
         "direct_v2_cancelled",
         "direct_v2_missing_events",
+        "direct_v2_start_only",
     ],
 )
 async def test_saved_history_unknown_or_progression_shapes_remain_blocked(
@@ -261,6 +276,8 @@ async def test_saved_history_unknown_or_progression_shapes_remain_blocked(
         snapshot["blocks"] = {}
     elif unsafe == "snapshot_progression":
         snapshot["provenance"]["kind"] = "progression"
+    elif unsafe == "snapshot_unknown_provenance":
+        snapshot["provenance"]["kind"] = "unprescribed"
     elif unsafe == "snapshot_course":
         snapshot["provenance"]["program_inclusion_id"] = 123
     elif unsafe == "workout_snapshot_identity":
@@ -294,11 +311,233 @@ async def test_saved_history_unknown_or_progression_shapes_remain_blocked(
                 "status": native.engine_status,
                 "phase": "COMPLETE",
             }
+            if unsafe == "direct_v2_start_only":
+                session.add(
+                    SessionEvent(
+                        session_id=native.id,
+                        seq=0,
+                        type="start",
+                        payload={},
+                        server_at=datetime.now(UTC),
+                        outcome="applied",
+                    )
+                )
     native.prescription_snapshot = snapshot
     await session.flush()
+    if unsafe == "direct_v2_start_only":
+        detail = await TrainingSessionRepository(session).get_for_user(native.id, user.id)
+        with pytest.raises(KeyError, match="paused_at"):
+            live_engine.engine_view(detail, datetime.now(UTC))
+        with pytest.raises(EngineError, match="plan.blocks"):
+            await LiveEngineService(session).rebuild_state(native.id)
     before = await _guarded_database_hashes(session)
     result = await _verify(session)
     assert result["verified"] is False and "history_without_plan=1" in result["errors"], result
     fields = await candidate_counts(test_dsn)
-    assert fields[6] == 1 and sum(fields[8:18]) >= 1
+    expected_reason = (
+        13
+        if unsafe == "planned_source"
+        else 16
+        if "engine" in unsafe or unsafe.startswith("direct_")
+        else 15
+    )
+    assert fields[6] == 1
+    assert fields[8:18] == [int(index == expected_reason) for index in range(8, 18)]
+    assert await _guarded_database_hashes(session) == before
+
+
+@pytest.mark.parametrize("protocol_kind", ["time", "max", "interval", "extra"])
+async def test_terminal_engine_protocols_and_extra_sets_remain_compatible(
+    session, user, test_dsn, monkeypatch, protocol_kind
+):
+    from tests.test_web.test_v2_live_engine import _builder
+
+    await seed_catalog(session)
+    protocol = {
+        "time": {
+            "type": "time_sets",
+            "rest_seconds": 0,
+            "prescription": {"source": "static", "sets": 1, "duration_seconds": 1},
+        },
+        "max": {
+            "type": "max_effort",
+            "rest_seconds": 0,
+            "prescription": {"source": "static", "attempts": 1},
+        },
+        "interval": {
+            "type": "interval",
+            "total_duration_seconds": 2,
+            "work_seconds": 1,
+            "rest_seconds": 1,
+            "starts_with": "work",
+        },
+        "extra": PROTOCOL,
+    }[protocol_kind]
+    workout = await _builder(session, user, [protocol])
+    started = await v2_post(
+        session,
+        user.telegram_id,
+        LIVE,
+        {
+            "client_session_id": str(uuid.uuid4()),
+            "workout_id": workout.id,
+            "engine_version": 2,
+        },
+    )
+    assert started.status_code == 200, started.text
+    sid = started.json()["id"]
+    at = started.json()["engine"]["state"]["started_at"] + 10000
+    monkeypatch.setattr(live_engine, "_utcnow", lambda: live_engine.from_ms(at))
+    if protocol_kind in {"max", "extra"}:
+        response = await v2_post(
+            session,
+            user.telegram_id,
+            f"{LIVE}/{sid}/events",
+            {
+                "events": [
+                    {
+                        "client_event_id": str(uuid.uuid4()),
+                        "type": "submit_result",
+                        "payload": {
+                            "block_index": 0,
+                            "set_index": 0,
+                            "round_index": None,
+                            "value": 8,
+                        },
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        if protocol_kind == "extra":
+            response = await v2_post(
+                session,
+                user.telegram_id,
+                f"{LIVE}/{sid}/events",
+                {
+                    "events": [
+                        {
+                            "client_event_id": str(uuid.uuid4()),
+                            "type": "add_extra_set",
+                            "payload": {"block_index": 0, "value": 7},
+                        }
+                    ]
+                },
+            )
+            assert response.status_code == 200, response.text
+    else:
+        assert (await v2_get(session, user.telegram_id, f"{LIVE}/active")).json()["session"] is None
+    native = await session.get(TrainingSession, sid)
+    assert native.engine_status == "completed"
+    assert await LiveEngineService(session).rebuild_state(sid) == native.engine_state
+    await session.commit()
+    before = await _guarded_database_hashes(session)
+    result = await _verify(session)
+    assert result["verified"] is True, result
+    assert (await candidate_counts(test_dsn))[6] == 0
+    assert await _guarded_database_hashes(session) == before
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "logs",
+        "time_target",
+        "set_rest",
+        "block_rest",
+        "finishing_events",
+        "cursor_block",
+        "cursor_set",
+        "cursor_huge",
+    ],
+)
+async def test_completed_engine_cache_must_satisfy_actual_readers(
+    session, user, test_dsn, monkeypatch, tamper
+):
+    await seed_catalog(session)
+    workout, _ = await _workout(session, user, [PROTOCOL])
+    started = await v2_post(
+        session,
+        user.telegram_id,
+        LIVE,
+        {
+            "client_session_id": str(uuid.uuid4()),
+            "workout_id": workout.id,
+            "engine_version": 2,
+        },
+    )
+    assert started.status_code == 200, started.text
+    sid = started.json()["id"]
+    at = started.json()["engine"]["state"]["started_at"] + 6000
+    monkeypatch.setattr(live_engine, "_utcnow", lambda: live_engine.from_ms(at))
+    completed = await v2_post(
+        session,
+        user.telegram_id,
+        f"{LIVE}/{sid}/events",
+        {
+            "events": [
+                {
+                    "client_event_id": str(uuid.uuid4()),
+                    "type": "submit_result",
+                    "payload": {
+                        "block_index": 0,
+                        "set_index": 0,
+                        "round_index": None,
+                        "value": 8,
+                    },
+                }
+            ]
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    row = await session.get(TrainingSession, sid)
+    assert row.engine_status == "completed"
+    plan, state = deepcopy(row.engine_plan), deepcopy(row.engine_state)
+    if tamper == "logs":
+        state["logs"] = [{}]
+        with pytest.raises(KeyError, match="block_index"):
+            engine_domain.advance(
+                plan,
+                state,
+                {
+                    "type": "correct_previous",
+                    "payload": {
+                        "block_index": 0,
+                        "set_index": 0,
+                        "value": 9,
+                    },
+                },
+                at,
+            )
+    elif tamper.startswith("cursor_"):
+        state["cursor"]["block_index" if tamper == "cursor_block" else "set_index"] = (
+            100000000000000000000 if tamper == "cursor_huge" else 1
+        )
+        mirrored = live_engine.mirror(state)
+        assert mirrored.current_block_index >= len(
+            plan["blocks"]
+        ) or mirrored.current_set_number > len(plan["blocks"][0]["sets"])
+    elif tamper == "finishing_events":
+        from sqlalchemy import delete
+
+        await session.execute(
+            delete(SessionEvent).where(SessionEvent.session_id == sid, SessionEvent.seq > 0)
+        )
+        assert await LiveEngineService(session).rebuild_state(sid) != state
+    else:
+        if tamper == "time_target":
+            plan["blocks"][0]["sets"][0] = {"kind": "time"}
+        elif tamper == "set_rest":
+            plan["blocks"][0]["sets"][0]["rest_after_seconds"] = -1
+        else:
+            plan["blocks"][0]["rest_after_block_seconds"] = -1
+        with pytest.raises(EngineError):
+            engine_domain.validate_plan(plan)
+    row.engine_plan, row.engine_state = plan, state
+    await session.flush()
+    before = await _guarded_database_hashes(session)
+    result = await _verify(session)
+    assert result["verified"] is False and "history_without_plan=1" in result["errors"], result
+    counts = await candidate_counts(test_dsn)
+    assert counts[6] == counts[16] == 1
     assert await _guarded_database_hashes(session) == before

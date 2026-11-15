@@ -330,9 +330,13 @@ plan/session references, not course-count equality, STEP JSON shapes, cached
 progress counters, slot completeness, or unique historical credit per plan item.
 
 A missing plan is compatible with cold archives, including archived completed-workout
-counters. Completed native unplanned journal/activity facts are also compatible only
-with explicit supported provenance and no plan/credit/engine/definition or protected
-STEP-role signals. A completed reset legacy copy additionally requires a key,
+counters. Completed native unplanned journal/activity facts are compatible only
+with explicit supported provenance and no plan/credit or protected STEP-role signals.
+Saved-workout manual records/repeats also require same-user/system definition
+ownership and consistent frozen definition/version/snapshot identity. Direct live
+v1/v2 records require their explicitly supported completed terminal engine shape;
+active, cancelled and unknown engine state remains refused. Archived definitions
+retain historical identity. A completed reset legacy copy additionally requires a key,
 `legacy_deleted`, a same-user archive id/date/status match, no live legacy source,
 and no plan/inclusion/M2M links. Archive presence and onboarding status alone never
 permit an account: current workouts (any status), electives, positive current counters,
@@ -368,8 +372,16 @@ user counts for current planless accounts, the eight history sources and limited
 native/started/linked/unknown-origin/superseded/STEP flags. The query uses a bounded
 read-only snapshot; failures export only `DIAG_UNAVAILABLE`. Origin classification
 is not a complete safety classification, and neither this metadata nor the separate
-historical-failure diagnostic is admission. The phase-2 candidate verifier remains
-authoritative. Run the final candidate's once-only production-preflight after its
+historical-failure diagnostic is admission. Same-schema preflight additionally
+requires `PLANLESS-CANDIDATE` from the CLI's exact canonical classification SQL:
+the reviewed guard checks the fixed candidate Git blob's regular mode, bounded
+size and compiled SHA256 before executing it in an explicit bounded read-only
+repeatable-read transaction. It exports only fixed numeric reason/subtype counts.
+`PLANLESS_BLOCKED` must be zero; blocked, missing, mismatched or unavailable results
+refuse before build or STOP. Zero proves this necessary condition only: the full
+phase-2 verifier and all stopped-writer/global preservation checks remain mandatory.
+The initial migration path keeps its existing preflight where these tables may
+not exist. Run the final candidate's once-only production-preflight after its
 exact-SHA staging and both QA results, following reviewed guard adoption and fresh
 readiness; no retry or protocol exception is introduced.
 
