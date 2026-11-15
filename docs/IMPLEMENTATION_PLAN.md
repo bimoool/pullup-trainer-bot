@@ -1,5 +1,17 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Draft server-side Drive backup #405 — 2026-11-15
+
+Изолированный кандидат от `main` `226c505`: root-only утилита `deploy/drive-backup.py`,
+systemd service/timer и [план установки/приёмки](SERVER_DRIVE_BACKUP.md). Согласованный
+dump шифруется до записи на диск; загрузка проверяется фактическим скачиванием
+шифротекста и SHA-256/размером. Общие deployment locks, приватные fsync-квитанции,
+неповторяемые UNKNOWN/FAILED, отсутствие remote deletion. Offline-тесты только на
+синтетических байтах/credentials; код не меняет приложения, схему или release gates.
+Остаются owner OAuth/public recipient provisioning, серверная установка,
+живой upload/readback и независимое восстановление. Не merge/release до завершения
+текущего production recovery; наличие кода/таймера не означает runtime acceptance.
+
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 
 Отдельный aggregate QA-кандидат включает reviewed #384 (явный launch platform) и
