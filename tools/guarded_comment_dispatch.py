@@ -324,6 +324,10 @@ def authorize(event, runtime, api):
             and live_comment.get("updated_at") == live_comment["created_at"],
             "original unedited incident owner command required",
         )
+    if operation == "rollback-check":
+        require(
+            runtime.get("run_attempt") == "1", "first rollback-check dispatcher attempt required"
+        )
     if operation in {"rollback-r1-apply", "server-adopt-runner"}:
         require(runtime.get("run_attempt") == "1", "first dispatcher attempt required")
         r1.original_comment(live_comment, owner, number, comment["body"], require)
@@ -407,6 +411,13 @@ def dispatch(event, runtime, api):
     if operation.startswith("server-"):
         marker = (
             f"<!-- pullup-{marker_kind}-v1:{number}:{sha}:ops-{inputs['request_comment_id']} -->"
+        )
+    if operation == "rollback-check":
+        # Read-only evidence may need refreshing after a different check or state change.
+        # A new owner comment is a new check; the same event keeps its durable claim.
+        marker = (
+            f"<!-- pullup-rollback-check-v2:{number}:{sha}:{inputs['kind']}:"
+            f"{inputs['manifest']}:{event['comment']['id']} -->"
         )
     if operation == "rollback-r1-apply":
         marker = r1.marker(inputs)

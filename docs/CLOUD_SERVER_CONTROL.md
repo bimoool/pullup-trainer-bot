@@ -187,7 +187,14 @@ manual workflow dispatch, a rerun or an uncertain API response cannot replay it.
 The child persists its execution reservation before SSH. New checks expose kind,
 mode and manifest in their run name; old unattributed checks cannot admit this
 route; request a fresh read-only `/pullup rollback-check <sha> R1 <manifest>`
-after activation. The existing pinned incident-only R3 route remains unchanged.
+after activation. Read-only rollback-check claims bind kind, exact manifest and
+owner request comment ID in addition to PR/SHA. A later owner comment may refresh
+the same R1 check or request another kind/manifest; a rerun of an already reserved
+comment deduplicates. Historical v1 claims remain preserved and do not prevent
+new checks. Dispatcher reruns are refused, including events with only a historical
+v1 claim; use a new owner comment for another read-only check. This does not
+change incident-wide apply/execution claims or the
+existing pinned incident-only R3 route.
 
 R1 admission is not proof of recoverability or recovery. Installed server guards
 still require the unchanged schema revision and no started backfill, restore

@@ -346,3 +346,79 @@ class Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FreshRollbackCheckTests(unittest.TestCase):
+    def fixture(self):
+        a = API()
+        a.runtime["run_attempt"] = "1"
+
+        def api(method, path, body=None):
+            if method == "GET" and path == f"issues/comments/{a.event['comment']['id']}":
+                return copy.deepcopy(a.event["comment"])
+            return a(method, path, body)
+
+        return a, api
+
+    def request(self, a, api, kind, manifest, comment_id):
+        a.event["comment"].update(
+            id=comment_id, body=f"/pullup rollback-check {SHA} {kind} {manifest}"
+        )
+        return t.dispatch(a.event, a.runtime, api)
+
+    def test_r3_then_r1_gets_distinct_readonly_dispatch_and_same_event_deduplicates(self):
+        a, api = self.fixture()
+        manifest = "/root/backups/prod-pre-aaaaaaa-20261115T120000Z.manifest"
+        self.assertIn("accepted", self.request(a, api, "R3", manifest, 10))
+        self.assertIn("accepted", self.request(a, api, "R1", manifest, 11))
+        self.assertIn("duplicate", self.request(a, api, "R1", manifest, 11))
+        self.assertEqual(len(a.dispatched()), 2)
+        self.assertEqual([call[2]["inputs"]["kind"] for call in a.dispatched()], ["R3", "R1"])
+        self.assertTrue(all(call[2]["inputs"]["mode"] == "check" for call in a.dispatched()))
+        self.assertEqual(len(a.comments), 2)
+
+    def test_new_manifest_and_later_same_r1_request_get_fresh_checks(self):
+        a, api = self.fixture()
+        first = "/root/backups/prod-pre-aaaaaaa-20261115T120000Z.manifest"
+        second = "/root/backups/prod-pre-aaaaaaa-20261115T130000Z.manifest"
+        for manifest, comment_id in [(first, 10), (second, 11), (second, 12)]:
+            self.assertIn("accepted", self.request(a, api, "R1", manifest, comment_id))
+            self.assertIn("duplicate", self.request(a, api, "R1", manifest, comment_id))
+        self.assertEqual(len(a.dispatched()), 3)
+        self.assertEqual(
+            [call[2]["inputs"]["manifest"] for call in a.dispatched()], [first, second, second]
+        )
+
+    def test_legacy_claim_is_preserved_and_does_not_block_fresh_check(self):
+        a, api = self.fixture()
+        legacy = {
+            "id": 19,
+            "body": f"<!-- pullup-rollback-check-v1:400:{SHA} -->\nHistorical check claim.",
+            "user": {"id": t.BOT_ID, "login": "github-actions[bot]"},
+        }
+        a.comments.append(copy.deepcopy(legacy))
+        self.assertIn(
+            "accepted",
+            self.request(
+                a, api, "R1", "/root/backups/prod-pre-aaaaaaa-20261115T120000Z.manifest", 11
+            ),
+        )
+        self.assertEqual(a.comments[0], legacy)
+        self.assertFalse(any(call[0] == "DELETE" for call in a.calls))
+        self.assertEqual(len(a.dispatched()), 1)
+
+    def test_rerun_with_legacy_claim_refuses_without_dispatch(self):
+        a, api = self.fixture()
+        a.runtime["run_attempt"] = "2"
+        legacy = {
+            "id": 19,
+            "body": f"<!-- pullup-rollback-check-v1:400:{SHA} -->",
+            "user": {"id": t.BOT_ID, "login": "github-actions[bot]"},
+        }
+        a.comments.append(copy.deepcopy(legacy))
+        with self.assertRaises(t.Refused):
+            self.request(
+                a, api, "R1", "/root/backups/prod-pre-aaaaaaa-20261115T120000Z.manifest", 10
+            )
+        self.assertEqual(a.comments, [legacy])
+        self.assertFalse(a.dispatched())
