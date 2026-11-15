@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 
+import incident_r3_recovery as incident
 from current_checks import CheckRefused, ensure_green
 
 REPO = "bimoool/pullup-trainer-bot"
@@ -26,6 +27,13 @@ REQUIRED_CHECKS = {
 
 
 def command(body):
+    if body == incident.COMMAND:
+        return (
+            "incident-r3-apply",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
     recovery = re.fullmatch(
         r"/pullup server-prepare-recover ([0-9a-f]{40}) ([1-9][0-9]{0,19})", body
     )
@@ -194,6 +202,14 @@ def unchanged_staging(api, deployed):
 
 
 def release_gates(api, operation, sha, inputs):
+    if operation == "incident-r3-apply":
+        require(
+            sha == incident.CANDIDATE
+            and all(inputs.get(k) == v for k, v in incident.fixed_inputs().items()),
+            "fixed incident inputs required",
+        )
+        incident.verify_evidence(api, require)
+        return
     if operation.startswith("server-"):
         if operation not in {"server-readiness", "server-receipt"}:
             green_checks(api, sha)
@@ -260,6 +276,8 @@ def authorize(event, runtime, api):
     require("pull_request" in issue, "not a PR conversation")
     require(type(comment.get("id")) is int and comment["id"] > 0, "invalid comment")
     operation, sha, workflow_name, inputs = command(comment.get("body", ""))
+    if operation == "incident-r3-apply":
+        require(number == incident.PR_NUMBER, "incident PR binding required")
     live_repo = api("GET", "")
     require(repository.get("id") == live_repo["id"], "repository ID mismatch")
     owner = live_repo["owner"]
@@ -278,6 +296,20 @@ def authorize(event, runtime, api):
         and live_comment.get("user", {}).get("id") == owner["id"],
         "comment changed or unavailable",
     )
+    if operation == "incident-r3-apply":
+        require(
+            runtime.get("run_attempt") == "1"
+            and live_comment.get("id") == comment["id"]
+            and live_comment.get("issue_url")
+            == f"https://api.github.com/repos/{REPO}/issues/{incident.PR_NUMBER}"
+            and live_comment.get("user", {}).get("login") == owner["login"]
+            and live_comment.get("user", {}).get("type") == "User"
+            and live_comment.get("author_association") == "OWNER"
+            and isinstance(live_comment.get("created_at"), str)
+            and bool(live_comment["created_at"])
+            and live_comment.get("updated_at") == live_comment["created_at"],
+            "original unedited incident owner command required",
+        )
     validate_pr(api("GET", f"pulls/{number}"), number, sha)
     workflow = api("GET", f"actions/workflows/{workflow_name}")
     require(
@@ -300,6 +332,9 @@ def authorize(event, runtime, api):
         inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
         inputs["pr_number"] = str(number)
         inputs.setdefault("request_comment_id", str(comment["id"]))
+    if operation == "incident-r3-apply":
+        inputs["incident_request_comment_id"] = str(comment["id"])
+        inputs["incident_dispatcher_run_id"] = str(runtime["run_id"])
     return number, operation, sha, workflow_name, inputs
 
 
@@ -337,6 +372,10 @@ def dispatch(event, runtime, api):
         if recovery_id
         else ""
     )
+    if operation == "incident-r3-apply":
+        provenance = (
+            incident.request_marker(inputs["incident_request_comment_id"], runtime["run_id"]) + "\n"
+        )
     marker_kind = "preflight" if operation == "staging-preflight" else operation
     marker = f"<!-- pullup-{marker_kind}-v1:{number}:{sha} -->"
     if operation.startswith("server-"):
@@ -402,6 +441,7 @@ def main():
         "repository": os.environ["GITHUB_REPOSITORY"],
         "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
         "run_id": os.environ["GITHUB_RUN_ID"],
+        "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
     }
     with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
         event = json.load(source)

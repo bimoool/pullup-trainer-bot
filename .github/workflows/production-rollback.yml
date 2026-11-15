@@ -24,9 +24,20 @@ on:
         description: "Для apply: ROLLBACK-<R1|R3>-<run_id из manifest>. Для check — пусто."
         required: false
         default: ""
+      incident_request_comment_id:
+        description: "Fixed incident adapter provenance; not a manual approval shortcut."
+        required: false
+        default: ""
+      incident_dispatcher_run_id:
+        description: "Trusted owner-command dispatcher run for the fixed incident."
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
+  issues: write
 
 concurrency:
   group: production
@@ -34,10 +45,15 @@ concurrency:
 
 jobs:
   rollback:
+    if: github.repository == 'bimoool/pullup-trainer-bot' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 90
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
       - name: Validate inputs
         env:
           KIND: ${{ inputs.kind }}
@@ -53,6 +69,17 @@ jobs:
           else
             [ -z "$CONFIRM" ] || { echo "::error::confirm is accepted only with apply"; exit 1; }
           fi
+
+      - name: Revalidate fixed incident approval and reserve execution before SSH
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIND: ${{ inputs.kind }}
+          MANIFEST: ${{ inputs.manifest }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          INCIDENT_REQUEST_COMMENT_ID: ${{ inputs.incident_request_comment_id }}
+          INCIDENT_DISPATCHER_RUN_ID: ${{ inputs.incident_dispatcher_run_id }}
+        run: python3 tools/incident_r3_recovery_client.py
 
       - name: Guarded rollback ${{ inputs.kind }} ${{ inputs.mode }}
         env:
