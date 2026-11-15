@@ -105,6 +105,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   // A read started before a local action must never replace that action after its POST was acknowledged.
   const mutationEpoch = useRef(0);
   const refreshRequest = useRef(0);
+  const acceptedRefresh = useRef(0);
   const resync = useRef(false);
   const firstCompletion = useRef<LiveSessionCompleteResponse | null>(null);
   const closed = useRef(false);
@@ -285,7 +286,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
     }
     const epoch = mutationEpoch.current;
     const request = ++refreshRequest.current;
-    const isCurrentRead = () => lifecycle.isCurrent(token) && epoch === mutationEpoch.current && request === refreshRequest.current;
+    // A slower read may still apply while newer reads are pending. Only a newer accepted outcome supersedes it.
+    const isCurrentRead = () => lifecycle.isCurrent(token) && epoch === mutationEpoch.current && request > acceptedRefresh.current;
     try {
       const started = Date.now();
       const active = await fetchActiveLiveSession(initDataRaw);
@@ -293,7 +295,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
         return;
       }
       if (active !== null && active.id === initialSession.id) {
+        acceptedRefresh.current = request;
         acceptServer(active, started, Date.now());
+        setFailure(null);
         return;
       }
       // Не активна на сервере: завершилась сама (проекция в фоне), на другом устройстве или отменена.
@@ -302,6 +306,8 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       if (!isCurrentRead()) {
         return;
       }
+      acceptedRefresh.current = request;
+      setFailure(null);
       if (result.engine_status === "cancelled" || result.progression_skipped_reason === "cancelled") {
         await finishWith(result);
         return;
@@ -311,7 +317,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       }
       setServer(result);
     } catch (error) {
-      if (isCurrentRead()) {
+      // An error from this request's own awaited finishWith still belongs to its accepted outcome.
+      if (lifecycle.isCurrent(token) && epoch === mutationEpoch.current && request >= acceptedRefresh.current) {
+        acceptedRefresh.current = request;
         setFailure(classifySyncError(error));
       }
     }
