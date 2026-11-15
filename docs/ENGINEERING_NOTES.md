@@ -3157,3 +3157,24 @@ or provider root cause: the old catch discarded guard/HTTP details, so that caus
 remains UNKNOWN. The separately authorized delivery route pins this terminal
 pre-SSH outcome and preserves dedicated dispatch plus global execution claims.
 New diagnostics render fixed enums and bounded numeric HTTP status only.
+
+### R3 CLAIM_WRITE 403 after first delivery recovery
+
+Child 43730752868/job 132862408612 returned safe HTTP403/CLAIM_WRITE diagnostics
+and skipped SSH without a global execution claim. The response reason was not
+retained; do not attribute it conclusively to a permission or provider condition.
+Rollback's explicit pull-requests:read differed from the established PR-comment
+writers' write permission. The follow-up aligns that declaration and adds exact
+message-enum classification and numeric header allowlisting, with bounded parsing
+and no raw response output. Original claims and unknown historical causes remain.
+An explicit fixed owner-authored manual execution reservation conservatively denies
+future old-incident cloud admissions; proposal markers alone have no effect.
+
+The reviewed follow-up also supplies one fixed second delivery for the same
+incident after 43730752868/job 132862408612 definitively failed before SSH. It
+pins the full immutable two-stage history and preserves both earlier claims.
+Admission uses structured API metadata only; it neither fetches job logs nor
+uses a pasted HTTP403 as privilege evidence. A dedicated dispatch reservation
+and the existing global execution reservation retain at-most-once cloud
+execution. Old routes deny the new reservation; manual/global execution
+reservations deny all routes. A future ambiguity is reconciliation, not retry.

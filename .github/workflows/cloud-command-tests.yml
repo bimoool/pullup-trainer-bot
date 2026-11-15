@@ -27,6 +27,8 @@ on:
       - tools/guarded_comment_dispatch.py
       - tools/incident_diagnostics.py
       - tools/tests/test_incident_r3_once_recovery.py
+      - tools/tests/test_incident_r3_claim_write.py
+      - tools/tests/test_incident_r3_redelivery.py
       - tools/incident_r3_recovery.py
       - tools/incident_r3_recovery_client.py
       - tools/rollback_r1_recovery*.py
