@@ -1417,3 +1417,15 @@ on PR #399 denies the old incident's cloud dispatch and execution admissions.
 The exact reservation envelope is documented in `CLOUD_SERVER_CONTROL.md`.
 Proposal prose, the marker alone and other authors do not reserve execution.
 This exclusion does not itself authorize or perform a manual operation.
+
+The first delivery recovery is consumed. One second and final fixed
+`incident-r3-redeliver` capability binds that original incident plus recovery
+approval 6896948857/dispatcher 43730724401/failed child 43730752868/job 132862408612
+at exact trusted head f6bf15d. It requires both prior latest first-attempt failures
+with admission failed and SSH skipped, all original immutable provenance/evidence
+and both preserved unique claims. A dedicated second-delivery claim precedes
+dispatch; the same global execution marker precedes SSH under existing production
+concurrency. Both old paths deny the second claim. Global execution or actual
+owner manual reservation denies every path. Only structured metadata is used;
+HTTP403 is descriptive. No generic retry, new incident/manifest/server operation
+or further delivery route is added. Exact grammar is in CLOUD_SERVER_CONTROL.md.

@@ -32,6 +32,13 @@ def command(body):
     if body.startswith("/pullup rollback-r1-apply "):
         sha, inputs = r1.parse(body, require)
         return "rollback-r1-apply", sha, "production-rollback.yml", inputs
+    if body == incident.REDELIVERY_COMMAND:
+        return (
+            "incident-r3-redeliver",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
     if body == incident.RECOVERY_COMMAND:
         return (
             "incident-r3-recover",
@@ -217,14 +224,22 @@ def release_gates(api, operation, sha, inputs):
     if operation == "rollback-r1-apply":
         r1.verify_evidence(api, sha, inputs, require, BOT_ID)
         return
-    if operation in {"incident-r3-apply", "incident-r3-recover"}:
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
         require(
             sha == incident.CANDIDATE
             and all(inputs.get(k) == v for k, v in incident.fixed_inputs().items()),
             "fixed incident inputs required",
         )
         incident.verify_evidence(api, require)
-        if operation == "incident-r3-recover":
+        if operation == "incident-r3-redeliver":
+            incident.verify_redelivery(
+                api,
+                require,
+                api("GET", "")["owner"],
+                inputs.get("incident_redelivery_comment_id"),
+                inputs.get("incident_dispatcher_run_id"),
+            )
+        elif operation == "incident-r3-recover":
             incident.verify_recovery(
                 api,
                 require,
@@ -233,9 +248,9 @@ def release_gates(api, operation, sha, inputs):
                 inputs.get("incident_dispatcher_run_id"),
             )
         else:
-            incident.no_manual_execution(
-                incident.comments(api, require), api("GET", "")["owner"], require
-            )
+            rows = incident.comments(api, require)
+            incident.no_manual_execution(rows, api("GET", "")["owner"], require)
+            incident.no_redelivery(rows, require)
         return
     if operation.startswith("server-"):
         if operation not in {"server-readiness", "server-receipt"}:
@@ -310,7 +325,7 @@ def authorize(event, runtime, api):
     require("pull_request" in issue, "not a PR conversation")
     require(type(comment.get("id")) is int and comment["id"] > 0, "invalid comment")
     operation, sha, workflow_name, inputs = command(comment.get("body", ""))
-    if operation in {"incident-r3-apply", "incident-r3-recover"}:
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
         require(number == incident.PR_NUMBER, "incident PR binding required")
     live_repo = api("GET", "")
     require(repository.get("id") == live_repo["id"], "repository ID mismatch")
@@ -330,7 +345,7 @@ def authorize(event, runtime, api):
         and live_comment.get("user", {}).get("id") == owner["id"],
         "comment changed or unavailable",
     )
-    if operation in {"incident-r3-apply", "incident-r3-recover"}:
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
         require(
             runtime.get("run_attempt") == "1"
             and live_comment.get("id") == comment["id"]
@@ -359,7 +374,7 @@ def authorize(event, runtime, api):
         and workflow.get("state") == "active",
         "guarded workflow unavailable",
     )
-    if operation == "incident-r3-recover":
+    if operation in {"incident-r3-recover", "incident-r3-redeliver"}:
         require(
             re.fullmatch(r"[0-9a-f]{40}", runtime.get("sha", "")),
             "trusted recovery dispatcher SHA required",
@@ -386,16 +401,27 @@ def authorize(event, runtime, api):
         inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
         inputs["pr_number"] = str(number)
         inputs.setdefault("request_comment_id", str(comment["id"]))
-    if operation in {"incident-r3-apply", "incident-r3-recover"}:
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
         inputs["incident_request_comment_id"] = str(comment["id"])
         inputs["incident_dispatcher_run_id"] = str(runtime["run_id"])
-        if operation == "incident-r3-recover":
+        if operation in {"incident-r3-recover", "incident-r3-redeliver"}:
             require(
                 comment["id"] != incident.ORIGINAL_REQUEST,
                 "new incident recovery approval required",
             )
             inputs["incident_request_comment_id"] = str(incident.ORIGINAL_REQUEST)
             inputs["incident_recovery_comment_id"] = str(comment["id"])
+            if operation == "incident-r3-redeliver":
+                require(
+                    comment["id"] != incident.PARENT_REQUEST,
+                    "new incident redelivery approval required",
+                )
+                require(
+                    str(runtime["run_id"]) != str(incident.PARENT_DISPATCHER),
+                    "new incident dispatcher required",
+                )
+                inputs["incident_recovery_comment_id"] = str(incident.PARENT_REQUEST)
+                inputs["incident_redelivery_comment_id"] = str(comment["id"])
     if operation == "rollback-r1-apply":
         inputs["recovery_pr_number"] = str(number)
         inputs["recovery_request_comment_id"] = str(comment["id"])
@@ -437,13 +463,18 @@ def dispatch(event, runtime, api):
         if recovery_id
         else ""
     )
-    if operation in {"incident-r3-apply", "incident-r3-recover"}:
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
         provenance = (
             incident.request_marker(inputs["incident_request_comment_id"], runtime["run_id"]) + "\n"
         )
     if operation == "incident-r3-recover":
         provenance = (
             incident.recovery_marker(inputs["incident_recovery_comment_id"], runtime["run_id"])
+            + "\n"
+        )
+    if operation == "incident-r3-redeliver":
+        provenance = (
+            incident.redelivery_marker(inputs["incident_redelivery_comment_id"], runtime["run_id"])
             + "\n"
         )
     if operation == "rollback-r1-apply":
@@ -465,6 +496,8 @@ def dispatch(event, runtime, api):
         )
     if operation == "incident-r3-recover":
         marker = incident.RECOVERY_MARKER
+    if operation == "incident-r3-redeliver":
+        marker = incident.REDELIVERY_MARKER
     if operation == "rollback-r1-apply":
         marker = r1.marker(inputs)
     for page in range(1, 101):

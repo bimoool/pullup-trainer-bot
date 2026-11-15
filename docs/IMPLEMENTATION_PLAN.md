@@ -263,6 +263,9 @@ CLAIM_WRITE and no global execution reservation. Align rollback's explicit PR
 write permission with the existing comment-writing adapters and add bounded 403
 classification plus owner manual-reservation exclusion. The exact 403 reason is
 UNKNOWN; the first historical failure also remains UNKNOWN. All existing claims
-stay preserved. This minimal patch supplies no second redelivery path: the first
-recovery claim continues to block replay. Next: review and mandatory CI; separately
-decide a reviewed redelivery capability or an owner-approved guarded fallback.
+stay preserved. A second and final fixed failed-before-SSH delivery binds the
+entire original plus first-recovery chain and exact latest failed job. It adds
+one dedicated dispatch claim while retaining the same global execution marker;
+old routes deny that new claim. No log-derived privileges or generic retry are
+introduced. Next: independent/native review and mandatory CI, trusted-main
+integration, then a separate owner decision. No operation was performed.

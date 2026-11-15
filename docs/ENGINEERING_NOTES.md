@@ -3169,3 +3169,12 @@ message-enum classification and numeric header allowlisting, with bounded parsin
 and no raw response output. Original claims and unknown historical causes remain.
 An explicit fixed owner-authored manual execution reservation conservatively denies
 future old-incident cloud admissions; proposal markers alone have no effect.
+
+The reviewed follow-up also supplies one fixed second delivery for the same
+incident after 43730752868/job 132862408612 definitively failed before SSH. It
+pins the full immutable two-stage history and preserves both earlier claims.
+Admission uses structured API metadata only; it neither fetches job logs nor
+uses a pasted HTTP403 as privilege evidence. A dedicated dispatch reservation
+and the existing global execution reservation retain at-most-once cloud
+execution. Old routes deny the new reservation; manual/global execution
+reservations deny all routes. A future ambiguity is reconciliation, not retry.

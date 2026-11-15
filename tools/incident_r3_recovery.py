@@ -130,7 +130,9 @@ def trusted_run(api, require, run_id, workflow, event, actor, head, terminal=Non
     )
 
 
-def verify_recovery(api, require, owner, recovery_id=None, dispatcher_id=None):
+def verify_recovery(
+    api, require, owner, recovery_id=None, dispatcher_id=None, allow_redelivery=False
+):
     """GET only: prove the original delivery terminated before its one SSH step."""
     owner_comment(
         api("GET", f"issues/comments/{ORIGINAL_REQUEST}"),
@@ -159,43 +161,11 @@ def verify_recovery(api, require, owner, recovery_id=None, dispatcher_id=None):
         ORIGINAL_HEAD,
         "failure",
     )
-    result = api("GET", f"actions/runs/{REFUSED_RUN}/jobs?filter=latest&per_page=100")
-    jobs = result.get("jobs", [])
-    require(result.get("total_count") == 1 and len(jobs) == 1, "incident refused job topology")
-    job = jobs[0]
-    require(
-        job.get("id") == REFUSED_JOB
-        and job.get("run_id") == REFUSED_RUN
-        and job.get("run_attempt") == 1
-        and job.get("name") == "rollback"
-        and job.get("status") == "completed"
-        and job.get("conclusion") == "failure",
-        "incident refused latest job changed",
-    )
-    expected_steps = [
-        ("Set up job", "success"),
-        ("Run actions/checkout@v4", "success"),
-        ("Validate inputs", "success"),
-        ("Revalidate fixed incident approval and reserve execution before SSH", "failure"),
-        ("Revalidate R1 owner command and reserve execution before SSH", "skipped"),
-        ("Guarded rollback R3 apply", "skipped"),
-        ("Remove key", "success"),
-        ("Post Run actions/checkout@v4", "success"),
-        ("Complete job", "success"),
-    ]
-    steps = job.get("steps", [])
-    require(
-        len(steps) == len(expected_steps)
-        and all(
-            step.get("name") == name
-            and step.get("status") == "completed"
-            and step.get("conclusion") == conclusion
-            for step, (name, conclusion) in zip(steps, expected_steps)
-        ),
-        "incident original SSH was not proven skipped",
-    )
+    verify_refused_job(api, require, REFUSED_RUN, REFUSED_JOB)
     rows = comments(api, require)
     no_manual_execution(rows, owner, require)
+    if not allow_redelivery:
+        no_redelivery(rows, require)
     claims = [r for r in rows if bot_comment(r) and CLAIM_MARKER in r.get("body", "")]
     require(len(claims) == 1, "one durable incident dispatch claim required")
     require(
@@ -251,3 +221,141 @@ def no_manual_execution(rows, owner, require):
         ),
         "incident manual execution reserved; no cloud replay",
     )
+
+
+# The second and final fixed delivery capability. No generic retry/incident selector.
+PARENT_REQUEST = 6896948857
+PARENT_DISPATCHER = 43730724401
+PARENT_REFUSED_RUN = 43730752868
+PARENT_REFUSED_JOB = 132862408612
+PARENT_HEAD = "f6bf15dafa03dd1aa74c4353d7099a8b3563c9e7"
+REDELIVERY_COMMAND = (
+    f"/pullup incident-r3-redeliver {CANDIDATE} {CONFIRM} {ORIGINAL_REQUEST} "
+    f"{PARENT_REQUEST} {PARENT_DISPATCHER} {PARENT_REFUSED_RUN}"
+)
+REDELIVERY_MARKER = f"<!-- pullup-incident-r3-redelivery-v1:{PARENT_REFUSED_RUN} -->"
+
+
+def redelivery_marker(comment_id, dispatcher_id):
+    return f"<!-- pullup-incident-r3-redelivery-request-v1:{comment_id}:{dispatcher_id} -->"
+
+
+def no_redelivery(rows, require):
+    require(
+        not any(bot_comment(row) and REDELIVERY_MARKER in row.get("body", "") for row in rows),
+        "incident redelivery already reserved; no old delivery",
+    )
+
+
+def verify_refused_job(api, require, run_id, job_id):
+    result = api("GET", f"actions/runs/{run_id}/jobs?filter=latest&per_page=100")
+    jobs = result.get("jobs", [])
+    require(result.get("total_count") == 1 and len(jobs) == 1, "incident refused job topology")
+    job = jobs[0]
+    require(
+        job.get("id") == job_id
+        and job.get("run_id") == run_id
+        and job.get("run_attempt") == 1
+        and job.get("name") == "rollback"
+        and job.get("status") == "completed"
+        and job.get("conclusion") == "failure",
+        "incident refused latest job changed",
+    )
+    expected_steps = [
+        ("Set up job", "success"),
+        ("Run actions/checkout@v4", "success"),
+        ("Validate inputs", "success"),
+        ("Revalidate fixed incident approval and reserve execution before SSH", "failure"),
+        ("Revalidate R1 owner command and reserve execution before SSH", "skipped"),
+        ("Guarded rollback R3 apply", "skipped"),
+        ("Remove key", "success"),
+        ("Post Run actions/checkout@v4", "success"),
+        ("Complete job", "success"),
+    ]
+    steps = job.get("steps", [])
+    require(
+        len(steps) == len(expected_steps)
+        and all(
+            step.get("name") == name
+            and step.get("status") == "completed"
+            and step.get("conclusion") == conclusion
+            for step, (name, conclusion) in zip(steps, expected_steps)
+        ),
+        "incident original SSH was not proven skipped",
+    )
+
+
+def verify_redelivery(api, require, owner, redelivery_id=None, dispatcher_id=None):
+    # Structured API only. The recorded HTTP403 is descriptive, not an admission guard.
+    # Preserve and revalidate the whole first recovery chain and both prior claims.
+    rows = verify_recovery(
+        api,
+        require,
+        owner,
+        PARENT_REQUEST,
+        PARENT_DISPATCHER,
+        allow_redelivery=True,
+    )
+    trusted_run(
+        api,
+        require,
+        PARENT_DISPATCHER,
+        ".github/workflows/cloud-command-dispatch.yml",
+        "issue_comment",
+        owner,
+        PARENT_HEAD,
+        "success",
+    )
+    trusted_run(
+        api,
+        require,
+        PARENT_REFUSED_RUN,
+        WORKFLOW,
+        "workflow_dispatch",
+        {"id": BOT_ID, "login": "github-actions[bot]"},
+        PARENT_HEAD,
+        "failure",
+    )
+    verify_refused_job(api, require, PARENT_REFUSED_RUN, PARENT_REFUSED_JOB)
+    # Refresh all reservations after reading parent metadata.
+    rows = comments(api, require)
+    no_manual_execution(rows, owner, require)
+    for marker, binding in (
+        (CLAIM_MARKER, request_marker(ORIGINAL_REQUEST, ORIGINAL_DISPATCHER)),
+        (RECOVERY_MARKER, recovery_marker(PARENT_REQUEST, PARENT_DISPATCHER)),
+    ):
+        preserved = [r for r in rows if bot_comment(r) and marker in r.get("body", "")]
+        require(
+            len(preserved) == 1 and binding in preserved[0]["body"],
+            "incident preserved claim chain changed",
+        )
+    owner_comment(
+        api("GET", f"issues/comments/{ORIGINAL_REQUEST}"), owner, ORIGINAL_REQUEST, COMMAND, require
+    )
+    owner_comment(
+        api("GET", f"issues/comments/{PARENT_REQUEST}"),
+        owner,
+        PARENT_REQUEST,
+        RECOVERY_COMMAND,
+        require,
+    )
+    require(
+        not any(bot_comment(row) and EXECUTION_MARKER in row.get("body", "") for row in rows),
+        "incident execution already claimed; no replay",
+    )
+    claims = [r for r in rows if bot_comment(r) and REDELIVERY_MARKER in r.get("body", "")]
+    require(len(claims) <= 1, "incident multiple redelivery claims")
+    if redelivery_id is not None:
+        owner_comment(
+            api("GET", f"issues/comments/{redelivery_id}"),
+            owner,
+            redelivery_id,
+            REDELIVERY_COMMAND,
+            require,
+        )
+        require(len(claims) == 1, "one durable incident redelivery claim required")
+        require(
+            redelivery_marker(redelivery_id, dispatcher_id) in claims[0]["body"],
+            "incident redelivery claim binding",
+        )
+    return rows
