@@ -372,9 +372,9 @@ for svc in app web; do
 done
 log "build took $((SECONDS - t0))s"
 
-# Existing fully migrated deployments have no migration work to apply. Verify the
+# Same-head deployments must not apply migration work. Verify the
 # historical contract using the candidate BEFORE downtime; this does not materialize
-# the calendar. Missing user plans retain the initial migration flow below.
+# the calendar. Missing coverage refuses release rather than selecting a repair.
 VERIFY_EXISTING=0
 verify_existing() {
   local label="$1"
@@ -390,12 +390,9 @@ if d.get("mode") != "verify-only" or d.get("verified") is not True or d.get("err
 ' < "$WORK/verify_$label.txt" || die "invalid verify-only machine result ($label)"
 }
 if [ "$PREV_REV" = "$EXPECTED_TO_REV" ]; then
-  missing_plans="$(dbq "select /*verify:missing-plans*/ count(*) from users u where u.onboarding_completed_at is not null and not exists (select 1 from training_plans p where p.user_id=u.id)")"
-  if [ "$missing_plans" = "0" ]; then
-    verify_existing before-stop
-    VERIFY_EXISTING=1
-    log "existing migration coverage verified read-only before stopping writers"
-  fi
+  verify_existing before-stop
+  VERIFY_EXISTING=1
+  log "existing migration coverage verified read-only before stopping writers"
 fi
 
 # ------------------------------------------------------------------------------------------------ backup helper
@@ -511,7 +508,8 @@ hash_all dry-run
 cmp -s "$WORK/hq_all_migration.txt" "$WORK/hq_all_dry-run.txt" || die "backfill --dry-run wrote to the database"
 log "backfill dry-run: onboarded=$ONB will_migrate=$WILL already_migrated=$ALREADY (report $REPORT_DIR/1-dry-run.txt); database unchanged"
 sed 's/^/    /' "$WORK/backfill_dry.txt"
-if [ "$VERIFY_EXISTING" = "1" ] && [ "$WILL" = "0" ] && [ "$ALREADY" = "$ONB" ]; then
+if [ "$VERIFY_EXISTING" = "1" ]; then
+  { [ "$WILL" = "0" ] && [ "$ALREADY" = "$ONB" ]; } || die "same-head migration coverage changed after pre-stop verification; refusing mutating backfill"
   # Reverify under stopped writers: the pre-stop read cannot rule out later writes.
   verify_existing stopped
   cp "$WORK/verify_stopped.txt" "$REPORT_DIR/2-verify-only.txt"

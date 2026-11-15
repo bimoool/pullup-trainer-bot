@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select, text
@@ -564,8 +565,41 @@ async def _verify_with_fresh_session(session):
 async def _migration_table_rows(session):
     return {
         name: list((await session.execute(text(f'SELECT row_to_json(t)::text FROM {name} t ORDER BY id'))).scalars())
-        for name in ('plan_items', 'plan_weeks', 'program_inclusions', 'training_sessions', 'set_logs')
+        for name in ('training_plans', 'plan_items', 'plan_weeks', 'program_inclusions', 'training_sessions', 'set_logs')
     }
+
+
+async def _guarded_database_hashes(session):
+    generator = Path(__file__).resolve().parents[2] / 'docs/rehearsal/sql/gen_hash_queries.sql'
+    queries = list((await session.execute(text(generator.read_text()))).scalars())
+    hashes = {}
+    for query in queries:
+        table, count, digest = (await session.execute(text(query))).one()
+        hashes[table] = (count, digest)
+    return hashes
+
+
+async def test_verify_only_rejects_mixed_coverage_without_changing_guarded_hashes(session, user):
+    await _onboard(session, user)
+    await backfill_all(session, now=NOW)
+    missing = await UserRepository(session).create(telegram_id=555003, username='missing-plan')
+    await _onboard(session, missing)
+    before = await _guarded_database_hashes(session)
+
+    result = await _verify_with_fresh_session(session)
+
+    assert result['verified'] is False
+    assert 'onboarded_without_plan=1' in result['errors']
+    assert await _guarded_database_hashes(session) == before
+
+    # Negative control: the former fallback really changes the protected tables.
+    # Existing rows need not be edited: inserting the missing user's plan is enough.
+    report = await backfill_all(session, now=NOW)
+    assert report.users_migrated_this_run == 1 and report.users_already_migrated == 1
+    after = await _guarded_database_hashes(session)
+    changed = {name for name in before if before[name] != after[name]}
+    assert changed == {'training_plans', 'program_inclusions', 'plan_weeks', 'plan_items'}
+    assert after['training_plans'][0] == before['training_plans'][0] + 1
 
 
 async def test_verify_only_preserves_calendar_at_next_week(session, user):

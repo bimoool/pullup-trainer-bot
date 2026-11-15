@@ -3128,3 +3128,21 @@ Journal to fall back to the previous month before the race is exercised. Existin
 `journal_calendar` users retain their timestamps. Frozen-clock PostgreSQL tests
 cover month/year midnight, the first five minutes, and an ordinary date; the
 browser scenario still delays and releases a real API response body.
+
+## Same-head deployment must not repair missing plan coverage (2026-11-15)
+
+The read-only deployment path previously depended on every onboarded user already
+having a plan. One missing plan selected the full backfill, even when the database
+and candidate shared the same Alembic revision. Full apply inserts plans and their
+children, normalizes inclusion snapshots, and converges existing calendars; its
+"already migrated" user counter does not mean no rows change. These operations
+violate the release's strict fingerprints of tables that existed before deploy.
+
+Same-head release now always verifies coverage read-only before stopping writers,
+and refuses changed coverage after stopping them. It never falls back to apply.
+The initial older-schema migration flow and every legacy fingerprint remain.
+Regressions cover mixed migrated/missing users, the stopped-writer race, and the
+actual hash generator on synthetic PostgreSQL data: read-only verification leaves
+all fingerprints intact; the former fallback changes the four plan tables,
+including a new `training_plans` row. No production row data is needed to prove
+this control-flow defect; table names alone do not prove edits to existing rows.
