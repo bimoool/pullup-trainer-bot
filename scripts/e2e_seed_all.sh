@@ -4,10 +4,23 @@
 # Используется и в CI (.github/workflows/e2e.yml), и локально — один источник правды.
 # not_onboarded (900001) не сеет ничего: статус = отсутствие строки users.
 set -euo pipefail
+# Stable inspection contract: expand the same registry without invoking any seed.
+LIST_ONLY=0
+if [ "$#" -gt 0 ]; then
+  if [ "$#" -ne 1 ] || [ "$1" != "--list" ]; then
+    printf 'Usage: %s [--list]\n' "$0" >&2
+    exit 2
+  fi
+  LIST_ONLY=1
+fi
 # e2e_seed.py импортирует пакет scripts.* — корень репозитория должен быть в sys.path.
 export PYTHONPATH="${PYTHONPATH:-.}"
 PY="${PYTHON:-python}"
 seed() {
+  if [ "$LIST_ONLY" = "1" ]; then
+    printf '%s %s\n' "$1" "$2"
+    return
+  fi
   if [ "${E2E_CALENDAR_FIXTURE:-}" = "1" ]; then
     "$PY" -m tests.support.e2e_calendar_seed "$1" "$2"
   else
