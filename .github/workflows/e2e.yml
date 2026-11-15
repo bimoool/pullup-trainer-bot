@@ -15,6 +15,90 @@ jobs:
   changes:
     uses: ./.github/workflows/ci-changed-paths.yml
 
+  webkit-fresh-diagnostic:
+    name: WebKit fresh course (synthetic local diagnosis)
+    needs: changes
+    if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pullup
+          POSTGRES_PASSWORD: pullup
+          POSTGRES_DB: pullup_qa_fresh_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pullup"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://pullup:pullup@localhost:5432/pullup_qa_fresh_local
+      BOT_TOKEN: ci-test-token
+      STAGING_URL: http://127.0.0.1:8001
+      STAGING_BOT_TOKEN: ci-test-token
+      STAGING_PROJECT: iphone-webkit
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: bash scripts/install-python.sh dev
+      - run: alembic upgrade head
+      - name: Seed reserved fresh identity in fixed local database
+        run: python -m scripts.qa.seed_local_fresh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build real frontend
+        working-directory: webapp-frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Install WebKit diagnostic dependencies
+        working-directory: webapp-frontend/e2e-staging
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          npm run typecheck
+      - name: Start real local API
+        run: |
+          nohup uvicorn app.web.main:app --host 127.0.0.1 --port 8001 > "$RUNNER_TEMP/local-fresh-api.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8001/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "Local diagnostic API did not become healthy"
+          exit 1
+      - name: Diagnose exact fresh journey (no retries, real local API)
+        working-directory: webapp-frontend/e2e-staging
+        run: |
+          set -uo pipefail
+          npx playwright test --config=playwright.local-fresh.config.ts --retries=0 > "$RUNNER_TEMP/local-fresh-playwright.log" 2>&1
+          result=$?
+          echo "Synthetic local WebKit fresh diagnosis exit=$result"
+          if [ -f test-results/release-status.json ]; then
+            cat test-results/release-status.json
+            echo
+          fi
+          exit "$result"
+      - name: Upload synthetic diagnostic screenshots only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-webkit-fresh-screenshots
+          path: webapp-frontend/e2e-staging/test-results/**/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
   e2e:
     needs: changes
     if: ${{ always() && !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run_full != 'false') }}
