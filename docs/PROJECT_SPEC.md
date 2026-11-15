@@ -1431,3 +1431,14 @@ concurrency. Both old paths deny the second claim. Global execution or actual
 owner manual reservation denies every path. Only structured metadata is used;
 HTTP403 is descriptive. No generic retry, new incident/manifest/server operation
 or further delivery route is added. Exact grammar is in CLOUD_SERVER_CONTROL.md.
+
+### Private compatibility failure diagnostics
+
+Guarded production preflight may report historical diagnostic enums and bounded
+aggregate counts for the fixed November 15 before-stop compatibility failure.
+The installed guard reads only the incident-bound private files on the server;
+user IDs, catalog names, raw output and exception text remain private. Missing,
+untrusted or malformed evidence produces an unavailable or unclassified result.
+Future verifier failures emit the same restricted summary before the existing
+refusal. Historical diagnostics provide no fresh verification or release acceptance;
+all compatibility, ownership, history, read-only and hash guards still apply.

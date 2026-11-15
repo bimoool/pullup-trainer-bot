@@ -3194,3 +3194,17 @@ including after the awaited completion fallback. Existing lifecycle and session-
 guards remain. A fresh GET still accepts an external device's resume event.
 This independently proves the ordering bug; it does not establish the cause of
 the earlier deployed WebKit failure from screenshots alone.
+
+### Before-stop compatibility failure diagnostics (2026-11-15)
+
+A nonzero `--verify-compatible` exit occurs before the separate success-result
+parser, so the original failure alone cannot distinguish a reported incompatibility
+from an execution error. The production runner now sanitizes private RESULT-JSON
+locally and emits only fixed enums and bounded aggregate counts. Superseded live
+copy errors are counted without user IDs; missing catalog payloads are discarded.
+No stderr/traceback is exported or used to infer a cause. Fixed historical evidence
+must match the manifest, companion failure report and private work report; unsafe
+files, later-phase markers or malformed results yield no diagnostic clearance.
+The runner remains self-contained for existing adoption, with its rehearsal hash
+updated and the control runner unchanged. Reading a historical diagnosis does not
+replace any candidate release gate or authorize another apply.
