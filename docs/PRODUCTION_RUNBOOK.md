@@ -313,47 +313,68 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
   (§6): `app`/`web` остаются остановленными, в логе Actions — точная команда отката, её параметры вводятся в
   `production-rollback.yml`.
 
-## Already-migrated no-schema hotfix: verified read-only backfill path
+## Same-schema hotfix: read-only runtime compatibility
 
-For a candidate with the same Alembic head as the live database, the guarded
-production runner always runs the candidate's `scripts/backfill_multi_program.py --verify-only`
-**before stopping app/web**. Verification failure aborts before downtime; it does
-not fall back to a mutating repair. This includes a database with both migrated
-users and onboarded users lacking a plan: equal schema revisions do not authorize
-filling that coverage gap during deployment. Initial migrations from an older
-revision retain the existing full backfill flow and its strict guards.
+When the current and target Alembic revisions match, the guarded runner uses
+`scripts/backfill_multi_program.py --verify-compatible` before stopping app/web,
+then under stopped writers and again for the final invariants. This mode is
+separate from `--verify-only`, which retains strict initial-migration semantics.
+An initial migration from an older revision retains the full backfill path and
+its original strict final invariants.
 
-`--verify-only` requires its own fresh transaction and uses PostgreSQL
-`REPEATABLE READ, READ ONLY`. It checks plan/user/inclusion consistency, duplicate
-keys, keyed coverage for every completed legacy workout and elective (including
-users not in the onboarded count), existing catalog, and the existing history
-convergence semantics. Missing/changed copies, unknown ownership states, history
-mutations or ambiguity reject release. It never calls seed/normalization/calendar
-materialization. Normal runtime may later advance the current calendar; release
-verification deliberately does not require calendar convergence mutations to be zero.
+Compatibility accepts the existing runtime contract: onboarding may leave no
+TrainingPlan; an existing plan may have zero or multiple active courses, manual
+items, custom plans, removed courses, or an owner who has not completed the
+questionnaire. It validates relational ownership of plan/week/inclusion/custom
+plan/session references, not course-count equality, STEP JSON shapes, cached
+progress counters, slot completeness, or unique historical credit per plan item.
 
-After writers stop, phase 8 reruns verification twice. It still checks full database
-fingerprints, `same_legacy`, post-apply dry-run/no-write controls, plan guards and
-all existing final invariants. This is not a whitelist of mutable plan tables.
-Every same-head deployment stays on this verification path. If the stopped
-backfill dry-run no longer sees all onboarded users migrated, or the stopped
-verifier finds new gaps, release refuses without applying backfill. Writers stay
-stopped for the operator's existing guarded recovery decision. No plan/calendar
-or historical repair is silently permitted by this mode.
+A missing plan is accepted only with no workouts (any status), electives,
+training sessions (any origin/status, including superseded/unkeyed copies),
+archived workouts in either archive family, or positive completed-workout
+counters in current/archived workout sets. Profile, baseline, trial and a zero
+completed-workout set alone do not require a plan. Unknown or history-bearing
+missing-plan states still refuse release. All-user historical reconciliation,
+keyed copy coverage, duplicate detection, proposed history mutations, unresolved
+ambiguity and required catalog checks remain blockers.
+
+Both modes use a fresh PostgreSQL `REPEATABLE READ, READ ONLY` transaction and
+roll it back. Compatibility emits a distinct `verify-compatible` machine result
+with nonnegative integer classification counts. The runner validates count
+equations, zero blocked/history-mutation/ambiguity counts and stable
+classification before/after stopping writers. Backfill dry-run must agree with
+that classification: it may propose plans for the explicitly compatible empty
+onboarded users; these proposals are never applied. No mutating backfill or
+`backfill_started_at` marker is permitted on the same-schema path.
+
+Full-table fingerprints, pre-existing-table hashes, backup/restore checks,
+schema checks, history dry-run and plan-repair dry-run guards remain mandatory.
+Phase 9 uses compatibility results for same-schema releases instead of requiring
+one active course and one plan per onboarded user. Every stopped-state refusal
+leaves writers stopped for the existing guarded recovery decision.
+
+A successful fingerprint comparison only proves this run preserved its input.
+It does not certify an incident-modified database as a new baseline: classify
+that state separately or recover from the original verified backup before
+running the forward rehearsal. No history or plan repair is authorized by
+compatibility verification.
 
 Before using it on production:
 
-1. Apply the implementation patch to the actual reviewed hotfix/main SHA; it does
-   not include the REST fix itself. Require PostgreSQL tests and existing CI green
-   on that combined SHA. Source files at bd80bc9 and d1b2375 were independently
+1. Require the reviewed runtime-compatibility guard and the workout rest fix in
+   the same candidate SHA, with PostgreSQL tests and existing CI green on that
+   exact combined SHA. Source files at bd80bc9 and d1b2375 were independently
    confirmed identical for the production runner/backfill; recheck newer bases.
-2. On an isolated fresh production DB copy, disable outbound Telegram and rehearse
-   the exact runner/candidate. Save verifier JSON, table fingerprints, rollback
-   rehearsal and plan dry-run report. Inspect the row diff from the prior failed
-   backfill separately; synthetic tests do not reproduce that database.
+2. A full restored-production-copy rehearsal is a diagnostic option; it is not
+   an additional release gate when the owner explicitly waives it for this
+   release. If performed, isolate the copy, disable outbound Telegram and save
+   verifier JSON, fingerprints, rollback and plan dry-run reports. The waiver
+   does not waive exact-SHA CI, synthetic PostgreSQL/guard regression checks or
+   separate classification of the prior failed state (or recovery from the
+   original verified backup). Synthetic tests do not certify that incident state.
 3. Review/install the production runner from the exact tested commit at the path
    used by the forced-command dispatcher. Record its sha256. Do not substitute
-   a candidate without `--verify-only` support; it will safely refuse before stop.
+   a candidate without `--verify-compatible` support; it will safely refuse before stop.
 4. Run read-only preflight, then only the previously authorized guarded operation
    with the exact candidate SHA. Existing rollback/runbook restrictions remain.
 
@@ -367,7 +388,7 @@ active-session recovery separate, preserving plan/snapshot/event replay consiste
 поднимает отдельный compose-проект с фейковым `BOT_TOKEN` и заблокированным `api.telegram.org`, восстанавливает КОПИЮ
 дампа (читается только файл), прогоняет контрольно прежний раннер (должен воспроизвести отказ фазы 8 и дать построчный
 diff `plan_weeks/plan_items/program_inclusions`), затем новый раннер в `rehearse-check`, сверяет отпечатки всех таблиц
-до/после, запускает независимый `--verify-only` и считает незавершённые legacy-занятия с неверным отдыхом (только по
+до/после, запускает независимый `--verify-compatible` и считает незавершённые legacy-занятия с неверным отдыхом (только по
 копии, занятия не меняются). По умолчанию удаляет копию данных, оставляет отчёты в `/srv/rehearsal-*/reports/`.
 Скрипт отказывается стартовать, если на хосте меньше 700 МБ доступной памяти (сторож прерывает прогон при <300 МБ):
 production-VPS 1 ГБ может оказаться слишком мал — тогда тот же скрипт запускают на другом Linux-хосте с Docker
