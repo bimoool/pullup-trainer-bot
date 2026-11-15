@@ -9,7 +9,7 @@ Type=oneshot
 User=root
 Group=root
 WorkingDirectory=/root/pullup-trainer-bot
-ExecStart=/usr/bin/python3 -I /root/bin/drive-backup.py
+ExecStart=/usr/bin/python3 -I /root/bin/control-plane-backup.py
 UMask=0077
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # The runner has its own 1100s deadline. Container-side pg_dump timeout is 600s.

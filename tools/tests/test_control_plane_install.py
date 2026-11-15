@@ -17,12 +17,15 @@ i = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(i)
 SUPERVISOR = (ROOT / "deploy/control-plane-supervisor.py").read_bytes()
 LAUNCHER = (ROOT / "deploy/control-plane-entrypoint.sh").read_bytes()
+SCHEDULED = (ROOT / "deploy/control-plane-backup.py").read_bytes()
+UNITS = {name: (ROOT / "deploy/systemd" / name).read_bytes() for name in i.UNITS}
 
 
 def fixture(path):
     binary, backups = path / "bin", path / "backups"
     binary.mkdir(mode=0o700)
     backups.mkdir(mode=0o700)
+    (path / "units").mkdir(mode=0o700)
     old = blobs("installed")
     for name, blob in old.items():
         (binary / name).write_bytes(blob)
@@ -40,7 +43,14 @@ def fixture(path):
     )
 
 
-def install(binary, ledger, candidate, expected, apply=True):
+def install(binary, ledger, candidate, expected, apply=True, read_state=None):
+    unit_root = binary.parent / "units"
+    if read_state is None:
+        read_state = lambda name: {
+            "enabled": "disabled",
+            "active": "inactive",
+            "fragment": str(unit_root / name) if (unit_root / name).exists() else "",
+        }
     return i.install(
         c,
         binary,
@@ -50,12 +60,102 @@ def install(binary, ledger, candidate, expected, apply=True):
         candidate,
         SUPERVISOR,
         LAUNCHER,
+        scheduled_blob=SCHEDULED,
+        unit_blobs=UNITS,
+        unit_root=unit_root,
+        read_state=read_state,
         apply=apply,
         expected=expected,
     )
 
 
 class InstallTests(unittest.TestCase):
+    def test_bootstrap_provisions_only_disabled_fixed_schedule(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary, ledger, candidate, expected = fixture(Path(directory))
+            install(binary, ledger, candidate, expected)
+            self.assertTrue((binary / "control-plane-backup.py").exists())
+            self.assertTrue((binary.parent / "units/pullup-drive-backup.timer").exists())
+            self.assertFalse((binary.parent / "units/timers.target.wants").exists())
+            self.assertIn(
+                b"ExecStart=/usr/bin/python3 -I /root/bin/control-plane-backup.py",
+                (binary.parent / "units/pullup-drive-backup.service").read_bytes(),
+            )
+
+    def test_known_disabled_units_and_legacy_backup_retain_inodes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary, ledger, candidate, expected = fixture(Path(directory))
+            legacy = binary / "drive-backup.py"
+            legacy.write_bytes(b"preserved legacy script, never selected")
+            legacy.chmod(0o700)
+            candidate["drive-backup.py"] = b"# reviewed bundle script\npass\n"
+            original = (legacy.stat().st_ino, legacy.read_bytes())
+            for name, blob in UNITS.items():
+                unit = binary.parent / "units" / name
+                unit.write_bytes(blob)
+                unit.chmod(0o644)
+            inodes = {name: (binary.parent / "units" / name).stat().st_ino for name in UNITS}
+            result = install(binary, ledger, candidate, expected)
+            self.assertTrue(result["schedule_disabled"])
+            self.assertEqual((legacy.stat().st_ino, legacy.read_bytes()), original)
+            self.assertEqual(
+                inodes, {name: (binary.parent / "units" / name).stat().st_ino for name in UNITS}
+            )
+            self.assertEqual(
+                (binary / "control-plane/releases" / NEW / "drive-backup.py").read_bytes(),
+                candidate["drive-backup.py"],
+            )
+
+    def test_enabled_active_unknown_units_fragments_and_symlinks_refuse_before_write(self):
+        for case in ("enabled", "active", "unknown", "fragment", "symlink", "launcher"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                binary, ledger, candidate, expected = fixture(Path(directory))
+                unit = binary.parent / "units/pullup-drive-backup.timer"
+                state = {"enabled": "disabled", "active": "inactive", "fragment": ""}
+                if case == "enabled":
+                    state["enabled"] = "enabled"
+                elif case == "active":
+                    state["active"] = "activating"
+                elif case == "fragment":
+                    state["fragment"] = "/run/systemd/transient/unknown.timer"
+                elif case == "unknown":
+                    unit.write_bytes(b"unknown unit")
+                elif case == "symlink":
+                    unit.symlink_to(binary / "authorized_keys")
+                else:
+                    (binary / "control-plane-backup.py").write_bytes(b"unknown launcher")
+                with self.assertRaises(c.Refused):
+                    install(
+                        binary,
+                        ledger,
+                        candidate,
+                        expected,
+                        read_state=lambda name, state=state: state,
+                    )
+                self.assertFalse((binary / "control-plane").exists())
+                self.assertFalse((binary / "control-plane-supervisor.py").exists())
+
+    def test_systemd_queries_are_read_only_fixed_names(self):
+        from unittest.mock import patch
+
+        result = type("Result", (), {"returncode": 0, "stdout": "disabled\n"})()
+        with patch.object(i.subprocess, "run", return_value=result) as query:
+            i.unit_state("pullup-drive-backup.timer")
+        self.assertEqual(
+            [call.args[0] for call in query.call_args_list],
+            [
+                ["systemctl", "is-enabled", "pullup-drive-backup.timer"],
+                ["systemctl", "is-active", "pullup-drive-backup.timer"],
+                [
+                    "systemctl",
+                    "show",
+                    "--property=FragmentPath",
+                    "--value",
+                    "pullup-drive-backup.timer",
+                ],
+            ],
+        )
+
     def test_dry_run_idempotence_and_exact_preservation(self):
         with tempfile.TemporaryDirectory() as directory:
             binary, ledger, candidate, expected = fixture(Path(directory))
@@ -82,6 +182,8 @@ class InstallTests(unittest.TestCase):
         for point in (
             "bootstrap-backup-published",
             "bootstrap-supervisor-published",
+            "bootstrap-schedule-published",
+            "bootstrap-unit-published",
             "bundle-renamed",
             "activation-published",
             "bootstrap-ready",

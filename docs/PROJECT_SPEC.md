@@ -1393,7 +1393,13 @@ same-operation ledger and cannot perform the prepare effect twice. No claim or l
 
 Complete controller upkeep (#406) uses a reviewed one-time stable supervisor and
 complete versioned dispatcher/helper/production/rollback bundles, activated through
-one fsynced record. Adoption requires exact PR/head, trusted-main owner/first-attempt
+one fsynced record. The sole optional artifact is fixed `deploy/drive-backup.py`;
+absence means capability unavailable. A stable local-root scheduled launcher
+rejects arguments/SSH environments and executes only that validated bundle's
+backup artifact. Reviewed bootstrap installs known backup units disabled, refusing
+unknown, enabled or active units; it never starts/authenticates a backup. Subsequent
+backup code updates use cloud adoption; credentials, timer configuration/activation
+and actual independent recovery proof stay separate. Adoption requires exact PR/head, trusted-main owner/first-attempt
 provenance, full CI/rehearsal plus controller authorization and main-tree equality.
 Independent cloud status/recovery remain available when the bundled dispatcher or
 helper fails; recovery selects only the prior validated local bundle recorded in

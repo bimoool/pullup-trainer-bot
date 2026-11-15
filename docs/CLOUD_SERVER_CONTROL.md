@@ -211,16 +211,30 @@ The reviewed one-time conversion installs a small stable supervisor outside
 replaceable bundles. The existing authorized-key forced command path stays
 `/root/bin/prod-guarded-dispatch.sh`; only its contents become the fixed
 `control-plane-entrypoint.sh` launcher. No key, SSH configuration, account,
-package, service or general shell endpoint is introduced.
+package or general shell endpoint is introduced. Existing reviewed backup unit
+definitions are installed disabled, with activation a separate owner decision.
 
 Each immutable `/root/bin/control-plane/releases/<sha>/` contains exactly the
 reviewed dispatcher, helper, production runner, rollback runner and a generated
-hash manifest. Dispatcher/helper resolve their own bundle directory. One private
+hash manifest. The sole optional artifact is fixed `deploy/drive-backup.py`;
+absence means backup capability unavailable. Optional files receive the same
+Git-mode, size, syntax, ownership and hash guards; no arbitrary manifest paths
+are accepted. Dispatcher/helper resolve their own bundle directory. One private
 fsynced `active.json` switches the entire bundle; an invocation resolves it once
 while holding the existing Actions lock and passes that open lock to the bundled
 dispatcher. Existing production, guarded and staging locks/inodes remain in use.
 Receipt reads bypass mutation locks. Independent runner adoption refuses inside
 a versioned bundle; future controller and runner changes use complete adoption.
+
+`/root/bin/control-plane-backup.py` is a separate stable, local-root-only scheduled
+entrypoint. It rejects arguments and any SSH environment, reads one activation,
+validates that complete bundle and executes only its fixed backup artifact using
+isolated Python and a clean environment. It never selects the legacy root-bin
+backup script. Immutable releases are retained, so a concurrent activation cannot
+mix versions; the unchanged backup runner acquires its original locks itself.
+SSH gains no backup command or flags. Reviewed backup code updates subsequently
+use `server-adopt-controller`; return and explicit new-operation re-adoption of
+the same immutable SHA remain supported.
 
 Owner commands, in the original eligible PR conversation:
 
@@ -271,6 +285,13 @@ PR404 helper/dispatcher pair plus the cloud-adopted production runner `c97a36…
 and unchanged rollback runner. Unknown files/modes/symlinks refuse. It writes only
 the new supervisor, complete initial bundle/activation, private controller ledger,
 nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher.
+It also installs the stable local backup launcher and the two exact reviewed
+systemd unit files. It refuses unknown units/launchers, enabled or active units,
+and unexpected loaded unit fragments before changing files. Known disabled units
+retain their inodes. Systemd calls only inspect state: no daemon reload, enable,
+start, authentication, package installation or backup runs occur in bootstrap.
+Actual activation requires the separate provisioning/recovery evidence in
+`SERVER_DRIVE_BACKUP.md`; installed disabled units are not working automation.
 The bundle's production and rollback runners must equal already installed bytes.
 Legacy helpers/runners retain bytes and inodes; authorized_keys, existing backups,
 locks, production checkout, services and data remain unchanged. Known interrupted
@@ -284,6 +305,7 @@ injection is confined to synthetic fixtures. Record exact source/hashes and run
 URLs. Installation or a green dispatch alone is not end-to-end acceptance.
 OS/SSH failure, damaged trusted storage, or a defect in the small stable trust
 anchor can still require an administrator from a trusted device.
+
 ### Fixed R3 delivery recovery after pre-SSH refusal (#409)
 
 The original child run 43724053051/job 132841996080 failed the incident admission

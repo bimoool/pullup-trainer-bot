@@ -12,6 +12,15 @@ dump шифруется до записи на диск; загрузка про
 живой upload/readback и независимое восстановление. Не merge/release до завершения
 текущего production recovery; наличие кода/таймера не означает runtime acceptance.
 
+PR408 now combines reviewed PR407 `bf68d0e` and PR410 `6f95f236` by normal branch
+merges, without advancing main or changing the critical PR410. The fixed optional
+backup code belongs to the atomic controller bundle; a stable local-root-only
+launcher resolves one complete bundle. Bootstrap installs exact units disabled
+only and refuses active/enabled/unknown units. Routine reviewed backup code updates
+use cloud adoption. OAuth/configuration, timer activation and actual recovery proof
+remain separate unperformed acceptance steps. The PR412 rollback patch is excluded
+and remains a future cloud-adoption acceptance candidate.
+
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 
 Отдельный aggregate QA-кандидат включает reviewed #384 (явный launch platform) и
@@ -254,7 +263,8 @@ recorded controller recovery, including subprocess SIGKILL and bootstrap-preserv
 tests. Candidate only: no new bootstrap/install or production operation performed.
 Finish the frozen release first; then require full CI/independent security review,
 reviewed exact-SHA administrative conversion, and actual cloud adopt/status/recover
-acceptance. Drive backup #405 remains a separate sequential writer/integration task.
+acceptance. Reviewed Drive backup #405 and fixed R3 recovery #409 are combined on
+PR408 only; main and the critical-release branch remain unchanged.
 
 Candidate controller upgrade adds fixed runner adoption and owner/provenance-bound
 R1 apply to the existing bridge. Product runner, compatibility repair and rehearsal

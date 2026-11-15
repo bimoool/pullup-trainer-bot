@@ -14,7 +14,8 @@ staging locks, in that order, through dump, encryption, upload and verification.
 Missing locks or contention fail closed; it never replaces a lock inode. Use the
 guarded entry points for deployment/rollback; an uncoordinated manual database
 writer can still race any backup. PostgreSQL `pg_dump -Fc` takes a consistent
-snapshot while app writes continue. No app/schema/workflow changes are made.
+snapshot while app writes continue. The backup runner changes no app/schema or
+deployment configuration.
 
 The dump streams through `age` into a root-only ciphertext file. Plaintext is
 never written to disk. The VPS has only the approved **public** recipient;
@@ -111,19 +112,26 @@ host, container, API subscription or paid service is added. Missing prerequisite
 block execution. Confirm adequate Drive quota and local ciphertext space as part
 of owner acceptance; this utility adds no restore/resource-gate policy.
 
-After the owner securely provisions the files above, install reviewed code/units
-as root, without copying secrets into a shell command/history:
+PR408 combines reviewed PR407 `bf68d0e` and PR410 `6f95f236` through normal branch
+merges. Use the exact reviewed controller bootstrap in
+[complete controller bundles](CLOUD_SERVER_CONTROL.md#complete-controller-bundles-406).
+It installs the stable `/root/bin/control-plane-backup.py` local launcher and
+known service/timer definitions **disabled**; it refuses unknown/enabled/active
+units. It does not authenticate, reload systemd, install packages, enable a timer
+or run a dump. Existing legacy `/root/bin/drive-backup.py`, if present, is retained
+with its inode and bytes and is never selected by the new unit.
 
-```sh
-install -d -m 0700 /root/backups/drive-operations
-install -m 0700 deploy/drive-backup.py /root/bin/drive-backup.py
-install -m 0644 deploy/systemd/pullup-drive-backup.service /etc/systemd/system/
-install -m 0644 deploy/systemd/pullup-drive-backup.timer /etc/systemd/system/
-systemctl daemon-reload
-```
+The optional fixed bundle artifact `deploy/drive-backup.py` supplies the scheduled
+code. The launcher rejects SSH environments and all arguments, validates one
+complete active bundle and executes exactly that artifact with no flags. A bundle
+without it reports capability unavailable. Subsequent reviewed backup code
+updates use the existing owner `server-adopt-controller` path with full gates;
+they require no repeat administrative copy. Units, cadence, private configuration,
+OAuth and recovery-key provisioning remain separate controlled operations.
 
-Keep the timer disabled until an explicit owner-authorized manual run and
-recovery check succeed. `systemctl start pullup-drive-backup.service` performs a
+Keep the timer disabled until the owner provisions the files above and explicitly
+authorizes systemd reload, a manual run and independent recovery proof.
+`systemctl start pullup-drive-backup.service` performs a
 **real production dump and remote write**; do not run it as a coding check.
 Inspect the corresponding private receipt locally on the VPS. After successful
 acceptance, the owner can enable `systemctl enable --now pullup-drive-backup.timer`.

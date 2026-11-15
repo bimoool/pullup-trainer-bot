@@ -35,6 +35,7 @@ FILES = (
     "deploy-production-guarded-run.sh",
     "rollback-production-guarded.sh",
 )
+OPTIONAL_FILES = ("drive-backup.py",)
 SHA = r"[0-9a-f]{40}"
 HASH = r"[0-9a-f]{64}"
 OP = r"ops-[1-9][0-9]{0,19}"
@@ -121,6 +122,18 @@ def atomic(path, blob, *, exclusive=False, mode=0o600, event="record"):
 def validate_id(value, pattern, code):
     require(isinstance(value, str) and re.fullmatch(pattern, value), code)
     return value
+
+
+def manifest(sha, tree, blobs):
+    validate_id(sha, SHA, "SHA")
+    validate_id(tree, SHA, "TREE_SHA")
+    require(set(FILES) <= set(blobs) <= {*FILES, *OPTIONAL_FILES}, "SOURCE_FILES")
+    return {
+        "version": 1,
+        "source_sha": sha,
+        "tree_sha": tree,
+        "files": {name: digest(blob) for name, blob in blobs.items()},
+    }
 
 
 class Store:
@@ -241,8 +254,10 @@ def source(sha):
     )
     require(tree == main and re.fullmatch(SHA, tree), "TRUSTED_MAIN_TREE")
     blobs = {}
-    for name in FILES:
+    for name in (*FILES, *OPTIONAL_FILES):
         entry = run(["git", "-C", str(REPO), "ls-tree", sha, "--", "deploy/" + name]).decode()
+        if not entry and name in OPTIONAL_FILES:
+            continue
         require(
             re.fullmatch(
                 r"100(?:644|755) blob " + SHA + r"\tdeploy/" + re.escape(name) + r"\n", entry
@@ -289,7 +304,6 @@ class Supervisor:
     def bundle(self, reference):
         path = self.releases / reference["sha"]
         trusted(path, directory=True, private=True)
-        require({item.name for item in path.iterdir()} == {*FILES, "bundle.json"}, "BUNDLE_FILES")
         manifest_path = path / "bundle.json"
         manifest = read_json(manifest_path)
         require(
@@ -303,10 +317,15 @@ class Supervisor:
         require(manifest["source_sha"] == reference["sha"], "MANIFEST_SOURCE")
         validate_id(manifest["tree_sha"], SHA, "TREE_SHA")
         require(
-            isinstance(manifest["files"], dict) and set(manifest["files"]) == set(FILES),
+            isinstance(manifest["files"], dict)
+            and set(FILES) <= set(manifest["files"]) <= {*FILES, *OPTIONAL_FILES},
             "MANIFEST_FILES",
         )
-        for name in FILES:
+        require(
+            {item.name for item in path.iterdir()} == {*manifest["files"], "bundle.json"},
+            "BUNDLE_FILES",
+        )
+        for name in manifest["files"]:
             info = trusted(path / name, private=True)
             validate_id(manifest["files"][name], HASH, "FILE_HASH")
             require(
@@ -317,21 +336,15 @@ class Supervisor:
         return path
 
     def stage(self, sha, tree, blobs):
-        require(set(blobs) == set(FILES), "SOURCE_FILES")
-        manifest = {
-            "version": 1,
-            "source_sha": sha,
-            "tree_sha": tree,
-            "files": {name: digest(blobs[name]) for name in FILES},
-        }
-        reference = {"sha": sha, "manifest_sha256": digest(encoded(manifest))}
+        metadata = manifest(sha, tree, blobs)
+        reference = {"sha": sha, "manifest_sha256": digest(encoded(metadata))}
         destination = self.releases / sha
         if destination.exists() or destination.is_symlink():
             self.bundle(reference)
             return reference
         staged = Path(tempfile.mkdtemp(prefix=".staged-", dir=self.releases))
         try:
-            for name in FILES:
+            for name in blobs:
                 blob = blobs[name]
                 require(0 < len(blob) <= 1048576, "SOURCE_SIZE")
                 if name.endswith(".py"):
@@ -339,7 +352,7 @@ class Supervisor:
                 atomic(staged / name, blob, exclusive=True, mode=0o700, event="bundle-file")
                 if name.endswith(".sh"):
                     run(["bash", "-n", str(staged / name)])
-            atomic(staged / "bundle.json", encoded(manifest), exclusive=True, event="manifest")
+            atomic(staged / "bundle.json", encoded(metadata), exclusive=True, event="manifest")
             sync_directory(staged)
             checkpoint("bundle-before-rename")
             os.rename(staged, destination)
@@ -412,16 +425,7 @@ class Supervisor:
                     tree, blobs = source(sha)
                     reference = {
                         "sha": sha,
-                        "manifest_sha256": digest(
-                            encoded(
-                                {
-                                    "version": 1,
-                                    "source_sha": sha,
-                                    "tree_sha": tree,
-                                    "files": {name: digest(blobs[name]) for name in FILES},
-                                }
-                            )
-                        ),
+                        "manifest_sha256": digest(encoded(manifest(sha, tree, blobs))),
                     }
                     after = {
                         "version": 1,

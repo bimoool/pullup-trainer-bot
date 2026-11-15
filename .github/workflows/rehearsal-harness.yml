@@ -18,6 +18,8 @@ on:
       - deploy/control-plane-*.py
       - deploy/control-plane-*.sh
       - deploy/install-control-plane.py
+      - deploy/drive-backup.py
+      - deploy/systemd/pullup-drive-backup.*
       - tools/controller_control_client.py
       - .github/workflows/controller-control.yml
       - .github/workflows/controller-recovery.yml
