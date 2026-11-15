@@ -282,7 +282,7 @@ git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sh
 
 The installer requires fresh local origin/main tree equality and the recorded
 PR404 helper/dispatcher pair plus the cloud-adopted production runner `c97a36…`
-and unchanged rollback runner. Unknown files/modes/symlinks refuse. It writes only
+and the known installed rollback baseline. Unknown files/modes/symlinks refuse. It writes only
 the new supervisor, complete initial bundle/activation, private controller ledger,
 nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher.
 It also installs the stable local backup launcher and the two exact reviewed
@@ -296,7 +296,12 @@ retain their inodes. Systemd calls only inspect state: no daemon reload, enable,
 start, authentication, package installation or backup runs occur in bootstrap.
 Actual activation requires the separate provisioning/recovery evidence in
 `SERVER_DRIVE_BACKUP.md`; installed disabled units are not working automation.
-The bundle's production and rollback runners must equal already installed bytes.
+The production runner must equal already installed bytes. Installed rollback
+`6286544a…` is accepted only as the preserved bootstrap baseline; the initial
+active bundle selects the reviewed rollback source and records its computed
+hash. The combined candidate includes PR412's atomic database-swap repair and
+PR413's current admission/manual-reservation controls. No installed rollback
+file is overwritten and no database operation is performed during bootstrap.
 Legacy helpers/runners retain bytes and inodes; authorized_keys, existing backups,
 locks, production checkout, services and data remain unchanged. Known interrupted
 bootstrap states can resume; unknown activation or supervisor bytes refuse.

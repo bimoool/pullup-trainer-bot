@@ -30,8 +30,9 @@ script. Synthetic PostgreSQL 16 regressions first reproduced the absent live nam
 on second-rename failure and backend interruption; the fix passes those cases,
 first-rename failure and successful retention of failed history. Existing shell
 guard regressions remain. Draft review and full required CI precede integration.
-The installed runner remains unchanged; separately reviewed controller-bundle
-adoption after current release gates is future work. No server or R3 action ran.
+The installed runner remains unchanged. The reviewed component is included in
+PR408's initial bundle; its combined CI/review and exact-SHA bootstrap remain
+required before runtime acceptance. No server or R3 action ran.
 
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 

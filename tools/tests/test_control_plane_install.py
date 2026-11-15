@@ -72,6 +72,37 @@ def install(binary, ledger, candidate, expected, apply=True, read_state=None):
 
 
 class InstallTests(unittest.TestCase):
+    def test_known_legacy_rollback_is_only_bootstrap_baseline_not_active_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary, ledger, candidate, expected = fixture(Path(directory))
+            legacy = binary / "rollback-production-guarded.sh"
+            before = (legacy.stat().st_ino, legacy.read_bytes())
+            candidate[legacy.name] = (ROOT / "deploy" / legacy.name).read_bytes()
+            self.assertNotEqual(c.digest(candidate[legacy.name]), expected[legacy.name])
+            self.assertEqual(
+                i.CURRENT[legacy.name],
+                "6286544abbe156e4d9725a005f37ecd9fb7e69ac34945a9fd1085e8a55a60bbd",
+            )
+            self.assertTrue(install(binary, ledger, candidate, expected)["installed"])
+            control = c.Supervisor(binary / "control-plane", ledger)
+            selected = control.bundle(control.activation()["active"])
+            self.assertEqual((selected / legacy.name).read_bytes(), candidate[legacy.name])
+            self.assertEqual(
+                c.read_json(selected / "bundle.json")["files"][legacy.name],
+                c.digest(candidate[legacy.name]),
+            )
+            self.assertEqual((legacy.stat().st_ino, legacy.read_bytes()), before)
+
+    def test_unknown_installed_rollback_is_not_accepted_as_patched_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary, ledger, candidate, expected = fixture(Path(directory))
+            legacy = binary / "rollback-production-guarded.sh"
+            legacy.write_bytes(b"unknown installed rollback")
+            candidate[legacy.name] = (ROOT / "deploy" / legacy.name).read_bytes()
+            with self.assertRaisesRegex(c.Refused, "UNKNOWN_INSTALLED_FILE"):
+                install(binary, ledger, candidate, expected)
+            self.assertFalse((binary / "control-plane").exists())
+
     def test_loaded_service_and_timer_dropins_refuse_before_any_bootstrap_write(self):
         for selected in UNITS:
             with self.subTest(unit=selected), tempfile.TemporaryDirectory() as directory:

@@ -112,8 +112,8 @@ host, container, API subscription or paid service is added. Missing prerequisite
 block execution. Confirm adequate Drive quota and local ciphertext space as part
 of owner acceptance; this utility adds no restore/resource-gate policy.
 
-PR408 combines reviewed PR407 `bf68d0e` and PR410 `6f95f236` through normal branch
-merges. Use the exact reviewed controller bootstrap in
+PR408 combines reviewed PR407 `bf68d0e`, PR410 `6f95f236`, PR413 `2d961a8` and
+PR412 `63a0262` through normal branch merges. Use the exact reviewed controller bootstrap in
 [complete controller bundles](CLOUD_SERVER_CONTROL.md#complete-controller-bundles-406).
 It installs the stable `/root/bin/control-plane-backup.py` local launcher and
 known service/timer definitions **disabled**; it refuses unknown/enabled/active

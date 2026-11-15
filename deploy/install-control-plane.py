@@ -191,8 +191,11 @@ def install(
             if (backup / name).exists() or (backup / name).is_symlink():
                 c.trusted(backup / name, private=True)
                 c.require(c.digest((backup / name).read_bytes()) == known, "UNKNOWN_BACKUP")
-    for name in ("deploy-production-guarded-run.sh", "rollback-production-guarded.sh"):
-        c.require(blobs[name] == (root / name).read_bytes(), "BOOTSTRAP_RUNNER_CHANGED")
+    # The known installed rollback remains untouched as a bootstrap baseline.
+    # The active bundle selects the reviewed source rollback (including its
+    # atomic-swap repair), rather than retaining the legacy installed artifact.
+    name = "deploy-production-guarded-run.sh"
+    c.require(blobs[name] == (root / name).read_bytes(), "BOOTSTRAP_RUNNER_CHANGED")
     if supervisor.exists() or supervisor.is_symlink():
         c.trusted(supervisor, private=True)
         c.require(supervisor.read_bytes() == supervisor_blob, "UNKNOWN_SUPERVISOR")
