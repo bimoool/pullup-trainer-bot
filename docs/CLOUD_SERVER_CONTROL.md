@@ -200,3 +200,41 @@ R1 admission is not proof of recoverability or recovery. Installed server guards
 still require the unchanged schema revision and no started backfill, restore
 only prior application images, and never overwrite the database. Creating,
 reviewing or merging this change does not authorize any production operation.
+
+### Fixed R3 delivery recovery after pre-SSH refusal (#409)
+
+The original child run 43724053051/job 132841996080 failed the incident admission
+step and skipped SSH. The public metadata reconstructs valid guards; its historical
+HTTP/guard cause is **UNKNOWN**, because the old client discarded those details.
+This capability does not claim to repair that historical provider failure.
+
+After independent review, mandatory checks and trusted-main integration, a
+separate owner decision may post this **exact** new, unedited command on PR #399:
+
+```text
+/pullup incident-r3-recover e9f32dd194aab140f63c445e0c2d2eddf59b2b91 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039 6895994270 43724033626 43724053051
+```
+
+This is the same original incident, candidate, approval, manifest and token.
+It never reruns the old child, selects another manifest or allocates a new server
+operation. A new owner comment and trusted-main first-attempt dispatcher/child
+must preserve the original approval and dispatch claim. The dispatcher and child
+freshly check both exact original deploy/check run+job pairs, original dispatcher,
+and original latest failed first-attempt child/job. The exact known job topology
+must show admission failed and SSH skipped; pending, changed or unknown evidence
+refuses. A dedicated recovery dispatch claim persists before dispatch and blocks
+another delivery, including another comment. The child requires that claim's
+binding and persists the **same global incident execution marker** before SSH.
+Production workflow concurrency serializes execution admission. Both original
+and recovery claims remain permanently preserved. A late original path is refused
+once recovery is claimed. No automatic retries, deleting claims or bypassing
+manual child dispatch are supported.
+
+Any ambiguous claim/dispatch/SSH response requires reconciliation of the existing
+claims and run. Once execution is reserved, no recovery route may replay it even
+if SSH never starts. Existing server flock locks and guarded manifest/token checks
+are unchanged; they do not constitute a new durable server dedup ledger. This
+change adds at-most-once **cloud** execution admission, without changing the R3
+runner or asserting that recovery completed. Failure diagnostics contain only
+allowlisted stage/guard/failure codes, numeric HTTP status or null, and
+`RECONCILE_NO_REPLAY`; no URL, body, token or exception detail is printed.

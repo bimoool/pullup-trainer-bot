@@ -65,7 +65,9 @@ seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003
 seed home_workouts 920004
-seed home_workouts 920005  # Builder rest/reps validation, persistence and retry
+# Builder rest/reps: one home_workouts profile per case and CI retry.
+# Foreign-owner companions 1920005–1920012 are reserved by the same seed.
+for id in 920005 920006 920007 920008 920009 920010 920011 920012; do seed home_workouts "$id"; done
 seed home_discovery 940001
 seed home_discovery 940002
 seed workout_detail 950001
