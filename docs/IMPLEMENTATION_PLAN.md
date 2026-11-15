@@ -333,3 +333,23 @@ one dedicated dispatch claim while retaining the same global execution marker;
 old routes deny that new claim. No log-derived privileges or generic retry are
 introduced. Next: independent/native review and mandatory CI, trusted-main
 integration, then a separate owner decision. No operation was performed.
+
+## Completed native saved-workout release admission (2026-11-15)
+
+Add synthetic real PostgreSQL/API proof for manual saved definitions, direct live
+v1/v2 and repeats, and admit only completed unplanned ownership/snapshot-consistent
+history without STEP or plan/program links. A canonical fixed SQL classification
+now feeds CLI and the guard's hash-pinned aggregate preflight; same-schema blocked
+or unavailable classification refuses before build/STOP. Existing initial migration,
+legacy reconciliation, global compatibility, hash and stopped-writer guards remain.
+No schema, account/history repair, production action or controller change occurs.
+Next: mandatory full CI, native and independent review, then trusted-main integration
+and controlled guard adoption before precise production preflight; no diagnostic apply.
+
+Calendar follow-up in the same primary PR addresses the twelve canonical CI
+fixture failures without changing production calendar rules. Opt-in pytest plan
+fixtures and the finite-identity synthetic E2E harness share explicit calendar
+inputs; all other identities and live timers retain ordinary behavior. Focused
+backend/guard/rollover/isolation checks: 180 passed. Local browser setup is blocked
+by the provider's pinned Chromium download denial, so final hosted visual/full
+E2E proof remains mandatory. No old workflow rerun substitutes for final-head CI.

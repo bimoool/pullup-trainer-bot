@@ -3254,3 +3254,78 @@ files, later-phase markers or malformed results yield no diagnostic clearance.
 The runner remains self-contained for existing adoption, with its rehearsal hash
 updated and the control runner unchanged. Reading a historical diagnosis does not
 replace any candidate release gate or authorize another apply.
+
+### Completed saved-workout planless admission (2026-11-15)
+
+The prior journal-only predicate rejected every definition/snapshot and engine
+field. It omitted ordinary `manual_existing_workout` and `direct_live` producers,
+including repeats. Public production-baseline and current producer files are
+byte-identical; the actual private production subtype remains unknown until the
+new aggregate preflight runs. No production row, log, credential or dump is used
+by this change.
+
+Synthetic PostgreSQL/API journeys cover user/system definitions with and without
+a stored version, manual save, direct engine v1/v2 completion and manual repeats.
+They prove frozen identity, read/edit behavior, client UUID/event replay, terminal
+event rebuild and account/trial/progression invariance. All twelve journeys failed
+only admission before the fix (22.22 s); all twelve pass after it (22.91 s).
+The v2 completion route normally appends a no-op event on a fresh repeated request;
+the regression preserves that behavior and checks stable replay of the same event.
+
+`scripts/sql/planless_classification.sql` is the single classification SELECT used
+by both CLI and host preflight. The reviewed guard pins its SHA256, regular Git
+blob mode, maximum size and fixed path at the validated candidate SHA. Host Python
+uses isolated trusted stdlib only to validate bytes and bounded aggregate output;
+it never imports or runs candidate Python. Reasons count affected planless users
+and may overlap across sessions. Subtype counts describe source metadata and never
+grant admission. Planned links, protected STEP, active/cancelled or unknown engine
+state, foreign/inconsistent definitions/snapshots, legacy progress and unproved
+tombstones still block. Historical archives remain untouched. Rehearsal pins the
+new guard bytes; production installation/adoption remains a separate operation.
+
+Independent review additionally caught a start-only malformed v2 cache that passed
+admission but failed actual engine view/rebuild. The exact negative was red before
+hardening. Terminal admission now checks the existing reader schema for plan
+blocks/targets/rests, cursor bounds, log entries and terminal state fields, plus
+applied post-start finishing-event evidence. Only the real `static` provenance
+enum is accepted; `unprescribed` is a separate top-level prescription kind.
+These are necessary schema checks, not a claim of full event replay in SQL.
+Final focused safety/host parity checks: 58 passed, including normal time, max,
+interval and post-completion extra-set records. The wider historical regression
+run had 183 passes and one calendar-fixture failure; canonical CI remains required.
+
+### Synthetic plan calendar fixture alignment (2026-11-15)
+
+Canonical CI exposed the same twelve UTC/local calendar fixture failures after
+21:00 UTC Sunday (Monday in Moscow): tests built UTC weeks while API calendar
+used the profile timezone. Assertions and runtime calendar rules are unchanged.
+The affected pytest fixtures now share a captured plan calendar, explicit local
+origins/week starts, and the convergence test reuses the API's local day.
+Independent real API regressions retain Sunday/Monday, month/year and UTC-midnight
+rollover behavior rather than treating a fixed visual fixture as rollover proof.
+
+The test-only ASGI/seed adapters under `tests/support` are excluded from Docker.
+They validate the fixed loopback `pullup_e2e` database/test token, settings aliases,
+dotenv and optional credentials before importing settings or constructing engines.
+One captured CI instant feeds only the thirteen reserved visual-plan/Builder
+identities listed in `CALENDAR_SCENARIOS`. The user-aware calendar delegates all
+other users; only default-created fixture plan origins are anchored. Explicit
+origins, PlanWeek data and all session performed/started/completed/ended timestamps
+are preserved. Seed dates remain explicit; API response bodies and assertions are
+not rewritten. Fresh QA and engine 06/07 identities retain real clocks and data.
+This is fixture/UI determinism, not acceptance of wall-clock rollover or engine
+timing. Production application clocks and entrypoints are unchanged.
+
+Final combined focused checks: 180 passed (127.61 s); own frontend build, ruff,
+shell syntax and diff checks passed. Nine signed-HTTP fixture checks passed against
+an isolated real API/PostgreSQL with a Sunday 20:59:59 calendar while the real
+profile day was Monday. Local visual Playwright produced 22 setup failures before
+any assertion because its pinned Chromium was absent. One official installation
+command failed with provider HTTP 403; no bypass or additional installation attempt was used. Final hosted
+E2E, full backend gates and exact-head independent/native reviews remain required.
+
+Local artifact incident: an initial frontend build followed a mistakenly retained
+dist symlink and changed the shared checkout's ignored built bundle. Its exact
+prior bytes are unknown; tracked source and existing result artifacts were
+unchanged. The symlink was removed and subsequent builds used this worktree's own
+real dist. Production and CI do not use that shared local bundle.

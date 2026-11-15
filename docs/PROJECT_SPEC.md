@@ -1492,3 +1492,20 @@ untrusted or malformed evidence produces an unavailable or unclassified result.
 Future verifier failures emit the same restricted summary before the existing
 refusal. Historical diagnostics provide no fresh verification or release acceptance;
 all compatibility, ownership, history, read-only and hash guards still apply.
+
+Same-schema release admission also recognizes completed unplanned saved-workout
+history: manual records/repeats and direct live engine v1/v2 sessions, with
+same-user or system definition ownership, consistent definition/version and frozen
+snapshot identity, no protected STEP blocks, and no plan/program credit. Archived
+definitions retain their historical identity. Live v2 must be terminal completed;
+active, cancelled, unknown, linked and progression-bearing state stays refused.
+This check never creates a plan or changes history.
+
+The CLI and installed guard share the exact fixed classification SQL. The guard
+accepts only a bounded regular Git blob from the fixed candidate path with its
+reviewed compiled SHA256. Read-only repeatable-read preflight exports only fixed
+numeric reason/subtype counts and `PLANLESS_BLOCKED`; a nonzero count or unavailable
+classification refuses the same-schema release before build or STOP. Zero is a
+necessary planless condition; all remaining compatibility and release gates still
+apply, including repeated checks with stopped writers. Initial schema migration
+keeps its existing preflight because these tables may not exist yet.
