@@ -338,12 +338,16 @@ questionnaire. It validates relational ownership of plan/week/inclusion/custom
 plan/session references, not course-count equality, STEP JSON shapes, cached
 progress counters, slot completeness, or unique historical credit per plan item.
 
-A missing plan is accepted only with no workouts (any status), electives,
-training sessions (any origin/status, including superseded/unkeyed copies),
-archived workouts in either archive family, or positive completed-workout
-counters in current/archived workout sets. Profile, baseline, trial and a zero
-completed-workout set alone do not require a plan. Unknown or history-bearing
-missing-plan states still refuse release. All-user historical reconciliation,
+A missing plan is compatible with cold archives, including archived completed-workout
+counters. Completed native unplanned journal/activity facts are also compatible only
+with explicit supported provenance and no plan/credit/engine/definition or protected
+STEP-role signals. A completed reset legacy copy additionally requires a key,
+`legacy_deleted`, a same-user archive id/date/status match, no live legacy source,
+and no plan/inclusion/M2M links. Archive presence and onboarding status alone never
+permit an account: current workouts (any status), electives, positive current counters,
+active or unclassified sessions and unproved references still refuse release.
+Profile, baseline, trial and a zero completed-workout set alone do not require a plan.
+All-user historical reconciliation,
 keyed copy coverage, duplicate detection, proposed history mutations, unresolved
 ambiguity and required catalog checks remain blockers.
 
@@ -352,7 +356,7 @@ roll it back. Compatibility emits a distinct `verify-compatible` machine result
 with nonnegative integer classification counts. The runner validates count
 equations, zero blocked/history-mutation/ambiguity counts and stable
 classification before/after stopping writers. Backfill dry-run must agree with
-that classification: it may propose plans for the explicitly compatible empty
+that classification: it may propose plans for the explicitly compatible planless
 onboarded users; these proposals are never applied. No mutating backfill or
 `backfill_started_at` marker is permitted on the same-schema path.
 
@@ -367,6 +371,16 @@ It does not certify an incident-modified database as a new baseline: reconcile
 that state against the original stopped-writer snapshot, or recover from the
 original verified backup while preserving the failed database, before forwarding. No history or plan repair is authorized by
 compatibility verification.
+
+Preflight's fixed `PLANLESS-SOURCES` diagnostic reports only overlapping anonymous
+user counts for current planless accounts, the eight history sources and limited
+native/started/linked/unknown-origin/superseded/STEP flags. The query uses a bounded
+read-only snapshot; failures export only `DIAG_UNAVAILABLE`. Origin classification
+is not a complete safety classification, and neither this metadata nor the separate
+historical-failure diagnostic is admission. The phase-2 candidate verifier remains
+authoritative. Run the final candidate's once-only production-preflight after its
+exact-SHA staging and both QA results, following reviewed guard adoption and fresh
+readiness; no retry or protocol exception is introduced.
 
 Before using it on production:
 

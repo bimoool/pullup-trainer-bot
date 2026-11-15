@@ -34,6 +34,20 @@ The installed runner remains unchanged. The reviewed component is included in
 PR408's initial bundle; its combined CI/review and exact-SHA bootstrap remain
 required before runtime acceptance. No server or R3 action ran.
 
+## Кандидат совместимости истории без плана — 2026-11-15
+
+Обычные записи Журнала/активности и холодные архивы могут существовать без `TrainingPlan`.
+Синтетические реальные PostgreSQL/API journeys доказывают сохранение истории, архивов,
+подписки, владения и всех хэшей при чтении; правка меняет только выбранный факт.
+Кандидат сужает отказ проверки до текущей/активной/недоказанной истории, сохраняет все
+общие ownership/copy/history/RO проверки и не запускает repair/backfill/migration.
+Фиксированный preflight показывает только анонимные пересекающиеся source-count агрегаты
+текущих planless-аккаунтов; это диагностика, не допуск к релизу. Историческая диагностика
+не меняется. Production-подтип ещё неизвестен, новая версия приложения не выкачена.
+Следом: полный CI и независимое ревью, защищённый merge владельцем, staging и оба QA
+точного финального SHA, принятие нового guard с receipt, свежие readiness и единственный
+после-QA production-preflight; только затем отдельное решение о guarded apply.
+
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 
 Отдельный aggregate QA-кандидат включает reviewed #384 (явный launch platform) и

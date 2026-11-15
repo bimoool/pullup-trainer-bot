@@ -212,6 +212,11 @@ if args[0] == "exec":
         sys.exit(0)
     restore = target.endswith("_restore_check")
     rb = "_rb_" in target
+    if "planless-source-aggregate" in sql:
+        L("planless-source-aggregate")
+        if env.get("FAIL_SOURCE_DIAGNOSTIC"):
+            sys.stderr.write("PRIVATE-DIAGNOSTIC-ERROR"); sys.exit(1)
+        out(env.get("SOURCE_DIAGNOSTIC_ROW", "1|3|0|0|1|1|0|0|1|0|1|0|0|0|0|0")); sys.exit(0)
     if "alembic_version" in sql:
         if restore: out(env.get("RESTORED_REV", st["rev"]))
         elif rb: out(st.get("dump_rev", "none"))
@@ -899,11 +904,17 @@ def test_fully_migrated_database_uses_verified_read_only_path(sandbox):
 
 def test_verify_only_incomplete_history_aborts_before_stop(sandbox):
     sandbox.preset(rev=NEW_HEAD, backfill_applied=1)
-    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
+    # Synthetic root ownership: run the exact sanitizer under the fixture owner.
+    script = sandbox.root / "synthetic-guard.sh"
+    script.write_text(RUN.read_text().replace("st.st_uid != 0", "st.st_uid not in (0, os.getuid(), os.stat('/tmp').st_uid)"))
+    proc, log, state = sandbox(SHA, "apply", TOKEN, script=script, PROD_EXPECTED_FROM_REV=NEW_HEAD, VERIFY_ONLY_FAIL="1")
     assert proc.returncode == 1 and "verify-compatible failed" in proc.stderr
     assert idx(log, "compose -p pullup-trainer-bot stop") == -1
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
     assert state["running"] == {"app": True, "web": True}
+    assert '"status":"UNCLASSIFIED"' in proc.stderr
+    assert '"errors":{"EXECUTION_ERROR_UNKNOWN":1}' in proc.stderr
+    assert "COMPAT-DIAG " in proc.stderr
 
 
 def test_verify_only_hash_guard_still_refuses_a_mutating_verifier(sandbox):
@@ -978,3 +989,32 @@ def test_same_schema_rejects_invalid_compatibility_machine_results_before_stop(s
     assert proc.returncode == 1 and "invalid verify-compatible machine result" in proc.stderr
     assert idx(log, "compose -p pullup-trainer-bot stop") == -1
     assert state["running"] == {"app": True, "web": True}
+
+
+@pytest.mark.parametrize("bad", [None, "secret-row-and-id", "0|" + "0|" * 14 + "0", "1|" + "0|" * 14 + "1000000001"])
+def test_preflight_current_source_diagnostic_is_aggregate_only_and_never_admission(sandbox, bad):
+    kwargs = {} if bad is None else {"SOURCE_DIAGNOSTIC_ROW": bad}
+    proc, log, state = sandbox(SHA, "preflight", **kwargs)
+    assert proc.returncode == 0, proc.stderr
+    rows = [line.removeprefix("PLANLESS-SOURCES ") for line in proc.stderr.splitlines() if line.startswith("PLANLESS-SOURCES ")]
+    assert len(rows) == 1
+    result = json.loads(rows[0])
+    if bad is None:
+        assert result["scope"] == "CURRENT_SOURCES_NOT_RELEASE_ACCEPTANCE"
+        assert result["counts"]["USERS_TOTAL"] == 3
+        assert result["counts"]["NATIVE_COMPLETED_SESSIONS"] == 1
+    else:
+        assert result == {"status": "DIAG_UNAVAILABLE"}
+        assert bad not in proc.stdout + proc.stderr
+    assert log.count("planless-source-aggregate") == 1
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert idx(log, "compose -p pullup-trainer-bot run") == -1
+    assert state["running"] == {"app": True, "web": True}
+    assert state.get("backfill_applied", 0) == 0
+
+
+def test_source_diagnostic_sql_failure_exports_no_database_error(sandbox):
+    proc, _, _ = sandbox(SHA, "preflight", FAIL_SOURCE_DIAGNOSTIC="1")
+    assert proc.returncode == 0
+    assert 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' in proc.stderr
+    assert "PRIVATE-DIAGNOSTIC-ERROR" not in proc.stdout + proc.stderr

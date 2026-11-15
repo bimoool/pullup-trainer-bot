@@ -1,5 +1,34 @@
 # Инженерные заметки pullup-trainer-bot
 
+## Planless history compatibility (2026-11-15, source candidate)
+
+The blanket `history_without_plan` test conflated missing migration state with supported runtime states.
+Ordinary `POST /api/v2/sessions` journal/activity writes do not create a plan or apply course progression.
+`reset_user_progress` archives legacy data, retains superseded keyed copies and clears onboarding; cold v1
+archives predate plans. Neither archive presence nor onboarding status proves a complete reset: electives
+and native sessions survive the ordinary reset. The first account-invariance proof ran six real PostgreSQL/API
+journeys on unchanged source; changing the verifier expectation then failed on the old blanket predicate.
+
+Admission now permits cold archives and narrowly proved completed native unplanned journal/activity facts.
+A reset copy requires `legacy_backfill`, completed status, a key, `legacy_deleted`, an exact same-user archive
+id/date/status match, no live legacy source, and no plan/inclusion/M2M link. Current legacy rows, positive current
+workout-set counters, active/unknown/unlabelled history, protected native STEP roles and foreign references
+remain refused. Verification uses the existing read-only transaction and all-user reconciliation; it never
+repairs history, restores archives or creates plans. The existing count keys retain their partition equations:
+compatible planless users now include these proved shapes, so dry-run's proposed missing-plan count still
+agrees; its proposed work is never applied in same-schema mode. All repeat/stopped/hash checks remain.
+
+Preflight also runs one fixed host literal aggregate query for current planless accounts, in an explicit
+repeatable-read/read-only transaction with statement/lock/idle timeouts. It returns overlapping user counts
+for the eight historical sources and native/active/linked/unknown/superseded/STEP flags. A host-isolated
+numeric allowlist emits only fixed enums and bounded counts; raw SQL errors are suppressed. This is evidence
+classification, never admission. The older historical-failure diagnostic remains unchanged. No production
+subtype is inferred from synthetic proof and no production row or dump is used.
+
+Release sequencing is unchanged: review/full CI and protected merge, exact final-SHA staging and both QA,
+root-controlled guard adoption/receipt and fresh readiness, then that candidate's once-only after-QA
+production-preflight before any separate apply decision. Source work performs no operation or migration.
+
 > Это бывший `CLAUDE.md` (сохранён целиком, история файла — через `git log --follow`).
 > Короткая обязательная точка входа для агентов теперь — [`CLAUDE.md`](../CLAUDE.md);
 > продуктовое поведение — [`docs/PROJECT_SPEC.md`](PROJECT_SPEC.md), план и статус —
@@ -3211,3 +3240,17 @@ including after the awaited completion fallback. Existing lifecycle and session-
 guards remain. A fresh GET still accepts an external device's resume event.
 This independently proves the ordering bug; it does not establish the cause of
 the earlier deployed WebKit failure from screenshots alone.
+
+### Before-stop compatibility failure diagnostics (2026-11-15)
+
+A nonzero `--verify-compatible` exit occurs before the separate success-result
+parser, so the original failure alone cannot distinguish a reported incompatibility
+from an execution error. The production runner now sanitizes private RESULT-JSON
+locally and emits only fixed enums and bounded aggregate counts. Superseded live
+copy errors are counted without user IDs; missing catalog payloads are discarded.
+No stderr/traceback is exported or used to infer a cause. Fixed historical evidence
+must match the manifest, companion failure report and private work report; unsafe
+files, later-phase markers or malformed results yield no diagnostic clearance.
+The runner remains self-contained for existing adoption, with its rehearsal hash
+updated and the control runner unchanged. Reading a historical diagnosis does not
+replace any candidate release gate or authorize another apply.

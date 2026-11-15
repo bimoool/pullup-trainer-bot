@@ -323,6 +323,14 @@ Dynamic Island / управления с экрана блокировки / ф�
   (правка/удаление #279 идут по копии; удаление замещает копию, чтобы сведение не воскресило запись).
   Срез `offset/limit` и `has_more` считаются после скрытия; `target_a/b` («следующая цель») — только на самой
   свежей записи ВСЕЙ истории (#285).
+  **История без TrainingPlan:** завершённая самостоятельная запись Журнала/внешней активности и холодные
+  архивы не требуют создания пустого плана. Обычное чтение и правка такой записи сохраняют аккаунт,
+  подписку, архивы и прогрессию; замещённые сбросом legacy-копии остаются скрытыми. Проверка совместимости
+  релиза допускает только доказанные формы: явную завершённую нативную запись без курса/кредита/STEP-ролей
+  либо завершённую keyed legacy-копию `legacy_deleted`, подтверждённую архивом того же пользователя.
+  Наличие архива или незавершённый онбординг сами по себе не доказывают безопасность: текущая legacy-история,
+  положительные текущие счётчики прогресса, активные/неразмеченные/неизвестные сессии и недоказанные связи
+  по-прежнему блокируют релиз. Архивы никогда не восстанавливаются и планы не создаются проверкой.
 - **Сводка Профиля = `canonical_sessions` (#308).** `GET /api/profile`: `workouts_count` — целое число
   канонических сессий (тот же счёт, что в календаре и Analytics), `days_since_last_workout` — по самой свежей из
   них. Готовность/прогрессия (`/api/dashboard`, бот) считаются по legacy как раньше; карточки ГТО/ВСФ — на
@@ -1473,3 +1481,14 @@ outcome uncertain and services stopped pending inspection of the exact three
 database names; it does not authorize another apply. The repository change does
 not update the installed rollback script. Future adoption requires a separately
 reviewed controller bundle and existing release gates. See runbook §7.3.
+
+### Private compatibility failure diagnostics
+
+Guarded production preflight may report historical diagnostic enums and bounded
+aggregate counts for the fixed November 15 before-stop compatibility failure.
+The installed guard reads only the incident-bound private files on the server;
+user IDs, catalog names, raw output and exception text remain private. Missing,
+untrusted or malformed evidence produces an unavailable or unclassified result.
+Future verifier failures emit the same restricted summary before the existing
+refusal. Historical diagnostics provide no fresh verification or release acceptance;
+all compatibility, ownership, history, read-only and hash guards still apply.
