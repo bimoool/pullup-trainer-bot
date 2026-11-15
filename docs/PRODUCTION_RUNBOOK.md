@@ -316,11 +316,12 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 ## Already-migrated no-schema hotfix: verified read-only backfill path
 
 For a candidate with the same Alembic head as the live database, the guarded
-production runner now checks for onboarded users lacking a plan. If none are
-missing, it runs the candidate's `scripts/backfill_multi_program.py --verify-only`
+production runner always runs the candidate's `scripts/backfill_multi_program.py --verify-only`
 **before stopping app/web**. Verification failure aborts before downtime; it does
-not fall back to a mutating repair. Initial migrations with missing plans retain
-the existing full backfill flow and its strict guards.
+not fall back to a mutating repair. This includes a database with both migrated
+users and onboarded users lacking a plan: equal schema revisions do not authorize
+filling that coverage gap during deployment. Initial migrations from an older
+revision retain the existing full backfill flow and its strict guards.
 
 `--verify-only` requires its own fresh transaction and uses PostgreSQL
 `REPEATABLE READ, READ ONLY`. It checks plan/user/inclusion consistency, duplicate
@@ -334,9 +335,11 @@ verification deliberately does not require calendar convergence mutations to be 
 After writers stop, phase 8 reruns verification twice. It still checks full database
 fingerprints, `same_legacy`, post-apply dry-run/no-write controls, plan guards and
 all existing final invariants. This is not a whitelist of mutable plan tables.
-The verifier is only selected if pre-stop verification passed and the stopped
-backfill dry-run still sees all onboarded users migrated. No plan/calendar or
-historical repair is silently permitted by this mode.
+Every same-head deployment stays on this verification path. If the stopped
+backfill dry-run no longer sees all onboarded users migrated, or the stopped
+verifier finds new gaps, release refuses without applying backfill. Writers stay
+stopped for the operator's existing guarded recovery decision. No plan/calendar
+or historical repair is silently permitted by this mode.
 
 Before using it on production:
 

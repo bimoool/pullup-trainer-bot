@@ -84,6 +84,7 @@ if args[0] == "compose":
     if sub == "port": out(env.get("STUB_WEB_PORT", "127.0.0.1:8001")); sys.exit(0)
     if sub == "stop":
         for s in rest: st["running"][s] = False
+        if env.get("MISSING_PLAN_AFTER_STOP"): st["missing_plans"] = 1
         save(); sys.exit(0)
     if sub == "build":
         if env.get("FAIL_BUILD") == rest[-1]: sys.stderr.write("build failed\n"); sys.exit(1)
@@ -109,7 +110,8 @@ if args[0] == "compose":
             if "--verify-only" in cmd:
                 if env.get("VERIFY_ONLY_WRITES") and not st.get("running", {}).get("app"):
                     st["v2_version"] += 1; save()
-                if env.get("VERIFY_ONLY_FAIL"): sys.stderr.write("incomplete history coverage\n"); sys.exit(1)
+                if env.get("VERIFY_ONLY_FAIL") or st.get("missing_plans") or (env.get("VERIFY_ONLY_FAIL_AFTER_STOP") and not st.get("running", {}).get("app")):
+                    sys.stderr.write("incomplete migration coverage\n"); sys.exit(1)
                 out("RESULT-JSON " + json.dumps({"mode": "verify-only", "verified": True, "errors": []}))
                 sys.exit(0)
             if "--converge-history" in cmd:
@@ -120,15 +122,18 @@ if args[0] == "compose":
             n = st.get("backfill_applied", 0)
             if "--dry-run" in cmd:
                 if env.get("BACKFILL_DRY_WRITES"): st["v2_version"] += 1; save()
-                will, already = (0, 3) if n else (3, 0)
+                will = st.get("missing_plans", 0 if n else 3)
+                already = 3 - will
                 out("DRY-RUN (ничего не записано)\nОнбордившихся пользователей: %s\n  будет мигрировано: %d\n"
                     "  уже было мигрировано (пропущено): %d\nБудет создано TrainingSession (обычных): 20" % (env.get("STUB_ONBOARDED", "3"), will, already))
                 sys.exit(0)
             if env.get("FAIL_BACKFILL"): sys.stderr.write("Traceback: boom\n"); sys.exit(1)
             st["backfill_applied"] = n + 1
-            if n == 0 or env.get("BACKFILL_NOT_IDEMPOTENT"): st["v2_version"] += 1
+            missing = st.get("missing_plans", 0 if n else 3)
+            if missing or env.get("BACKFILL_NOT_IDEMPOTENT"): st["v2_version"] += 1
+            st["missing_plans"] = 0
             event("backfill"); save()
-            migrated, already = (3, 0) if n == 0 else (0, 3)
+            migrated, already = missing, 3 - missing
             mark = "РАСХОЖДЕНИЕ" if env.get("BACKFILL_MISMATCH") else "OK"
             out("Прогон завершён\nОнбордившихся пользователей: 3\n  мигрировано в этом прогоне: %d\n"
                 "  уже было мигрировано (пропущено): %d\nTrainingPlan всего: 3 (ожидается 3) [OK]\n"
@@ -214,7 +219,6 @@ if args[0] == "exec":
                 h = "N%d" % st["v2_version"]
             out("%s|5|%s" % (t, h))
         sys.exit(0)
-    if "verify:missing-plans" in sql: out(env.get("VERIFY_MISSING_PLANS", "0")); sys.exit(0)
     if "inv:noplan" in sql: out(env.get("INV_NOPLAN", "0")); sys.exit(0)
     if "inv:inclusion" in sql or "inv:dups" in sql: out("0"); sys.exit(0)
     if "inv:plans" in sql: out(env.get("INV_PLANS", "3")); sys.exit(0)
@@ -888,9 +892,41 @@ def test_verify_only_hash_guard_still_refuses_a_mutating_verifier(sandbox):
     assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
 
 
-def test_missing_plan_does_not_select_verified_existing_path(sandbox):
+def test_initial_migration_retains_full_backfill_path(sandbox):
     # Initial migration is still the original full backfill path, not a silent skip.
-    proc, log, state = sandbox(SHA, "apply", TOKEN, VERIFY_MISSING_PLANS="1")
+    proc, log, state = sandbox(SHA, "apply", TOKEN)
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert idx(log, "--verify-only") == -1
     assert state["backfill_applied"] == 2
+
+
+def test_same_head_with_mixed_migrated_and_missing_plans_refuses_before_stop(sandbox):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=1)
+    proc, log, state = sandbox(SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD)
+    assert proc.returncode == 1 and "verify-only failed" in proc.stderr
+    assert idx(log, "--verify-only") >= 0
+    assert idx(log, "compose -p pullup-trainer-bot stop") == -1
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["missing_plans"] == 1 and state["backfill_applied"] == 1
+    assert state["v2_version"] == 1
+    assert state["running"] == {"app": True, "web": True}
+
+
+@pytest.mark.parametrize(("race", "reason"), [
+    ("MISSING_PLAN_AFTER_STOP", "migration coverage changed"),
+    ("VERIFY_ONLY_FAIL_AFTER_STOP", "verify-only failed (stopped)"),
+])
+def test_same_head_coverage_race_refuses_without_applying_backfill(sandbox, race, reason):
+    sandbox.preset(rev=NEW_HEAD, backfill_applied=1, v2_version=1, missing_plans=0)
+    proc, log, state = sandbox(
+        SHA, "apply", TOKEN, PROD_EXPECTED_FROM_REV=NEW_HEAD, **{race: "1"},
+    )
+    assert proc.returncode == 1 and reason in proc.stderr
+    assert idx(log, "--verify-only") < idx(log, "compose -p pullup-trainer-bot stop")
+    assert idx_end(log, "app python scripts/backfill_multi_program.py") == -1
+    assert state["missing_plans"] == (1 if race == "MISSING_PLAN_AFTER_STOP" else 0)
+    assert state["backfill_applied"] == 1
+    assert state["v2_version"] == 1
+    assert state["running"] == {"app": False, "web": False}
+    assert "R1" in proc.stderr
+    assert not any("backfill_started_at=" in p.read_text() for p in (sandbox.root / "backups").glob("*.manifest"))
