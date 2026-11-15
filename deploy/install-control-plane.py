@@ -37,7 +37,7 @@ CURRENT = {
     "prod-guarded-dispatch.sh": "daaa8e739e8a57518723193789c5911288e176ccbd2f7cf4ccfd62078b0db429",
     "server-control.py": "3c6061c60a452bb682f80aead0efc98c4cbdf1159c4b94ab623f616a657af5da",
     # Expected only after the primary release's separately verified NEWLIVE.
-    "deploy-production-guarded-run.sh": "986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966",
+    "deploy-production-guarded-run.sh": "e0773bd7d23020add0fb84f970a9fa887c9d458b5ba5d0940c04fb906a7821ee",
     "rollback-production-guarded.sh": "6286544abbe156e4d9725a005f37ecd9fb7e69ac34945a9fd1085e8a55a60bbd",
 }
 

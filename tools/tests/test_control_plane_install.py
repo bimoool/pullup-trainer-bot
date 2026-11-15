@@ -87,10 +87,10 @@ class InstallTests(unittest.TestCase):
         candidate["deploy-production-guarded-run.sh"] = production
         return binary, ledger, candidate, represented_hashes
 
-    def test_default_post_newlive_profile_accepts_only_reviewed986_source(self):
+    def test_default_post_newlive_profile_accepts_only_reviewed_e077_source(self):
         from unittest.mock import patch
 
-        expected = "986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966"
+        expected = "e0773bd7d23020add0fb84f970a9fa887c9d458b5ba5d0940c04fb906a7821ee"
         production = (ROOT / "deploy/deploy-production-guarded-run.sh").read_bytes()
         self.assertEqual(c.digest(production), expected)
         actual_digest = c.digest
@@ -117,13 +117,15 @@ class InstallTests(unittest.TestCase):
                 before,
             )
 
-    def test_default_profile_refuses_old_c97_temporary785_and_source_mismatch(self):
+    def test_default_profile_refuses_986_785_c97_unknown_and_source_mismatch(self):
         from unittest.mock import patch
 
         actual_digest = c.digest
         old_hashes = (
+            "986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966",
             "c97a36be89bbce6782ca181a641327be69b3c27e1d91d1810da7a90b57fe4b35",
-            "785" + "0" * 61,
+            "7859898bc0638e40635d5f966e3892871832fd8b523ee7d088e36401965883db",
+            "f" * 64,
         )
         for old in old_hashes:
             with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:

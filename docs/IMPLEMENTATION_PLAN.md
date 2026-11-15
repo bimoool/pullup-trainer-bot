@@ -23,12 +23,13 @@ remain separate unperformed acceptance steps. The initial active bundle includes
 the reviewed atomic rollback source; installed rollback `6286544a…` remains only
 the preserved bootstrap baseline, never the selected patched bundle artifact.
 
-The combined candidate also carries reviewed PR414 `1dc9f00` and PR416
-`a78cf3a` by normal merge. Its app/scripts/production guard/rehearsal pin retain
-exact PR416 bytes. Feature controls remain unchanged except the installer's
-expected post-NEWLIVE production guard hash `986d8358…`; temporary `785…` and
-old `c97…` are not bootstrap baselines. Source integration is not installation
-or runtime proof. Primary NEWLIVE, fresh combined gates and both provenance
+The combined candidate also carries reviewed PR414 `1dc9f00`, PR416
+`a78cf3a` and PR417 `5014be8` by normal merge. Its primary app/scripts/SQL,
+calendar fixtures, workflows, production guard and rehearsal pin retain exact
+PR417 bytes. Feature controls remain unchanged except the installer's expected
+post-NEWLIVE production guard hash `e0773bd7…`; currently installed `986…`,
+earlier `785…` and old `c97…` are not bootstrap baselines. Source integration
+is not installation or runtime proof. Primary NEWLIVE, fresh combined gates and both provenance
 reviews remain prerequisites; the prepared #406 job stays NOT STARTED/window CLOSED.
 
 ## Candidate R3 rename transaction #411 — 2026-11-15

@@ -281,7 +281,7 @@ git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sh
 ```
 
 The installer requires fresh local origin/main tree equality and the recorded
-PR404 helper/dispatcher pair plus the post-NEWLIVE production runner `986d8358…`
+PR404 helper/dispatcher pair plus the post-NEWLIVE production runner `e0773bd7…`
 and the known installed rollback baseline. Unknown files/modes/symlinks refuse. It writes only
 the new supervisor, complete initial bundle/activation, private controller ledger,
 nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher.
@@ -303,9 +303,10 @@ hash. The combined candidate includes PR412's atomic database-swap repair and
 PR413's current admission/manual-reservation controls. No installed rollback
 file is overwritten and no database operation is performed during bootstrap.
 
-The expected production guard is the exact reviewed PR416 `a78cf3a` source,
-SHA256 `986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966`.
-The temporary installed `785…` diagnostic guard and old `c97…` are refused;
+The expected production guard is the exact reviewed PR417 `5014be8` source,
+SHA256 `e0773bd7d23020add0fb84f970a9fa887c9d458b5ba5d0940c04fb906a7821ee`.
+The currently installed `986…`, earlier `785…` diagnostic guard and old `c97…`
+are refused;
 bootstrap cannot replace them with its source or accept them as another known
 version. Source equality and a guard hash are not primary runtime acceptance:
 the coordinator must first verify primary NEWLIVE and the corresponding guard
