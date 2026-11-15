@@ -424,3 +424,15 @@ API or SSH outcome requires inspecting the existing run and approved operational
 receipts; do not delete claims, retry, or post another recovery command. This
 adapter reads GitHub metadata only and does not inspect production rows, dumps or
 raw logs. The same-head deployment guard repair is a separate change.
+
+## Cloud continuity prerequisites
+
+The owner bridge's exact runner-adoption and R1 recovery grammar, reviewed
+one-time no-key administrative helper/dispatcher upgrade, known installed hashes
+and non-replayable receipt handling are documented in
+[CLOUD_SERVER_CONTROL.md](CLOUD_SERVER_CONTROL.md#continuity-upgrade-runner-adoption-and-r1-admission-2026-11-15).
+This upgrade is not installed merely because its PR is merged. R1 apply through
+the workflow now requires original owner-command provenance and an execution
+claim; direct/manual R1 apply dispatch and reruns are refused before SSH. R1 check
+remains available, and the old pinned R3 incident adapter is unchanged. Existing
+server schema/backfill/image guards remain authoritative.

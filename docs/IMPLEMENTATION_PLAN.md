@@ -234,3 +234,13 @@ explicit documented domain/platform reason. Матрица и issues — `docs/C
 
 Owner-comment dispatcher on main → existing planner/worker on develop/current.
 Controls, safety boundaries and sandbox proof: [ORCH_OWNER_UI.md](ORCH_OWNER_UI.md).
+
+## Cloud release control continuity (2026-11-15)
+
+Candidate controller upgrade adds fixed runner adoption and owner/provenance-bound
+R1 apply to the existing bridge. Product runner, compatibility repair and rehearsal
+pin are unchanged. Offline synthetic admission/filesystem regressions cover the
+new routes; full GitHub checks and independent review remain integration gates.
+The new controller is **not installed** and no production action was performed.
+Next: reviewed merge, one existing administrative no-key bootstrap, then cloud
+readiness/prepare/adoption and separate guarded release/recovery decisions.

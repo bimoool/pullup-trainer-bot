@@ -1375,3 +1375,16 @@ The child checks both comments and recovery provenance. An existing original cla
 recovery; an interrupted recovery remains claimed and cannot be replayed. A late original
 request deduplicates against the same marker. Concurrent children share the server's exclusive
 same-operation ledger and cannot perform the prepare effect twice. No claim or ledger is deleted.
+
+### Cloud release control continuity
+
+The existing owner-command bridge supports exact `server-adopt-runner <sha>`
+and `rollback-r1-apply <failed-sha> <manifest> <token> <failed-run> <check-run>`
+commands after the reviewed no-key administrative controller upgrade. Adoption
+changes only the fixed installed production runner, with full CI/rehearsal,
+trusted-main tree, immutable owner/provenance, locks, old-hash and durable receipt
+guards. R1 recovery remains available after failed product CI and preserves the
+existing no-database-overwrite, unchanged-schema/no-backfill server guards.
+Incident-wide and execution claims prohibit replay, including through another
+PR or manual child dispatch. Exact grammar, actual installation state and the
+one-time administrative prerequisite are in `CLOUD_SERVER_CONTROL.md`.

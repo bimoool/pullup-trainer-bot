@@ -15,6 +15,7 @@ from guarded_comment_dispatch import (
     Refused,
     command,
     green_checks,
+    release_gates,
     require,
     validate_pr,
     validate_prepare_comment,
@@ -65,6 +66,11 @@ SAFE_KEYS = {
     "cleanup_verified",
     "fresh_backup_created",
     "required_ram_mib",
+    "runner_adopted",
+    "runner_state_unknown",
+    "previous_sha256",
+    "runner_sha256",
+    "protected_files_unchanged",
 }
 
 
@@ -133,6 +139,8 @@ def authorize(api, env):
     require(op == "server-" + action and expected_sha == sha, "command binding")
     require(operation == (inputs["operation_id"] or "ops-" + comment_id), "operation binding")
     validate_pr(api("GET", f"pulls/{number}"), int(number), sha)
+    if action == "adopt-runner":
+        release_gates(api, "server-adopt-runner", sha, inputs)
     if action in {"prepare", "restore"}:
         green_checks(api, sha)
     # A trusted dispatcher claim must exist; a direct workflow_dispatch is not an admission shortcut.
@@ -183,6 +191,20 @@ def authorize(api, env):
         and run.get("head_branch") == "main",
         "untrusted dispatcher run",
     )
+    if action == "adopt-runner":
+        from rollback_r1_recovery import original_comment
+        from rollback_r1_recovery_client import provenance
+
+        require(
+            env.get("GITHUB_REF") == "refs/heads/main"
+            and env.get("GITHUB_RUN_ATTEMPT") == "1"
+            and re.fullmatch(r"[0-9a-f]{40}", env.get("GITHUB_SHA", "")),
+            "trusted first-attempt adoption required",
+        )
+        original_comment(comment, owner, number, f"/pullup server-adopt-runner {sha}", require)
+        require(comment.get("id") == int(comment_id), "live comment identity")
+        provenance(api, env, owner, match[1], WORKFLOW)
+        release_gates(api, "server-adopt-runner", sha, inputs)
     return int(number), action, sha, operation
 
 

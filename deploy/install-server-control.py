@@ -14,6 +14,8 @@ import tempfile
 from pathlib import Path
 
 BASE_DISPATCH = "9313be214b5dc1ad7756171d80f649b3394e1d50a92140a3980933be156706e5"
+CURRENT_DISPATCH = "3c48db20eddebb420d7933daca1b9a982128316d5ed041613ff7ead1f4033c42"
+CURRENT_HELPER = "0e90e704cb69332eb1f9eb39ac98da5c2c13ed52630fa05db38a948d69161c6c"
 ROOT = Path("/root/bin")
 BACKUPS = Path("/root/backups")
 REPO = Path("/root/pullup-trainer-bot")
@@ -34,6 +36,14 @@ def digest(blob):
     return hashlib.sha256(blob).hexdigest()
 
 
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def write_new(path, blob, mode=0o700):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     with os.fdopen(fd, "wb") as target:
@@ -41,6 +51,7 @@ def write_new(path, blob, mode=0o700):
         os.fchmod(target.fileno(), mode)
         target.flush()
         os.fsync(target.fileno())
+    sync_directory(path.parent)
 
 
 def atomic(path, blob):
@@ -52,6 +63,7 @@ def atomic(path, blob):
             target.flush()
             os.fsync(target.fileno())
         os.replace(temp, path)
+        sync_directory(path.parent)
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
@@ -76,6 +88,53 @@ def install(root, blobs, *, baseline_hash=BASE_DISPATCH, apply=False):
             "changed": False,
             "dispatcher_sha256": digest(old),
             "helper_sha256": digest(helper.read_bytes()),
+        }
+    if digest(old) == CURRENT_DISPATCH:
+        check(helper)
+        check(backup)
+        ensure(digest(backup.read_bytes()) == BASE_DISPATCH, "UNKNOWN_ORIGINAL_BACKUP")
+        ensure(digest(helper.read_bytes()) == CURRENT_HELPER, "UNKNOWN_HELPER")
+        upgrade_backups = {
+            root / "prod-guarded-dispatch.before-continuity.sh": old,
+            root / "server-control.before-continuity.py": helper.read_bytes(),
+        }
+        for path, blob in upgrade_backups.items():
+            if path.exists() or path.is_symlink():
+                check(path)
+                ensure(path.read_bytes() == blob, "UNKNOWN_UPGRADE_BACKUP")
+        if not apply:
+            return {
+                "installed": False,
+                "changed": False,
+                "old_dispatcher_sha256": digest(old),
+                "new_dispatcher_sha256": digest(expected),
+                "helper_sha256": digest(blobs["server-control.py"]),
+            }
+        for path, blob in upgrade_backups.items():
+            if not path.exists():
+                write_new(path, blob)
+        original_helper = helper.read_bytes()
+        atomic(helper, blobs["server-control.py"])
+        try:
+            ensure(dispatcher.read_bytes() == old)
+            atomic(dispatcher, expected)
+            check(helper)
+            check(dispatcher)
+            ensure(
+                helper.read_bytes() == blobs["server-control.py"]
+                and dispatcher.read_bytes() == expected
+            )
+            ensure(digest(backup.read_bytes()) == BASE_DISPATCH)
+        except (OSError, ValueError, RuntimeError):
+            atomic(dispatcher, old)
+            atomic(helper, original_helper)
+            raise
+        return {
+            "installed": True,
+            "changed": True,
+            "dispatcher_sha256": digest(expected),
+            "helper_sha256": digest(blobs["server-control.py"]),
+            "backup_sha256": digest(old),
         }
     ensure(digest(old) == baseline_hash, "UNKNOWN_DISPATCHER")
     if helper.exists() or helper.is_symlink():
@@ -191,14 +250,28 @@ def main():
         )
     keys = Path("/root/.ssh/authorized_keys")
     check(keys)
-    key_hash = digest(keys.read_bytes())
+    key_identity = (keys.stat().st_dev, keys.stat().st_ino, digest(keys.read_bytes()))
     runners = {
-        name: digest((ROOT / name).read_bytes())
+        name: (
+            (ROOT / name).stat().st_dev,
+            (ROOT / name).stat().st_ino,
+            digest((ROOT / name).read_bytes()),
+        )
         for name in ["deploy-production-guarded-run.sh", "rollback-production-guarded.sh"]
     }
     result = install(ROOT, blobs, apply=sys.argv[2] == "--install")
-    ensure(digest(keys.read_bytes()) == key_hash)
-    ensure(all(digest((ROOT / name).read_bytes()) == value for name, value in runners.items()))
+    ensure((keys.stat().st_dev, keys.stat().st_ino, digest(keys.read_bytes())) == key_identity)
+    ensure(
+        all(
+            (
+                (ROOT / name).stat().st_dev,
+                (ROOT / name).stat().st_ino,
+                digest((ROOT / name).read_bytes()),
+            )
+            == value
+            for name, value in runners.items()
+        )
+    )
     print(json.dumps(dict(result, keys_unchanged=True, runners_unchanged=True, source_sha=sha)))
 
 

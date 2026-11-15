@@ -77,3 +77,52 @@ class InstallTests(unittest.TestCase):
             alias.symlink_to(lock)
             with self.assertRaises(RuntimeError):
                 t.acquire_install_lock(alias, staging=False)
+
+
+class ContinuityUpgradeTests(unittest.TestCase):
+    def test_only_known_current_pair_upgrades_preserving_original_backup_keys_runners(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original, dispatch, helper = (
+                b"original policy",
+                b"known current policy",
+                b"known current helper",
+            )
+            protected = {
+                "prod-guarded-dispatch.before-cloud-control.sh": original,
+                "authorized_keys": b"same key",
+                "deploy-production-guarded-run.sh": b"same runner",
+                "rollback-production-guarded.sh": b"same rollback",
+            }
+            for name, blob in dict(
+                protected, **{"prod-guarded-dispatch.sh": dispatch, "server-control.py": helper}
+            ).items():
+                (root / name).write_bytes(blob)
+                (root / name).chmod(0o700)
+            identities = {name: (root / name).stat().st_ino for name in protected}
+            blobs = {
+                "server-control.py": b"pass\n",
+                "prod-guarded-dispatch.sh": b"#!/bin/bash\nexit 0\n",
+            }
+            with (
+                patch.object(t, "BASE_DISPATCH", t.digest(original)),
+                patch.object(t, "CURRENT_DISPATCH", t.digest(dispatch)),
+                patch.object(t, "CURRENT_HELPER", t.digest(helper)),
+            ):
+                self.assertFalse(
+                    t.install(root, blobs, baseline_hash=t.digest(original))["installed"]
+                )
+                self.assertEqual((root / "server-control.py").read_bytes(), helper)
+                self.assertTrue(
+                    t.install(root, blobs, baseline_hash=t.digest(original), apply=True)["changed"]
+                )
+                self.assertFalse(
+                    t.install(root, blobs, baseline_hash=t.digest(original), apply=True)["changed"]
+                )
+            for name, blob in protected.items():
+                self.assertEqual((root / name).read_bytes(), blob)
+                self.assertEqual((root / name).stat().st_ino, identities[name])
+            self.assertEqual(
+                (root / "prod-guarded-dispatch.before-continuity.sh").read_bytes(), dispatch
+            )
+            self.assertEqual((root / "server-control.before-continuity.py").read_bytes(), helper)
