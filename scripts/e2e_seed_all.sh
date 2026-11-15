@@ -38,6 +38,9 @@ seed plan_week_stepper 990002
 seed builder_workouts 910001
 # issue #306: Live Engine v2 (автопереходы, пауза, интервал) — по пользователю на сценарий.
 for id in 930601 930602 930603 930604 930605 930606 930607 930608 930609 930610 930611 930612 930613 930614 930615 930616 930617 930618 930619 930620 930621 930622 930623 930624 930625 930626 930627 930628 930629; do seed live_engine "$id"; done
+# Delayed refresh / acknowledged pause ordering has an independent mutable identity.
+seed live_engine 930630
+seed live_engine 930631
 seed journal_v2 910002
 seed journal_calendar 970001
 seed journal_calendar 970002

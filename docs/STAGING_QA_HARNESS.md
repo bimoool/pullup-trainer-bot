@@ -36,6 +36,22 @@ release gate. `release-qa.yml` runs only the current v2 files described above an
 uploads synthetic screenshots only; it does not publish raw HTML/JSON reports,
 console bodies, traces or signed launch URLs.
 
+Release QA also prints a bounded diagnostic record: a fixed test identifier,
+browser/status enum, allowlisted spec basename and bounded numeric source lines,
+plus an allowlisted matcher name. Unknown input becomes `unknown`; raw error
+messages, stacks, snippets, URLs, expected/actual values and attachments are never
+serialized by this reporter. The original raw reports remain on the ephemeral
+runner. Screenshots remain the only uploaded release artifacts.
+
+The PR E2E workflow separately diagnoses the exact fresh current-v2 journey in
+WebKit against a real loopback API and isolated PostgreSQL database
+`pullup_qa_fresh_local`. It uses only the fixed synthetic `ci-test-token`, the
+reserved fresh identity and the existing onboarding/provisioning service helpers.
+Its seed refuses any other database/host/token. It has no staging/production
+secrets, provisioning access or dispatch input. This focused local diagnostic
+cannot replace full functional E2E, both deployed release-QA browsers or native
+Telegram acceptance.
+
 ```
 GitHub Actions (staging-qa.yml)                    VPS (staging only)
  ├─ job provision (optional) ── ssh forced cmd ──► ./qa-staging.sh provision|snapshot   (owner installs, see below)

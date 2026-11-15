@@ -3178,3 +3178,19 @@ uses a pasted HTTP403 as privilege evidence. A dedicated dispatch reservation
 and the existing global execution reservation retain at-most-once cloud
 execution. Old routes deny the new reservation; manual/global execution
 reservations deny all routes. A future ambiguity is reconciliation, not retry.
+
+## Live Engine: delayed refresh after acknowledged pause (2026-11-15)
+
+A real local PostgreSQL/API regression held an unpaused REST `/sessions/live/active`
+response, acknowledged the subsequent pause POST and emptied the device queue,
+then delivered the old GET. The screen incorrectly reverted to unpaused REST.
+The queue guard at request start was insufficient after its awaited response.
+Refresh checks a local mutation epoch and the latest accepted read ordinal before
+accepting a response, completion or failure. Starting another poll does not
+invalidate an in-flight read: when requests overlap, successful responses still
+make progress, while a response older than an already accepted outcome is ignored.
+The accepted ordinal advances only immediately before applying state or failure,
+including after the awaited completion fallback. Existing lifecycle and session-ID
+guards remain. A fresh GET still accepts an external device's resume event.
+This independently proves the ordering bug; it does not establish the cause of
+the earlier deployed WebKit failure from screenshots alone.
