@@ -99,7 +99,7 @@ def authorize_execution(api, env):
             incident.RECOVERY_COMMAND,
             require,
         )
-        incident.verify_recovery(api, require, owner)
+        incident.verify_recovery(api, require, owner, recovery_id, dispatcher_id)
     for run_id, workflow, event in (
         (dispatcher_id, dispatcher.DISPATCHER, "issue_comment"),
         (current_id, incident.WORKFLOW, "workflow_dispatch"),
@@ -157,7 +157,7 @@ def authorize_execution(api, env):
     if recovery_id:
         # Refresh terminal history and the global claim immediately before reservation.
         incident.verify_evidence(api, require)
-        incident.verify_recovery(api, require, owner)
+        incident.verify_recovery(api, require, owner, recovery_id, dispatcher_id)
     recovery_provenance = (
         incident.recovery_marker(recovery_id, dispatcher_id) + "\n" if recovery_id else ""
     )

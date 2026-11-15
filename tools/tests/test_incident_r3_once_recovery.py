@@ -332,6 +332,31 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(a.dispatched())
         self.assertTrue(any(RECOVERY_MARKER in c["body"] for c in a.comments))
 
+    def test_child_refreshes_recovery_approval_and_claim_before_reservation(self):
+        for case in ("claim_disappeared", "approval_edited", "ssh_changed"):
+            a = RecoveryAPI()
+            a.run()
+            original = a.__call__
+            listings = 0
+
+            def race(method, path, body=None, original=original, case=case, a=a):
+                nonlocal listings
+                result = original(method, path, body)
+                if method == "GET" and "/comments?" in path:
+                    listings += 1
+                    if listings == 2:
+                        if case == "claim_disappeared":
+                            a.comments.pop()
+                        elif case == "approval_edited":
+                            a.event["comment"]["updated_at"] += "edited"
+                        else:
+                            a.jobs[REFUSED_RUN]["jobs"][0]["steps"][5]["conclusion"] = "success"
+                return result
+
+            with self.subTest(case=case), self.assertRaises(d.Refused):
+                client.authorize_execution(race, a.env())
+            self.assertFalse(any(i.EXECUTION_MARKER in c["body"] for c in a.comments))
+
     def test_same_production_concurrency_and_single_reservation_precede_ssh(self):
 
         text = (

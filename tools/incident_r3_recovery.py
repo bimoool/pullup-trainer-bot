@@ -130,7 +130,7 @@ def trusted_run(api, require, run_id, workflow, event, actor, head, terminal=Non
     )
 
 
-def verify_recovery(api, require, owner):
+def verify_recovery(api, require, owner, recovery_id=None, dispatcher_id=None):
     """GET only: prove the original delivery terminated before its one SSH step."""
     owner_comment(
         api("GET", f"issues/comments/{ORIGINAL_REQUEST}"),
@@ -209,4 +209,20 @@ def verify_recovery(api, require, owner):
         sum(bot_comment(r) and RECOVERY_MARKER in r.get("body", "") for r in rows) <= 1,
         "incident multiple recovery dispatch claims",
     )
+    if recovery_id is not None:
+        owner_comment(
+            api("GET", f"issues/comments/{recovery_id}"),
+            owner,
+            recovery_id,
+            RECOVERY_COMMAND,
+            require,
+        )
+        recovery_claims = [
+            r for r in rows if bot_comment(r) and RECOVERY_MARKER in r.get("body", "")
+        ]
+        require(len(recovery_claims) == 1, "one durable incident recovery claim required")
+        require(
+            recovery_marker(recovery_id, dispatcher_id) in recovery_claims[0]["body"],
+            "incident recovery claim binding",
+        )
     return rows

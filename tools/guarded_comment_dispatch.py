@@ -225,7 +225,13 @@ def release_gates(api, operation, sha, inputs):
         )
         incident.verify_evidence(api, require)
         if operation == "incident-r3-recover":
-            incident.verify_recovery(api, require, api("GET", "")["owner"])
+            incident.verify_recovery(
+                api,
+                require,
+                api("GET", "")["owner"],
+                inputs.get("incident_recovery_comment_id"),
+                inputs.get("incident_dispatcher_run_id"),
+            )
         return
     if operation.startswith("server-"):
         if operation not in {"server-readiness", "server-receipt"}:
