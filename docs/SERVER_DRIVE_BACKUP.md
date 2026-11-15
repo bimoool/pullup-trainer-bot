@@ -143,7 +143,9 @@ if SQL reports no backend: an exec may still be starting before its connection
 appears. The remote command checks host boot-clock uptime before starting and
 uses only the remaining part of the 600-second window. PostgreSQL container and
 VPS must share that boot clock (the ordinary Docker setup, to verify at acceptance).
-Repeated TERM does not shorten cleanup waiting. If cleanup cannot be confirmed,
+Interrupted local child waits retry within their original five-second bound;
+the remote deadline wait also wraps local cleanup failures. Repeated TERM does
+not shorten cleanup waiting. If cleanup cannot be confirmed,
 the runner additionally records cleanup unconfirmed.
 The systemd stop allowance preserves this cleanup window. SIGKILL/power loss can
 only be reported as UNKNOWN; consult the private receipt and database state.
@@ -174,10 +176,16 @@ Tests in `tests/test_scripts/test_drive_backup.py` use synthetic bytes, fake
 Drive transport and temporary private files. They cover content corruption even
 when metadata matches, idempotency, ambiguous transfer, interrupted receipt,
 partial dump cleanup, private file permissions/symlinks, shared lock contention,
-and safe error reporting. The focused suite passed **22 tests**. The changed-content
+and safe error reporting. The focused suite passed **24 tests**. The changed-content
 test was also run with download comparison temporarily removed: it failed because
 the corrupted object was incorrectly VERIFIED, then passed with comparison restored.
 No provider success is claimed by those tests.
+
+Two local-cleanup interruption regressions were also run against the previous
+runner: both failed because the remote deadline wait was skipped. With the fix,
+repeated interrupted child waits still reap both children, run targeted SQL
+cleanup and retain the full deadline; an escaping local cleanup error also
+retains that deadline.
 
 The opt-in `test_drive_backup_real.py` passed **1 real synthetic drill** using only
 the existing local test PostgreSQL 16 container: create two disposable databases,

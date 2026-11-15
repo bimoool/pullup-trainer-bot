@@ -347,15 +347,22 @@ def stop_children(children):
     for child in children:
         if child is None:
             continue
-        try:
-            if child.poll() is None:
-                try:
-                    os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass  # It exited after poll; still reap it and clean every other child.
-            child.wait(timeout=5)
-        except (OSError, subprocess.SubprocessError):
-            stopped = False
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                if child.poll() is None:
+                    try:
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass  # It exited after poll; still reap it and clean every other child.
+                child.wait(timeout=max(0, deadline - time.monotonic()))
+                break
+            except Refused as exc:
+                require(str(exc) == "INTERRUPTED", "LOCAL_CLEANUP")
+                # Retry reaping this child without restarting its bounded wait.
+            except (OSError, subprocess.SubprocessError):
+                stopped = False
+                break
     return stopped
 
 
@@ -421,55 +428,60 @@ def encrypted_dump(path, recipient, operation):
             output.flush()
             os.fsync(output.fileno())
     finally:
-        failed = any(child is not None and child.poll() != 0 for child in (dump, encrypt))
-        stopped = stop_children((dump, encrypt))
-        if failed and dump is not None:
-            cleanup_confirmed = stopped
-            # Only this invocation's random PGAPPNAME. No database-wide cancellation.
-            query = (
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                "WHERE application_name='" + appname + "'"
-            )
-            try:
-                command(
-                    base
-                    + [
-                        "sh",
-                        "-c",
-                        (
-                            'exec psql -U "$POSTGRES_USER" '
-                            '-d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -At -c "$1"'
-                        ),
-                        "sh",
-                        query,
-                    ]
-                )
+        failed = True
+        try:
+            failed = any(child is not None and child.poll() != 0 for child in (dump, encrypt))
+            stopped = stop_children((dump, encrypt))
+            if failed and dump is not None:
+                cleanup_confirmed = stopped
+                # Only this invocation's random PGAPPNAME. No database-wide cancellation.
                 query = (
-                    "SELECT count(*) FROM pg_stat_activity WHERE application_name='" + appname + "'"
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE application_name='" + appname + "'"
                 )
-                require(
+                try:
                     command(
                         base
                         + [
                             "sh",
                             "-c",
-                            ('exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "$1"'),
+                            (
+                                'exec psql -U "$POSTGRES_USER" '
+                                '-d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -At -c "$1"'
+                            ),
                             "sh",
                             query,
                         ]
-                    ).strip()
-                    == b"0",
-                    "DUMP_CLEANUP",
-                )
-                require(stopped, "LOCAL_CLEANUP")
-            except (Refused, OSError, subprocess.SubprocessError):
-                cleanup_confirmed = False
-            finally:
+                    )
+                    query = (
+                        "SELECT count(*) FROM pg_stat_activity WHERE application_name='"
+                        + appname
+                        + "'"
+                    )
+                    require(
+                        command(
+                            base
+                            + [
+                                "sh",
+                                "-c",
+                                ('exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "$1"'),
+                                "sh",
+                                query,
+                            ]
+                        ).strip()
+                        == b"0",
+                        "DUMP_CLEANUP",
+                    )
+                    require(stopped, "LOCAL_CLEANUP")
+                except (Refused, OSError, subprocess.SubprocessError):
+                    cleanup_confirmed = False
+                if not cleanup_confirmed:
+                    raise Refused("DUMP_CLEANUP_UNCONFIRMED") from None
+        finally:
+            if failed and dump is not None:
                 # Backend absence cannot exclude an exec that has not connected yet.
-                # Always retain deployment locks through the absolute remote deadline.
+                # This also covers interruptions/errors during local child cleanup.
                 wait_dump_horizon(deadline)
-            if not cleanup_confirmed:
-                raise Refused("DUMP_CLEANUP_UNCONFIRMED") from None
 
 
 def load_settings():

@@ -412,3 +412,96 @@ def test_failed_dump_waits_absolute_horizon_despite_repeated_term(monkeypatch):
     backup.wait_dump_horizon(700)
     assert clock.current == 710
     assert all(0 < seconds <= 1 for seconds in clock.sleeps)
+
+
+def test_interrupted_local_cleanup_reaps_children_before_horizon(tmp_path, monkeypatch):
+    calls = []
+    clock = [100]
+
+    class Child:
+        def __init__(self, pid, returncode):
+            self.pid = pid
+            self.returncode = returncode
+            self.stdout = self
+            self.interruptions = 2 if pid == 123 else 0
+
+        def close(self):
+            pass
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout):
+            if self.pid == 456:
+                calls.append("encrypt-wait")
+                return 2
+            calls.append("dump-wait")
+            if self.interruptions:
+                self.interruptions -= 1
+                raise backup.Refused("INTERRUPTED")
+            self.returncode = -9
+            return self.returncode
+
+    children = [Child(123, None), Child(456, 2)]
+    pending = iter(children)
+
+    def command(args, **kwargs):
+        if "--version" not in args:
+            calls.append("count" if "SELECT count(*)" in args[-1] else "terminate")
+        return b"0\n"
+
+    def kill(pid, signum):
+        assert pid == 123 and signum == backup.signal.SIGKILL
+        calls.append("kill")
+
+    def sleep(seconds):
+        assert children[0].returncode == -9
+        assert children[0].interruptions == 0
+        assert "terminate" in calls and "count" in calls
+        clock[0] += seconds
+
+    monkeypatch.setattr(backup.subprocess, "Popen", lambda *args, **kwargs: next(pending))
+    monkeypatch.setattr(backup, "command", command)
+    monkeypatch.setattr(backup, "remaining", lambda limit=30: limit)
+    monkeypatch.setattr(backup.os, "killpg", kill)
+    monkeypatch.setattr(backup.time, "clock_gettime", lambda which: clock[0])
+    monkeypatch.setattr(backup.time, "sleep", sleep)
+    with pytest.raises(backup.Refused) as error:
+        backup.encrypted_dump(tmp_path / "output.age", tmp_path / "recipient", "backup-20261115")
+    assert clock[0] == 710
+    assert str(error.value) == "ENCRYPT_FAILED"
+    assert calls.count("dump-wait") == 3
+    assert calls.count("encrypt-wait") == 2
+
+
+def test_local_cleanup_exception_cannot_skip_dump_horizon(tmp_path, monkeypatch):
+    horizons = []
+
+    class Child:
+        stdout = None
+
+        def poll(self):
+            return 2
+
+        def wait(self, timeout):
+            return 2
+
+        def close(self):
+            pass
+
+    child = Child()
+    child.stdout = child
+
+    def stopped_then_interrupted(children):
+        assert all(item.poll() == 2 for item in children)
+        raise backup.Refused("INTERRUPTED")
+
+    monkeypatch.setattr(backup.subprocess, "Popen", lambda *args, **kwargs: child)
+    monkeypatch.setattr(backup, "command", lambda *args, **kwargs: b"0\n")
+    monkeypatch.setattr(backup, "remaining", lambda limit=30: limit)
+    monkeypatch.setattr(backup.time, "clock_gettime", lambda which: 100)
+    monkeypatch.setattr(backup, "stop_children", stopped_then_interrupted)
+    monkeypatch.setattr(backup, "wait_dump_horizon", horizons.append)
+    with pytest.raises(backup.Refused, match="^INTERRUPTED$"):
+        backup.encrypted_dump(tmp_path / "output.age", tmp_path / "recipient", "backup-20261115")
+    assert horizons == [700]
