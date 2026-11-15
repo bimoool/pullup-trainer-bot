@@ -1,10 +1,13 @@
 """GET /api/v2/plan (issue #165, волна 3)."""
 
+import pytest
+
 from app.db.models import User
 from app.db.models_program import Exercise, Program, ProgramItem
 from app.domain.multi_program import MetricType, ProgramStructureType, WeekPhase
 from tests.test_web._v2_client import v2_get, v2_post
 
+pytestmark = pytest.mark.usefixtures("plan_calendar")
 
 async def test_get_plan_for_unknown_telegram_id_is_404(session):
     response = await v2_get(session, telegram_id=60101, path="/api/v2/plan")

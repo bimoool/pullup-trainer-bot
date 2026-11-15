@@ -2,16 +2,17 @@
 создание manual PlanItem непосредственно внутри конкретной PlanWeek,
 ownership-проверка через get_plan_week_for_user."""
 
-from datetime import date
 
+import pytest
 from sqlalchemy import func, select
 
 from app.db.models import User
 from app.db.models_program import Complex, ComplexItem, Exercise, PlanItem
 from app.db.repositories.training_plans import TrainingPlanRepository
-from app.domain.multi_program import MetricType, WeekPhase
+from app.domain.multi_program import MetricType, WeekPhase, plan_week_start_date
 from tests.test_web._v2_client import v2_get, v2_post
 
+pytestmark = pytest.mark.usefixtures("plan_calendar")
 
 async def _make_exercise(session) -> Exercise:
     exercise = Exercise(name="Отжимания", metric_type=MetricType.REPS, category="test_synth")
@@ -26,7 +27,7 @@ async def test_create_plan_item_with_valid_plan_week_id_succeeds(session, user: 
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
     week = await plans.create_plan_week(
-        training_plan_id=plan.id, week_number=1, start_date=date(2026, 9, 21), phase=WeekPhase.BASE,
+        training_plan_id=plan.id, week_number=1, start_date=plan_week_start_date(plan.created_at.date(), 1), phase=WeekPhase.BASE,
     )
 
     response = await v2_post(
@@ -50,7 +51,7 @@ async def test_create_plan_item_with_plan_week_id_persists_correctly(session, us
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
     week = await plans.create_plan_week(
-        training_plan_id=plan.id, week_number=1, start_date=date(2026, 9, 21), phase=WeekPhase.BASE,
+        training_plan_id=plan.id, week_number=1, start_date=plan_week_start_date(plan.created_at.date(), 1), phase=WeekPhase.BASE,
     )
 
     create_response = await v2_post(
@@ -91,7 +92,7 @@ async def test_create_plan_item_with_foreign_plan_week_id_is_404(session, user: 
     plans = TrainingPlanRepository(session)
     other_plan = await plans.get_or_create_for_user(other_user.id)
     other_week = await plans.create_plan_week(
-        training_plan_id=other_plan.id, week_number=1, start_date=date(2026, 9, 21), phase=WeekPhase.BASE,
+        training_plan_id=other_plan.id, week_number=1, start_date=plan_week_start_date(other_plan.created_at.date(), 1), phase=WeekPhase.BASE,
     )
 
     # Пытаемся создать PlanItem для первого пользователя с week_id второго
@@ -116,7 +117,7 @@ async def test_create_plan_item_with_invalid_day_of_week_is_rejected(session, us
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
     week = await plans.create_plan_week(
-        training_plan_id=plan.id, week_number=1, start_date=date(2026, 9, 21), phase=WeekPhase.BASE,
+        training_plan_id=plan.id, week_number=1, start_date=plan_week_start_date(plan.created_at.date(), 1), phase=WeekPhase.BASE,
     )
 
     # day_of_week должен быть 0-6 или NULL
@@ -220,7 +221,7 @@ async def test_manual_item_appears_in_get_plan_within_plan_week(session, user: U
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
     week = await plans.create_plan_week(
-        training_plan_id=plan.id, week_number=1, start_date=date(2026, 9, 21), phase=WeekPhase.BASE,
+        training_plan_id=plan.id, week_number=1, start_date=plan_week_start_date(plan.created_at.date(), 1), phase=WeekPhase.BASE,
     )
 
     create_response = await v2_post(

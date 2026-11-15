@@ -295,3 +295,11 @@ legacy reconciliation, global compatibility, hash and stopped-writer guards rema
 No schema, account/history repair, production action or controller change occurs.
 Next: mandatory full CI, native and independent review, then trusted-main integration
 and controlled guard adoption before precise production preflight; no diagnostic apply.
+
+Calendar follow-up in the same primary PR addresses the twelve canonical CI
+fixture failures without changing production calendar rules. Opt-in pytest plan
+fixtures and the finite-identity synthetic E2E harness share explicit calendar
+inputs; all other identities and live timers retain ordinary behavior. Focused
+backend/guard/rollover/isolation checks: 180 passed. Local browser setup is blocked
+by the provider's pinned Chromium download denial, so final hosted visual/full
+E2E proof remains mandatory. No old workflow rerun substitutes for final-head CI.

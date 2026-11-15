@@ -387,7 +387,7 @@ require_candidate_planless_zero() {
   classification="$(git show "$SHA:scripts/sql/planless_classification.sql" 2>/dev/null | python3 -I -c '
 import hashlib, sys
 raw = sys.stdin.buffer.read(32769)
-if len(raw) > 32768 or hashlib.sha256(raw).hexdigest() != "0f570c2ddd2c6a5645c6ca5face5f17780d8558dfcf872c5516491c6247c46ed":
+if len(raw) > 32768 or hashlib.sha256(raw).hexdigest() != "17c2e0370136bb884c49ca7f39fafe07dfc57031db75e175fad39e660d70e35c":
     raise SystemExit(1)
 sys.stdout.write(raw.decode("ascii"))
 ' 2>/dev/null)" || { echo 'PLANLESS-CANDIDATE {"status":"QUERY_UNAVAILABLE"}' >&7; return 1; }

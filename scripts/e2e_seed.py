@@ -753,7 +753,8 @@ async def seed_plans_overview(session: AsyncSession, telegram_id: int) -> None:
 
     service = ProgramInclusionService(session)
     for target in (course, removable):
-        await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id, course_inputs=_V5_E2E_INPUTS))
+        inclusion = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id, course_inputs=_V5_E2E_INPUTS))
+        inclusion.started_at = datetime.now(UTC)  # Same explicit seed calendar as the overview fixtures.
     ended = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=past.id, course_inputs=_V5_E2E_INPUTS))
     ended.is_active = False
     ended.started_at = datetime.now(UTC) - timedelta(days=40)
@@ -828,7 +829,7 @@ async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> Exer
     plan = TrainingPlan(user_id=user.id)
     session.add(plan)
     await session.flush()
-    today = datetime.now(UTC).date()
+    today = datetime.now(UTC).astimezone(ZoneInfo(user.timezone)).date()
     week_number = plan_week_number(plan.created_at.date(), today)
     week = await TrainingPlanRepository(session).create_plan_week(
         training_plan_id=plan.id, week_number=week_number,

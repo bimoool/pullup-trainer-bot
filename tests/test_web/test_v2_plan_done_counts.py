@@ -4,6 +4,8 @@
 
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
 from app.db.models import User
 from app.db.models_program import (
     Exercise,
@@ -22,7 +24,10 @@ from app.domain.multi_program import (
     plan_week_number,
     plan_week_start_date,
 )
+from app.web import routes_v2
 from tests.test_web._v2_client import v2_get
+
+pytestmark = pytest.mark.usefixtures("plan_calendar")
 
 
 def test_count_done_pure_week_bounds():
@@ -37,13 +42,14 @@ def test_count_done_pure_week_bounds():
 async def _setup(session, user: User):
     exercise = Exercise(name="Планка", metric_type=MetricType.TIME, category="core", source_type="system")
     session.add(exercise)
-    plan = TrainingPlan(user_id=user.id, created_at=datetime.now(UTC) - timedelta(days=14))
+    today = routes_v2._plan_today(user)
+    plan = TrainingPlan(user_id=user.id, created_at=_noon(today - timedelta(days=14)))
     session.add(plan)
     await session.flush()
     # Текущую неделю GET создал бы сам (ensure_current_plan_week); создаём
     # заранее по тем же правилам, чтобы привязать к ней items.
     created = plan.created_at.date()
-    number = plan_week_number(created, datetime.now(UTC).date())
+    number = plan_week_number(created, today)
     weeks = {}
     for n in (number - 1, number):
         week = PlanWeek(

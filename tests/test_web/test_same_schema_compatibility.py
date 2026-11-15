@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Gender
 from app.db.models_program import TrainingPlan
+from app.domain.multi_program import is_plannable_week_number, plan_week_number
 from app.services.onboarding import OnboardingService
 from scripts.backfill_multi_program import seed_catalog, verify_compatible_database
 from tests.test_scripts.test_backfill_multi_program import NOW, _guarded_database_hashes
 from tests.test_web._v2_client import v2_get, v2_post
 from tests.test_web.test_v2_plan_items_with_week import _make_exercise, _make_workout
 from tests.test_web.test_v2_plan_overview import _program
+
+pytestmark = pytest.mark.usefixtures("plan_calendar")
 
 
 async def _verify(session):
@@ -104,6 +107,18 @@ async def test_public_runtime_plan_states_are_compatible_without_onboarding(
     assert result["counts"]["non_onboarded_with_plan"] == 1
     assert result["counts"]["training_plans_total"] == 1
     assert await _guarded_database_hashes(session) == before
+
+
+@pytest.mark.parametrize("created,today,expected_week", [
+    (date(2026, 11, 15), date(2026, 11, 15), 1),
+    (date(2026, 11, 15), date(2026, 11, 16), 2),
+    (date(2026, 5, 31), date(2026, 6, 1), 2),
+    (date(2028, 12, 31), date(2029, 1, 1), 2),
+])
+def test_fresh_empty_plan_forward_week_stays_valid_at_calendar_boundaries(created, today, expected_week):
+    current_week = plan_week_number(created, today)
+    assert current_week == expected_week
+    assert is_plannable_week_number(2, current_week)
 
 
 @pytest.mark.parametrize(

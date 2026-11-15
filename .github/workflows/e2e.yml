@@ -151,7 +151,9 @@ jobs:
 
       - name: Start API server
         run: |
-          nohup uvicorn app.web.main:app --port 8001 > uvicorn.log 2>&1 &
+          export E2E_PLAN_CALENDAR_AT="$(python -c 'from datetime import UTC, datetime; print(datetime.now(UTC).isoformat())')"
+          echo "E2E_PLAN_CALENDAR_AT=$E2E_PLAN_CALENDAR_AT" >> "$GITHUB_ENV"
+          nohup uvicorn tests.support.e2e_calendar_app:app --host 127.0.0.1 --port 8001 > uvicorn.log 2>&1 &
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8001/health && exit 0
             sleep 1
@@ -161,6 +163,8 @@ jobs:
       - name: Seed E2E scenarios
         # not_onboarded (900001) не сеет ничего — статус означает
         # отсутствие строки users, см. scripts/e2e_seed.py::seed_not_onboarded.
+        env:
+          E2E_CALENDAR_FIXTURE: "1"
         run: scripts/e2e_seed_all.sh
 
       - name: Install Playwright

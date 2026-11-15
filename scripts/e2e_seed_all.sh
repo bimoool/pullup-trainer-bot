@@ -7,7 +7,13 @@ set -euo pipefail
 # e2e_seed.py импортирует пакет scripts.* — корень репозитория должен быть в sys.path.
 export PYTHONPATH="${PYTHONPATH:-.}"
 PY="${PYTHON:-python}"
-seed() { "$PY" scripts/e2e_seed.py "$1" "$2"; }
+seed() {
+  if [ "${E2E_CALENDAR_FIXTURE:-}" = "1" ]; then
+    "$PY" -m tests.support.e2e_calendar_seed "$1" "$2"
+  else
+    "$PY" scripts/e2e_seed.py "$1" "$2"
+  fi
+}
 seed first_workout 900002
 seed ready 900003
 seed v2_session_ready 900010

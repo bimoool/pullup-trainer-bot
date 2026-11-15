@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 
 from app.db.models import SubscriptionStatus
 from app.db.models_program import (
@@ -449,6 +450,9 @@ async def test_terminal_engine_protocols_and_extra_sets_remain_compatible(
         "cursor_block",
         "cursor_set",
         "cursor_huge",
+        "log_index_huge",
+        "log_set_huge",
+        "log_round_huge",
     ],
 )
 async def test_completed_engine_cache_must_satisfy_actual_readers(
@@ -509,6 +513,33 @@ async def test_completed_engine_cache_must_satisfy_actual_readers(
                 },
                 at,
             )
+    elif tamper.startswith("log_"):
+        key = {
+            "log_index_huge": "log_index",
+            "log_set_huge": "set_index",
+            "log_round_huge": "round_index",
+        }[tamper]
+        state["logs"][0][key] = 10**20
+        log = state["logs"][0]
+        _, effects = engine_domain.advance(
+            plan,
+            state,
+            {
+                "type": "correct_previous",
+                "payload": {
+                    "block_index": log["block_index"],
+                    "set_index": log["set_index"],
+                    "round_index": log["round_index"],
+                    "value": 9,
+                },
+            },
+            at,
+        )
+        with pytest.raises(DBAPIError):
+            async with session.begin_nested():
+                await LiveEngineService(session)._write_log(
+                    sid, plan, effects[0]["log"], corrected=True
+                )
     elif tamper.startswith("cursor_"):
         state["cursor"]["block_index" if tamper == "cursor_block" else "set_index"] = (
             100000000000000000000 if tamper == "cursor_huge" else 1

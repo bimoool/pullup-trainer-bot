@@ -103,11 +103,14 @@ WITH session_facts AS (
                         OR EXISTS (SELECT 1 FROM unnest(ARRAY['log_index','block_index','set_index']) k
                             WHERE jsonb_typeof(l->k) IS DISTINCT FROM 'number'
                                 OR NOT COALESCE(l->>k ~ '^[0-9]+$', false))
+                        OR l->'log_index' > '32767'::jsonb
+                        OR l->'set_index' > '32766'::jsonb
                         OR l->'block_index' >= to_jsonb(jsonb_array_length(
                             CASE WHEN jsonb_typeof(s.engine_plan->'blocks')='array'
                                 THEN s.engine_plan->'blocks' ELSE '[]'::jsonb END))
                         OR NOT COALESCE(l->'round_index'='null'::jsonb
                             OR (jsonb_typeof(l->'round_index')='number' AND l->>'round_index' ~ '^[0-9]+$'), false)
+                        OR (l->'round_index'<>'null'::jsonb AND l->'round_index' > '32767'::jsonb)
                         OR jsonb_typeof(l->'is_extra') IS DISTINCT FROM 'boolean'
                         OR NOT COALESCE(jsonb_typeof(l->'value') IN ('number','null'), false)
                         OR NOT COALESCE(jsonb_typeof(l->'effort') IN ('number','null'), false)
