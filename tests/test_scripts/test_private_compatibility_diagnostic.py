@@ -155,3 +155,28 @@ def test_untrusted_private_evidence_is_unavailable(diagnostic, mutation, tmp_pat
 def test_phase_two_manifest_rejects_actual_later_phase_markers(diagnostic, key):
     diagnostic.manifest.write_text(diagnostic.manifest.read_text() + key + "=" + SECRET + "\n")
     assert diagnostic.run()["status"] == "DIAG_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("shadow", ["cwd_json", "pythonpath_json", "sitecustomize"])
+def test_host_sanitizer_never_imports_checkout_or_environment_code(tmp_path, shadow):
+    import subprocess
+
+    source = GUARD.read_text()
+    function = source[source.index("safe_compatibility_diagnostic() {"):source.index("\nrollback_hint() {")]
+    cwd, injected = tmp_path / "checkout", tmp_path / "injected"
+    cwd.mkdir()
+    injected.mkdir()
+    marker = tmp_path / "executed-private-module"
+    directory = cwd if shadow == "cwd_json" else injected
+    module = "sitecustomize.py" if shadow == "sitecustomize" else "json.py"
+    (directory / module).write_text(
+        f"open({str(marker)!r}, 'w').write({SECRET!r})\nprint({SECRET!r})\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", "exec 7>&1\n" + function + "\nsafe_compatibility_diagnostic historical"],
+        cwd=cwd, env={**os.environ, "PYTHONPATH": str(injected)},
+        capture_output=True, text=True, check=False, timeout=15,
+    )
+    assert SECRET not in proc.stdout + proc.stderr
+    assert not marker.exists(), "host sanitizer executed an injected Python module"
+    assert proc.returncode == 0 and "COMPAT-DIAG " in proc.stdout

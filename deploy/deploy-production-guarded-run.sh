@@ -129,7 +129,7 @@ envkey_is() { grep -qxF "$1=$2" "$PROD_DIR/.env"; }
 # Host-only sanitizer: never execute candidate code or export private verifier text.
 # Historical evidence is bound to one failed before-stop run, never an admission result.
 safe_compatibility_diagnostic() {
-  python3 - "$1" "${2:-before-stop}" "${WORK:-}" 2>/dev/null <<'COMPAT_DIAGNOSTIC_PY' >&7 || echo 'COMPAT-DIAG {"status":"DIAG_UNAVAILABLE"}' >&7
+  python3 -I - "$1" "${2:-before-stop}" "${WORK:-}" 2>/dev/null <<'COMPAT_DIAGNOSTIC_PY' >&7 || echo 'COMPAT-DIAG {"status":"DIAG_UNAVAILABLE"}' >&7
 import json
 import os
 import re
