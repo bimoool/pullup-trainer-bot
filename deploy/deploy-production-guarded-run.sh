@@ -300,6 +300,73 @@ rollback_hint() {
   fi
 }
 
+# Current overlapping source counts only: no verdict, row payload or candidate code.
+# Fixed literal SQL, explicit server-enforced read-only snapshot and bounded waits.
+safe_planless_source_diagnostic() {
+  local sql result
+  sql="$(cat <<'PLANLESS_SOURCE_SQL'
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '5s';
+SET LOCAL lock_timeout = '1s';
+SET LOCAL idle_in_transaction_session_timeout = '5s';
+WITH planless AS (
+  SELECT u.id FROM users u WHERE NOT EXISTS (SELECT 1 FROM training_plans p WHERE p.user_id=u.id)
+), sources AS (
+  SELECT u.id,
+    EXISTS (SELECT 1 FROM workouts w WHERE w.user_id=u.id) AS workouts,
+    EXISTS (SELECT 1 FROM elective_workouts e WHERE e.user_id=u.id) AS electives,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id) AS sessions,
+    EXISTS (SELECT 1 FROM workouts_archive_v1 a WHERE a.user_id=u.id) AS archive_v1,
+    EXISTS (SELECT 1 FROM workouts_archive_admin_reset a WHERE a.user_id=u.id) AS archive_reset,
+    EXISTS (SELECT 1 FROM workout_sets s WHERE s.user_id=u.id AND s.workouts_completed>0) AS progress,
+    EXISTS (SELECT 1 FROM workout_sets_archive_v1 a WHERE a.user_id=u.id AND a.workouts_completed>0) AS progress_v1,
+    EXISTS (SELECT 1 FROM workout_sets_archive_admin_reset a WHERE a.user_id=u.id AND a.workouts_completed>0) AS progress_reset,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND s.origin='native' AND s.status='completed') AS native_completed,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND s.status='started') AS active,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND (s.program_inclusion_id IS NOT NULL
+      OR s.plan_item_id IS NOT NULL OR EXISTS (SELECT 1 FROM session_plan_items l WHERE l.session_id=s.id))) AS linked,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id
+      AND (s.origin IS NULL OR s.origin NOT IN ('native','legacy_backfill','legacy_elective'))) AS unknown_origin,
+    EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id
+      AND s.origin='legacy_backfill' AND s.superseded_at IS NOT NULL) AS superseded_legacy,
+    EXISTS (SELECT 1 FROM training_sessions s JOIN session_blocks b ON b.session_id=s.id
+      JOIN exercises e ON e.id=b.exercise_id WHERE s.user_id=u.id AND s.origin='native'
+      AND e.subcategory IN ('block_a','block_b')) AS native_step
+  FROM planless u
+)
+SELECT /*planless-source-aggregate*/ array_to_string(ARRAY[
+  CASE WHEN current_setting('transaction_read_only')='on' THEN 1 ELSE 0 END,
+  count(*), count(*) FILTER (WHERE workouts), count(*) FILTER (WHERE electives),
+  count(*) FILTER (WHERE sessions), count(*) FILTER (WHERE archive_v1), count(*) FILTER (WHERE archive_reset),
+  count(*) FILTER (WHERE progress), count(*) FILTER (WHERE progress_v1), count(*) FILTER (WHERE progress_reset),
+  count(*) FILTER (WHERE native_completed), count(*) FILTER (WHERE active), count(*) FILTER (WHERE linked),
+  count(*) FILTER (WHERE unknown_origin), count(*) FILTER (WHERE superseded_legacy), count(*) FILTER (WHERE native_step)
+], '|') FROM sources;
+ROLLBACK;
+PLANLESS_SOURCE_SQL
+)"
+  result="$(dbq "$sql" 2>/dev/null)" || { echo 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' >&7; return 0; }
+  printf '%s\n' "$result" | python3 -I -c '
+import json, re, sys
+keys = ("USERS_TOTAL", "WORKOUTS", "ELECTIVE_WORKOUTS", "TRAINING_SESSIONS", "WORKOUTS_ARCHIVE_V1",
+        "WORKOUTS_ARCHIVE_ADMIN_RESET", "WORKOUT_SETS", "WORKOUT_SETS_ARCHIVE_V1",
+        "WORKOUT_SETS_ARCHIVE_ADMIN_RESET", "NATIVE_COMPLETED_SESSIONS", "ACTIVE_SESSIONS",
+        "LINKED_SESSIONS", "UNKNOWN_SESSION_ORIGINS", "SUPERSEDED_LEGACY_SESSIONS", "NATIVE_STEP_SESSIONS")
+try:
+    raw = sys.stdin.read(4097)
+    rows = [line for line in raw.splitlines() if line not in ("BEGIN", "SET", "ROLLBACK")]
+    if len(raw) > 4096 or len(rows) != 1 or not re.fullmatch(r"1(?:\|[0-9]{1,10}){15}", rows[0]):
+        raise ValueError()
+    values = list(map(int, rows[0].split("|")[1:]))
+    if any(value > 1_000_000_000 for value in values) or any(value > values[0] for value in values[1:]):
+        raise ValueError()
+    result = {"scope":"CURRENT_SOURCES_NOT_RELEASE_ACCEPTANCE", "status":"SOURCE_COUNTS", "counts":dict(zip(keys, values))}
+except Exception:
+    result = {"status":"DIAG_UNAVAILABLE"}
+print("PLANLESS-SOURCES " + json.dumps(result, sort_keys=True, separators=(",", ":")))
+' 2>/dev/null >&7 || echo 'PLANLESS-SOURCES {"status":"DIAG_UNAVAILABLE"}' >&7
+}
+
 summary() {
   echo "---- state for rollback (docs/PRODUCTION_RUNBOOK.md §7) ----"
   echo "mode            : $MODE   target sha: $SHA"
@@ -476,6 +543,7 @@ if pgrep -f 'deploy-staging(-guarded)?-run\.sh' >/dev/null 2>&1; then die "a sta
 
 if [ "$MODE" = "preflight" ]; then
   safe_compatibility_diagnostic historical
+  safe_planless_source_diagnostic
   log "PREFLIGHT OK (read-only): nothing was fetched, stopped, built, migrated, tagged or written; target $SHA, prod HEAD $PREV_SHA, alembic $PREV_REV"
   exit 0
 fi
@@ -734,7 +802,7 @@ fi
 hash_all dry-run2
 cmp -s "$WORK/hq_all_apply2.txt" "$WORK/hq_all_dry-run2.txt" || die "post-apply backfill --dry-run wrote to the database"
 if [ "$VERIFY_EXISTING" = "1" ]; then
-  log "runtime-compatible database unchanged: dry-run proposes $COMPAT_EMPTY empty-user plans; none applied"
+  log "runtime-compatible database unchanged: dry-run proposes $COMPAT_EMPTY planless-user plans; none applied"
 else
   log "backfill idempotent: re-run migrated 0, skipped $ONB; post-apply dry-run: will migrate 0; database unchanged"
 fi
@@ -773,7 +841,7 @@ if [ "$VERIFY_EXISTING" = "1" ]; then
   cp "$WORK/verify_final.txt" "$REPORT_DIR/6-verify-compatible-final.txt"
   hash_all final
   cmp -s "$WORK/hq_all_control.txt" "$WORK/hq_all_final.txt" || die "final verify-compatible wrote to the database"
-  log "runtime compatibility invariants: verified; plans=$COMPAT_PLANS empty_onboarded=$COMPAT_EMPTY non_onboarded_plans=$COMPAT_OTHER_PLAN"
+  log "runtime compatibility invariants: verified; plans=$COMPAT_PLANS compatible_planless_onboarded=$COMPAT_EMPTY non_onboarded_plans=$COMPAT_OTHER_PLAN"
 else
 inv onboarded-without-plan "select /*inv:noplan*/ count(*) from users u where u.onboarding_completed_at is not null and not exists (select 1 from training_plans p where p.user_id = u.id)"
 inv plans-without-one-active-inclusion "select /*inv:inclusion*/ count(*) from training_plans p where (select count(*) from program_inclusions i where i.training_plan_id = p.id and i.is_active) <> 1"
