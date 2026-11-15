@@ -56,6 +56,24 @@ test("validation blocks nonsense and never yields NaN", () => {
   assert.equal(buildProtocol({ ...base, kind: "max_effort", attempts: 0 }).ok, false);
 });
 
+test("every time field rejects non-finite and fractional seconds", () => {
+  const base = draftFromProtocol(null);
+  const fields = [
+    ["reps_sets", "restSeconds"], ["time_sets", "restSeconds"],
+    ["time_sets", "durationSeconds"], ["max_effort", "maxRestSeconds"],
+    ["interval", "totalSeconds"], ["interval", "workSeconds"],
+    ["interval", "intervalRestSeconds"],
+  ] as const;
+  for (const [kind, field] of fields) {
+    for (const value of [NaN, Infinity, -Infinity, 1.5, -1]) {
+      assert.equal(buildProtocol({ ...base, kind, [field]: value }).ok, false, `${kind}.${field}=${value}`);
+    }
+  }
+  for (const kind of ["reps_sets", "time_sets", "max_effort", "interval"] as const) {
+    assert.equal(buildProtocol({ ...base, kind, restSeconds: 0, maxRestSeconds: 0, intervalRestSeconds: 0 }).ok, true);
+  }
+});
+
 test("existing protocol round-trips through draft without loss", () => {
   const p = { type: "interval", total_duration_seconds: 240, work_seconds: 20, rest_seconds: 10, starts_with: "rest" };
   const built = buildProtocol(draftFromProtocol(p));

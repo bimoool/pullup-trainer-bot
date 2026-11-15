@@ -1139,7 +1139,7 @@ async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
         (reps -> interval -> max 21 того же упражнения) 8 дней назад — новый
         рекорд;
       * граничная сессия: понедельник текущей ЛОКАЛЬНОЙ недели 00:30 по
-        местному времени (в UTC это воскресенье прошлой недели);
+        местному времени, но не позднее now (в UTC это воскресенье прошлой недели);
     в окне 30 дней ровно 4 сессии."""
     from zoneinfo import ZoneInfo
 
@@ -1191,6 +1191,8 @@ async def seed_analytics_v2(session: AsyncSession, telegram_id: int) -> None:
     local_today = now.astimezone(tz).date()
     local_monday = local_today - timedelta(days=local_today.weekday())
     boundary = datetime.combine(local_monday, datetime.min.time(), tzinfo=tz) + timedelta(minutes=30)
+    # Before local Monday 00:30, keep the completed fixture in this week and out of the future.
+    boundary = min(boundary, now)
     await add(boundary, [(pull, reps, [5], None)])
     await session.flush()
 

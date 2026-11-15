@@ -65,6 +65,7 @@ seed home_workouts 920001
 seed home_workouts 920002
 seed home_workouts 920003
 seed home_workouts 920004
+seed home_workouts 920005  # Builder rest/reps validation, persistence and retry
 seed home_discovery 940001
 seed home_discovery 940002
 seed workout_detail 950001
