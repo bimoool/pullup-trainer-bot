@@ -206,6 +206,7 @@ if args[0] == "exec":
     if target == "postgres":
         if "ALTER DATABASE" in sql:
             if env.get("FAIL_SWAP"): sys.exit(1)
+            st["swap_sql"] = sql
             st["swapped"] = True; st["rev"] = st.get("dump_rev", st["rev"]); st["v2_version"] = 0; st["legacy_changed"] = False; save(); sys.exit(0)
         if "pg_stat_activity" in sql: out("0"); sys.exit(0)
         sys.exit(0)
@@ -836,6 +837,11 @@ def test_r3_restores_the_dump_into_a_new_db_swaps_and_starts_previous_images(san
     assert all(i >= 0 for i in order) and order == sorted(order), (order, log)
     assert not any("dropdb" in line for line in log), "R3 never drops the live database (it is renamed and kept)"
     assert state["swapped"] is True and state["rev"] == OLD_REV
+    assert re.fullmatch(
+        r"BEGIN; ALTER DATABASE pullup RENAME TO pullup_failed_\d{14}; "
+        r"ALTER DATABASE pullup_rb_\d{14} RENAME TO pullup; COMMIT;\s*",
+        state["swap_sql"],
+    )
     assert state["container"] == {"app": "sha256:old-app", "web": "sha256:old-web"}
     assert state["running"] == {"app": True, "web": True}
     assert "DATA LOSS WINDOW" in proc.stdout and "ROLLBACK R3 OK" in proc.stdout

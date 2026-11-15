@@ -219,10 +219,18 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
 Порядок: проверка дампа (sha256 = manifest, оглавление, свободный диск ≥ 3 × дамп + 1 ГБ) → `stop app web`, 0 соединений
 → восстановление в **новую** БД `pullup_rb_<ts>` (`--single-transaction --exit-on-error`), в ней `alembic_version` =
 `previous_alembic` и счётчики `users/workouts/elective_workouts/subscriptions` = manifest → **одной транзакцией**
-`ALTER DATABASE pullup RENAME TO pullup_failed_<ts>; ALTER DATABASE pullup_rb_<ts> RENAME TO pullup` (атомарность
-переименования проверена на `postgres:16`) → прежние образы и checkout → `up -d` → `/health` → проверка ID.
+`BEGIN; ALTER DATABASE pullup RENAME TO pullup_failed_<ts>; ALTER DATABASE pullup_rb_<ts> RENAME TO pullup; COMMIT;`
+(реальные PostgreSQL 16 регрессии проверяют отказ каждого rename и прерывание backend между ними)
+→ прежние образы и checkout → `up -d` → `/health` → проверка ID.
 Живая БД не удаляется: она остаётся как `pullup_failed_<ts>`. Удалить её владелец может сам, когда данные окна
 разобраны.
+
+При потере соединения около `COMMIT` ответ мог потеряться уже после фиксации обоих rename.
+Сервисы остаются остановлены: проверить все три имени БД из ошибки и manifest, не повторять apply вслепую.
+Версия до исправления #411 отправляла SQL в stdin `psql` без `BEGIN`: два rename были отдельными
+транзакциями и отказ второго мог оставить имя `pullup` отсутствующим. Репозиторный фикс сам по себе
+не обновляет установленный rollback-скрипт; принятие возможно только через отдельно проверенный
+controller bundle после release gates, без перезаписи установленного файла вручную.
 
 ### 7.4 Окно потери данных R3
 
@@ -276,8 +284,9 @@ cd /root && git -C /root/pullup-trainer-bot fetch origin        # preflight са
   на репетиции. Если повторный apply законно трогает какие-то поля (например, временные метки), скрипт откажет; это
   надо увидеть на репетиции, а не в окне.
 * Совместимость старого кода с новой схемой (R2), поведение FSM в Redis после смены хендлеров, кэш старого бандла Mini App.
-* `pg_restore --single-transaction` R3 на прод-дампе и атомарная перестановка БД — проверены только на пустой
-  `postgres:16` локально; на прод-дампе — на репетиции §4 п. 7.
+* `pg_restore --single-transaction` R3 на прод-дампе — на репетиции §4 п. 7. Пара rename с явным
+  `BEGIN`/`COMMIT` проверена на отдельных синтетических БД PostgreSQL 16 с историей и архивом:
+  успех, отказ первого/второго rename, прерывание backend между ними. Это не проверка всего production R3.
 * Выкатываемый SHA должен содержать `628144f`; `aa9270e` его не содержит (§1).
 
 ## 10. Выкат из GitHub Actions (постоянный ручной путь)

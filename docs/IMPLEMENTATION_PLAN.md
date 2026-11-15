@@ -1,5 +1,15 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Candidate R3 rename transaction #411 — 2026-11-15
+
+Explicit `BEGIN`/`COMMIT` fixes the two database renames in the repository rollback
+script. Synthetic PostgreSQL 16 regressions first reproduced the absent live name
+on second-rename failure and backend interruption; the fix passes those cases,
+first-rename failure and successful retention of failed history. Existing shell
+guard regressions remain. Draft review and full required CI precede integration.
+The installed runner remains unchanged; separately reviewed controller-bundle
+adoption after current release gates is future work. No server or R3 action ran.
+
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 
 Отдельный aggregate QA-кандидат включает reviewed #384 (явный launch platform) и

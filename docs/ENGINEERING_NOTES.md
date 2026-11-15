@@ -11,6 +11,23 @@
 > продуктовое поведение: при расхождении с `PROJECT_SPEC.md` прав `PROJECT_SPEC.md`
 > (а над обоими — `.specify/memory/constitution.md`).
 
+## R3: psql stdin does not make database renames atomic (#411, 2026-11-15)
+
+`adminq` feeds SQL to `psql` on stdin. Without an explicit transaction each
+`ALTER DATABASE ... RENAME` commits independently. On synthetic PostgreSQL
+16.15, a late connection rejecting rename two and a terminated backend between
+the statements both left the live name absent, with the failed and restored
+databases retained. The real regression executes the source helper and swap
+command, rather than a rewritten SQL equivalent.
+
+The pair now uses explicit `BEGIN`/`COMMIT`. Both failures roll back the first
+rename; success keeps the failed database and moves the restored copy to the
+live name. Tests compare names, database OIDs/metadata, schema, history and archive
+rows, plus an unrelated synthetic sentinel. A connection lost at COMMIT can still
+leave the outcome unknown: stop writers and inspect names; never claim that
+every client error means nothing committed. No production reproduction, runner
+installation or recovery action is part of this fix.
+
 ## REBUILD-1: заметки реконструкции (post-Phase-D)
 
 Что и как восстановлено — `docs/IMPLEMENTATION_PLAN.md`; принятое поведение —

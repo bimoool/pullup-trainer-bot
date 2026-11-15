@@ -1388,3 +1388,14 @@ existing no-database-overwrite, unchanged-schema/no-backfill server guards.
 Incident-wide and execution claims prohibit replay, including through another
 PR or manual child dispatch. Exact grammar, actual installation state and the
 one-time administrative prerequisite are in `CLOUD_SERVER_CONTROL.md`.
+
+### Guarded R3 database rename transaction (#411)
+
+After the existing backup, restore, schema/count, image and zero-connections
+checks, the rollback script renames the live and verified restored databases
+inside explicit `BEGIN`/`COMMIT`. Failure before commit rolls back both renames;
+the failed database is retained after success. A lost COMMIT reply leaves the
+outcome uncertain and services stopped pending inspection of the exact three
+database names; it does not authorize another apply. The repository change does
+not update the installed rollback script. Future adoption requires a separately
+reviewed controller bundle and existing release gates. See runbook §7.3.
