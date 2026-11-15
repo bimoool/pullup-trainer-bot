@@ -117,7 +117,9 @@ merges. Use the exact reviewed controller bootstrap in
 [complete controller bundles](CLOUD_SERVER_CONTROL.md#complete-controller-bundles-406).
 It installs the stable `/root/bin/control-plane-backup.py` local launcher and
 known service/timer definitions **disabled**; it refuses unknown/enabled/active
-units. It does not authenticate, reload systemd, install packages, enable a timer
+units, loaded drop-ins and applicable on-disk exact/prefix/global overrides even
+before systemd loads them. It does not remove existing overrides, authenticate,
+reload systemd, install packages, enable a timer
 or run a dump. Existing legacy `/root/bin/drive-backup.py`, if present, is retained
 with its inode and bytes and is never selected by the new unit.
 

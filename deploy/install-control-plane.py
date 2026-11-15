@@ -15,6 +15,24 @@ LEDGER = Path("/root/backups/cloud-controller")
 REPO = Path("/root/pullup-trainer-bot")
 UNIT_ROOT = Path("/etc/systemd/system")
 UNITS = ("pullup-drive-backup.service", "pullup-drive-backup.timer")
+SYSTEMD_ROOTS = tuple(
+    Path(value)
+    for value in (
+        "/etc/systemd/system.control",
+        "/run/systemd/system.control",
+        "/run/systemd/transient",
+        "/run/systemd/generator.early",
+        "/etc/systemd/system",
+        "/etc/systemd/system.attached",
+        "/run/systemd/system",
+        "/run/systemd/system.attached",
+        "/run/systemd/generator",
+        "/usr/local/lib/systemd/system",
+        "/usr/lib/systemd/system",
+        "/lib/systemd/system",
+        "/run/systemd/generator.late",
+    )
+)
 CURRENT = {
     "prod-guarded-dispatch.sh": "daaa8e739e8a57518723193789c5911288e176ccbd2f7cf4ccfd62078b0db429",
     "server-control.py": "3c6061c60a452bb682f80aead0efc98c4cbdf1159c4b94ab623f616a657af5da",
@@ -42,17 +60,24 @@ def unit_state(name):
         ("enabled", ["is-enabled", name]),
         ("active", ["is-active", name]),
         ("fragment", ["show", "--property=FragmentPath", "--value", name]),
+        ("dropins", ["show", "--property=DropInPaths", "--value", name]),
     ):
         result = subprocess.run(
             ["systemctl", *arguments], capture_output=True, text=True, timeout=20, check=False
         )
         if result.returncode not in {0, 1, 3, 4}:
             raise RuntimeError("SYSTEMD_STATE_UNAVAILABLE")
+        if (
+            field in {"fragment", "dropins"}
+            and result.returncode != 0
+            and values.get("enabled") != "not-found"
+        ):
+            raise RuntimeError("SYSTEMD_STATE_UNAVAILABLE")
         values[field] = result.stdout.strip()
     return values
 
 
-def schedule_check(c, unit_root, units, read_state):
+def schedule_check(c, unit_root, units, read_state, dropin_roots):
     c.trusted(unit_root, directory=True)
     c.require(set(units) == set(UNITS), "UNIT_FILES")
     for name in UNITS:
@@ -72,6 +97,19 @@ def schedule_check(c, unit_root, units, read_state):
             "SCHEDULE_NOT_DISABLED",
         )
         c.require(state.get("fragment") in {"", str(target)}, "UNKNOWN_SYSTEMD_FRAGMENT")
+        c.require(state.get("dropins") == "", "UNKNOWN_SYSTEMD_DROPINS")
+        # Refuse overrides even if systemd has not loaded/reloaded them. Names
+        # cover this fixed unit, both hyphen prefixes, and global type drop-ins.
+        stem, kind = name.rsplit(".", 1)
+        parts = stem.split("-")
+        folders = {name + ".d", kind + ".d"}
+        folders.update(
+            "-".join(parts[:index]) + "-." + kind + ".d" for index in range(1, len(parts))
+        )
+        for directory in {unit_root, *dropin_roots}:
+            for folder in folders:
+                path = directory / folder
+                c.require(not path.exists() and not path.is_symlink(), "UNKNOWN_SYSTEMD_DROPINS")
 
 
 def write_unit(c, target, blob):
@@ -107,6 +145,7 @@ def install(
     unit_blobs,
     unit_root=UNIT_ROOT,
     read_state=unit_state,
+    dropin_roots=SYSTEMD_ROOTS,
     apply=False,
     expected=None,
 ):
@@ -136,7 +175,7 @@ def install(
     if scheduled.exists() or scheduled.is_symlink():
         c.trusted(scheduled, private=True)
         c.require(scheduled.read_bytes() == scheduled_blob, "UNKNOWN_SCHEDULE_LAUNCHER")
-    schedule_check(c, unit_root, unit_blobs, read_state)
+    schedule_check(c, unit_root, unit_blobs, read_state, dropin_roots)
     for directory in (base, base / "releases", ledger):
         if directory.exists() or directory.is_symlink():
             c.trusted(directory, directory=True, private=True)
@@ -202,7 +241,7 @@ def install(
         c.atomic(scheduled, scheduled_blob, exclusive=True, mode=0o700, event="bootstrap-schedule")
     for name in UNITS:
         write_unit(c, unit_root / name, unit_blobs[name])
-    schedule_check(c, unit_root, unit_blobs, read_state)
+    schedule_check(c, unit_root, unit_blobs, read_state, dropin_roots)
     control = c.Supervisor(base, ledger)
     reference = control.stage(sha, tree, blobs)
     initial = {

@@ -288,6 +288,10 @@ nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher
 It also installs the stable local backup launcher and the two exact reviewed
 systemd unit files. It refuses unknown units/launchers, enabled or active units,
 and unexpected loaded unit fragments before changing files. Known disabled units
+also require empty loaded `DropInPaths` and no applicable exact-unit, hyphen-prefix
+or global-type drop-in directories in standard systemd load locations, including
+unloaded/runtime overrides and symlinks. Unknown overrides are refused, never
+removed or modified by bootstrap. Known disabled units
 retain their inodes. Systemd calls only inspect state: no daemon reload, enable,
 start, authentication, package installation or backup runs occur in bootstrap.
 Actual activation requires the separate provisioning/recovery evidence in

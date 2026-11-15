@@ -50,6 +50,7 @@ def install(binary, ledger, candidate, expected, apply=True, read_state=None):
             "enabled": "disabled",
             "active": "inactive",
             "fragment": str(unit_root / name) if (unit_root / name).exists() else "",
+            "dropins": "",
         }
     return i.install(
         c,
@@ -64,12 +65,92 @@ def install(binary, ledger, candidate, expected, apply=True, read_state=None):
         unit_blobs=UNITS,
         unit_root=unit_root,
         read_state=read_state,
+        dropin_roots=(unit_root, binary.parent / "runtime-units"),
         apply=apply,
         expected=expected,
     )
 
 
 class InstallTests(unittest.TestCase):
+    def test_loaded_service_and_timer_dropins_refuse_before_any_bootstrap_write(self):
+        for selected in UNITS:
+            with self.subTest(unit=selected), tempfile.TemporaryDirectory() as directory:
+                binary, ledger, candidate, expected = fixture(Path(directory))
+                state = lambda name, selected=selected: {
+                    "enabled": "disabled",
+                    "active": "inactive",
+                    "fragment": "",
+                    "dropins": "/run/systemd/system/" + selected + ".d/override.conf"
+                    if name == selected
+                    else "",
+                }
+                with self.assertRaisesRegex(c.Refused, "UNKNOWN_SYSTEMD_DROPINS"):
+                    install(binary, ledger, candidate, expected, read_state=state)
+                self.assertFalse((binary / "control-plane").exists())
+                self.assertFalse((binary / "control-plane-supervisor.py").exists())
+
+    def test_unloaded_exact_prefix_and_global_service_timer_overrides_refuse(self):
+        for kind in ("service", "timer"):
+            for directory_name in (
+                f"pullup-drive-backup.{kind}.d",
+                f"pullup-drive-.{kind}.d",
+                f"pullup-.{kind}.d",
+                f"{kind}.d",
+            ):
+                with (
+                    self.subTest(folder=directory_name),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
+                    binary, ledger, candidate, expected = fixture(Path(directory))
+                    override = binary.parent / "units" / directory_name
+                    override.mkdir()
+                    value = (
+                        "[Service]\nExecStart=\nExecStart=/root/bin/drive-backup.py\n"
+                        if kind == "service"
+                        else "[Timer]\nOnCalendar=\nOnCalendar=hourly\n"
+                    )
+                    (override / "unknown.conf").write_text(value)
+                    with self.assertRaisesRegex(c.Refused, "UNKNOWN_SYSTEMD_DROPINS"):
+                        install(binary, ledger, candidate, expected)
+                    self.assertFalse((binary / "control-plane").exists())
+                    self.assertFalse((binary / "control-plane-supervisor.py").exists())
+
+    def test_unloaded_runtime_and_symlink_dropins_also_block_dry_run(self):
+        for case in ("runtime", "symlink"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                binary, ledger, candidate, expected = fixture(Path(directory))
+                runtime = binary.parent / "runtime-units"
+                runtime.mkdir()
+                if case == "runtime":
+                    override = runtime / "pullup-drive-backup.service.d"
+                    override.mkdir()
+                    (override / "unknown.conf").write_text("[Service]\nExecStart=/unreviewed\n")
+                else:
+                    (binary.parent / "units/pullup-drive-backup.timer.d").symlink_to(
+                        runtime / "missing"
+                    )
+                with self.assertRaisesRegex(c.Refused, "UNKNOWN_SYSTEMD_DROPINS"):
+                    install(binary, ledger, candidate, expected, apply=False)
+                self.assertFalse((binary / "control-plane").exists())
+
+    def test_loaded_unit_dropin_query_failure_refuses_unknown_effective_config(self):
+        from unittest.mock import patch
+
+        def result(code, output):
+            return type("Result", (), {"returncode": code, "stdout": output})()
+
+        responses = [
+            result(0, "disabled\n"),
+            result(3, "inactive\n"),
+            result(0, "/etc/systemd/system/pullup-drive-backup.timer\n"),
+            result(1, ""),
+        ]
+        with (
+            patch.object(i.subprocess, "run", side_effect=responses),
+            self.assertRaisesRegex(RuntimeError, "SYSTEMD_STATE_UNAVAILABLE"),
+        ):
+            i.unit_state("pullup-drive-backup.timer")
+
     def test_bootstrap_provisions_only_disabled_fixed_schedule(self):
         with tempfile.TemporaryDirectory() as directory:
             binary, ledger, candidate, expected = fixture(Path(directory))
@@ -111,7 +192,7 @@ class InstallTests(unittest.TestCase):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
                 binary, ledger, candidate, expected = fixture(Path(directory))
                 unit = binary.parent / "units/pullup-drive-backup.timer"
-                state = {"enabled": "disabled", "active": "inactive", "fragment": ""}
+                state = {"enabled": "disabled", "active": "inactive", "fragment": "", "dropins": ""}
                 if case == "enabled":
                     state["enabled"] = "enabled"
                 elif case == "active":
@@ -150,6 +231,13 @@ class InstallTests(unittest.TestCase):
                     "systemctl",
                     "show",
                     "--property=FragmentPath",
+                    "--value",
+                    "pullup-drive-backup.timer",
+                ],
+                [
+                    "systemctl",
+                    "show",
+                    "--property=DropInPaths",
                     "--value",
                     "pullup-drive-backup.timer",
                 ],
