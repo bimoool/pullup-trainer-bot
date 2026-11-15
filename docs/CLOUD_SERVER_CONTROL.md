@@ -208,8 +208,9 @@ step and skipped SSH. The public metadata reconstructs valid guards; its histori
 HTTP/guard cause is **UNKNOWN**, because the old client discarded those details.
 This capability does not claim to repair that historical provider failure.
 
-After independent review, mandatory checks and trusted-main integration, a
-separate owner decision may post this **exact** new, unedited command on PR #399:
+This first delivery capability was consumed by owner comment 6896948857 and
+its durable claim. The command is retained here for audit; do not repost/rerun it:
+
 
 ```text
 /pullup incident-r3-recover e9f32dd194aab140f63c445e0c2d2eddf59b2b91 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039 6895994270 43724033626 43724053051
@@ -238,3 +239,77 @@ change adds at-most-once **cloud** execution admission, without changing the R3
 runner or asserting that recovery completed. Failure diagnostics contain only
 allowlisted stage/guard/failure codes, numeric HTTP status or null, and
 `RECONCILE_NO_REPLAY`; no URL, body, token or exception detail is printed.
+
+### Execution claim permission and manual exclusion
+
+Recovery child 43730752868/job 132862408612 ended at admission before SSH, with
+`failure=HTTP`, `http_status=403`, `stage=CLAIM_WRITE`, and no global execution
+claim. Its owner request is 6896948857 and dispatcher 43730724401. The body/reason
+of that 403 was not retained, so its precise cause remains **UNKNOWN**. The older
+43724053051 failure's cause also remains UNKNOWN.
+
+The rollback workflow now explicitly grants `pull-requests: write`, matching the
+working comment-writing dispatcher/server-control workflows. GitHub documents
+[create issue comment](https://docs.github.com/en/rest/issues/comments#create-an-issue-comment)
+as accepting Issues(write) or Pull requests(write). Aligning the explicit PR
+permission is a compatibility correction; it does not prove the historical 403's
+cause. No content/action permission is broadened. A future 403 diagnostic may
+emit only an allowlisted exact message enum and bounded numeric remaining/limit/
+reset/retry-after values. Unknown, malformed or oversized messages stay UNKNOWN;
+no response body, URL, token, arbitrary header or exception detail is printed.
+
+Both old incident admissions also recognize this exact owner-authored reservation
+on PR #399, **only after a separate owner decision to reserve manual execution**:
+
+```text
+<!-- pullup-incident-r3-manual-execution-reserved-v1:43691971076 -->
+MANUAL R3 EXECUTION RESERVED e9f32dd194aab140f63c445e0c2d2eddf59b2b91 6895994270 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039
+```
+
+The full body must match exactly, and the live author identity/OWNER association
+and PR binding must match the repository owner. It denies cloud admission before
+new dispatch/execution reservations. Preserve this comment permanently, including
+after manual execution; do not edit or delete it. A marker alone, proposal prose,
+quoted proposal or another author cannot reserve execution. Publishing this code
+or proposal does not post a reservation and does not authorize a manual action.
+This exclusion coordinates the separately controlled manual route; GitHub comments
+cannot atomically lock out an already admitted/in-flight SSH operation. Before
+manual reservation/action, reconcile the current runs and execution claims and
+prove no cloud execution is active. The existing server locks remain required.
+
+Both prior dispatch claims are retained. The fixed second-delivery capability
+below supplies a separate reviewed admission without replaying either exhausted
+route. Never delete claims, rerun a failed child or substitute a new manifest/incident.
+
+### Second and final fixed failed-before-SSH delivery
+
+After independent/native review, mandatory checks and trusted-main integration,
+a separate owner approval on PR #399 may use this exact unedited command:
+
+```text
+/pullup incident-r3-redeliver e9f32dd194aab140f63c445e0c2d2eddf59b2b91 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039 6895994270 6896948857 43730724401 43730752868
+```
+
+This capability is fixed to original owner approval 6895994270 and the first
+recovery approval 6896948857/dispatcher 43730724401/failed child 43730752868/job
+132862408612 at trusted head f6bf15dafa03dd1aa74c4353d7099a8b3563c9e7. It uses
+existing structured GitHub metadata only; the recorded HTTP403 is descriptive,
+not a privilege/admission assertion. Both old child run/job identities and latest
+first attempts must remain terminal failures with the exact known step topology:
+admission failed, SSH skipped. All original deploy/check evidence, immutable
+owner comments, owner/bot actor and triggering-actor identities, trusted heads,
+and both original dispatch claims must remain unchanged and uniquely bound.
+
+A new original owner comment and first-attempt trusted-main dispatcher reserve
+one dedicated `pullup-incident-r3-redelivery-v1:43730752868` claim before dispatch.
+The new first-attempt bot child binds that claim to the new approval/dispatcher,
+refreshes the entire fixed evidence/approval/claim chain and both execution
+exclusions immediately before reserving the **same** global incident execution
+marker under production concurrency. Both older paths deny a redelivery claim.
+A global execution reservation or explicit owner manual reservation denies all
+three paths. Unknown, pending, changed, duplicate or ambiguous evidence refuses;
+uncertain POST/dispatch/SSH outcomes require reconciliation and never replay.
+There is no generic retry, caller-selected incident, new server operation,
+manifest/token change, automatic retry or third delivery capability. Existing
+forced SSH command, server locks and rollback runner remain unchanged. Publishing
+or integrating this capability does not approve or perform recovery.

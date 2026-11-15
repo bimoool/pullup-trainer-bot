@@ -55,6 +55,11 @@ def authorize_execution(api, env):
         "incident provenance IDs required",
     )
     recovery_id = env.get("INCIDENT_RECOVERY_COMMENT_ID", "")
+    redelivery_id = env.get("INCIDENT_REDELIVERY_COMMENT_ID", "")
+    require(
+        not redelivery_id or re.fullmatch(r"[1-9][0-9]{0,19}", redelivery_id),
+        "incident provenance IDs required",
+    )
     require(
         not recovery_id or re.fullmatch(r"[1-9][0-9]{0,19}", recovery_id),
         "incident provenance IDs required",
@@ -83,7 +88,23 @@ def authorize_execution(api, env):
         api("GET", f"pulls/{incident.PR_NUMBER}"), incident.PR_NUMBER, incident.CANDIDATE
     )
     incident.verify_evidence(api, require)
-    if recovery_id:
+    if redelivery_id:
+        require(
+            request_id == str(incident.ORIGINAL_REQUEST)
+            and recovery_id == str(incident.PARENT_REQUEST),
+            "incident redelivery parent binding",
+        )
+        require(
+            redelivery_id not in {request_id, recovery_id},
+            "new incident redelivery approval required",
+        )
+        require(
+            dispatcher_id
+            not in {str(incident.ORIGINAL_DISPATCHER), str(incident.PARENT_DISPATCHER)},
+            "new incident dispatcher required",
+        )
+        incident.verify_redelivery(api, require, owner, redelivery_id, dispatcher_id)
+    elif recovery_id:
         require(
             request_id == str(incident.ORIGINAL_REQUEST),
             "incident recovery original request binding",
@@ -126,6 +147,7 @@ def authorize_execution(api, env):
             "incident workflow provenance changed",
         )
     rows = comments(api)
+    incident.no_manual_execution(rows, owner, require)
     claims = [
         row for row in rows if bot_comment(row) and incident.CLAIM_MARKER in row.get("body", "")
     ]
@@ -141,11 +163,16 @@ def authorize_execution(api, env):
     if recovery_id:
         require(len(recovery_claims) == 1, "one durable incident recovery claim required")
         require(
-            incident.recovery_marker(recovery_id, dispatcher_id) in recovery_claims[0]["body"],
+            incident.recovery_marker(
+                recovery_id, incident.PARENT_DISPATCHER if redelivery_id else dispatcher_id
+            )
+            in recovery_claims[0]["body"],
             "incident recovery claim binding",
         )
     else:
         require(not recovery_claims, "incident multiple recovery dispatch claims")
+    if not redelivery_id:
+        incident.no_redelivery(rows, require)
     require(
         not any(
             bot_comment(row) and incident.EXECUTION_MARKER in row.get("body", "") for row in rows
@@ -154,13 +181,27 @@ def authorize_execution(api, env):
     )
     # Production workflow concurrency serializes this check-and-claim. Persist before SSH;
     # ambiguity on POST stops this run, and the durable marker blocks every subsequent run.
-    if recovery_id:
+    if redelivery_id:
+        incident.verify_evidence(api, require)
+        incident.verify_redelivery(api, require, owner, redelivery_id, dispatcher_id)
+    elif recovery_id:
         # Refresh terminal history and the global claim immediately before reservation.
         incident.verify_evidence(api, require)
         incident.verify_recovery(api, require, owner, recovery_id, dispatcher_id)
+    else:
+        final_rows = comments(api)
+        incident.no_manual_execution(final_rows, owner, require)
+        incident.no_redelivery(final_rows, require)
     recovery_provenance = (
         incident.recovery_marker(recovery_id, dispatcher_id) + "\n" if recovery_id else ""
     )
+    if redelivery_id:
+        recovery_provenance = (
+            incident.recovery_marker(recovery_id, incident.PARENT_DISPATCHER)
+            + "\n"
+            + incident.redelivery_marker(redelivery_id, dispatcher_id)
+            + "\n"
+        )
     claim = api(
         "POST",
         f"issues/{incident.PR_NUMBER}/comments",
@@ -188,7 +229,8 @@ def main(api=github_api):
         require(
             not env.get("INCIDENT_REQUEST_COMMENT_ID")
             and not env.get("INCIDENT_DISPATCHER_RUN_ID")
-            and not env.get("INCIDENT_RECOVERY_COMMENT_ID"),
+            and not env.get("INCIDENT_RECOVERY_COMMENT_ID")
+            and not env.get("INCIDENT_REDELIVERY_COMMENT_ID"),
             "incident provenance cannot select another rollback",
         )
 
