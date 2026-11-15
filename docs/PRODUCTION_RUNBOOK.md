@@ -354,9 +354,9 @@ one active course and one plan per onboarded user. Every stopped-state refusal
 leaves writers stopped for the existing guarded recovery decision.
 
 A successful fingerprint comparison only proves this run preserved its input.
-It does not certify an incident-modified database as a new baseline: classify
-that state separately or recover from the original verified backup before
-running the forward rehearsal. No history or plan repair is authorized by
+It does not certify an incident-modified database as a new baseline: reconcile
+that state against the original stopped-writer snapshot, or recover from the
+original verified backup while preserving the failed database, before forwarding. No history or plan repair is authorized by
 compatibility verification.
 
 Before using it on production:
@@ -370,8 +370,9 @@ Before using it on production:
    release. If performed, isolate the copy, disable outbound Telegram and save
    verifier JSON, fingerprints, rollback and plan dry-run reports. The waiver
    does not waive exact-SHA CI, synthetic PostgreSQL/guard regression checks or
-   separate classification of the prior failed state (or recovery from the
-   original verified backup). Synthetic tests do not certify that incident state.
+   reconciliation of the failed state against the original stopped-writer
+   snapshot (or verified original-backup recovery preserving the failed
+   database). Synthetic tests do not certify that incident state.
 3. Review/install the production runner from the exact tested commit at the path
    used by the forced-command dispatcher. Record its sha256. Do not substitute
    a candidate without `--verify-compatible` support; it will safely refuse before stop.

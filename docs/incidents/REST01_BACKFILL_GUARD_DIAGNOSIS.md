@@ -55,4 +55,5 @@ APIs, including a mixed migrated-history/removed-course/empty-onboarding case.
 The old mutating-backfill negative control still changes exactly four tables
 (`training_plans`, `program_inclusions`, `plan_weeks`, `plan_items`). Preserving
 a received database does not certify a previously failed run as a new baseline;
-that state needs separate classification or recovery from the original backup.
+that state must be reconciled against the original stopped-writer snapshot, or
+recovered from the original verified backup while preserving the failed database.
