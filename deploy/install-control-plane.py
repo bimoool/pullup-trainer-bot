@@ -36,7 +36,8 @@ SYSTEMD_ROOTS = tuple(
 CURRENT = {
     "prod-guarded-dispatch.sh": "daaa8e739e8a57518723193789c5911288e176ccbd2f7cf4ccfd62078b0db429",
     "server-control.py": "3c6061c60a452bb682f80aead0efc98c4cbdf1159c4b94ab623f616a657af5da",
-    "deploy-production-guarded-run.sh": "c97a36be89bbce6782ca181a641327be69b3c27e1d91d1810da7a90b57fe4b35",
+    # Expected only after the primary release's separately verified NEWLIVE.
+    "deploy-production-guarded-run.sh": "986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966",
     "rollback-production-guarded.sh": "6286544abbe156e4d9725a005f37ecd9fb7e69ac34945a9fd1085e8a55a60bbd",
 }
 

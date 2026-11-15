@@ -72,6 +72,93 @@ def install(binary, ledger, candidate, expected, apply=True, read_state=None):
 
 
 class InstallTests(unittest.TestCase):
+    def known_profile(self, path, production):
+        binary, ledger, candidate, _ = fixture(path)
+        represented_hashes = {}
+        for name in c.FILES:
+            value = (
+                production
+                if name == "deploy-production-guarded-run.sh"
+                else ("# recorded installed profile " + name + "\n").encode()
+            )
+            (binary / name).write_bytes(value)
+            if name != "deploy-production-guarded-run.sh":
+                represented_hashes[value] = i.CURRENT[name]
+        candidate["deploy-production-guarded-run.sh"] = production
+        return binary, ledger, candidate, represented_hashes
+
+    def test_default_post_newlive_profile_accepts_only_reviewed986_source(self):
+        from unittest.mock import patch
+
+        expected = "986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966"
+        production = (ROOT / "deploy/deploy-production-guarded-run.sh").read_bytes()
+        self.assertEqual(c.digest(production), expected)
+        actual_digest = c.digest
+        with tempfile.TemporaryDirectory() as directory:
+            binary, ledger, candidate, represented = self.known_profile(Path(directory), production)
+            before = ((binary / "deploy-production-guarded-run.sh").stat().st_ino, production)
+            with patch.object(
+                c, "digest", side_effect=lambda value: represented.get(value, actual_digest(value))
+            ):
+                self.assertTrue(install(binary, ledger, candidate, None)["installed"])
+                control = c.Supervisor(binary / "control-plane", ledger)
+                selected = control.bundle(control.activation()["active"])
+                self.assertEqual(
+                    c.read_json(selected / "bundle.json")["files"][
+                        "deploy-production-guarded-run.sh"
+                    ],
+                    expected,
+                )
+            self.assertEqual(
+                (
+                    (binary / "deploy-production-guarded-run.sh").stat().st_ino,
+                    (binary / "deploy-production-guarded-run.sh").read_bytes(),
+                ),
+                before,
+            )
+
+    def test_default_profile_refuses_old_c97_temporary785_and_source_mismatch(self):
+        from unittest.mock import patch
+
+        actual_digest = c.digest
+        old_hashes = (
+            "c97a36be89bbce6782ca181a641327be69b3c27e1d91d1810da7a90b57fe4b35",
+            "785" + "0" * 61,
+        )
+        for old in old_hashes:
+            with self.subTest(old=old), tempfile.TemporaryDirectory() as directory:
+                production = ("#!/bin/bash\n# synthetic old profile " + old + "\nexit 0\n").encode()
+                binary, ledger, candidate, represented = self.known_profile(
+                    Path(directory), production
+                )
+                represented[production] = old
+                with (
+                    patch.object(
+                        c,
+                        "digest",
+                        side_effect=lambda value, represented=represented: represented.get(
+                            value, actual_digest(value)
+                        ),
+                    ),
+                    self.assertRaisesRegex(c.Refused, "UNKNOWN_INSTALLED_FILE"),
+                ):
+                    install(binary, ledger, candidate, None)
+                self.assertFalse((binary / "control-plane").exists())
+        with tempfile.TemporaryDirectory() as directory:
+            production = (ROOT / "deploy/deploy-production-guarded-run.sh").read_bytes()
+            binary, ledger, candidate, represented = self.known_profile(Path(directory), production)
+            candidate["deploy-production-guarded-run.sh"] = b"#!/bin/bash\nexit 9\n"
+            with (
+                patch.object(
+                    c,
+                    "digest",
+                    side_effect=lambda value: represented.get(value, actual_digest(value)),
+                ),
+                self.assertRaisesRegex(c.Refused, "BOOTSTRAP_RUNNER_CHANGED"),
+            ):
+                install(binary, ledger, candidate, None)
+            self.assertFalse((binary / "control-plane").exists())
+
     def test_known_legacy_rollback_is_only_bootstrap_baseline_not_active_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             binary, ledger, candidate, expected = fixture(Path(directory))

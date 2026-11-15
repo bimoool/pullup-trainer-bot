@@ -281,7 +281,7 @@ git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sh
 ```
 
 The installer requires fresh local origin/main tree equality and the recorded
-PR404 helper/dispatcher pair plus the cloud-adopted production runner `c97a36…`
+PR404 helper/dispatcher pair plus the post-NEWLIVE production runner `986d8358…`
 and the known installed rollback baseline. Unknown files/modes/symlinks refuse. It writes only
 the new supervisor, complete initial bundle/activation, private controller ledger,
 nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher.
@@ -302,6 +302,17 @@ active bundle selects the reviewed rollback source and records its computed
 hash. The combined candidate includes PR412's atomic database-swap repair and
 PR413's current admission/manual-reservation controls. No installed rollback
 file is overwritten and no database operation is performed during bootstrap.
+
+The expected production guard is the exact reviewed PR416 `a78cf3a` source,
+SHA256 `986d83582657348a03edf675d069d6b99d6a09f4b43744762f6a0ea9bde4e966`.
+The temporary installed `785…` diagnostic guard and old `c97…` are refused;
+bootstrap cannot replace them with its source or accept them as another known
+version. Source equality and a guard hash are not primary runtime acceptance:
+the coordinator must first verify primary NEWLIVE and the corresponding guard
+receipt, then all combined gates/reviews. Prepared job `6897648541` remains
+NOT STARTED with its window CLOSED until those prerequisites and the exact
+combined source head are pinned. No OAuth or disaster-recovery readiness is
+implied by this source candidate, installation plan, or backup transport code.
 Legacy helpers/runners retain bytes and inodes; authorized_keys, existing backups,
 locks, production checkout, services and data remain unchanged. Known interrupted
 bootstrap states can resume; unknown activation or supervisor bytes refuse.
