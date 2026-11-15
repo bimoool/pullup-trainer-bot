@@ -373,3 +373,32 @@ diff `plan_weeks/plan_items/program_inclusions`), затем новый ранн
 production-VPS 1 ГБ может оказаться слишком мал — тогда тот же скрипт запускают на другом Linux-хосте с Docker
 (`REHEARSE_DUMP=<путь к копии дампа>`, рядом должен лежать `.sha256`).
 Успешная репетиция не разрешает apply: apply остаётся отдельным явным шагом.
+
+## Fixed incident R3 owner-command admission (2026-11-15)
+
+The incident-only adapter in `tools/incident_r3_recovery.py` binds one recovery to
+PR #399, its failed production candidate, the reviewed failed apply and successful
+R3 check run/job pairs, and the exact R3 manifest/confirmation. It adds no server
+command or credential: it dispatches the existing `production-rollback.yml` on
+trusted `main`, preserving production concurrency, environment approval and every
+installed rollback check.
+
+After independent review, merge, and the owner's separate explicit approval of
+this R3 recovery, the authenticated owner (or the owner's explicitly authorized
+connector) can post the exact `COMMAND` defined in that module on PR #399. Creating
+or merging this adapter is not approval to post the command or recover production.
+Other commands, candidates, PRs and rollback inputs cannot use this admission.
+
+The dispatcher rechecks the live, unedited owner comment and the exact latest
+attempts of the reviewed evidence, then persists an incident-wide dispatch claim
+before requesting the fixed workflow. Immediately before SSH, the child rechecks
+owner/PR/input/evidence bindings, trusted main provenance, bot actor and triggering
+actor, first attempts and the original dispatcher claim. Under production workflow
+concurrency it persists a separate incident-wide execution claim. Direct manual
+dispatch, reruns and duplicate owner comments cannot replay this incident.
+
+A dispatch or execution claim is a reservation, not proof of recovery. An uncertain
+API or SSH outcome requires inspecting the existing run and approved operational
+receipts; do not delete claims, retry, or post another recovery command. This
+adapter reads GitHub metadata only and does not inspect production rows, dumps or
+raw logs. The same-head deployment guard repair is a separate change.
