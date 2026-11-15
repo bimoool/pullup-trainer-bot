@@ -3185,8 +3185,12 @@ A real local PostgreSQL/API regression held an unpaused REST `/sessions/live/act
 response, acknowledged the subsequent pause POST and emptied the device queue,
 then delivered the old GET. The screen incorrectly reverted to unpaused REST.
 The queue guard at request start was insufficient after its awaited response.
-Refresh now checks both a local mutation epoch and the latest read request before
-accepting a response, completion or failure. Existing lifecycle and session-ID
+Refresh checks a local mutation epoch and the latest accepted read ordinal before
+accepting a response, completion or failure. Starting another poll does not
+invalidate an in-flight read: when requests overlap, successful responses still
+make progress, while a response older than an already accepted outcome is ignored.
+The accepted ordinal advances only immediately before applying state or failure,
+including after the awaited completion fallback. Existing lifecycle and session-ID
 guards remain. A fresh GET still accepts an external device's resume event.
 This independently proves the ordering bug; it does not establish the cause of
 the earlier deployed WebKit failure from screenshots alone.

@@ -97,4 +97,91 @@ test("a refresh captured before pause cannot replace its acknowledged state; a f
   await (await oldDelivered).finished();
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(page.getByTestId("engine-phase")).toHaveText("Отдых · пауза");
+
+  // Slow overlapping polls must make progress before the newest request finishes.
+  // Actual external changes produce A=running, B=paused, C=running; all three reads are held.
+  await page.unroute(activeUrl);
+  const gates = [false, true, false].map((paused) => {
+    let captured!: () => void;
+    let release!: () => void;
+    return {
+      paused,
+      captured: new Promise<void>((resolve) => { captured = resolve; }),
+      held: new Promise<void>((resolve) => { release = resolve; }),
+      capture: () => captured(), release: () => release(),
+    };
+  });
+  let read = 0;
+  await page.route(activeUrl, async (route) => {
+    const gate = gates[read++];
+    if (!gate) return route.continue();
+    const response = await route.fetch();
+    const body = await response.json();
+    expect(body.session.engine.state.paused_at !== null).toBe(gate.paused);
+    gate.capture();
+    await gate.held;
+    await route.fulfill({ response });
+  });
+  for (const gate of gates) {
+    const changed = await page.request.post(`/api/v2/sessions/live/${session.id}/events`, {
+      headers, data: { events: [{
+        client_event_id: crypto.randomUUID(), type: gate.paused ? "pause" : "resume",
+        payload: { phase_seq: session.engine.state.phase_seq }, client_at: new Date().toISOString(),
+      }] },
+    });
+    expect(changed.ok()).toBe(true);
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await gate.captured;
+  }
+  for (const index of [0, 2, 1]) {
+    const delivered = page.waitForResponse((response) => response.url().endsWith("/api/v2/sessions/live/active"));
+    gates[index].release();
+    await (await delivered).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    // A applies while B/C are pending; after C is accepted, late B cannot rewind the screen.
+    await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
+  }
+
+  // A newer failed read also supersedes older snapshots; a later successful read clears that error.
+  await page.unroute(activeUrl);
+  let captureErrorOld!: () => void;
+  let releaseErrorOld!: () => void;
+  const errorOldCaptured = new Promise<void>((resolve) => { captureErrorOld = resolve; });
+  const errorOldHeld = new Promise<void>((resolve) => { releaseErrorOld = resolve; });
+  let errorRead = 0;
+  await page.route(activeUrl, async (route) => {
+    if (errorRead++ === 0) {
+      const response = await route.fetch();
+      expect((await response.json()).session.engine.state.paused_at).not.toBeNull();
+      captureErrorOld();
+      await errorOldHeld;
+      return route.fulfill({ response });
+    }
+    // Explicit transient network fault; preceding and following snapshots use the real API.
+    return route.fulfill({ status: 503, contentType: "application/json", body: '{"detail":"synthetic outage"}' });
+  });
+  const eventsUrl = `/api/v2/sessions/live/${session.id}/events`;
+  const externalChange = async (type: "pause" | "resume") => {
+    const changed = await page.request.post(eventsUrl, {
+      headers, data: { events: [{ client_event_id: crypto.randomUUID(), type,
+        payload: { phase_seq: session.engine.state.phase_seq }, client_at: new Date().toISOString() }] },
+    });
+    expect(changed.ok()).toBe(true);
+  };
+  await externalChange("pause");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await errorOldCaptured;
+  await externalChange("resume");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByTestId("engine-sync-error")).toBeVisible();
+  const errorOldDelivered = page.waitForResponse((response) => response.url().endsWith("/api/v2/sessions/live/active"));
+  releaseErrorOld();
+  await (await errorOldDelivered).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
+  await expect(page.getByTestId("engine-sync-error")).toBeVisible();
+  await page.unroute(activeUrl);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByTestId("engine-sync-error")).toHaveCount(0);
+  await expect(page.getByTestId("engine-phase")).toHaveText("Отдых");
 });
