@@ -33,6 +33,10 @@ on:
         description: "Trusted owner-command dispatcher run for the fixed incident."
         required: false
         default: ""
+      incident_recovery_comment_id:
+        description: "One fixed original incident delivery recovery approval."
+        required: false
+        default: ""
       recovery_candidate_sha:
         required: false
         default: ""
@@ -98,6 +102,7 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
           INCIDENT_REQUEST_COMMENT_ID: ${{ inputs.incident_request_comment_id }}
           INCIDENT_DISPATCHER_RUN_ID: ${{ inputs.incident_dispatcher_run_id }}
+          INCIDENT_RECOVERY_COMMENT_ID: ${{ inputs.incident_recovery_comment_id }}
         run: python3 tools/incident_r3_recovery_client.py
 
       - name: Revalidate R1 owner command and reserve execution before SSH

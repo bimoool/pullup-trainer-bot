@@ -3146,3 +3146,14 @@ actual hash generator on synthetic PostgreSQL data: read-only verification leave
 all fingerprints intact; the former fallback changes the four plan tables,
 including a new `training_plans` row. No production row data is needed to prove
 this control-flow defect; table names alone do not prove edits to existing rows.
+
+### R3 admission observability and bounded delivery recovery (#409)
+
+Original child 43724053051 failed before SSH, with no execution reservation.
+Exact public snapshots pass offline `authorize_execution` reconstruction only
+when that child's status is historically simulated as in_progress. The actual
+completed/failure snapshot correctly refuses. This proves no historical guard
+or provider root cause: the old catch discarded guard/HTTP details, so that cause
+remains UNKNOWN. The separately authorized delivery route pins this terminal
+pre-SSH outcome and preserves dedicated dispatch plus global execution claims.
+New diagnostics render fixed enums and bounded numeric HTTP status only.

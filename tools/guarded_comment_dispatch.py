@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 import incident_r3_recovery as incident
 import rollback_r1_recovery as r1
 from current_checks import CheckRefused, ensure_green
+from incident_diagnostics import Trace
 
 REPO = "bimoool/pullup-trainer-bot"
 WORKFLOW = "deploy-staging-guarded.yml"
@@ -31,6 +32,13 @@ def command(body):
     if body.startswith("/pullup rollback-r1-apply "):
         sha, inputs = r1.parse(body, require)
         return "rollback-r1-apply", sha, "production-rollback.yml", inputs
+    if body == incident.RECOVERY_COMMAND:
+        return (
+            "incident-r3-recover",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
     if body == incident.COMMAND:
         return (
             "incident-r3-apply",
@@ -209,13 +217,15 @@ def release_gates(api, operation, sha, inputs):
     if operation == "rollback-r1-apply":
         r1.verify_evidence(api, sha, inputs, require, BOT_ID)
         return
-    if operation == "incident-r3-apply":
+    if operation in {"incident-r3-apply", "incident-r3-recover"}:
         require(
             sha == incident.CANDIDATE
             and all(inputs.get(k) == v for k, v in incident.fixed_inputs().items()),
             "fixed incident inputs required",
         )
         incident.verify_evidence(api, require)
+        if operation == "incident-r3-recover":
+            incident.verify_recovery(api, require, api("GET", "")["owner"])
         return
     if operation.startswith("server-"):
         if operation not in {"server-readiness", "server-receipt"}:
@@ -290,7 +300,7 @@ def authorize(event, runtime, api):
     require("pull_request" in issue, "not a PR conversation")
     require(type(comment.get("id")) is int and comment["id"] > 0, "invalid comment")
     operation, sha, workflow_name, inputs = command(comment.get("body", ""))
-    if operation == "incident-r3-apply":
+    if operation in {"incident-r3-apply", "incident-r3-recover"}:
         require(number == incident.PR_NUMBER, "incident PR binding required")
     live_repo = api("GET", "")
     require(repository.get("id") == live_repo["id"], "repository ID mismatch")
@@ -310,7 +320,7 @@ def authorize(event, runtime, api):
         and live_comment.get("user", {}).get("id") == owner["id"],
         "comment changed or unavailable",
     )
-    if operation == "incident-r3-apply":
+    if operation in {"incident-r3-apply", "incident-r3-recover"}:
         require(
             runtime.get("run_attempt") == "1"
             and live_comment.get("id") == comment["id"]
@@ -339,6 +349,18 @@ def authorize(event, runtime, api):
         and workflow.get("state") == "active",
         "guarded workflow unavailable",
     )
+    if operation == "incident-r3-recover":
+        require(
+            re.fullmatch(r"[0-9a-f]{40}", runtime.get("sha", "")),
+            "trusted recovery dispatcher SHA required",
+        )
+        require(
+            str(runtime["run_id"]) != str(incident.ORIGINAL_DISPATCHER),
+            "new incident dispatcher required",
+        )
+        incident.trusted_run(
+            api, require, runtime["run_id"], DISPATCHER, "issue_comment", owner, runtime["sha"]
+        )
     release_gates(api, operation, sha, inputs)
     if "recovery_comment_id" in inputs:
         require(
@@ -354,9 +376,16 @@ def authorize(event, runtime, api):
         inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
         inputs["pr_number"] = str(number)
         inputs.setdefault("request_comment_id", str(comment["id"]))
-    if operation == "incident-r3-apply":
+    if operation in {"incident-r3-apply", "incident-r3-recover"}:
         inputs["incident_request_comment_id"] = str(comment["id"])
         inputs["incident_dispatcher_run_id"] = str(runtime["run_id"])
+        if operation == "incident-r3-recover":
+            require(
+                comment["id"] != incident.ORIGINAL_REQUEST,
+                "new incident recovery approval required",
+            )
+            inputs["incident_request_comment_id"] = str(incident.ORIGINAL_REQUEST)
+            inputs["incident_recovery_comment_id"] = str(comment["id"])
     if operation == "rollback-r1-apply":
         inputs["recovery_pr_number"] = str(number)
         inputs["recovery_request_comment_id"] = str(comment["id"])
@@ -398,9 +427,14 @@ def dispatch(event, runtime, api):
         if recovery_id
         else ""
     )
-    if operation == "incident-r3-apply":
+    if operation in {"incident-r3-apply", "incident-r3-recover"}:
         provenance = (
             incident.request_marker(inputs["incident_request_comment_id"], runtime["run_id"]) + "\n"
+        )
+    if operation == "incident-r3-recover":
+        provenance = (
+            incident.recovery_marker(inputs["incident_recovery_comment_id"], runtime["run_id"])
+            + "\n"
         )
     if operation == "rollback-r1-apply":
         provenance = (
@@ -419,6 +453,8 @@ def dispatch(event, runtime, api):
             f"<!-- pullup-rollback-check-v2:{number}:{sha}:{inputs['kind']}:"
             f"{inputs['manifest']}:{event['comment']['id']} -->"
         )
+    if operation == "incident-r3-recover":
+        marker = incident.RECOVERY_MARKER
     if operation == "rollback-r1-apply":
         marker = r1.marker(inputs)
     for page in range(1, 101):
@@ -484,17 +520,15 @@ def main():
         "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
         "run_id": os.environ["GITHUB_RUN_ID"],
         "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+        "sha": os.environ["GITHUB_SHA"],
     }
     with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
         event = json.load(source)
 
-    api_phase = "not-called"
+    trace = Trace()
 
     def api(method, path, body=None):
-        nonlocal api_phase
-        # Fixed route classes only: no URLs, bodies, credentials or user inputs.
-        route = "repository" if not path else path.split("/", 1)[0]
-        api_phase = f"{method} {route if route in {'repository', 'issues', 'pulls', 'actions', 'commits', 'git'} else 'other'}"
+        trace.before(method, path)
         request = urllib.request.Request(
             f"https://api.github.com/repos/{REPO}" + (f"/{path}" if path else ""),
             data=None if body is None else json.dumps(body).encode(),
@@ -514,21 +548,8 @@ def main():
 
     try:
         print(dispatch(event, runtime, api))
-    except Refused as exc:
-        # Refused messages are fixed local guard text, never response bodies or inputs.
-        print(f"Guard refused: {exc}. No automatic retry.")
-        raise SystemExit(1) from None
-    except urllib.error.HTTPError as exc:
-        print(
-            f"GitHub API HTTP status {exc.code} at {api_phase}. "
-            "No automatic retry; inspect claims and Actions."
-        )
-        raise SystemExit(1) from None
-    except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
-        # No response bodies, request headers, command body or secret values in logs.
-        print(
-            "Dispatch refused or interrupted. No automatic retry; inspect the durable claim and Actions."
-        )
+    except (Refused, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        print(trace.report(exc, refused=isinstance(exc, Refused)))
         raise SystemExit(1) from None
 
 

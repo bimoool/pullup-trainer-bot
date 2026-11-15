@@ -1388,3 +1388,20 @@ existing no-database-overwrite, unchanged-schema/no-backfill server guards.
 Incident-wide and execution claims prohibit replay, including through another
 PR or manual child dispatch. Exact grammar, actual installation state and the
 one-time administrative prerequisite are in `CLOUD_SERVER_CONTROL.md`.
+
+### One delivery recovery for the fixed November 15 R3 incident
+
+The owner may authorize one new delivery on PR #399 using the exact
+`incident-r3-recover` command documented in `CLOUD_SERVER_CONTROL.md`. It remains
+bound to original approval 6895994270, dispatcher 43724033626, failed child
+43724053051/job 132841996080, the original candidate, manifest and R3 token.
+Both admissions require unchanged fixed failed-deploy/check evidence and the
+original child's latest first attempt with admission failed and SSH skipped.
+A dedicated durable recovery claim precedes dispatch; the existing global
+incident execution reservation precedes SSH under production concurrency.
+Original claims are preserved. New approvals/dispatchers/children must be
+unedited, owner-bound and trusted first attempts. Any execution reservation,
+changed/unknown evidence or ambiguous write requires reconciliation, without
+replay. The historical admission failure's HTTP/guard cause remains UNKNOWN.
+This adds cloud delivery capability, not a server dedup ledger or a changed
+rollback runner. Existing forced-command locks and manifest/token guards apply.

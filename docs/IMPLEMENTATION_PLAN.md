@@ -244,3 +244,14 @@ new routes; full GitHub checks and independent review remain integration gates.
 The new controller is **not installed** and no production action was performed.
 Next: reviewed merge, one existing administrative no-key bootstrap, then cloud
 readiness/prepare/adoption and separate guarded release/recovery decisions.
+
+## Fixed R3 delivery recovery (#409, 2026-11-15)
+
+A separate once-only owner approval can recover delivery after the exact original
+child failed admission before SSH. Both admissions pin original evidence,
+immutable approvals and latest first-attempt run/job identities; dedicated dispatch
+and global execution reservations prevent cloud replay. Safe diagnostics expose
+only enum stage/guard and numeric HTTP status. Historical cause remains UNKNOWN.
+Server rollback code, schema, applications and existing claims are unchanged.
+Next: independent review and all mandatory CI gates, trusted-main integration,
+then a separate owner decision. Implementation/testing does not execute recovery.
