@@ -31,12 +31,14 @@ supports these fixed commands, with no arbitrary workflow, URL or shell input:
 | `production-preflight SHA FROM TO` | Existing guarded production workflow, preflight only |
 | `production-apply SHA FROM TO PRODUCTION-APPLY-SHA12` | Existing guarded production apply with its exact confirmation |
 | `rollback-check SHA R1_OR_R3 MANIFEST` | Existing rollback inspection, `mode=check` only |
+| `incident-r3-apply e9f32dd194aab140f63c445e0c2d2eddf59b2b91 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039` | One fixed incident recovery through the existing rollback workflow; separate explicit owner R3 approval required |
 
 `SHA` is 40 lowercase hex characters; `FROM` and `TO` are 12-character observed
 Alembic revisions, not invented defaults. `SHA12` is the candidate's first12
 characters. The manifest must be a safe `/root/backups/*.manifest` path from the
-actual guarded deployment. Rollback apply is deliberately not automated here:
-R3 can lose activity since the backup and needs a separate recovery decision.
+actual guarded deployment. Generic rollback apply is not accepted. The fixed
+incident exception below requires a separate recovery decision because R3 can
+lose activity since the backup.
 
 **staging-deploy is state-changing.** It stops services, backs up, builds,
 upgrades to the existing Alembic head and starts verified services. Its fixed
@@ -143,3 +145,27 @@ claim about the running build or a successful prior provisioning transaction.
 A failed/uncertain provision must be reconciled before any new state-changing QA.
 A snapshot alone cannot prove which interrupted commands committed: combine it
 with administrative execution receipts and active-process/lock evidence.
+
+## Incident-only R3 recovery admission
+
+The new command is restricted to original PR #399 and the exact constants in
+`tools/incident_r3_recovery.py`. It cannot select another candidate, manifest,
+confirmation, workflow or shell command. Its reviewed evidence is failed apply
+run `43691971076` / job `132744343548` and successful R3 check run `43692580932` /
+job `132746139599`; changed latest attempts refuse admission.
+
+Only after independent review and merge of the capability, and after the owner's
+separate direct approval of this destructive R3 recovery, may the main chat use
+its authenticated owner connector to post this exact PR #399 comment:
+
+```text
+/pullup incident-r3-apply e9f32dd194aab140f63c445e0c2d2eddf59b2b91 ROLLBACK-R3-prod-e9f32dd-20261115T075403Z-247039
+```
+
+The existing owner/live-comment/PR/main checks still apply. Edited comments,
+manual child dispatch, child reruns and mismatched provenance refuse before SSH.
+The incident-wide dispatch and execution claims persist across new comments and
+workflow runs. Neither a claim nor dispatch acceptance proves completed recovery.
+An uncertain outcome requires inspection of the existing run; never replay or
+remove a claim. See `PRODUCTION_RUNBOOK.md` for the exact admission boundaries.
+No recovery command was executed as part of preparing this capability.
