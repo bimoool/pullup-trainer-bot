@@ -898,32 +898,61 @@ async def verify_compatible_database(session: AsyncSession) -> dict:
     """Read-only same-schema runtime check, not certification of initial migration.
 
     Onboarding does not create a plan, and a runtime plan may have zero or many
-    courses. Only demonstrably history-free users may lack a plan. Never infer
-    missing history from a profile, progression JSON, or current course count.
+    courses. Cold archives and proved completed unplanned journal facts do not
+    require a plan. Current legacy progress, active or unclassified sessions do.
+    Never infer safety from onboarding, archive presence or a profile alone.
     """
     if session.in_transaction():
         raise ValueError("verify-compatible requires a fresh session")
     try:
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
-        history = """EXISTS (SELECT 1 FROM workouts w WHERE w.user_id=u.id)
+        # These are runtime shapes proved by the ordinary journal writer and admin
+        # reset, not evidence that initial migration ran. Keep unknown provenance,
+        # active work and every current legacy progression signal fail-closed.
+        # Cold archives are never materialized, rewritten or used as active history.
+        requires_plan = """EXISTS (SELECT 1 FROM workouts w WHERE w.user_id=u.id)
             OR EXISTS (SELECT 1 FROM elective_workouts e WHERE e.user_id=u.id)
-            OR EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id)
-            OR EXISTS (SELECT 1 FROM workouts_archive_v1 a WHERE a.user_id=u.id)
-            OR EXISTS (SELECT 1 FROM workouts_archive_admin_reset a WHERE a.user_id=u.id)
             OR EXISTS (SELECT 1 FROM workout_sets s WHERE s.user_id=u.id AND s.workouts_completed>0)
-            OR EXISTS (SELECT 1 FROM workout_sets_archive_v1 a WHERE a.user_id=u.id AND a.workouts_completed>0)
-            OR EXISTS (SELECT 1 FROM workout_sets_archive_admin_reset a WHERE a.user_id=u.id AND a.workouts_completed>0)"""
+            OR EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND (
+                s.status <> 'completed'
+                OR s.program_inclusion_id IS NOT NULL OR s.plan_item_id IS NOT NULL
+                OR s.superseded_by_id IS NOT NULL
+                OR s.engine_status IS NOT NULL OR s.engine_plan IS NOT NULL OR s.engine_state IS NOT NULL
+                OR s.engine_version IS NOT NULL
+                OR EXISTS (SELECT 1 FROM session_events e WHERE e.session_id=s.id)
+                OR EXISTS (SELECT 1 FROM session_plan_items l WHERE l.session_id=s.id)
+                OR NOT COALESCE((
+                    (s.origin='native' AND s.completed_at IS NOT NULL
+                     AND s.legacy_id IS NULL AND s.superseded_at IS NULL
+                     AND s.source IN ('freeform','backdated')
+                     AND s.source_v2 IN ('external_activity','manual_custom')
+                     AND s.workout_definition_id IS NULL AND s.workout_snapshot IS NULL
+                     AND s.workout_definition_version_id IS NULL
+                     AND NOT EXISTS (SELECT 1 FROM session_blocks b LEFT JOIN exercises e ON e.id=b.exercise_id
+                         WHERE b.session_id=s.id AND (b.complex_id IS NOT NULL OR e.id IS NULL
+                             OR e.subcategory IN ('block_a','block_b')
+                             OR (e.source_type='user' AND e.owner_user_id IS DISTINCT FROM s.user_id)
+                             OR (e.source_type='system' AND e.owner_user_id IS NOT NULL)
+                             OR e.source_type NOT IN ('system','user'))))
+                    OR (s.origin='legacy_backfill' AND s.legacy_id IS NOT NULL
+                        AND s.superseded_at IS NOT NULL AND s.superseded_reason='legacy_deleted'
+                        AND EXISTS (SELECT 1 FROM workouts_archive_admin_reset a
+                            WHERE a.id=s.legacy_id AND a.user_id=s.user_id
+                              AND a.performed_at=s.performed_at AND a.status='completed')
+                        AND NOT EXISTS (SELECT 1 FROM workouts w WHERE w.id=s.legacy_id))
+                ), false)
+            ))"""
         row = (await session.execute(text(f"""WITH classified AS (
             SELECT u.id, u.onboarding_completed_at IS NOT NULL AS onboarded,
                    EXISTS (SELECT 1 FROM training_plans p WHERE p.user_id=u.id) AS has_plan,
-                   ({history}) AS has_history FROM users u
+                   ({requires_plan}) AS requires_plan FROM users u
         ) SELECT count(*) AS users_total,
             count(*) FILTER (WHERE onboarded) AS users_onboarded,
             count(*) FILTER (WHERE onboarded AND has_plan) AS onboarded_with_plan,
-            count(*) FILTER (WHERE onboarded AND NOT has_plan AND NOT has_history) AS compatible_onboarded_without_plan,
+            count(*) FILTER (WHERE onboarded AND NOT has_plan AND NOT requires_plan) AS compatible_onboarded_without_plan,
             count(*) FILTER (WHERE NOT onboarded AND has_plan) AS non_onboarded_with_plan,
-            count(*) FILTER (WHERE NOT onboarded AND NOT has_plan AND NOT has_history) AS compatible_non_onboarded_without_plan,
-            count(*) FILTER (WHERE NOT has_plan AND has_history) AS blocked_without_plan,
+            count(*) FILTER (WHERE NOT onboarded AND NOT has_plan AND NOT requires_plan) AS compatible_non_onboarded_without_plan,
+            count(*) FILTER (WHERE NOT has_plan AND requires_plan) AS blocked_without_plan,
             (SELECT count(*) FROM training_plans) AS training_plans_total FROM classified"""))).mappings().one()
         counts = {key: int(value) for key, value in row.items()}
         errors: list[str] = []

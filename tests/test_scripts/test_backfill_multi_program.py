@@ -722,7 +722,7 @@ async def _verify_compatible_with_fresh_session(session):
     'workouts_archive_v1', 'workouts_archive_admin_reset', 'workout_sets',
     'workout_sets_archive_v1', 'workout_sets_archive_admin_reset',
 ])
-async def test_compatible_missing_plan_with_any_history_remains_blocked_and_unchanged(session, user, history_kind):
+async def test_compatible_planless_history_distinguishes_cold_archives_from_active_or_unproved_state(session, user, history_kind):
     await _onboard(session, user)
     await seed_catalog(session)
     if history_kind == 'legacy':
@@ -764,8 +764,12 @@ async def test_compatible_missing_plan_with_any_history_remains_blocked_and_unch
     before = await _guarded_database_hashes(session)
     try:
         result = await _verify_compatible_with_fresh_session(session)
-        assert result['verified'] is False, result
-        assert 'history_without_plan=1' in result['errors']
+        cold_archive = history_kind in {
+            'workouts_archive_v1', 'workouts_archive_admin_reset',
+            'workout_sets_archive_v1', 'workout_sets_archive_admin_reset',
+        }
+        assert result['verified'] is cold_archive, result
+        assert ('history_without_plan=1' in result['errors']) is not cold_archive
         assert await _guarded_database_hashes(session) == before
     finally:
         # archive_v1 is outside the shared fixture TRUNCATE list; do not leak synthetic records to other tests.
