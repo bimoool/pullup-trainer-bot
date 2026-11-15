@@ -303,3 +303,8 @@ inputs; all other identities and live timers retain ordinary behavior. Focused
 backend/guard/rollover/isolation checks: 180 passed. Local browser setup is blocked
 by the provider's pinned Chromium download denial, so final hosted visual/full
 E2E proof remains mandatory. No old workflow rerun substitutes for final-head CI.
+
+Registry integrity follow-up replaces line-based shell rewriting with the explicit
+`e2e_seed_all.sh --list` contract. Inspection expands the original registry without
+Python or seed execution; synthetic dispatch tests cover both calendar modes.
+Scenario validity, unique identities and spec identity coverage remain required.
