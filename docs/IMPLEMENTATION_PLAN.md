@@ -12,14 +12,26 @@ dump шифруется до записи на диск; загрузка про
 живой upload/readback и независимое восстановление. Не merge/release до завершения
 текущего production recovery; наличие кода/таймера не означает runtime acceptance.
 
-PR408 now combines reviewed PR407 `bf68d0e` and PR410 `6f95f236` by normal branch
-merges, without advancing main or changing the critical PR410. The fixed optional
+PR408 now combines reviewed PR407 `bf68d0e`, PR410 `6f95f236`, PR413 `2d961a8`
+and PR412 `63a0262` by normal branch merges, without advancing main or changing
+the critical-release branches. The fixed optional
 backup code belongs to the atomic controller bundle; a stable local-root-only
 launcher resolves one complete bundle. Bootstrap installs exact units disabled
 only and refuses active/enabled/unknown units. Routine reviewed backup code updates
 use cloud adoption. OAuth/configuration, timer activation and actual recovery proof
-remain separate unperformed acceptance steps. The PR412 rollback patch is excluded
-and remains a future cloud-adoption acceptance candidate.
+remain separate unperformed acceptance steps. The initial active bundle includes
+the reviewed atomic rollback source; installed rollback `6286544a…` remains only
+the preserved bootstrap baseline, never the selected patched bundle artifact.
+
+## Candidate R3 rename transaction #411 — 2026-11-15
+
+Explicit `BEGIN`/`COMMIT` fixes the two database renames in the repository rollback
+script. Synthetic PostgreSQL 16 regressions first reproduced the absent live name
+on second-rename failure and backend interruption; the fix passes those cases,
+first-rename failure and successful retention of failed history. Existing shell
+guard regressions remain. Draft review and full required CI precede integration.
+The installed runner remains unchanged; separately reviewed controller-bundle
+adoption after current release gates is future work. No server or R3 action ran.
 
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 

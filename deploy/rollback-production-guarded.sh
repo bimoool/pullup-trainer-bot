@@ -14,7 +14,8 @@
 #          (alembic, счётчики legacy-таблиц = manifest) -> атомарно (одна транзакция) переименовать текущую БД в
 #          <db>_failed_<ts> (НЕ удаляется: из неё можно вручную достать данные окна) и восстановленную — в <db> ->
 #          прежние образы -> старт -> healthcheck. Теряется всё, что записано после backup_at manifest.
-# Любая ошибка => app/web ОСТАНОВЛЕНЫ, печатается состояние. Повторный запуск безопасен (на каждом шаге проверка).
+# Любая ошибка => app/web ОСТАНОВЛЕНЫ, печатается состояние. Перед повтором проверить БД и manifest:
+# потерянный ответ COMMIT не доказывает, что транзакция откатилась.
 #
 # Параметры (окружение): PROD_HEALTH_TIMEOUT=240, PROD_MIN_DISK_MB=1024 (сверх 3 x размер дампа).
 # shellcheck disable=SC2016  # $POSTGRES_* намеренно раскрываются внутри контейнера db (sh -c '...'), не здесь
@@ -169,7 +170,9 @@ if [ "$KIND" = "R3" ]; then
   step "swap databases atomically: $DB_NAME -> $FAILED (kept), $RB -> $DB_NAME"
   conns="$(adminq "select count(*) from pg_stat_activity where datname in ('$DB_NAME','$RB')")"
   [ "$conns" = "0" ] || die "$conns connection(s) to $DB_NAME/$RB — cannot rename"
-  adminq "ALTER DATABASE $DB_NAME RENAME TO $FAILED; ALTER DATABASE $RB RENAME TO $DB_NAME;" >/dev/null || die "database swap failed (single transaction: nothing renamed)"
+  # psql reads stdin in autocommit mode: both renames need an explicit transaction.
+  # A disconnect before COMMIT rolls back both; a lost COMMIT reply is ambiguous.
+  adminq "BEGIN; ALTER DATABASE $DB_NAME RENAME TO $FAILED; ALTER DATABASE $RB RENAME TO $DB_NAME; COMMIT;" >/dev/null || die "database swap failed; keep app/web stopped and inspect $DB_NAME, $FAILED and $RB (a lost COMMIT reply can mean both renames committed)"
   SWAPPED=1
   [ "$(dbq "select version_num from alembic_version")" = "$PREV_REV" ] || die "live alembic_version after swap differs from $PREV_REV"
   [ "$(dbq "$COUNTS_SQL")" = "$LEGACY_COUNTS" ] || die "live legacy counts after swap differ from the manifest"
