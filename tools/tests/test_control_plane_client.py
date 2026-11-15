@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import controller_control_client as c
+import current_checks as checks
 import guarded_comment_dispatch as dispatch
 
 from tools.tests.check_fixtures import SHA, CheckAPI
@@ -131,6 +132,44 @@ def event(api):
 
 
 class ClientTests(unittest.TestCase):
+    def test_release_cli_defaults_seven_but_controller_eight_is_explicit(self):
+        release = {
+            "ruff",
+            "pytest",
+            "frontend build",
+            "e2e",
+            "codex-review",
+            "security",
+            "rehearse",
+        }
+        for arguments, expected in (
+            ([], release),
+            (["--required", *sorted(release | {"authorization"})], release | {"authorization"}),
+        ):
+            with (
+                self.subTest(arguments=arguments),
+                patch.object(sys, "argv", ["current_checks.py", SHA, *arguments]),
+                patch.object(checks, "ensure_green") as gate,
+                patch("builtins.print"),
+            ):
+                checks.main()
+                self.assertEqual(set(gate.call_args.args[2]), expected)
+
+    def test_only_filtered_owner_jobs_reserve_production_concurrency(self):
+        workflow = (
+            Path(__file__).resolve().parents[2] / ".github/workflows/controller-recovery.yml"
+        ).read_text()
+        before_jobs, jobs = workflow.split("\njobs:\n", 1)
+        # GitHub admits workflow-level concurrency before evaluating any job if.
+        # Ordinary comments and matching non-owner comments must never evict a
+        # pending production operation before live Python admission can run.
+        self.assertNotIn("\nconcurrency:", before_jobs)
+        self.assertIn("\n    concurrency:\n", jobs)
+        condition = jobs.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0]
+        self.assertIn("github.event.comment.user.id == github.event.repository.owner.id", condition)
+        self.assertIn("github.event.sender.id == github.event.repository.owner.id", condition)
+        self.assertIn("github.event.comment.author_association == 'OWNER'", condition)
+
     def test_adoption_requires_full_ci_authorization_main_tree_and_dispatcher_provenance(self):
         api = API()
         self.assertEqual(c.authorize_adopt(api, env()), (400, "adopt", SHA, "ops-10", None))

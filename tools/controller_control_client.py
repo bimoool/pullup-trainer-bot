@@ -8,7 +8,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from current_checks import REQUIRED_WORKFLOWS, CheckRefused, ensure_green
+from current_checks import DEFAULT_REQUIRED, CheckRefused, ensure_green
 
 REPO = "bimoool/pullup-trainer-bot"
 BOT = {"id": 41898282, "login": "github-actions[bot]"}
@@ -130,7 +130,7 @@ def bot_comment(comment):
 
 
 def adoption_gates(api, sha):
-    ensure_green(api, sha, set(REQUIRED_WORKFLOWS))
+    ensure_green(api, sha, {*DEFAULT_REQUIRED, "authorization"})
     candidate = api("GET", f"git/commits/{sha}")
     main = api("GET", "commits/main")
     require(candidate["tree"]["sha"] == main["commit"]["tree"]["sha"], "TRUSTED_MAIN_TREE")

@@ -20,6 +20,9 @@ REQUIRED_WORKFLOWS = {
     "rehearse": "rehearsal-harness.yml",
     "authorization": "cloud-command-tests.yml",
 }
+# Controller authorization is path-filtered and explicitly required by adoption.
+# Ordinary release QA retains the seven contexts available on product-only PRs.
+DEFAULT_REQUIRED = tuple(name for name in REQUIRED_WORKFLOWS if name != "authorization")
 
 
 class CheckRefused(Exception):
@@ -230,7 +233,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sha")
     parser.add_argument(
-        "--required", nargs="+", choices=REQUIRED_WORKFLOWS, default=list(REQUIRED_WORKFLOWS)
+        "--required", nargs="+", choices=REQUIRED_WORKFLOWS, default=list(DEFAULT_REQUIRED)
     )
     args = parser.parse_args()
 
