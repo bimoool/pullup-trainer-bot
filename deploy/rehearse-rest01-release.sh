@@ -38,7 +38,7 @@ OLD_CODE_SHA="${REHEARSE_OLD_CODE_SHA:-bd80bc9d5cc3683aa6eccdbba182a8fe4d9571d2}
 CONTROL_SHA="${REHEARSE_CONTROL_SHA:-d1b237567d732d4d670232d8a060f9849c3132a8}"            # кандидат упавшего выката (дерево = 9fb76da)
 # Pin the reviewed candidate, including bounded recovery from transient unhealthy startup.
 # Rehearsal does not install this runner on the production server.
-NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-7a1d42c1653fc443095b28809b888f110a3110b875eed58ecd5affc4f70d0dde}"
+NEW_RUNNER_SHA256="${REHEARSE_NEW_RUNNER_SHA256:-07380ffbc9edaea70602a9382f9db959b8eece8d0f5a67180008993488335ce2}"
 FROM_REV="${REHEARSE_FROM_REV:-b5d8e1f3a6c9}"
 WEB_PORT="${REHEARSE_WEB_PORT:-18781}"
 # Жёсткие потолки памяти (cgroup, БЕЗ swap): сборки идут в ОТДЕЛЬНОМ контейнерном билдере BuildKit, контейнеры проекта — со
