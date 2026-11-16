@@ -16,7 +16,7 @@
 # только ожидаемые ревизии Alembic, которые guarded-скрипт сверяет с живой БД и с выкатываемым SHA.
 set -euo pipefail
 
-BIN=/root/bin
+BIN="$(cd -- "$(dirname -- "$0")" && pwd)"
 LOCK_DIR=/root/backups
 cmd="${SSH_ORIGINAL_COMMAND:-}"
 
@@ -32,7 +32,11 @@ if [[ "$cmd" =~ $re_control ]] && [[ "${BASH_REMATCH[1]}" = receipt ]]; then
 fi
 
 mkdir -p "$LOCK_DIR"
-exec 9>"$LOCK_DIR/.prod-actions.lock"
+if [[ "${PULLUP_CONTROL_LOCK_FD:-}" = 9 ]]; then
+  [[ "$(readlink /proc/self/fd/9)" = "$LOCK_DIR/.prod-actions.lock" ]] || exit 1
+else
+  exec 9>"$LOCK_DIR/.prod-actions.lock"
+fi
 flock -n 9 || { echo "another production run started from GitHub Actions is in progress" >&2; exit 1; }
 
 if [[ "$cmd" =~ $re_control ]]; then

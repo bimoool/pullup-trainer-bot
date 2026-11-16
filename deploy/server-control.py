@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path("/root/pullup-trainer-bot")
-BIN = Path("/root/bin")
+BIN = Path(__file__).resolve().parent
 BACKUPS = Path("/root/backups")
 LEDGER = BACKUPS / "cloud-operations"
 STAGING_LOCK = Path("/home/deploy/.deploy-staging.lock")
@@ -162,6 +162,8 @@ def atomic_private(path, blob, mode=0o600):
 
 
 def adopt_runner(sha, operation):
+    # Versioned bundles activate together through the independent stable supervisor.
+    require(BIN.parent != Path("/root/bin/control-plane/releases"), "CONTROLLER_BUNDLE_REQUIRED")
     # Called only after the durable operation claim, all three locks and busy checks.
     # Fixed source and destination; no candidate program is executed (bash -n only).
     runner = BIN / "deploy-production-guarded-run.sh"

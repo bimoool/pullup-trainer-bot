@@ -1,5 +1,48 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Draft server-side Drive backup #405 — 2026-11-15
+
+Изолированный кандидат от `main` `226c505`: root-only утилита `deploy/drive-backup.py`,
+systemd service/timer и [план установки/приёмки](SERVER_DRIVE_BACKUP.md). Согласованный
+dump шифруется до записи на диск; загрузка проверяется фактическим скачиванием
+шифротекста и SHA-256/размером. Общие deployment locks, приватные fsync-квитанции,
+неповторяемые UNKNOWN/FAILED, отсутствие remote deletion. Offline-тесты только на
+синтетических байтах/credentials; код не меняет приложения, схему или release gates.
+Остаются owner OAuth/public recipient provisioning, серверная установка,
+живой upload/readback и независимое восстановление. Не merge/release до завершения
+текущего production recovery; наличие кода/таймера не означает runtime acceptance.
+
+PR408 now combines reviewed PR407 `bf68d0e`, PR410 `6f95f236`, PR413 `2d961a8`
+and PR412 `63a0262` by normal branch merges, without advancing main or changing
+the critical-release branches. The fixed optional
+backup code belongs to the atomic controller bundle; a stable local-root-only
+launcher resolves one complete bundle. Bootstrap installs exact units disabled
+only and refuses active/enabled/unknown units. Routine reviewed backup code updates
+use cloud adoption. OAuth/configuration, timer activation and actual recovery proof
+remain separate unperformed acceptance steps. The initial active bundle includes
+the reviewed atomic rollback source; installed rollback `6286544a…` remains only
+the preserved bootstrap baseline, never the selected patched bundle artifact.
+
+The combined candidate also carries reviewed PR414 `1dc9f00`, PR416
+`a78cf3a` and PR417 `5014be8` by normal merge. Its primary app/scripts/SQL,
+calendar fixtures, workflows, production guard and rehearsal pin retain exact
+PR417 bytes. Feature controls remain unchanged except the installer's expected
+post-NEWLIVE production guard hash `e0773bd7…`; currently installed `986…`,
+earlier `785…` and old `c97…` are not bootstrap baselines. Source integration
+is not installation or runtime proof. Primary NEWLIVE, fresh combined gates and both provenance
+reviews remain prerequisites; the prepared #406 job stays NOT STARTED/window CLOSED.
+
+## Candidate R3 rename transaction #411 — 2026-11-15
+
+Explicit `BEGIN`/`COMMIT` fixes the two database renames in the repository rollback
+script. Synthetic PostgreSQL 16 regressions first reproduced the absent live name
+on second-rename failure and backend interruption; the fix passes those cases,
+first-rename failure and successful retention of failed history. Existing shell
+guard regressions remain. Draft review and full required CI precede integration.
+The installed runner remains unchanged. The reviewed component is included in
+PR408's initial bundle; its combined CI/review and exact-SHA bootstrap remain
+required before runtime acceptance. No server or R3 action ran.
+
 ## Кандидат совместимости истории без плана — 2026-11-15
 
 Обычные записи Журнала/активности и холодные архивы могут существовать без `TrainingPlan`.
@@ -250,6 +293,14 @@ Owner-comment dispatcher on main → existing planner/worker on develop/current.
 Controls, safety boundaries and sandbox proof: [ORCH_OWNER_UI.md](ORCH_OWNER_UI.md).
 
 ## Cloud release control continuity (2026-11-15)
+
+Follow-up #406 implements stable-supervisor complete bundle adoption and independent
+recorded controller recovery, including subprocess SIGKILL and bootstrap-preservation
+tests. Candidate only: no new bootstrap/install or production operation performed.
+Finish the frozen release first; then require full CI/independent security review,
+reviewed exact-SHA administrative conversion, and actual cloud adopt/status/recover
+acceptance. Reviewed Drive backup #405 and fixed R3 recovery #409 are combined on
+PR408 only; main and the critical-release branch remain unchanged.
 
 Candidate controller upgrade adds fixed runner adoption and owner/provenance-bound
 R1 apply to the existing bridge. Product runner, compatibility repair and rehearsal

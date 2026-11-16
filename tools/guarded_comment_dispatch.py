@@ -29,6 +29,14 @@ REQUIRED_CHECKS = {
 
 
 def command(body):
+    controller = re.fullmatch(r"/pullup server-adopt-controller ([0-9a-f]{40})", body)
+    if controller:
+        return (
+            "server-adopt-controller",
+            controller[1],
+            "controller-control.yml",
+            {"operation": "adopt", "candidate_sha": controller[1], "operation_id": ""},
+        )
     if body.startswith("/pullup rollback-r1-apply "):
         sha, inputs = r1.parse(body, require)
         return "rollback-r1-apply", sha, "production-rollback.yml", inputs
@@ -253,6 +261,11 @@ def release_gates(api, operation, sha, inputs):
             incident.no_redelivery(rows, require)
         return
     if operation.startswith("server-"):
+        if operation == "server-adopt-controller":
+            from controller_control_client import adoption_gates
+
+            adoption_gates(api, sha)
+            return
         if operation not in {"server-readiness", "server-receipt"}:
             green_checks(api, sha)
         if operation == "server-adopt-runner":
@@ -363,7 +376,7 @@ def authorize(event, runtime, api):
         require(
             runtime.get("run_attempt") == "1", "first rollback-check dispatcher attempt required"
         )
-    if operation in {"rollback-r1-apply", "server-adopt-runner"}:
+    if operation in {"rollback-r1-apply", "server-adopt-runner", "server-adopt-controller"}:
         require(runtime.get("run_attempt") == "1", "first dispatcher attempt required")
         r1.original_comment(live_comment, owner, number, comment["body"], require)
         require(live_comment.get("id") == comment["id"], "live comment identity")

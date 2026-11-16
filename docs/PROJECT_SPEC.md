@@ -1,5 +1,18 @@
 # PROJECT_SPEC — принятое продуктовое поведение
 
+### Автоматический зашифрованный бэкап БД на Google Drive (draft, #405)
+
+Владелец разрешил отдельный серверный механизм VPS → свой Google Drive без
+зависимости от ноутбука: согласованный `pg_dump -Fc` → шифрование публичным
+получателем → загрузка → фактическое скачивание шифротекста на VPS и сверка
+SHA-256/размера перед VERIFIED. Блокировки общие с существующим deploy/rollback;
+идемпотентные приватные квитанции не повторяют неопределённую операцию. Удаление
+удалённых копий не выполняется. Ключ расшифровки остаётся у владельца вне VPS.
+Контракт, установка и явные блокеры — [SERVER_DRIVE_BACKUP.md](SERVER_DRIVE_BACKUP.md).
+Это кандидат: OAuth/получатель не provisioned, установка и живое восстановление
+не проверены. Только БД, не обещание полного восстановления всего проекта;
+production recovery и release controls этим изменением не меняются.
+
 Живая тренировка V5.6 показывает нагрузку текущего блока из замороженного рецепта:
 дополнительный вес, свой вес или описание резины; неизвестная нагрузка не считается нулевой.
 Кнопка окончания объёмного блока из-за нарушения техники требует подтверждения;
@@ -1388,6 +1401,24 @@ same-operation ledger and cannot perform the prepare effect twice. No claim or l
 
 ### Cloud release control continuity
 
+Complete controller upkeep (#406) uses a reviewed one-time stable supervisor and
+complete versioned dispatcher/helper/production/rollback bundles, activated through
+one fsynced record. The sole optional artifact is fixed `deploy/drive-backup.py`;
+absence means capability unavailable. A stable local-root scheduled launcher
+rejects arguments/SSH environments and executes only that validated bundle's
+backup artifact. Reviewed bootstrap installs known backup units disabled, refusing
+unknown, enabled or active units; it never starts/authenticates a backup. Subsequent
+backup code updates use cloud adoption; credentials, timer configuration/activation
+and actual independent recovery proof stay separate. Adoption requires exact PR/head, trusted-main owner/first-attempt
+provenance, full CI/rehearsal plus controller authorization and main-tree equality.
+Independent cloud status/recovery remain available when the bundled dispatcher or
+helper fails; recovery selects only the prior validated local bundle recorded in
+the adoption journal, with a separate claim and no adoption replay. Recovery does
+not depend on latest product CI/main or the source PR retaining its old head.
+Existing forced SSH/key and deployment/data guards remain in force. Implementation
+does not imply installation, deployment authorization or actual cloud acceptance;
+the exact bootstrap and commands are in `CLOUD_SERVER_CONTROL.md` (#406 section).
+
 The existing owner-command bridge supports exact `server-adopt-runner <sha>`
 and `rollback-r1-apply <failed-sha> <manifest> <token> <failed-run> <check-run>`
 commands after the reviewed no-key administrative controller upgrade. Adoption
@@ -1439,6 +1470,17 @@ concurrency. Both old paths deny the second claim. Global execution or actual
 owner manual reservation denies every path. Only structured metadata is used;
 HTTP403 is descriptive. No generic retry, new incident/manifest/server operation
 or further delivery route is added. Exact grammar is in CLOUD_SERVER_CONTROL.md.
+
+### Guarded R3 database rename transaction (#411)
+
+After the existing backup, restore, schema/count, image and zero-connections
+checks, the rollback script renames the live and verified restored databases
+inside explicit `BEGIN`/`COMMIT`. Failure before commit rolls back both renames;
+the failed database is retained after success. A lost COMMIT reply leaves the
+outcome uncertain and services stopped pending inspection of the exact three
+database names; it does not authorize another apply. The repository change does
+not update the installed rollback script. Future adoption requires a separately
+reviewed controller bundle and existing release gates. See runbook §7.3.
 
 ### Private compatibility failure diagnostics
 

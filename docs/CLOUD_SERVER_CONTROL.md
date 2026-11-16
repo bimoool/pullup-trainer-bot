@@ -201,6 +201,132 @@ still require the unchanged schema revision and no started backfill, restore
 only prior application images, and never overwrite the database. Creating,
 reviewing or merging this change does not authorize any production operation.
 
+## Complete controller bundles (#406)
+
+**Implementation candidate; not installed and not accepted from the cloud.**
+Finish the frozen release before merging this follow-up: advancing main still
+invalidates its exact-tree release gate. No existing release gate is relaxed.
+
+The reviewed one-time conversion installs a small stable supervisor outside
+replaceable bundles. The existing authorized-key forced command path stays
+`/root/bin/prod-guarded-dispatch.sh`; only its contents become the fixed
+`control-plane-entrypoint.sh` launcher. No key, SSH configuration, account,
+package or general shell endpoint is introduced. Existing reviewed backup unit
+definitions are installed disabled, with activation a separate owner decision.
+
+Each immutable `/root/bin/control-plane/releases/<sha>/` contains exactly the
+reviewed dispatcher, helper, production runner, rollback runner and a generated
+hash manifest. The sole optional artifact is fixed `deploy/drive-backup.py`;
+absence means backup capability unavailable. Optional files receive the same
+Git-mode, size, syntax, ownership and hash guards; no arbitrary manifest paths
+are accepted. Dispatcher/helper resolve their own bundle directory. One private
+fsynced `active.json` switches the entire bundle; an invocation resolves it once
+while holding the existing Actions lock and passes that open lock to the bundled
+dispatcher. Existing production, guarded and staging locks/inodes remain in use.
+Receipt reads bypass mutation locks. Independent runner adoption refuses inside
+a versioned bundle; future controller and runner changes use complete adoption.
+
+`/root/bin/control-plane-backup.py` is a separate stable, local-root-only scheduled
+entrypoint. It rejects arguments and any SSH environment, reads one activation,
+validates that complete bundle and executes only its fixed backup artifact using
+isolated Python and a clean environment. It never selects the legacy root-bin
+backup script. Immutable releases are retained, so a concurrent activation cannot
+mix versions; the unchanged backup runner acquires its original locks itself.
+SSH gains no backup command or flags. Reviewed backup code updates subsequently
+use `server-adopt-controller`; return and explicit new-operation re-adoption of
+the same immutable SHA remain supported.
+
+Owner commands, in the original eligible PR conversation:
+
+```text
+/pullup server-adopt-controller <exact-current-pr-head-sha>
+/pullup server-controller-status <adopted-sha> ops-<adoption-comment-id>
+/pullup server-recover-controller <adopted-sha> ops-<adoption-comment-id>
+```
+
+Status may also query `ops-<recovery-comment-id>`. Adoption requires the original
+unedited owner request, live PR/head binding, all seven existing exact-SHA
+CI/rehearsal contexts plus attributed `authorization`, current main-tree equality,
+trusted-main first-attempt dispatcher/child provenance, and a durable execution
+claim before SSH. The server independently fetches only fixed origin/main and
+checks exact tree and regular Git blob modes. No source URL, shell, path, hash or
+arbitrary manifest is accepted from the caller.
+
+The stable supervisor implements its own status and recovery. Their standalone
+`controller-recovery.yml`/client path does not import the ordinary dispatcher;
+broken bundled helper/dispatcher code cannot disable recovery. Recovery binds an
+original adoption owner comment and private operation journal, validates its
+saved previous local bundle, and refuses unrelated activation changes. It does
+not require latest product CI, latest main-tree equality, or an unchanged source
+PR head. It never fetches, reruns adoption, changes app images, starts services
+or restores a database. Each new recovery comment has a separate durable claim.
+An interrupted recovery that already switched is reconciled without switching
+again. Uncertain transport is UNKNOWN: query the same operation; never replay.
+
+Claims publish complete fsynced temporary records with atomic no-replace links;
+partly written final claims are impossible. The prior activation is included
+before staging, and the proposed activation is journaled before switching.
+Incomplete staged directories are never executable. Activation and receipts
+use file fsync, atomic replacement and directory fsync. Referenced releases and
+journals are retained; this implementation performs no automatic garbage collection.
+
+### Exact additional administrative bootstrap
+
+Only after reviewed integration/full gates and current-release completion, the
+existing authorized administrator fetches the exact reviewed merged SHA and uses:
+
+```text
+git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sha> --check
+git show <reviewed-sha>:deploy/install-control-plane.py | python3 - <reviewed-sha> --install
+```
+
+The installer requires fresh local origin/main tree equality and the recorded
+PR404 helper/dispatcher pair plus the post-NEWLIVE production runner `e0773bd7…`
+and the known installed rollback baseline. Unknown files/modes/symlinks refuse. It writes only
+the new supervisor, complete initial bundle/activation, private controller ledger,
+nonoverwriting `control-plane.bootstrap-before` copies, and finally the launcher.
+It also installs the stable local backup launcher and the two exact reviewed
+systemd unit files. It refuses unknown units/launchers, enabled or active units,
+and unexpected loaded unit fragments before changing files. Known disabled units
+also require empty loaded `DropInPaths` and no applicable exact-unit, hyphen-prefix
+or global-type drop-in directories in standard systemd load locations, including
+unloaded/runtime overrides and symlinks. Unknown overrides are refused, never
+removed or modified by bootstrap. Known disabled units
+retain their inodes. Systemd calls only inspect state: no daemon reload, enable,
+start, authentication, package installation or backup runs occur in bootstrap.
+Actual activation requires the separate provisioning/recovery evidence in
+`SERVER_DRIVE_BACKUP.md`; installed disabled units are not working automation.
+The production runner must equal already installed bytes. Installed rollback
+`6286544a…` is accepted only as the preserved bootstrap baseline; the initial
+active bundle selects the reviewed rollback source and records its computed
+hash. The combined candidate includes PR412's atomic database-swap repair and
+PR413's current admission/manual-reservation controls. No installed rollback
+file is overwritten and no database operation is performed during bootstrap.
+
+The expected production guard is the exact reviewed PR417 `5014be8` source,
+SHA256 `e0773bd7d23020add0fb84f970a9fa887c9d458b5ba5d0940c04fb906a7821ee`.
+The currently installed `986…`, earlier `785…` diagnostic guard and old `c97…`
+are refused;
+bootstrap cannot replace them with its source or accept them as another known
+version. Source equality and a guard hash are not primary runtime acceptance:
+the coordinator must first verify primary NEWLIVE and the corresponding guard
+receipt, then all combined gates/reviews. Prepared job `6897648541` remains
+NOT STARTED with its window CLOSED until those prerequisites and the exact
+combined source head are pinned. No OAuth or disaster-recovery readiness is
+implied by this source candidate, installation plan, or backup transport code.
+Legacy helpers/runners retain bytes and inodes; authorized_keys, existing backups,
+locks, production checkout, services and data remain unchanged. Known interrupted
+bootstrap states can resume; unknown activation or supervisor bytes refuse.
+
+Acceptance requires synthetic SIGKILL coverage around claim/staging/activation,
+recovery and launcher publication; provenance/dedup/source/lock refusal tests;
+independent security review and full CI; then an actual cloud adoption, status
+and explicitly requested return of a harmless reviewed bundle. Broken-bundle
+injection is confined to synthetic fixtures. Record exact source/hashes and run
+URLs. Installation or a green dispatch alone is not end-to-end acceptance.
+OS/SSH failure, damaged trusted storage, or a defect in the small stable trust
+anchor can still require an administrator from a trusted device.
+
 ### Fixed R3 delivery recovery after pre-SSH refusal (#409)
 
 The original child run 43724053051/job 132841996080 failed the incident admission
