@@ -1,9 +1,20 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 import pytest_asyncio
 
 from app.db.models import SubscriptionStatus, User
 from app.db.repositories.users import UserRepository
+
+
+@pytest.fixture
+def plan_calendar():
+    """Explicit local-calendar fixture for plan tests, separate from engine time."""
+    from tests.support.plan_calendar import install_plan_calendar
+    at = datetime.now(UTC)
+    restore = install_plan_calendar(at, {1001})
+    yield at
+    restore()
 
 
 @pytest_asyncio.fixture

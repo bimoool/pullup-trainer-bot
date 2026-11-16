@@ -118,6 +118,7 @@ from app.domain.session import BlockLog
 from app.services.onboarding import OnboardingService
 from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
 from app.services.session_log import TrainingSessionLogService
+from app.services.training_analytics import resolve_timezone
 from scripts.seed_exercise_library import seed_exercise_library
 
 BAND_VALUE = Decimal("15.0")
@@ -265,6 +266,16 @@ async def _onboard(session: AsyncSession, telegram_id: int) -> User:
     return user
 
 
+def seed_plan_today(user: User, *, now: datetime | None = None) -> date:
+    """Use the API's user-local calendar, including its missing/invalid-zone fallback.
+
+    Plan creation dates remain the stored UTC dates used by plan_week_number in
+    the API. Only the current day is local; historical offsets and live clocks
+    keep their original meaning.
+    """
+    return (now if now is not None else datetime.now(UTC)).astimezone(resolve_timezone(user.timezone)).date()
+
+
 async def seed_v2_session_ready(session: AsyncSession, telegram_id: int) -> None:
     """STEP-курс синтетической категории — тот же рецепт, что
     tests/test_web/test_v2_live_session.py::_setup_step_session (PlanItem на
@@ -345,7 +356,7 @@ async def seed_v2_session_complex(session: AsyncSession, telegram_id: int) -> No
     # только элементы с plan_week_id (иначе "ничего не запланировано").
     plans = TrainingPlanRepository(session)
     plan = await plans.get_or_create_for_user(user.id)
-    week_number = plan_week_number(plan.created_at.date(), datetime.now(UTC).date())
+    week_number = plan_week_number(plan.created_at.date(), seed_plan_today(user))
     week = await plans.create_plan_week(
         training_plan_id=plan.id, week_number=week_number,
         start_date=plan_week_start_date(plan.created_at.date(), week_number), phase=WeekPhase.BASE,
@@ -511,7 +522,7 @@ async def seed_plan_week_grouping(session: AsyncSession, telegram_id: int) -> No
     if plan is not None:
         # Ручной PlanItem, как его создаёт picker, всегда принадлежит PlanWeek: без plan_week_id
         # «Планы» не показывают его в недельном списке. Неделя — та же, что материализует GET /plan.
-        today = datetime.now(UTC).date()
+        today = seed_plan_today(user)
         week_number = plan_week_number(plan.created_at.date(), today)
         plans_repo = TrainingPlanRepository(session)
         week = await plans_repo.get_plan_week(training_plan_id=plan.id, week_number=week_number)
@@ -618,7 +629,7 @@ async def seed_plan_week_manual_session(session: AsyncSession, telegram_id: int)
     session.add(plan)
     await session.flush()
 
-    today = datetime.now(UTC).date()
+    today = seed_plan_today(user)
     week_number = plan_week_number(plan.created_at.date(), today)
     week_start = plan_week_start_date(plan.created_at.date(), week_number)
     week = await TrainingPlanRepository(session).create_plan_week(
@@ -662,13 +673,13 @@ async def seed_plan_week_stepper(session: AsyncSession, telegram_id: int) -> Non
     await seed_exercise_library(session)
 
     now = datetime.now(UTC)
-    tz = ZoneInfo(user.timezone)
+    tz = resolve_timezone(user.timezone)
     plan = TrainingPlan(user_id=user.id, created_at=now - timedelta(days=14))
     session.add(plan)
     await session.flush()
 
     created = plan.created_at.date()
-    current_number = plan_week_number(created, now.astimezone(tz).date())
+    current_number = plan_week_number(created, seed_plan_today(user, now=now))
     plans = TrainingPlanRepository(session)
     previous = await plans.create_plan_week(
         training_plan_id=plan.id, week_number=current_number - 1,
@@ -753,7 +764,8 @@ async def seed_plans_overview(session: AsyncSession, telegram_id: int) -> None:
 
     service = ProgramInclusionService(session)
     for target in (course, removable):
-        await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id, course_inputs=_V5_E2E_INPUTS))
+        inclusion = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=target.id, course_inputs=_V5_E2E_INPUTS))
+        inclusion.started_at = datetime.now(UTC)  # Same explicit seed calendar as the overview fixtures.
     ended = await service.create_inclusion(user_id=user.id, request=ProgramInclusionRequest(program_id=past.id, course_inputs=_V5_E2E_INPUTS))
     ended.is_active = False
     ended.started_at = datetime.now(UTC) - timedelta(days=40)
@@ -798,7 +810,7 @@ async def seed_journal_combined(session: AsyncSession, telegram_id: int) -> None
     )
 
     plan = await TrainingPlanRepository(session).get_or_create_for_user(user.id)
-    today = now.date()
+    today = seed_plan_today(user, now=now)
     week_number = plan_week_number(plan.created_at.date(), today)
     week_start = plan_week_start_date(plan.created_at.date(), week_number)
     week = await TrainingPlanRepository(session).create_plan_week(
@@ -828,7 +840,7 @@ async def seed_builder_workouts(session: AsyncSession, telegram_id: int) -> Exer
     plan = TrainingPlan(user_id=user.id)
     session.add(plan)
     await session.flush()
-    today = datetime.now(UTC).date()
+    today = seed_plan_today(user)
     week_number = plan_week_number(plan.created_at.date(), today)
     week = await TrainingPlanRepository(session).create_plan_week(
         training_plan_id=plan.id, week_number=week_number,
@@ -882,7 +894,7 @@ async def seed_live_engine(session: AsyncSession, telegram_id: int) -> None:
     plan = TrainingPlan(user_id=user.id)
     session.add(plan)
     await session.flush()
-    today = datetime.now(UTC).date()
+    today = seed_plan_today(user)
     week_number = plan_week_number(plan.created_at.date(), today)
     week = await TrainingPlanRepository(session).create_plan_week(
         training_plan_id=plan.id, week_number=week_number,
@@ -1111,7 +1123,7 @@ async def seed_journal_plans_polish(session: AsyncSession, telegram_id: int) -> 
     )).scalar_one()
     # Строка плана — в текущей неделе: сегодняшняя сессия уже выполнила её (1/1).
     plan = (await session.execute(select(TrainingPlan).where(TrainingPlan.user_id == user.id))).scalar_one()
-    today = datetime.now(UTC).date()
+    today = seed_plan_today(user)
     current_number = plan_week_number(plan.created_at.date(), today)
     week = await TrainingPlanRepository(session).create_plan_week(
         training_plan_id=plan.id, week_number=current_number,
@@ -1119,6 +1131,20 @@ async def seed_journal_plans_polish(session: AsyncSession, telegram_id: int) -> 
     )
     plan_item = (await session.execute(select(PlanItem).where(PlanItem.training_plan_id == plan.id))).scalar_one()
     plan_item.plan_week_id = week.id
+    # This fixture promises 1/1 in the CURRENT week. During its first five
+    # minutes the inherited now-5min record still belongs to the previous week.
+    # Clamp only that linked generated fact; preserve all ordinary offsets.
+    week_start = datetime.combine(week.start_date, time.min, tzinfo=resolve_timezone(user.timezone)).astimezone(UTC)
+    linked = (await session.execute(
+        select(TrainingSession).join(SessionPlanItem, SessionPlanItem.session_id == TrainingSession.id)
+        .where(SessionPlanItem.plan_item_id == plan_item.id),
+    )).scalar_one()
+    if linked.performed_at < week_start:
+        linked.performed_at = week_start
+        if linked.completed_at is not None:
+            linked.completed_at = max(linked.completed_at, week_start)
+        if linked.ended_at is not None:
+            linked.ended_at = max(linked.ended_at, week_start)
     now = datetime.now(UTC)
     await TrainingSessionRepository(session).create_session(
         user_id=user.id, source=SessionSource.BACKDATED, performed_at=now - timedelta(minutes=20), effort=None,
@@ -1423,7 +1449,7 @@ async def seed_golden_journey(session: AsyncSession, telegram_id: int) -> None:
     plan = TrainingPlan(user_id=user.id)
     session.add(plan)
     await session.flush()
-    today = datetime.now(UTC).date()
+    today = seed_plan_today(user)
     week_number = plan_week_number(plan.created_at.date(), today)
     await TrainingPlanRepository(session).create_plan_week(
         training_plan_id=plan.id, week_number=week_number,

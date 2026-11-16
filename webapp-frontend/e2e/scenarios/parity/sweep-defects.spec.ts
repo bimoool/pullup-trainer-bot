@@ -4,6 +4,7 @@ import { noWakeLock } from "../../fixtures/builderFlow";
 import { expectNoHorizontalOverflow, openTab, WIDTHS } from "../../fixtures/parity";
 import { openAppAs } from "../../fixtures/setup";
 import { buildInitData, getTestBotToken } from "../../fixtures/initData";
+import { performedOnForUtcAge } from "../../fixtures/profileCalendar";
 import { isTelegramBackButtonVisible, pressTelegramBackButton } from "../../fixtures/telegramMock";
 
 // #277 «Full sweep» — регрессии трёх найденных дефектов:
@@ -27,7 +28,10 @@ const backdatedCards = (page: Page) =>
 const todayInUserZone = (page: Page) =>
   page.evaluate((tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()), USER_TIME_ZONE);
 
-type SavedSession = { id: number; performed_at: string };
+type SavedSession = {
+  id: number; performed_at: string; source: string; status: string; source_v2: string; can_edit: boolean;
+  blocks: { set_logs: { value: string }[] }[];
+};
 async function completedSessions(page: Page, telegramId: number): Promise<SavedSession[]> {
   const response = await page.request.get("/api/v2/sessions?status=completed&limit=25", {
     headers: { "X-Telegram-Init-Data": buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken()) },
@@ -143,7 +147,37 @@ for (const width of WIDTHS) {
     });
 
     test("D2: Профиль учитывает завершённые тренировки Журнала v2", async ({ page }, testInfo) => {
-      const { consoleErrors, apiFailures } = await openAppAs(page, base + 8 + testInfo.retry, { theme });
+      const telegramId = base + 8 + testInfo.retry;
+      const { consoleErrors, apiFailures } = await openAppAs(page, telegramId, { theme });
+      const headers = { "X-Telegram-Init-Data": buildInitData({ id: telegramId, firstName: "E2E" }, getTestBotToken()) };
+      // Seed runs once for the whole suite: after UTC midnight, "2 days ago" is 3.
+      // Re-date the SAME two owned facts through the supported API, preserving their sets/results.
+      const before = await completedSessions(page, telegramId);
+      expect(before).toHaveLength(SEED_BACKDATED);
+      const now = new Date();
+      for (const [index, saved] of [...before].sort((a, b) => b.performed_at.localeCompare(a.performed_at)).entries()) {
+        const original = saved;
+        expect(original.source).toBe("backdated");
+        expect(original.status).toBe("completed");
+        expect(original.source_v2).toBe("manual_custom");
+        expect(original.can_edit).toBe(true);
+        expect(original.blocks.flatMap((block) => block.set_logs.map((set) => Number(set.value)))).toEqual([8, 7]);
+        const response = await page.request.patch(`/api/v2/sessions/${saved.id}`, {
+          headers, data: { performed_on: performedOnForUtcAge(saved.performed_at, now, index === 0 ? 2 : 5, USER_TIME_ZONE) },
+        });
+        expect(response.ok()).toBe(true);
+        const updated = await response.json();
+        expect(updated.id).toBe(saved.id);
+        expect(updated.blocks).toEqual(original.blocks);
+        expect(updated.source).toBe(original.source);
+        expect(updated.status).toBe(original.status);
+        expect((Date.parse(`${now.toISOString().slice(0, 10)}T00:00:00Z`) - Date.parse(`${updated.performed_at.slice(0, 10)}T00:00:00Z`)) / 86_400_000).toBe(index === 0 ? 2 : 5);
+      }
+      const after = await completedSessions(page, telegramId);
+      expect(after.map((saved) => saved.id).sort()).toEqual(before.map((saved) => saved.id).sort());
+      const profile = await page.request.get("/api/profile", { headers });
+      expect(profile.ok()).toBe(true);
+      expect(await profile.json()).toMatchObject({ timezone: USER_TIME_ZONE, days_since_last_workout: 2, workouts_count: 2 });
       await openTab(page, "Профиль");
       await expect(page.getByText("Личные данные")).toBeVisible();
 

@@ -71,6 +71,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -906,55 +907,26 @@ async def verify_compatible_database(session: AsyncSession) -> dict:
         raise ValueError("verify-compatible requires a fresh session")
     try:
         await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
-        # These are runtime shapes proved by the ordinary journal writer and admin
-        # reset, not evidence that initial migration ran. Keep unknown provenance,
-        # active work and every current legacy progression signal fail-closed.
-        # Cold archives are never materialized, rewritten or used as active history.
-        requires_plan = """EXISTS (SELECT 1 FROM workouts w WHERE w.user_id=u.id)
-            OR EXISTS (SELECT 1 FROM elective_workouts e WHERE e.user_id=u.id)
-            OR EXISTS (SELECT 1 FROM workout_sets s WHERE s.user_id=u.id AND s.workouts_completed>0)
-            OR EXISTS (SELECT 1 FROM training_sessions s WHERE s.user_id=u.id AND (
-                s.status <> 'completed'
-                OR s.program_inclusion_id IS NOT NULL OR s.plan_item_id IS NOT NULL
-                OR s.superseded_by_id IS NOT NULL
-                OR s.engine_status IS NOT NULL OR s.engine_plan IS NOT NULL OR s.engine_state IS NOT NULL
-                OR s.engine_version IS NOT NULL
-                OR EXISTS (SELECT 1 FROM session_events e WHERE e.session_id=s.id)
-                OR EXISTS (SELECT 1 FROM session_plan_items l WHERE l.session_id=s.id)
-                OR NOT COALESCE((
-                    (s.origin='native' AND s.completed_at IS NOT NULL
-                     AND s.legacy_id IS NULL AND s.superseded_at IS NULL
-                     AND s.source IN ('freeform','backdated')
-                     AND s.source_v2 IN ('external_activity','manual_custom')
-                     AND s.workout_definition_id IS NULL AND s.workout_snapshot IS NULL
-                     AND s.workout_definition_version_id IS NULL
-                     AND NOT EXISTS (SELECT 1 FROM session_blocks b LEFT JOIN exercises e ON e.id=b.exercise_id
-                         WHERE b.session_id=s.id AND (b.complex_id IS NOT NULL OR e.id IS NULL
-                             OR e.subcategory IN ('block_a','block_b')
-                             OR (e.source_type='user' AND e.owner_user_id IS DISTINCT FROM s.user_id)
-                             OR (e.source_type='system' AND e.owner_user_id IS NOT NULL)
-                             OR e.source_type NOT IN ('system','user'))))
-                    OR (s.origin='legacy_backfill' AND s.legacy_id IS NOT NULL
-                        AND s.superseded_at IS NOT NULL AND s.superseded_reason='legacy_deleted'
-                        AND EXISTS (SELECT 1 FROM workouts_archive_admin_reset a
-                            WHERE a.id=s.legacy_id AND a.user_id=s.user_id
-                              AND a.performed_at=s.performed_at AND a.status='completed')
-                        AND NOT EXISTS (SELECT 1 FROM workouts w WHERE w.id=s.legacy_id))
-                ), false)
-            ))"""
-        row = (await session.execute(text(f"""WITH classified AS (
-            SELECT u.id, u.onboarding_completed_at IS NOT NULL AS onboarded,
-                   EXISTS (SELECT 1 FROM training_plans p WHERE p.user_id=u.id) AS has_plan,
-                   ({requires_plan}) AS requires_plan FROM users u
-        ) SELECT count(*) AS users_total,
-            count(*) FILTER (WHERE onboarded) AS users_onboarded,
-            count(*) FILTER (WHERE onboarded AND has_plan) AS onboarded_with_plan,
-            count(*) FILTER (WHERE onboarded AND NOT has_plan AND NOT requires_plan) AS compatible_onboarded_without_plan,
-            count(*) FILTER (WHERE NOT onboarded AND has_plan) AS non_onboarded_with_plan,
-            count(*) FILTER (WHERE NOT onboarded AND NOT has_plan AND NOT requires_plan) AS compatible_non_onboarded_without_plan,
-            count(*) FILTER (WHERE NOT has_plan AND requires_plan) AS blocked_without_plan,
-            (SELECT count(*) FROM training_plans) AS training_plans_total FROM classified"""))).mappings().one()
-        counts = {key: int(value) for key, value in row.items()}
+        # The installed guard consumes these exact reviewed bytes without executing
+        # candidate Python. This query returns bounded aggregates only, never rows.
+        await session.execute(text("SET LOCAL statement_timeout = '5s'"))
+        await session.execute(text("SET LOCAL lock_timeout = '1s'"))
+        await session.execute(text("SET LOCAL idle_in_transaction_session_timeout = '5s'"))
+        classification = (
+            Path(__file__).with_name("sql").joinpath("planless_classification.sql").read_text()
+        )
+        row = (await session.execute(text(classification))).mappings().one()
+        count_keys = (
+            "users_total",
+            "users_onboarded",
+            "onboarded_with_plan",
+            "compatible_onboarded_without_plan",
+            "non_onboarded_with_plan",
+            "compatible_non_onboarded_without_plan",
+            "blocked_without_plan",
+            "training_plans_total",
+        )
+        counts = {key: int(row[key]) for key in count_keys}
         errors: list[str] = []
         if counts["blocked_without_plan"]:
             errors.append(f"history_without_plan={counts['blocked_without_plan']}")
