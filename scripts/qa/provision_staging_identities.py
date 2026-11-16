@@ -118,7 +118,7 @@ async def _include_course_in_past(session, user, *, start: datetime, visited_wee
     from app.db.repositories.training_plans import TrainingPlanRepository
     from app.services.plan_week import PlanWeekService
     from app.services.program_inclusion import ProgramInclusionRequest, ProgramInclusionService
-    from scripts.e2e_seed import _shipped_pull_ups_program
+    from scripts.e2e_seed import _shipped_pull_ups_program, seed_plan_today
 
     program = await _shipped_pull_ups_program(session)
     inclusion = await ProgramInclusionService(session).create_inclusion(
@@ -141,7 +141,7 @@ async def _include_course_in_past(session, user, *, start: datetime, visited_wee
     for offset in range(visited_weeks):
         await weeks.ensure_current_plan_week(
             training_plan_id=plan.id,
-            today=(start + timedelta(weeks=offset)).date(),
+            today=seed_plan_today(user, now=start + timedelta(weeks=offset)),
         )
     return program, inclusion, plan
 
@@ -299,6 +299,7 @@ async def snapshot(session, telegram_id: int) -> dict:
     )
     from app.db.repositories.users import UserRepository
     from app.domain.multi_program import plan_week_number
+    from scripts.e2e_seed import seed_plan_today
 
     user = await UserRepository(session).get_by_telegram_id(telegram_id)
     if user is None:
@@ -330,7 +331,7 @@ async def snapshot(session, telegram_id: int) -> dict:
     if plan is None:
         out["plan"] = None
         return out
-    today = datetime.now(UTC).date()
+    today = seed_plan_today(user, now=datetime.now(UTC))
     inclusions = (
         (
             await session.execute(

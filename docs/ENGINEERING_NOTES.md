@@ -3316,3 +3316,39 @@ dist symlink and changed the shared checkout's ignored built bundle. Its exact
 prior bytes are unknown; tracked source and existing result artifacts were
 unchanged. The symlink was removed and subsequent builds used this worktree's own
 real dist. Production and CI do not use that shared local bundle.
+
+### Plan-facing seed dates follow the profile calendar (2026-11-16)
+
+An independent synthetic PostgreSQL/signed-HTTP probe at 2026-11-15 23:06 UTC
+(Monday in Moscow) found five `live_engine` rows in the previous week and zero
+in the API's current week. The ordinary live-engine identities are outside the
+finite visual fixture harness. Their seed used the UTC day while `/api/v2/plan`
+uses the profile's local day. This explains a missing current-week planned-start
+row; hosted browser assertion results remain a separate CI gate.
+
+`scripts/e2e_seed.py::seed_plan_today` now uses the same public timezone resolver
+and fallback as the API, without importing the web layer or test harness. The
+stored UTC `TrainingPlan.created_at.date()` remains the plan-week origin, as in
+the real API. The audit covers every plan-week/calendar call site:
+
+| Seed family | Calendar handling and delegated scenarios |
+|---|---|
+| `v2_session_complex` | Current week uses the shared helper. |
+| `plan_week_grouping` | Current manual stretch row; API expands its intended 2× weekly volume. |
+| `plan_week_manual_session`, `journal_combined` | Current manual plank/push-up rows; legacy history offsets retained. |
+| `live_engine` | All five named workouts belong to the API's current week; live clocks stay real. |
+| `journal_plans_polish` | Current completed row; only its linked generated fact is clamped to local Monday midnight when `now−5min` crosses into the previous week. Completion/end remain at or after performance, never in the future. Ordinary offsets and other records are preserved. |
+| `golden_journey` | Empty current week; inherited by `sweep_defects`, `session_recovery`, then `background_interval`. |
+| `builder_workouts` | Existing local-day behavior goes through the same helper; inherited by `journal_v2`. |
+| `plan_week_stepper` | Existing local current/previous weeks and noon-or-now session clamp retained; inherited by `sweep_populated`. |
+| Inclusion-only seeds | `v2_session_ready`, `v2_session_progression_edit`, `plan_week_ready`, `plan_week_add_exercise`, `plan_week_start_session`, `v5_one_rep_max`, `v5_weighted_b_live`, `plans_overview` leave current-week materialization to the real API. `journal_edit` creates an unweeked journal title link; its polish variant assigns the current week above. |
+| QA provisioner | Historical visited-week dates and read-only `snapshot.current_week_number` use the same helper. `provision_aged_active`, `provision_aged_legacy_snapshot`, and `provision_expired` retain their original start timestamps and week offsets; fresh/partial/weighted fixtures retain their existing paths. |
+
+Other journal/analytics records keep their intentional local-month or elapsed-time
+offsets. In particular `analytics_v2` retains all four recent sessions and its
+existing Monday-boundary clamp. No application calendar, engine clock, SQL,
+production guard, workflow, registry, or finite visual harness is changed.
+The regression freezes only seed/API calendar inputs and synthetic plan creation
+timestamps; it checks explicit intended row identities/volumes, current-week
+credits and real-clock planned live starts through PostgreSQL and the real API
+across local/UTC Monday and month/year boundaries.

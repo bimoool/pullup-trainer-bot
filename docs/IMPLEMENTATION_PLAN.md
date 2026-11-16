@@ -308,3 +308,13 @@ Registry integrity follow-up replaces line-based shell rewriting with the explic
 `e2e_seed_all.sh --list` contract. Inspection expands the original registry without
 Python or seed execution; synthetic dispatch tests cover both calendar modes.
 Scenario validity, unique identities and spec identity coverage remain required.
+
+Plan-facing seed audit follow-up aligns all seven remaining UTC-day callers with
+the API's user-local calendar, shares the existing correct Builder/stepper policy,
+and aligns QA visited-week dates and snapshot reporting. Only the generated
+`journal_plans_polish` current-week fact is clamped at Monday midnight; other
+historical offsets remain intact. PostgreSQL/API regressions cover intended
+workout identities/volumes, completed credits, local/UTC week/month/year
+boundaries and live planned starts with real engine clocks. The finite visual
+harness, registry, application code, SQL and production guard are unchanged.
+Next: final-head mandatory GitHub CI and independent review in the same PR.
