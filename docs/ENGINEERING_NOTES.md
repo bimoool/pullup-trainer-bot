@@ -3352,3 +3352,36 @@ The regression freezes only seed/API calendar inputs and synthetic plan creation
 timestamps; it checks explicit intended row identities/volumes, current-week
 credits and real-clock planned live starts through PostgreSQL and the real API
 across local/UTC Monday and month/year boundaries.
+
+### E2E assertions distinguish plan weeks, course weeks and Profile dates (2026-11-16)
+
+Old CI run `43772901970`, job `132992688978`, exposed three residual assertion
+contracts. `plans-plan-week` assumed PlanWeek 1; `later-weeks` assumed the next
+two PlanWeeks were always 2/3. A plan created on UTC Sunday can already have
+current PlanWeek 2 on local Monday. Both specs now use explicit `current_week_id`,
+independently check the UTC plan origin/local Monday arithmetic and full rendered
+week label, and navigate relative offsets 1/2. The latter also proves these map
+to course weeks 2/3. Four-row Tuesday/free-pool ownership, two course occurrences,
+start buttons and reload assertions remain; no application rules change.
+
+That job seeded D2 identities 997509/997529 at November 15 23:11:27/35 UTC and
+tested Profile at November 16 00:21:54/00:22:12 UTC. Profile currently subtracts
+UTC dates, so the original two-day-old fact became three days old. Immediately
+before D2, the spec now moves only the existing two owned synthetic session dates
+through supported signed `PATCH /sessions/{id}`. The request is a local date and
+preserves local time, so its helper first derives the intended UTC timestamp,
+then converts to Moscow. Checks preserve IDs, blocks, sets, results, sources,
+statuses and count, verify returned UTC ages 2/5 and API summary 2 days/2 total,
+and retain the exact UI assertion. No reseed, deletion or clock/harness change.
+
+Regression evidence: extracted old week assumptions failed seven pure cases;
+restoring the unadjusted D2 date reproduced `3 != 2` on real PostgreSQL with
+signed HTTP, then restoring preparation passed. Fifteen signed PostgreSQL/API
+cases pass across local/UTC Monday and month/year boundaries, including course
+mapping, stable repeated GETs, live targets and ownership refusal for a foreign
+date edit. Fourteen new pure cases (including offset-bearing timestamps), fourteen
+adjacent navigation/profile unit cases, ten registry checks and changed-spec
+TypeScript checks pass. The related plan/fix-wave1 specs have no remaining
+literal first-week or UTC-today assumptions. Production, SQL, guard, workflow,
+registry and finite calendar harness bytes remain unchanged; final-head hosted
+CI and independent review are still required.

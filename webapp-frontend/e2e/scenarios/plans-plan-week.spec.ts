@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { openAppAs } from "../fixtures/setup";
+import { currentPlanWeek, planWeekLabel, type CalendarPlan } from "../fixtures/planCalendar";
 
 // scripts/e2e_seed.py plan_week_ready 900013 — RECURRING-курс с одним
 // PlanItem по вторникам (day_of_week=1) и одним в свободном пуле
@@ -23,14 +24,12 @@ test("«Планы»: видна текущая неделя плана, эле�
   await page.getByRole("button", { name: "Планы" }).click();
 
   const planResponse = await planResponsePromise;
-  const plan = (await planResponse.json()).plan as {
-    plan_weeks: { id: number; week_number: number; phase: string }[];
+  const plan = (await planResponse.json()).plan as CalendarPlan & {
     plan_items: { id: number; day_of_week: number | null; plan_week_id: number | null }[];
   };
 
   expect(plan.plan_weeks).toHaveLength(1);
-  const week = plan.plan_weeks[0];
-  expect(week.week_number).toBe(1);
+  const week = currentPlanWeek(plan);
   expect(week.phase).toBe("base");
 
   // #304: одна строка = одно занятие — «вторник × 1» и «свободный пул × 3» = 4 занятия.
@@ -39,6 +38,7 @@ test("«Планы»: видна текущая неделя плана, эле�
     expect(item.plan_week_id).toBe(week.id);
   }
   expect(plan.plan_items.filter((item) => item.day_of_week !== null)).toHaveLength(1);
+  expect(plan.plan_items.find((item) => item.day_of_week !== null)?.day_of_week).toBe(1);
   expect(plan.plan_items.filter((item) => item.day_of_week === null)).toHaveLength(3);
 
   // Визуально — текущая неделя подписана явно ("текущая"), элементы видны и
@@ -50,7 +50,7 @@ test("«Планы»: видна текущая неделя плана, эле�
   // эти два ассерта раньше проверяли имя упражнения, теперь устарели.
   // issue #258 — шапка недели теперь степпер «Неделя N · даты» + чип фазы,
   // «×/нед» заменено счётчиком «сделано/план».
-  await expect(page.getByTestId("plan-week-label")).toContainText("Неделя 1 ·");
+  await expect(page.getByTestId("plan-week-label")).toHaveText(planWeekLabel(week));
   await expect(page.getByTestId("plan-week-stepper")).toContainText("База");
   await expect(page.getByTestId("plan-week-progress")).toContainText("Текущая неделя");
   await expect(page.getByText("Вторник")).toBeVisible();

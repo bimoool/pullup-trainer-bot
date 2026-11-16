@@ -318,3 +318,13 @@ workout identities/volumes, completed credits, local/UTC week/month/year
 boundaries and live planned starts with real engine clocks. The finite visual
 harness, registry, application code, SQL and production guard are unchanged.
 Next: final-head mandatory GitHub CI and independent review in the same PR.
+
+Residual E2E assertions now resolve the explicit current PlanWeek and navigate
+relative future offsets while independently checking week/date/course mapping.
+Profile D2 preserves its exact two-day/two-workout fixture through dates-only
+signed edits of the same two owned synthetic facts immediately before reading;
+the full-suite UTC-midnight drift is reproduced without changing application
+semantics. Focused validation: 15 signed PostgreSQL/API, 14 new pure, 14 adjacent
+unit and 10 registry cases passed; changed-spec TypeScript checks passed.
+No application, seed, SQL, guard, workflow, registry or calendar harness changes.
+Next: exact final-head hosted CI and independent review in the same PR.
