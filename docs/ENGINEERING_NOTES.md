@@ -3480,3 +3480,13 @@ TypeScript checks pass. The related plan/fix-wave1 specs have no remaining
 literal first-week or UTC-today assumptions. Production, SQL, guard, workflow,
 registry and finite calendar harness bytes remain unchanged; final-head hosted
 CI and independent review are still required.
+### 1RM speed labels inherited the effort grid (#359, 2026-11-17)
+
+The three long speed labels in `CourseSetupForm` inherited `.live-chips`'s five
+equal columns. Real browser text ranges exceeded the 54.39 px targets at 320 px
+and the 66.80 px targets at 390 px; the word «Получилось» alone was 89.41 px wide.
+The scoped `.one-rm-speed` grid uses auto-fit with a 12rem minimum capped by its
+container. At both mobile widths the full labels fit in 56 px high rows at the
+original 16 px font size. Shared effort styles and speed handlers keep their
+original definitions. Fresh UI/API regression, exact rollback proof, synthetic
+screenshots and local validation are recorded in [ONE_RM_LAYOUT_QA.md](ONE_RM_LAYOUT_QA.md).
