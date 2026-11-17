@@ -53,3 +53,24 @@ headless shell is absent, and system Chromium exits on the sandbox's denied
 synthetic database was started, and no additional API mocks were introduced.
 Full backend/format/build/E2E gates remain required in the draft PR's CI; the full
 3000+ local backend suite was not repeated for this test/config-only maintenance.
+
+## Current-main integration (2026-11-17, issue #391)
+
+The existing PR390 branch was advanced with a normal merge of current main
+`869cd0d19334e59e5c0fb6d7cd280da3c095d4a9`; no force push or duplicate PR.
+The diff against that main remains limited to the functional E2E command,
+compiler/fixture types, workflow ordering and documentation.
+
+With both dependency packages available, temporarily restoring the three
+repaired files from this current main reproduced exactly the same seven
+TypeScript diagnostics (exit 2). Restoring the PR fixes returned exit 0 with
+zero diagnostics. The newer Journal, rest-editor and calendar scenarios are
+included by the unchanged `**/*.ts` scope. No compiler exclusions, diagnostic
+suppression or product changes were introduced. Hosted full backend/E2E and
+current-head review remain the integration gates; old-head CI is not reused.
+
+Fresh integration checks: frontend production build passed; functional Playwright
+collection found 624 tests in 96 files (collection only, no browser pass claimed).
+Workflow YAML/order and successful-typecheck gating assertions passed, including
+retaining the main browser step after a peer-insights failure. `git diff --check`
+passed. The existing Vite bundle-size advisory remains unchanged.
