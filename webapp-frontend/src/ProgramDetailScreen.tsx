@@ -13,7 +13,10 @@ import { useBackButton } from "./useBackButton";
 type Props = {
   initDataRaw: string;
   program: ProgramResponseV2;
-  included: boolean;
+  /** null means membership is unknown; adding must wait for a valid plan. */
+  included: boolean | null;
+  planError: string | null;
+  onReloadPlan: () => void;
   adding: boolean;
   addError: string | null;
   onAdd: () => void;
@@ -58,7 +61,7 @@ function categoryIndex(category: string | null | undefined): number {
   return hash;
 }
 
-export function ProgramDetailScreen({ initDataRaw, program, included, adding, addError, onAdd, onBack }: Props) {
+export function ProgramDetailScreen({ initDataRaw, program, included, planError, onReloadPlan, adding, addError, onAdd, onBack }: Props) {
   const structureLabel = STRUCTURE_TYPE_LABELS[program.structure_type] ?? program.structure_type;
 
   // issue #266: превью структуры из реальных ProgramItem; сбой/пусто — только описание.
@@ -125,11 +128,18 @@ export function ProgramDetailScreen({ initDataRaw, program, included, adding, ad
         className="action-button vs-primary"
         size="l"
         stretched
-        disabled={included || adding}
+        disabled={included !== false || adding}
         onClick={onAdd}
       >
-        {included ? <><Icon name="check" size={18} strokeWidth={2.4} className="vp-icon-lead" />В плане</> : adding ? "Добавляю…" : "Добавить в план"}
+        {included === null ? (planError === null ? "Загружаю план…" : "План недоступен")
+          : included ? <><Icon name="check" size={18} strokeWidth={2.4} className="vp-icon-lead" />В плане</> : adding ? "Добавляю…" : "Добавить в план"}
       </Button>
+      {included === null && planError !== null && (
+        <div data-testid="program-plan-unavailable">
+          <p className="screen-message">Не удалось загрузить план: {planError}. Сначала загрузите план, чтобы проверить, добавлен ли этот курс.</p>
+          <Button size="s" mode="outline" onClick={onReloadPlan}>Повторить загрузку плана</Button>
+        </div>
+      )}
       {addError && <p className="screen-message">Не удалось добавить курс: {addError}</p>}
     </div>
   );

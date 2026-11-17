@@ -15,8 +15,8 @@ test.setTimeout(120_000);
 
 const freshId = () => 7_600_000 + Math.floor(Math.random() * 90_000);
 
-async function onboardAndOpenSetup(page: Page, telegramId: number) {
-  await openAppAs(page, telegramId);
+async function onboardAndOpenSetup(page: Page, telegramId: number, theme: "light" | "dark" = "light") {
+  await openAppAs(page, telegramId, { theme });
   await page.getByLabel("Сколько подтягиваний вышло?").fill("16");
   await page.getByRole("button", { name: "Далее" }).click();
   await page.getByRole("button", { name: "Да" }).click();
@@ -159,3 +159,72 @@ test("вариант 2: шаг веса + недавний 5×5 и «Сохра�
   await expect(page.getByTestId("one-rm-test")).toHaveCount(0);
   await expect(page.getByText(/^Блок 2: 5×5/)).toBeVisible();
 });
+
+// #359: long speed labels used the five-column effort grid and overlapped on narrow screens.
+// Reach the single-rep step through actual onboarding and API ladder responses, without a seed or route mock.
+for (const width of [320, 390]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`1RM: ${width}px ${theme} — подписи и области нажатия скорости не перекрываются`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 844 });
+      await onboardAndOpenSetup(page, freshId(), theme);
+      await page.getByTestId("course-input-load_step_kg").fill("2,5");
+      await page.getByTestId("one-rm-start").click();
+      await expect(page.getByTestId("one-rm-next")).toHaveText("Подход 1 из 8: собственный вес × 5");
+      await page.getByTestId("one-rm-success").click();
+      await expect(page.getByTestId("one-rm-next")).toHaveText("Подход 2 из 8: +7.5 кг × 3");
+      await page.getByTestId("one-rm-success").click();
+      await expect(page.getByTestId("one-rm-next")).toHaveText("Подход 3 из 8: +15 кг × 1");
+
+      const speed = page.getByTestId("one-rm-speed");
+      await speed.scrollIntoViewIfNeeded();
+      const bounds = await speed.getByRole("button").evaluateAll((buttons) => buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNodeContents(button);
+        return {
+          label: button.textContent,
+          box: box.toJSON() as { x: number; y: number; right: number; bottom: number; width: number; height: number },
+          lines: Array.from(text.getClientRects(), (line) => ({ x: line.x, y: line.y, right: line.right, bottom: line.bottom })),
+          ownsCenter: button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)),
+        };
+      }));
+      await testInfo.attach("speed-bounds", { body: JSON.stringify(bounds, null, 2), contentType: "application/json" });
+      await testInfo.attach("speed-layout", { body: await page.screenshot(), contentType: "image/png" });
+      expect(bounds.map(({ label }) => label)).toEqual([
+        "Получилось · Быстро", "Получилось · Обычно", "Получилось · Медленно",
+      ]);
+      for (const { box, lines, ownsCenter } of bounds) {
+        expect(box.width).toBeGreaterThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(ownsCenter).toBe(true);
+        expect(lines.length).toBeGreaterThan(0);
+        for (const line of lines) {
+          expect(line.x).toBeGreaterThanOrEqual(box.x - 1);
+          expect(line.right).toBeLessThanOrEqual(box.right + 1);
+          expect(line.y).toBeGreaterThanOrEqual(box.y - 1);
+          expect(line.bottom).toBeLessThanOrEqual(box.bottom + 1);
+        }
+      }
+      for (let i = 0; i < bounds.length; i += 1) {
+        for (const { box: other } of bounds.slice(i + 1)) {
+          const { box } = bounds[i];
+          expect(box.right <= other.x || other.right <= box.x || box.bottom <= other.y || other.bottom <= box.y).toBe(true);
+        }
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+      // Every complete label remains a working target and submits its original speed value.
+      for (const [index, choice] of [
+        { label: "Быстро", value: "fast", nextKg: "22.5" },
+        { label: "Обычно", value: "normal", nextKg: "25" },
+        { label: "Медленно", value: "slow", nextKg: "27.5" },
+      ].entries()) {
+        const response = page.waitForResponse((r) => r.url().endsWith("/course/one-rep-max/next-set") && r.status() === 200);
+        await speed.getByRole("button", { name: `Получилось · ${choice.label}`, exact: true }).click();
+        const next = await response;
+        expect(next.request().postDataJSON().attempts.at(-1).speed).toBe(choice.value);
+        await expect(page.getByTestId("one-rm-next")).toHaveText(`Подход ${index + 4} из 8: +${choice.nextKg} кг × 1`);
+      }
+    });
+  }
+}

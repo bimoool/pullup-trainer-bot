@@ -183,7 +183,7 @@ export function OneRepMaxTest(
           </p>
           {attempts.length > 0 && <p className="live-hint">Перед подходом — отдых {Math.round((next?.rest_seconds ?? 180) / 60)} мин.</p>}
           {current.reps === 1 ? (
-            <div className="live-chips" data-testid="one-rm-speed">
+            <div className="live-chips one-rm-speed" data-testid="one-rm-speed">
               {SPEEDS.map((speed) => (
                 <button key={speed.value} type="button" className="live-chip" disabled={busy} onClick={() => attempt(true, speed.value)}>
                   Получилось · {speed.label}
