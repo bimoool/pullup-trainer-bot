@@ -45,6 +45,45 @@ production/rollback command patterns remain unchanged. The root helper never
 executes candidate app code, migrates or starts a bot. The fixed runner adoption
 operation below replaces only the production runner.
 
+### Separate staging runner evidence (#360)
+
+Readiness previously hashed only the three root bundle runners in
+`runner_hashes`; those facts cannot attest the separate file invoked by the
+staging forced dispatcher. The additive `facts.staging_runner_attestation`
+reports `installed_state`, `installed`, `candidate_state`, `candidate` and
+`match`. The existing three `runner_hashes` entries and their meaning are unchanged.
+
+The only installed path read is `/home/deploy/deploy-staging-guarded-run.sh`.
+The fixed `deploy` account must have a nonzero UID and home `/home/deploy`.
+The root and `home` directories must be root-owned, and `deploy` must own its
+home; all three must be real directories without group/world writes or special
+mode bits. The executable must be a regular, singly linked, deploy-owned mode 755
+file, as installed by `STAGING_RC_RUNBOOK.md` §3.2. Descriptor-relative
+`O_NOFOLLOW` opens, nonblocking file open, a 256 KiB read bound, before/after file
+metadata and path-chain reconciliation discard symlinks and concurrent drift.
+No owner, mode, file content, checkout or service is changed by this observation.
+
+The candidate digest comes only from `deploy/deploy-staging-guarded-run.sh` in
+the exact requested commit. Git blob type and size are checked before reading
+the immutable object, with final size verification; no fetch, checkout or code
+execution occurs. Each side has one fixed state: `PRESENT`, `ABSENT`, `UNTRUSTED`
+or `UNKNOWN`. Only `PRESENT` has a SHA-256; all other states have a null digest.
+`match` is a Boolean only when both sides are present and is null otherwise.
+The adapter validates this exact shape, states and hashes before publishing it;
+file bytes, private paths and raw errors are not exported.
+
+Readiness receipt `VERIFIED` means the observation completed. It does **not**
+mean staging is verified, that all hashes match, or that deployment is admitted.
+An absent or untrusted staging file leaves an unknown match without failing the
+existing observation. A matching digest proves the observed file bytes only;
+it does not prove a runner executed, a deployment succeeded or startup health
+passed. Existing authorization, claims, locks, admission and deployment behavior,
+including the implemented startup health waits, are unchanged.
+
+This source candidate is not installed runtime evidence. Integration and review
+must precede separate controller activation and an actual fresh observation.
+It performs no staging runner installation/adoption and does not close #360.
+
 ## Receipts, serialization and failure handling
 
 GitHub reserves a durable comment claim before dispatch. Each new owner request
