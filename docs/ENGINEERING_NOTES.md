@@ -19,6 +19,14 @@ their CI retries are registered in the existing seed. Chromium touch emulation e
 browser behavior; it does not establish native Telegram or iOS behavior. Local WebKit was
 unavailable; no new platform gate or installation is introduced.
 
+Local evidence: the four physical-gesture regressions fail on the original UI and again
+after rolling back only the fix; restoring it passes all five cases, including natural
+90-second REST, pause/reload, later intentional skip, keyboard submission and persisted
+`[5, 5]`. All 29 existing live-engine, refresh-race, narrow-screen and durable-result browser
+cases pass against real FastAPI/PostgreSQL. Production build, E2E typecheck, 34 shared vectors,
+43 fixture/clock checks and `ruff check` pass. The unchanged Python formatting baseline
+reports 456 files; this change edits no Python files. Full PR gates remain required.
+
 ## Home partial upstream failures #353/#298 (2026-11-17, candidate)
 
 `HomeScreen` previously used `Promise.all(fetchPrograms, fetchPlan)` and kept both
