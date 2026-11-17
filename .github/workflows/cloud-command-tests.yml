@@ -2,6 +2,21 @@ name: Cloud command authorization tests
 on:
   pull_request:
     paths:
+      - deploy/control-plane-*.py
+      - deploy/control-plane-*.sh
+      - deploy/install-control-plane.py
+      - deploy/drive-backup.py
+      - deploy/systemd/pullup-drive-backup.*
+      - tools/controller_control_client.py
+      - tools/tests/test_control_plane*.py
+      - .github/workflows/controller-control.yml
+      - .github/workflows/controller-recovery.yml
+      - deploy/server-control.py
+      - deploy/prod-guarded-dispatch.sh
+      - deploy/install-server-control.py
+      - tools/server_control_client.py
+      - tools/tests/test_server_control*.py
+      - .github/workflows/server-control.yml
       - deploy/install-staging-qa-access.py
       - deploy/qa-staging.sh
       - deploy/staging-qa-access-dispatch.sh
@@ -10,6 +25,16 @@ on:
       - tools/tests/check_fixtures.py
       - tools/tests/test_current_checks.py
       - tools/guarded_comment_dispatch.py
+      - tools/incident_diagnostics.py
+      - tools/tests/test_incident_r3_once_recovery.py
+      - tools/tests/test_incident_r3_claim_write.py
+      - tools/tests/test_incident_r3_redelivery.py
+      - tools/incident_r3_recovery.py
+      - tools/incident_r3_recovery_client.py
+      - tools/rollback_r1_recovery*.py
+      - tools/tests/test_rollback_r1_recovery.py
+      - tools/tests/test_cloud_control_continuity.py
+      - tools/tests/test_incident_r3_recovery.py
       - tools/tests/test_guarded_comment_dispatch.py
       - .github/workflows/cloud-command-dispatch.yml
       - .github/workflows/cloud-command-tests.yml
@@ -18,6 +43,7 @@ on:
       - .github/workflows/staging-qa.yml
       - .github/workflows/release-qa.yml
       - .github/workflows/production-deploy.yml
+      - .github/workflows/production-rollback.yml
       - .github/workflows/rehearsal-harness.yml
 permissions:
   contents: read

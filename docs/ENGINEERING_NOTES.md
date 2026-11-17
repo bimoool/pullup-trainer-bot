@@ -1,5 +1,34 @@
 # Инженерные заметки pullup-trainer-bot
 
+## Planless history compatibility (2026-11-15, source candidate)
+
+The blanket `history_without_plan` test conflated missing migration state with supported runtime states.
+Ordinary `POST /api/v2/sessions` journal/activity writes do not create a plan or apply course progression.
+`reset_user_progress` archives legacy data, retains superseded keyed copies and clears onboarding; cold v1
+archives predate plans. Neither archive presence nor onboarding status proves a complete reset: electives
+and native sessions survive the ordinary reset. The first account-invariance proof ran six real PostgreSQL/API
+journeys on unchanged source; changing the verifier expectation then failed on the old blanket predicate.
+
+Admission now permits cold archives and narrowly proved completed native unplanned journal/activity facts.
+A reset copy requires `legacy_backfill`, completed status, a key, `legacy_deleted`, an exact same-user archive
+id/date/status match, no live legacy source, and no plan/inclusion/M2M link. Current legacy rows, positive current
+workout-set counters, active/unknown/unlabelled history, protected native STEP roles and foreign references
+remain refused. Verification uses the existing read-only transaction and all-user reconciliation; it never
+repairs history, restores archives or creates plans. The existing count keys retain their partition equations:
+compatible planless users now include these proved shapes, so dry-run's proposed missing-plan count still
+agrees; its proposed work is never applied in same-schema mode. All repeat/stopped/hash checks remain.
+
+Preflight also runs one fixed host literal aggregate query for current planless accounts, in an explicit
+repeatable-read/read-only transaction with statement/lock/idle timeouts. It returns overlapping user counts
+for the eight historical sources and native/active/linked/unknown/superseded/STEP flags. A host-isolated
+numeric allowlist emits only fixed enums and bounded counts; raw SQL errors are suppressed. This is evidence
+classification, never admission. The older historical-failure diagnostic remains unchanged. No production
+subtype is inferred from synthetic proof and no production row or dump is used.
+
+Release sequencing is unchanged: review/full CI and protected merge, exact final-SHA staging and both QA,
+root-controlled guard adoption/receipt and fresh readiness, then that candidate's once-only after-QA
+production-preflight before any separate apply decision. Source work performs no operation or migration.
+
 > Это бывший `CLAUDE.md` (сохранён целиком, история файла — через `git log --follow`).
 > Короткая обязательная точка входа для агентов теперь — [`CLAUDE.md`](../CLAUDE.md);
 > продуктовое поведение — [`docs/PROJECT_SPEC.md`](PROJECT_SPEC.md), план и статус —
@@ -10,6 +39,23 @@
 > Этот файл — журнал устоявшихся решений, инцидентов и ловушек. Он **не** определяет
 > продуктовое поведение: при расхождении с `PROJECT_SPEC.md` прав `PROJECT_SPEC.md`
 > (а над обоими — `.specify/memory/constitution.md`).
+
+## R3: psql stdin does not make database renames atomic (#411, 2026-11-15)
+
+`adminq` feeds SQL to `psql` on stdin. Without an explicit transaction each
+`ALTER DATABASE ... RENAME` commits independently. On synthetic PostgreSQL
+16.15, a late connection rejecting rename two and a terminated backend between
+the statements both left the live name absent, with the failed and restored
+databases retained. The real regression executes the source helper and swap
+command, rather than a rewritten SQL equivalent.
+
+The pair now uses explicit `BEGIN`/`COMMIT`. Both failures roll back the first
+rename; success keeps the failed database and moves the restored copy to the
+live name. Tests compare names, database OIDs/metadata, schema, history and archive
+rows, plus an unrelated synthetic sentinel. A connection lost at COMMIT can still
+leave the outcome unknown: stop writers and inspect names; never claim that
+every client error means nothing committed. No production reproduction, runner
+installation or recovery action is part of this fix.
 
 ## REBUILD-1: заметки реконструкции (post-Phase-D)
 
@@ -2569,6 +2615,10 @@ SELECT → «строки нет» → INSERT, второй запрос пад�
 - E2E: все сиды — `scripts/e2e_seed_all.sh` (CI и локально), идемпотентны. Спеки `session-offline` и
   `session-progression-edit` требуют `ADMIN_IDS=900010,900011,900012` у сервера (вкладка Dashboard) —
   без него падают на поиске кнопки, это не баг продукта.
+- Проверка реестра использует `scripts/e2e_seed_all.sh --list`: тот же порядок, циклы и арифметика,
+  но только пары `scenario telegram_id`, без запуска Python, календарного harness или записи данных.
+  Не вырезать определение `seed()` по строкам: многострочный dispatch оставляет исполняемые фрагменты
+  и ломает shell. Неизвестные и дополнительные аргументы отклоняются до dispatch.
 - Golden Journey (`golden-journey.spec.ts`): Главная → Программа → Моя тренировка → в план → reps →
   Summary → Аналитика → Журнал → безопасное удаление; остальные инварианты — в узких спеках (см. шапку).
 
@@ -3103,3 +3153,252 @@ POST …/995/complete: `refresh()` LiveEngineScreen не нашёл новую �
 - **Тесты.** Фикстура веб-`user` уже с триалом (#300); вспомогательные пользователи тестов, которые проверяют не
   подписку, создаются через `tests/test_web/_premium.py::create_premium_user` (бот — autouse
   `tests/test_bot/_premium.py`). Иначе 402 маскирует то, что тест на самом деле проверяет.
+# Skipped GitHub Actions job timestamps (2026-11-11)
+
+The current-check release guard rejected the rehearsal request in dispatcher run
+`43074641565` before creating a durable claim. On candidate `bf0d55fb`, GitHub's
+check and job APIs both reported skipped `claude` job `130693727248` in run
+`43069619207` with start `2026-11-11T17:35:30Z` and completion
+`2026-11-11T17:35:21Z`. The timestamps matched exactly; the rejected assumption was
+that every completed job has a nonnegative execution interval. Other skipped jobs
+on that candidate also had completion before start.
+
+`tools/current_checks.py` permits that ordering only for `skipped` jobs, which did
+not execute. Exact check/job timestamp equality, SHA/app/workflow/suite/job binding,
+attempt validation and latest-start ordering remain mandatory. Required checks
+still need `success`; a skipped required context cannot satisfy them. This repair
+does not replay the refused command or establish successful rehearsal evidence.
+
+### Journal calendar response-race fixture at month boundaries
+
+The response-race browser scenario uses its own `journal_calendar_response_race`
+seed (939951). Its current-month session is timestamped at seed time: subtracting
+five minutes can cross midnight on the first day in Europe/Moscow, causing the
+Journal to fall back to the previous month before the race is exercised. Existing
+`journal_calendar` users retain their timestamps. Frozen-clock PostgreSQL tests
+cover month/year midnight, the first five minutes, and an ordinary date; the
+browser scenario still delays and releases a real API response body.
+
+## Same-head deployment must not repair missing plan coverage (2026-11-15)
+
+The read-only deployment path previously depended on every onboarded user already
+having a plan. One missing plan selected the full backfill, even when the database
+and candidate shared the same Alembic revision. Full apply inserts plans and their
+children, normalizes inclusion snapshots, and converges existing calendars; its
+"already migrated" user counter does not mean no rows change. These operations
+violate the release's strict fingerprints of tables that existed before deploy.
+
+Same-head release now always verifies coverage read-only before stopping writers,
+and refuses changed coverage after stopping them. It never falls back to apply.
+The initial older-schema migration flow and every legacy fingerprint remain.
+Regressions cover mixed migrated/missing users, the stopped-writer race, and the
+actual hash generator on synthetic PostgreSQL data: read-only verification leaves
+all fingerprints intact; the former fallback changes the four plan tables,
+including a new `training_plans` row. No production row data is needed to prove
+this control-flow defect; table names alone do not prove edits to existing rows.
+
+### R3 admission observability and bounded delivery recovery (#409)
+
+Original child 43724053051 failed before SSH, with no execution reservation.
+Exact public snapshots pass offline `authorize_execution` reconstruction only
+when that child's status is historically simulated as in_progress. The actual
+completed/failure snapshot correctly refuses. This proves no historical guard
+or provider root cause: the old catch discarded guard/HTTP details, so that cause
+remains UNKNOWN. The separately authorized delivery route pins this terminal
+pre-SSH outcome and preserves dedicated dispatch plus global execution claims.
+New diagnostics render fixed enums and bounded numeric HTTP status only.
+
+### R3 CLAIM_WRITE 403 after first delivery recovery
+
+Child 43730752868/job 132862408612 returned safe HTTP403/CLAIM_WRITE diagnostics
+and skipped SSH without a global execution claim. The response reason was not
+retained; do not attribute it conclusively to a permission or provider condition.
+Rollback's explicit pull-requests:read differed from the established PR-comment
+writers' write permission. The follow-up aligns that declaration and adds exact
+message-enum classification and numeric header allowlisting, with bounded parsing
+and no raw response output. Original claims and unknown historical causes remain.
+An explicit fixed owner-authored manual execution reservation conservatively denies
+future old-incident cloud admissions; proposal markers alone have no effect.
+
+The reviewed follow-up also supplies one fixed second delivery for the same
+incident after 43730752868/job 132862408612 definitively failed before SSH. It
+pins the full immutable two-stage history and preserves both earlier claims.
+Admission uses structured API metadata only; it neither fetches job logs nor
+uses a pasted HTTP403 as privilege evidence. A dedicated dispatch reservation
+and the existing global execution reservation retain at-most-once cloud
+execution. Old routes deny the new reservation; manual/global execution
+reservations deny all routes. A future ambiguity is reconciliation, not retry.
+
+## Live Engine: delayed refresh after acknowledged pause (2026-11-15)
+
+A real local PostgreSQL/API regression held an unpaused REST `/sessions/live/active`
+response, acknowledged the subsequent pause POST and emptied the device queue,
+then delivered the old GET. The screen incorrectly reverted to unpaused REST.
+The queue guard at request start was insufficient after its awaited response.
+Refresh checks a local mutation epoch and the latest accepted read ordinal before
+accepting a response, completion or failure. Starting another poll does not
+invalidate an in-flight read: when requests overlap, successful responses still
+make progress, while a response older than an already accepted outcome is ignored.
+The accepted ordinal advances only immediately before applying state or failure,
+including after the awaited completion fallback. Existing lifecycle and session-ID
+guards remain. A fresh GET still accepts an external device's resume event.
+This independently proves the ordering bug; it does not establish the cause of
+the earlier deployed WebKit failure from screenshots alone.
+
+### Before-stop compatibility failure diagnostics (2026-11-15)
+
+A nonzero `--verify-compatible` exit occurs before the separate success-result
+parser, so the original failure alone cannot distinguish a reported incompatibility
+from an execution error. The production runner now sanitizes private RESULT-JSON
+locally and emits only fixed enums and bounded aggregate counts. Superseded live
+copy errors are counted without user IDs; missing catalog payloads are discarded.
+No stderr/traceback is exported or used to infer a cause. Fixed historical evidence
+must match the manifest, companion failure report and private work report; unsafe
+files, later-phase markers or malformed results yield no diagnostic clearance.
+The runner remains self-contained for existing adoption, with its rehearsal hash
+updated and the control runner unchanged. Reading a historical diagnosis does not
+replace any candidate release gate or authorize another apply.
+
+### Completed saved-workout planless admission (2026-11-15)
+
+The prior journal-only predicate rejected every definition/snapshot and engine
+field. It omitted ordinary `manual_existing_workout` and `direct_live` producers,
+including repeats. Public production-baseline and current producer files are
+byte-identical; the actual private production subtype remains unknown until the
+new aggregate preflight runs. No production row, log, credential or dump is used
+by this change.
+
+Synthetic PostgreSQL/API journeys cover user/system definitions with and without
+a stored version, manual save, direct engine v1/v2 completion and manual repeats.
+They prove frozen identity, read/edit behavior, client UUID/event replay, terminal
+event rebuild and account/trial/progression invariance. All twelve journeys failed
+only admission before the fix (22.22 s); all twelve pass after it (22.91 s).
+The v2 completion route normally appends a no-op event on a fresh repeated request;
+the regression preserves that behavior and checks stable replay of the same event.
+
+`scripts/sql/planless_classification.sql` is the single classification SELECT used
+by both CLI and host preflight. The reviewed guard pins its SHA256, regular Git
+blob mode, maximum size and fixed path at the validated candidate SHA. Host Python
+uses isolated trusted stdlib only to validate bytes and bounded aggregate output;
+it never imports or runs candidate Python. Reasons count affected planless users
+and may overlap across sessions. Subtype counts describe source metadata and never
+grant admission. Planned links, protected STEP, active/cancelled or unknown engine
+state, foreign/inconsistent definitions/snapshots, legacy progress and unproved
+tombstones still block. Historical archives remain untouched. Rehearsal pins the
+new guard bytes; production installation/adoption remains a separate operation.
+
+Independent review additionally caught a start-only malformed v2 cache that passed
+admission but failed actual engine view/rebuild. The exact negative was red before
+hardening. Terminal admission now checks the existing reader schema for plan
+blocks/targets/rests, cursor bounds, log entries and terminal state fields, plus
+applied post-start finishing-event evidence. Only the real `static` provenance
+enum is accepted; `unprescribed` is a separate top-level prescription kind.
+These are necessary schema checks, not a claim of full event replay in SQL.
+Final focused safety/host parity checks: 58 passed, including normal time, max,
+interval and post-completion extra-set records. The wider historical regression
+run had 183 passes and one calendar-fixture failure; canonical CI remains required.
+
+### Synthetic plan calendar fixture alignment (2026-11-15)
+
+Canonical CI exposed the same twelve UTC/local calendar fixture failures after
+21:00 UTC Sunday (Monday in Moscow): tests built UTC weeks while API calendar
+used the profile timezone. Assertions and runtime calendar rules are unchanged.
+The affected pytest fixtures now share a captured plan calendar, explicit local
+origins/week starts, and the convergence test reuses the API's local day.
+Independent real API regressions retain Sunday/Monday, month/year and UTC-midnight
+rollover behavior rather than treating a fixed visual fixture as rollover proof.
+
+The test-only ASGI/seed adapters under `tests/support` are excluded from Docker.
+They validate the fixed loopback `pullup_e2e` database/test token, settings aliases,
+dotenv and optional credentials before importing settings or constructing engines.
+One captured CI instant feeds only the thirteen reserved visual-plan/Builder
+identities listed in `CALENDAR_SCENARIOS`. The user-aware calendar delegates all
+other users; only default-created fixture plan origins are anchored. Explicit
+origins, PlanWeek data and all session performed/started/completed/ended timestamps
+are preserved. Seed dates remain explicit; API response bodies and assertions are
+not rewritten. Fresh QA and engine 06/07 identities retain real clocks and data.
+This is fixture/UI determinism, not acceptance of wall-clock rollover or engine
+timing. Production application clocks and entrypoints are unchanged.
+
+Final combined focused checks: 180 passed (127.61 s); own frontend build, ruff,
+shell syntax and diff checks passed. Nine signed-HTTP fixture checks passed against
+an isolated real API/PostgreSQL with a Sunday 20:59:59 calendar while the real
+profile day was Monday. Local visual Playwright produced 22 setup failures before
+any assertion because its pinned Chromium was absent. One official installation
+command failed with provider HTTP 403; no bypass or additional installation attempt was used. Final hosted
+E2E, full backend gates and exact-head independent/native reviews remain required.
+
+Local artifact incident: an initial frontend build followed a mistakenly retained
+dist symlink and changed the shared checkout's ignored built bundle. Its exact
+prior bytes are unknown; tracked source and existing result artifacts were
+unchanged. The symlink was removed and subsequent builds used this worktree's own
+real dist. Production and CI do not use that shared local bundle.
+
+### Plan-facing seed dates follow the profile calendar (2026-11-16)
+
+An independent synthetic PostgreSQL/signed-HTTP probe at 2026-11-15 23:06 UTC
+(Monday in Moscow) found five `live_engine` rows in the previous week and zero
+in the API's current week. The ordinary live-engine identities are outside the
+finite visual fixture harness. Their seed used the UTC day while `/api/v2/plan`
+uses the profile's local day. This explains a missing current-week planned-start
+row; hosted browser assertion results remain a separate CI gate.
+
+`scripts/e2e_seed.py::seed_plan_today` now uses the same public timezone resolver
+and fallback as the API, without importing the web layer or test harness. The
+stored UTC `TrainingPlan.created_at.date()` remains the plan-week origin, as in
+the real API. The audit covers every plan-week/calendar call site:
+
+| Seed family | Calendar handling and delegated scenarios |
+|---|---|
+| `v2_session_complex` | Current week uses the shared helper. |
+| `plan_week_grouping` | Current manual stretch row; API expands its intended 2× weekly volume. |
+| `plan_week_manual_session`, `journal_combined` | Current manual plank/push-up rows; legacy history offsets retained. |
+| `live_engine` | All five named workouts belong to the API's current week; live clocks stay real. |
+| `journal_plans_polish` | Current completed row; only its linked generated fact is clamped to local Monday midnight when `now−5min` crosses into the previous week. Completion/end remain at or after performance, never in the future. Ordinary offsets and other records are preserved. |
+| `golden_journey` | Empty current week; inherited by `sweep_defects`, `session_recovery`, then `background_interval`. |
+| `builder_workouts` | Existing local-day behavior goes through the same helper; inherited by `journal_v2`. |
+| `plan_week_stepper` | Existing local current/previous weeks and noon-or-now session clamp retained; inherited by `sweep_populated`. |
+| Inclusion-only seeds | `v2_session_ready`, `v2_session_progression_edit`, `plan_week_ready`, `plan_week_add_exercise`, `plan_week_start_session`, `v5_one_rep_max`, `v5_weighted_b_live`, `plans_overview` leave current-week materialization to the real API. `journal_edit` creates an unweeked journal title link; its polish variant assigns the current week above. |
+| QA provisioner | Historical visited-week dates and read-only `snapshot.current_week_number` use the same helper. `provision_aged_active`, `provision_aged_legacy_snapshot`, and `provision_expired` retain their original start timestamps and week offsets; fresh/partial/weighted fixtures retain their existing paths. |
+
+Other journal/analytics records keep their intentional local-month or elapsed-time
+offsets. In particular `analytics_v2` retains all four recent sessions and its
+existing Monday-boundary clamp. No application calendar, engine clock, SQL,
+production guard, workflow, registry, or finite visual harness is changed.
+The regression freezes only seed/API calendar inputs and synthetic plan creation
+timestamps; it checks explicit intended row identities/volumes, current-week
+credits and real-clock planned live starts through PostgreSQL and the real API
+across local/UTC Monday and month/year boundaries.
+
+### E2E assertions distinguish plan weeks, course weeks and Profile dates (2026-11-16)
+
+Old CI run `43772901970`, job `132992688978`, exposed three residual assertion
+contracts. `plans-plan-week` assumed PlanWeek 1; `later-weeks` assumed the next
+two PlanWeeks were always 2/3. A plan created on UTC Sunday can already have
+current PlanWeek 2 on local Monday. Both specs now use explicit `current_week_id`,
+independently check the UTC plan origin/local Monday arithmetic and full rendered
+week label, and navigate relative offsets 1/2. The latter also proves these map
+to course weeks 2/3. Four-row Tuesday/free-pool ownership, two course occurrences,
+start buttons and reload assertions remain; no application rules change.
+
+That job seeded D2 identities 997509/997529 at November 15 23:11:27/35 UTC and
+tested Profile at November 16 00:21:54/00:22:12 UTC. Profile currently subtracts
+UTC dates, so the original two-day-old fact became three days old. Immediately
+before D2, the spec now moves only the existing two owned synthetic session dates
+through supported signed `PATCH /sessions/{id}`. The request is a local date and
+preserves local time, so its helper first derives the intended UTC timestamp,
+then converts to Moscow. Checks preserve IDs, blocks, sets, results, sources,
+statuses and count, verify returned UTC ages 2/5 and API summary 2 days/2 total,
+and retain the exact UI assertion. No reseed, deletion or clock/harness change.
+
+Regression evidence: extracted old week assumptions failed seven pure cases;
+restoring the unadjusted D2 date reproduced `3 != 2` on real PostgreSQL with
+signed HTTP, then restoring preparation passed. Fifteen signed PostgreSQL/API
+cases pass across local/UTC Monday and month/year boundaries, including course
+mapping, stable repeated GETs, live targets and ownership refusal for a foreign
+date edit. Fourteen new pure cases (including offset-bearing timestamps), fourteen
+adjacent navigation/profile unit cases, ten registry checks and changed-spec
+TypeScript checks pass. The related plan/fix-wave1 specs have no remaining
+literal first-week or UTC-today assumptions. Production, SQL, guard, workflow,
+registry and finite calendar harness bytes remain unchanged; final-head hosted
+CI and independent review are still required.

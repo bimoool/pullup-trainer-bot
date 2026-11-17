@@ -1,6 +1,6 @@
 """deploy/prod-guarded-dispatch.sh — forced command ключа GitHub Actions для guarded-выката production.
 
-Проверяется без сервера: копия диспетчера с путями /root/bin и /root/backups, заменёнными на временный каталог, и
+Проверяется без сервера: диспетчер рядом с заглушками в своём временном каталоге, путь блокировок заменён на временный, и
 заглушки guarded-скриптов, которые печатают полученные аргументы и окружение. Цель — доказать, что через SSH проходит
 ровно четыре шаблона, аргументы попадают в guarded-скрипты только из разобранного regex, окружение вызывающего не
 пропускается, а второй параллельный запуск отклоняется."""
@@ -36,17 +36,25 @@ def dispatcher(tmp_path: Path) -> Path:
         stub.write_text(STUB)
         stub.chmod(0o755)
     text = DISPATCH.read_text()
-    assert "BIN=/root/bin\n" in text and "LOCK_DIR=/root/backups\n" in text
-    text = text.replace("BIN=/root/bin\n", f"BIN={bin_dir}\n").replace("LOCK_DIR=/root/backups\n", f"LOCK_DIR={lock_dir}\n")
-    script = tmp_path / "dispatch.sh"
+    assert 'BIN="$(cd -- "$(dirname -- "$0")" && pwd)"\n' in text
+    assert "LOCK_DIR=/root/backups\n" in text
+    text = text.replace("LOCK_DIR=/root/backups\n", f"LOCK_DIR={lock_dir}\n")
+    script = bin_dir / "dispatch.sh"
     script.write_text(text)
     script.chmod(0o755)
     return script
 
 
 def _run(script: Path, command: str) -> subprocess.CompletedProcess:
-    env = {"PATH": os.environ["PATH"], "SSH_ORIGINAL_COMMAND": command, "LEAK": "x", "PROD_DIR": "/tmp/evil"}
-    return subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=30, check=False)
+    env = {
+        "PATH": os.environ["PATH"],
+        "SSH_ORIGINAL_COMMAND": command,
+        "LEAK": "x",
+        "PROD_DIR": "/tmp/evil",
+    }
+    return subprocess.run(
+        ["bash", str(script)], env=env, capture_output=True, text=True, timeout=30, check=False
+    )
 
 
 def test_preflight_passes_parsed_args_and_revisions_only(dispatcher):
@@ -112,7 +120,9 @@ def test_parallel_run_is_refused(dispatcher, tmp_path):
     holder = subprocess.Popen(["flock", str(lock_dir / ".prod-actions.lock"), "sleep", "5"])
     try:
         for _ in range(50):
-            probe = subprocess.run(["flock", "-n", str(lock_dir / ".prod-actions.lock"), "true"], check=False)
+            probe = subprocess.run(
+                ["flock", "-n", str(lock_dir / ".prod-actions.lock"), "true"], check=False
+            )
             if probe.returncode != 0:
                 break
             time.sleep(0.1)

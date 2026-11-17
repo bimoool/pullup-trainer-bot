@@ -102,6 +102,10 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   const [reviewComment, setReviewComment] = useState("");
   const [answers, setAnswers] = useState<Record<number, BlockAnswers>>({});
   const syncing = useRef<Promise<void> | null>(null);
+  // A read started before a local action must never replace that action after its POST was acknowledged.
+  const mutationEpoch = useRef(0);
+  const refreshRequest = useRef(0);
+  const acceptedRefresh = useRef(0);
   const resync = useRef(false);
   const firstCompletion = useRef<LiveSessionCompleteResponse | null>(null);
   const closed = useRef(false);
@@ -148,6 +152,7 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
    * событий (после сбоя) не дублирует их: события с известным client_event_id не добавляются.
    */
   async function commit(events: QueuedEngineEvent[], complete: EngineQueue["complete"] | undefined, onSaved?: () => void): Promise<boolean> {
+    mutationEpoch.current += 1;
     const add = (base: EngineQueue): EngineQueue => ({
       ...base,
       events: [...base.events, ...events.filter((event) => !base.events.some((known) => known.client_event_id === event.client_event_id))],
@@ -276,25 +281,33 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
   /** Сверка с сервером: свежая проекция (дедлайны, истёкшие в фоне, уже применены сервером). */
   async function refresh(): Promise<void> {
     const token = lifecycle.token();
-    if (token === null || !navigator.onLine || closed.current || !owner.current.loaded() || queueRef.current.events.length > 0) {
+    if (token === null || !navigator.onLine || closed.current || !owner.current.loaded() || savingRef.current > 0 || queueRef.current.events.length > 0) {
       return;  // непрочитанная очередь может нести действие до дедлайна — проекцию не запрашиваем
     }
+    const epoch = mutationEpoch.current;
+    const request = ++refreshRequest.current;
+    // A slower read may still apply while newer reads are pending. Only a newer accepted outcome supersedes it.
+    const isCurrentRead = () => lifecycle.isCurrent(token) && epoch === mutationEpoch.current && request > acceptedRefresh.current;
     try {
       const started = Date.now();
       const active = await fetchActiveLiveSession(initDataRaw);
-      if (!lifecycle.isCurrent(token)) {
+      if (!isCurrentRead()) {
         return;
       }
       if (active !== null && active.id === initialSession.id) {
+        acceptedRefresh.current = request;
         acceptServer(active, started, Date.now());
+        setFailure(null);
         return;
       }
       // Не активна на сервере: завершилась сама (проекция в фоне), на другом устройстве или отменена.
       // Идемпотентный complete отдаёт итог, ничего не повторяя (#307 T).
       const result = await completeLiveSession(initDataRaw, initialSession.id, false);
-      if (!lifecycle.isCurrent(token)) {
+      if (!isCurrentRead()) {
         return;
       }
+      acceptedRefresh.current = request;
+      setFailure(null);
       if (result.engine_status === "cancelled" || result.progression_skipped_reason === "cancelled") {
         await finishWith(result);
         return;
@@ -304,7 +317,9 @@ export function LiveEngineScreen({ initDataRaw, initialSession, onCompleted, onL
       }
       setServer(result);
     } catch (error) {
-      if (lifecycle.isCurrent(token)) {
+      // An error from this request's own awaited finishWith still belongs to its accepted outcome.
+      if (lifecycle.isCurrent(token) && epoch === mutationEpoch.current && request >= acceptedRefresh.current) {
+        acceptedRefresh.current = request;
         setFailure(classifySyncError(error));
       }
     }

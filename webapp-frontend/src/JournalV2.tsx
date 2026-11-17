@@ -123,7 +123,7 @@ export function JournalV2Detail({
   const deleteInFlight = useRef(false);
 
   const leaveForm = initialMode === "view" ? () => setMode("view") : onBack;
-  useBackButton(mode === "view" ? onBack : leaveForm, [mode, onBack]);
+  useBackButton(onBack, [onBack], mode === "view");
 
   async function handleDelete() {
     if (deleteInFlight.current) {

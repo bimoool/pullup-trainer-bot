@@ -11,6 +11,73 @@ from tools.tests.check_fixtures import SHA, CheckAPI
 
 
 class CurrentCheckTests(unittest.TestCase):
+    def skipped_check(self, api, name="claude", workflow="claude.yml"):
+        # Observed REST check/job metadata on bf0d55fb: a skipped job has no
+        # execution interval, and GitHub recorded completion before start.
+        check = api.add(
+            name,
+            run_id=43069619207,
+            job_id=130693727248,
+            workflow=workflow,
+            conclusion="skipped",
+            started="2026-11-11T17:35:30Z",
+        )
+        job = api.jobs[43069619207][0]
+        check["completed_at"] = job["completed_at"] = "2026-11-11T17:35:21Z"
+        return check, job
+
+    def test_observed_skipped_job_with_completion_before_start_allows_rehearsal_gate(self):
+        api = CheckAPI()
+        self.skipped_check(api)
+        dispatch.green_checks(api, SHA, rehearsal=False)
+
+    def test_only_skipped_jobs_can_have_completion_before_start(self):
+        for conclusion in ("success", "failure", "neutral", "cancelled", "timed_out"):
+            with self.subTest(conclusion=conclusion):
+                api = CheckAPI()
+                check, job = self.skipped_check(api)
+                check["conclusion"] = job["conclusion"] = conclusion
+                with self.assertRaisesRegex(dispatch.Refused, "completion time mismatch"):
+                    dispatch.green_checks(api, SHA, rehearsal=False)
+
+    def test_skipped_required_context_still_cannot_satisfy_success_requirement(self):
+        api = CheckAPI()
+        self.skipped_check(api, "codex-review", "claude-code-review.yml")
+        with self.assertRaisesRegex(dispatch.Refused, "required current checks not green"):
+            dispatch.green_checks(api, SHA, rehearsal=False)
+
+    def test_skipped_job_retains_timestamp_and_provenance_guards(self):
+        changes = [
+            lambda c, j: c.update(completed_at="2026-11-11T17:35:22Z"),
+            lambda c, j: c.update(started_at="2026-11-11T17:35:31Z"),
+            lambda c, j: c.update(head_sha="b" * 40),
+            lambda c, j: j.update(head_sha="b" * 40),
+            lambda c, j: c.update(check_suite={"id": 99}),
+            lambda c, j: j.update(check_run_url="https://other.example/1"),
+            lambda c, j: j.update(conclusion="failure"),
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                api = CheckAPI()
+                change(*self.skipped_check(api))
+                with self.assertRaises(dispatch.Refused):
+                    dispatch.green_checks(api, SHA, rehearsal=False)
+
+    def test_newer_optional_failure_is_not_hidden_by_skipped_job(self):
+        api = CheckAPI()
+        self.skipped_check(api)
+        api.add(
+            "claude",
+            workflow="claude.yml",
+            run_id=43069619207,
+            job_id=130693727249,
+            attempt=2,
+            conclusion="failure",
+            started="2026-11-11T17:36:00Z",
+        )
+        with self.assertRaisesRegex(dispatch.Refused, "current non-green check exists"):
+            dispatch.green_checks(api, SHA, rehearsal=False)
+
     def test_superseded_cancelled_draft_review_does_not_block_new_success(self):
         api = CheckAPI()
         current = next(c for c in api.checks if c["name"] == "codex-review")

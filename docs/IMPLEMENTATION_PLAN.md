@@ -1,5 +1,62 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Draft server-side Drive backup #405 — 2026-11-15
+
+Изолированный кандидат от `main` `226c505`: root-only утилита `deploy/drive-backup.py`,
+systemd service/timer и [план установки/приёмки](SERVER_DRIVE_BACKUP.md). Согласованный
+dump шифруется до записи на диск; загрузка проверяется фактическим скачиванием
+шифротекста и SHA-256/размером. Общие deployment locks, приватные fsync-квитанции,
+неповторяемые UNKNOWN/FAILED, отсутствие remote deletion. Offline-тесты только на
+синтетических байтах/credentials; код не меняет приложения, схему или release gates.
+Остаются owner OAuth/public recipient provisioning, серверная установка,
+живой upload/readback и независимое восстановление. Не merge/release до завершения
+текущего production recovery; наличие кода/таймера не означает runtime acceptance.
+
+PR408 now combines reviewed PR407 `bf68d0e`, PR410 `6f95f236`, PR413 `2d961a8`
+and PR412 `63a0262` by normal branch merges, without advancing main or changing
+the critical-release branches. The fixed optional
+backup code belongs to the atomic controller bundle; a stable local-root-only
+launcher resolves one complete bundle. Bootstrap installs exact units disabled
+only and refuses active/enabled/unknown units. Routine reviewed backup code updates
+use cloud adoption. OAuth/configuration, timer activation and actual recovery proof
+remain separate unperformed acceptance steps. The initial active bundle includes
+the reviewed atomic rollback source; installed rollback `6286544a…` remains only
+the preserved bootstrap baseline, never the selected patched bundle artifact.
+
+The combined candidate also carries reviewed PR414 `1dc9f00`, PR416
+`a78cf3a` and PR417 `5014be8` by normal merge. Its primary app/scripts/SQL,
+calendar fixtures, workflows, production guard and rehearsal pin retain exact
+PR417 bytes. Feature controls remain unchanged except the installer's expected
+post-NEWLIVE production guard hash `e0773bd7…`; currently installed `986…`,
+earlier `785…` and old `c97…` are not bootstrap baselines. Source integration
+is not installation or runtime proof. Primary NEWLIVE, fresh combined gates and both provenance
+reviews remain prerequisites; the prepared #406 job stays NOT STARTED/window CLOSED.
+
+## Candidate R3 rename transaction #411 — 2026-11-15
+
+Explicit `BEGIN`/`COMMIT` fixes the two database renames in the repository rollback
+script. Synthetic PostgreSQL 16 regressions first reproduced the absent live name
+on second-rename failure and backend interruption; the fix passes those cases,
+first-rename failure and successful retention of failed history. Existing shell
+guard regressions remain. Draft review and full required CI precede integration.
+The installed runner remains unchanged. The reviewed component is included in
+PR408's initial bundle; its combined CI/review and exact-SHA bootstrap remain
+required before runtime acceptance. No server or R3 action ran.
+
+## Кандидат совместимости истории без плана — 2026-11-15
+
+Обычные записи Журнала/активности и холодные архивы могут существовать без `TrainingPlan`.
+Синтетические реальные PostgreSQL/API journeys доказывают сохранение истории, архивов,
+подписки, владения и всех хэшей при чтении; правка меняет только выбранный факт.
+Кандидат сужает отказ проверки до текущей/активной/недоказанной истории, сохраняет все
+общие ownership/copy/history/RO проверки и не запускает repair/backfill/migration.
+Фиксированный preflight показывает только анонимные пересекающиеся source-count агрегаты
+текущих planless-аккаунтов; это диагностика, не допуск к релизу. Историческая диагностика
+не меняется. Production-подтип ещё неизвестен, новая версия приложения не выкачена.
+Следом: полный CI и независимое ревью, защищённый merge владельцем, staging и оба QA
+точного финального SHA, принятие нового guard с receipt, свежие readiness и единственный
+после-QA production-preflight; только затем отдельное решение о guarded apply.
+
 ## Кандидат isolated browser smoke #383 — 2026-11-10
 
 Отдельный aggregate QA-кандидат включает reviewed #384 (явный launch platform) и
@@ -234,3 +291,91 @@ explicit documented domain/platform reason. Матрица и issues — `docs/C
 
 Owner-comment dispatcher on main → existing planner/worker on develop/current.
 Controls, safety boundaries and sandbox proof: [ORCH_OWNER_UI.md](ORCH_OWNER_UI.md).
+
+## Cloud release control continuity (2026-11-15)
+
+Follow-up #406 implements stable-supervisor complete bundle adoption and independent
+recorded controller recovery, including subprocess SIGKILL and bootstrap-preservation
+tests. Candidate only: no new bootstrap/install or production operation performed.
+Finish the frozen release first; then require full CI/independent security review,
+reviewed exact-SHA administrative conversion, and actual cloud adopt/status/recover
+acceptance. Reviewed Drive backup #405 and fixed R3 recovery #409 are combined on
+PR408 only; main and the critical-release branch remain unchanged.
+
+Candidate controller upgrade adds fixed runner adoption and owner/provenance-bound
+R1 apply to the existing bridge. Product runner, compatibility repair and rehearsal
+pin are unchanged. Offline synthetic admission/filesystem regressions cover the
+new routes; full GitHub checks and independent review remain integration gates.
+The new controller is **not installed** and no production action was performed.
+Next: reviewed merge, one existing administrative no-key bootstrap, then cloud
+readiness/prepare/adoption and separate guarded release/recovery decisions.
+
+## Fixed R3 delivery recovery (#409, 2026-11-15)
+
+A separate once-only owner approval can recover delivery after the exact original
+child failed admission before SSH. Both admissions pin original evidence,
+immutable approvals and latest first-attempt run/job identities; dedicated dispatch
+and global execution reservations prevent cloud replay. Safe diagnostics expose
+only enum stage/guard and numeric HTTP status. Historical cause remains UNKNOWN.
+Server rollback code, schema, applications and existing claims are unchanged.
+Next: independent review and all mandatory CI gates, trusted-main integration,
+then a separate owner decision. Implementation/testing does not execute recovery.
+
+## Fixed R3 execution-claim write follow-up (2026-11-15)
+
+Recovery child 43730752868/job 132862408612 failed before SSH with HTTP 403 at
+CLAIM_WRITE and no global execution reservation. Align rollback's explicit PR
+write permission with the existing comment-writing adapters and add bounded 403
+classification plus owner manual-reservation exclusion. The exact 403 reason is
+UNKNOWN; the first historical failure also remains UNKNOWN. All existing claims
+stay preserved. A second and final fixed failed-before-SSH delivery binds the
+entire original plus first-recovery chain and exact latest failed job. It adds
+one dedicated dispatch claim while retaining the same global execution marker;
+old routes deny that new claim. No log-derived privileges or generic retry are
+introduced. Next: independent/native review and mandatory CI, trusted-main
+integration, then a separate owner decision. No operation was performed.
+
+## Completed native saved-workout release admission (2026-11-15)
+
+Add synthetic real PostgreSQL/API proof for manual saved definitions, direct live
+v1/v2 and repeats, and admit only completed unplanned ownership/snapshot-consistent
+history without STEP or plan/program links. A canonical fixed SQL classification
+now feeds CLI and the guard's hash-pinned aggregate preflight; same-schema blocked
+or unavailable classification refuses before build/STOP. Existing initial migration,
+legacy reconciliation, global compatibility, hash and stopped-writer guards remain.
+No schema, account/history repair, production action or controller change occurs.
+Next: mandatory full CI, native and independent review, then trusted-main integration
+and controlled guard adoption before precise production preflight; no diagnostic apply.
+
+Calendar follow-up in the same primary PR addresses the twelve canonical CI
+fixture failures without changing production calendar rules. Opt-in pytest plan
+fixtures and the finite-identity synthetic E2E harness share explicit calendar
+inputs; all other identities and live timers retain ordinary behavior. Focused
+backend/guard/rollover/isolation checks: 180 passed. Local browser setup is blocked
+by the provider's pinned Chromium download denial, so final hosted visual/full
+E2E proof remains mandatory. No old workflow rerun substitutes for final-head CI.
+
+Registry integrity follow-up replaces line-based shell rewriting with the explicit
+`e2e_seed_all.sh --list` contract. Inspection expands the original registry without
+Python or seed execution; synthetic dispatch tests cover both calendar modes.
+Scenario validity, unique identities and spec identity coverage remain required.
+
+Plan-facing seed audit follow-up aligns all seven remaining UTC-day callers with
+the API's user-local calendar, shares the existing correct Builder/stepper policy,
+and aligns QA visited-week dates and snapshot reporting. Only the generated
+`journal_plans_polish` current-week fact is clamped at Monday midnight; other
+historical offsets remain intact. PostgreSQL/API regressions cover intended
+workout identities/volumes, completed credits, local/UTC week/month/year
+boundaries and live planned starts with real engine clocks. The finite visual
+harness, registry, application code, SQL and production guard are unchanged.
+Next: final-head mandatory GitHub CI and independent review in the same PR.
+
+Residual E2E assertions now resolve the explicit current PlanWeek and navigate
+relative future offsets while independently checking week/date/course mapping.
+Profile D2 preserves its exact two-day/two-workout fixture through dates-only
+signed edits of the same two owned synthetic facts immediately before reading;
+the full-suite UTC-midnight drift is reproduced without changing application
+semantics. Focused validation: 15 signed PostgreSQL/API, 14 new pure, 14 adjacent
+unit and 10 registry cases passed; changed-spec TypeScript checks passed.
+No application, seed, SQL, guard, workflow, registry or calendar harness changes.
+Next: exact final-head hosted CI and independent review in the same PR.
