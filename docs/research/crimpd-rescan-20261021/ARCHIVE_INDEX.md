@@ -52,10 +52,11 @@ remain outside main pending review; they are not broken local-file links.
 
 - #347 is the research and path-agreement umbrella; this index does not close it.
 - #348 has historical source material, but complete current coverage is unproven.
-- #349 comparison Sheet: no separate delivered Sheet pointer was established.
-- #350 paths Sheet: a historical pointer exists, but access, ownership, sheet
-  structure and delivered contents were not verified. Do not create a duplicate
-  from the absence of a link in the issue alone.
+- #349 comparison Sheet: the archive lacks a separate delivered Sheet pointer.
+- #350 paths Sheet: a historical pointer exists. Archive inventory alone does
+  not establish live access, ownership, structure, delivered contents or product
+  acceptance. Check each task's current status separately; do not infer absence
+  or create duplicates merely because an issue lacks a delivered link.
 
 The original PR stays draft. Before transferring any more files, select a
 bounded subset, review its contents and evidence provenance, retain UNKNOWN
