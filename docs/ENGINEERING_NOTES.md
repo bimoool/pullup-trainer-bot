@@ -1,5 +1,39 @@
 # Инженерные заметки pullup-trainer-bot
 
+## Home partial upstream failures #353/#298 (2026-11-17, candidate)
+
+`HomeScreen` previously used `Promise.all(fetchPrograms, fetchPlan)` and kept both
+results in one catalog state. A failed plan discarded successful program content;
+a failed catalog also discarded the known empty-plan state and its create CTA.
+Separate local loading/error/ready states preserve each successful read. Program
+Detail uses nullable membership: unknown membership disables Add until the plan
+loads, and plan errors expose a retry while retaining the API's human-readable
+authentication explanation. Both fetch effects ignore late results after cleanup.
+No backend, formula, schema, ownership, subscription or release behavior changes.
+
+`home-partial-failure.spec.ts` runs built React against real FastAPI/PostgreSQL.
+Only the tested upstream route is fault-injected. It asserts the exact complete
+API and console error lists, real successful companion responses, browsable
+catalog/detail, safe unknown-membership actions, retry/reload, unchanged persisted
+inclusion and no writes, late-response isolation, and the existing 401 message.
+Separate explicit catalog-500 tests exercise both Home's create fallback and the
+already-working empty-Plans create CTA; there is no catalog-dependent test branch.
+Read-only fixtures 939981/939982 (course) and 939971/939972 (empty plan, plus their
+foreign-workout companions) are registered without changing the finite calendar
+map or harness guards. The course has no last-session date, so week/month rollover
+does not require fixture clock changes. Full final-head CI and independent review
+remain required after the prerequisite PR #389 is integrated.
+
+Local validation: the exact final regression assertions fail on the unmodified
+6915e3e UI (three selected cases), then pass on the restored fix (all seven cases,
+four workers). The first baseline also passed the already-working empty-Plans
+fallback. Frontend production build and functional TypeScript checks pass, along
+with 29 Home/discovery/week unit assertions, 29 registry/calendar-guard/clock
+checks, the existing real-PostgreSQL fixture/timestamp isolation case, and the
+existing global expired-session UI case. A fixed local-Monday boundary inventory
+also confirms all four new identities and both foreign-workout companions remain
+outside the finite calendar map and keep the ordinary application/engine clocks.
+
 ## Frontend toolchain audit #367 (2026-11-17, candidate)
 
 The frontend lock on `main` `869cd0d` reported nine vulnerable packages
@@ -3446,3 +3480,13 @@ TypeScript checks pass. The related plan/fix-wave1 specs have no remaining
 literal first-week or UTC-today assumptions. Production, SQL, guard, workflow,
 registry and finite calendar harness bytes remain unchanged; final-head hosted
 CI and independent review are still required.
+### 1RM speed labels inherited the effort grid (#359, 2026-11-17)
+
+The three long speed labels in `CourseSetupForm` inherited `.live-chips`'s five
+equal columns. Real browser text ranges exceeded the 54.39 px targets at 320 px
+and the 66.80 px targets at 390 px; the word «Получилось» alone was 89.41 px wide.
+The scoped `.one-rm-speed` grid uses auto-fit with a 12rem minimum capped by its
+container. At both mobile widths the full labels fit in 56 px high rows at the
+original 16 px font size. Shared effort styles and speed handlers keep their
+original definitions. Fresh UI/API regression, exact rollback proof, synthetic
+screenshots and local validation are recorded in [ONE_RM_LAYOUT_QA.md](ONE_RM_LAYOUT_QA.md).

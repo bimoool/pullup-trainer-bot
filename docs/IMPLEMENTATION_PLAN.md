@@ -1,5 +1,29 @@
 # IMPLEMENTATION_PLAN — статус и порядок работ
 
+## Candidate narrow 1RM speed layout #359 — 2026-11-17
+
+Real built React/API/PostgreSQL reproduction confirms overlapping speed labels at
+320/390 px in light/dark themes. A selector-specific responsive grid keeps the
+three complete labels inside separate targets. Four fresh-onboarding regressions
+fail on the original layout, pass with the fix, and fail again on exact source
+rollback; all three speed payloads retain the expected API ladder responses.
+Evidence and scope: [ONE_RM_LAYOUT_QA.md](ONE_RM_LAYOUT_QA.md). Combine with the
+reviewed Home #353/#298 checkpoint after PR #389 integration; final-head full CI
+and independent review remain pending. Other #359 feedback remains open.
+
+## Candidate Home partial failures #353/#298 — 2026-11-17
+
+Continue from `main` f92654b with the reviewed PR #389 prerequisite 6915e3e.
+Home now keeps successfully loaded courses browsable while plan membership is
+loading/unavailable, blocks plan-dependent actions until a valid response, and
+offers a plan retry. A known empty plan retains its direct create fallback when
+the catalog fails. Real built React/API/PostgreSQL regressions reproduced three
+failures before the fix; the explicit empty-Plans catalog-error CTA already passed.
+Focused recovery/loading/stale-response/401 coverage is added with independent
+synthetic fixtures. Full CI, independent review and trusted-main integration remain
+pending; publish the final PR after the frozen PR #389 integration. No release,
+schema, progression or server operation belongs to this change.
+
 ## Кандидат frontend toolchain #367 — 2026-11-17
 
 От актуального `main` `869cd0d`: Vite 6.4.6, Vitest 4.1.12 и адресное обновление
