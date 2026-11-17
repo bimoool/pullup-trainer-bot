@@ -60,7 +60,7 @@ export function buildInitData(telegramId: number, botToken: string, authDate: nu
  * (tgWebAppData / tgWebAppVersion / tgWebAppPlatform / tgWebAppThemeParams). The frontend reads them
  * through retrieveLaunchParams() (App.tsx) exactly as in a real client; nothing is stubbed.
  */
-export function launchUrl(baseUrl: string, initData: string, platform: "ios" | "android" | "tdesktop" = "ios", version: "8.0" | "6.1" = "8.0"): string {
+export function launchUrl(baseUrl: string, initData: string, platform: "ios" | "android" | "tdesktop", version: "8.0" | "6.1" = "8.0"): string {
   const params = new URLSearchParams({
     tgWebAppData: initData,
     tgWebAppVersion: version,

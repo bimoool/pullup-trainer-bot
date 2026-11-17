@@ -36,7 +36,7 @@ export default defineConfig({
   timeout: 180_000,
   expect: { timeout: 15_000 },
   outputDir: "test-results",
-  reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }], ["json", { outputFile: "test-results/results.json" }]],
+  reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }], ["json", { outputFile: "test-results/results.json" }], ["./release/statusReporter.ts"]],
   use: {
     baseURL: BASE_URL,
     // Live initData is a credential: traces capture launch URLs and request headers.

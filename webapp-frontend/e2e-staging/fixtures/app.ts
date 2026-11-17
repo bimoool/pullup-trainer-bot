@@ -1,6 +1,7 @@
 import { expect, test as base, type Page, type TestInfo } from "@playwright/test";
 
-import { buildInitData, launchUrl, QA_IDENTITIES, stagingBotToken, type QaIdentity } from "./initData";
+import { buildInitData, QA_IDENTITIES, stagingBotToken, type QaIdentity } from "./initData";
+import { projectLaunchUrl } from "./projectLaunch";
 
 export type ApiEntry = { t: string; method: string; path: string; status: number };
 
@@ -47,7 +48,7 @@ async function openAs(page: Page, identity: QaIdentity, baseURL: string, testInf
 
   const launch = async () => {
     const initData = buildInitData(QA_IDENTITIES[identity], stagingBotToken());
-    await page.goto(launchUrl(baseURL, initData, "ios", options.version));
+    await page.goto(projectLaunchUrl(baseURL, initData, testInfo.project.name, options.version));
     // Onboarded identity: bottom navigation is the first stable landmark of a loaded app.
     await expect(page.locator(".bottom-tabbar")).toBeVisible({ timeout: 45_000 });
   };

@@ -1,5 +1,18 @@
 # PROJECT_SPEC — принятое продуктовое поведение
 
+### Автоматический зашифрованный бэкап БД на Google Drive (draft, #405)
+
+Владелец разрешил отдельный серверный механизм VPS → свой Google Drive без
+зависимости от ноутбука: согласованный `pg_dump -Fc` → шифрование публичным
+получателем → загрузка → фактическое скачивание шифротекста на VPS и сверка
+SHA-256/размера перед VERIFIED. Блокировки общие с существующим deploy/rollback;
+идемпотентные приватные квитанции не повторяют неопределённую операцию. Удаление
+удалённых копий не выполняется. Ключ расшифровки остаётся у владельца вне VPS.
+Контракт, установка и явные блокеры — [SERVER_DRIVE_BACKUP.md](SERVER_DRIVE_BACKUP.md).
+Это кандидат: OAuth/получатель не provisioned, установка и живое восстановление
+не проверены. Только БД, не обещание полного восстановления всего проекта;
+production recovery и release controls этим изменением не меняются.
+
 Живая тренировка V5.6 показывает нагрузку текущего блока из замороженного рецепта:
 дополнительный вес, свой вес или описание резины; неизвестная нагрузка не считается нулевой.
 Кнопка окончания объёмного блока из-за нарушения техники требует подтверждения;
@@ -193,6 +206,8 @@ Dynamic Island / управления с экрана блокировки / ф�
   показывает текущую фазу, сигнала задним числом нет.
 - **Пауза — на сервере.** «Пауза/Продолжить» — события сессии: переживают перезагрузку и второе устройство;
   «Продолжить» возвращает ровно оставшееся время. Интервалы паузятся так же.
+  Запоздалое чтение, начатое до действия пользователя, не заменяет уже подтверждённое состояние;
+  новое чтение по-прежнему принимает изменения с другого устройства.
 - **Интервалы** идут тем же движком (раунды = фазы «Пошёл»/«Отдых»), без отдельного экрана.
 - **Офлайн.** Действия копятся в очереди на устройстве (`client_event_id`, время клиента) и досылаются по
   порядку; повтор того же события — без последствий, устаревшее — игнорируется. Очередь — своя у каждой
@@ -265,6 +280,8 @@ Dynamic Island / управления с экрана блокировки / ф�
 - **Детали** открываются из уже загруженного объекта списка (отдельного endpoint нет): название,
   дата/время, каждый блок, протокол, план/факт там, где осмысленно, комментарий/усилие.
   Навигация — Telegram BackButton и видимая кнопка «← Назад» вызывают один и тот же обработчик.
+  В формах правки и копирования «Назад» и «Отмена» не закрывают форму во время сохранения;
+  ошибка API остаётся в форме вместе с введёнными значениями, после ошибки отмена снова доступна.
 - **Пагинация** — существующий `GET /api/v2/sessions` (`limit`/`offset`, `has_more`), страница
   25, «Показать ещё»: без дублирующих запросов, слияние по `id`, сбой догрузки не стирает
   загруженное, удаление не сдвигает следующий offset, возврат из деталей сохраняет список.
@@ -275,6 +292,7 @@ Dynamic Island / управления с экрана блокировки / ф�
   «неделя (Пн–Вс) → день», карточки/детали/удаление/правка без изменений. Пустой месяц —
   «В этом месяце тренировок нет» (день — «В этот день тренировок нет»). Стартовый месяц — текущий
   в поясе пользователя; если он пуст, а тренировки есть — месяц самой свежей.
+  Запоздалый ответ обновления точек после записи не меняет календарь уже выбранного другого месяца.
 - **Данные по месяцам, без полного скана**: `GET /api/v2/journal/days?month=YYYY-MM` →
   `{month, timezone, days:[{date,count}], latest_month}` (неверный месяц — 422);
   `GET /api/v2/sessions` и `GET /api/history` принимают `date_from`/`date_to` (включительно).
@@ -305,6 +323,14 @@ Dynamic Island / управления с экрана блокировки / ф�
   (правка/удаление #279 идут по копии; удаление замещает копию, чтобы сведение не воскресило запись).
   Срез `offset/limit` и `has_more` считаются после скрытия; `target_a/b` («следующая цель») — только на самой
   свежей записи ВСЕЙ истории (#285).
+  **История без TrainingPlan:** завершённая самостоятельная запись Журнала/внешней активности и холодные
+  архивы не требуют создания пустого плана. Обычное чтение и правка такой записи сохраняют аккаунт,
+  подписку, архивы и прогрессию; замещённые сбросом legacy-копии остаются скрытыми. Проверка совместимости
+  релиза допускает только доказанные формы: явную завершённую нативную запись без курса/кредита/STEP-ролей
+  либо завершённую keyed legacy-копию `legacy_deleted`, подтверждённую архивом того же пользователя.
+  Наличие архива или незавершённый онбординг сами по себе не доказывают безопасность: текущая legacy-история,
+  положительные текущие счётчики прогресса, активные/неразмеченные/неизвестные сессии и недоказанные связи
+  по-прежнему блокируют релиз. Архивы никогда не восстанавливаются и планы не создаются проверкой.
 - **Сводка Профиля = `canonical_sessions` (#308).** `GET /api/profile`: `workouts_count` — целое число
   канонических сессий (тот же счёт, что в календаре и Analytics), `days_since_last_workout` — по самой свежей из
   них. Готовность/прогрессия (`/api/dashboard`, бот) считаются по legacy как раньше; карточки ГТО/ВСФ — на
@@ -457,7 +483,8 @@ TrainingSession — редактируемый исторический факт
 UI: в деталях записи рядом с «Удалить» — «✏️ Изменить» (при `can_edit`) и «⧉ Повторить (клонировать)»
 (при `can_clone`); правка — форма (дата, значение/усилие/заметка каждого подхода, усилие и комментарий
 тренировки; у активности — тип и длительность ч:мм); клон — выбор даты (по умолчанию сегодня), после
-создания Журнал переходит к месяцу новой записи.
+создания Журнал переходит к месяцу новой записи, снимает выбранный день (в том числе при
+клонировании в том же месяце) и обновляет список и отметки календаря, чтобы копия была видна.
 
 ## 4. Analytics v2
 
@@ -980,6 +1007,14 @@ UI: в деталях записи рядом с «Удалить» — «✏️
   - *«Главная» без плана:* пустой каталог — «Курсов для подключения пока нет…» (`catalog-empty`), не «появится позже».
     Баннер «план дня» у пользователя без курса и без пунктов плана не ведёт в пустые «Планы»: «План дня пока пуст» /
     «Выберите курс в каталоге выше» (прокрутка к каталогу) либо «Соберите свою тренировку» (открывает создание).
+- **Частичная недоступность Главной (#353/#298):** каталог курсов и план загружаются независимо.
+  Пока план загружается или не загрузился, доступные карточки и детали курсов можно просматривать;
+  состояние «В плане» неизвестно, поэтому добавление курса и быстрый старт тренировки недоступны.
+  Ошибка плана названа прямо и сопровождается «Повторить загрузку плана»; неизвестный план не
+  объявляется пустым и не показывает баннер пустого плана. Успешный повтор или перезагрузка
+  возвращает реальные статусы курсов и существующий быстрый старт без повторного добавления.
+  При недоступном каталоге и достоверно пустом плане баннер Главной ведёт прямо к созданию
+  тренировки. Пустые «Планы» при ошибке каталога сохраняют явную кнопку «Создать тренировку».
 - **Главная (G3):** секции «Курсы» (каталог Программ, как раньше) и «Мои тренировки» (компактные
   карточки из `GET /api/v2/workouts`: название, число упражнений, первые названия и цель первого
   упражнения — только реальные данные, без id/JSON/нулевых целей). Вход «Создать» — на самой Главной
@@ -1002,6 +1037,12 @@ UI: в деталях записи рядом с «Удалить» — «✏️
   Telegram BackButton с детали возвращает туда, откуда открыли. «← Назад» из формы «Записать» (и Telegram
   BackButton) возвращает на Workout Detail той вкладки («Главная» / «Планы»), откуда нажали «Записать» (#277);
   после сохранения остаёмся в Журнале с новой записью. «Добавить в план» ведёт на «Планы». У готовой (системной) тренировки каталога кнопки «Изменить» нет.
+  В редакторе своей тренировки пустое или некорректное время (например, `00:99`) остаётся в поле
+  с объяснением и блокирует сохранение; прежнее значение отдыха не подставляется молча. Время — целое
+  число секунд, отдых `00:00` допустим. Ошибка сохранения упражнения видна в открытой форме, введённые
+  повторения и отдых сохраняются для повторной попытки. Пока запрос выполняется, повторная запись
+  и уход из формы заблокированы. Успешная правка используется в следующих стартах; снимки уже начатых
+  тренировок не меняются.
   **Готовые тренировки (#296):** секция «Готовые тренировки» на Главной (после подборок, перед «Мои
   тренировки», скрыта, если каталог не загрузился/пуст) показывает системные Workout из
   `GET /api/v2/workouts/catalog`; карточка открывает тот же Workout Detail; они же ищутся в поиске.
@@ -1082,6 +1123,9 @@ UI: в деталях записи рядом с «Удалить» — «✏️
     `one_rep_max_too_soon`); недавний 5×5 / 5×3 **со слов пользователя** (self-report, сервер его с сохранёнными
     сессиями не сверяет) — альтернатива тесту. Выбор следующей резины
     из личного списка — подтверждением полной записи (см. «Резина»).
+    **Скорость одиночного подхода (#359).** Все три подписи «Получилось · Быстро / Обычно / Медленно»
+    помещаются в свои кнопки и не перекрываются на узких экранах; сетка переносит целые кнопки по доступной
+    ширине, сохраняя обычный размер текста и отдельные области нажатия не меньше 44×44 px.
     **«Начать тест» и недостающие входы (staging, первый обычный пользователь).** Тест 1RM без массы тела и шага
     веса не начинается (правило прежнее). «Начать тест» сначала сохраняет введённые в той же форме массу тела и
     шаг веса (тот же `PUT …/course/inputs`), потом просит первый подход; чего нет ни на сервере, ни в форме —
@@ -1351,3 +1395,128 @@ UI: в деталях записи рядом с «Удалить» — «✏️
   «Добавить в план» остаётся главным действием.
 - **Golden Journey** — постоянный полный E2E — отдельная задача (issue #221).
 - **Слияние legacy и v2 Журнала** — не принято.
+
+### Same-operation server prepare recovery
+
+The owner may post `/pullup server-prepare-recover <exact-40-character-sha> <original-comment-id>`
+on the original candidate PR when its original prepare request has no trusted dispatcher claim.
+The original comment must still be the owner's exact `/pullup server-prepare <sha>` on that PR.
+Recovery retains the original prepare action, operation ID and request comment; it requires
+current PR head, existing full CI/rehearsal gates and trusted main workflows. It only prepares
+the Git object, following existing prepare admission, without a deployment tree-equality bypass.
+The durable original prepare marker also records the recovery comment and dispatcher run.
+The child checks both comments and recovery provenance. An existing original claim refuses
+recovery; an interrupted recovery remains claimed and cannot be replayed. A late original
+request deduplicates against the same marker. Concurrent children share the server's exclusive
+same-operation ledger and cannot perform the prepare effect twice. No claim or ledger is deleted.
+
+### Cloud release control continuity
+
+Complete controller upkeep (#406) uses a reviewed one-time stable supervisor and
+complete versioned dispatcher/helper/production/rollback bundles, activated through
+one fsynced record. The sole optional artifact is fixed `deploy/drive-backup.py`;
+absence means capability unavailable. A stable local-root scheduled launcher
+rejects arguments/SSH environments and executes only that validated bundle's
+backup artifact. Reviewed bootstrap installs known backup units disabled, refusing
+unknown, enabled or active units; it never starts/authenticates a backup. Subsequent
+backup code updates use cloud adoption; credentials, timer configuration/activation
+and actual independent recovery proof stay separate. Adoption requires exact PR/head, trusted-main owner/first-attempt
+provenance, full CI/rehearsal plus controller authorization and main-tree equality.
+Independent cloud status/recovery remain available when the bundled dispatcher or
+helper fails; recovery selects only the prior validated local bundle recorded in
+the adoption journal, with a separate claim and no adoption replay. Recovery does
+not depend on latest product CI/main or the source PR retaining its old head.
+Existing forced SSH/key and deployment/data guards remain in force. Implementation
+does not imply installation, deployment authorization or actual cloud acceptance;
+the exact bootstrap and commands are in `CLOUD_SERVER_CONTROL.md` (#406 section).
+
+The existing owner-command bridge supports exact `server-adopt-runner <sha>`
+and `rollback-r1-apply <failed-sha> <manifest> <token> <failed-run> <check-run>`
+commands after the reviewed no-key administrative controller upgrade. Adoption
+changes only the fixed installed production runner, with full CI/rehearsal,
+trusted-main tree, immutable owner/provenance, locks, old-hash and durable receipt
+guards. R1 recovery remains available after failed product CI and preserves the
+existing no-database-overwrite, unchanged-schema/no-backfill server guards.
+Incident-wide and execution claims prohibit replay, including through another
+PR or manual child dispatch. Exact grammar, actual installation state and the
+one-time administrative prerequisite are in `CLOUD_SERVER_CONTROL.md`.
+
+### One delivery recovery for the fixed November 15 R3 incident
+
+The owner may authorize one new delivery on PR #399 using the exact
+`incident-r3-recover` command documented in `CLOUD_SERVER_CONTROL.md`. It remains
+bound to original approval 6895994270, dispatcher 43724033626, failed child
+43724053051/job 132841996080, the original candidate, manifest and R3 token.
+Both admissions require unchanged fixed failed-deploy/check evidence and the
+original child's latest first attempt with admission failed and SSH skipped.
+A dedicated durable recovery claim precedes dispatch; the existing global
+incident execution reservation precedes SSH under production concurrency.
+Original claims are preserved. New approvals/dispatchers/children must be
+unedited, owner-bound and trusted first attempts. Any execution reservation,
+changed/unknown evidence or ambiguous write requires reconciliation, without
+replay. The historical admission failure's HTTP/guard cause remains UNKNOWN.
+This adds cloud delivery capability, not a server dedup ledger or a changed
+rollback runner. Existing forced-command locks and manifest/token guards apply.
+
+The guarded rollback token explicitly grants `pull-requests: write` for its
+execution reservation in the PR conversation, matching the established dispatcher
+and server-control adapters. A 403 remains a refused write; diagnostics classify
+only exact allowlisted GitHub messages and bounded numeric rate-limit headers.
+No provider cause is inferred from the permission declaration or a bare 403.
+
+An explicit fixed manual-execution reservation authored by the repository owner
+on PR #399 denies the old incident's cloud dispatch and execution admissions.
+The exact reservation envelope is documented in `CLOUD_SERVER_CONTROL.md`.
+Proposal prose, the marker alone and other authors do not reserve execution.
+This exclusion does not itself authorize or perform a manual operation.
+
+The first delivery recovery is consumed. One second and final fixed
+`incident-r3-redeliver` capability binds that original incident plus recovery
+approval 6896948857/dispatcher 43730724401/failed child 43730752868/job 132862408612
+at exact trusted head f6bf15d. It requires both prior latest first-attempt failures
+with admission failed and SSH skipped, all original immutable provenance/evidence
+and both preserved unique claims. A dedicated second-delivery claim precedes
+dispatch; the same global execution marker precedes SSH under existing production
+concurrency. Both old paths deny the second claim. Global execution or actual
+owner manual reservation denies every path. Only structured metadata is used;
+HTTP403 is descriptive. No generic retry, new incident/manifest/server operation
+or further delivery route is added. Exact grammar is in CLOUD_SERVER_CONTROL.md.
+
+### Guarded R3 database rename transaction (#411)
+
+After the existing backup, restore, schema/count, image and zero-connections
+checks, the rollback script renames the live and verified restored databases
+inside explicit `BEGIN`/`COMMIT`. Failure before commit rolls back both renames;
+the failed database is retained after success. A lost COMMIT reply leaves the
+outcome uncertain and services stopped pending inspection of the exact three
+database names; it does not authorize another apply. The repository change does
+not update the installed rollback script. Future adoption requires a separately
+reviewed controller bundle and existing release gates. See runbook §7.3.
+
+### Private compatibility failure diagnostics
+
+Guarded production preflight may report historical diagnostic enums and bounded
+aggregate counts for the fixed November 15 before-stop compatibility failure.
+The installed guard reads only the incident-bound private files on the server;
+user IDs, catalog names, raw output and exception text remain private. Missing,
+untrusted or malformed evidence produces an unavailable or unclassified result.
+Future verifier failures emit the same restricted summary before the existing
+refusal. Historical diagnostics provide no fresh verification or release acceptance;
+all compatibility, ownership, history, read-only and hash guards still apply.
+
+Same-schema release admission also recognizes completed unplanned saved-workout
+history: manual records/repeats and direct live engine v1/v2 sessions, with
+same-user or system definition ownership, consistent definition/version and frozen
+snapshot identity, no protected STEP blocks, and no plan/program credit. Archived
+definitions retain their historical identity. Live v2 must be terminal completed;
+active, cancelled, unknown, linked and progression-bearing state stays refused.
+This check never creates a plan or changes history.
+
+The CLI and installed guard share the exact fixed classification SQL. The guard
+accepts only a bounded regular Git blob from the fixed candidate path with its
+reviewed compiled SHA256. Read-only repeatable-read preflight exports only fixed
+numeric reason/subtype counts and `PLANLESS_BLOCKED`; a nonzero count or unavailable
+classification refuses the same-schema release before build or STOP. Zero is a
+necessary planless condition; all remaining compatibility and release gates still
+apply, including repeated checks with stopped writers. Initial schema migration
+keeps its existing preflight because these tables may not exist yet.

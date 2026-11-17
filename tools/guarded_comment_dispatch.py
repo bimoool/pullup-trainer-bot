@@ -7,7 +7,10 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 
+import incident_r3_recovery as incident
+import rollback_r1_recovery as r1
 from current_checks import CheckRefused, ensure_green
+from incident_diagnostics import Trace
 
 REPO = "bimoool/pullup-trainer-bot"
 WORKFLOW = "deploy-staging-guarded.yml"
@@ -26,6 +29,71 @@ REQUIRED_CHECKS = {
 
 
 def command(body):
+    controller = re.fullmatch(r"/pullup server-adopt-controller ([0-9a-f]{40})", body)
+    if controller:
+        return (
+            "server-adopt-controller",
+            controller[1],
+            "controller-control.yml",
+            {"operation": "adopt", "candidate_sha": controller[1], "operation_id": ""},
+        )
+    if body.startswith("/pullup rollback-r1-apply "):
+        sha, inputs = r1.parse(body, require)
+        return "rollback-r1-apply", sha, "production-rollback.yml", inputs
+    if body == incident.REDELIVERY_COMMAND:
+        return (
+            "incident-r3-redeliver",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
+    if body == incident.RECOVERY_COMMAND:
+        return (
+            "incident-r3-recover",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
+    if body == incident.COMMAND:
+        return (
+            "incident-r3-apply",
+            incident.CANDIDATE,
+            "production-rollback.yml",
+            incident.fixed_inputs(),
+        )
+    recovery = re.fullmatch(
+        r"/pullup server-prepare-recover ([0-9a-f]{40}) ([1-9][0-9]{0,19})", body
+    )
+    if recovery:
+        sha, original = recovery.groups()
+        return (
+            "server-prepare",
+            sha,
+            "server-control.yml",
+            {
+                "operation": "prepare",
+                "candidate_sha": sha,
+                "operation_id": "ops-" + original,
+                "request_comment_id": original,
+                "recovery_comment_id": "",
+            },
+        )
+    control = re.fullmatch(
+        r"/pullup server-(readiness|prepare|restore|receipt|adopt-runner) ([0-9a-f]{40})(?: (ops-[1-9][0-9]{0,19}))?",
+        body,
+    )
+    if control:
+        action, sha, operation_id = control.groups()
+        require(
+            (action == "receipt") == (operation_id is not None),
+            "receipt ID required only for reconciliation",
+        )
+        return (
+            "server-" + action,
+            sha,
+            "server-control.yml",
+            {"operation": action, "candidate_sha": sha, "operation_id": operation_id or ""},
+        )
     match = re.fullmatch(
         r"/pullup (staging-preflight|staging-snapshot|staging-deploy|staging-qa|production-preflight|production-apply|rehearse|rollback-check) "
         r"([0-9a-f]{40})(?: ([0-9a-f]{12}) ([0-9a-f]{12})(?: (PRODUCTION-APPLY-[0-9a-f]{12}))?"
@@ -161,6 +229,53 @@ def unchanged_staging(api, deployed):
 
 
 def release_gates(api, operation, sha, inputs):
+    if operation == "rollback-r1-apply":
+        r1.verify_evidence(api, sha, inputs, require, BOT_ID)
+        return
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        require(
+            sha == incident.CANDIDATE
+            and all(inputs.get(k) == v for k, v in incident.fixed_inputs().items()),
+            "fixed incident inputs required",
+        )
+        incident.verify_evidence(api, require)
+        if operation == "incident-r3-redeliver":
+            incident.verify_redelivery(
+                api,
+                require,
+                api("GET", "")["owner"],
+                inputs.get("incident_redelivery_comment_id"),
+                inputs.get("incident_dispatcher_run_id"),
+            )
+        elif operation == "incident-r3-recover":
+            incident.verify_recovery(
+                api,
+                require,
+                api("GET", "")["owner"],
+                inputs.get("incident_recovery_comment_id"),
+                inputs.get("incident_dispatcher_run_id"),
+            )
+        else:
+            rows = incident.comments(api, require)
+            incident.no_manual_execution(rows, api("GET", "")["owner"], require)
+            incident.no_redelivery(rows, require)
+        return
+    if operation.startswith("server-"):
+        if operation == "server-adopt-controller":
+            from controller_control_client import adoption_gates
+
+            adoption_gates(api, sha)
+            return
+        if operation not in {"server-readiness", "server-receipt"}:
+            green_checks(api, sha)
+        if operation == "server-adopt-runner":
+            candidate = api("GET", f"git/commits/{sha}")
+            main = api("GET", "commits/main")
+            require(
+                candidate["tree"]["sha"] == main["commit"]["tree"]["sha"],
+                "candidate must equal trusted main tree",
+            )
+        return  # metadata/fetch/isolated restore never execute candidate app code or deploy
     if operation in {"staging-preflight", "staging-snapshot"}:
         return
     if operation == "rollback-check":
@@ -223,6 +338,8 @@ def authorize(event, runtime, api):
     require("pull_request" in issue, "not a PR conversation")
     require(type(comment.get("id")) is int and comment["id"] > 0, "invalid comment")
     operation, sha, workflow_name, inputs = command(comment.get("body", ""))
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        require(number == incident.PR_NUMBER, "incident PR binding required")
     live_repo = api("GET", "")
     require(repository.get("id") == live_repo["id"], "repository ID mismatch")
     owner = live_repo["owner"]
@@ -241,6 +358,28 @@ def authorize(event, runtime, api):
         and live_comment.get("user", {}).get("id") == owner["id"],
         "comment changed or unavailable",
     )
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        require(
+            runtime.get("run_attempt") == "1"
+            and live_comment.get("id") == comment["id"]
+            and live_comment.get("issue_url")
+            == f"https://api.github.com/repos/{REPO}/issues/{incident.PR_NUMBER}"
+            and live_comment.get("user", {}).get("login") == owner["login"]
+            and live_comment.get("user", {}).get("type") == "User"
+            and live_comment.get("author_association") == "OWNER"
+            and isinstance(live_comment.get("created_at"), str)
+            and bool(live_comment["created_at"])
+            and live_comment.get("updated_at") == live_comment["created_at"],
+            "original unedited incident owner command required",
+        )
+    if operation == "rollback-check":
+        require(
+            runtime.get("run_attempt") == "1", "first rollback-check dispatcher attempt required"
+        )
+    if operation in {"rollback-r1-apply", "server-adopt-runner", "server-adopt-controller"}:
+        require(runtime.get("run_attempt") == "1", "first dispatcher attempt required")
+        r1.original_comment(live_comment, owner, number, comment["body"], require)
+        require(live_comment.get("id") == comment["id"], "live comment identity")
     validate_pr(api("GET", f"pulls/{number}"), number, sha)
     workflow = api("GET", f"actions/workflows/{workflow_name}")
     require(
@@ -248,8 +387,71 @@ def authorize(event, runtime, api):
         and workflow.get("state") == "active",
         "guarded workflow unavailable",
     )
+    if operation in {"incident-r3-recover", "incident-r3-redeliver"}:
+        require(
+            re.fullmatch(r"[0-9a-f]{40}", runtime.get("sha", "")),
+            "trusted recovery dispatcher SHA required",
+        )
+        require(
+            str(runtime["run_id"]) != str(incident.ORIGINAL_DISPATCHER),
+            "new incident dispatcher required",
+        )
+        incident.trusted_run(
+            api, require, runtime["run_id"], DISPATCHER, "issue_comment", owner, runtime["sha"]
+        )
     release_gates(api, operation, sha, inputs)
+    if "recovery_comment_id" in inputs:
+        require(
+            live_comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}",
+            "recovery comment PR binding required",
+        )
+        original_id = inputs["request_comment_id"]
+        require(original_id != str(comment["id"]), "original comment required")
+        original = api("GET", f"issues/comments/{original_id}")
+        validate_prepare_comment(original, owner, number, sha)
+        inputs["recovery_comment_id"] = str(comment["id"])
+    if operation.startswith("server-"):
+        inputs["operation_id"] = inputs["operation_id"] or f"ops-{comment['id']}"
+        inputs["pr_number"] = str(number)
+        inputs.setdefault("request_comment_id", str(comment["id"]))
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        inputs["incident_request_comment_id"] = str(comment["id"])
+        inputs["incident_dispatcher_run_id"] = str(runtime["run_id"])
+        if operation in {"incident-r3-recover", "incident-r3-redeliver"}:
+            require(
+                comment["id"] != incident.ORIGINAL_REQUEST,
+                "new incident recovery approval required",
+            )
+            inputs["incident_request_comment_id"] = str(incident.ORIGINAL_REQUEST)
+            inputs["incident_recovery_comment_id"] = str(comment["id"])
+            if operation == "incident-r3-redeliver":
+                require(
+                    comment["id"] != incident.PARENT_REQUEST,
+                    "new incident redelivery approval required",
+                )
+                require(
+                    str(runtime["run_id"]) != str(incident.PARENT_DISPATCHER),
+                    "new incident dispatcher required",
+                )
+                inputs["incident_recovery_comment_id"] = str(incident.PARENT_REQUEST)
+                inputs["incident_redelivery_comment_id"] = str(comment["id"])
+    if operation == "rollback-r1-apply":
+        inputs["recovery_pr_number"] = str(number)
+        inputs["recovery_request_comment_id"] = str(comment["id"])
+        inputs["recovery_dispatcher_run_id"] = str(runtime["run_id"])
     return number, operation, sha, workflow_name, inputs
+
+
+def validate_prepare_comment(comment, owner, number, sha):
+    require(
+        comment.get("body") == f"/pullup server-prepare {sha}"
+        and comment.get("issue_url") == f"https://api.github.com/repos/{REPO}/issues/{number}"
+        and comment.get("user", {}).get("id") == owner["id"]
+        and comment.get("user", {}).get("login") == owner["login"]
+        and comment.get("user", {}).get("type") == "User"
+        and comment.get("author_association") == "OWNER",
+        "original prepare owner, text and PR binding required",
+    )
 
 
 def validate_pr(pr, number, sha):
@@ -268,10 +470,54 @@ def validate_pr(pr, number, sha):
 
 def dispatch(event, runtime, api):
     number, operation, sha, workflow_name, inputs = authorize(event, runtime, api)
+    recovery_id = inputs.pop("recovery_comment_id", None)
+    provenance = (
+        f"<!-- pullup-prepare-recovery-v1:{inputs['request_comment_id']}:{recovery_id}:{runtime['run_id']} -->\n"
+        if recovery_id
+        else ""
+    )
+    if operation in {"incident-r3-apply", "incident-r3-recover", "incident-r3-redeliver"}:
+        provenance = (
+            incident.request_marker(inputs["incident_request_comment_id"], runtime["run_id"]) + "\n"
+        )
+    if operation == "incident-r3-recover":
+        provenance = (
+            incident.recovery_marker(inputs["incident_recovery_comment_id"], runtime["run_id"])
+            + "\n"
+        )
+    if operation == "incident-r3-redeliver":
+        provenance = (
+            incident.redelivery_marker(inputs["incident_redelivery_comment_id"], runtime["run_id"])
+            + "\n"
+        )
+    if operation == "rollback-r1-apply":
+        provenance = (
+            r1.request_marker(inputs["recovery_request_comment_id"], runtime["run_id"]) + "\n"
+        )
     marker_kind = "preflight" if operation == "staging-preflight" else operation
     marker = f"<!-- pullup-{marker_kind}-v1:{number}:{sha} -->"
+    if operation.startswith("server-"):
+        marker = (
+            f"<!-- pullup-{marker_kind}-v1:{number}:{sha}:ops-{inputs['request_comment_id']} -->"
+        )
+    if operation == "rollback-check":
+        # Read-only evidence may need refreshing after a different check or state change.
+        # A new owner comment is a new check; the same event keeps its durable claim.
+        marker = (
+            f"<!-- pullup-rollback-check-v2:{number}:{sha}:{inputs['kind']}:"
+            f"{inputs['manifest']}:{event['comment']['id']} -->"
+        )
+    if operation == "incident-r3-recover":
+        marker = incident.RECOVERY_MARKER
+    if operation == "incident-r3-redeliver":
+        marker = incident.REDELIVERY_MARKER
+    if operation == "rollback-r1-apply":
+        marker = r1.marker(inputs)
     for page in range(1, 101):
-        comments = api("GET", f"issues/{number}/comments?per_page=100&page={page}")
+        listing = (
+            "issues/comments" if operation == "rollback-r1-apply" else f"issues/{number}/comments"
+        )
+        comments = api("GET", f"{listing}?per_page=100&page={page}")
         require(isinstance(comments, list) and len(comments) <= 100, "invalid comment listing")
         for comment in comments:
             author = comment.get("user", {})
@@ -280,6 +526,10 @@ def dispatch(event, runtime, api):
                 and author.get("login") == "github-actions[bot]"
                 and marker in comment.get("body", "")
             ):
+                require(
+                    not recovery_id or provenance.strip() in comment.get("body", ""),
+                    "original prepare already claimed; recovery forbidden",
+                )
                 return "duplicate: existing durable claim; not dispatched again"
         if len(comments) < 100:
             break
@@ -290,7 +540,7 @@ def dispatch(event, runtime, api):
         "POST",
         f"issues/{number}/comments",
         {
-            "body": f"{marker}\n{operation} reserved for `{sha}` by dispatcher run {runtime['run_id']}.\n"
+            "body": f"{marker}\n{provenance}{operation} reserved for `{sha}` by dispatcher run {runtime['run_id']}.\n"
             "No automatic retry: if the next request is interrupted, inspect Actions before any operator recovery."
         },
     )
@@ -312,7 +562,7 @@ def dispatch(event, runtime, api):
         "PATCH",
         f"issues/comments/{receipt['id']}",
         {
-            "body": f"{marker}\nDispatch accepted for {operation} of `{sha}`.\n"
+            "body": f"{marker}\n{provenance}Dispatch accepted for {operation} of `{sha}`.\n"
             f"Dispatcher run: https://github.com/{REPO}/actions/runs/{runtime['run_id']}\n"
             "Acceptance is not completion. Read the guarded workflow run and verify its exact SHA, inputs and successful conclusion."
         },
@@ -325,17 +575,16 @@ def main():
         "repository": os.environ["GITHUB_REPOSITORY"],
         "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"],
         "run_id": os.environ["GITHUB_RUN_ID"],
+        "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+        "sha": os.environ["GITHUB_SHA"],
     }
     with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
         event = json.load(source)
 
-    api_phase = "not-called"
+    trace = Trace()
 
     def api(method, path, body=None):
-        nonlocal api_phase
-        # Fixed route classes only: no URLs, bodies, credentials or user inputs.
-        route = "repository" if not path else path.split("/", 1)[0]
-        api_phase = f"{method} {route if route in {'repository', 'issues', 'pulls', 'actions', 'commits', 'git'} else 'other'}"
+        trace.before(method, path)
         request = urllib.request.Request(
             f"https://api.github.com/repos/{REPO}" + (f"/{path}" if path else ""),
             data=None if body is None else json.dumps(body).encode(),
@@ -355,21 +604,8 @@ def main():
 
     try:
         print(dispatch(event, runtime, api))
-    except Refused as exc:
-        # Refused messages are fixed local guard text, never response bodies or inputs.
-        print(f"Guard refused: {exc}. No automatic retry.")
-        raise SystemExit(1) from None
-    except urllib.error.HTTPError as exc:
-        print(
-            f"GitHub API HTTP status {exc.code} at {api_phase}. "
-            "No automatic retry; inspect claims and Actions."
-        )
-        raise SystemExit(1) from None
-    except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
-        # No response bodies, request headers, command body or secret values in logs.
-        print(
-            "Dispatch refused or interrupted. No automatic retry; inspect the durable claim and Actions."
-        )
+    except (Refused, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        print(trace.report(exc, refused=isinstance(exc, Refused)))
         raise SystemExit(1) from None
 
 

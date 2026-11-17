@@ -126,3 +126,13 @@ def test_every_container_has_a_hard_memory_cap_without_swap_and_the_builder_is_c
 def test_runner_builds_with_the_capped_builder_and_in_the_rehearsal_project(runner_env):
     block = SRC.split("run_runner() {", 1)[1].split("\n}\n", 1)[0]
     assert runner_env in block and "run_job" in block
+
+
+def test_rehearsal_pins_the_exact_runtime_compatibility_guard():
+    import hashlib
+
+    guard = SCRIPT.parent / 'deploy-production-guarded-run.sh'
+    pinned = re.search(r'NEW_RUNNER_SHA256="\$\{REHEARSE_NEW_RUNNER_SHA256:-([a-f0-9]{64})\}"', SRC).group(1)
+    assert pinned == hashlib.sha256(guard.read_bytes()).hexdigest()
+    assert 'CONTROL_SHA="${REHEARSE_CONTROL_SHA:-d1b237567d732d4d670232d8a060f9849c3132a8}"' in SRC
+    assert 'scripts/backfill_multi_program.py --verify-compatible' in SRC

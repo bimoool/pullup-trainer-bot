@@ -11,6 +11,7 @@ import {
 } from "./journalEdit";
 import { sanitizeDecimalInput } from "./decimalInput";
 import { ACTIVITY_TYPE_OPTIONS } from "./journalLog";
+import { useBackButton } from "./useBackButton";
 
 const UNIT_LABELS: Record<string, string> = { reps: "повт.", s: "сек", kg: "кг", deg: "°", m: "м" };
 
@@ -48,6 +49,13 @@ export function JournalV2EditForm({
   const [saving, setSaving] = useState(false);
   const inFlight = useRef(false);
 
+  function handleCancel() {
+    if (!inFlight.current) {
+      onCancel();
+    }
+  }
+  useBackButton(handleCancel);
+
   function patchSet(blockIndex: number, setNumber: number, patch: Partial<SetDraft>) {
     setDraft((current) => ({
       ...current,
@@ -80,7 +88,7 @@ export function JournalV2EditForm({
 
   return (
     <div data-testid="journal-edit-form">
-      <BackChevron onClick={saving ? () => undefined : onCancel} testId="journal-edit-back" />
+      <BackChevron onClick={handleCancel} testId="journal-edit-back" />
       <p className="plan-title">Изменить тренировку</p>
       <p className="block-subtitle">{journalEntryTitle(session)}</p>
 
@@ -173,7 +181,7 @@ export function JournalV2EditForm({
       <Button className="action-button" size="l" stretched loading={saving} onClick={() => void handleSave()}>
         Сохранить
       </Button>
-      <Button className="action-button" size="l" stretched mode="outline" disabled={saving} onClick={onCancel}>
+      <Button className="action-button" size="l" stretched mode="outline" disabled={saving} onClick={handleCancel}>
         Отмена
       </Button>
     </div>
@@ -195,6 +203,13 @@ export function JournalV2CloneForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const inFlight = useRef(false);
+
+  function handleCancel() {
+    if (!inFlight.current) {
+      onCancel();
+    }
+  }
+  useBackButton(handleCancel);
 
   async function handleClone() {
     if (inFlight.current) {
@@ -219,7 +234,7 @@ export function JournalV2CloneForm({
 
   return (
     <div data-testid="journal-clone-form">
-      <BackChevron onClick={saving ? () => undefined : onCancel} testId="journal-clone-back" />
+      <BackChevron onClick={handleCancel} testId="journal-clone-back" />
       <p className="plan-title">Повторить тренировку</p>
       <p className="block-subtitle">{journalEntryTitle(session)}</p>
       <p className="hint">Будет создана новая завершённая запись с теми же упражнениями и результатами.</p>
@@ -236,7 +251,7 @@ export function JournalV2CloneForm({
       <Button className="action-button" size="l" stretched loading={saving} onClick={() => void handleClone()}>
         Создать копию
       </Button>
-      <Button className="action-button" size="l" stretched mode="outline" disabled={saving} onClick={onCancel}>
+      <Button className="action-button" size="l" stretched mode="outline" disabled={saving} onClick={handleCancel}>
         Отмена
       </Button>
     </div>

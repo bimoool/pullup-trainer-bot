@@ -176,7 +176,7 @@ unchanged; a repeated call has no further effect. There is no re-activation in t
 
 **Deleted (archived) workouts in a custom plan** (owner decision, #304 second review, blocker F). A workout of
 `workouts` is *live* when it is not archived (`complexes.archived_at IS NULL`) and is the user's own Builder
-workout or an ownerless system workout (the same visibility rule as `get_visible_workout_for_user`).
+workout or an ownerless system workout (the same visibility rule as `get_publicly_attachable_workout_for_user`).
 
 - Archived/deleted workout references are **ignored for future materialisation**: `converge_user_plan` creates
   no occurrence for them. The stored rotation vector is **not** changed.
